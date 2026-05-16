@@ -1,0 +1,13 @@
+name: Setup Rust with cache
+description: Install toolchain from rust-toolchain.toml and restore Swatinem cache.
+
+runs:
+  using: composite
+  steps:
+    - name: Install Rust toolchain
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        components: rustfmt,clippy
+
+    - name: Restore build cache
+      uses: Swatinem/rust-cache@v2

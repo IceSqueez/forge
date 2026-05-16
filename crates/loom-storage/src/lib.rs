@@ -2,8 +2,10 @@
 
 pub mod error;
 pub mod globals;
+pub mod settings;
 pub mod user_globals;
 
 pub use error::StorageError;
 pub use globals::{GlobalEntry, GlobalsRepo};
+pub use settings::{SettingsRepo, reserved_keys};
 pub use user_globals::{UserGlobalEntry, UserGlobalsRepo};

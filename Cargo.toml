@@ -42,7 +42,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 sqlx               = { version = "0.8", features = ["sqlite", "runtime-tokio", "migrate", "time"] }
 
 aes-gcm            = { version = "0.10" }
-keyring            = { version = "3" }
+keyring            = { version = "4" }
 rand               = { version = "0.8" }
 
 rhai               = { version = "1", features = ["sync"] }

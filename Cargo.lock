@@ -2565,7 +2565,9 @@ dependencies = [
  "async-trait",
  "loom-types",
  "serde",
+ "serde_json",
  "thiserror 2.0.18",
+ "time",
  "tokio",
 ]
 

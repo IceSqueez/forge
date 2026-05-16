@@ -11,4 +11,23 @@ pub enum SqliteStorageError {
 
     #[error("keyring error: {reason}")]
     Keyring { reason: String },
+
+    #[error("decode error: {0}")]
+    Decode(String),
+}
+
+impl From<SqliteStorageError> for loom_storage::StorageError {
+    fn from(e: SqliteStorageError) -> Self {
+        match e {
+            SqliteStorageError::Migration { migration, reason } => {
+                Self::Migration { migration, reason }
+            }
+            SqliteStorageError::Sqlx(inner) => Self::Connection {
+                reason: inner.to_string(),
+            },
+            SqliteStorageError::Crypto { reason } => Self::Connection { reason },
+            SqliteStorageError::Keyring { reason } => Self::Connection { reason },
+            SqliteStorageError::Decode(msg) => Self::Parse(msg),
+        }
+    }
 }

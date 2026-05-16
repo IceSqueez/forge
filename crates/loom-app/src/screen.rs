@@ -8,6 +8,20 @@ pub enum OnboardingStep {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingsSection {
+    Appearance,
+    Language,
+    Shortcuts,
+    Notifications,
+    Scripting,
+    Queues,
+    Storage,
+    WebSocket,
+    Version,
+    Diagnostics,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Screen {
     Onboarding(OnboardingStep),
     Hub,
@@ -25,5 +39,5 @@ pub enum Screen {
     ScriptEditor,
     Server,
     Logs,
-    Settings,
+    Settings(SettingsSection),
 }

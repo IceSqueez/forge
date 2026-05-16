@@ -1,7 +1,8 @@
 use iced::{Element, Length, Subscription, Task, Theme};
 use loom_widgets::{LoomPalette, ThemeId};
 
-use crate::{Message, Screen};
+use crate::screen::OnboardingStep;
+use crate::{Message, Screen, SettingsSection};
 
 pub struct App {
     pub screen: Screen,
@@ -13,7 +14,7 @@ impl Default for App {
     fn default() -> Self {
         let (theme, palette) = loom_widgets::catppuccin_mocha();
         Self {
-            screen: Screen::Hub,
+            screen: Screen::Onboarding(OnboardingStep::Welcome),
             theme,
             palette,
         }
@@ -68,6 +69,107 @@ fn hub_view(palette: &LoomPalette) -> Element<'static, Message> {
         .into()
 }
 
+fn settings_section_button<'a>(
+    label: &'a str,
+    section: SettingsSection,
+    active: &SettingsSection,
+    palette: &LoomPalette,
+) -> Element<'a, Message> {
+    if &section == active {
+        loom_widgets::primary_button(label, Message::Navigate(Screen::Settings(section)), palette)
+    } else {
+        loom_widgets::ghost_button(label, Message::Navigate(Screen::Settings(section)), palette)
+    }
+}
+
+fn settings_diagnostics_pane(palette: &LoomPalette) -> Element<'static, Message> {
+    let version = env!("CARGO_PKG_VERSION");
+    let metrics = iced::widget::row![
+        loom_widgets::metric_card("Build", version, None::<&str>, palette),
+        loom_widgets::metric_card("Rust", "1.95.0", None::<&str>, palette),
+        loom_widgets::metric_card("OS", std::env::consts::OS, None::<&str>, palette),
+    ]
+    .spacing(12);
+
+    iced::widget::container(metrics)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(16)
+        .into()
+}
+
+fn settings_view<'a>(
+    section: &'a SettingsSection,
+    palette: &'a LoomPalette,
+) -> Element<'a, Message> {
+    let nav = iced::widget::column![
+        settings_section_button("Appearance", SettingsSection::Appearance, section, palette),
+        settings_section_button("Language", SettingsSection::Language, section, palette),
+        settings_section_button("Shortcuts", SettingsSection::Shortcuts, section, palette),
+        settings_section_button(
+            "Notifications",
+            SettingsSection::Notifications,
+            section,
+            palette
+        ),
+        settings_section_button("Scripting", SettingsSection::Scripting, section, palette),
+        settings_section_button("Queues", SettingsSection::Queues, section, palette),
+        settings_section_button("Storage", SettingsSection::Storage, section, palette),
+        settings_section_button("WebSocket", SettingsSection::WebSocket, section, palette),
+        settings_section_button("Version", SettingsSection::Version, section, palette),
+        settings_section_button(
+            "Diagnostics",
+            SettingsSection::Diagnostics,
+            section,
+            palette
+        ),
+    ]
+    .spacing(4)
+    .width(Length::Fixed(160.0));
+
+    let pane: Element<'a, Message> = match section {
+        SettingsSection::Diagnostics => settings_diagnostics_pane(palette),
+        other => {
+            let label = format!("Settings · {other:?}");
+            iced::widget::container(loom_widgets::empty_state(
+                label,
+                "Placeholder for alpha-1.",
+                None::<(&str, Message)>,
+                palette,
+            ))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
+        }
+    };
+
+    iced::widget::row![nav, pane].spacing(16).into()
+}
+
+fn onboarding_view<'a>(step: &'a OnboardingStep, palette: &'a LoomPalette) -> Element<'a, Message> {
+    let step_label = format!("Step: {step:?}");
+    let hero = loom_widgets::hero_card(
+        "Welcome to streamer-loom",
+        "First-run setup",
+        std::iter::once(iced::widget::text(step_label).into()),
+        palette,
+    );
+
+    let buttons = iced::widget::row![
+        loom_widgets::ghost_button("Skip", Message::Navigate(Screen::Hub), palette),
+        loom_widgets::ghost_button("Next", Message::Navigate(Screen::Hub), palette),
+    ]
+    .spacing(8);
+
+    let content = loom_widgets::card([hero, buttons.into()], palette);
+
+    iced::widget::container(content)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(16)
+        .into()
+}
+
 fn coming_soon_view(screen_label: String, palette: &LoomPalette) -> Element<'static, Message> {
     iced::widget::container(loom_widgets::empty_state(
         "Coming soon",
@@ -92,7 +194,11 @@ pub fn view(app: &App) -> Element<'_, Message> {
         nav_button("Commands", Screen::Commands, palette),
         nav_button("Platforms", Screen::Platforms, palette),
         nav_button("Integrations", Screen::Integrations, palette),
-        nav_button("Settings", Screen::Settings, palette),
+        nav_button(
+            "Settings",
+            Screen::Settings(SettingsSection::Appearance),
+            palette,
+        ),
     ];
 
     let sidebar = loom_widgets::sidebar(
@@ -102,6 +208,8 @@ pub fn view(app: &App) -> Element<'_, Message> {
 
     let content: Element<'_, Message> = match &app.screen {
         Screen::Hub => hub_view(palette),
+        Screen::Settings(section) => settings_view(section, palette),
+        Screen::Onboarding(step) => onboarding_view(step, palette),
         other => coming_soon_view(format!("{other:?}"), palette),
     };
 
@@ -137,6 +245,27 @@ mod tests {
     }
 
     #[test]
+    fn navigate_to_settings_diagnostics() {
+        let mut app = App::default();
+        let _ = update(
+            &mut app,
+            Message::Navigate(Screen::Settings(SettingsSection::Diagnostics)),
+        );
+        assert_eq!(app.screen, Screen::Settings(SettingsSection::Diagnostics));
+    }
+
+    #[test]
+    fn navigate_to_onboarding_welcome() {
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Navigate(Screen::Hub));
+        let _ = update(
+            &mut app,
+            Message::Navigate(Screen::Onboarding(OnboardingStep::Welcome)),
+        );
+        assert_eq!(app.screen, Screen::Onboarding(OnboardingStep::Welcome));
+    }
+
+    #[test]
     fn theme_changed_tokyo_night() {
         let mut app = App::default();
         let _ = update(&mut app, Message::ThemeChanged(ThemeId::TokyoNight));
@@ -154,7 +283,7 @@ mod tests {
     fn noop_does_not_change_screen() {
         let mut app = App::default();
         let _ = update(&mut app, Message::Noop);
-        assert_eq!(app.screen, Screen::Hub);
+        assert_eq!(app.screen, Screen::Onboarding(OnboardingStep::Welcome));
     }
 
     #[test]

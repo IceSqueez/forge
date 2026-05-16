@@ -35,45 +35,14 @@ macro_rules! define_id {
     };
 }
 
-define_id!(
-    /// Unique identifier for a bus event.
-    EventId
-);
-
-define_id!(
-    /// Unique identifier for an action.
-    ActionId
-);
-
-define_id!(
-    /// Unique identifier for a trigger.
-    TriggerId
-);
-
-define_id!(
-    /// Unique identifier for a command.
-    CommandId
-);
-
-define_id!(
-    /// Unique identifier for an action queue.
-    QueueId
-);
-
-define_id!(
-    /// Unique identifier for a registered rhai script.
-    ScriptId
-);
-
-define_id!(
-    /// Unique identifier for a global variable entry.
-    GlobalId
-);
-
-define_id!(
-    /// Opaque identifier for a platform user.
-    UserId
-);
+define_id!(EventId);
+define_id!(ActionId);
+define_id!(TriggerId);
+define_id!(CommandId);
+define_id!(QueueId);
+define_id!(ScriptId);
+define_id!(GlobalId);
+define_id!(UserId);
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]

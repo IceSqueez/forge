@@ -119,7 +119,7 @@ impl fmt::Display for Variant {
 }
 
 impl Variant {
-    /// Constructs a `Float` variant, rejecting NaN and infinite values.
+    /// Rejects NaN and infinite values.
     pub fn float(f: f64) -> Result<Self, VariantError> {
         if f.is_nan() {
             return Err(VariantError::InvalidFloat { reason: "NaN" });
@@ -296,11 +296,7 @@ impl Variant {
         }
     }
 
-    /// Converts a `serde_json::Value` into a `Variant`.
-    ///
-    /// Enforces depth ≤ 32 and element count ≤ 10,000 per container.
-    /// Strings are kept as `Variant::String` — no RFC3339 auto-promotion.
-    /// `null` returns `Err(VariantError::NullNotSupported)`.
+    /// Depth ≤ 32, element count ≤ 10_000, null rejected, strings never auto-promoted.
     pub fn from_json(value: serde_json::Value) -> Result<Self, VariantError> {
         from_json_inner(value, 0)
     }

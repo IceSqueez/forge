@@ -26,20 +26,9 @@ macro_rules! define_redacted_token {
     };
 }
 
-define_redacted_token!(
-    /// An OAuth access token. `Debug` output is redacted; use `expose()` for the raw value.
-    OAuthToken
-);
-
-define_redacted_token!(
-    /// An OAuth refresh token. `Debug` output is redacted; use `expose()` for the raw value.
-    RefreshToken
-);
-
-define_redacted_token!(
-    /// An API key for a third-party service. `Debug` output is redacted; use `expose()` for the raw value.
-    ApiKey
-);
+define_redacted_token!(OAuthToken);
+define_redacted_token!(RefreshToken);
+define_redacted_token!(ApiKey);
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]

@@ -1,4 +1,7 @@
+use std::sync::Arc;
+
 use iced::{Element, Length, Subscription, Task, Theme};
+use loom_storage_sqlite::SqliteBackend;
 use loom_widgets::{LoomPalette, ThemeId};
 
 use crate::screen::OnboardingStep;
@@ -8,15 +11,43 @@ pub struct App {
     pub screen: Screen,
     pub theme: Theme,
     pub palette: LoomPalette,
+    pub backend: Arc<SqliteBackend>,
+    pub storage_offline: bool,
 }
 
+impl App {
+    pub fn default_with(
+        initial: Screen,
+        backend: Arc<SqliteBackend>,
+        storage_offline: bool,
+    ) -> Self {
+        let (theme, palette) = loom_widgets::catppuccin_mocha();
+        Self {
+            screen: initial,
+            theme,
+            palette,
+            backend,
+            storage_offline,
+        }
+    }
+}
+
+#[cfg(test)]
 impl Default for App {
+    #[allow(clippy::expect_used)]
     fn default() -> Self {
+        let rt = tokio::runtime::Runtime::new().expect("tokio runtime for test");
+        let backend = Arc::new(
+            rt.block_on(SqliteBackend::open("sqlite::memory:"))
+                .expect("in-memory SQLite always opens"),
+        );
         let (theme, palette) = loom_widgets::catppuccin_mocha();
         Self {
             screen: Screen::Onboarding(OnboardingStep::Welcome),
             theme,
             palette,
+            backend,
+            storage_offline: false,
         }
     }
 }

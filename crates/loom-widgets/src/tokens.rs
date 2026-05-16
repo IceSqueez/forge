@@ -57,8 +57,7 @@ pub enum FontRole {
     Monospace,
 }
 
-/// Returns the iced Font handle for the given role.
-/// Fonts must be loaded at startup via load_fonts() before this is called.
+/// Caller must invoke `load_fonts()` at startup; otherwise iced falls back to system fonts.
 pub fn font(role: FontRole) -> Font {
     match role {
         FontRole::Body => Font::with_name("Inter"),
@@ -71,10 +70,7 @@ pub fn font(role: FontRole) -> Font {
     }
 }
 
-/// Called once at app startup to register bundled font bytes.
-///
-/// Returns empty when the `bundled-fonts` feature is not active; iced then
-/// falls back to system fonts for the "Inter" and "JetBrains Mono" families.
+/// Empty when the `bundled-fonts` feature is off; iced then uses system fonts.
 pub fn load_fonts() -> Vec<std::borrow::Cow<'static, [u8]>> {
     #[cfg(feature = "bundled-fonts")]
     {

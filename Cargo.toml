@@ -81,3 +81,15 @@ inherits      = "release"
 lto           = "fat"
 codegen-units = 1
 strip         = "symbols"
+
+[workspace.metadata.dist]
+cargo-dist-version = "0.21.0"
+ci                 = "github"
+installers         = ["shell", "powershell"]
+targets            = [
+    "x86_64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+]
+pr-run-mode        = "plan"

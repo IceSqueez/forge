@@ -1,0 +1,58 @@
+name: Manual
+
+on:
+  workflow_dispatch:
+    inputs:
+      os:
+        description: Target OS
+        required: true
+        type: choice
+        options:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+      command:
+        description: Command to run
+        required: true
+        type: choice
+        options:
+          - test
+          - clippy
+          - build-release
+
+jobs:
+  manual:
+    name: manual (${{ inputs.os }}, ${{ inputs.command }})
+    runs-on: ${{ inputs.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust with cache
+        uses: ./.github/actions/setup-rust-cached
+
+      - name: Run test
+        if: inputs.command == 'test'
+        shell: bash
+        run: cargo test --workspace
+
+      - name: Run clippy
+        if: inputs.command == 'clippy'
+        shell: bash
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run build-release
+        if: inputs.command == 'build-release'
+        shell: bash
+        run: cargo build --workspace --release
+
+      - name: Upload artifacts
+        if: inputs.command == 'build-release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ inputs.os }}
+          path: |
+            target/release/streamer-loom
+            target/release/streamer-loom.exe
+          if-no-files-found: ignore

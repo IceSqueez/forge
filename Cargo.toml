@@ -23,7 +23,7 @@ rust-version = "1.95"
 
 [workspace.dependencies]
 tokio              = { version = "1", features = ["full"] }
-tokio-tungstenite  = { version = "0.24" }
+tokio-tungstenite  = { version = "0.29" }
 
 serde              = { version = "1", features = ["derive"] }
 serde_json         = { version = "1" }
@@ -42,7 +42,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 sqlx               = { version = "0.8", features = ["sqlite", "runtime-tokio", "migrate", "time"] }
 
 aes-gcm            = { version = "0.10" }
-keyring            = { version = "3" }
+keyring            = { version = "4" }
 rand               = { version = "0.8" }
 
 rhai               = { version = "1", features = ["sync"] }

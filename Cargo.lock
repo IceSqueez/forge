@@ -2633,7 +2633,10 @@ dependencies = [
  "async-trait",
  "loom-events",
  "loom-types",
+ "serde",
+ "serde_json",
  "thiserror 2.0.18",
+ "time",
 ]
 
 [[package]]

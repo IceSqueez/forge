@@ -17,3 +17,4 @@ tokio        = { workspace = true }
 tracing      = { workspace = true }
 thiserror    = { workspace = true }
 async-trait  = { workspace = true }
+serde_json   = { workspace = true }

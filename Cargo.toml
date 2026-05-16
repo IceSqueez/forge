@@ -23,7 +23,7 @@ rust-version = "1.95"
 
 [workspace.dependencies]
 tokio              = { version = "1", features = ["full"] }
-tokio-tungstenite  = { version = "0.24" }
+tokio-tungstenite  = { version = "0.29" }
 
 serde              = { version = "1", features = ["derive"] }
 serde_json         = { version = "1" }

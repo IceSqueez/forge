@@ -250,6 +250,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
+name = "apple-native-keyring-store"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7be2f067ccd8d4b4d4a66ddafe0f32a5dff31732f32dbff85fefc40929b1f72"
+dependencies = [
+ "keyring-core",
+ "log",
+ "security-framework",
+]
+
+[[package]]
 name = "arbitrary"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1759,6 +1770,29 @@ dependencies = [
  "smallvec",
  "zune-inflate",
 ]
+
+[[package]]
+name = "fallible-iterator"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2acce4a10f12dc2fb14a218589d4f1f62ef011b2d0cc4b3cb1bba8e94da14649"
+
+[[package]]
+name = "fastbloom"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e7f34442dbe69c60fe8eaf58a8cafff81a1f278816d8ab4db255b3bef4ac3c4"
+dependencies = [
+ "getrandom 0.3.4",
+ "libm",
+ "siphasher",
+]
+
+[[package]]
+name = "fastdivide"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9afc2bd4d5a73106dd53d10d73d3401c2f32730ba2c0b93ddb888a8983680471"
 
 [[package]]
 name = "fastrand"
@@ -3397,7 +3431,7 @@ dependencies = [
 
 [[package]]
 name = "loom-app"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.0"
 dependencies = [
  "iced",
  "loom-events",
@@ -3416,7 +3450,7 @@ dependencies = [
 
 [[package]]
 name = "loom-events"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.0"
 dependencies = [
  "async-trait",
  "loom-types",
@@ -3429,7 +3463,7 @@ dependencies = [
 
 [[package]]
 name = "loom-platform-core"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.0"
 dependencies = [
  "async-trait",
  "loom-events",
@@ -3444,7 +3478,7 @@ dependencies = [
 
 [[package]]
 name = "loom-runtime"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.0"
 dependencies = [
  "async-trait",
  "loom-events",
@@ -3458,7 +3492,7 @@ dependencies = [
 
 [[package]]
 name = "loom-script"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.0"
 dependencies = [
  "loom-events",
  "loom-types",
@@ -3470,7 +3504,7 @@ dependencies = [
 
 [[package]]
 name = "loom-server"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.0"
 dependencies = [
  "axum",
  "loom-events",
@@ -3486,7 +3520,7 @@ dependencies = [
 
 [[package]]
 name = "loom-storage"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.0"
 dependencies = [
  "async-trait",
  "loom-events",
@@ -3499,7 +3533,7 @@ dependencies = [
 
 [[package]]
 name = "loom-storage-sqlite"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.0"
 dependencies = [
  "aes-gcm",
  "async-trait",
@@ -3519,7 +3553,7 @@ dependencies = [
 
 [[package]]
 name = "loom-types"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -3530,7 +3564,7 @@ dependencies = [
 
 [[package]]
 name = "loom-widgets"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.0"
 dependencies = [
  "iced",
  "iced_fonts",
@@ -4481,6 +4515,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "36820e9051aca1014ddc75770aab4d68bc1e9e632f0f5627c4086bc216fb583b"
 dependencies = [
  "ttf-parser",
+]
+
+[[package]]
+name = "ownedbytes"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2fbd56f7631767e61784dc43f8580f403f4475bd4aaa4da003e6295e1bab4a7e"
+dependencies = [
+ "stable_deref_trait",
+]
+
+[[package]]
+name = "owo-colors"
+version = "3.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c1b04fb49957986fdce4d6ee7a65027d55d4b6d2265e5848bbb507b58ccfdb6f"
+
+[[package]]
+name = "pack1"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3b7bb0ecf2e447b1f20ee94ee79ef6eed1e9d4b3c36ce1903b9dea3bf205523"
+dependencies = [
+ "bytemuck",
 ]
 
 [[package]]

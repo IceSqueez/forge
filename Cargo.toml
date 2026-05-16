@@ -1,60 +1,68 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/loom-types",
-    "crates/loom-events",
-    "crates/loom-runtime",
-    "crates/loom-script",
-    "crates/loom-storage",
-    "crates/loom-storage-sqlite",
-    "crates/loom-platform-core",
-    "crates/loom-server",
-    "crates/loom-widgets",
-    "crates/loom-app",
+  "crates/loom-types",
+  "crates/loom-events",
+  "crates/loom-runtime",
+  "crates/loom-script",
+  "crates/loom-storage",
+  "crates/loom-storage-sqlite",
+  "crates/loom-platform-core",
+  "crates/loom-server",
+  "crates/loom-widgets",
+  "crates/loom-app",
 ]
 default-members = ["crates/loom-app"]
 
 [workspace.package]
-version      = "0.1.0-alpha.1"
-edition      = "2024"
-license      = "MIT OR Apache-2.0"
-repository   = "https://github.com/IceSqueez/streamer-loom"
+version = "0.1.0-alpha.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/IceSqueez/streamer-loom"
 rust-version = "1.95"
 
 [workspace.dependencies]
-tokio              = { version = "1", features = ["full"] }
-tokio-tungstenite  = { version = "0.29" }
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = { version = "0.29" }
 
-serde              = { version = "1", features = ["derive"] }
-serde_json         = { version = "1" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1" }
 
-thiserror          = { version = "2" }
+thiserror = { version = "2" }
 
-async-trait        = { version = "0.1" }
+async-trait = { version = "0.1" }
 
-time               = { version = "0.3", features = ["serde", "formatting", "parsing"] }
+time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
 
-ulid               = { version = "1", features = ["serde"] }
+ulid = { version = "1", features = ["serde"] }
 
-tracing            = { version = "0.1" }
+tracing = { version = "0.1" }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-sqlx               = { version = "0.8", features = ["sqlite", "runtime-tokio", "migrate", "time"] }
+sqlx = { version = "0.8", features = [
+  "sqlite",
+  "runtime-tokio",
+  "migrate",
+  "time",
+] }
 
-aes-gcm            = { version = "0.10" }
-keyring            = { version = "4" }
-rand               = { version = "0.8" }
+aes-gcm = { version = "0.10" }
+keyring = { version = "4" }
+rand = { version = "0.8" }
 
-rhai               = { version = "1", features = ["sync"] }
+rhai = { version = "1", features = ["sync"] }
 
-reqwest            = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+reqwest = { version = "0.12", features = [
+  "json",
+  "rustls-tls",
+], default-features = false }
 
-axum               = { version = "0.8" }
+axum = { version = "0.8" }
 
-iced               = { version = "0.14", features = ["tokio", "image", "svg", "advanced"] }
-iced_fonts         = { version = "0.3" }
+iced = { version = "0.14", features = ["tokio", "image", "svg", "advanced"] }
+iced_fonts = { version = "0.3" }
 
-cpal               = { version = "0.15" }
+cpal = { version = "0.15" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
@@ -62,34 +70,34 @@ unsafe_code = "deny"
 [workspace.lints.clippy]
 unwrap_used = "warn"
 expect_used = "warn"
-panic       = "warn"
+panic = "warn"
 
 [profile.dev]
-opt-level   = 0
-debug       = true
+opt-level = 0
+debug = true
 incremental = true
 
 [profile.release]
-opt-level     = 3
-lto           = "thin"
+opt-level = 3
+lto = "thin"
 codegen-units = 16
-strip         = "debuginfo"
-panic         = "abort"
+strip = "debuginfo"
+panic = "abort"
 
 [profile.dist]
-inherits      = "release"
-lto           = "fat"
+inherits = "release"
+lto = "fat"
 codegen-units = 1
-strip         = "symbols"
+strip = "symbols"
 
 [workspace.metadata.dist]
 cargo-dist-version = "0.21.0"
-ci                 = "github"
-installers         = ["shell", "powershell"]
-targets            = [
-    "x86_64-unknown-linux-gnu",
-    "x86_64-pc-windows-msvc",
-    "x86_64-apple-darwin",
-    "aarch64-apple-darwin",
+ci = "github"
+installers = ["shell", "powershell"]
+targets = [
+  "x86_64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+  "x86_64-apple-darwin",
+  "aarch64-apple-darwin",
 ]
-pr-run-mode        = "plan"
+pr-run-mode = "plan"

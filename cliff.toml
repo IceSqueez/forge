@@ -1,0 +1,68 @@
+[changelog]
+header = """
+# Changelog
+All notable changes to this project will be documented in this file.\n
+"""
+
+body = """
+{% if version %}\
+    ## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else %}\
+    ## [Unreleased]
+{%- endif -%}
+
+{% set breaking_commits = commits | filter(attribute="breaking", value=true) %}\
+    {% if breaking_commits | length > 0 %}\
+        ### ⚠️ BREAKING CHANGES
+    {% for commit in breaking_commits %}\
+        - **{{ commit.scope | default(value="general") }}**: {{ commit.breaking_description }}
+    {% endfor %}
+{% endif %}
+{%- for group, commits in commits | group_by(attribute="group") -%}
+    ### {{ group | upper_first }}\
+    {% for commit in commits %}
+        - {% if commit.scope %}*({{ commit.scope }})* {% endif %}\
+            {% if commit.breaking %}[**breaking**] {% endif %}\
+            {{ commit.message | upper_first }}\
+    {% endfor %}\n
+{% endfor %}
+"""
+
+trim = true
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+split_commits = false
+
+commit_preprocessors = [
+  { pattern = "^Merge branch", replace = "chore(merge): Merge branch" },
+  { pattern = "^Merge pull request", replace = "chore(merge): Merge pull request" },
+  { pattern = "^Merge remote-tracking branch", replace = "chore(merge): Merge remote-tracking branch" },
+  { pattern = "^Initial commit", replace = "chore(init): bootstrap repository" },
+  { pattern = "^ci\\(GitHubCI\\)", replace = "ci(github)" },
+]
+
+commit_parsers = [
+  { message = "^chore: Release [a-z0-9-_]+ version", skip = true },
+  { message = "^chore\\(merge\\)", skip = true },
+  { message = "^chore\\(init\\)", skip = true },
+  { message = "^chore\\(release\\): prepare for", skip = true },
+  { message = "^chore\\(version\\)", skip = true },
+  { message = "^docs\\(changelog\\)", skip = true },
+
+  { message = "^(?i)feat", group = "🚀 Features" },
+  { message = "^(?i)fix", group = "🐛 Bug Fixes" },
+  { message = "^(?i)doc", group = "📚 Documentation" },
+  { message = "^(?i)perf", group = "⚡ Performance" },
+  { message = "^(?i)refactor", group = "🚜 Refactor" },
+  { message = "^(?i)build|^(?i)ci", group = "🛠️ Build" },
+  { message = "^(?i)style", group = "🎨 Styling" },
+  { message = "^(?i)test", group = "🧪 Testing" },
+  { message = "^chore", group = "⚙️ Miscellaneous Tasks" },
+  { body = ".*security", group = "🛡️ Security" },
+]
+
+tag_pattern = "v[0-9].*"
+topo_order = true
+sort_commits = "oldest"

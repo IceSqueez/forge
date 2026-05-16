@@ -1,0 +1,7 @@
+allow-branch = ["main"]
+sign-commit = false
+push = true
+publish = false
+shared-version = true
+consolidate-commits = true
+tag-name = "v{{version}}"

@@ -1,5 +1,7 @@
 pub mod action_impl;
 pub mod command_impl;
+pub mod credentials_impl;
+pub mod crypto;
 pub mod error;
 pub mod globals_impl;
 pub mod migrations;
@@ -11,6 +13,7 @@ pub mod user_globals_impl;
 
 pub use action_impl::SqliteActionRepo;
 pub use command_impl::SqliteCommandRepo;
+pub use credentials_impl::SqliteCredentialsRepo;
 pub use error::SqliteStorageError;
 pub use globals_impl::SqliteGlobalsRepo;
 pub use migrations::{MIGRATIONS, apply as apply_migrations};

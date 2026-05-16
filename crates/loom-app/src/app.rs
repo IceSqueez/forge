@@ -1,4 +1,4 @@
-use iced::{Element, Subscription, Task, Theme, widget::text};
+use iced::{Element, Length, Subscription, Task, Theme};
 use loom_widgets::{LoomPalette, ThemeId};
 
 use crate::{Message, Screen};
@@ -40,11 +40,72 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
     }
 }
 
+fn nav_button<'a>(label: &'a str, screen: Screen, palette: &LoomPalette) -> Element<'a, Message> {
+    loom_widgets::ghost_button(label, Message::Navigate(screen), palette)
+}
+
+fn hub_view(palette: &LoomPalette) -> Element<'static, Message> {
+    let hero = loom_widgets::hero_card(
+        "Welcome to streamer-loom",
+        "0.1.0-alpha.1",
+        std::iter::empty::<Element<'static, Message>>(),
+        palette,
+    );
+
+    let metrics = iced::widget::row![
+        loom_widgets::metric_card("Twitch", "disconnected", None::<&str>, palette),
+        loom_widgets::metric_card("OBS", "disconnected", None::<&str>, palette),
+        loom_widgets::metric_card("Speak Queue", "empty", None::<&str>, palette),
+    ]
+    .spacing(12);
+
+    let content = loom_widgets::card([hero, metrics.into()], palette);
+
+    iced::widget::container(content)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(16)
+        .into()
+}
+
+fn coming_soon_view(screen_label: String, palette: &LoomPalette) -> Element<'static, Message> {
+    iced::widget::container(loom_widgets::empty_state(
+        "Coming soon",
+        screen_label,
+        None::<(&str, Message)>,
+        palette,
+    ))
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .into()
+}
+
 pub fn view(app: &App) -> Element<'_, Message> {
-    match &app.screen {
-        Screen::Hub => text("streamer-loom hub").into(),
-        other => text(format!("placeholder for {other:?}")).into(),
-    }
+    let palette = &app.palette;
+
+    let nav_items = vec![
+        nav_button("Hub", Screen::Hub, palette),
+        nav_button("Live Chat", Screen::LiveChat, palette),
+        nav_button("Events", Screen::EventFeed, palette),
+        nav_button("Globals", Screen::Globals, palette),
+        nav_button("Actions", Screen::Actions, palette),
+        nav_button("Commands", Screen::Commands, palette),
+        nav_button("Platforms", Screen::Platforms, palette),
+        nav_button("Integrations", Screen::Integrations, palette),
+        nav_button("Settings", Screen::Settings, palette),
+    ];
+
+    let sidebar = loom_widgets::sidebar(
+        vec![loom_widgets::sidebar_section("Main", nav_items, palette)],
+        palette,
+    );
+
+    let content: Element<'_, Message> = match &app.screen {
+        Screen::Hub => hub_view(palette),
+        other => coming_soon_view(format!("{other:?}"), palette),
+    };
+
+    iced::widget::row![sidebar, content].into()
 }
 
 pub fn subscription(_app: &App) -> Subscription<Message> {

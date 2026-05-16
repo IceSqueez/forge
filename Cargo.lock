@@ -3431,7 +3431,7 @@ dependencies = [
 
 [[package]]
 name = "loom-app"
-version = "0.1.0-alpha.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "iced",
  "loom-events",
@@ -3450,7 +3450,7 @@ dependencies = [
 
 [[package]]
 name = "loom-events"
-version = "0.1.0-alpha.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "async-trait",
  "loom-types",
@@ -3463,7 +3463,7 @@ dependencies = [
 
 [[package]]
 name = "loom-platform-core"
-version = "0.1.0-alpha.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "async-trait",
  "loom-events",
@@ -3478,7 +3478,7 @@ dependencies = [
 
 [[package]]
 name = "loom-runtime"
-version = "0.1.0-alpha.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "async-trait",
  "loom-events",
@@ -3492,7 +3492,7 @@ dependencies = [
 
 [[package]]
 name = "loom-script"
-version = "0.1.0-alpha.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "loom-events",
  "loom-types",
@@ -3504,7 +3504,7 @@ dependencies = [
 
 [[package]]
 name = "loom-server"
-version = "0.1.0-alpha.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "axum",
  "loom-events",
@@ -3520,7 +3520,7 @@ dependencies = [
 
 [[package]]
 name = "loom-storage"
-version = "0.1.0-alpha.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "async-trait",
  "loom-events",
@@ -3533,7 +3533,7 @@ dependencies = [
 
 [[package]]
 name = "loom-storage-sqlite"
-version = "0.1.0-alpha.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "aes-gcm",
  "async-trait",
@@ -3553,7 +3553,7 @@ dependencies = [
 
 [[package]]
 name = "loom-types"
-version = "0.1.0-alpha.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -3564,7 +3564,7 @@ dependencies = [
 
 [[package]]
 name = "loom-widgets"
-version = "0.1.0-alpha.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "iced",
  "iced_fonts",

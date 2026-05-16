@@ -15,27 +15,13 @@ pub enum EventsError {
     LaggingReceiver,
 }
 
-/// A stream of events received from the bus.
-///
-/// Wraps `tokio::sync::broadcast::Receiver<Event>` so that tokio internals
-/// do not appear in higher-level public API signatures.
 pub struct EventStream(broadcast::Receiver<Event>);
 
 impl EventStream {
-    /// Wraps a `broadcast::Receiver` into an `EventStream`.
-    ///
-    /// Implementations of `EventBus::subscribe` call this to hand a typed
-    /// stream to callers without exposing `tokio` channel types in their own
-    /// public signatures.
     pub fn new(rx: broadcast::Receiver<Event>) -> Self {
         Self(rx)
     }
 
-    /// Returns the next event from the stream.
-    ///
-    /// Returns `Err(EventsError::BusClosed)` when the bus has shut down.
-    /// Returns `Err(EventsError::LaggingReceiver)` when the receiver has fallen
-    /// behind and events have been dropped.
     pub async fn recv(&mut self) -> Result<Event, EventsError> {
         match self.0.recv().await {
             Ok(event) => Ok(event),
@@ -47,19 +33,12 @@ impl EventStream {
 
 #[async_trait]
 pub trait EventBus: Send + Sync {
-    /// Publishes an event to all current subscribers.
-    ///
-    /// Slow subscribers lag (broadcast semantics) — they do not block the publisher.
+    /// Slow subscribers lag (broadcast semantics); publisher never blocks on them.
     async fn publish(&self, event: Event) -> Result<(), EventsError>;
 
-    /// Returns a new `EventStream` subscribed from the current point in time.
     fn subscribe(&self) -> EventStream;
 
-    /// Re-emits a previously captured event for debugging.
-    ///
-    /// The replayed event is published as a new event with its original ID
-    /// preserved in the payload. Returns `Err(EventsError::ReplayMiss)` if the
-    /// event is not in the in-memory buffer.
+    /// Returns the captured event with original ID preserved.
     async fn replay(&self, id: EventId) -> Result<Event, EventsError>;
 }
 

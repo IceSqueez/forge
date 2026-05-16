@@ -34,7 +34,6 @@ impl Event {
         }
     }
 
-    /// Creates an event causally linked to a parent event.
     pub fn caused_by(
         source: EventSource,
         kind: impl Into<String>,

@@ -1,0 +1,39 @@
+name: PR
+
+on:
+  pull_request:
+    branches:
+      - main
+      - "release/**"
+
+concurrency:
+  group: pr-${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust with cache
+        uses: ./.github/actions/setup-rust-cached
+
+      - name: Check formatting
+        shell: bash
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        shell: bash
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test
+        shell: bash
+        run: cargo test --workspace

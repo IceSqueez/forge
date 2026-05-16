@@ -2,6 +2,7 @@
 
 pub mod buttons;
 pub mod cards;
+pub mod inputs;
 pub mod layout;
 pub mod navigation;
 pub mod palette;
@@ -11,6 +12,7 @@ pub mod tokens;
 
 pub use buttons::{ghost_button, icon_button, primary_button, secondary_button};
 pub use cards::{card, hero_card, metric_card, stat_row};
+pub use inputs::{search_input, select, text_input_field};
 pub use layout::{breadcrumb, title_bar, toolbar};
 pub use navigation::{sidebar, sidebar_section, tree_node};
 pub use palette::{CATPPUCCIN_MOCHA, LATTE, LoomPalette, TOKYO_NIGHT};

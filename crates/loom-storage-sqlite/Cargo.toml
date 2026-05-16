@@ -1,0 +1,26 @@
+[package]
+name                  = "loom-storage-sqlite"
+version.workspace     = true
+edition.workspace     = true
+license.workspace     = true
+repository.workspace  = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+loom-types   = { path = "../loom-types" }
+loom-events  = { path = "../loom-events" }
+loom-storage = { path = "../loom-storage" }
+serde        = { workspace = true }
+serde_json   = { workspace = true }
+thiserror    = { workspace = true }
+async-trait  = { workspace = true }
+tokio        = { workspace = true }
+sqlx         = { workspace = true }
+aes-gcm      = { workspace = true }
+keyring      = { workspace = true }
+rand         = { workspace = true }
+time         = { workspace = true }
+tracing      = { workspace = true }

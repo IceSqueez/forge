@@ -1,0 +1,29 @@
+[package]
+name                  = "loom-app"
+version.workspace     = true
+edition.workspace     = true
+license.workspace     = true
+repository.workspace  = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "loom"
+path = "src/main.rs"
+
+[dependencies]
+loom-types          = { path = "../loom-types" }
+loom-events         = { path = "../loom-events" }
+loom-runtime        = { path = "../loom-runtime" }
+loom-script         = { path = "../loom-script" }
+loom-storage        = { path = "../loom-storage" }
+loom-storage-sqlite = { path = "../loom-storage-sqlite" }
+loom-platform-core  = { path = "../loom-platform-core" }
+loom-server         = { path = "../loom-server" }
+loom-widgets        = { path = "../loom-widgets" }
+iced                = { workspace = true }
+tokio               = { workspace = true }
+tracing             = { workspace = true }
+tracing-subscriber  = { workspace = true }

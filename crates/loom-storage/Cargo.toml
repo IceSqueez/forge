@@ -1,0 +1,16 @@
+[package]
+name                  = "loom-storage"
+version.workspace     = true
+edition.workspace     = true
+license.workspace     = true
+repository.workspace  = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+loom-types  = { path = "../loom-types" }
+loom-events = { path = "../loom-events" }
+async-trait = { workspace = true }
+thiserror   = { workspace = true }

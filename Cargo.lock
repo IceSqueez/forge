@@ -2594,6 +2594,7 @@ dependencies = [
  "loom-events",
  "loom-storage",
  "loom-types",
+ "serde_json",
  "thiserror 2.0.18",
  "tokio",
  "tracing",

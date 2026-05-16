@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
 use iced::{Element, Length, Subscription, Task, Theme};
+use loom_events::EventBus;
+use loom_runtime::InMemoryEventBus;
 use loom_storage_sqlite::SqliteBackend;
 use loom_widgets::{LoomPalette, ThemeId};
 
@@ -12,6 +14,7 @@ pub struct App {
     pub theme: Theme,
     pub palette: LoomPalette,
     pub backend: Arc<SqliteBackend>,
+    pub bus: Arc<InMemoryEventBus>,
     pub storage_offline: bool,
 }
 
@@ -27,6 +30,7 @@ impl App {
             theme,
             palette,
             backend,
+            bus: Arc::new(InMemoryEventBus::new()),
             storage_offline,
         }
     }
@@ -47,6 +51,7 @@ impl Default for App {
             theme,
             palette,
             backend,
+            bus: Arc::new(InMemoryEventBus::new()),
             storage_offline: false,
         }
     }
@@ -68,6 +73,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             app.palette = palette;
             Task::none()
         }
+        Message::BusEvent(_) => Task::none(),
         Message::Noop => Task::none(),
     }
 }
@@ -247,8 +253,17 @@ pub fn view(app: &App) -> Element<'_, Message> {
     iced::widget::row![sidebar, content].into()
 }
 
-pub fn subscription(_app: &App) -> Subscription<Message> {
-    Subscription::none()
+pub fn subscription(app: &App) -> Subscription<Message> {
+    let bus = app.bus.clone();
+    Subscription::run_with_id(
+        "event-bus",
+        iced::stream::channel(64, move |mut output| async move {
+            let mut stream = bus.subscribe();
+            while let Ok(event) = stream.recv().await {
+                let _ = output.try_send(Message::BusEvent(event));
+            }
+        }),
+    )
 }
 
 pub fn theme_callback(app: &App) -> Theme {

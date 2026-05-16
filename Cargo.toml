@@ -51,7 +51,7 @@ reqwest            = { version = "0.12", features = ["json", "rustls-tls"], defa
 
 axum               = { version = "0.7" }
 
-iced               = { version = "0.13", features = ["tokio", "image", "svg", "advanced"] }
+iced               = { version = "0.14", features = ["tokio", "image", "svg", "advanced"] }
 iced_fonts         = { version = "0.1" }
 
 cpal               = { version = "0.15" }

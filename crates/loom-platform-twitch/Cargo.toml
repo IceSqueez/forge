@@ -1,0 +1,23 @@
+[package]
+name                  = "loom-platform-twitch"
+version.workspace     = true
+edition.workspace     = true
+license.workspace     = true
+repository.workspace  = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+loom-types          = { path = "../loom-types" }
+loom-events         = { path = "../loom-events" }
+loom-platform-core  = { path = "../loom-platform-core" }
+tokio               = { workspace = true }
+reqwest             = { workspace = true }
+serde               = { workspace = true }
+serde_json          = { workspace = true }
+thiserror           = { workspace = true }
+async-trait         = { workspace = true }
+tracing             = { workspace = true }
+time                = { workspace = true }

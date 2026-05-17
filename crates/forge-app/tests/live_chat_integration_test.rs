@@ -26,6 +26,7 @@ fn test_app() -> App {
         storage_offline: false,
         onboarding: forge_app::OnboardingState::new(),
         live_chat: forge_app::LiveChatState::new(),
+        actions: forge_app::ActionsState::new(),
         twitch_chat_handle: None,
         action_engine: None,
         scheduler: None,

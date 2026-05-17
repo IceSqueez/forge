@@ -1,5 +1,6 @@
 use forge_events::Event;
 use forge_platform_core::oauth::{DeviceCodeResponse, TokenResponse};
+use forge_types::ActionId;
 use forge_widgets::ThemeId;
 
 use crate::Screen;
@@ -43,11 +44,27 @@ pub enum OnboardingMsg {
 }
 
 #[derive(Debug, Clone)]
+pub enum ActionsMsg {
+    LoadRequested,
+    TreeLoaded(Result<Vec<crate::actions::ActionsGroup>, String>),
+    ActionSelected(ActionId),
+    DetailLoaded(Result<crate::actions::ActionDetail, String>),
+    ToggleEnabled(ActionId, bool),
+    EnabledToggled(Result<(), String>),
+    TestTrigger(ActionId),
+    DeleteAction(ActionId),
+    ActionDeleted(Result<(), String>),
+    OpenAddActionModal,
+    OpenAddTriggerModal(ActionId),
+}
+
+#[derive(Debug, Clone)]
 pub enum Message {
     Navigate(Screen),
     Onboarding(OnboardingMsg),
     OnboardingPersistResult(Result<(), String>),
     Settings(SettingsMsg),
+    Actions(ActionsMsg),
     ThemeChanged(ThemeId),
     EventArrived(Event),
     ChatInputChanged(String),

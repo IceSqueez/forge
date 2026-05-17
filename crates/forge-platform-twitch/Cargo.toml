@@ -12,11 +12,16 @@ workspace = true
 [dependencies]
 forge-types          = { path = "../forge-types" }
 forge-events         = { path = "../forge-events" }
+forge-runtime        = { path = "../forge-runtime" }
 forge-platform-core  = { path = "../forge-platform-core" }
 tokio               = { workspace = true }
+tokio-tungstenite   = { workspace = true }
 serde               = { workspace = true }
 serde_json          = { workspace = true }
 thiserror           = { workspace = true }
 async-trait         = { workspace = true }
 tracing             = { workspace = true }
 time                = { workspace = true }
+reqwest             = { workspace = true }
+rand                = { workspace = true }
+futures-util        = { workspace = true }

@@ -13,7 +13,7 @@ pub enum Density {
     Compact,
     #[default]
     Cozy,
-    Comfortable,
+    Spacious,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,6 +25,9 @@ pub enum Spacing {
     Xl,
     Xxl,
     Xxxl,
+    Huge,
+    Mega,
+    Giga,
 }
 
 impl Spacing {
@@ -34,9 +37,12 @@ impl Spacing {
             Self::Sm => 6.0,
             Self::Md => 8.0,
             Self::Lg => 10.0,
-            Self::Xl => 14.0,
-            Self::Xxl => 18.0,
-            Self::Xxxl => 24.0,
+            Self::Xl => 12.0,
+            Self::Xxl => 14.0,
+            Self::Xxxl => 18.0,
+            Self::Huge => 24.0,
+            Self::Mega => 32.0,
+            Self::Giga => 40.0,
         }
     }
 }
@@ -46,10 +52,53 @@ pub fn spacing(s: Spacing, d: Density) -> u16 {
     let multiplier = match d {
         Density::Compact => 0.85,
         Density::Cozy => 1.0,
-        Density::Comfortable => 1.2,
+        Density::Spacious => 1.2,
     };
     (s.base_px() * multiplier).round() as u16
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Radius {
+    Xs,
+    Sm,
+    Md,
+    Lg,
+    Xl,
+    Xxl,
+    Xxxl,
+    /// Returns a large sentinel so iced renders a fully rounded pill/circle.
+    Pill,
+}
+
+pub fn radius(r: Radius) -> f32 {
+    match r {
+        Radius::Xs => 4.0,
+        Radius::Sm => 6.0,
+        Radius::Md => 7.0,
+        Radius::Lg => 8.0,
+        Radius::Xl => 9.0,
+        Radius::Xxl => 10.0,
+        Radius::Xxxl => 11.0,
+        Radius::Pill => 9999.0,
+    }
+}
+
+pub const BORDER_THIN: f32 = 1.0;
+pub const BORDER_ACCENT: f32 = 1.0;
+
+pub const FONT_CAPS_SM: f32 = 10.5;
+pub const FONT_CAPS: f32 = 11.0;
+pub const FONT_BODY_SM: f32 = 11.5;
+pub const FONT_BODY: f32 = 12.0;
+pub const FONT_BODY_MD: f32 = 12.5;
+pub const FONT_BODY_LG: f32 = 13.0;
+pub const FONT_PLATFORM_NAME: f32 = 13.5;
+pub const FONT_VALUE: f32 = 14.0;
+pub const FONT_HEADING_SM: f32 = 16.0;
+pub const FONT_HEADING: f32 = 18.0;
+pub const FONT_PAGE_TITLE: f32 = 20.0;
+pub const FONT_HERO: f32 = 22.0;
+pub const FONT_DEVICE_CODE: f32 = 28.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FontRole {
@@ -100,26 +149,45 @@ mod tests {
     }
 
     #[test]
-    fn spacing_cozy_returns_documented_values() {
+    fn spacing_cozy_returns_html_observed_values() {
         assert_eq!(spacing(Spacing::Xs, Density::Cozy), 4);
         assert_eq!(spacing(Spacing::Sm, Density::Cozy), 6);
         assert_eq!(spacing(Spacing::Md, Density::Cozy), 8);
         assert_eq!(spacing(Spacing::Lg, Density::Cozy), 10);
-        assert_eq!(spacing(Spacing::Xl, Density::Cozy), 14);
-        assert_eq!(spacing(Spacing::Xxl, Density::Cozy), 18);
-        assert_eq!(spacing(Spacing::Xxxl, Density::Cozy), 24);
+        assert_eq!(spacing(Spacing::Xl, Density::Cozy), 12);
+        assert_eq!(spacing(Spacing::Xxl, Density::Cozy), 14);
+        assert_eq!(spacing(Spacing::Xxxl, Density::Cozy), 18);
+        assert_eq!(spacing(Spacing::Huge, Density::Cozy), 24);
+        assert_eq!(spacing(Spacing::Mega, Density::Cozy), 32);
+        assert_eq!(spacing(Spacing::Giga, Density::Cozy), 40);
     }
 
     #[test]
-    fn spacing_compact_halves_approximately() {
+    fn spacing_compact_scales_down() {
         assert_eq!(spacing(Spacing::Md, Density::Compact), 7);
-        assert_eq!(spacing(Spacing::Xxxl, Density::Compact), 20);
+        assert_eq!(spacing(Spacing::Xxxl, Density::Compact), 15);
     }
 
     #[test]
-    fn spacing_comfortable_increases() {
-        assert_eq!(spacing(Spacing::Md, Density::Comfortable), 10);
-        assert_eq!(spacing(Spacing::Xxxl, Density::Comfortable), 29);
+    fn spacing_spacious_increases() {
+        assert_eq!(spacing(Spacing::Md, Density::Spacious), 10);
+        assert_eq!(spacing(Spacing::Xxxl, Density::Spacious), 22);
+    }
+
+    #[test]
+    fn radius_returns_correct_px_per_variant() {
+        assert_eq!(radius(Radius::Xs), 4.0);
+        assert_eq!(radius(Radius::Sm), 6.0);
+        assert_eq!(radius(Radius::Md), 7.0);
+        assert_eq!(radius(Radius::Lg), 8.0);
+        assert_eq!(radius(Radius::Xl), 9.0);
+        assert_eq!(radius(Radius::Xxl), 10.0);
+        assert_eq!(radius(Radius::Xxxl), 11.0);
+    }
+
+    #[test]
+    fn radius_pill_renders_as_circle() {
+        assert!(radius(Radius::Pill) >= 1000.0);
     }
 
     #[test]

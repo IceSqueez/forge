@@ -1,2 +1,6 @@
-pub mod bus_impl;
-pub use bus_impl::InMemoryEventBus;
+mod bridge;
+mod buf;
+pub mod bus;
+
+pub use bridge::bus_subscription;
+pub use bus::{BusStats, EventBus, EventSubscription};

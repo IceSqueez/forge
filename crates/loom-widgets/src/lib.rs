@@ -12,7 +12,10 @@ pub mod status;
 pub mod theme;
 pub mod tokens;
 
-pub use buttons::{ghost_button, icon_button, primary_button, secondary_button};
+pub use buttons::{
+    destructive_button, ghost_button, icon_button, primary_button, primary_button_small,
+    primary_button_with_icon_right, secondary_button,
+};
 pub use cards::{card, hero_card, metric_card, stat_row};
 pub use inputs::{search_input, select, text_input_field};
 pub use layout::{breadcrumb, title_bar, toolbar};
@@ -26,4 +29,4 @@ pub use palette::{CATPPUCCIN_MOCHA, LATTE, LoomPalette, TOKYO_NIGHT};
 pub use sections::{ToastVariant, counter_badge, empty_state, section_header, toast_banner};
 pub use status::{StatusVariant, platform_badge, role_badge, status_dot, status_pill};
 pub use theme::{catppuccin_mocha, latte, palette_for_theme, tokyo_night_storm};
-pub use tokens::{Density, FontRole, Spacing, ThemeId, font, load_fonts, spacing};
+pub use tokens::{Density, FontRole, Radius, Spacing, ThemeId, font, load_fonts, radius, spacing};

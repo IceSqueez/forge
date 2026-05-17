@@ -17,6 +17,7 @@ use tracing::warn;
 
 use crate::{EventBus, EventSubscription, QueueSchedulerHandle, SchedulerRequest};
 
+#[derive(Clone)]
 pub struct CommandParserHandle {
     cancel: Arc<AtomicBool>,
 }

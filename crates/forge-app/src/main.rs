@@ -6,8 +6,11 @@ use forge_app::Screen;
 use forge_app::app::{subscription, theme_callback, update, view};
 use forge_app::screen::OnboardingStep;
 use forge_platform_core::paths;
-use forge_storage::SettingsRepo;
-use forge_storage::reserved_keys;
+use forge_runtime::{
+    ActionEngineHandle, CommandParser, CommandParserHandle, EventBus, QueueScheduler,
+    QueueSchedulerHandle, spawn_action_engine,
+};
+use forge_storage::{DataProvider, SettingsRepo, reserved_keys};
 use forge_storage_sqlite::SqliteBackend;
 
 fn default_db_path() -> PathBuf {
@@ -76,6 +79,43 @@ fn resolve_initial_screen(backend: &SqliteBackend) -> Screen {
     })
 }
 
+struct RuntimeHandles {
+    engine: ActionEngineHandle,
+    scheduler: QueueSchedulerHandle,
+    parser: CommandParserHandle,
+}
+
+#[allow(clippy::expect_used)]
+fn spawn_runtime(backend: Arc<SqliteBackend>, bus: Arc<EventBus>) -> Option<RuntimeHandles> {
+    let rt = match tokio::runtime::Runtime::new() {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!("failed to create tokio runtime for runtime spawn: {e}");
+            return None;
+        }
+    };
+
+    let dp: Arc<dyn DataProvider> = Arc::clone(&backend) as Arc<dyn DataProvider>;
+
+    let queues = match rt.block_on(dp.queue_repo().list()) {
+        Ok(q) => q,
+        Err(e) => {
+            tracing::warn!("failed to load queues on boot, starting with empty set: {e}");
+            vec![]
+        }
+    };
+
+    let engine = spawn_action_engine(Arc::clone(&bus), Arc::clone(&dp));
+    let scheduler = QueueScheduler::spawn(engine.clone(), Arc::clone(&bus), queues);
+    let parser = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), scheduler.clone());
+
+    Some(RuntimeHandles {
+        engine,
+        scheduler,
+        parser,
+    })
+}
+
 fn main() -> iced::Result {
     tracing_subscriber::fmt().with_env_filter("info").init();
     tracing::info!("forge starting");
@@ -83,14 +123,30 @@ fn main() -> iced::Result {
     let (backend, storage_offline) = boot_storage();
     let initial_screen = resolve_initial_screen(&backend);
 
+    let bus = Arc::new(EventBus::new());
+
+    let (action_engine, scheduler, command_parser) = if storage_offline {
+        (None, None, None)
+    } else {
+        match spawn_runtime(Arc::clone(&backend), Arc::clone(&bus)) {
+            Some(h) => (Some(h.engine), Some(h.scheduler), Some(h.parser)),
+            None => (None, None, None),
+        }
+    };
+
     let backend_boot = Arc::clone(&backend);
     let boot_screen = Arc::new(initial_screen);
+    let bus_boot = Arc::clone(&bus);
     let boot = move || {
-        let app = App::default_with(
+        let mut app = App::default_with(
             (*boot_screen).clone(),
             Arc::clone(&backend_boot),
             storage_offline,
+            action_engine.clone(),
+            scheduler.clone(),
+            command_parser.clone(),
         );
+        app.bus = Arc::clone(&bus_boot);
         (app, iced::Task::none())
     };
 

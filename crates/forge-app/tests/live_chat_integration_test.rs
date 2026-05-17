@@ -8,12 +8,12 @@ use forge_runtime::{EventBus, bus_subscription};
 use forge_storage_sqlite::SqliteBackend;
 use futures_util::StreamExt as _;
 
+const TEST_KEY: [u8; 32] = [0xab; 32];
+
 fn test_app() -> App {
-    keyring::use_sample_store(&std::collections::HashMap::new())
-        .expect("sample keyring store must initialize");
     let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
     let backend = Arc::new(
-        rt.block_on(SqliteBackend::open("sqlite::memory:"))
+        rt.block_on(SqliteBackend::open_with_key("sqlite::memory:", TEST_KEY))
             .expect("in-memory SQLite always opens"),
     );
     let (theme, palette) = forge_widgets::catppuccin_mocha();

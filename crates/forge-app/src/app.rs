@@ -48,14 +48,15 @@ impl App {
 }
 
 #[cfg(test)]
+const TEST_KEY: [u8; 32] = [0xab; 32];
+
+#[cfg(test)]
 impl Default for App {
     #[allow(clippy::expect_used)]
     fn default() -> Self {
-        keyring::use_sample_store(&std::collections::HashMap::new())
-            .expect("sample keyring store must initialize");
         let rt = tokio::runtime::Runtime::new().expect("tokio runtime for test");
         let backend = Arc::new(
-            rt.block_on(SqliteBackend::open("sqlite::memory:"))
+            rt.block_on(SqliteBackend::open_with_key("sqlite::memory:", TEST_KEY))
                 .expect("in-memory SQLite always opens"),
         );
         let (theme, palette) = forge_widgets::catppuccin_mocha();

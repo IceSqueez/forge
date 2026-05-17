@@ -1,6 +1,39 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-alpha.3] - 2026-05-17
+### ⚠️ BREAKING CHANGES
+- **twitch**: TwitchChat / ChatSession / send_chat no longer take reqwest::Client parameter
+
+### ⚙️ Miscellaneous Tasks
+- *(cargo)* Cleanup
+
+### 🐛 Bug Fixes
+- *(app)* Wire user_info into credentials and chat operations
+- *(app)* Bypass keyring in test helpers via open_with_key
+
+### 🚀 Features
+- *(runtime)* Add EventBus with broadcast and bounded replay buffer
+- *(twitch)* Add chat ingestion via EventSub and send-chat via Helix
+- *(widgets)* Add chat row input bar and filter chip widgets
+- *(app)* Wire LiveChat screen with EventBus subscription
+- *(app)* Add Settings Platforms screen with Reconnect button
+- *(twitch)* Add fetch_user_info via Helix GET users endpoint
+
+### 🚜 Refactor
+- *(twitch)* [**breaking**] Hide reqwest behind chat module internals
+- *(events)* Remove dead EventBus trait and async-trait dep
+
+### 🛠️ Build
+- Drop redundant Swatinem cache step (setup-rust-toolchain handles it)
+- Fix PR concurrency group and enable fail-fast on test matrix
+- *(manual)* Tighten upload-artifact paths to exact binary names
+- *(release)* Split build into per-OS matrix and download-merge publish
+
+### 🧪 Testing
+- *(twitch)* Add token redaction CI gate per RFC-011 qa concern
+- *(app)* Add livechat end-to-end integration test
+
 ## [0.1.0-alpha.2] - 2026-05-17
 ### ⚠️ BREAKING CHANGES
 - **widgets**: LoomPalette adds surface_overlay field
@@ -13,6 +46,7 @@ All notable changes to this project will be documented in this file.
 - Add MIT and Apache-2.0 dual license files
 - *(github)* Add issue templates and pull request template
 - Remove docs/ — CHANGELOG.md is the canonical release log
+- Release
 
 ### 🐛 Bug Fixes
 - *(widgets)* Migrate to iced 0.14 API after dep bump
@@ -25,6 +59,7 @@ All notable changes to this project will be documented in this file.
 - *(readme)* Add known limitations section for twitch client id
 - Add CODE_OF_CONDUCT CONTRIBUTING and SECURITY policy
 - *(readme)* Fix path to LICENSE
+- *(release)* Release v0.1.0-alpha.2
 - *(release)* Release v0.1.0-alpha.2
 
 ### 🚀 Features

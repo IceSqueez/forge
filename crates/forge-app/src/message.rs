@@ -30,6 +30,7 @@ pub enum OnboardingMsg {
     EnterDeviceCodeFlow(String),
     DeviceCodeReceived(Result<DeviceCodeResponse, String>),
     TokenReceived(Result<TokenResponse, String>),
+    CredentialsStored(Result<(), String>),
     BackFromDeviceCode,
     RetryDeviceCode,
     AdvanceFromObs,

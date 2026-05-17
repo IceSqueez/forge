@@ -196,22 +196,29 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 if app.onboarding.device_code.is_none() {
                     return Task::none();
                 }
-                if let Some(session) = app.onboarding.device_code.as_mut() {
-                    session.status = DeviceCodeStatus::Success;
-                }
+                let Some(client_id) = forge_platform_twitch::client_id() else {
+                    if let Some(session) = app.onboarding.device_code.as_mut() {
+                        session.status =
+                            DeviceCodeStatus::Error("FORGE_TWITCH_CLIENT_ID not set".into());
+                    }
+                    return Task::none();
+                };
                 let backend = Arc::clone(&app.backend);
                 let access = tokens.access_token.expose().to_owned();
                 let refresh = tokens.refresh_token.as_ref().map(|r| r.expose().to_owned());
                 let expires_secs = tokens.expires_in.as_secs();
-                let next = OnboardingStep::ConnectObs;
-                app.onboarding.sync_step(&next);
-                app.screen = Screen::Onboarding(next.clone());
-                let store_credential = Task::perform(
+                Task::perform(
                     async move {
+                        let token = forge_types::OAuthToken::new(access.clone());
+                        let user_info = forge_platform_twitch::fetch_user_info(&token, &client_id)
+                            .await
+                            .map_err(|e| e.to_string())?;
                         let bundle = serde_json::json!({
                             "access_token": access,
                             "refresh_token": refresh,
                             "expires_in_secs": expires_secs,
+                            "user_id": user_info.id,
+                            "login": user_info.login,
                         })
                         .to_string();
                         backend
@@ -219,12 +226,23 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                             .await
                             .map_err(|e| e.to_string())
                     },
-                    Message::OnboardingPersistResult,
-                );
-                Task::batch([
-                    store_credential,
-                    persist_step(Arc::clone(&app.backend), next),
-                ])
+                    |result| Message::Onboarding(OnboardingMsg::CredentialsStored(result)),
+                )
+            }
+            OnboardingMsg::CredentialsStored(Ok(())) => {
+                if let Some(session) = app.onboarding.device_code.as_mut() {
+                    session.status = DeviceCodeStatus::Success;
+                }
+                let next = OnboardingStep::ConnectObs;
+                app.onboarding.sync_step(&next);
+                app.screen = Screen::Onboarding(next.clone());
+                persist_step(Arc::clone(&app.backend), next)
+            }
+            OnboardingMsg::CredentialsStored(Err(e)) => {
+                if let Some(session) = app.onboarding.device_code.as_mut() {
+                    session.status = DeviceCodeStatus::Error(e);
+                }
+                Task::none()
             }
             OnboardingMsg::TokenReceived(Err(e)) => {
                 if let Some(session) = app.onboarding.device_code.as_mut() {
@@ -319,13 +337,44 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             Task::none()
         }
         Message::ChatSubmit => {
-            let input = app.live_chat.chat_input.trim().to_owned();
-            if input.is_empty() {
+            let msg = std::mem::take(&mut app.live_chat.chat_input);
+            let msg = msg.trim().to_owned();
+            if msg.is_empty() {
                 return Task::none();
             }
-            app.live_chat.chat_input.clear();
-            tracing::debug!(message = %input, "chat submit — Twitch send not yet wired (alpha-4)");
-            Task::done(Message::ChatSent(Ok(())))
+            let backend = Arc::clone(&app.backend);
+            Task::perform(
+                async move {
+                    let json_str = backend
+                        .load(&CredentialId::new("twitch:broadcaster"))
+                        .await
+                        .map_err(|e| e.to_string())?
+                        .ok_or_else(|| "no Twitch credentials stored".to_owned())?;
+                    let bundle: serde_json::Value =
+                        serde_json::from_str(&json_str).map_err(|e| e.to_string())?;
+                    let token = bundle["access_token"]
+                        .as_str()
+                        .ok_or_else(|| "missing access_token".to_owned())?
+                        .to_owned();
+                    let client_id = forge_platform_twitch::client_id()
+                        .ok_or_else(|| "FORGE_TWITCH_CLIENT_ID not configured".to_owned())?;
+                    let user_id = bundle["user_id"]
+                        .as_str()
+                        .ok_or_else(|| {
+                            "missing user_id — re-authorize in Settings → Platforms".to_owned()
+                        })?
+                        .to_owned();
+                    let oauth = forge_types::OAuthToken::new(token);
+                    let limiter = NoopRateLimiter;
+                    forge_platform_twitch::send_chat(
+                        &limiter, &oauth, &client_id, &user_id, &user_id, &msg,
+                    )
+                    .await
+                    .map(|_| ())
+                    .map_err(|e| e.to_string())
+                },
+                Message::ChatSent,
+            )
         }
         Message::ChatSent(Ok(())) => Task::none(),
         Message::ChatSent(Err(e)) => {
@@ -363,9 +412,8 @@ async fn reconnect_twitch(backend: Arc<SqliteBackend>, bus: Arc<EventBus>) -> Re
     use forge_platform_twitch::{TwitchChat, client_id};
 
     let cid = client_id().ok_or_else(|| "FORGE_TWITCH_CLIENT_ID not set".to_owned())?;
-    let cred_id = CredentialId::new("twitch:broadcaster");
     let bundle_json = backend
-        .load(&cred_id)
+        .load(&CredentialId::new("twitch:broadcaster"))
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "no Twitch credential stored".to_owned())?;
@@ -376,10 +424,32 @@ async fn reconnect_twitch(backend: Arc<SqliteBackend>, bus: Arc<EventBus>) -> Re
         .as_str()
         .ok_or_else(|| "missing access_token in credential bundle".to_owned())?
         .to_owned();
+    let user_id = bundle["user_id"]
+        .as_str()
+        .ok_or_else(|| "missing user_id — re-authorize in Settings → Platforms".to_owned())?
+        .to_owned();
 
     let token = forge_types::OAuthToken::new(access);
-    TwitchChat::new(token, cid, String::new(), String::new(), bus).start();
+    TwitchChat::new(token, cid, user_id.clone(), user_id, bus).start();
     Ok(())
+}
+
+struct NoopRateLimiter;
+
+#[async_trait::async_trait]
+impl forge_platform_core::RateLimiter for NoopRateLimiter {
+    async fn acquire(
+        &self,
+        _weight: u32,
+    ) -> Result<forge_platform_core::RateLimitOutcome, forge_platform_core::PlatformError> {
+        Ok(forge_platform_core::RateLimitOutcome::Granted)
+    }
+
+    fn remaining(&self) -> u32 {
+        u32::MAX
+    }
+
+    async fn observe_remote_throttle(&self, _retry_after: std::time::Duration) {}
 }
 
 fn nav_button<'a>(label: &'a str, screen: Screen, palette: &ForgePalette) -> Element<'a, Message> {
@@ -1805,5 +1875,75 @@ mod tests {
             Message::Navigate(Screen::Settings(SettingsSection::Platforms)),
         );
         let _ = view(&app);
+    }
+
+    #[test]
+    fn credentials_stored_ok_sets_success_status_and_navigates_to_connect_obs() {
+        let mut app = App::default();
+        app.onboarding.device_code = Some(crate::DeviceCodeSession {
+            user_code: "ABCD-1234".into(),
+            verification_uri: "https://twitch.tv/activate".into(),
+            expires_at: std::time::SystemTime::now(),
+            status: DeviceCodeStatus::Waiting,
+        });
+        let _ = update(
+            &mut app,
+            Message::Onboarding(OnboardingMsg::CredentialsStored(Ok(()))),
+        );
+        assert_eq!(app.screen, Screen::Onboarding(OnboardingStep::ConnectObs));
+        assert!(
+            app.onboarding
+                .device_code
+                .as_ref()
+                .is_some_and(|s| matches!(s.status, DeviceCodeStatus::Success))
+        );
+    }
+
+    #[test]
+    fn credentials_stored_err_sets_error_status_and_does_not_navigate() {
+        let mut app = App::default();
+        app.onboarding.device_code = Some(crate::DeviceCodeSession {
+            user_code: "ABCD-1234".into(),
+            verification_uri: "https://twitch.tv/activate".into(),
+            expires_at: std::time::SystemTime::now(),
+            status: DeviceCodeStatus::Waiting,
+        });
+        let _ = update(
+            &mut app,
+            Message::Onboarding(OnboardingMsg::CredentialsStored(Err(
+                "keyring write failed".into(),
+            ))),
+        );
+        assert_eq!(app.screen, Screen::Onboarding(OnboardingStep::Welcome));
+        assert!(
+            app.onboarding
+                .device_code
+                .as_ref()
+                .is_some_and(|s| matches!(s.status, DeviceCodeStatus::Error(_)))
+        );
+    }
+
+    #[test]
+    fn chat_submit_empty_input_is_noop() {
+        let mut app = App::default();
+        app.live_chat.chat_input = String::new();
+        let _ = update(&mut app, Message::ChatSubmit);
+        assert!(app.live_chat.chat_input.is_empty());
+    }
+
+    #[test]
+    fn chat_submit_clears_input_and_dispatches_task() {
+        let mut app = App::default();
+        app.live_chat.chat_input = "hello chat".into();
+        let _ = update(&mut app, Message::ChatSubmit);
+        assert!(app.live_chat.chat_input.is_empty());
+    }
+
+    #[test]
+    fn chat_sent_err_logs_and_leaves_screen_unchanged() {
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Navigate(Screen::LiveChat));
+        let _ = update(&mut app, Message::ChatSent(Err("rate limited".into())));
+        assert_eq!(app.screen, Screen::LiveChat);
     }
 }

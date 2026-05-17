@@ -2010,6 +2010,7 @@ checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
 name = "forge-app"
 version = "0.1.0-alpha.2"
 dependencies = [
+ "async-trait",
  "forge-events",
  "forge-platform-core",
  "forge-platform-twitch",
@@ -2033,7 +2034,6 @@ dependencies = [
 name = "forge-events"
 version = "0.1.0-alpha.2"
 dependencies = [
- "async-trait",
  "forge-types",
  "serde",
  "serde_json",

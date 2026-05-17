@@ -1,7 +1,7 @@
 use iced::Color;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct LoomPalette {
+pub struct ForgePalette {
     pub base: Color,
     pub shell: Color,
     pub elevated: Color,
@@ -38,7 +38,7 @@ const fn hex(r: u8, g: u8, b: u8) -> Color {
     }
 }
 
-pub const CATPPUCCIN_MOCHA: LoomPalette = LoomPalette {
+pub const CATPPUCCIN_MOCHA: ForgePalette = ForgePalette {
     base: hex(0x18, 0x18, 0x25),
     shell: hex(0x11, 0x11, 0x1b),
     elevated: hex(0x1e, 0x1e, 0x2e),
@@ -66,7 +66,7 @@ pub const CATPPUCCIN_MOCHA: LoomPalette = LoomPalette {
     disabled: hex(0x6c, 0x70, 0x86),
 };
 
-pub const TOKYO_NIGHT: LoomPalette = LoomPalette {
+pub const TOKYO_NIGHT: ForgePalette = ForgePalette {
     base: hex(0x1a, 0x1b, 0x26),
     shell: hex(0x13, 0x14, 0x1f),
     elevated: hex(0x24, 0x28, 0x3b),
@@ -94,7 +94,7 @@ pub const TOKYO_NIGHT: LoomPalette = LoomPalette {
     disabled: hex(0x56, 0x5f, 0x89),
 };
 
-pub const LATTE: LoomPalette = LoomPalette {
+pub const LATTE: ForgePalette = ForgePalette {
     base: hex(0xef, 0xf1, 0xf5),
     shell: hex(0xe6, 0xe9, 0xef),
     elevated: hex(0xff, 0xff, 0xff),

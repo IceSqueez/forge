@@ -3,13 +3,13 @@ use iced::{
     widget::{Row, Space, column, container, row, text},
 };
 
-use crate::palette::LoomPalette;
+use crate::palette::ForgePalette;
 use crate::tokens::{BORDER_THIN, Density, Radius, Spacing, radius, spacing};
 
 pub fn title_bar<'a, Msg: 'a>(
     title: &str,
     actions: Vec<Element<'a, Msg>>,
-    palette: &LoomPalette,
+    palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let shell = palette.shell;
     let text_primary = palette.text_primary;
@@ -35,7 +35,7 @@ pub fn title_bar<'a, Msg: 'a>(
         .into()
 }
 
-pub(crate) fn logo_box<'a, Msg: 'a>(letter: char, palette: &LoomPalette) -> Element<'a, Msg> {
+pub(crate) fn logo_box<'a, Msg: 'a>(letter: char, palette: &ForgePalette) -> Element<'a, Msg> {
     let bg = palette.brand;
     let fg = palette.shell;
     container(text(letter.to_string()).size(11).color(fg))
@@ -59,7 +59,7 @@ pub fn title_bar_with_logo<'a, Msg: 'a>(
     subtitle: &str,
     logo_letter: char,
     actions: Vec<Element<'a, Msg>>,
-    palette: &LoomPalette,
+    palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let shell = palette.shell;
     let border_color = palette.border_regular;
@@ -101,7 +101,7 @@ pub fn title_bar_with_logo<'a, Msg: 'a>(
 pub fn toolbar<'a, Msg: 'a>(
     left: Vec<Element<'a, Msg>>,
     right: Vec<Element<'a, Msg>>,
-    palette: &LoomPalette,
+    palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let elevated = palette.elevated;
     let border_color = palette.border_regular;
@@ -136,7 +136,7 @@ pub fn toolbar<'a, Msg: 'a>(
 
 pub fn breadcrumb<'a, Msg: 'a + Clone>(
     segments: Vec<(String, Option<Msg>)>,
-    palette: &LoomPalette,
+    palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let text_muted = palette.text_muted;
     let text_secondary = palette.text_secondary;

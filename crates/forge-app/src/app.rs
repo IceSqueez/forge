@@ -1,14 +1,14 @@
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use forge_events::EventBus;
 use forge_runtime::InMemoryEventBus;
-use forge_storage::SettingsRepo;
-use forge_storage::reserved_keys;
+use forge_storage::{CredentialId, CredentialsRepo, SettingsRepo, reserved_keys};
 use forge_storage_sqlite::SqliteBackend;
-use forge_widgets::{ForgePalette, StepInfo, ThemeId};
+use forge_widgets::{BannerKind, ForgePalette, StepInfo, ThemeId};
 use iced::{Element, Length, Subscription, Task, Theme};
 
-use crate::onboarding_state::OnboardingState;
+use crate::onboarding_state::{DeviceCodeSession, DeviceCodeStatus, OnboardingState};
 use crate::screen::OnboardingStep;
 use crate::{Message, OnboardingMsg, Screen, SettingsSection};
 
@@ -110,8 +110,116 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                     _ => OnboardingStep::ConnectObs,
                 };
                 app.onboarding.sync_step(&next);
-                app.screen = Screen::Onboarding(next);
+                app.screen = Screen::Onboarding(next.clone());
+                match &next {
+                    OnboardingStep::DeviceCodeFlow(id) => Task::done(Message::Onboarding(
+                        OnboardingMsg::EnterDeviceCodeFlow(id.clone()),
+                    )),
+                    _ => Task::none(),
+                }
+            }
+            OnboardingMsg::EnterDeviceCodeFlow(_id) => {
+                let Some(client_id) = forge_platform_twitch::client_id() else {
+                    app.onboarding.device_code = Some(DeviceCodeSession {
+                        user_code: String::new(),
+                        verification_uri: String::new(),
+                        expires_at: SystemTime::now(),
+                        status: DeviceCodeStatus::MissingClientId,
+                    });
+                    return Task::none();
+                };
+                app.onboarding.device_code = Some(DeviceCodeSession {
+                    user_code: String::new(),
+                    verification_uri: String::new(),
+                    expires_at: SystemTime::now(),
+                    status: DeviceCodeStatus::Requesting,
+                });
+                let http = reqwest::Client::new();
+                Task::perform(
+                    async move {
+                        forge_platform_twitch::request_twitch_device_code(&http, &client_id)
+                            .await
+                            .map_err(|e| e.to_string())
+                    },
+                    |result| Message::Onboarding(OnboardingMsg::DeviceCodeReceived(result)),
+                )
+            }
+            OnboardingMsg::DeviceCodeReceived(Ok(resp)) => {
+                let Some(client_id) = forge_platform_twitch::client_id() else {
+                    return Task::none();
+                };
+                if let Some(session) = app.onboarding.device_code.as_mut() {
+                    session.user_code = resp.user_code.clone();
+                    session.verification_uri = resp.verification_uri.clone();
+                    session.expires_at = SystemTime::now() + resp.expires_in;
+                    session.status = DeviceCodeStatus::Waiting;
+                }
+                let mut poller = forge_platform_twitch::new_twitch_poller(
+                    client_id,
+                    resp.device_code.clone(),
+                    resp.interval,
+                    resp.expires_in,
+                );
+                let http = reqwest::Client::new();
+                Task::perform(
+                    async move { poller.run(http).await.map_err(|e| e.to_string()) },
+                    |result| Message::Onboarding(OnboardingMsg::TokenReceived(result)),
+                )
+            }
+            OnboardingMsg::DeviceCodeReceived(Err(e)) => {
+                if let Some(session) = app.onboarding.device_code.as_mut() {
+                    session.status = DeviceCodeStatus::Error(e);
+                }
                 Task::none()
+            }
+            OnboardingMsg::TokenReceived(Ok(tokens)) => {
+                if app.onboarding.device_code.is_none() {
+                    return Task::none();
+                }
+                if let Some(session) = app.onboarding.device_code.as_mut() {
+                    session.status = DeviceCodeStatus::Success;
+                }
+                let backend = Arc::clone(&app.backend);
+                let access = tokens.access_token.expose().to_owned();
+                let refresh = tokens.refresh_token.as_ref().map(|r| r.expose().to_owned());
+                let expires_secs = tokens.expires_in.as_secs();
+                let next = OnboardingStep::ConnectObs;
+                app.onboarding.sync_step(&next);
+                app.screen = Screen::Onboarding(next);
+                Task::perform(
+                    async move {
+                        let bundle = serde_json::json!({
+                            "access_token": access,
+                            "refresh_token": refresh,
+                            "expires_in_secs": expires_secs,
+                        })
+                        .to_string();
+                        backend
+                            .store(&CredentialId::new("twitch:broadcaster"), &bundle)
+                            .await
+                            .map_err(|e| e.to_string())
+                    },
+                    Message::OnboardingPersistResult,
+                )
+            }
+            OnboardingMsg::TokenReceived(Err(e)) => {
+                if let Some(session) = app.onboarding.device_code.as_mut() {
+                    session.status = DeviceCodeStatus::Error(e);
+                }
+                Task::none()
+            }
+            OnboardingMsg::BackFromDeviceCode => {
+                app.onboarding.clear_device_code();
+                let prev = OnboardingStep::ConnectPlatform;
+                app.onboarding.sync_step(&prev);
+                app.screen = Screen::Onboarding(prev);
+                Task::none()
+            }
+            OnboardingMsg::RetryDeviceCode => {
+                app.onboarding.clear_device_code();
+                Task::done(Message::Onboarding(OnboardingMsg::EnterDeviceCodeFlow(
+                    "twitch".into(),
+                )))
             }
             OnboardingMsg::BackFromPicker => {
                 let prev = OnboardingStep::Welcome;
@@ -459,35 +567,146 @@ fn connect_platform_content<'a>(
     .into()
 }
 
-fn device_code_placeholder_content<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
-    let header = forge_widgets::onboarding_step_header(
-        2,
-        5,
-        "Authorize with your platform",
-        false,
-        false,
+fn twitch_scope_hint() -> &'static str {
+    "polling every 5s · scopes: chat:read chat:edit channel:read:subscriptions bits:read moderator:read:followers"
+}
+
+fn device_code_error_body<'a>(detail: &'a str, palette: &'a ForgePalette) -> Element<'a, Message> {
+    let banner = forge_widgets::live_status_banner(
+        BannerKind::Error,
+        "Authorization failed.",
+        Some(detail),
         palette,
     );
+    let retry = forge_widgets::primary_button(
+        "Try again",
+        Message::Onboarding(OnboardingMsg::RetryDeviceCode),
+        palette,
+    );
+    iced::widget::column![banner, retry].spacing(10.0).into()
+}
 
-    let body_text = iced::widget::text("Device code authorization — coming in a future commit.")
-        .size(13.0)
-        .color(palette.text_muted);
+fn device_code_body<'a>(
+    onboarding: &'a OnboardingState,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    let session = match onboarding.device_code.as_ref() {
+        None => {
+            return forge_widgets::live_status_banner(
+                BannerKind::Waiting,
+                "Requesting authorization code...",
+                None,
+                palette,
+            );
+        }
+        Some(s) => s,
+    };
+
+    match &session.status {
+        DeviceCodeStatus::Requesting => forge_widgets::live_status_banner(
+            BannerKind::Waiting,
+            "Requesting authorization code...",
+            None,
+            palette,
+        ),
+        DeviceCodeStatus::Waiting => {
+            let remaining = session
+                .expires_at
+                .duration_since(SystemTime::now())
+                .unwrap_or_default();
+
+            let steps = iced::widget::row![
+                forge_widgets::numbered_box_step(
+                    1,
+                    "Open this URL in your browser",
+                    &session.verification_uri,
+                    false,
+                    palette,
+                ),
+                forge_widgets::numbered_box_step(
+                    2,
+                    "Enter the code shown above",
+                    "Twitch will display a confirmation when authorized.",
+                    true,
+                    palette,
+                ),
+            ]
+            .spacing(10.0)
+            .width(Length::Fill);
+
+            let scope_hint = twitch_scope_hint();
+
+            iced::widget::column![
+                // clipboard wiring is deferred; copy button dispatches RetryDeviceCode as placeholder
+                forge_widgets::device_code_display(
+                    &session.user_code,
+                    Message::Onboarding(OnboardingMsg::RetryDeviceCode),
+                    palette,
+                ),
+                forge_widgets::expiration_timer(
+                    remaining,
+                    "Get new code",
+                    Message::Onboarding(OnboardingMsg::RetryDeviceCode),
+                    palette,
+                ),
+                steps,
+                forge_widgets::live_status_banner(
+                    BannerKind::Waiting,
+                    "Waiting for authorization...",
+                    Some(scope_hint),
+                    palette,
+                ),
+            ]
+            .spacing(14.0)
+            .into()
+        }
+        DeviceCodeStatus::Success => forge_widgets::live_status_banner(
+            BannerKind::Success,
+            "Authorized successfully. Continuing setup...",
+            None,
+            palette,
+        ),
+        DeviceCodeStatus::Error(msg) => device_code_error_body(msg, palette),
+        DeviceCodeStatus::MissingClientId => forge_widgets::live_status_banner(
+            BannerKind::Error,
+            "Twitch integration is not configured.",
+            Some(
+                "Set FORGE_TWITCH_CLIENT_ID env var with your own registered app's client_id. See KNOWN_ISSUES.md.",
+            ),
+            palette,
+        ),
+    }
+}
+
+fn device_code_flow_content<'a>(
+    onboarding: &'a OnboardingState,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    let header =
+        forge_widgets::onboarding_step_header(2, 5, "Authorize on Twitch", false, true, palette);
+
+    let subtitle = iced::widget::text(
+        "Enter the code below on Twitch's activation page. We'll automatically continue when you authorize.",
+    )
+    .size(13.0)
+    .color(palette.text_muted);
+
+    let body = device_code_body(onboarding, palette);
 
     let footer = forge_widgets::onboarding_footer(
-        Some(Message::Navigate(Screen::Onboarding(
-            OnboardingStep::ConnectPlatform,
-        ))),
+        Some(Message::Onboarding(OnboardingMsg::BackFromDeviceCode)),
         None,
         "Continue",
         '→',
-        Message::Navigate(Screen::Onboarding(OnboardingStep::ConnectObs)),
-        true,
+        Message::Onboarding(OnboardingMsg::BackFromDeviceCode),
+        false,
         palette,
     );
 
     iced::widget::column![
         header,
-        body_text,
+        subtitle,
+        body,
         iced::widget::Space::new().height(Length::Fill),
         footer,
     ]
@@ -677,7 +896,7 @@ fn onboarding_view<'a>(
     let right: Element<'a, Message> = match step {
         OnboardingStep::Welcome => welcome_step_content(palette),
         OnboardingStep::ConnectPlatform => connect_platform_content(onboarding, palette),
-        OnboardingStep::DeviceCodeFlow(_) => device_code_placeholder_content(palette),
+        OnboardingStep::DeviceCodeFlow(_) => device_code_flow_content(onboarding, palette),
         OnboardingStep::ConnectObs => connect_obs_content(palette),
         OnboardingStep::StarterPack => starter_pack_content(palette),
         OnboardingStep::Ready => ready_content(palette),
@@ -1132,5 +1351,173 @@ mod tests {
             app.onboarding.step_infos[4].status,
             forge_widgets::StepStatus::Current
         );
+    }
+
+    #[test]
+    fn enter_device_code_flow_sets_requesting_or_missing_client_id() {
+        let mut app = App::default();
+        let _ = update(
+            &mut app,
+            Message::Onboarding(OnboardingMsg::EnterDeviceCodeFlow("twitch".into())),
+        );
+        assert!(app.onboarding.device_code.is_some());
+        let is_valid_initial = app.onboarding.device_code.as_ref().is_some_and(|s| {
+            matches!(
+                s.status,
+                DeviceCodeStatus::MissingClientId | DeviceCodeStatus::Requesting
+            )
+        });
+        assert!(is_valid_initial);
+    }
+
+    #[test]
+    fn back_from_device_code_clears_session_and_returns_to_platform_picker() {
+        let mut app = App::default();
+        app.onboarding.device_code = Some(crate::DeviceCodeSession {
+            user_code: "ABCD-1234".into(),
+            verification_uri: "https://twitch.tv/activate".into(),
+            expires_at: std::time::SystemTime::now(),
+            status: DeviceCodeStatus::Waiting,
+        });
+        let _ = update(
+            &mut app,
+            Message::Onboarding(OnboardingMsg::BackFromDeviceCode),
+        );
+        assert!(app.onboarding.device_code.is_none());
+        assert_eq!(
+            app.screen,
+            Screen::Onboarding(OnboardingStep::ConnectPlatform)
+        );
+    }
+
+    #[test]
+    fn retry_device_code_clears_session() {
+        let mut app = App::default();
+        app.onboarding.device_code = Some(crate::DeviceCodeSession {
+            user_code: "ABCD-1234".into(),
+            verification_uri: "https://twitch.tv/activate".into(),
+            expires_at: std::time::SystemTime::now(),
+            status: DeviceCodeStatus::Error("timeout".into()),
+        });
+        let _ = update(
+            &mut app,
+            Message::Onboarding(OnboardingMsg::RetryDeviceCode),
+        );
+        assert!(app.onboarding.device_code.is_none());
+    }
+
+    #[test]
+    fn device_code_received_err_sets_error_status() {
+        let mut app = App::default();
+        app.onboarding.device_code = Some(crate::DeviceCodeSession {
+            user_code: String::new(),
+            verification_uri: String::new(),
+            expires_at: std::time::SystemTime::now(),
+            status: DeviceCodeStatus::Requesting,
+        });
+        let _ = update(
+            &mut app,
+            Message::Onboarding(OnboardingMsg::DeviceCodeReceived(Err("HTTP 400".into()))),
+        );
+        assert!(
+            app.onboarding
+                .device_code
+                .as_ref()
+                .is_some_and(|s| { matches!(s.status, DeviceCodeStatus::Error(_)) })
+        );
+    }
+
+    #[test]
+    fn token_received_err_sets_error_status() {
+        let mut app = App::default();
+        app.onboarding.device_code = Some(crate::DeviceCodeSession {
+            user_code: "ABCD-1234".into(),
+            verification_uri: "https://twitch.tv/activate".into(),
+            expires_at: std::time::SystemTime::now(),
+            status: DeviceCodeStatus::Waiting,
+        });
+        let _ = update(
+            &mut app,
+            Message::Onboarding(OnboardingMsg::TokenReceived(Err("user denied".into()))),
+        );
+        assert!(
+            app.onboarding
+                .device_code
+                .as_ref()
+                .is_some_and(|s| { matches!(s.status, DeviceCodeStatus::Error(_)) })
+        );
+    }
+
+    #[test]
+    fn token_received_ok_ignored_when_session_cleared() {
+        use forge_platform_core::oauth::TokenResponse;
+        use forge_types::{OAuthToken, RefreshToken};
+        use std::time::Duration;
+
+        let mut app = App::default();
+        app.onboarding.device_code = None;
+        let fake_token = TokenResponse {
+            access_token: OAuthToken::new("access"),
+            refresh_token: Some(RefreshToken::new("refresh")),
+            expires_in: Duration::from_secs(3600),
+            scopes: vec!["chat:read".into()],
+        };
+        let _ = update(
+            &mut app,
+            Message::Onboarding(OnboardingMsg::TokenReceived(Ok(fake_token))),
+        );
+        assert_eq!(app.screen, Screen::Onboarding(OnboardingStep::Welcome));
+    }
+
+    fn make_device_code_app(status: DeviceCodeStatus) -> App {
+        let mut app = App::default();
+        app.onboarding
+            .sync_step(&OnboardingStep::DeviceCodeFlow("twitch".into()));
+        app.screen = Screen::Onboarding(OnboardingStep::DeviceCodeFlow("twitch".into()));
+        app.onboarding.device_code = Some(crate::DeviceCodeSession {
+            user_code: "WDJB-MJHT".into(),
+            verification_uri: "https://www.twitch.tv/activate".into(),
+            expires_at: std::time::SystemTime::now() + std::time::Duration::from_secs(300),
+            status,
+        });
+        app
+    }
+
+    #[test]
+    fn view_compiles_device_code_flow_no_session() {
+        let mut app = App::default();
+        let _ = update(
+            &mut app,
+            Message::Onboarding(OnboardingMsg::PlatformSelected("twitch".into())),
+        );
+        let _ = update(
+            &mut app,
+            Message::Onboarding(OnboardingMsg::AdvanceFromPicker),
+        );
+        let _ = view(&app);
+    }
+
+    #[test]
+    fn view_compiles_device_code_flow_requesting() {
+        let app = make_device_code_app(DeviceCodeStatus::Requesting);
+        let _ = view(&app);
+    }
+
+    #[test]
+    fn view_compiles_device_code_flow_waiting() {
+        let app = make_device_code_app(DeviceCodeStatus::Waiting);
+        let _ = view(&app);
+    }
+
+    #[test]
+    fn view_compiles_device_code_flow_missing_client_id() {
+        let app = make_device_code_app(DeviceCodeStatus::MissingClientId);
+        let _ = view(&app);
+    }
+
+    #[test]
+    fn view_compiles_device_code_flow_error() {
+        let app = make_device_code_app(DeviceCodeStatus::Error("bad client id".into()));
+        let _ = view(&app);
     }
 }

@@ -1,10 +1,30 @@
+use std::time::SystemTime;
+
 use forge_widgets::{StepInfo, StepStatus};
 
 use crate::screen::OnboardingStep;
 
+#[derive(Debug, Clone)]
+pub struct DeviceCodeSession {
+    pub user_code: String,
+    pub verification_uri: String,
+    pub expires_at: SystemTime,
+    pub status: DeviceCodeStatus,
+}
+
+#[derive(Debug, Clone)]
+pub enum DeviceCodeStatus {
+    Requesting,
+    Waiting,
+    Success,
+    Error(String),
+    MissingClientId,
+}
+
 pub struct OnboardingState {
     pub selected_platform: Option<String>,
     pub step_infos: Vec<StepInfo>,
+    pub device_code: Option<DeviceCodeSession>,
 }
 
 impl Default for OnboardingState {
@@ -18,7 +38,12 @@ impl OnboardingState {
         Self {
             selected_platform: None,
             step_infos: Self::build_step_infos(&OnboardingStep::Welcome),
+            device_code: None,
         }
+    }
+
+    pub fn clear_device_code(&mut self) {
+        self.device_code = None;
     }
 
     pub fn select_platform(&mut self, id: String) {

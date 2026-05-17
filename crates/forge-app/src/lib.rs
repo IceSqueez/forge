@@ -5,5 +5,5 @@ pub mod screen;
 
 pub use app::App;
 pub use message::{Message, OnboardingMsg};
-pub use onboarding_state::OnboardingState;
+pub use onboarding_state::{DeviceCodeSession, DeviceCodeStatus, OnboardingState};
 pub use screen::{OnboardingStep, Screen, SettingsSection};

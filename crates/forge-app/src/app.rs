@@ -1,8 +1,7 @@
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use forge_events::EventBus;
-use forge_runtime::InMemoryEventBus;
+use forge_runtime::EventBus;
 use forge_storage::{CredentialId, CredentialsRepo, SettingsRepo, reserved_keys};
 use forge_storage_sqlite::SqliteBackend;
 use forge_widgets::{BannerKind, ForgePalette, StepInfo, ThemeId};
@@ -17,7 +16,7 @@ pub struct App {
     pub theme: Theme,
     pub palette: ForgePalette,
     pub backend: Arc<SqliteBackend>,
-    pub bus: Arc<InMemoryEventBus>,
+    pub bus: Arc<EventBus>,
     pub storage_offline: bool,
     pub onboarding: OnboardingState,
 }
@@ -34,7 +33,7 @@ impl App {
             theme,
             palette,
             backend,
-            bus: Arc::new(InMemoryEventBus::new()),
+            bus: EventBus::new(),
             storage_offline,
             onboarding: OnboardingState::new(),
         }
@@ -58,7 +57,7 @@ impl Default for App {
             theme,
             palette,
             backend,
-            bus: Arc::new(InMemoryEventBus::new()),
+            bus: EventBus::new(),
             storage_offline: false,
             onboarding: OnboardingState::new(),
         }
@@ -982,7 +981,7 @@ pub fn subscription(app: &App) -> Subscription<Message> {
     use iced::advanced::subscription::{EventStream, Hasher, Recipe, from_recipe};
     use iced::futures::StreamExt as _;
 
-    struct BusRecipe(Arc<InMemoryEventBus>);
+    struct BusRecipe(Arc<EventBus>);
 
     impl Recipe for BusRecipe {
         type Output = Message;

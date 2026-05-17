@@ -20,6 +20,9 @@ on:
           - clippy
           - build-release
 
+permissions:
+  contents: read
+
 jobs:
   manual:
     name: manual (${{ inputs.os }}, ${{ inputs.command }})
@@ -27,7 +30,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Rust with cache
         uses: ./.github/actions/setup-rust-cached
@@ -47,12 +50,18 @@ jobs:
         shell: bash
         run: cargo build --workspace --release
 
-      - name: Upload artifacts
-        if: inputs.command == 'build-release'
-        uses: actions/upload-artifact@v7
+      - name: Upload artifacts (Linux / macOS)
+        if: inputs.command == 'build-release' && runner.os != 'Windows'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: binaries-${{ inputs.os }}
-          path: |
-            target/release/streamer-loom
-            target/release/streamer-loom.exe
-          if-no-files-found: ignore
+          path: target/release/loom*
+          if-no-files-found: error
+
+      - name: Upload artifacts (Windows)
+        if: inputs.command == 'build-release' && runner.os == 'Windows'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: binaries-${{ inputs.os }}
+          path: target/release/loom*.exe
+          if-no-files-found: error

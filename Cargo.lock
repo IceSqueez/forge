@@ -2020,6 +2020,7 @@ dependencies = [
  "forge-storage-sqlite",
  "forge-types",
  "forge-widgets",
+ "futures-util",
  "iced",
  "keyring",
  "serde_json",

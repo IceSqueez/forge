@@ -1,0 +1,137 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
+use std::sync::Arc;
+
+use forge_app::{App, ChatFilter, Message, Screen, app::update, screen::OnboardingStep};
+use forge_events::{Event, EventSource};
+use forge_runtime::{EventBus, bus_subscription};
+use forge_storage_sqlite::SqliteBackend;
+use futures_util::StreamExt as _;
+
+fn test_app() -> App {
+    keyring::use_sample_store(&std::collections::HashMap::new())
+        .expect("sample keyring store must initialize");
+    let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+    let backend = Arc::new(
+        rt.block_on(SqliteBackend::open("sqlite::memory:"))
+            .expect("in-memory SQLite always opens"),
+    );
+    let (theme, palette) = forge_widgets::catppuccin_mocha();
+    App {
+        screen: Screen::Onboarding(OnboardingStep::Welcome),
+        theme,
+        palette,
+        backend,
+        bus: EventBus::new(),
+        storage_offline: false,
+        onboarding: forge_app::OnboardingState::new(),
+        live_chat: forge_app::LiveChatState::new(),
+        twitch_chat_handle: None,
+    }
+}
+
+fn make_twitch_chat_event(username: &str, message: &str) -> Event {
+    Event::new(
+        EventSource::Twitch,
+        "chat.message",
+        serde_json::json!({
+            "chatter_user_name": username,
+            "message": { "text": message },
+            "badges": [],
+            "color": "#cba6f7",
+        }),
+    )
+}
+
+#[test]
+fn chat_message_event_appends_to_log() {
+    let mut app = test_app();
+    let ev = make_twitch_chat_event("INTEGRATION_TEST_USERNAME", "INTEGRATION_TEST_MESSAGE_BODY");
+    let _ = update(&mut app, Message::EventArrived(ev));
+    assert_eq!(app.live_chat.chat_log.len(), 1);
+    let row = &app.live_chat.chat_log[0];
+    assert_eq!(row.username, "INTEGRATION_TEST_USERNAME");
+    assert_eq!(
+        row.body,
+        forge_widgets::ChatBody::Message("INTEGRATION_TEST_MESSAGE_BODY".to_owned()),
+    );
+}
+
+#[test]
+fn chat_log_trims_at_1000_entries() {
+    let mut app = test_app();
+    let limit = forge_app::live_chat::CHAT_LOG_MAX;
+    for i in 0..=limit {
+        let ev = make_twitch_chat_event(
+            &format!("INTEGRATION_TEST_USERNAME_{i}"),
+            "INTEGRATION_TEST_MESSAGE_BODY",
+        );
+        let _ = update(&mut app, Message::EventArrived(ev));
+    }
+    assert_eq!(app.live_chat.chat_log.len(), limit);
+    let first = &app.live_chat.chat_log[0];
+    assert_ne!(first.username, "INTEGRATION_TEST_USERNAME_0");
+}
+
+#[test]
+fn non_chat_events_are_ignored() {
+    let mut app = test_app();
+    let ev = Event::new(
+        EventSource::Twitch,
+        "platform.connected",
+        serde_json::json!({ "platform": "twitch" }),
+    );
+    let _ = update(&mut app, Message::EventArrived(ev));
+    assert!(app.live_chat.chat_log.is_empty());
+}
+
+#[test]
+fn filter_changed_updates_filter_state() {
+    let mut app = test_app();
+    let _ = update(&mut app, Message::ChatFilterChanged(ChatFilter::HideBots));
+    assert_eq!(app.live_chat.chat_filter, ChatFilter::HideBots);
+}
+
+#[test]
+fn chat_input_changed_updates_state() {
+    let mut app = test_app();
+    let _ = update(
+        &mut app,
+        Message::ChatInputChanged("INTEGRATION_TEST_INPUT".into()),
+    );
+    assert_eq!(app.live_chat.chat_input, "INTEGRATION_TEST_INPUT");
+}
+
+#[test]
+fn chat_submit_clears_input_optimistically() {
+    let mut app = test_app();
+    app.live_chat.chat_input = "INTEGRATION_TEST_MESSAGE_BODY".to_owned();
+    let _ = update(&mut app, Message::ChatSubmit);
+    assert!(app.live_chat.chat_input.is_empty());
+}
+
+#[tokio::test]
+async fn event_bus_subscription_bridge_delivers_events() {
+    let bus = EventBus::new();
+    let mut stream = bus_subscription(Arc::clone(&bus));
+
+    let ev1 = Event::new(EventSource::Core, "action.start", serde_json::Value::Null);
+    let ev2 = Event::new(EventSource::Twitch, "chat.message", serde_json::Value::Null);
+    let ev3 = Event::new(EventSource::Core, "action.done", serde_json::Value::Null);
+
+    let id1 = ev1.id;
+    let id2 = ev2.id;
+    let id3 = ev3.id;
+
+    bus.publish(ev1);
+    bus.publish(ev2);
+    bus.publish(ev3);
+
+    let received1 = stream.next().await.unwrap();
+    let received2 = stream.next().await.unwrap();
+    let received3 = stream.next().await.unwrap();
+
+    assert_eq!(received1.id, id1);
+    assert_eq!(received2.id, id2);
+    assert_eq!(received3.id, id3);
+}

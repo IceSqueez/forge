@@ -111,6 +111,7 @@ pub enum SettingsSection {
     Language,
     Shortcuts,
     Notifications,
+    Platforms,
     Scripting,
     Queues,
     Storage,

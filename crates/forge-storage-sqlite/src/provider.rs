@@ -1,14 +1,12 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use forge_events::EventSource;
 use forge_storage::{
-    ActionRecord, ActionRepo, CommandRecord, CommandRepo, CredentialId, CredentialsRepo,
-    DataProvider, GlobalEntry, GlobalsRepo, HistoryRecord, HistoryRepo, NewHistoryRecord,
-    QueueRecord, QueueRepo, ScriptRecord, ScriptRepo, SettingsRepo, StorageError, TriggerRecord,
-    TriggerRepo, UserGlobalEntry, UserGlobalsRepo,
+    ActionRepo, CommandRepo, CredentialId, CredentialsRepo, DataProvider, GlobalEntry, GlobalsRepo,
+    HistoryRepo, QueueRepo, ScriptRecord, ScriptRepo, SettingsRepo, StorageError, TriggerRepo,
+    UserGlobalEntry, UserGlobalsRepo,
 };
-use forge_types::{ActionId, CommandId, EventId, QueueId, ScriptId, TriggerId, Variant};
+use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
 
 use crate::error::SqliteStorageError;
@@ -167,119 +165,6 @@ impl SettingsRepo for SqliteBackend {
 }
 
 #[async_trait]
-impl ActionRepo for SqliteBackend {
-    async fn get(&self, id: ActionId) -> Result<Option<ActionRecord>, StorageError> {
-        self.action.get(id).await
-    }
-
-    async fn get_by_name(&self, name: &str) -> Result<Option<ActionRecord>, StorageError> {
-        self.action.get_by_name(name).await
-    }
-
-    async fn upsert(&self, record: ActionRecord) -> Result<(), StorageError> {
-        self.action.upsert(record).await
-    }
-
-    async fn delete(&self, id: ActionId) -> Result<bool, StorageError> {
-        self.action.delete(id).await
-    }
-
-    async fn list(&self) -> Result<Vec<ActionRecord>, StorageError> {
-        self.action.list().await
-    }
-}
-
-#[async_trait]
-impl TriggerRepo for SqliteBackend {
-    async fn get(&self, id: TriggerId) -> Result<Option<TriggerRecord>, StorageError> {
-        self.trigger.get(id).await
-    }
-
-    async fn upsert(&self, record: TriggerRecord) -> Result<(), StorageError> {
-        self.trigger.upsert(record).await
-    }
-
-    async fn delete(&self, id: TriggerId) -> Result<bool, StorageError> {
-        self.trigger.delete(id).await
-    }
-
-    async fn list(&self) -> Result<Vec<TriggerRecord>, StorageError> {
-        self.trigger.list().await
-    }
-
-    async fn list_for_action(
-        &self,
-        action_id: ActionId,
-    ) -> Result<Vec<TriggerRecord>, StorageError> {
-        self.trigger.list_for_action(action_id).await
-    }
-
-    async fn list_enabled_by_source(
-        &self,
-        source: EventSource,
-    ) -> Result<Vec<TriggerRecord>, StorageError> {
-        self.trigger.list_enabled_by_source(source).await
-    }
-}
-
-#[async_trait]
-impl CommandRepo for SqliteBackend {
-    async fn get(&self, id: CommandId) -> Result<Option<CommandRecord>, StorageError> {
-        self.command.get(id).await
-    }
-
-    async fn get_by_name(&self, name: &str) -> Result<Option<CommandRecord>, StorageError> {
-        self.command.get_by_name(name).await
-    }
-
-    async fn upsert(&self, record: CommandRecord) -> Result<(), StorageError> {
-        self.command.upsert(record).await
-    }
-
-    async fn delete(&self, id: CommandId) -> Result<bool, StorageError> {
-        self.command.delete(id).await
-    }
-
-    async fn list(&self) -> Result<Vec<CommandRecord>, StorageError> {
-        self.command.list().await
-    }
-
-    async fn list_for_action(
-        &self,
-        action_id: ActionId,
-    ) -> Result<Vec<CommandRecord>, StorageError> {
-        self.command.list_for_action(action_id).await
-    }
-}
-
-#[async_trait]
-impl QueueRepo for SqliteBackend {
-    async fn get(&self, id: QueueId) -> Result<Option<QueueRecord>, StorageError> {
-        self.queue.get(id).await
-    }
-
-    async fn get_by_name(&self, name: &str) -> Result<Option<QueueRecord>, StorageError> {
-        self.queue.get_by_name(name).await
-    }
-
-    async fn upsert(&self, record: QueueRecord) -> Result<(), StorageError> {
-        self.queue.upsert(record).await
-    }
-
-    async fn delete(&self, id: QueueId) -> Result<bool, StorageError> {
-        self.queue.delete(id).await
-    }
-
-    async fn list(&self) -> Result<Vec<QueueRecord>, StorageError> {
-        self.queue.list().await
-    }
-
-    async fn set_paused(&self, id: QueueId, paused: bool) -> Result<(), StorageError> {
-        self.queue.set_paused(id, paused).await
-    }
-}
-
-#[async_trait]
 impl ScriptRepo for SqliteBackend {
     async fn get(&self, id: ScriptId) -> Result<Option<ScriptRecord>, StorageError> {
         self.script.get(id).await
@@ -337,38 +222,27 @@ impl CredentialsRepo for SqliteBackend {
 }
 
 #[async_trait]
-impl HistoryRepo for SqliteBackend {
-    async fn record(&self, new: NewHistoryRecord) -> Result<i64, StorageError> {
-        self.history.record(new).await
-    }
-
-    async fn get(&self, id: i64) -> Result<Option<HistoryRecord>, StorageError> {
-        self.history.get(id).await
-    }
-
-    async fn list_for_action(
-        &self,
-        action_id: ActionId,
-        limit: u32,
-    ) -> Result<Vec<HistoryRecord>, StorageError> {
-        self.history.list_for_action(action_id, limit).await
-    }
-
-    async fn list_recent(&self, limit: u32) -> Result<Vec<HistoryRecord>, StorageError> {
-        self.history.list_recent(limit).await
-    }
-
-    async fn list_caused_by(&self, event_id: EventId) -> Result<Vec<HistoryRecord>, StorageError> {
-        self.history.list_caused_by(event_id).await
-    }
-
-    async fn prune_older_than(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError> {
-        self.history.prune_older_than(cutoff).await
-    }
-}
-
-#[async_trait]
 impl DataProvider for SqliteBackend {
+    fn action_repo(&self) -> &dyn ActionRepo {
+        &self.action
+    }
+
+    fn trigger_repo(&self) -> &dyn TriggerRepo {
+        &self.trigger
+    }
+
+    fn command_repo(&self) -> &dyn CommandRepo {
+        &self.command
+    }
+
+    fn queue_repo(&self) -> &dyn QueueRepo {
+        &self.queue
+    }
+
+    fn history_repo(&self) -> &dyn HistoryRepo {
+        &self.history
+    }
+
     async fn schema_version(&self) -> Result<u32, StorageError> {
         let version: Option<i64> = sqlx::query_scalar("SELECT MAX(version) FROM _sqlx_migrations")
             .fetch_optional(&self.pool)
@@ -396,7 +270,6 @@ impl DataProvider for SqliteBackend {
         Ok(())
     }
 
-    /// Replaces the current database with the file at `path`. Destructive.
     async fn import(&self, _path: &std::path::Path) -> Result<(), StorageError> {
         Err(StorageError::Connection {
             reason: "import not yet implemented".into(),

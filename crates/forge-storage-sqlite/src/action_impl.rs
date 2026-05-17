@@ -1,39 +1,62 @@
 use async_trait::async_trait;
-use forge_storage::{ActionRecord, ActionRepo, StorageError};
-use forge_types::ActionId;
-use time::OffsetDateTime;
+use forge_storage::{ActionRepo, StorageError};
+use forge_types::{Action, ActionId, QueueId, SubActionSpec};
+use serde_json;
 
 use crate::error::SqliteStorageError;
 
-fn epoch_ms_now() -> i64 {
-    let now = OffsetDateTime::now_utc();
-    (now.unix_timestamp_nanos() / 1_000_000) as i64
-}
-
-fn from_epoch_ms(ms: i64) -> Result<OffsetDateTime, SqliteStorageError> {
-    OffsetDateTime::from_unix_timestamp_nanos(ms as i128 * 1_000_000)
-        .map_err(|e| SqliteStorageError::Decode(format!("invalid epoch ms {ms}: {e}")))
-}
-
-fn parse_action_id(s: &str) -> Result<ActionId, SqliteStorageError> {
+fn parse_id<T: serde::de::DeserializeOwned>(s: &str, label: &str) -> Result<T, SqliteStorageError> {
     serde_json::from_str(&format!("\"{s}\""))
-        .map_err(|e| SqliteStorageError::Decode(format!("invalid action id '{s}': {e}")))
+        .map_err(|e| SqliteStorageError::Decode(format!("invalid {label} id '{s}': {e}")))
 }
 
-fn decode_row(
-    id_str: String,
-    name: String,
-    config_json: String,
-    created_at_ms: i64,
-    last_modified_ms: i64,
-) -> Result<ActionRecord, SqliteStorageError> {
-    let id = parse_action_id(&id_str)?;
-    Ok(ActionRecord {
+type ActionRow = (
+    String,
+    String,
+    String,
+    String,
+    i64,
+    i64,
+    i64,
+    String,
+    String,
+);
+
+fn decode_row(row: ActionRow) -> Result<Action, SqliteStorageError> {
+    let (
+        id_str,
+        name,
+        group_name,
+        queue_id_str,
+        enabled,
+        concurrent,
+        bypass_pause,
+        description,
+        sub_actions_json,
+    ) = row;
+    let id: ActionId = parse_id(&id_str, "action")?;
+    let queue_id: QueueId = parse_id(&queue_id_str, "queue")?;
+    let sub_actions: Vec<SubActionSpec> = serde_json::from_str(&sub_actions_json)
+        .map_err(|e| SqliteStorageError::Decode(format!("invalid sub_actions json: {e}")))?;
+
+    Ok(Action {
         id,
         name,
-        config_json,
-        created_at: from_epoch_ms(created_at_ms)?,
-        last_modified: from_epoch_ms(last_modified_ms)?,
+        group: if group_name.is_empty() {
+            None
+        } else {
+            Some(group_name)
+        },
+        queue_id,
+        enabled: enabled != 0,
+        concurrent: concurrent != 0,
+        bypass_pause: bypass_pause != 0,
+        description: if description.is_empty() {
+            None
+        } else {
+            Some(description)
+        },
+        sub_actions,
     })
 }
 
@@ -49,63 +72,68 @@ impl SqliteActionRepo {
 
 #[async_trait]
 impl ActionRepo for SqliteActionRepo {
-    async fn get(&self, id: ActionId) -> Result<Option<ActionRecord>, StorageError> {
+    async fn list(&self) -> Result<Vec<Action>, StorageError> {
+        let rows: Vec<ActionRow> = sqlx::query_as(
+            "SELECT id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions
+             FROM actions ORDER BY name",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        rows.into_iter()
+            .map(|row| decode_row(row).map_err(StorageError::from))
+            .collect()
+    }
+
+    async fn get(&self, id: ActionId) -> Result<Option<Action>, StorageError> {
         let id_str = id.to_string();
-        let row: Option<(String, String, String, i64, i64)> = sqlx::query_as(
-            "SELECT id, name, config_json, created_at, last_modified FROM actions WHERE id = ?",
+        let row: Option<ActionRow> = sqlx::query_as(
+            "SELECT id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions
+             FROM actions WHERE id = ?",
         )
         .bind(&id_str)
         .fetch_optional(&self.pool)
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
-        match row {
-            None => Ok(None),
-            Some((id_s, name, config_json, created_at_ms, last_modified_ms)) => {
-                decode_row(id_s, name, config_json, created_at_ms, last_modified_ms)
-                    .map(Some)
-                    .map_err(StorageError::from)
-            }
-        }
+        row.map(|row| decode_row(row).map_err(StorageError::from))
+            .transpose()
     }
 
-    async fn get_by_name(&self, name: &str) -> Result<Option<ActionRecord>, StorageError> {
-        let row: Option<(String, String, String, i64, i64)> = sqlx::query_as(
-            "SELECT id, name, config_json, created_at, last_modified FROM actions WHERE name = ?",
-        )
-        .bind(name)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(SqliteStorageError::Sqlx)?;
-
-        match row {
-            None => Ok(None),
-            Some((id_s, name, config_json, created_at_ms, last_modified_ms)) => {
-                decode_row(id_s, name, config_json, created_at_ms, last_modified_ms)
-                    .map(Some)
-                    .map_err(StorageError::from)
-            }
-        }
-    }
-
-    async fn upsert(&self, record: ActionRecord) -> Result<(), StorageError> {
-        let id_str = record.id.to_string();
-        let now_ms = epoch_ms_now();
+    async fn save(&self, action: &Action) -> Result<(), StorageError> {
+        let id_str = action.id.to_string();
+        let queue_id_str = action.queue_id.to_string();
+        let group_name = action.group.as_deref().unwrap_or("").to_string();
+        let description = action.description.as_deref().unwrap_or("").to_string();
+        let sub_actions_json =
+            serde_json::to_string(&action.sub_actions).map_err(StorageError::Serialization)?;
+        let enabled: i64 = if action.enabled { 1 } else { 0 };
+        let concurrent: i64 = if action.concurrent { 1 } else { 0 };
+        let bypass_pause: i64 = if action.bypass_pause { 1 } else { 0 };
 
         sqlx::query(
-            "INSERT INTO actions (id, name, config_json, created_at, last_modified)
-             VALUES (?, ?, ?, ?, ?)
+            "INSERT INTO actions (id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
-                 name          = excluded.name,
-                 config_json   = excluded.config_json,
-                 last_modified = ?",
+                 name         = excluded.name,
+                 group_name   = excluded.group_name,
+                 queue_id     = excluded.queue_id,
+                 enabled      = excluded.enabled,
+                 concurrent   = excluded.concurrent,
+                 bypass_pause = excluded.bypass_pause,
+                 description  = excluded.description,
+                 sub_actions  = excluded.sub_actions",
         )
         .bind(&id_str)
-        .bind(&record.name)
-        .bind(&record.config_json)
-        .bind(now_ms)
-        .bind(now_ms)
-        .bind(now_ms)
+        .bind(&action.name)
+        .bind(&group_name)
+        .bind(&queue_id_str)
+        .bind(enabled)
+        .bind(concurrent)
+        .bind(bypass_pause)
+        .bind(&description)
+        .bind(&sub_actions_json)
         .execute(&self.pool)
         .await
         .map_err(SqliteStorageError::Sqlx)?;
@@ -124,21 +152,19 @@ impl ActionRepo for SqliteActionRepo {
         Ok(result.rows_affected() > 0)
     }
 
-    async fn list(&self) -> Result<Vec<ActionRecord>, StorageError> {
-        let rows: Vec<(String, String, String, i64, i64)> = sqlx::query_as(
-            "SELECT id, name, config_json, created_at, last_modified FROM actions ORDER BY name",
+    async fn list_by_group(&self, group: Option<&str>) -> Result<Vec<Action>, StorageError> {
+        let group_val = group.unwrap_or("");
+        let rows: Vec<ActionRow> = sqlx::query_as(
+            "SELECT id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions
+             FROM actions WHERE group_name = ? ORDER BY name",
         )
+        .bind(group_val)
         .fetch_all(&self.pool)
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
-        let mut records = Vec::with_capacity(rows.len());
-        for (id_s, name, config_json, created_at_ms, last_modified_ms) in rows {
-            let record = decode_row(id_s, name, config_json, created_at_ms, last_modified_ms)
-                .map_err(StorageError::from)?;
-            records.push(record);
-        }
-
-        Ok(records)
+        rows.into_iter()
+            .map(|row| decode_row(row).map_err(StorageError::from))
+            .collect()
     }
 }

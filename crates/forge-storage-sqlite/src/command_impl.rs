@@ -1,56 +1,39 @@
 use async_trait::async_trait;
-use forge_storage::{CommandRecord, CommandRepo, StorageError};
-use forge_types::{ActionId, CommandId};
-use time::OffsetDateTime;
+use forge_storage::{CommandRepo, StorageError};
+use forge_types::{Command, CommandId, CommandPermission};
+use serde_json;
 
 use crate::error::SqliteStorageError;
 
-type CommandRow = (String, String, String, i64, String, i64, i64, i64);
-
-fn epoch_ms_now() -> i64 {
-    let now = OffsetDateTime::now_utc();
-    (now.unix_timestamp_nanos() / 1_000_000) as i64
-}
-
-fn from_epoch_ms(ms: i64) -> Result<OffsetDateTime, SqliteStorageError> {
-    OffsetDateTime::from_unix_timestamp_nanos(ms as i128 * 1_000_000)
-        .map_err(|e| SqliteStorageError::Decode(format!("invalid epoch ms {ms}: {e}")))
-}
-
-fn parse_id<T>(s: &str, label: &str) -> Result<T, SqliteStorageError>
-where
-    T: serde::de::DeserializeOwned,
-{
+fn parse_id<T: serde::de::DeserializeOwned>(s: &str, label: &str) -> Result<T, SqliteStorageError> {
     serde_json::from_str(&format!("\"{s}\""))
         .map_err(|e| SqliteStorageError::Decode(format!("invalid {label} id '{s}': {e}")))
 }
 
-fn decode_row(row: CommandRow) -> Result<CommandRecord, SqliteStorageError> {
-    let (
-        id_str,
-        name,
-        action_id_str,
-        cooldown_ms,
-        permission,
-        enabled_int,
-        created_at_ms,
-        last_modified_ms,
-    ) = row;
-
+fn decode_row(
+    id_str: String,
+    action_id_str: String,
+    name: String,
+    cooldown_secs: i64,
+    permission_str: String,
+) -> Result<Command, SqliteStorageError> {
     let id: CommandId = parse_id(&id_str, "command")?;
-    let action_id: ActionId = parse_id(&action_id_str, "action")?;
+    let action_id = parse_id(&action_id_str, "action")?;
+    let permission: CommandPermission = serde_json::from_str(&format!("\"{permission_str}\""))
+        .map_err(|e| {
+            SqliteStorageError::Decode(format!("invalid permission '{permission_str}': {e}"))
+        })?;
 
-    Ok(CommandRecord {
+    Ok(Command {
         id,
-        name,
         action_id,
-        cooldown_ms: cooldown_ms as u32,
+        name,
+        cooldown_secs: cooldown_secs as u64,
         permission,
-        enabled: enabled_int != 0,
-        created_at: from_epoch_ms(created_at_ms)?,
-        last_modified: from_epoch_ms(last_modified_ms)?,
     })
 }
+
+type CommandRow = (String, String, String, i64, String);
 
 pub struct SqliteCommandRepo {
     pool: sqlx::SqlitePool,
@@ -64,61 +47,58 @@ impl SqliteCommandRepo {
 
 #[async_trait]
 impl CommandRepo for SqliteCommandRepo {
-    async fn get(&self, id: CommandId) -> Result<Option<CommandRecord>, StorageError> {
-        let id_str = id.to_string();
-        let row: Option<CommandRow> = sqlx::query_as(
-            "SELECT id, name, action_id, cooldown_ms, permission, enabled, created_at, last_modified
-             FROM commands WHERE id = ?",
+    async fn list(&self) -> Result<Vec<Command>, StorageError> {
+        let rows: Vec<CommandRow> = sqlx::query_as(
+            "SELECT id, action_id, name, cooldown_secs, permission FROM commands ORDER BY name",
         )
-        .bind(&id_str)
-        .fetch_optional(&self.pool)
+        .fetch_all(&self.pool)
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
-        row.map(|r| decode_row(r).map_err(StorageError::from))
-            .transpose()
+        rows.into_iter()
+            .map(|(id, aid, name, cooldown, perm)| {
+                decode_row(id, aid, name, cooldown, perm).map_err(StorageError::from)
+            })
+            .collect()
     }
 
-    async fn get_by_name(&self, name: &str) -> Result<Option<CommandRecord>, StorageError> {
+    async fn get_by_name(&self, name: &str) -> Result<Option<Command>, StorageError> {
         let row: Option<CommandRow> = sqlx::query_as(
-            "SELECT id, name, action_id, cooldown_ms, permission, enabled, created_at, last_modified
-             FROM commands WHERE name = ?",
+            "SELECT id, action_id, name, cooldown_secs, permission FROM commands WHERE name = ?",
         )
         .bind(name)
         .fetch_optional(&self.pool)
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
-        row.map(|r| decode_row(r).map_err(StorageError::from))
-            .transpose()
+        row.map(|(id, aid, name, cooldown, perm)| {
+            decode_row(id, aid, name, cooldown, perm).map_err(StorageError::from)
+        })
+        .transpose()
     }
 
-    async fn upsert(&self, record: CommandRecord) -> Result<(), StorageError> {
-        let id_str = record.id.to_string();
-        let action_id_str = record.action_id.to_string();
-        let enabled_int: i64 = if record.enabled { 1 } else { 0 };
-        let now_ms = epoch_ms_now();
+    async fn save(&self, command: &Command) -> Result<(), StorageError> {
+        let id_str = command.id.to_string();
+        let action_id_str = command.action_id.to_string();
+        let permission_str = serde_json::to_string(&command.permission)
+            .map_err(StorageError::Serialization)?
+            .trim_matches('"')
+            .to_string();
 
         sqlx::query(
-            "INSERT INTO commands (id, name, action_id, cooldown_ms, permission, enabled, created_at, last_modified)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            "INSERT INTO commands (id, action_id, name, cooldown_secs, permission)
+             VALUES (?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
-                 name          = excluded.name,
                  action_id     = excluded.action_id,
-                 cooldown_ms   = excluded.cooldown_ms,
-                 permission    = excluded.permission,
-                 enabled       = excluded.enabled,
-                 last_modified = ?",
+                 name          = excluded.name,
+                 cooldown_secs = excluded.cooldown_secs,
+                 permission    = excluded.permission",
         )
         .bind(&id_str)
-        .bind(&record.name)
         .bind(&action_id_str)
-        .bind(record.cooldown_ms as i64)
-        .bind(&record.permission)
-        .bind(enabled_int)
-        .bind(now_ms)
-        .bind(now_ms)
-        .bind(now_ms)
+        .bind(&command.name)
+        .bind(command.cooldown_secs as i64)
+        .bind(&permission_str)
         .execute(&self.pool)
         .await
         .map_err(SqliteStorageError::Sqlx)?;
@@ -135,38 +115,5 @@ impl CommandRepo for SqliteCommandRepo {
             .map_err(SqliteStorageError::Sqlx)?;
 
         Ok(result.rows_affected() > 0)
-    }
-
-    async fn list(&self) -> Result<Vec<CommandRecord>, StorageError> {
-        let rows: Vec<CommandRow> = sqlx::query_as(
-            "SELECT id, name, action_id, cooldown_ms, permission, enabled, created_at, last_modified
-             FROM commands ORDER BY name",
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(SqliteStorageError::Sqlx)?;
-
-        rows.into_iter()
-            .map(|r| decode_row(r).map_err(StorageError::from))
-            .collect()
-    }
-
-    async fn list_for_action(
-        &self,
-        action_id: ActionId,
-    ) -> Result<Vec<CommandRecord>, StorageError> {
-        let action_id_str = action_id.to_string();
-        let rows: Vec<CommandRow> = sqlx::query_as(
-            "SELECT id, name, action_id, cooldown_ms, permission, enabled, created_at, last_modified
-             FROM commands WHERE action_id = ? ORDER BY name",
-        )
-        .bind(&action_id_str)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(SqliteStorageError::Sqlx)?;
-
-        rows.into_iter()
-            .map(|r| decode_row(r).map_err(StorageError::from))
-            .collect()
     }
 }

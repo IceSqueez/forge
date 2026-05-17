@@ -8,6 +8,7 @@ members = [
   "crates/loom-storage",
   "crates/loom-storage-sqlite",
   "crates/loom-platform-core",
+  "crates/loom-platform-twitch",
   "crates/loom-server",
   "crates/loom-widgets",
   "crates/loom-app",

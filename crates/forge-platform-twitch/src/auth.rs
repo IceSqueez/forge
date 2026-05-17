@@ -28,11 +28,9 @@ pub fn twitch_auth_flow() -> AuthFlow {
 }
 
 pub async fn request_twitch_device_code(
-    http: &reqwest::Client,
     client_id: &str,
 ) -> Result<DeviceCodeResponse, PlatformError> {
     DeviceCodePoller::request_device_code(
-        http,
         TWITCH_DEVICE_ENDPOINT,
         DeviceCodeRequest {
             client_id: client_id.to_owned(),

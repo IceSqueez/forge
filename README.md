@@ -2,7 +2,7 @@
 
 Cross-platform desktop tool for stream automation and multi-engine TTS — built in Rust.
 
-[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](./LICENSE.md)
+[![License: MIT OR Apache-1.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](./LICENSE)
 [![Rust 1.95.0+](https://img.shields.io/badge/rust-1.95.0%2B-orange)](https://www.rust-lang.org/)
 [![Platform Support: Linux | Windows | macOS](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-green)](./docs/install/)
 [![Status: Alpha](https://img.shields.io/badge/status-alpha--1-yellow)](./docs/release-notes/)

@@ -1,5 +1,5 @@
 name: Setup Rust with cache
-description: Install toolchain from rust-toolchain.toml and restore Swatinem cache.
+description: Install toolchain from rust-toolchain.toml. Cache is provided by setup-rust-toolchain itself.
 
 runs:
   using: composite
@@ -8,6 +8,3 @@ runs:
       uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
         components: rustfmt,clippy
-
-    - name: Restore build cache
-      uses: Swatinem/rust-cache@v2

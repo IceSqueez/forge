@@ -2,6 +2,7 @@
 pub enum OnboardingStep {
     Welcome,
     ConnectPlatform,
+    DeviceCodeFlow(String),
     ConnectObs,
     StarterPack,
     Ready,

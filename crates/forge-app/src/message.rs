@@ -6,6 +6,10 @@ use forge_widgets::ThemeId;
 pub enum OnboardingMsg {
     SkipSetup,
     AdvanceFromWelcome,
+    PlatformSelected(String),
+    AdvanceFromPicker,
+    BackFromPicker,
+    SkipPicker,
 }
 
 #[derive(Debug, Clone)]

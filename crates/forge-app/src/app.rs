@@ -83,6 +83,31 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 app.screen = Screen::Onboarding(next);
                 Task::none()
             }
+            OnboardingMsg::PlatformSelected(id) => {
+                app.onboarding.select_platform(id);
+                Task::none()
+            }
+            OnboardingMsg::AdvanceFromPicker => {
+                let next = match app.onboarding.selected_platform.as_deref() {
+                    Some("twitch") => OnboardingStep::DeviceCodeFlow("twitch".into()),
+                    _ => OnboardingStep::ConnectObs,
+                };
+                app.onboarding.sync_step(&next);
+                app.screen = Screen::Onboarding(next);
+                Task::none()
+            }
+            OnboardingMsg::BackFromPicker => {
+                let prev = OnboardingStep::Welcome;
+                app.onboarding.sync_step(&prev);
+                app.screen = Screen::Onboarding(prev);
+                Task::none()
+            }
+            OnboardingMsg::SkipPicker => {
+                let next = OnboardingStep::ConnectObs;
+                app.onboarding.sync_step(&next);
+                app.screen = Screen::Onboarding(next);
+                Task::none()
+            }
         },
         Message::ThemeChanged(id) => {
             let (theme, palette) = match id {
@@ -271,15 +296,124 @@ fn welcome_step_content<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     .into()
 }
 
+fn connect_platform_content<'a>(
+    onboarding: &'a OnboardingState,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    let header = forge_widgets::onboarding_step_header(
+        2,
+        5,
+        "Connect a streaming platform",
+        true,
+        false,
+        palette,
+    );
+
+    let subtitle = iced::widget::text(
+        "You can connect more later from settings. Pick one to start — we'll show you a code to enter on the platform's site.",
+    )
+    .size(13.0)
+    .color(palette.text_muted);
+
+    let selected = onboarding.selected_platform.as_deref();
+
+    let twitch = forge_widgets::platform_picker_card(
+        forge_widgets::PlatformCardProps {
+            name: "Twitch",
+            letter: "T",
+            brand_color: palette.brand,
+            subtitle: "Most popular",
+            capability_summary: "Chat, subs, bits, raids, channel points, EventSub",
+            selected: selected == Some("twitch"),
+        },
+        Message::Onboarding(OnboardingMsg::PlatformSelected("twitch".into())),
+        palette,
+    );
+
+    let youtube = forge_widgets::platform_picker_card(
+        forge_widgets::PlatformCardProps {
+            name: "YouTube",
+            letter: "Y",
+            brand_color: palette.random,
+            subtitle: "Live streaming",
+            capability_summary: "Chat, super chat, memberships, sponsorships",
+            selected: selected == Some("youtube"),
+        },
+        Message::Onboarding(OnboardingMsg::PlatformSelected("youtube".into())),
+        palette,
+    );
+
+    let kick = forge_widgets::platform_picker_card(
+        forge_widgets::PlatformCardProps {
+            name: "Kick",
+            letter: "K",
+            brand_color: palette.info,
+            subtitle: "Growing platform",
+            capability_summary: "Chat, subscribers, gifted subs, host events",
+            selected: selected == Some("kick"),
+        },
+        Message::Onboarding(OnboardingMsg::PlatformSelected("kick".into())),
+        palette,
+    );
+
+    let trovo = forge_widgets::platform_picker_card(
+        forge_widgets::PlatformCardProps {
+            name: "Trovo",
+            letter: "Tr",
+            brand_color: palette.success,
+            subtitle: "Niche audience",
+            capability_summary: "Chat, mana, spells, gift subs, follows",
+            selected: selected == Some("trovo"),
+        },
+        Message::Onboarding(OnboardingMsg::PlatformSelected("trovo".into())),
+        palette,
+    );
+
+    let grid = iced::widget::column![
+        iced::widget::row![twitch, youtube].spacing(10),
+        iced::widget::row![kick, trovo].spacing(10),
+    ]
+    .spacing(10);
+
+    let locale_tip = forge_widgets::locale_tip_card(
+        "Streaming in Ukrainian? Forge has full UA localization, UTF-8 chat handling, and a community starter pack tailored for UA streamers.",
+        Some("Learn more →"),
+        Some(Message::Onboarding(OnboardingMsg::SkipSetup)),
+        palette,
+    );
+
+    let footer = forge_widgets::onboarding_footer(
+        Some(Message::Onboarding(OnboardingMsg::BackFromPicker)),
+        Some(Message::Onboarding(OnboardingMsg::SkipPicker)),
+        onboarding.continue_label(),
+        '→',
+        Message::Onboarding(OnboardingMsg::AdvanceFromPicker),
+        onboarding.selected_platform.is_some(),
+        palette,
+    );
+
+    iced::widget::column![
+        header,
+        subtitle,
+        grid,
+        locale_tip,
+        iced::widget::Space::new().height(Length::Fill),
+        footer,
+    ]
+    .spacing(16.0)
+    .height(Length::Fill)
+    .into()
+}
+
 fn placeholder_step_content<'a>(
     step: &'a OnboardingStep,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let (step_num, title, body) = match step {
-        OnboardingStep::ConnectPlatform => (
+        OnboardingStep::DeviceCodeFlow(_) => (
             2usize,
-            "Connect a streaming platform",
-            "You can connect more later from settings.",
+            "Authorize with your platform",
+            "Device code authorization — coming in a future commit.",
         ),
         OnboardingStep::ConnectObs => (
             3,
@@ -296,26 +430,19 @@ fn placeholder_step_content<'a>(
             "You're ready",
             "Setup complete. You can configure everything later from settings.",
         ),
-        OnboardingStep::Welcome => unreachable!(),
+        OnboardingStep::Welcome | OnboardingStep::ConnectPlatform => unreachable!(),
     };
 
-    let header = forge_widgets::onboarding_step_header(
-        step_num,
-        5,
-        title,
-        matches!(step, OnboardingStep::ConnectPlatform),
-        false,
-        palette,
-    );
+    let header = forge_widgets::onboarding_step_header(step_num, 5, title, false, false, palette);
 
     let body_text = iced::widget::text(body)
         .size(13.0)
         .color(palette.text_muted);
 
     let (on_back, on_continue, continue_label) = match step {
-        OnboardingStep::ConnectPlatform => (
+        OnboardingStep::DeviceCodeFlow(_) => (
             Some(Message::Navigate(Screen::Onboarding(
-                OnboardingStep::Welcome,
+                OnboardingStep::ConnectPlatform,
             ))),
             Message::Navigate(Screen::Onboarding(OnboardingStep::ConnectObs)),
             "Continue",
@@ -341,7 +468,7 @@ fn placeholder_step_content<'a>(
             Message::Navigate(Screen::Hub),
             "Enter Forge",
         ),
-        OnboardingStep::Welcome => unreachable!(),
+        OnboardingStep::Welcome | OnboardingStep::ConnectPlatform => unreachable!(),
     };
 
     let footer = forge_widgets::onboarding_footer(
@@ -367,7 +494,7 @@ fn placeholder_step_content<'a>(
 
 fn onboarding_view<'a>(
     step: &'a OnboardingStep,
-    steps: &'a [StepInfo],
+    onboarding: &'a OnboardingState,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let skip_action: Element<'a, Message> = forge_widgets::ghost_button(
@@ -379,10 +506,11 @@ fn onboarding_view<'a>(
     let title_bar =
         forge_widgets::title_bar_with_logo("Forge", "Quick setup", 'S', vec![skip_action], palette);
 
-    let left = onboarding_left_column(steps, palette);
+    let left = onboarding_left_column(&onboarding.step_infos, palette);
 
     let right: Element<'a, Message> = match step {
         OnboardingStep::Welcome => welcome_step_content(palette),
+        OnboardingStep::ConnectPlatform => connect_platform_content(onboarding, palette),
         other => placeholder_step_content(other, palette),
     };
 
@@ -412,7 +540,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let palette = &app.palette;
 
     if let Screen::Onboarding(step) = &app.screen {
-        return onboarding_view(step, &app.onboarding.step_infos, palette);
+        return onboarding_view(step, &app.onboarding, palette);
     }
 
     let nav_items = vec![
@@ -591,6 +719,103 @@ mod tests {
     fn view_compiles_hub() {
         let mut app = App::default();
         let _ = update(&mut app, Message::Navigate(Screen::Hub));
+        let _ = view(&app);
+    }
+
+    #[test]
+    fn platform_selected_stores_id() {
+        let mut app = App::default();
+        let _ = update(
+            &mut app,
+            Message::Onboarding(OnboardingMsg::PlatformSelected("twitch".into())),
+        );
+        assert_eq!(app.onboarding.selected_platform.as_deref(), Some("twitch"));
+    }
+
+    #[test]
+    fn platform_selected_replaces_previous_selection() {
+        let mut app = App::default();
+        let _ = update(
+            &mut app,
+            Message::Onboarding(OnboardingMsg::PlatformSelected("twitch".into())),
+        );
+        let _ = update(
+            &mut app,
+            Message::Onboarding(OnboardingMsg::PlatformSelected("youtube".into())),
+        );
+        assert_eq!(app.onboarding.selected_platform.as_deref(), Some("youtube"));
+    }
+
+    #[test]
+    fn advance_from_picker_with_twitch_goes_to_device_code_flow() {
+        let mut app = App::default();
+        let _ = update(
+            &mut app,
+            Message::Onboarding(OnboardingMsg::PlatformSelected("twitch".into())),
+        );
+        let _ = update(
+            &mut app,
+            Message::Onboarding(OnboardingMsg::AdvanceFromPicker),
+        );
+        assert_eq!(
+            app.screen,
+            Screen::Onboarding(OnboardingStep::DeviceCodeFlow("twitch".into()))
+        );
+    }
+
+    #[test]
+    fn advance_from_picker_without_twitch_goes_to_connect_obs() {
+        let mut app = App::default();
+        let _ = update(
+            &mut app,
+            Message::Onboarding(OnboardingMsg::PlatformSelected("kick".into())),
+        );
+        let _ = update(
+            &mut app,
+            Message::Onboarding(OnboardingMsg::AdvanceFromPicker),
+        );
+        assert_eq!(app.screen, Screen::Onboarding(OnboardingStep::ConnectObs));
+    }
+
+    #[test]
+    fn back_from_picker_returns_to_welcome() {
+        let mut app = App::default();
+        let _ = update(
+            &mut app,
+            Message::Onboarding(OnboardingMsg::AdvanceFromWelcome),
+        );
+        let _ = update(&mut app, Message::Onboarding(OnboardingMsg::BackFromPicker));
+        assert_eq!(app.screen, Screen::Onboarding(OnboardingStep::Welcome));
+    }
+
+    #[test]
+    fn skip_picker_advances_to_connect_obs() {
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Onboarding(OnboardingMsg::SkipPicker));
+        assert_eq!(app.screen, Screen::Onboarding(OnboardingStep::ConnectObs));
+    }
+
+    #[test]
+    fn view_compiles_connect_platform() {
+        let mut app = App::default();
+        let _ = update(
+            &mut app,
+            Message::Onboarding(OnboardingMsg::AdvanceFromWelcome),
+        );
+        let _ = view(&app);
+    }
+
+    #[test]
+    fn view_compiles_connect_platform_with_selection() {
+        let mut app = App::default();
+        let _ = update(
+            &mut app,
+            Message::Onboarding(OnboardingMsg::AdvanceFromWelcome),
+        );
+        let _ = update(
+            &mut app,
+            Message::Onboarding(OnboardingMsg::PlatformSelected("twitch".into())),
+        );
         let _ = view(&app);
     }
 }

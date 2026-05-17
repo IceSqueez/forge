@@ -16,6 +16,8 @@ pub struct LoomPalette {
     pub border_input: Color,
     pub border_active: Color,
 
+    pub surface_overlay: Color,
+
     pub brand: Color,
     pub success: Color,
     pub warning: Color,
@@ -51,6 +53,8 @@ pub const CATPPUCCIN_MOCHA: LoomPalette = LoomPalette {
     border_input: hex(0x45, 0x47, 0x5a),
     border_active: hex(0xcb, 0xa6, 0xf7),
 
+    surface_overlay: hex(0x31, 0x32, 0x44),
+
     brand: hex(0xcb, 0xa6, 0xf7),
     success: hex(0xa6, 0xe3, 0xa1),
     warning: hex(0xf9, 0xe2, 0xaf),
@@ -77,6 +81,8 @@ pub const TOKYO_NIGHT: LoomPalette = LoomPalette {
     border_input: hex(0x41, 0x44, 0x58),
     border_active: hex(0x7a, 0xa2, 0xf7),
 
+    surface_overlay: hex(0x2f, 0x35, 0x49),
+
     brand: hex(0x7a, 0xa2, 0xf7),
     success: hex(0x9e, 0xce, 0x6a),
     warning: hex(0xe0, 0xaf, 0x68),
@@ -102,6 +108,8 @@ pub const LATTE: LoomPalette = LoomPalette {
     border_regular: hex(0xcc, 0xd0, 0xda),
     border_input: hex(0xac, 0xb0, 0xbe),
     border_active: hex(0x1e, 0x66, 0xf5),
+
+    surface_overlay: hex(0xdc, 0xe0, 0xe8),
 
     brand: hex(0x1e, 0x66, 0xf5),
     success: hex(0x40, 0xa0, 0x2b),
@@ -146,5 +154,18 @@ mod tests {
         let _m = CATPPUCCIN_MOCHA;
         let _t = TOKYO_NIGHT;
         let _l = LATTE;
+    }
+
+    #[test]
+    fn surface_overlay_differs_from_border_regular_in_tokyo_night() {
+        let p = TOKYO_NIGHT;
+        assert_ne!(p.surface_overlay.r, p.border_regular.r);
+    }
+
+    #[test]
+    fn surface_overlay_is_defined_for_all_palettes() {
+        let _mo = CATPPUCCIN_MOCHA.surface_overlay;
+        let _tn = TOKYO_NIGHT.surface_overlay;
+        let _la = LATTE.surface_overlay;
     }
 }

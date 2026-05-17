@@ -7,7 +7,7 @@ use crate::error::SqliteStorageError;
 const NONCE_LEN: usize = 12;
 
 pub fn load_or_create_key() -> Result<[u8; 32], SqliteStorageError> {
-    if let Ok(path) = std::env::var("LOOM_CREDENTIAL_KEY_FILE") {
+    if let Ok(path) = std::env::var("FORGE_CREDENTIAL_KEY_FILE") {
         return load_or_create_file_key(&std::path::PathBuf::from(path));
     }
 

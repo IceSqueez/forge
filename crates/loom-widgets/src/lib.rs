@@ -27,7 +27,10 @@ pub use onboarding::{
     platform_picker_card,
 };
 pub use palette::{CATPPUCCIN_MOCHA, LATTE, LoomPalette, TOKYO_NIGHT};
-pub use sections::{ToastVariant, counter_badge, empty_state, section_header, toast_banner};
+pub use sections::{
+    ToastVariant, counter_badge, empty_state, section_header, section_header_expandable,
+    toast_banner,
+};
 pub use status::{StatusVariant, platform_badge, role_badge, status_dot, status_pill};
 pub use theme::{catppuccin_mocha, latte, palette_for_theme, tokyo_night_storm};
 pub use tokens::{Density, FontRole, Radius, Spacing, ThemeId, font, load_fonts, radius, spacing};

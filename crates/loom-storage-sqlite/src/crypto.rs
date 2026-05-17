@@ -1,6 +1,6 @@
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
-use rand::RngCore;
+use rand::rand_core::Rng;
 
 use crate::error::SqliteStorageError;
 
@@ -11,7 +11,7 @@ pub fn load_or_create_key() -> Result<[u8; 32], SqliteStorageError> {
         return load_or_create_file_key(&std::path::PathBuf::from(path));
     }
 
-    let entry = keyring::Entry::new("streamer-loom", "credentials-key").map_err(|e| {
+    let entry = keyring_core::Entry::new("streamer-loom", "credentials-key").map_err(|e| {
         SqliteStorageError::Keyring {
             reason: e.to_string(),
         }
@@ -19,7 +19,7 @@ pub fn load_or_create_key() -> Result<[u8; 32], SqliteStorageError> {
 
     match entry.get_password() {
         Ok(hex) => hex_to_key(&hex),
-        Err(keyring::Error::NoEntry) => {
+        Err(keyring_core::Error::NoEntry) => {
             let key = generate_key();
             let hex = key_to_hex(&key);
             entry
@@ -98,7 +98,7 @@ pub fn encrypt(key: &[u8; 32], plaintext: &str) -> Result<(Vec<u8>, Vec<u8>), Sq
     })?;
 
     let mut nonce_bytes = [0u8; NONCE_LEN];
-    rand::rngs::OsRng.fill_bytes(&mut nonce_bytes);
+    rand::rng().fill_bytes(&mut nonce_bytes);
     let nonce = Nonce::from_slice(&nonce_bytes);
 
     let ciphertext =
@@ -134,7 +134,7 @@ pub fn decrypt(
 
 fn generate_key() -> [u8; 32] {
     let mut key = [0u8; 32];
-    rand::rngs::OsRng.fill_bytes(&mut key);
+    rand::rng().fill_bytes(&mut key);
     key
 }
 

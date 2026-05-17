@@ -13,7 +13,7 @@ pub enum StatusVariant {
 
 pub fn status_dot<'a, Msg: 'a>(color: Color, size: f32) -> Element<'a, Msg> {
     let radius = size / 2.0;
-    container(iced::widget::Space::new(size, size))
+    container(iced::widget::Space::new().width(size).height(size))
         .width(size)
         .height(size)
         .style(move |_theme: &iced::Theme| container::Style {
@@ -63,7 +63,7 @@ pub fn platform_badge<'a, Msg: 'a>(
     let dot_color = color;
     let text_color = palette.text_secondary;
 
-    let dot = container(iced::widget::Space::new(5.0, 5.0))
+    let dot = container(iced::widget::Space::new().width(5.0).height(5.0))
         .width(5.0)
         .height(5.0)
         .style(move |_theme: &iced::Theme| container::Style {

@@ -48,13 +48,14 @@ sqlx = { version = "0.8", features = [
 
 aes-gcm = { version = "0.10" }
 keyring = { version = "4" }
-rand = { version = "0.8" }
+keyring-core = { version = "1" }
+rand = { version = "0.10" }
 
 rhai = { version = "1", features = ["sync"] }
 
-reqwest = { version = "0.12", features = [
+reqwest = { version = "0.13", features = [
   "json",
-  "rustls-tls",
+  "rustls",
 ], default-features = false }
 
 axum = { version = "0.8" }
@@ -62,7 +63,7 @@ axum = { version = "0.8" }
 iced = { version = "0.14", features = ["tokio", "image", "svg", "advanced"] }
 iced_fonts = { version = "0.3" }
 
-cpal = { version = "0.15" }
+cpal = { version = "0.17" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

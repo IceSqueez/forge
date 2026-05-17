@@ -7,6 +7,7 @@ use forge_storage_sqlite::SqliteBackend;
 use forge_widgets::{BannerKind, ForgePalette, StepInfo, ThemeId};
 use iced::{Element, Length, Subscription, Task, Theme};
 
+use crate::live_chat::{CHAT_LOG_MAX, LiveChatState, chat_row_from_event, live_chat_view};
 use crate::onboarding_state::{DeviceCodeSession, DeviceCodeStatus, OnboardingState};
 use crate::screen::OnboardingStep;
 use crate::{Message, OnboardingMsg, Screen, SettingsSection};
@@ -19,6 +20,7 @@ pub struct App {
     pub bus: Arc<EventBus>,
     pub storage_offline: bool,
     pub onboarding: OnboardingState,
+    pub live_chat: LiveChatState,
 }
 
 impl App {
@@ -36,6 +38,7 @@ impl App {
             bus: EventBus::new(),
             storage_offline,
             onboarding: OnboardingState::new(),
+            live_chat: LiveChatState::new(),
         }
     }
 }
@@ -60,6 +63,7 @@ impl Default for App {
             bus: EventBus::new(),
             storage_offline: false,
             onboarding: OnboardingState::new(),
+            live_chat: LiveChatState::new(),
         }
     }
 }
@@ -296,7 +300,37 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             app.palette = palette;
             Task::none()
         }
-        Message::BusEvent(_) => Task::none(),
+        Message::EventArrived(event) => {
+            if let Some(row) = chat_row_from_event(&event) {
+                app.live_chat.chat_log.push_back(row);
+                if app.live_chat.chat_log.len() > CHAT_LOG_MAX {
+                    app.live_chat.chat_log.pop_front();
+                }
+            }
+            Task::none()
+        }
+        Message::ChatInputChanged(s) => {
+            app.live_chat.chat_input = s;
+            Task::none()
+        }
+        Message::ChatSubmit => {
+            let input = app.live_chat.chat_input.trim().to_owned();
+            if input.is_empty() {
+                return Task::none();
+            }
+            app.live_chat.chat_input.clear();
+            tracing::debug!(message = %input, "chat submit — Twitch send not yet wired (alpha-4)");
+            Task::done(Message::ChatSent(Ok(())))
+        }
+        Message::ChatSent(Ok(())) => Task::none(),
+        Message::ChatSent(Err(e)) => {
+            tracing::warn!(error = %e, "chat send failed");
+            Task::none()
+        }
+        Message::ChatFilterChanged(filter) => {
+            app.live_chat.chat_filter = filter;
+            Task::none()
+        }
         Message::Noop => Task::none(),
     }
 }
@@ -969,6 +1003,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
 
     let content: Element<'_, Message> = match &app.screen {
         Screen::Hub => hub_view(palette),
+        Screen::LiveChat => live_chat_view(&app.live_chat, palette),
         Screen::Settings(section) => settings_view(section, palette),
         Screen::Onboarding(_) => unreachable!(),
         other => coming_soon_view(format!("{other:?}"), palette),
@@ -1002,7 +1037,7 @@ pub fn subscription(app: &App) -> Subscription<Message> {
                     let mut stream = bus.subscribe();
                     loop {
                         if let Ok(event) = stream.recv().await {
-                            let _ = tx.try_send(Message::BusEvent(event));
+                            let _ = tx.try_send(Message::EventArrived(event));
                         }
                     }
                 },

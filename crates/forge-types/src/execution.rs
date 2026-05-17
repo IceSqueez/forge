@@ -1,0 +1,228 @@
+use crate::ids::{ActionId, EventId};
+use crate::variant::Variant;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use time::OffsetDateTime;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ExecutionOutcome {
+    Success,
+    Failed(String),
+    Cancelled,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SubActionOutcome {
+    Success,
+    Failed(String),
+    Skipped(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SubActionTelemetry {
+    pub kind: String,
+    #[serde(with = "time::serde::rfc3339")]
+    pub started_at: OffsetDateTime,
+    pub duration_ms: u64,
+    pub outcome: SubActionOutcome,
+}
+
+/// Immutable after construction; built once from trigger event and globals snapshot.
+pub struct ArgStack(BTreeMap<String, Variant>);
+
+impl ArgStack {
+    pub fn new() -> Self {
+        Self(BTreeMap::new())
+    }
+
+    pub fn get(&self, key: &str) -> Option<&Variant> {
+        self.0.get(key)
+    }
+
+    /// Returns a new `ArgStack` with `key` bound to `value`.
+    pub fn set(mut self, key: String, value: Variant) -> Self {
+        self.0.insert(key, value);
+        self
+    }
+
+    /// Single-pass `%name%` substitution over `template`. Unknown tokens remain verbatim.
+    pub fn interpolate(&self, template: &str) -> String {
+        let mut result = String::with_capacity(template.len());
+        let mut chars = template.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if ch != '%' {
+                result.push(ch);
+                continue;
+            }
+            let token_start = result.len();
+            result.push('%');
+            let mut key = String::new();
+            let mut closed = false;
+            for inner in chars.by_ref() {
+                if inner == '%' {
+                    closed = true;
+                    break;
+                }
+                key.push(inner);
+            }
+            if !closed {
+                continue;
+            }
+            if let Some(val) = self.0.get(&key) {
+                result.truncate(token_start);
+                result.push_str(&val.to_string());
+            } else {
+                result.push_str(&key);
+                result.push('%');
+            }
+        }
+        result
+    }
+}
+
+impl Default for ArgStack {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ExecutionContext {
+    pub action_id: ActionId,
+    pub trigger_event_id: EventId,
+    pub arg_stack_snapshot: BTreeMap<String, Variant>,
+    #[serde(with = "time::serde::rfc3339")]
+    pub started_at: OffsetDateTime,
+    #[serde(default, with = "time::serde::rfc3339::option")]
+    pub completed_at: Option<OffsetDateTime>,
+    pub telemetry: Vec<SubActionTelemetry>,
+    pub outcome: ExecutionOutcome,
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::ids::{ActionId, EventId};
+    use crate::variant::Variant;
+    use time::OffsetDateTime;
+
+    fn stack_with(pairs: &[(&str, Variant)]) -> ArgStack {
+        let mut s = ArgStack::new();
+        for (k, v) in pairs {
+            s = s.set(k.to_string(), v.clone());
+        }
+        s
+    }
+
+    #[test]
+    fn interpolate_empty_template() {
+        let stack = ArgStack::new();
+        assert_eq!(stack.interpolate(""), "");
+    }
+
+    #[test]
+    fn interpolate_single_known_var() {
+        let stack = stack_with(&[("name", Variant::String("Twitch".to_string()))]);
+        assert_eq!(stack.interpolate("%name%"), "Twitch");
+    }
+
+    #[test]
+    fn interpolate_var_in_sentence() {
+        let stack = stack_with(&[("user", Variant::String("alice".to_string()))]);
+        assert_eq!(
+            stack.interpolate("hello %user%, welcome"),
+            "hello alice, welcome"
+        );
+    }
+
+    #[test]
+    fn interpolate_unknown_var_stays_verbatim() {
+        let stack = ArgStack::new();
+        assert_eq!(stack.interpolate("%missing%"), "%missing%");
+    }
+
+    #[test]
+    fn interpolate_is_single_pass_no_recursion() {
+        let stack = stack_with(&[("a", Variant::String("%b%".to_string()))]);
+        assert_eq!(stack.interpolate("%a%"), "%b%");
+    }
+
+    #[test]
+    fn interpolate_multiple_vars() {
+        let stack = stack_with(&[
+            ("first", Variant::String("Hello".to_string())),
+            ("second", Variant::String("World".to_string())),
+        ]);
+        assert_eq!(stack.interpolate("%first% %second%"), "Hello World");
+    }
+
+    #[test]
+    fn interpolate_no_tokens_unchanged() {
+        let stack = ArgStack::new();
+        assert_eq!(
+            stack.interpolate("no substitutions here"),
+            "no substitutions here"
+        );
+    }
+
+    #[test]
+    fn arg_stack_set_returns_new_layer() {
+        let s1 = ArgStack::new();
+        let s2 = s1.set("x".to_string(), Variant::Int(1));
+        let s3 = s2.set("y".to_string(), Variant::Int(2));
+        assert_eq!(s3.get("x"), Some(&Variant::Int(1)));
+        assert_eq!(s3.get("y"), Some(&Variant::Int(2)));
+    }
+
+    #[test]
+    fn execution_context_serde_roundtrip() {
+        let ctx = ExecutionContext {
+            action_id: ActionId::new(),
+            trigger_event_id: EventId::new(),
+            arg_stack_snapshot: BTreeMap::new(),
+            started_at: OffsetDateTime::now_utc(),
+            completed_at: None,
+            telemetry: vec![SubActionTelemetry {
+                kind: "SendChat".to_string(),
+                started_at: OffsetDateTime::now_utc(),
+                duration_ms: 5,
+                outcome: SubActionOutcome::Success,
+            }],
+            outcome: ExecutionOutcome::Success,
+        };
+        let json = serde_json::to_string(&ctx).unwrap();
+        let back: ExecutionContext = serde_json::from_str(&json).unwrap();
+        assert_eq!(ctx.action_id, back.action_id);
+        assert_eq!(ctx.outcome, back.outcome);
+        assert_eq!(ctx.telemetry.len(), back.telemetry.len());
+    }
+
+    #[test]
+    fn execution_outcome_variants_serde_roundtrip() {
+        let outcomes = [
+            ExecutionOutcome::Success,
+            ExecutionOutcome::Failed("rhai panic".to_string()),
+            ExecutionOutcome::Cancelled,
+        ];
+        for o in outcomes {
+            let json = serde_json::to_string(&o).unwrap();
+            let back: ExecutionOutcome = serde_json::from_str(&json).unwrap();
+            assert_eq!(o, back);
+        }
+    }
+
+    #[test]
+    fn sub_action_outcome_variants_serde_roundtrip() {
+        let outcomes = [
+            SubActionOutcome::Success,
+            SubActionOutcome::Failed("timeout".to_string()),
+            SubActionOutcome::Skipped("disabled".to_string()),
+        ];
+        for o in outcomes {
+            let json = serde_json::to_string(&o).unwrap();
+            let back: SubActionOutcome = serde_json::from_str(&json).unwrap();
+            assert_eq!(o, back);
+        }
+    }
+}

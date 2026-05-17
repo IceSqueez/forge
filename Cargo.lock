@@ -3541,6 +3541,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "loom-platform-twitch"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "async-trait",
+ "loom-events",
+ "loom-platform-core",
+ "loom-types",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "time",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "loom-runtime"
 version = "0.1.0-alpha.1"
 dependencies = [

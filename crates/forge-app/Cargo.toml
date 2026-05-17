@@ -24,11 +24,14 @@ forge-runtime        = { path = "../forge-runtime" }
 forge-script         = { path = "../forge-script" }
 forge-storage        = { path = "../forge-storage" }
 forge-storage-sqlite = { path = "../forge-storage-sqlite" }
-forge-platform-core  = { path = "../forge-platform-core" }
-forge-server         = { path = "../forge-server" }
+forge-platform-core   = { path = "../forge-platform-core" }
+forge-platform-twitch = { path = "../forge-platform-twitch" }
+forge-server          = { path = "../forge-server" }
 forge-widgets        = { path = "../forge-widgets" }
 iced                = { workspace = true }
 keyring             = { workspace = true }
+reqwest             = { workspace = true }
+serde_json          = { workspace = true }
 tokio               = { workspace = true }
 tracing             = { workspace = true }
 tracing-subscriber  = { workspace = true }

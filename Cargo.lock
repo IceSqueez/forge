@@ -2012,6 +2012,7 @@ version = "0.1.0-alpha.1"
 dependencies = [
  "forge-events",
  "forge-platform-core",
+ "forge-platform-twitch",
  "forge-runtime",
  "forge-script",
  "forge-server",
@@ -2021,6 +2022,8 @@ dependencies = [
  "forge-widgets",
  "iced",
  "keyring",
+ "reqwest",
+ "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",

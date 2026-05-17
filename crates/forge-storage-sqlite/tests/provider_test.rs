@@ -4,23 +4,20 @@ use forge_storage::{DataProvider, GlobalsRepo};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::Variant;
 
-fn init_keyring() {
-    keyring::use_sample_store(&std::collections::HashMap::new())
-        .expect("sample keyring must initialize");
-}
+const TEST_KEY: [u8; 32] = [0xab; 32];
 
 #[tokio::test]
 async fn open_succeeds_with_in_memory_db() {
-    init_keyring();
-    SqliteBackend::open("sqlite::memory:")
+    SqliteBackend::open_with_key("sqlite::memory:", TEST_KEY)
         .await
-        .expect("SqliteBackend::open must succeed on sqlite::memory:");
+        .expect("SqliteBackend::open_with_key must succeed on sqlite::memory:");
 }
 
 #[tokio::test]
 async fn schema_version_returns_3_after_all_migrations() {
-    init_keyring();
-    let backend = SqliteBackend::open("sqlite::memory:").await.expect("open");
+    let backend = SqliteBackend::open_with_key("sqlite::memory:", TEST_KEY)
+        .await
+        .expect("open");
 
     let version = backend.schema_version().await.expect("schema_version");
     assert_eq!(version, 3, "expected 3 applied migrations");
@@ -28,8 +25,9 @@ async fn schema_version_returns_3_after_all_migrations() {
 
 #[tokio::test]
 async fn dataprovider_coercion_compiles_and_delegates() {
-    init_keyring();
-    let backend = SqliteBackend::open("sqlite::memory:").await.expect("open");
+    let backend = SqliteBackend::open_with_key("sqlite::memory:", TEST_KEY)
+        .await
+        .expect("open");
 
     let dp: &dyn DataProvider = &backend;
 
@@ -45,13 +43,12 @@ async fn dataprovider_coercion_compiles_and_delegates() {
 
 #[tokio::test]
 async fn export_writes_a_non_empty_file() {
-    init_keyring();
     let pid = std::process::id();
     let source_path = std::env::temp_dir().join(format!("forge_source_{pid}.sqlite"));
     let export_path = std::env::temp_dir().join(format!("forge_export_{pid}.sqlite"));
 
     let url = format!("sqlite://{}", source_path.display());
-    let backend = SqliteBackend::open(&url)
+    let backend = SqliteBackend::open_with_key(&url, TEST_KEY)
         .await
         .expect("open file-backed db");
 

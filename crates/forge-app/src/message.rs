@@ -23,6 +23,7 @@ pub enum OnboardingMsg {
 pub enum Message {
     Navigate(Screen),
     Onboarding(OnboardingMsg),
+    OnboardingPersistResult(Result<(), String>),
     ThemeChanged(ThemeId),
     BusEvent(Event),
     Noop,

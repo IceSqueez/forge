@@ -6,20 +6,29 @@ use iced::{
 };
 
 use crate::palette::LoomPalette;
+use crate::tokens::{BORDER_THIN, FontRole, Radius, font, radius};
+
+pub const SIDEBAR_WIDTH: u16 = 200;
 
 pub fn sidebar<'a, Msg: 'a>(
     sections: Vec<Element<'a, Msg>>,
     palette: &LoomPalette,
 ) -> Element<'a, Msg> {
     let bg = palette.shell;
+    let border_color = palette.border_regular;
     let content = column(sections).spacing(4);
 
     container(scrollable(content).height(iced::Length::Fill))
-        .width(240)
+        .width(u32::from(SIDEBAR_WIDTH))
         .height(iced::Length::Fill)
         .padding(12)
         .style(move |_theme: &iced::Theme| iced::widget::container::Style {
             background: Some(iced::Background::Color(bg)),
+            border: Border {
+                color: border_color,
+                width: BORDER_THIN,
+                radius: 0.0.into(),
+            },
             ..Default::default()
         })
         .into()
@@ -31,7 +40,10 @@ pub fn sidebar_section<'a, Msg: 'a>(
     palette: &LoomPalette,
 ) -> Element<'a, Msg> {
     let header_color = palette.text_faint;
-    let header = text(title.to_uppercase()).size(11).color(header_color);
+    let header = text(title.to_uppercase())
+        .size(11)
+        .font(font(FontRole::Monospace))
+        .color(header_color);
 
     let mut col = column![header].spacing(2).padding([0_u16, 4]);
     for item in items {
@@ -56,6 +68,7 @@ pub fn tree_node<'a, Msg: 'a + Clone>(
         a: 0.08,
         ..palette.brand
     };
+    let hover_radius = radius(Radius::Sm);
 
     let chevron: Element<'_, Msg> = match on_toggle {
         Some(toggle_msg) => {
@@ -102,7 +115,7 @@ pub fn tree_node<'a, Msg: 'a + Clone>(
                 background: Some(iced::Background::Color(bg_hover)),
                 text_color: text_hover,
                 border: Border {
-                    radius: 4.0.into(),
+                    radius: hover_radius.into(),
                     ..Border::default()
                 },
                 shadow: iced::Shadow::default(),
@@ -123,6 +136,17 @@ pub fn tree_node<'a, Msg: 'a + Clone>(
 mod tests {
     use super::*;
     use crate::palette::CATPPUCCIN_MOCHA;
+    use crate::tokens::radius;
+
+    #[test]
+    fn sidebar_width_constant_matches_design() {
+        assert_eq!(SIDEBAR_WIDTH, 200);
+    }
+
+    #[test]
+    fn tree_node_hover_radius_matches_design() {
+        assert_eq!(radius(Radius::Sm), 6.0);
+    }
 
     #[test]
     fn sidebar_builds_with_unit_msg() {

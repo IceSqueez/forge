@@ -4,6 +4,7 @@ use forge_types::ActionId;
 use forge_widgets::ThemeId;
 
 use crate::Screen;
+use crate::actions::AddActionMsg;
 use crate::live_chat::ChatFilter;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,6 +66,7 @@ pub enum Message {
     OnboardingPersistResult(Result<(), String>),
     Settings(SettingsMsg),
     Actions(ActionsMsg),
+    AddAction(AddActionMsg),
     ThemeChanged(ThemeId),
     EventArrived(Event),
     ChatInputChanged(String),

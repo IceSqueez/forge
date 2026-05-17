@@ -1,6 +1,6 @@
 use forge_storage::{DataProvider, StorageError};
 use forge_storage_sqlite::SqliteBackend;
-use forge_types::{Action, ActionId, Command, Trigger};
+use forge_types::{Action, ActionId, Command, QueueId, Trigger};
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -24,12 +24,92 @@ pub struct ActionDetail {
     pub commands: Vec<Command>,
 }
 
+pub struct AddActionForm {
+    pub name: String,
+    pub group: String,
+    pub queue_id: Option<QueueId>,
+    pub description: String,
+    pub enabled: bool,
+    pub concurrent: bool,
+    pub bypass_pause: bool,
+    pub queue_options: Vec<(QueueId, String)>,
+    pub selected_queue_name: Option<String>,
+    pub error: Option<String>,
+    pub saving: bool,
+}
+
+impl AddActionForm {
+    pub fn new() -> Self {
+        Self {
+            name: String::new(),
+            group: String::new(),
+            queue_id: None,
+            description: String::new(),
+            enabled: true,
+            concurrent: false,
+            bypass_pause: false,
+            queue_options: vec![],
+            selected_queue_name: None,
+            error: None,
+            saving: false,
+        }
+    }
+
+    pub fn set_queue_options(&mut self, opts: Vec<(QueueId, String)>) {
+        let default = opts
+            .iter()
+            .find(|(_, n)| n.eq_ignore_ascii_case("default"))
+            .cloned();
+        self.queue_options = opts;
+        if let Some((id, name)) = default {
+            self.queue_id = Some(id);
+            self.selected_queue_name = Some(name);
+        }
+    }
+
+    pub fn select_queue_by_name(&mut self, name: String) {
+        let found = self.queue_options.iter().find(|(_, n)| *n == name);
+        if let Some((id, _)) = found {
+            self.queue_id = Some(*id);
+        }
+        self.selected_queue_name = Some(name);
+    }
+
+    /// Returns false if name is blank or no queue is selected.
+    pub fn is_valid(&self) -> bool {
+        !self.name.trim().is_empty() && self.queue_id.is_some()
+    }
+}
+
+impl Default for AddActionForm {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum AddActionMsg {
+    OpenRequested,
+    QueueOptionsLoaded(Result<Vec<(QueueId, String)>, String>),
+    NameChanged(String),
+    GroupChanged(String),
+    QueueSelected(String),
+    DescriptionChanged(String),
+    EnabledToggled(bool),
+    ConcurrentToggled(bool),
+    BypassPauseToggled(bool),
+    Cancel,
+    Submit,
+    Saved(Result<ActionId, String>),
+}
+
 #[derive(Default)]
 pub struct ActionsState {
     pub tree: Vec<ActionsGroup>,
     pub selected: Option<ActionId>,
     pub detail: Option<ActionDetail>,
     pub loading: bool,
+    pub add_action_modal: Option<AddActionForm>,
 }
 
 impl ActionsState {
@@ -104,6 +184,36 @@ mod tests {
     use super::*;
     use forge_storage::DataProvider;
     use forge_types::{Action, ActionId, Queue, QueueId};
+
+    #[test]
+    fn form_invalid_when_name_is_empty() {
+        let mut form = AddActionForm::new();
+        form.queue_id = Some(QueueId::new());
+        assert!(!form.is_valid());
+    }
+
+    #[test]
+    fn form_invalid_when_no_queue_selected() {
+        let mut form = AddActionForm::new();
+        form.name = "My action".to_string();
+        assert!(!form.is_valid());
+    }
+
+    #[test]
+    fn form_valid_when_name_and_queue_present() {
+        let mut form = AddActionForm::new();
+        form.name = "My action".to_string();
+        form.queue_id = Some(QueueId::new());
+        assert!(form.is_valid());
+    }
+
+    #[test]
+    fn form_invalid_when_name_is_only_whitespace() {
+        let mut form = AddActionForm::new();
+        form.name = "   ".to_string();
+        form.queue_id = Some(QueueId::new());
+        assert!(!form.is_valid());
+    }
 
     const TEST_KEY: [u8; 32] = [0xab; 32];
 

@@ -16,7 +16,12 @@ forge-storage = { path = "../forge-storage" }
 tokio        = { workspace = true }
 tokio-stream = { workspace = true }
 futures-core = { workspace = true }
+futures-util = { workspace = true }
 tracing      = { workspace = true }
 thiserror    = { workspace = true }
 async-trait  = { workspace = true }
 serde_json   = { workspace = true }
+time         = { workspace = true }
+
+[dev-dependencies]
+forge-storage-sqlite = { path = "../forge-storage-sqlite" }

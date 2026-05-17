@@ -20,6 +20,7 @@ pub enum SubActionOutcome {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SubActionTelemetry {
+    pub index: usize,
     pub kind: String,
     #[serde(with = "time::serde::rfc3339")]
     pub started_at: OffsetDateTime,
@@ -37,6 +38,10 @@ impl ArgStack {
 
     pub fn get(&self, key: &str) -> Option<&Variant> {
         self.0.get(key)
+    }
+
+    pub fn snapshot(&self) -> BTreeMap<String, Variant> {
+        self.0.clone()
     }
 
     /// Returns a new `ArgStack` with `key` bound to `value`.
@@ -184,6 +189,7 @@ mod tests {
             started_at: OffsetDateTime::now_utc(),
             completed_at: None,
             telemetry: vec![SubActionTelemetry {
+                index: 0,
                 kind: "SendChat".to_string(),
                 started_at: OffsetDateTime::now_utc(),
                 duration_ms: 5,

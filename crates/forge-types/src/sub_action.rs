@@ -31,6 +31,17 @@ pub enum SubActionSpec {
     },
 }
 
+impl SubActionSpec {
+    pub fn kind_label(&self) -> &'static str {
+        match self {
+            Self::SendChat { .. } => "SendChat",
+            Self::SetGlobal { .. } => "SetGlobal",
+            Self::Delay { .. } => "Delay",
+            Self::Log { .. } => "Log",
+        }
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {

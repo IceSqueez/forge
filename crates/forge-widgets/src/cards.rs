@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use iced::{Border, Element, widget::container};
 
-use crate::palette::LoomPalette;
+use crate::palette::ForgePalette;
 use crate::tokens::{
     BORDER_THIN, Density, FONT_CAPS_SM, FONT_HERO, Radius, Spacing, radius, spacing,
 };
@@ -25,7 +25,7 @@ fn card_style(
 
 pub fn card<'a, Msg: 'a>(
     children: impl IntoIterator<Item = Element<'a, Msg>>,
-    palette: &LoomPalette,
+    palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     card_with_radius(children, palette, Radius::Xl)
 }
@@ -33,7 +33,7 @@ pub fn card<'a, Msg: 'a>(
 /// Variant of `card` for callers that need a non-default corner radius.
 pub fn card_with_radius<'a, Msg: 'a>(
     children: impl IntoIterator<Item = Element<'a, Msg>>,
-    palette: &LoomPalette,
+    palette: &ForgePalette,
     r: Radius,
 ) -> Element<'a, Msg> {
     let bg = palette.elevated;
@@ -51,7 +51,7 @@ pub fn metric_card<'a, Msg: 'a>(
     label: impl Into<Cow<'a, str>>,
     value: impl Into<Cow<'a, str>>,
     sublabel: Option<impl Into<Cow<'a, str>>>,
-    palette: &LoomPalette,
+    palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let bg = palette.elevated;
     let border_color = palette.border_regular;
@@ -86,7 +86,7 @@ pub fn metric_card<'a, Msg: 'a>(
 pub fn stat_row<'a, Msg: 'a>(
     label: impl Into<Cow<'a, str>>,
     value: impl Into<Cow<'a, str>>,
-    palette: &LoomPalette,
+    palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let label_color = palette.text_muted;
     let value_color = palette.text_primary;
@@ -107,7 +107,7 @@ pub fn hero_card<'a, Msg: 'a>(
     title: impl Into<Cow<'a, str>>,
     subtitle: impl Into<Cow<'a, str>>,
     children: impl IntoIterator<Item = Element<'a, Msg>>,
-    palette: &LoomPalette,
+    palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let bg = palette.elevated;
     let border_color = palette.border_regular;

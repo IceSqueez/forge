@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use iced::{Border, Color, Element, widget::container};
 
-use crate::palette::LoomPalette;
+use crate::palette::ForgePalette;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StatusVariant {
@@ -30,7 +30,7 @@ pub fn status_dot<'a, Msg: 'a>(color: Color, size: f32) -> Element<'a, Msg> {
 pub fn status_pill<'a, Msg: 'a>(
     label: impl Into<Cow<'a, str>>,
     variant: StatusVariant,
-    palette: &LoomPalette,
+    palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let color = match variant {
         StatusVariant::Positive => palette.success,
@@ -56,7 +56,7 @@ pub fn status_pill<'a, Msg: 'a>(
 pub fn platform_badge<'a, Msg: 'a>(
     label: impl Into<Cow<'a, str>>,
     color: Color,
-    palette: &LoomPalette,
+    palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let bg = Color { a: 0.15, ..color };
     let label_str: Cow<'a, str> = label.into();
@@ -97,7 +97,7 @@ pub fn platform_badge<'a, Msg: 'a>(
 
 pub fn role_badge<'a, Msg: 'a>(
     label: impl Into<Cow<'a, str>>,
-    palette: &LoomPalette,
+    palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let text_color = palette.text_muted;
     let border_color = palette.border_regular;

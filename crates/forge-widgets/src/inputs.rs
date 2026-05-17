@@ -5,14 +5,14 @@ use iced::{
     widget::{container, pick_list, row, text, text_input},
 };
 
-use crate::palette::LoomPalette;
+use crate::palette::ForgePalette;
 use crate::tokens::{BORDER_THIN, Radius, radius};
 
 pub fn input_padding() -> Padding {
     Padding::from([8, 12])
 }
 
-fn text_input_style(palette: LoomPalette, status: text_input::Status) -> text_input::Style {
+fn text_input_style(palette: ForgePalette, status: text_input::Status) -> text_input::Style {
     let border_color = match status {
         text_input::Status::Focused { .. } => palette.border_input,
         text_input::Status::Disabled => palette.disabled,
@@ -39,7 +39,7 @@ fn text_input_style(palette: LoomPalette, status: text_input::Status) -> text_in
     }
 }
 
-fn borderless_input_style(palette: LoomPalette, _status: text_input::Status) -> text_input::Style {
+fn borderless_input_style(palette: ForgePalette, _status: text_input::Status) -> text_input::Style {
     text_input::Style {
         background: Background::Color(Color::TRANSPARENT),
         border: Border {
@@ -61,7 +61,7 @@ pub fn text_input_field<'a, Msg: 'a + Clone>(
     placeholder: impl Into<Cow<'a, str>>,
     value: &'a str,
     on_change: impl Fn(String) -> Msg + 'a,
-    palette: &LoomPalette,
+    palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let p = *palette;
     let ph: Cow<'a, str> = placeholder.into();
@@ -77,7 +77,7 @@ pub fn search_input<'a, Msg: 'a + Clone>(
     placeholder: impl Into<Cow<'a, str>>,
     value: &'a str,
     on_change: impl Fn(String) -> Msg + 'a,
-    palette: &LoomPalette,
+    palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let p = *palette;
     let ph: Cow<'a, str> = placeholder.into();
@@ -104,7 +104,7 @@ pub fn search_input<'a, Msg: 'a + Clone>(
         .into()
 }
 
-fn pick_list_style(palette: LoomPalette, status: pick_list::Status) -> pick_list::Style {
+fn pick_list_style(palette: ForgePalette, status: pick_list::Status) -> pick_list::Style {
     let border_color = match status {
         pick_list::Status::Opened { .. } => palette.border_active,
         pick_list::Status::Hovered => palette.border_input,
@@ -139,7 +139,7 @@ pub fn select<'a, Msg: 'a + Clone>(
     options: &'a [(&'a str, &'a str)],
     selected: Option<&'a str>,
     on_select: impl Fn(&'a str) -> Msg + 'a,
-    palette: &LoomPalette,
+    palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let p = *palette;
     let opt_vec: Vec<SelectOption<'a>> = options

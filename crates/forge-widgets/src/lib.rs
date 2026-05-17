@@ -1,4 +1,4 @@
-#![doc = "Pure design-system kit: Tier 1 widget builders + LoomPalette theme tokens."]
+#![doc = "Pure design-system kit: Tier 1 widget builders + ForgePalette theme tokens."]
 
 pub mod buttons;
 pub mod cards;
@@ -26,7 +26,7 @@ pub use onboarding::{
     numbered_box_step, onboarding_footer, onboarding_step_header, onboarding_stepper,
     platform_picker_card,
 };
-pub use palette::{CATPPUCCIN_MOCHA, LATTE, LoomPalette, TOKYO_NIGHT};
+pub use palette::{CATPPUCCIN_MOCHA, LATTE, ForgePalette, TOKYO_NIGHT};
 pub use sections::{
     ToastVariant, counter_badge, empty_state, section_header, section_header_expandable,
     toast_banner,

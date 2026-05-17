@@ -5,7 +5,7 @@ use iced::{
     widget::button::{Status, Style},
 };
 
-use crate::palette::LoomPalette;
+use crate::palette::ForgePalette;
 use crate::tokens::{Density, Radius, Spacing, radius, spacing};
 
 fn primary_style(bg: Color, text_color: Color, status: Status) -> Style {
@@ -56,7 +56,7 @@ fn primary_style(bg: Color, text_color: Color, status: Status) -> Style {
 pub fn primary_button<'a, Msg: 'a + Clone>(
     label: impl Into<Cow<'a, str>>,
     on_press: Msg,
-    palette: &LoomPalette,
+    palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let bg = palette.brand;
     let text_color = palette.shell;
@@ -73,7 +73,7 @@ pub fn primary_button<'a, Msg: 'a + Clone>(
 pub fn primary_button_small<'a, Msg: 'a + Clone>(
     label: impl Into<Cow<'a, str>>,
     on_press: Msg,
-    palette: &LoomPalette,
+    palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let bg = palette.brand;
     let text_color = palette.shell;
@@ -91,7 +91,7 @@ pub fn primary_button_with_icon_right<'a, Msg: 'a + Clone>(
     label: impl Into<Cow<'a, str>>,
     icon_char: char,
     on_press: Msg,
-    palette: &LoomPalette,
+    palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let bg = palette.brand;
     let text_color = palette.shell;
@@ -115,7 +115,7 @@ pub fn primary_button_with_icon_right<'a, Msg: 'a + Clone>(
 pub fn destructive_button<'a, Msg: 'a + Clone>(
     label: impl Into<Cow<'a, str>>,
     on_press: Msg,
-    palette: &LoomPalette,
+    palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let bg = palette.random;
     let text_color = palette.shell;
@@ -132,7 +132,7 @@ pub fn destructive_button<'a, Msg: 'a + Clone>(
 pub fn secondary_button<'a, Msg: 'a + Clone>(
     label: impl Into<Cow<'a, str>>,
     on_press: Msg,
-    palette: &LoomPalette,
+    palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let border_color = palette.border_regular;
     let text_color = palette.text_secondary;
@@ -194,7 +194,7 @@ pub fn secondary_button<'a, Msg: 'a + Clone>(
 pub fn ghost_button<'a, Msg: 'a + Clone>(
     label: impl Into<Cow<'a, str>>,
     on_press: Msg,
-    palette: &LoomPalette,
+    palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let text_color = palette.text_muted;
     let text_hover = palette.text_secondary;
@@ -250,7 +250,7 @@ pub fn icon_button<'a, Msg: 'a + Clone>(
     icon: char,
     tooltip: impl Into<Cow<'a, str>>,
     on_press: Msg,
-    palette: &LoomPalette,
+    palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let _ = tooltip;
     let icon_color = palette.text_secondary;

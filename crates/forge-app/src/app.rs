@@ -3,7 +3,7 @@ use std::sync::Arc;
 use forge_events::EventBus;
 use forge_runtime::InMemoryEventBus;
 use forge_storage_sqlite::SqliteBackend;
-use forge_widgets::{LoomPalette, ThemeId};
+use forge_widgets::{ForgePalette, ThemeId};
 use iced::{Element, Length, Subscription, Task, Theme};
 
 use crate::screen::OnboardingStep;
@@ -12,7 +12,7 @@ use crate::{Message, Screen, SettingsSection};
 pub struct App {
     pub screen: Screen,
     pub theme: Theme,
-    pub palette: LoomPalette,
+    pub palette: ForgePalette,
     pub backend: Arc<SqliteBackend>,
     pub bus: Arc<InMemoryEventBus>,
     pub storage_offline: bool,
@@ -80,11 +80,11 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
     }
 }
 
-fn nav_button<'a>(label: &'a str, screen: Screen, palette: &LoomPalette) -> Element<'a, Message> {
+fn nav_button<'a>(label: &'a str, screen: Screen, palette: &ForgePalette) -> Element<'a, Message> {
     forge_widgets::ghost_button(label, Message::Navigate(screen), palette)
 }
 
-fn hub_view(palette: &LoomPalette) -> Element<'static, Message> {
+fn hub_view(palette: &ForgePalette) -> Element<'static, Message> {
     let hero = forge_widgets::hero_card(
         "Welcome to forge",
         "0.1.0-alpha.1",
@@ -112,7 +112,7 @@ fn settings_section_button<'a>(
     label: &'a str,
     section: SettingsSection,
     active: &SettingsSection,
-    palette: &LoomPalette,
+    palette: &ForgePalette,
 ) -> Element<'a, Message> {
     if &section == active {
         forge_widgets::primary_button(label, Message::Navigate(Screen::Settings(section)), palette)
@@ -121,7 +121,7 @@ fn settings_section_button<'a>(
     }
 }
 
-fn settings_diagnostics_pane(palette: &LoomPalette) -> Element<'static, Message> {
+fn settings_diagnostics_pane(palette: &ForgePalette) -> Element<'static, Message> {
     let version = env!("CARGO_PKG_VERSION");
     let metrics = iced::widget::row![
         forge_widgets::metric_card("Build", version, None::<&str>, palette),
@@ -139,7 +139,7 @@ fn settings_diagnostics_pane(palette: &LoomPalette) -> Element<'static, Message>
 
 fn settings_view<'a>(
     section: &'a SettingsSection,
-    palette: &'a LoomPalette,
+    palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let nav = iced::widget::column![
         settings_section_button("Appearance", SettingsSection::Appearance, section, palette),
@@ -185,7 +185,7 @@ fn settings_view<'a>(
     iced::widget::row![nav, pane].spacing(16).into()
 }
 
-fn onboarding_view<'a>(step: &'a OnboardingStep, palette: &'a LoomPalette) -> Element<'a, Message> {
+fn onboarding_view<'a>(step: &'a OnboardingStep, palette: &'a ForgePalette) -> Element<'a, Message> {
     let step_label = format!("Step: {step:?}");
     let hero = forge_widgets::hero_card(
         "Welcome to forge",
@@ -209,7 +209,7 @@ fn onboarding_view<'a>(step: &'a OnboardingStep, palette: &'a LoomPalette) -> El
         .into()
 }
 
-fn coming_soon_view(screen_label: String, palette: &LoomPalette) -> Element<'static, Message> {
+fn coming_soon_view(screen_label: String, palette: &ForgePalette) -> Element<'static, Message> {
     iced::widget::container(forge_widgets::empty_state(
         "Coming soon",
         screen_label,

@@ -12,7 +12,8 @@ workspace = true
 [dependencies]
 forge-types  = { path = "../forge-types" }
 forge-events = { path = "../forge-events" }
-async-trait = { workspace = true }
+async-trait  = { workspace = true }
+directories  = { workspace = true }
 tokio       = { workspace = true }
 thiserror   = { workspace = true }
 reqwest     = { workspace = true }

@@ -6,6 +6,7 @@ pub mod chat;
 pub mod error;
 pub mod integration;
 pub mod oauth;
+pub mod paths;
 pub mod rate_limit;
 pub use auth::AuthFlow;
 pub use capabilities::PlatformCapabilities;

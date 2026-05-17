@@ -1,5 +1,6 @@
 #![doc = "Pure design-system kit: Tier 1 widget builders + ForgePalette theme tokens."]
 
+pub mod actions;
 pub mod buttons;
 pub mod cards;
 pub mod chat;
@@ -13,6 +14,10 @@ pub mod status;
 pub mod theme;
 pub mod tokens;
 
+pub use actions::{
+    ModalProps, NodeProps, NodeStatus, SubActionProps, ToggleProps, TriggerCardProps,
+    category_chip, modal, sub_action_card, toggle, tree_node_with_status, variable_chip,
+};
 pub use buttons::{
     destructive_button, ghost_button, icon_button, primary_button, primary_button_small,
     primary_button_with_icon_right, secondary_button,

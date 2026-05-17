@@ -35,8 +35,8 @@ mod tests {
     use super::*;
     use crate::EventBus;
     use forge_storage::DataProvider;
-    use forge_storage_sqlite::SqliteBackend;
     use forge_storage::GlobalsRepo;
+    use forge_storage_sqlite::SqliteBackend;
     use forge_types::{ArgStack, EventId, LogLevel, SubActionOutcome, SubActionSpec, Variant};
     use std::sync::Arc;
     use std::time::Duration;

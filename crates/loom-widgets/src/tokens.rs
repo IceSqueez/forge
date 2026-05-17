@@ -66,6 +66,7 @@ pub enum Radius {
     Xl,
     Xxl,
     Xxxl,
+    Hero,
     /// Returns a large sentinel so iced renders a fully rounded pill/circle.
     Pill,
 }
@@ -79,6 +80,7 @@ pub fn radius(r: Radius) -> f32 {
         Radius::Xl => 9.0,
         Radius::Xxl => 10.0,
         Radius::Xxxl => 11.0,
+        Radius::Hero => 14.0,
         Radius::Pill => 9999.0,
     }
 }
@@ -183,6 +185,7 @@ mod tests {
         assert_eq!(radius(Radius::Xl), 9.0);
         assert_eq!(radius(Radius::Xxl), 10.0);
         assert_eq!(radius(Radius::Xxxl), 11.0);
+        assert_eq!(radius(Radius::Hero), 14.0);
     }
 
     #[test]

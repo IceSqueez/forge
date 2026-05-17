@@ -1,7 +1,7 @@
 use iced::Theme;
 use iced::theme::Palette;
 
-use crate::palette::{CATPPUCCIN_MOCHA, LATTE, ForgePalette, TOKYO_NIGHT};
+use crate::palette::{CATPPUCCIN_MOCHA, ForgePalette, LATTE, TOKYO_NIGHT};
 use crate::tokens::ThemeId;
 
 pub fn catppuccin_mocha() -> (Theme, ForgePalette) {

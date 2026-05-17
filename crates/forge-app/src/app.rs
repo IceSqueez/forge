@@ -2,14 +2,18 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use forge_platform_twitch::{ChatConnectionState, TwitchChatHandle};
-use forge_runtime::{ActionEngineHandle, CommandParserHandle, EventBus, QueueSchedulerHandle};
-use forge_storage::{CredentialId, CredentialsRepo, SettingsRepo, reserved_keys};
+use forge_runtime::{
+    ActionEngineHandle, CommandParserHandle, EventBus, ExecutionRequest, QueueSchedulerHandle,
+};
+use forge_storage::{CredentialId, CredentialsRepo, DataProvider, SettingsRepo, reserved_keys};
 use forge_storage_sqlite::SqliteBackend;
+use forge_types::{ArgStack, EventId};
 use forge_widgets::{BannerKind, ForgePalette, StepInfo, ThemeId};
 use iced::{Element, Length, Subscription, Task, Theme};
 
+use crate::actions::{ActionsState, load_action_detail, load_actions_tree};
 use crate::live_chat::{CHAT_LOG_MAX, LiveChatState, chat_row_from_event, live_chat_view};
-use crate::message::{PlatformId, SettingsMsg};
+use crate::message::{ActionsMsg, PlatformId, SettingsMsg};
 use crate::onboarding_state::{DeviceCodeSession, DeviceCodeStatus, OnboardingState};
 use crate::screen::OnboardingStep;
 use crate::{Message, OnboardingMsg, Screen, SettingsSection};
@@ -23,6 +27,7 @@ pub struct App {
     pub storage_offline: bool,
     pub onboarding: OnboardingState,
     pub live_chat: LiveChatState,
+    pub actions: ActionsState,
     pub twitch_chat_handle: Option<TwitchChatHandle>,
     pub action_engine: Option<ActionEngineHandle>,
     pub scheduler: Option<QueueSchedulerHandle>,
@@ -48,6 +53,7 @@ impl App {
             storage_offline,
             onboarding: OnboardingState::new(),
             live_chat: LiveChatState::new(),
+            actions: ActionsState::new(),
             twitch_chat_handle: None,
             action_engine,
             scheduler,
@@ -78,6 +84,7 @@ impl Default for App {
             storage_offline: false,
             onboarding: OnboardingState::new(),
             live_chat: LiveChatState::new(),
+            actions: ActionsState::new(),
             twitch_chat_handle: None,
             action_engine: None,
             scheduler: None,
@@ -104,8 +111,13 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             if let Screen::Onboarding(ref step) = screen {
                 app.onboarding.sync_step(step);
             }
+            let load_actions = matches!(screen, Screen::Actions);
             app.screen = screen;
-            Task::none()
+            if load_actions {
+                Task::done(Message::Actions(ActionsMsg::LoadRequested))
+            } else {
+                Task::none()
+            }
         }
         Message::OnboardingPersistResult(result) => {
             if let Err(ref e) = result {
@@ -417,7 +429,124 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 Task::none()
             }
         },
+        Message::Actions(sub) => handle_actions_msg(app, sub),
         Message::Noop => Task::none(),
+    }
+}
+
+fn handle_actions_msg(app: &mut App, sub: ActionsMsg) -> Task<Message> {
+    match sub {
+        ActionsMsg::LoadRequested => {
+            app.actions.loading = true;
+            let dp = Arc::clone(&app.backend);
+            Task::perform(
+                async move { load_actions_tree(dp).await.map_err(|e| e.to_string()) },
+                |r| Message::Actions(ActionsMsg::TreeLoaded(r)),
+            )
+        }
+        ActionsMsg::TreeLoaded(Ok(tree)) => {
+            app.actions.tree = tree;
+            app.actions.loading = false;
+            Task::none()
+        }
+        ActionsMsg::TreeLoaded(Err(e)) => {
+            app.actions.loading = false;
+            tracing::warn!(error = %e, "actions tree load failed");
+            Task::none()
+        }
+        ActionsMsg::ActionSelected(id) => {
+            app.actions.selected = Some(id);
+            let dp = Arc::clone(&app.backend);
+            Task::perform(
+                async move { load_action_detail(dp, id).await.map_err(|e| e.to_string()) },
+                |r| Message::Actions(ActionsMsg::DetailLoaded(r)),
+            )
+        }
+        ActionsMsg::DetailLoaded(Ok(detail)) => {
+            app.actions.detail = Some(detail);
+            Task::none()
+        }
+        ActionsMsg::DetailLoaded(Err(e)) => {
+            app.actions.detail = None;
+            tracing::warn!(error = %e, "action detail load failed");
+            Task::none()
+        }
+        ActionsMsg::ToggleEnabled(id, enabled) => {
+            if let Some(detail) = app.actions.detail.as_mut()
+                && detail.action.id == id
+            {
+                detail.action.enabled = enabled;
+            }
+            for group in &mut app.actions.tree {
+                for summary in &mut group.actions {
+                    if summary.id == id {
+                        summary.enabled = enabled;
+                    }
+                }
+            }
+            let dp = Arc::clone(&app.backend);
+            Task::perform(
+                async move {
+                    let Some(mut action) =
+                        dp.action_repo().get(id).await.map_err(|e| e.to_string())?
+                    else {
+                        return Err("action not found".to_string());
+                    };
+                    action.enabled = enabled;
+                    dp.action_repo()
+                        .save(&action)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                |r| Message::Actions(ActionsMsg::EnabledToggled(r)),
+            )
+        }
+        ActionsMsg::EnabledToggled(Ok(())) => Task::none(),
+        ActionsMsg::EnabledToggled(Err(e)) => {
+            tracing::warn!(error = %e, "toggle enabled persist failed");
+            Task::none()
+        }
+        ActionsMsg::TestTrigger(id) => {
+            let Some(engine) = app.action_engine.clone() else {
+                return Task::none();
+            };
+            Task::perform(
+                async move {
+                    engine
+                        .dispatch(ExecutionRequest {
+                            action_id: id,
+                            trigger_event_id: EventId::new(),
+                            initial_args: ArgStack::new(),
+                        })
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                |r| {
+                    if let Err(e) = r {
+                        tracing::warn!(error = %e, "test trigger dispatch failed");
+                    }
+                    Message::Noop
+                },
+            )
+        }
+        ActionsMsg::DeleteAction(id) => {
+            let dp = Arc::clone(&app.backend);
+            Task::perform(
+                async move { dp.action_repo().delete(id).await.map_err(|e| e.to_string()) },
+                |r| Message::Actions(ActionsMsg::ActionDeleted(r.map(|_| ()))),
+            )
+        }
+        ActionsMsg::ActionDeleted(Ok(())) => {
+            app.actions.selected = None;
+            app.actions.detail = None;
+            Task::done(Message::Actions(ActionsMsg::LoadRequested))
+        }
+        ActionsMsg::ActionDeleted(Err(e)) => {
+            tracing::warn!(error = %e, "delete action failed");
+            Task::none()
+        }
+        ActionsMsg::OpenAddActionModal => Task::none(),
+        ActionsMsg::OpenAddTriggerModal(_) => Task::none(),
     }
 }
 
@@ -1195,6 +1324,389 @@ fn onboarding_view<'a>(
         .into()
 }
 
+fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
+    use forge_widgets::{NodeProps, NodeStatus, ToggleProps};
+    use iced::widget::{column, container, row, scrollable, text};
+
+    let actions_state = &app.actions;
+
+    let new_action_btn = forge_widgets::primary_button_small(
+        "+ New action",
+        Message::Actions(ActionsMsg::OpenAddActionModal),
+        palette,
+    );
+
+    let search = forge_widgets::search_input("Search actions...", "", |_| Message::Noop, palette);
+
+    let toolbar_row = row![search, new_action_btn]
+        .spacing(8)
+        .align_y(iced::alignment::Vertical::Center);
+
+    let mut tree_col = column![toolbar_row].spacing(4);
+
+    if actions_state.loading {
+        tree_col = tree_col.push(text("Loading...").size(12.0).color(palette.text_muted));
+    } else if actions_state.tree.is_empty() {
+        tree_col = tree_col.push(forge_widgets::empty_state(
+            "No actions yet",
+            "Use + New action to create your first action.",
+            None::<(&str, Message)>,
+            palette,
+        ));
+    } else {
+        for group in &actions_state.tree {
+            let header = forge_widgets::section_header(
+                &group.name,
+                Some(group.actions.len() as u32),
+                palette,
+            );
+            tree_col = tree_col.push(header);
+
+            for summary in &group.actions {
+                let status = if summary.enabled {
+                    NodeStatus::Enabled
+                } else {
+                    NodeStatus::Disabled
+                };
+                let selected = actions_state.selected == Some(summary.id);
+                let node = forge_widgets::tree_node_with_status(
+                    palette,
+                    NodeProps {
+                        label: &summary.name,
+                        status,
+                        sub_action_count: summary.sub_action_count,
+                        selected,
+                        on_press: Message::Actions(ActionsMsg::ActionSelected(summary.id)),
+                    },
+                );
+                tree_col = tree_col.push(node);
+            }
+        }
+    }
+
+    let left_pane = container(scrollable(tree_col).height(Length::Fill))
+        .width(Length::Fixed(280.0))
+        .height(Length::Fill)
+        .padding([8, 0])
+        .style(move |_theme: &iced::Theme| iced::widget::container::Style {
+            background: Some(iced::Background::Color(palette.shell)),
+            border: iced::Border {
+                color: palette.border_regular,
+                width: 0.5,
+                radius: 0.0.into(),
+            },
+            ..iced::widget::container::Style::default()
+        });
+
+    let right_pane: Element<'_, Message> = match actions_state.detail.as_ref() {
+        None if actions_state.selected.is_some() => container(
+            text("Loading action...")
+                .size(12.0)
+                .color(palette.text_muted),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(18)
+        .into(),
+        None => container(forge_widgets::empty_state(
+            "Select an action",
+            "Choose an action from the list to view its triggers and sub-action chain.",
+            None::<(&str, Message)>,
+            palette,
+        ))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into(),
+        Some(detail) => {
+            let action = &detail.action;
+
+            let enabled_toggle = forge_widgets::toggle(
+                palette,
+                ToggleProps {
+                    label: "Enabled",
+                    description: "Action runs when a trigger fires.",
+                    value: action.enabled,
+                    on_toggle: Message::Actions(ActionsMsg::ToggleEnabled(
+                        action.id,
+                        !action.enabled,
+                    )),
+                },
+            );
+
+            let test_btn = forge_widgets::secondary_button(
+                "Test run",
+                Message::Actions(ActionsMsg::TestTrigger(action.id)),
+                palette,
+            );
+
+            let delete_btn = forge_widgets::destructive_button(
+                "Delete",
+                Message::Actions(ActionsMsg::DeleteAction(action.id)),
+                palette,
+            );
+
+            let header_row = row![
+                text(&action.name).size(18.0).color(palette.text_primary),
+                iced::widget::Space::new().width(Length::Fill),
+                test_btn,
+                delete_btn,
+            ]
+            .spacing(8)
+            .align_y(iced::alignment::Vertical::Center);
+
+            let description_el = if let Some(desc) = &action.description {
+                text(desc.as_str()).size(12.0).color(palette.text_muted)
+            } else {
+                text("").size(12.0).color(palette.text_muted)
+            };
+
+            let triggers_header = row![
+                forge_widgets::section_header(
+                    "TRIGGERS",
+                    Some(detail.triggers.len() as u32),
+                    palette,
+                ),
+                iced::widget::Space::new().width(Length::Fill),
+                forge_widgets::ghost_button(
+                    "+ Add trigger",
+                    Message::Actions(ActionsMsg::OpenAddTriggerModal(action.id)),
+                    palette,
+                ),
+            ]
+            .align_y(iced::alignment::Vertical::Center)
+            .spacing(8);
+
+            let trigger_elems: Vec<Element<'_, Message>> = detail
+                .triggers
+                .iter()
+                .map(|t| {
+                    trigger_row_element(
+                        format!("Twitch \u{00b7} {:?}", t.kind),
+                        format!("{:?}", t.config),
+                        palette,
+                    )
+                })
+                .chain(detail.commands.iter().map(|c| {
+                    trigger_row_element(
+                        "Twitch \u{00b7} Chat command".to_string(),
+                        format!(
+                            "{} \u{00b7} cooldown {}s \u{00b7} {:?}",
+                            c.name, c.cooldown_secs, c.permission
+                        ),
+                        palette,
+                    )
+                }))
+                .collect();
+
+            let mut triggers_col = column![].spacing(6);
+            if trigger_elems.is_empty() {
+                triggers_col = triggers_col.push(
+                    text("No triggers — use + Add trigger to fire this action.")
+                        .size(11.5)
+                        .color(palette.text_faint),
+                );
+            }
+            for elem in trigger_elems {
+                triggers_col = triggers_col.push(elem);
+            }
+
+            let sub_count = action.sub_actions.len();
+            let sub_actions_header = forge_widgets::section_header(
+                format!("SUB-ACTIONS \u{00b7} {sub_count}"),
+                None,
+                palette,
+            );
+
+            let mut sub_actions_col = column![].spacing(6);
+            if action.sub_actions.is_empty() {
+                sub_actions_col = sub_actions_col.push(
+                    text("No sub-actions yet.")
+                        .size(11.5)
+                        .color(palette.text_faint),
+                );
+            }
+            for (idx, spec) in action.sub_actions.iter().enumerate() {
+                let idx_u8 = (idx + 1).min(255) as u8;
+                let card = sub_action_element(idx_u8, spec, palette);
+                sub_actions_col = sub_actions_col.push(card);
+            }
+
+            let detail_col = column![
+                header_row,
+                description_el,
+                enabled_toggle,
+                triggers_header,
+                triggers_col,
+                sub_actions_header,
+                sub_actions_col,
+            ]
+            .spacing(12);
+
+            container(scrollable(detail_col).height(Length::Fill))
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .padding(18)
+                .into()
+        }
+    };
+
+    row![left_pane, right_pane].into()
+}
+
+fn trigger_row_element<'a>(
+    kind_label: String,
+    summary: String,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    use iced::widget::{container, row, text};
+    use iced::{Alignment, Background, Border, Length};
+
+    let icon_el = container(text('\u{ea21}'.to_string()).size(14.0).color(palette.brand))
+        .width(26)
+        .height(26)
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center)
+        .style(move |_theme: &iced::Theme| container::Style {
+            background: Some(Background::Color(palette.surface_overlay)),
+            border: Border {
+                radius: forge_widgets::radius(forge_widgets::Radius::Sm).into(),
+                color: iced::Color::TRANSPARENT,
+                width: 0.0,
+            },
+            ..container::Style::default()
+        });
+
+    let label_col = iced::widget::column![
+        text(kind_label).size(12.5).color(palette.text_primary),
+        text(summary)
+            .size(11.0)
+            .color(palette.text_muted)
+            .font(forge_widgets::font(forge_widgets::FontRole::Monospace)),
+    ]
+    .spacing(1);
+
+    let inner = row![icon_el, container(label_col).width(Length::Fill),]
+        .spacing(10)
+        .align_y(Alignment::Center);
+
+    container(inner)
+        .width(Length::Fill)
+        .padding(iced::Padding {
+            top: 8.0,
+            right: 10.0,
+            bottom: 8.0,
+            left: 10.0,
+        })
+        .style(move |_theme: &iced::Theme| container::Style {
+            background: Some(Background::Color(palette.elevated)),
+            border: Border {
+                color: palette.border_regular,
+                width: 0.5,
+                radius: forge_widgets::radius(forge_widgets::Radius::Md).into(),
+            },
+            ..container::Style::default()
+        })
+        .into()
+}
+
+fn sub_action_element<'a>(
+    index: u8,
+    spec: &forge_types::SubActionSpec,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    use forge_types::SubActionSpec;
+    use iced::widget::{container, row, text};
+    use iced::{Alignment, Background, Border, Length};
+
+    let (icon_char, kind_label, preview): (char, &str, String) = match spec {
+        SubActionSpec::SendChat { message, target } => (
+            '\u{ea21}',
+            spec.kind_label(),
+            format!("{target}: {message}"),
+        ),
+        SubActionSpec::SetGlobal { name, value } => {
+            ('\u{eb58}', spec.kind_label(), format!("{name} = {value}"))
+        }
+        SubActionSpec::Delay { ms } => ('\u{ebc5}', spec.kind_label(), format!("{ms}ms")),
+        SubActionSpec::Log { level, message } => (
+            '\u{ea77}',
+            spec.kind_label(),
+            format!("[{level:?}] {message}"),
+        ),
+    };
+
+    let index_el = container(
+        text(format!("{index}"))
+            .size(11.0)
+            .color(palette.shell)
+            .font(forge_widgets::font(forge_widgets::FontRole::Body)),
+    )
+    .width(22)
+    .height(22)
+    .align_x(Alignment::Center)
+    .align_y(Alignment::Center)
+    .style(move |_theme: &iced::Theme| container::Style {
+        background: Some(Background::Color(palette.brand)),
+        border: Border {
+            radius: 11.0.into(),
+            color: iced::Color::TRANSPARENT,
+            width: 0.0,
+        },
+        ..container::Style::default()
+    });
+
+    let icon_el = container(text(icon_char.to_string()).size(14.0).color(palette.brand))
+        .width(26)
+        .height(26)
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center)
+        .style(move |_theme: &iced::Theme| container::Style {
+            background: Some(Background::Color(palette.surface_overlay)),
+            border: Border {
+                radius: forge_widgets::radius(forge_widgets::Radius::Sm).into(),
+                color: iced::Color::TRANSPARENT,
+                width: 0.0,
+            },
+            ..container::Style::default()
+        });
+
+    let label_col = iced::widget::column![
+        text(kind_label).size(12.5).color(palette.text_primary),
+        text(preview)
+            .size(11.0)
+            .color(palette.text_muted)
+            .font(forge_widgets::font(forge_widgets::FontRole::Monospace)),
+    ]
+    .spacing(2);
+
+    let card_inner = row![icon_el, container(label_col).width(Length::Fill),]
+        .spacing(8)
+        .align_y(Alignment::Center);
+
+    let card = container(card_inner)
+        .width(Length::Fill)
+        .padding(iced::Padding {
+            top: 10.0,
+            right: 12.0,
+            bottom: 10.0,
+            left: 12.0,
+        })
+        .style(move |_theme: &iced::Theme| container::Style {
+            background: Some(Background::Color(palette.elevated)),
+            border: Border {
+                color: palette.border_regular,
+                width: 0.5,
+                radius: forge_widgets::radius(forge_widgets::Radius::Lg).into(),
+            },
+            ..container::Style::default()
+        });
+
+    row![index_el, card]
+        .spacing(10)
+        .align_y(Alignment::Center)
+        .into()
+}
+
 fn coming_soon_view(screen_label: String, palette: &ForgePalette) -> Element<'static, Message> {
     iced::widget::container(forge_widgets::empty_state(
         "Coming soon",
@@ -1238,6 +1750,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let content: Element<'_, Message> = match &app.screen {
         Screen::Hub => hub_view(palette),
         Screen::LiveChat => live_chat_view(&app.live_chat, palette),
+        Screen::Actions => actions_view(app, palette),
         Screen::Settings(section) => {
             settings_view(section, app.twitch_chat_handle.as_ref(), palette)
         }
@@ -1290,6 +1803,7 @@ pub fn theme_callback(app: &App) -> Theme {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use forge_platform_twitch::ChatConnectionState;
@@ -1985,6 +2499,7 @@ mod tests {
             storage_offline: false,
             onboarding: OnboardingState::new(),
             live_chat: LiveChatState::new(),
+            actions: ActionsState::new(),
             twitch_chat_handle: None,
             action_engine: Some(engine),
             scheduler: Some(scheduler),
@@ -2017,5 +2532,132 @@ mod tests {
         let _ = update(&mut app, Message::Navigate(Screen::LiveChat));
         let _ = update(&mut app, Message::ChatSent(Err("rate limited".into())));
         assert_eq!(app.screen, Screen::LiveChat);
+    }
+
+    #[test]
+    fn navigate_to_actions_sets_loading_true() {
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Navigate(Screen::Actions));
+        assert_eq!(app.screen, Screen::Actions);
+    }
+
+    #[test]
+    fn tree_loaded_ok_clears_loading_flag() {
+        let mut app = App::default();
+        app.actions.loading = true;
+        let _ = update(
+            &mut app,
+            Message::Actions(ActionsMsg::TreeLoaded(Ok(vec![]))),
+        );
+        assert!(!app.actions.loading);
+        assert!(app.actions.tree.is_empty());
+    }
+
+    #[test]
+    fn tree_loaded_err_clears_loading_flag() {
+        let mut app = App::default();
+        app.actions.loading = true;
+        let _ = update(
+            &mut app,
+            Message::Actions(ActionsMsg::TreeLoaded(Err("db error".into()))),
+        );
+        assert!(!app.actions.loading);
+    }
+
+    #[test]
+    fn action_selected_updates_selected_field() {
+        use forge_types::ActionId;
+        let mut app = App::default();
+        let id = ActionId::new();
+        let _ = update(&mut app, Message::Actions(ActionsMsg::ActionSelected(id)));
+        assert_eq!(app.actions.selected, Some(id));
+    }
+
+    #[test]
+    fn detail_loaded_ok_stores_detail() {
+        use forge_types::{Action, ActionId, QueueId};
+        let mut app = App::default();
+        let id = ActionId::new();
+        let action = Action {
+            id,
+            name: "!quote".to_string(),
+            group: None,
+            queue_id: QueueId::new(),
+            enabled: true,
+            concurrent: false,
+            bypass_pause: false,
+            description: None,
+            sub_actions: vec![],
+        };
+        let detail = crate::actions::ActionDetail {
+            action,
+            triggers: vec![],
+            commands: vec![],
+        };
+        let _ = update(
+            &mut app,
+            Message::Actions(ActionsMsg::DetailLoaded(Ok(detail))),
+        );
+        assert!(app.actions.detail.is_some());
+        assert_eq!(app.actions.detail.as_ref().unwrap().action.name, "!quote");
+    }
+
+    #[test]
+    fn detail_loaded_err_clears_detail() {
+        let mut app = App::default();
+        let _ = update(
+            &mut app,
+            Message::Actions(ActionsMsg::DetailLoaded(Err("not found".into()))),
+        );
+        assert!(app.actions.detail.is_none());
+    }
+
+    #[test]
+    fn toggle_enabled_updates_detail_optimistically() {
+        use forge_types::{Action, ActionId, QueueId};
+        let mut app = App::default();
+        let id = ActionId::new();
+        let action = Action {
+            id,
+            name: "test".to_string(),
+            group: None,
+            queue_id: QueueId::new(),
+            enabled: true,
+            concurrent: false,
+            bypass_pause: false,
+            description: None,
+            sub_actions: vec![],
+        };
+        app.actions.detail = Some(crate::actions::ActionDetail {
+            action,
+            triggers: vec![],
+            commands: vec![],
+        });
+        let _ = update(
+            &mut app,
+            Message::Actions(ActionsMsg::ToggleEnabled(id, false)),
+        );
+        assert!(!app.actions.detail.as_ref().unwrap().action.enabled);
+    }
+
+    #[test]
+    fn actions_delete_clears_selection_and_detail() {
+        use forge_types::ActionId;
+        let mut app = App::default();
+        let id = ActionId::new();
+        app.actions.selected = Some(id);
+        let _ = update(
+            &mut app,
+            Message::Actions(ActionsMsg::ActionDeleted(Ok(()))),
+        );
+        assert!(app.actions.selected.is_none());
+        assert!(app.actions.detail.is_none());
+    }
+
+    #[test]
+    fn view_compiles_actions_empty() {
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Navigate(Screen::Actions));
+        let _ = view(&app);
     }
 }

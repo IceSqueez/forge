@@ -28,7 +28,6 @@ struct SessionConfig {
     broadcaster_id: String,
     user_id: String,
     bus: Arc<EventBus>,
-    http: Arc<reqwest::Client>,
 }
 
 pub(crate) struct ChatSession {
@@ -44,7 +43,6 @@ impl ChatSession {
         broadcaster_id: String,
         user_id: String,
         bus: Arc<EventBus>,
-        http: Arc<reqwest::Client>,
     ) -> (
         Self,
         watch::Receiver<ChatConnectionState>,
@@ -59,7 +57,6 @@ impl ChatSession {
                 broadcaster_id,
                 user_id,
                 bus,
-                http,
             },
             state_tx,
             shutdown_rx,
@@ -175,7 +172,6 @@ impl ChatSession {
                 *session_id = Some(id.clone());
 
                 match subscribe_chat_message(
-                    &self.config.http,
                     &self.config.token,
                     &self.config.client_id,
                     &id,

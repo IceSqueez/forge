@@ -14,13 +14,13 @@ pub(crate) enum SubscribeError {
 }
 
 pub(crate) async fn subscribe_chat_message(
-    http: &reqwest::Client,
     token: &OAuthToken,
     client_id: &str,
     session_id: &str,
     broadcaster_id: &str,
     user_id: &str,
 ) -> Result<(), SubscribeError> {
+    let http = reqwest::Client::new();
     let body = serde_json::json!({
         "type": "channel.chat.message",
         "version": "1",

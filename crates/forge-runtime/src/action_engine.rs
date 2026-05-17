@@ -154,9 +154,18 @@ impl ActionEngine {
                 }),
                 parent_event_id,
             );
+            let run_event_id = run_event.id;
             self.bus.publish(run_event);
 
-            let telemetry = dispatch(spec, arg_stack, index, &self.bus, self.dp.as_ref()).await;
+            let telemetry = dispatch(
+                spec,
+                arg_stack,
+                index,
+                run_event_id,
+                &self.bus,
+                self.dp.as_ref(),
+            )
+            .await;
 
             let failure_msg = match &telemetry.outcome {
                 SubActionOutcome::Failed(m) => Some(m.clone()),
@@ -193,8 +202,16 @@ impl ActionEngine {
                     }),
                     parent_event_id,
                 );
+                let run_event_id = run_event.id;
                 self.bus.publish(run_event);
-                dispatch(spec, arg_stack, index, &self.bus, self.dp.as_ref())
+                dispatch(
+                    spec,
+                    arg_stack,
+                    index,
+                    run_event_id,
+                    &self.bus,
+                    self.dp.as_ref(),
+                )
             })
             .collect();
 

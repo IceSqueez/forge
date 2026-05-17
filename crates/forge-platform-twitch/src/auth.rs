@@ -60,6 +60,22 @@ pub fn new_twitch_poller(
     )
 }
 
+/// Priority: runtime env `FORGE_TWITCH_CLIENT_ID` → compile-time `option_env!` → `None`.
+pub fn client_id() -> Option<String> {
+    let runtime = std::env::var("FORGE_TWITCH_CLIENT_ID").ok();
+    resolve_client_id(runtime.as_deref(), option_env!("FORGE_TWITCH_CLIENT_ID"))
+}
+
+fn resolve_client_id(
+    runtime_env: Option<&str>,
+    compile_env: Option<&'static str>,
+) -> Option<String> {
+    runtime_env
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_owned())
+        .or_else(|| compile_env.filter(|s| !s.is_empty()).map(|s| s.to_owned()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -89,5 +105,39 @@ mod tests {
     #[test]
     fn default_scopes_non_empty() {
         assert!(!TWITCH_BROADCASTER_SCOPES.is_empty());
+    }
+
+    #[test]
+    fn client_id_prefers_runtime_over_compile_time() {
+        assert_eq!(
+            resolve_client_id(Some("runtime_id"), Some("compile_id")),
+            Some("runtime_id".to_owned()),
+        );
+    }
+
+    #[test]
+    fn client_id_falls_back_to_compile_time_when_runtime_absent() {
+        assert_eq!(
+            resolve_client_id(None, Some("compile_id")),
+            Some("compile_id".to_owned()),
+        );
+    }
+
+    #[test]
+    fn client_id_returns_none_when_both_absent() {
+        assert_eq!(resolve_client_id(None, None), None);
+    }
+
+    #[test]
+    fn client_id_treats_empty_runtime_as_absent() {
+        assert_eq!(
+            resolve_client_id(Some(""), Some("compile_id")),
+            Some("compile_id".to_owned()),
+        );
+    }
+
+    #[test]
+    fn client_id_treats_empty_compile_time_as_absent() {
+        assert_eq!(resolve_client_id(None, Some("")), None);
     }
 }

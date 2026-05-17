@@ -7,11 +7,13 @@ use forge_runtime::{
 };
 use forge_storage::{CredentialId, CredentialsRepo, DataProvider, SettingsRepo, reserved_keys};
 use forge_storage_sqlite::SqliteBackend;
-use forge_types::{ArgStack, EventId};
+use forge_types::{Action, ActionId, ArgStack, EventId};
 use forge_widgets::{BannerKind, ForgePalette, StepInfo, ThemeId};
 use iced::{Element, Length, Subscription, Task, Theme};
 
-use crate::actions::{ActionsState, load_action_detail, load_actions_tree};
+use crate::actions::{
+    ActionsState, AddActionForm, AddActionMsg, load_action_detail, load_actions_tree,
+};
 use crate::live_chat::{CHAT_LOG_MAX, LiveChatState, chat_row_from_event, live_chat_view};
 use crate::message::{ActionsMsg, PlatformId, SettingsMsg};
 use crate::onboarding_state::{DeviceCodeSession, DeviceCodeStatus, OnboardingState};
@@ -430,6 +432,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             }
         },
         Message::Actions(sub) => handle_actions_msg(app, sub),
+        Message::AddAction(sub) => handle_add_action_msg(app, sub),
         Message::Noop => Task::none(),
     }
 }
@@ -545,8 +548,144 @@ fn handle_actions_msg(app: &mut App, sub: ActionsMsg) -> Task<Message> {
             tracing::warn!(error = %e, "delete action failed");
             Task::none()
         }
-        ActionsMsg::OpenAddActionModal => Task::none(),
+        ActionsMsg::OpenAddActionModal => {
+            Task::done(Message::AddAction(AddActionMsg::OpenRequested))
+        }
         ActionsMsg::OpenAddTriggerModal(_) => Task::none(),
+    }
+}
+
+fn handle_add_action_msg(app: &mut App, sub: AddActionMsg) -> Task<Message> {
+    match sub {
+        AddActionMsg::OpenRequested => {
+            app.actions.add_action_modal = Some(AddActionForm::new());
+            let dp = Arc::clone(&app.backend);
+            Task::perform(
+                async move {
+                    dp.queue_repo()
+                        .list()
+                        .await
+                        .map(|qs| qs.into_iter().map(|q| (q.id, q.name)).collect())
+                        .map_err(|e| e.to_string())
+                },
+                |r| Message::AddAction(AddActionMsg::QueueOptionsLoaded(r)),
+            )
+        }
+        AddActionMsg::QueueOptionsLoaded(Ok(opts)) => {
+            if let Some(form) = app.actions.add_action_modal.as_mut() {
+                form.set_queue_options(opts);
+            }
+            Task::none()
+        }
+        AddActionMsg::QueueOptionsLoaded(Err(e)) => {
+            if let Some(form) = app.actions.add_action_modal.as_mut() {
+                form.error = Some(e);
+            }
+            Task::none()
+        }
+        AddActionMsg::NameChanged(v) => {
+            if let Some(f) = app.actions.add_action_modal.as_mut() {
+                f.name = v;
+            }
+            Task::none()
+        }
+        AddActionMsg::GroupChanged(v) => {
+            if let Some(f) = app.actions.add_action_modal.as_mut() {
+                f.group = v;
+            }
+            Task::none()
+        }
+        AddActionMsg::QueueSelected(name) => {
+            if let Some(f) = app.actions.add_action_modal.as_mut() {
+                f.select_queue_by_name(name);
+            }
+            Task::none()
+        }
+        AddActionMsg::DescriptionChanged(v) => {
+            if let Some(f) = app.actions.add_action_modal.as_mut() {
+                f.description = v;
+            }
+            Task::none()
+        }
+        AddActionMsg::EnabledToggled(v) => {
+            if let Some(f) = app.actions.add_action_modal.as_mut() {
+                f.enabled = v;
+            }
+            Task::none()
+        }
+        AddActionMsg::ConcurrentToggled(v) => {
+            if let Some(f) = app.actions.add_action_modal.as_mut() {
+                f.concurrent = v;
+            }
+            Task::none()
+        }
+        AddActionMsg::BypassPauseToggled(v) => {
+            if let Some(f) = app.actions.add_action_modal.as_mut() {
+                f.bypass_pause = v;
+            }
+            Task::none()
+        }
+        AddActionMsg::Cancel => {
+            app.actions.add_action_modal = None;
+            Task::none()
+        }
+        AddActionMsg::Submit => {
+            let Some(form) = app.actions.add_action_modal.as_ref() else {
+                return Task::none();
+            };
+            if !form.is_valid() {
+                return Task::none();
+            }
+            let Some(queue_id) = form.queue_id else {
+                return Task::none();
+            };
+            let action = Action {
+                id: ActionId::new(),
+                name: form.name.trim().to_string(),
+                group: if form.group.trim().is_empty() {
+                    None
+                } else {
+                    Some(form.group.trim().to_string())
+                },
+                queue_id,
+                enabled: form.enabled,
+                concurrent: form.concurrent,
+                bypass_pause: form.bypass_pause,
+                description: if form.description.trim().is_empty() {
+                    None
+                } else {
+                    Some(form.description.trim().to_string())
+                },
+                sub_actions: vec![],
+            };
+            if let Some(f) = app.actions.add_action_modal.as_mut() {
+                f.saving = true;
+            }
+            let dp = Arc::clone(&app.backend);
+            Task::perform(
+                async move {
+                    dp.action_repo()
+                        .save(&action)
+                        .await
+                        .map(|_| action.id)
+                        .map_err(|e| e.to_string())
+                },
+                |r| Message::AddAction(AddActionMsg::Saved(r)),
+            )
+        }
+        AddActionMsg::Saved(Ok(id)) => {
+            app.actions.add_action_modal = None;
+            let load = Task::done(Message::Actions(ActionsMsg::LoadRequested));
+            let select = Task::done(Message::Actions(ActionsMsg::ActionSelected(id)));
+            load.chain(select)
+        }
+        AddActionMsg::Saved(Err(e)) => {
+            if let Some(f) = app.actions.add_action_modal.as_mut() {
+                f.saving = false;
+                f.error = Some(e);
+            }
+            Task::none()
+        }
     }
 }
 
@@ -1550,7 +1689,200 @@ fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Mess
         }
     };
 
-    row![left_pane, right_pane].into()
+    let main_view: Element<'_, Message> = row![left_pane, right_pane].into();
+
+    if let Some(form) = app.actions.add_action_modal.as_ref() {
+        let modal_el = add_action_modal_view(form, palette);
+        iced::widget::stack![main_view, modal_el].into()
+    } else {
+        main_view
+    }
+}
+
+fn add_action_modal_view<'a>(
+    form: &'a AddActionForm,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    use forge_widgets::{BannerKind, ModalProps, ToggleProps};
+    use iced::widget::{column, row, text};
+
+    let name_count = format!("{}/64", form.name.len().min(64));
+    let name_counter = text(name_count)
+        .size(10.0)
+        .color(palette.text_faint)
+        .font(forge_widgets::font(forge_widgets::FontRole::Monospace));
+
+    let name_input = forge_widgets::text_input_field(
+        "My automation",
+        &form.name,
+        |v| Message::AddAction(AddActionMsg::NameChanged(v)),
+        palette,
+    );
+
+    let name_row = row![name_input, name_counter]
+        .spacing(8)
+        .align_y(iced::alignment::Vertical::Center);
+
+    let name_block = column![
+        forge_widgets::section_header("NAME", None, palette),
+        name_row,
+    ]
+    .spacing(6);
+
+    let group_input = forge_widgets::text_input_field(
+        "Examples",
+        &form.group,
+        |v| Message::AddAction(AddActionMsg::GroupChanged(v)),
+        palette,
+    );
+
+    let group_block = column![
+        forge_widgets::section_header("GROUP", None, palette),
+        group_input,
+    ]
+    .spacing(6);
+
+    let queue_names: Vec<String> = form.queue_options.iter().map(|(_, n)| n.clone()).collect();
+    let p = *palette;
+    let queue_select: Element<'_, Message> = iced::widget::pick_list(
+        queue_names,
+        form.selected_queue_name.clone(),
+        |name: String| Message::AddAction(AddActionMsg::QueueSelected(name)),
+    )
+    .padding(forge_widgets::inputs::input_padding())
+    .width(Length::Fill)
+    .style(move |_theme, status| {
+        use iced::widget::pick_list;
+        let border_color = match status {
+            pick_list::Status::Opened { .. } => p.border_active,
+            _ => p.border_regular,
+        };
+        pick_list::Style {
+            text_color: p.text_primary,
+            placeholder_color: p.text_muted,
+            handle_color: p.text_muted,
+            background: iced::Background::Color(p.shell),
+            border: iced::Border {
+                color: border_color,
+                width: 0.5,
+                radius: forge_widgets::radius(forge_widgets::Radius::Md).into(),
+            },
+        }
+    })
+    .into();
+
+    let queue_block = column![
+        forge_widgets::section_header("QUEUE", None, palette),
+        queue_select,
+    ]
+    .spacing(6);
+
+    let two_col = row![group_block, queue_block].spacing(12);
+
+    let desc_input = forge_widgets::text_input_field(
+        "Plays a sound, shows overlay alert...",
+        &form.description,
+        |v| Message::AddAction(AddActionMsg::DescriptionChanged(v)),
+        palette,
+    );
+
+    let desc_block = column![
+        forge_widgets::section_header("DESCRIPTION", None, palette),
+        desc_input,
+    ]
+    .spacing(6);
+
+    let enabled_toggle = forge_widgets::toggle(
+        palette,
+        ToggleProps {
+            label: "Enabled",
+            description: "Action runs when a trigger fires.",
+            value: form.enabled,
+            on_toggle: Message::AddAction(AddActionMsg::EnabledToggled(!form.enabled)),
+        },
+    );
+
+    let concurrent_toggle = forge_widgets::toggle(
+        palette,
+        ToggleProps {
+            label: "Concurrent execution",
+            description: "Allow parallel runs in this queue.",
+            value: form.concurrent,
+            on_toggle: Message::AddAction(AddActionMsg::ConcurrentToggled(!form.concurrent)),
+        },
+    );
+
+    let bypass_toggle = forge_widgets::toggle(
+        palette,
+        ToggleProps {
+            label: "Bypass queue pause",
+            description: "Always run even if queue is paused.",
+            value: form.bypass_pause,
+            on_toggle: Message::AddAction(AddActionMsg::BypassPauseToggled(!form.bypass_pause)),
+        },
+    );
+
+    let behavior_header = forge_widgets::section_header("BEHAVIOR", None, palette);
+
+    let mut body_col = column![
+        name_block,
+        two_col,
+        desc_block,
+        behavior_header,
+        enabled_toggle,
+        concurrent_toggle,
+        bypass_toggle,
+    ]
+    .spacing(14);
+
+    if let Some(err) = form.error.as_deref() {
+        body_col = body_col.push(forge_widgets::live_status_banner(
+            BannerKind::Error,
+            err,
+            None,
+            palette,
+        ));
+    }
+
+    let cancel_btn = forge_widgets::secondary_button(
+        "Cancel",
+        Message::AddAction(AddActionMsg::Cancel),
+        palette,
+    );
+
+    let create_on_press = Message::AddAction(AddActionMsg::Submit);
+    let create_btn = if form.is_valid() && !form.saving {
+        forge_widgets::primary_button("Create action", create_on_press, palette)
+    } else {
+        forge_widgets::secondary_button("Create action", Message::Noop, palette)
+    };
+
+    let footer_buttons = row![cancel_btn, create_btn].spacing(8);
+
+    let footer: Element<'_, Message> = iced::widget::container(
+        row![
+            text("ESC to cancel")
+                .size(11.0)
+                .color(palette.text_faint)
+                .font(forge_widgets::font(forge_widgets::FontRole::Monospace)),
+            iced::widget::Space::new().width(Length::Fill),
+            footer_buttons,
+        ]
+        .align_y(iced::alignment::Vertical::Center),
+    )
+    .width(Length::Fill)
+    .into();
+
+    forge_widgets::modal(
+        palette,
+        ModalProps {
+            title: "New action",
+            on_close: Message::AddAction(AddActionMsg::Cancel),
+            kbd_hint: None,
+        },
+        body_col.into(),
+        footer,
+    )
 }
 
 fn trigger_row_element<'a>(
@@ -2659,5 +2991,128 @@ mod tests {
         let mut app = App::default();
         let _ = update(&mut app, Message::Navigate(Screen::Actions));
         let _ = view(&app);
+    }
+
+    #[test]
+    fn open_add_action_modal_creates_form() {
+        let mut app = App::default();
+        assert!(app.actions.add_action_modal.is_none());
+        let _ = update(&mut app, Message::AddAction(AddActionMsg::OpenRequested));
+        assert!(app.actions.add_action_modal.is_some());
+    }
+
+    #[test]
+    fn cancel_clears_modal() {
+        let mut app = App::default();
+        app.actions.add_action_modal = Some(crate::actions::AddActionForm::new());
+        let _ = update(&mut app, Message::AddAction(AddActionMsg::Cancel));
+        assert!(app.actions.add_action_modal.is_none());
+    }
+
+    #[test]
+    fn name_changed_updates_form() {
+        let mut app = App::default();
+        app.actions.add_action_modal = Some(crate::actions::AddActionForm::new());
+        let _ = update(
+            &mut app,
+            Message::AddAction(AddActionMsg::NameChanged("Sub raid".to_string())),
+        );
+        assert_eq!(
+            app.actions.add_action_modal.as_ref().unwrap().name,
+            "Sub raid"
+        );
+    }
+
+    #[test]
+    fn submit_with_invalid_form_is_noop() {
+        let mut app = App::default();
+        app.actions.add_action_modal = Some(crate::actions::AddActionForm::new());
+        let _ = update(&mut app, Message::AddAction(AddActionMsg::Submit));
+        assert!(app.actions.add_action_modal.is_some(), "modal remains open");
+    }
+
+    #[test]
+    fn saved_ok_closes_modal_and_sets_selected() {
+        use forge_types::ActionId;
+        let mut app = App::default();
+        app.actions.add_action_modal = Some(crate::actions::AddActionForm::new());
+        let new_id = ActionId::new();
+        let _ = update(
+            &mut app,
+            Message::AddAction(AddActionMsg::Saved(Ok(new_id))),
+        );
+        assert!(app.actions.add_action_modal.is_none());
+    }
+
+    #[test]
+    fn saved_err_keeps_modal_open_with_error() {
+        let mut app = App::default();
+        app.actions.add_action_modal = Some(crate::actions::AddActionForm::new());
+        let _ = update(
+            &mut app,
+            Message::AddAction(AddActionMsg::Saved(Err("db locked".to_string()))),
+        );
+        let form = app.actions.add_action_modal.as_ref().unwrap();
+        assert_eq!(form.error.as_deref(), Some("db locked"));
+        assert!(!form.saving);
+    }
+
+    #[test]
+    fn view_compiles_actions_with_open_modal() {
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Navigate(Screen::Actions));
+        app.actions.add_action_modal = Some(crate::actions::AddActionForm::new());
+        let _ = view(&app);
+    }
+
+    #[tokio::test]
+    #[allow(clippy::expect_used)]
+    async fn submit_with_valid_form_sets_saving_and_saved_ok_stores_action() {
+        use forge_storage::DataProvider;
+        use forge_types::{Queue, QueueId};
+
+        let dp = Arc::new(
+            SqliteBackend::open_with_key("sqlite::memory:", TEST_KEY)
+                .await
+                .expect("in-memory SQLite"),
+        );
+        let queue = Queue {
+            id: QueueId::new(),
+            name: "default".to_string(),
+            blocking: false,
+        };
+        dp.queue_repo().save(&queue).await.expect("save queue");
+
+        let (theme, palette) = forge_widgets::catppuccin_mocha();
+        let mut app = App {
+            screen: Screen::Actions,
+            theme,
+            palette,
+            backend: Arc::clone(&dp),
+            bus: EventBus::new(),
+            storage_offline: false,
+            onboarding: OnboardingState::new(),
+            live_chat: LiveChatState::new(),
+            actions: ActionsState::new(),
+            twitch_chat_handle: None,
+            action_engine: None,
+            scheduler: None,
+            command_parser: None,
+        };
+
+        let mut form = crate::actions::AddActionForm::new();
+        form.name = "My test action".to_string();
+        form.set_queue_options(vec![(queue.id, "default".to_string())]);
+        app.actions.add_action_modal = Some(form);
+
+        let _ = update(&mut app, Message::AddAction(AddActionMsg::Submit));
+        assert!(app.actions.add_action_modal.as_ref().unwrap().saving);
+
+        let saved_id = forge_types::ActionId::new();
+        let _ = update(
+            &mut app,
+            Message::AddAction(AddActionMsg::Saved(Ok(saved_id))),
+        );
+        assert!(app.actions.add_action_modal.is_none());
     }
 }

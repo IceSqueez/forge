@@ -12,7 +12,8 @@ use forge_widgets::{BannerKind, ForgePalette, StepInfo, ThemeId};
 use iced::{Element, Length, Subscription, Task, Theme};
 
 use crate::actions::{
-    ActionsState, AddActionForm, AddActionMsg, load_action_detail, load_actions_tree,
+    ActionsState, AddActionForm, AddActionMsg, AddTriggerForm, AddTriggerMsg, TriggerCategory,
+    kind_label, kind_summary, load_action_detail, load_actions_tree,
 };
 use crate::live_chat::{CHAT_LOG_MAX, LiveChatState, chat_row_from_event, live_chat_view};
 use crate::message::{ActionsMsg, PlatformId, SettingsMsg};
@@ -433,6 +434,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         },
         Message::Actions(sub) => handle_actions_msg(app, sub),
         Message::AddAction(sub) => handle_add_action_msg(app, sub),
+        Message::AddTrigger(sub) => handle_add_trigger_msg(app, sub),
         Message::Noop => Task::none(),
     }
 }
@@ -551,7 +553,9 @@ fn handle_actions_msg(app: &mut App, sub: ActionsMsg) -> Task<Message> {
         ActionsMsg::OpenAddActionModal => {
             Task::done(Message::AddAction(AddActionMsg::OpenRequested))
         }
-        ActionsMsg::OpenAddTriggerModal(_) => Task::none(),
+        ActionsMsg::OpenAddTriggerModal(action_id) => {
+            Task::done(Message::AddTrigger(AddTriggerMsg::OpenRequested(action_id)))
+        }
     }
 }
 
@@ -687,6 +691,158 @@ fn handle_add_action_msg(app: &mut App, sub: AddActionMsg) -> Task<Message> {
             Task::none()
         }
     }
+}
+
+fn handle_add_trigger_msg(app: &mut App, sub: AddTriggerMsg) -> Task<Message> {
+    match sub {
+        AddTriggerMsg::OpenRequested(action_id) => {
+            app.actions.add_trigger_modal = Some(AddTriggerForm::new(action_id));
+            Task::none()
+        }
+        AddTriggerMsg::SearchChanged(v) => {
+            if let Some(f) = app.actions.add_trigger_modal.as_mut() {
+                f.search = v;
+            }
+            Task::none()
+        }
+        AddTriggerMsg::CategorySelected(cat) => {
+            if let Some(f) = app.actions.add_trigger_modal.as_mut() {
+                f.category = cat;
+            }
+            Task::none()
+        }
+        AddTriggerMsg::KindSelected(kind) => {
+            if let Some(f) = app.actions.add_trigger_modal.as_mut() {
+                f.selected_kind = Some(kind);
+                f.error = None;
+            }
+            Task::none()
+        }
+        AddTriggerMsg::CommandNameChanged(v) => {
+            if let Some(f) = app.actions.add_trigger_modal.as_mut() {
+                f.config.command_name = v;
+            }
+            Task::none()
+        }
+        AddTriggerMsg::CooldownChanged(v) => {
+            if let Some(f) = app.actions.add_trigger_modal.as_mut() {
+                f.config.cooldown_secs = v;
+            }
+            Task::none()
+        }
+        AddTriggerMsg::PermissionSelected(perm) => {
+            if let Some(f) = app.actions.add_trigger_modal.as_mut() {
+                f.config.permission = perm;
+            }
+            Task::none()
+        }
+        AddTriggerMsg::MinBitsChanged(v) => {
+            if let Some(f) = app.actions.add_trigger_modal.as_mut() {
+                f.config.min_bits = v;
+            }
+            Task::none()
+        }
+        AddTriggerMsg::Cancel => {
+            app.actions.add_trigger_modal = None;
+            Task::none()
+        }
+        AddTriggerMsg::Submit => {
+            let Some(form) = app.actions.add_trigger_modal.as_ref() else {
+                return Task::none();
+            };
+            if !form.is_valid() {
+                return Task::none();
+            }
+            let Some(kind) = form.selected_kind.clone() else {
+                return Task::none();
+            };
+            let action_id = form.for_action_id;
+            let config = build_trigger_config(&kind, &form.config);
+            let trigger = forge_types::Trigger {
+                id: forge_types::TriggerId::new(),
+                action_id,
+                kind: kind.clone(),
+                config,
+            };
+            let cmd = if matches!(kind, forge_types::TriggerKind::TwitchChatCommand) {
+                let raw = form.config.command_name.trim();
+                let normalized = format!("!{}", raw.trim_start_matches('!').to_lowercase());
+                Some(forge_types::Command {
+                    id: forge_types::CommandId::new(),
+                    action_id,
+                    name: normalized,
+                    cooldown_secs: form.config.parsed_cooldown(),
+                    permission: form.config.permission.clone(),
+                })
+            } else {
+                None
+            };
+            let trigger_id = trigger.id;
+            if let Some(f) = app.actions.add_trigger_modal.as_mut() {
+                f.saving = true;
+            }
+            let dp = Arc::clone(&app.backend);
+            Task::perform(
+                async move {
+                    dp.trigger_repo()
+                        .save(&trigger)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    if let Some(c) = cmd {
+                        dp.command_repo()
+                            .save(&c)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                    }
+                    Ok(trigger_id)
+                },
+                |r| Message::AddTrigger(AddTriggerMsg::Saved(r)),
+            )
+        }
+        AddTriggerMsg::Saved(Ok(_)) => {
+            let action_id = app
+                .actions
+                .add_trigger_modal
+                .as_ref()
+                .map(|f| f.for_action_id);
+            app.actions.add_trigger_modal = None;
+            if let Some(id) = action_id {
+                Task::done(Message::Actions(ActionsMsg::ActionSelected(id)))
+            } else {
+                Task::none()
+            }
+        }
+        AddTriggerMsg::Saved(Err(e)) => {
+            if let Some(f) = app.actions.add_trigger_modal.as_mut() {
+                f.saving = false;
+                f.error = Some(e);
+            }
+            Task::none()
+        }
+    }
+}
+
+fn build_trigger_config(
+    kind: &forge_types::TriggerKind,
+    form: &crate::actions::TriggerConfigForm,
+) -> forge_types::TriggerConfig {
+    let mut m = std::collections::BTreeMap::new();
+    match kind {
+        forge_types::TriggerKind::TwitchChatCommand => {
+            m.insert(
+                "cooldown_secs".to_string(),
+                forge_types::Variant::Int(form.parsed_cooldown() as i64),
+            );
+        }
+        forge_types::TriggerKind::TwitchCheer => {
+            m.insert(
+                "min_bits".to_string(),
+                forge_types::Variant::Int(form.parsed_min_bits() as i64),
+            );
+        }
+        _ => {}
+    }
+    m
 }
 
 async fn reconnect_twitch(backend: Arc<SqliteBackend>, bus: Arc<EventBus>) -> Result<(), String> {
@@ -1691,7 +1847,10 @@ fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Mess
 
     let main_view: Element<'_, Message> = row![left_pane, right_pane].into();
 
-    if let Some(form) = app.actions.add_action_modal.as_ref() {
+    if let Some(form) = app.actions.add_trigger_modal.as_ref() {
+        let modal_el = add_trigger_modal_view(form, palette);
+        iced::widget::stack![main_view, modal_el].into()
+    } else if let Some(form) = app.actions.add_action_modal.as_ref() {
         let modal_el = add_action_modal_view(form, palette);
         iced::widget::stack![main_view, modal_el].into()
     } else {
@@ -1883,6 +2042,342 @@ fn add_action_modal_view<'a>(
         body_col.into(),
         footer,
     )
+}
+
+fn add_trigger_modal_view<'a>(
+    form: &'a AddTriggerForm,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    use forge_widgets::{BannerKind, ModalProps};
+    use iced::widget::{column, row, scrollable, text};
+    use iced::{Alignment, Background, Length};
+
+    let search_input = forge_widgets::search_input(
+        "Filter trigger types...",
+        &form.search,
+        |v| Message::AddTrigger(AddTriggerMsg::SearchChanged(v)),
+        palette,
+    );
+
+    let chip_all = forge_widgets::category_chip(
+        palette,
+        "All",
+        palette.brand,
+        form.category == TriggerCategory::All,
+        Message::AddTrigger(AddTriggerMsg::CategorySelected(TriggerCategory::All)),
+    );
+    let chip_chat = forge_widgets::category_chip(
+        palette,
+        "Chat",
+        palette.brand,
+        form.category == TriggerCategory::Chat,
+        Message::AddTrigger(AddTriggerMsg::CategorySelected(TriggerCategory::Chat)),
+    );
+    let chip_subs = forge_widgets::category_chip(
+        palette,
+        "Subscriptions",
+        palette.brand,
+        form.category == TriggerCategory::Subscriptions,
+        Message::AddTrigger(AddTriggerMsg::CategorySelected(
+            TriggerCategory::Subscriptions,
+        )),
+    );
+    let chip_bits = forge_widgets::category_chip(
+        palette,
+        "Bits",
+        palette.bits,
+        form.category == TriggerCategory::Bits,
+        Message::AddTrigger(AddTriggerMsg::CategorySelected(TriggerCategory::Bits)),
+    );
+    let chip_raids = forge_widgets::category_chip(
+        palette,
+        "Raids",
+        palette.random,
+        form.category == TriggerCategory::Raids,
+        Message::AddTrigger(AddTriggerMsg::CategorySelected(TriggerCategory::Raids)),
+    );
+
+    let chips_row = row![chip_all, chip_chat, chip_subs, chip_bits, chip_raids].spacing(6);
+
+    let visible = form.visible_kinds();
+    let is_empty = visible.is_empty();
+    let mut grid_col = column![].spacing(6);
+    for kind in visible {
+        let selected = form.selected_kind.as_ref() == Some(&kind);
+        let lbl = kind_label(&kind);
+        let summ = kind_summary(&kind);
+        let card = trigger_picker_card(
+            lbl,
+            summ,
+            selected,
+            palette,
+            Message::AddTrigger(AddTriggerMsg::KindSelected(kind)),
+        );
+        grid_col = grid_col.push(card);
+    }
+
+    if form.selected_kind.is_none() && is_empty {
+        grid_col = grid_col.push(
+            text("No trigger types match your filter.")
+                .size(11.5)
+                .color(palette.text_faint),
+        );
+    }
+
+    let mut config_col = column![].spacing(10);
+
+    if let Some(kind) = &form.selected_kind {
+        match kind {
+            forge_types::TriggerKind::TwitchChatCommand => {
+                let cmd_input = forge_widgets::text_input_field(
+                    "!quote",
+                    &form.config.command_name,
+                    |v| Message::AddTrigger(AddTriggerMsg::CommandNameChanged(v)),
+                    palette,
+                );
+                let cmd_block = column![
+                    forge_widgets::section_header("COMMAND NAME", None, palette),
+                    cmd_input,
+                ]
+                .spacing(6);
+
+                let cooldown_input = forge_widgets::text_input_field(
+                    "0",
+                    &form.config.cooldown_secs,
+                    |v| Message::AddTrigger(AddTriggerMsg::CooldownChanged(v)),
+                    palette,
+                );
+                let cooldown_block = column![
+                    forge_widgets::section_header("COOLDOWN (SECS)", None, palette),
+                    cooldown_input,
+                ]
+                .spacing(6);
+
+                let p = *palette;
+                let perm_options: Vec<String> = vec![
+                    "Everyone".to_string(),
+                    "Subscriber".to_string(),
+                    "Vip".to_string(),
+                    "Moderator".to_string(),
+                    "Broadcaster".to_string(),
+                ];
+                let selected_perm = permission_label(&form.config.permission).to_string();
+                let perm_select: Element<'_, Message> =
+                    iced::widget::pick_list(perm_options, Some(selected_perm), |name: String| {
+                        Message::AddTrigger(AddTriggerMsg::PermissionSelected(
+                            permission_from_label(&name),
+                        ))
+                    })
+                    .padding(forge_widgets::inputs::input_padding())
+                    .width(Length::Fill)
+                    .style(move |_theme, status| {
+                        use iced::widget::pick_list;
+                        let border_color = match status {
+                            pick_list::Status::Opened { .. } => p.border_active,
+                            _ => p.border_regular,
+                        };
+                        pick_list::Style {
+                            text_color: p.text_primary,
+                            placeholder_color: p.text_muted,
+                            handle_color: p.text_muted,
+                            background: iced::Background::Color(p.shell),
+                            border: iced::Border {
+                                color: border_color,
+                                width: 0.5,
+                                radius: forge_widgets::radius(forge_widgets::Radius::Md).into(),
+                            },
+                        }
+                    })
+                    .into();
+
+                let perm_block = column![
+                    forge_widgets::section_header("PERMISSION", None, palette),
+                    perm_select,
+                ]
+                .spacing(6);
+
+                config_col = config_col
+                    .push(cmd_block)
+                    .push(cooldown_block)
+                    .push(perm_block);
+            }
+            forge_types::TriggerKind::TwitchCheer => {
+                let bits_input = forge_widgets::text_input_field(
+                    "1",
+                    &form.config.min_bits,
+                    |v| Message::AddTrigger(AddTriggerMsg::MinBitsChanged(v)),
+                    palette,
+                );
+                let bits_block = column![
+                    forge_widgets::section_header("MINIMUM BITS", None, palette),
+                    bits_input,
+                ]
+                .spacing(6);
+                config_col = config_col.push(bits_block);
+            }
+            _ => {
+                config_col = config_col.push(
+                    text("No configuration required for this trigger type.")
+                        .size(12.0)
+                        .color(palette.text_muted),
+                );
+            }
+        }
+    }
+
+    let mut body_col =
+        column![search_input, chips_row, scrollable(grid_col).height(200),].spacing(10);
+
+    if form.selected_kind.is_some() {
+        body_col = body_col.push(
+            iced::widget::container(column![].spacing(0))
+                .width(Length::Fill)
+                .height(0.5)
+                .style(move |_theme: &iced::Theme| iced::widget::container::Style {
+                    background: Some(Background::Color(palette.border_regular)),
+                    ..iced::widget::container::Style::default()
+                }),
+        );
+        body_col = body_col.push(forge_widgets::section_header("CONFIGURE", None, palette));
+        body_col = body_col.push(config_col);
+    }
+
+    if let Some(err) = form.error.as_deref() {
+        body_col = body_col.push(forge_widgets::live_status_banner(
+            BannerKind::Error,
+            err,
+            None,
+            palette,
+        ));
+    }
+
+    let cancel_btn = forge_widgets::secondary_button(
+        "Cancel",
+        Message::AddTrigger(AddTriggerMsg::Cancel),
+        palette,
+    );
+
+    let save_on_press = Message::AddTrigger(AddTriggerMsg::Submit);
+    let save_btn = if form.is_valid() && !form.saving {
+        forge_widgets::primary_button("Add trigger", save_on_press, palette)
+    } else {
+        forge_widgets::secondary_button("Add trigger", Message::Noop, palette)
+    };
+
+    let footer_buttons = row![cancel_btn, save_btn].spacing(8);
+
+    let footer: Element<'_, Message> = iced::widget::container(
+        row![
+            text("ESC to cancel")
+                .size(11.0)
+                .color(palette.text_faint)
+                .font(forge_widgets::font(forge_widgets::FontRole::Monospace)),
+            iced::widget::Space::new().width(Length::Fill),
+            footer_buttons,
+        ]
+        .align_y(Alignment::Center),
+    )
+    .width(Length::Fill)
+    .into();
+
+    forge_widgets::modal(
+        palette,
+        ModalProps {
+            title: "Add trigger",
+            on_close: Message::AddTrigger(AddTriggerMsg::Cancel),
+            kbd_hint: None,
+        },
+        body_col.into(),
+        footer,
+    )
+}
+
+fn trigger_picker_card<'a>(
+    label: &'a str,
+    summary: &'a str,
+    selected: bool,
+    palette: &'a ForgePalette,
+    on_press: Message,
+) -> Element<'a, Message> {
+    use iced::widget::{button, column, container, row, text};
+    use iced::{Alignment, Background, Border, Length};
+
+    let icon_el = container(text('\u{ea21}'.to_string()).size(13.0).color(palette.brand))
+        .width(24)
+        .height(24)
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center)
+        .style(move |_theme: &iced::Theme| container::Style {
+            background: Some(Background::Color(palette.surface_overlay)),
+            border: Border {
+                radius: forge_widgets::radius(forge_widgets::Radius::Sm).into(),
+                color: iced::Color::TRANSPARENT,
+                width: 0.0,
+            },
+            ..container::Style::default()
+        });
+
+    let label_col = column![
+        text(label).size(12.5).color(palette.text_primary),
+        text(summary)
+            .size(11.0)
+            .color(palette.text_muted)
+            .font(forge_widgets::font(forge_widgets::FontRole::Monospace)),
+    ]
+    .spacing(1);
+
+    let inner = row![icon_el, container(label_col).width(Length::Fill),]
+        .spacing(8)
+        .align_y(Alignment::Center);
+
+    let border_color = if selected {
+        palette.brand
+    } else {
+        palette.border_regular
+    };
+    let border_width = if selected { 1.0 } else { 0.5 };
+
+    button(inner)
+        .on_press(on_press)
+        .padding(iced::Padding {
+            top: 8.0,
+            right: 10.0,
+            bottom: 8.0,
+            left: 10.0,
+        })
+        .width(Length::Fill)
+        .style(move |_theme: &iced::Theme, _status| button::Style {
+            background: Some(Background::Color(palette.elevated)),
+            border: Border {
+                color: border_color,
+                width: border_width,
+                radius: forge_widgets::radius(forge_widgets::Radius::Md).into(),
+            },
+            text_color: palette.text_primary,
+            shadow: iced::Shadow::default(),
+            snap: false,
+        })
+        .into()
+}
+
+fn permission_label(perm: &forge_types::CommandPermission) -> &'static str {
+    match perm {
+        forge_types::CommandPermission::Everyone => "Everyone",
+        forge_types::CommandPermission::Subscriber => "Subscriber",
+        forge_types::CommandPermission::Vip => "Vip",
+        forge_types::CommandPermission::Moderator => "Moderator",
+        forge_types::CommandPermission::Broadcaster => "Broadcaster",
+    }
+}
+
+fn permission_from_label(label: &str) -> forge_types::CommandPermission {
+    match label {
+        "Subscriber" => forge_types::CommandPermission::Subscriber,
+        "Vip" => forge_types::CommandPermission::Vip,
+        "Moderator" => forge_types::CommandPermission::Moderator,
+        "Broadcaster" => forge_types::CommandPermission::Broadcaster,
+        _ => forge_types::CommandPermission::Everyone,
+    }
 }
 
 fn trigger_row_element<'a>(

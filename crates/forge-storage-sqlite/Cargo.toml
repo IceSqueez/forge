@@ -10,9 +10,10 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
-forge-types   = { path = "../forge-types" }
-forge-events  = { path = "../forge-events" }
-forge-storage = { path = "../forge-storage" }
+forge-types          = { path = "../forge-types" }
+forge-events         = { path = "../forge-events" }
+forge-storage        = { path = "../forge-storage" }
+forge-platform-core  = { path = "../forge-platform-core" }
 serde        = { workspace = true }
 serde_json   = { workspace = true }
 thiserror    = { workspace = true }

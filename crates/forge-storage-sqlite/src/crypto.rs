@@ -14,7 +14,7 @@ pub fn load_or_create_key() -> Result<[u8; 32], SqliteStorageError> {
     match try_keyring_key() {
         Ok(key) => Ok(key),
         Err(_) => {
-            let path = xdg_data_home().join("credentials-key");
+            let path = forge_platform_core::paths::data_dir().join("credentials-key");
             load_or_create_file_key(&path)
         }
     }
@@ -172,17 +172,6 @@ fn hex_to_key(hex: &str) -> Result<[u8; 32], SqliteStorageError> {
     }
 
     Ok(key)
-}
-
-fn xdg_data_home() -> std::path::PathBuf {
-    if let Ok(dir) = std::env::var("XDG_DATA_HOME") {
-        return std::path::PathBuf::from(dir).join("forge");
-    }
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    std::path::PathBuf::from(home)
-        .join(".local")
-        .join("share")
-        .join("forge")
 }
 
 #[cfg(test)]

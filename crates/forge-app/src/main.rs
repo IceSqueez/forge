@@ -5,41 +5,17 @@ use forge_app::App;
 use forge_app::Screen;
 use forge_app::app::{subscription, theme_callback, update, view};
 use forge_app::screen::OnboardingStep;
+use forge_platform_core::paths;
 use forge_storage::SettingsRepo;
 use forge_storage::reserved_keys;
 use forge_storage_sqlite::SqliteBackend;
 
-#[cfg(target_os = "linux")]
-fn data_dir() -> PathBuf {
-    let base = std::env::var_os("XDG_DATA_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            let home = std::env::var_os("HOME").unwrap_or_default();
-            PathBuf::from(home).join(".local").join("share")
-        });
-    base.join("forge").join("forge.db")
-}
-
-#[cfg(target_os = "windows")]
-fn data_dir() -> PathBuf {
-    let base = std::env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
-    base.join("forge").join("forge.db")
-}
-
-#[cfg(target_os = "macos")]
-fn data_dir() -> PathBuf {
-    let home = std::env::var_os("HOME").unwrap_or_default();
-    PathBuf::from(home)
-        .join("Library")
-        .join("Application Support")
-        .join("forge")
-        .join("forge.db")
+fn default_db_path() -> PathBuf {
+    paths::data_dir().join("forge.db")
 }
 
 fn boot_storage() -> (Arc<SqliteBackend>, bool) {
-    let db_path = data_dir();
+    let db_path = default_db_path();
 
     if let Some(parent) = db_path.parent()
         && let Err(e) = std::fs::create_dir_all(parent)

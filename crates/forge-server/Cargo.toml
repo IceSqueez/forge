@@ -10,8 +10,9 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
-forge-types        = { path = "../forge-types" }
-forge-events       = { path = "../forge-events" }
+forge-types         = { path = "../forge-types" }
+forge-events        = { path = "../forge-events" }
+forge-platform-core = { path = "../forge-platform-core" }
 axum              = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tokio             = { workspace = true }

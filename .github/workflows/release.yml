@@ -35,6 +35,9 @@ jobs:
         run: cargo dist plan
 
       - name: Build release artifacts
+        env:
+          # Compile-time Twitch client_id from repo secret. Empty if secret unset → app falls back to runtime env var or shows UX error.
+          FORGE_TWITCH_CLIENT_ID: ${{ secrets.FORGE_TWITCH_CLIENT_ID }}
         shell: bash
         run: |
           cargo dist build \

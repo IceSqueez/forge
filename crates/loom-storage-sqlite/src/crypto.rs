@@ -11,6 +11,21 @@ pub fn load_or_create_key() -> Result<[u8; 32], SqliteStorageError> {
         return load_or_create_file_key(&std::path::PathBuf::from(path));
     }
 
+    match try_keyring_key() {
+        Ok(key) => Ok(key),
+        Err(_) => {
+            let path = xdg_data_home().join("credentials-key");
+            load_or_create_file_key(&path)
+        }
+    }
+}
+
+fn try_keyring_key() -> Result<[u8; 32], SqliteStorageError> {
+    // Registers the OS-native backend; fails on headless Linux / WSL / CI without secret service.
+    keyring::use_native_store(false).map_err(|e| SqliteStorageError::Keyring {
+        reason: e.to_string(),
+    })?;
+
     let entry = keyring_core::Entry::new("streamer-loom", "credentials-key").map_err(|e| {
         SqliteStorageError::Keyring {
             reason: e.to_string(),
@@ -29,13 +44,9 @@ pub fn load_or_create_key() -> Result<[u8; 32], SqliteStorageError> {
                 })?;
             Ok(key)
         }
-        Err(e) => {
-            let data_home = xdg_data_home();
-            let path = data_home.join("credentials-key");
-            load_or_create_file_key(&path).map_err(|_| SqliteStorageError::Keyring {
-                reason: e.to_string(),
-            })
-        }
+        Err(e) => Err(SqliteStorageError::Keyring {
+            reason: e.to_string(),
+        }),
     }
 }
 
@@ -172,4 +183,39 @@ fn xdg_data_home() -> std::path::PathBuf {
         .join(".local")
         .join("share")
         .join("streamer-loom")
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn file_key_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let key_path = dir.path().join("test-credentials-key");
+
+        let key1 = load_or_create_file_key(&key_path).unwrap();
+        let key2 = load_or_create_file_key(&key_path).unwrap();
+
+        assert_eq!(key1, key2);
+        assert_eq!(key1.len(), 32);
+    }
+
+    #[test]
+    fn encrypt_decrypt_roundtrip() {
+        let key = [0xabu8; 32];
+        let plaintext = "super-secret-token";
+        let (ciphertext, nonce) = encrypt(&key, plaintext).unwrap();
+        let recovered = decrypt(&key, &ciphertext, &nonce).unwrap();
+        assert_eq!(recovered, plaintext);
+    }
+
+    #[test]
+    fn decrypt_rejects_wrong_key() {
+        let key = [0x01u8; 32];
+        let wrong_key = [0x02u8; 32];
+        let (ciphertext, nonce) = encrypt(&key, "payload").unwrap();
+        assert!(decrypt(&wrong_key, &ciphertext, &nonce).is_err());
+    }
 }

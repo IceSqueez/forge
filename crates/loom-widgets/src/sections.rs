@@ -82,11 +82,12 @@ pub fn toast_banner<'a, Msg: 'a + Clone>(
                 text_color: palette.text_muted,
                 border: Border::default(),
                 shadow: iced::Shadow::default(),
+                snap: false,
             },
         );
 
     let content_row = row![
-        container(iced::widget::Space::new(3.0, 0.0))
+        container(iced::widget::Space::new().width(3.0))
             .width(3.0)
             .style(move |_theme: &iced::Theme| container::Style {
                 background: Some(iced::Background::Color(accent)),

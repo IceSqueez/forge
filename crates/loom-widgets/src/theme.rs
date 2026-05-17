@@ -10,6 +10,7 @@ pub fn catppuccin_mocha() -> (Theme, LoomPalette) {
         text: CATPPUCCIN_MOCHA.text_primary,
         primary: CATPPUCCIN_MOCHA.brand,
         success: CATPPUCCIN_MOCHA.success,
+        warning: CATPPUCCIN_MOCHA.warning,
         danger: CATPPUCCIN_MOCHA.random,
     };
     (
@@ -24,6 +25,7 @@ pub fn tokyo_night_storm() -> (Theme, LoomPalette) {
         text: TOKYO_NIGHT.text_primary,
         primary: TOKYO_NIGHT.brand,
         success: TOKYO_NIGHT.success,
+        warning: TOKYO_NIGHT.warning,
         danger: TOKYO_NIGHT.random,
     };
     (
@@ -38,6 +40,7 @@ pub fn latte() -> (Theme, LoomPalette) {
         text: LATTE.text_primary,
         primary: LATTE.brand,
         success: LATTE.success,
+        warning: LATTE.warning,
         danger: LATTE.random,
     };
     (Theme::custom("Latte".to_owned(), palette), LATTE)

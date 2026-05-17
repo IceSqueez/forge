@@ -20,7 +20,7 @@ pub fn title_bar<'a, Msg: 'a>(
         action_row = action_row.push(action);
     }
 
-    let content = row![title_text, Space::with_width(Length::Fill), action_row,]
+    let content = row![title_text, Space::new().width(Length::Fill), action_row,]
         .align_y(iced::Alignment::Center)
         .padding([0, 12]);
 
@@ -51,7 +51,7 @@ pub fn toolbar<'a, Msg: 'a>(
         right_row = right_row.push(item);
     }
 
-    let content = row![left_row, Space::with_width(Length::Fill), right_row,]
+    let content = row![left_row, Space::new().width(Length::Fill), right_row,]
         .align_y(iced::Alignment::Center)
         .padding([4, 8]);
 
@@ -93,6 +93,7 @@ pub fn breadcrumb<'a, Msg: 'a + Clone>(
                             text_color: fg_actual,
                             border: iced::Border::default(),
                             shadow: iced::Shadow::default(),
+                            snap: false,
                         }
                     })
                     .into()

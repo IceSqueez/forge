@@ -28,6 +28,7 @@ loom-platform-core  = { path = "../loom-platform-core" }
 loom-server         = { path = "../loom-server" }
 loom-widgets        = { path = "../loom-widgets" }
 iced                = { workspace = true }
+keyring             = { workspace = true }
 tokio               = { workspace = true }
 tracing             = { workspace = true }
 tracing-subscriber  = { workspace = true }

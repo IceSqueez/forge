@@ -40,6 +40,8 @@ impl App {
 impl Default for App {
     #[allow(clippy::expect_used)]
     fn default() -> Self {
+        keyring::use_sample_store(&std::collections::HashMap::new())
+            .expect("sample keyring store must initialize");
         let rt = tokio::runtime::Runtime::new().expect("tokio runtime for test");
         let backend = Arc::new(
             rt.block_on(SqliteBackend::open("sqlite::memory:"))
@@ -254,16 +256,40 @@ pub fn view(app: &App) -> Element<'_, Message> {
 }
 
 pub fn subscription(app: &App) -> Subscription<Message> {
-    let bus = app.bus.clone();
-    Subscription::run_with_id(
-        "event-bus",
-        iced::stream::channel(64, move |mut output| async move {
-            let mut stream = bus.subscribe();
-            while let Ok(event) = stream.recv().await {
-                let _ = output.try_send(Message::BusEvent(event));
-            }
-        }),
-    )
+    use iced::advanced::subscription::{EventStream, Hasher, Recipe, from_recipe};
+    use iced::futures::StreamExt as _;
+
+    struct BusRecipe(Arc<InMemoryEventBus>);
+
+    impl Recipe for BusRecipe {
+        type Output = Message;
+
+        fn hash(&self, state: &mut Hasher) {
+            use std::hash::Hash as _;
+            (Arc::as_ptr(&self.0) as usize).hash(state);
+        }
+
+        fn stream(
+            self: Box<Self>,
+            _input: EventStream,
+        ) -> iced::futures::stream::BoxStream<'static, Self::Output> {
+            let bus = self.0;
+            iced::stream::channel(
+                64,
+                |mut tx: iced::futures::channel::mpsc::Sender<Message>| async move {
+                    let mut stream = bus.subscribe();
+                    loop {
+                        if let Ok(event) = stream.recv().await {
+                            let _ = tx.try_send(Message::BusEvent(event));
+                        }
+                    }
+                },
+            )
+            .boxed()
+        }
+    }
+
+    from_recipe(BusRecipe(app.bus.clone()))
 }
 
 pub fn theme_callback(app: &App) -> Theme {

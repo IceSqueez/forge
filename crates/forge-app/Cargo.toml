@@ -26,6 +26,7 @@ forge-storage        = { path = "../forge-storage" }
 forge-storage-sqlite = { path = "../forge-storage-sqlite" }
 forge-platform-core   = { path = "../forge-platform-core" }
 forge-platform-twitch = { path = "../forge-platform-twitch" }
+async-trait          = { workspace = true }
 forge-server          = { path = "../forge-server" }
 forge-widgets        = { path = "../forge-widgets" }
 iced                = { workspace = true }

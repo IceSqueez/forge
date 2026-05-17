@@ -10,6 +10,13 @@ pub enum OnboardingMsg {
     AdvanceFromPicker,
     BackFromPicker,
     SkipPicker,
+    AdvanceFromObs,
+    BackFromObs,
+    SkipObs,
+    AdvanceFromStarterPack,
+    BackFromStarterPack,
+    SkipStarterPack,
+    FinishOnboarding,
 }
 
 #[derive(Debug, Clone)]

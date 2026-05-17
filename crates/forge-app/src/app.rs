@@ -108,6 +108,34 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 app.screen = Screen::Onboarding(next);
                 Task::none()
             }
+            OnboardingMsg::AdvanceFromObs | OnboardingMsg::SkipObs => {
+                let next = OnboardingStep::StarterPack;
+                app.onboarding.sync_step(&next);
+                app.screen = Screen::Onboarding(next);
+                Task::none()
+            }
+            OnboardingMsg::BackFromObs => {
+                let prev = OnboardingStep::ConnectPlatform;
+                app.onboarding.sync_step(&prev);
+                app.screen = Screen::Onboarding(prev);
+                Task::none()
+            }
+            OnboardingMsg::AdvanceFromStarterPack | OnboardingMsg::SkipStarterPack => {
+                let next = OnboardingStep::Ready;
+                app.onboarding.sync_step(&next);
+                app.screen = Screen::Onboarding(next);
+                Task::none()
+            }
+            OnboardingMsg::BackFromStarterPack => {
+                let prev = OnboardingStep::ConnectObs;
+                app.onboarding.sync_step(&prev);
+                app.screen = Screen::Onboarding(prev);
+                Task::none()
+            }
+            OnboardingMsg::FinishOnboarding => {
+                app.screen = Screen::Hub;
+                Task::none()
+            }
         },
         Message::ThemeChanged(id) => {
             let (theme, palette) = match id {
@@ -405,78 +433,28 @@ fn connect_platform_content<'a>(
     .into()
 }
 
-fn placeholder_step_content<'a>(
-    step: &'a OnboardingStep,
-    palette: &'a ForgePalette,
-) -> Element<'a, Message> {
-    let (step_num, title, body) = match step {
-        OnboardingStep::DeviceCodeFlow(_) => (
-            2usize,
-            "Authorize with your platform",
-            "Device code authorization — coming in a future commit.",
-        ),
-        OnboardingStep::ConnectObs => (
-            3,
-            "Connect OBS Studio",
-            "OBS Studio integration ships in alpha-7. Skip for now.",
-        ),
-        OnboardingStep::StarterPack => (
-            4,
-            "Starter pack",
-            "Pre-built actions and triggers ship in a future release. Skip for now.",
-        ),
-        OnboardingStep::Ready => (
-            5,
-            "You're ready",
-            "Setup complete. You can configure everything later from settings.",
-        ),
-        OnboardingStep::Welcome | OnboardingStep::ConnectPlatform => unreachable!(),
-    };
+fn device_code_placeholder_content<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
+    let header = forge_widgets::onboarding_step_header(
+        2,
+        5,
+        "Authorize with your platform",
+        false,
+        false,
+        palette,
+    );
 
-    let header = forge_widgets::onboarding_step_header(step_num, 5, title, false, false, palette);
-
-    let body_text = iced::widget::text(body)
+    let body_text = iced::widget::text("Device code authorization — coming in a future commit.")
         .size(13.0)
         .color(palette.text_muted);
 
-    let (on_back, on_continue, continue_label) = match step {
-        OnboardingStep::DeviceCodeFlow(_) => (
-            Some(Message::Navigate(Screen::Onboarding(
-                OnboardingStep::ConnectPlatform,
-            ))),
-            Message::Navigate(Screen::Onboarding(OnboardingStep::ConnectObs)),
-            "Continue",
-        ),
-        OnboardingStep::ConnectObs => (
-            Some(Message::Navigate(Screen::Onboarding(
-                OnboardingStep::ConnectPlatform,
-            ))),
-            Message::Navigate(Screen::Onboarding(OnboardingStep::StarterPack)),
-            "Continue",
-        ),
-        OnboardingStep::StarterPack => (
-            Some(Message::Navigate(Screen::Onboarding(
-                OnboardingStep::ConnectObs,
-            ))),
-            Message::Navigate(Screen::Onboarding(OnboardingStep::Ready)),
-            "Continue",
-        ),
-        OnboardingStep::Ready => (
-            Some(Message::Navigate(Screen::Onboarding(
-                OnboardingStep::StarterPack,
-            ))),
-            Message::Navigate(Screen::Hub),
-            "Enter Forge",
-        ),
-        OnboardingStep::Welcome | OnboardingStep::ConnectPlatform => unreachable!(),
-    };
-
     let footer = forge_widgets::onboarding_footer(
-        on_back,
+        Some(Message::Navigate(Screen::Onboarding(
+            OnboardingStep::ConnectPlatform,
+        ))),
         None,
-        continue_label,
+        "Continue",
         '→',
-        on_continue,
+        Message::Navigate(Screen::Onboarding(OnboardingStep::ConnectObs)),
         true,
         palette,
     );
@@ -484,6 +462,168 @@ fn placeholder_step_content<'a>(
     iced::widget::column![
         header,
         body_text,
+        iced::widget::Space::new().height(Length::Fill),
+        footer,
+    ]
+    .spacing(16.0)
+    .height(Length::Fill)
+    .into()
+}
+
+fn connect_obs_content<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
+    let header =
+        forge_widgets::onboarding_step_header(3, 5, "Connect OBS Studio", true, false, palette);
+
+    let subtitle = iced::widget::text(
+        "Forge talks to OBS via the WebSocket plugin (bundled since OBS 28). \
+         You'll need it running locally — we'll connect to localhost:4455 by default.",
+    )
+    .size(11.5)
+    .color(palette.text_muted);
+
+    let coming_soon_card = forge_widgets::card(
+        [
+            iced::widget::text("Coming in alpha-3")
+                .size(13.0)
+                .color(palette.text_primary)
+                .into(),
+            iced::widget::text(
+                "OBS connection wiring is implemented in alpha-3. \
+                 For now, this step is skippable and Forge will operate without OBS integration.",
+            )
+            .size(11.5)
+            .color(palette.text_muted)
+            .into(),
+        ],
+        palette,
+    );
+
+    let footer = forge_widgets::onboarding_footer(
+        Some(Message::Onboarding(OnboardingMsg::BackFromObs)),
+        Some(Message::Onboarding(OnboardingMsg::SkipObs)),
+        "I'll connect later",
+        '→',
+        Message::Onboarding(OnboardingMsg::AdvanceFromObs),
+        true,
+        palette,
+    );
+
+    iced::widget::column![
+        header,
+        subtitle,
+        coming_soon_card,
+        iced::widget::Space::new().height(Length::Fill),
+        footer,
+    ]
+    .spacing(16.0)
+    .height(Length::Fill)
+    .into()
+}
+
+fn starter_pack_content<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
+    let header = forge_widgets::onboarding_step_header(4, 5, "Starter pack", true, false, palette);
+
+    let subtitle = iced::widget::text(
+        "Pre-built actions, commands, and overlays for common streamer setups. \
+         Pick a pack to install or skip and add later from settings.",
+    )
+    .size(11.5)
+    .color(palette.text_muted);
+
+    let ua_pack = forge_widgets::card(
+        [
+            iced::widget::text("UA streamer pack")
+                .size(13.0)
+                .color(palette.text_primary)
+                .into(),
+            iced::widget::text("Coming in alpha-2 RC — placeholder for now.")
+                .size(11.5)
+                .color(palette.text_muted)
+                .into(),
+        ],
+        palette,
+    );
+
+    let generic_pack = forge_widgets::card(
+        [
+            iced::widget::text("Generic essentials")
+                .size(13.0)
+                .color(palette.text_primary)
+                .into(),
+            iced::widget::text("Coming in alpha-2 RC — placeholder for now.")
+                .size(11.5)
+                .color(palette.text_muted)
+                .into(),
+        ],
+        palette,
+    );
+
+    let pack_grid = iced::widget::row![ua_pack, generic_pack].spacing(10);
+
+    let footer = forge_widgets::onboarding_footer(
+        Some(Message::Onboarding(OnboardingMsg::BackFromStarterPack)),
+        Some(Message::Onboarding(OnboardingMsg::SkipStarterPack)),
+        "Continue",
+        '→',
+        Message::Onboarding(OnboardingMsg::AdvanceFromStarterPack),
+        true,
+        palette,
+    );
+
+    iced::widget::column![
+        header,
+        subtitle,
+        pack_grid,
+        iced::widget::Space::new().height(Length::Fill),
+        footer,
+    ]
+    .spacing(16.0)
+    .height(Length::Fill)
+    .into()
+}
+
+fn ready_content<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
+    let header = forge_widgets::onboarding_step_header(5, 5, "You're ready", false, false, palette);
+
+    let subtitle = iced::widget::text(
+        "Everything you configured is saved. You can change any of these later from Settings.",
+    )
+    .size(11.5)
+    .color(palette.text_muted);
+
+    let banner = forge_widgets::live_status_banner(
+        forge_widgets::BannerKind::Success,
+        "Forge is ready to run your show.",
+        None,
+        palette,
+    );
+
+    let summary_card = forge_widgets::card(
+        [iced::widget::text(
+            "Click Enter Forge to open the Hub. From there you can configure \
+             actions, triggers, integrations, and TTS.",
+        )
+        .size(11.5)
+        .color(palette.text_muted)
+        .into()],
+        palette,
+    );
+
+    let footer = forge_widgets::onboarding_footer(
+        None,
+        None,
+        "Enter Forge",
+        '→',
+        Message::Onboarding(OnboardingMsg::FinishOnboarding),
+        true,
+        palette,
+    );
+
+    iced::widget::column![
+        header,
+        subtitle,
+        banner,
+        summary_card,
         iced::widget::Space::new().height(Length::Fill),
         footer,
     ]
@@ -511,7 +651,10 @@ fn onboarding_view<'a>(
     let right: Element<'a, Message> = match step {
         OnboardingStep::Welcome => welcome_step_content(palette),
         OnboardingStep::ConnectPlatform => connect_platform_content(onboarding, palette),
-        other => placeholder_step_content(other, palette),
+        OnboardingStep::DeviceCodeFlow(_) => device_code_placeholder_content(palette),
+        OnboardingStep::ConnectObs => connect_obs_content(palette),
+        OnboardingStep::StarterPack => starter_pack_content(palette),
+        OnboardingStep::Ready => ready_content(palette),
     };
 
     let body = iced::widget::row![left, right]
@@ -817,5 +960,132 @@ mod tests {
             Message::Onboarding(OnboardingMsg::PlatformSelected("twitch".into())),
         );
         let _ = view(&app);
+    }
+
+    #[test]
+    fn advance_from_obs_navigates_to_starter_pack() {
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Onboarding(OnboardingMsg::AdvanceFromObs));
+        assert_eq!(app.screen, Screen::Onboarding(OnboardingStep::StarterPack));
+    }
+
+    #[test]
+    fn skip_obs_navigates_to_starter_pack() {
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Onboarding(OnboardingMsg::SkipObs));
+        assert_eq!(app.screen, Screen::Onboarding(OnboardingStep::StarterPack));
+    }
+
+    #[test]
+    fn back_from_obs_returns_to_connect_platform() {
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Onboarding(OnboardingMsg::BackFromObs));
+        assert_eq!(
+            app.screen,
+            Screen::Onboarding(OnboardingStep::ConnectPlatform)
+        );
+    }
+
+    #[test]
+    fn advance_from_starter_pack_navigates_to_ready() {
+        let mut app = App::default();
+        let _ = update(
+            &mut app,
+            Message::Onboarding(OnboardingMsg::AdvanceFromStarterPack),
+        );
+        assert_eq!(app.screen, Screen::Onboarding(OnboardingStep::Ready));
+    }
+
+    #[test]
+    fn skip_starter_pack_navigates_to_ready() {
+        let mut app = App::default();
+        let _ = update(
+            &mut app,
+            Message::Onboarding(OnboardingMsg::SkipStarterPack),
+        );
+        assert_eq!(app.screen, Screen::Onboarding(OnboardingStep::Ready));
+    }
+
+    #[test]
+    fn back_from_starter_pack_returns_to_connect_obs() {
+        let mut app = App::default();
+        let _ = update(
+            &mut app,
+            Message::Onboarding(OnboardingMsg::BackFromStarterPack),
+        );
+        assert_eq!(app.screen, Screen::Onboarding(OnboardingStep::ConnectObs));
+    }
+
+    #[test]
+    fn finish_onboarding_navigates_to_hub() {
+        let mut app = App::default();
+        let _ = update(
+            &mut app,
+            Message::Onboarding(OnboardingMsg::FinishOnboarding),
+        );
+        assert_eq!(app.screen, Screen::Hub);
+    }
+
+    #[test]
+    fn view_compiles_connect_obs() {
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Onboarding(OnboardingMsg::AdvanceFromObs));
+        let _ = update(
+            &mut app,
+            Message::Onboarding(OnboardingMsg::BackFromStarterPack),
+        );
+        let _ = view(&app);
+    }
+
+    #[test]
+    fn view_compiles_starter_pack() {
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Onboarding(OnboardingMsg::AdvanceFromObs));
+        let _ = view(&app);
+    }
+
+    #[test]
+    fn view_compiles_ready() {
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Onboarding(OnboardingMsg::AdvanceFromObs));
+        let _ = update(
+            &mut app,
+            Message::Onboarding(OnboardingMsg::AdvanceFromStarterPack),
+        );
+        let _ = view(&app);
+    }
+
+    #[test]
+    fn stepper_shows_connect_obs_as_current_on_step_3() {
+        let mut app = App::default();
+        app.onboarding.sync_step(&OnboardingStep::ConnectObs);
+        assert_eq!(
+            app.onboarding.step_infos[2].status,
+            forge_widgets::StepStatus::Current
+        );
+        assert_eq!(
+            app.onboarding.step_infos[0].status,
+            forge_widgets::StepStatus::Done
+        );
+    }
+
+    #[test]
+    fn stepper_shows_starter_pack_as_current_on_step_4() {
+        let mut app = App::default();
+        app.onboarding.sync_step(&OnboardingStep::StarterPack);
+        assert_eq!(
+            app.onboarding.step_infos[3].status,
+            forge_widgets::StepStatus::Current
+        );
+    }
+
+    #[test]
+    fn stepper_shows_ready_as_current_on_step_5() {
+        let mut app = App::default();
+        app.onboarding.sync_step(&OnboardingStep::Ready);
+        assert_eq!(
+            app.onboarding.step_infos[4].status,
+            forge_widgets::StepStatus::Current
+        );
     }
 }

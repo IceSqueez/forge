@@ -3,6 +3,7 @@ use forge_platform_core::oauth::{DeviceCodeResponse, TokenResponse};
 use forge_widgets::ThemeId;
 
 use crate::Screen;
+use crate::live_chat::ChatFilter;
 
 #[derive(Debug, Clone)]
 pub enum OnboardingMsg {
@@ -32,6 +33,10 @@ pub enum Message {
     Onboarding(OnboardingMsg),
     OnboardingPersistResult(Result<(), String>),
     ThemeChanged(ThemeId),
-    BusEvent(Event),
+    EventArrived(Event),
+    ChatInputChanged(String),
+    ChatSubmit,
+    ChatSent(Result<(), String>),
+    ChatFilterChanged(ChatFilter),
     Noop,
 }

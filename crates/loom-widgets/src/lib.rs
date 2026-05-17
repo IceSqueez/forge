@@ -21,9 +21,10 @@ pub use inputs::{search_input, select, text_input_field};
 pub use layout::{breadcrumb, page_shell, title_bar, title_bar_with_logo, toolbar};
 pub use navigation::{SIDEBAR_WIDTH, sidebar, sidebar_section, tree_node};
 pub use onboarding::{
-    BannerKind, Severity, StepEntry, StepStatus, device_code_display, expiration_color_band,
-    expiration_timer, live_status_banner, locale_tip_card, numbered_box_step, onboarding_footer,
-    onboarding_step_header, onboarding_stepper, platform_picker_card,
+    BannerKind, PlatformCardProps, Severity, StepEntry, StepInfo, StepStatus, device_code_display,
+    expiration_color_band, expiration_timer, live_status_banner, locale_tip_card,
+    numbered_box_step, onboarding_footer, onboarding_step_header, onboarding_stepper,
+    platform_picker_card,
 };
 pub use palette::{CATPPUCCIN_MOCHA, LATTE, LoomPalette, TOKYO_NIGHT};
 pub use sections::{ToastVariant, counter_badge, empty_state, section_header, toast_banner};

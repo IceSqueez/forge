@@ -77,3 +77,36 @@ async fn set_string_overwrites_existing_value() {
     let got = repo.get_string("accent_color").await.expect("get");
     assert_eq!(got, Some("sky".to_owned()));
 }
+
+#[tokio::test]
+async fn last_onboarding_step_roundtrips() {
+    use forge_storage::reserved_keys::LAST_ONBOARDING_STEP;
+
+    let repo = setup().await;
+    repo.set_string(LAST_ONBOARDING_STEP, "connect_obs")
+        .await
+        .expect("set last_onboarding_step");
+    let got = repo
+        .get_string(LAST_ONBOARDING_STEP)
+        .await
+        .expect("get last_onboarding_step");
+    assert_eq!(got, Some("connect_obs".to_owned()));
+}
+
+#[tokio::test]
+async fn last_onboarding_step_overwrites_correctly() {
+    use forge_storage::reserved_keys::LAST_ONBOARDING_STEP;
+
+    let repo = setup().await;
+    repo.set_string(LAST_ONBOARDING_STEP, "welcome")
+        .await
+        .expect("set welcome");
+    repo.set_string(LAST_ONBOARDING_STEP, "starter_pack")
+        .await
+        .expect("set starter_pack");
+    let got = repo
+        .get_string(LAST_ONBOARDING_STEP)
+        .await
+        .expect("get after overwrite");
+    assert_eq!(got, Some("starter_pack".to_owned()));
+}

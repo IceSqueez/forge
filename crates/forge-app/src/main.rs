@@ -78,11 +78,26 @@ fn open_memory_backend() -> (Arc<SqliteBackend>, bool) {
 #[allow(clippy::expect_used)]
 fn resolve_initial_screen(backend: &SqliteBackend) -> Screen {
     let rt = tokio::runtime::Runtime::new().expect("tokio runtime required for settings read");
-    let result = rt.block_on(backend.get_string(reserved_keys::ONBOARDING_COMPLETED));
-    match result {
-        Ok(Some(ref v)) if v == "true" => Screen::Hub,
-        _ => Screen::Onboarding(OnboardingStep::Welcome),
-    }
+    rt.block_on(async {
+        let completed = backend
+            .get_string(reserved_keys::ONBOARDING_COMPLETED)
+            .await
+            .ok()
+            .flatten();
+        if matches!(completed.as_deref(), Some("true")) {
+            return Screen::Hub;
+        }
+        let last_step = backend
+            .get_string(reserved_keys::LAST_ONBOARDING_STEP)
+            .await
+            .ok()
+            .flatten();
+        let step = last_step
+            .as_deref()
+            .and_then(OnboardingStep::from_key)
+            .unwrap_or(OnboardingStep::Welcome);
+        Screen::Onboarding(step)
+    })
 }
 
 fn main() -> iced::Result {

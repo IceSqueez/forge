@@ -1,6 +1,8 @@
 use forge_storage::{DataProvider, StorageError};
 use forge_storage_sqlite::SqliteBackend;
-use forge_types::{Action, ActionId, Command, QueueId, Trigger};
+use forge_types::{
+    Action, ActionId, Command, CommandPermission, QueueId, Trigger, TriggerId, TriggerKind,
+};
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -103,6 +105,174 @@ pub enum AddActionMsg {
     Saved(Result<ActionId, String>),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TriggerCategory {
+    All,
+    Chat,
+    Subscriptions,
+    Bits,
+    Raids,
+}
+
+pub fn category_of(kind: &TriggerKind) -> TriggerCategory {
+    match kind {
+        TriggerKind::TwitchChatCommand | TriggerKind::TwitchChatAnyMessage => TriggerCategory::Chat,
+        TriggerKind::TwitchSubscribe
+        | TriggerKind::TwitchResubscribe
+        | TriggerKind::TwitchGiftSub => TriggerCategory::Subscriptions,
+        TriggerKind::TwitchCheer => TriggerCategory::Bits,
+        TriggerKind::TwitchRaid => TriggerCategory::Raids,
+    }
+}
+
+pub fn kind_label(kind: &TriggerKind) -> &'static str {
+    match kind {
+        TriggerKind::TwitchChatCommand => "Twitch \u{00b7} Chat command",
+        TriggerKind::TwitchChatAnyMessage => "Twitch \u{00b7} Any chat message",
+        TriggerKind::TwitchSubscribe => "Twitch \u{00b7} New subscriber",
+        TriggerKind::TwitchResubscribe => "Twitch \u{00b7} Re-subscribe",
+        TriggerKind::TwitchGiftSub => "Twitch \u{00b7} Gift subs",
+        TriggerKind::TwitchCheer => "Twitch \u{00b7} Bits cheered",
+        TriggerKind::TwitchRaid => "Twitch \u{00b7} Raid received",
+    }
+}
+
+pub fn kind_summary(kind: &TriggerKind) -> &'static str {
+    match kind {
+        TriggerKind::TwitchChatCommand => "User types !command in chat",
+        TriggerKind::TwitchChatAnyMessage => "Every chat message fires this",
+        TriggerKind::TwitchSubscribe => "Fires when someone subscribes",
+        TriggerKind::TwitchResubscribe => "Existing sub renews",
+        TriggerKind::TwitchGiftSub => "Someone gifts subs to channel",
+        TriggerKind::TwitchCheer => "Viewer sends bits",
+        TriggerKind::TwitchRaid => "Another stream raids you",
+    }
+}
+
+/// Combined text used for case-insensitive search matching.
+pub fn kind_search_text(kind: &TriggerKind) -> &'static str {
+    match kind {
+        TriggerKind::TwitchChatCommand => "twitch chat command !command",
+        TriggerKind::TwitchChatAnyMessage => "twitch chat any message all",
+        TriggerKind::TwitchSubscribe => "twitch subscribe subscriber sub new",
+        TriggerKind::TwitchResubscribe => "twitch resubscribe resub renew",
+        TriggerKind::TwitchGiftSub => "twitch gift sub giftsub gifted",
+        TriggerKind::TwitchCheer => "twitch cheer bits cheered donate",
+        TriggerKind::TwitchRaid => "twitch raid incoming raided",
+    }
+}
+
+pub fn all_trigger_kinds() -> [TriggerKind; 7] {
+    [
+        TriggerKind::TwitchChatCommand,
+        TriggerKind::TwitchChatAnyMessage,
+        TriggerKind::TwitchSubscribe,
+        TriggerKind::TwitchResubscribe,
+        TriggerKind::TwitchGiftSub,
+        TriggerKind::TwitchCheer,
+        TriggerKind::TwitchRaid,
+    ]
+}
+
+#[derive(Debug, Clone)]
+pub struct TriggerConfigForm {
+    pub command_name: String,
+    pub cooldown_secs: String,
+    pub permission: CommandPermission,
+    pub min_bits: String,
+}
+
+impl TriggerConfigForm {
+    pub fn new() -> Self {
+        Self {
+            command_name: String::new(),
+            cooldown_secs: "0".to_string(),
+            permission: CommandPermission::Everyone,
+            min_bits: "1".to_string(),
+        }
+    }
+
+    pub fn parsed_cooldown(&self) -> u64 {
+        self.cooldown_secs.trim().parse().unwrap_or(0)
+    }
+
+    pub fn parsed_min_bits(&self) -> u32 {
+        self.min_bits.trim().parse().unwrap_or(1)
+    }
+}
+
+impl Default for TriggerConfigForm {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+pub struct AddTriggerForm {
+    pub for_action_id: ActionId,
+    pub search: String,
+    pub category: TriggerCategory,
+    pub selected_kind: Option<TriggerKind>,
+    pub config: TriggerConfigForm,
+    pub error: Option<String>,
+    pub saving: bool,
+}
+
+impl AddTriggerForm {
+    pub fn new(for_action_id: ActionId) -> Self {
+        Self {
+            for_action_id,
+            search: String::new(),
+            category: TriggerCategory::All,
+            selected_kind: None,
+            config: TriggerConfigForm::new(),
+            error: None,
+            saving: false,
+        }
+    }
+
+    /// Returns false until a kind is selected; for TwitchChatCommand also requires a non-empty command name.
+    pub fn is_valid(&self) -> bool {
+        let Some(kind) = &self.selected_kind else {
+            return false;
+        };
+        if matches!(kind, TriggerKind::TwitchChatCommand) {
+            !self.config.command_name.trim().is_empty()
+        } else {
+            true
+        }
+    }
+
+    pub fn visible_kinds(&self) -> Vec<TriggerKind> {
+        let query = self.search.trim().to_lowercase();
+        all_trigger_kinds()
+            .into_iter()
+            .filter(|k| {
+                let cat_match =
+                    self.category == TriggerCategory::All || category_of(k) == self.category;
+                let search_match = query.is_empty()
+                    || kind_search_text(k).contains(&query)
+                    || kind_label(k).to_lowercase().contains(&query);
+                cat_match && search_match
+            })
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum AddTriggerMsg {
+    OpenRequested(ActionId),
+    SearchChanged(String),
+    CategorySelected(TriggerCategory),
+    KindSelected(TriggerKind),
+    CommandNameChanged(String),
+    CooldownChanged(String),
+    PermissionSelected(CommandPermission),
+    MinBitsChanged(String),
+    Cancel,
+    Submit,
+    Saved(Result<TriggerId, String>),
+}
+
 #[derive(Default)]
 pub struct ActionsState {
     pub tree: Vec<ActionsGroup>,
@@ -110,6 +280,7 @@ pub struct ActionsState {
     pub detail: Option<ActionDetail>,
     pub loading: bool,
     pub add_action_modal: Option<AddActionForm>,
+    pub add_trigger_modal: Option<AddTriggerForm>,
 }
 
 impl ActionsState {
@@ -183,7 +354,7 @@ pub async fn load_action_detail(
 mod tests {
     use super::*;
     use forge_storage::DataProvider;
-    use forge_types::{Action, ActionId, Queue, QueueId};
+    use forge_types::{Action, ActionId, CommandId, Queue, QueueId};
 
     #[test]
     fn form_invalid_when_name_is_empty() {
@@ -213,6 +384,122 @@ mod tests {
         form.name = "   ".to_string();
         form.queue_id = Some(QueueId::new());
         assert!(!form.is_valid());
+    }
+
+    #[test]
+    fn chat_command_category_is_chat() {
+        assert_eq!(
+            category_of(&TriggerKind::TwitchChatCommand),
+            TriggerCategory::Chat
+        );
+    }
+
+    #[test]
+    fn any_message_category_is_chat() {
+        assert_eq!(
+            category_of(&TriggerKind::TwitchChatAnyMessage),
+            TriggerCategory::Chat
+        );
+    }
+
+    #[test]
+    fn subscribe_category_is_subscriptions() {
+        assert_eq!(
+            category_of(&TriggerKind::TwitchSubscribe),
+            TriggerCategory::Subscriptions
+        );
+        assert_eq!(
+            category_of(&TriggerKind::TwitchResubscribe),
+            TriggerCategory::Subscriptions
+        );
+        assert_eq!(
+            category_of(&TriggerKind::TwitchGiftSub),
+            TriggerCategory::Subscriptions
+        );
+    }
+
+    #[test]
+    fn cheer_category_is_bits() {
+        assert_eq!(
+            category_of(&TriggerKind::TwitchCheer),
+            TriggerCategory::Bits
+        );
+    }
+
+    #[test]
+    fn raid_category_is_raids() {
+        assert_eq!(
+            category_of(&TriggerKind::TwitchRaid),
+            TriggerCategory::Raids
+        );
+    }
+
+    #[test]
+    fn kind_search_text_contains_chat_keyword() {
+        assert!(kind_search_text(&TriggerKind::TwitchChatCommand).contains("chat"));
+        assert!(kind_search_text(&TriggerKind::TwitchChatAnyMessage).contains("chat"));
+    }
+
+    #[test]
+    fn kind_search_text_contains_sub_keyword() {
+        assert!(kind_search_text(&TriggerKind::TwitchSubscribe).contains("sub"));
+        assert!(kind_search_text(&TriggerKind::TwitchGiftSub).contains("sub"));
+    }
+
+    #[test]
+    fn add_trigger_form_invalid_without_kind() {
+        let form = AddTriggerForm::new(ActionId::new());
+        assert!(!form.is_valid());
+    }
+
+    #[test]
+    fn add_trigger_form_invalid_chat_command_without_name() {
+        let mut form = AddTriggerForm::new(ActionId::new());
+        form.selected_kind = Some(TriggerKind::TwitchChatCommand);
+        assert!(!form.is_valid());
+    }
+
+    #[test]
+    fn add_trigger_form_valid_chat_command_with_name() {
+        let mut form = AddTriggerForm::new(ActionId::new());
+        form.selected_kind = Some(TriggerKind::TwitchChatCommand);
+        form.config.command_name = "quote".to_string();
+        assert!(form.is_valid());
+    }
+
+    #[test]
+    fn add_trigger_form_valid_non_command_kind_without_name() {
+        let mut form = AddTriggerForm::new(ActionId::new());
+        form.selected_kind = Some(TriggerKind::TwitchSubscribe);
+        assert!(form.is_valid());
+    }
+
+    #[test]
+    fn search_chat_shows_command_and_any_message() {
+        let mut form = AddTriggerForm::new(ActionId::new());
+        form.search = "chat".to_string();
+        let visible = form.visible_kinds();
+        assert!(visible.contains(&TriggerKind::TwitchChatCommand));
+        assert!(visible.contains(&TriggerKind::TwitchChatAnyMessage));
+    }
+
+    #[test]
+    fn category_chat_filter_hides_non_chat_kinds() {
+        let mut form = AddTriggerForm::new(ActionId::new());
+        form.category = TriggerCategory::Chat;
+        let visible = form.visible_kinds();
+        assert!(!visible.contains(&TriggerKind::TwitchSubscribe));
+        assert!(!visible.contains(&TriggerKind::TwitchRaid));
+        assert!(visible.contains(&TriggerKind::TwitchChatCommand));
+    }
+
+    #[test]
+    fn search_sub_category_all_shows_subscribe_kinds() {
+        let mut form = AddTriggerForm::new(ActionId::new());
+        form.search = "sub".to_string();
+        let visible = form.visible_kinds();
+        assert!(visible.contains(&TriggerKind::TwitchSubscribe));
+        assert!(visible.contains(&TriggerKind::TwitchGiftSub));
     }
 
     const TEST_KEY: [u8; 32] = [0xab; 32];
@@ -295,6 +582,58 @@ mod tests {
         let detail = load_action_detail(dp, a.id).await.unwrap();
         assert_eq!(detail.action.name, "!quote");
         assert!(detail.triggers.is_empty());
+        assert!(detail.commands.is_empty());
+    }
+
+    #[tokio::test]
+    async fn chat_command_submit_persists_trigger_and_command() {
+        let dp = open_backend().await;
+        let action = make_action(&dp, "!quote", None).await;
+        dp.action_repo().save(&action).await.unwrap();
+
+        let trigger = Trigger {
+            id: TriggerId::new(),
+            action_id: action.id,
+            kind: TriggerKind::TwitchChatCommand,
+            config: {
+                let mut m = std::collections::BTreeMap::new();
+                m.insert("cooldown_secs".to_string(), forge_types::Variant::Int(30));
+                m
+            },
+        };
+        let cmd = Command {
+            id: CommandId::new(),
+            action_id: action.id,
+            name: "!quote".to_string(),
+            cooldown_secs: 30,
+            permission: CommandPermission::Everyone,
+        };
+
+        dp.trigger_repo().save(&trigger).await.unwrap();
+        dp.command_repo().save(&cmd).await.unwrap();
+
+        let detail = load_action_detail(dp, action.id).await.unwrap();
+        assert_eq!(detail.triggers.len(), 1);
+        assert_eq!(detail.commands.len(), 1);
+        assert_eq!(detail.commands[0].name, "!quote");
+    }
+
+    #[tokio::test]
+    async fn non_command_trigger_persists_only_trigger_row() {
+        let dp = open_backend().await;
+        let action = make_action(&dp, "sub alert", None).await;
+        dp.action_repo().save(&action).await.unwrap();
+
+        let trigger = Trigger {
+            id: TriggerId::new(),
+            action_id: action.id,
+            kind: TriggerKind::TwitchSubscribe,
+            config: std::collections::BTreeMap::new(),
+        };
+        dp.trigger_repo().save(&trigger).await.unwrap();
+
+        let detail = load_action_detail(dp, action.id).await.unwrap();
+        assert_eq!(detail.triggers.len(), 1);
         assert!(detail.commands.is_empty());
     }
 }

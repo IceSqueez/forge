@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Discussion / question
+    url: https://github.com/IceSqueez/forge/discussions
+    about: Ask a question, share an idea, or get help with using Forge.
+  - name: Security vulnerability
+    url: https://github.com/IceSqueez/forge/security/advisories/new
+    about: Report a security issue privately — do NOT use public issues.

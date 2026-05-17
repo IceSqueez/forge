@@ -65,6 +65,18 @@ impl Default for App {
     }
 }
 
+fn persist_step(backend: Arc<SqliteBackend>, step: OnboardingStep) -> Task<Message> {
+    Task::perform(
+        async move {
+            backend
+                .set_string(reserved_keys::LAST_ONBOARDING_STEP, step.as_key())
+                .await
+                .map_err(|e| e.to_string())
+        },
+        Message::OnboardingPersistResult,
+    )
+}
+
 pub fn update(app: &mut App, msg: Message) -> Task<Message> {
     match msg {
         Message::Navigate(screen) => {
@@ -97,8 +109,8 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             OnboardingMsg::AdvanceFromWelcome => {
                 let next = OnboardingStep::ConnectPlatform;
                 app.onboarding.sync_step(&next);
-                app.screen = Screen::Onboarding(next);
-                Task::none()
+                app.screen = Screen::Onboarding(next.clone());
+                persist_step(Arc::clone(&app.backend), next)
             }
             OnboardingMsg::PlatformSelected(id) => {
                 app.onboarding.select_platform(id);
@@ -111,12 +123,14 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 };
                 app.onboarding.sync_step(&next);
                 app.screen = Screen::Onboarding(next.clone());
-                match &next {
+                let persist = persist_step(Arc::clone(&app.backend), next.clone());
+                let nav_task = match &next {
                     OnboardingStep::DeviceCodeFlow(id) => Task::done(Message::Onboarding(
                         OnboardingMsg::EnterDeviceCodeFlow(id.clone()),
                     )),
                     _ => Task::none(),
-                }
+                };
+                Task::batch([persist, nav_task])
             }
             OnboardingMsg::EnterDeviceCodeFlow(_id) => {
                 let Some(client_id) = forge_platform_twitch::client_id() else {
@@ -183,8 +197,8 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 let expires_secs = tokens.expires_in.as_secs();
                 let next = OnboardingStep::ConnectObs;
                 app.onboarding.sync_step(&next);
-                app.screen = Screen::Onboarding(next);
-                Task::perform(
+                app.screen = Screen::Onboarding(next.clone());
+                let store_credential = Task::perform(
                     async move {
                         let bundle = serde_json::json!({
                             "access_token": access,
@@ -198,7 +212,11 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                             .map_err(|e| e.to_string())
                     },
                     Message::OnboardingPersistResult,
-                )
+                );
+                Task::batch([
+                    store_credential,
+                    persist_step(Arc::clone(&app.backend), next),
+                ])
             }
             OnboardingMsg::TokenReceived(Err(e)) => {
                 if let Some(session) = app.onboarding.device_code.as_mut() {
@@ -210,8 +228,8 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 app.onboarding.clear_device_code();
                 let prev = OnboardingStep::ConnectPlatform;
                 app.onboarding.sync_step(&prev);
-                app.screen = Screen::Onboarding(prev);
-                Task::none()
+                app.screen = Screen::Onboarding(prev.clone());
+                persist_step(Arc::clone(&app.backend), prev)
             }
             OnboardingMsg::RetryDeviceCode => {
                 app.onboarding.clear_device_code();
@@ -222,38 +240,38 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             OnboardingMsg::BackFromPicker => {
                 let prev = OnboardingStep::Welcome;
                 app.onboarding.sync_step(&prev);
-                app.screen = Screen::Onboarding(prev);
-                Task::none()
+                app.screen = Screen::Onboarding(prev.clone());
+                persist_step(Arc::clone(&app.backend), prev)
             }
             OnboardingMsg::SkipPicker => {
                 let next = OnboardingStep::ConnectObs;
                 app.onboarding.sync_step(&next);
-                app.screen = Screen::Onboarding(next);
-                Task::none()
+                app.screen = Screen::Onboarding(next.clone());
+                persist_step(Arc::clone(&app.backend), next)
             }
             OnboardingMsg::AdvanceFromObs | OnboardingMsg::SkipObs => {
                 let next = OnboardingStep::StarterPack;
                 app.onboarding.sync_step(&next);
-                app.screen = Screen::Onboarding(next);
-                Task::none()
+                app.screen = Screen::Onboarding(next.clone());
+                persist_step(Arc::clone(&app.backend), next)
             }
             OnboardingMsg::BackFromObs => {
                 let prev = OnboardingStep::ConnectPlatform;
                 app.onboarding.sync_step(&prev);
-                app.screen = Screen::Onboarding(prev);
-                Task::none()
+                app.screen = Screen::Onboarding(prev.clone());
+                persist_step(Arc::clone(&app.backend), prev)
             }
             OnboardingMsg::AdvanceFromStarterPack | OnboardingMsg::SkipStarterPack => {
                 let next = OnboardingStep::Ready;
                 app.onboarding.sync_step(&next);
-                app.screen = Screen::Onboarding(next);
-                Task::none()
+                app.screen = Screen::Onboarding(next.clone());
+                persist_step(Arc::clone(&app.backend), next)
             }
             OnboardingMsg::BackFromStarterPack => {
                 let prev = OnboardingStep::ConnectObs;
                 app.onboarding.sync_step(&prev);
-                app.screen = Screen::Onboarding(prev);
-                Task::none()
+                app.screen = Screen::Onboarding(prev.clone());
+                persist_step(Arc::clone(&app.backend), prev)
             }
             OnboardingMsg::FinishOnboarding => {
                 app.screen = Screen::Hub;

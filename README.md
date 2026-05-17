@@ -113,4 +113,4 @@ at your option.
 
 ## Acknowledgements
 
-forge is an independent open-source project built from first principles using Rust, iced, tokio, and community libraries.
+Forge is an independent open-source project built from first principles using Rust, iced, tokio, and community libraries.

@@ -36,10 +36,23 @@ impl SqliteBackend {
     pub async fn open(url: &str) -> Result<Self, SqliteStorageError> {
         let pool = connect(url).await?;
         apply_migrations(&pool).await?;
-
         let credentials = SqliteCredentialsRepo::new(pool.clone())?;
+        Ok(Self::from_pool_and_credentials(pool, credentials))
+    }
 
-        Ok(Self {
+    #[doc(hidden)]
+    pub async fn open_with_key(url: &str, key: [u8; 32]) -> Result<Self, SqliteStorageError> {
+        let pool = connect(url).await?;
+        apply_migrations(&pool).await?;
+        let credentials = SqliteCredentialsRepo::new_with_key(pool.clone(), key);
+        Ok(Self::from_pool_and_credentials(pool, credentials))
+    }
+
+    fn from_pool_and_credentials(
+        pool: sqlx::SqlitePool,
+        credentials: SqliteCredentialsRepo,
+    ) -> Self {
+        Self {
             globals: SqliteGlobalsRepo::new(pool.clone()),
             user_globals: SqliteUserGlobalsRepo::new(pool.clone()),
             settings: SqliteSettingsRepo::new(pool.clone()),
@@ -51,7 +64,7 @@ impl SqliteBackend {
             history: SqliteHistoryRepo::new(pool.clone()),
             credentials,
             pool,
-        })
+        }
     }
 }
 

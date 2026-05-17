@@ -1,6 +1,62 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-alpha.2] - 2026-05-17
+### ⚠️ BREAKING CHANGES
+- **widgets**: LoomPalette adds surface_overlay field
+- **widgets**: Spacing scale + Density::Spacious rename + new Radius/BorderWidth/FontSize tokens
+- **widgets**: onboarding widget signatures rebuilt — see DESIGN_AUDIT.md
+- **oauth**: DeviceCodePoller methods no longer take reqwest::Client parameter
+
+### ⚙️ Miscellaneous Tasks
+- Rename project loom to forge across workspace
+- Add MIT and Apache-2.0 dual license files
+- *(github)* Add issue templates and pull request template
+- Remove docs/ — CHANGELOG.md is the canonical release log
+
+### 🐛 Bug Fixes
+- *(widgets)* Migrate to iced 0.14 API after dep bump
+- *(storage)* Register keyring backend and fall back to file key
+- *(storage)* Rename LOOM_CREDENTIAL_KEY_FILE env var to FORGE prefix
+- *(storage)* Bypass keyring in tests via open_with_key
+
+### 📚 Documentation
+- *(readme)* Capitalize Forge in acknowledgements sentence
+- *(readme)* Add known limitations section for twitch client id
+- Add CODE_OF_CONDUCT CONTRIBUTING and SECURITY policy
+- *(readme)* Fix path to LICENSE
+- *(release)* Release v0.1.0-alpha.2
+
+### 🚀 Features
+- *(oauth)* Add DeviceCodePoller state machine with slow-down
+- *(twitch)* Bootstrap loom-platform-twitch with device-code auth
+- *(widgets)* Add onboarding widget family for first-run flow
+- *(app)* Add OnboardingState and Welcome screen scaffold
+- *(app)* Build ConnectPlatform screen with 4-card picker
+- *(app)* Add ConnectObs StarterPack Ready onboarding screens
+- *(app)* Persist onboarding_completed flag on finish or skip
+- *(twitch)* Add client_id resolver with env and option_env
+- *(app)* Wire DeviceCodeFlow screen with twitch oauth
+- *(app)* Persist and resume last_onboarding_step across restarts
+
+### 🚜 Refactor
+- *(widgets)* [**breaking**] Fix theme background and add surface_overlay token
+- *(widgets)* [**breaking**] Rebuild token scale with html-observed values
+- *(widgets)* Rebuild button styles to match design source
+- *(widgets)* Rebuild card styles to match design source
+- *(widgets)* Align sidebar toolbar title-bar with design
+- *(widgets)* Style text-input search-input and select
+- *(widgets)* [**breaking**] Rewrite onboarding family to match mockups
+- *(widgets)* Style section headers and add expandable variant
+- *(widgets)* Rename LoomPalette to ForgePalette
+- *(oauth)* [**breaking**] Hide reqwest behind DeviceCodePoller internals
+
+### 🛠️ Build
+- Split lint/test jobs, add audit, least-privilege perms
+- Restore action version tags from dependabot bumps
+- Inject FORGE_TWITCH_CLIENT_ID secret into release builds
+- Add timeout-minutes guard on test jobs
+
 ## [0.1.0-alpha.1] - 2026-05-16
 ### ⚙️ Miscellaneous Tasks
 - *(workspace)* Add cross-platform .gitignore
@@ -13,21 +69,24 @@ All notable changes to this project will be documented in this file.
 - *(deps)* Bump tokio-tungstenite from 0.24.0 to 0.29.0 (#9)
 - *(deps)* Bump keyring from 3.6.3 to 4.0.1 (#6)
 - *(deps)* Bump iced_fonts from 0.1.1 to 0.3.0 (#8)
+- Release
 
 ### 🎨 Styling
 - *(types)* Strip tautological doc comments
 - *(events)* Strip doc-policy violations
 - *(widgets)* Collapse multi-line doc comments on font helpers
+- *(workspace)* Fix formating
 
 ### 🐛 Bug Fixes
 - *(storage)* Land queue.rs to match lib.rs mod declaration
 
 ### 📚 Documentation
 - *(readme)* Add project README and alpha-1 release notes
+- *(release)* Release v0.1.0-alpha.1
 
 ### 🚀 Features
-- *(types)* Seed forge-types with Variant value system
-- *(events)* Seed forge-events with Event bus contract
+- *(types)* Seed loom-types with Variant value system
+- *(events)* Seed loom-events with Event bus contract
 - *(storage)* Add StorageError enum with typed variants
 - *(globals)* Add GlobalsRepo trait with GlobalEntry type
 - *(storage)* Add UserGlobalsRepo trait for per-broadcaster scope
@@ -50,7 +109,7 @@ All notable changes to this project will be documented in this file.
 - *(platforms)* Add RateLimiter trait with outcome enum
 - *(platforms)* Add IntegrationDetail page trait family
 - *(storage)* Add sqlite migration 0001 with all alpha-1 tables
-- *(widgets)* Add ForgePalette and design tokens for 3 themes
+- *(widgets)* Add LoomPalette and design tokens for 3 themes
 - *(globals)* Implement SQLite GlobalsRepo with telemetry
 - *(widgets)* Add Tier 1 button family with iced 0.13 styling
 - *(widgets)* Add Tier 1 status indicator family

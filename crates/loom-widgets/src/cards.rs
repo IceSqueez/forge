@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use iced::{Border, Element, widget::container};
+use iced::{Border, Element, Length, widget::container};
 
 use crate::palette::LoomPalette;
 
@@ -80,7 +80,7 @@ pub fn stat_row<'a, Msg: 'a>(
 
     iced::widget::row![
         iced::widget::text(label_str).size(13).color(label_color),
-        iced::widget::horizontal_space(),
+        iced::widget::Space::new().width(Length::Fill),
         iced::widget::text(value_str).size(13).color(value_color),
     ]
     .align_y(iced::alignment::Vertical::Center)

@@ -25,12 +25,14 @@ pub fn primary_button<'a, Msg: 'a + Clone>(
                 text_color,
                 border: Border::default(),
                 shadow: iced::Shadow::default(),
+                snap: false,
             },
             Status::Hovered => Style {
                 background: Some(iced::Background::Color(bg_hover)),
                 text_color,
                 border: Border::default(),
                 shadow: iced::Shadow::default(),
+                snap: false,
             },
             Status::Disabled => Style {
                 background: Some(iced::Background::Color(Color { a: 0.4, ..bg })),
@@ -40,6 +42,7 @@ pub fn primary_button<'a, Msg: 'a + Clone>(
                 },
                 border: Border::default(),
                 shadow: iced::Shadow::default(),
+                snap: false,
             },
         })
         .into()
@@ -70,6 +73,7 @@ pub fn secondary_button<'a, Msg: 'a + Clone>(
                     radius: 4.0.into(),
                 },
                 shadow: iced::Shadow::default(),
+                snap: false,
             },
             Status::Hovered => Style {
                 background: Some(iced::Background::Color(bg_hover)),
@@ -80,6 +84,7 @@ pub fn secondary_button<'a, Msg: 'a + Clone>(
                     radius: 4.0.into(),
                 },
                 shadow: iced::Shadow::default(),
+                snap: false,
             },
             Status::Disabled => Style {
                 background: Some(iced::Background::Color(Color::TRANSPARENT)),
@@ -96,6 +101,7 @@ pub fn secondary_button<'a, Msg: 'a + Clone>(
                     radius: 4.0.into(),
                 },
                 shadow: iced::Shadow::default(),
+                snap: false,
             },
         })
         .into()
@@ -118,12 +124,14 @@ pub fn ghost_button<'a, Msg: 'a + Clone>(
                 text_color,
                 border: Border::default(),
                 shadow: iced::Shadow::default(),
+                snap: false,
             },
             Status::Hovered => Style {
                 background: None,
                 text_color: text_hover,
                 border: Border::default(),
                 shadow: iced::Shadow::default(),
+                snap: false,
             },
             Status::Disabled => Style {
                 background: None,
@@ -133,6 +141,7 @@ pub fn ghost_button<'a, Msg: 'a + Clone>(
                 },
                 border: Border::default(),
                 shadow: iced::Shadow::default(),
+                snap: false,
             },
         })
         .into()
@@ -162,6 +171,7 @@ pub fn icon_button<'a, Msg: 'a + Clone>(
                 text_color: icon_color,
                 border: Border::default(),
                 shadow: iced::Shadow::default(),
+                snap: false,
             },
             Status::Hovered => Style {
                 background: Some(iced::Background::Color(bg_hover)),
@@ -171,6 +181,7 @@ pub fn icon_button<'a, Msg: 'a + Clone>(
                     ..Border::default()
                 },
                 shadow: iced::Shadow::default(),
+                snap: false,
             },
             Status::Disabled => Style {
                 background: None,
@@ -180,6 +191,7 @@ pub fn icon_button<'a, Msg: 'a + Clone>(
                 },
                 border: Border::default(),
                 shadow: iced::Shadow::default(),
+                snap: false,
             },
         })
         .into()

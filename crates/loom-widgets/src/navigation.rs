@@ -71,17 +71,19 @@ pub fn tree_node<'a, Msg: 'a + Clone>(
                         text_color: ch_hover,
                         border: Border::default(),
                         shadow: iced::Shadow::default(),
+                        snap: false,
                     },
                     _ => ButtonStyle {
                         background: None,
                         text_color: ch_color,
                         border: Border::default(),
                         shadow: iced::Shadow::default(),
+                        snap: false,
                     },
                 })
                 .into()
         }
-        None => Space::with_width(16).into(),
+        None => Space::new().width(16).into(),
     };
 
     let label_text = text(label).size(13).color(text_color);
@@ -89,7 +91,7 @@ pub fn tree_node<'a, Msg: 'a + Clone>(
         .spacing(2)
         .align_y(iced::Alignment::Center);
 
-    let row_with_indent = row![Space::with_width(indent), inner].align_y(iced::Alignment::Center);
+    let row_with_indent = row![Space::new().width(indent), inner].align_y(iced::Alignment::Center);
 
     button(row_with_indent)
         .on_press(on_select)
@@ -104,12 +106,14 @@ pub fn tree_node<'a, Msg: 'a + Clone>(
                     ..Border::default()
                 },
                 shadow: iced::Shadow::default(),
+                snap: false,
             },
             _ => ButtonStyle {
                 background: None,
                 text_color,
                 border: Border::default(),
                 shadow: iced::Shadow::default(),
+                snap: false,
             },
         })
         .into()

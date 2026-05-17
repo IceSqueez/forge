@@ -92,11 +92,20 @@ fn main() -> iced::Result {
     let (backend, storage_offline) = boot_storage();
     let initial_screen = resolve_initial_screen(&backend);
 
-    iced::application("streamer-loom", update, view)
+    let backend_boot = Arc::clone(&backend);
+    let boot_screen = Arc::new(initial_screen);
+    let boot = move || {
+        let app = App::default_with(
+            (*boot_screen).clone(),
+            Arc::clone(&backend_boot),
+            storage_offline,
+        );
+        (app, iced::Task::none())
+    };
+
+    iced::application(boot, update, view)
+        .title("streamer-loom")
         .subscription(subscription)
         .theme(theme_callback)
-        .run_with(move || {
-            let app = App::default_with(initial_screen, Arc::clone(&backend), storage_offline);
-            (app, iced::Task::none())
-        })
+        .run()
 }

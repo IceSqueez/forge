@@ -3,11 +3,12 @@ use std::sync::Arc;
 use forge_events::EventBus;
 use forge_runtime::InMemoryEventBus;
 use forge_storage_sqlite::SqliteBackend;
-use forge_widgets::{ForgePalette, ThemeId};
+use forge_widgets::{ForgePalette, StepInfo, ThemeId};
 use iced::{Element, Length, Subscription, Task, Theme};
 
+use crate::onboarding_state::OnboardingState;
 use crate::screen::OnboardingStep;
-use crate::{Message, Screen, SettingsSection};
+use crate::{Message, OnboardingMsg, Screen, SettingsSection};
 
 pub struct App {
     pub screen: Screen,
@@ -16,6 +17,7 @@ pub struct App {
     pub backend: Arc<SqliteBackend>,
     pub bus: Arc<InMemoryEventBus>,
     pub storage_offline: bool,
+    pub onboarding: OnboardingState,
 }
 
 impl App {
@@ -32,6 +34,7 @@ impl App {
             backend,
             bus: Arc::new(InMemoryEventBus::new()),
             storage_offline,
+            onboarding: OnboardingState::new(),
         }
     }
 }
@@ -55,6 +58,7 @@ impl Default for App {
             backend,
             bus: Arc::new(InMemoryEventBus::new()),
             storage_offline: false,
+            onboarding: OnboardingState::new(),
         }
     }
 }
@@ -62,9 +66,24 @@ impl Default for App {
 pub fn update(app: &mut App, msg: Message) -> Task<Message> {
     match msg {
         Message::Navigate(screen) => {
+            if let Screen::Onboarding(ref step) = screen {
+                app.onboarding.sync_step(step);
+            }
             app.screen = screen;
             Task::none()
         }
+        Message::Onboarding(sub) => match sub {
+            OnboardingMsg::SkipSetup => {
+                app.screen = Screen::Hub;
+                Task::none()
+            }
+            OnboardingMsg::AdvanceFromWelcome => {
+                let next = OnboardingStep::ConnectPlatform;
+                app.onboarding.sync_step(&next);
+                app.screen = Screen::Onboarding(next);
+                Task::none()
+            }
+        },
         Message::ThemeChanged(id) => {
             let (theme, palette) = match id {
                 ThemeId::CatppuccinMocha => forge_widgets::catppuccin_mocha(),
@@ -185,27 +204,195 @@ fn settings_view<'a>(
     iced::widget::row![nav, pane].spacing(16).into()
 }
 
-fn onboarding_view<'a>(step: &'a OnboardingStep, palette: &'a ForgePalette) -> Element<'a, Message> {
-    let step_label = format!("Step: {step:?}");
-    let hero = forge_widgets::hero_card(
-        "Welcome to forge",
-        "First-run setup",
-        std::iter::once(iced::widget::text(step_label).into()),
+fn onboarding_left_column<'a>(
+    steps: &'a [StepInfo],
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    let hero_box = iced::widget::container(iced::widget::text("S").size(30.0).color(palette.shell))
+        .width(60.0)
+        .height(60.0)
+        .align_x(iced::Alignment::Center)
+        .align_y(iced::Alignment::Center)
+        .style(move |_theme: &iced::Theme| iced::widget::container::Style {
+            background: Some(iced::Background::Color(palette.brand)),
+            border: iced::Border {
+                radius: 14.0.into(),
+                ..iced::Border::default()
+            },
+            ..iced::widget::container::Style::default()
+        });
+
+    let heading = iced::widget::text("Weave your\nfirst loom")
+        .size(22.0)
+        .color(palette.text_primary);
+
+    let subtitle = iced::widget::text(
+        "Optional setup. Skip anything you want and configure it later from settings.",
+    )
+    .size(12.5)
+    .color(palette.text_muted);
+
+    let stepper = forge_widgets::onboarding_stepper(steps, palette);
+
+    iced::widget::column![hero_box, heading, subtitle, stepper]
+        .spacing(20.0)
+        .width(Length::Fixed(240.0))
+        .into()
+}
+
+fn welcome_step_content<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
+    let header =
+        forge_widgets::onboarding_step_header(1, 5, "Welcome to Forge", false, false, palette);
+
+    let subtitle = iced::widget::text(
+        "Forge your show with powerful automation, integrations, and TTS — all in one place.",
+    )
+    .size(13.0)
+    .color(palette.text_muted);
+
+    let footer = forge_widgets::onboarding_footer(
+        None,
+        None,
+        "Get started",
+        '→',
+        Message::Onboarding(OnboardingMsg::AdvanceFromWelcome),
+        true,
         palette,
     );
 
-    let buttons = iced::widget::row![
-        forge_widgets::ghost_button("Skip", Message::Navigate(Screen::Hub), palette),
-        forge_widgets::ghost_button("Next", Message::Navigate(Screen::Hub), palette),
+    iced::widget::column![
+        header,
+        subtitle,
+        iced::widget::Space::new().height(Length::Fill),
+        footer,
     ]
-    .spacing(8);
+    .spacing(16.0)
+    .height(Length::Fill)
+    .into()
+}
 
-    let content = forge_widgets::card([hero, buttons.into()], palette);
+fn placeholder_step_content<'a>(
+    step: &'a OnboardingStep,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    let (step_num, title, body) = match step {
+        OnboardingStep::ConnectPlatform => (
+            2usize,
+            "Connect a streaming platform",
+            "You can connect more later from settings.",
+        ),
+        OnboardingStep::ConnectObs => (
+            3,
+            "Connect OBS Studio",
+            "OBS Studio integration ships in alpha-7. Skip for now.",
+        ),
+        OnboardingStep::StarterPack => (
+            4,
+            "Starter pack",
+            "Pre-built actions and triggers ship in a future release. Skip for now.",
+        ),
+        OnboardingStep::Ready => (
+            5,
+            "You're ready",
+            "Setup complete. You can configure everything later from settings.",
+        ),
+        OnboardingStep::Welcome => unreachable!(),
+    };
 
-    iced::widget::container(content)
-        .width(Length::Fill)
+    let header = forge_widgets::onboarding_step_header(
+        step_num,
+        5,
+        title,
+        matches!(step, OnboardingStep::ConnectPlatform),
+        false,
+        palette,
+    );
+
+    let body_text = iced::widget::text(body)
+        .size(13.0)
+        .color(palette.text_muted);
+
+    let (on_back, on_continue, continue_label) = match step {
+        OnboardingStep::ConnectPlatform => (
+            Some(Message::Navigate(Screen::Onboarding(
+                OnboardingStep::Welcome,
+            ))),
+            Message::Navigate(Screen::Onboarding(OnboardingStep::ConnectObs)),
+            "Continue",
+        ),
+        OnboardingStep::ConnectObs => (
+            Some(Message::Navigate(Screen::Onboarding(
+                OnboardingStep::ConnectPlatform,
+            ))),
+            Message::Navigate(Screen::Onboarding(OnboardingStep::StarterPack)),
+            "Continue",
+        ),
+        OnboardingStep::StarterPack => (
+            Some(Message::Navigate(Screen::Onboarding(
+                OnboardingStep::ConnectObs,
+            ))),
+            Message::Navigate(Screen::Onboarding(OnboardingStep::Ready)),
+            "Continue",
+        ),
+        OnboardingStep::Ready => (
+            Some(Message::Navigate(Screen::Onboarding(
+                OnboardingStep::StarterPack,
+            ))),
+            Message::Navigate(Screen::Hub),
+            "Enter Forge",
+        ),
+        OnboardingStep::Welcome => unreachable!(),
+    };
+
+    let footer = forge_widgets::onboarding_footer(
+        on_back,
+        None,
+        continue_label,
+        '→',
+        on_continue,
+        true,
+        palette,
+    );
+
+    iced::widget::column![
+        header,
+        body_text,
+        iced::widget::Space::new().height(Length::Fill),
+        footer,
+    ]
+    .spacing(16.0)
+    .height(Length::Fill)
+    .into()
+}
+
+fn onboarding_view<'a>(
+    step: &'a OnboardingStep,
+    steps: &'a [StepInfo],
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    let skip_action: Element<'a, Message> = forge_widgets::ghost_button(
+        "Skip setup, just let me explore →",
+        Message::Onboarding(OnboardingMsg::SkipSetup),
+        palette,
+    );
+
+    let title_bar =
+        forge_widgets::title_bar_with_logo("Forge", "Quick setup", 'S', vec![skip_action], palette);
+
+    let left = onboarding_left_column(steps, palette);
+
+    let right: Element<'a, Message> = match step {
+        OnboardingStep::Welcome => welcome_step_content(palette),
+        other => placeholder_step_content(other, palette),
+    };
+
+    let body = iced::widget::row![left, right]
+        .spacing(40.0)
+        .padding(iced::Padding::from([32_u16, 40_u16]))
+        .height(Length::Fill);
+
+    iced::widget::column![title_bar, body]
         .height(Length::Fill)
-        .padding(16)
         .into()
 }
 
@@ -223,6 +410,10 @@ fn coming_soon_view(screen_label: String, palette: &ForgePalette) -> Element<'st
 
 pub fn view(app: &App) -> Element<'_, Message> {
     let palette = &app.palette;
+
+    if let Screen::Onboarding(step) = &app.screen {
+        return onboarding_view(step, &app.onboarding.step_infos, palette);
+    }
 
     let nav_items = vec![
         nav_button("Hub", Screen::Hub, palette),
@@ -248,7 +439,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let content: Element<'_, Message> = match &app.screen {
         Screen::Hub => hub_view(palette),
         Screen::Settings(section) => settings_view(section, palette),
-        Screen::Onboarding(step) => onboarding_view(step, palette),
+        Screen::Onboarding(_) => unreachable!(),
         other => coming_soon_view(format!("{other:?}"), palette),
     };
 
@@ -365,8 +556,41 @@ mod tests {
     }
 
     #[test]
-    fn view_compiles() {
+    fn onboarding_skip_setup_navigates_to_hub() {
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Onboarding(OnboardingMsg::SkipSetup));
+        assert_eq!(app.screen, Screen::Hub);
+    }
+
+    #[test]
+    fn onboarding_advance_from_welcome_navigates_to_connect_platform() {
+        let mut app = App::default();
+        let _ = update(
+            &mut app,
+            Message::Onboarding(OnboardingMsg::AdvanceFromWelcome),
+        );
+        assert_eq!(
+            app.screen,
+            Screen::Onboarding(OnboardingStep::ConnectPlatform)
+        );
+    }
+
+    #[test]
+    fn onboarding_state_initialized_with_no_platform() {
         let app = App::default();
+        assert!(app.onboarding.selected_platform.is_none());
+    }
+
+    #[test]
+    fn view_compiles_onboarding_welcome() {
+        let app = App::default();
+        let _ = view(&app);
+    }
+
+    #[test]
+    fn view_compiles_hub() {
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Navigate(Screen::Hub));
         let _ = view(&app);
     }
 }

@@ -1,25 +1,25 @@
 [workspace]
 resolver = "3"
 members = [
-  "crates/loom-types",
-  "crates/loom-events",
-  "crates/loom-runtime",
-  "crates/loom-script",
-  "crates/loom-storage",
-  "crates/loom-storage-sqlite",
-  "crates/loom-platform-core",
-  "crates/loom-platform-twitch",
-  "crates/loom-server",
-  "crates/loom-widgets",
-  "crates/loom-app",
+  "crates/forge-types",
+  "crates/forge-events",
+  "crates/forge-runtime",
+  "crates/forge-script",
+  "crates/forge-storage",
+  "crates/forge-storage-sqlite",
+  "crates/forge-platform-core",
+  "crates/forge-platform-twitch",
+  "crates/forge-server",
+  "crates/forge-widgets",
+  "crates/forge-app",
 ]
-default-members = ["crates/loom-app"]
+default-members = ["crates/forge-app"]
 
 [workspace.package]
 version = "0.1.0-alpha.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/IceSqueez/streamer-loom"
+repository = "https://github.com/IceSqueez/forge"
 rust-version = "1.95"
 
 [workspace.dependencies]

@@ -1,0 +1,34 @@
+[package]
+name                  = "forge-app"
+version.workspace     = true
+edition.workspace     = true
+license.workspace     = true
+repository.workspace  = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "forge"
+path = "src/main.rs"
+
+[lib]
+name = "forge_app"
+path = "src/lib.rs"
+
+[dependencies]
+forge-types          = { path = "../forge-types" }
+forge-events         = { path = "../forge-events" }
+forge-runtime        = { path = "../forge-runtime" }
+forge-script         = { path = "../forge-script" }
+forge-storage        = { path = "../forge-storage" }
+forge-storage-sqlite = { path = "../forge-storage-sqlite" }
+forge-platform-core  = { path = "../forge-platform-core" }
+forge-server         = { path = "../forge-server" }
+forge-widgets        = { path = "../forge-widgets" }
+iced                = { workspace = true }
+keyring             = { workspace = true }
+tokio               = { workspace = true }
+tracing             = { workspace = true }
+tracing-subscriber  = { workspace = true }

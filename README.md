@@ -1,4 +1,4 @@
-# streamer-loom
+# forge
 
 Cross-platform desktop tool for stream automation and multi-engine TTS — built in Rust.
 
@@ -7,9 +7,9 @@ Cross-platform desktop tool for stream automation and multi-engine TTS — built
 [![Platform Support: Linux | Windows | macOS](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-green)](./docs/install/)
 [![Status: Alpha](https://img.shields.io/badge/status-alpha--1-yellow)](./docs/release-notes/)
 
-## What is streamer-loom?
+## What is forge?
 
-streamer-loom is an open-source desktop application that automates stream workflows across multiple chat and streaming platforms. It combines event-driven action automation with a powerful multi-engine text-to-speech pipeline, all in a single, focused tool built entirely in Rust.
+forge is an open-source desktop application that automates stream workflows across multiple chat and streaming platforms. It combines event-driven action automation with a powerful multi-engine text-to-speech pipeline, all in a single, focused tool built entirely in Rust.
 
 **Core capabilities** (roadmap, shipping incrementally):
 
@@ -73,24 +73,24 @@ See the full roadmap once alpha-2 ships.
 ### Build
 
 ```bash
-git clone https://github.com/IceSqueez/streamer-loom.git
-cd streamer-loom
+git clone https://github.com/IceSqueez/forge.git
+cd forge
 cargo build --release
 ```
 
-The binary will be at `target/release/loom` (Linux/macOS) or `target/release/loom.exe` (Windows).
+The binary will be at `target/release/forge` (Linux/macOS) or `target/release/forge.exe` (Windows).
 
 ### Run
 
 ```bash
-./target/release/loom
+./target/release/forge
 ```
 
 On first run, the app will initialize your data directory (XDG-compliant on Linux, AppData on Windows, Library on macOS) and route you to the Onboarding screen.
 
 ## Installing Releases
 
-Binary releases for Linux, Windows, and macOS are published on [GitHub Releases](https://github.com/IceSqueez/streamer-loom/releases).
+Binary releases for Linux, Windows, and macOS are published on [GitHub Releases](https://github.com/IceSqueez/forge/releases).
 
 - **Linux:** AppImage (universal), Flatpak, AUR (community).
 - **Windows:** Portable ZIP (no install) + MSI installer (coming beta-1).
@@ -113,4 +113,4 @@ at your option.
 
 ## Acknowledgements
 
-streamer-loom is an independent open-source project built from first principles using Rust, iced, tokio, and community libraries.
+forge is an independent open-source project built from first principles using Rust, iced, tokio, and community libraries.

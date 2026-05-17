@@ -55,7 +55,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: binaries-${{ inputs.os }}
-          path: target/release/loom*
+          path: target/release/forge*
           if-no-files-found: error
 
       - name: Upload artifacts (Windows)
@@ -63,5 +63,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: binaries-${{ inputs.os }}
-          path: target/release/loom*.exe
+          path: target/release/forge*.exe
           if-no-files-found: error

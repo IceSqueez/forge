@@ -1,4 +1,4 @@
-# streamer-loom v0.1.0-alpha.1 — Foundation
+# forge v0.1.0-alpha.1 — Foundation
 
 **Release Date:** 2026-05-17
 
@@ -17,7 +17,7 @@
 - **Theme switching** in Settings persists across restarts (Catppuccin Mocha, Tokyo Night, Latte).
 - **Sidebar navigation** between Hub, Actions, Commands, Platforms, Integrations, TTS, Soundboard, Logs, Settings screens.
 - **Settings** → Diagnostics view shows DataProvider status, schema version, app version, and data directory path.
-- **Data storage** at platform-appropriate paths: `~/.local/share/streamer-loom/` (Linux/Wayland), `%APPDATA%\streamer-loom\` (Windows), `~/Library/Application Support/streamer-loom/` (macOS).
+- **Data storage** at platform-appropriate paths: `~/.local/share/forge/` (Linux/Wayland), `%APPDATA%\forge\` (Windows), `~/Library/Application Support/forge/` (macOS).
 
 ## Known Limitations
 
@@ -32,30 +32,30 @@
 
 ## Architecture
 
-**Core layer** (`loom-types`, `loom-events`, `loom-runtime`, `loom-script`):
+**Core layer** (`forge-types`, `forge-events`, `forge-runtime`, `forge-script`):
 - `Variant`: 7-type polymorphic value system (Int, Float, Bool, String, Datetime, Array, Object).
 - `Event` bus & `EventSource` taxonomy for system observability.
 - `EventBus` trait + re-entrant event dispatch (impl lands alpha-3).
 - rhai scripting engine sandbox (LoomApi god-object lands alpha-6).
 
-**Data layer** (`loom-storage`, `loom-storage-sqlite`):
+**Data layer** (`forge-storage`, `forge-storage-sqlite`):
 - 10 repository traits: Globals, UserGlobals, Settings, Actions, Triggers, Commands, Queues, Scripts, Credentials, History.
 - SQLite WAL mode + async sqlx connection pool.
 - AES-GCM encryption for stored credentials using OS keyring-derived keys.
 - Migration `0001_init` with schemas for globals, settings, action history, and encrypted credential vault.
 
-**Platform layer** (`loom-platform-core`):
+**Platform layer** (`forge-platform-core`):
 - `ChatPlatform` trait contract.
 - `AuthFlow` enum: Device Code (Twitch, YouTube), Local Callback (fallback), None (community/unofficial APIs).
 - Four Integration Detail traits: `IntegrationStatus`, `IntegrationHealth`, `IntegrationCatalog`, `QuickActions` — used by all integrations (Twitch, OBS, VTube, Discord, MIDI, Hotkey, etc.).
 
 **Integration & Audio layers** (skeleton crates):
-- `loom-server`: axum HTTP + tokio-tungstenite WebSocket foundation.
-- Audio layer ready for `loom-audio`, `loom-tts-core`, `loom-voice`, `loom-speak-queue`, `loom-soundboard` — implementations start alpha-3.
+- `forge-server`: axum HTTP + tokio-tungstenite WebSocket foundation.
+- Audio layer ready for `forge-audio`, `forge-tts-core`, `forge-voice`, `forge-speak-queue`, `forge-soundboard` — implementations start alpha-3.
 
-**UI layer** (`loom-widgets`, `loom-app`):
-- **loom-widgets:** Design-system kit with 20+ Tier 1 components, theme factories, semantic color palette, spacing/density/typography tokens.
-- **loom-app:** iced App shell with view router, Hub, Sidebar, Settings, Onboarding, first-run routing, theme persistence.
+**UI layer** (`forge-widgets`, `forge-app`):
+- **forge-widgets:** Design-system kit with 20+ Tier 1 components, theme factories, semantic color palette, spacing/density/typography tokens.
+- **forge-app:** iced App shell with view router, Hub, Sidebar, Settings, Onboarding, first-run routing, theme persistence.
 
 ## CI / Release Pipeline
 

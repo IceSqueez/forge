@@ -36,7 +36,6 @@ struct SentData {
 /// Rate-limited. Returns `ChatSendError::RateLimited` if the limiter is exhausted.
 /// `message` must be ≤500 chars (Twitch limit); returns `ChatSendError::MessageTooLong` otherwise.
 pub async fn send_chat(
-    http: &reqwest::Client,
     rate_limiter: &dyn RateLimiter,
     token: &OAuthToken,
     client_id: &str,
@@ -44,6 +43,7 @@ pub async fn send_chat(
     sender_id: &str,
     message: &str,
 ) -> Result<SentMessageId, ChatSendError> {
+    let http = reqwest::Client::new();
     if message.len() > MAX_MESSAGE_LEN {
         return Err(ChatSendError::MessageTooLong);
     }

@@ -17,7 +17,6 @@ pub struct TwitchChat {
     broadcaster_id: String,
     user_id: String,
     bus: Arc<EventBus>,
-    http: Arc<reqwest::Client>,
 }
 
 pub struct TwitchChatHandle {
@@ -32,7 +31,6 @@ impl TwitchChat {
         broadcaster_id: String,
         user_id: String,
         bus: Arc<EventBus>,
-        http: Arc<reqwest::Client>,
     ) -> Self {
         Self {
             token,
@@ -40,7 +38,6 @@ impl TwitchChat {
             broadcaster_id,
             user_id,
             bus,
-            http,
         }
     }
 
@@ -52,7 +49,6 @@ impl TwitchChat {
             self.broadcaster_id,
             self.user_id,
             self.bus,
-            self.http,
         );
         tokio::spawn(sess.run());
         TwitchChatHandle {

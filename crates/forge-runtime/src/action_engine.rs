@@ -14,6 +14,7 @@ use tracing::warn;
 use crate::EventBus;
 use crate::sub_actions::dispatch;
 
+#[derive(Clone)]
 pub struct ActionEngineHandle {
     sender: mpsc::Sender<ExecutionRequest>,
     cancel: Arc<AtomicBool>,

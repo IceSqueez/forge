@@ -28,6 +28,7 @@ pub enum SchedulerError {
     QueueNotFound(QueueId),
 }
 
+#[derive(Clone)]
 pub struct QueueSchedulerHandle {
     sender: mpsc::UnboundedSender<SchedulerCommand>,
 }

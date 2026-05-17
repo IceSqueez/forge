@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use forge_platform_twitch::{ChatConnectionState, TwitchChatHandle};
-use forge_runtime::EventBus;
+use forge_runtime::{ActionEngineHandle, CommandParserHandle, EventBus, QueueSchedulerHandle};
 use forge_storage::{CredentialId, CredentialsRepo, SettingsRepo, reserved_keys};
 use forge_storage_sqlite::SqliteBackend;
 use forge_widgets::{BannerKind, ForgePalette, StepInfo, ThemeId};
@@ -24,6 +24,9 @@ pub struct App {
     pub onboarding: OnboardingState,
     pub live_chat: LiveChatState,
     pub twitch_chat_handle: Option<TwitchChatHandle>,
+    pub action_engine: Option<ActionEngineHandle>,
+    pub scheduler: Option<QueueSchedulerHandle>,
+    pub command_parser: Option<CommandParserHandle>,
 }
 
 impl App {
@@ -31,6 +34,9 @@ impl App {
         initial: Screen,
         backend: Arc<SqliteBackend>,
         storage_offline: bool,
+        action_engine: Option<ActionEngineHandle>,
+        scheduler: Option<QueueSchedulerHandle>,
+        command_parser: Option<CommandParserHandle>,
     ) -> Self {
         let (theme, palette) = forge_widgets::catppuccin_mocha();
         Self {
@@ -43,6 +49,9 @@ impl App {
             onboarding: OnboardingState::new(),
             live_chat: LiveChatState::new(),
             twitch_chat_handle: None,
+            action_engine,
+            scheduler,
+            command_parser,
         }
     }
 }
@@ -70,6 +79,9 @@ impl Default for App {
             onboarding: OnboardingState::new(),
             live_chat: LiveChatState::new(),
             twitch_chat_handle: None,
+            action_engine: None,
+            scheduler: None,
+            command_parser: None,
         }
     }
 }
@@ -1938,6 +1950,65 @@ mod tests {
         app.live_chat.chat_input = "hello chat".into();
         let _ = update(&mut app, Message::ChatSubmit);
         assert!(app.live_chat.chat_input.is_empty());
+    }
+
+    #[tokio::test]
+    #[allow(clippy::expect_used)]
+    async fn runtime_handles_present_when_storage_is_online() {
+        use forge_storage::DataProvider;
+
+        let sqlite = Arc::new(
+            SqliteBackend::open_with_key("sqlite::memory:", TEST_KEY)
+                .await
+                .expect("in-memory SQLite always opens"),
+        );
+        let dp: Arc<dyn DataProvider> = Arc::clone(&sqlite) as Arc<dyn DataProvider>;
+        let bus = EventBus::new();
+        let queues = dp.queue_repo().list().await.expect("list queues");
+
+        let engine = forge_runtime::spawn_action_engine(Arc::clone(&bus), Arc::clone(&dp));
+        let scheduler =
+            forge_runtime::QueueScheduler::spawn(engine.clone(), Arc::clone(&bus), queues);
+        let parser = forge_runtime::CommandParser::spawn(
+            Arc::clone(&bus),
+            Arc::clone(&dp),
+            scheduler.clone(),
+        );
+
+        let (theme, palette) = forge_widgets::catppuccin_mocha();
+        let app = App {
+            screen: Screen::Hub,
+            theme,
+            palette,
+            backend: sqlite,
+            bus,
+            storage_offline: false,
+            onboarding: OnboardingState::new(),
+            live_chat: LiveChatState::new(),
+            twitch_chat_handle: None,
+            action_engine: Some(engine),
+            scheduler: Some(scheduler),
+            command_parser: Some(parser),
+        };
+
+        assert!(app.action_engine.is_some());
+        assert!(app.scheduler.is_some());
+        assert!(app.command_parser.is_some());
+    }
+
+    #[test]
+    fn runtime_handles_absent_when_storage_offline() {
+        let app = App {
+            storage_offline: true,
+            action_engine: None,
+            scheduler: None,
+            command_parser: None,
+            ..App::default()
+        };
+
+        assert!(app.action_engine.is_none());
+        assert!(app.scheduler.is_none());
+        assert!(app.command_parser.is_none());
     }
 
     #[test]

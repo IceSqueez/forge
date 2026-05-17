@@ -415,8 +415,7 @@ mod tests {
         }
 
         assert_eq!(
-            subaction_run_count,
-            2,
+            subaction_run_count, 2,
             "both sub-actions must fire subaction.run"
         );
         handle.shutdown();

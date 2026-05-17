@@ -1,5 +1,4 @@
 use crate::Event;
-use async_trait::async_trait;
 use forge_types::EventId;
 use tokio::sync::broadcast;
 
@@ -29,17 +28,6 @@ impl EventStream {
             Err(broadcast::error::RecvError::Lagged(_)) => Err(EventsError::LaggingReceiver),
         }
     }
-}
-
-#[async_trait]
-pub trait EventBus: Send + Sync {
-    /// Slow subscribers lag (broadcast semantics); publisher never blocks on them.
-    async fn publish(&self, event: Event) -> Result<(), EventsError>;
-
-    fn subscribe(&self) -> EventStream;
-
-    /// Returns the captured event with original ID preserved.
-    async fn replay(&self, id: EventId) -> Result<Event, EventsError>;
 }
 
 #[cfg(test)]

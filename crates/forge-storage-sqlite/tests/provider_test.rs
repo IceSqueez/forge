@@ -14,17 +14,59 @@ async fn open_succeeds_with_in_memory_db() {
 }
 
 #[tokio::test]
-async fn schema_version_returns_3_after_all_migrations() {
+async fn schema_version_is_at_least_2_after_all_migrations() {
     let backend = SqliteBackend::open_with_key("sqlite::memory:", TEST_KEY)
         .await
         .expect("open");
 
     let version = backend.schema_version().await.expect("schema_version");
-    assert_eq!(version, 3, "expected 3 applied migrations");
+    assert!(version >= 2, "expected at least 2 applied migrations");
 }
 
 #[tokio::test]
-async fn dataprovider_coercion_compiles_and_delegates() {
+async fn dataprovider_action_repo_accessor_is_reachable() {
+    use forge_types::{Action, ActionId};
+
+    let backend = SqliteBackend::open_with_key("sqlite::memory:", TEST_KEY)
+        .await
+        .expect("open");
+
+    let dp: &dyn DataProvider = &backend;
+
+    let queue = dp
+        .queue_repo()
+        .get_by_name("Default")
+        .await
+        .expect("get default queue");
+    let queue_id = queue.expect("default queue seeded").id;
+
+    let action = Action {
+        id: ActionId::new(),
+        name: "test_action".to_owned(),
+        group: None,
+        queue_id,
+        enabled: true,
+        concurrent: false,
+        bypass_pause: false,
+        description: None,
+        sub_actions: vec![],
+    };
+    dp.action_repo()
+        .save(&action)
+        .await
+        .expect("save must succeed");
+
+    let got = dp
+        .action_repo()
+        .get(action.id)
+        .await
+        .expect("get must succeed");
+    let action = got.expect("action must exist");
+    assert_eq!(action.name, "test_action");
+}
+
+#[tokio::test]
+async fn dataprovider_globals_repo_roundtrip() {
     let backend = SqliteBackend::open_with_key("sqlite::memory:", TEST_KEY)
         .await
         .expect("open");

@@ -5,6 +5,7 @@ pub mod capabilities;
 pub mod chat;
 pub mod error;
 pub mod integration;
+pub mod oauth;
 pub mod rate_limit;
 pub use auth::AuthFlow;
 pub use capabilities::PlatformCapabilities;
@@ -13,5 +14,8 @@ pub use error::PlatformError;
 pub use integration::{
     CatalogEntry, HealthColor, HealthMetric, IntegrationCatalog, IntegrationHealth, IntegrationId,
     IntegrationStatus, QuickAction, QuickActions,
+};
+pub use oauth::{
+    DeviceCodePoller, DeviceCodeRequest, DeviceCodeResponse, PollOutcome, TokenResponse,
 };
 pub use rate_limit::{RateLimitOutcome, RateLimiter};

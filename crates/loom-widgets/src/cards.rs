@@ -1,12 +1,40 @@
 use std::borrow::Cow;
 
-use iced::{Border, Element, Length, widget::container};
+use iced::{Border, Element, widget::container};
 
 use crate::palette::LoomPalette;
+use crate::tokens::{
+    BORDER_THIN, Density, FONT_CAPS_SM, FONT_HERO, Radius, Spacing, radius, spacing,
+};
+
+fn card_style(
+    bg: iced::Color,
+    border_color: iced::Color,
+    r: f32,
+) -> impl Fn(&iced::Theme) -> container::Style {
+    move |_theme: &iced::Theme| container::Style {
+        background: Some(iced::Background::Color(bg)),
+        border: Border {
+            color: border_color,
+            width: BORDER_THIN,
+            radius: r.into(),
+        },
+        ..container::Style::default()
+    }
+}
 
 pub fn card<'a, Msg: 'a>(
     children: impl IntoIterator<Item = Element<'a, Msg>>,
     palette: &LoomPalette,
+) -> Element<'a, Msg> {
+    card_with_radius(children, palette, Radius::Xl)
+}
+
+/// Variant of `card` for callers that need a non-default corner radius.
+pub fn card_with_radius<'a, Msg: 'a>(
+    children: impl IntoIterator<Item = Element<'a, Msg>>,
+    palette: &LoomPalette,
+    r: Radius,
 ) -> Element<'a, Msg> {
     let bg = palette.elevated;
     let border_color = palette.border_regular;
@@ -14,16 +42,8 @@ pub fn card<'a, Msg: 'a>(
     let col = iced::widget::column(children).spacing(8);
 
     container(col)
-        .padding(16)
-        .style(move |_theme: &iced::Theme| container::Style {
-            background: Some(iced::Background::Color(bg)),
-            border: Border {
-                color: border_color,
-                width: 1.0,
-                radius: 12.0.into(),
-            },
-            ..container::Style::default()
-        })
+        .padding(spacing(Spacing::Xxl, Density::default()))
+        .style(card_style(bg, border_color, radius(r)))
         .into()
 }
 
@@ -43,8 +63,12 @@ pub fn metric_card<'a, Msg: 'a>(
     let value_str: Cow<'a, str> = value.into();
 
     let mut col = iced::widget::column![
-        iced::widget::text(label_str).size(11).color(label_color),
-        iced::widget::text(value_str).size(22).color(value_color),
+        iced::widget::text(label_str)
+            .size(FONT_CAPS_SM)
+            .color(label_color),
+        iced::widget::text(value_str)
+            .size(FONT_HERO)
+            .color(value_color),
     ]
     .spacing(4);
 
@@ -54,16 +78,8 @@ pub fn metric_card<'a, Msg: 'a>(
     }
 
     container(col)
-        .padding(12)
-        .style(move |_theme: &iced::Theme| container::Style {
-            background: Some(iced::Background::Color(bg)),
-            border: Border {
-                color: border_color,
-                width: 1.0,
-                radius: 8.0.into(),
-            },
-            ..container::Style::default()
-        })
+        .padding(spacing(Spacing::Xxxl, Density::default()))
+        .style(card_style(bg, border_color, radius(Radius::Xxl)))
         .into()
 }
 
@@ -80,7 +96,7 @@ pub fn stat_row<'a, Msg: 'a>(
 
     iced::widget::row![
         iced::widget::text(label_str).size(13).color(label_color),
-        iced::widget::Space::new().width(Length::Fill),
+        iced::widget::Space::new().width(iced::Length::Fill),
         iced::widget::text(value_str).size(13).color(value_color),
     ]
     .align_y(iced::alignment::Vertical::Center)
@@ -102,7 +118,9 @@ pub fn hero_card<'a, Msg: 'a>(
     let subtitle_str: Cow<'a, str> = subtitle.into();
 
     let header = iced::widget::column![
-        iced::widget::text(title_str).size(18).color(title_color),
+        iced::widget::text(title_str)
+            .size(FONT_HERO)
+            .color(title_color),
         iced::widget::text(subtitle_str)
             .size(13)
             .color(subtitle_color),
@@ -115,16 +133,8 @@ pub fn hero_card<'a, Msg: 'a>(
     }
 
     container(col)
-        .padding(20)
-        .style(move |_theme: &iced::Theme| container::Style {
-            background: Some(iced::Background::Color(bg)),
-            border: Border {
-                color: border_color,
-                width: 1.0,
-                radius: 12.0.into(),
-            },
-            ..container::Style::default()
-        })
+        .padding(spacing(Spacing::Huge, Density::default()))
+        .style(card_style(bg, border_color, radius(Radius::Hero)))
         .into()
 }
 
@@ -132,11 +142,24 @@ pub fn hero_card<'a, Msg: 'a>(
 mod tests {
     use super::*;
     use crate::palette::CATPPUCCIN_MOCHA;
+    use crate::tokens::{BORDER_THIN, Radius, radius};
     use iced::widget::text;
 
     #[test]
     fn card_compiles_with_unit_msg() {
         let _: Element<'_, ()> = card([text("content").into()], &CATPPUCCIN_MOCHA);
+    }
+
+    #[test]
+    fn card_with_radius_uses_hero_radius() {
+        let _: Element<'_, ()> =
+            card_with_radius([text("content").into()], &CATPPUCCIN_MOCHA, Radius::Hero);
+    }
+
+    #[test]
+    fn card_with_radius_uses_xl_radius() {
+        let _: Element<'_, ()> =
+            card_with_radius([text("x").into()], &CATPPUCCIN_MOCHA, Radius::Xl);
     }
 
     #[test]
@@ -188,5 +211,25 @@ mod tests {
         let label = String::from("Followers");
         let value = String::from("12 345");
         let _: Element<'_, ()> = stat_row(label.as_str(), value.as_str(), &CATPPUCCIN_MOCHA);
+    }
+
+    #[test]
+    fn border_thin_constant_is_one() {
+        assert_eq!(BORDER_THIN, 1.0);
+    }
+
+    #[test]
+    fn metric_card_radius_token_is_xxl() {
+        assert_eq!(radius(Radius::Xxl), 10.0);
+    }
+
+    #[test]
+    fn hero_card_radius_token_is_hero() {
+        assert_eq!(radius(Radius::Hero), 14.0);
+    }
+
+    #[test]
+    fn card_default_radius_token_is_xl() {
+        assert_eq!(radius(Radius::Xl), 9.0);
     }
 }

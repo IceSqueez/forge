@@ -62,15 +62,16 @@ pub struct DeviceCodePoller {
     device_code: String,
     interval: Duration,
     expires_at: Instant,
+    http: reqwest::Client,
     cancel: Arc<AtomicBool>,
 }
 
 impl DeviceCodePoller {
     pub async fn request_device_code(
-        http: &reqwest::Client,
         user_code_endpoint: &str,
         req: DeviceCodeRequest,
     ) -> Result<DeviceCodeResponse, PlatformError> {
+        let http = reqwest::Client::new();
         let scopes = req.scopes.join(" ");
         let resp = http
             .post(user_code_endpoint)
@@ -107,12 +108,14 @@ impl DeviceCodePoller {
             device_code: device_code.into(),
             interval,
             expires_at: Instant::now() + expires_in,
+            http: reqwest::Client::new(),
             cancel: Arc::new(AtomicBool::new(false)),
         }
     }
 
-    pub async fn poll_once(&self, http: &reqwest::Client) -> Result<PollOutcome, PlatformError> {
-        let resp = http
+    pub async fn poll_once(&self) -> Result<PollOutcome, PlatformError> {
+        let resp = self
+            .http
             .post(&self.token_endpoint)
             .form(&[
                 ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
@@ -153,7 +156,7 @@ impl DeviceCodePoller {
         Ok(error_field_to_outcome(&error_body.error))
     }
 
-    pub async fn run(&mut self, http: reqwest::Client) -> Result<TokenResponse, PlatformError> {
+    pub async fn run(&mut self) -> Result<TokenResponse, PlatformError> {
         loop {
             if self.cancel.load(Ordering::Relaxed) {
                 return Err(PlatformError::Auth {
@@ -175,7 +178,7 @@ impl DeviceCodePoller {
                 });
             }
 
-            match self.poll_once(&http).await? {
+            match self.poll_once().await? {
                 PollOutcome::Pending => {}
                 PollOutcome::SlowDown => {
                     self.interval += Duration::from_secs(5);

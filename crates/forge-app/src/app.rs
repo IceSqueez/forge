@@ -134,10 +134,9 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                     expires_at: SystemTime::now(),
                     status: DeviceCodeStatus::Requesting,
                 });
-                let http = reqwest::Client::new();
                 Task::perform(
                     async move {
-                        forge_platform_twitch::request_twitch_device_code(&http, &client_id)
+                        forge_platform_twitch::request_twitch_device_code(&client_id)
                             .await
                             .map_err(|e| e.to_string())
                     },
@@ -160,9 +159,8 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                     resp.interval,
                     resp.expires_in,
                 );
-                let http = reqwest::Client::new();
                 Task::perform(
-                    async move { poller.run(http).await.map_err(|e| e.to_string()) },
+                    async move { poller.run().await.map_err(|e| e.to_string()) },
                     |result| Message::Onboarding(OnboardingMsg::TokenReceived(result)),
                 )
             }

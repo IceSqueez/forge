@@ -1,0 +1,17 @@
+[package]
+name                  = "forge-widgets"
+version.workspace     = true
+edition.workspace     = true
+license.workspace     = true
+repository.workspace  = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+bundled-fonts = []
+
+[dependencies]
+iced       = { workspace = true }
+iced_fonts = { workspace = true }

@@ -26,8 +26,8 @@ All notable changes to this project will be documented in this file.
 - *(readme)* Add project README and alpha-1 release notes
 
 ### 🚀 Features
-- *(types)* Seed loom-types with Variant value system
-- *(events)* Seed loom-events with Event bus contract
+- *(types)* Seed forge-types with Variant value system
+- *(events)* Seed forge-events with Event bus contract
 - *(storage)* Add StorageError enum with typed variants
 - *(globals)* Add GlobalsRepo trait with GlobalEntry type
 - *(storage)* Add UserGlobalsRepo trait for per-broadcaster scope

@@ -5,6 +5,20 @@ use forge_widgets::ThemeId;
 use crate::Screen;
 use crate::live_chat::ChatFilter;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PlatformId {
+    Twitch,
+    YouTube,
+    Kick,
+    Trovo,
+}
+
+#[derive(Debug, Clone)]
+pub enum SettingsMsg {
+    ReconnectPlatform(PlatformId),
+    PlatformReconnectResult(Result<(), String>),
+}
+
 #[derive(Debug, Clone)]
 pub enum OnboardingMsg {
     SkipSetup,
@@ -32,6 +46,7 @@ pub enum Message {
     Navigate(Screen),
     Onboarding(OnboardingMsg),
     OnboardingPersistResult(Result<(), String>),
+    Settings(SettingsMsg),
     ThemeChanged(ThemeId),
     EventArrived(Event),
     ChatInputChanged(String),

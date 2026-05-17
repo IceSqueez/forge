@@ -6,7 +6,7 @@ use crate::tokens::ThemeId;
 
 pub fn catppuccin_mocha() -> (Theme, LoomPalette) {
     let palette = Palette {
-        background: CATPPUCCIN_MOCHA.elevated,
+        background: CATPPUCCIN_MOCHA.base,
         text: CATPPUCCIN_MOCHA.text_primary,
         primary: CATPPUCCIN_MOCHA.brand,
         success: CATPPUCCIN_MOCHA.success,
@@ -21,7 +21,7 @@ pub fn catppuccin_mocha() -> (Theme, LoomPalette) {
 
 pub fn tokyo_night_storm() -> (Theme, LoomPalette) {
     let palette = Palette {
-        background: TOKYO_NIGHT.elevated,
+        background: TOKYO_NIGHT.base,
         text: TOKYO_NIGHT.text_primary,
         primary: TOKYO_NIGHT.brand,
         success: TOKYO_NIGHT.success,
@@ -36,7 +36,7 @@ pub fn tokyo_night_storm() -> (Theme, LoomPalette) {
 
 pub fn latte() -> (Theme, LoomPalette) {
     let palette = Palette {
-        background: LATTE.elevated,
+        background: LATTE.base,
         text: LATTE.text_primary,
         primary: LATTE.brand,
         success: LATTE.success,

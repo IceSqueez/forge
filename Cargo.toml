@@ -51,6 +51,7 @@ aes-gcm = { version = "0.10" }
 keyring = { version = "4" }
 keyring-core = { version = "1" }
 rand = { version = "0.10" }
+tempfile = { version = "3" }
 
 rhai = { version = "1", features = ["sync"] }
 

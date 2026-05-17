@@ -5,7 +5,7 @@ use iced::{
     widget::{Space, button, column, container, row, text},
 };
 
-use crate::palette::LoomPalette;
+use crate::palette::ForgePalette;
 use crate::tokens::{FONT_CAPS, FontRole, Radius, font, radius};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -19,7 +19,7 @@ pub enum ToastVariant {
 pub fn section_header<'a, Msg: 'a>(
     label: impl Into<Cow<'a, str>>,
     count: Option<u32>,
-    palette: &LoomPalette,
+    palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let label_str: Cow<'a, str> = label.into();
     let display = match count {
@@ -39,7 +39,7 @@ pub fn section_header<'a, Msg: 'a>(
 
 /// Chevron rotates to `▾` when expanded and `▸` when collapsed.
 pub fn section_header_expandable<'a, Msg: 'a + Clone>(
-    palette: &'a LoomPalette,
+    palette: &'a ForgePalette,
     label: impl Into<Cow<'a, str>>,
     count: u32,
     expanded: bool,
@@ -93,7 +93,7 @@ pub(crate) fn chevron_for(expanded: bool) -> char {
     if expanded { '▾' } else { '▸' }
 }
 
-fn counter_badge_inline<'a, Msg: 'a>(count: u32, palette: &LoomPalette) -> Element<'a, Msg> {
+fn counter_badge_inline<'a, Msg: 'a>(count: u32, palette: &ForgePalette) -> Element<'a, Msg> {
     let label = if count > 99 {
         "99+".to_string()
     } else {
@@ -110,7 +110,7 @@ pub fn empty_state<'a, Msg: 'a + Clone>(
     headline: impl Into<Cow<'a, str>>,
     body: impl Into<Cow<'a, str>>,
     action: Option<(impl Into<Cow<'a, str>>, Msg)>,
-    palette: &LoomPalette,
+    palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let headline_str: Cow<'a, str> = headline.into();
     let body_str: Cow<'a, str> = body.into();
@@ -137,7 +137,7 @@ pub fn toast_banner<'a, Msg: 'a + Clone>(
     message: impl Into<Cow<'a, str>>,
     variant: ToastVariant,
     on_dismiss: Msg,
-    palette: &'a LoomPalette,
+    palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
     let accent = match variant {
         ToastVariant::Info => palette.info,
@@ -189,7 +189,7 @@ pub fn toast_banner<'a, Msg: 'a + Clone>(
         .into()
 }
 
-pub fn counter_badge<'a, Msg: 'a>(count: u32, palette: &LoomPalette) -> Element<'a, Msg> {
+pub fn counter_badge<'a, Msg: 'a>(count: u32, palette: &ForgePalette) -> Element<'a, Msg> {
     let label = if count > 99 {
         "99+".to_string()
     } else {

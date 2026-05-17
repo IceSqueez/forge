@@ -9,7 +9,7 @@ Cross-platform desktop tool for stream automation and multi-engine TTS — built
 
 ## What is forge?
 
-forge is an open-source desktop application that automates stream workflows across multiple chat and streaming platforms. It combines event-driven action automation with a powerful multi-engine text-to-speech pipeline, all in a single, focused tool built entirely in Rust.
+Forge is an open-source desktop application that automates stream workflows across multiple chat and streaming platforms. It combines event-driven action automation with a powerful multi-engine text-to-speech pipeline, all in a single, focused tool built entirely in Rust.
 
 **Core capabilities** (roadmap, shipping incrementally):
 

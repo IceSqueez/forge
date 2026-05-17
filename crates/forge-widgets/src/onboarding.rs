@@ -5,7 +5,7 @@ use iced::{
 
 use crate::{
     buttons::{ghost_button, primary_button_with_icon_right, secondary_button},
-    palette::LoomPalette,
+    palette::ForgePalette,
     tokens::{
         BORDER_THIN, FONT_BODY_LG, FONT_BODY_MD, FONT_BODY_SM, FONT_CAPS, FONT_CAPS_SM,
         FONT_DEVICE_CODE, FONT_PAGE_TITLE, FONT_PLATFORM_NAME, FontRole, Radius, Spacing, font,
@@ -77,7 +77,7 @@ fn badge_circle<'a, Msg: 'a>(inner: Element<'a, Msg>, size: f32, bg: Color) -> E
 fn disabled_primary_button<'a, Msg: 'a>(
     label: &'a str,
     icon_char: char,
-    palette: &LoomPalette,
+    palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let bg = Color {
         a: 0.4,
@@ -116,7 +116,7 @@ fn disabled_primary_button<'a, Msg: 'a>(
 /// Vertical stepper using Stack to render the connecting line behind all dots.
 pub fn onboarding_stepper<'a, Msg: 'a>(
     steps: &'a [StepInfo],
-    palette: &'a LoomPalette,
+    palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
     let row_height: f32 = 22.0;
     let row_gap: f32 = 14.0;
@@ -204,7 +204,7 @@ pub fn onboarding_step_header<'a, Msg: 'a>(
     title: &'a str,
     optional: bool,
     waiting: bool,
-    palette: &'a LoomPalette,
+    palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
     let header_text = format!("STEP {} OF {}", step, total);
 
@@ -289,7 +289,7 @@ pub struct PlatformCardProps<'a> {
 pub fn platform_picker_card<'a, Msg: Clone + 'a>(
     props: PlatformCardProps<'a>,
     on_press: Msg,
-    palette: &'a LoomPalette,
+    palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
     let PlatformCardProps {
         name,
@@ -382,7 +382,7 @@ pub fn locale_tip_card<'a, Msg: Clone + 'a>(
     body: &'a str,
     link_label: Option<&'a str>,
     on_link: Option<Msg>,
-    palette: &'a LoomPalette,
+    palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
     let mut text_block = column![text(body).size(FONT_BODY_SM).color(palette.text_secondary)];
 
@@ -419,7 +419,7 @@ pub fn onboarding_footer<'a, Msg: Clone + 'a>(
     continue_icon: char,
     on_continue: Msg,
     continue_enabled: bool,
-    palette: &'a LoomPalette,
+    palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
     let back_element: Element<'a, Msg> = match on_back {
         Some(msg) => ghost_button("← Back", msg, palette),
@@ -473,7 +473,7 @@ pub fn onboarding_footer<'a, Msg: Clone + 'a>(
 pub fn device_code_display<'a, Msg: Clone + 'a>(
     code: &'a str,
     on_copy: Msg,
-    palette: &'a LoomPalette,
+    palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
     let mut char_row = Row::new().spacing(0);
     for ch in code.chars() {
@@ -539,7 +539,7 @@ pub fn expiration_timer<'a, Msg: Clone + 'a>(
     remaining: std::time::Duration,
     refresh_label: &'a str,
     on_refresh: Msg,
-    palette: &'a LoomPalette,
+    palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
     let total_secs = remaining.as_secs() as u32;
     let mins = total_secs / 60;
@@ -570,7 +570,7 @@ pub fn live_status_banner<'a, Msg: 'a>(
     kind: BannerKind,
     message: &'a str,
     hint: Option<&'a str>,
-    palette: &'a LoomPalette,
+    palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
     let (dot_color, bg_color, border_color) = match kind {
         BannerKind::Waiting => (palette.brand, palette.surface_overlay, palette.brand),
@@ -632,7 +632,7 @@ pub fn numbered_box_step<'a, Msg: 'a>(
     title: &'a str,
     body: &'a str,
     active: bool,
-    palette: &'a LoomPalette,
+    palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
     let (badge_bg, badge_fg) = if active {
         (palette.brand, palette.shell)
@@ -678,7 +678,7 @@ pub fn numbered_box_step<'a, Msg: 'a>(
 }
 
 #[cfg(test)]
-fn badge_active_uses_brand(active: bool, palette: &LoomPalette) -> Color {
+fn badge_active_uses_brand(active: bool, palette: &ForgePalette) -> Color {
     if active {
         palette.brand
     } else {

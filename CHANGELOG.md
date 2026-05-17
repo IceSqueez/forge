@@ -50,7 +50,7 @@ All notable changes to this project will be documented in this file.
 - *(platforms)* Add RateLimiter trait with outcome enum
 - *(platforms)* Add IntegrationDetail page trait family
 - *(storage)* Add sqlite migration 0001 with all alpha-1 tables
-- *(widgets)* Add LoomPalette and design tokens for 3 themes
+- *(widgets)* Add ForgePalette and design tokens for 3 themes
 - *(globals)* Implement SQLite GlobalsRepo with telemetry
 - *(widgets)* Add Tier 1 button family with iced 0.13 styling
 - *(widgets)* Add Tier 1 status indicator family

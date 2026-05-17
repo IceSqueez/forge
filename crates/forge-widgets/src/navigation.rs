@@ -5,14 +5,14 @@ use iced::{
     widget::{Space, button, column, container, row, scrollable, text},
 };
 
-use crate::palette::LoomPalette;
+use crate::palette::ForgePalette;
 use crate::tokens::{BORDER_THIN, FontRole, Radius, font, radius};
 
 pub const SIDEBAR_WIDTH: u16 = 200;
 
 pub fn sidebar<'a, Msg: 'a>(
     sections: Vec<Element<'a, Msg>>,
-    palette: &LoomPalette,
+    palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let bg = palette.shell;
     let border_color = palette.border_regular;
@@ -37,7 +37,7 @@ pub fn sidebar<'a, Msg: 'a>(
 pub fn sidebar_section<'a, Msg: 'a>(
     title: &str,
     items: Vec<Element<'a, Msg>>,
-    palette: &LoomPalette,
+    palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let header_color = palette.text_faint;
     let header = text(title.to_uppercase())
@@ -59,7 +59,7 @@ pub fn tree_node<'a, Msg: 'a + Clone>(
     expanded: bool,
     on_toggle: Option<Msg>,
     on_select: Msg,
-    palette: &LoomPalette,
+    palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let indent = f32::from(depth) * 16.0;
     let text_color = palette.text_secondary;

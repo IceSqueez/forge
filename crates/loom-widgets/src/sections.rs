@@ -1,11 +1,12 @@
 use std::borrow::Cow;
 
 use iced::{
-    Alignment, Border, Color, Element,
-    widget::{column, container, row, text},
+    Alignment, Background, Border, Color, Element, Length,
+    widget::{Space, button, column, container, row, text},
 };
 
 use crate::palette::LoomPalette;
+use crate::tokens::{FONT_CAPS, FontRole, Radius, font, radius};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ToastVariant {
@@ -26,8 +27,82 @@ pub fn section_header<'a, Msg: 'a>(
         None => label_str.to_uppercase(),
     };
 
-    container(text(display).size(11).color(palette.text_muted))
-        .padding([8, 0])
+    container(
+        text(display)
+            .font(font(FontRole::Monospace))
+            .size(FONT_CAPS)
+            .color(palette.text_muted),
+    )
+    .padding([6, 14])
+    .into()
+}
+
+/// Chevron rotates to `▾` when expanded and `▸` when collapsed.
+pub fn section_header_expandable<'a, Msg: 'a + Clone>(
+    palette: &'a LoomPalette,
+    label: impl Into<Cow<'a, str>>,
+    count: u32,
+    expanded: bool,
+    on_toggle: Msg,
+) -> Element<'a, Msg> {
+    let label_str: Cow<'a, str> = label.into();
+    let chevron_char = chevron_for(expanded);
+    let surface_overlay = palette.surface_overlay;
+
+    let inner = row![
+        text(chevron_char)
+            .font(font(FontRole::Monospace))
+            .size(FONT_CAPS)
+            .color(palette.text_muted),
+        text(label_str.to_uppercase())
+            .font(font(FontRole::Monospace))
+            .size(FONT_CAPS)
+            .color(palette.text_muted),
+        counter_badge_inline(count, palette),
+        Space::new().width(Length::Fill),
+    ]
+    .spacing(8)
+    .align_y(Alignment::Center);
+
+    button(inner)
+        .on_press(on_toggle)
+        .padding([6, 14])
+        .style(move |_theme: &iced::Theme, status| {
+            let bg = match status {
+                button::Status::Hovered | button::Status::Pressed => {
+                    Some(Background::Color(Color {
+                        a: 0.08,
+                        ..surface_overlay
+                    }))
+                }
+                _ => None,
+            };
+            button::Style {
+                background: bg,
+                border: Border {
+                    radius: radius(Radius::Sm).into(),
+                    ..Border::default()
+                },
+                ..button::Style::default()
+            }
+        })
+        .into()
+}
+
+pub(crate) fn chevron_for(expanded: bool) -> char {
+    if expanded { '▾' } else { '▸' }
+}
+
+fn counter_badge_inline<'a, Msg: 'a>(count: u32, palette: &LoomPalette) -> Element<'a, Msg> {
+    let label = if count > 99 {
+        "99+".to_string()
+    } else {
+        count.to_string()
+    };
+    text(label)
+        .font(font(FontRole::Monospace))
+        .size(FONT_CAPS)
+        .color(palette.text_faint)
         .into()
 }
 
@@ -216,5 +291,23 @@ mod tests {
     #[test]
     fn counter_badge_zero_is_valid() {
         let _: Element<'_, ()> = counter_badge(0, &CATPPUCCIN_MOCHA);
+    }
+
+    #[test]
+    fn section_header_expandable_uses_chevron_down_when_expanded() {
+        assert_eq!(chevron_for(true), '▾');
+        assert_eq!(chevron_for(false), '▸');
+    }
+
+    #[test]
+    fn section_header_expandable_compiles_expanded() {
+        let _: Element<'_, u32> =
+            section_header_expandable(&CATPPUCCIN_MOCHA, "CHAT COMMANDS", 7, true, 0u32);
+    }
+
+    #[test]
+    fn section_header_expandable_compiles_collapsed() {
+        let _: Element<'_, u32> =
+            section_header_expandable(&CATPPUCCIN_MOCHA, "TIMERS", 3, false, 0u32);
     }
 }

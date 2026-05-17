@@ -2063,12 +2063,17 @@ dependencies = [
  "async-trait",
  "forge-events",
  "forge-platform-core",
+ "forge-runtime",
  "forge-types",
+ "futures-util",
+ "rand 0.10.1",
+ "reqwest",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
  "time",
  "tokio",
+ "tokio-tungstenite",
  "tracing",
 ]
 

@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use forge_events::EventBus;
 use forge_runtime::InMemoryEventBus;
+use forge_storage::SettingsRepo;
+use forge_storage::reserved_keys;
 use forge_storage_sqlite::SqliteBackend;
 use forge_widgets::{ForgePalette, StepInfo, ThemeId};
 use iced::{Element, Length, Subscription, Task, Theme};
@@ -72,10 +74,25 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             app.screen = screen;
             Task::none()
         }
+        Message::OnboardingPersistResult(result) => {
+            if let Err(ref e) = result {
+                tracing::warn!(error = %e, "failed to persist onboarding_completed flag");
+            }
+            Task::none()
+        }
         Message::Onboarding(sub) => match sub {
             OnboardingMsg::SkipSetup => {
                 app.screen = Screen::Hub;
-                Task::none()
+                let backend = Arc::clone(&app.backend);
+                Task::perform(
+                    async move {
+                        backend
+                            .set_string(reserved_keys::ONBOARDING_COMPLETED, "true")
+                            .await
+                            .map_err(|e| e.to_string())
+                    },
+                    Message::OnboardingPersistResult,
+                )
             }
             OnboardingMsg::AdvanceFromWelcome => {
                 let next = OnboardingStep::ConnectPlatform;
@@ -134,7 +151,16 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             }
             OnboardingMsg::FinishOnboarding => {
                 app.screen = Screen::Hub;
-                Task::none()
+                let backend = Arc::clone(&app.backend);
+                Task::perform(
+                    async move {
+                        backend
+                            .set_string(reserved_keys::ONBOARDING_COMPLETED, "true")
+                            .await
+                            .map_err(|e| e.to_string())
+                    },
+                    Message::OnboardingPersistResult,
+                )
             }
         },
         Message::ThemeChanged(id) => {
@@ -1022,6 +1048,25 @@ mod tests {
         let _ = update(
             &mut app,
             Message::Onboarding(OnboardingMsg::FinishOnboarding),
+        );
+        assert_eq!(app.screen, Screen::Hub);
+    }
+
+    #[test]
+    fn persist_result_ok_leaves_screen_unchanged() {
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Navigate(Screen::Hub));
+        let _ = update(&mut app, Message::OnboardingPersistResult(Ok(())));
+        assert_eq!(app.screen, Screen::Hub);
+    }
+
+    #[test]
+    fn persist_result_err_leaves_screen_unchanged() {
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Navigate(Screen::Hub));
+        let _ = update(
+            &mut app,
+            Message::OnboardingPersistResult(Err("disk full".into())),
         );
         assert_eq!(app.screen, Screen::Hub);
     }

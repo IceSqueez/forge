@@ -2,6 +2,7 @@
 
 pub mod buttons;
 pub mod cards;
+pub mod chat;
 pub mod inputs;
 pub mod layout;
 pub mod navigation;
@@ -17,6 +18,9 @@ pub use buttons::{
     primary_button_with_icon_right, secondary_button,
 };
 pub use cards::{card, card_with_radius, hero_card, metric_card, stat_row};
+pub use chat::{
+    BadgeKind, ChatBody, ChatRow, Platform, PlatformTarget, chat_row, filter_chip, input_bar,
+};
 pub use inputs::{search_input, select, text_input_field};
 pub use layout::{breadcrumb, page_shell, title_bar, title_bar_with_logo, toolbar};
 pub use navigation::{SIDEBAR_WIDTH, sidebar, sidebar_section, tree_node};

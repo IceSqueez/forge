@@ -1,0 +1,67 @@
+name: Bug report
+description: Something doesn't work as expected
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill in as much detail as you can — it helps us reproduce and fix the issue faster.
+  - type: input
+    id: version
+    attributes:
+      label: Forge version
+      description: Output of `forge --version` (or the release tag / commit SHA).
+      placeholder: "0.1.0-alpha.2 (commit abc1234)"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux (Wayland)
+        - Linux (X11)
+        - Windows 10
+        - Windows 11
+        - macOS (Intel)
+        - macOS (Apple Silicon)
+        - Other (please specify in description)
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the bug. What did you expect, what actually happened?
+      placeholder: When I click X, Y happens instead of Z.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps that trigger the bug.
+      placeholder: |
+        1. Launch Forge.
+        2. Navigate to ...
+        3. Click ...
+        4. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: |
+        Run with `RUST_LOG=forge=debug cargo run -p forge-app` and paste relevant output. Redact tokens and personal info.
+      render: shell
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Pre-submission checks
+      options:
+        - label: I've searched existing issues and confirmed this isn't a duplicate
+          required: true
+        - label: I'm using the latest alpha/beta release (or built from the active release branch)
+          required: true

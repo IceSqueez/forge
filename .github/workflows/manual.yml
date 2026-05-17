@@ -47,6 +47,9 @@ jobs:
 
       - name: Run build-release
         if: inputs.command == 'build-release'
+        env:
+          # Compile-time Twitch client_id from repo secret. Empty if secret unset → app falls back to runtime env var or shows UX error.
+          FORGE_TWITCH_CLIENT_ID: ${{ secrets.FORGE_TWITCH_CLIENT_ID }}
         shell: bash
         run: cargo build --workspace --release
 

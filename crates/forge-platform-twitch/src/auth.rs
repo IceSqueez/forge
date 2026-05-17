@@ -14,6 +14,8 @@ pub const TWITCH_BROADCASTER_SCOPES: &[&str] = &[
     "channel:read:subscriptions",
     "bits:read",
     "moderator:read:followers",
+    "user:read:chat",
+    "user:write:chat",
 ];
 
 pub fn twitch_auth_flow() -> AuthFlow {

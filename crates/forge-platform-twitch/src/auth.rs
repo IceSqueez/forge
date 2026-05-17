@@ -4,6 +4,8 @@ use forge_platform_core::{
     AuthFlow, PlatformError,
     oauth::{DeviceCodePoller, DeviceCodeRequest, DeviceCodeResponse},
 };
+use forge_types::OAuthToken;
+use serde::Deserialize;
 
 pub const TWITCH_DEVICE_ENDPOINT: &str = "https://id.twitch.tv/oauth2/device";
 pub const TWITCH_TOKEN_ENDPOINT: &str = "https://id.twitch.tv/oauth2/token";
@@ -60,6 +62,71 @@ pub fn new_twitch_poller(
     )
 }
 
+const HELIX_USERS_URL: &str = "https://api.twitch.tv/helix/users";
+
+#[derive(Debug, Clone)]
+pub struct UserInfo {
+    pub id: String,
+    pub login: String,
+    pub display_name: String,
+}
+
+#[derive(Deserialize)]
+struct HelixUsersResponse {
+    data: Vec<HelixUser>,
+}
+
+#[derive(Deserialize)]
+struct HelixUser {
+    id: String,
+    login: String,
+    display_name: String,
+}
+
+/// Fetches the authorized user's Twitch ID + login via Helix GET /users.
+///
+/// Returns the user's own info; `id` serves as both `broadcaster_id`
+/// and `user_id` in EventSub conditions.
+pub async fn fetch_user_info(
+    token: &OAuthToken,
+    client_id: &str,
+) -> Result<UserInfo, PlatformError> {
+    let http = reqwest::Client::new();
+    let resp = http
+        .get(HELIX_USERS_URL)
+        .bearer_auth(token.expose())
+        .header("Client-Id", client_id)
+        .send()
+        .await
+        .map_err(|e| PlatformError::Network {
+            reason: e.to_string(),
+        })?;
+
+    let status = resp.status().as_u16();
+    tracing::debug!(status = %resp.status(), "helix user fetch");
+
+    if !resp.status().is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(PlatformError::Http { status, body });
+    }
+
+    let body: HelixUsersResponse = resp.json().await.map_err(|e| PlatformError::Network {
+        reason: e.to_string(),
+    })?;
+
+    body.data
+        .into_iter()
+        .next()
+        .map(|u| UserInfo {
+            id: u.id,
+            login: u.login,
+            display_name: u.display_name,
+        })
+        .ok_or_else(|| PlatformError::Auth {
+            reason: "helix returned empty user list".into(),
+        })
+}
+
 /// Priority: runtime env `FORGE_TWITCH_CLIENT_ID` → compile-time `option_env!` → `None`.
 pub fn client_id() -> Option<String> {
     let runtime = std::env::var("FORGE_TWITCH_CLIENT_ID").ok();
@@ -77,6 +144,7 @@ fn resolve_client_id(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
@@ -139,5 +207,28 @@ mod tests {
     #[test]
     fn client_id_treats_empty_compile_time_as_absent() {
         assert_eq!(resolve_client_id(None, Some("")), None);
+    }
+
+    #[test]
+    fn helix_users_response_parses_canonical_shape() {
+        let json = r#"{"data":[{"id":"123","login":"foo","display_name":"Foo"}]}"#;
+        let parsed: HelixUsersResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.data.len(), 1);
+        assert_eq!(parsed.data[0].id, "123");
+        assert_eq!(parsed.data[0].login, "foo");
+        assert_eq!(parsed.data[0].display_name, "Foo");
+    }
+
+    #[test]
+    fn helix_users_response_parses_empty_data() {
+        let json = r#"{"data":[]}"#;
+        let parsed: HelixUsersResponse = serde_json::from_str(json).unwrap();
+        assert!(parsed.data.is_empty());
+    }
+
+    #[test]
+    fn helix_users_response_rejects_missing_data_field() {
+        let json = r#"{"other":"value"}"#;
+        assert!(serde_json::from_str::<HelixUsersResponse>(json).is_err());
     }
 }

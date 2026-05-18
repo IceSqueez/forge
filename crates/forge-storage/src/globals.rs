@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::StorageError;
+use crate::transit::GlobalTransit;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GlobalEntry {
@@ -33,6 +34,26 @@ pub trait GlobalsRepo: Send + Sync {
     /// Errors with [`StorageError::NotFound`] if the key does not exist, or
     /// [`StorageError::TypeMismatch`] if the stored type is not numeric.
     async fn incr(&self, name: &str, amount: i64) -> Result<Variant, StorageError>;
+
+    /// Returns all globals in transit shape for export, sorted by name.
+    ///
+    /// Does not increment `reads` counters — this is an inspection operation,
+    /// not a runtime get. Backends with a more efficient bulk path may override.
+    async fn export_all(&self) -> Result<Vec<GlobalTransit>, StorageError> {
+        let mut entries = self.list().await?;
+        entries.sort_unstable_by(|a, b| a.name.cmp(&b.name));
+        Ok(entries
+            .into_iter()
+            .map(|e| GlobalTransit {
+                name: e.name,
+                value: e.value,
+                persisted: e.persisted,
+                last_modified: e.last_modified,
+                reads: e.reads,
+                writes: e.writes,
+            })
+            .collect())
+    }
 }
 
 #[cfg(test)]

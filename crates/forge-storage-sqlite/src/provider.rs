@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use forge_storage::{
-    ActionRepo, CommandRepo, CredentialId, CredentialsRepo, DataProvider, GlobalEntry, GlobalsRepo,
-    HistoryRepo, QueueRepo, ScriptRecord, ScriptRepo, SettingsRepo, StorageError, TriggerRepo,
-    UserGlobalEntry, UserGlobalsRepo,
+    ActionRepo, CommandRepo, CredentialId, CredentialsRepo, DataProvider, GlobalEntry,
+    GlobalTransit, GlobalsRepo, HistoryRepo, QueueRepo, ScriptRecord, ScriptRepo, SettingsRepo,
+    StorageError, TriggerRepo, UserGlobalEntry, UserGlobalsRepo,
 };
 use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
@@ -94,6 +94,10 @@ impl GlobalsRepo for SqliteBackend {
 
     async fn incr(&self, name: &str, amount: i64) -> Result<Variant, StorageError> {
         self.globals.incr(name, amount).await
+    }
+
+    async fn export_all(&self) -> Result<Vec<GlobalTransit>, StorageError> {
+        self.globals.export_all().await
     }
 }
 

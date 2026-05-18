@@ -10,6 +10,7 @@ pub mod provider;
 pub mod queue;
 pub mod script;
 pub mod settings;
+pub mod transit;
 pub mod trigger;
 pub mod user_globals;
 
@@ -23,5 +24,6 @@ pub use provider::DataProvider;
 pub use queue::QueueRepo;
 pub use script::{ScriptRecord, ScriptRepo};
 pub use settings::{SettingsRepo, reserved_keys};
+pub use transit::{CURRENT_FORMAT_VERSION, GlobalTransit, GlobalsExport};
 pub use trigger::TriggerRepo;
 pub use user_globals::{UserGlobalEntry, UserGlobalsRepo};

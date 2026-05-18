@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use forge_storage::{GlobalsRepo, StorageError};
+use forge_storage::{GlobalsExport, GlobalsRepo, StorageError};
 use forge_storage_sqlite::{SqliteBackend, SqliteGlobalsRepo, apply_migrations};
 use forge_types::Variant;
 
@@ -251,4 +251,153 @@ async fn concurrent_incr_no_lost_updates() {
     let entry = entries.iter().find(|e| e.name == "counter").expect("entry");
     assert_eq!(entry.reads, 1, "one get at end increments reads to 1");
     assert_eq!(entry.writes, 51, "one set + 50 incr = 51 writes");
+}
+
+#[tokio::test]
+async fn export_all_empty_db_returns_empty_vec() {
+    let repo = setup().await;
+    let result = repo.export_all().await.expect("export_all");
+    assert!(result.is_empty());
+}
+
+#[tokio::test]
+async fn export_all_returns_sorted_by_name_with_correct_fields() {
+    let repo = setup().await;
+    repo.set("gamma", Variant::Int(3), false)
+        .await
+        .expect("set gamma");
+    repo.set("alpha", Variant::String("hello".into()), true)
+        .await
+        .expect("set alpha");
+    repo.set("beta", Variant::Bool(true), true)
+        .await
+        .expect("set beta");
+
+    let exports = repo.export_all().await.expect("export_all");
+    assert_eq!(exports.len(), 3);
+
+    assert_eq!(exports[0].name, "alpha");
+    assert_eq!(exports[0].value, Variant::String("hello".into()));
+    assert!(exports[0].persisted);
+    assert_eq!(exports[0].writes, 1);
+
+    assert_eq!(exports[1].name, "beta");
+    assert_eq!(exports[1].value, Variant::Bool(true));
+    assert!(exports[1].persisted);
+
+    assert_eq!(exports[2].name, "gamma");
+    assert_eq!(exports[2].value, Variant::Int(3));
+    assert!(!exports[2].persisted);
+}
+
+#[tokio::test]
+async fn export_all_preserves_reads_writes_counters() {
+    let repo = setup().await;
+    repo.set("tracked", Variant::Int(0), true)
+        .await
+        .expect("set");
+    repo.set("tracked", Variant::Int(1), true)
+        .await
+        .expect("set again");
+    repo.get("tracked").await.expect("get 1");
+    repo.get("tracked").await.expect("get 2");
+    repo.get("tracked").await.expect("get 3");
+
+    let exports = repo.export_all().await.expect("export_all");
+    let entry = exports.iter().find(|e| e.name == "tracked").expect("entry");
+    assert_eq!(entry.writes, 2, "two set calls");
+    assert_eq!(entry.reads, 3, "three get calls");
+}
+
+#[tokio::test]
+async fn export_all_does_not_increment_reads() {
+    let repo = setup().await;
+    repo.set("noread", Variant::Int(7), true)
+        .await
+        .expect("set");
+
+    repo.export_all().await.expect("export 1");
+    repo.export_all().await.expect("export 2");
+    repo.export_all().await.expect("export 3");
+
+    repo.get("noread").await.expect("get");
+
+    let entries = repo.list().await.expect("list");
+    let entry = entries.iter().find(|e| e.name == "noread").expect("entry");
+    assert_eq!(entry.reads, 1, "only the single get call incremented reads");
+}
+
+#[tokio::test]
+async fn export_all_round_trips_via_json_envelope() {
+    let repo = setup().await;
+    repo.set("counter", Variant::Int(7), true)
+        .await
+        .expect("set int");
+    repo.set("flag", Variant::Bool(false), true)
+        .await
+        .expect("set bool");
+    repo.set("label", Variant::String("forge".into()), false)
+        .await
+        .expect("set string");
+    repo.set("ratio", Variant::Float(1.5), false)
+        .await
+        .expect("set float");
+
+    let globals = repo.export_all().await.expect("export_all");
+    assert_eq!(globals.len(), 4);
+
+    let envelope = GlobalsExport::new(globals);
+    let json = serde_json::to_string(&envelope).expect("serialize");
+
+    assert!(
+        json.contains("\"format_version\":1"),
+        "format_version must be 1"
+    );
+    assert!(json.contains("\"type\":\"int\""), "int variant present");
+    assert!(json.contains("\"type\":\"bool\""), "bool variant present");
+    assert!(
+        json.contains("\"type\":\"string\""),
+        "string variant present"
+    );
+    assert!(json.contains("\"type\":\"float\""), "float variant present");
+
+    let decoded: GlobalsExport = serde_json::from_str(&json).expect("deserialize");
+    assert_eq!(decoded.format_version, 1);
+    assert_eq!(decoded.globals.len(), 4);
+
+    let counter = decoded
+        .globals
+        .iter()
+        .find(|g| g.name == "counter")
+        .expect("counter");
+    assert_eq!(counter.value, Variant::Int(7));
+    assert!(counter.persisted);
+    assert_eq!(counter.writes, 1);
+}
+
+#[tokio::test]
+async fn backend_export_all_delegates_correctly() {
+    let backend = SqliteBackend::open_with_key(":memory:", [0xab; 32])
+        .await
+        .expect("open backend");
+
+    backend
+        .set("x", Variant::Int(100), true)
+        .await
+        .expect("set x");
+    backend
+        .set("y", Variant::Bool(true), false)
+        .await
+        .expect("set y");
+
+    let exports = backend.export_all().await.expect("export_all via backend");
+    assert_eq!(exports.len(), 2);
+
+    let x = exports.iter().find(|e| e.name == "x").expect("x");
+    assert_eq!(x.value, Variant::Int(100));
+    assert!(x.persisted);
+
+    let y = exports.iter().find(|e| e.name == "y").expect("y");
+    assert_eq!(y.value, Variant::Bool(true));
+    assert!(!y.persisted);
 }

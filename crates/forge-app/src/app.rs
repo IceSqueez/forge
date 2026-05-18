@@ -28,8 +28,11 @@ use crate::actions::{
     AddTriggerMsg, RemoveSubActionMsg, SubActionKindChoice, TriggerCategory, kind_label,
     kind_summary, load_action_detail, load_actions_tree, remove_sub_action, save_sub_action,
 };
+use crate::globals_view::{GlobalsState, globals_view, handle_globals_msg};
 use crate::live_chat::{CHAT_LOG_MAX, LiveChatState, chat_row_from_event, live_chat_view};
-use crate::message::{ActionsMsg, HubMsg, HubStatsData, PlatformId, SettingsMsg, SidebarMsg};
+use crate::message::{
+    ActionsMsg, GlobalsMsg, HubMsg, HubStatsData, PlatformId, SettingsMsg, SidebarMsg,
+};
 use crate::onboarding_state::{DeviceCodeSession, DeviceCodeStatus, OnboardingState};
 use crate::screen::OnboardingStep;
 use crate::{Message, OnboardingMsg, Screen, SettingsSection};
@@ -83,6 +86,7 @@ pub struct App {
     pub onboarding: OnboardingState,
     pub live_chat: LiveChatState,
     pub actions: ActionsState,
+    pub globals: GlobalsState,
     pub twitch_chat_handle: Option<TwitchChatHandle>,
     pub chat_send_bridge: Option<ChatSendBridgeHandle>,
     pub action_engine: Option<ActionEngineHandle>,
@@ -113,6 +117,7 @@ impl App {
             onboarding: OnboardingState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
+            globals: GlobalsState::new(),
             twitch_chat_handle: None,
             chat_send_bridge: None,
             action_engine,
@@ -148,6 +153,7 @@ impl Default for App {
             onboarding: OnboardingState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
+            globals: GlobalsState::new(),
             twitch_chat_handle: None,
             chat_send_bridge: None,
             action_engine: None,
@@ -177,11 +183,14 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             }
             let is_actions = matches!(screen, Screen::Actions);
             let is_hub = matches!(screen, Screen::Home);
+            let is_globals = matches!(screen, Screen::Globals);
             app.screen = screen;
             if is_actions {
                 Task::done(Message::Actions(ActionsMsg::LoadRequested))
             } else if is_hub {
                 Task::done(Message::Hub(HubMsg::LoadStats))
+            } else if is_globals {
+                Task::done(Message::Globals(GlobalsMsg::LoadRequested))
             } else {
                 Task::none()
             }
@@ -511,6 +520,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             }
         },
         Message::Hub(sub) => handle_hub_msg(app, sub),
+        Message::Globals(sub) => handle_globals_msg(app, sub),
         Message::Actions(sub) => handle_actions_msg(app, sub),
         Message::AddAction(sub) => handle_add_action_msg(app, sub),
         Message::AddTrigger(sub) => handle_add_trigger_msg(app, sub),
@@ -3833,6 +3843,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let content: Element<'_, Message> = match &app.screen {
         Screen::Home => hub_view(app, palette),
         Screen::LiveChat => live_chat_view(&app.live_chat, palette),
+        Screen::Globals => globals_view(app, palette),
         Screen::Actions => actions_view(app, palette),
         Screen::Settings(section) => {
             settings_view(section, app.twitch_chat_handle.as_ref(), palette)
@@ -4586,6 +4597,7 @@ mod tests {
             onboarding: OnboardingState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
+            globals: GlobalsState::new(),
             twitch_chat_handle: None,
             chat_send_bridge: None,
             action_engine: Some(engine),
@@ -4852,6 +4864,7 @@ mod tests {
             onboarding: OnboardingState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
+            globals: GlobalsState::new(),
             twitch_chat_handle: None,
             chat_send_bridge: None,
             action_engine: None,

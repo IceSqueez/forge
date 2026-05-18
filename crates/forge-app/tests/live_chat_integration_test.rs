@@ -29,6 +29,7 @@ fn test_app() -> App {
         onboarding: forge_app::OnboardingState::new(),
         live_chat: forge_app::LiveChatState::new(),
         actions: forge_app::ActionsState::new(),
+        globals: forge_app::GlobalsState::new(),
         boot_time: std::time::SystemTime::now(),
         hub: forge_app::app::HubStats::new(),
         sidebar_state: SidebarExpandState::new(),

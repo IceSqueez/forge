@@ -1,7 +1,9 @@
 use forge_events::Event;
 use forge_platform_core::oauth::{DeviceCodeResponse, TokenResponse};
+use forge_storage::GlobalEntry;
 use forge_types::ActionId;
 use forge_widgets::ThemeId;
+use time::OffsetDateTime;
 
 use crate::Screen;
 use crate::actions::{AddActionMsg, AddSubActionMsg, AddTriggerMsg, RemoveSubActionMsg};
@@ -73,6 +75,35 @@ pub enum ActionsMsg {
     OpenAddTriggerModal(ActionId),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlobalsFilter {
+    All,
+    Persisted,
+    Session,
+}
+
+#[derive(Debug, Clone)]
+pub struct GlobalsLoadData {
+    pub entries: Vec<GlobalEntry>,
+    pub storage_bytes: u64,
+    pub last_save: Option<OffsetDateTime>,
+}
+
+#[derive(Debug, Clone)]
+pub enum GlobalsMsg {
+    LoadRequested,
+    EntriesLoaded(Result<GlobalsLoadData, String>),
+    FilterSelected(GlobalsFilter),
+    SearchChanged(String),
+    TogglePersistence(String, bool),
+    PersistenceToggled(Result<(), String>),
+    OpenCreateModal,
+    OpenEditModal(String),
+    DeleteRequested(String),
+    Deleted(Result<(), String>),
+    ExportRequested,
+}
+
 #[derive(Debug, Clone)]
 pub enum SidebarMsg {
     ToggleActionsQueues,
@@ -88,6 +119,7 @@ pub enum Message {
     OnboardingPersistResult(Result<(), String>),
     Settings(SettingsMsg),
     Hub(HubMsg),
+    Globals(GlobalsMsg),
     Actions(ActionsMsg),
     AddAction(AddActionMsg),
     AddTrigger(AddTriggerMsg),

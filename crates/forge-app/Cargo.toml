@@ -31,6 +31,7 @@ forge-server          = { path = "../forge-server" }
 forge-widgets        = { path = "../forge-widgets" }
 iced                = { workspace = true }
 serde_json          = { workspace = true }
+time                = { workspace = true }
 tokio               = { workspace = true }
 tracing             = { workspace = true }
 tracing-subscriber  = { workspace = true }

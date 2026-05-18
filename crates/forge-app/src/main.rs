@@ -11,7 +11,7 @@ use forge_runtime::{
     ActionEngineHandle, CommandParser, CommandParserHandle, EventBus, QueueScheduler,
     QueueSchedulerHandle, spawn_action_engine,
 };
-use forge_storage::{DataProvider, SettingsRepo, reserved_keys};
+use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo, reserved_keys};
 use forge_storage_sqlite::SqliteBackend;
 
 fn default_db_path() -> PathBuf {
@@ -110,7 +110,10 @@ fn spawn_runtime(backend: Arc<SqliteBackend>, bus: Arc<EventBus>) -> Option<Runt
     let engine = spawn_action_engine(Arc::clone(&bus), Arc::clone(&dp));
     let scheduler = QueueScheduler::spawn(engine.clone(), Arc::clone(&bus), queues);
     let parser = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), scheduler.clone());
-    let chat_send_bridge = ChatSendBridge::spawn(Arc::clone(&bus), Arc::clone(&backend));
+    let chat_send_bridge = ChatSendBridge::spawn(
+        Arc::clone(&bus),
+        Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
+    );
 
     Some(RuntimeHandles {
         engine,

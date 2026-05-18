@@ -37,6 +37,9 @@ use crate::message::{
 };
 use crate::onboarding_state::{DeviceCodeSession, DeviceCodeStatus, OnboardingState};
 use crate::screen::OnboardingStep;
+use crate::script_editor::{
+    ScriptEditorMsg, ScriptEditorState, handle_script_editor_msg, script_editor_view,
+};
 use crate::{Message, OnboardingMsg, Screen, SettingsSection};
 
 pub struct SidebarExpandState {
@@ -89,6 +92,7 @@ pub struct App {
     pub live_chat: LiveChatState,
     pub actions: ActionsState,
     pub globals: GlobalsState,
+    pub script_editor: ScriptEditorState,
     pub twitch_chat_handle: Option<TwitchChatHandle>,
     pub chat_send_bridge: Option<ChatSendBridgeHandle>,
     pub action_engine: Option<ActionEngineHandle>,
@@ -120,6 +124,7 @@ impl App {
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
             globals: GlobalsState::new(),
+            script_editor: ScriptEditorState::new(),
             twitch_chat_handle: None,
             chat_send_bridge: None,
             action_engine,
@@ -156,6 +161,7 @@ impl Default for App {
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
             globals: GlobalsState::new(),
+            script_editor: ScriptEditorState::new(),
             twitch_chat_handle: None,
             chat_send_bridge: None,
             action_engine: None,
@@ -186,6 +192,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             let is_actions = matches!(screen, Screen::Actions);
             let is_hub = matches!(screen, Screen::Home);
             let is_globals = matches!(screen, Screen::Globals);
+            let is_script_editor = matches!(screen, Screen::ScriptEditor);
             app.screen = screen;
             if is_actions {
                 Task::done(Message::Actions(ActionsMsg::LoadRequested))
@@ -193,6 +200,8 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 Task::done(Message::Hub(HubMsg::LoadStats))
             } else if is_globals {
                 Task::done(Message::Globals(GlobalsMsg::LoadRequested))
+            } else if is_script_editor {
+                Task::done(Message::ScriptEditor(ScriptEditorMsg::LoadRequested))
             } else {
                 Task::none()
             }
@@ -529,6 +538,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::AddTrigger(sub) => handle_add_trigger_msg(app, sub),
         Message::AddSubAction(sub) => handle_add_sub_action_msg(app, sub),
         Message::RemoveSubAction(sub) => handle_remove_sub_action_msg(app, sub),
+        Message::ScriptEditor(sub) => handle_script_editor_msg(app, sub),
         Message::Noop => Task::none(),
     }
 }
@@ -3854,6 +3864,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Screen::Settings(section) => {
             settings_view(section, app.twitch_chat_handle.as_ref(), palette)
         }
+        Screen::ScriptEditor => script_editor_view(app, palette),
         Screen::Onboarding(_) => unreachable!(),
         other => coming_soon_view(format!("{other:?}"), palette),
     };
@@ -4604,6 +4615,7 @@ mod tests {
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
             globals: GlobalsState::new(),
+            script_editor: ScriptEditorState::new(),
             twitch_chat_handle: None,
             chat_send_bridge: None,
             action_engine: Some(engine),
@@ -4871,6 +4883,7 @@ mod tests {
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
             globals: GlobalsState::new(),
+            script_editor: ScriptEditorState::new(),
             twitch_chat_handle: None,
             chat_send_bridge: None,
             action_engine: None,

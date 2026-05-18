@@ -10,6 +10,7 @@ use time::OffsetDateTime;
 use crate::Screen;
 use crate::actions::{AddActionMsg, AddSubActionMsg, AddTriggerMsg, RemoveSubActionMsg};
 use crate::live_chat::ChatFilter;
+use crate::script_editor::ScriptEditorMsg;
 
 #[derive(Debug, Clone)]
 pub struct HubStatsData {
@@ -160,5 +161,6 @@ pub enum Message {
     ChatSubmit,
     ChatSent(Result<(), String>),
     ChatFilterChanged(ChatFilter),
+    ScriptEditor(ScriptEditorMsg),
     Noop,
 }

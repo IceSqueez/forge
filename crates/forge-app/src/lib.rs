@@ -5,6 +5,7 @@ pub mod live_chat;
 pub mod message;
 pub mod onboarding_state;
 pub mod screen;
+pub mod script_editor;
 
 pub use actions::{
     ActionDetail, ActionSummary, ActionsGroup, ActionsState, AddActionForm, AddActionMsg,
@@ -23,3 +24,7 @@ pub use message::{
 };
 pub use onboarding_state::{DeviceCodeSession, DeviceCodeStatus, OnboardingState};
 pub use screen::{OnboardingStep, Screen, SettingsSection};
+pub use script_editor::{
+    OpenScript, RunModalForm, RunModalInputField, RunResult, ScriptEditorMsg, ScriptEditorState,
+    ScriptListEntry, handle_script_editor_msg, script_editor_view,
+};

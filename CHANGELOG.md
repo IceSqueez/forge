@@ -1,14 +1,85 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-alpha.6] - 2026-05-18
+### ⚠️ BREAKING CHANGES
+- **types**: VariantKind::color() removed — use forge_widgets::variant_kind_color(kind, palette) instead
+- **storage**: ScriptRecord.source_code renamed to body; description
+removed; contract: ScriptContract and body_hash: String added; upsert
+renamed to save. Migration 0003 was shipped in alpha.4/alpha.5; 0004
+adds the missing columns via ALTER TABLE on the existing scripts table.
+- **script**: Engine::with_config now stores wall_timer as field; Engine struct is no longer Send (was already not Send due to rhai::Engine).
+- **runtime**: dispatch signature gains registry param; bus changed to &Arc<EventBus>, dp to Arc<dyn DataProvider>
+- **runtime**: spawn_action_engine now requires Arc<ScriptRegistry>
+
+### 🐛 Bug Fixes
+- Remove stage-marker strings from docs and error messages
+- *(script)* Use Engine::new_raw with explicit packages and sleep budget
+
+### 🚀 Features
+- *(storage)* [**breaking**] Add migration 0004 and ScriptContract to ScriptRepo
+- *(script)* [**breaking**] Add ForgeApi god-object with sandbox limits
+- *(script)* Add doc-comment contract parser and scope builder
+- *(runtime)* Add ScriptRegistry with hot-reload
+- *(runtime)* [**breaking**] Add RunScript sub-action runner with registry lookup
+- *(widgets)* Add console widget with typed prefix levels
+- *(widgets)* Add code_editor wrapper with line numbers
+- *(app)* Build ScriptEditor 3-pane screen
+- *(runtime)* [**breaking**] Wire ScriptRegistry into ActionEngine for RunScript
+
+### 🚜 Refactor
+- *(types)* [**breaking**] Move VariantKind to forge-types from forge-widgets
+
+### 🛠️ Build
+- *(release)* Allow dirty release.yml for intentional manual deltas
+
+### 🧪 Testing
+- *(runtime)* Add ignored regression for RunScript wiring gap in ActionEngine
+
+## [0.1.0-alpha.5] - 2026-05-18
+### ⚠️ BREAKING CHANGES
+- **runtime**: SubActionSpec gets 3 new variants — match arms in user code must be exhaustive
+- **widgets**: forge-widgets now depends on forge-types
+
+### ⚙️ Miscellaneous Tasks
+- Release
+
+### 🎨 Styling
+- *(cliff)* Adds fix for typo in commit history
+
+### 🚀 Features
+- *(app)* Rebuild Hub screen per design mockup
+- *(widgets)* Add title_bar_v2 breadcrumb with status pills
+- *(widgets)* Add sidebar_v2 with nested groups and status dots
+- *(app)* Rebuild Home content per v2 and wire chrome v2
+- *(storage)* Wire globals reads/writes counters and add incr
+- *(storage)* Add GlobalTransit, GlobalsExport and export_all
+- *(runtime)* [**breaking**] Add globals sub-action runners and interpolation hook
+- *(widgets)* [**breaking**] Add Tier 1.5 data widgets for globals editor
+- *(app)* Build Globals screen with filter search and table
+- *(app)* Add Variant editor modal for globals create and edit
+- *(app)* Wire globals JSON export to native file dialog
+
+### 🚜 Refactor
+- *(app)* Rename Screen::Hub to Screen::Home
+
+### 🧪 Testing
+- *(runtime)* Assert interpolation increments globals reads counter
+
 ## [0.1.0-alpha.4] - 2026-05-18
 ### ⚠️ BREAKING CHANGES
 - **paths**: data path on Windows now %APPDATA%\icesqueez\forge\data\, on macOS ~/Library/Application Support/com.icesqueez.forge/. Linux unchanged.
 - **storage**: repo traits now return forge_types domain types; DataProvider gains 5 accessor methods replacing supertrait composition for those repos
 - **twitch**: ChatSendBridge::spawn now takes Arc<dyn CredentialsRepo>
 
+### ⚙️ Miscellaneous Tasks
+- Release
+
 ### 🐛 Bug Fixes
 - *(paths)* Use BaseDirs to drop owner segment from Windows path
+
+### 📚 Documentation
+- *(release)* Release v0.1.0-alpha.4
 
 ### 🚀 Features
 - *(paths)* [**breaking**] Add cross-platform ProjectDirs helper and migrate call-sites
@@ -48,6 +119,9 @@ All notable changes to this project will be documented in this file.
 ### 🐛 Bug Fixes
 - *(app)* Wire user_info into credentials and chat operations
 - *(app)* Bypass keyring in test helpers via open_with_key
+
+### 📚 Documentation
+- *(release)* Release v0.1.0-alpha.3
 
 ### 🚀 Features
 - *(runtime)* Add EventBus with broadcast and bounded replay buffer

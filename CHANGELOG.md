@@ -1,12 +1,49 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-alpha.4] - 2026-05-18
+### ⚠️ BREAKING CHANGES
+- **paths**: data path on Windows now %APPDATA%\icesqueez\forge\data\, on macOS ~/Library/Application Support/com.icesqueez.forge/. Linux unchanged.
+- **storage**: repo traits now return forge_types domain types; DataProvider gains 5 accessor methods replacing supertrait composition for those repos
+- **twitch**: ChatSendBridge::spawn now takes Arc<dyn CredentialsRepo>
+
+### 🐛 Bug Fixes
+- *(paths)* Use BaseDirs to drop owner segment from Windows path
+
+### 🚀 Features
+- *(paths)* [**breaking**] Add cross-platform ProjectDirs helper and migrate call-sites
+- *(types)* Add Action Trigger Command Queue SubAction primitives
+- *(storage)* [**breaking**] Replace ActionRepo/TriggerRepo/CommandRepo/QueueRepo/HistoryRepo with domain types
+- *(runtime)* Add ActionEngine with sub-action dispatch loop
+- *(runtime)* Add QueueScheduler with pause and concurrency control
+- *(runtime)* Add SendChat Delay SetGlobal sub-action runners
+- *(runtime)* Add CommandParser for chat-message dispatch
+- *(widgets)* Add actions editor widget family
+- *(app)* Spawn ActionEngine Scheduler CommandParser on boot
+- *(app)* Build Actions screen with tree pane and detail view
+- *(app)* Add Add Action modal and create-action flow
+- *(app)* Add Add Trigger modal with kind picker and config form
+- *(app)* Add Add Sub-Action modal and remove button
+- *(twitch)* Bridge chat.send.request events to Helix send
+
+### 🚜 Refactor
+- *(twitch)* [**breaking**] Hide SqliteBackend behind CredentialsRepo trait
+- Strip stage refs from docs and drop unused import stub
+
+### 🛠️ Build
+- *(github)* Fix cargo dist
+- *(github)* Undo running release on pull-request
+
+### 🧪 Testing
+- *(app)* Add end-to-end action pipeline causation test
+
 ## [0.1.0-alpha.3] - 2026-05-17
 ### ⚠️ BREAKING CHANGES
 - **twitch**: TwitchChat / ChatSession / send_chat no longer take reqwest::Client parameter
 
 ### ⚙️ Miscellaneous Tasks
 - *(cargo)* Cleanup
+- Release
 
 ### 🐛 Bug Fixes
 - *(app)* Wire user_info into credentials and chat operations

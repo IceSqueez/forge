@@ -103,7 +103,7 @@ pub struct TitleBarV2<'a, Msg> {
     pub breadcrumb_icon: char,
     pub breadcrumb_label: &'a str,
     pub connected: (u8, u8),
-    pub uptime: &'a str,
+    pub uptime: String,
     pub _msg: std::marker::PhantomData<Msg>,
 }
 
@@ -377,7 +377,7 @@ mod tests {
                 breadcrumb_icon: ICON_HOME,
                 breadcrumb_label: "Home",
                 connected: (8, 8),
-                uptime: "2h 14m",
+                uptime: "2h 14m".to_string(),
                 _msg: std::marker::PhantomData,
             },
         );
@@ -391,7 +391,7 @@ mod tests {
                 breadcrumb_icon: ICON_HOME,
                 breadcrumb_label: "Settings",
                 connected: (3, 5),
-                uptime: "0h 4m",
+                uptime: "0h 4m".to_string(),
                 _msg: std::marker::PhantomData,
             },
         );

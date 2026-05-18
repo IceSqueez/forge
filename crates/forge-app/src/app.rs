@@ -9,10 +9,18 @@ use forge_runtime::{
 use forge_storage::{CredentialId, CredentialsRepo, DataProvider, SettingsRepo, reserved_keys};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{Action, ActionId, ArgStack, EventId};
-use forge_widgets::tokens::{
-    FONT_BODY, FONT_BODY_LG, FONT_BODY_SM, FONT_CAPS, FONT_HERO, FONT_VALUE,
+use forge_widgets::icons::{
+    ICON_ACTIVITY, ICON_BROADCAST, ICON_CHAT, ICON_DOWNLOAD, ICON_GEAR, ICON_GRID, ICON_HASH,
+    ICON_HOME, ICON_LIGHTNING, ICON_PEOPLE, ICON_PLUS, ICON_TERMINAL,
 };
-use forge_widgets::{BannerKind, FontRole, ForgePalette, Radius, StepInfo, ThemeId, font, radius};
+use forge_widgets::tokens::{
+    FONT_BODY, FONT_BODY_LG, FONT_BODY_MD, FONT_BODY_SM, FONT_CAPS, FONT_CAPS_SM, FONT_PAGE_TITLE,
+    FONT_VALUE,
+};
+use forge_widgets::{
+    BannerKind, FontRole, ForgePalette, NavChild, NavItem, Radius, SidebarV2, StepInfo, ThemeId,
+    TitleBarV2, font, page_shell, radius, sidebar_v2, title_bar_v2,
+};
 use iced::{Element, Length, Subscription, Task, Theme};
 
 use crate::actions::{
@@ -1158,10 +1166,6 @@ impl forge_platform_core::RateLimiter for NoopRateLimiter {
     async fn observe_remote_throttle(&self, _retry_after: std::time::Duration) {}
 }
 
-fn nav_button<'a>(label: &'a str, screen: Screen, palette: &ForgePalette) -> Element<'a, Message> {
-    forge_widgets::ghost_button(label, Message::Navigate(screen), palette)
-}
-
 pub(crate) fn format_uptime(elapsed: std::time::Duration) -> String {
     let total_secs = elapsed.as_secs();
     if total_secs < 60 {
@@ -1235,60 +1239,71 @@ fn hub_card_style(
 }
 
 fn hub_nav_card<'a>(
-    icon: &'a str,
+    icon: char,
     icon_color: iced::Color,
     title: &'a str,
-    description: &'a str,
+    description: impl Into<String>,
     on_press: Message,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
+    use forge_widgets::BOOTSTRAP_FONT;
     use iced::widget::{button, column, container, text};
-    use iced::{Alignment, Background, Border, Shadow};
+    use iced::{Alignment, Background, Border, Color, Shadow};
 
-    let icon_box = container(text(icon).size(16.0).color(icon_color))
-        .width(30.0)
-        .height(30.0)
-        .align_x(Alignment::Center)
-        .align_y(Alignment::Center)
-        .style(move |_theme: &Theme| iced::widget::container::Style {
-            background: Some(Background::Color(palette.surface_overlay)),
-            border: Border {
-                radius: radius(Radius::Lg).into(),
-                color: iced::Color::TRANSPARENT,
-                width: 0.0,
-            },
-            ..iced::widget::container::Style::default()
-        });
+    let description: String = description.into();
+
+    let icon_box = container(
+        text(icon.to_string())
+            .size(16.0)
+            .font(BOOTSTRAP_FONT)
+            .color(icon_color),
+    )
+    .width(30.0)
+    .height(30.0)
+    .align_x(Alignment::Center)
+    .align_y(Alignment::Center)
+    .style(move |_theme: &Theme| iced::widget::container::Style {
+        background: Some(Background::Color(palette.surface_overlay)),
+        border: Border {
+            radius: radius(Radius::Lg).into(),
+            color: iced::Color::TRANSPARENT,
+            width: 0.0,
+        },
+        ..iced::widget::container::Style::default()
+    });
 
     let content = column![
         icon_box,
         text(title).size(FONT_BODY_LG).color(palette.text_primary),
-        text(description)
-            .size(FONT_BODY_SM)
-            .color(palette.text_muted),
+        text(description).size(FONT_CAPS).color(palette.text_muted),
     ]
-    .spacing(4.0)
+    .spacing(10.0)
     .width(Length::Fill);
 
     button(content)
         .on_press(on_press)
-        .padding(iced::Padding {
-            top: 14.0,
-            right: 14.0,
-            bottom: 14.0,
-            left: 14.0,
-        })
+        .padding(14.0)
         .width(Length::Fill)
-        .style(move |_theme: &Theme, _status| button::Style {
-            background: Some(Background::Color(palette.elevated)),
-            border: Border {
-                color: palette.border_regular,
-                width: 0.5,
-                radius: radius(Radius::Xxl).into(),
-            },
-            text_color: palette.text_primary,
-            shadow: Shadow::default(),
-            snap: false,
+        .style(move |_theme: &Theme, status| {
+            let bg = if matches!(status, iced::widget::button::Status::Hovered) {
+                Color {
+                    a: 1.0,
+                    ..palette.elevated
+                }
+            } else {
+                palette.elevated
+            };
+            button::Style {
+                background: Some(Background::Color(bg)),
+                border: Border {
+                    color: palette.border_regular,
+                    width: 0.5,
+                    radius: 10.0.into(),
+                },
+                text_color: palette.text_primary,
+                shadow: Shadow::default(),
+                snap: false,
+            }
         })
         .into()
 }
@@ -1368,9 +1383,12 @@ fn hub_stat_row<'a>(
     use iced::{Alignment, Border};
 
     let inner = row![
-        text(label).size(FONT_CAPS).color(palette.text_muted),
+        text(label).size(FONT_BODY_SM).color(palette.text_muted),
         iced::widget::Space::new().width(Length::Fill),
-        text(value_text).size(FONT_VALUE).color(value_color),
+        text(value_text)
+            .size(FONT_VALUE)
+            .color(value_color)
+            .font(font(FontRole::Monospace)),
     ]
     .align_y(Alignment::Center);
 
@@ -1395,102 +1413,180 @@ fn hub_stat_row<'a>(
         .into()
 }
 
+pub(crate) fn connected_count(app: &App) -> u8 {
+    if app.twitch_chat_handle.is_some() {
+        1
+    } else {
+        0
+    }
+}
+
+fn hub_inline_button<'a>(
+    icon: char,
+    label: &'a str,
+    on_press: Message,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    use forge_widgets::BOOTSTRAP_FONT;
+    use iced::widget::{button, row, text};
+    use iced::{Alignment, Background, Border, Shadow};
+
+    let icon_color = palette.text_secondary;
+    let text_color = palette.text_secondary;
+    let border_color = palette.border_regular;
+    let r = radius(Radius::Md);
+
+    let content = row![
+        text(icon.to_string())
+            .size(12.0)
+            .font(BOOTSTRAP_FONT)
+            .color(icon_color),
+        text(label).size(FONT_BODY_SM).color(text_color),
+    ]
+    .spacing(5.0)
+    .align_y(Alignment::Center);
+
+    button(content)
+        .on_press(on_press)
+        .padding([6.0, 12.0])
+        .style(move |_theme: &Theme, status| {
+            let bg = if matches!(status, iced::widget::button::Status::Hovered) {
+                Some(Background::Color(iced::Color {
+                    a: 0.06,
+                    ..border_color
+                }))
+            } else {
+                Some(Background::Color(iced::Color::TRANSPARENT))
+            };
+            button::Style {
+                background: bg,
+                text_color,
+                border: Border {
+                    color: border_color,
+                    width: 0.5,
+                    radius: r.into(),
+                },
+                shadow: Shadow::default(),
+                snap: false,
+            }
+        })
+        .into()
+}
+
 fn hub_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
     use iced::widget::{column, container, row, text};
     use iced::{Alignment, Background, Border};
 
-    let version = env!("CARGO_PKG_VERSION");
-    let elapsed = app.boot_time.elapsed().unwrap_or_default();
-    let uptime = format_uptime(elapsed);
-
-    let brand_box = container(text("S").size(30.0).color(palette.shell))
-        .width(62.0)
-        .height(62.0)
-        .align_x(Alignment::Center)
-        .align_y(Alignment::Center)
-        .style(move |_theme: &Theme| iced::widget::container::Style {
-            background: Some(Background::Color(palette.brand)),
-            border: Border {
-                radius: radius(Radius::Hero).into(),
-                color: iced::Color::TRANSPARENT,
-                width: 0.0,
-            },
-            ..iced::widget::container::Style::default()
-        });
+    let brand_box = container(text("F").size(26.0).color(palette.shell).font(iced::Font {
+        weight: iced::font::Weight::Semibold,
+        ..iced::Font::DEFAULT
+    }))
+    .width(54.0)
+    .height(54.0)
+    .align_x(Alignment::Center)
+    .align_y(Alignment::Center)
+    .style(move |_theme: &Theme| iced::widget::container::Style {
+        background: Some(Background::Color(palette.brand)),
+        border: Border {
+            radius: 12.0.into(),
+            color: iced::Color::TRANSPARENT,
+            width: 0.0,
+        },
+        ..iced::widget::container::Style::default()
+    });
 
     let title_col = column![
-        text("Forge").size(FONT_HERO).color(palette.text_primary),
-        text(format!("v{version} \u{2014} Weave your stream automation"))
-            .size(FONT_BODY_LG)
+        text("Forge")
+            .size(FONT_PAGE_TITLE)
+            .color(palette.text_primary),
+        text("Open-source stream automation, forged for streamers")
+            .size(FONT_BODY_MD)
             .color(palette.text_muted),
     ]
     .spacing(2.0);
 
-    let uptime_col = column![
-        text("UPTIME")
-            .size(FONT_CAPS)
-            .color(palette.text_faint)
-            .font(font(FontRole::Monospace)),
-        text(uptime).size(FONT_BODY_LG).color(palette.success),
-    ]
-    .spacing(2.0)
-    .align_x(Alignment::End);
+    let import_btn = hub_inline_button(ICON_DOWNLOAD, "Import", Message::Noop, palette);
+    let new_action_btn = hub_inline_button(
+        ICON_PLUS,
+        "New action",
+        Message::Navigate(Screen::Actions),
+        palette,
+    );
+
+    let hero_buttons = row![import_btn, new_action_btn].spacing(6.0);
 
     let hero_inner = row![
         brand_box,
         container(title_col).width(Length::Fill),
-        uptime_col,
+        hero_buttons,
     ]
-    .spacing(20.0)
+    .spacing(18.0)
     .align_y(Alignment::Center);
 
     let hero_card = container(hero_inner)
         .width(Length::Fill)
         .padding(iced::Padding {
-            top: 24.0,
-            right: 24.0,
-            bottom: 24.0,
-            left: 24.0,
+            top: 20.0,
+            right: 22.0,
+            bottom: 20.0,
+            left: 22.0,
         })
         .style(move |_theme: &Theme| iced::widget::container::Style {
             background: Some(Background::Color(palette.elevated)),
             border: Border {
                 color: palette.border_regular,
                 width: 0.5,
-                radius: radius(Radius::Hero).into(),
+                radius: 12.0.into(),
             },
             ..iced::widget::container::Style::default()
         });
 
+    let manage_header = text("MANAGE")
+        .size(FONT_CAPS_SM)
+        .color(palette.text_muted)
+        .font(font(FontRole::Monospace));
+
+    let platforms_connected = connected_count(app);
+    let actions_desc = format!(
+        "{} configured \u{b7} {} fired",
+        app.hub.actions_count.unwrap_or(0),
+        app.hub.triggers_fired.unwrap_or(0),
+    );
+    let commands_desc = format!(
+        "{} commands across chat",
+        app.hub.commands_count.unwrap_or(0),
+    );
+    let platforms_desc = format!("{platforms_connected} connected");
+
     let actions_card = hub_nav_card(
-        "\u{26a1}",
+        ICON_LIGHTNING,
         palette.brand,
         "Actions",
-        "Configure actions, queues, and history",
+        actions_desc,
         Message::Navigate(Screen::Actions),
         palette,
     );
     let commands_card = hub_nav_card(
-        "\u{276f}",
+        ICON_TERMINAL,
         palette.info,
         "Commands",
-        "Manage your chat commands",
+        commands_desc,
         Message::Navigate(Screen::Commands),
         palette,
     );
     let platforms_card = hub_nav_card(
-        "\u{229b}",
+        ICON_BROADCAST,
         palette.random,
         "Platforms",
-        "Twitch, YouTube, Kick settings",
+        platforms_desc,
         Message::Navigate(Screen::Platforms),
         palette,
     );
     let stream_apps_card = hub_nav_card(
-        "\u{25a6}",
+        ICON_GRID,
         palette.success,
-        "Stream Apps",
-        "OBS, VTube Studio, more",
+        "Stream apps",
+        "OBS, VTube Studio",
         Message::Navigate(Screen::StreamApps),
         palette,
     );
@@ -1501,19 +1597,36 @@ fn hub_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message>
         platforms_card,
         stream_apps_card
     ]
-    .spacing(10.0)
+    .spacing(8.0)
     .width(Length::Fill);
 
     let recent_events = {
+        let live_dot = container(iced::widget::Space::new())
+            .width(6.0)
+            .height(6.0)
+            .style(move |_theme: &Theme| iced::widget::container::Style {
+                background: Some(Background::Color(palette.success)),
+                border: Border {
+                    radius: 3.0.into(),
+                    color: iced::Color::TRANSPARENT,
+                    width: 0.0,
+                },
+                ..iced::widget::container::Style::default()
+            });
+        let live_label = text("LIVE")
+            .size(FONT_CAPS_SM)
+            .color(palette.text_faint)
+            .font(font(FontRole::Monospace));
+        let live_row = row![live_dot, live_label]
+            .spacing(5.0)
+            .align_y(Alignment::Center);
+
         let header = row![
             text("Recent events")
                 .size(FONT_BODY_LG)
                 .color(palette.text_primary),
             iced::widget::Space::new().width(Length::Fill),
-            text("LIVE")
-                .size(FONT_CAPS)
-                .color(palette.text_faint)
-                .font(font(FontRole::Monospace)),
+            live_row,
         ]
         .align_y(Alignment::Center);
 
@@ -1588,8 +1701,8 @@ fn hub_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message>
         .spacing(10.0)
         .width(Length::Fill);
 
-    let content = column![hero_card, cards_grid, bottom_row]
-        .spacing(18.0)
+    let content = column![hero_card, manage_header, cards_grid, bottom_row]
+        .spacing(16.0)
         .width(Length::Fill);
 
     container(content)
@@ -3525,6 +3638,162 @@ fn coming_soon_view(screen_label: String, palette: &ForgePalette) -> Element<'st
     .into()
 }
 
+fn breadcrumb_icon_for(screen: &Screen) -> char {
+    match screen {
+        Screen::Home => ICON_HOME,
+        Screen::Actions => ICON_LIGHTNING,
+        Screen::Commands => ICON_TERMINAL,
+        Screen::Platforms => ICON_BROADCAST,
+        Screen::StreamApps | Screen::Integrations => ICON_GRID,
+        Screen::LiveChat => ICON_CHAT,
+        Screen::EventFeed => ICON_ACTIVITY,
+        Screen::Globals => ICON_HASH,
+        Screen::Viewers => ICON_PEOPLE,
+        Screen::Settings(_) => ICON_GEAR,
+        Screen::Tts | Screen::Soundboard => ICON_PEOPLE,
+        Screen::ScriptEditor => ICON_TERMINAL,
+        Screen::Server | Screen::Logs => ICON_GEAR,
+        Screen::Onboarding(_) => ICON_HOME,
+    }
+}
+
+fn screen_label(screen: &Screen) -> &'static str {
+    match screen {
+        Screen::Home => "Home",
+        Screen::Actions => "Actions",
+        Screen::Commands => "Commands",
+        Screen::Platforms => "Platforms",
+        Screen::StreamApps => "Stream apps",
+        Screen::Integrations => "Integrations",
+        Screen::LiveChat => "Live chat",
+        Screen::EventFeed => "Event feed",
+        Screen::Globals => "Globals",
+        Screen::Viewers => "Viewers",
+        Screen::Settings(_) => "Settings",
+        Screen::Tts => "TTS",
+        Screen::Soundboard => "Soundboard",
+        Screen::ScriptEditor => "Script editor",
+        Screen::Server => "Server",
+        Screen::Logs => "Logs",
+        Screen::Onboarding(_) => "Setup",
+    }
+}
+
+fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Vec<NavItem<'a, Message>> {
+    let is_home = matches!(app.screen, Screen::Home);
+    let is_viewers = matches!(app.screen, Screen::Viewers);
+    let is_actions = matches!(app.screen, Screen::Actions);
+    let is_commands = matches!(app.screen, Screen::Commands);
+    let is_platforms = matches!(app.screen, Screen::Platforms);
+    let is_stream_apps = matches!(app.screen, Screen::StreamApps);
+    let is_live_chat = matches!(app.screen, Screen::LiveChat);
+    let is_event_feed = matches!(app.screen, Screen::EventFeed);
+    let is_globals = matches!(app.screen, Screen::Globals);
+    let is_settings = matches!(app.screen, Screen::Settings(_));
+
+    vec![
+        NavItem::Leaf {
+            icon: ICON_HOME,
+            label: "Home",
+            active: is_home,
+            on_press: Message::Navigate(Screen::Home),
+        },
+        NavItem::Leaf {
+            icon: ICON_PEOPLE,
+            label: "Viewers",
+            active: is_viewers,
+            on_press: Message::Navigate(Screen::Viewers),
+        },
+        NavItem::Group {
+            icon: ICON_LIGHTNING,
+            label: "Actions & Queues",
+            active: is_actions,
+            expanded: app.sidebar_state.actions_queues,
+            on_toggle: Message::Sidebar(SidebarMsg::ToggleActionsQueues),
+            children: vec![],
+        },
+        NavItem::Leaf {
+            icon: ICON_TERMINAL,
+            label: "Commands",
+            active: is_commands,
+            on_press: Message::Navigate(Screen::Commands),
+        },
+        NavItem::Group {
+            icon: ICON_BROADCAST,
+            label: "Platforms",
+            active: is_platforms,
+            expanded: app.sidebar_state.platforms,
+            on_toggle: Message::Sidebar(SidebarMsg::TogglePlatforms),
+            children: vec![
+                NavChild {
+                    dot_color: palette.brand,
+                    label: "Twitch",
+                    active: false,
+                    on_press: Message::Navigate(Screen::Platforms),
+                },
+                NavChild {
+                    dot_color: palette.random,
+                    label: "YouTube",
+                    active: false,
+                    on_press: Message::Navigate(Screen::Platforms),
+                },
+                NavChild {
+                    dot_color: palette.info,
+                    label: "Kick",
+                    active: false,
+                    on_press: Message::Navigate(Screen::Platforms),
+                },
+            ],
+        },
+        NavItem::Group {
+            icon: ICON_GRID,
+            label: "Stream apps",
+            active: is_stream_apps,
+            expanded: app.sidebar_state.stream_apps,
+            on_toggle: Message::Sidebar(SidebarMsg::ToggleStreamApps),
+            children: vec![
+                NavChild {
+                    dot_color: palette.success,
+                    label: "OBS Studio",
+                    active: false,
+                    on_press: Message::Navigate(Screen::Integrations),
+                },
+                NavChild {
+                    dot_color: palette.warning,
+                    label: "VTube Studio",
+                    active: false,
+                    on_press: Message::Navigate(Screen::Integrations),
+                },
+            ],
+        },
+        NavItem::Leaf {
+            icon: ICON_CHAT,
+            label: "Live chat",
+            active: is_live_chat,
+            on_press: Message::Navigate(Screen::LiveChat),
+        },
+        NavItem::Leaf {
+            icon: ICON_ACTIVITY,
+            label: "Event feed",
+            active: is_event_feed,
+            on_press: Message::Navigate(Screen::EventFeed),
+        },
+        NavItem::Leaf {
+            icon: ICON_HASH,
+            label: "Globals",
+            active: is_globals,
+            on_press: Message::Navigate(Screen::Globals),
+        },
+        NavItem::Divider,
+        NavItem::Leaf {
+            icon: ICON_GEAR,
+            label: "Settings",
+            active: is_settings,
+            on_press: Message::Navigate(Screen::Settings(SettingsSection::Appearance)),
+        },
+    ]
+}
+
 pub fn view(app: &App) -> Element<'_, Message> {
     let palette = &app.palette;
 
@@ -3532,25 +3801,24 @@ pub fn view(app: &App) -> Element<'_, Message> {
         return onboarding_view(step, &app.onboarding, palette);
     }
 
-    let nav_items = vec![
-        nav_button("Hub", Screen::Home, palette),
-        nav_button("Live Chat", Screen::LiveChat, palette),
-        nav_button("Events", Screen::EventFeed, palette),
-        nav_button("Globals", Screen::Globals, palette),
-        nav_button("Actions", Screen::Actions, palette),
-        nav_button("Commands", Screen::Commands, palette),
-        nav_button("Platforms", Screen::Platforms, palette),
-        nav_button("Integrations", Screen::Integrations, palette),
-        nav_button(
-            "Settings",
-            Screen::Settings(SettingsSection::Appearance),
-            palette,
-        ),
-    ];
+    let elapsed = app.boot_time.elapsed().unwrap_or_default();
 
-    let sidebar = forge_widgets::sidebar(
-        vec![forge_widgets::sidebar_section("Main", nav_items, palette)],
+    let title_bar = title_bar_v2(
         palette,
+        TitleBarV2 {
+            breadcrumb_icon: breadcrumb_icon_for(&app.screen),
+            breadcrumb_label: screen_label(&app.screen),
+            connected: (connected_count(app), 4),
+            uptime: format_uptime(elapsed),
+            _msg: std::marker::PhantomData,
+        },
+    );
+
+    let sidebar = sidebar_v2(
+        palette,
+        SidebarV2 {
+            items: nav_items_for(app, palette),
+        },
     );
 
     let content: Element<'_, Message> = match &app.screen {
@@ -3564,7 +3832,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         other => coming_soon_view(format!("{other:?}"), palette),
     };
 
-    iced::widget::row![sidebar, content].into()
+    page_shell(title_bar, None, sidebar, content)
 }
 
 pub fn subscription(app: &App) -> Subscription<Message> {
@@ -4847,5 +5115,90 @@ mod tests {
         assert!(!app.sidebar_state.actions_queues);
         assert!(app.sidebar_state.platforms);
         assert!(!app.sidebar_state.stream_apps);
+    }
+
+    #[test]
+    fn connected_count_zero_when_no_handle() {
+        let app = App::default();
+        assert_eq!(connected_count(&app), 0);
+    }
+
+    #[test]
+    fn breadcrumb_icon_for_home_returns_home_icon() {
+        assert_eq!(breadcrumb_icon_for(&Screen::Home), ICON_HOME);
+    }
+
+    #[test]
+    fn breadcrumb_icon_for_actions_returns_lightning() {
+        assert_eq!(breadcrumb_icon_for(&Screen::Actions), ICON_LIGHTNING);
+    }
+
+    #[test]
+    fn breadcrumb_icon_for_settings_returns_gear() {
+        assert_eq!(
+            breadcrumb_icon_for(&Screen::Settings(SettingsSection::Appearance)),
+            ICON_GEAR
+        );
+    }
+
+    #[test]
+    fn screen_label_home() {
+        assert_eq!(screen_label(&Screen::Home), "Home");
+    }
+
+    #[test]
+    fn screen_label_actions() {
+        assert_eq!(screen_label(&Screen::Actions), "Actions");
+    }
+
+    #[test]
+    fn screen_label_settings() {
+        assert_eq!(
+            screen_label(&Screen::Settings(SettingsSection::Appearance)),
+            "Settings"
+        );
+    }
+
+    #[test]
+    fn view_home_renders_with_v2_chrome() {
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Navigate(Screen::Home));
+        app.hub.actions_count = Some(12);
+        app.hub.commands_count = Some(5);
+        app.hub.triggers_fired = Some(99);
+        app.hub.globals_count = Some(3);
+        let _ = view(&app);
+    }
+
+    #[test]
+    fn view_live_chat_renders_with_v2_chrome() {
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Navigate(Screen::LiveChat));
+        let _ = view(&app);
+    }
+
+    #[test]
+    fn view_coming_soon_screen_renders_with_v2_chrome() {
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Navigate(Screen::Viewers));
+        let _ = view(&app);
+    }
+
+    #[test]
+    fn view_platforms_expanded_sidebar_renders() {
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Navigate(Screen::Home));
+        let _ = update(&mut app, Message::Sidebar(SidebarMsg::TogglePlatforms));
+        let _ = update(&mut app, Message::Sidebar(SidebarMsg::ToggleStreamApps));
+        let _ = view(&app);
+    }
+
+    #[test]
+    fn hub_view_desc_shows_actions_count() {
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Navigate(Screen::Home));
+        app.hub.actions_count = Some(47);
+        app.hub.triggers_fired = Some(1284);
+        let _ = view(&app);
     }
 }

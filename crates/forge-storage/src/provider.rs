@@ -20,9 +20,6 @@ pub trait DataProvider:
 
     /// Copies the underlying database file to `path`.
     async fn export(&self, path: &std::path::Path) -> Result<(), StorageError>;
-
-    /// Replaces the current database with the file at `path`. Destructive.
-    async fn import(&self, path: &std::path::Path) -> Result<(), StorageError>;
 }
 
 #[cfg(test)]

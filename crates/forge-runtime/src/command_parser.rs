@@ -1,6 +1,7 @@
-//! Permission filtering not yet implemented — all commands fire for Everyone.
-//! Full permission check (subscriber/vip/mod/broadcaster) lands when badge data
-//! is reliably parsed from EventSub payloads.
+//! Command permission stored on `Command` rows is currently informational only;
+//! every matched command dispatches regardless of the chatter's role. Badge
+//! parsing from EventSub payloads is required before permission filtering can
+//! be enforced.
 
 use std::collections::HashMap;
 use std::sync::{

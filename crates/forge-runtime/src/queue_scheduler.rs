@@ -1,5 +1,6 @@
-//! Queue registry loaded at startup. UI-added queues require restart in alpha-4.
-//! Hot-reload (queue add/remove without restart) lands in alpha-5+.
+//! Queue registry is loaded once at scheduler spawn time. Adding or removing
+//! queues at runtime requires re-spawning the scheduler — there is no hot-reload
+//! channel from storage to the scheduler.
 
 use std::collections::HashMap;
 use std::sync::Arc;

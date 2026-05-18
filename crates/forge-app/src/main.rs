@@ -6,6 +6,7 @@ use forge_app::Screen;
 use forge_app::app::{subscription, theme_callback, update, view};
 use forge_app::screen::OnboardingStep;
 use forge_platform_core::paths;
+use forge_platform_twitch::{ChatSendBridge, ChatSendBridgeHandle};
 use forge_runtime::{
     ActionEngineHandle, CommandParser, CommandParserHandle, EventBus, QueueScheduler,
     QueueSchedulerHandle, spawn_action_engine,
@@ -83,6 +84,7 @@ struct RuntimeHandles {
     engine: ActionEngineHandle,
     scheduler: QueueSchedulerHandle,
     parser: CommandParserHandle,
+    chat_send_bridge: ChatSendBridgeHandle,
 }
 
 #[allow(clippy::expect_used)]
@@ -108,11 +110,13 @@ fn spawn_runtime(backend: Arc<SqliteBackend>, bus: Arc<EventBus>) -> Option<Runt
     let engine = spawn_action_engine(Arc::clone(&bus), Arc::clone(&dp));
     let scheduler = QueueScheduler::spawn(engine.clone(), Arc::clone(&bus), queues);
     let parser = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), scheduler.clone());
+    let chat_send_bridge = ChatSendBridge::spawn(Arc::clone(&bus), Arc::clone(&backend));
 
     Some(RuntimeHandles {
         engine,
         scheduler,
         parser,
+        chat_send_bridge,
     })
 }
 
@@ -125,12 +129,17 @@ fn main() -> iced::Result {
 
     let bus = Arc::new(EventBus::new());
 
-    let (action_engine, scheduler, command_parser) = if storage_offline {
-        (None, None, None)
+    let (action_engine, scheduler, command_parser, chat_send_bridge) = if storage_offline {
+        (None, None, None, None)
     } else {
         match spawn_runtime(Arc::clone(&backend), Arc::clone(&bus)) {
-            Some(h) => (Some(h.engine), Some(h.scheduler), Some(h.parser)),
-            None => (None, None, None),
+            Some(h) => (
+                Some(h.engine),
+                Some(h.scheduler),
+                Some(h.parser),
+                Some(h.chat_send_bridge),
+            ),
+            None => (None, None, None, None),
         }
     };
 
@@ -147,6 +156,7 @@ fn main() -> iced::Result {
             command_parser.clone(),
         );
         app.bus = Arc::clone(&bus_boot);
+        app.chat_send_bridge = chat_send_bridge.clone();
         (app, iced::Task::none())
     };
 

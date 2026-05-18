@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use forge_platform_twitch::{ChatConnectionState, TwitchChatHandle};
+use forge_platform_twitch::{ChatConnectionState, ChatSendBridgeHandle, TwitchChatHandle};
 use forge_runtime::{
     ActionEngineHandle, CommandParserHandle, EventBus, ExecutionRequest, QueueSchedulerHandle,
 };
@@ -33,6 +33,7 @@ pub struct App {
     pub live_chat: LiveChatState,
     pub actions: ActionsState,
     pub twitch_chat_handle: Option<TwitchChatHandle>,
+    pub chat_send_bridge: Option<ChatSendBridgeHandle>,
     pub action_engine: Option<ActionEngineHandle>,
     pub scheduler: Option<QueueSchedulerHandle>,
     pub command_parser: Option<CommandParserHandle>,
@@ -59,6 +60,7 @@ impl App {
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
             twitch_chat_handle: None,
+            chat_send_bridge: None,
             action_engine,
             scheduler,
             command_parser,
@@ -90,6 +92,7 @@ impl Default for App {
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
             twitch_chat_handle: None,
+            chat_send_bridge: None,
             action_engine: None,
             scheduler: None,
             command_parser: None,
@@ -3777,6 +3780,7 @@ mod tests {
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
             twitch_chat_handle: None,
+            chat_send_bridge: None,
             action_engine: Some(engine),
             scheduler: Some(scheduler),
             command_parser: Some(parser),
@@ -4039,6 +4043,7 @@ mod tests {
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
             twitch_chat_handle: None,
+            chat_send_bridge: None,
             action_engine: None,
             scheduler: None,
             command_parser: None,

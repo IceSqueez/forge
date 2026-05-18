@@ -287,11 +287,15 @@ mod tests {
             .await
             .unwrap();
 
-        let _ = interpolate_with_globals("Player score: %score%", &ArgStack::new(), dp.as_ref()).await;
+        let _ =
+            interpolate_with_globals("Player score: %score%", &ArgStack::new(), dp.as_ref()).await;
         let _ = interpolate_with_globals("%score% points", &ArgStack::new(), dp.as_ref()).await;
 
         let entries = GlobalsRepo::list(dp.as_ref()).await.unwrap();
         let entry = entries.iter().find(|e| e.name == "score").unwrap();
-        assert_eq!(entry.reads, 2, "two interpolations of %score% must yield reads == 2");
+        assert_eq!(
+            entry.reads, 2,
+            "two interpolations of %score% must yield reads == 2"
+        );
     }
 }

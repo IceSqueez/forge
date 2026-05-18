@@ -30,7 +30,7 @@ pub use chat::{
 };
 pub use data::{
     FooterProps, VariantKind, data_screen_footer, data_table, persistence_toggle_inline, type_pill,
-    value_preview,
+    value_preview, variant_kind_color,
 };
 pub use icons::{
     BOOTSTRAP_FONT, BOOTSTRAP_FONT_BYTES, ICON_ACTIVITY, ICON_BROADCAST, ICON_CHAT,

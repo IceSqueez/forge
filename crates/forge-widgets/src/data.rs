@@ -5,58 +5,22 @@ use iced::{
 };
 
 use forge_types::Variant;
+pub use forge_types::VariantKind;
 
 use crate::palette::ForgePalette;
 use crate::tokens::{
     FONT_BODY_SM, FONT_CAPS, FONT_CAPS_SM, FONT_CAPS_XS, FontRole, Radius, font, radius,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum VariantKind {
-    Int,
-    Float,
-    Bool,
-    String,
-    Datetime,
-    Array,
-    Object,
-}
-
-impl VariantKind {
-    pub fn from_variant(v: &Variant) -> Self {
-        match v {
-            Variant::Int(_) => Self::Int,
-            Variant::Float(_) => Self::Float,
-            Variant::Bool(_) => Self::Bool,
-            Variant::String(_) => Self::String,
-            Variant::Datetime(_) => Self::Datetime,
-            Variant::Array(_) => Self::Array,
-            Variant::Object(_) => Self::Object,
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Int => "int",
-            Self::Float => "float",
-            Self::Bool => "bool",
-            Self::String => "string",
-            Self::Datetime => "datetime",
-            Self::Array => "array",
-            Self::Object => "object",
-        }
-    }
-
-    pub fn color(self, palette: &ForgePalette) -> Color {
-        match self {
-            Self::Int => palette.info,
-            Self::Float => palette.bits,
-            Self::Bool => palette.random,
-            Self::String => palette.success,
-            Self::Datetime => palette.accent_teal,
-            Self::Array => palette.brand,
-            Self::Object => palette.accent_pink_light,
-        }
+pub fn variant_kind_color(kind: VariantKind, palette: &ForgePalette) -> Color {
+    match kind {
+        VariantKind::Int => palette.info,
+        VariantKind::Float => palette.bits,
+        VariantKind::Bool => palette.random,
+        VariantKind::String => palette.success,
+        VariantKind::Datetime => palette.accent_teal,
+        VariantKind::Array => palette.brand,
+        VariantKind::Object => palette.accent_pink_light,
     }
 }
 
@@ -70,7 +34,7 @@ pub struct FooterProps<'a> {
 
 pub fn type_pill<'a, Msg: 'a>(palette: &'a ForgePalette, kind: VariantKind) -> Element<'a, Msg> {
     let bg = palette.surface_overlay;
-    let fg = kind.color(palette);
+    let fg = variant_kind_color(kind, palette);
     let pill_font = Font {
         family: iced_font::Family::Name("JetBrains Mono"),
         weight: iced_font::Weight::Medium,
@@ -383,14 +347,14 @@ mod tests {
     }
 
     #[test]
-    fn variant_kind_labels_are_correct() {
-        assert_eq!(VariantKind::Int.label(), "int");
-        assert_eq!(VariantKind::Float.label(), "float");
-        assert_eq!(VariantKind::Bool.label(), "bool");
-        assert_eq!(VariantKind::String.label(), "string");
-        assert_eq!(VariantKind::Datetime.label(), "datetime");
-        assert_eq!(VariantKind::Array.label(), "array");
-        assert_eq!(VariantKind::Object.label(), "object");
+    fn variant_kind_labels_are_caps_abbreviations() {
+        assert_eq!(VariantKind::Int.label(), "INT");
+        assert_eq!(VariantKind::Float.label(), "FLOAT");
+        assert_eq!(VariantKind::Bool.label(), "BOOL");
+        assert_eq!(VariantKind::String.label(), "STR");
+        assert_eq!(VariantKind::Datetime.label(), "TIME");
+        assert_eq!(VariantKind::Array.label(), "ARR");
+        assert_eq!(VariantKind::Object.label(), "OBJ");
     }
 
     #[test]
@@ -405,7 +369,7 @@ mod tests {
             VariantKind::Array,
             VariantKind::Object,
         ];
-        let colors: Vec<Color> = kinds.iter().map(|k| k.color(&p)).collect();
+        let colors: Vec<Color> = kinds.iter().map(|k| variant_kind_color(*k, &p)).collect();
         for i in 0..colors.len() {
             for j in (i + 1)..colors.len() {
                 assert_ne!(

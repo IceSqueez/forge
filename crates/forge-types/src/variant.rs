@@ -48,6 +48,67 @@ impl std::str::FromStr for VariantType {
     }
 }
 
+/// Display-facing discriminant for a [`Variant`] value.
+///
+/// Distinct from [`VariantType`]: this type carries abbreviated caps labels
+/// ("INT", "STR", …) suitable for UI pills and script contract annotations,
+/// while [`VariantType`] owns the lowercase serialisation tag used in storage
+/// and error messages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VariantKind {
+    Int,
+    Float,
+    Bool,
+    String,
+    Datetime,
+    Array,
+    Object,
+}
+
+impl VariantKind {
+    pub fn from_variant(v: &Variant) -> Self {
+        match v {
+            Variant::Int(_) => Self::Int,
+            Variant::Float(_) => Self::Float,
+            Variant::Bool(_) => Self::Bool,
+            Variant::String(_) => Self::String,
+            Variant::Datetime(_) => Self::Datetime,
+            Variant::Array(_) => Self::Array,
+            Variant::Object(_) => Self::Object,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Int => "INT",
+            Self::Float => "FLOAT",
+            Self::Bool => "BOOL",
+            Self::String => "STR",
+            Self::Datetime => "TIME",
+            Self::Array => "ARR",
+            Self::Object => "OBJ",
+        }
+    }
+
+    /// Parses a lowercase type name from a script contract annotation.
+    ///
+    /// Returns `None` for unknown names and for names that are not all-lowercase
+    /// (e.g. `"INT"` → `None`).
+    pub fn from_contract_name(name: &str) -> Option<Self> {
+        match name {
+            "int" => Some(Self::Int),
+            "float" => Some(Self::Float),
+            "bool" => Some(Self::Bool),
+            "string" => Some(Self::String),
+            "datetime" => Some(Self::Datetime),
+            "array" => Some(Self::Array),
+            "object" => Some(Self::Object),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum VariantError {
     #[error("type mismatch: expected {expected}, got {actual}")]
@@ -592,6 +653,95 @@ mod tests {
     fn variant_type_from_str_unknown_errors() {
         let result: Result<VariantType, _> = "binary".parse();
         assert!(matches!(result, Err(VariantError::UnknownTypeTag(_))));
+    }
+
+    #[test]
+    fn variant_kind_from_variant_all_seven() {
+        assert_eq!(
+            VariantKind::from_variant(&Variant::Int(0)),
+            VariantKind::Int
+        );
+        assert_eq!(
+            VariantKind::from_variant(&Variant::float(1.0).unwrap()),
+            VariantKind::Float
+        );
+        assert_eq!(
+            VariantKind::from_variant(&Variant::Bool(true)),
+            VariantKind::Bool
+        );
+        assert_eq!(
+            VariantKind::from_variant(&Variant::String("hi".into())),
+            VariantKind::String
+        );
+        assert_eq!(
+            VariantKind::from_variant(&Variant::Datetime(time::OffsetDateTime::UNIX_EPOCH)),
+            VariantKind::Datetime
+        );
+        assert_eq!(
+            VariantKind::from_variant(&Variant::Array(vec![])),
+            VariantKind::Array
+        );
+        assert_eq!(
+            VariantKind::from_variant(&Variant::Object(BTreeMap::new())),
+            VariantKind::Object
+        );
+    }
+
+    #[test]
+    fn variant_kind_labels_are_caps_abbreviations() {
+        assert_eq!(VariantKind::Int.label(), "INT");
+        assert_eq!(VariantKind::Float.label(), "FLOAT");
+        assert_eq!(VariantKind::Bool.label(), "BOOL");
+        assert_eq!(VariantKind::String.label(), "STR");
+        assert_eq!(VariantKind::Datetime.label(), "TIME");
+        assert_eq!(VariantKind::Array.label(), "ARR");
+        assert_eq!(VariantKind::Object.label(), "OBJ");
+    }
+
+    #[test]
+    fn variant_kind_from_contract_name_valid_lowercase() {
+        assert_eq!(
+            VariantKind::from_contract_name("int"),
+            Some(VariantKind::Int)
+        );
+        assert_eq!(
+            VariantKind::from_contract_name("float"),
+            Some(VariantKind::Float)
+        );
+        assert_eq!(
+            VariantKind::from_contract_name("bool"),
+            Some(VariantKind::Bool)
+        );
+        assert_eq!(
+            VariantKind::from_contract_name("string"),
+            Some(VariantKind::String)
+        );
+        assert_eq!(
+            VariantKind::from_contract_name("datetime"),
+            Some(VariantKind::Datetime)
+        );
+        assert_eq!(
+            VariantKind::from_contract_name("array"),
+            Some(VariantKind::Array)
+        );
+        assert_eq!(
+            VariantKind::from_contract_name("object"),
+            Some(VariantKind::Object)
+        );
+    }
+
+    #[test]
+    fn variant_kind_from_contract_name_uppercase_rejected() {
+        assert_eq!(VariantKind::from_contract_name("INT"), None);
+        assert_eq!(VariantKind::from_contract_name("Float"), None);
+        assert_eq!(VariantKind::from_contract_name("BOOL"), None);
+    }
+
+    #[test]
+    fn variant_kind_from_contract_name_unknown_rejected() {
+        assert_eq!(VariantKind::from_contract_name("binary"), None);
+        assert_eq!(VariantKind::from_contract_name(""), None);
+        assert_eq!(VariantKind::from_contract_name("number"), None);
     }
 
     #[test]

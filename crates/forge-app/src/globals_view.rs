@@ -9,7 +9,7 @@ use forge_widgets::{
     BannerKind, FontRole, FooterProps, ForgePalette, ModalProps, ToggleProps, VariantKind,
     category_chip, data_screen_footer, data_table, empty_state, font, live_status_banner, modal,
     persistence_toggle_inline, primary_button_small, search_input, secondary_button,
-    section_header, toggle, type_pill, value_preview,
+    section_header, toggle, type_pill, value_preview, variant_kind_color,
 };
 use iced::{
     Alignment, Background, Border, Color, Element, Length, Shadow,
@@ -431,7 +431,11 @@ pub fn handle_globals_msg(app: &mut App, sub: GlobalsMsg) -> iced::Task<Message>
         GlobalsMsg::ExportRequested => {
             let dp = Arc::clone(&app.backend);
             iced::Task::perform(
-                async move { export_globals_to_chosen_file(dp).await.map_err(|e| e.to_string()) },
+                async move {
+                    export_globals_to_chosen_file(dp)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
                 |r| Message::Globals(GlobalsMsg::Exported(r)),
             )
         }
@@ -1003,7 +1007,7 @@ fn variant_editor_modal_view<'a>(
         acc.push(category_chip(
             palette,
             k.label(),
-            k.color(palette),
+            variant_kind_color(k, palette),
             form.kind == k,
             Message::VariantEditor(VariantEditorMsg::KindSelected(k)),
         ))

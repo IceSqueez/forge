@@ -18,4 +18,4 @@ pub use queue::Queue;
 pub use sub_action::{LogLevel, SubActionSpec, VariantTemplate};
 pub use token::{ApiKey, OAuthToken, RefreshToken};
 pub use trigger::{Trigger, TriggerConfig, TriggerKind};
-pub use variant::{Variant, VariantError, VariantType};
+pub use variant::{Variant, VariantError, VariantKind, VariantType};

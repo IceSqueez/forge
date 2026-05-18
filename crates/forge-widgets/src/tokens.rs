@@ -88,6 +88,7 @@ pub fn radius(r: Radius) -> f32 {
 pub const BORDER_THIN: f32 = 1.0;
 pub const BORDER_ACCENT: f32 = 1.0;
 
+pub const FONT_CAPS_XS: f32 = 9.5;
 pub const FONT_CAPS_SM: f32 = 10.5;
 pub const FONT_CAPS: f32 = 11.0;
 pub const FONT_BODY_SM: f32 = 11.5;

@@ -121,7 +121,7 @@ fn parse_input_to_variant(field: &RunModalInputField) -> Result<Variant, String>
         },
         VariantKind::String => Ok(Variant::String(field.raw_value.clone())),
         other => Err(format!(
-            "`{}`: {other:?} inputs not supported in alpha-6 run modal",
+            "`{}`: {other:?} inputs not supported in this run modal — edit the script's contract or pass via ArgStack",
             field.name
         )),
     }

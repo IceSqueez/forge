@@ -47,10 +47,9 @@ impl Default for CodeEditorState {
 
 /// Line-number gutter + styled `text_editor` side-by-side.
 ///
-/// The gutter renders all line numbers as a non-scrollable column; it does not
-/// scroll-sync with the editor's internal scroll in alpha-6. For short scripts
-/// (< ~60 lines) this is invisible; beta adds a custom Highlighter that owns
-/// the gutter inside the editor pipeline.
+/// The gutter renders all line numbers as a non-scrollable column; it does NOT
+/// scroll-sync with the editor body. Acceptable for short scripts; long scripts
+/// will see the gutter stay fixed while the editor scrolls.
 pub fn code_editor<'a, Msg: Clone + 'a>(
     palette: &'a ForgePalette,
     state: &'a CodeEditorState,

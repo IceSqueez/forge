@@ -4,6 +4,8 @@ pub mod actions;
 pub mod buttons;
 pub mod cards;
 pub mod chat;
+pub mod code_editor;
+pub mod console;
 pub mod data;
 pub mod icons;
 pub mod inputs;
@@ -28,6 +30,8 @@ pub use cards::{card, card_with_radius, hero_card, metric_card, stat_row};
 pub use chat::{
     BadgeKind, ChatBody, ChatRow, Platform, PlatformTarget, chat_row, filter_chip, input_bar,
 };
+pub use code_editor::{CodeEditorState, code_editor};
+pub use console::{ConsoleLevel, ConsoleLine, console};
 pub use data::{
     FooterProps, VariantKind, data_screen_footer, data_table, persistence_toggle_inline, type_pill,
     value_preview, variant_kind_color,

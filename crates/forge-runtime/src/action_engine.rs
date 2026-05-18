@@ -145,6 +145,7 @@ impl ActionEngine {
         ctx: &mut ExecutionContext,
         parent_event_id: EventId,
     ) {
+        let mut current_stack = arg_stack.clone();
         for (index, spec) in specs.iter().enumerate() {
             let run_event = Event::caused_by(
                 EventSource::Core,
@@ -158,15 +159,19 @@ impl ActionEngine {
             let run_event_id = run_event.id;
             self.bus.publish(run_event);
 
-            let telemetry = dispatch(
+            let (telemetry, updated_stack) = dispatch(
                 spec,
-                arg_stack,
+                &current_stack,
                 index,
                 run_event_id,
                 &self.bus,
                 self.dp.as_ref(),
             )
             .await;
+
+            if let Some(new_stack) = updated_stack {
+                current_stack = new_stack;
+            }
 
             let failure_msg = match &telemetry.outcome {
                 SubActionOutcome::Failed(m) => Some(m.clone()),
@@ -219,7 +224,7 @@ impl ActionEngine {
         let results = join_all(futures).await;
 
         let mut first_failure: Option<String> = None;
-        for telemetry in results {
+        for (telemetry, _) in results {
             if first_failure.is_none()
                 && let SubActionOutcome::Failed(msg) = &telemetry.outcome
             {

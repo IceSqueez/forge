@@ -3536,6 +3536,15 @@ fn sub_action_element<'a>(
         SubActionSpec::SetGlobal { name, value } => {
             ('\u{eb58}', spec.kind_label(), format!("{name} = {value}"))
         }
+        SubActionSpec::GetGlobal { name, into_arg } => (
+            '\u{eb58}',
+            spec.kind_label(),
+            format!("{name} → {into_arg}"),
+        ),
+        SubActionSpec::IncrementGlobal { name, amount } => {
+            ('\u{eb58}', spec.kind_label(), format!("{name} += {amount}"))
+        }
+        SubActionSpec::DeleteGlobal { name } => ('\u{eb58}', spec.kind_label(), name.clone()),
         SubActionSpec::Delay { ms } => ('\u{ebc5}', spec.kind_label(), format!("{ms}ms")),
         SubActionSpec::Log { level, message } => (
             '\u{ea77}',

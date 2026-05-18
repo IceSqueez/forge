@@ -1,11 +1,18 @@
+use forge_events::{Event, EventSource};
 use forge_storage::{DataProvider, GlobalsRepo};
-use forge_types::{ArgStack, SubActionOutcome, SubActionSpec, SubActionTelemetry, Variant};
+use forge_types::{
+    ArgStack, EventId, SubActionOutcome, SubActionSpec, SubActionTelemetry, Variant,
+};
 use time::OffsetDateTime;
+
+use crate::EventBus;
 
 pub(super) async fn run(
     spec: &SubActionSpec,
     arg_stack: &ArgStack,
     index: usize,
+    parent_event_id: EventId,
+    bus: &EventBus,
     dp: &dyn DataProvider,
 ) -> SubActionTelemetry {
     let started_at = OffsetDateTime::now_utc();
@@ -14,12 +21,24 @@ pub(super) async fn run(
         unreachable!()
     };
 
-    let name = arg_stack.interpolate(name);
-    let raw = arg_stack.interpolate(value);
+    let name = super::interpolate_with_globals(name, arg_stack, dp).await;
+    let raw = super::interpolate_with_globals(value, arg_stack, dp).await;
     let variant = parse_variant(&raw);
 
     let outcome = match GlobalsRepo::set(dp, &name, variant, false).await {
-        Ok(()) => SubActionOutcome::Success,
+        Ok(()) => {
+            bus.publish(Event::caused_by(
+                EventSource::Core,
+                "global.set",
+                serde_json::json!({
+                    "name": name,
+                    "value": raw,
+                    "persisted": false,
+                }),
+                parent_event_id,
+            ));
+            SubActionOutcome::Success
+        }
         Err(e) => SubActionOutcome::Failed(e.to_string()),
     };
 

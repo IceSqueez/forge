@@ -29,6 +29,7 @@ pub struct SubActionTelemetry {
 }
 
 /// Immutable after construction; built once from trigger event and globals snapshot.
+#[derive(Clone)]
 pub struct ArgStack(BTreeMap<String, Variant>);
 
 impl ArgStack {

@@ -41,6 +41,8 @@ commit_preprocessors = [
   { pattern = "^Merge remote-tracking branch", replace = "chore(merge): Merge remote-tracking branch" },
   { pattern = "^Initial commit", replace = "chore(init): bootstrap repository" },
   { pattern = "^ci\\(GitHubCI\\)", replace = "ci(github)" },
+  # Historical typo in 276470f (alpha-3 release): `docs(release); ...` instead of `:`. Tag is published, can't rewrite.
+  { pattern = "^(\\w+)\\(([^)]+)\\);\\s+", replace = "$1($2): " },
 ]
 
 commit_parsers = [

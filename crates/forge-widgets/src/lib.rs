@@ -4,6 +4,7 @@ pub mod actions;
 pub mod buttons;
 pub mod cards;
 pub mod chat;
+pub mod icons;
 pub mod inputs;
 pub mod layout;
 pub mod navigation;
@@ -26,8 +27,15 @@ pub use cards::{card, card_with_radius, hero_card, metric_card, stat_row};
 pub use chat::{
     BadgeKind, ChatBody, ChatRow, Platform, PlatformTarget, chat_row, filter_chip, input_bar,
 };
+pub use icons::{
+    BOOTSTRAP_FONT, BOOTSTRAP_FONT_BYTES, ICON_BROADCAST, ICON_CHAT, ICON_CLOCK, ICON_FILE_CODE,
+    ICON_GEAR, ICON_GLOBE, ICON_GRID, ICON_HOME, ICON_JOURNAL, ICON_LIGHTNING, ICON_MUSIC_NOTE,
+    ICON_PEOPLE, ICON_SERVER, ICON_SPEAKER, ICON_TERMINAL,
+};
 pub use inputs::{search_input, select, text_input_field};
-pub use layout::{breadcrumb, page_shell, title_bar, title_bar_with_logo, toolbar};
+pub use layout::{
+    TitleBarV2, breadcrumb, page_shell, title_bar, title_bar_v2, title_bar_with_logo, toolbar,
+};
 pub use navigation::{SIDEBAR_WIDTH, sidebar, sidebar_section, tree_node};
 pub use onboarding::{
     BannerKind, PlatformCardProps, Severity, StepEntry, StepInfo, StepStatus, device_code_display,

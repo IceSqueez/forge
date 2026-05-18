@@ -3,6 +3,7 @@ use iced::{
     widget::{Row, Space, column, container, row, text},
 };
 
+use crate::icons::{BOOTSTRAP_FONT, ICON_CLOCK};
 use crate::palette::ForgePalette;
 use crate::tokens::{BORDER_THIN, Density, Radius, Spacing, radius, spacing};
 
@@ -96,6 +97,80 @@ pub fn title_bar_with_logo<'a, Msg: 'a>(
             ..Default::default()
         })
         .into()
+}
+
+pub struct TitleBarV2<'a, Msg> {
+    pub breadcrumb_icon: char,
+    pub breadcrumb_label: &'a str,
+    pub connected: (u8, u8),
+    pub uptime: &'a str,
+    pub _msg: std::marker::PhantomData<Msg>,
+}
+
+pub fn title_bar_v2<'a, Msg: 'a>(
+    palette: &'a ForgePalette,
+    props: TitleBarV2<'a, Msg>,
+) -> Element<'a, Msg> {
+    let shell = palette.shell;
+    let border_color = palette.border_regular;
+    let text_primary = palette.text_primary;
+    let text_secondary = palette.text_secondary;
+    let text_muted = palette.text_muted;
+    let text_faint = palette.text_faint;
+    let success = palette.success;
+
+    let icon_el = text(props.breadcrumb_icon)
+        .font(BOOTSTRAP_FONT)
+        .size(13)
+        .color(text_primary);
+    let label_el = text(props.breadcrumb_label).size(12).color(text_primary);
+    let left = row![icon_el, label_el]
+        .spacing(8)
+        .align_y(iced::Alignment::Center);
+
+    let dot = crate::status::status_dot(success, 7.0);
+    let connected_label = text(format_connected(props.connected))
+        .size(11)
+        .color(text_secondary);
+    let connected_pill = row![dot, connected_label]
+        .spacing(6)
+        .align_y(iced::Alignment::Center);
+
+    let sep = text("·").size(11).color(text_faint);
+
+    let clock_icon = text(ICON_CLOCK)
+        .font(BOOTSTRAP_FONT)
+        .size(12)
+        .color(text_muted);
+    let uptime_label = text(props.uptime).size(11).color(text_muted);
+    let uptime_row = row![clock_icon, uptime_label]
+        .spacing(5)
+        .align_y(iced::Alignment::Center);
+
+    let right = row![connected_pill, sep, uptime_row]
+        .spacing(14)
+        .align_y(iced::Alignment::Center);
+
+    let content = row![left, Space::new().width(Length::Fill), right]
+        .align_y(iced::Alignment::Center)
+        .padding([10, 16]);
+
+    container(content)
+        .width(Length::Fill)
+        .style(move |_theme: &iced::Theme| iced::widget::container::Style {
+            background: Some(iced::Background::Color(shell)),
+            border: Border {
+                color: border_color,
+                width: BORDER_THIN,
+                radius: 0.0.into(),
+            },
+            ..Default::default()
+        })
+        .into()
+}
+
+fn format_connected(connected: (u8, u8)) -> String {
+    format!("Connected ({}/{})", connected.0, connected.1)
 }
 
 pub fn toolbar<'a, Msg: 'a>(
@@ -202,6 +277,7 @@ pub fn page_shell<'a, Msg: 'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::icons::ICON_HOME;
     use crate::palette::CATPPUCCIN_MOCHA;
 
     #[test]
@@ -276,5 +352,48 @@ mod tests {
         let sidebar: Element<'_, ()> = iced::widget::text("sidebar").into();
         let content: Element<'_, ()> = iced::widget::text("content").into();
         let _: Element<'_, ()> = page_shell(tb, Some(bar), sidebar, content);
+    }
+
+    #[test]
+    fn format_connected_all_connected() {
+        assert_eq!(format_connected((8, 8)), "Connected (8/8)");
+    }
+
+    #[test]
+    fn format_connected_partial() {
+        assert_eq!(format_connected((2, 5)), "Connected (2/5)");
+    }
+
+    #[test]
+    fn format_connected_none() {
+        assert_eq!(format_connected((0, 3)), "Connected (0/3)");
+    }
+
+    #[test]
+    fn title_bar_v2_compiles() {
+        let _: Element<'_, ()> = title_bar_v2(
+            &CATPPUCCIN_MOCHA,
+            TitleBarV2 {
+                breadcrumb_icon: ICON_HOME,
+                breadcrumb_label: "Home",
+                connected: (8, 8),
+                uptime: "2h 14m",
+                _msg: std::marker::PhantomData,
+            },
+        );
+    }
+
+    #[test]
+    fn title_bar_v2_partial_connected_compiles() {
+        let _: Element<'_, ()> = title_bar_v2(
+            &CATPPUCCIN_MOCHA,
+            TitleBarV2 {
+                breadcrumb_icon: ICON_HOME,
+                breadcrumb_label: "Settings",
+                connected: (3, 5),
+                uptime: "0h 4m",
+                _msg: std::marker::PhantomData,
+            },
+        );
     }
 }

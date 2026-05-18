@@ -167,5 +167,6 @@ fn main() -> iced::Result {
         .title("forge")
         .subscription(subscription)
         .theme(theme_callback)
+        .font(forge_widgets::BOOTSTRAP_FONT_BYTES)
         .run()
 }

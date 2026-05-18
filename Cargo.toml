@@ -68,7 +68,7 @@ reqwest = { version = "0.13", features = [
 axum = { version = "0.8" }
 
 iced = { version = "0.14", features = ["tokio", "image", "svg", "advanced"] }
-iced_fonts = { version = "0.3" }
+iced_fonts = { version = "0.3", features = ["bootstrap"] }
 
 cpal = { version = "0.17" }
 

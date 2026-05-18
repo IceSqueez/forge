@@ -1,0 +1,17 @@
+pub use iced_fonts::{BOOTSTRAP_FONT, BOOTSTRAP_FONT_BYTES};
+
+pub const ICON_HOME: char = '\u{F425}';
+pub const ICON_CLOCK: char = '\u{F293}';
+pub const ICON_LIGHTNING: char = '\u{F46F}';
+pub const ICON_TERMINAL: char = '\u{F5C3}';
+pub const ICON_BROADCAST: char = '\u{F1D6}';
+pub const ICON_GRID: char = '\u{F3FC}';
+pub const ICON_SPEAKER: char = '\u{F57E}';
+pub const ICON_MUSIC_NOTE: char = '\u{F4A0}';
+pub const ICON_FILE_CODE: char = '\u{F352}';
+pub const ICON_SERVER: char = '\u{F52C}';
+pub const ICON_JOURNAL: char = '\u{F446}';
+pub const ICON_GEAR: char = '\u{F3E5}';
+pub const ICON_PEOPLE: char = '\u{F4D0}';
+pub const ICON_CHAT: char = '\u{F268}';
+pub const ICON_GLOBE: char = '\u{F3EE}';

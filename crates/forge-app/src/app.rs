@@ -3564,6 +3564,9 @@ fn sub_action_element<'a>(
             spec.kind_label(),
             format!("[{level:?}] {message}"),
         ),
+        SubActionSpec::RunScript { script_name } => {
+            ('\u{ea4e}', spec.kind_label(), script_name.clone())
+        }
     };
 
     let index_el = container(

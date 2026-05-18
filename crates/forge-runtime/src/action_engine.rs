@@ -165,7 +165,8 @@ impl ActionEngine {
                 index,
                 run_event_id,
                 &self.bus,
-                self.dp.as_ref(),
+                Arc::clone(&self.dp),
+                None,
             )
             .await;
 
@@ -216,7 +217,8 @@ impl ActionEngine {
                     index,
                     run_event_id,
                     &self.bus,
-                    self.dp.as_ref(),
+                    Arc::clone(&self.dp),
+                    None,
                 )
             })
             .collect();

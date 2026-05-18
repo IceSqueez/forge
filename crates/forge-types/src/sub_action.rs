@@ -40,6 +40,9 @@ pub enum SubActionSpec {
         level: LogLevel,
         message: VariantTemplate,
     },
+    RunScript {
+        script_name: String,
+    },
 }
 
 impl SubActionSpec {
@@ -52,6 +55,7 @@ impl SubActionSpec {
             Self::DeleteGlobal { .. } => "DeleteGlobal",
             Self::Delay { .. } => "Delay",
             Self::Log { .. } => "Log",
+            Self::RunScript { .. } => "RunScript",
         }
     }
 }
@@ -135,6 +139,16 @@ mod tests {
     }
 
     #[test]
+    fn run_script_serde_roundtrip() {
+        let spec = SubActionSpec::RunScript {
+            script_name: "greet_chat".to_string(),
+        };
+        let json = serde_json::to_string(&spec).unwrap();
+        let back: SubActionSpec = serde_json::from_str(&json).unwrap();
+        assert_eq!(spec, back);
+    }
+
+    #[test]
     fn kind_labels_match_all_variants() {
         assert_eq!(
             SubActionSpec::GetGlobal {
@@ -158,6 +172,13 @@ mod tests {
             }
             .kind_label(),
             "DeleteGlobal"
+        );
+        assert_eq!(
+            SubActionSpec::RunScript {
+                script_name: String::new(),
+            }
+            .kind_label(),
+            "RunScript"
         );
     }
 

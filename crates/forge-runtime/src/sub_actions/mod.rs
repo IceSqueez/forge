@@ -3,13 +3,18 @@ mod delete_global;
 mod get_global;
 mod increment_global;
 mod log;
+mod run_script;
 mod send_chat;
 mod set_global;
 
+use std::sync::Arc;
+
 use forge_storage::{DataProvider, GlobalsRepo};
-use forge_types::{ArgStack, EventId, SubActionSpec, SubActionTelemetry};
+use forge_types::{ArgStack, EventId, SubActionOutcome, SubActionSpec, SubActionTelemetry};
+use time::OffsetDateTime;
 
 use crate::EventBus;
+use crate::script_registry::ScriptRegistry;
 
 pub(crate) async fn interpolate_with_globals(
     template: &str,
@@ -60,31 +65,55 @@ pub async fn dispatch(
     arg_stack: &ArgStack,
     index: usize,
     parent_event_id: EventId,
-    bus: &EventBus,
-    dp: &dyn DataProvider,
+    bus: &Arc<EventBus>,
+    dp: Arc<dyn DataProvider>,
+    registry: Option<&ScriptRegistry>,
 ) -> (SubActionTelemetry, Option<ArgStack>) {
     match spec {
         SubActionSpec::Log { message, .. } => {
-            let interpolated = interpolate_with_globals(message, arg_stack, dp).await;
+            let interpolated = interpolate_with_globals(message, arg_stack, dp.as_ref()).await;
             (log::run(spec, index, &interpolated), None)
         }
         SubActionSpec::SendChat { .. } => {
-            let t = send_chat::run(spec, arg_stack, index, parent_event_id, bus, dp).await;
+            let t = send_chat::run(spec, arg_stack, index, parent_event_id, bus, dp.as_ref()).await;
             (t, None)
         }
         SubActionSpec::Delay { .. } => (delay::run(spec, index).await, None),
         SubActionSpec::SetGlobal { .. } => {
-            let t = set_global::run(spec, arg_stack, index, parent_event_id, bus, dp).await;
+            let t =
+                set_global::run(spec, arg_stack, index, parent_event_id, bus, dp.as_ref()).await;
             (t, None)
         }
-        SubActionSpec::GetGlobal { .. } => get_global::run(spec, arg_stack, index, dp).await,
+        SubActionSpec::GetGlobal { .. } => {
+            get_global::run(spec, arg_stack, index, dp.as_ref()).await
+        }
         SubActionSpec::IncrementGlobal { .. } => {
-            let t = increment_global::run(spec, arg_stack, index, parent_event_id, bus, dp).await;
+            let t =
+                increment_global::run(spec, arg_stack, index, parent_event_id, bus, dp.as_ref())
+                    .await;
             (t, None)
         }
         SubActionSpec::DeleteGlobal { .. } => {
-            let t = delete_global::run(spec, arg_stack, index, parent_event_id, bus, dp).await;
+            let t =
+                delete_global::run(spec, arg_stack, index, parent_event_id, bus, dp.as_ref()).await;
             (t, None)
+        }
+        SubActionSpec::RunScript { .. } => {
+            let Some(reg) = registry else {
+                return (
+                    SubActionTelemetry {
+                        kind: "RunScript".to_string(),
+                        started_at: OffsetDateTime::now_utc(),
+                        duration_ms: 0,
+                        outcome: SubActionOutcome::Skipped(
+                            "script registry unavailable".to_string(),
+                        ),
+                        index,
+                    },
+                    None,
+                );
+            };
+            run_script::run(spec, arg_stack, index, parent_event_id, bus, dp, reg).await
         }
     }
 }
@@ -123,7 +152,8 @@ mod tests {
             0,
             EventId::new(),
             &bus,
-            dp.as_ref(),
+            Arc::clone(&dp),
+            None,
         )
         .await;
         assert_eq!(telemetry.kind, "Log");
@@ -141,7 +171,16 @@ mod tests {
             message: "hello %user%".to_string(),
         };
         let stack = ArgStack::new().set("user".to_string(), Variant::String("alice".to_string()));
-        let (telemetry, _) = dispatch(&spec, &stack, 0, EventId::new(), &bus, dp.as_ref()).await;
+        let (telemetry, _) = dispatch(
+            &spec,
+            &stack,
+            0,
+            EventId::new(),
+            &bus,
+            Arc::clone(&dp),
+            None,
+        )
+        .await;
         assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
     }
 
@@ -156,7 +195,7 @@ mod tests {
             target: "twitch".to_string(),
         };
         let stack = ArgStack::new().set("user".to_string(), Variant::String("alice".to_string()));
-        dispatch(&spec, &stack, 0, parent_id, &bus, dp.as_ref()).await;
+        dispatch(&spec, &stack, 0, parent_id, &bus, Arc::clone(&dp), None).await;
         let event = tokio::time::timeout(Duration::from_millis(100), sub.recv())
             .await
             .unwrap()
@@ -181,7 +220,8 @@ mod tests {
             0,
             EventId::new(),
             &bus,
-            dp.as_ref(),
+            Arc::clone(&dp),
+            None,
         )
         .await;
         let val = GlobalsRepo::get(dp.as_ref(), "counter").await.unwrap();
@@ -197,7 +237,16 @@ mod tests {
             value: "%user%".to_string(),
         };
         let stack = ArgStack::new().set("user".to_string(), Variant::String("alice".to_string()));
-        dispatch(&spec, &stack, 0, EventId::new(), &bus, dp.as_ref()).await;
+        dispatch(
+            &spec,
+            &stack,
+            0,
+            EventId::new(),
+            &bus,
+            Arc::clone(&dp),
+            None,
+        )
+        .await;
         let val = GlobalsRepo::get(dp.as_ref(), "greeting").await.unwrap();
         assert!(matches!(val, Some(Variant::String(s)) if s == "alice"));
     }
@@ -212,7 +261,16 @@ mod tests {
             name: "x".to_string(),
             value: "100".to_string(),
         };
-        dispatch(&spec, &ArgStack::new(), 0, parent_id, &bus, dp.as_ref()).await;
+        dispatch(
+            &spec,
+            &ArgStack::new(),
+            0,
+            parent_id,
+            &bus,
+            Arc::clone(&dp),
+            None,
+        )
+        .await;
         let event = tokio::time::timeout(Duration::from_millis(100), sub.recv())
             .await
             .unwrap()
@@ -239,7 +297,8 @@ mod tests {
             0,
             EventId::new(),
             &bus,
-            dp.as_ref(),
+            Arc::clone(&dp),
+            None,
         )
         .await;
         assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
@@ -297,5 +356,231 @@ mod tests {
             entry.reads, 2,
             "two interpolations of %score% must yield reads == 2"
         );
+    }
+
+    #[tokio::test]
+    async fn run_script_skipped_when_registry_is_none() {
+        let dp = make_dp().await;
+        let bus = EventBus::new();
+        let spec = SubActionSpec::RunScript {
+            script_name: "anything".to_string(),
+        };
+        let (telemetry, updated) = dispatch(
+            &spec,
+            &ArgStack::new(),
+            0,
+            EventId::new(),
+            &bus,
+            Arc::clone(&dp),
+            None,
+        )
+        .await;
+        assert!(
+            matches!(telemetry.outcome, SubActionOutcome::Skipped(_)),
+            "RunScript with None registry must yield Skipped"
+        );
+        assert!(updated.is_none());
+    }
+
+    #[tokio::test]
+    async fn run_script_not_found_returns_failed() {
+        use crate::ScriptRegistry;
+
+        let dp = make_dp().await;
+        let bus = EventBus::new();
+        let registry = ScriptRegistry::new();
+        let spec = SubActionSpec::RunScript {
+            script_name: "no_such_script".to_string(),
+        };
+        let (telemetry, _) = dispatch(
+            &spec,
+            &ArgStack::new(),
+            0,
+            EventId::new(),
+            &bus,
+            Arc::clone(&dp),
+            Some(&registry),
+        )
+        .await;
+        assert!(
+            matches!(telemetry.outcome, SubActionOutcome::Failed(_)),
+            "RunScript with unknown name must yield Failed"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_script_valid_script_publishes_script_exec_event() {
+        use crate::ScriptRegistry;
+        use forge_storage::ScriptRepo;
+        use forge_storage_sqlite::SqliteBackend;
+        use forge_types::{ScriptContract, ScriptId};
+        use std::time::Duration;
+        use time::OffsetDateTime;
+
+        let dp: Arc<dyn DataProvider> = Arc::new(
+            SqliteBackend::open_with_key(":memory:", [0xab; 32])
+                .await
+                .unwrap(),
+        );
+        let bus = EventBus::new();
+        let mut sub = bus.subscribe();
+
+        let ts = OffsetDateTime::now_utc();
+        let record = forge_storage::ScriptRecord {
+            id: ScriptId::new(),
+            name: "hello_script".to_owned(),
+            body: "let x = 1 + 1; x".to_owned(),
+            contract: ScriptContract::default(),
+            body_hash: "h1".to_owned(),
+            enabled: true,
+            created_at: ts,
+            last_modified: ts,
+        };
+        ScriptRepo::save(dp.as_ref(), record).await.unwrap();
+
+        let registry = ScriptRegistry::new();
+        registry.load_all(dp.as_ref()).await.unwrap();
+
+        let parent_id = EventId::new();
+        let spec = SubActionSpec::RunScript {
+            script_name: "hello_script".to_string(),
+        };
+        let (telemetry, _) = dispatch(
+            &spec,
+            &ArgStack::new(),
+            0,
+            parent_id,
+            &bus,
+            Arc::clone(&dp),
+            Some(&registry),
+        )
+        .await;
+
+        assert!(
+            matches!(telemetry.outcome, SubActionOutcome::Success),
+            "valid script must return Success, got: {:?}",
+            telemetry.outcome
+        );
+
+        let event = tokio::time::timeout(Duration::from_millis(500), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(event.kind, "script.exec");
+        assert_eq!(event.caused_by, Some(parent_id));
+        assert!(event.payload["duration_ms"].is_number());
+    }
+
+    #[tokio::test]
+    async fn run_script_erroring_script_publishes_script_error_event() {
+        use crate::ScriptRegistry;
+        use forge_storage::ScriptRepo;
+        use forge_storage_sqlite::SqliteBackend;
+        use forge_types::{ScriptContract, ScriptId};
+        use std::time::Duration;
+        use time::OffsetDateTime;
+
+        let dp: Arc<dyn DataProvider> = Arc::new(
+            SqliteBackend::open_with_key(":memory:", [0xab; 32])
+                .await
+                .unwrap(),
+        );
+        let bus = EventBus::new();
+        let mut sub = bus.subscribe();
+
+        let ts = OffsetDateTime::now_utc();
+        let record = forge_storage::ScriptRecord {
+            id: ScriptId::new(),
+            name: "crashing_script".to_owned(),
+            body: r#"throw "intentional error";"#.to_owned(),
+            contract: ScriptContract::default(),
+            body_hash: "h2".to_owned(),
+            enabled: true,
+            created_at: ts,
+            last_modified: ts,
+        };
+        ScriptRepo::save(dp.as_ref(), record).await.unwrap();
+
+        let registry = ScriptRegistry::new();
+        registry.load_all(dp.as_ref()).await.unwrap();
+
+        let spec = SubActionSpec::RunScript {
+            script_name: "crashing_script".to_string(),
+        };
+        let (telemetry, _) = dispatch(
+            &spec,
+            &ArgStack::new(),
+            0,
+            EventId::new(),
+            &bus,
+            Arc::clone(&dp),
+            Some(&registry),
+        )
+        .await;
+
+        assert!(
+            matches!(telemetry.outcome, SubActionOutcome::Failed(_)),
+            "erroring script must return Failed"
+        );
+
+        let event = tokio::time::timeout(Duration::from_millis(500), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(event.kind, "script.error");
+    }
+
+    #[tokio::test]
+    async fn run_script_globals_write_visible_after_execution() {
+        use crate::ScriptRegistry;
+        use forge_storage::ScriptRepo;
+        use forge_storage_sqlite::SqliteBackend;
+        use forge_types::{ScriptContract, ScriptId};
+        use time::OffsetDateTime;
+
+        let dp: Arc<dyn DataProvider> = Arc::new(
+            SqliteBackend::open_with_key(":memory:", [0xab; 32])
+                .await
+                .unwrap(),
+        );
+        let bus = EventBus::new();
+
+        let ts = OffsetDateTime::now_utc();
+        let record = forge_storage::ScriptRecord {
+            id: ScriptId::new(),
+            name: "writer_script".to_owned(),
+            body: r#"forge::globals::set("result", 77, false);"#.to_owned(),
+            contract: ScriptContract::default(),
+            body_hash: "h3".to_owned(),
+            enabled: true,
+            created_at: ts,
+            last_modified: ts,
+        };
+        ScriptRepo::save(dp.as_ref(), record).await.unwrap();
+
+        let registry = ScriptRegistry::new();
+        registry.load_all(dp.as_ref()).await.unwrap();
+
+        let spec = SubActionSpec::RunScript {
+            script_name: "writer_script".to_string(),
+        };
+        let (telemetry, _) = dispatch(
+            &spec,
+            &ArgStack::new(),
+            0,
+            EventId::new(),
+            &bus,
+            Arc::clone(&dp),
+            Some(&registry),
+        )
+        .await;
+
+        assert!(
+            matches!(telemetry.outcome, SubActionOutcome::Success),
+            "globals write script must succeed"
+        );
+
+        let stored = GlobalsRepo::get(dp.as_ref(), "result").await.unwrap();
+        assert_eq!(stored, Some(Variant::Int(77)));
     }
 }

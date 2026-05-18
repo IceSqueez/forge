@@ -123,7 +123,7 @@ pub enum SettingsSection {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Screen {
     Onboarding(OnboardingStep),
-    Hub,
+    Home,
     LiveChat,
     EventFeed,
     Viewers,

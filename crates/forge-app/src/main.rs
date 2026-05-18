@@ -65,7 +65,7 @@ fn resolve_initial_screen(backend: &SqliteBackend) -> Screen {
             .ok()
             .flatten();
         if matches!(completed.as_deref(), Some("true")) {
-            return Screen::Hub;
+            return Screen::Home;
         }
         let last_step = backend
             .get_string(reserved_keys::LAST_ONBOARDING_STEP)

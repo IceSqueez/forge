@@ -143,7 +143,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 app.onboarding.sync_step(step);
             }
             let is_actions = matches!(screen, Screen::Actions);
-            let is_hub = matches!(screen, Screen::Hub);
+            let is_hub = matches!(screen, Screen::Home);
             app.screen = screen;
             if is_actions {
                 Task::done(Message::Actions(ActionsMsg::LoadRequested))
@@ -161,7 +161,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         }
         Message::Onboarding(sub) => match sub {
             OnboardingMsg::SkipSetup => {
-                app.screen = Screen::Hub;
+                app.screen = Screen::Home;
                 let backend = Arc::clone(&app.backend);
                 Task::perform(
                     async move {
@@ -359,7 +359,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 persist_step(Arc::clone(&app.backend), prev)
             }
             OnboardingMsg::FinishOnboarding => {
-                app.screen = Screen::Hub;
+                app.screen = Screen::Home;
                 let backend = Arc::clone(&app.backend);
                 Task::perform(
                     async move {
@@ -3494,7 +3494,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
     }
 
     let nav_items = vec![
-        nav_button("Hub", Screen::Hub, palette),
+        nav_button("Hub", Screen::Home, palette),
         nav_button("Live Chat", Screen::LiveChat, palette),
         nav_button("Events", Screen::EventFeed, palette),
         nav_button("Globals", Screen::Globals, palette),
@@ -3515,7 +3515,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
     );
 
     let content: Element<'_, Message> = match &app.screen {
-        Screen::Hub => hub_view(app, palette),
+        Screen::Home => hub_view(app, palette),
         Screen::LiveChat => live_chat_view(&app.live_chat, palette),
         Screen::Actions => actions_view(app, palette),
         Screen::Settings(section) => {
@@ -3587,8 +3587,8 @@ mod tests {
     fn navigate_to_hub_sets_hub_screen() {
         let mut app = App::default();
         let _ = update(&mut app, Message::Navigate(Screen::Logs));
-        let _ = update(&mut app, Message::Navigate(Screen::Hub));
-        assert_eq!(app.screen, Screen::Hub);
+        let _ = update(&mut app, Message::Navigate(Screen::Home));
+        assert_eq!(app.screen, Screen::Home);
     }
 
     #[test]
@@ -3604,7 +3604,7 @@ mod tests {
     #[test]
     fn navigate_to_onboarding_welcome() {
         let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::Hub));
+        let _ = update(&mut app, Message::Navigate(Screen::Home));
         let _ = update(
             &mut app,
             Message::Navigate(Screen::Onboarding(OnboardingStep::Welcome)),
@@ -3643,7 +3643,7 @@ mod tests {
     fn onboarding_skip_setup_navigates_to_hub() {
         let mut app = App::default();
         let _ = update(&mut app, Message::Onboarding(OnboardingMsg::SkipSetup));
-        assert_eq!(app.screen, Screen::Hub);
+        assert_eq!(app.screen, Screen::Home);
     }
 
     #[test]
@@ -3674,7 +3674,7 @@ mod tests {
     #[test]
     fn view_compiles_hub() {
         let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::Hub));
+        let _ = update(&mut app, Message::Navigate(Screen::Home));
         let _ = view(&app);
     }
 
@@ -3836,26 +3836,26 @@ mod tests {
             &mut app,
             Message::Onboarding(OnboardingMsg::FinishOnboarding),
         );
-        assert_eq!(app.screen, Screen::Hub);
+        assert_eq!(app.screen, Screen::Home);
     }
 
     #[test]
     fn persist_result_ok_leaves_screen_unchanged() {
         let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::Hub));
+        let _ = update(&mut app, Message::Navigate(Screen::Home));
         let _ = update(&mut app, Message::OnboardingPersistResult(Ok(())));
-        assert_eq!(app.screen, Screen::Hub);
+        assert_eq!(app.screen, Screen::Home);
     }
 
     #[test]
     fn persist_result_err_leaves_screen_unchanged() {
         let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::Hub));
+        let _ = update(&mut app, Message::Navigate(Screen::Home));
         let _ = update(
             &mut app,
             Message::OnboardingPersistResult(Err("disk full".into())),
         );
-        assert_eq!(app.screen, Screen::Hub);
+        assert_eq!(app.screen, Screen::Home);
     }
 
     #[test]
@@ -4140,25 +4140,25 @@ mod tests {
     #[test]
     fn settings_reconnect_result_ok_leaves_screen_unchanged() {
         let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::Hub));
+        let _ = update(&mut app, Message::Navigate(Screen::Home));
         let _ = update(
             &mut app,
             Message::Settings(SettingsMsg::PlatformReconnectResult(Ok(()))),
         );
-        assert_eq!(app.screen, Screen::Hub);
+        assert_eq!(app.screen, Screen::Home);
     }
 
     #[test]
     fn settings_reconnect_result_err_logs_and_leaves_screen_unchanged() {
         let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::Hub));
+        let _ = update(&mut app, Message::Navigate(Screen::Home));
         let _ = update(
             &mut app,
             Message::Settings(SettingsMsg::PlatformReconnectResult(Err(
                 "connection refused".into(),
             ))),
         );
-        assert_eq!(app.screen, Screen::Hub);
+        assert_eq!(app.screen, Screen::Home);
     }
 
     #[test]
@@ -4258,7 +4258,7 @@ mod tests {
 
         let (theme, palette) = forge_widgets::catppuccin_mocha();
         let app = App {
-            screen: Screen::Hub,
+            screen: Screen::Home,
             theme,
             palette,
             backend: sqlite,
@@ -4710,14 +4710,14 @@ mod tests {
     #[test]
     fn hub_view_compiles_with_empty_stats() {
         let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::Hub));
+        let _ = update(&mut app, Message::Navigate(Screen::Home));
         let _ = view(&app);
     }
 
     #[test]
     fn hub_view_compiles_with_populated_stats() {
         let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::Hub));
+        let _ = update(&mut app, Message::Navigate(Screen::Home));
         app.hub.actions_count = Some(47);
         app.hub.commands_count = Some(23);
         app.hub.triggers_fired = Some(1284);
@@ -4728,15 +4728,15 @@ mod tests {
     #[test]
     fn navigate_to_hub_dispatches_load_stats() {
         let mut app = App::default();
-        let task = update(&mut app, Message::Navigate(Screen::Hub));
-        assert_eq!(app.screen, Screen::Hub);
+        let task = update(&mut app, Message::Navigate(Screen::Home));
+        assert_eq!(app.screen, Screen::Home);
         let _ = task;
     }
 
     #[test]
     fn hub_stats_loaded_ok_updates_all_fields() {
         let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::Hub));
+        let _ = update(&mut app, Message::Navigate(Screen::Home));
         let data = HubStatsData {
             actions_count: 5,
             commands_count: 3,
@@ -4753,7 +4753,7 @@ mod tests {
     #[test]
     fn hub_stats_loaded_err_leaves_nones() {
         let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::Hub));
+        let _ = update(&mut app, Message::Navigate(Screen::Home));
         let _ = update(
             &mut app,
             Message::Hub(HubMsg::StatsLoaded(Err("db error".into()))),

@@ -4,7 +4,7 @@ use forge_types::ActionId;
 use forge_widgets::ThemeId;
 
 use crate::Screen;
-use crate::actions::{AddActionMsg, AddTriggerMsg};
+use crate::actions::{AddActionMsg, AddSubActionMsg, AddTriggerMsg, RemoveSubActionMsg};
 use crate::live_chat::ChatFilter;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,6 +68,8 @@ pub enum Message {
     Actions(ActionsMsg),
     AddAction(AddActionMsg),
     AddTrigger(AddTriggerMsg),
+    AddSubAction(AddSubActionMsg),
+    RemoveSubAction(RemoveSubActionMsg),
     ThemeChanged(ThemeId),
     EventArrived(Event),
     ChatInputChanged(String),

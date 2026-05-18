@@ -7,7 +7,8 @@ pub mod screen;
 
 pub use actions::{
     ActionDetail, ActionSummary, ActionsGroup, ActionsState, AddActionForm, AddActionMsg,
-    AddTriggerForm, AddTriggerMsg, TriggerCategory,
+    AddSubActionForm, AddSubActionMsg, AddTriggerForm, AddTriggerMsg, RemoveSubActionMsg,
+    SubActionKindChoice, TriggerCategory,
 };
 pub use app::App;
 pub use live_chat::{ChatFilter, LiveChatState};

@@ -1,7 +1,8 @@
 use forge_storage::{DataProvider, StorageError};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
-    Action, ActionId, Command, CommandPermission, QueueId, Trigger, TriggerId, TriggerKind,
+    Action, ActionId, Command, CommandPermission, LogLevel, QueueId, SubActionSpec, Trigger,
+    TriggerId, TriggerKind,
 };
 use std::sync::Arc;
 
@@ -273,6 +274,92 @@ pub enum AddTriggerMsg {
     Saved(Result<TriggerId, String>),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum SubActionKindChoice {
+    #[default]
+    SendChat,
+    SetGlobal,
+    Delay,
+    Log,
+}
+
+#[derive(Debug, Clone)]
+pub struct SubActionConfigForm {
+    pub send_chat_message: String,
+    pub send_chat_target: String,
+    pub set_global_name: String,
+    pub set_global_value: String,
+    pub delay_ms: String,
+    pub log_level: LogLevel,
+    pub log_message: String,
+}
+
+impl Default for SubActionConfigForm {
+    fn default() -> Self {
+        Self {
+            send_chat_message: String::new(),
+            send_chat_target: "twitch".to_string(),
+            set_global_name: String::new(),
+            set_global_value: String::new(),
+            delay_ms: "500".to_string(),
+            log_level: LogLevel::Info,
+            log_message: String::new(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct AddSubActionForm {
+    pub for_action_id: ActionId,
+    pub kind: SubActionKindChoice,
+    pub config: SubActionConfigForm,
+    pub error: Option<String>,
+    pub saving: bool,
+}
+
+impl AddSubActionForm {
+    pub fn new(for_action_id: ActionId) -> Self {
+        Self {
+            for_action_id,
+            kind: SubActionKindChoice::SendChat,
+            config: SubActionConfigForm::default(),
+            error: None,
+            saving: false,
+        }
+    }
+
+    pub fn is_valid(&self) -> bool {
+        match self.kind {
+            SubActionKindChoice::SendChat => !self.config.send_chat_message.trim().is_empty(),
+            SubActionKindChoice::SetGlobal => !self.config.set_global_name.trim().is_empty(),
+            SubActionKindChoice::Delay => self.config.delay_ms.trim().parse::<u64>().is_ok(),
+            SubActionKindChoice::Log => !self.config.log_message.trim().is_empty(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum AddSubActionMsg {
+    OpenRequested(ActionId),
+    KindSelected(SubActionKindChoice),
+    SendChatMessageChanged(String),
+    SendChatTargetChanged(String),
+    SetGlobalNameChanged(String),
+    SetGlobalValueChanged(String),
+    DelayMsChanged(String),
+    LogLevelSelected(LogLevel),
+    LogMessageChanged(String),
+    Cancel,
+    Submit,
+    Saved(Result<(), String>),
+}
+
+#[derive(Debug, Clone)]
+pub enum RemoveSubActionMsg {
+    Requested(ActionId, usize),
+    Removed(Result<(), String>),
+}
+
 #[derive(Default)]
 pub struct ActionsState {
     pub tree: Vec<ActionsGroup>,
@@ -281,6 +368,7 @@ pub struct ActionsState {
     pub loading: bool,
     pub add_action_modal: Option<AddActionForm>,
     pub add_trigger_modal: Option<AddTriggerForm>,
+    pub add_sub_action_modal: Option<AddSubActionForm>,
 }
 
 impl ActionsState {
@@ -347,6 +435,36 @@ pub async fn load_action_detail(
         triggers,
         commands,
     })
+}
+
+pub async fn save_sub_action(
+    dp: Arc<SqliteBackend>,
+    action_id: ActionId,
+    spec: SubActionSpec,
+) -> Result<(), StorageError> {
+    let Some(mut action) = dp.action_repo().get(action_id).await? else {
+        return Err(StorageError::NotFound {
+            key: action_id.to_string(),
+        });
+    };
+    action.sub_actions.push(spec);
+    dp.action_repo().save(&action).await
+}
+
+pub async fn remove_sub_action(
+    dp: Arc<SqliteBackend>,
+    action_id: ActionId,
+    index: usize,
+) -> Result<(), StorageError> {
+    let Some(mut action) = dp.action_repo().get(action_id).await? else {
+        return Err(StorageError::NotFound {
+            key: action_id.to_string(),
+        });
+    };
+    if index < action.sub_actions.len() {
+        action.sub_actions.remove(index);
+    }
+    dp.action_repo().save(&action).await
 }
 
 #[cfg(test)]
@@ -635,5 +753,158 @@ mod tests {
         let detail = load_action_detail(dp, action.id).await.unwrap();
         assert_eq!(detail.triggers.len(), 1);
         assert!(detail.commands.is_empty());
+    }
+
+    #[test]
+    fn add_sub_action_form_send_chat_invalid_without_message() {
+        let mut form = AddSubActionForm::new(ActionId::new());
+        form.kind = SubActionKindChoice::SendChat;
+        form.config.send_chat_message = String::new();
+        assert!(!form.is_valid());
+    }
+
+    #[test]
+    fn add_sub_action_form_send_chat_valid_with_message() {
+        let mut form = AddSubActionForm::new(ActionId::new());
+        form.kind = SubActionKindChoice::SendChat;
+        form.config.send_chat_message = "Hello %user%!".to_string();
+        assert!(form.is_valid());
+    }
+
+    #[test]
+    fn add_sub_action_form_set_global_invalid_without_name() {
+        let mut form = AddSubActionForm::new(ActionId::new());
+        form.kind = SubActionKindChoice::SetGlobal;
+        form.config.set_global_name = String::new();
+        assert!(!form.is_valid());
+    }
+
+    #[test]
+    fn add_sub_action_form_set_global_valid_with_name() {
+        let mut form = AddSubActionForm::new(ActionId::new());
+        form.kind = SubActionKindChoice::SetGlobal;
+        form.config.set_global_name = "counter".to_string();
+        assert!(form.is_valid());
+    }
+
+    #[test]
+    fn add_sub_action_form_delay_invalid_with_non_numeric() {
+        let mut form = AddSubActionForm::new(ActionId::new());
+        form.kind = SubActionKindChoice::Delay;
+        form.config.delay_ms = "abc".to_string();
+        assert!(!form.is_valid());
+    }
+
+    #[test]
+    fn add_sub_action_form_delay_valid_with_numeric() {
+        let mut form = AddSubActionForm::new(ActionId::new());
+        form.kind = SubActionKindChoice::Delay;
+        form.config.delay_ms = "500".to_string();
+        assert!(form.is_valid());
+    }
+
+    #[test]
+    fn add_sub_action_form_log_invalid_without_message() {
+        let mut form = AddSubActionForm::new(ActionId::new());
+        form.kind = SubActionKindChoice::Log;
+        form.config.log_message = String::new();
+        assert!(!form.is_valid());
+    }
+
+    #[test]
+    fn add_sub_action_form_log_valid_with_message() {
+        let mut form = AddSubActionForm::new(ActionId::new());
+        form.kind = SubActionKindChoice::Log;
+        form.config.log_message = "action started".to_string();
+        assert!(form.is_valid());
+    }
+
+    #[tokio::test]
+    async fn save_sub_action_appends_send_chat() {
+        let dp = open_backend().await;
+        let action = make_action(&dp, "say hello", None).await;
+        dp.action_repo().save(&action).await.unwrap();
+
+        let spec = SubActionSpec::SendChat {
+            message: "Hello %user%!".to_string(),
+            target: "twitch".to_string(),
+        };
+        save_sub_action(Arc::clone(&dp), action.id, spec.clone())
+            .await
+            .unwrap();
+
+        let loaded = dp.action_repo().get(action.id).await.unwrap().unwrap();
+        assert_eq!(loaded.sub_actions.len(), 1);
+        assert_eq!(loaded.sub_actions[0], spec);
+    }
+
+    #[tokio::test]
+    async fn save_sub_action_appends_set_global() {
+        let dp = open_backend().await;
+        let action = make_action(&dp, "track", None).await;
+        dp.action_repo().save(&action).await.unwrap();
+
+        let spec = SubActionSpec::SetGlobal {
+            name: "counter".to_string(),
+            value: "1".to_string(),
+        };
+        save_sub_action(Arc::clone(&dp), action.id, spec.clone())
+            .await
+            .unwrap();
+
+        let loaded = dp.action_repo().get(action.id).await.unwrap().unwrap();
+        assert_eq!(loaded.sub_actions[0], spec);
+    }
+
+    #[tokio::test]
+    async fn save_sub_action_delay_stores_ms_correctly() {
+        let dp = open_backend().await;
+        let action = make_action(&dp, "pause", None).await;
+        dp.action_repo().save(&action).await.unwrap();
+
+        let spec = SubActionSpec::Delay { ms: 500 };
+        save_sub_action(Arc::clone(&dp), action.id, spec.clone())
+            .await
+            .unwrap();
+
+        let loaded = dp.action_repo().get(action.id).await.unwrap().unwrap();
+        assert_eq!(loaded.sub_actions[0], SubActionSpec::Delay { ms: 500 });
+    }
+
+    #[tokio::test]
+    async fn remove_sub_action_removes_at_valid_index() {
+        let dp = open_backend().await;
+        let mut action = make_action(&dp, "multi", None).await;
+        action.sub_actions = vec![
+            SubActionSpec::Delay { ms: 100 },
+            SubActionSpec::Log {
+                level: LogLevel::Info,
+                message: "done".to_string(),
+            },
+        ];
+        dp.action_repo().save(&action).await.unwrap();
+
+        remove_sub_action(Arc::clone(&dp), action.id, 0)
+            .await
+            .unwrap();
+
+        let loaded = dp.action_repo().get(action.id).await.unwrap().unwrap();
+        assert_eq!(loaded.sub_actions.len(), 1);
+        assert!(matches!(loaded.sub_actions[0], SubActionSpec::Log { .. }));
+    }
+
+    #[tokio::test]
+    async fn remove_sub_action_out_of_range_leaves_action_unchanged() {
+        let dp = open_backend().await;
+        let mut action = make_action(&dp, "single", None).await;
+        action.sub_actions = vec![SubActionSpec::Delay { ms: 250 }];
+        dp.action_repo().save(&action).await.unwrap();
+
+        remove_sub_action(Arc::clone(&dp), action.id, 99)
+            .await
+            .unwrap();
+
+        let loaded = dp.action_repo().get(action.id).await.unwrap().unwrap();
+        assert_eq!(loaded.sub_actions.len(), 1);
     }
 }

@@ -12,8 +12,9 @@ use forge_widgets::{BannerKind, ForgePalette, StepInfo, ThemeId};
 use iced::{Element, Length, Subscription, Task, Theme};
 
 use crate::actions::{
-    ActionsState, AddActionForm, AddActionMsg, AddTriggerForm, AddTriggerMsg, TriggerCategory,
-    kind_label, kind_summary, load_action_detail, load_actions_tree,
+    ActionsState, AddActionForm, AddActionMsg, AddSubActionForm, AddSubActionMsg, AddTriggerForm,
+    AddTriggerMsg, RemoveSubActionMsg, SubActionKindChoice, TriggerCategory, kind_label,
+    kind_summary, load_action_detail, load_actions_tree, remove_sub_action, save_sub_action,
 };
 use crate::live_chat::{CHAT_LOG_MAX, LiveChatState, chat_row_from_event, live_chat_view};
 use crate::message::{ActionsMsg, PlatformId, SettingsMsg};
@@ -435,6 +436,8 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::Actions(sub) => handle_actions_msg(app, sub),
         Message::AddAction(sub) => handle_add_action_msg(app, sub),
         Message::AddTrigger(sub) => handle_add_trigger_msg(app, sub),
+        Message::AddSubAction(sub) => handle_add_sub_action_msg(app, sub),
+        Message::RemoveSubAction(sub) => handle_remove_sub_action_msg(app, sub),
         Message::Noop => Task::none(),
     }
 }
@@ -817,6 +820,155 @@ fn handle_add_trigger_msg(app: &mut App, sub: AddTriggerMsg) -> Task<Message> {
                 f.saving = false;
                 f.error = Some(e);
             }
+            Task::none()
+        }
+    }
+}
+
+fn handle_add_sub_action_msg(app: &mut App, sub: AddSubActionMsg) -> Task<Message> {
+    match sub {
+        AddSubActionMsg::OpenRequested(action_id) => {
+            app.actions.add_sub_action_modal = Some(AddSubActionForm::new(action_id));
+            Task::none()
+        }
+        AddSubActionMsg::KindSelected(kind) => {
+            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
+                f.kind = kind;
+                f.error = None;
+            }
+            Task::none()
+        }
+        AddSubActionMsg::SendChatMessageChanged(v) => {
+            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
+                f.config.send_chat_message = v;
+            }
+            Task::none()
+        }
+        AddSubActionMsg::SendChatTargetChanged(v) => {
+            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
+                f.config.send_chat_target = v;
+            }
+            Task::none()
+        }
+        AddSubActionMsg::SetGlobalNameChanged(v) => {
+            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
+                f.config.set_global_name = v;
+            }
+            Task::none()
+        }
+        AddSubActionMsg::SetGlobalValueChanged(v) => {
+            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
+                f.config.set_global_value = v;
+            }
+            Task::none()
+        }
+        AddSubActionMsg::DelayMsChanged(v) => {
+            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
+                f.config.delay_ms = v;
+            }
+            Task::none()
+        }
+        AddSubActionMsg::LogLevelSelected(level) => {
+            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
+                f.config.log_level = level;
+            }
+            Task::none()
+        }
+        AddSubActionMsg::LogMessageChanged(v) => {
+            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
+                f.config.log_message = v;
+            }
+            Task::none()
+        }
+        AddSubActionMsg::Cancel => {
+            app.actions.add_sub_action_modal = None;
+            Task::none()
+        }
+        AddSubActionMsg::Submit => {
+            let Some(form) = app.actions.add_sub_action_modal.as_ref() else {
+                return Task::none();
+            };
+            if !form.is_valid() {
+                let error_msg = match form.kind {
+                    SubActionKindChoice::SendChat => "Message is required.",
+                    SubActionKindChoice::SetGlobal => "Variable name is required.",
+                    SubActionKindChoice::Delay => "Milliseconds must be a non-negative integer.",
+                    SubActionKindChoice::Log => "Log message is required.",
+                };
+                if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
+                    f.error = Some(error_msg.to_string());
+                }
+                return Task::none();
+            }
+            let spec = match form.kind {
+                SubActionKindChoice::SendChat => forge_types::SubActionSpec::SendChat {
+                    message: form.config.send_chat_message.clone(),
+                    target: form.config.send_chat_target.clone(),
+                },
+                SubActionKindChoice::SetGlobal => forge_types::SubActionSpec::SetGlobal {
+                    name: form.config.set_global_name.clone(),
+                    value: form.config.set_global_value.clone(),
+                },
+                SubActionKindChoice::Delay => {
+                    let ms = form.config.delay_ms.trim().parse::<u64>().unwrap_or(0);
+                    forge_types::SubActionSpec::Delay { ms }
+                }
+                SubActionKindChoice::Log => forge_types::SubActionSpec::Log {
+                    level: form.config.log_level.clone(),
+                    message: form.config.log_message.clone(),
+                },
+            };
+            let action_id = form.for_action_id;
+            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
+                f.saving = true;
+            }
+            let dp = Arc::clone(&app.backend);
+            Task::perform(
+                async move {
+                    save_sub_action(dp, action_id, spec)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                |r| Message::AddSubAction(AddSubActionMsg::Saved(r)),
+            )
+        }
+        AddSubActionMsg::Saved(Ok(())) => {
+            let selected = app.actions.selected;
+            app.actions.add_sub_action_modal = None;
+            match selected {
+                Some(id) => Task::done(Message::Actions(ActionsMsg::ActionSelected(id))),
+                None => Task::none(),
+            }
+        }
+        AddSubActionMsg::Saved(Err(e)) => {
+            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
+                f.saving = false;
+                f.error = Some(e);
+            }
+            Task::none()
+        }
+    }
+}
+
+fn handle_remove_sub_action_msg(app: &mut App, sub: RemoveSubActionMsg) -> Task<Message> {
+    match sub {
+        RemoveSubActionMsg::Requested(action_id, index) => {
+            let dp = Arc::clone(&app.backend);
+            Task::perform(
+                async move {
+                    remove_sub_action(dp, action_id, index)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                |r| Message::RemoveSubAction(RemoveSubActionMsg::Removed(r)),
+            )
+        }
+        RemoveSubActionMsg::Removed(Ok(())) => match app.actions.selected {
+            Some(id) => Task::done(Message::Actions(ActionsMsg::ActionSelected(id))),
+            None => Task::none(),
+        },
+        RemoveSubActionMsg::Removed(Err(e)) => {
+            tracing::warn!(error = %e, "remove sub-action persist failed");
             Task::none()
         }
     }
@@ -1806,23 +1958,33 @@ fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Mess
             }
 
             let sub_count = action.sub_actions.len();
-            let sub_actions_header = forge_widgets::section_header(
-                format!("SUB-ACTIONS \u{00b7} {sub_count}"),
-                None,
-                palette,
-            );
+            let sub_actions_header = row![
+                forge_widgets::section_header(
+                    format!("SUB-ACTIONS \u{00b7} {sub_count}"),
+                    None,
+                    palette,
+                ),
+                iced::widget::Space::new().width(Length::Fill),
+                forge_widgets::ghost_button(
+                    "+ Add step",
+                    Message::AddSubAction(AddSubActionMsg::OpenRequested(action.id)),
+                    palette,
+                ),
+            ]
+            .align_y(iced::alignment::Vertical::Center)
+            .spacing(8);
 
             let mut sub_actions_col = column![].spacing(6);
             if action.sub_actions.is_empty() {
                 sub_actions_col = sub_actions_col.push(
-                    text("No sub-actions yet.")
+                    text("No sub-actions yet — use + Add step to build the chain.")
                         .size(11.5)
                         .color(palette.text_faint),
                 );
             }
             for (idx, spec) in action.sub_actions.iter().enumerate() {
                 let idx_u8 = (idx + 1).min(255) as u8;
-                let card = sub_action_element(idx_u8, spec, palette);
+                let card = sub_action_element(idx_u8, spec, action.id, idx, palette);
                 sub_actions_col = sub_actions_col.push(card);
             }
 
@@ -1847,7 +2009,10 @@ fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Mess
 
     let main_view: Element<'_, Message> = row![left_pane, right_pane].into();
 
-    if let Some(form) = app.actions.add_trigger_modal.as_ref() {
+    if let Some(form) = app.actions.add_sub_action_modal.as_ref() {
+        let modal_el = add_sub_action_modal_view(form, palette);
+        iced::widget::stack![main_view, modal_el].into()
+    } else if let Some(form) = app.actions.add_trigger_modal.as_ref() {
         let modal_el = add_trigger_modal_view(form, palette);
         iced::widget::stack![main_view, modal_el].into()
     } else if let Some(form) = app.actions.add_action_modal.as_ref() {
@@ -2292,6 +2457,278 @@ fn add_trigger_modal_view<'a>(
     )
 }
 
+fn log_level_label(level: &forge_types::LogLevel) -> &'static str {
+    match level {
+        forge_types::LogLevel::Trace => "Trace",
+        forge_types::LogLevel::Debug => "Debug",
+        forge_types::LogLevel::Info => "Info",
+        forge_types::LogLevel::Warn => "Warn",
+        forge_types::LogLevel::Error => "Error",
+    }
+}
+
+fn log_level_from_label(label: &str) -> forge_types::LogLevel {
+    match label {
+        "Trace" => forge_types::LogLevel::Trace,
+        "Debug" => forge_types::LogLevel::Debug,
+        "Warn" => forge_types::LogLevel::Warn,
+        "Error" => forge_types::LogLevel::Error,
+        _ => forge_types::LogLevel::Info,
+    }
+}
+
+fn add_sub_action_modal_view<'a>(
+    form: &'a AddSubActionForm,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    use forge_widgets::{BannerKind, ModalProps};
+    use iced::Length;
+    use iced::widget::{column, row, text};
+
+    let chip_send_chat = forge_widgets::category_chip(
+        palette,
+        "Send chat",
+        palette.brand,
+        form.kind == SubActionKindChoice::SendChat,
+        Message::AddSubAction(AddSubActionMsg::KindSelected(SubActionKindChoice::SendChat)),
+    );
+    let chip_set_global = forge_widgets::category_chip(
+        palette,
+        "Set global",
+        palette.warning,
+        form.kind == SubActionKindChoice::SetGlobal,
+        Message::AddSubAction(AddSubActionMsg::KindSelected(
+            SubActionKindChoice::SetGlobal,
+        )),
+    );
+    let chip_delay = forge_widgets::category_chip(
+        palette,
+        "Delay",
+        palette.info,
+        form.kind == SubActionKindChoice::Delay,
+        Message::AddSubAction(AddSubActionMsg::KindSelected(SubActionKindChoice::Delay)),
+    );
+    let chip_log = forge_widgets::category_chip(
+        palette,
+        "Log",
+        palette.text_muted,
+        form.kind == SubActionKindChoice::Log,
+        Message::AddSubAction(AddSubActionMsg::KindSelected(SubActionKindChoice::Log)),
+    );
+    let chips_row = row![chip_send_chat, chip_set_global, chip_delay, chip_log].spacing(6);
+
+    let config_block: iced::Element<'_, Message> = match form.kind {
+        SubActionKindChoice::SendChat => {
+            let msg_input = forge_widgets::text_input_field(
+                "Hello %user%!",
+                &form.config.send_chat_message,
+                |v| Message::AddSubAction(AddSubActionMsg::SendChatMessageChanged(v)),
+                palette,
+            );
+            let helper = text("Variables: %user%, %message%, %args%")
+                .size(10.5)
+                .color(palette.warning)
+                .font(forge_widgets::font(forge_widgets::FontRole::Monospace));
+            let msg_block = column![
+                forge_widgets::section_header("MESSAGE", None, palette),
+                msg_input,
+                helper,
+            ]
+            .spacing(4);
+
+            let p = *palette;
+            let target_options: Vec<String> = vec!["twitch".to_string()];
+            let selected_target = form.config.send_chat_target.clone();
+            let target_select: iced::Element<'_, Message> =
+                iced::widget::pick_list(target_options, Some(selected_target), |name: String| {
+                    Message::AddSubAction(AddSubActionMsg::SendChatTargetChanged(name))
+                })
+                .padding(forge_widgets::inputs::input_padding())
+                .width(Length::Fill)
+                .style(move |_theme, status| {
+                    use iced::widget::pick_list;
+                    let border_color = match status {
+                        pick_list::Status::Opened { .. } => p.border_active,
+                        _ => p.border_regular,
+                    };
+                    pick_list::Style {
+                        text_color: p.text_primary,
+                        placeholder_color: p.text_muted,
+                        handle_color: p.text_muted,
+                        background: iced::Background::Color(p.shell),
+                        border: iced::Border {
+                            color: border_color,
+                            width: 0.5,
+                            radius: forge_widgets::radius(forge_widgets::Radius::Md).into(),
+                        },
+                    }
+                })
+                .into();
+            let target_block = column![
+                forge_widgets::section_header("TARGET PLATFORM", None, palette),
+                target_select,
+            ]
+            .spacing(6);
+
+            column![msg_block, target_block].spacing(12).into()
+        }
+        SubActionKindChoice::SetGlobal => {
+            let name_input = forge_widgets::text_input_field(
+                "my_counter",
+                &form.config.set_global_name,
+                |v| Message::AddSubAction(AddSubActionMsg::SetGlobalNameChanged(v)),
+                palette,
+            );
+            let name_block = column![
+                forge_widgets::section_header("VARIABLE NAME", None, palette),
+                name_input,
+            ]
+            .spacing(6);
+
+            let val_input = forge_widgets::text_input_field(
+                "%user% or 42",
+                &form.config.set_global_value,
+                |v| Message::AddSubAction(AddSubActionMsg::SetGlobalValueChanged(v)),
+                palette,
+            );
+            let helper = text("Supports variable interpolation")
+                .size(10.5)
+                .color(palette.warning)
+                .font(forge_widgets::font(forge_widgets::FontRole::Monospace));
+            let val_block = column![
+                forge_widgets::section_header("VALUE", None, palette),
+                val_input,
+                helper,
+            ]
+            .spacing(4);
+
+            column![name_block, val_block].spacing(12).into()
+        }
+        SubActionKindChoice::Delay => {
+            let ms_input = forge_widgets::text_input_field(
+                "500",
+                &form.config.delay_ms,
+                |v| Message::AddSubAction(AddSubActionMsg::DelayMsChanged(v)),
+                palette,
+            );
+            column![
+                forge_widgets::section_header("MILLISECONDS", None, palette),
+                ms_input,
+            ]
+            .spacing(6)
+            .into()
+        }
+        SubActionKindChoice::Log => {
+            let p = *palette;
+            let level_options: Vec<String> = vec![
+                "Trace".to_string(),
+                "Debug".to_string(),
+                "Info".to_string(),
+                "Warn".to_string(),
+                "Error".to_string(),
+            ];
+            let selected_level = log_level_label(&form.config.log_level).to_string();
+            let level_select: iced::Element<'_, Message> =
+                iced::widget::pick_list(level_options, Some(selected_level), |name: String| {
+                    Message::AddSubAction(AddSubActionMsg::LogLevelSelected(log_level_from_label(
+                        &name,
+                    )))
+                })
+                .padding(forge_widgets::inputs::input_padding())
+                .width(Length::Fill)
+                .style(move |_theme, status| {
+                    use iced::widget::pick_list;
+                    let border_color = match status {
+                        pick_list::Status::Opened { .. } => p.border_active,
+                        _ => p.border_regular,
+                    };
+                    pick_list::Style {
+                        text_color: p.text_primary,
+                        placeholder_color: p.text_muted,
+                        handle_color: p.text_muted,
+                        background: iced::Background::Color(p.shell),
+                        border: iced::Border {
+                            color: border_color,
+                            width: 0.5,
+                            radius: forge_widgets::radius(forge_widgets::Radius::Md).into(),
+                        },
+                    }
+                })
+                .into();
+            let level_block = column![
+                forge_widgets::section_header("LEVEL", None, palette),
+                level_select,
+            ]
+            .spacing(6);
+
+            let msg_input = forge_widgets::text_input_field(
+                "Action started",
+                &form.config.log_message,
+                |v| Message::AddSubAction(AddSubActionMsg::LogMessageChanged(v)),
+                palette,
+            );
+            let msg_block = column![
+                forge_widgets::section_header("MESSAGE", None, palette),
+                msg_input,
+            ]
+            .spacing(6);
+
+            column![level_block, msg_block].spacing(12).into()
+        }
+    };
+
+    let mut body_col = column![chips_row, config_block].spacing(16);
+
+    if let Some(err) = form.error.as_deref() {
+        body_col = body_col.push(forge_widgets::live_status_banner(
+            BannerKind::Error,
+            err,
+            None,
+            palette,
+        ));
+    }
+
+    let cancel_btn = forge_widgets::secondary_button(
+        "Cancel",
+        Message::AddSubAction(AddSubActionMsg::Cancel),
+        palette,
+    );
+
+    let add_on_press = Message::AddSubAction(AddSubActionMsg::Submit);
+    let add_btn = if form.is_valid() && !form.saving {
+        forge_widgets::primary_button("Add step", add_on_press, palette)
+    } else {
+        forge_widgets::secondary_button("Add step", Message::Noop, palette)
+    };
+
+    let footer_buttons = row![cancel_btn, add_btn].spacing(8);
+
+    let footer: iced::Element<'_, Message> = iced::widget::container(
+        row![
+            text("ESC to cancel")
+                .size(11.0)
+                .color(palette.text_faint)
+                .font(forge_widgets::font(forge_widgets::FontRole::Monospace)),
+            iced::widget::Space::new().width(Length::Fill),
+            footer_buttons,
+        ]
+        .align_y(iced::alignment::Vertical::Center),
+    )
+    .width(Length::Fill)
+    .into();
+
+    forge_widgets::modal(
+        palette,
+        ModalProps {
+            title: "Add step",
+            on_close: Message::AddSubAction(AddSubActionMsg::Cancel),
+            kbd_hint: None,
+        },
+        body_col.into(),
+        footer,
+    )
+}
+
 fn trigger_picker_card<'a>(
     label: &'a str,
     summary: &'a str,
@@ -2439,6 +2876,8 @@ fn trigger_row_element<'a>(
 fn sub_action_element<'a>(
     index: u8,
     spec: &forge_types::SubActionSpec,
+    action_id: ActionId,
+    raw_index: usize,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     use forge_types::SubActionSpec;
@@ -2506,9 +2945,19 @@ fn sub_action_element<'a>(
     ]
     .spacing(2);
 
-    let card_inner = row![icon_el, container(label_col).width(Length::Fill),]
-        .spacing(8)
-        .align_y(Alignment::Center);
+    let remove_btn = forge_widgets::ghost_button(
+        "\u{eb55}",
+        Message::RemoveSubAction(RemoveSubActionMsg::Requested(action_id, raw_index)),
+        palette,
+    );
+
+    let card_inner = row![
+        icon_el,
+        container(label_col).width(Length::Fill),
+        remove_btn,
+    ]
+    .spacing(8)
+    .align_y(Alignment::Center);
 
     let card = container(card_inner)
         .width(Length::Fill)
@@ -3609,5 +4058,127 @@ mod tests {
             Message::AddAction(AddActionMsg::Saved(Ok(saved_id))),
         );
         assert!(app.actions.add_action_modal.is_none());
+    }
+
+    #[test]
+    fn open_add_sub_action_modal_creates_form() {
+        use forge_types::ActionId;
+        let mut app = App::default();
+        let id = ActionId::new();
+        assert!(app.actions.add_sub_action_modal.is_none());
+        let _ = update(
+            &mut app,
+            Message::AddSubAction(AddSubActionMsg::OpenRequested(id)),
+        );
+        assert!(app.actions.add_sub_action_modal.is_some());
+        assert_eq!(
+            app.actions
+                .add_sub_action_modal
+                .as_ref()
+                .unwrap()
+                .for_action_id,
+            id
+        );
+    }
+
+    #[test]
+    fn cancel_sub_action_modal_clears_form() {
+        use forge_types::ActionId;
+        let mut app = App::default();
+        app.actions.add_sub_action_modal =
+            Some(crate::actions::AddSubActionForm::new(ActionId::new()));
+        let _ = update(&mut app, Message::AddSubAction(AddSubActionMsg::Cancel));
+        assert!(app.actions.add_sub_action_modal.is_none());
+    }
+
+    #[test]
+    fn kind_selected_updates_form() {
+        use forge_types::ActionId;
+        let mut app = App::default();
+        app.actions.add_sub_action_modal =
+            Some(crate::actions::AddSubActionForm::new(ActionId::new()));
+        let _ = update(
+            &mut app,
+            Message::AddSubAction(AddSubActionMsg::KindSelected(SubActionKindChoice::Delay)),
+        );
+        assert_eq!(
+            app.actions.add_sub_action_modal.as_ref().unwrap().kind,
+            SubActionKindChoice::Delay,
+        );
+    }
+
+    #[test]
+    fn send_chat_message_changed_updates_form() {
+        use forge_types::ActionId;
+        let mut app = App::default();
+        app.actions.add_sub_action_modal =
+            Some(crate::actions::AddSubActionForm::new(ActionId::new()));
+        let _ = update(
+            &mut app,
+            Message::AddSubAction(AddSubActionMsg::SendChatMessageChanged(
+                "Hello %user%!".to_string(),
+            )),
+        );
+        assert_eq!(
+            app.actions
+                .add_sub_action_modal
+                .as_ref()
+                .unwrap()
+                .config
+                .send_chat_message,
+            "Hello %user%!"
+        );
+    }
+
+    #[test]
+    fn submit_invalid_delay_sets_error_on_form() {
+        use forge_types::ActionId;
+        let mut app = App::default();
+        let mut form = crate::actions::AddSubActionForm::new(ActionId::new());
+        form.kind = SubActionKindChoice::Delay;
+        form.config.delay_ms = "not_a_number".to_string();
+        app.actions.add_sub_action_modal = Some(form);
+        let _ = update(&mut app, Message::AddSubAction(AddSubActionMsg::Submit));
+        let f = app.actions.add_sub_action_modal.as_ref().unwrap();
+        assert!(f.error.is_some());
+    }
+
+    #[test]
+    fn add_sub_action_saved_ok_closes_modal() {
+        use forge_types::ActionId;
+        let mut app = App::default();
+        let id = ActionId::new();
+        app.actions.add_sub_action_modal = Some(crate::actions::AddSubActionForm::new(id));
+        app.actions.selected = Some(id);
+        let _ = update(
+            &mut app,
+            Message::AddSubAction(AddSubActionMsg::Saved(Ok(()))),
+        );
+        assert!(app.actions.add_sub_action_modal.is_none());
+    }
+
+    #[test]
+    fn add_sub_action_saved_err_keeps_modal_with_error() {
+        use forge_types::ActionId;
+        let mut app = App::default();
+        app.actions.add_sub_action_modal =
+            Some(crate::actions::AddSubActionForm::new(ActionId::new()));
+        let _ = update(
+            &mut app,
+            Message::AddSubAction(AddSubActionMsg::Saved(Err("db locked".to_string()))),
+        );
+        let f = app.actions.add_sub_action_modal.as_ref().unwrap();
+        assert_eq!(f.error.as_deref(), Some("db locked"));
+        assert!(!f.saving);
+    }
+
+    #[test]
+    fn view_compiles_actions_with_add_sub_action_modal() {
+        use forge_types::ActionId;
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Navigate(Screen::Actions));
+        app.actions.add_sub_action_modal =
+            Some(crate::actions::AddSubActionForm::new(ActionId::new()));
+        let _ = view(&app);
     }
 }

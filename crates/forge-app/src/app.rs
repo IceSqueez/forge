@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::SystemTime;
 
+use forge_events::EventSource;
 use forge_platform_twitch::{ChatConnectionState, ChatSendBridgeHandle, TwitchChatHandle};
 use forge_runtime::{
     ActionEngineHandle, CommandParserHandle, EventBus, ExecutionRequest, QueueSchedulerHandle,
@@ -8,7 +9,10 @@ use forge_runtime::{
 use forge_storage::{CredentialId, CredentialsRepo, DataProvider, SettingsRepo, reserved_keys};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{Action, ActionId, ArgStack, EventId};
-use forge_widgets::{BannerKind, ForgePalette, StepInfo, ThemeId};
+use forge_widgets::tokens::{
+    FONT_BODY, FONT_BODY_LG, FONT_BODY_SM, FONT_CAPS, FONT_HERO, FONT_VALUE,
+};
+use forge_widgets::{BannerKind, FontRole, ForgePalette, Radius, StepInfo, ThemeId, font, radius};
 use iced::{Element, Length, Subscription, Task, Theme};
 
 use crate::actions::{
@@ -17,10 +21,24 @@ use crate::actions::{
     kind_summary, load_action_detail, load_actions_tree, remove_sub_action, save_sub_action,
 };
 use crate::live_chat::{CHAT_LOG_MAX, LiveChatState, chat_row_from_event, live_chat_view};
-use crate::message::{ActionsMsg, PlatformId, SettingsMsg};
+use crate::message::{ActionsMsg, HubMsg, HubStatsData, PlatformId, SettingsMsg};
 use crate::onboarding_state::{DeviceCodeSession, DeviceCodeStatus, OnboardingState};
 use crate::screen::OnboardingStep;
 use crate::{Message, OnboardingMsg, Screen, SettingsSection};
+
+#[derive(Default)]
+pub struct HubStats {
+    pub actions_count: Option<usize>,
+    pub commands_count: Option<usize>,
+    pub triggers_fired: Option<u64>,
+    pub globals_count: Option<usize>,
+}
+
+impl HubStats {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
 
 pub struct App {
     pub screen: Screen,
@@ -29,6 +47,8 @@ pub struct App {
     pub backend: Arc<SqliteBackend>,
     pub bus: Arc<EventBus>,
     pub storage_offline: bool,
+    pub boot_time: SystemTime,
+    pub hub: HubStats,
     pub onboarding: OnboardingState,
     pub live_chat: LiveChatState,
     pub actions: ActionsState,
@@ -56,6 +76,8 @@ impl App {
             backend,
             bus: EventBus::new(),
             storage_offline,
+            boot_time: SystemTime::now(),
+            hub: HubStats::new(),
             onboarding: OnboardingState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
@@ -88,6 +110,8 @@ impl Default for App {
             backend,
             bus: EventBus::new(),
             storage_offline: false,
+            boot_time: SystemTime::now(),
+            hub: HubStats::new(),
             onboarding: OnboardingState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
@@ -118,10 +142,13 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             if let Screen::Onboarding(ref step) = screen {
                 app.onboarding.sync_step(step);
             }
-            let load_actions = matches!(screen, Screen::Actions);
+            let is_actions = matches!(screen, Screen::Actions);
+            let is_hub = matches!(screen, Screen::Hub);
             app.screen = screen;
-            if load_actions {
+            if is_actions {
                 Task::done(Message::Actions(ActionsMsg::LoadRequested))
+            } else if is_hub {
+                Task::done(Message::Hub(HubMsg::LoadStats))
             } else {
                 Task::none()
             }
@@ -436,6 +463,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 Task::none()
             }
         },
+        Message::Hub(sub) => handle_hub_msg(app, sub),
         Message::Actions(sub) => handle_actions_msg(app, sub),
         Message::AddAction(sub) => handle_add_action_msg(app, sub),
         Message::AddTrigger(sub) => handle_add_trigger_msg(app, sub),
@@ -443,6 +471,53 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::RemoveSubAction(sub) => handle_remove_sub_action_msg(app, sub),
         Message::Noop => Task::none(),
     }
+}
+
+fn handle_hub_msg(app: &mut App, sub: HubMsg) -> Task<Message> {
+    match sub {
+        HubMsg::LoadStats => {
+            let dp = Arc::clone(&app.backend);
+            Task::perform(
+                async move { load_hub_stats(dp).await.map_err(|e| e.to_string()) },
+                |r| Message::Hub(HubMsg::StatsLoaded(r)),
+            )
+        }
+        HubMsg::StatsLoaded(Ok(data)) => {
+            app.hub.actions_count = Some(data.actions_count);
+            app.hub.commands_count = Some(data.commands_count);
+            app.hub.triggers_fired = Some(data.triggers_fired);
+            app.hub.globals_count = Some(data.globals_count);
+            Task::none()
+        }
+        HubMsg::StatsLoaded(Err(e)) => {
+            tracing::warn!(error = %e, "hub stats load failed");
+            Task::none()
+        }
+    }
+}
+
+async fn load_hub_stats(dp: Arc<SqliteBackend>) -> Result<HubStatsData, String> {
+    use forge_storage::GlobalsRepo;
+
+    let actions = dp
+        .action_repo()
+        .list()
+        .await
+        .map_err(|e| e.to_string())?
+        .len();
+    let commands = dp
+        .command_repo()
+        .list()
+        .await
+        .map_err(|e| e.to_string())?
+        .len();
+    let globals = dp.list().await.map_err(|e| e.to_string())?.len();
+    Ok(HubStatsData {
+        actions_count: actions,
+        commands_count: commands,
+        triggers_fired: 0,
+        globals_count: globals,
+    })
 }
 
 fn handle_actions_msg(app: &mut App, sub: ActionsMsg) -> Task<Message> {
@@ -1048,27 +1123,440 @@ fn nav_button<'a>(label: &'a str, screen: Screen, palette: &ForgePalette) -> Ele
     forge_widgets::ghost_button(label, Message::Navigate(screen), palette)
 }
 
-fn hub_view(palette: &ForgePalette) -> Element<'static, Message> {
-    let hero = forge_widgets::hero_card(
-        "Welcome to forge",
-        "0.1.0-alpha.1",
-        std::iter::empty::<Element<'static, Message>>(),
+pub(crate) fn format_uptime(elapsed: std::time::Duration) -> String {
+    let total_secs = elapsed.as_secs();
+    if total_secs < 60 {
+        return format!("{total_secs}s");
+    }
+    let hours = total_secs / 3600;
+    let minutes = (total_secs % 3600) / 60;
+    let secs = total_secs % 60;
+    if hours == 0 {
+        format!("{minutes}m {secs}s")
+    } else {
+        format!("{hours}h {minutes}m")
+    }
+}
+
+fn event_source_color(source: EventSource, palette: &ForgePalette) -> iced::Color {
+    match source {
+        EventSource::Twitch => palette.brand,
+        EventSource::YouTube => palette.random,
+        EventSource::Kick => palette.info,
+        EventSource::Trovo => palette.success,
+        EventSource::Core => palette.warning,
+        EventSource::Rhai => palette.warning,
+        EventSource::Http => palette.random,
+        EventSource::Obs => palette.success,
+        EventSource::VTube => palette.bits,
+        EventSource::Discord => palette.brand,
+        EventSource::Midi => palette.info,
+        EventSource::Hotkey => palette.info,
+        EventSource::Timer => palette.warning,
+        EventSource::Server => palette.info,
+    }
+}
+
+fn event_kind_description(source: EventSource, kind: &str) -> String {
+    let src_label = match source {
+        EventSource::Twitch => "Twitch",
+        EventSource::YouTube => "YouTube",
+        EventSource::Kick => "Kick",
+        EventSource::Trovo => "Trovo",
+        EventSource::Core => "Core",
+        EventSource::Rhai => "Rhai",
+        EventSource::Http => "HTTP",
+        EventSource::Obs => "OBS",
+        EventSource::VTube => "VTube",
+        EventSource::Discord => "Discord",
+        EventSource::Midi => "MIDI",
+        EventSource::Hotkey => "Hotkey",
+        EventSource::Timer => "Timer",
+        EventSource::Server => "Server",
+    };
+    format!("{src_label}: {kind}")
+}
+
+fn fmt_count<T: std::fmt::Display>(v: Option<T>) -> String {
+    v.map_or_else(|| "\u{2014}".to_string(), |n| n.to_string())
+}
+
+fn hub_card_style(
+    palette: &ForgePalette,
+) -> impl Fn(&Theme) -> iced::widget::container::Style + '_ {
+    move |_theme: &Theme| iced::widget::container::Style {
+        background: Some(iced::Background::Color(palette.elevated)),
+        border: iced::Border {
+            color: palette.border_regular,
+            width: 0.5,
+            radius: radius(Radius::Xxl).into(),
+        },
+        ..iced::widget::container::Style::default()
+    }
+}
+
+fn hub_nav_card<'a>(
+    icon: &'a str,
+    icon_color: iced::Color,
+    title: &'a str,
+    description: &'a str,
+    on_press: Message,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    use iced::widget::{button, column, container, text};
+    use iced::{Alignment, Background, Border, Shadow};
+
+    let icon_box = container(text(icon).size(16.0).color(icon_color))
+        .width(30.0)
+        .height(30.0)
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center)
+        .style(move |_theme: &Theme| iced::widget::container::Style {
+            background: Some(Background::Color(palette.surface_overlay)),
+            border: Border {
+                radius: radius(Radius::Lg).into(),
+                color: iced::Color::TRANSPARENT,
+                width: 0.0,
+            },
+            ..iced::widget::container::Style::default()
+        });
+
+    let content = column![
+        icon_box,
+        text(title).size(FONT_BODY_LG).color(palette.text_primary),
+        text(description)
+            .size(FONT_BODY_SM)
+            .color(palette.text_muted),
+    ]
+    .spacing(4.0)
+    .width(Length::Fill);
+
+    button(content)
+        .on_press(on_press)
+        .padding(iced::Padding {
+            top: 14.0,
+            right: 14.0,
+            bottom: 14.0,
+            left: 14.0,
+        })
+        .width(Length::Fill)
+        .style(move |_theme: &Theme, _status| button::Style {
+            background: Some(Background::Color(palette.elevated)),
+            border: Border {
+                color: palette.border_regular,
+                width: 0.5,
+                radius: radius(Radius::Xxl).into(),
+            },
+            text_color: palette.text_primary,
+            shadow: Shadow::default(),
+            snap: false,
+        })
+        .into()
+}
+
+fn hub_event_row<'a>(
+    event: &forge_events::Event,
+    has_bottom_border: bool,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    use iced::widget::{container, row, text};
+    use iced::{Alignment, Background, Border};
+
+    let dot_color = event_source_color(event.source, palette);
+
+    let dot = container(iced::widget::Space::new())
+        .width(6.0)
+        .height(6.0)
+        .style(move |_theme: &Theme| iced::widget::container::Style {
+            background: Some(Background::Color(dot_color)),
+            border: Border {
+                radius: 3.0.into(),
+                color: iced::Color::TRANSPARENT,
+                width: 0.0,
+            },
+            ..iced::widget::container::Style::default()
+        });
+
+    let ts = event.timestamp;
+    let ts_str = format!("{:02}:{:02}:{:02}", ts.hour(), ts.minute(), ts.second());
+
+    let timestamp = container(
+        text(ts_str)
+            .size(FONT_CAPS)
+            .color(palette.text_muted)
+            .font(font(FontRole::Monospace)),
+    )
+    .width(48.0);
+
+    let description = text(event_kind_description(event.source, &event.kind))
+        .size(FONT_BODY)
+        .color(palette.text_primary)
+        .width(Length::Fill);
+
+    let inner = row![dot, timestamp, description]
+        .spacing(10.0)
+        .align_y(Alignment::Center)
+        .padding(iced::Padding {
+            top: 6.0,
+            right: 0.0,
+            bottom: 6.0,
+            left: 0.0,
+        });
+
+    let border_width = if has_bottom_border { 0.5 } else { 0.0 };
+
+    container(inner)
+        .width(Length::Fill)
+        .style(move |_theme: &Theme| iced::widget::container::Style {
+            border: Border {
+                color: palette.border_regular,
+                width: border_width,
+                radius: 0.0.into(),
+            },
+            ..iced::widget::container::Style::default()
+        })
+        .into()
+}
+
+fn hub_stat_row<'a>(
+    label: &'a str,
+    value_text: String,
+    value_color: iced::Color,
+    has_bottom_border: bool,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    use iced::widget::{container, row, text};
+    use iced::{Alignment, Border};
+
+    let inner = row![
+        text(label).size(FONT_CAPS).color(palette.text_muted),
+        iced::widget::Space::new().width(Length::Fill),
+        text(value_text).size(FONT_VALUE).color(value_color),
+    ]
+    .align_y(Alignment::Center);
+
+    let border_width = if has_bottom_border { 0.5 } else { 0.0 };
+
+    container(inner)
+        .width(Length::Fill)
+        .padding(iced::Padding {
+            top: 5.0,
+            right: 0.0,
+            bottom: 5.0,
+            left: 0.0,
+        })
+        .style(move |_theme: &Theme| iced::widget::container::Style {
+            border: Border {
+                color: palette.border_regular,
+                width: border_width,
+                radius: 0.0.into(),
+            },
+            ..iced::widget::container::Style::default()
+        })
+        .into()
+}
+
+fn hub_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
+    use iced::widget::{column, container, row, text};
+    use iced::{Alignment, Background, Border};
+
+    let version = env!("CARGO_PKG_VERSION");
+    let elapsed = app.boot_time.elapsed().unwrap_or_default();
+    let uptime = format_uptime(elapsed);
+
+    let brand_box = container(text("S").size(30.0).color(palette.shell))
+        .width(62.0)
+        .height(62.0)
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center)
+        .style(move |_theme: &Theme| iced::widget::container::Style {
+            background: Some(Background::Color(palette.brand)),
+            border: Border {
+                radius: radius(Radius::Hero).into(),
+                color: iced::Color::TRANSPARENT,
+                width: 0.0,
+            },
+            ..iced::widget::container::Style::default()
+        });
+
+    let title_col = column![
+        text("Forge").size(FONT_HERO).color(palette.text_primary),
+        text(format!("v{version} \u{2014} Weave your stream automation"))
+            .size(FONT_BODY_LG)
+            .color(palette.text_muted),
+    ]
+    .spacing(2.0);
+
+    let uptime_col = column![
+        text("UPTIME")
+            .size(FONT_CAPS)
+            .color(palette.text_faint)
+            .font(font(FontRole::Monospace)),
+        text(uptime).size(FONT_BODY_LG).color(palette.success),
+    ]
+    .spacing(2.0)
+    .align_x(Alignment::End);
+
+    let hero_inner = row![
+        brand_box,
+        container(title_col).width(Length::Fill),
+        uptime_col,
+    ]
+    .spacing(20.0)
+    .align_y(Alignment::Center);
+
+    let hero_card = container(hero_inner)
+        .width(Length::Fill)
+        .padding(iced::Padding {
+            top: 24.0,
+            right: 24.0,
+            bottom: 24.0,
+            left: 24.0,
+        })
+        .style(move |_theme: &Theme| iced::widget::container::Style {
+            background: Some(Background::Color(palette.elevated)),
+            border: Border {
+                color: palette.border_regular,
+                width: 0.5,
+                radius: radius(Radius::Hero).into(),
+            },
+            ..iced::widget::container::Style::default()
+        });
+
+    let actions_card = hub_nav_card(
+        "\u{26a1}",
+        palette.brand,
+        "Actions",
+        "Configure actions, queues, and history",
+        Message::Navigate(Screen::Actions),
+        palette,
+    );
+    let commands_card = hub_nav_card(
+        "\u{276f}",
+        palette.info,
+        "Commands",
+        "Manage your chat commands",
+        Message::Navigate(Screen::Commands),
+        palette,
+    );
+    let platforms_card = hub_nav_card(
+        "\u{229b}",
+        palette.random,
+        "Platforms",
+        "Twitch, YouTube, Kick settings",
+        Message::Navigate(Screen::Platforms),
+        palette,
+    );
+    let stream_apps_card = hub_nav_card(
+        "\u{25a6}",
+        palette.success,
+        "Stream Apps",
+        "OBS, VTube Studio, more",
+        Message::Navigate(Screen::StreamApps),
         palette,
     );
 
-    let metrics = iced::widget::row![
-        forge_widgets::metric_card("Twitch", "disconnected", None::<&str>, palette),
-        forge_widgets::metric_card("OBS", "disconnected", None::<&str>, palette),
-        forge_widgets::metric_card("Speak Queue", "empty", None::<&str>, palette),
+    let cards_grid = row![
+        actions_card,
+        commands_card,
+        platforms_card,
+        stream_apps_card
     ]
-    .spacing(12);
+    .spacing(10.0)
+    .width(Length::Fill);
 
-    let content = forge_widgets::card([hero, metrics.into()], palette);
+    let recent_events = {
+        let header = row![
+            text("Recent events")
+                .size(FONT_BODY_LG)
+                .color(palette.text_primary),
+            iced::widget::Space::new().width(Length::Fill),
+            text("LIVE")
+                .size(FONT_CAPS)
+                .color(palette.text_faint)
+                .font(font(FontRole::Monospace)),
+        ]
+        .align_y(Alignment::Center);
 
-    iced::widget::container(content)
+        let events = app.bus.recent(4);
+
+        let mut events_col = column![header].spacing(0.0);
+
+        if events.is_empty() {
+            events_col = events_col.push(
+                text("No events yet \u{2014} interact with the app to see live activity here.")
+                    .size(FONT_BODY_SM)
+                    .color(palette.text_faint),
+            );
+        } else {
+            let count = events.len();
+            for (i, event) in events.iter().enumerate() {
+                let has_border = i + 1 < count;
+                events_col = events_col.push(hub_event_row(event, has_border, palette));
+            }
+        }
+
+        container(events_col)
+            .width(Length::FillPortion(7))
+            .padding(14.0)
+            .style(hub_card_style(palette))
+    };
+
+    let at_a_glance = {
+        let header = text("At a glance")
+            .size(FONT_BODY_LG)
+            .color(palette.text_primary);
+
+        let actions_row = hub_stat_row(
+            "Actions",
+            fmt_count(app.hub.actions_count),
+            palette.brand,
+            true,
+            palette,
+        );
+        let commands_row = hub_stat_row(
+            "Commands",
+            fmt_count(app.hub.commands_count),
+            palette.info,
+            true,
+            palette,
+        );
+        let triggers_row = hub_stat_row(
+            "Triggers fired",
+            fmt_count(app.hub.triggers_fired),
+            palette.success,
+            true,
+            palette,
+        );
+        let globals_row = hub_stat_row(
+            "Globals",
+            fmt_count(app.hub.globals_count),
+            palette.warning,
+            false,
+            palette,
+        );
+
+        let stats_col =
+            column![header, actions_row, commands_row, triggers_row, globals_row].spacing(4.0);
+
+        container(stats_col)
+            .width(Length::FillPortion(5))
+            .padding(14.0)
+            .style(hub_card_style(palette))
+    };
+
+    let bottom_row = row![recent_events, at_a_glance]
+        .spacing(10.0)
+        .width(Length::Fill);
+
+    let content = column![hero_card, cards_grid, bottom_row]
+        .spacing(18.0)
+        .width(Length::Fill);
+
+    container(content)
         .width(Length::Fill)
         .height(Length::Fill)
-        .padding(16)
+        .padding(20.0)
         .into()
 }
 
@@ -3027,7 +3515,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
     );
 
     let content: Element<'_, Message> = match &app.screen {
-        Screen::Hub => hub_view(palette),
+        Screen::Hub => hub_view(app, palette),
         Screen::LiveChat => live_chat_view(&app.live_chat, palette),
         Screen::Actions => actions_view(app, palette),
         Screen::Settings(section) => {
@@ -3776,6 +4264,8 @@ mod tests {
             backend: sqlite,
             bus,
             storage_offline: false,
+            boot_time: std::time::SystemTime::now(),
+            hub: HubStats::new(),
             onboarding: OnboardingState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
@@ -4039,6 +4529,8 @@ mod tests {
             backend: Arc::clone(&dp),
             bus: EventBus::new(),
             storage_offline: false,
+            boot_time: std::time::SystemTime::now(),
+            hub: HubStats::new(),
             onboarding: OnboardingState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
@@ -4185,5 +4677,90 @@ mod tests {
         app.actions.add_sub_action_modal =
             Some(crate::actions::AddSubActionForm::new(ActionId::new()));
         let _ = view(&app);
+    }
+
+    #[test]
+    fn format_uptime_zero_seconds() {
+        assert_eq!(format_uptime(std::time::Duration::from_secs(0)), "0s");
+    }
+
+    #[test]
+    fn format_uptime_ninety_seconds() {
+        assert_eq!(format_uptime(std::time::Duration::from_secs(90)), "1m 30s");
+    }
+
+    #[test]
+    fn format_uptime_one_hour_one_minute() {
+        assert_eq!(format_uptime(std::time::Duration::from_secs(3700)), "1h 1m");
+    }
+
+    #[test]
+    fn format_uptime_twenty_four_hours() {
+        assert_eq!(
+            format_uptime(std::time::Duration::from_secs(86400)),
+            "24h 0m"
+        );
+    }
+
+    #[test]
+    fn format_uptime_less_than_minute() {
+        assert_eq!(format_uptime(std::time::Duration::from_secs(47)), "47s");
+    }
+
+    #[test]
+    fn hub_view_compiles_with_empty_stats() {
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Navigate(Screen::Hub));
+        let _ = view(&app);
+    }
+
+    #[test]
+    fn hub_view_compiles_with_populated_stats() {
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Navigate(Screen::Hub));
+        app.hub.actions_count = Some(47);
+        app.hub.commands_count = Some(23);
+        app.hub.triggers_fired = Some(1284);
+        app.hub.globals_count = Some(31);
+        let _ = view(&app);
+    }
+
+    #[test]
+    fn navigate_to_hub_dispatches_load_stats() {
+        let mut app = App::default();
+        let task = update(&mut app, Message::Navigate(Screen::Hub));
+        assert_eq!(app.screen, Screen::Hub);
+        let _ = task;
+    }
+
+    #[test]
+    fn hub_stats_loaded_ok_updates_all_fields() {
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Navigate(Screen::Hub));
+        let data = HubStatsData {
+            actions_count: 5,
+            commands_count: 3,
+            triggers_fired: 42,
+            globals_count: 7,
+        };
+        let _ = update(&mut app, Message::Hub(HubMsg::StatsLoaded(Ok(data))));
+        assert_eq!(app.hub.actions_count, Some(5));
+        assert_eq!(app.hub.commands_count, Some(3));
+        assert_eq!(app.hub.triggers_fired, Some(42));
+        assert_eq!(app.hub.globals_count, Some(7));
+    }
+
+    #[test]
+    fn hub_stats_loaded_err_leaves_nones() {
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Navigate(Screen::Hub));
+        let _ = update(
+            &mut app,
+            Message::Hub(HubMsg::StatsLoaded(Err("db error".into()))),
+        );
+        assert!(app.hub.actions_count.is_none());
+        assert!(app.hub.commands_count.is_none());
+        assert!(app.hub.triggers_fired.is_none());
+        assert!(app.hub.globals_count.is_none());
     }
 }

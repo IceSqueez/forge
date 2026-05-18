@@ -35,6 +35,7 @@ pub fn cache_dir() -> PathBuf {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
@@ -62,21 +63,30 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn linux_data_dir_appends_forge_only() {
-        let suffix = data_dir().strip_prefix(base_dirs().data_dir()).unwrap().to_path_buf();
+        let suffix = data_dir()
+            .strip_prefix(base_dirs().data_dir())
+            .unwrap()
+            .to_path_buf();
         assert_eq!(suffix, PathBuf::from("forge"));
     }
 
     #[cfg(target_os = "windows")]
     #[test]
     fn windows_data_dir_appends_forge_only() {
-        let suffix = data_dir().strip_prefix(base_dirs().data_dir()).unwrap().to_path_buf();
+        let suffix = data_dir()
+            .strip_prefix(base_dirs().data_dir())
+            .unwrap()
+            .to_path_buf();
         assert_eq!(suffix, PathBuf::from("forge"));
     }
 
     #[cfg(target_os = "macos")]
     #[test]
     fn macos_data_dir_uses_bundle_id() {
-        let suffix = data_dir().strip_prefix(base_dirs().data_dir()).unwrap().to_path_buf();
+        let suffix = data_dir()
+            .strip_prefix(base_dirs().data_dir())
+            .unwrap()
+            .to_path_buf();
         assert_eq!(suffix, PathBuf::from(MACOS_BUNDLE_ID));
     }
 }

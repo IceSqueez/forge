@@ -7,6 +7,20 @@ use crate::Screen;
 use crate::actions::{AddActionMsg, AddSubActionMsg, AddTriggerMsg, RemoveSubActionMsg};
 use crate::live_chat::ChatFilter;
 
+#[derive(Debug, Clone)]
+pub struct HubStatsData {
+    pub actions_count: usize,
+    pub commands_count: usize,
+    pub triggers_fired: u64,
+    pub globals_count: usize,
+}
+
+#[derive(Debug, Clone)]
+pub enum HubMsg {
+    LoadStats,
+    StatsLoaded(Result<HubStatsData, String>),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlatformId {
     Twitch,
@@ -65,6 +79,7 @@ pub enum Message {
     Onboarding(OnboardingMsg),
     OnboardingPersistResult(Result<(), String>),
     Settings(SettingsMsg),
+    Hub(HubMsg),
     Actions(ActionsMsg),
     AddAction(AddActionMsg),
     AddTrigger(AddTriggerMsg),

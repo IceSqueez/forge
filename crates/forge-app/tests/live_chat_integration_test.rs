@@ -27,6 +27,8 @@ fn test_app() -> App {
         onboarding: forge_app::OnboardingState::new(),
         live_chat: forge_app::LiveChatState::new(),
         actions: forge_app::ActionsState::new(),
+        boot_time: std::time::SystemTime::now(),
+        hub: forge_app::app::HubStats::new(),
         twitch_chat_handle: None,
         chat_send_bridge: None,
         action_engine: None,

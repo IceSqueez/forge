@@ -12,6 +12,8 @@ pub use actions::{
 };
 pub use app::App;
 pub use live_chat::{ChatFilter, LiveChatState};
-pub use message::{ActionsMsg, Message, OnboardingMsg, PlatformId, SettingsMsg};
+pub use message::{
+    ActionsMsg, HubMsg, HubStatsData, Message, OnboardingMsg, PlatformId, SettingsMsg,
+};
 pub use onboarding_state::{DeviceCodeSession, DeviceCodeStatus, OnboardingState};
 pub use screen::{OnboardingStep, Screen, SettingsSection};

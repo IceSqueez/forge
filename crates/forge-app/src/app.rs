@@ -28,7 +28,9 @@ use crate::actions::{
     AddTriggerMsg, RemoveSubActionMsg, SubActionKindChoice, TriggerCategory, kind_label,
     kind_summary, load_action_detail, load_actions_tree, remove_sub_action, save_sub_action,
 };
-use crate::globals_view::{GlobalsState, globals_view, handle_globals_msg};
+use crate::globals_view::{
+    GlobalsState, globals_view, handle_globals_msg, handle_variant_editor_msg,
+};
 use crate::live_chat::{CHAT_LOG_MAX, LiveChatState, chat_row_from_event, live_chat_view};
 use crate::message::{
     ActionsMsg, GlobalsMsg, HubMsg, HubStatsData, PlatformId, SettingsMsg, SidebarMsg,
@@ -521,6 +523,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         },
         Message::Hub(sub) => handle_hub_msg(app, sub),
         Message::Globals(sub) => handle_globals_msg(app, sub),
+        Message::VariantEditor(sub) => handle_variant_editor_msg(app, sub),
         Message::Actions(sub) => handle_actions_msg(app, sub),
         Message::AddAction(sub) => handle_add_action_msg(app, sub),
         Message::AddTrigger(sub) => handle_add_trigger_msg(app, sub),

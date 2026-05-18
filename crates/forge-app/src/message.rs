@@ -2,7 +2,7 @@ use forge_events::Event;
 use forge_platform_core::oauth::{DeviceCodeResponse, TokenResponse};
 use forge_storage::GlobalEntry;
 use forge_types::ActionId;
-use forge_widgets::ThemeId;
+use forge_widgets::{ThemeId, VariantKind};
 use time::OffsetDateTime;
 
 use crate::Screen;
@@ -75,6 +75,31 @@ pub enum ActionsMsg {
     OpenAddTriggerModal(ActionId),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EditorMode {
+    Create,
+    Edit(String),
+}
+
+#[derive(Debug, Clone)]
+pub enum VariantEditorMsg {
+    OpenCreate,
+    OpenEdit(String, GlobalEntry),
+    NameChanged(String),
+    KindSelected(VariantKind),
+    PersistenceToggled(bool),
+    IntInputChanged(String),
+    FloatInputChanged(String),
+    BoolValueChanged(bool),
+    StringInputChanged(String),
+    DatetimeInputChanged(String),
+    ArrayJsonChanged(String),
+    ObjectJsonChanged(String),
+    Cancel,
+    Submit,
+    Saved(Result<(), String>),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GlobalsFilter {
     All,
@@ -120,6 +145,7 @@ pub enum Message {
     Settings(SettingsMsg),
     Hub(HubMsg),
     Globals(GlobalsMsg),
+    VariantEditor(VariantEditorMsg),
     Actions(ActionsMsg),
     AddAction(AddActionMsg),
     AddTrigger(AddTriggerMsg),

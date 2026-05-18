@@ -12,11 +12,14 @@ pub use actions::{
     SubActionKindChoice, TriggerCategory,
 };
 pub use app::{App, SidebarExpandState};
-pub use globals_view::{GlobalsState, load_globals_data};
+pub use globals_view::{
+    GlobalsState, VariantEditorFields, VariantEditorForm, handle_variant_editor_msg,
+    load_globals_data,
+};
 pub use live_chat::{ChatFilter, LiveChatState};
 pub use message::{
-    ActionsMsg, GlobalsFilter, GlobalsLoadData, GlobalsMsg, HubMsg, HubStatsData, Message,
-    OnboardingMsg, PlatformId, SettingsMsg, SidebarMsg,
+    ActionsMsg, EditorMode, GlobalsFilter, GlobalsLoadData, GlobalsMsg, HubMsg, HubStatsData,
+    Message, OnboardingMsg, PlatformId, SettingsMsg, SidebarMsg, VariantEditorMsg,
 };
 pub use onboarding_state::{DeviceCodeSession, DeviceCodeStatus, OnboardingState};
 pub use screen::{OnboardingStep, Screen, SettingsSection};

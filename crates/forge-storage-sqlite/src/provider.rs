@@ -182,8 +182,8 @@ impl ScriptRepo for SqliteBackend {
         self.script.get_by_name(name).await
     }
 
-    async fn upsert(&self, record: ScriptRecord) -> Result<(), StorageError> {
-        self.script.upsert(record).await
+    async fn save(&self, record: ScriptRecord) -> Result<(), StorageError> {
+        self.script.save(record).await
     }
 
     async fn delete(&self, id: ScriptId) -> Result<bool, StorageError> {

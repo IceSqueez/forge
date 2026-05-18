@@ -3,6 +3,7 @@ pub mod command;
 pub mod execution;
 pub mod ids;
 pub mod queue;
+pub mod script;
 pub mod sub_action;
 pub mod token;
 pub mod trigger;
@@ -15,6 +16,7 @@ pub use execution::{
 };
 pub use ids::{ActionId, CommandId, EventId, GlobalId, QueueId, ScriptId, TriggerId, UserId};
 pub use queue::Queue;
+pub use script::{ScriptContract, ScriptInput};
 pub use sub_action::{LogLevel, SubActionSpec, VariantTemplate};
 pub use token::{ApiKey, OAuthToken, RefreshToken};
 pub use trigger::{Trigger, TriggerConfig, TriggerKind};

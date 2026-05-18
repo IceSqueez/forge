@@ -31,9 +31,9 @@ async fn schema_version_matches_migration_count() {
         .await
         .expect("open");
     let version = backend.schema_version().await.expect("schema_version");
-    assert!(
-        version >= 2,
-        "schema_version must be at least 2 (migrations 0001 + 0002)"
+    assert_eq!(
+        version, 4,
+        "schema_version must be 4 after migrations 0001 + 0002 + 0003 + 0004"
     );
 }
 

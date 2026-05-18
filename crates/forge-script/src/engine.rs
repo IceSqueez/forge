@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use rhai::Dynamic;
+use rhai::packages::{BasicArrayPackage, BasicMapPackage, CorePackage, LogicPackage, Package};
 
 use crate::ScriptError;
 use crate::api::ForgeApi;
@@ -29,7 +30,12 @@ pub struct Engine {
 
 impl Engine {
     pub fn with_config(cfg: EngineConfig) -> Self {
-        let mut inner = rhai::Engine::new();
+        let mut inner = rhai::Engine::new_raw();
+
+        inner.register_global_module(CorePackage::new().as_shared_module());
+        inner.register_global_module(LogicPackage::new().as_shared_module());
+        inner.register_global_module(BasicArrayPackage::new().as_shared_module());
+        inner.register_global_module(BasicMapPackage::new().as_shared_module());
 
         inner.set_max_operations(cfg.op_limit);
         inner.set_max_call_levels(64);
@@ -39,9 +45,6 @@ impl Engine {
         inner.set_max_map_size(10_000);
 
         inner.disable_symbol("eval");
-        inner.disable_symbol("print");
-        inner.disable_symbol("debug");
-        inner.disable_symbol("type_of");
 
         let wall_timer = Arc::new(Mutex::new(Instant::now()));
         let timer_for_closure = Arc::clone(&wall_timer);
@@ -111,7 +114,9 @@ impl Engine {
 ///
 /// Does not execute the script. Returns `ScriptError::Compile` for any parse failure.
 pub fn validate_syntax(body: &str) -> Result<(), ScriptError> {
-    rhai::Engine::new()
+    let mut engine = rhai::Engine::new_raw();
+    engine.register_global_module(CorePackage::new().as_shared_module());
+    engine
         .compile(body)
         .map(|_| ())
         .map_err(|e| ScriptError::Compile {
@@ -169,7 +174,21 @@ mod tests {
     }
 
     fn make_api(dp: Arc<SqliteBackend>) -> ForgeApi {
-        ForgeApi::new(Arc::new(MockPublisher), dp, EventId::new())
+        ForgeApi::new(
+            Arc::new(MockPublisher),
+            dp,
+            EventId::new(),
+            Instant::now() + std::time::Duration::from_secs(10),
+        )
+    }
+
+    fn make_api_with_wall_ms(dp: Arc<SqliteBackend>, wall_ms: u64) -> ForgeApi {
+        ForgeApi::new(
+            Arc::new(MockPublisher),
+            dp,
+            EventId::new(),
+            Instant::now() + std::time::Duration::from_millis(wall_ms),
+        )
     }
 
     #[test]
@@ -248,7 +267,7 @@ mod tests {
                 op_limit: 100_000,
                 wall_time_ms: 2_000,
             },
-            make_api(dp),
+            make_api_with_wall_ms(dp, 2_000),
         );
         let before = std::time::Instant::now();
         tokio::task::spawn_blocking(move || {
@@ -270,13 +289,61 @@ mod tests {
                 op_limit: 100_000,
                 wall_time_ms: 10_000,
             },
-            make_api(dp),
+            make_api_with_wall_ms(dp, 10_000),
         );
         tokio::task::spawn_blocking(move || {
             let _ = engine.eval_script("forge::sleep(-999)").unwrap();
         })
         .await
         .unwrap();
+    }
+
+    #[tokio::test]
+    async fn sleep_clamped_to_remaining_wall_budget() {
+        let dp = open_test_dp().await;
+        let wall_ms = 200_u64;
+        let engine = Engine::with_api(
+            EngineConfig {
+                op_limit: 100_000,
+                wall_time_ms: wall_ms,
+            },
+            make_api_with_wall_ms(dp, wall_ms),
+        );
+        let start = std::time::Instant::now();
+        let result = tokio::task::spawn_blocking(move || engine.eval_script("forge::sleep(5000)"))
+            .await
+            .unwrap();
+        let elapsed = start.elapsed();
+        assert!(
+            result.is_ok() || result.is_err(),
+            "sleep with tight budget must not hang"
+        );
+        assert!(
+            elapsed.as_millis() < 5_500,
+            "sleep(5000) with 200ms budget must not sleep the full 5s, elapsed={elapsed:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn sleep_returns_err_when_deadline_already_passed() {
+        use std::time::Duration;
+
+        let dp = open_test_dp().await;
+        let expired_deadline = Instant::now() - Duration::from_millis(50);
+        let api = ForgeApi::new(
+            Arc::new(MockPublisher),
+            dp,
+            EventId::new(),
+            expired_deadline,
+        );
+        let engine = Engine::with_api(EngineConfig::default(), api);
+        let result = tokio::task::spawn_blocking(move || engine.eval_script("forge::sleep(100)"))
+            .await
+            .unwrap();
+        assert!(
+            result.is_err(),
+            "sleep with already-expired deadline must return error, got: {result:?}"
+        );
     }
 
     #[tokio::test]
@@ -287,7 +354,7 @@ mod tests {
                 op_limit: 100_000,
                 wall_time_ms: 200,
             },
-            make_api(dp),
+            make_api_with_wall_ms(dp, 200),
         );
         let start = std::time::Instant::now();
         let result = tokio::task::spawn_blocking(move || engine.eval_script("loop {}"))
@@ -363,7 +430,12 @@ mod tests {
         let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
         let publisher = Arc::new(CapturingPublisher(Arc::clone(&captured)));
         let caused_by = EventId::new();
-        let api = ForgeApi::new(publisher, dp, caused_by);
+        let api = ForgeApi::new(
+            publisher,
+            dp,
+            caused_by,
+            Instant::now() + std::time::Duration::from_secs(10),
+        );
         let engine = Engine::with_api(EngineConfig::default(), api);
 
         tokio::task::spawn_blocking(move || {

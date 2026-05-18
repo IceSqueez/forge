@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_storage::{DataProvider, GlobalsRepo};
@@ -12,12 +12,13 @@ use crate::convert::{dynamic_to_variant, variant_to_dynamic};
 /// The god-object exposed to rhai scripts as the `forge::*` namespace.
 ///
 /// Holds `Arc` clones of the event publisher and storage needed by script-callable
-/// methods. Created once per script execution with the `caused_by` event id so all
-/// events emitted during the execution carry a correct causation chain.
+/// methods. Created once per script execution. `deadline` is the absolute wall-clock
+/// time at which `forge::sleep` must stop sleeping to respect the wall-time budget.
 pub struct ForgeApi {
     publisher: Arc<dyn EventPublisher>,
     dp: Arc<dyn DataProvider>,
     caused_by: EventId,
+    pub deadline: Instant,
 }
 
 impl ForgeApi {
@@ -25,11 +26,13 @@ impl ForgeApi {
         publisher: Arc<dyn EventPublisher>,
         dp: Arc<dyn DataProvider>,
         caused_by: EventId,
+        deadline: Instant,
     ) -> Self {
         Self {
             publisher,
             dp,
             caused_by,
+            deadline,
         }
     }
 
@@ -61,9 +64,15 @@ impl ForgeApi {
             },
         );
 
-        root.set_native_fn("sleep", |ms: i64| -> Result<(), Box<EvalAltResult>> {
-            let clamped = (ms.max(0) as u64).min(5_000);
-            Handle::current().block_on(tokio::time::sleep(Duration::from_millis(clamped)));
+        let deadline = self.deadline;
+        root.set_native_fn("sleep", move |ms: i64| -> Result<(), Box<EvalAltResult>> {
+            let now = Instant::now();
+            if now >= deadline {
+                return Err("script execution deadline exceeded".into());
+            }
+            let remaining_ms = (deadline - now).as_millis() as u64;
+            let clamped = (ms.max(0) as u64).min(5_000).min(remaining_ms);
+            std::thread::sleep(Duration::from_millis(clamped));
             Ok(())
         });
 

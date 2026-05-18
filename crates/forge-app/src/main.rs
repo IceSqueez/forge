@@ -9,7 +9,7 @@ use forge_platform_core::paths;
 use forge_platform_twitch::{ChatSendBridge, ChatSendBridgeHandle};
 use forge_runtime::{
     ActionEngineHandle, CommandParser, CommandParserHandle, EventBus, QueueScheduler,
-    QueueSchedulerHandle, spawn_action_engine,
+    QueueSchedulerHandle, ScriptRegistry, spawn_action_engine,
 };
 use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo, reserved_keys};
 use forge_storage_sqlite::SqliteBackend;
@@ -81,6 +81,7 @@ fn resolve_initial_screen(backend: &SqliteBackend) -> Screen {
 }
 
 struct RuntimeHandles {
+    registry: Arc<ScriptRegistry>,
     engine: ActionEngineHandle,
     scheduler: QueueSchedulerHandle,
     parser: CommandParserHandle,
@@ -107,7 +108,12 @@ fn spawn_runtime(backend: Arc<SqliteBackend>, bus: Arc<EventBus>) -> Option<Runt
         }
     };
 
-    let engine = spawn_action_engine(Arc::clone(&bus), Arc::clone(&dp));
+    let registry = Arc::new(ScriptRegistry::new());
+    if let Err(e) = rt.block_on(registry.load_all(dp.as_ref())) {
+        tracing::warn!("script registry load failed at boot: {e}");
+    }
+
+    let engine = spawn_action_engine(Arc::clone(&bus), Arc::clone(&dp), Arc::clone(&registry));
     let scheduler = QueueScheduler::spawn(engine.clone(), Arc::clone(&bus), queues);
     let parser = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), scheduler.clone());
     let chat_send_bridge = ChatSendBridge::spawn(
@@ -116,6 +122,7 @@ fn spawn_runtime(backend: Arc<SqliteBackend>, bus: Arc<EventBus>) -> Option<Runt
     );
 
     Some(RuntimeHandles {
+        registry,
         engine,
         scheduler,
         parser,
@@ -132,19 +139,21 @@ fn main() -> iced::Result {
 
     let bus = Arc::new(EventBus::new());
 
-    let (action_engine, scheduler, command_parser, chat_send_bridge) = if storage_offline {
-        (None, None, None, None)
-    } else {
-        match spawn_runtime(Arc::clone(&backend), Arc::clone(&bus)) {
-            Some(h) => (
-                Some(h.engine),
-                Some(h.scheduler),
-                Some(h.parser),
-                Some(h.chat_send_bridge),
-            ),
-            None => (None, None, None, None),
-        }
-    };
+    let (script_registry, action_engine, scheduler, command_parser, chat_send_bridge) =
+        if storage_offline {
+            (Arc::new(ScriptRegistry::new()), None, None, None, None)
+        } else {
+            match spawn_runtime(Arc::clone(&backend), Arc::clone(&bus)) {
+                Some(h) => (
+                    h.registry,
+                    Some(h.engine),
+                    Some(h.scheduler),
+                    Some(h.parser),
+                    Some(h.chat_send_bridge),
+                ),
+                None => (Arc::new(ScriptRegistry::new()), None, None, None, None),
+            }
+        };
 
     let backend_boot = Arc::clone(&backend);
     let boot_screen = Arc::new(initial_screen);
@@ -154,6 +163,7 @@ fn main() -> iced::Result {
             (*boot_screen).clone(),
             Arc::clone(&backend_boot),
             storage_offline,
+            Arc::clone(&script_registry),
             action_engine.clone(),
             scheduler.clone(),
             command_parser.clone(),

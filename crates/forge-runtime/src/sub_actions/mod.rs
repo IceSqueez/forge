@@ -98,7 +98,7 @@ pub async fn dispatch(
                 delete_global::run(spec, arg_stack, index, parent_event_id, bus, dp.as_ref()).await;
             (t, None)
         }
-        SubActionSpec::RunScript { .. } => {
+        SubActionSpec::RunScript { script_name } => {
             let Some(reg) = registry else {
                 return (
                     SubActionTelemetry {
@@ -113,7 +113,7 @@ pub async fn dispatch(
                     None,
                 );
             };
-            run_script::run(spec, arg_stack, index, parent_event_id, bus, dp, reg).await
+            run_script::run(script_name, arg_stack, index, parent_event_id, bus, dp, reg).await
         }
     }
 }

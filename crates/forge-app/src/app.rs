@@ -5,6 +5,7 @@ use forge_events::EventSource;
 use forge_platform_twitch::{ChatConnectionState, ChatSendBridgeHandle, TwitchChatHandle};
 use forge_runtime::{
     ActionEngineHandle, CommandParserHandle, EventBus, ExecutionRequest, QueueSchedulerHandle,
+    ScriptRegistry,
 };
 use forge_storage::{CredentialId, CredentialsRepo, DataProvider, SettingsRepo, reserved_keys};
 use forge_storage_sqlite::SqliteBackend;
@@ -93,6 +94,7 @@ pub struct App {
     pub actions: ActionsState,
     pub globals: GlobalsState,
     pub script_editor: ScriptEditorState,
+    pub script_registry: Arc<ScriptRegistry>,
     pub twitch_chat_handle: Option<TwitchChatHandle>,
     pub chat_send_bridge: Option<ChatSendBridgeHandle>,
     pub action_engine: Option<ActionEngineHandle>,
@@ -105,6 +107,7 @@ impl App {
         initial: Screen,
         backend: Arc<SqliteBackend>,
         storage_offline: bool,
+        script_registry: Arc<ScriptRegistry>,
         action_engine: Option<ActionEngineHandle>,
         scheduler: Option<QueueSchedulerHandle>,
         command_parser: Option<CommandParserHandle>,
@@ -125,6 +128,7 @@ impl App {
             actions: ActionsState::new(),
             globals: GlobalsState::new(),
             script_editor: ScriptEditorState::new(),
+            script_registry,
             twitch_chat_handle: None,
             chat_send_bridge: None,
             action_engine,
@@ -162,6 +166,7 @@ impl Default for App {
             actions: ActionsState::new(),
             globals: GlobalsState::new(),
             script_editor: ScriptEditorState::new(),
+            script_registry: Arc::new(ScriptRegistry::new()),
             twitch_chat_handle: None,
             chat_send_bridge: None,
             action_engine: None,
@@ -4591,7 +4596,12 @@ mod tests {
         let bus = EventBus::new();
         let queues = dp.queue_repo().list().await.expect("list queues");
 
-        let engine = forge_runtime::spawn_action_engine(Arc::clone(&bus), Arc::clone(&dp));
+        let registry = Arc::new(forge_runtime::ScriptRegistry::new());
+        let engine = forge_runtime::spawn_action_engine(
+            Arc::clone(&bus),
+            Arc::clone(&dp),
+            Arc::clone(&registry),
+        );
         let scheduler =
             forge_runtime::QueueScheduler::spawn(engine.clone(), Arc::clone(&bus), queues);
         let parser = forge_runtime::CommandParser::spawn(
@@ -4616,6 +4626,7 @@ mod tests {
             actions: ActionsState::new(),
             globals: GlobalsState::new(),
             script_editor: ScriptEditorState::new(),
+            script_registry: registry,
             twitch_chat_handle: None,
             chat_send_bridge: None,
             action_engine: Some(engine),
@@ -4884,6 +4895,7 @@ mod tests {
             actions: ActionsState::new(),
             globals: GlobalsState::new(),
             script_editor: ScriptEditorState::new(),
+            script_registry: Arc::new(ScriptRegistry::new()),
             twitch_chat_handle: None,
             chat_send_bridge: None,
             action_engine: None,

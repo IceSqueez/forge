@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_events::{Event, EventSource, EventsError};
-use forge_runtime::{CommandParser, EventBus, QueueScheduler, spawn_action_engine};
+use forge_runtime::{CommandParser, EventBus, QueueScheduler, ScriptRegistry, spawn_action_engine};
 use forge_storage::DataProvider;
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{Action, ActionId, Command, CommandId, CommandPermission, SubActionSpec};
@@ -60,7 +60,11 @@ async fn full_action_pipeline_emits_causation_chain() {
     // Subscribe before spawning so that no events published by the runtime are missed.
     let mut sub = bus.subscribe();
 
-    let engine = spawn_action_engine(Arc::clone(&bus), Arc::clone(&dp));
+    let engine = spawn_action_engine(
+        Arc::clone(&bus),
+        Arc::clone(&dp),
+        Arc::new(ScriptRegistry::new()),
+    );
     let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
     let _parser = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), scheduler);
 
@@ -170,7 +174,11 @@ async fn unknown_command_does_not_dispatch_action() {
 
     let mut sub = bus.subscribe();
 
-    let engine = spawn_action_engine(Arc::clone(&bus), Arc::clone(&dp));
+    let engine = spawn_action_engine(
+        Arc::clone(&bus),
+        Arc::clone(&dp),
+        Arc::new(ScriptRegistry::new()),
+    );
     let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
     let _parser = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), scheduler);
 

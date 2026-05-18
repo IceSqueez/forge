@@ -1,10 +1,10 @@
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use forge_events::{Event, EventSource};
 use forge_script::{Engine, EngineConfig, ForgeApi, build_scope_for_contract};
 use forge_storage::DataProvider;
-use forge_types::{ArgStack, EventId, SubActionOutcome, SubActionSpec, SubActionTelemetry};
+use forge_types::{ArgStack, EventId, SubActionOutcome, SubActionTelemetry};
 use serde_json::json;
 use time::OffsetDateTime;
 
@@ -12,7 +12,7 @@ use crate::EventBus;
 use crate::script_registry::ScriptRegistry;
 
 pub(super) async fn run(
-    spec: &SubActionSpec,
+    script_name: &str,
     arg_stack: &ArgStack,
     index: usize,
     parent_event_id: EventId,
@@ -20,10 +20,6 @@ pub(super) async fn run(
     dp: Arc<dyn DataProvider>,
     registry: &ScriptRegistry,
 ) -> (SubActionTelemetry, Option<ArgStack>) {
-    let SubActionSpec::RunScript { script_name } = spec else {
-        unreachable!()
-    };
-
     let name = arg_stack.interpolate(script_name);
     let started_at = OffsetDateTime::now_utc();
     let wall_start = Instant::now();
@@ -57,8 +53,10 @@ pub(super) async fn run(
                 reason: e.to_string(),
             }
         })?;
-        let api = ForgeApi::new(publisher, dp_for_api, caused_by);
-        let engine = Engine::with_api(EngineConfig::default(), api);
+        let cfg = EngineConfig::default();
+        let deadline = Instant::now() + Duration::from_millis(cfg.wall_time_ms);
+        let api = ForgeApi::new(publisher, dp_for_api, caused_by, deadline);
+        let engine = Engine::with_api(cfg, api);
         let mut scope = scope;
         engine.eval_script_with_scope(&body, &mut scope)
     })

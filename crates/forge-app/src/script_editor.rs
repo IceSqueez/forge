@@ -148,12 +148,15 @@ async fn run_script_inline(
 ) -> Result<RunResult, String> {
     let contract = parse_contract(&body).map_err(|e| e.to_string())?;
     let mut scope = build_scope_for_contract(&contract, &arg_stack).map_err(|e| e.to_string())?;
+    let cfg = EngineConfig::default();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(cfg.wall_time_ms);
     let api = ForgeApi::new(
         Arc::clone(&bus) as Arc<dyn EventPublisher>,
         dp,
         EventId::new(),
+        deadline,
     );
-    let engine = Engine::with_api(EngineConfig::default(), api);
+    let engine = Engine::with_api(cfg, api);
     let start = std::time::Instant::now();
     let result =
         tokio::task::spawn_blocking(move || engine.eval_script_with_scope(&body, &mut scope))
@@ -282,15 +285,34 @@ pub fn handle_script_editor_msg(
         }
         ScriptEditorMsg::ScriptSaved(Ok(record)) => {
             if let Some(open) = app.script_editor.editor.as_mut() {
-                let body = record.body.clone();
-                open.original_body = body;
-                open.record = record;
+                open.original_body = record.body.clone();
+                open.record = record.clone();
             }
             let ts = now_timestamp();
             app.script_editor.console_lines.push(ConsoleLine {
                 level: ConsoleLevel::Ok,
                 timestamp: Some(ts),
                 text: "script saved".to_string(),
+            });
+            let registry = Arc::clone(&app.script_registry);
+            let bus = Arc::clone(&app.bus);
+            iced::Task::perform(
+                async move {
+                    registry
+                        .reload(record, bus.as_ref())
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                |r| Message::ScriptEditor(ScriptEditorMsg::ScriptReloaded(r)),
+            )
+        }
+        ScriptEditorMsg::ScriptReloaded(Ok(())) => iced::Task::none(),
+        ScriptEditorMsg::ScriptReloaded(Err(e)) => {
+            let ts = now_timestamp();
+            app.script_editor.console_lines.push(ConsoleLine {
+                level: ConsoleLevel::Err,
+                timestamp: Some(ts),
+                text: format!("hot-reload failed: {e}"),
             });
             iced::Task::none()
         }
@@ -1143,6 +1165,7 @@ pub enum ScriptEditorMsg {
     EditorAction(iced::widget::text_editor::Action),
     SaveRequested,
     ScriptSaved(Result<ScriptRecord, String>),
+    ScriptReloaded(Result<(), String>),
     RunRequested,
     RunModalCancel,
     RunModalInputChanged(usize, String),

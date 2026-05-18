@@ -12,6 +12,7 @@ use tokio::sync::mpsc;
 use tracing::warn;
 
 use crate::EventBus;
+use crate::script_registry::ScriptRegistry;
 use crate::sub_actions::dispatch;
 
 #[derive(Clone)]
@@ -48,15 +49,25 @@ impl ActionEngineHandle {
 struct ActionEngine {
     bus: Arc<EventBus>,
     dp: Arc<dyn DataProvider>,
+    registry: Arc<ScriptRegistry>,
     input: mpsc::Receiver<ExecutionRequest>,
 }
 
 impl ActionEngine {
-    pub fn spawn(bus: Arc<EventBus>, dp: Arc<dyn DataProvider>) -> ActionEngineHandle {
+    pub fn spawn(
+        bus: Arc<EventBus>,
+        dp: Arc<dyn DataProvider>,
+        registry: Arc<ScriptRegistry>,
+    ) -> ActionEngineHandle {
         let (tx, rx) = mpsc::channel(256);
         let cancel = Arc::new(AtomicBool::new(false));
         let cancel_clone = Arc::clone(&cancel);
-        let engine = Self { bus, dp, input: rx };
+        let engine = Self {
+            bus,
+            dp,
+            registry,
+            input: rx,
+        };
         tokio::spawn(async move { engine.run(cancel_clone).await });
         ActionEngineHandle { sender: tx, cancel }
     }
@@ -166,7 +177,7 @@ impl ActionEngine {
                 run_event_id,
                 &self.bus,
                 Arc::clone(&self.dp),
-                None,
+                Some(self.registry.as_ref()),
             )
             .await;
 
@@ -218,7 +229,7 @@ impl ActionEngine {
                     run_event_id,
                     &self.bus,
                     Arc::clone(&self.dp),
-                    None,
+                    Some(self.registry.as_ref()),
                 )
             })
             .collect();
@@ -241,14 +252,19 @@ impl ActionEngine {
     }
 }
 
-pub fn spawn_action_engine(bus: Arc<EventBus>, dp: Arc<dyn DataProvider>) -> ActionEngineHandle {
-    ActionEngine::spawn(bus, dp)
+pub fn spawn_action_engine(
+    bus: Arc<EventBus>,
+    dp: Arc<dyn DataProvider>,
+    registry: Arc<ScriptRegistry>,
+) -> ActionEngineHandle {
+    ActionEngine::spawn(bus, dp, registry)
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::script_registry::ScriptRegistry;
     use forge_storage::DataProvider;
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::{Action, ActionId, EventId, LogLevel, Queue, QueueId, SubActionSpec};
@@ -297,7 +313,11 @@ mod tests {
         seed_action(&dp, &action).await;
 
         let bus = EventBus::new();
-        let handle = spawn_action_engine(Arc::clone(&bus), Arc::clone(&dp));
+        let handle = spawn_action_engine(
+            Arc::clone(&bus),
+            Arc::clone(&dp),
+            Arc::new(ScriptRegistry::new()),
+        );
 
         handle
             .dispatch(ExecutionRequest {
@@ -323,7 +343,11 @@ mod tests {
 
         let bus = EventBus::new();
         let mut sub = bus.subscribe();
-        let handle = spawn_action_engine(Arc::clone(&bus), Arc::clone(&dp));
+        let handle = spawn_action_engine(
+            Arc::clone(&bus),
+            Arc::clone(&dp),
+            Arc::new(ScriptRegistry::new()),
+        );
 
         let trigger_id = EventId::new();
         handle
@@ -367,7 +391,11 @@ mod tests {
 
         let bus = EventBus::new();
         let mut sub = bus.subscribe();
-        let handle = spawn_action_engine(Arc::clone(&bus), Arc::clone(&dp));
+        let handle = spawn_action_engine(
+            Arc::clone(&bus),
+            Arc::clone(&dp),
+            Arc::new(ScriptRegistry::new()),
+        );
 
         let trigger_id = EventId::new();
         handle
@@ -408,7 +436,11 @@ mod tests {
 
         let bus = EventBus::new();
         let mut sub = bus.subscribe();
-        let handle = spawn_action_engine(Arc::clone(&bus), Arc::clone(&dp));
+        let handle = spawn_action_engine(
+            Arc::clone(&bus),
+            Arc::clone(&dp),
+            Arc::new(ScriptRegistry::new()),
+        );
 
         handle
             .dispatch(ExecutionRequest {
@@ -455,7 +487,11 @@ mod tests {
 
         let bus = EventBus::new();
         let mut sub = bus.subscribe();
-        let handle = spawn_action_engine(Arc::clone(&bus), Arc::clone(&dp));
+        let handle = spawn_action_engine(
+            Arc::clone(&bus),
+            Arc::clone(&dp),
+            Arc::new(ScriptRegistry::new()),
+        );
 
         handle
             .dispatch(ExecutionRequest {
@@ -486,17 +522,6 @@ mod tests {
         handle.shutdown();
     }
 
-    // Regression test for EC#4-EC#7: ScriptRegistry is not wired into ActionEngine.
-    //
-    // `spawn_action_engine` never creates or accepts a ScriptRegistry; dispatch always
-    // passes `None` for the registry parameter, so every RunScript sub-action is
-    // `SubActionOutcome::Skipped("script registry unavailable")` at runtime.
-    //
-    // Fix: add `Arc<ScriptRegistry>` to `ActionEngine` and `spawn_action_engine`,
-    // store it in the struct, and pass `Some(self.registry.as_ref())` to `dispatch`.
-    // Populate it via `ScriptRegistry::load_all` at startup and hot-reload on save.
-    // Remove this `#[ignore]` once the fix is in place and verify global is written.
-    #[ignore = "RunScript wiring blocked: ScriptRegistry not in ActionEngine (EC#4-7 gap)"]
     #[tokio::test]
     async fn run_script_sub_action_executes_and_writes_global_via_action_engine() {
         use forge_storage::{GlobalsRepo, ScriptRecord, ScriptRepo};
@@ -521,6 +546,9 @@ mod tests {
         };
         ScriptRepo::save(dp.as_ref(), script_record).await.unwrap();
 
+        let registry = Arc::new(ScriptRegistry::new());
+        registry.load_all(dp.as_ref()).await.unwrap();
+
         let run_script = SubActionSpec::RunScript {
             script_name: "write_marker".to_string(),
         };
@@ -539,7 +567,7 @@ mod tests {
 
         let bus = EventBus::new();
         let mut sub = bus.subscribe();
-        let handle = spawn_action_engine(Arc::clone(&bus), Arc::clone(&dp));
+        let handle = spawn_action_engine(Arc::clone(&bus), Arc::clone(&dp), Arc::clone(&registry));
 
         handle
             .dispatch(ExecutionRequest {

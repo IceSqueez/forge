@@ -193,7 +193,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::{EventBus, EventSubscription, QueueScheduler, spawn_action_engine};
+    use crate::{EventBus, EventSubscription, QueueScheduler, ScriptRegistry, spawn_action_engine};
 
     async fn make_dp() -> Arc<dyn DataProvider> {
         Arc::new(
@@ -292,7 +292,11 @@ mod tests {
 
         let bus = EventBus::new();
         let mut sub = bus.subscribe();
-        let engine = spawn_action_engine(Arc::clone(&bus), Arc::clone(&dp));
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            Arc::clone(&dp),
+            Arc::new(ScriptRegistry::new()),
+        );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let _handle = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
 
@@ -324,7 +328,11 @@ mod tests {
 
         let bus = EventBus::new();
         let mut sub = bus.subscribe();
-        let engine = spawn_action_engine(Arc::clone(&bus), Arc::clone(&dp));
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            Arc::clone(&dp),
+            Arc::new(ScriptRegistry::new()),
+        );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let _handle = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
 
@@ -367,7 +375,11 @@ mod tests {
 
         let bus = EventBus::new();
         let mut sub = bus.subscribe();
-        let engine = spawn_action_engine(Arc::clone(&bus), Arc::clone(&dp));
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            Arc::clone(&dp),
+            Arc::new(ScriptRegistry::new()),
+        );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let _handle = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
 
@@ -397,7 +409,11 @@ mod tests {
 
         let bus = EventBus::new();
         let mut sub = bus.subscribe();
-        let engine = spawn_action_engine(Arc::clone(&bus), Arc::clone(&dp));
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            Arc::clone(&dp),
+            Arc::new(ScriptRegistry::new()),
+        );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let _handle = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
 
@@ -424,7 +440,11 @@ mod tests {
 
         let bus = EventBus::new();
         let mut sub = bus.subscribe();
-        let engine = spawn_action_engine(Arc::clone(&bus), Arc::clone(&dp));
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            Arc::clone(&dp),
+            Arc::new(ScriptRegistry::new()),
+        );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let _handle = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
 
@@ -451,7 +471,11 @@ mod tests {
 
         let bus = EventBus::new();
         let mut sub = bus.subscribe();
-        let engine = spawn_action_engine(Arc::clone(&bus), Arc::clone(&dp));
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            Arc::clone(&dp),
+            Arc::new(ScriptRegistry::new()),
+        );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let _handle = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
 

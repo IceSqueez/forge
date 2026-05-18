@@ -7,7 +7,7 @@ use forge_app::{
     screen::OnboardingStep,
 };
 use forge_events::{Event, EventSource};
-use forge_runtime::{EventBus, bus_subscription};
+use forge_runtime::{EventBus, ScriptRegistry, bus_subscription};
 use forge_storage_sqlite::SqliteBackend;
 use futures_util::StreamExt as _;
 
@@ -32,6 +32,7 @@ fn test_app() -> App {
         actions: forge_app::ActionsState::new(),
         globals: forge_app::GlobalsState::new(),
         script_editor: ScriptEditorState::new(),
+        script_registry: Arc::new(ScriptRegistry::new()),
         boot_time: std::time::SystemTime::now(),
         hub: forge_app::app::HubStats::new(),
         sidebar_state: SidebarExpandState::new(),

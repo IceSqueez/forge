@@ -1,9 +1,11 @@
 #![doc = "Event bus contract: Event, EventStream, EventSource taxonomy."]
 
 pub mod bus;
+pub mod publisher;
 pub mod source;
 
 pub use bus::{EventStream, EventsError};
+pub use publisher::EventPublisher;
 pub use source::EventSource;
 
 use forge_types::EventId;

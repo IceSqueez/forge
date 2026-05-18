@@ -2131,9 +2131,13 @@ name = "forge-script"
 version = "0.1.0-alpha.5"
 dependencies = [
  "forge-events",
+ "forge-storage",
+ "forge-storage-sqlite",
  "forge-types",
  "rhai",
+ "serde_json",
  "thiserror 2.0.18",
+ "time",
  "tokio",
  "tracing",
 ]

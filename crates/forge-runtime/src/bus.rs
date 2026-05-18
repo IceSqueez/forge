@@ -1,5 +1,5 @@
 use crate::buf::RingBuffer;
-use forge_events::{Event, EventsError};
+use forge_events::{Event, EventPublisher, EventsError};
 use forge_types::EventId;
 use std::sync::{
     Arc, Mutex,
@@ -90,6 +90,12 @@ impl EventBus {
             ring_len: ring.len(),
             subscriber_count: self.sender.receiver_count(),
         }
+    }
+}
+
+impl EventPublisher for EventBus {
+    fn publish(&self, event: Event) {
+        EventBus::publish(self, event);
     }
 }
 

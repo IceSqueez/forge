@@ -10,9 +10,15 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
-forge-types  = { path = "../forge-types" }
-forge-events = { path = "../forge-events" }
-rhai        = { workspace = true }
-tokio       = { workspace = true }
-tracing     = { workspace = true }
-thiserror   = { workspace = true }
+forge-types   = { path = "../forge-types" }
+forge-events  = { path = "../forge-events" }
+forge-storage = { path = "../forge-storage" }
+rhai          = { workspace = true }
+tokio         = { workspace = true }
+tracing       = { workspace = true }
+thiserror     = { workspace = true }
+serde_json    = { workspace = true }
+time          = { workspace = true }
+
+[dev-dependencies]
+forge-storage-sqlite = { path = "../forge-storage-sqlite" }

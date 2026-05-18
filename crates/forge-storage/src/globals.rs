@@ -27,6 +27,12 @@ pub trait GlobalsRepo: Send + Sync {
     async fn list(&self) -> Result<Vec<GlobalEntry>, StorageError>;
     async fn storage_bytes(&self) -> Result<u64, StorageError>;
     async fn last_save_at(&self) -> Result<Option<OffsetDateTime>, StorageError>;
+
+    /// Atomically adds `amount` to an `Int` or `Float` global and returns the updated value.
+    ///
+    /// Errors with [`StorageError::NotFound`] if the key does not exist, or
+    /// [`StorageError::TypeMismatch`] if the stored type is not numeric.
+    async fn incr(&self, name: &str, amount: i64) -> Result<Variant, StorageError>;
 }
 
 #[cfg(test)]

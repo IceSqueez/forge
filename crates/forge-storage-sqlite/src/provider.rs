@@ -91,6 +91,10 @@ impl GlobalsRepo for SqliteBackend {
     async fn last_save_at(&self) -> Result<Option<OffsetDateTime>, StorageError> {
         self.globals.last_save_at().await
     }
+
+    async fn incr(&self, name: &str, amount: i64) -> Result<Variant, StorageError> {
+        self.globals.incr(name, amount).await
+    }
 }
 
 #[async_trait]

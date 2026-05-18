@@ -18,6 +18,9 @@ pub enum StorageError {
     #[error("key not found: {key}")]
     NotFound { key: String },
 
+    #[error("global '{name}' has type {actual}, expected numeric")]
+    TypeMismatch { name: String, actual: String },
+
     #[error("serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
 
@@ -57,6 +60,10 @@ mod tests {
             },
             StorageError::NotFound {
                 key: "theme".into(),
+            },
+            StorageError::TypeMismatch {
+                name: "counter".into(),
+                actual: "string".into(),
             },
             StorageError::Serialization(make_serde_error()),
             StorageError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "missing")),

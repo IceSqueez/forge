@@ -1,7 +1,9 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use forge_storage::GlobalsRepo;
-use forge_storage_sqlite::{SqliteGlobalsRepo, apply_migrations};
+use std::sync::Arc;
+
+use forge_storage::{GlobalsRepo, StorageError};
+use forge_storage_sqlite::{SqliteBackend, SqliteGlobalsRepo, apply_migrations};
 use forge_types::Variant;
 
 async fn setup() -> SqliteGlobalsRepo {
@@ -129,4 +131,124 @@ async fn set_overwrites_existing_value() {
     repo.set("key", Variant::Int(2), true).await.expect("set 2");
     let got = repo.get("key").await.expect("get");
     assert_eq!(got, Some(Variant::Int(2)));
+}
+
+const TEST_KEY: [u8; 32] = [0xab; 32];
+
+async fn setup_file_backed() -> (tempfile::TempDir, Arc<SqliteBackend>) {
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    let path = dir.path().join("test.sqlite");
+    let url = format!("sqlite://{}", path.display());
+    let backend = SqliteBackend::open_with_key(&url, TEST_KEY)
+        .await
+        .expect("open file-backed db");
+    (dir, Arc::new(backend))
+}
+
+#[tokio::test]
+async fn incr_on_int_global_returns_updated_value() {
+    let repo = setup().await;
+    repo.set("n", Variant::Int(10), false).await.expect("set");
+    let result = repo.incr("n", 5).await.expect("incr");
+    assert_eq!(result, Variant::Int(15));
+}
+
+#[tokio::test]
+async fn incr_with_negative_amount_decrements() {
+    let repo = setup().await;
+    repo.set("n", Variant::Int(10), false).await.expect("set");
+    let result = repo.incr("n", -3).await.expect("incr");
+    assert_eq!(result, Variant::Int(7));
+}
+
+#[tokio::test]
+async fn incr_updates_writes_counter() {
+    let repo = setup().await;
+    repo.set("n", Variant::Int(0), false).await.expect("set");
+    repo.incr("n", 1).await.expect("incr 1");
+    repo.incr("n", 1).await.expect("incr 2");
+    let entries = repo.list().await.expect("list");
+    let entry = entries.iter().find(|e| e.name == "n").expect("entry");
+    assert_eq!(entry.writes, 3, "set + 2 incr = 3 writes");
+}
+
+#[tokio::test]
+async fn incr_on_missing_key_returns_not_found() {
+    let repo = setup().await;
+    let err = repo.incr("ghost", 1).await.expect_err("must fail");
+    assert!(
+        matches!(err, StorageError::NotFound { .. }),
+        "expected NotFound, got {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn incr_on_string_global_returns_type_mismatch() {
+    let repo = setup().await;
+    repo.set("s", Variant::String("hello".into()), false)
+        .await
+        .expect("set");
+    let err = repo.incr("s", 1).await.expect_err("must fail");
+    assert!(
+        matches!(err, StorageError::TypeMismatch { .. }),
+        "expected TypeMismatch, got {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn concurrent_reads_counter_exact() {
+    let (_dir, backend) = setup_file_backed().await;
+    backend.set("x", Variant::Int(0), false).await.expect("set");
+
+    let mut handles = Vec::with_capacity(100);
+    for _ in 0..100 {
+        let b = Arc::clone(&backend);
+        handles.push(tokio::spawn(async move { b.get("x").await.expect("get") }));
+    }
+    for h in handles {
+        h.await.expect("task panicked");
+    }
+
+    let entries = backend.list().await.expect("list");
+    let entry = entries.iter().find(|e| e.name == "x").expect("entry");
+    assert_eq!(
+        entry.reads, 100,
+        "100 concurrent get() calls must yield reads == 100"
+    );
+    assert_eq!(
+        entry.writes, 1,
+        "only the initial set contributes to writes"
+    );
+}
+
+#[tokio::test]
+async fn concurrent_incr_no_lost_updates() {
+    let (_dir, backend) = setup_file_backed().await;
+    backend
+        .set("counter", Variant::Int(0), false)
+        .await
+        .expect("set");
+
+    let mut handles = Vec::with_capacity(50);
+    for _ in 0..50 {
+        let b = Arc::clone(&backend);
+        handles.push(tokio::spawn(async move {
+            b.incr("counter", 1).await.expect("incr")
+        }));
+    }
+    for h in handles {
+        h.await.expect("task panicked");
+    }
+
+    let got = backend.get("counter").await.expect("get");
+    assert_eq!(
+        got,
+        Some(Variant::Int(50)),
+        "50 concurrent incr(1) must sum to exactly 50"
+    );
+
+    let entries = backend.list().await.expect("list");
+    let entry = entries.iter().find(|e| e.name == "counter").expect("entry");
+    assert_eq!(entry.reads, 1, "one get at end increments reads to 1");
+    assert_eq!(entry.writes, 51, "one set + 50 incr = 51 writes");
 }

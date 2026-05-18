@@ -1,4 +1,5 @@
 use std::str::FromStr;
+use std::time::Duration;
 
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
 
@@ -9,6 +10,7 @@ pub async fn connect(url: &str) -> Result<sqlx::SqlitePool, SqliteStorageError> 
         .map_err(SqliteStorageError::Sqlx)?
         .journal_mode(SqliteJournalMode::Wal)
         .synchronous(SqliteSynchronous::Normal)
+        .busy_timeout(Duration::from_secs(5))
         .create_if_missing(true);
 
     SqlitePoolOptions::new()

@@ -28,26 +28,16 @@ impl SqliteGlobalsRepo {
 #[async_trait]
 impl GlobalsRepo for SqliteGlobalsRepo {
     async fn get(&self, name: &str) -> Result<Option<Variant>, StorageError> {
-        let mut tx = self.pool.begin().await.map_err(SqliteStorageError::Sqlx)?;
-
-        let row: Option<(String,)> = sqlx::query_as("SELECT value FROM globals WHERE name = ?")
-            .bind(name)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(SqliteStorageError::Sqlx)?;
+        let row: Option<(String,)> =
+            sqlx::query_as("UPDATE globals SET reads = reads + 1 WHERE name = ? RETURNING value")
+                .bind(name)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(SqliteStorageError::Sqlx)?;
 
         let Some((value_json,)) = row else {
-            tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
             return Ok(None);
         };
-
-        sqlx::query("UPDATE globals SET reads = reads + 1 WHERE name = ?")
-            .bind(name)
-            .execute(&mut *tx)
-            .await
-            .map_err(SqliteStorageError::Sqlx)?;
-
-        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
 
         let variant: Variant = serde_json::from_str(&value_json)
             .map_err(|e| SqliteStorageError::Decode(format!("variant decode: {e}")))?;
@@ -147,6 +137,47 @@ impl GlobalsRepo for SqliteGlobalsRepo {
         match ms {
             None => Ok(None),
             Some(ms) => from_epoch_ms(ms).map(Some).map_err(StorageError::from),
+        }
+    }
+
+    async fn incr(&self, name: &str, amount: i64) -> Result<Variant, StorageError> {
+        let now_ms = epoch_ms_now();
+
+        let row: Option<(String,)> = sqlx::query_as(
+            "UPDATE globals \
+             SET value         = json_set(value, '$.value', json_extract(value, '$.value') + ?), \
+                 writes        = writes + 1, \
+                 last_modified = ? \
+             WHERE name = ? AND type_tag IN ('int', 'float') \
+             RETURNING value",
+        )
+        .bind(amount)
+        .bind(now_ms)
+        .bind(name)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        if let Some((value_json,)) = row {
+            let variant: Variant = serde_json::from_str(&value_json)
+                .map_err(|e| StorageError::Parse(format!("variant decode: {e}")))?;
+            return Ok(variant);
+        }
+
+        let tag: Option<String> = sqlx::query_scalar("SELECT type_tag FROM globals WHERE name = ?")
+            .bind(name)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+        match tag {
+            None => Err(StorageError::NotFound {
+                key: name.to_string(),
+            }),
+            Some(actual) => Err(StorageError::TypeMismatch {
+                name: name.to_string(),
+                actual,
+            }),
         }
     }
 }

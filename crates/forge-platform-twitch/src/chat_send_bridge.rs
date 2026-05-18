@@ -9,12 +9,11 @@ use forge_events::{Event, EventSource, EventsError};
 use forge_platform_core::{PlatformError, RateLimitOutcome, RateLimiter};
 use forge_runtime::EventBus;
 use forge_storage::{CredentialId, CredentialsRepo};
-use forge_storage_sqlite::SqliteBackend;
 use forge_types::OAuthToken;
 
 pub struct ChatSendBridge {
     bus: Arc<EventBus>,
-    backend: Arc<SqliteBackend>,
+    creds: Arc<dyn CredentialsRepo>,
 }
 
 pub struct ChatSendBridgeHandle {
@@ -36,11 +35,11 @@ impl Clone for ChatSendBridgeHandle {
 }
 
 impl ChatSendBridge {
-    pub fn spawn(bus: Arc<EventBus>, backend: Arc<SqliteBackend>) -> ChatSendBridgeHandle {
+    pub fn spawn(bus: Arc<EventBus>, creds: Arc<dyn CredentialsRepo>) -> ChatSendBridgeHandle {
         let cancel = Arc::new(AtomicBool::new(false));
         let bridge = Self {
             bus: Arc::clone(&bus),
-            backend,
+            creds,
         };
         tokio::spawn(bridge.run(Arc::clone(&cancel)));
         ChatSendBridgeHandle { cancel }
@@ -105,7 +104,7 @@ impl ChatSendBridge {
             crate::auth::client_id().ok_or_else(|| "no Twitch client_id configured".to_string())?;
 
         let json_str = self
-            .backend
+            .creds
             .load(&CredentialId::new("twitch:broadcaster"))
             .await
             .map_err(|e| e.to_string())?
@@ -176,6 +175,7 @@ impl RateLimiter for NoopRateLimiter {
 mod tests {
     use super::*;
     use forge_events::EventSource;
+    use forge_storage_sqlite::SqliteBackend;
     use std::time::Duration;
 
     fn make_request_event(target: &str, message: &str) -> Event {
@@ -228,7 +228,7 @@ mod tests {
         );
 
         let mut test_sub = bus.subscribe();
-        ChatSendBridge::spawn(Arc::clone(&bus), backend);
+        ChatSendBridge::spawn(Arc::clone(&bus), backend as Arc<dyn CredentialsRepo>);
         tokio::task::yield_now().await;
 
         bus.publish(make_request_event("twitch", "hello"));
@@ -267,7 +267,7 @@ mod tests {
         );
 
         let mut test_sub = bus.subscribe();
-        ChatSendBridge::spawn(Arc::clone(&bus), backend);
+        ChatSendBridge::spawn(Arc::clone(&bus), backend as Arc<dyn CredentialsRepo>);
         tokio::task::yield_now().await;
 
         let request = make_request_event("twitch", "hi");
@@ -306,7 +306,7 @@ mod tests {
         );
 
         let mut test_sub = bus.subscribe();
-        ChatSendBridge::spawn(Arc::clone(&bus), backend);
+        ChatSendBridge::spawn(Arc::clone(&bus), backend as Arc<dyn CredentialsRepo>);
         tokio::task::yield_now().await;
 
         bus.publish(make_request_event("youtube", "hi"));

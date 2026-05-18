@@ -10,6 +10,7 @@ rust-version.workspace = true
 workspace = true
 
 [dev-dependencies]
+forge-storage-sqlite = { path = "../forge-storage-sqlite" }
 tracing-subscriber   = { workspace = true }
 
 [dependencies]
@@ -17,7 +18,6 @@ forge-types          = { path = "../forge-types" }
 forge-events         = { path = "../forge-events" }
 forge-runtime        = { path = "../forge-runtime" }
 forge-storage        = { path = "../forge-storage" }
-forge-storage-sqlite = { path = "../forge-storage-sqlite" }
 forge-platform-core  = { path = "../forge-platform-core" }
 tokio               = { workspace = true }
 tokio-tungstenite   = { workspace = true }

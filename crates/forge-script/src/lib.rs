@@ -10,5 +10,5 @@ pub use api::ForgeApi;
 pub use contract::{
     ContractParseError, InputMismatchError, build_scope_for_contract, parse_contract,
 };
-pub use engine::{Engine, EngineConfig};
+pub use engine::{Engine, EngineConfig, validate_syntax};
 pub use error::ScriptError;

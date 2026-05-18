@@ -13,6 +13,7 @@ workspace = true
 forge-types   = { path = "../forge-types" }
 forge-events  = { path = "../forge-events" }
 forge-storage = { path = "../forge-storage" }
+forge-script  = { path = "../forge-script" }
 tokio        = { workspace = true }
 tokio-stream = { workspace = true }
 futures-core = { workspace = true }

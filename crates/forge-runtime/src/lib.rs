@@ -4,6 +4,7 @@ mod buf;
 pub mod bus;
 pub mod command_parser;
 pub mod queue_scheduler;
+pub mod script_registry;
 mod sub_actions;
 
 pub use action_engine::{ActionEngineHandle, DispatchError, ExecutionRequest, spawn_action_engine};
@@ -11,3 +12,4 @@ pub use bridge::bus_subscription;
 pub use bus::{BusStats, EventBus, EventSubscription};
 pub use command_parser::{CommandParser, CommandParserHandle};
 pub use queue_scheduler::{QueueScheduler, QueueSchedulerHandle, SchedulerError, SchedulerRequest};
+pub use script_registry::{CompiledScript, ScriptRegistry, ScriptRegistryError};

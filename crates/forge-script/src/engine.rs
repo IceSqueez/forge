@@ -91,9 +91,33 @@ impl Engine {
             .map_err(|e| map_eval_error(expr, &self.config, *e))
     }
 
+    pub fn eval_script_with_scope(
+        &self,
+        body: &str,
+        scope: &mut rhai::Scope<'_>,
+    ) -> Result<rhai::Dynamic, ScriptError> {
+        self.reset_timer();
+        self.inner
+            .eval_with_scope::<rhai::Dynamic>(scope, body)
+            .map_err(|e| map_eval_error(body, &self.config, *e))
+    }
+
     pub(crate) fn reset_timer(&self) {
         *self.wall_timer.lock().unwrap_or_else(|p| p.into_inner()) = Instant::now();
     }
+}
+
+/// Parses `body` and returns `Ok(())` if the script is syntactically valid.
+///
+/// Does not execute the script. Returns `ScriptError::Compile` for any parse failure.
+pub fn validate_syntax(body: &str) -> Result<(), ScriptError> {
+    rhai::Engine::new()
+        .compile(body)
+        .map(|_| ())
+        .map_err(|e| ScriptError::Compile {
+            script: body.chars().take(80).collect(),
+            reason: e.to_string(),
+        })
 }
 
 fn map_eval_error(script: &str, cfg: &EngineConfig, err: rhai::EvalAltResult) -> ScriptError {

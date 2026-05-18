@@ -277,4 +277,21 @@ mod tests {
         let result = interpolate_with_globals("%x%", &stack, dp.as_ref()).await;
         assert_eq!(result, "from_stack");
     }
+
+    // Regression: exit criterion #4 — reads counter must increment when a %var% token is
+    // resolved via GlobalsRepo::get inside interpolate_with_globals.
+    #[tokio::test]
+    async fn interpolation_increments_reads_counter() {
+        let dp = make_dp().await;
+        GlobalsRepo::set(dp.as_ref(), "score", Variant::Int(42), false)
+            .await
+            .unwrap();
+
+        let _ = interpolate_with_globals("Player score: %score%", &ArgStack::new(), dp.as_ref()).await;
+        let _ = interpolate_with_globals("%score% points", &ArgStack::new(), dp.as_ref()).await;
+
+        let entries = GlobalsRepo::list(dp.as_ref()).await.unwrap();
+        let entry = entries.iter().find(|e| e.name == "score").unwrap();
+        assert_eq!(entry.reads, 2, "two interpolations of %score% must yield reads == 2");
+    }
 }

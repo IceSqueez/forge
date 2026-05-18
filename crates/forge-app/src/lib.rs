@@ -10,10 +10,10 @@ pub use actions::{
     AddSubActionForm, AddSubActionMsg, AddTriggerForm, AddTriggerMsg, RemoveSubActionMsg,
     SubActionKindChoice, TriggerCategory,
 };
-pub use app::App;
+pub use app::{App, SidebarExpandState};
 pub use live_chat::{ChatFilter, LiveChatState};
 pub use message::{
-    ActionsMsg, HubMsg, HubStatsData, Message, OnboardingMsg, PlatformId, SettingsMsg,
+    ActionsMsg, HubMsg, HubStatsData, Message, OnboardingMsg, PlatformId, SettingsMsg, SidebarMsg,
 };
 pub use onboarding_state::{DeviceCodeSession, DeviceCodeStatus, OnboardingState};
 pub use screen::{OnboardingStep, Screen, SettingsSection};

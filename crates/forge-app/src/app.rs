@@ -21,10 +21,32 @@ use crate::actions::{
     kind_summary, load_action_detail, load_actions_tree, remove_sub_action, save_sub_action,
 };
 use crate::live_chat::{CHAT_LOG_MAX, LiveChatState, chat_row_from_event, live_chat_view};
-use crate::message::{ActionsMsg, HubMsg, HubStatsData, PlatformId, SettingsMsg};
+use crate::message::{ActionsMsg, HubMsg, HubStatsData, PlatformId, SettingsMsg, SidebarMsg};
 use crate::onboarding_state::{DeviceCodeSession, DeviceCodeStatus, OnboardingState};
 use crate::screen::OnboardingStep;
 use crate::{Message, OnboardingMsg, Screen, SettingsSection};
+
+pub struct SidebarExpandState {
+    pub actions_queues: bool,
+    pub platforms: bool,
+    pub stream_apps: bool,
+}
+
+impl SidebarExpandState {
+    pub fn new() -> Self {
+        Self {
+            actions_queues: false,
+            platforms: false,
+            stream_apps: false,
+        }
+    }
+}
+
+impl Default for SidebarExpandState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[derive(Default)]
 pub struct HubStats {
@@ -49,6 +71,7 @@ pub struct App {
     pub storage_offline: bool,
     pub boot_time: SystemTime,
     pub hub: HubStats,
+    pub sidebar_state: SidebarExpandState,
     pub onboarding: OnboardingState,
     pub live_chat: LiveChatState,
     pub actions: ActionsState,
@@ -78,6 +101,7 @@ impl App {
             storage_offline,
             boot_time: SystemTime::now(),
             hub: HubStats::new(),
+            sidebar_state: SidebarExpandState::new(),
             onboarding: OnboardingState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
@@ -112,6 +136,7 @@ impl Default for App {
             storage_offline: false,
             boot_time: SystemTime::now(),
             hub: HubStats::new(),
+            sidebar_state: SidebarExpandState::new(),
             onboarding: OnboardingState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
@@ -152,6 +177,20 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             } else {
                 Task::none()
             }
+        }
+        Message::Sidebar(sub) => {
+            match sub {
+                SidebarMsg::ToggleActionsQueues => {
+                    app.sidebar_state.actions_queues = !app.sidebar_state.actions_queues;
+                }
+                SidebarMsg::TogglePlatforms => {
+                    app.sidebar_state.platforms = !app.sidebar_state.platforms;
+                }
+                SidebarMsg::ToggleStreamApps => {
+                    app.sidebar_state.stream_apps = !app.sidebar_state.stream_apps;
+                }
+            }
+            Task::none()
         }
         Message::OnboardingPersistResult(result) => {
             if let Err(ref e) = result {
@@ -4266,6 +4305,7 @@ mod tests {
             storage_offline: false,
             boot_time: std::time::SystemTime::now(),
             hub: HubStats::new(),
+            sidebar_state: SidebarExpandState::new(),
             onboarding: OnboardingState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
@@ -4531,6 +4571,7 @@ mod tests {
             storage_offline: false,
             boot_time: std::time::SystemTime::now(),
             hub: HubStats::new(),
+            sidebar_state: SidebarExpandState::new(),
             onboarding: OnboardingState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
@@ -4762,5 +4803,49 @@ mod tests {
         assert!(app.hub.commands_count.is_none());
         assert!(app.hub.triggers_fired.is_none());
         assert!(app.hub.globals_count.is_none());
+    }
+
+    #[test]
+    fn sidebar_expand_state_initializes_all_collapsed() {
+        let app = App::default();
+        assert!(!app.sidebar_state.actions_queues);
+        assert!(!app.sidebar_state.platforms);
+        assert!(!app.sidebar_state.stream_apps);
+    }
+
+    #[test]
+    fn sidebar_toggle_actions_queues_flips_bool() {
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Sidebar(SidebarMsg::ToggleActionsQueues));
+        assert!(app.sidebar_state.actions_queues);
+        let _ = update(&mut app, Message::Sidebar(SidebarMsg::ToggleActionsQueues));
+        assert!(!app.sidebar_state.actions_queues);
+    }
+
+    #[test]
+    fn sidebar_toggle_platforms_flips_bool() {
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Sidebar(SidebarMsg::TogglePlatforms));
+        assert!(app.sidebar_state.platforms);
+        let _ = update(&mut app, Message::Sidebar(SidebarMsg::TogglePlatforms));
+        assert!(!app.sidebar_state.platforms);
+    }
+
+    #[test]
+    fn sidebar_toggle_stream_apps_flips_bool() {
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Sidebar(SidebarMsg::ToggleStreamApps));
+        assert!(app.sidebar_state.stream_apps);
+        let _ = update(&mut app, Message::Sidebar(SidebarMsg::ToggleStreamApps));
+        assert!(!app.sidebar_state.stream_apps);
+    }
+
+    #[test]
+    fn sidebar_toggles_are_independent() {
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Sidebar(SidebarMsg::TogglePlatforms));
+        assert!(!app.sidebar_state.actions_queues);
+        assert!(app.sidebar_state.platforms);
+        assert!(!app.sidebar_state.stream_apps);
     }
 }

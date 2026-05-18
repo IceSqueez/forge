@@ -2,7 +2,9 @@
 
 use std::sync::Arc;
 
-use forge_app::{App, ChatFilter, Message, Screen, app::update, screen::OnboardingStep};
+use forge_app::{
+    App, ChatFilter, Message, Screen, SidebarExpandState, app::update, screen::OnboardingStep,
+};
 use forge_events::{Event, EventSource};
 use forge_runtime::{EventBus, bus_subscription};
 use forge_storage_sqlite::SqliteBackend;
@@ -29,6 +31,7 @@ fn test_app() -> App {
         actions: forge_app::ActionsState::new(),
         boot_time: std::time::SystemTime::now(),
         hub: forge_app::app::HubStats::new(),
+        sidebar_state: SidebarExpandState::new(),
         twitch_chat_handle: None,
         chat_send_bridge: None,
         action_engine: None,

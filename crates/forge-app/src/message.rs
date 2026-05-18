@@ -74,8 +74,16 @@ pub enum ActionsMsg {
 }
 
 #[derive(Debug, Clone)]
+pub enum SidebarMsg {
+    ToggleActionsQueues,
+    TogglePlatforms,
+    ToggleStreamApps,
+}
+
+#[derive(Debug, Clone)]
 pub enum Message {
     Navigate(Screen),
+    Sidebar(SidebarMsg),
     Onboarding(OnboardingMsg),
     OnboardingPersistResult(Result<(), String>),
     Settings(SettingsMsg),

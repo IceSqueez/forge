@@ -28,6 +28,7 @@ fn test_app() -> App {
         live_chat: forge_app::LiveChatState::new(),
         actions: forge_app::ActionsState::new(),
         twitch_chat_handle: None,
+        chat_send_bridge: None,
         action_engine: None,
         scheduler: None,
         command_parser: None,

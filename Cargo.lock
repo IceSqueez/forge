@@ -2086,6 +2086,8 @@ dependencies = [
  "forge-events",
  "forge-platform-core",
  "forge-runtime",
+ "forge-storage",
+ "forge-storage-sqlite",
  "forge-types",
  "futures-util",
  "rand 0.10.1",

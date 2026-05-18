@@ -485,4 +485,87 @@ mod tests {
         assert_eq!(history[0].action_id, action_id);
         handle.shutdown();
     }
+
+    // Regression test for EC#4-EC#7: ScriptRegistry is not wired into ActionEngine.
+    //
+    // `spawn_action_engine` never creates or accepts a ScriptRegistry; dispatch always
+    // passes `None` for the registry parameter, so every RunScript sub-action is
+    // `SubActionOutcome::Skipped("script registry unavailable")` at runtime.
+    //
+    // Fix: add `Arc<ScriptRegistry>` to `ActionEngine` and `spawn_action_engine`,
+    // store it in the struct, and pass `Some(self.registry.as_ref())` to `dispatch`.
+    // Populate it via `ScriptRegistry::load_all` at startup and hot-reload on save.
+    // Remove this `#[ignore]` once the fix is in place and verify global is written.
+    #[ignore = "RunScript wiring blocked: ScriptRegistry not in ActionEngine (EC#4-7 gap)"]
+    #[tokio::test]
+    async fn run_script_sub_action_executes_and_writes_global_via_action_engine() {
+        use forge_storage::{GlobalsRepo, ScriptRecord, ScriptRepo};
+        use forge_types::{ScriptContract, ScriptId};
+        use std::time::Duration;
+        use time::OffsetDateTime;
+
+        let dp = make_dp().await;
+        let queue_id = QueueId::new();
+        let action_id = ActionId::new();
+
+        let ts = OffsetDateTime::now_utc();
+        let script_record = ScriptRecord {
+            id: ScriptId::new(),
+            name: "write_marker".to_owned(),
+            body: r#"forge::globals::set("qa_marker", 1, false);"#.to_owned(),
+            contract: ScriptContract::default(),
+            body_hash: "qa".to_owned(),
+            enabled: true,
+            created_at: ts,
+            last_modified: ts,
+        };
+        ScriptRepo::save(dp.as_ref(), script_record).await.unwrap();
+
+        let run_script = SubActionSpec::RunScript {
+            script_name: "write_marker".to_string(),
+        };
+        let action = Action {
+            id: action_id,
+            name: "QA RunScript".to_string(),
+            group: None,
+            queue_id,
+            enabled: true,
+            concurrent: false,
+            bypass_pause: false,
+            description: None,
+            sub_actions: vec![run_script],
+        };
+        seed_action(&dp, &action).await;
+
+        let bus = EventBus::new();
+        let mut sub = bus.subscribe();
+        let handle = spawn_action_engine(Arc::clone(&bus), Arc::clone(&dp));
+
+        handle
+            .dispatch(ExecutionRequest {
+                action_id,
+                trigger_event_id: EventId::new(),
+                initial_args: forge_types::ArgStack::new(),
+            })
+            .await
+            .unwrap();
+
+        loop {
+            match tokio::time::timeout(Duration::from_millis(2_000), sub.recv()).await {
+                Ok(Ok(ev)) if ev.kind == "action.done" => break,
+                Ok(Ok(_)) => {}
+                _ => break,
+            }
+        }
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        handle.shutdown();
+
+        let val = GlobalsRepo::get(dp.as_ref(), "qa_marker").await.unwrap();
+        assert_eq!(
+            val,
+            Some(forge_types::Variant::Int(1)),
+            "RunScript must execute and write the global via ActionEngine"
+        );
+    }
 }

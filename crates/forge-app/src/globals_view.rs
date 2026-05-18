@@ -1,6 +1,7 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
-use forge_storage::{GlobalEntry, GlobalsRepo};
+use forge_storage::{GlobalEntry, GlobalsExport, GlobalsRepo, StorageError};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::Variant;
 use forge_widgets::tokens::{FONT_BODY_MD, FONT_BODY_SM, FONT_CAPS_SM};
@@ -19,6 +20,37 @@ use time::OffsetDateTime;
 use crate::Message;
 use crate::app::App;
 use crate::message::{EditorMode, GlobalsFilter, GlobalsLoadData, GlobalsMsg, VariantEditorMsg};
+
+#[derive(Debug, thiserror::Error)]
+enum ExportError {
+    #[error("user cancelled")]
+    Cancelled,
+    #[error("storage: {0}")]
+    Storage(#[from] StorageError),
+    #[error("serialize: {0}")]
+    Serialize(#[from] serde_json::Error),
+    #[error("io: {0}")]
+    Io(#[from] std::io::Error),
+}
+
+async fn export_globals_to_chosen_file(dp: Arc<SqliteBackend>) -> Result<PathBuf, ExportError> {
+    let entries = dp.export_all().await?;
+    let envelope = GlobalsExport::new(entries);
+    let json = serde_json::to_string_pretty(&envelope)?;
+    let default_name = format!(
+        "forge-globals-{}.json",
+        time::OffsetDateTime::now_utc().unix_timestamp()
+    );
+    let handle = rfd::AsyncFileDialog::new()
+        .add_filter("JSON", &["json"])
+        .set_file_name(&default_name)
+        .save_file()
+        .await
+        .ok_or(ExportError::Cancelled)?;
+    let path = handle.path().to_path_buf();
+    tokio::fs::write(&path, json).await?;
+    Ok(path)
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct VariantEditorFields {
@@ -396,7 +428,23 @@ pub fn handle_globals_msg(app: &mut App, sub: GlobalsMsg) -> iced::Task<Message>
             }
         }
 
-        GlobalsMsg::ExportRequested => iced::Task::none(),
+        GlobalsMsg::ExportRequested => {
+            let dp = Arc::clone(&app.backend);
+            iced::Task::perform(
+                async move { export_globals_to_chosen_file(dp).await.map_err(|e| e.to_string()) },
+                |r| Message::Globals(GlobalsMsg::Exported(r)),
+            )
+        }
+
+        GlobalsMsg::Exported(Ok(path)) => {
+            tracing::info!(path = %path.display(), "globals exported");
+            iced::Task::none()
+        }
+
+        GlobalsMsg::Exported(Err(reason)) => {
+            tracing::warn!(error = %reason, "globals export failed or cancelled");
+            iced::Task::none()
+        }
     }
 }
 

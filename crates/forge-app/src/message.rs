@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use forge_events::Event;
 use forge_platform_core::oauth::{DeviceCodeResponse, TokenResponse};
 use forge_storage::GlobalEntry;
@@ -127,6 +129,7 @@ pub enum GlobalsMsg {
     DeleteRequested(String),
     Deleted(Result<(), String>),
     ExportRequested,
+    Exported(Result<PathBuf, String>),
 }
 
 #[derive(Debug, Clone)]

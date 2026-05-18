@@ -70,6 +70,8 @@ axum = { version = "0.8" }
 iced = { version = "0.14", features = ["tokio", "image", "svg", "advanced"] }
 iced_fonts = { version = "0.3", features = ["bootstrap"] }
 
+rfd = { version = "0.17", default-features = false, features = ["xdg-portal", "wayland"] }
+
 cpal = { version = "0.17" }
 
 [workspace.lints.rust]

@@ -269,10 +269,4 @@ impl DataProvider for SqliteBackend {
 
         Ok(())
     }
-
-    async fn import(&self, _path: &std::path::Path) -> Result<(), StorageError> {
-        Err(StorageError::Connection {
-            reason: "import not yet implemented".into(),
-        })
-    }
 }

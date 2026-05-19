@@ -9,7 +9,7 @@ use axum::routing::{any, get};
 use axum::{Json, Router, middleware};
 use tokio::net::TcpListener;
 
-use forge_runtime::EventBus;
+use forge_runtime::{ActionEngineHandle, EventBus};
 use forge_storage::{CredentialsRepo, DataProvider};
 
 use crate::auth::AuthState;
@@ -26,6 +26,7 @@ pub struct AppState {
     pub dp: Arc<dyn DataProvider>,
     pub credentials: Arc<dyn CredentialsRepo>,
     pub server_info: Arc<ServerInfo>,
+    pub action_engine: Arc<ActionEngineHandle>,
 }
 
 pub struct Server {
@@ -51,6 +52,7 @@ impl Server {
             dp: self.config.data_provider,
             credentials,
             server_info: ServerInfo::new(),
+            action_engine: self.config.action_engine,
         };
         let listener = TcpListener::bind(addr)
             .await
@@ -138,7 +140,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use async_trait::async_trait;
-    use forge_runtime::{EventBus, NullEventLogRepo};
+    use forge_runtime::{EventBus, NullEventLogRepo, ScriptRegistry, spawn_action_engine};
     use forge_storage::{CredentialId, CredentialsRepo, DataProvider, StorageError};
     use time::OffsetDateTime;
     use tokio::net::TcpListener;
@@ -212,6 +214,13 @@ mod tests {
         let bus_adapter = BusAdapter::new(Arc::clone(&bus));
         bus_adapter.spawn();
         let dp: Arc<dyn DataProvider> = null_dp();
+        let registry = Arc::new(ScriptRegistry::new());
+        let action_engine = Arc::new(spawn_action_engine(
+            Arc::clone(&bus),
+            Arc::clone(&dp),
+            registry,
+            None,
+        ));
         AppState {
             auth,
             bus,
@@ -219,6 +228,7 @@ mod tests {
             dp,
             credentials: creds,
             server_info: ServerInfo::new(),
+            action_engine,
         }
     }
 

@@ -3,10 +3,10 @@ use std::sync::{Arc, atomic::Ordering};
 
 use serde::{Deserialize, Serialize};
 
-use forge_events::EventSource;
-use forge_runtime::EventBus;
+use forge_events::{Event, EventSource};
+use forge_runtime::{ActionEngineHandle, EventBus, ExecutionRequest};
 use forge_storage::{CredentialsRepo, DataProvider};
-use forge_types::EventId;
+use forge_types::{ActionId, ArgStack, EventId, Variant};
 
 use crate::auth::AuthState;
 use crate::bus_adapter::{BusAdapter, ClientFilterSet, EventFilter};
@@ -191,6 +191,7 @@ pub struct DispatchContext {
     pub auth_required_for_reads: bool,
     pub credentials: Arc<dyn CredentialsRepo>,
     pub server_info: Arc<ServerInfo>,
+    pub action_engine: Arc<ActionEngineHandle>,
 }
 
 const PLATFORM_PREFIXES: &[&str] = &["twitch:", "youtube:", "kick:", "trovo:"];
@@ -295,6 +296,109 @@ fn not_implemented() -> WsResponse {
     }
 }
 
+async fn handle_get_actions(ctx: &DispatchContext) -> WsResponse {
+    let actions = match ctx.dp.action_repo().list().await {
+        Ok(list) => list,
+        Err(e) => {
+            return WsResponse::Error {
+                code: Some("RUNTIME_ERROR".to_owned()),
+                message: e.to_string(),
+            };
+        }
+    };
+    let wire_actions: Vec<serde_json::Value> = actions
+        .iter()
+        .map(|a| {
+            serde_json::json!({
+                "id": a.id.to_string(),
+                "name": a.name,
+                "group": a.group,
+                "queue_id": a.queue_id.to_string(),
+                "enabled": a.enabled,
+                "concurrent": a.concurrent,
+                "bypass_queue_pause": a.bypass_pause,
+                "description": a.description,
+                "sub_action_count": a.sub_actions.len(),
+            })
+        })
+        .collect();
+    WsResponse::Ok(serde_json::json!({ "actions": wire_actions }))
+}
+
+async fn handle_do_action(
+    action_id: String,
+    args: serde_json::Value,
+    ctx: &DispatchContext,
+) -> WsResponse {
+    let aid: ActionId = match serde_json::from_value(serde_json::Value::String(action_id.clone())) {
+        Ok(id) => id,
+        Err(_) => {
+            return WsResponse::Error {
+                code: Some("INVALID_PAYLOAD".to_owned()),
+                message: "invalid action id format".to_owned(),
+            };
+        }
+    };
+
+    match ctx.dp.action_repo().get(aid).await {
+        Ok(None) => {
+            return WsResponse::Error {
+                code: Some("NOT_FOUND".to_owned()),
+                message: "action not found".to_owned(),
+            };
+        }
+        Ok(Some(_)) => {}
+        Err(e) => {
+            return WsResponse::Error {
+                code: Some("RUNTIME_ERROR".to_owned()),
+                message: e.to_string(),
+            };
+        }
+    }
+
+    let trigger_event_id = EventId::new();
+
+    ctx.bus.publish(Event::new(
+        EventSource::Server,
+        "action.invoked",
+        serde_json::json!({
+            "action_id": action_id,
+            "user_via": "ws_api",
+        }),
+    ));
+
+    let initial_args = build_arg_stack(args);
+
+    match ctx
+        .action_engine
+        .dispatch(ExecutionRequest {
+            action_id: aid,
+            trigger_event_id,
+            initial_args,
+        })
+        .await
+    {
+        Ok(()) => WsResponse::Ok(serde_json::json!({
+            "ok": true,
+            "execution_id": trigger_event_id.to_string(),
+        })),
+        Err(e) => WsResponse::Error {
+            code: Some("RUNTIME_ERROR".to_owned()),
+            message: e.to_string(),
+        },
+    }
+}
+
+fn build_arg_stack(args: serde_json::Value) -> ArgStack {
+    let obj = match args {
+        serde_json::Value::Object(m) => m,
+        _ => return ArgStack::new(),
+    };
+    obj.into_iter()
+        .filter_map(|(k, v)| Variant::from_json(v).ok().map(|vv| (k, vv)))
+        .fold(ArgStack::new(), |stack, (k, v)| stack.set(k, v))
+}
+
 fn unauthenticated() -> WsResponse {
     WsResponse::Error {
         code: Some("UNAUTHENTICATED".to_owned()),
@@ -353,14 +457,14 @@ async fn route(req: WsRequest, ctx: &DispatchContext) -> WsResponse {
             if ctx.auth_required_for_reads && !is_authenticated(ctx) {
                 return unauthenticated();
             }
-            not_implemented()
+            handle_get_actions(ctx).await
         }
 
-        WsRequest::DoAction { .. } => {
+        WsRequest::DoAction { action_id, args } => {
             if !is_authenticated(ctx) {
                 return unauthenticated();
             }
-            not_implemented()
+            handle_do_action(action_id, args, ctx).await
         }
 
         WsRequest::GetCommands => {
@@ -443,14 +547,25 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use forge_events::EventSource;
-    use forge_runtime::{EventBus, NullEventLogRepo};
+    use forge_runtime::{EventBus, NullEventLogRepo, ScriptRegistry, spawn_action_engine};
     use forge_storage::DataProvider;
+    use forge_types::{Action, ActionId, LogLevel, QueueId, SubActionSpec};
 
     use super::*;
     use crate::bus_adapter::{BusAdapter, ClientFilterSet, ClientId, EventFilter};
     use crate::server_info::ServerInfo;
-    use crate::test_dp::{null_creds, null_dp};
+    use crate::test_dp::{VecActionDp, null_creds, null_dp};
     use crate::ws_client::WsClient;
+
+    fn make_engine(bus: &Arc<EventBus>, dp: &Arc<dyn DataProvider>) -> Arc<ActionEngineHandle> {
+        let registry = Arc::new(ScriptRegistry::new());
+        Arc::new(spawn_action_engine(
+            Arc::clone(bus),
+            Arc::clone(dp),
+            registry,
+            None,
+        ))
+    }
 
     fn make_ctx(authenticated: bool, auth_required_for_reads: bool) -> DispatchContext {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
@@ -464,6 +579,7 @@ mod tests {
             Arc::clone(&drop_counter),
         ));
         client.authenticated.store(authenticated, Ordering::Relaxed);
+        let action_engine = make_engine(&bus, &dp);
         DispatchContext {
             bus,
             bus_adapter,
@@ -473,6 +589,32 @@ mod tests {
             auth_required_for_reads,
             credentials: null_creds(),
             server_info: ServerInfo::new(),
+            action_engine,
+        }
+    }
+
+    fn make_ctx_with_dp(authenticated: bool, dp: Arc<dyn DataProvider>) -> DispatchContext {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let bus_adapter = BusAdapter::new(Arc::clone(&bus));
+        let auth_state = AuthState::for_test(false, "test-token");
+        let drop_counter = Arc::new(AtomicU64::new(0));
+        let client = Arc::new(WsClient::new(
+            ClientId::next(),
+            "127.0.0.1:0".parse().unwrap(),
+            Arc::clone(&drop_counter),
+        ));
+        client.authenticated.store(authenticated, Ordering::Relaxed);
+        let action_engine = make_engine(&bus, &dp);
+        DispatchContext {
+            bus,
+            bus_adapter,
+            dp,
+            auth_state,
+            client,
+            auth_required_for_reads: false,
+            credentials: null_creds(),
+            server_info: ServerInfo::new(),
+            action_engine,
         }
     }
 
@@ -493,6 +635,7 @@ mod tests {
             Arc::clone(&handle.drop_counter),
         ));
         client.authenticated.store(authenticated, Ordering::Relaxed);
+        let action_engine = make_engine(&bus, &dp);
         DispatchContext {
             bus,
             bus_adapter,
@@ -502,6 +645,24 @@ mod tests {
             auth_required_for_reads,
             credentials: null_creds(),
             server_info: ServerInfo::new(),
+            action_engine,
+        }
+    }
+
+    fn sample_action() -> Action {
+        Action {
+            id: ActionId::new(),
+            name: "Test Action".to_string(),
+            group: Some("Chat".to_string()),
+            queue_id: QueueId::new(),
+            enabled: true,
+            concurrent: false,
+            bypass_pause: false,
+            description: Some("A test action".to_string()),
+            sub_actions: vec![SubActionSpec::Log {
+                level: LogLevel::Info,
+                message: "hello".to_string(),
+            }],
         }
     }
 
@@ -619,28 +780,89 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn authenticated_do_action_returns_not_implemented_stub() {
+    async fn get_actions_returns_empty_list_for_null_dp() {
+        let ctx = make_ctx(false, false);
+        let req = WsEnvelope {
+            id: Some("5".to_owned()),
+            inner: WsRequest::GetActions,
+        };
+        let resp = dispatch(req, &ctx).await;
+        assert_eq!(resp.id, Some("5".to_owned()));
+        let json = serialize_response_frame(&resp);
+        assert_eq!(json["status"], "ok");
+        assert!(json["actions"].is_array());
+        assert_eq!(json["actions"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn get_actions_returns_wire_shape_for_seeded_action() {
+        let action = sample_action();
+        let action_id_str = action.id.to_string();
+        let dp = VecActionDp::with_actions(vec![action]);
+        let ctx = make_ctx_with_dp(false, dp);
+        let req = WsEnvelope {
+            id: Some("5".to_owned()),
+            inner: WsRequest::GetActions,
+        };
+        let resp = dispatch(req, &ctx).await;
+        let json = serialize_response_frame(&resp);
+        assert_eq!(json["status"], "ok");
+        let actions = json["actions"].as_array().unwrap();
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0]["id"].as_str().unwrap(), action_id_str);
+        assert_eq!(actions[0]["name"], "Test Action");
+        assert_eq!(actions[0]["group"], "Chat");
+        assert_eq!(actions[0]["enabled"], true);
+        assert_eq!(actions[0]["concurrent"], false);
+        assert_eq!(actions[0]["bypass_queue_pause"], false);
+        assert_eq!(actions[0]["sub_action_count"], 1u64);
+        assert!(actions[0]["queue_id"].is_string());
+    }
+
+    #[tokio::test]
+    async fn do_action_valid_id_returns_ok_with_execution_id() {
+        let action = sample_action();
+        let action_id_str = action.id.to_string();
+        let dp = VecActionDp::with_actions(vec![action]);
+        let ctx = make_ctx_with_dp(true, dp);
+        let req = WsEnvelope {
+            id: Some("6".to_owned()),
+            inner: WsRequest::DoAction {
+                action_id: action_id_str,
+                args: serde_json::json!({ "user": "Alice", "count": 3 }),
+            },
+        };
+        let resp = dispatch(req, &ctx).await;
+        assert_eq!(resp.id, Some("6".to_owned()));
+        let json = serialize_response_frame(&resp);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["ok"], true);
+        assert!(json["execution_id"].is_string());
+        assert!(!json["execution_id"].as_str().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn do_action_nonexistent_id_returns_not_found() {
         let ctx = make_ctx(true, false);
+        let nonexistent = ActionId::new().to_string();
         let req = WsEnvelope {
             id: Some("7".to_owned()),
             inner: WsRequest::DoAction {
-                action_id: "fake-id".to_owned(),
+                action_id: nonexistent,
                 args: serde_json::Value::Null,
             },
         };
         let resp = dispatch(req, &ctx).await;
         assert_eq!(resp.id, Some("7".to_owned()));
-        match resp.inner {
+        match &resp.inner {
             WsResponse::Error {
-                code: None,
+                code: Some(code),
                 message,
             } => {
-                assert!(
-                    message.contains("not implemented"),
-                    "expected 'not implemented' in message, got: {message}"
-                );
+                assert_eq!(code, "NOT_FOUND");
+                assert!(!message.is_empty());
             }
-            other => panic!("expected not-implemented stub error, got {other:?}"),
+            other => panic!("expected NOT_FOUND error, got {other:?}"),
         }
     }
 

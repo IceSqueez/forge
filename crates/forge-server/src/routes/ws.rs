@@ -65,6 +65,7 @@ async fn handle_socket(
         auth_required_for_reads: state.auth.auth_required_for_reads,
         credentials: Arc::clone(&state.credentials),
         server_info: Arc::clone(&state.server_info),
+        action_engine: Arc::clone(&state.action_engine),
     };
 
     loop {

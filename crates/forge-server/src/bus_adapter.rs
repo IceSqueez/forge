@@ -206,6 +206,16 @@ impl BusAdapter {
         }
     }
 
+    pub async fn current_subscriptions(&self, id: ClientId) -> HashSet<EventFilter> {
+        self.registry
+            .read()
+            .await
+            .iter()
+            .find(|c| c.id == id)
+            .map(|c| c.filters.subscriptions.clone())
+            .unwrap_or_default()
+    }
+
     pub async fn drop_count_for(&self, id: ClientId) -> Option<u64> {
         self.registry
             .read()

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::{Arc, atomic::Ordering};
 
 use serde::{Deserialize, Serialize};
@@ -8,16 +9,16 @@ use forge_storage::DataProvider;
 use forge_types::EventId;
 
 use crate::auth::AuthState;
-use crate::bus_adapter::BusAdapter;
+use crate::bus_adapter::{BusAdapter, ClientFilterSet, EventFilter};
 use crate::ws_client::WsClient;
 
 /// Wildcard-capable event filter sent by clients in subscribe/unsubscribe payloads.
 /// `"*"` or absent field means wildcard for that axis.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct WireEventFilter {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
-    #[serde(rename = "type", default)]
+    #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
 }
 
@@ -189,6 +190,18 @@ pub struct DispatchContext {
     pub auth_required_for_reads: bool,
 }
 
+fn parse_wire_filter(wf: &WireEventFilter) -> EventFilter {
+    let source = match wf.source.as_deref() {
+        None | Some("*") => None,
+        Some(s) => serde_json::from_value(serde_json::Value::String(s.to_owned())).ok(),
+    };
+    let kind = match wf.kind.as_deref() {
+        None | Some("*") => None,
+        Some(k) => Some(k.to_owned()),
+    };
+    EventFilter::new(source, kind)
+}
+
 fn not_implemented() -> WsResponse {
     WsResponse::Error {
         code: None,
@@ -217,18 +230,30 @@ async fn route(req: WsRequest, ctx: &DispatchContext) -> WsResponse {
     match req {
         WsRequest::Auth { .. } => not_implemented(),
 
-        WsRequest::Subscribe { .. } => {
+        WsRequest::Subscribe { events } => {
             if ctx.auth_required_for_reads && !is_authenticated(ctx) {
                 return unauthenticated();
             }
-            not_implemented()
+            let new_filters: HashSet<EventFilter> = events.iter().map(parse_wire_filter).collect();
+            let mut current = ctx.bus_adapter.current_subscriptions(ctx.client.id).await;
+            current.extend(new_filters);
+            ctx.bus_adapter
+                .update_subscriptions(ctx.client.id, ClientFilterSet::new(current))
+                .await;
+            WsResponse::Ok(serde_json::json!({ "subscribed": events }))
         }
 
-        WsRequest::Unsubscribe { .. } => {
+        WsRequest::Unsubscribe { events } => {
             if ctx.auth_required_for_reads && !is_authenticated(ctx) {
                 return unauthenticated();
             }
-            not_implemented()
+            let to_remove: HashSet<EventFilter> = events.iter().map(parse_wire_filter).collect();
+            let mut current = ctx.bus_adapter.current_subscriptions(ctx.client.id).await;
+            current.retain(|f| !to_remove.contains(f));
+            ctx.bus_adapter
+                .update_subscriptions(ctx.client.id, ClientFilterSet::new(current))
+                .await;
+            WsResponse::Ok(serde_json::json!({ "unsubscribed": events }))
         }
 
         WsRequest::GetInfo => {
@@ -327,14 +352,16 @@ async fn route(req: WsRequest, ctx: &DispatchContext) -> WsResponse {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
+    use std::collections::HashSet;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, Ordering};
 
+    use forge_events::EventSource;
     use forge_runtime::{EventBus, NullEventLogRepo};
     use forge_storage::DataProvider;
 
     use super::*;
-    use crate::bus_adapter::{BusAdapter, ClientId};
+    use crate::bus_adapter::{BusAdapter, ClientFilterSet, ClientId, EventFilter};
     use crate::test_dp::null_dp;
     use crate::ws_client::WsClient;
 
@@ -348,6 +375,33 @@ mod tests {
             ClientId::next(),
             "127.0.0.1:0".parse().unwrap(),
             Arc::clone(&drop_counter),
+        ));
+        client.authenticated.store(authenticated, Ordering::Relaxed);
+        DispatchContext {
+            bus,
+            bus_adapter,
+            dp,
+            auth_state,
+            client,
+            auth_required_for_reads,
+        }
+    }
+
+    async fn make_registered_ctx(
+        authenticated: bool,
+        auth_required_for_reads: bool,
+    ) -> DispatchContext {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let bus_adapter = BusAdapter::new(Arc::clone(&bus));
+        let dp: Arc<dyn DataProvider> = null_dp();
+        let auth_state = AuthState::for_test(auth_required_for_reads, "test-token");
+        let (handle, _rx) = bus_adapter
+            .register_client(ClientFilterSet::new(HashSet::new()))
+            .await;
+        let client = Arc::new(WsClient::new(
+            handle.id,
+            "127.0.0.1:0".parse().unwrap(),
+            Arc::clone(&handle.drop_counter),
         ));
         client.authenticated.store(authenticated, Ordering::Relaxed);
         DispatchContext {
@@ -545,5 +599,109 @@ mod tests {
         };
         let resp = dispatch(req, &ctx).await;
         assert!(matches!(resp.inner, WsResponse::Error { code: None, .. }));
+    }
+
+    #[tokio::test]
+    async fn subscribe_registers_filter_for_client() {
+        let ctx = make_registered_ctx(false, false).await;
+        let req = WsEnvelope {
+            id: Some("2".to_owned()),
+            inner: WsRequest::Subscribe {
+                events: vec![WireEventFilter {
+                    source: Some("twitch".to_owned()),
+                    kind: Some("chat.message".to_owned()),
+                }],
+            },
+        };
+        let resp = dispatch(req, &ctx).await;
+        assert_eq!(resp.id, Some("2".to_owned()));
+        let json = serialize_response_frame(&resp);
+        assert_eq!(json["status"], "ok");
+        assert!(json["subscribed"].is_array());
+
+        let subs = ctx.bus_adapter.current_subscriptions(ctx.client.id).await;
+        assert!(subs.contains(&EventFilter::new(
+            Some(EventSource::Twitch),
+            Some("chat.message".to_owned()),
+        )));
+    }
+
+    #[tokio::test]
+    async fn unsubscribe_removes_filter_from_client() {
+        let ctx = make_registered_ctx(false, false).await;
+        let filter = EventFilter::new(Some(EventSource::Twitch), Some("chat.message".to_owned()));
+        ctx.bus_adapter
+            .update_subscriptions(
+                ctx.client.id,
+                ClientFilterSet::new(HashSet::from([filter.clone()])),
+            )
+            .await;
+
+        let req = WsEnvelope {
+            id: Some("3".to_owned()),
+            inner: WsRequest::Unsubscribe {
+                events: vec![WireEventFilter {
+                    source: Some("twitch".to_owned()),
+                    kind: Some("chat.message".to_owned()),
+                }],
+            },
+        };
+        let resp = dispatch(req, &ctx).await;
+        assert_eq!(resp.id, Some("3".to_owned()));
+        let json = serialize_response_frame(&resp);
+        assert_eq!(json["status"], "ok");
+        assert!(json["unsubscribed"].is_array());
+
+        let subs = ctx.bus_adapter.current_subscriptions(ctx.client.id).await;
+        assert!(!subs.contains(&filter));
+    }
+
+    #[tokio::test]
+    async fn subscribe_is_additive_across_calls() {
+        let ctx = make_registered_ctx(false, false).await;
+        let req1 = WsEnvelope {
+            id: Some("2".to_owned()),
+            inner: WsRequest::Subscribe {
+                events: vec![WireEventFilter {
+                    source: Some("twitch".to_owned()),
+                    kind: None,
+                }],
+            },
+        };
+        dispatch(req1, &ctx).await;
+
+        let req2 = WsEnvelope {
+            id: Some("3".to_owned()),
+            inner: WsRequest::Subscribe {
+                events: vec![WireEventFilter {
+                    source: Some("obs".to_owned()),
+                    kind: None,
+                }],
+            },
+        };
+        dispatch(req2, &ctx).await;
+
+        let subs = ctx.bus_adapter.current_subscriptions(ctx.client.id).await;
+        assert_eq!(subs.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn subscribe_wildcard_type_registers_kind_wildcard() {
+        let ctx = make_registered_ctx(false, false).await;
+        let req = WsEnvelope {
+            id: Some("4".to_owned()),
+            inner: WsRequest::Subscribe {
+                events: vec![WireEventFilter {
+                    source: Some("twitch".to_owned()),
+                    kind: Some("*".to_owned()),
+                }],
+            },
+        };
+        let resp = dispatch(req, &ctx).await;
+        let json = serialize_response_frame(&resp);
+        assert_eq!(json["status"], "ok");
+
+        let subs = ctx.bus_adapter.current_subscriptions(ctx.client.id).await;
+        assert!(subs.contains(&EventFilter::new(Some(EventSource::Twitch), None)));
     }
 }

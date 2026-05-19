@@ -558,8 +558,9 @@ mod tests {
         let mut sub = bus.subscribe();
 
         let ts = OffsetDateTime::now_utc();
+        let script_id = ScriptId::new();
         let record = forge_storage::ScriptRecord {
-            id: ScriptId::new(),
+            id: script_id,
             name: "hello_script".to_owned(),
             body: "let x = 1 + 1; x".to_owned(),
             contract: ScriptContract::default(),
@@ -601,11 +602,14 @@ mod tests {
             .unwrap();
         assert_eq!(event.kind, "script.exec");
         assert_eq!(event.caused_by, Some(parent_id));
-        assert!(event.payload["duration_ms"].is_number());
+        assert_eq!(
+            event.payload["script_id"].as_str(),
+            Some(script_id.to_string().as_str())
+        );
     }
 
     #[tokio::test]
-    async fn run_script_erroring_script_publishes_script_error_event() {
+    async fn run_script_erroring_script_publishes_exec_then_error_with_causation_chain() {
         use crate::ScriptRegistry;
         use forge_storage::ScriptRepo;
         use forge_storage_sqlite::SqliteBackend;
@@ -657,11 +661,27 @@ mod tests {
             "erroring script must return Failed"
         );
 
-        let event = tokio::time::timeout(Duration::from_millis(500), sub.recv())
+        let exec_event = tokio::time::timeout(Duration::from_millis(500), sub.recv())
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(event.kind, "script.error");
+        assert_eq!(exec_event.kind, "script.exec");
+        let exec_event_id = exec_event.id;
+
+        let error_event = tokio::time::timeout(Duration::from_millis(500), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(error_event.kind, "script.error");
+        assert_eq!(
+            error_event.caused_by,
+            Some(exec_event_id),
+            "script.error.caused_by must point to script.exec event"
+        );
+        assert!(
+            error_event.payload.get("error_type").is_some(),
+            "script.error payload must include error_type"
+        );
     }
 
     #[tokio::test]

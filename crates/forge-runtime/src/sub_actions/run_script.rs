@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use forge_events::{Event, EventSource};
-use forge_script::{Engine, EngineConfig, ForgeApi, build_scope_for_contract};
+use forge_script::{Engine, EngineConfig, ForgeApi, ScriptError, build_scope_for_contract};
 use forge_storage::DataProvider;
 use forge_types::{ArgStack, EventId, SubActionOutcome, SubActionTelemetry};
 use serde_json::json;
@@ -38,24 +38,36 @@ pub(super) async fn run(
         );
     };
 
+    let script_id = compiled.record.id;
     let body = compiled.record.body.clone();
     let contract = compiled.record.contract.clone();
     let arg_stack_clone = arg_stack.clone();
-    let caused_by = parent_event_id;
     let bus_arc: Arc<EventBus> = Arc::clone(bus);
     let publisher: Arc<dyn forge_events::EventPublisher> = bus_arc;
     let dp_for_api = Arc::clone(&dp);
 
+    let exec_event = Event::caused_by(
+        EventSource::Rhai,
+        "script.exec",
+        json!({
+            "script_id": script_id.to_string(),
+            "script_name": name.as_str(),
+        }),
+        parent_event_id,
+    );
+    let script_event_id = exec_event.id;
+    bus.publish(exec_event);
+
     let exec_result = tokio::task::spawn_blocking(move || {
         let scope = build_scope_for_contract(&contract, &arg_stack_clone).map_err(|e| {
-            forge_script::ScriptError::Runtime {
+            ScriptError::Runtime {
                 script: body.clone(),
                 reason: e.to_string(),
             }
         })?;
         let cfg = EngineConfig::default();
         let deadline = Instant::now() + Duration::from_millis(cfg.wall_time_ms);
-        let api = ForgeApi::new(publisher, dp_for_api, caused_by, deadline);
+        let api = ForgeApi::new(publisher, dp_for_api, parent_event_id, deadline);
         let engine = Engine::with_api(cfg, api);
         let mut scope = scope;
         engine.eval_script_with_scope(&body, &mut scope)
@@ -64,37 +76,37 @@ pub(super) async fn run(
 
     let duration_ms = wall_start.elapsed().as_millis() as u64;
 
-    let (event_kind, outcome) = match exec_result {
-        Ok(Ok(_)) => ("script.exec", SubActionOutcome::Success),
-        Ok(Err(script_err)) => (
-            "script.error",
-            SubActionOutcome::Failed(script_err.to_string()),
-        ),
-        Err(join_err) => (
-            "script.error",
-            SubActionOutcome::Failed(format!("script task panicked: {join_err}")),
-        ),
+    let outcome = match exec_result {
+        Ok(Ok(_)) => SubActionOutcome::Success,
+        Ok(Err(script_err)) => {
+            bus.publish(Event::caused_by(
+                EventSource::Rhai,
+                "script.error",
+                json!({
+                    "script_id": script_id.to_string(),
+                    "script_name": name.as_str(),
+                    "error_type": error_kind(&script_err),
+                    "message": script_err.to_string(),
+                }),
+                script_event_id,
+            ));
+            SubActionOutcome::Failed(script_err.to_string())
+        }
+        Err(join_err) => {
+            bus.publish(Event::caused_by(
+                EventSource::Rhai,
+                "script.error",
+                json!({
+                    "script_id": script_id.to_string(),
+                    "script_name": name.as_str(),
+                    "error_type": "panic",
+                    "message": format!("script task panicked: {join_err}"),
+                }),
+                script_event_id,
+            ));
+            SubActionOutcome::Failed(format!("script task panicked: {join_err}"))
+        }
     };
-
-    let payload = match &outcome {
-        SubActionOutcome::Success => json!({
-            "script_name": name,
-            "duration_ms": duration_ms,
-        }),
-        SubActionOutcome::Failed(msg) => json!({
-            "script_name": name,
-            "error": msg,
-            "duration_ms": duration_ms,
-        }),
-        SubActionOutcome::Skipped(_) => unreachable!(),
-    };
-
-    bus.publish(Event::caused_by(
-        EventSource::Rhai,
-        event_kind,
-        payload,
-        parent_event_id,
-    ));
 
     (
         SubActionTelemetry {
@@ -106,4 +118,13 @@ pub(super) async fn run(
         },
         None,
     )
+}
+
+fn error_kind(err: &ScriptError) -> &'static str {
+    match err {
+        ScriptError::Compile { .. } => "syntax",
+        ScriptError::Timeout { .. } => "timeout",
+        ScriptError::OperationLimit { .. } => "ops_exceeded",
+        _ => "runtime",
+    }
 }

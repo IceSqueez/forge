@@ -113,7 +113,12 @@ fn spawn_runtime(backend: Arc<SqliteBackend>, bus: Arc<EventBus>) -> Option<Runt
         tracing::warn!("script registry load failed at boot: {e}");
     }
 
-    let engine = spawn_action_engine(Arc::clone(&bus), Arc::clone(&dp), Arc::clone(&registry));
+    let engine = spawn_action_engine(
+        Arc::clone(&bus),
+        Arc::clone(&dp),
+        Arc::clone(&registry),
+        None,
+    );
     let scheduler = QueueScheduler::spawn(engine.clone(), Arc::clone(&bus), queues);
     let parser = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), scheduler.clone());
     let chat_send_bridge = ChatSendBridge::spawn(

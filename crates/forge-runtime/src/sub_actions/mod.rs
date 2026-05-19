@@ -3,12 +3,14 @@ mod delete_global;
 mod get_global;
 mod increment_global;
 mod log;
+mod obs;
 mod run_script;
 mod send_chat;
 mod set_global;
 
 use std::sync::Arc;
 
+use forge_obs::ObsSink;
 use forge_storage::{DataProvider, GlobalsRepo};
 use forge_types::{ArgStack, EventId, SubActionOutcome, SubActionSpec, SubActionTelemetry};
 use time::OffsetDateTime;
@@ -60,6 +62,7 @@ pub(crate) async fn interpolate_with_globals(
     result
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn dispatch(
     spec: &SubActionSpec,
     arg_stack: &ArgStack,
@@ -68,6 +71,7 @@ pub async fn dispatch(
     bus: &Arc<EventBus>,
     dp: Arc<dyn DataProvider>,
     registry: Option<&ScriptRegistry>,
+    obs_sink: Option<Arc<dyn ObsSink>>,
 ) -> (SubActionTelemetry, Option<ArgStack>) {
     match spec {
         SubActionSpec::Log { message, .. } => {
@@ -122,16 +126,7 @@ pub async fn dispatch(
         | SubActionSpec::ObsStopRecord
         | SubActionSpec::ObsStartStream
         | SubActionSpec::ObsStopStream
-        | SubActionSpec::ObsRaw { .. } => (
-            SubActionTelemetry {
-                kind: spec.kind_label().to_string(),
-                started_at: OffsetDateTime::now_utc(),
-                duration_ms: 0,
-                outcome: SubActionOutcome::Failed("integration not ready: OBS".to_string()),
-                index,
-            },
-            None,
-        ),
+        | SubActionSpec::ObsRaw { .. } => obs::run(spec, index, obs_sink).await,
     }
 }
 
@@ -171,6 +166,7 @@ mod tests {
             &bus,
             Arc::clone(&dp),
             None,
+            None,
         )
         .await;
         assert_eq!(telemetry.kind, "Log");
@@ -196,6 +192,7 @@ mod tests {
             &bus,
             Arc::clone(&dp),
             None,
+            None,
         )
         .await;
         assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
@@ -212,7 +209,17 @@ mod tests {
             target: "twitch".to_string(),
         };
         let stack = ArgStack::new().set("user".to_string(), Variant::String("alice".to_string()));
-        dispatch(&spec, &stack, 0, parent_id, &bus, Arc::clone(&dp), None).await;
+        dispatch(
+            &spec,
+            &stack,
+            0,
+            parent_id,
+            &bus,
+            Arc::clone(&dp),
+            None,
+            None,
+        )
+        .await;
         let event = tokio::time::timeout(Duration::from_millis(100), sub.recv())
             .await
             .unwrap()
@@ -239,6 +246,7 @@ mod tests {
             &bus,
             Arc::clone(&dp),
             None,
+            None,
         )
         .await;
         let val = GlobalsRepo::get(dp.as_ref(), "counter").await.unwrap();
@@ -261,6 +269,7 @@ mod tests {
             EventId::new(),
             &bus,
             Arc::clone(&dp),
+            None,
             None,
         )
         .await;
@@ -285,6 +294,7 @@ mod tests {
             parent_id,
             &bus,
             Arc::clone(&dp),
+            None,
             None,
         )
         .await;
@@ -315,6 +325,7 @@ mod tests {
             EventId::new(),
             &bus,
             Arc::clone(&dp),
+            None,
             None,
         )
         .await;
@@ -390,6 +401,7 @@ mod tests {
             &bus,
             Arc::clone(&dp),
             None,
+            None,
         )
         .await;
         assert!(
@@ -417,6 +429,7 @@ mod tests {
             &bus,
             Arc::clone(&dp),
             Some(&registry),
+            None,
         )
         .await;
         assert!(
@@ -470,6 +483,7 @@ mod tests {
             &bus,
             Arc::clone(&dp),
             Some(&registry),
+            None,
         )
         .await;
 
@@ -532,6 +546,7 @@ mod tests {
             &bus,
             Arc::clone(&dp),
             Some(&registry),
+            None,
         )
         .await;
 
@@ -589,6 +604,7 @@ mod tests {
             &bus,
             Arc::clone(&dp),
             Some(&registry),
+            None,
         )
         .await;
 

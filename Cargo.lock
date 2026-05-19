@@ -2173,6 +2173,7 @@ version = "0.1.0-alpha.6"
 dependencies = [
  "async-trait",
  "forge-events",
+ "forge-obs",
  "forge-script",
  "forge-storage",
  "forge-storage-sqlite",

@@ -4,6 +4,7 @@ use std::sync::{
 };
 
 use forge_events::{Event, EventSource};
+use forge_obs::ObsSink;
 use forge_storage::DataProvider;
 use forge_types::{
     ActionId, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome, SubActionOutcome,
@@ -52,6 +53,7 @@ struct ActionEngine {
     bus: Arc<EventBus>,
     dp: Arc<dyn DataProvider>,
     registry: Arc<ScriptRegistry>,
+    obs_sink: Option<Arc<dyn ObsSink>>,
     input: mpsc::Receiver<ExecutionRequest>,
 }
 
@@ -60,6 +62,7 @@ impl ActionEngine {
         bus: Arc<EventBus>,
         dp: Arc<dyn DataProvider>,
         registry: Arc<ScriptRegistry>,
+        obs_sink: Option<Arc<dyn ObsSink>>,
     ) -> ActionEngineHandle {
         let (tx, rx) = mpsc::channel(256);
         let cancel = Arc::new(AtomicBool::new(false));
@@ -68,6 +71,7 @@ impl ActionEngine {
             bus,
             dp,
             registry,
+            obs_sink,
             input: rx,
         };
         tokio::spawn(async move { engine.run(cancel_clone).await });
@@ -182,6 +186,7 @@ impl ActionEngine {
                 &self.bus,
                 Arc::clone(&self.dp),
                 Some(self.registry.as_ref()),
+                self.obs_sink.clone(),
             )
             .await;
 
@@ -234,6 +239,7 @@ impl ActionEngine {
                     &self.bus,
                     Arc::clone(&self.dp),
                     Some(self.registry.as_ref()),
+                    self.obs_sink.clone(),
                 )
             })
             .collect();
@@ -260,8 +266,9 @@ pub fn spawn_action_engine(
     bus: Arc<EventBus>,
     dp: Arc<dyn DataProvider>,
     registry: Arc<ScriptRegistry>,
+    obs_sink: Option<Arc<dyn ObsSink>>,
 ) -> ActionEngineHandle {
-    ActionEngine::spawn(bus, dp, registry)
+    ActionEngine::spawn(bus, dp, registry, obs_sink)
 }
 
 #[cfg(test)]
@@ -321,6 +328,7 @@ mod tests {
             Arc::clone(&bus),
             Arc::clone(&dp),
             Arc::new(ScriptRegistry::new()),
+            None,
         );
 
         handle
@@ -351,6 +359,7 @@ mod tests {
             Arc::clone(&bus),
             Arc::clone(&dp),
             Arc::new(ScriptRegistry::new()),
+            None,
         );
 
         let trigger_id = EventId::new();
@@ -399,6 +408,7 @@ mod tests {
             Arc::clone(&bus),
             Arc::clone(&dp),
             Arc::new(ScriptRegistry::new()),
+            None,
         );
 
         let trigger_id = EventId::new();
@@ -444,6 +454,7 @@ mod tests {
             Arc::clone(&bus),
             Arc::clone(&dp),
             Arc::new(ScriptRegistry::new()),
+            None,
         );
 
         handle
@@ -495,6 +506,7 @@ mod tests {
             Arc::clone(&bus),
             Arc::clone(&dp),
             Arc::new(ScriptRegistry::new()),
+            None,
         );
 
         handle
@@ -571,7 +583,12 @@ mod tests {
 
         let bus = EventBus::new();
         let mut sub = bus.subscribe();
-        let handle = spawn_action_engine(Arc::clone(&bus), Arc::clone(&dp), Arc::clone(&registry));
+        let handle = spawn_action_engine(
+            Arc::clone(&bus),
+            Arc::clone(&dp),
+            Arc::clone(&registry),
+            None,
+        );
 
         handle
             .dispatch(ExecutionRequest {

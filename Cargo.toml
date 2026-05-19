@@ -9,6 +9,7 @@ members = [
   "crates/forge-storage-sqlite",
   "crates/forge-platform-core",
   "crates/forge-platform-twitch",
+  "crates/forge-obs",
   "crates/forge-server",
   "crates/forge-widgets",
   "crates/forge-app",

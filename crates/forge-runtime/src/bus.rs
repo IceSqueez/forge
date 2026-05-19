@@ -37,6 +37,14 @@ impl EventLogRepo for NullEventLogRepo {
         Ok(Vec::new())
     }
 
+    async fn recent_since(
+        &self,
+        _limit: usize,
+        _since: Option<EventId>,
+    ) -> Result<Vec<Event>, StorageError> {
+        Ok(Vec::new())
+    }
+
     async fn prune_before(&self, _cutoff: OffsetDateTime) -> Result<u64, StorageError> {
         Ok(0)
     }
@@ -125,6 +133,44 @@ impl EventBus {
             .take(limit)
             .cloned()
             .collect()
+    }
+
+    /// Returns up to `limit` events in newest-first order.
+    ///
+    /// When `since` is `None` this is equivalent to `recent(limit)`.
+    /// When `since` is `Some(id)` only events published after (exclusive) that
+    /// event are returned.  The ring is checked first; if the anchor id has been
+    /// evicted the call falls back to `EventLogRepo::recent_since`.  If the
+    /// anchor is absent from both ring and log the result is an empty `Vec`.
+    ///
+    /// The ring lock is never held across the async DB fallback.
+    pub async fn recent_since(&self, limit: usize, since: Option<EventId>) -> Vec<Event> {
+        let since_id = match since {
+            None => return self.recent(limit),
+            Some(id) => id,
+        };
+
+        let ring_result = {
+            let guard = self.ring.lock().unwrap_or_else(|p| p.into_inner());
+            let items: Vec<&Event> = guard.iter().collect();
+            items.iter().position(|e| e.id == since_id).map(|pos| {
+                items[pos + 1..]
+                    .iter()
+                    .rev()
+                    .take(limit)
+                    .map(|e| (*e).clone())
+                    .collect::<Vec<Event>>()
+            })
+        };
+
+        if let Some(events) = ring_result {
+            return events;
+        }
+
+        self.event_log
+            .recent_since(limit, Some(since_id))
+            .await
+            .unwrap_or_default()
     }
 
     pub fn stats(&self) -> BusStats {
@@ -269,6 +315,14 @@ mod tests {
 
         async fn recent(&self, limit: usize) -> Result<Vec<Event>, StorageError> {
             self.0.event_log_repo().recent(limit).await
+        }
+
+        async fn recent_since(
+            &self,
+            limit: usize,
+            since: Option<EventId>,
+        ) -> Result<Vec<Event>, StorageError> {
+            self.0.event_log_repo().recent_since(limit, since).await
         }
 
         async fn prune_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError> {
@@ -495,6 +549,22 @@ mod tests {
             Ok(self.stored.lock().unwrap().clone())
         }
 
+        async fn recent_since(
+            &self,
+            limit: usize,
+            _since: Option<EventId>,
+        ) -> Result<Vec<Event>, StorageError> {
+            Ok(self
+                .stored
+                .lock()
+                .unwrap()
+                .iter()
+                .rev()
+                .take(limit)
+                .cloned()
+                .collect())
+        }
+
         async fn prune_before(&self, _cutoff: OffsetDateTime) -> Result<u64, StorageError> {
             Ok(0)
         }
@@ -574,5 +644,98 @@ mod tests {
                 "event {id} not persisted after shutdown drain"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn recent_since_none_returns_newest_first() {
+        let bus = null_bus();
+        let mut ids = Vec::new();
+        for i in 0..7 {
+            let ev = core_event(&format!("ev.{i}"));
+            ids.push(ev.id);
+            bus.publish(ev);
+        }
+        let result = bus.recent_since(5, None).await;
+        assert_eq!(result.len(), 5);
+        assert_eq!(result[0].id, ids[6]);
+        assert_eq!(result[1].id, ids[5]);
+        assert_eq!(result[4].id, ids[2]);
+    }
+
+    #[tokio::test]
+    async fn recent_since_anchor_in_ring_returns_newer_events() {
+        let bus = null_bus();
+        let mut ids = Vec::new();
+        for i in 0..5 {
+            let ev = core_event(&format!("ev.{i}"));
+            ids.push(ev.id);
+            bus.publish(ev);
+        }
+        let result = bus.recent_since(100, Some(ids[2])).await;
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].id, ids[4]);
+        assert_eq!(result[1].id, ids[3]);
+    }
+
+    #[tokio::test]
+    async fn recent_since_anchor_at_end_returns_empty() {
+        let bus = null_bus();
+        let mut ids = Vec::new();
+        for i in 0..3 {
+            let ev = core_event(&format!("ev.{i}"));
+            ids.push(ev.id);
+            bus.publish(ev);
+        }
+        let result = bus.recent_since(100, Some(ids[2])).await;
+        assert!(result.is_empty());
+    }
+
+    #[tokio::test]
+    async fn recent_since_limit_respected_within_ring() {
+        let bus = null_bus();
+        let mut ids = Vec::new();
+        for i in 0..6 {
+            let ev = core_event(&format!("ev.{i}"));
+            ids.push(ev.id);
+            bus.publish(ev);
+        }
+        let result = bus.recent_since(2, Some(ids[0])).await;
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].id, ids[5]);
+        assert_eq!(result[1].id, ids[4]);
+    }
+
+    #[tokio::test]
+    async fn recent_since_evicted_anchor_falls_back_to_db() {
+        let (bus, backend) = backed_bus_with_caps(64, 2).await;
+
+        let mut ev1 = core_event("ev.first");
+        ev1.timestamp = time::OffsetDateTime::from_unix_timestamp(1_000_000).unwrap();
+        let mut ev2 = core_event("ev.second");
+        ev2.timestamp = time::OffsetDateTime::from_unix_timestamp(1_000_001).unwrap();
+        let mut ev3 = core_event("ev.third");
+        ev3.timestamp = time::OffsetDateTime::from_unix_timestamp(1_000_002).unwrap();
+
+        let ev1_id = ev1.id;
+        let ev2_id = ev2.id;
+        let ev3_id = ev3.id;
+
+        backend.event_log_repo().insert(&ev1).await.unwrap();
+        backend.event_log_repo().insert(&ev2).await.unwrap();
+        backend.event_log_repo().insert(&ev3).await.unwrap();
+
+        bus.publish(ev1);
+        bus.publish(ev2);
+        bus.publish(ev3);
+
+        assert!(
+            bus.lookup(ev1_id).is_none(),
+            "ev1 must be evicted from the 2-slot ring"
+        );
+
+        let result = bus.recent_since(100, Some(ev1_id)).await;
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].id, ev3_id);
+        assert_eq!(result[1].id, ev2_id);
     }
 }

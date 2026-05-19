@@ -13,6 +13,18 @@ pub trait EventLogRepo: Send + Sync {
     /// Returns up to `limit` events ordered newest-first.
     async fn recent(&self, limit: usize) -> Result<Vec<Event>, StorageError>;
 
+    /// Returns up to `limit` events ordered newest-first.
+    ///
+    /// When `since` is `Some(id)`, only events whose timestamp is strictly
+    /// greater than the timestamp of the event identified by `id` are returned.
+    /// If the anchor event is absent from the store the result is empty.
+    /// When `since` is `None` this is equivalent to `recent(limit)`.
+    async fn recent_since(
+        &self,
+        limit: usize,
+        since: Option<EventId>,
+    ) -> Result<Vec<Event>, StorageError>;
+
     /// Deletes all events whose timestamp is strictly before `cutoff`.
     /// Returns the number of rows deleted.
     async fn prune_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError>;

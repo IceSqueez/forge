@@ -51,7 +51,7 @@ pub use icons::{
     ICON_CHAT, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CHEVRON_UP, ICON_CLOCK, ICON_COPY,
     ICON_DOWNLOAD, ICON_EYE, ICON_EYE_SLASH, ICON_FILE_CODE, ICON_GEAR, ICON_GLOBE, ICON_GRID,
     ICON_HASH, ICON_HOME, ICON_JOURNAL, ICON_LIGHTNING, ICON_MUSIC_NOTE, ICON_PEOPLE, ICON_PLUS,
-    ICON_REFRESH, ICON_REPLAY, ICON_SERVER, ICON_SPEAKER, ICON_TERMINAL,
+    ICON_REFRESH, ICON_REPLAY, ICON_SERVER, ICON_SPEAKER, ICON_TERMINAL, ICON_X,
 };
 pub use inputs::{input_padding, search_input, select, text_input_field};
 pub use integration::{
@@ -76,7 +76,9 @@ pub use sections::{
     ToastVariant, counter_badge, empty_state, section_header, section_header_expandable,
     toast_banner,
 };
-pub use server::bearer_token_display;
+pub use server::{
+    ClientRowData, ClientStatus, SubscriptionChipData, bearer_token_display, client_table_row,
+};
 pub use status::{StatusVariant, platform_badge, role_badge, status_dot, status_pill};
 pub use theme::{catppuccin_mocha, latte, palette_for_theme, tokyo_night_storm};
 pub use tokens::{Density, FontRole, Radius, Spacing, ThemeId, font, load_fonts, radius, spacing};

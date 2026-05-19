@@ -28,3 +28,4 @@ pub const ICON_EYE_SLASH: char = '\u{F344}';
 pub const ICON_COPY: char = '\u{F28C}';
 pub const ICON_REFRESH: char = '\u{F130}';
 pub const ICON_ALERT_TRIANGLE: char = '\u{F33B}';
+pub const ICON_X: char = '\u{F62C}';

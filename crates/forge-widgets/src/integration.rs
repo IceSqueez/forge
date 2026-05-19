@@ -10,8 +10,8 @@ use crate::{
     BOOTSTRAP_FONT,
     palette::ForgePalette,
     tokens::{
-        BORDER_THIN, Density, FONT_BODY, FONT_BODY_SM, FONT_CAPS_XS, FONT_HEADING_SM, FontRole,
-        Radius, Spacing, font, radius, spacing,
+        BORDER_THIN, Density, FONT_BODY, FONT_BODY_SM, FONT_CAPS_SM, FONT_CAPS_XS, FONT_HEADING_SM,
+        FONT_VALUE, FontRole, Radius, Spacing, font, radius, spacing,
     },
 };
 
@@ -270,6 +270,118 @@ fn format_uptime(d: Duration) -> String {
     }
 }
 
+pub fn integration_health_grid<'a, Msg: 'a>(
+    metrics: &[forge_platform_core::HealthMetric; 4],
+    palette: &ForgePalette,
+) -> Element<'a, Msg> {
+    let gap = spacing(Spacing::Md, Density::Cozy) as f32;
+
+    iced::widget::Row::new()
+        .spacing(gap)
+        .push(health_metric_card(&metrics[0], palette))
+        .push(health_metric_card(&metrics[1], palette))
+        .push(health_metric_card(&metrics[2], palette))
+        .push(health_metric_card(&metrics[3], palette))
+        .into()
+}
+
+fn health_metric_card<'a, Msg: 'a>(
+    metric: &forge_platform_core::HealthMetric,
+    palette: &ForgePalette,
+) -> Element<'a, Msg> {
+    use forge_platform_core::HealthValue;
+
+    let bg = palette.elevated;
+    let border_color = palette.border_regular;
+    let r = radius(Radius::Xl);
+    let v_pad = spacing(Spacing::Lg, Density::Cozy);
+    let h_pad = spacing(Spacing::Xl, Density::Cozy);
+
+    let cap_label = iced::widget::text(metric.label.to_uppercase())
+        .font(font(FontRole::Monospace))
+        .size(FONT_CAPS_SM)
+        .color(palette.text_muted);
+
+    let value_col: Element<'a, Msg> = match &metric.value {
+        HealthValue::Status {
+            label: val_label,
+            active,
+        } => {
+            let color = if *active {
+                palette.success
+            } else {
+                palette.disabled
+            };
+            let dot = crate::status::status_dot(color, 7.0);
+            let val_text = iced::widget::text(val_label.clone())
+                .size(FONT_VALUE)
+                .color(color);
+            iced::widget::row![dot, val_text]
+                .spacing(spacing(Spacing::Sm, Density::Cozy) as f32)
+                .align_y(Alignment::Center)
+                .into()
+        }
+        HealthValue::Text { primary, secondary } => {
+            let primary_text = iced::widget::text(primary.clone())
+                .size(FONT_VALUE)
+                .color(palette.text_primary);
+            if let Some(sec) = secondary {
+                let sub = iced::widget::text(sec.clone())
+                    .font(font(FontRole::Monospace))
+                    .size(FONT_CAPS_SM)
+                    .color(palette.text_faint);
+                iced::widget::column![primary_text, sub]
+                    .spacing(spacing(Spacing::Xs, Density::Cozy) as f32)
+                    .into()
+            } else {
+                iced::widget::column![primary_text].into()
+            }
+        }
+        HealthValue::Pair { left, right } => iced::widget::text(format!("{left} · {right}"))
+            .font(font(FontRole::Monospace))
+            .size(FONT_VALUE)
+            .color(palette.text_primary)
+            .into(),
+        HealthValue::Ratio {
+            used,
+            total,
+            reset_hint,
+        } => {
+            let ratio_text = iced::widget::text(format!("{used} / {total}"))
+                .size(FONT_VALUE)
+                .color(palette.text_primary);
+            if let Some(hint) = reset_hint {
+                let hint_text = iced::widget::text(hint.clone())
+                    .font(font(FontRole::Monospace))
+                    .size(FONT_CAPS_SM)
+                    .color(palette.text_faint);
+                iced::widget::column![ratio_text, hint_text]
+                    .spacing(spacing(Spacing::Xs, Density::Cozy) as f32)
+                    .into()
+            } else {
+                iced::widget::column![ratio_text].into()
+            }
+        }
+    };
+
+    let inner = iced::widget::column![cap_label, value_col]
+        .spacing(spacing(Spacing::Xs, Density::Cozy) as f32);
+
+    container(inner)
+        .padding([v_pad, h_pad])
+        .width(Length::Fill)
+        .style(move |_theme: &iced::Theme| container::Style {
+            background: Some(iced::Background::Color(bg)),
+            border: Border {
+                color: border_color,
+                width: BORDER_THIN,
+                radius: r.into(),
+            },
+            ..container::Style::default()
+        })
+        .into()
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
@@ -428,5 +540,83 @@ mod tests {
             icon: SectionIcon::new("K"),
         };
         let _: Element<'_, ()> = integration_header_card(params, |_action| (), &CATPPUCCIN_MOCHA);
+    }
+
+    #[test]
+    fn integration_health_grid_renders_all_value_variants() {
+        use forge_platform_core::{HealthMetric, HealthValue};
+
+        let metrics: [HealthMetric; 4] = [
+            HealthMetric {
+                label: "Stream".to_owned(),
+                value: HealthValue::Status {
+                    label: "Live".to_owned(),
+                    active: true,
+                },
+            },
+            HealthMetric {
+                label: "CPU / FPS".to_owned(),
+                value: HealthValue::Pair {
+                    left: "8.2%".to_owned(),
+                    right: "60.0".to_owned(),
+                },
+            },
+            HealthMetric {
+                label: "Dropped".to_owned(),
+                value: HealthValue::Text {
+                    primary: "0 frames".to_owned(),
+                    secondary: Some("0.00%".to_owned()),
+                },
+            },
+            HealthMetric {
+                label: "API Calls".to_owned(),
+                value: HealthValue::Ratio {
+                    used: 142,
+                    total: 800,
+                    reset_hint: Some("resets in 47s".to_owned()),
+                },
+            },
+        ];
+
+        let _: Element<'_, ()> = integration_health_grid(&metrics, &CATPPUCCIN_MOCHA);
+    }
+
+    #[test]
+    fn integration_health_grid_renders_inactive_status_and_bare_text() {
+        use forge_platform_core::{HealthMetric, HealthValue};
+
+        let metrics: [HealthMetric; 4] = [
+            HealthMetric {
+                label: "Recording".to_owned(),
+                value: HealthValue::Status {
+                    label: "Off".to_owned(),
+                    active: false,
+                },
+            },
+            HealthMetric {
+                label: "Viewers".to_owned(),
+                value: HealthValue::Text {
+                    primary: "1,284".to_owned(),
+                    secondary: None,
+                },
+            },
+            HealthMetric {
+                label: "EventSub".to_owned(),
+                value: HealthValue::Status {
+                    label: "11 subs".to_owned(),
+                    active: true,
+                },
+            },
+            HealthMetric {
+                label: "Quota".to_owned(),
+                value: HealthValue::Ratio {
+                    used: 142,
+                    total: 10_000,
+                    reset_hint: None,
+                },
+            },
+        ];
+
+        let _: Element<'_, ()> = integration_health_grid(&metrics, &CATPPUCCIN_MOCHA);
     }
 }

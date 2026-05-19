@@ -2,7 +2,7 @@
 
 use forge_storage::DataProvider;
 use forge_storage_sqlite::SqliteBackend;
-use forge_types::{ActionId, EventId, ExecutionContext, ExecutionOutcome};
+use forge_types::{ActionId, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome};
 use std::collections::BTreeMap;
 use time::OffsetDateTime;
 
@@ -17,7 +17,7 @@ async fn setup() -> SqliteBackend {
 fn make_ctx(action_id: ActionId, event_id: EventId) -> ExecutionContext {
     ExecutionContext {
         action_id,
-        trigger_event_id: event_id,
+        metadata: ExecutionMetadata::Trigger { event_id },
         arg_stack_snapshot: BTreeMap::new(),
         started_at: OffsetDateTime::now_utc(),
         completed_at: Some(OffsetDateTime::now_utc()),
@@ -42,7 +42,9 @@ async fn save_then_recent_for_action_roundtrips() {
         .expect("recent_for_action");
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].action_id, action_id);
-    assert_eq!(records[0].trigger_event_id, event_id);
+    assert!(
+        matches!(&records[0].metadata, ExecutionMetadata::Trigger { event_id: eid } if *eid == event_id)
+    );
     assert_eq!(records[0].outcome, ExecutionOutcome::Success);
 }
 

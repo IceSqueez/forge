@@ -12,7 +12,8 @@ pub mod variant;
 pub use action::Action;
 pub use command::{Command, CommandPermission};
 pub use execution::{
-    ArgStack, ExecutionContext, ExecutionOutcome, SubActionOutcome, SubActionTelemetry,
+    ArgStack, ExecutionContext, ExecutionMetadata, ExecutionOutcome, SubActionOutcome,
+    SubActionTelemetry,
 };
 pub use ids::{ActionId, CommandId, EventId, GlobalId, QueueId, ScriptId, TriggerId, UserId};
 pub use queue::Queue;

@@ -28,6 +28,18 @@ pub struct SubActionTelemetry {
     pub outcome: SubActionOutcome,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ExecutionMetadata {
+    Trigger {
+        event_id: EventId,
+    },
+    QuickAction {
+        integration_id: String,
+        label: String,
+    },
+}
+
 /// Immutable after construction; built once from trigger event and globals snapshot.
 #[derive(Clone)]
 pub struct ArgStack(BTreeMap<String, Variant>);
@@ -95,7 +107,7 @@ impl Default for ArgStack {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ExecutionContext {
     pub action_id: ActionId,
-    pub trigger_event_id: EventId,
+    pub metadata: ExecutionMetadata,
     pub arg_stack_snapshot: BTreeMap<String, Variant>,
     #[serde(with = "time::serde::rfc3339")]
     pub started_at: OffsetDateTime,
@@ -183,9 +195,10 @@ mod tests {
 
     #[test]
     fn execution_context_serde_roundtrip() {
+        let event_id = EventId::new();
         let ctx = ExecutionContext {
             action_id: ActionId::new(),
-            trigger_event_id: EventId::new(),
+            metadata: ExecutionMetadata::Trigger { event_id },
             arg_stack_snapshot: BTreeMap::new(),
             started_at: OffsetDateTime::now_utc(),
             completed_at: None,
@@ -201,8 +214,20 @@ mod tests {
         let json = serde_json::to_string(&ctx).unwrap();
         let back: ExecutionContext = serde_json::from_str(&json).unwrap();
         assert_eq!(ctx.action_id, back.action_id);
+        assert_eq!(ctx.metadata, back.metadata);
         assert_eq!(ctx.outcome, back.outcome);
         assert_eq!(ctx.telemetry.len(), back.telemetry.len());
+    }
+
+    #[test]
+    fn execution_metadata_quick_action_serde_roundtrip() {
+        let meta = ExecutionMetadata::QuickAction {
+            integration_id: "obs".to_string(),
+            label: "Toggle Stream".to_string(),
+        };
+        let json = serde_json::to_string(&meta).unwrap();
+        let back: ExecutionMetadata = serde_json::from_str(&json).unwrap();
+        assert_eq!(meta, back);
     }
 
     #[test]

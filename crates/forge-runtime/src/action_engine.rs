@@ -5,7 +5,9 @@ use std::sync::{
 
 use forge_events::{Event, EventSource};
 use forge_storage::DataProvider;
-use forge_types::{ActionId, EventId, ExecutionContext, ExecutionOutcome, SubActionOutcome};
+use forge_types::{
+    ActionId, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome, SubActionOutcome,
+};
 use serde_json::json;
 use time::OffsetDateTime;
 use tokio::sync::mpsc;
@@ -96,7 +98,9 @@ impl ActionEngine {
 
         let mut ctx = ExecutionContext {
             action_id: req.action_id,
-            trigger_event_id: req.trigger_event_id,
+            metadata: ExecutionMetadata::Trigger {
+                event_id: req.trigger_event_id,
+            },
             arg_stack_snapshot: arg_stack.snapshot(),
             started_at,
             completed_at: None,

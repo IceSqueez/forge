@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use forge_storage::{HistoryRepo, StorageError};
-use forge_types::{ActionId, ExecutionContext};
+use forge_types::{ActionId, ExecutionContext, ExecutionMetadata};
 use serde_json;
 use time::OffsetDateTime;
 
@@ -24,7 +24,10 @@ impl SqliteHistoryRepo {
 impl HistoryRepo for SqliteHistoryRepo {
     async fn save(&self, ctx: &ExecutionContext) -> Result<(), StorageError> {
         let action_id_str = ctx.action_id.to_string();
-        let event_id_str = ctx.trigger_event_id.to_string();
+        let event_id_str: Option<String> = match &ctx.metadata {
+            ExecutionMetadata::Trigger { event_id } => Some(event_id.to_string()),
+            ExecutionMetadata::QuickAction { .. } => None,
+        };
         let started_at_ms = to_epoch_ms(ctx.started_at);
         let duration_ms = ctx
             .completed_at
@@ -45,7 +48,7 @@ impl HistoryRepo for SqliteHistoryRepo {
              VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(&action_id_str)
-        .bind(&event_id_str)
+        .bind(event_id_str.as_deref())
         .bind(started_at_ms)
         .bind(duration_ms)
         .bind(&outcome_str)

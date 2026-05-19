@@ -1,7 +1,7 @@
 use forge_events::EventSource;
 use iced::{
     Background, Border, Color, Element, Length, Padding,
-    widget::{button, column, container, row, scrollable},
+    widget::{Space, button, column, container, row, scrollable},
 };
 
 use crate::{
@@ -531,6 +531,81 @@ pub fn replay_button<'a, Msg: Clone + 'a>(
         .into()
 }
 
+pub struct EventInspectorParams<'a, Msg> {
+    pub source: EventSource,
+    pub event_type: &'a str,
+    pub timestamp: &'a str,
+    pub event_id: &'a str,
+    pub payload: &'a serde_json::Value,
+    pub caused_action: Option<(&'a str, &'a str, Msg)>,
+    pub on_replay: Msg,
+}
+
+pub fn event_inspector<'a, Msg: Clone + 'a>(
+    params: EventInspectorParams<'a, Msg>,
+    palette: &ForgePalette,
+) -> Element<'a, Msg> {
+    let mono = font(FontRole::Monospace);
+    let elevated = palette.elevated;
+    let border_color = palette.border_regular;
+    let text_primary = palette.text_primary;
+    let text_muted = palette.text_muted;
+    let text_faint = palette.text_faint;
+
+    let badge = source_badge(params.source, palette);
+
+    let type_label = iced::widget::text(params.event_type)
+        .size(FONT_CAPS)
+        .color(text_primary)
+        .font(mono);
+
+    let header_top = row![badge, type_label]
+        .spacing(6)
+        .align_y(iced::Alignment::Center);
+
+    let secondary = iced::widget::text(format!("{} · #{}", params.timestamp, params.event_id))
+        .size(FONT_CAPS_SM)
+        .color(text_muted)
+        .font(mono);
+
+    let header_card = container(column![header_top, secondary].spacing(6))
+        .padding([10, 10])
+        .width(Length::Fill)
+        .style(move |_: &iced::Theme| container::Style {
+            background: Some(Background::Color(elevated)),
+            border: Border {
+                color: border_color,
+                width: 0.5,
+                radius: radius(Radius::Lg).into(),
+            },
+            ..container::Style::default()
+        });
+
+    let payload_label = iced::widget::text("PAYLOAD")
+        .size(FONT_CAPS_XS)
+        .color(text_faint)
+        .font(mono);
+
+    let viewer = json_viewer(params.payload, palette);
+
+    let mut col = column![header_card, payload_label, viewer].spacing(8);
+
+    if let Some((label, action_id_display, on_click)) = params.caused_action {
+        let caused_label = iced::widget::text("CAUSED")
+            .size(FONT_CAPS_XS)
+            .color(text_faint)
+            .font(mono);
+        col = col
+            .push(Space::new().height(4))
+            .push(caused_label)
+            .push(causation_chip(label, action_id_display, on_click, palette));
+    }
+
+    col.push(Space::new().height(2))
+        .push(replay_button(params.on_replay, palette))
+        .into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -664,5 +739,37 @@ mod tests {
     fn json_viewer_nested_object_constructs() {
         let value = serde_json::json!({"a": {"b": [1, true, null]}});
         let _: iced::Element<'_, ()> = json_viewer(&value, &CATPPUCCIN_MOCHA);
+    }
+
+    #[test]
+    fn event_inspector_with_caused_action_constructs() {
+        let palette = &CATPPUCCIN_MOCHA;
+        let payload = serde_json::json!({"command": "!quote", "user": "koval_dev"});
+        let params = EventInspectorParams {
+            source: EventSource::Twitch,
+            event_type: "command.matched",
+            timestamp: "14:23:01.142",
+            event_id: "ev_a8f3",
+            payload: &payload,
+            caused_action: Some(("!quote", "#ac_1a2b", ())),
+            on_replay: (),
+        };
+        let _: iced::Element<'_, ()> = event_inspector(params, palette);
+    }
+
+    #[test]
+    fn event_inspector_without_caused_action_constructs() {
+        let palette = &CATPPUCCIN_MOCHA;
+        let payload = serde_json::json!({"scene": "Gameplay"});
+        let params: EventInspectorParams<'_, ()> = EventInspectorParams {
+            source: EventSource::Obs,
+            event_type: "scene.changed",
+            timestamp: "14:23:04.521",
+            event_id: "ev_b9c4",
+            payload: &payload,
+            caused_action: None,
+            on_replay: (),
+        };
+        let _: iced::Element<'_, ()> = event_inspector(params, palette);
     }
 }

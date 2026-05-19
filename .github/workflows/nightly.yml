@@ -55,7 +55,8 @@ jobs:
 
   test:
     name: test (${{ matrix.os }})
-    needs: lint
+    needs: [check_changes, lint]
+    if: needs.check_changes.outputs.should_run == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
     strategy:

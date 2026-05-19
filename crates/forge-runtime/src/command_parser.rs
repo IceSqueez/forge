@@ -178,7 +178,7 @@ impl CommandParser {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use std::sync::Arc;
     use std::time::Duration;
@@ -187,7 +187,7 @@ mod tests {
     use forge_storage::DataProvider;
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::{
-        Action, ActionId, Command, CommandId, CommandPermission, EventId, LogLevel, Queue, QueueId,
+        Action, ActionId, Command, CommandId, CommandPermission, LogLevel, Queue, QueueId,
         SubActionSpec,
     };
     use serde_json::json;
@@ -239,8 +239,7 @@ mod tests {
         dp.command_repo().save(command).await.unwrap();
     }
 
-    fn chat_event(message: &str, user: &str, trigger_id: EventId) -> Event {
-        let _ = trigger_id;
+    fn chat_event(message: &str, user: &str) -> Event {
         Event::new(
             EventSource::Twitch,
             "chat.message",
@@ -306,7 +305,7 @@ mod tests {
 
         tokio::time::sleep(Duration::from_millis(10)).await;
 
-        let chat = chat_event("!quote", "viewer1", EventId::new());
+        let chat = chat_event("!quote", "viewer1");
         let chat_id = chat.id;
         bus.publish(chat);
 
@@ -341,9 +340,9 @@ mod tests {
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let _handle = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
 
-        bus.publish(chat_event("!quote", "viewer1", EventId::new()));
+        bus.publish(chat_event("!quote", "viewer1"));
         tokio::time::sleep(Duration::from_millis(50)).await;
-        bus.publish(chat_event("!quote", "viewer1", EventId::new()));
+        bus.publish(chat_event("!quote", "viewer1"));
 
         let mut matched_count = 0usize;
         let mut blocked_count = 0usize;
@@ -389,7 +388,7 @@ mod tests {
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let _handle = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
 
-        bus.publish(chat_event("!QUOTE", "viewer1", EventId::new()));
+        bus.publish(chat_event("!QUOTE", "viewer1"));
 
         let matched = collect_kind(&mut sub, "command.matched", 30).await;
         assert!(
@@ -424,7 +423,7 @@ mod tests {
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let _handle = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
 
-        bus.publish(chat_event("hello world", "viewer1", EventId::new()));
+        bus.publish(chat_event("hello world", "viewer1"));
 
         let saw = drain_no_kind(&mut sub, "command.matched", 150).await;
         assert!(!saw, "plain chat message must not produce command.matched");
@@ -456,7 +455,7 @@ mod tests {
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let _handle = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
 
-        bus.publish(chat_event("!unknown", "viewer1", EventId::new()));
+        bus.publish(chat_event("!unknown", "viewer1"));
 
         let saw = drain_no_kind(&mut sub, "command.matched", 150).await;
         assert!(!saw, "unknown command must not produce command.matched");
@@ -488,11 +487,7 @@ mod tests {
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let _handle = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
 
-        bus.publish(chat_event(
-            "!quote some args here",
-            "viewer1",
-            EventId::new(),
-        ));
+        bus.publish(chat_event("!quote some args here", "viewer1"));
 
         let matched = collect_kind(&mut sub, "command.matched", 30).await.unwrap();
         assert_eq!(
@@ -502,5 +497,132 @@ mod tests {
 
         let done = collect_kind(&mut sub, "action.done", 30).await;
         assert!(done.is_some(), "action must execute after command.matched");
+    }
+
+    #[tokio::test]
+    async fn full_causation_chain_integrity() {
+        use forge_types::EventId;
+        use std::collections::HashMap;
+
+        let dp = make_dp().await;
+        let q_id = QueueId::new();
+        let a_id = ActionId::new();
+        let c_id = CommandId::new();
+        let queue = Queue {
+            id: q_id,
+            name: "default".into(),
+            blocking: false,
+        };
+        let action = Action {
+            id: a_id,
+            name: "chain-action".to_string(),
+            group: None,
+            queue_id: q_id,
+            enabled: true,
+            concurrent: false,
+            bypass_pause: false,
+            description: None,
+            sub_actions: vec![SubActionSpec::SendChat {
+                message: "hello from chain".to_string(),
+                target: "twitch".to_string(),
+            }],
+        };
+        let command = make_command(c_id, a_id, "!chain", 0);
+        seed(&dp, &queue, &action, &command).await;
+
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let mut sub = bus.subscribe();
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            Arc::clone(&dp),
+            Arc::new(ScriptRegistry::new()),
+            None,
+        );
+        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
+        let _handle = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let chat = chat_event("!chain", "viewer1");
+        let chat_id: EventId = chat.id;
+        bus.publish(chat);
+
+        let expected_kinds = [
+            "chat.message",
+            "command.matched",
+            "action.start",
+            "subaction.run",
+            "chat.send.request",
+            "action.done",
+        ];
+        let mut by_kind: HashMap<String, forge_events::Event> = HashMap::new();
+        let mut seen = 0usize;
+
+        while let Ok(Ok(ev)) =
+            tokio::time::timeout(Duration::from_millis(500), sub.recv()).await
+        {
+            let kind = ev.kind.clone();
+            if expected_kinds.contains(&kind.as_str()) {
+                by_kind.insert(kind, ev);
+                seen += 1;
+                if seen >= expected_kinds.len() {
+                    break;
+                }
+            }
+        }
+
+        let chat_ev = by_kind
+            .get("chat.message")
+            .expect("chat.message not received");
+        assert_eq!(chat_ev.id, chat_id);
+        assert_eq!(chat_ev.caused_by, None, "chat.message: no parent");
+
+        let cmd_ev = by_kind
+            .get("command.matched")
+            .expect("command.matched not received");
+        let cmd_id: EventId = cmd_ev.id;
+        assert_eq!(
+            cmd_ev.caused_by,
+            Some(chat_id),
+            "command.matched must be caused by chat.message"
+        );
+
+        let start_ev = by_kind
+            .get("action.start")
+            .expect("action.start not received");
+        let start_id: EventId = start_ev.id;
+        assert_eq!(
+            start_ev.caused_by,
+            Some(cmd_id),
+            "action.start must be caused by command.matched"
+        );
+
+        let run_ev = by_kind
+            .get("subaction.run")
+            .expect("subaction.run not received");
+        let run_id: EventId = run_ev.id;
+        assert_eq!(
+            run_ev.caused_by,
+            Some(start_id),
+            "subaction.run must be caused by action.start"
+        );
+
+        let send_ev = by_kind
+            .get("chat.send.request")
+            .expect("chat.send.request not received");
+        assert_eq!(
+            send_ev.caused_by,
+            Some(run_id),
+            "chat.send.request must be caused by subaction.run"
+        );
+
+        let done_ev = by_kind
+            .get("action.done")
+            .expect("action.done not received");
+        assert_eq!(
+            done_ev.caused_by,
+            Some(start_id),
+            "action.done must be caused by action.start"
+        );
     }
 }

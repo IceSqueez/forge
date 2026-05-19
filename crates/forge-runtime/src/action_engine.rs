@@ -300,20 +300,19 @@ async fn run_quick_action_loop(
     obs_sink: Option<Arc<dyn ObsSink>>,
 ) {
     while let Some(req) = rx.recv().await {
-        let parent_event_id = EventId::new();
-
         let run_event = Event::new(
             EventSource::Core,
             "subaction.run",
             json!({ "step_index": 0, "kind": req.spec.kind_label() }),
         );
+        let run_event_id = run_event.id;
         bus.publish(run_event);
 
         let (telemetry, _) = dispatch(
             &req.spec,
             &ArgStack::new(),
             0,
-            parent_event_id,
+            run_event_id,
             &bus,
             Arc::clone(&dp),
             Some(registry.as_ref()),
@@ -336,7 +335,7 @@ async fn run_quick_action_loop(
                 "label": req.label,
                 "integration_id": req.integration_id,
             }),
-            parent_event_id,
+            run_event_id,
         ));
     }
 }

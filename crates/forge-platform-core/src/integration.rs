@@ -1,4 +1,5 @@
 use std::fmt;
+use std::pin::Pin;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -26,22 +27,41 @@ impl fmt::Display for IntegrationId {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum HealthColor {
-    Ok,
-    Warn,
-    Crit,
-    Neutral,
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum HealthValue {
+    Status {
+        label: String,
+        active: bool,
+    },
+    Text {
+        primary: String,
+        secondary: Option<String>,
+    },
+    Pair {
+        left: String,
+        right: String,
+    },
+    Ratio {
+        used: u64,
+        total: u64,
+        reset_hint: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HealthMetric {
+    pub label: String,
+    pub value: HealthValue,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HealthMetric {
-    pub label: String,
-    pub value: String,
-    pub sublabel: Option<String>,
-    pub color: HealthColor,
+pub struct HealthDelta {
+    pub index: u8,
+    pub new_value: HealthValue,
 }
+
+pub type HealthStream = Pin<Box<dyn futures_core::Stream<Item = HealthDelta> + Send + 'static>>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CatalogEntry {
@@ -85,8 +105,8 @@ pub trait IntegrationStatus: Send + Sync {
 }
 
 pub trait IntegrationHealth: Send + Sync {
-    /// Exactly 4 metrics shown as the status grid on the integration detail page.
     fn metrics(&self) -> [HealthMetric; 4];
+    fn stream(&self) -> HealthStream;
 }
 
 #[async_trait]
@@ -96,7 +116,6 @@ pub trait IntegrationCatalog: Send + Sync {
 }
 
 pub trait QuickActions: Send + Sync {
-    /// Up to 4 quick-action buttons pre-filled with SubAction config.
     fn actions(&self) -> Vec<QuickAction>;
 }
 
@@ -130,34 +149,98 @@ mod tests {
     fn health_metric_serde_roundtrip() {
         let metric = HealthMetric {
             label: "Chat".to_owned(),
-            value: "Connected".to_owned(),
-            sublabel: Some("IRC".to_owned()),
-            color: HealthColor::Ok,
+            value: HealthValue::Status {
+                label: "Connected".to_owned(),
+                active: true,
+            },
         };
         let json = serde_json::to_string(&metric).unwrap();
         let back: HealthMetric = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.label, metric.label);
-        assert_eq!(back.value, metric.value);
-        assert_eq!(back.sublabel, metric.sublabel);
+        assert_eq!(back, metric);
     }
 
     #[test]
-    fn health_color_serde_snake_case() {
-        assert_eq!(serde_json::to_string(&HealthColor::Ok).unwrap(), r#""ok""#);
-        assert_eq!(
-            serde_json::to_string(&HealthColor::Warn).unwrap(),
-            r#""warn""#
-        );
-        assert_eq!(
-            serde_json::to_string(&HealthColor::Crit).unwrap(),
-            r#""crit""#
-        );
-        assert_eq!(
-            serde_json::to_string(&HealthColor::Neutral).unwrap(),
-            r#""neutral""#
-        );
-        let back: HealthColor = serde_json::from_str(r#""warn""#).unwrap();
-        assert_eq!(back, HealthColor::Warn);
+    fn health_value_status_serde() {
+        let v = HealthValue::Status {
+            label: "Connected".to_owned(),
+            active: true,
+        };
+        let json = serde_json::to_string(&v).unwrap();
+        let back: HealthValue = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, v);
+    }
+
+    #[test]
+    fn health_value_text_serde() {
+        let v = HealthValue::Text {
+            primary: "42 msg/s".to_owned(),
+            secondary: Some("peak: 150".to_owned()),
+        };
+        let json = serde_json::to_string(&v).unwrap();
+        let back: HealthValue = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, v);
+    }
+
+    #[test]
+    fn health_value_text_no_secondary_serde() {
+        let v = HealthValue::Text {
+            primary: "idle".to_owned(),
+            secondary: None,
+        };
+        let json = serde_json::to_string(&v).unwrap();
+        let back: HealthValue = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, v);
+    }
+
+    #[test]
+    fn health_value_pair_serde() {
+        let v = HealthValue::Pair {
+            left: "60 fps".to_owned(),
+            right: "2.4%".to_owned(),
+        };
+        let json = serde_json::to_string(&v).unwrap();
+        let back: HealthValue = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, v);
+    }
+
+    #[test]
+    fn health_value_ratio_serde() {
+        let v = HealthValue::Ratio {
+            used: 800,
+            total: 1000,
+            reset_hint: Some("resets hourly".to_owned()),
+        };
+        let json = serde_json::to_string(&v).unwrap();
+        let back: HealthValue = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, v);
+    }
+
+    #[test]
+    fn health_value_ratio_no_hint_serde() {
+        let v = HealthValue::Ratio {
+            used: 0,
+            total: 100,
+            reset_hint: None,
+        };
+        let json = serde_json::to_string(&v).unwrap();
+        let back: HealthValue = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, v);
+    }
+
+    #[test]
+    fn health_delta_serde_roundtrip() {
+        let delta = HealthDelta {
+            index: 2,
+            new_value: HealthValue::Ratio {
+                used: 450,
+                total: 800,
+                reset_hint: None,
+            },
+        };
+        let json = serde_json::to_string(&delta).unwrap();
+        let back: HealthDelta = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.index, delta.index);
+        assert_eq!(back.new_value, delta.new_value);
     }
 
     #[test]

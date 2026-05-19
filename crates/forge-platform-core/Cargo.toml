@@ -17,6 +17,7 @@ directories  = { workspace = true }
 tokio       = { workspace = true }
 thiserror   = { workspace = true }
 reqwest     = { workspace = true }
-serde       = { workspace = true }
-serde_json  = { workspace = true }
-time        = { workspace = true }
+serde        = { workspace = true }
+serde_json   = { workspace = true }
+time         = { workspace = true }
+futures-core = { workspace = true }

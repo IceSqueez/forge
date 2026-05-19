@@ -13,8 +13,9 @@ pub use capabilities::PlatformCapabilities;
 pub use chat::{ChatPlatform, ConnectionState};
 pub use error::PlatformError;
 pub use integration::{
-    CapabilityFlags, CatalogEntry, HeaderAction, HealthColor, HealthMetric, IntegrationCatalog,
-    IntegrationHealth, IntegrationId, IntegrationStatus, QuickAction, QuickActions,
+    CapabilityFlags, CatalogEntry, HeaderAction, HealthDelta, HealthMetric, HealthStream,
+    HealthValue, IntegrationCatalog, IntegrationHealth, IntegrationId, IntegrationStatus,
+    QuickAction, QuickActions,
 };
 pub use oauth::{
     DeviceCodePoller, DeviceCodeRequest, DeviceCodeResponse, PollOutcome, TokenResponse,

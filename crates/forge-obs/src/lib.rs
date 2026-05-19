@@ -4,6 +4,7 @@
 
 pub mod client;
 pub mod error;
+pub mod health;
 pub mod sink;
 pub mod source;
 

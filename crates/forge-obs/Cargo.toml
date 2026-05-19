@@ -15,6 +15,7 @@ forge-types         = { path = "../forge-types" }
 
 obws         = { version = "0.15", features = ["events"] }
 tokio        = { workspace = true }
+tokio-stream = { workspace = true }
 time         = { workspace = true }
 thiserror    = { workspace = true }
 tracing      = { workspace = true }

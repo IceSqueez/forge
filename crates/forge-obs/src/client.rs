@@ -5,14 +5,15 @@ use std::time::Duration;
 use futures_util::StreamExt;
 use rand::RngExt;
 use time::OffsetDateTime;
-use tokio::sync::Notify;
+use tokio::sync::{Notify, broadcast};
 use tokio::task::JoinHandle;
 
 use forge_platform_core::{
-    CapabilityFlags, ConnectionState, HeaderAction, IntegrationId, IntegrationStatus,
+    CapabilityFlags, ConnectionState, HeaderAction, HealthDelta, IntegrationId, IntegrationStatus,
 };
 
 use crate::error::ObsError;
+use crate::health::{HealthSnapshot, make_health_channel};
 
 const STATE_DISCONNECTED: u8 = 0;
 const STATE_CONNECTING: u8 = 1;
@@ -29,6 +30,8 @@ pub struct ObsClient {
     connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
     obs_id: IntegrationId,
     obs_version: Arc<OnceLock<String>>,
+    pub(crate) health_state: Arc<RwLock<HealthSnapshot>>,
+    pub(crate) health_tx: broadcast::Sender<HealthDelta>,
 }
 
 impl ObsClient {
@@ -40,6 +43,8 @@ impl ObsClient {
         let shutdown = Arc::new(Notify::new());
         let connected_at = Arc::new(RwLock::new(None::<OffsetDateTime>));
         let obs_version = Arc::new(OnceLock::new());
+
+        let (health_tx, health_state) = make_health_channel();
 
         let ctx = SupervisorContext {
             inner: Arc::clone(&inner),
@@ -59,6 +64,8 @@ impl ObsClient {
             connected_at,
             obs_id: IntegrationId::new("obs"),
             obs_version,
+            health_state,
+            health_tx,
         })
     }
 
@@ -89,6 +96,7 @@ impl ObsClient {
 
     #[cfg(test)]
     pub fn new_for_test(endpoint: String) -> Self {
+        let (health_tx, health_state) = make_health_channel();
         Self {
             inner: Arc::new(tokio::sync::RwLock::new(None)),
             endpoint,
@@ -98,6 +106,8 @@ impl ObsClient {
             connected_at: Arc::new(RwLock::new(None)),
             obs_id: IntegrationId::new("obs"),
             obs_version: Arc::new(OnceLock::new()),
+            health_state,
+            health_tx,
         }
     }
 }

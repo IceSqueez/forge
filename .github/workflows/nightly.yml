@@ -19,16 +19,14 @@ jobs:
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
       - name: Check commits in last 24 hours
         id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          count=$(git log --oneline --since="24 hours ago" | wc -l)
+          since=$(date -u -d '24 hours ago' '+%Y-%m-%dT%H:%M:%SZ')
+          count=$(gh api "repos/${{ github.repository }}/commits?since=${since}" --jq 'length')
           if [ "$count" -gt 0 ]; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
           else

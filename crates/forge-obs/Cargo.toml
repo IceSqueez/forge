@@ -10,6 +10,7 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
+forge-events        = { path = "../forge-events" }
 forge-platform-core = { path = "../forge-platform-core" }
 forge-types         = { path = "../forge-types" }
 

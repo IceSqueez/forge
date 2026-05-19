@@ -5,6 +5,7 @@
 pub mod catalog;
 pub mod client;
 pub mod error;
+mod events;
 pub mod health;
 pub mod quick_actions;
 pub mod sink;

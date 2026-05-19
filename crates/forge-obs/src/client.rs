@@ -9,6 +9,7 @@ use time::OffsetDateTime;
 use tokio::sync::{Notify, broadcast};
 use tokio::task::JoinHandle;
 
+use forge_events::EventPublisher;
 use forge_platform_core::{
     CapabilityFlags, ConnectionState, HeaderAction, HealthDelta, IntegrationId, IntegrationStatus,
 };
@@ -24,7 +25,7 @@ const STATE_RECONNECTING: u8 = 3;
 
 pub struct ObsClient {
     pub(crate) inner: Arc<tokio::sync::RwLock<Option<obws::Client>>>,
-    pub(crate) scene_item_id_cache: Mutex<HashMap<(String, String), i64>>,
+    pub(crate) scene_item_id_cache: Arc<Mutex<HashMap<(String, String), i64>>>,
     endpoint: String,
     state: Arc<AtomicU8>,
     shutdown: Arc<Notify>,
@@ -38,7 +39,11 @@ pub struct ObsClient {
 }
 
 impl ObsClient {
-    pub async fn connect(endpoint: &str, password: Option<&str>) -> Result<Self, ObsError> {
+    pub async fn connect(
+        endpoint: &str,
+        password: Option<&str>,
+        publisher: Arc<dyn EventPublisher>,
+    ) -> Result<Self, ObsError> {
         let (host, port) = parse_endpoint(endpoint)?;
 
         let inner = Arc::new(tokio::sync::RwLock::new(None::<obws::Client>));
@@ -46,8 +51,10 @@ impl ObsClient {
         let shutdown = Arc::new(Notify::new());
         let connected_at = Arc::new(RwLock::new(None::<OffsetDateTime>));
         let obs_version = Arc::new(OnceLock::new());
+        let item_cache = Arc::new(Mutex::new(HashMap::<(String, String), i64>::new()));
 
         let (health_tx, health_state) = make_health_channel();
+        let catalog_state = Arc::new(RwLock::new(ObsCatalog::default()));
 
         let ctx = SupervisorContext {
             inner: Arc::clone(&inner),
@@ -55,6 +62,11 @@ impl ObsClient {
             shutdown: Arc::clone(&shutdown),
             connected_at: Arc::clone(&connected_at),
             obs_version: Arc::clone(&obs_version),
+            catalog_state: Arc::clone(&catalog_state),
+            health_state: Arc::clone(&health_state),
+            health_tx: health_tx.clone(),
+            publisher,
+            item_cache: Arc::clone(&item_cache),
         };
         let handle = tokio::spawn(run_supervisor(host, port, password.map(str::to_owned), ctx));
 
@@ -69,8 +81,8 @@ impl ObsClient {
             obs_version,
             health_state,
             health_tx,
-            catalog_state: Arc::new(RwLock::new(ObsCatalog::default())),
-            scene_item_id_cache: Mutex::new(HashMap::new()),
+            catalog_state,
+            scene_item_id_cache: item_cache,
         })
     }
 
@@ -114,7 +126,7 @@ impl ObsClient {
             health_state,
             health_tx,
             catalog_state: Arc::new(RwLock::new(ObsCatalog::default())),
-            scene_item_id_cache: Mutex::new(HashMap::new()),
+            scene_item_id_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -183,6 +195,11 @@ struct SupervisorContext {
     shutdown: Arc<Notify>,
     connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
     obs_version: Arc<OnceLock<String>>,
+    catalog_state: Arc<RwLock<ObsCatalog>>,
+    health_state: Arc<RwLock<HealthSnapshot>>,
+    health_tx: broadcast::Sender<HealthDelta>,
+    publisher: Arc<dyn EventPublisher>,
+    item_cache: Arc<Mutex<HashMap<(String, String), i64>>>,
 }
 
 async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: SupervisorContext) {
@@ -192,6 +209,11 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
         shutdown,
         connected_at,
         obs_version,
+        catalog_state,
+        health_state,
+        health_tx,
+        publisher,
+        item_cache,
     } = ctx;
     let mut attempt: u32 = 0;
 
@@ -256,9 +278,21 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                                 return;
                             }
                             item = stream.next() => {
-                                if item.is_none() {
-                                    tracing::info!(host = %host, port, "OBS connection lost; reconnecting");
-                                    break;
+                                match item {
+                                    None => {
+                                        tracing::info!(host = %host, port, "OBS connection lost; reconnecting");
+                                        break;
+                                    }
+                                    Some(ev) => {
+                                        handle_obs_event(
+                                            &ev,
+                                            &catalog_state,
+                                            &health_state,
+                                            &health_tx,
+                                            &item_cache,
+                                            &*publisher,
+                                        );
+                                    }
                                 }
                             }
                         }
@@ -289,6 +323,59 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                 tracing::debug!(host = %host, port, attempt, error = %e, "OBS connection attempt failed");
                 attempt = attempt.saturating_add(1);
             }
+        }
+    }
+}
+
+fn handle_obs_event(
+    ev: &obws::events::Event,
+    catalog_state: &RwLock<ObsCatalog>,
+    health_state: &RwLock<HealthSnapshot>,
+    health_tx: &broadcast::Sender<HealthDelta>,
+    item_cache: &Mutex<HashMap<(String, String), i64>>,
+    publisher: &dyn EventPublisher,
+) {
+    if let Ok(mut catalog) = catalog_state.write() {
+        crate::events::apply_catalog_update(ev, &mut catalog);
+    }
+
+    let deltas = if let Ok(mut health) = health_state.write() {
+        crate::events::apply_health_update(ev, &mut health)
+    } else {
+        vec![]
+    };
+    for delta in deltas {
+        let _ = health_tx.send(delta);
+    }
+
+    if let Some(bus_event) = crate::events::map_obs_event(ev) {
+        publisher.publish(bus_event);
+    }
+
+    if let obws::events::Event::SceneItemEnableStateChanged {
+        scene,
+        item_id,
+        enabled,
+        ..
+    } = ev
+    {
+        let source_name = item_cache
+            .lock()
+            .ok()
+            .and_then(|guard| crate::events::resolve_source_name(&guard, &scene.name, *item_id));
+
+        if let Some(name) = source_name {
+            if let Ok(mut catalog) = catalog_state.write()
+                && let Some(sources) = catalog.sources.get_mut(&scene.name)
+                && let Some(info) = sources.iter_mut().find(|s| s.name == name)
+            {
+                info.visible = *enabled;
+            }
+            publisher.publish(crate::events::map_scene_item_visibility(
+                &scene.name,
+                &name,
+                *enabled,
+            ));
         }
     }
 }

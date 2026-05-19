@@ -40,35 +40,21 @@ Forge is an open-source desktop application that automates stream workflows acro
 
 ## Current Status
 
-**v0.1.0-alpha.1** is the foundation release: workspace structure, trait architecture, SQLite data layer, iced UI shell, and CI pipeline. Real feature work (chat platforms, integrations, TTS engines) ships in alpha-2 onward.
+**Current alpha: v0.1.0-alpha.7** — OBS WebSocket integration milestone.
 
-**What's included in alpha-1:**
+**What's included (alpha-1 through alpha-7):**
 
-- 10-crate workspace with trait scaffolding for platforms, integrations, TTS, storage, and server.
-- SQLite backend with AES-GCM encrypted credential storage.
-- Catppuccin Mocha theme + theming system with Tokyo Night and Latte.
-- iced app shell with Hub dashboard, sidebar navigation, Settings.
-- First-run detection and Onboarding placeholder.
-- Cross-platform CI pipeline (GitHub Actions matrix for Linux, Windows, macOS).
+- **Workspace & storage layer:** 12-crate workspace; SQLite backend with AES-GCM encrypted credential storage; schema versioning with append-only migration pipeline.
+- **iced UI shell:** Catppuccin Mocha theme + Tokyo Night and Latte; sidebar navigation; Hub dashboard; Settings with sub-screens; cross-platform CI pipeline (Linux, Windows, macOS).
+- **Twitch platform:** Device-code OAuth flow with auto-refresh; EventSub chat ingestion; Helix send-chat; viewer tracking. Live Chat screen, Settings → Platforms screen with reconnect.
+- **Action engine:** Action editor with trigger configuration, sub-action chains, and queue scheduling. Sub-actions: `SendChat`, `Delay`, `SetGlobal`, `RunScript`. Command parser for chat-triggered actions.
+- **Globals system:** Per-key read/write counters; `%variable%` interpolation in action config; Globals editor with filter, JSON export, and Variant editor modal.
+- **Rhai scripting sandbox:** `ForgeApi` god-object with op-count and time limits; `ScriptRegistry` with hot-reload; `RunScript` sub-action; 3-pane ScriptEditor screen.
+- **OBS WebSocket v5 integration:** `forge-obs` crate; challenge-response auth; exponential-backoff reconnect; sub-actions: `SetScene`, `SetSourceVisible`, `SetInputMute`, `StartRecord`, `StopRecord`, `StartStream`, `StopStream`; `ObsSceneChanged` trigger; OBS events on the bus (`scene.changed`, `recording.*`, `streaming.*`, `source.visibility.changed`); generic `IntegrationDetail` screen; `StreamApps` landing screen; Onboarding ConnectObs step.
 
-**Known limitations:**
+**Feature timeline (pending):**
 
-- No real chat platform connections yet.
-- No TTS engines (rhai scripting API lands alpha-6).
-- No soundboard or custom overlays.
-- No action editor or trigger configuration UI.
-- Onboarding wizard is a placeholder.
-
-**Feature timeline:**
-
-- **alpha-2:** Twitch IRC chat + user viewer DB.
-- **alpha-3:** OBS WebSocket + Piper TTS engine.
-- **alpha-4:** Action editor + trigger UI.
-- **alpha-5:** Globals editor + variable system.
-- **alpha-6:** rhai scripting API + LoomApi.
-- **beta-1+:** YouTube, Trovo, Kick; more TTS engines; VTube Studio; Discord webhooks; MIDI.
-
-See the full roadmap once alpha-2 ships.
+- **beta-1+:** YouTube, Trovo, Kick chat platforms; TTS engines (local and cloud); VTube Studio; Discord webhooks; MIDI controllers; browser-source overlay server.
 
 ## Building from Source
 
@@ -105,7 +91,7 @@ Binary releases for Linux, Windows, and macOS are published on [GitHub Releases]
 - **Windows:** Portable ZIP (no install) + MSI installer (coming beta-1).
 - **macOS:** Disk image (.dmg) with signed binary (coming beta-1).
 
-See [`docs/install/`](./docs/install/) for per-platform installation details.
+Per-platform installation details will be added as packaging matures.
 
 ## Known limitations
 
@@ -118,9 +104,10 @@ Forge is in active alpha development. Current gaps:
   [dev.twitch.tv/console/apps](https://dev.twitch.tv/console/apps) and set
   `FORGE_TWITCH_CLIENT_ID=<your-client-id>` before launching Forge — the device-code flow
   works end-to-end once the variable is present.
+- **`ObsRaw` sub-action is non-functional.** The variant exists in the schema for forward
+  compatibility, but `obws` v0.15 does not expose a raw-request passthrough. Execution returns
+  a protocol error at runtime. Resolves when `obws` 0.16+ ships a `send_raw` API.
 - **Other platform integrations** (YouTube, Trovo, Kick) are not yet implemented.
-
-For additional known issues, see release notes for each alpha.
 
 ## Contributing
 

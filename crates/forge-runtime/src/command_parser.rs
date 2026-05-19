@@ -558,9 +558,7 @@ mod tests {
         let mut by_kind: HashMap<String, forge_events::Event> = HashMap::new();
         let mut seen = 0usize;
 
-        while let Ok(Ok(ev)) =
-            tokio::time::timeout(Duration::from_millis(500), sub.recv()).await
-        {
+        while let Ok(Ok(ev)) = tokio::time::timeout(Duration::from_millis(500), sub.recv()).await {
             let kind = ev.kind.clone();
             if expected_kinds.contains(&kind.as_str()) {
                 by_kind.insert(kind, ev);

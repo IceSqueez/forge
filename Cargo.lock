@@ -2279,6 +2279,7 @@ dependencies = [
  "forge-types",
  "iced",
  "iced_fonts",
+ "serde_json",
  "time",
 ]
 

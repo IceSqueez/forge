@@ -2212,6 +2212,7 @@ dependencies = [
 name = "forge-server"
 version = "0.1.0-alpha.8"
 dependencies = [
+ "arc-swap",
  "async-trait",
  "axum",
  "base64",

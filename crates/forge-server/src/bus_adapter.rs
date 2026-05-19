@@ -17,7 +17,7 @@ pub(crate) const CLIENT_CHANNEL_CAP: usize = 1024;
 pub struct ClientId(u64);
 
 impl ClientId {
-    fn next() -> Self {
+    pub(crate) fn next() -> Self {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         Self(COUNTER.fetch_add(1, Ordering::Relaxed))
     }

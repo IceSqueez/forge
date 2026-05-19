@@ -18,6 +18,7 @@ pub mod onboarding;
 pub mod palette;
 pub mod picker;
 pub mod sections;
+pub mod server;
 pub mod status;
 pub mod theme;
 pub mod tokens;
@@ -46,11 +47,11 @@ pub use events::{
     event_row_observability, json_viewer, replay_button, source_badge,
 };
 pub use icons::{
-    BOOTSTRAP_FONT, BOOTSTRAP_FONT_BYTES, ICON_ACTIVITY, ICON_BROADCAST, ICON_CHAT,
-    ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CHEVRON_UP, ICON_CLOCK, ICON_DOWNLOAD,
-    ICON_FILE_CODE, ICON_GEAR, ICON_GLOBE, ICON_GRID, ICON_HASH, ICON_HOME, ICON_JOURNAL,
-    ICON_LIGHTNING, ICON_MUSIC_NOTE, ICON_PEOPLE, ICON_PLUS, ICON_REPLAY, ICON_SERVER,
-    ICON_SPEAKER, ICON_TERMINAL,
+    BOOTSTRAP_FONT, BOOTSTRAP_FONT_BYTES, ICON_ACTIVITY, ICON_ALERT_TRIANGLE, ICON_BROADCAST,
+    ICON_CHAT, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CHEVRON_UP, ICON_CLOCK, ICON_COPY,
+    ICON_DOWNLOAD, ICON_EYE, ICON_EYE_SLASH, ICON_FILE_CODE, ICON_GEAR, ICON_GLOBE, ICON_GRID,
+    ICON_HASH, ICON_HOME, ICON_JOURNAL, ICON_LIGHTNING, ICON_MUSIC_NOTE, ICON_PEOPLE, ICON_PLUS,
+    ICON_REFRESH, ICON_REPLAY, ICON_SERVER, ICON_SPEAKER, ICON_TERMINAL,
 };
 pub use inputs::{input_padding, search_input, select, text_input_field};
 pub use integration::{
@@ -75,6 +76,7 @@ pub use sections::{
     ToastVariant, counter_badge, empty_state, section_header, section_header_expandable,
     toast_banner,
 };
+pub use server::bearer_token_display;
 pub use status::{StatusVariant, platform_badge, role_badge, status_dot, status_pill};
 pub use theme::{catppuccin_mocha, latte, palette_for_theme, tokyo_night_storm};
 pub use tokens::{Density, FontRole, Radius, Spacing, ThemeId, font, load_fonts, radius, spacing};

@@ -4,9 +4,7 @@ use iced::{
 };
 
 use crate::palette::ForgePalette;
-use crate::tokens::{
-    Density, FONT_CAPS_SM, FontRole, Radius, Spacing, font, radius, spacing,
-};
+use crate::tokens::{Density, FONT_CAPS_SM, FontRole, Radius, Spacing, font, radius, spacing};
 
 const RING_LEN: usize = 60;
 const CANVAS_HEIGHT: f32 = 80.0;

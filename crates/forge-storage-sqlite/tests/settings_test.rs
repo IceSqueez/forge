@@ -1,7 +1,15 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use forge_storage::SettingsRepo;
-use forge_storage_sqlite::{SqliteSettingsRepo, apply_migrations};
+use forge_storage_sqlite::{SqliteBackend, SqliteSettingsRepo, apply_migrations};
+
+const TEST_KEY: [u8; 32] = [0xab; 32];
+
+async fn setup_backend() -> SqliteBackend {
+    SqliteBackend::open_with_key(":memory:", TEST_KEY)
+        .await
+        .expect("in-memory backend")
+}
 
 async fn setup() -> SqliteSettingsRepo {
     let pool = sqlx::SqlitePool::connect("sqlite::memory:")
@@ -109,4 +117,40 @@ async fn last_onboarding_step_overwrites_correctly() {
         .await
         .expect("get after overwrite");
     assert_eq!(got, Some("starter_pack".to_owned()));
+}
+
+#[tokio::test]
+async fn event_log_retention_days_default_is_seven() {
+    let backend = setup_backend().await;
+    let days = backend
+        .event_log_retention_days()
+        .await
+        .expect("default retention");
+    assert_eq!(days, 7);
+}
+
+#[tokio::test]
+async fn event_log_retention_days_roundtrip() {
+    let backend = setup_backend().await;
+    for value in [1u32, 7, 30] {
+        backend
+            .set_event_log_retention_days(value)
+            .await
+            .expect("set");
+        let got = backend.event_log_retention_days().await.expect("get");
+        assert_eq!(got, value);
+    }
+}
+
+#[tokio::test]
+async fn event_log_retention_days_invalid_string_falls_back_to_seven() {
+    use forge_storage::reserved_keys::EVENT_LOG_RETENTION_DAYS_KEY;
+
+    let backend = setup_backend().await;
+    backend
+        .set_string(EVENT_LOG_RETENTION_DAYS_KEY, "not_a_number")
+        .await
+        .expect("set invalid");
+    let days = backend.event_log_retention_days().await.expect("fallback");
+    assert_eq!(days, 7);
 }

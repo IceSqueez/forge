@@ -4,7 +4,7 @@ use std::sync::{Arc, atomic::Ordering};
 use serde::{Deserialize, Serialize};
 
 use forge_events::{Event, EventSource};
-use forge_runtime::{ActionEngineHandle, EventBus, ExecutionRequest};
+use forge_runtime::{ActionEngineHandle, BusError, EventBus, ExecutionRequest};
 use forge_storage::{CredentialsRepo, DataProvider, GlobalsRepo, UserGlobalsRepo};
 use forge_types::{ActionId, ArgStack, CommandPermission, EventId, Variant};
 
@@ -608,6 +608,55 @@ fn build_arg_stack(args: serde_json::Value) -> ArgStack {
         .fold(ArgStack::new(), |stack, (k, v)| stack.set(k, v))
 }
 
+async fn handle_get_events(
+    limit: Option<u32>,
+    since: Option<String>,
+    ctx: &DispatchContext,
+) -> WsResponse {
+    let limit = limit.unwrap_or(100).min(500) as usize;
+    let since_id: Option<EventId> = match since {
+        None => None,
+        Some(s) => match serde_json::from_value::<EventId>(serde_json::Value::String(s)) {
+            Ok(id) => Some(id),
+            Err(_) => {
+                return WsResponse::Error {
+                    code: Some("INVALID_PAYLOAD".to_owned()),
+                    message: "since must be a valid event id".to_owned(),
+                };
+            }
+        },
+    };
+    let events = ctx.bus.recent_since(limit, since_id).await;
+    let wire: Vec<serde_json::Value> = events
+        .iter()
+        .filter_map(|e| serde_json::to_value(e).ok())
+        .collect();
+    WsResponse::Ok(serde_json::json!({ "events": wire }))
+}
+
+async fn handle_replay_event(event_id: String, ctx: &DispatchContext) -> WsResponse {
+    let eid: EventId = match serde_json::from_value(serde_json::Value::String(event_id)) {
+        Ok(id) => id,
+        Err(_) => {
+            return WsResponse::Error {
+                code: Some("NOT_FOUND".to_owned()),
+                message: "event not found".to_owned(),
+            };
+        }
+    };
+    match ctx.bus.replay_and_publish(eid).await {
+        Ok(()) => WsResponse::Ok(serde_json::json!({ "ok": true })),
+        Err(BusError::EventNotFound(_)) => WsResponse::Error {
+            code: Some("NOT_FOUND".to_owned()),
+            message: "event not found".to_owned(),
+        },
+        Err(BusError::Storage(e)) => WsResponse::Error {
+            code: Some("RUNTIME_ERROR".to_owned()),
+            message: e.to_string(),
+        },
+    }
+}
+
 fn unauthenticated() -> WsResponse {
     WsResponse::Error {
         code: Some("UNAUTHENTICATED".to_owned()),
@@ -725,18 +774,18 @@ async fn route(req: WsRequest, ctx: &DispatchContext) -> WsResponse {
             handle_trigger_code_event(name, args, ctx).await
         }
 
-        WsRequest::GetEvents { .. } => {
+        WsRequest::GetEvents { limit, since } => {
             if ctx.auth_required_for_reads && !is_authenticated(ctx) {
                 return unauthenticated();
             }
-            not_implemented()
+            handle_get_events(limit, since, ctx).await
         }
 
-        WsRequest::ReplayEvent { .. } => {
+        WsRequest::ReplayEvent { event_id } => {
             if !is_authenticated(ctx) {
                 return unauthenticated();
             }
-            not_implemented()
+            handle_replay_event(event_id, ctx).await
         }
 
         WsRequest::GetActiveViewers => {
@@ -1118,16 +1167,143 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn authenticated_replay_event_returns_not_implemented() {
-        let ctx = make_ctx(true, false);
+    async fn get_events_empty_bus_returns_empty_list() {
+        let ctx = make_ctx(false, false);
         let req = WsEnvelope {
-            id: Some("10".to_owned()),
-            inner: WsRequest::ReplayEvent {
-                event_id: "01JVKR7X8QD0GEEMHC4Z3F2P1K".to_owned(),
+            id: Some("13".to_owned()),
+            inner: WsRequest::GetEvents {
+                limit: None,
+                since: None,
             },
         };
         let resp = dispatch(req, &ctx).await;
-        assert!(matches!(resp.inner, WsResponse::Error { code: None, .. }));
+        let json = serialize_response_frame(&resp);
+        assert_eq!(json["status"], "ok");
+        assert!(json["events"].is_array());
+        assert_eq!(json["events"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn get_events_with_three_events_returns_all_in_shape() {
+        let ctx = make_ctx(false, false);
+        for i in 0u32..3 {
+            ctx.bus.publish(Event::new(
+                EventSource::Core,
+                "test.event",
+                serde_json::json!({ "i": i }),
+            ));
+        }
+        let req = WsEnvelope {
+            id: Some("13".to_owned()),
+            inner: WsRequest::GetEvents {
+                limit: None,
+                since: None,
+            },
+        };
+        let resp = dispatch(req, &ctx).await;
+        let json = serialize_response_frame(&resp);
+        assert_eq!(json["status"], "ok");
+        let events = json["events"].as_array().unwrap();
+        assert_eq!(events.len(), 3);
+        assert!(events[0]["id"].is_string());
+        assert!(events[0]["source"].is_string());
+        assert!(events[0]["kind"].is_string());
+        assert!(events[0]["timestamp"].is_string());
+        assert!(events[0]["payload"].is_object());
+        assert_eq!(events[0]["replay"], false);
+    }
+
+    #[tokio::test]
+    async fn get_events_since_with_limit_returns_events_after_anchor() {
+        let ctx = make_ctx(false, false);
+        let ev1 = Event::new(EventSource::Core, "test.a", serde_json::json!({}));
+        let anchor_id = ev1.id.to_string();
+        ctx.bus.publish(ev1);
+        ctx.bus.publish(Event::new(
+            EventSource::Core,
+            "test.b",
+            serde_json::json!({}),
+        ));
+        ctx.bus.publish(Event::new(
+            EventSource::Core,
+            "test.c",
+            serde_json::json!({}),
+        ));
+
+        let req = WsEnvelope {
+            id: Some("13".to_owned()),
+            inner: WsRequest::GetEvents {
+                limit: Some(1),
+                since: Some(anchor_id),
+            },
+        };
+        let resp = dispatch(req, &ctx).await;
+        let json = serialize_response_frame(&resp);
+        assert_eq!(json["status"], "ok");
+        let events = json["events"].as_array().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0]["kind"], "test.c");
+    }
+
+    #[tokio::test]
+    async fn replay_event_without_auth_returns_unauthenticated() {
+        let ctx = make_ctx(false, false);
+        let ev = Event::new(EventSource::Core, "test.event", serde_json::json!({}));
+        let ev_id = ev.id.to_string();
+        ctx.bus.publish(ev);
+        let req = WsEnvelope {
+            id: Some("14".to_owned()),
+            inner: WsRequest::ReplayEvent { event_id: ev_id },
+        };
+        let resp = dispatch(req, &ctx).await;
+        match resp.inner {
+            WsResponse::Error {
+                code: Some(code), ..
+            } => assert_eq!(code, "UNAUTHENTICATED"),
+            other => panic!("expected UNAUTHENTICATED, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn replay_event_nonexistent_id_returns_not_found() {
+        let ctx = make_ctx(true, false);
+        let ghost_id = forge_types::EventId::new().to_string();
+        let req = WsEnvelope {
+            id: Some("14".to_owned()),
+            inner: WsRequest::ReplayEvent { event_id: ghost_id },
+        };
+        let resp = dispatch(req, &ctx).await;
+        match resp.inner {
+            WsResponse::Error {
+                code: Some(code), ..
+            } => assert_eq!(code, "NOT_FOUND"),
+            other => panic!("expected NOT_FOUND, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn replay_event_valid_id_returns_ok_and_emits_replayed_event() {
+        let ctx = make_ctx(true, false);
+        let original = Event::new(EventSource::Core, "test.original", serde_json::json!({}));
+        let original_id = original.id.to_string();
+        ctx.bus.publish(original);
+
+        let mut bus_sub = ctx.bus.subscribe();
+
+        let req = WsEnvelope {
+            id: Some("14".to_owned()),
+            inner: WsRequest::ReplayEvent {
+                event_id: original_id,
+            },
+        };
+        let resp = dispatch(req, &ctx).await;
+        let json = serialize_response_frame(&resp);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["ok"], true);
+
+        let replayed = bus_sub.recv().await.unwrap();
+        assert_eq!(replayed.kind, "test.original");
+        assert!(replayed.replay);
     }
 
     #[tokio::test]

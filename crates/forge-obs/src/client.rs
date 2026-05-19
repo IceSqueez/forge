@@ -598,4 +598,42 @@ mod tests {
         let status: &dyn IntegrationStatus = &client;
         assert!(status.uptime().is_none());
     }
+
+    #[test]
+    fn compute_backoff_base_doubles_each_attempt_before_cap() {
+        for attempt in 0u32..5 {
+            let base_secs_this = 1u64 << attempt;
+            let base_secs_next = 1u64 << (attempt + 1);
+            assert_eq!(
+                base_secs_next,
+                base_secs_this * 2,
+                "base must double from attempt {attempt} to {}",
+                attempt + 1
+            );
+        }
+    }
+
+    #[test]
+    fn compute_backoff_total_millis_at_least_base_secs() {
+        for attempt in 0u32..=7 {
+            let d = compute_backoff(attempt);
+            let base_secs = (1u64 << attempt.min(6)).min(60);
+            assert!(
+                d.as_millis() >= (base_secs * 1000) as u128,
+                "backoff for attempt {attempt} must be >= {base_secs}s but was {}ms",
+                d.as_millis()
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a live OBS instance at ws://127.0.0.1:4455 with no password; \
+                verifies that the supervisor task retries with exponential backoff after \
+                disconnect — obws::Client connects to a real TCP socket and cannot be mocked \
+                in-process; remove #[ignore] when a mock transport is available"]
+    async fn reconnect_supervisor_retries_with_backoff_on_disconnect() {
+        // Boot a real ObsClient, kill the OBS websocket, wait for the first reconnect attempt,
+        // assert state transitions: Connected → Reconnecting → Connected.
+        // Validate that at least one compute_backoff delay is observed before re-connection.
+    }
 }

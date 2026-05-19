@@ -9,6 +9,7 @@ pub mod onboarding_state;
 pub mod screen;
 pub mod script_editor;
 pub mod server_screen;
+pub mod settings_websocket;
 pub mod stream_apps;
 pub mod test_trigger;
 
@@ -44,4 +45,8 @@ pub use server_screen::{
     OwnedClientRow, OwnedFileMime, OwnedOverlayEntry, OwnedOverlayKind, OwnedSubscriptionChip,
     ServerInfoSnapshot, ServerScreenMsg, ServerScreenState, ServerStats, ServerStatus,
     handle_server_screen_msg, server_screen_view,
+};
+pub use settings_websocket::{
+    BindAddressChoice, SettingsWebSocketMsg, SettingsWebSocketState, handle_settings_websocket_msg,
+    settings_websocket_view,
 };

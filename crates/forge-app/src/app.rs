@@ -54,6 +54,9 @@ use crate::script_editor::{
 use crate::server_screen::{
     ServerScreenMsg, ServerScreenState, handle_server_screen_msg, server_screen_view,
 };
+use crate::settings_websocket::{
+    SettingsWebSocketState, handle_settings_websocket_msg, settings_websocket_view,
+};
 use crate::stream_apps::view as stream_apps_view;
 use crate::test_trigger::synthesize_test_event;
 use crate::{Message, OnboardingMsg, Screen, SettingsSection};
@@ -119,6 +122,7 @@ pub struct App {
     pub integration_detail: Option<IntegrationDetailState>,
     pub obs_client: Option<Arc<ObsClient>>,
     pub server_screen: ServerScreenState,
+    pub settings_websocket: SettingsWebSocketState,
 }
 
 impl App {
@@ -157,6 +161,7 @@ impl App {
             integration_detail: None,
             obs_client: None,
             server_screen: ServerScreenState::default(),
+            settings_websocket: SettingsWebSocketState::default(),
         }
     }
 }
@@ -199,6 +204,7 @@ impl Default for App {
             integration_detail: None,
             obs_client: None,
             server_screen: ServerScreenState::default(),
+            settings_websocket: SettingsWebSocketState::default(),
         }
     }
 }
@@ -663,6 +669,9 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             }
         },
         Message::Server(sub) => handle_server_screen_msg(&mut app.server_screen, sub),
+        Message::SettingsWebSocket(sub) => {
+            handle_settings_websocket_msg(&mut app.settings_websocket, sub, &app.backend)
+        }
         Message::Noop => Task::none(),
     }
 }
@@ -2029,12 +2038,25 @@ fn settings_platforms_pane<'a>(
         .into()
 }
 
+fn nav_group_header<'a>(label: &'a str, palette: &'a ForgePalette) -> Element<'a, Message> {
+    iced::widget::text(label)
+        .font(forge_widgets::tokens::font(
+            forge_widgets::tokens::FontRole::Monospace,
+        ))
+        .size(forge_widgets::tokens::FONT_CAPS_SM)
+        .color(palette.text_faint)
+        .into()
+}
+
 fn settings_view<'a>(
     section: &'a SettingsSection,
     twitch_handle: Option<&'a TwitchChatHandle>,
+    ws: &'a crate::settings_websocket::SettingsWebSocketState,
+    server: &'a ServerScreenState,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let nav = iced::widget::column![
+        nav_group_header("PREFERENCES", palette),
         settings_section_button("Appearance", SettingsSection::Appearance, section, palette),
         settings_section_button("Language", SettingsSection::Language, section, palette),
         settings_section_button("Shortcuts", SettingsSection::Shortcuts, section, palette),
@@ -2042,32 +2064,52 @@ fn settings_view<'a>(
             "Notifications",
             SettingsSection::Notifications,
             section,
-            palette
+            palette,
         ),
+        iced::widget::Space::new().height(6),
+        nav_group_header("ENGINE", palette),
         settings_section_button("Platforms", SettingsSection::Platforms, section, palette),
         settings_section_button("Scripting", SettingsSection::Scripting, section, palette),
         settings_section_button("Queues", SettingsSection::Queues, section, palette),
         settings_section_button("Storage", SettingsSection::Storage, section, palette),
         settings_section_button("WebSocket", SettingsSection::WebSocket, section, palette),
+        iced::widget::Space::new().height(6),
+        nav_group_header("ABOUT", palette),
         settings_section_button("Version", SettingsSection::Version, section, palette),
         settings_section_button(
             "Diagnostics",
             SettingsSection::Diagnostics,
             section,
-            palette
+            palette,
         ),
     ]
-    .spacing(4)
-    .width(Length::Fixed(160.0));
+    .spacing(2)
+    .padding([12_u16, 8_u16])
+    .width(Length::Fixed(200.0));
+
+    let nav_container = iced::widget::container(nav)
+        .height(Length::Fill)
+        .style(move |_| iced::widget::container::Style {
+            background: Some(iced::Background::Color(palette.shell)),
+            border: iced::Border {
+                color: palette.border_regular,
+                width: 0.5,
+                radius: 0.0.into(),
+            },
+            ..iced::widget::container::Style::default()
+        });
 
     let pane: Element<'a, Message> = match section {
         SettingsSection::Diagnostics => settings_diagnostics_pane(palette),
         SettingsSection::Platforms => settings_platforms_pane(twitch_handle, palette),
+        SettingsSection::WebSocket => {
+            settings_websocket_view(ws, &server.bearer_token, server.token_revealed, palette)
+        }
         other => {
             let label = format!("Settings · {other:?}");
             iced::widget::container(forge_widgets::empty_state(
                 label,
-                "Placeholder for alpha-1.",
+                "Coming with alpha-N.",
                 None::<(&str, Message)>,
                 palette,
             ))
@@ -2077,7 +2119,7 @@ fn settings_view<'a>(
         }
     };
 
-    iced::widget::row![nav, pane].spacing(16).into()
+    iced::widget::row![nav_container, pane].spacing(0).into()
 }
 
 fn onboarding_left_column<'a>(
@@ -4118,9 +4160,13 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Screen::LiveChat => live_chat_view(&app.live_chat, palette),
         Screen::Globals => globals_view(app, palette),
         Screen::Actions => actions_view(app, palette),
-        Screen::Settings(section) => {
-            settings_view(section, app.twitch_chat_handle.as_ref(), palette)
-        }
+        Screen::Settings(section) => settings_view(
+            section,
+            app.twitch_chat_handle.as_ref(),
+            &app.settings_websocket,
+            &app.server_screen,
+            palette,
+        ),
         Screen::ScriptEditor => script_editor_view(app, palette),
         Screen::StreamApps => stream_apps_view(app, palette),
         Screen::EventFeed => event_feed_view(&app.event_feed, palette),
@@ -4951,6 +4997,7 @@ mod tests {
             integration_detail: None,
             obs_client: None,
             server_screen: ServerScreenState::default(),
+            settings_websocket: SettingsWebSocketState::default(),
         };
 
         assert!(app.action_engine.is_some());
@@ -5224,6 +5271,7 @@ mod tests {
             integration_detail: None,
             obs_client: None,
             server_screen: ServerScreenState::default(),
+            settings_websocket: SettingsWebSocketState::default(),
         };
 
         let mut form = crate::actions::AddActionForm::new();

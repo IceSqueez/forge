@@ -45,6 +45,7 @@ fn test_app() -> App {
         integration_detail: None,
         obs_client: None,
         server_screen: forge_app::ServerScreenState::default(),
+        settings_websocket: forge_app::SettingsWebSocketState::default(),
     }
 }
 

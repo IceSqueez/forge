@@ -18,6 +18,7 @@ use crate::event_feed::EventFeedMsg;
 use crate::live_chat::ChatFilter;
 use crate::script_editor::ScriptEditorMsg;
 use crate::server_screen::ServerScreenMsg;
+use crate::settings_websocket::SettingsWebSocketMsg;
 
 pub struct ObsClientRef(pub(crate) Arc<ObsClient>);
 
@@ -215,5 +216,6 @@ pub enum Message {
     ScriptEditor(ScriptEditorMsg),
     EventFeed(EventFeedMsg),
     Server(ServerScreenMsg),
+    SettingsWebSocket(SettingsWebSocketMsg),
     Noop,
 }

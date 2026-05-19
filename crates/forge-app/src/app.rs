@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use forge_events::{EventPublisher, EventSource};
+use forge_events::{Event, EventPublisher, EventSource};
 use forge_obs::ObsClient;
 use forge_platform_core::{
     IntegrationContent, IntegrationHealth, IntegrationId, IntegrationStatus, QuickActions,
@@ -9,12 +9,12 @@ use forge_platform_core::{
 };
 use forge_platform_twitch::{ChatConnectionState, ChatSendBridgeHandle, TwitchChatHandle};
 use forge_runtime::{
-    ActionEngineHandle, CommandParserHandle, EventBus, ExecutionRequest, NullEventLogRepo,
-    QueueSchedulerHandle, ScriptRegistry,
+    ActionEngineHandle, CommandParserHandle, EventBus, NullEventLogRepo, QueueSchedulerHandle,
+    ScriptRegistry,
 };
 use forge_storage::{CredentialId, CredentialsRepo, DataProvider, SettingsRepo, reserved_keys};
 use forge_storage_sqlite::SqliteBackend;
-use forge_types::{Action, ActionId, ArgStack, EventId};
+use forge_types::{Action, ActionId};
 use forge_widgets::icons::{
     ICON_ACTIVITY, ICON_BROADCAST, ICON_CHAT, ICON_DOWNLOAD, ICON_GEAR, ICON_GRID, ICON_HASH,
     ICON_HOME, ICON_LIGHTNING, ICON_PEOPLE, ICON_PLUS, ICON_TERMINAL,
@@ -52,6 +52,7 @@ use crate::script_editor::{
     ScriptEditorMsg, ScriptEditorState, handle_script_editor_msg, script_editor_view,
 };
 use crate::stream_apps::view as stream_apps_view;
+use crate::test_trigger::synthesize_test_event;
 use crate::{Message, OnboardingMsg, Screen, SettingsSection};
 
 pub struct SidebarExpandState {
@@ -779,23 +780,30 @@ fn handle_actions_msg(app: &mut App, sub: ActionsMsg) -> Task<Message> {
             Task::none()
         }
         ActionsMsg::TestTrigger(id) => {
-            let Some(engine) = app.action_engine.clone() else {
-                return Task::none();
-            };
+            let bus = Arc::clone(&app.bus);
+            let dp = Arc::clone(&app.backend);
             Task::perform(
                 async move {
-                    engine
-                        .dispatch(ExecutionRequest {
-                            action_id: id,
-                            trigger_event_id: EventId::new(),
-                            initial_args: ArgStack::new(),
-                        })
+                    let detail = load_action_detail(Arc::clone(&dp), id)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    let event = match detail.triggers.first() {
+                        Some(trigger) => synthesize_test_event(trigger, &detail.commands),
+                        None => Event::new(
+                            EventSource::Core,
+                            "test.trigger",
+                            serde_json::json!({ "action_id": id.to_string() }),
+                        ),
+                    };
+                    let event_id = event.id;
+                    bus.publish(event);
+                    bus.replay_and_publish(event_id)
                         .await
                         .map_err(|e| e.to_string())
                 },
                 |r| {
                     if let Err(e) = r {
-                        tracing::warn!(error = %e, "test trigger dispatch failed");
+                        tracing::warn!(error = %e, "test trigger failed");
                     }
                     Message::Noop
                 },

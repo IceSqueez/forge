@@ -307,4 +307,53 @@ mod tests {
             "action.done expected when scene filter is None"
         );
     }
+
+    #[tokio::test]
+    async fn replay_and_publish_dispatches_action_and_sets_replay_flag() {
+        let dp = make_dp().await;
+        let q_id = QueueId::new();
+        let a_id = ActionId::new();
+        let queue = Queue {
+            id: q_id,
+            name: "default".into(),
+            blocking: false,
+        };
+        let action = log_action(a_id, q_id);
+        let trigger = obs_trigger(a_id, None);
+
+        dp.queue_repo().save(&queue).await.unwrap();
+        dp.action_repo().save(&action).await.unwrap();
+        dp.trigger_repo().save(&trigger).await.unwrap();
+
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let mut sub = bus.subscribe();
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            Arc::clone(&dp),
+            Arc::new(ScriptRegistry::new()),
+            None,
+        );
+        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
+        let _handle = ObsTriggerEvaluator::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let original = scene_changed_event("TestScene");
+        let original_id = original.id;
+        bus.publish(original);
+        let _ = collect_kind(&mut sub, "action.done", 30).await;
+
+        bus.replay_and_publish(original_id).await.unwrap();
+
+        let replayed = collect_kind(&mut sub, "scene.changed", 30).await.unwrap();
+        assert!(
+            replayed.replay,
+            "replayed scene.changed must have replay=true"
+        );
+
+        let done = collect_kind(&mut sub, "action.done", 30).await;
+        assert!(
+            done.is_some(),
+            "action.done must fire when evaluator processes replayed event"
+        );
+    }
 }

@@ -1,7 +1,12 @@
+use forge_events::{Event, EventSource};
+use forge_runtime::EventBus;
 use forge_types::OAuthToken;
+use serde::Deserialize;
+use std::sync::Arc;
 use thiserror::Error;
 
 const EVENTSUB_URL: &str = "https://api.twitch.tv/helix/eventsub/subscriptions";
+const EVENTSUB_PATH: &str = "/helix/eventsub/subscriptions";
 
 #[derive(Debug, Error)]
 pub(crate) enum SubscribeError {
@@ -13,12 +18,26 @@ pub(crate) enum SubscribeError {
     ScopeMissing,
 }
 
+#[derive(Debug, Deserialize)]
+struct SubscribeResponse {
+    data: Vec<SubscriptionData>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SubscriptionData {
+    id: String,
+    #[serde(rename = "type")]
+    subscription_type: String,
+    condition: serde_json::Value,
+}
+
 pub(crate) async fn subscribe_chat_message(
     token: &OAuthToken,
     client_id: &str,
     session_id: &str,
     broadcaster_id: &str,
     user_id: &str,
+    bus: &Arc<EventBus>,
 ) -> Result<(), SubscribeError> {
     let http = reqwest::Client::new();
     let body = serde_json::json!({
@@ -47,18 +66,62 @@ pub(crate) async fn subscribe_chat_message(
     let status = resp.status().as_u16();
 
     if status == 401 {
+        bus.publish(Event::new(
+            EventSource::Twitch,
+            "request.fail",
+            serde_json::json!({
+                "endpoint": EVENTSUB_PATH,
+                "status_code": status,
+                "body_snippet": "unauthorized",
+                "retry_after_secs": null,
+            }),
+        ));
         return Err(SubscribeError::ScopeMissing);
     }
 
     if !resp.status().is_success() {
+        let retry_after = extract_retry_after(&resp);
         let body_text = resp.text().await.unwrap_or_default();
+        let snippet_end = body_text.len().min(200);
+        bus.publish(Event::new(
+            EventSource::Twitch,
+            "request.fail",
+            serde_json::json!({
+                "endpoint": EVENTSUB_PATH,
+                "status_code": status,
+                "body_snippet": &body_text[..snippet_end],
+                "retry_after_secs": retry_after,
+            }),
+        ));
         return Err(SubscribeError::Http {
             status,
             body: body_text,
         });
     }
 
+    let body_text = resp.text().await.unwrap_or_default();
+    if let Ok(parsed) = serde_json::from_str::<SubscribeResponse>(&body_text)
+        && let Some(sub) = parsed.data.first()
+    {
+        bus.publish(Event::new(
+            EventSource::Twitch,
+            "eventsub.subscription.created",
+            serde_json::json!({
+                "type": sub.subscription_type,
+                "subscription_id": sub.id,
+                "condition": sub.condition,
+            }),
+        ));
+    }
+
     Ok(())
+}
+
+fn extract_retry_after(resp: &reqwest::Response) -> Option<u64> {
+    resp.headers()
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<u64>().ok())
 }
 
 #[cfg(test)]

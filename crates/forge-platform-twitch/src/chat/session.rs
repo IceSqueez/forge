@@ -177,6 +177,7 @@ impl ChatSession {
                     &id,
                     &self.config.broadcaster_id,
                     &self.config.user_id,
+                    &self.config.bus,
                 )
                 .await
                 {
@@ -241,27 +242,22 @@ impl ChatSession {
     }
 
     fn publish_chat_message(&self, event_data: &serde_json::Value) {
-        let broadcaster_id = event_data
-            .get("broadcaster_user_id")
+        let channel = event_data
+            .get("broadcaster_user_login")
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
-        let chatter_id = event_data
-            .get("chatter_user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let chatter_login = event_data
+        let user_login = event_data
             .get("chatter_user_login")
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
-        let message_id = event_data
-            .get("message_id")
+        let user_id = event_data
+            .get("chatter_user_id")
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
-        let message_text = event_data
+        let message = event_data
             .get("message")
             .and_then(|m| m.get("text"))
             .and_then(|v| v.as_str())
@@ -272,10 +268,12 @@ impl ChatSession {
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
+        let roles = extract_roles_from_badges(event_data.get("badges"));
+        let badges = roles.clone();
 
         info!(
-            broadcaster_id = %broadcaster_id,
-            chatter_login = %chatter_login,
+            channel = %channel,
+            user_login = %user_login,
             "chat message received"
         );
 
@@ -283,11 +281,14 @@ impl ChatSession {
             EventSource::Twitch,
             "chat.message",
             serde_json::json!({
-                "broadcaster_id": broadcaster_id,
-                "chatter_id": chatter_id,
-                "chatter_login": chatter_login,
-                "message_id": message_id,
-                "message_text": message_text,
+                "channel": channel,
+                "user": {
+                    "login": user_login,
+                    "id": user_id,
+                    "roles": roles,
+                },
+                "message": message,
+                "badges": badges,
                 "color": color,
             }),
         ));
@@ -325,6 +326,18 @@ impl ChatSession {
             Ok(()) | Err(oneshot::error::TryRecvError::Closed)
         )
     }
+}
+
+fn extract_roles_from_badges(badges: Option<&serde_json::Value>) -> Vec<String> {
+    badges
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|b| b.get("set_id").and_then(|s| s.as_str()))
+                .map(ToOwned::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 enum SessionOutcome {
@@ -416,5 +429,79 @@ mod tests {
             ChatConnectionState::Reconnecting { attempt: 1 },
             ChatConnectionState::Reconnecting { attempt: 2 }
         );
+    }
+
+    #[test]
+    fn extract_roles_from_badges_returns_set_ids() {
+        let badges = serde_json::json!([
+            {"set_id": "moderator", "id": "1", "info": ""},
+            {"set_id": "subscriber", "id": "3012", "info": "36"}
+        ]);
+        let roles = extract_roles_from_badges(Some(&badges));
+        assert_eq!(roles, vec!["moderator", "subscriber"]);
+    }
+
+    #[test]
+    fn extract_roles_from_badges_empty_array() {
+        let badges = serde_json::json!([]);
+        let roles = extract_roles_from_badges(Some(&badges));
+        assert!(roles.is_empty());
+    }
+
+    #[test]
+    fn extract_roles_from_badges_missing_field() {
+        let roles = extract_roles_from_badges(None);
+        assert!(roles.is_empty());
+    }
+
+    #[tokio::test]
+    async fn publish_chat_message_emits_rfc031_payload_shape() {
+        use forge_runtime::{EventBus, NullEventLogRepo};
+        use forge_types::OAuthToken;
+        use std::sync::Arc;
+
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let token = OAuthToken::new("dummy".to_string());
+        let (session, _, _) = ChatSession::new(
+            token,
+            "client".to_string(),
+            "bcast".to_string(),
+            "user".to_string(),
+            Arc::clone(&bus),
+        );
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "broadcaster_user_login": "streamer_channel",
+            "chatter_user_id": "67890",
+            "chatter_user_login": "viewer_one",
+            "message": {"text": "hello world"},
+            "color": "#FF0000",
+            "badges": [
+                {"set_id": "moderator", "id": "1", "info": ""},
+                {"set_id": "vip", "id": "1", "info": ""}
+            ]
+        });
+
+        session.publish_chat_message(&event_data);
+
+        let ev = tokio::time::timeout(std::time::Duration::from_millis(100), sub.recv())
+            .await
+            .expect("timeout")
+            .expect("recv error");
+
+        assert_eq!(ev.kind, "chat.message");
+        assert_eq!(ev.source, EventSource::Twitch);
+        assert_eq!(ev.payload["channel"].as_str(), Some("streamer_channel"));
+        assert_eq!(ev.payload["user"]["login"].as_str(), Some("viewer_one"));
+        assert_eq!(ev.payload["user"]["id"].as_str(), Some("67890"));
+        assert_eq!(ev.payload["message"].as_str(), Some("hello world"));
+        assert_eq!(ev.payload["color"].as_str(), Some("#FF0000"));
+        let roles = ev.payload["user"]["roles"].as_array().unwrap();
+        assert_eq!(roles.len(), 2);
+        assert_eq!(roles[0].as_str(), Some("moderator"));
+        assert_eq!(roles[1].as_str(), Some("vip"));
+        let badges = ev.payload["badges"].as_array().unwrap();
+        assert_eq!(badges[0].as_str(), Some("moderator"));
     }
 }

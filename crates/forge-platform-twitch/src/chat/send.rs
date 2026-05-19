@@ -1,9 +1,13 @@
+use forge_events::{Event, EventSource};
 use forge_platform_core::RateLimiter;
+use forge_runtime::EventBus;
 use forge_types::OAuthToken;
 use serde::Deserialize;
+use std::sync::Arc;
 use thiserror::Error;
 
 const SEND_CHAT_URL: &str = "https://api.twitch.tv/helix/chat/messages";
+const SEND_CHAT_PATH: &str = "/helix/chat/messages";
 const MAX_MESSAGE_LEN: usize = 500;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,6 +46,7 @@ pub async fn send_chat(
     broadcaster_id: &str,
     sender_id: &str,
     message: &str,
+    bus: &Arc<EventBus>,
 ) -> Result<SentMessageId, ChatSendError> {
     let http = reqwest::Client::new();
     if message.len() > MAX_MESSAGE_LEN {
@@ -75,16 +80,26 @@ pub async fn send_chat(
 
     let status = resp.status().as_u16();
 
-    if status == 401 {
-        return Err(ChatSendError::ReauthRequired);
-    }
-
-    if status == 429 {
-        return Err(ChatSendError::RateLimited);
-    }
-
     if !resp.status().is_success() {
+        let retry_after = extract_retry_after(&resp);
         let body_text = resp.text().await.unwrap_or_default();
+        let snippet_end = body_text.len().min(200);
+        bus.publish(Event::new(
+            EventSource::Twitch,
+            "request.fail",
+            serde_json::json!({
+                "endpoint": SEND_CHAT_PATH,
+                "status_code": status,
+                "body_snippet": &body_text[..snippet_end],
+                "retry_after_secs": retry_after,
+            }),
+        ));
+        if status == 401 {
+            return Err(ChatSendError::ReauthRequired);
+        }
+        if status == 429 {
+            return Err(ChatSendError::RateLimited);
+        }
         return Err(ChatSendError::Http(format!("HTTP {status}: {body_text}")));
     }
 
@@ -101,6 +116,13 @@ pub async fn send_chat(
         .unwrap_or_default();
 
     Ok(SentMessageId(message_id))
+}
+
+fn extract_retry_after(resp: &reqwest::Response) -> Option<u64> {
+    resp.headers()
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<u64>().ok())
 }
 
 #[cfg(test)]

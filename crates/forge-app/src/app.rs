@@ -548,6 +548,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 return Task::none();
             }
             let backend = Arc::clone(&app.backend);
+            let bus = Arc::clone(&app.bus);
             Task::perform(
                 async move {
                     let json_str = backend
@@ -572,7 +573,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                     let oauth = forge_types::OAuthToken::new(token);
                     let limiter = NoopRateLimiter;
                     forge_platform_twitch::send_chat(
-                        &limiter, &oauth, &client_id, &user_id, &user_id, &msg,
+                        &limiter, &oauth, &client_id, &user_id, &user_id, &msg, &bus,
                     )
                     .await
                     .map(|_| ())

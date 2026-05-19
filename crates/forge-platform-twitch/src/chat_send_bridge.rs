@@ -81,8 +81,8 @@ impl ChatSendBridge {
                 Ok(()) => {
                     self.bus.publish(Event::caused_by(
                         EventSource::Twitch,
-                        "chat.sent",
-                        serde_json::json!({"target": "twitch"}),
+                        "chat.send",
+                        serde_json::json!({"channel": "twitch", "message": message}),
                         caused_by,
                     ));
                 }
@@ -132,6 +132,7 @@ impl ChatSendBridge {
             &user_id,
             &user_id,
             message,
+            &self.bus,
         )
         .await
         .map(|_| ())
@@ -238,7 +239,7 @@ mod tests {
             loop {
                 match test_sub.recv().await {
                     Ok(e) if e.kind == "chat.send.failed" => return Some(e),
-                    Ok(e) if e.kind == "chat.sent" => return Some(e),
+                    Ok(e) if e.kind == "chat.send" => return Some(e),
                     Ok(_) => continue,
                     Err(_) => return None,
                 }
@@ -278,7 +279,7 @@ mod tests {
         let result = tokio::time::timeout(Duration::from_secs(2), async {
             loop {
                 match test_sub.recv().await {
-                    Ok(e) if e.kind == "chat.send.failed" || e.kind == "chat.sent" => {
+                    Ok(e) if e.kind == "chat.send.failed" || e.kind == "chat.send" => {
                         return Some(e);
                     }
                     Ok(_) => continue,

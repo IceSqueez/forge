@@ -1,6 +1,56 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-alpha.8] - 2026-05-19
+### ⚠️ BREAKING CHANGES
+- **storage**: DataProvider gains event_log_repo() method
+- **runtime**: EventBus::replay renamed to lookup; replay name reserved for replay_and_publish
+- **runtime**: EventBus::new now requires Arc<dyn EventLogRepo>
+- **runtime**: none
+
+### ⚙️ Miscellaneous Tasks
+- *(workspace)* Update Cargo.lock
+- *(deps)* Update lockfile for forge-widgets forge-events dep
+- *(workspace)* Update Cargo.lock and rustfmt cleanup
+
+### 🐛 Bug Fixes
+- *(obs)* Align event payloads with RFC-031 and populate caused_by
+- *(twitch)* Align observability events with RFC-031 audit
+- *(runtime)* [**breaking**] Populate caused_by across full event causation chain
+- *(twitch)* Use char-boundary truncation for body_snippet
+- *(widgets)* Cap json_viewer recursion depth to prevent stack overflow
+
+### 📚 Documentation
+- *(readme)* Remove Twitch client_id manual-setup limitation
+- *(readme)* Refresh current status for alpha-8 EventFeed milestone
+
+### 🚀 Features
+- *(events)* Add Event::replay flag for replay_and_publish
+- *(storage)* [**breaking**] Add EventLogRepo trait and DataProvider extension
+- *(storage-sqlite)* Add migration 0005 and EventLogRepo impl
+- *(storage)* Add event_log_retention_days settings key
+- *(storage-sqlite)* Add background event_log retention pruning task
+- *(widgets)* Add source_badge widget with EventSource colors
+- *(runtime)* [**breaking**] Add EventBus::replay_and_publish with DB fallback
+- *(runtime)* Add ring buffer flush task for event_log persistence
+- *(widgets)* Add event_row_observability widget
+- *(widgets)* Add causation_chip widget
+- *(widgets)* Add json_viewer widget with syntax colors
+- *(runtime)* Emit global.set/incr/del observability events per RFC-031
+- *(widgets)* Add replay_button widget
+- *(runtime)* Emit queue and cooldown observability events
+- *(widgets)* Add event_inspector composite widget
+- *(script)* Emit script.exec and script.error events per RFC-031
+- *(app)* Add EventFeed screen with filters and replay flow
+- *(app)* Wire real EventLogRepo into EventBus at boot
+- *(app)* Rewire TestTrigger to use EventBus::replay_and_publish
+
+### 🚜 Refactor
+- *(runtime)* [**breaking**] Rename EventBus::replay to lookup
+
+### 🧪 Testing
+- *(runtime)* Add replay correctness regression tests
+
 ## [0.1.0-alpha.7] - 2026-05-19
 ### ⚠️ BREAKING CHANGES
 - **platform-core**: IntegrationStatus requires capability_flags() and header_actions()
@@ -16,6 +66,7 @@ All notable changes to this project will be documented in this file.
 - *(workspace)* Update Cargo.lock
 - *(deps)* Add futures-core to forge-platform-core lockfile
 - *(deps)* Update Cargo.lock for forge-events dep in forge-obs
+- Release
 
 ### 🐛 Bug Fixes
 - *(obs)* Align scene event kinds with EventSource::Obs taxonomy
@@ -23,6 +74,7 @@ All notable changes to this project will be documented in this file.
 ### 📚 Documentation
 - *(readme)* Add dynamic release and activity badge block
 - *(readme)* Refresh current status for alpha-7 OBS milestone
+- *(release)* Release v0.1.0-alpha.7
 
 ### 🚀 Features
 - *(obs)* Add forge-obs crate skeleton

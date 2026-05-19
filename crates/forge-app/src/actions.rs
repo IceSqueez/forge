@@ -113,6 +113,7 @@ pub enum TriggerCategory {
     Subscriptions,
     Bits,
     Raids,
+    Obs,
 }
 
 pub fn category_of(kind: &TriggerKind) -> TriggerCategory {
@@ -123,6 +124,7 @@ pub fn category_of(kind: &TriggerKind) -> TriggerCategory {
         | TriggerKind::TwitchGiftSub => TriggerCategory::Subscriptions,
         TriggerKind::TwitchCheer => TriggerCategory::Bits,
         TriggerKind::TwitchRaid => TriggerCategory::Raids,
+        TriggerKind::ObsSceneChanged { .. } => TriggerCategory::Obs,
     }
 }
 
@@ -135,6 +137,7 @@ pub fn kind_label(kind: &TriggerKind) -> &'static str {
         TriggerKind::TwitchGiftSub => "Twitch \u{00b7} Gift subs",
         TriggerKind::TwitchCheer => "Twitch \u{00b7} Bits cheered",
         TriggerKind::TwitchRaid => "Twitch \u{00b7} Raid received",
+        TriggerKind::ObsSceneChanged { .. } => "OBS \u{00b7} Scene changed",
     }
 }
 
@@ -147,6 +150,7 @@ pub fn kind_summary(kind: &TriggerKind) -> &'static str {
         TriggerKind::TwitchGiftSub => "Someone gifts subs to channel",
         TriggerKind::TwitchCheer => "Viewer sends bits",
         TriggerKind::TwitchRaid => "Another stream raids you",
+        TriggerKind::ObsSceneChanged { .. } => "Fires when OBS switches the active scene",
     }
 }
 
@@ -160,10 +164,11 @@ pub fn kind_search_text(kind: &TriggerKind) -> &'static str {
         TriggerKind::TwitchGiftSub => "twitch gift sub giftsub gifted",
         TriggerKind::TwitchCheer => "twitch cheer bits cheered donate",
         TriggerKind::TwitchRaid => "twitch raid incoming raided",
+        TriggerKind::ObsSceneChanged { .. } => "obs scene changed obsscenechanged",
     }
 }
 
-pub fn all_trigger_kinds() -> [TriggerKind; 7] {
+pub fn all_trigger_kinds() -> [TriggerKind; 8] {
     [
         TriggerKind::TwitchChatCommand,
         TriggerKind::TwitchChatAnyMessage,
@@ -172,6 +177,7 @@ pub fn all_trigger_kinds() -> [TriggerKind; 7] {
         TriggerKind::TwitchGiftSub,
         TriggerKind::TwitchCheer,
         TriggerKind::TwitchRaid,
+        TriggerKind::ObsSceneChanged { scene: None },
     ]
 }
 

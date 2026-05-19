@@ -18,7 +18,12 @@ fn decode_row(
 ) -> Result<Trigger, SqliteStorageError> {
     let id: TriggerId = parse_id(&id_str, "trigger")?;
     let action_id: ActionId = parse_id(&action_id_str, "action")?;
-    let kind: TriggerKind = serde_json::from_str(&format!("\"{kind_str}\"")).map_err(|e| {
+    let raw = if kind_str.starts_with('{') || kind_str.starts_with('[') {
+        kind_str.clone()
+    } else {
+        format!("\"{kind_str}\"")
+    };
+    let kind: TriggerKind = serde_json::from_str(&raw).map_err(|e| {
         SqliteStorageError::Decode(format!("invalid trigger kind '{kind_str}': {e}"))
     })?;
     let config: TriggerConfig = serde_json::from_str(&config_json)

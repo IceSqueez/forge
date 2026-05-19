@@ -12,6 +12,11 @@ pub enum TriggerKind {
     TwitchGiftSub,
     TwitchCheer,
     TwitchRaid,
+    /// Fires when OBS switches the active scene. `scene: None` fires on any
+    /// change; `scene: Some(name)` fires only when switching TO that scene.
+    ObsSceneChanged {
+        scene: Option<String>,
+    },
 }
 
 /// Kind-specific trigger parameters (cooldown_secs, perm, min_bits, etc.).
@@ -72,11 +77,30 @@ mod tests {
             TriggerKind::TwitchGiftSub,
             TriggerKind::TwitchCheer,
             TriggerKind::TwitchRaid,
+            TriggerKind::ObsSceneChanged { scene: None },
         ];
         for kind in kinds {
             let json = serde_json::to_string(&kind).unwrap();
             let back: TriggerKind = serde_json::from_str(&json).unwrap();
             assert_eq!(kind, back);
         }
+    }
+
+    #[test]
+    fn obs_scene_changed_any_serde_roundtrip() {
+        let kind = TriggerKind::ObsSceneChanged { scene: None };
+        let json = serde_json::to_string(&kind).unwrap();
+        let back: TriggerKind = serde_json::from_str(&json).unwrap();
+        assert_eq!(kind, back);
+    }
+
+    #[test]
+    fn obs_scene_changed_filtered_serde_roundtrip() {
+        let kind = TriggerKind::ObsSceneChanged {
+            scene: Some("Gaming".to_string()),
+        };
+        let json = serde_json::to_string(&kind).unwrap();
+        let back: TriggerKind = serde_json::from_str(&json).unwrap();
+        assert_eq!(kind, back);
     }
 }

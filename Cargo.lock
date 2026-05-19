@@ -2217,6 +2217,7 @@ dependencies = [
  "base64",
  "forge-events",
  "forge-platform-core",
+ "forge-runtime",
  "forge-storage",
  "forge-types",
  "rand 0.10.1",

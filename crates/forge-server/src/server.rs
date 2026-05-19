@@ -9,6 +9,7 @@ use axum::{Json, Router, middleware};
 use tokio::net::TcpListener;
 
 use crate::auth::AuthState;
+use crate::bus_adapter::BusAdapter;
 use crate::routes::{api, overlays, ws};
 use crate::{ServerConfig, ServerError, ServerHandle};
 
@@ -24,6 +25,8 @@ impl Server {
             self.config.credentials.as_ref(),
         )
         .await?;
+        let bus_adapter = BusAdapter::new(self.config.event_bus);
+        bus_adapter.spawn();
         let listener = TcpListener::bind(addr)
             .await
             .map_err(|e| ServerError::Bind {

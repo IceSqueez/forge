@@ -3,6 +3,7 @@
 mod routes;
 
 pub mod auth;
+pub mod bus_adapter;
 pub mod config;
 pub mod error;
 pub mod handle;

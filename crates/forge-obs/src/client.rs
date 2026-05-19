@@ -17,6 +17,7 @@ use forge_platform_core::{
 use crate::catalog::ObsCatalog;
 use crate::error::ObsError;
 use crate::health::{HealthSnapshot, make_health_channel};
+use crate::source::SourceInfo;
 
 const STATE_DISCONNECTED: u8 = 0;
 const STATE_CONNECTING: u8 = 1;
@@ -258,6 +259,8 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                     }
                 }
 
+                snapshot_catalog(&client, &catalog_state).await;
+
                 let events = client.events();
                 inner.write().await.replace(client);
 
@@ -376,6 +379,64 @@ fn handle_obs_event(
                 &name,
                 *enabled,
             ));
+        }
+    }
+}
+
+async fn snapshot_catalog(client: &obws::Client, catalog_state: &RwLock<ObsCatalog>) {
+    use obws::requests::scenes::SceneId;
+
+    let scenes: Vec<String> = client
+        .scenes()
+        .list()
+        .await
+        .map(|list| list.scenes.iter().map(|s| s.id.name.clone()).collect())
+        .unwrap_or_default();
+
+    let current_scene: Option<String> = client
+        .scenes()
+        .current_program_scene()
+        .await
+        .map(|s| s.id.name.clone())
+        .ok();
+
+    let sources: Option<(String, Vec<SourceInfo>)> = if let Some(scene) = current_scene.as_deref() {
+        client
+            .scene_items()
+            .list(SceneId::Name(scene))
+            .await
+            .map(|items| {
+                let infos = items
+                    .into_iter()
+                    .map(|i| SourceInfo {
+                        name: i.source_name,
+                        visible: true,
+                        locked: false,
+                        audio_db: None,
+                    })
+                    .collect();
+                (scene.to_owned(), infos)
+            })
+            .ok()
+    } else {
+        None
+    };
+
+    let audio_inputs: Vec<String> = client
+        .inputs()
+        .list(None)
+        .await
+        .map(|inputs| inputs.into_iter().map(|i| i.id.name.clone()).collect())
+        .unwrap_or_default();
+
+    if let Ok(mut catalog) = catalog_state.write() {
+        catalog.scenes = scenes;
+        catalog.audio_inputs = audio_inputs;
+        if let Some(scene) = current_scene {
+            if let Some((scene_key, infos)) = sources {
+                catalog.sources.insert(scene_key, infos);
+            }
+            catalog.current_scene = Some(scene);
         }
     }
 }

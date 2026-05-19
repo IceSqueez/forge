@@ -12,6 +12,7 @@ pub(crate) struct ObsCatalog {
     pub scenes: Vec<String>,
     pub current_scene: Option<String>,
     pub sources: HashMap<String, Vec<SourceInfo>>,
+    pub audio_inputs: Vec<String>,
 }
 
 fn scene_to_item(name: &str, current_scene: Option<&str>) -> ContentListItem {

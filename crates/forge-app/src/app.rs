@@ -524,6 +524,17 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                     app.live_chat.chat_log.pop_front();
                 }
             }
+            if event.kind == "quick_action.done"
+                && let Some(state) = app.integration_detail.as_mut()
+            {
+                let label = event.payload["label"].as_str().unwrap_or("Quick Action");
+                let outcome = event.payload["outcome"].as_str().unwrap_or("done");
+                state.quick_action_toast = Some(if outcome == "success" {
+                    format!("{label} — done")
+                } else {
+                    format!("{label} — {outcome}")
+                });
+            }
             Task::none()
         }
         Message::ChatInputChanged(s) => {

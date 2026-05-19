@@ -4,7 +4,9 @@ use std::sync::Arc;
 use forge_events::Event;
 use forge_obs::ObsClient;
 use forge_platform_core::oauth::{DeviceCodeResponse, TokenResponse};
-use forge_platform_core::{HeaderAction, HealthDelta, PickerKind};
+use forge_widgets::PickerItem;
+
+use forge_platform_core::{HeaderAction, HealthDelta};
 use forge_storage::GlobalEntry;
 use forge_types::ActionId;
 use forge_widgets::{ThemeId, VariantKind};
@@ -171,8 +173,11 @@ pub enum IntegrationDetailMsg {
     HealthDelta(HealthDelta),
     HeaderActionClicked(HeaderAction),
     QuickActionClicked(usize),
-    PickerOpened(PickerKind),
-    PickerClosed,
+    PickerSearchChanged(String),
+    PickerItemsLoaded(Result<(Vec<PickerItem>, Option<String>), String>),
+    PickerItemSelected(usize),
+    PickerCancelled,
+    DismissToast,
 }
 
 #[derive(Debug, Clone)]

@@ -7,7 +7,8 @@ use forge_events::{Event, EventSource};
 use forge_obs::ObsSink;
 use forge_storage::DataProvider;
 use forge_types::{
-    ActionId, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome, SubActionOutcome,
+    ActionId, ArgStack, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome,
+    SubActionOutcome, SubActionSpec,
 };
 use serde_json::json;
 use time::OffsetDateTime;
@@ -18,9 +19,16 @@ use crate::EventBus;
 use crate::script_registry::ScriptRegistry;
 use crate::sub_actions::dispatch;
 
+struct QuickActionRequest {
+    spec: SubActionSpec,
+    integration_id: String,
+    label: String,
+}
+
 #[derive(Clone)]
 pub struct ActionEngineHandle {
     sender: mpsc::Sender<ExecutionRequest>,
+    quick_sender: mpsc::Sender<QuickActionRequest>,
     cancel: Arc<AtomicBool>,
 }
 
@@ -40,6 +48,22 @@ impl ActionEngineHandle {
     pub async fn dispatch(&self, req: ExecutionRequest) -> Result<(), DispatchError> {
         self.sender
             .send(req)
+            .await
+            .map_err(|_| DispatchError::ChannelClosed)
+    }
+
+    pub async fn execute_quick_action(
+        &self,
+        spec: SubActionSpec,
+        integration_id: String,
+        label: String,
+    ) -> Result<(), DispatchError> {
+        self.quick_sender
+            .send(QuickActionRequest {
+                spec,
+                integration_id,
+                label,
+            })
             .await
             .map_err(|_| DispatchError::ChannelClosed)
     }
@@ -65,17 +89,23 @@ impl ActionEngine {
         obs_sink: Option<Arc<dyn ObsSink>>,
     ) -> ActionEngineHandle {
         let (tx, rx) = mpsc::channel(256);
+        let (quick_tx, quick_rx) = mpsc::channel(64);
         let cancel = Arc::new(AtomicBool::new(false));
         let cancel_clone = Arc::clone(&cancel);
         let engine = Self {
-            bus,
-            dp,
-            registry,
-            obs_sink,
+            bus: Arc::clone(&bus),
+            dp: Arc::clone(&dp),
+            registry: Arc::clone(&registry),
+            obs_sink: obs_sink.clone(),
             input: rx,
         };
         tokio::spawn(async move { engine.run(cancel_clone).await });
-        ActionEngineHandle { sender: tx, cancel }
+        tokio::spawn(run_quick_action_loop(quick_rx, bus, dp, registry, obs_sink));
+        ActionEngineHandle {
+            sender: tx,
+            quick_sender: quick_tx,
+            cancel,
+        }
     }
 
     async fn run(mut self, cancel: Arc<AtomicBool>) {
@@ -259,6 +289,55 @@ impl ActionEngine {
         if let Some(msg) = first_failure {
             ctx.outcome = ExecutionOutcome::Failed(msg);
         }
+    }
+}
+
+async fn run_quick_action_loop(
+    mut rx: mpsc::Receiver<QuickActionRequest>,
+    bus: Arc<EventBus>,
+    dp: Arc<dyn DataProvider>,
+    registry: Arc<ScriptRegistry>,
+    obs_sink: Option<Arc<dyn ObsSink>>,
+) {
+    while let Some(req) = rx.recv().await {
+        let parent_event_id = EventId::new();
+
+        let run_event = Event::new(
+            EventSource::Core,
+            "subaction.run",
+            json!({ "step_index": 0, "kind": req.spec.kind_label() }),
+        );
+        bus.publish(run_event);
+
+        let (telemetry, _) = dispatch(
+            &req.spec,
+            &ArgStack::new(),
+            0,
+            parent_event_id,
+            &bus,
+            Arc::clone(&dp),
+            Some(registry.as_ref()),
+            obs_sink.clone(),
+        )
+        .await;
+
+        let outcome = match &telemetry.outcome {
+            SubActionOutcome::Success => "success",
+            SubActionOutcome::Failed(_) => "failed",
+            SubActionOutcome::Skipped(_) => "skipped",
+        };
+
+        bus.publish(Event::caused_by(
+            EventSource::Core,
+            "quick_action.done",
+            json!({
+                "kind": telemetry.kind,
+                "outcome": outcome,
+                "label": req.label,
+                "integration_id": req.integration_id,
+            }),
+            parent_event_id,
+        ));
     }
 }
 

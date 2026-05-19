@@ -342,6 +342,8 @@ fn push_key_segs<'a, Msg: 'a>(
     }
 }
 
+const JSON_VIEWER_MAX_DEPTH: usize = 32;
+
 fn push_lines<'a, Msg: 'a>(
     out: &mut Vec<Element<'a, Msg>>,
     value: &serde_json::Value,
@@ -352,6 +354,20 @@ fn push_lines<'a, Msg: 'a>(
     mono: iced::Font,
 ) {
     use serde_json::Value;
+
+    if indent >= JSON_VIEWER_MAX_DEPTH {
+        let mut segs = Vec::new();
+        push_indent_seg(&mut segs, indent, colors, mono);
+        push_key_segs(&mut segs, key, colors, mono);
+        let trail = if trailing_comma {
+            "\"...\","
+        } else {
+            "\"...\""
+        };
+        segs.push(colored_text_span(trail.to_string(), colors.muted, mono));
+        out.push(lines_row(segs));
+        return;
+    }
 
     match value {
         Value::Object(map) => {

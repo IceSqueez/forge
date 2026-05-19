@@ -33,3 +33,7 @@ pub const ICON_X: char = '\u{F62C}';
 pub const ICON_CHECK_CIRCLE: char = '\u{F26D}';
 pub const ICON_INFO_CIRCLE: char = '\u{F431}';
 pub const ICON_KEYBOARD: char = '\u{F459}';
+pub const ICON_FOLDER: char = '\u{F3D7}';
+pub const ICON_FOLDER_OPEN: char = '\u{F3D8}';
+pub const ICON_FILE_IMAGE: char = '\u{F39B}';
+pub const ICON_EXTERNAL_LINK: char = '\u{F1C5}';

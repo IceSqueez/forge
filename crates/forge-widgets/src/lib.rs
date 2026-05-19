@@ -49,10 +49,11 @@ pub use events::{
 pub use icons::{
     BOOTSTRAP_FONT, BOOTSTRAP_FONT_BYTES, ICON_ACTIVITY, ICON_ALERT_TRIANGLE, ICON_BROADCAST,
     ICON_CHAT, ICON_CHECK_CIRCLE, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CHEVRON_UP,
-    ICON_CLOCK, ICON_COPY, ICON_DOWNLOAD, ICON_EYE, ICON_EYE_SLASH, ICON_FILE_CODE, ICON_GEAR,
-    ICON_GLOBE, ICON_GRID, ICON_HASH, ICON_HOME, ICON_INFO_CIRCLE, ICON_JOURNAL, ICON_KEYBOARD,
-    ICON_LIGHTNING, ICON_LOCK, ICON_MUSIC_NOTE, ICON_PEOPLE, ICON_PLUS, ICON_REFRESH, ICON_REPLAY,
-    ICON_SERVER, ICON_SPEAKER, ICON_TERMINAL, ICON_X,
+    ICON_CLOCK, ICON_COPY, ICON_DOWNLOAD, ICON_EXTERNAL_LINK, ICON_EYE, ICON_EYE_SLASH,
+    ICON_FILE_CODE, ICON_FILE_IMAGE, ICON_FOLDER, ICON_FOLDER_OPEN, ICON_GEAR, ICON_GLOBE,
+    ICON_GRID, ICON_HASH, ICON_HOME, ICON_INFO_CIRCLE, ICON_JOURNAL, ICON_KEYBOARD, ICON_LIGHTNING,
+    ICON_LOCK, ICON_MUSIC_NOTE, ICON_PEOPLE, ICON_PLUS, ICON_REFRESH, ICON_REPLAY, ICON_SERVER,
+    ICON_SPEAKER, ICON_TERMINAL, ICON_X,
 };
 pub use inputs::{input_padding, search_input, select, text_input_field};
 pub use integration::{
@@ -79,8 +80,9 @@ pub use sections::{
 };
 pub use server::{
     BindAddressCardParams, BindBadge, BulletItem, BulletKind, ClientRowData, ClientStatus,
-    SubscriptionChipData, TypeToConfirmModalParams, bearer_token_display, bind_address_card,
-    client_table_row, type_to_confirm_modal,
+    FileMime, OverlayEntry, OverlayFileListParams, OverlayKind, SubscriptionChipData,
+    TypeToConfirmModalParams, bearer_token_display, bind_address_card, client_table_row,
+    overlay_file_list, type_to_confirm_modal,
 };
 pub use status::{StatusVariant, platform_badge, role_badge, status_dot, status_pill};
 pub use theme::{catppuccin_mocha, latte, palette_for_theme, tokyo_night_storm};

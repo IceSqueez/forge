@@ -2227,6 +2227,7 @@ name = "forge-storage"
 version = "0.1.0-alpha.7"
 dependencies = [
  "async-trait",
+ "forge-events",
  "forge-types",
  "serde",
  "serde_json",
@@ -2240,6 +2241,7 @@ version = "0.1.0-alpha.7"
 dependencies = [
  "aes-gcm",
  "async-trait",
+ "forge-events",
  "forge-platform-core",
  "forge-storage",
  "forge-types",

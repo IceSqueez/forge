@@ -25,16 +25,21 @@ pub(super) async fn run(
     let raw = super::interpolate_with_globals(value, arg_stack, dp).await;
     let variant = parse_variant(&raw);
 
+    let prev_value = GlobalsRepo::get(dp, &name).await.ok().flatten();
+
     let outcome = match GlobalsRepo::set(dp, &name, variant, false).await {
         Ok(()) => {
+            let mut payload = serde_json::json!({
+                "key": name,
+                "new_value": raw,
+            });
+            if let Some(prev) = prev_value {
+                payload["prev_value"] = serde_json::Value::String(prev.to_string());
+            }
             bus.publish(Event::caused_by(
                 EventSource::Core,
                 "global.set",
-                serde_json::json!({
-                    "name": name,
-                    "value": raw,
-                    "persisted": false,
-                }),
+                payload,
                 parent_event_id,
             ));
             SubActionOutcome::Success

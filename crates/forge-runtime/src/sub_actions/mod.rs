@@ -278,7 +278,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn set_global_emits_global_set_event() {
+    async fn set_global_emits_global_set_event_with_key_field() {
         let dp = make_dp().await;
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
@@ -304,7 +304,109 @@ mod tests {
             .unwrap();
         assert_eq!(event.kind, "global.set");
         assert_eq!(event.caused_by, Some(parent_id));
-        assert_eq!(event.payload["name"].as_str(), Some("x"));
+        assert_eq!(event.payload["key"].as_str(), Some("x"));
+        assert_eq!(event.payload["new_value"].as_str(), Some("100"));
+        assert!(event.payload.get("prev_value").is_none());
+    }
+
+    #[tokio::test]
+    async fn set_global_emits_prev_value_when_key_existed() {
+        let dp = make_dp().await;
+        GlobalsRepo::set(dp.as_ref(), "score", Variant::Int(10), false)
+            .await
+            .unwrap();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let mut sub = bus.subscribe();
+        let spec = SubActionSpec::SetGlobal {
+            name: "score".to_string(),
+            value: "20".to_string(),
+        };
+        dispatch(
+            &spec,
+            &ArgStack::new(),
+            0,
+            EventId::new(),
+            &bus,
+            Arc::clone(&dp),
+            None,
+            None,
+        )
+        .await;
+        let event = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(event.kind, "global.set");
+        assert_eq!(event.payload["key"].as_str(), Some("score"));
+        assert_eq!(event.payload["new_value"].as_str(), Some("20"));
+        assert_eq!(event.payload["prev_value"].as_str(), Some("10"));
+    }
+
+    #[tokio::test]
+    async fn increment_global_via_dispatch_emits_global_incr_with_key_and_delta() {
+        let dp = make_dp().await;
+        GlobalsRepo::set(dp.as_ref(), "hits", Variant::Int(5), false)
+            .await
+            .unwrap();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let mut sub = bus.subscribe();
+        let parent_id = EventId::new();
+        let spec = SubActionSpec::IncrementGlobal {
+            name: "hits".to_string(),
+            amount: 2,
+        };
+        dispatch(
+            &spec,
+            &ArgStack::new(),
+            0,
+            parent_id,
+            &bus,
+            Arc::clone(&dp),
+            None,
+            None,
+        )
+        .await;
+        let event = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(event.kind, "global.incr");
+        assert_eq!(event.caused_by, Some(parent_id));
+        assert_eq!(event.payload["key"].as_str(), Some("hits"));
+        assert_eq!(event.payload["delta"].as_i64(), Some(2));
+        assert_eq!(event.payload["new_value"].as_i64(), Some(7));
+    }
+
+    #[tokio::test]
+    async fn delete_global_via_dispatch_emits_global_del_with_key() {
+        let dp = make_dp().await;
+        GlobalsRepo::set(dp.as_ref(), "temp", Variant::Int(1), false)
+            .await
+            .unwrap();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let mut sub = bus.subscribe();
+        let parent_id = EventId::new();
+        let spec = SubActionSpec::DeleteGlobal {
+            name: "temp".to_string(),
+        };
+        dispatch(
+            &spec,
+            &ArgStack::new(),
+            0,
+            parent_id,
+            &bus,
+            Arc::clone(&dp),
+            None,
+            None,
+        )
+        .await;
+        let event = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(event.kind, "global.del");
+        assert_eq!(event.caused_by, Some(parent_id));
+        assert_eq!(event.payload["key"].as_str(), Some("temp"));
     }
 
     #[tokio::test]

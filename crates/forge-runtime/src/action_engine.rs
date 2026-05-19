@@ -350,14 +350,16 @@ pub fn spawn_action_engine(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use crate::NullEventLogRepo;
     use crate::script_registry::ScriptRegistry;
-    use forge_storage::DataProvider;
+    use forge_storage::{DataProvider, GlobalsRepo};
     use forge_storage_sqlite::SqliteBackend;
-    use forge_types::{Action, ActionId, EventId, LogLevel, Queue, QueueId, SubActionSpec};
+    use forge_types::{
+        Action, ActionId, EventId, LogLevel, Queue, QueueId, SubActionSpec, Variant,
+    };
 
     async fn make_dp() -> Arc<dyn DataProvider> {
         Arc::new(
@@ -615,6 +617,205 @@ mod tests {
         assert_eq!(history.len(), 1, "one execution must be saved");
         assert_eq!(history[0].action_id, action_id);
         handle.shutdown();
+    }
+
+    #[tokio::test]
+    async fn set_global_sub_action_emits_global_set_event_via_action_engine() {
+        use std::time::Duration;
+
+        let dp = make_dp().await;
+        let action_id = ActionId::new();
+        let queue_id = QueueId::new();
+        let action = Action {
+            id: action_id,
+            name: "Set Counter".to_string(),
+            group: None,
+            queue_id,
+            enabled: true,
+            concurrent: false,
+            bypass_pause: false,
+            description: None,
+            sub_actions: vec![SubActionSpec::SetGlobal {
+                name: "counter".to_string(),
+                value: "99".to_string(),
+            }],
+        };
+        seed_action(&dp, &action).await;
+
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let mut sub = bus.subscribe();
+        let handle = spawn_action_engine(
+            Arc::clone(&bus),
+            Arc::clone(&dp),
+            Arc::new(ScriptRegistry::new()),
+            None,
+        );
+
+        handle
+            .dispatch(ExecutionRequest {
+                action_id,
+                trigger_event_id: EventId::new(),
+                initial_args: forge_types::ArgStack::new(),
+            })
+            .await
+            .unwrap();
+
+        let mut global_set_event = None;
+        loop {
+            match tokio::time::timeout(Duration::from_millis(500), sub.recv()).await {
+                Ok(Ok(ev)) if ev.kind == "global.set" => {
+                    global_set_event = Some(ev);
+                }
+                Ok(Ok(ev)) if ev.kind == "action.done" => break,
+                Ok(Ok(_)) => {}
+                _ => break,
+            }
+        }
+        handle.shutdown();
+
+        assert!(
+            global_set_event.is_some(),
+            "global.set event must be emitted"
+        );
+        let event = global_set_event.unwrap();
+        assert_eq!(event.payload["key"].as_str(), Some("counter"));
+        assert_eq!(event.payload["new_value"].as_str(), Some("99"));
+        assert!(event.caused_by.is_some());
+    }
+
+    #[tokio::test]
+    async fn increment_global_sub_action_emits_global_incr_event_via_action_engine() {
+        use std::time::Duration;
+
+        let dp = make_dp().await;
+        GlobalsRepo::set(dp.as_ref(), "hits", Variant::Int(3), false)
+            .await
+            .unwrap();
+
+        let action_id = ActionId::new();
+        let queue_id = QueueId::new();
+        let action = Action {
+            id: action_id,
+            name: "Incr Hits".to_string(),
+            group: None,
+            queue_id,
+            enabled: true,
+            concurrent: false,
+            bypass_pause: false,
+            description: None,
+            sub_actions: vec![SubActionSpec::IncrementGlobal {
+                name: "hits".to_string(),
+                amount: 5,
+            }],
+        };
+        seed_action(&dp, &action).await;
+
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let mut sub = bus.subscribe();
+        let handle = spawn_action_engine(
+            Arc::clone(&bus),
+            Arc::clone(&dp),
+            Arc::new(ScriptRegistry::new()),
+            None,
+        );
+
+        handle
+            .dispatch(ExecutionRequest {
+                action_id,
+                trigger_event_id: EventId::new(),
+                initial_args: forge_types::ArgStack::new(),
+            })
+            .await
+            .unwrap();
+
+        let mut global_incr_event = None;
+        loop {
+            match tokio::time::timeout(Duration::from_millis(500), sub.recv()).await {
+                Ok(Ok(ev)) if ev.kind == "global.incr" => {
+                    global_incr_event = Some(ev);
+                }
+                Ok(Ok(ev)) if ev.kind == "action.done" => break,
+                Ok(Ok(_)) => {}
+                _ => break,
+            }
+        }
+        handle.shutdown();
+
+        assert!(
+            global_incr_event.is_some(),
+            "global.incr event must be emitted"
+        );
+        let event = global_incr_event.unwrap();
+        assert_eq!(event.payload["key"].as_str(), Some("hits"));
+        assert_eq!(event.payload["delta"].as_i64(), Some(5));
+        assert_eq!(event.payload["new_value"].as_i64(), Some(8));
+        assert!(event.caused_by.is_some());
+    }
+
+    #[tokio::test]
+    async fn delete_global_sub_action_emits_global_del_event_via_action_engine() {
+        use std::time::Duration;
+
+        let dp = make_dp().await;
+        GlobalsRepo::set(dp.as_ref(), "temp_key", Variant::Int(1), false)
+            .await
+            .unwrap();
+
+        let action_id = ActionId::new();
+        let queue_id = QueueId::new();
+        let action = Action {
+            id: action_id,
+            name: "Del Temp".to_string(),
+            group: None,
+            queue_id,
+            enabled: true,
+            concurrent: false,
+            bypass_pause: false,
+            description: None,
+            sub_actions: vec![SubActionSpec::DeleteGlobal {
+                name: "temp_key".to_string(),
+            }],
+        };
+        seed_action(&dp, &action).await;
+
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let mut sub = bus.subscribe();
+        let handle = spawn_action_engine(
+            Arc::clone(&bus),
+            Arc::clone(&dp),
+            Arc::new(ScriptRegistry::new()),
+            None,
+        );
+
+        handle
+            .dispatch(ExecutionRequest {
+                action_id,
+                trigger_event_id: EventId::new(),
+                initial_args: forge_types::ArgStack::new(),
+            })
+            .await
+            .unwrap();
+
+        let mut global_del_event = None;
+        loop {
+            match tokio::time::timeout(Duration::from_millis(500), sub.recv()).await {
+                Ok(Ok(ev)) if ev.kind == "global.del" => {
+                    global_del_event = Some(ev);
+                }
+                Ok(Ok(ev)) if ev.kind == "action.done" => break,
+                Ok(Ok(_)) => {}
+                _ => break,
+            }
+        }
+        handle.shutdown();
+
+        assert!(
+            global_del_event.is_some(),
+            "global.del event must be emitted"
+        );
+        let event = global_del_event.unwrap();
+        assert_eq!(event.payload["key"].as_str(), Some("temp_key"));
+        assert!(event.caused_by.is_some());
     }
 
     #[tokio::test]

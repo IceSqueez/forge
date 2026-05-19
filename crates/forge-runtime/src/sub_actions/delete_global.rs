@@ -22,14 +22,11 @@ pub(super) async fn run(
     let resolved_name = super::interpolate_with_globals(name, arg_stack, dp).await;
 
     let outcome = match GlobalsRepo::delete(dp, &resolved_name).await {
-        Ok(existed) => {
+        Ok(_existed) => {
             bus.publish(Event::caused_by(
                 EventSource::Core,
                 "global.del",
-                serde_json::json!({
-                    "name": resolved_name,
-                    "existed": existed,
-                }),
+                serde_json::json!({ "key": resolved_name }),
                 parent_event_id,
             ));
             SubActionOutcome::Success
@@ -69,7 +66,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn delete_global_existing_key_emits_existed_true() {
+    async fn delete_global_existing_key_emits_event_with_key() {
         let dp = make_dp().await;
         GlobalsRepo::set(dp.as_ref(), "counter", Variant::Int(7), false)
             .await
@@ -95,11 +92,11 @@ mod tests {
             .unwrap();
         assert_eq!(event.kind, "global.del");
         assert_eq!(event.caused_by, Some(parent_id));
-        assert_eq!(event.payload["existed"].as_bool(), Some(true));
+        assert_eq!(event.payload["key"].as_str(), Some("counter"));
     }
 
     #[tokio::test]
-    async fn delete_global_nonexistent_key_emits_existed_false() {
+    async fn delete_global_nonexistent_key_still_emits_event() {
         let dp = make_dp().await;
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
@@ -123,7 +120,8 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(event.payload["existed"].as_bool(), Some(false));
+        assert_eq!(event.kind, "global.del");
+        assert_eq!(event.payload["key"].as_str(), Some("missing"));
     }
 
     #[tokio::test]

@@ -1,6 +1,8 @@
 use forge_events::{Event, EventSource};
 use forge_storage::{DataProvider, GlobalsRepo};
-use forge_types::{ArgStack, EventId, SubActionOutcome, SubActionSpec, SubActionTelemetry};
+use forge_types::{
+    ArgStack, EventId, SubActionOutcome, SubActionSpec, SubActionTelemetry, Variant,
+};
 use time::OffsetDateTime;
 
 use crate::EventBus;
@@ -22,14 +24,18 @@ pub(super) async fn run(
     let resolved_name = super::interpolate_with_globals(name, arg_stack, dp).await;
 
     let outcome = match GlobalsRepo::incr(dp, &resolved_name, *amount).await {
-        Ok(new_value) => {
+        Ok(new_val) => {
+            let new_val_json = match &new_val {
+                Variant::Int(i) => serde_json::Value::from(*i),
+                _ => serde_json::Value::String(new_val.to_string()),
+            };
             bus.publish(Event::caused_by(
                 EventSource::Core,
                 "global.incr",
                 serde_json::json!({
-                    "name": resolved_name,
-                    "amount": amount,
-                    "new_value": new_value.to_string(),
+                    "key": resolved_name,
+                    "delta": *amount,
+                    "new_value": new_val_json,
                 }),
                 parent_event_id,
             ));
@@ -97,8 +103,9 @@ mod tests {
             .unwrap();
         assert_eq!(event.kind, "global.incr");
         assert_eq!(event.caused_by, Some(parent_id));
-        assert_eq!(event.payload["name"].as_str(), Some("counter"));
-        assert_eq!(event.payload["amount"].as_i64(), Some(3));
+        assert_eq!(event.payload["key"].as_str(), Some("counter"));
+        assert_eq!(event.payload["delta"].as_i64(), Some(3));
+        assert_eq!(event.payload["new_value"].as_i64(), Some(10));
     }
 
     #[tokio::test]

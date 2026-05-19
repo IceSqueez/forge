@@ -40,7 +40,8 @@ pub use data::{
     value_preview, variant_kind_color,
 };
 pub use events::{
-    EventRowData, causation_chip, color_for_source, event_row_observability, source_badge,
+    EventRowData, causation_chip, color_for_source, event_row_observability, json_viewer,
+    source_badge,
 };
 pub use icons::{
     BOOTSTRAP_FONT, BOOTSTRAP_FONT_BYTES, ICON_ACTIVITY, ICON_BROADCAST, ICON_CHAT,

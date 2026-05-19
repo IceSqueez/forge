@@ -1,7 +1,7 @@
 use forge_events::EventSource;
 use iced::{
     Background, Border, Color, Element, Length, Padding,
-    widget::{button, column, container, row},
+    widget::{button, column, container, row, scrollable},
 };
 
 use crate::{
@@ -282,6 +282,196 @@ pub fn causation_chip<'a, Msg: Clone + 'a>(
         .into()
 }
 
+struct JsonColors {
+    muted: Color,
+    key: Color,
+    string_val: Color,
+    number_val: Color,
+    keyword_val: Color,
+}
+
+impl JsonColors {
+    fn from_palette(p: &ForgePalette) -> Self {
+        Self {
+            muted: p.text_muted,
+            key: p.info,
+            string_val: p.success,
+            number_val: p.bits,
+            keyword_val: p.brand,
+        }
+    }
+}
+
+fn colored_text_span<'a, Msg: 'a>(
+    content: String,
+    color: Color,
+    mono: iced::Font,
+) -> Element<'a, Msg> {
+    iced::widget::text(content)
+        .size(FONT_CAPS_SM)
+        .color(color)
+        .font(mono)
+        .into()
+}
+
+fn lines_row<'a, Msg: 'a>(segs: Vec<Element<'a, Msg>>) -> Element<'a, Msg> {
+    row(segs).spacing(0).into()
+}
+
+fn push_indent_seg<'a, Msg: 'a>(
+    segs: &mut Vec<Element<'a, Msg>>,
+    indent: usize,
+    colors: &JsonColors,
+    mono: iced::Font,
+) {
+    if indent > 0 {
+        segs.push(colored_text_span("  ".repeat(indent), colors.muted, mono));
+    }
+}
+
+fn push_key_segs<'a, Msg: 'a>(
+    segs: &mut Vec<Element<'a, Msg>>,
+    key: Option<&str>,
+    colors: &JsonColors,
+    mono: iced::Font,
+) {
+    if let Some(k) = key {
+        segs.push(colored_text_span(format!(r#""{k}""#), colors.key, mono));
+        segs.push(colored_text_span(": ".to_string(), colors.muted, mono));
+    }
+}
+
+fn push_lines<'a, Msg: 'a>(
+    out: &mut Vec<Element<'a, Msg>>,
+    value: &serde_json::Value,
+    indent: usize,
+    key: Option<&str>,
+    trailing_comma: bool,
+    colors: &JsonColors,
+    mono: iced::Font,
+) {
+    use serde_json::Value;
+
+    match value {
+        Value::Object(map) => {
+            let mut segs = Vec::new();
+            push_indent_seg(&mut segs, indent, colors, mono);
+            push_key_segs(&mut segs, key, colors, mono);
+            segs.push(colored_text_span("{".to_string(), colors.muted, mono));
+            out.push(lines_row(segs));
+
+            let len = map.len();
+            for (i, (k, v)) in map.iter().enumerate() {
+                push_lines(out, v, indent + 1, Some(k), i + 1 < len, colors, mono);
+            }
+
+            let closing = if trailing_comma { "}," } else { "}" };
+            let mut segs = Vec::new();
+            push_indent_seg(&mut segs, indent, colors, mono);
+            segs.push(colored_text_span(closing.to_string(), colors.muted, mono));
+            out.push(lines_row(segs));
+        }
+
+        Value::Array(arr) => {
+            let mut segs = Vec::new();
+            push_indent_seg(&mut segs, indent, colors, mono);
+            push_key_segs(&mut segs, key, colors, mono);
+            segs.push(colored_text_span("[".to_string(), colors.muted, mono));
+            out.push(lines_row(segs));
+
+            let len = arr.len();
+            for (i, v) in arr.iter().enumerate() {
+                push_lines(out, v, indent + 1, None, i + 1 < len, colors, mono);
+            }
+
+            let closing = if trailing_comma { "]," } else { "]" };
+            let mut segs = Vec::new();
+            push_indent_seg(&mut segs, indent, colors, mono);
+            segs.push(colored_text_span(closing.to_string(), colors.muted, mono));
+            out.push(lines_row(segs));
+        }
+
+        Value::String(_) => {
+            let json_repr = serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string());
+            let mut segs = Vec::new();
+            push_indent_seg(&mut segs, indent, colors, mono);
+            push_key_segs(&mut segs, key, colors, mono);
+            segs.push(colored_text_span(json_repr, colors.string_val, mono));
+            if trailing_comma {
+                segs.push(colored_text_span(",".to_string(), colors.muted, mono));
+            }
+            out.push(lines_row(segs));
+        }
+
+        Value::Number(n) => {
+            let mut segs = Vec::new();
+            push_indent_seg(&mut segs, indent, colors, mono);
+            push_key_segs(&mut segs, key, colors, mono);
+            segs.push(colored_text_span(n.to_string(), colors.number_val, mono));
+            if trailing_comma {
+                segs.push(colored_text_span(",".to_string(), colors.muted, mono));
+            }
+            out.push(lines_row(segs));
+        }
+
+        Value::Bool(b) => {
+            let kw = if *b { "true" } else { "false" };
+            let mut segs = Vec::new();
+            push_indent_seg(&mut segs, indent, colors, mono);
+            push_key_segs(&mut segs, key, colors, mono);
+            segs.push(colored_text_span(kw.to_string(), colors.keyword_val, mono));
+            if trailing_comma {
+                segs.push(colored_text_span(",".to_string(), colors.muted, mono));
+            }
+            out.push(lines_row(segs));
+        }
+
+        Value::Null => {
+            let mut segs = Vec::new();
+            push_indent_seg(&mut segs, indent, colors, mono);
+            push_key_segs(&mut segs, key, colors, mono);
+            segs.push(colored_text_span(
+                "null".to_string(),
+                colors.keyword_val,
+                mono,
+            ));
+            if trailing_comma {
+                segs.push(colored_text_span(",".to_string(), colors.muted, mono));
+            }
+            out.push(lines_row(segs));
+        }
+    }
+}
+
+pub fn json_viewer<'a, Msg: 'a>(
+    value: &'a serde_json::Value,
+    palette: &ForgePalette,
+) -> Element<'a, Msg> {
+    let mono = font(FontRole::Monospace);
+    let colors = JsonColors::from_palette(palette);
+
+    let mut lines: Vec<Element<'a, Msg>> = Vec::new();
+    push_lines(&mut lines, value, 0, None, false, &colors, mono);
+
+    let content = column(lines).spacing(0);
+
+    let base = palette.base;
+    let border_color = palette.border_regular;
+
+    container(scrollable(content).height(Length::Shrink))
+        .padding([10, 11])
+        .style(move |_: &iced::Theme| container::Style {
+            background: Some(Background::Color(base)),
+            border: Border {
+                color: border_color,
+                width: 0.5,
+                radius: radius(Radius::Lg).into(),
+            },
+            ..container::Style::default()
+        })
+        .into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -397,5 +587,17 @@ mod tests {
     fn causation_chip_renders_without_panic() {
         let palette = &CATPPUCCIN_MOCHA;
         let _: iced::Element<'_, ()> = causation_chip("ACTION: Sub Alert", "#ac_3f2a", (), palette);
+    }
+
+    #[test]
+    fn json_viewer_flat_object_constructs() {
+        let value = serde_json::json!({"key": "value"});
+        let _: iced::Element<'_, ()> = json_viewer(&value, &CATPPUCCIN_MOCHA);
+    }
+
+    #[test]
+    fn json_viewer_nested_object_constructs() {
+        let value = serde_json::json!({"a": {"b": [1, true, null]}});
+        let _: iced::Element<'_, ()> = json_viewer(&value, &CATPPUCCIN_MOCHA);
     }
 }

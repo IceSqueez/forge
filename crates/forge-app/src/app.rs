@@ -3582,6 +3582,30 @@ fn sub_action_element<'a>(
         SubActionSpec::RunScript { script_name } => {
             ('\u{ea4e}', spec.kind_label(), script_name.clone())
         }
+        SubActionSpec::ObsSetScene { scene_name } => {
+            ('\u{eb20}', spec.kind_label(), scene_name.clone())
+        }
+        SubActionSpec::ObsSetSourceVisible {
+            scene_name,
+            source_name,
+            visible,
+        } => (
+            '\u{eb20}',
+            spec.kind_label(),
+            format!("{scene_name} / {source_name} → {visible}"),
+        ),
+        SubActionSpec::ObsSetInputMute { input_name, muted } => (
+            '\u{eb20}',
+            spec.kind_label(),
+            format!("{input_name} muted={muted}"),
+        ),
+        SubActionSpec::ObsStartRecord => ('\u{eb20}', spec.kind_label(), String::new()),
+        SubActionSpec::ObsStopRecord => ('\u{eb20}', spec.kind_label(), String::new()),
+        SubActionSpec::ObsStartStream => ('\u{eb20}', spec.kind_label(), String::new()),
+        SubActionSpec::ObsStopStream => ('\u{eb20}', spec.kind_label(), String::new()),
+        SubActionSpec::ObsRaw { request_type, .. } => {
+            ('\u{eb20}', spec.kind_label(), request_type.clone())
+        }
     };
 
     let index_el = container(

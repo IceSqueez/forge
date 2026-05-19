@@ -115,6 +115,23 @@ pub async fn dispatch(
             };
             run_script::run(script_name, arg_stack, index, parent_event_id, bus, dp, reg).await
         }
+        SubActionSpec::ObsSetScene { .. }
+        | SubActionSpec::ObsSetSourceVisible { .. }
+        | SubActionSpec::ObsSetInputMute { .. }
+        | SubActionSpec::ObsStartRecord
+        | SubActionSpec::ObsStopRecord
+        | SubActionSpec::ObsStartStream
+        | SubActionSpec::ObsStopStream
+        | SubActionSpec::ObsRaw { .. } => (
+            SubActionTelemetry {
+                kind: spec.kind_label().to_string(),
+                started_at: OffsetDateTime::now_utc(),
+                duration_ms: 0,
+                outcome: SubActionOutcome::Failed("integration not ready: OBS".to_string()),
+                index,
+            },
+            None,
+        ),
     }
 }
 

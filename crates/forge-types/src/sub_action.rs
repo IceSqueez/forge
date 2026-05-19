@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::Variant;
+
 /// Inline template string passed through `ArgInterpolator` before execution.
 pub type VariantTemplate = String;
 
@@ -43,6 +45,26 @@ pub enum SubActionSpec {
     RunScript {
         script_name: String,
     },
+    ObsSetScene {
+        scene_name: String,
+    },
+    ObsSetSourceVisible {
+        scene_name: String,
+        source_name: String,
+        visible: bool,
+    },
+    ObsSetInputMute {
+        input_name: String,
+        muted: bool,
+    },
+    ObsStartRecord,
+    ObsStopRecord,
+    ObsStartStream,
+    ObsStopStream,
+    ObsRaw {
+        request_type: String,
+        payload: Variant,
+    },
 }
 
 impl SubActionSpec {
@@ -56,6 +78,14 @@ impl SubActionSpec {
             Self::Delay { .. } => "Delay",
             Self::Log { .. } => "Log",
             Self::RunScript { .. } => "RunScript",
+            Self::ObsSetScene { .. } => "ObsSetScene",
+            Self::ObsSetSourceVisible { .. } => "ObsSetSourceVisible",
+            Self::ObsSetInputMute { .. } => "ObsSetInputMute",
+            Self::ObsStartRecord => "ObsStartRecord",
+            Self::ObsStopRecord => "ObsStopRecord",
+            Self::ObsStartStream => "ObsStartStream",
+            Self::ObsStopStream => "ObsStopStream",
+            Self::ObsRaw { .. } => "ObsRaw",
         }
     }
 }
@@ -146,6 +176,77 @@ mod tests {
         let json = serde_json::to_string(&spec).unwrap();
         let back: SubActionSpec = serde_json::from_str(&json).unwrap();
         assert_eq!(spec, back);
+    }
+
+    #[test]
+    fn obs_variants_serde_roundtrip() {
+        let variants: Vec<SubActionSpec> = vec![
+            SubActionSpec::ObsSetScene {
+                scene_name: "Gameplay".to_string(),
+            },
+            SubActionSpec::ObsSetSourceVisible {
+                scene_name: "Gameplay".to_string(),
+                source_name: "Webcam".to_string(),
+                visible: false,
+            },
+            SubActionSpec::ObsSetInputMute {
+                input_name: "Mic".to_string(),
+                muted: true,
+            },
+            SubActionSpec::ObsStartRecord,
+            SubActionSpec::ObsStopRecord,
+            SubActionSpec::ObsStartStream,
+            SubActionSpec::ObsStopStream,
+            SubActionSpec::ObsRaw {
+                request_type: "GetStats".to_string(),
+                payload: crate::Variant::Object(std::collections::BTreeMap::new()),
+            },
+        ];
+        for spec in &variants {
+            let json = serde_json::to_string(spec).unwrap();
+            let back: SubActionSpec = serde_json::from_str(&json).unwrap();
+            assert_eq!(spec, &back, "round-trip failed for {}", spec.kind_label());
+        }
+    }
+
+    #[test]
+    fn obs_kind_labels_match_all_variants() {
+        assert_eq!(
+            SubActionSpec::ObsSetScene {
+                scene_name: String::new(),
+            }
+            .kind_label(),
+            "ObsSetScene"
+        );
+        assert_eq!(
+            SubActionSpec::ObsSetSourceVisible {
+                scene_name: String::new(),
+                source_name: String::new(),
+                visible: true,
+            }
+            .kind_label(),
+            "ObsSetSourceVisible"
+        );
+        assert_eq!(
+            SubActionSpec::ObsSetInputMute {
+                input_name: String::new(),
+                muted: false,
+            }
+            .kind_label(),
+            "ObsSetInputMute"
+        );
+        assert_eq!(SubActionSpec::ObsStartRecord.kind_label(), "ObsStartRecord");
+        assert_eq!(SubActionSpec::ObsStopRecord.kind_label(), "ObsStopRecord");
+        assert_eq!(SubActionSpec::ObsStartStream.kind_label(), "ObsStartStream");
+        assert_eq!(SubActionSpec::ObsStopStream.kind_label(), "ObsStopStream");
+        assert_eq!(
+            SubActionSpec::ObsRaw {
+                request_type: String::new(),
+                payload: crate::Variant::Bool(false),
+            }
+            .kind_label(),
+            "ObsRaw"
+        );
     }
 
     #[test]

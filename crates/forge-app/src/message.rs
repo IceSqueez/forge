@@ -14,6 +14,7 @@ use time::OffsetDateTime;
 
 use crate::Screen;
 use crate::actions::{AddActionMsg, AddSubActionMsg, AddTriggerMsg, RemoveSubActionMsg};
+use crate::event_feed::EventFeedMsg;
 use crate::live_chat::ChatFilter;
 use crate::script_editor::ScriptEditorMsg;
 
@@ -211,5 +212,6 @@ pub enum Message {
     ChatSent(Result<(), String>),
     ChatFilterChanged(ChatFilter),
     ScriptEditor(ScriptEditorMsg),
+    EventFeed(EventFeedMsg),
     Noop,
 }

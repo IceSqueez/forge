@@ -76,24 +76,25 @@ pub fn source_badge<'a, Msg: 'a>(source: EventSource, palette: &ForgePalette) ->
         .into()
 }
 
-pub struct EventRowData<'a> {
-    pub timestamp: &'a str,
+pub struct EventRowData {
+    pub timestamp: String,
     pub source: EventSource,
-    pub event_type: &'a str,
-    pub summary: &'a str,
-    pub result_tag: Option<&'a str>,
+    pub event_type: String,
+    pub summary: String,
+    pub result_tag: Option<String>,
     pub is_error: bool,
 }
 
 pub fn event_row_observability<'a, Msg: Clone + 'a>(
-    event: &'a EventRowData<'a>,
+    event: &EventRowData,
     selected: bool,
     on_click: Msg,
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
     let mono = font(FontRole::Monospace);
+    let is_error = event.is_error;
 
-    let accent_color = if event.is_error {
+    let accent_color = if is_error {
         palette.random
     } else if selected {
         palette.brand
@@ -123,7 +124,7 @@ pub fn event_row_observability<'a, Msg: Clone + 'a>(
             ..container::Style::default()
         });
 
-    let ts = iced::widget::text(event.timestamp)
+    let ts = iced::widget::text(event.timestamp.clone())
         .size(FONT_CAPS)
         .color(palette.text_faint)
         .font(mono)
@@ -132,7 +133,7 @@ pub fn event_row_observability<'a, Msg: Clone + 'a>(
     let badge = source_badge(event.source, palette);
 
     let etype = container(
-        iced::widget::text(event.event_type)
+        iced::widget::text(event.event_type.clone())
             .size(FONT_CAPS)
             .color(palette.text_primary)
             .font(mono),
@@ -140,7 +141,7 @@ pub fn event_row_observability<'a, Msg: Clone + 'a>(
     .width(104);
 
     let summary = container(
-        iced::widget::text(event.summary)
+        iced::widget::text(event.summary.clone())
             .size(FONT_CAPS)
             .color(palette.text_secondary)
             .font(mono),
@@ -148,10 +149,10 @@ pub fn event_row_observability<'a, Msg: Clone + 'a>(
     .width(Length::Fill)
     .clip(true);
 
-    let result_color = if event.is_error {
+    let result_color = if is_error {
         palette.random
     } else {
-        match event.result_tag {
+        match event.result_tag.as_deref() {
             Some("ok") | Some("sent") => palette.success,
             Some("err") => palette.random,
             _ => palette.text_muted,
@@ -162,9 +163,9 @@ pub fn event_row_observability<'a, Msg: Clone + 'a>(
         .spacing(10)
         .align_y(iced::Alignment::Center);
 
-    if let Some(tag) = event.result_tag {
+    if let Some(tag) = &event.result_tag {
         content_row = content_row.push(
-            iced::widget::text(tag)
+            iced::widget::text(tag.clone())
                 .size(FONT_CAPS_SM)
                 .color(result_color)
                 .font(mono),
@@ -196,11 +197,11 @@ pub fn event_row_observability<'a, Msg: Clone + 'a>(
         .style(
             move |_theme: &iced::Theme, status: button::Status| button::Style {
                 background: match status {
-                    button::Status::Hovered if !selected && !event.is_error => {
+                    button::Status::Hovered if !selected && !is_error => {
                         Some(Background::Color(bg_hover))
                     }
                     _ if selected => Some(Background::Color(bg_selected)),
-                    _ if event.is_error => Some(Background::Color(bg_error)),
+                    _ if is_error => Some(Background::Color(bg_error)),
                     _ => None,
                 },
                 text_color: Color::TRANSPARENT,
@@ -645,11 +646,11 @@ mod tests {
     fn event_row_unselected_constructs() {
         let palette = &CATPPUCCIN_MOCHA;
         let data = EventRowData {
-            timestamp: "14:23:01.124",
+            timestamp: "14:23:01.124".to_owned(),
             source: EventSource::Twitch,
-            event_type: "chat.message",
-            summary: "koval_dev: !quote",
-            result_tag: Some("→ 1 action"),
+            event_type: "chat.message".to_owned(),
+            summary: "koval_dev: !quote".to_owned(),
+            result_tag: Some("\u{2192} 1 action".to_owned()),
             is_error: false,
         };
         let _: iced::Element<'_, ()> = event_row_observability(&data, false, (), palette);
@@ -659,11 +660,11 @@ mod tests {
     fn event_row_selected_constructs() {
         let palette = &CATPPUCCIN_MOCHA;
         let data = EventRowData {
-            timestamp: "14:23:01.142",
+            timestamp: "14:23:01.142".to_owned(),
             source: EventSource::Twitch,
-            event_type: "command.matched",
-            summary: "!quote by koval_dev (VIP)",
-            result_tag: Some("→ trigger fired"),
+            event_type: "command.matched".to_owned(),
+            summary: "!quote by koval_dev (VIP)".to_owned(),
+            result_tag: Some("\u{2192} trigger fired".to_owned()),
             is_error: false,
         };
         let _: iced::Element<'_, ()> = event_row_observability(&data, true, (), palette);
@@ -673,11 +674,11 @@ mod tests {
     fn event_row_error_constructs() {
         let palette = &CATPPUCCIN_MOCHA;
         let data = EventRowData {
-            timestamp: "14:23:02.402",
+            timestamp: "14:23:02.402".to_owned(),
             source: EventSource::Http,
-            event_type: "request.fail",
-            summary: "GET api.twitch.tv/.../followers → 429 rate limited",
-            result_tag: Some("retry in 12s"),
+            event_type: "request.fail".to_owned(),
+            summary: "GET api.twitch.tv/.../followers \u{2192} 429 rate limited".to_owned(),
+            result_tag: Some("retry in 12s".to_owned()),
             is_error: true,
         };
         let _: iced::Element<'_, ()> = event_row_observability(&data, false, (), palette);
@@ -687,10 +688,10 @@ mod tests {
     fn event_row_no_result_tag_constructs() {
         let palette = &CATPPUCCIN_MOCHA;
         let data = EventRowData {
-            timestamp: "14:23:01.145",
+            timestamp: "14:23:01.145".to_owned(),
             source: EventSource::Core,
-            event_type: "subaction.run",
-            summary: "[1/5] read_file → %lines% = [128]",
+            event_type: "subaction.run".to_owned(),
+            summary: "[1/5] read_file \u{2192} %lines% = [128]".to_owned(),
             result_tag: None,
             is_error: false,
         };
@@ -701,11 +702,11 @@ mod tests {
     fn result_tag_ok_uses_success_color() {
         let palette = &CATPPUCCIN_MOCHA;
         let data = EventRowData {
-            timestamp: "14:23:01.158",
+            timestamp: "14:23:01.158".to_owned(),
             source: EventSource::Core,
-            event_type: "action.done",
-            summary: "!quote · 5/5 sub-actions",
-            result_tag: Some("ok"),
+            event_type: "action.done".to_owned(),
+            summary: "!quote \u{b7} 5/5 sub-actions".to_owned(),
+            result_tag: Some("ok".to_owned()),
             is_error: false,
         };
         let _: iced::Element<'_, ()> = event_row_observability(&data, false, (), palette);

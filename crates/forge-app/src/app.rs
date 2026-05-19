@@ -34,6 +34,7 @@ use crate::actions::{
     AddTriggerMsg, RemoveSubActionMsg, SubActionKindChoice, TriggerCategory, kind_label,
     kind_summary, load_action_detail, load_actions_tree, remove_sub_action, save_sub_action,
 };
+use crate::event_feed::{EventFeedState, event_feed_view, handle_event_feed_msg};
 use crate::globals_view::{
     GlobalsState, globals_view, handle_globals_msg, handle_variant_editor_msg,
 };
@@ -100,6 +101,7 @@ pub struct App {
     pub hub: HubStats,
     pub sidebar_state: SidebarExpandState,
     pub onboarding: OnboardingState,
+    pub event_feed: EventFeedState,
     pub live_chat: LiveChatState,
     pub actions: ActionsState,
     pub globals: GlobalsState,
@@ -136,6 +138,7 @@ impl App {
             hub: HubStats::new(),
             sidebar_state: SidebarExpandState::new(),
             onboarding: OnboardingState::new(),
+            event_feed: EventFeedState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
             globals: GlobalsState::new(),
@@ -176,6 +179,7 @@ impl Default for App {
             hub: HubStats::new(),
             sidebar_state: SidebarExpandState::new(),
             onboarding: OnboardingState::new(),
+            event_feed: EventFeedState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
             globals: GlobalsState::new(),
@@ -535,7 +539,13 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                     format!("{label} — {outcome}")
                 });
             }
+            if !app.event_feed.paused {
+                app.event_feed.push_event(event);
+            }
             Task::none()
+        }
+        Message::EventFeed(sub) => {
+            handle_event_feed_msg(&mut app.event_feed, sub, Arc::clone(&app.bus))
         }
         Message::ChatInputChanged(s) => {
             app.live_chat.chat_input = s;
@@ -4098,6 +4108,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         }
         Screen::ScriptEditor => script_editor_view(app, palette),
         Screen::StreamApps => stream_apps_view(app, palette),
+        Screen::EventFeed => event_feed_view(&app.event_feed, palette),
         Screen::Onboarding(_) => unreachable!(),
         Screen::IntegrationDetail(_id) => {
             if let Some(state) = app.integration_detail.as_ref() {
@@ -4902,6 +4913,7 @@ mod tests {
             hub: HubStats::new(),
             sidebar_state: SidebarExpandState::new(),
             onboarding: OnboardingState::new(),
+            event_feed: EventFeedState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
             globals: GlobalsState::new(),
@@ -5173,6 +5185,7 @@ mod tests {
             hub: HubStats::new(),
             sidebar_state: SidebarExpandState::new(),
             onboarding: OnboardingState::new(),
+            event_feed: EventFeedState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
             globals: GlobalsState::new(),

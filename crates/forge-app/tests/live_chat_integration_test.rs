@@ -3,8 +3,8 @@
 use std::sync::Arc;
 
 use forge_app::{
-    App, ChatFilter, Message, Screen, ScriptEditorState, SidebarExpandState, app::update,
-    screen::OnboardingStep,
+    App, ChatFilter, EventFeedState, Message, Screen, ScriptEditorState, SidebarExpandState,
+    app::update, screen::OnboardingStep,
 };
 use forge_events::{Event, EventSource};
 use forge_runtime::{EventBus, NullEventLogRepo, ScriptRegistry, bus_subscription};
@@ -28,6 +28,7 @@ fn test_app() -> App {
         bus: EventBus::new(Arc::new(NullEventLogRepo)),
         storage_offline: false,
         onboarding: forge_app::OnboardingState::new(),
+        event_feed: EventFeedState::new(),
         live_chat: forge_app::LiveChatState::new(),
         actions: forge_app::ActionsState::new(),
         globals: forge_app::GlobalsState::new(),

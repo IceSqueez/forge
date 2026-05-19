@@ -1,5 +1,6 @@
 pub mod actions;
 pub mod app;
+pub mod event_feed;
 pub mod globals_view;
 pub mod integration_detail;
 pub mod live_chat;
@@ -15,6 +16,9 @@ pub use actions::{
     SubActionKindChoice, TriggerCategory,
 };
 pub use app::{App, SidebarExpandState, load_obs_and_connect};
+pub use event_feed::{
+    EventFeedMsg, EventFeedState, EventFilter, handle_event_feed_msg, matches_filter,
+};
 pub use globals_view::{
     GlobalsState, VariantEditorFields, VariantEditorForm, handle_variant_editor_msg,
     load_globals_data,

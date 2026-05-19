@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use forge_events::{Event, EventSource};
 use forge_runtime::{ActionEngineHandle, EventBus, ExecutionRequest};
-use forge_storage::{CredentialsRepo, DataProvider};
-use forge_types::{ActionId, ArgStack, EventId, Variant};
+use forge_storage::{CredentialsRepo, DataProvider, GlobalsRepo};
+use forge_types::{ActionId, ArgStack, CommandPermission, EventId, Variant};
 
 use crate::auth::AuthState;
 use crate::bus_adapter::{BusAdapter, ClientFilterSet, EventFilter};
@@ -296,6 +296,149 @@ fn not_implemented() -> WsResponse {
     }
 }
 
+fn variant_to_wire_value(v: &Variant) -> serde_json::Value {
+    match v {
+        Variant::Int(n) => serde_json::json!(n),
+        Variant::Float(f) => serde_json::json!(f),
+        Variant::Bool(b) => serde_json::json!(b),
+        Variant::String(s) => serde_json::Value::String(s.clone()),
+        Variant::Datetime(dt) => serde_json::Value::String(
+            dt.format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_default(),
+        ),
+        Variant::Array(arr) => {
+            serde_json::Value::Array(arr.iter().map(variant_to_wire_value).collect())
+        }
+        Variant::Object(map) => serde_json::Value::Object(
+            map.iter()
+                .map(|(k, val)| (k.clone(), variant_to_wire_value(val)))
+                .collect(),
+        ),
+    }
+}
+
+fn permission_str(p: &CommandPermission) -> &'static str {
+    match p {
+        CommandPermission::Everyone => "everyone",
+        CommandPermission::Subscriber => "subscriber",
+        CommandPermission::Vip => "vip",
+        CommandPermission::Moderator => "moderator",
+        CommandPermission::Broadcaster => "broadcaster",
+    }
+}
+
+async fn handle_get_commands(ctx: &DispatchContext) -> WsResponse {
+    let commands = match ctx.dp.command_repo().list().await {
+        Ok(list) => list,
+        Err(e) => {
+            return WsResponse::Error {
+                code: Some("RUNTIME_ERROR".to_owned()),
+                message: e.to_string(),
+            };
+        }
+    };
+    let wire_commands: Vec<serde_json::Value> = commands
+        .iter()
+        .map(|c| {
+            serde_json::json!({
+                "id": c.id.to_string(),
+                "command": c.name,
+                "action_id": c.action_id.to_string(),
+                "cooldown_seconds": c.cooldown_secs,
+                "enabled": true,
+                "permission_level": permission_str(&c.permission),
+            })
+        })
+        .collect();
+    WsResponse::Ok(serde_json::json!({ "commands": wire_commands }))
+}
+
+async fn handle_get_globals(ctx: &DispatchContext) -> WsResponse {
+    let globals_repo: &dyn GlobalsRepo = ctx.dp.as_ref();
+    let globals = match globals_repo.list().await {
+        Ok(list) => list,
+        Err(e) => {
+            return WsResponse::Error {
+                code: Some("RUNTIME_ERROR".to_owned()),
+                message: e.to_string(),
+            };
+        }
+    };
+    let wire_globals: Vec<serde_json::Value> = globals
+        .iter()
+        .map(|g| {
+            let last_modified = g
+                .last_modified
+                .format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_default();
+            serde_json::json!({
+                "key": g.name,
+                "value": variant_to_wire_value(&g.value),
+                "type": g.value.type_tag().to_string(),
+                "persisted": g.persisted,
+                "reads": g.reads,
+                "writes": g.writes,
+                "last_modified": last_modified,
+            })
+        })
+        .collect();
+    WsResponse::Ok(serde_json::json!({ "globals": wire_globals }))
+}
+
+async fn handle_get_global(name: String, ctx: &DispatchContext) -> WsResponse {
+    let globals_repo: &dyn GlobalsRepo = ctx.dp.as_ref();
+    match globals_repo.get(&name).await {
+        Ok(Some(value)) => WsResponse::Ok(serde_json::json!({
+            "name": name,
+            "value": variant_to_wire_value(&value),
+            "type": value.type_tag().to_string(),
+        })),
+        Ok(None) => WsResponse::Error {
+            code: Some("NOT_FOUND".to_owned()),
+            message: format!("global '{name}' not found"),
+        },
+        Err(e) => WsResponse::Error {
+            code: Some("RUNTIME_ERROR".to_owned()),
+            message: e.to_string(),
+        },
+    }
+}
+
+async fn handle_set_global(
+    name: String,
+    value: serde_json::Value,
+    persisted: bool,
+    ctx: &DispatchContext,
+) -> WsResponse {
+    let variant = match Variant::from_json(value) {
+        Ok(v) => v,
+        Err(_) => {
+            return WsResponse::Error {
+                code: Some("INVALID_PAYLOAD".to_owned()),
+                message: "value must be a non-null JSON scalar, array, or object".to_owned(),
+            };
+        }
+    };
+    let event_payload = serde_json::json!({
+        "name": name,
+        "value": variant_to_wire_value(&variant),
+        "persisted": persisted,
+        "via": "ws_api",
+    });
+    let globals_repo: &dyn GlobalsRepo = ctx.dp.as_ref();
+    match globals_repo.set(&name, variant, persisted).await {
+        Ok(()) => {
+            ctx.bus
+                .publish(Event::new(EventSource::Server, "global.set", event_payload));
+            WsResponse::Ok(serde_json::json!({ "ok": true }))
+        }
+        Err(e) => WsResponse::Error {
+            code: Some("RUNTIME_ERROR".to_owned()),
+            message: e.to_string(),
+        },
+    }
+}
+
 async fn handle_get_actions(ctx: &DispatchContext) -> WsResponse {
     let actions = match ctx.dp.action_repo().list().await {
         Ok(list) => list,
@@ -471,28 +614,32 @@ async fn route(req: WsRequest, ctx: &DispatchContext) -> WsResponse {
             if ctx.auth_required_for_reads && !is_authenticated(ctx) {
                 return unauthenticated();
             }
-            not_implemented()
+            handle_get_commands(ctx).await
         }
 
         WsRequest::GetGlobals => {
             if ctx.auth_required_for_reads && !is_authenticated(ctx) {
                 return unauthenticated();
             }
-            not_implemented()
+            handle_get_globals(ctx).await
         }
 
-        WsRequest::GetGlobal { .. } => {
+        WsRequest::GetGlobal { name } => {
             if ctx.auth_required_for_reads && !is_authenticated(ctx) {
                 return unauthenticated();
             }
-            not_implemented()
+            handle_get_global(name, ctx).await
         }
 
-        WsRequest::SetGlobal { .. } => {
+        WsRequest::SetGlobal {
+            name,
+            value,
+            persisted,
+        } => {
             if !is_authenticated(ctx) {
                 return unauthenticated();
             }
-            not_implemented()
+            handle_set_global(name, value, persisted, ctx).await
         }
 
         WsRequest::GetUserGlobals { .. } => {
@@ -554,7 +701,10 @@ mod tests {
     use super::*;
     use crate::bus_adapter::{BusAdapter, ClientFilterSet, ClientId, EventFilter};
     use crate::server_info::ServerInfo;
-    use crate::test_dp::{VecActionDp, null_creds, null_dp};
+    use forge_storage::GlobalEntry;
+    use time::OffsetDateTime;
+
+    use crate::test_dp::{VecActionDp, VecCommandDp, VecGlobalsDp, null_creds, null_dp};
     use crate::ws_client::WsClient;
 
     fn make_engine(bus: &Arc<EventBus>, dp: &Arc<dyn DataProvider>) -> Arc<ActionEngineHandle> {
@@ -1055,5 +1205,175 @@ mod tests {
         assert!(clients[0]["uptime_seconds"].is_number());
         assert!(clients[0]["events_per_second"].is_number());
         assert!(clients[0]["subscriptions"].is_array());
+    }
+
+    fn sample_command() -> forge_types::Command {
+        forge_types::Command {
+            id: forge_types::CommandId::new(),
+            action_id: ActionId::new(),
+            name: "!quote".to_string(),
+            cooldown_secs: 30,
+            permission: forge_types::CommandPermission::Everyone,
+        }
+    }
+
+    fn sample_global_entry() -> GlobalEntry {
+        GlobalEntry {
+            name: "counter".to_string(),
+            value: forge_types::Variant::Int(42),
+            persisted: true,
+            reads: 5,
+            writes: 2,
+            created_at: OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap(),
+            last_modified: OffsetDateTime::from_unix_timestamp(1_700_001_000).unwrap(),
+        }
+    }
+
+    #[tokio::test]
+    async fn get_commands_returns_list_with_sample_command() {
+        let cmd = sample_command();
+        let cmd_id = cmd.id.to_string();
+        let action_id = cmd.action_id.to_string();
+        let dp = VecCommandDp::with_commands(vec![cmd]);
+        let ctx = make_ctx_with_dp(false, dp);
+        let req = WsEnvelope {
+            id: Some("7".to_owned()),
+            inner: WsRequest::GetCommands,
+        };
+        let resp = dispatch(req, &ctx).await;
+        let json = serialize_response_frame(&resp);
+        assert_eq!(json["status"], "ok");
+        let cmds = json["commands"].as_array().unwrap();
+        assert_eq!(cmds.len(), 1);
+        assert_eq!(cmds[0]["id"].as_str().unwrap(), cmd_id);
+        assert_eq!(cmds[0]["command"], "!quote");
+        assert_eq!(cmds[0]["action_id"].as_str().unwrap(), action_id);
+        assert_eq!(cmds[0]["cooldown_seconds"], 30u64);
+        assert_eq!(cmds[0]["enabled"], true);
+        assert_eq!(cmds[0]["permission_level"], "everyone");
+    }
+
+    #[tokio::test]
+    async fn get_globals_returns_list_with_sample_global() {
+        let entry = sample_global_entry();
+        let dp = VecGlobalsDp::with_globals(vec![entry]);
+        let ctx = make_ctx_with_dp(false, dp);
+        let req = WsEnvelope {
+            id: Some("8".to_owned()),
+            inner: WsRequest::GetGlobals,
+        };
+        let resp = dispatch(req, &ctx).await;
+        let json = serialize_response_frame(&resp);
+        assert_eq!(json["status"], "ok");
+        let globals = json["globals"].as_array().unwrap();
+        assert_eq!(globals.len(), 1);
+        assert_eq!(globals[0]["key"], "counter");
+        assert_eq!(globals[0]["value"], 42i64);
+        assert_eq!(globals[0]["type"], "int");
+        assert_eq!(globals[0]["persisted"], true);
+        assert_eq!(globals[0]["reads"], 5u64);
+        assert_eq!(globals[0]["writes"], 2u64);
+        assert!(globals[0]["last_modified"].is_string());
+    }
+
+    #[tokio::test]
+    async fn get_global_existing_returns_value() {
+        let entry = sample_global_entry();
+        let dp = VecGlobalsDp::with_globals(vec![entry]);
+        let ctx = make_ctx_with_dp(false, dp);
+        let req = WsEnvelope {
+            id: Some("9".to_owned()),
+            inner: WsRequest::GetGlobal {
+                name: "counter".to_owned(),
+            },
+        };
+        let resp = dispatch(req, &ctx).await;
+        let json = serialize_response_frame(&resp);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["name"], "counter");
+        assert_eq!(json["value"], 42i64);
+        assert_eq!(json["type"], "int");
+    }
+
+    #[tokio::test]
+    async fn get_global_nonexistent_returns_not_found() {
+        let ctx = make_ctx(false, false);
+        let req = WsEnvelope {
+            id: Some("9".to_owned()),
+            inner: WsRequest::GetGlobal {
+                name: "missing".to_owned(),
+            },
+        };
+        let resp = dispatch(req, &ctx).await;
+        match resp.inner {
+            WsResponse::Error {
+                code: Some(code), ..
+            } => assert_eq!(code, "NOT_FOUND"),
+            other => panic!("expected NOT_FOUND error, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn set_global_without_auth_returns_unauthenticated() {
+        let ctx = make_ctx(false, false);
+        let req = WsEnvelope {
+            id: Some("10".to_owned()),
+            inner: WsRequest::SetGlobal {
+                name: "counter".to_owned(),
+                value: serde_json::json!(99),
+                persisted: true,
+            },
+        };
+        let resp = dispatch(req, &ctx).await;
+        match resp.inner {
+            WsResponse::Error {
+                code: Some(code), ..
+            } => assert_eq!(code, "UNAUTHENTICATED"),
+            other => panic!("expected UNAUTHENTICATED error, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn set_global_with_auth_returns_ok_and_emits_event() {
+        let ctx = make_ctx(true, false);
+        let mut bus_sub = ctx.bus.subscribe();
+        let req = WsEnvelope {
+            id: Some("10".to_owned()),
+            inner: WsRequest::SetGlobal {
+                name: "counter".to_owned(),
+                value: serde_json::json!(99),
+                persisted: false,
+            },
+        };
+        let resp = dispatch(req, &ctx).await;
+        let json = serialize_response_frame(&resp);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["ok"], true);
+
+        let event = bus_sub.recv().await.unwrap();
+        assert_eq!(event.source, EventSource::Server);
+        assert_eq!(event.kind, "global.set");
+        assert_eq!(event.payload["name"], "counter");
+        assert_eq!(event.payload["via"], "ws_api");
+    }
+
+    #[tokio::test]
+    async fn set_global_null_value_returns_invalid_payload() {
+        let ctx = make_ctx(true, false);
+        let req = WsEnvelope {
+            id: Some("10".to_owned()),
+            inner: WsRequest::SetGlobal {
+                name: "counter".to_owned(),
+                value: serde_json::Value::Null,
+                persisted: false,
+            },
+        };
+        let resp = dispatch(req, &ctx).await;
+        match resp.inner {
+            WsResponse::Error {
+                code: Some(code), ..
+            } => assert_eq!(code, "INVALID_PAYLOAD"),
+            other => panic!("expected INVALID_PAYLOAD error, got {other:?}"),
+        }
     }
 }

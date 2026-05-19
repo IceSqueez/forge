@@ -97,13 +97,6 @@ Per-platform installation details will be added as packaging matures.
 
 Forge is in active alpha development. Current gaps:
 
-- **Twitch integration requires manual setup.** Pre-built binaries do not include a baked-in
-  Twitch client_id. The project owner is awaiting Twitch developer account verification, which
-  is currently blocked by SMS delivery issues to Ukrainian phone numbers. In the meantime, you
-  can register your own Twitch application at
-  [dev.twitch.tv/console/apps](https://dev.twitch.tv/console/apps) and set
-  `FORGE_TWITCH_CLIENT_ID=<your-client-id>` before launching Forge — the device-code flow
-  works end-to-end once the variable is present.
 - **`ObsRaw` sub-action is non-functional.** The variant exists in the schema for forward
   compatibility, but `obws` v0.15 does not expose a raw-request passthrough. Execution returns
   a protocol error at runtime. Resolves when `obws` 0.16+ ships a `send_raw` API.

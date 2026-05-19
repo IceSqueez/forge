@@ -2,10 +2,11 @@ use std::fmt;
 use std::pin::Pin;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use crate::{ConnectionState, PlatformError};
+use forge_types::SubActionSpec;
+
+use crate::ConnectionState;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -24,6 +25,21 @@ impl IntegrationId {
 impl fmt::Display for IntegrationId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
+    }
+}
+
+/// Opaque icon token resolved to a tabler icon string by `forge-widgets::icon`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct SectionIcon(pub(crate) String);
+
+impl SectionIcon {
+    pub fn new(s: impl Into<String>) -> Self {
+        Self(s.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 }
 
@@ -63,28 +79,199 @@ pub struct HealthDelta {
 
 pub type HealthStream = Pin<Box<dyn futures_core::Stream<Item = HealthDelta> + Send + 'static>>;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CatalogEntry {
-    pub id: String,
-    pub label: String,
-    pub sublabel: Option<String>,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TokenColor {
+    Green,
+    Yellow,
+    Red,
+    Muted,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QuickAction {
-    pub id: String,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TrailingToken {
+    Badge(String, TokenColor),
+    Icon(SectionIcon),
+    Label(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RowAction {
+    Play,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ContentListItem {
+    pub icon: SectionIcon,
+    pub name: String,
+    pub monospace_name: bool,
+    pub active: bool,
+    pub active_label: Option<String>,
+    pub trailing: Vec<TrailingToken>,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ContentList {
+    pub title: String,
+    pub icon: SectionIcon,
+    pub count_label: Option<String>,
+    pub items: Vec<ContentListItem>,
+    pub footer: Option<ListFooter>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KeyValueRow {
+    pub icon: SectionIcon,
+    pub name: String,
+    pub tag: Option<String>,
+    pub action: Option<RowAction>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActiveRow {
+    pub name: String,
+    pub active: bool,
+    pub mode_label: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BannerLevel {
+    Warning,
+    Info,
+    Error,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SubscriptionStatus {
+    Active,
+    Degraded,
+    Error,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SubscriptionRow {
+    pub name: String,
+    pub status: SubscriptionStatus,
+    pub version: Option<String>,
+    pub event_count: Option<u64>,
+    pub error_label: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListFooter {
+    pub cta_label: Option<String>,
+    pub trailing_label: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InfoField {
     pub label: String,
-    pub icon: Option<String>,
-    pub payload: serde_json::Value,
+    pub value: String,
+    pub monospace_value: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HealthLevel {
+    Good,
+    Ok,
+    Bad,
+    NoData,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HealthBar {
+    pub fraction: f32,
+    pub label: String,
+    pub level: HealthLevel,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StatColumn {
+    pub label: String,
+    pub value: String,
+    pub subtitle: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum DetailSection {
+    TwoColumnLists {
+        left: ContentList,
+        right: ContentList,
+    },
+    KeyValueList {
+        title: String,
+        icon: SectionIcon,
+        items: Vec<KeyValueRow>,
+    },
+    ActiveItemList {
+        title: String,
+        icon: SectionIcon,
+        items: Vec<ActiveRow>,
+    },
+    WarningBanner {
+        level: BannerLevel,
+        title: String,
+        body: String,
+        cta: Option<String>,
+    },
+    SubscriptionList {
+        title: String,
+        icon: SectionIcon,
+        items: Vec<SubscriptionRow>,
+        footer: Option<ListFooter>,
+    },
+    ScopesList {
+        title: String,
+        scopes: Vec<String>,
+        footer: Option<ListFooter>,
+    },
+    InfoCard {
+        title: String,
+        live: bool,
+        fields: Vec<InfoField>,
+        health_bar: Option<HealthBar>,
+    },
+    StatsGrid {
+        title: String,
+        icon: SectionIcon,
+        columns: Vec<StatColumn>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PickerKind {
+    Scene,
+    Source,
+    Input,
+    Hotkey,
+    Expression,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct QuickAction {
+    pub label: String,
+    pub icon: SectionIcon,
+    pub enabled: bool,
+    pub subaction_template: SubActionSpec,
+    pub picker: Option<PickerKind>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CapabilityFlags {
     pub limited: bool,
     pub label: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HeaderAction {
     Reconnect,
@@ -109,10 +296,8 @@ pub trait IntegrationHealth: Send + Sync {
     fn stream(&self) -> HealthStream;
 }
 
-#[async_trait]
-pub trait IntegrationCatalog: Send + Sync {
-    async fn primary_list(&self) -> Result<Vec<CatalogEntry>, PlatformError>;
-    async fn secondary_list(&self) -> Result<Option<Vec<CatalogEntry>>, PlatformError>;
+pub trait IntegrationContent: Send + Sync {
+    fn sections(&self) -> Vec<DetailSection>;
 }
 
 pub trait QuickActions: Send + Sync {
@@ -143,6 +328,16 @@ mod tests {
         assert_eq!(json, r#""kick""#);
         let back: IntegrationId = serde_json::from_str(&json).unwrap();
         assert_eq!(back, id);
+    }
+
+    #[test]
+    fn section_icon_roundtrip() {
+        let icon = SectionIcon::new("eye");
+        assert_eq!(icon.as_str(), "eye");
+        let json = serde_json::to_string(&icon).unwrap();
+        assert_eq!(json, r#""eye""#);
+        let back: SectionIcon = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, icon);
     }
 
     #[test]
@@ -244,46 +439,6 @@ mod tests {
     }
 
     #[test]
-    fn catalog_entry_serde_with_sublabel() {
-        let entry = CatalogEntry {
-            id: "scene-1".to_owned(),
-            label: "Main Scene".to_owned(),
-            sublabel: Some("720p".to_owned()),
-        };
-        let json = serde_json::to_string(&entry).unwrap();
-        let back: CatalogEntry = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.id, entry.id);
-        assert_eq!(back.sublabel, Some("720p".to_owned()));
-    }
-
-    #[test]
-    fn catalog_entry_serde_without_sublabel() {
-        let entry = CatalogEntry {
-            id: "scene-2".to_owned(),
-            label: "Offline Scene".to_owned(),
-            sublabel: None,
-        };
-        let json = serde_json::to_string(&entry).unwrap();
-        let back: CatalogEntry = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.sublabel, None);
-    }
-
-    #[test]
-    fn quick_action_serde_roundtrip() {
-        let action = QuickAction {
-            id: "switch-scene".to_owned(),
-            label: "Switch to Main".to_owned(),
-            icon: Some("play".to_owned()),
-            payload: serde_json::json!({ "scene": "Main Scene" }),
-        };
-        let json = serde_json::to_string(&action).unwrap();
-        let back: QuickAction = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.id, action.id);
-        assert_eq!(back.icon, action.icon);
-        assert_eq!(back.payload["scene"], "Main Scene");
-    }
-
-    #[test]
     fn capability_flags_serde_with_label() {
         let flags = CapabilityFlags {
             limited: true,
@@ -321,11 +476,104 @@ mod tests {
         }
     }
 
+    #[test]
+    fn detail_section_warning_banner_roundtrip() {
+        let section = DetailSection::WarningBanner {
+            level: BannerLevel::Warning,
+            title: "Limited API".to_owned(),
+            body: "Kick has no public OAuth API.".to_owned(),
+            cta: Some("Learn more".to_owned()),
+        };
+        let json = serde_json::to_string(&section).unwrap();
+        let back: DetailSection = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, section);
+    }
+
+    #[test]
+    fn detail_section_two_column_lists_roundtrip() {
+        let make_list = |title: &str| ContentList {
+            title: title.to_owned(),
+            icon: SectionIcon::new("list"),
+            count_label: Some("3".to_owned()),
+            items: vec![ContentListItem {
+                icon: SectionIcon::new("camera"),
+                name: "Main Scene".to_owned(),
+                monospace_name: false,
+                active: true,
+                active_label: Some("LIVE".to_owned()),
+                trailing: vec![TrailingToken::Badge("HD".to_owned(), TokenColor::Green)],
+                enabled: true,
+            }],
+            footer: None,
+        };
+        let section = DetailSection::TwoColumnLists {
+            left: make_list("Scenes"),
+            right: make_list("Sources"),
+        };
+        let json = serde_json::to_string(&section).unwrap();
+        let back: DetailSection = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, section);
+    }
+
+    #[test]
+    fn detail_section_info_card_roundtrip() {
+        let section = DetailSection::InfoCard {
+            title: "Live Broadcast".to_owned(),
+            live: true,
+            fields: vec![InfoField {
+                label: "Viewers".to_owned(),
+                value: "1 234".to_owned(),
+                monospace_value: false,
+            }],
+            health_bar: Some(HealthBar {
+                fraction: 0.72,
+                label: "72%".to_owned(),
+                level: HealthLevel::Good,
+            }),
+        };
+        let json = serde_json::to_string(&section).unwrap();
+        let back: DetailSection = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, section);
+    }
+
+    #[test]
+    fn quick_action_serde_roundtrip() {
+        let action = QuickAction {
+            label: "Switch to Main".to_owned(),
+            icon: SectionIcon::new("play"),
+            enabled: true,
+            subaction_template: SubActionSpec::ObsSetScene {
+                scene_name: "Main Scene".to_owned(),
+            },
+            picker: Some(PickerKind::Scene),
+        };
+        let json = serde_json::to_string(&action).unwrap();
+        let back: QuickAction = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, action);
+    }
+
+    #[test]
+    fn picker_kind_serde_variants() {
+        let cases = [
+            (PickerKind::Scene, r#""scene""#),
+            (PickerKind::Source, r#""source""#),
+            (PickerKind::Input, r#""input""#),
+            (PickerKind::Hotkey, r#""hotkey""#),
+            (PickerKind::Expression, r#""expression""#),
+        ];
+        for (kind, expected) in &cases {
+            let json = serde_json::to_string(kind).unwrap();
+            assert_eq!(json, *expected);
+            let back: PickerKind = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, *kind);
+        }
+    }
+
     #[allow(dead_code)]
     fn dyn_all(
         _: &dyn IntegrationStatus,
         _: &dyn IntegrationHealth,
-        _: &dyn IntegrationCatalog,
+        _: &dyn IntegrationContent,
         _: &dyn QuickActions,
     ) {
     }

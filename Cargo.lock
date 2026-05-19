@@ -2110,6 +2110,7 @@ name = "forge-obs"
 version = "0.1.0-alpha.6"
 dependencies = [
  "async-trait",
+ "forge-events",
  "forge-platform-core",
  "forge-types",
  "futures-core",

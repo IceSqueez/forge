@@ -10,7 +10,8 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
-forge-types  = { path = "../forge-types" }
+forge-types   = { path = "../forge-types" }
+forge-events  = { path = "../forge-events" }
 async-trait = { workspace = true }
 thiserror   = { workspace = true }
 serde       = { workspace = true }

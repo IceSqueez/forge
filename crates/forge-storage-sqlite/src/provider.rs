@@ -2,18 +2,18 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use forge_storage::{
-    ActionRepo, CommandRepo, CredentialId, CredentialsRepo, DataProvider, GlobalEntry,
-    GlobalTransit, GlobalsRepo, HistoryRepo, QueueRepo, ScriptRecord, ScriptRepo, SettingsRepo,
-    StorageError, TriggerRepo, UserGlobalEntry, UserGlobalsRepo,
+    ActionRepo, CommandRepo, CredentialId, CredentialsRepo, DataProvider, EventLogRepo,
+    GlobalEntry, GlobalTransit, GlobalsRepo, HistoryRepo, QueueRepo, ScriptRecord, ScriptRepo,
+    SettingsRepo, StorageError, TriggerRepo, UserGlobalEntry, UserGlobalsRepo,
 };
 use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
 
 use crate::error::SqliteStorageError;
 use crate::{
-    SqliteActionRepo, SqliteCommandRepo, SqliteCredentialsRepo, SqliteGlobalsRepo,
-    SqliteHistoryRepo, SqliteQueueRepo, SqliteScriptRepo, SqliteSettingsRepo, SqliteTriggerRepo,
-    SqliteUserGlobalsRepo, apply_migrations, connect,
+    SqliteActionRepo, SqliteCommandRepo, SqliteCredentialsRepo, SqliteEventLogRepo,
+    SqliteGlobalsRepo, SqliteHistoryRepo, SqliteQueueRepo, SqliteScriptRepo, SqliteSettingsRepo,
+    SqliteTriggerRepo, SqliteUserGlobalsRepo, apply_migrations, connect,
 };
 
 pub struct SqliteBackend {
@@ -28,6 +28,7 @@ pub struct SqliteBackend {
     script: SqliteScriptRepo,
     credentials: SqliteCredentialsRepo,
     history: SqliteHistoryRepo,
+    event_log: SqliteEventLogRepo,
 }
 
 impl SqliteBackend {
@@ -60,6 +61,7 @@ impl SqliteBackend {
             queue: SqliteQueueRepo::new(pool.clone()),
             script: SqliteScriptRepo::new(pool.clone()),
             history: SqliteHistoryRepo::new(pool.clone()),
+            event_log: SqliteEventLogRepo::new(pool.clone()),
             credentials,
             pool,
         }
@@ -249,6 +251,10 @@ impl DataProvider for SqliteBackend {
 
     fn history_repo(&self) -> &dyn HistoryRepo {
         &self.history
+    }
+
+    fn event_log_repo(&self) -> &dyn EventLogRepo {
+        &self.event_log
     }
 
     async fn schema_version(&self) -> Result<u32, StorageError> {

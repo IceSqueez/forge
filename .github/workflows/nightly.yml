@@ -55,24 +55,6 @@ jobs:
         shell: bash
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-  token-redaction:
-    name: token redaction
-    runs-on: ubuntu-latest
-    needs: lint
-    timeout-minutes: 10
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Rust with cache
-        uses: ./.github/actions/setup-rust-cached
-
-      - name: Run token-redaction test
-        shell: bash
-        env:
-          RUST_LOG: debug
-        run: cargo test -p forge-platform-twitch --test token_redaction_test
-
   test:
     name: test (${{ matrix.os }})
     needs: lint

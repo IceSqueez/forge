@@ -53,18 +53,10 @@ jobs:
         shell: bash
         run: cargo build --workspace --release
 
-      - name: Upload artifacts (Linux / macOS)
-        if: inputs.command == 'build-release' && runner.os != 'Windows'
+      - name: Upload artifacts
+        if: inputs.command == 'build-release'
         uses: actions/upload-artifact@v7
         with:
           name: binaries-${{ inputs.os }}
-          path: target/release/forge
-          if-no-files-found: error
-
-      - name: Upload artifacts (Windows)
-        if: inputs.command == 'build-release' && runner.os == 'Windows'
-        uses: actions/upload-artifact@v7
-        with:
-          name: binaries-${{ inputs.os }}
-          path: target/release/forge.exe
+          path: target/release/forge${{ runner.os == 'Windows' && '.exe' || '' }}
           if-no-files-found: error

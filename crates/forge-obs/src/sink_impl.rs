@@ -1,0 +1,167 @@
+use async_trait::async_trait;
+use forge_types::Variant;
+use obws::requests::inputs::InputId;
+use obws::requests::scene_items::{Id, SetEnabled};
+use obws::requests::scenes::SceneId;
+
+use crate::client::ObsClient;
+use crate::error::ObsError;
+use crate::sink::ObsSink;
+
+#[async_trait]
+impl ObsSink for ObsClient {
+    async fn set_scene(&self, scene: &str) -> Result<(), ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        client
+            .scenes()
+            .set_current_program_scene(SceneId::Name(scene))
+            .await
+            .map_err(|e| map_request_error("SetCurrentProgramScene", e))
+    }
+
+    async fn set_source_visible(
+        &self,
+        scene: &str,
+        source: &str,
+        visible: bool,
+    ) -> Result<(), ObsError> {
+        let cached_id = self
+            .scene_item_id_cache
+            .lock()
+            .map_err(|_| ObsError::Protocol("scene item cache poisoned".to_owned()))?
+            .get(&(scene.to_owned(), source.to_owned()))
+            .copied();
+
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+
+        let item_id = if let Some(id) = cached_id {
+            id
+        } else {
+            let id = client
+                .scene_items()
+                .id(Id {
+                    scene: SceneId::Name(scene),
+                    source,
+                    search_offset: None,
+                })
+                .await
+                .map_err(|e| map_request_error("GetSceneItemId", e))?;
+            self.scene_item_id_cache
+                .lock()
+                .map_err(|_| ObsError::Protocol("scene item cache poisoned".to_owned()))?
+                .insert((scene.to_owned(), source.to_owned()), id);
+            id
+        };
+
+        client
+            .scene_items()
+            .set_enabled(SetEnabled {
+                scene: SceneId::Name(scene),
+                item_id,
+                enabled: visible,
+            })
+            .await
+            .map_err(|e| map_request_error("SetSceneItemEnabled", e))
+    }
+
+    async fn set_input_mute(&self, input: &str, mute: bool) -> Result<(), ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        client
+            .inputs()
+            .set_muted(InputId::Name(input), mute)
+            .await
+            .map_err(|e| map_request_error("SetInputMute", e))
+    }
+
+    async fn start_record(&self) -> Result<(), ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        client
+            .recording()
+            .start()
+            .await
+            .map_err(|e| map_request_error("StartRecord", e))
+    }
+
+    async fn stop_record(&self) -> Result<(), ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        client
+            .recording()
+            .stop()
+            .await
+            .map(|_| ())
+            .map_err(|e| map_request_error("StopRecord", e))
+    }
+
+    async fn start_stream(&self) -> Result<(), ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        client
+            .streaming()
+            .start()
+            .await
+            .map_err(|e| map_request_error("StartStream", e))
+    }
+
+    async fn stop_stream(&self) -> Result<(), ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        client
+            .streaming()
+            .stop()
+            .await
+            .map_err(|e| map_request_error("StopStream", e))
+    }
+
+    async fn raw_request(
+        &self,
+        _request_type: &str,
+        _payload: &Variant,
+    ) -> Result<Variant, ObsError> {
+        Err(ObsError::Protocol(
+            "raw_request not supported by obws 0.15".to_owned(),
+        ))
+    }
+}
+
+fn map_request_error(request_type: &str, e: obws::error::Error) -> ObsError {
+    match e {
+        obws::error::Error::Timeout => ObsError::Timeout,
+        obws::error::Error::Disconnected => ObsError::Disconnected,
+        _ => ObsError::Request {
+            request_type: request_type.to_owned(),
+            message: e.to_string(),
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::client::ObsClient;
+
+    #[tokio::test]
+    async fn set_scene_returns_disconnected_when_not_connected() {
+        let client = ObsClient::new_for_test("localhost:4455".to_owned());
+        let result = client.set_scene("Gameplay").await;
+        assert!(matches!(result, Err(ObsError::Disconnected)));
+    }
+}

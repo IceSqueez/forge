@@ -8,6 +8,7 @@ pub mod error;
 pub mod health;
 pub mod quick_actions;
 pub mod sink;
+mod sink_impl;
 pub mod source;
 
 pub use client::ObsClient;

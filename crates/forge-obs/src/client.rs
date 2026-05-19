@@ -1,5 +1,6 @@
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::Duration;
 
 use futures_util::StreamExt;
@@ -22,8 +23,8 @@ const STATE_CONNECTED: u8 = 2;
 const STATE_RECONNECTING: u8 = 3;
 
 pub struct ObsClient {
-    #[allow(dead_code)]
     pub(crate) inner: Arc<tokio::sync::RwLock<Option<obws::Client>>>,
+    pub(crate) scene_item_id_cache: Mutex<HashMap<(String, String), i64>>,
     endpoint: String,
     state: Arc<AtomicU8>,
     shutdown: Arc<Notify>,
@@ -69,6 +70,7 @@ impl ObsClient {
             health_state,
             health_tx,
             catalog_state: Arc::new(RwLock::new(ObsCatalog::default())),
+            scene_item_id_cache: Mutex::new(HashMap::new()),
         })
     }
 
@@ -112,6 +114,7 @@ impl ObsClient {
             health_state,
             health_tx,
             catalog_state: Arc::new(RwLock::new(ObsCatalog::default())),
+            scene_item_id_cache: Mutex::new(HashMap::new()),
         }
     }
 }

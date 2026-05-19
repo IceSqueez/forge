@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::fmt;
 use std::sync::{
     Arc,
     atomic::{AtomicU64, Ordering},
@@ -14,12 +15,18 @@ use tokio::sync::{RwLock, broadcast};
 pub(crate) const CLIENT_CHANNEL_CAP: usize = 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ClientId(u64);
+pub struct ClientId(pub(crate) u64);
 
 impl ClientId {
     pub(crate) fn next() -> Self {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         Self(COUNTER.fetch_add(1, Ordering::Relaxed))
+    }
+}
+
+impl fmt::Display for ClientId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "ws_{:04x}", self.0)
     }
 }
 

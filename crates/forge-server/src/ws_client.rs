@@ -27,6 +27,19 @@ pub enum ClientType {
     ThirdParty(String),
 }
 
+impl ClientType {
+    pub fn type_str(&self) -> &'static str {
+        match self {
+            ClientType::Unknown => "unknown",
+            ClientType::ObsBrowser => "obs_browser",
+            ClientType::Ios => "ios",
+            ClientType::Android => "android",
+            ClientType::StreamDeck => "stream_deck",
+            ClientType::ThirdParty(_) => "third_party",
+        }
+    }
+}
+
 pub fn detect_from_user_agent(ua: Option<&str>) -> ClientType {
     let Some(ua) = ua else {
         return ClientType::Unknown;

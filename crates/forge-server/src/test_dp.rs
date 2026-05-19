@@ -335,3 +335,7 @@ impl DataProvider for NullDp {
 pub fn null_dp() -> Arc<dyn DataProvider> {
     Arc::new(NullDp)
 }
+
+pub fn null_creds() -> Arc<dyn forge_storage::CredentialsRepo> {
+    Arc::new(NullDp)
+}

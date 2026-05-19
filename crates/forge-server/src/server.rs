@@ -10,11 +10,12 @@ use axum::{Json, Router, middleware};
 use tokio::net::TcpListener;
 
 use forge_runtime::EventBus;
-use forge_storage::DataProvider;
+use forge_storage::{CredentialsRepo, DataProvider};
 
 use crate::auth::AuthState;
 use crate::bus_adapter::BusAdapter;
 use crate::routes::{api, overlays, ws};
+use crate::server_info::ServerInfo;
 use crate::{ServerConfig, ServerError, ServerHandle};
 
 #[derive(Clone)]
@@ -23,6 +24,8 @@ pub struct AppState {
     pub bus: Arc<EventBus>,
     pub bus_adapter: Arc<BusAdapter>,
     pub dp: Arc<dyn DataProvider>,
+    pub credentials: Arc<dyn CredentialsRepo>,
+    pub server_info: Arc<ServerInfo>,
 }
 
 pub struct Server {
@@ -32,6 +35,7 @@ pub struct Server {
 impl Server {
     pub async fn start(self) -> Result<ServerHandle, ServerError> {
         let addr = self.config.bind_addr;
+        let credentials = Arc::clone(&self.config.credentials);
         let auth = AuthState::load(
             self.config.auth_required_for_reads,
             self.config.credentials.as_ref(),
@@ -45,6 +49,8 @@ impl Server {
             bus,
             bus_adapter,
             dp: self.config.data_provider,
+            credentials,
+            server_info: ServerInfo::new(),
         };
         let listener = TcpListener::bind(addr)
             .await
@@ -138,6 +144,7 @@ mod tests {
     use tokio::net::TcpListener;
 
     use super::{AppState, AuthState, BusAdapter, ServerHandle, serve_on};
+    use crate::server_info::ServerInfo;
     use crate::test_dp::null_dp;
 
     struct MemCreds(Mutex<HashMap<String, String>>);
@@ -200,7 +207,7 @@ mod tests {
         }
     }
 
-    fn make_app_state(auth: Arc<AuthState>) -> AppState {
+    fn make_app_state(auth: Arc<AuthState>, creds: Arc<dyn CredentialsRepo>) -> AppState {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let bus_adapter = BusAdapter::new(Arc::clone(&bus));
         bus_adapter.spawn();
@@ -210,6 +217,8 @@ mod tests {
             bus,
             bus_adapter,
             dp,
+            credentials: creds,
+            server_info: ServerInfo::new(),
         }
     }
 
@@ -220,7 +229,8 @@ mod tests {
         let auth = AuthState::load(auth_required_for_reads, &*creds)
             .await
             .expect("auth load");
-        let state = make_app_state(auth);
+        let creds_dyn: Arc<dyn CredentialsRepo> = creds;
+        let state = make_app_state(auth, creds_dyn);
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("local addr");
         let handle = serve_on(listener, state);
@@ -235,7 +245,8 @@ mod tests {
             .await
             .expect("auth load");
         let auth_ref = Arc::clone(&auth);
-        let state = make_app_state(auth);
+        let creds_dyn: Arc<dyn CredentialsRepo> = creds;
+        let state = make_app_state(auth, creds_dyn);
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("local addr");
         let handle = serve_on(listener, state);

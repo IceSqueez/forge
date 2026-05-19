@@ -51,6 +51,11 @@ async fn handle_socket(
         client.client_type.store(Arc::new(client_type));
     }
 
+    state
+        .server_info
+        .register(client.id, Arc::clone(&client))
+        .await;
+
     let ctx = DispatchContext {
         bus: Arc::clone(&state.bus),
         bus_adapter: Arc::clone(&state.bus_adapter),
@@ -58,6 +63,8 @@ async fn handle_socket(
         auth_state: Arc::clone(&state.auth),
         client: Arc::clone(&client),
         auth_required_for_reads: state.auth.auth_required_for_reads,
+        credentials: Arc::clone(&state.credentials),
+        server_info: Arc::clone(&state.server_info),
     };
 
     loop {
@@ -86,6 +93,7 @@ async fn handle_socket(
                                     serialize_response_frame(&err_env).to_string()
                                 }
                             };
+                        let response_bytes = response_json.len() as u64;
                         if socket
                             .send(Message::Text(response_json.into()))
                             .await
@@ -93,6 +101,8 @@ async fn handle_socket(
                         {
                             break;
                         }
+                        client.bytes_sent_session.fetch_add(response_bytes, Ordering::Relaxed);
+                        state.server_info.bandwidth.record(response_bytes);
                     }
                     Message::Binary(_) => {
                         let _ = socket
@@ -116,6 +126,7 @@ async fn handle_socket(
                             break;
                         }
                         client.bytes_sent_session.fetch_add(len, Ordering::Relaxed);
+                        state.server_info.bandwidth.record(len);
                         client.record_event();
                     }
                     Ok(WsFrame::Close) | Err(RecvError::Closed) => break,
@@ -128,4 +139,5 @@ async fn handle_socket(
     }
 
     state.bus_adapter.unregister_client(handle.id).await;
+    state.server_info.unregister(handle.id).await;
 }

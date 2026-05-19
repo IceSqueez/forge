@@ -5,11 +5,12 @@ use serde::{Deserialize, Serialize};
 
 use forge_events::EventSource;
 use forge_runtime::EventBus;
-use forge_storage::DataProvider;
+use forge_storage::{CredentialsRepo, DataProvider};
 use forge_types::EventId;
 
 use crate::auth::AuthState;
 use crate::bus_adapter::{BusAdapter, ClientFilterSet, EventFilter};
+use crate::server_info::ServerInfo;
 use crate::ws_client::WsClient;
 
 /// Wildcard-capable event filter sent by clients in subscribe/unsubscribe payloads.
@@ -188,6 +189,91 @@ pub struct DispatchContext {
     pub auth_state: Arc<AuthState>,
     pub client: Arc<WsClient>,
     pub auth_required_for_reads: bool,
+    pub credentials: Arc<dyn CredentialsRepo>,
+    pub server_info: Arc<ServerInfo>,
+}
+
+const PLATFORM_PREFIXES: &[&str] = &["twitch:", "youtube:", "kick:", "trovo:"];
+
+async fn build_connected_accounts(creds: &dyn CredentialsRepo) -> Vec<serde_json::Value> {
+    let ids = match creds.list_ids().await {
+        Ok(ids) => ids,
+        Err(_) => return vec![],
+    };
+    ids.into_iter()
+        .filter_map(|id| {
+            let s = id.as_str();
+            for prefix in PLATFORM_PREFIXES {
+                if let Some(login) = s.strip_prefix(prefix) {
+                    let platform = &prefix[..prefix.len() - 1];
+                    return Some(serde_json::json!({
+                        "platform": platform,
+                        "login": login,
+                    }));
+                }
+            }
+            None
+        })
+        .collect()
+}
+
+async fn build_connected_clients(
+    server_info: &ServerInfo,
+    bus_adapter: &BusAdapter,
+) -> Vec<serde_json::Value> {
+    let clients = server_info.connected_clients.read().await;
+    let mut result = Vec::with_capacity(clients.len());
+    for (id, client) in clients.iter() {
+        let subs = bus_adapter.current_subscriptions(*id).await;
+        let subscriptions: Vec<serde_json::Value> = subs
+            .iter()
+            .map(|f| {
+                let source_str = match f.source {
+                    None => "*".to_owned(),
+                    Some(s) => serde_json::to_value(s)
+                        .ok()
+                        .and_then(|v| v.as_str().map(str::to_owned))
+                        .unwrap_or_else(|| "*".to_owned()),
+                };
+                let kind_str = f.kind.as_deref().unwrap_or("*");
+                serde_json::json!({ "source": source_str, "type": kind_str })
+            })
+            .collect();
+
+        let identification = client.identification.load_full();
+        let client_type = client.client_type.load_full();
+        let uptime = client.uptime();
+
+        result.push(serde_json::json!({
+            "client_id": id.to_string(),
+            "identification": identification.as_str(),
+            "remote_addr": client.remote_addr.ip().to_string(),
+            "client_type": client_type.type_str(),
+            "subscriptions": subscriptions,
+            "events_per_second": client.events_per_second(),
+            "uptime_seconds": uptime.whole_seconds(),
+            "bytes_sent": client.bytes_sent_session.load(Ordering::Relaxed),
+        }));
+    }
+    result
+}
+
+async fn handle_get_info(ctx: &DispatchContext) -> WsResponse {
+    let connected_accounts = build_connected_accounts(ctx.credentials.as_ref()).await;
+    let connected_clients = build_connected_clients(&ctx.server_info, &ctx.bus_adapter).await;
+    let bw = &ctx.server_info.bandwidth;
+    WsResponse::Ok(serde_json::json!({
+        "version": ctx.server_info.version,
+        "uptime_seconds": ctx.server_info.uptime_seconds(),
+        "connected_accounts": connected_accounts,
+        "available_platforms": ["twitch"],
+        "connected_clients": connected_clients,
+        "bandwidth": {
+            "outbound_bytes_per_second": bw.current_bps(),
+            "outbound_bytes_total": bw.total(),
+            "peak_outbound_bytes_per_second": bw.peak(),
+        },
+    }))
 }
 
 fn parse_wire_filter(wf: &WireEventFilter) -> EventFilter {
@@ -260,7 +346,7 @@ async fn route(req: WsRequest, ctx: &DispatchContext) -> WsResponse {
             if ctx.auth_required_for_reads && !is_authenticated(ctx) {
                 return unauthenticated();
             }
-            not_implemented()
+            handle_get_info(ctx).await
         }
 
         WsRequest::GetActions => {
@@ -362,7 +448,8 @@ mod tests {
 
     use super::*;
     use crate::bus_adapter::{BusAdapter, ClientFilterSet, ClientId, EventFilter};
-    use crate::test_dp::null_dp;
+    use crate::server_info::ServerInfo;
+    use crate::test_dp::{null_creds, null_dp};
     use crate::ws_client::WsClient;
 
     fn make_ctx(authenticated: bool, auth_required_for_reads: bool) -> DispatchContext {
@@ -384,6 +471,8 @@ mod tests {
             auth_state,
             client,
             auth_required_for_reads,
+            credentials: null_creds(),
+            server_info: ServerInfo::new(),
         }
     }
 
@@ -411,6 +500,8 @@ mod tests {
             auth_state,
             client,
             auth_required_for_reads,
+            credentials: null_creds(),
+            server_info: ServerInfo::new(),
         }
     }
 
@@ -554,22 +645,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn read_only_allowed_without_auth_by_default() {
+    async fn get_info_succeeds_without_auth_by_default() {
         let ctx = make_ctx(false, false);
         let req = WsEnvelope {
             id: Some("8".to_owned()),
             inner: WsRequest::GetInfo,
         };
         let resp = dispatch(req, &ctx).await;
-        match resp.inner {
-            WsResponse::Error {
-                code: None,
-                message,
-            } => {
-                assert!(message.contains("not implemented"));
-            }
-            other => panic!("expected not-implemented stub, got {other:?}"),
-        }
+        let json = serialize_response_frame(&resp);
+        assert_eq!(json["status"], "ok");
+        assert!(json["version"].is_string());
+        assert!(json["uptime_seconds"].is_number());
+        assert!(json["connected_clients"].is_array());
+        assert!(json["bandwidth"].is_object());
     }
 
     #[tokio::test]
@@ -703,5 +791,47 @@ mod tests {
 
         let subs = ctx.bus_adapter.current_subscriptions(ctx.client.id).await;
         assert!(subs.contains(&EventFilter::new(Some(EventSource::Twitch), None)));
+    }
+
+    #[tokio::test]
+    async fn get_info_no_clients_returns_empty_connected_clients() {
+        let ctx = make_ctx(false, false);
+        let req = WsEnvelope {
+            id: Some("1".to_owned()),
+            inner: WsRequest::GetInfo,
+        };
+        let resp = dispatch(req, &ctx).await;
+        let json = serialize_response_frame(&resp);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["version"], env!("CARGO_PKG_VERSION"));
+        assert!(json["uptime_seconds"].is_number());
+        let clients = json["connected_clients"].as_array().unwrap();
+        assert!(clients.is_empty());
+        assert_eq!(json["bandwidth"]["outbound_bytes_total"], 0u64);
+        assert_eq!(json["bandwidth"]["peak_outbound_bytes_per_second"], 0u64);
+        assert!(json["available_platforms"].is_array());
+    }
+
+    #[tokio::test]
+    async fn get_info_with_connected_client_returns_telemetry() {
+        let ctx = make_registered_ctx(false, false).await;
+        ctx.server_info
+            .register(ctx.client.id, Arc::clone(&ctx.client))
+            .await;
+
+        let req = WsEnvelope {
+            id: Some("1".to_owned()),
+            inner: WsRequest::GetInfo,
+        };
+        let resp = dispatch(req, &ctx).await;
+        let json = serialize_response_frame(&resp);
+        assert_eq!(json["status"], "ok");
+        let clients = json["connected_clients"].as_array().unwrap();
+        assert_eq!(clients.len(), 1);
+        assert!(clients[0]["client_id"].as_str().unwrap().starts_with("ws_"));
+        assert!(clients[0]["bytes_sent"].is_number());
+        assert!(clients[0]["uptime_seconds"].is_number());
+        assert!(clients[0]["events_per_second"].is_number());
+        assert!(clients[0]["subscriptions"].is_array());
     }
 }

@@ -193,7 +193,10 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::{EventBus, EventSubscription, QueueScheduler, ScriptRegistry, spawn_action_engine};
+    use crate::{
+        EventBus, EventSubscription, NullEventLogRepo, QueueScheduler, ScriptRegistry,
+        spawn_action_engine,
+    };
 
     async fn make_dp() -> Arc<dyn DataProvider> {
         Arc::new(
@@ -290,7 +293,7 @@ mod tests {
         let command = make_command(c_id, a_id, "!quote", 0);
         seed(&dp, &queue, &action, &command).await;
 
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
         let engine = spawn_action_engine(
             Arc::clone(&bus),
@@ -327,7 +330,7 @@ mod tests {
         let command = make_command(c_id, a_id, "!quote", 60);
         seed(&dp, &queue, &action, &command).await;
 
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
         let engine = spawn_action_engine(
             Arc::clone(&bus),
@@ -375,7 +378,7 @@ mod tests {
         let command = make_command(c_id, a_id, "!quote", 0);
         seed(&dp, &queue, &action, &command).await;
 
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
         let engine = spawn_action_engine(
             Arc::clone(&bus),
@@ -410,7 +413,7 @@ mod tests {
         let command = make_command(c_id, a_id, "!quote", 0);
         seed(&dp, &queue, &action, &command).await;
 
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
         let engine = spawn_action_engine(
             Arc::clone(&bus),
@@ -442,7 +445,7 @@ mod tests {
         let command = make_command(c_id, a_id, "!quote", 0);
         seed(&dp, &queue, &action, &command).await;
 
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
         let engine = spawn_action_engine(
             Arc::clone(&bus),
@@ -474,7 +477,7 @@ mod tests {
         let command = make_command(c_id, a_id, "!quote", 0);
         seed(&dp, &queue, &action, &command).await;
 
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
         let engine = spawn_action_engine(
             Arc::clone(&bus),

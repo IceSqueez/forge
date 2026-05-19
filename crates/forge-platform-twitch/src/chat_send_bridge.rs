@@ -175,6 +175,7 @@ impl RateLimiter for NoopRateLimiter {
 mod tests {
     use super::*;
     use forge_events::EventSource;
+    use forge_runtime::NullEventLogRepo;
     use forge_storage_sqlite::SqliteBackend;
     use std::time::Duration;
 
@@ -220,7 +221,7 @@ mod tests {
 
     #[tokio::test]
     async fn bridge_publishes_failed_event_when_no_credentials_stored() {
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let backend = Arc::new(
             SqliteBackend::open_with_key(":memory:", [0xab; 32])
                 .await
@@ -259,7 +260,7 @@ mod tests {
 
     #[tokio::test]
     async fn bridge_preserves_caused_by_chain() {
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let backend = Arc::new(
             SqliteBackend::open_with_key(":memory:", [0xab; 32])
                 .await
@@ -298,7 +299,7 @@ mod tests {
 
     #[tokio::test]
     async fn bridge_ignores_non_twitch_target() {
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let backend = Arc::new(
             SqliteBackend::open_with_key(":memory:", [0xab; 32])
                 .await

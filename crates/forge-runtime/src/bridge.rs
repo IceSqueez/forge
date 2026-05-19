@@ -22,11 +22,12 @@ pub fn bus_subscription(bus: Arc<EventBus>) -> impl Stream<Item = Event> + Send 
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::NullEventLogRepo;
     use forge_events::{Event, EventSource};
 
     #[tokio::test]
     async fn bus_subscription_delivers_published_event() {
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut stream = bus_subscription(Arc::clone(&bus));
         let ev = Event::new(EventSource::Core, "action.start", serde_json::Value::Null);
         let expected_id = ev.id;
@@ -37,7 +38,7 @@ mod tests {
 
     #[tokio::test]
     async fn bus_subscription_delivers_multiple_events_in_order() {
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut stream = bus_subscription(Arc::clone(&bus));
         let ev1 = Event::new(EventSource::Core, "ev.1", serde_json::Value::Null);
         let ev2 = Event::new(EventSource::Core, "ev.2", serde_json::Value::Null);

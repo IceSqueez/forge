@@ -9,7 +9,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_obs::{ObsError, ObsSink};
-use forge_runtime::{EventBus, ExecutionRequest, ScriptRegistry, spawn_action_engine};
+use forge_runtime::{
+    EventBus, ExecutionRequest, NullEventLogRepo, ScriptRegistry, spawn_action_engine,
+};
 use forge_storage::DataProvider;
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{Action, ActionId, ArgStack, EventId, Queue, QueueId, SubActionSpec, Variant};
@@ -171,7 +173,7 @@ async fn set_scene_trigger_path_and_quick_action_path_both_call_obs_sink() {
     };
     dp.action_repo().save(&action).await.unwrap();
 
-    let bus = EventBus::new();
+    let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let mut sub = bus.subscribe();
 
     let engine = spawn_action_engine(
@@ -269,7 +271,7 @@ async fn both_paths_emit_subaction_run_with_obs_set_scene_kind() {
     };
     dp.action_repo().save(&action).await.unwrap();
 
-    let bus = EventBus::new();
+    let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let mut sub = bus.subscribe();
 
     let engine = spawn_action_engine(
@@ -346,7 +348,7 @@ async fn obs_scene_changed_event_from_real_emitter_triggers_evaluator() {
     };
     dp.trigger_repo().save(&trigger).await.unwrap();
 
-    let bus = EventBus::new();
+    let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let mut sub = bus.subscribe();
 
     let engine = spawn_action_engine(

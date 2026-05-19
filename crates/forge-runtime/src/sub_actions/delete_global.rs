@@ -53,7 +53,7 @@ pub(super) async fn run(
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::EventBus;
+    use crate::{EventBus, NullEventLogRepo};
     use forge_storage::GlobalsRepo;
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::{ArgStack, EventId, SubActionSpec, Variant};
@@ -75,7 +75,7 @@ mod tests {
             .await
             .unwrap();
 
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
         let parent_id = EventId::new();
         let spec = SubActionSpec::DeleteGlobal {
@@ -101,7 +101,7 @@ mod tests {
     #[tokio::test]
     async fn delete_global_nonexistent_key_emits_existed_false() {
         let dp = make_dp().await;
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
         let spec = SubActionSpec::DeleteGlobal {
             name: "missing".to_string(),
@@ -129,7 +129,7 @@ mod tests {
     #[tokio::test]
     async fn delete_global_returns_correct_kind_and_index() {
         let dp = make_dp().await;
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let spec = SubActionSpec::DeleteGlobal {
             name: "x".to_string(),
         };

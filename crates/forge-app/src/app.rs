@@ -9,8 +9,8 @@ use forge_platform_core::{
 };
 use forge_platform_twitch::{ChatConnectionState, ChatSendBridgeHandle, TwitchChatHandle};
 use forge_runtime::{
-    ActionEngineHandle, CommandParserHandle, EventBus, ExecutionRequest, QueueSchedulerHandle,
-    ScriptRegistry,
+    ActionEngineHandle, CommandParserHandle, EventBus, ExecutionRequest, NullEventLogRepo,
+    QueueSchedulerHandle, ScriptRegistry,
 };
 use forge_storage::{CredentialId, CredentialsRepo, DataProvider, SettingsRepo, reserved_keys};
 use forge_storage_sqlite::SqliteBackend;
@@ -130,7 +130,7 @@ impl App {
             theme,
             palette,
             backend,
-            bus: EventBus::new(),
+            bus: EventBus::new(Arc::new(NullEventLogRepo)),
             storage_offline,
             boot_time: SystemTime::now(),
             hub: HubStats::new(),
@@ -170,7 +170,7 @@ impl Default for App {
             theme,
             palette,
             backend,
-            bus: EventBus::new(),
+            bus: EventBus::new(Arc::new(NullEventLogRepo)),
             storage_offline: false,
             boot_time: SystemTime::now(),
             hub: HubStats::new(),
@@ -4871,7 +4871,7 @@ mod tests {
                 .expect("in-memory SQLite always opens"),
         );
         let dp: Arc<dyn DataProvider> = Arc::clone(&sqlite) as Arc<dyn DataProvider>;
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let queues = dp.queue_repo().list().await.expect("list queues");
 
         let registry = Arc::new(forge_runtime::ScriptRegistry::new());
@@ -5166,7 +5166,7 @@ mod tests {
             theme,
             palette,
             backend: Arc::clone(&dp),
-            bus: EventBus::new(),
+            bus: EventBus::new(Arc::new(NullEventLogRepo)),
             storage_offline: false,
             boot_time: std::time::SystemTime::now(),
             hub: HubStats::new(),
@@ -5566,7 +5566,7 @@ mod tests {
     fn obs_boot_result_ok_sets_obs_client_and_integration_detail() {
         let mut app = App::default();
         let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as _;
         let client = rt
             .block_on(ObsClient::connect("ws://127.0.0.1:4455", None, publisher))

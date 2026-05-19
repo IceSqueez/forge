@@ -54,7 +54,7 @@ pub(super) async fn run(
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::EventBus;
+    use crate::{EventBus, NullEventLogRepo};
     use forge_storage::GlobalsRepo;
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::{ArgStack, EventId, SubActionSpec, Variant};
@@ -76,7 +76,7 @@ mod tests {
             .await
             .unwrap();
 
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
         let parent_id = EventId::new();
         let spec = SubActionSpec::IncrementGlobal {
@@ -104,7 +104,7 @@ mod tests {
     #[tokio::test]
     async fn increment_global_nonexistent_returns_failed() {
         let dp = make_dp().await;
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let spec = SubActionSpec::IncrementGlobal {
             name: "missing".to_string(),
             amount: 1,
@@ -128,7 +128,7 @@ mod tests {
         GlobalsRepo::set(dp.as_ref(), "c", Variant::Int(0), false)
             .await
             .unwrap();
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let spec = SubActionSpec::IncrementGlobal {
             name: "c".to_string(),
             amount: 1,

@@ -118,7 +118,7 @@ impl Default for ScriptRegistry {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::EventBus;
+    use crate::{EventBus, NullEventLogRepo};
     use forge_storage::ScriptRepo;
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::{ScriptContract, ScriptId};
@@ -212,7 +212,7 @@ mod tests {
     #[tokio::test]
     async fn reload_adds_new_entry_and_emits_event() {
         let registry = ScriptRegistry::new();
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
 
         let record = make_record("fresh_script", "let x = 1;", true);
@@ -234,7 +234,7 @@ mod tests {
     #[tokio::test]
     async fn reload_replaces_existing_entry() {
         let registry = ScriptRegistry::new();
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let id = ScriptId::new();
         let ts = OffsetDateTime::now_utc();
 
@@ -271,7 +271,7 @@ mod tests {
     #[tokio::test]
     async fn remove_returns_true_for_existing() {
         let registry = ScriptRegistry::new();
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let record = make_record("removable", "1 + 1;", true);
         let id = record.id;
 
@@ -290,7 +290,7 @@ mod tests {
     #[tokio::test]
     async fn concurrent_reads_and_reload_do_not_deadlock() {
         let registry = Arc::new(ScriptRegistry::new());
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
 
         let seed = make_record("concurrent_script", "let v = 99;", true);
         registry.reload(seed, &bus).await.unwrap();
@@ -308,7 +308,7 @@ mod tests {
 
         let writer = {
             let reg = Arc::clone(&registry);
-            let bus_clone = EventBus::new();
+            let bus_clone = EventBus::new(Arc::new(NullEventLogRepo));
             tokio::spawn(async move {
                 for i in 0..10u32 {
                     let r = make_record("concurrent_script", &format!("let v = {i};"), true);
@@ -332,7 +332,7 @@ mod tests {
     #[tokio::test]
     async fn reload_rejects_invalid_syntax() {
         let registry = ScriptRegistry::new();
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
 
         let bad = make_record("broken", "@@@invalid@@@", true);
@@ -354,7 +354,7 @@ mod tests {
     #[tokio::test]
     async fn get_returns_some_for_known_id() {
         let registry = ScriptRegistry::new();
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let record = make_record("by_id_script", "let a = 5;", true);
         let id = record.id;
 

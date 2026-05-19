@@ -281,7 +281,9 @@ mod tests {
     use forge_types::{Action, ActionId, EventId, LogLevel, Queue, QueueId, SubActionSpec};
 
     use super::*;
-    use crate::{EventBus, EventSubscription, ScriptRegistry, spawn_action_engine};
+    use crate::{
+        EventBus, EventSubscription, NullEventLogRepo, ScriptRegistry, spawn_action_engine,
+    };
 
     async fn make_dp() -> Arc<dyn DataProvider> {
         Arc::new(
@@ -354,7 +356,7 @@ mod tests {
         let action = log_action(a_id, q_id);
         seed(&dp, &queue, &action).await;
 
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let engine = spawn_action_engine(
             Arc::clone(&bus),
             Arc::clone(&dp),
@@ -397,7 +399,7 @@ mod tests {
             action_ids.push(a_id);
         }
 
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let engine = spawn_action_engine(
             Arc::clone(&bus),
             Arc::clone(&dp),
@@ -447,7 +449,7 @@ mod tests {
         let action = log_action(a_id, q_id);
         seed(&dp, &queue, &action).await;
 
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let engine = spawn_action_engine(
             Arc::clone(&bus),
             Arc::clone(&dp),
@@ -498,7 +500,7 @@ mod tests {
         let action = log_action(a_id, q_id);
         seed(&dp, &queue, &action).await;
 
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let engine = spawn_action_engine(
             Arc::clone(&bus),
             Arc::clone(&dp),
@@ -537,7 +539,7 @@ mod tests {
         let action = log_action(a_id, q_id);
         seed(&dp, &queue, &action).await;
 
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let engine = spawn_action_engine(
             Arc::clone(&bus),
             Arc::clone(&dp),
@@ -578,7 +580,7 @@ mod tests {
         let action = log_action(a_id, q_id);
         seed(&dp, &queue, &action).await;
 
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let engine = spawn_action_engine(
             Arc::clone(&bus),
             Arc::clone(&dp),

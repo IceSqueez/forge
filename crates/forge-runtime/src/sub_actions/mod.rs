@@ -134,7 +134,7 @@ pub async fn dispatch(
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::EventBus;
+    use crate::{EventBus, NullEventLogRepo};
     use forge_storage::DataProvider;
     use forge_storage::GlobalsRepo;
     use forge_storage_sqlite::SqliteBackend;
@@ -153,7 +153,7 @@ mod tests {
     #[tokio::test]
     async fn log_dispatch_returns_success_telemetry() {
         let dp = make_dp().await;
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let spec = SubActionSpec::Log {
             level: LogLevel::Info,
             message: "hello".to_string(),
@@ -178,7 +178,7 @@ mod tests {
     #[tokio::test]
     async fn log_dispatch_interpolates_message() {
         let dp = make_dp().await;
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let spec = SubActionSpec::Log {
             level: LogLevel::Info,
             message: "hello %user%".to_string(),
@@ -201,7 +201,7 @@ mod tests {
     #[tokio::test]
     async fn send_chat_publishes_chat_send_request_with_correct_caused_by() {
         let dp = make_dp().await;
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
         let parent_id = EventId::new();
         let spec = SubActionSpec::SendChat {
@@ -233,7 +233,7 @@ mod tests {
     #[tokio::test]
     async fn set_global_stores_integer_value() {
         let dp = make_dp().await;
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let spec = SubActionSpec::SetGlobal {
             name: "counter".to_string(),
             value: "42".to_string(),
@@ -256,7 +256,7 @@ mod tests {
     #[tokio::test]
     async fn set_global_interpolates_value_from_arg_stack() {
         let dp = make_dp().await;
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let spec = SubActionSpec::SetGlobal {
             name: "greeting".to_string(),
             value: "%user%".to_string(),
@@ -280,7 +280,7 @@ mod tests {
     #[tokio::test]
     async fn set_global_emits_global_set_event() {
         let dp = make_dp().await;
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
         let parent_id = EventId::new();
         let spec = SubActionSpec::SetGlobal {
@@ -313,7 +313,7 @@ mod tests {
         GlobalsRepo::set(dp.as_ref(), "counter", Variant::Int(7), false)
             .await
             .unwrap();
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let spec = SubActionSpec::GetGlobal {
             name: "counter".to_string(),
             into_arg: "x".to_string(),
@@ -389,7 +389,7 @@ mod tests {
     #[tokio::test]
     async fn run_script_skipped_when_registry_is_none() {
         let dp = make_dp().await;
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let spec = SubActionSpec::RunScript {
             script_name: "anything".to_string(),
         };
@@ -416,7 +416,7 @@ mod tests {
         use crate::ScriptRegistry;
 
         let dp = make_dp().await;
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let registry = ScriptRegistry::new();
         let spec = SubActionSpec::RunScript {
             script_name: "no_such_script".to_string(),
@@ -452,7 +452,7 @@ mod tests {
                 .await
                 .unwrap(),
         );
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
 
         let ts = OffsetDateTime::now_utc();
@@ -516,7 +516,7 @@ mod tests {
                 .await
                 .unwrap(),
         );
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
 
         let ts = OffsetDateTime::now_utc();
@@ -575,7 +575,7 @@ mod tests {
                 .await
                 .unwrap(),
         );
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
 
         let ts = OffsetDateTime::now_utc();
         let record = forge_storage::ScriptRecord {

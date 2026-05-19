@@ -48,7 +48,7 @@ pub(super) async fn run(
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::EventBus;
+    use crate::{EventBus, NullEventLogRepo};
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::{ArgStack, EventId, SubActionSpec, Variant};
     use std::sync::Arc;
@@ -65,7 +65,7 @@ mod tests {
     #[tokio::test]
     async fn send_chat_publishes_event_with_correct_kind_and_caused_by() {
         let dp = make_dp().await;
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
         let parent_id = EventId::new();
         let spec = SubActionSpec::SendChat {
@@ -84,7 +84,7 @@ mod tests {
     #[tokio::test]
     async fn send_chat_interpolates_message_and_target_in_payload() {
         let dp = make_dp().await;
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
         let stack = ArgStack::new().set("user".to_string(), Variant::String("alice".to_string()));
         let spec = SubActionSpec::SendChat {
@@ -107,7 +107,7 @@ mod tests {
     #[tokio::test]
     async fn send_chat_returns_success_telemetry() {
         let dp = make_dp().await;
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let _ = bus.subscribe();
         let spec = SubActionSpec::SendChat {
             message: "test".to_string(),

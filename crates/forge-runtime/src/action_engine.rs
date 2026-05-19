@@ -354,6 +354,7 @@ pub fn spawn_action_engine(
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::NullEventLogRepo;
     use crate::script_registry::ScriptRegistry;
     use forge_storage::DataProvider;
     use forge_storage_sqlite::SqliteBackend;
@@ -402,7 +403,7 @@ mod tests {
         action.enabled = false;
         seed_action(&dp, &action).await;
 
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let handle = spawn_action_engine(
             Arc::clone(&bus),
             Arc::clone(&dp),
@@ -432,7 +433,7 @@ mod tests {
         let action = simple_action(action_id, QueueId::new(), false);
         seed_action(&dp, &action).await;
 
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
         let handle = spawn_action_engine(
             Arc::clone(&bus),
@@ -481,7 +482,7 @@ mod tests {
         let action = simple_action(action_id, QueueId::new(), false);
         seed_action(&dp, &action).await;
 
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
         let handle = spawn_action_engine(
             Arc::clone(&bus),
@@ -527,7 +528,7 @@ mod tests {
         ];
         seed_action(&dp, &action).await;
 
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
         let handle = spawn_action_engine(
             Arc::clone(&bus),
@@ -579,7 +580,7 @@ mod tests {
         let action = simple_action(action_id, QueueId::new(), false);
         seed_action(&dp, &action).await;
 
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
         let handle = spawn_action_engine(
             Arc::clone(&bus),
@@ -660,7 +661,7 @@ mod tests {
         };
         seed_action(&dp, &action).await;
 
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
         let handle = spawn_action_engine(
             Arc::clone(&bus),

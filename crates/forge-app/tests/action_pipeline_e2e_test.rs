@@ -4,7 +4,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_events::{Event, EventSource, EventsError};
-use forge_runtime::{CommandParser, EventBus, QueueScheduler, ScriptRegistry, spawn_action_engine};
+use forge_runtime::{
+    CommandParser, EventBus, NullEventLogRepo, QueueScheduler, ScriptRegistry, spawn_action_engine,
+};
 use forge_storage::DataProvider;
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{Action, ActionId, Command, CommandId, CommandPermission, SubActionSpec};
@@ -22,7 +24,7 @@ async fn make_dp() -> Arc<dyn DataProvider> {
 #[tokio::test]
 async fn full_action_pipeline_emits_causation_chain() {
     let dp = make_dp().await;
-    let bus = EventBus::new();
+    let bus = EventBus::new(Arc::new(NullEventLogRepo));
 
     let queue = dp
         .queue_repo()
@@ -164,7 +166,7 @@ async fn full_action_pipeline_emits_causation_chain() {
 #[tokio::test]
 async fn unknown_command_does_not_dispatch_action() {
     let dp = make_dp().await;
-    let bus = EventBus::new();
+    let bus = EventBus::new(Arc::new(NullEventLogRepo));
 
     let queue = dp
         .queue_repo()

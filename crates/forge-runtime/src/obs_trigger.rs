@@ -128,7 +128,10 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::{EventBus, EventSubscription, QueueScheduler, ScriptRegistry, spawn_action_engine};
+    use crate::{
+        EventBus, EventSubscription, NullEventLogRepo, QueueScheduler, ScriptRegistry,
+        spawn_action_engine,
+    };
 
     async fn make_dp() -> Arc<dyn DataProvider> {
         Arc::new(
@@ -214,7 +217,7 @@ mod tests {
         dp.action_repo().save(&action).await.unwrap();
         dp.trigger_repo().save(&trigger).await.unwrap();
 
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
         let engine = spawn_action_engine(
             Arc::clone(&bus),
@@ -249,7 +252,7 @@ mod tests {
         dp.action_repo().save(&action).await.unwrap();
         dp.trigger_repo().save(&trigger).await.unwrap();
 
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
         let engine = spawn_action_engine(
             Arc::clone(&bus),
@@ -284,7 +287,7 @@ mod tests {
         dp.action_repo().save(&action).await.unwrap();
         dp.trigger_repo().save(&trigger).await.unwrap();
 
-        let bus = EventBus::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
         let engine = spawn_action_engine(
             Arc::clone(&bus),

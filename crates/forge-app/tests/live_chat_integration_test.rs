@@ -7,7 +7,7 @@ use forge_app::{
     screen::OnboardingStep,
 };
 use forge_events::{Event, EventSource};
-use forge_runtime::{EventBus, ScriptRegistry, bus_subscription};
+use forge_runtime::{EventBus, NullEventLogRepo, ScriptRegistry, bus_subscription};
 use forge_storage_sqlite::SqliteBackend;
 use futures_util::StreamExt as _;
 
@@ -25,7 +25,7 @@ fn test_app() -> App {
         theme,
         palette,
         backend,
-        bus: EventBus::new(),
+        bus: EventBus::new(Arc::new(NullEventLogRepo)),
         storage_offline: false,
         onboarding: forge_app::OnboardingState::new(),
         live_chat: forge_app::LiveChatState::new(),
@@ -128,7 +128,7 @@ fn chat_submit_clears_input_optimistically() {
 
 #[tokio::test]
 async fn event_bus_subscription_bridge_delivers_events() {
-    let bus = EventBus::new();
+    let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let mut stream = bus_subscription(Arc::clone(&bus));
 
     let ev1 = Event::new(EventSource::Core, "action.start", serde_json::Value::Null);

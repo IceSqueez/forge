@@ -1406,7 +1406,8 @@ mod tests {
                 .await
                 .unwrap(),
         );
-        let bus = forge_runtime::EventBus::new();
+        let bus =
+            forge_runtime::EventBus::new(std::sync::Arc::new(forge_runtime::NullEventLogRepo));
         let id = ScriptId::new();
         let result = run_script_inline("1 + 2".to_owned(), ArgStack::new(), dp, bus, id)
             .await
@@ -1422,7 +1423,8 @@ mod tests {
                 .await
                 .unwrap(),
         );
-        let bus = forge_runtime::EventBus::new();
+        let bus =
+            forge_runtime::EventBus::new(std::sync::Arc::new(forge_runtime::NullEventLogRepo));
         let id = ScriptId::new();
         let stack = ArgStack::new().set("x".to_owned(), Variant::Int(5));
         let result = run_script_inline("// @input x: int\nx * 2".to_owned(), stack, dp, bus, id)

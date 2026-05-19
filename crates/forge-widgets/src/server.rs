@@ -10,13 +10,13 @@ use iced::{
 use crate::{
     events::color_for_source,
     icons::{
-        BOOTSTRAP_FONT, ICON_ALERT_TRIANGLE, ICON_COPY, ICON_EYE, ICON_EYE_SLASH, ICON_REFRESH,
-        ICON_X,
+        BOOTSTRAP_FONT, ICON_ALERT_TRIANGLE, ICON_COPY, ICON_EYE, ICON_EYE_SLASH, ICON_LOCK,
+        ICON_REFRESH, ICON_X,
     },
     palette::ForgePalette,
     tokens::{
-        FONT_BODY_LG, FONT_BODY_SM, FONT_CAPS, FONT_CAPS_SM, FONT_CAPS_XS, FontRole, Radius, font,
-        radius,
+        BORDER_THIN, FONT_BODY_LG, FONT_BODY_MD, FONT_BODY_SM, FONT_CAPS, FONT_CAPS_SM,
+        FONT_CAPS_XS, FontRole, Radius, font, radius,
     },
 };
 
@@ -416,6 +416,207 @@ pub fn client_table_row<'a, Msg: Clone + 'a>(
         .into()
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BindBadge {
+    Recommended,
+    RequiresConfirmation,
+}
+
+pub struct BindAddressCardParams<'a> {
+    pub title: &'a str,
+    pub tech_label: &'a str,
+    pub badge: BindBadge,
+    pub description: &'a str,
+    pub selected: bool,
+}
+
+fn badge_color(badge: BindBadge, palette: &ForgePalette) -> Color {
+    match badge {
+        BindBadge::Recommended => palette.success,
+        BindBadge::RequiresConfirmation => palette.warning,
+    }
+}
+
+fn badge_icon(badge: BindBadge) -> char {
+    match badge {
+        BindBadge::Recommended => ICON_LOCK,
+        BindBadge::RequiresConfirmation => ICON_ALERT_TRIANGLE,
+    }
+}
+
+fn badge_label(badge: BindBadge) -> &'static str {
+    match badge {
+        BindBadge::Recommended => "Recommended",
+        BindBadge::RequiresConfirmation => "Requires confirmation",
+    }
+}
+
+fn radio_ring_style(ring_color: Color) -> impl Fn(&iced::Theme) -> container::Style {
+    move |_| container::Style {
+        background: Some(iced::Background::Color(Color::TRANSPARENT)),
+        border: Border {
+            color: ring_color,
+            width: 2.0,
+            radius: 999.0.into(),
+        },
+        ..container::Style::default()
+    }
+}
+
+fn radio_fill_style(fill_color: Color) -> impl Fn(&iced::Theme) -> container::Style {
+    move |_| container::Style {
+        background: Some(iced::Background::Color(fill_color)),
+        border: Border {
+            color: Color::TRANSPARENT,
+            width: 0.0,
+            radius: 999.0.into(),
+        },
+        ..container::Style::default()
+    }
+}
+
+fn radio_dot<'a, Msg: 'a>(selected: bool, palette: &ForgePalette) -> Element<'a, Msg> {
+    let ring_color = if selected {
+        palette.brand
+    } else {
+        palette.border_input
+    };
+
+    let inner: Element<'a, Msg> = if selected {
+        container(Space::new().width(7.0f32).height(7.0f32))
+            .style(radio_fill_style(palette.brand))
+            .into()
+    } else {
+        Space::new().into()
+    };
+
+    container(inner)
+        .width(Length::Fixed(16.0))
+        .height(Length::Fixed(16.0))
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center)
+        .style(radio_ring_style(ring_color))
+        .into()
+}
+
+fn bind_badge_element<'a, Msg: 'a>(badge: BindBadge, palette: &ForgePalette) -> Element<'a, Msg> {
+    let color = badge_color(badge, palette);
+    let surface = palette.surface_overlay;
+
+    let badge_row = row![
+        text(badge_icon(badge).to_string())
+            .font(BOOTSTRAP_FONT)
+            .size(10.0f32)
+            .color(color),
+        text(badge_label(badge))
+            .font(font(FontRole::Monospace))
+            .size(FONT_CAPS_XS)
+            .color(color),
+    ]
+    .spacing(4)
+    .align_y(Alignment::Center);
+
+    container(badge_row)
+        .padding([1u16, 6u16])
+        .style(move |_| container::Style {
+            background: Some(iced::Background::Color(surface)),
+            border: Border {
+                color: Color::TRANSPARENT,
+                width: 0.0,
+                radius: 8.0.into(),
+            },
+            ..container::Style::default()
+        })
+        .into()
+}
+
+fn bind_card_style(
+    selected: bool,
+    brand: Color,
+    border_regular: Color,
+    elevated: Color,
+    text_primary: Color,
+) -> impl Fn(&iced::Theme, Status) -> Style {
+    move |_theme, status| {
+        let (border_color, border_width) = if selected {
+            (brand, BORDER_THIN)
+        } else {
+            (border_regular, 0.5)
+        };
+        let bg = match status {
+            Status::Hovered => Color {
+                a: if selected { 0.08 } else { 0.04 },
+                ..brand
+            },
+            Status::Pressed => Color { a: 0.12, ..brand },
+            _ => elevated,
+        };
+        Style {
+            background: Some(iced::Background::Color(bg)),
+            text_color: text_primary,
+            border: Border {
+                color: border_color,
+                width: border_width,
+                radius: radius(Radius::Xl).into(),
+            },
+            shadow: iced::Shadow::default(),
+            snap: false,
+        }
+    }
+}
+
+pub fn bind_address_card<'a, Msg: Clone + 'a>(
+    params: BindAddressCardParams<'a>,
+    on_click: Msg,
+    palette: &ForgePalette,
+) -> Element<'a, Msg> {
+    let dot = radio_dot::<Msg>(params.selected, palette);
+
+    let title_row = row![
+        text(params.title)
+            .size(FONT_BODY_MD)
+            .color(palette.text_primary),
+        bind_badge_element::<Msg>(params.badge, palette),
+        Space::new().width(Length::Fill),
+        text(params.tech_label)
+            .font(font(FontRole::Monospace))
+            .size(FONT_CAPS_SM)
+            .color(palette.text_faint),
+    ]
+    .spacing(8)
+    .align_y(Alignment::Center);
+
+    let description = text(params.description)
+        .size(FONT_BODY_SM)
+        .color(palette.text_muted);
+
+    let content = column![title_row, description].spacing(2);
+
+    let dot_padded = container(dot).padding(iced::Padding {
+        top: 1.0,
+        right: 0.0,
+        bottom: 0.0,
+        left: 0.0,
+    });
+
+    let card_row = row![dot_padded, content,]
+        .spacing(11)
+        .align_y(Alignment::Start)
+        .padding([12u16, 14u16]);
+
+    button(card_row)
+        .on_press(on_click)
+        .width(Length::Fill)
+        .style(bind_card_style(
+            params.selected,
+            palette.brand,
+            palette.border_regular,
+            palette.elevated,
+            palette.text_primary,
+        ))
+        .into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -557,5 +758,48 @@ mod tests {
         let token = "fg_abc12345xyz5L9k";
         assert_eq!(token, token);
         assert_ne!(mask_token(token), token);
+    }
+
+    fn make_bind_params(badge: BindBadge, selected: bool) -> BindAddressCardParams<'static> {
+        match badge {
+            BindBadge::Recommended => BindAddressCardParams {
+                title: "Localhost only",
+                tech_label: "127.0.0.1",
+                badge,
+                description: "Only apps on this machine can connect.",
+                selected,
+            },
+            BindBadge::RequiresConfirmation => BindAddressCardParams {
+                title: "All interfaces (LAN)",
+                tech_label: "0.0.0.0",
+                badge,
+                description: "Lets other devices on your network connect.",
+                selected,
+            },
+        }
+    }
+
+    #[test]
+    fn smoke_bind_address_card_recommended_selected() {
+        let params = make_bind_params(BindBadge::Recommended, true);
+        let _: Element<'_, ()> = bind_address_card(params, (), &CATPPUCCIN_MOCHA);
+    }
+
+    #[test]
+    fn smoke_bind_address_card_requires_confirmation_unselected() {
+        let params = make_bind_params(BindBadge::RequiresConfirmation, false);
+        let _: Element<'_, ()> = bind_address_card(params, (), &CATPPUCCIN_MOCHA);
+    }
+
+    #[test]
+    fn badge_color_recommended_resolves_to_success() {
+        let color = badge_color(BindBadge::Recommended, &CATPPUCCIN_MOCHA);
+        assert_eq!(color, CATPPUCCIN_MOCHA.success);
+    }
+
+    #[test]
+    fn badge_color_requires_confirmation_resolves_to_warning() {
+        let color = badge_color(BindBadge::RequiresConfirmation, &CATPPUCCIN_MOCHA);
+        assert_eq!(color, CATPPUCCIN_MOCHA.warning);
     }
 }

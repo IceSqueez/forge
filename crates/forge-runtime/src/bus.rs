@@ -8,7 +8,7 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 use time::OffsetDateTime;
-use tokio::sync::broadcast;
+use tokio::sync::{Notify, broadcast};
 
 const CHANNEL_CAP: usize = 1_024;
 const RING_CAP: usize = 10_000;
@@ -47,6 +47,7 @@ pub struct EventBus {
     ring: Mutex<RingBuffer<Event>>,
     total_published: AtomicU64,
     event_log: Arc<dyn EventLogRepo>,
+    flush_shutdown: Arc<Notify>,
 }
 
 pub struct BusStats {
@@ -87,6 +88,7 @@ impl EventBus {
             ring: Mutex::new(RingBuffer::new(ring_cap)),
             total_published: AtomicU64::new(0),
             event_log,
+            flush_shutdown: Arc::new(Notify::new()),
         })
     }
 
@@ -163,6 +165,65 @@ impl EventBus {
         self.publish(replayed);
         Ok(())
     }
+
+    /// Subscribes a dedicated persistence receiver and spawns the flush task.
+    ///
+    /// The subscription is created synchronously before the task is spawned, so events
+    /// published immediately after this call are guaranteed to be received by the task.
+    /// Callers that do not need persistence (tests using `NullEventLogRepo`) may skip
+    /// this call entirely.
+    pub fn spawn_flush_task(bus: Arc<Self>) {
+        let recv = bus.sender.subscribe();
+        let repo = Arc::clone(&bus.event_log);
+        let shutdown = Arc::clone(&bus.flush_shutdown);
+        tokio::spawn(event_log_flush_task(recv, repo, shutdown));
+    }
+
+    /// Signals the flush task to drain remaining events and exit.
+    ///
+    /// Uses `notify_one` (not `notify_waiters`) so the permit is stored even if the
+    /// flush task has not yet polled its shutdown future.
+    pub fn shutdown(&self) {
+        self.flush_shutdown.notify_one();
+    }
+}
+
+async fn event_log_flush_task(
+    mut recv: broadcast::Receiver<Event>,
+    repo: Arc<dyn EventLogRepo>,
+    shutdown: Arc<Notify>,
+) {
+    loop {
+        tokio::select! {
+            biased;
+            _ = shutdown.notified() => {
+                while let Ok(ev) = recv.try_recv() {
+                    if let Err(e) = repo.insert(&ev).await {
+                        // Event remains in ring until evicted; persistence is lossy on error — no retry.
+                        tracing::warn!(error = %e, "event_log drain insert failed");
+                    }
+                }
+                return;
+            }
+            result = recv.recv() => {
+                match result {
+                    Ok(ev) => {
+                        if let Err(e) = repo.insert(&ev).await {
+                            // Event remains in ring until evicted; persistence is lossy on error — no retry.
+                            tracing::warn!(error = %e, "event_log insert failed; event not persisted");
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        tracing::warn!(
+                            skipped = n,
+                            "event_log flush task lagged; events may not be persisted"
+                        );
+                    }
+                    Err(broadcast::error::RecvError::Closed) => return,
+                }
+            }
+        }
+    }
 }
 
 impl EventPublisher for EventBus {
@@ -184,6 +245,7 @@ mod tests {
     use forge_storage::DataProvider;
     use forge_storage_sqlite::SqliteBackend;
     use std::sync::Arc;
+    use std::time::Duration;
 
     fn null_bus() -> Arc<EventBus> {
         EventBus::new(Arc::new(NullEventLogRepo))
@@ -394,5 +456,123 @@ mod tests {
             matches!(result, Err(BusError::EventNotFound(id)) if id == ghost_id),
             "must return EventNotFound for unknown id"
         );
+    }
+
+    struct FailFirstRepo {
+        call_count: AtomicU64,
+        stored: Mutex<Vec<Event>>,
+    }
+
+    impl FailFirstRepo {
+        fn new() -> Self {
+            Self {
+                call_count: AtomicU64::new(0),
+                stored: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn stored_count(&self) -> usize {
+            self.stored.lock().unwrap().len()
+        }
+    }
+
+    #[async_trait]
+    impl EventLogRepo for FailFirstRepo {
+        async fn insert(&self, event: &Event) -> Result<(), StorageError> {
+            let n = self.call_count.fetch_add(1, Ordering::SeqCst);
+            if n == 0 {
+                return Err(StorageError::NotReady);
+            }
+            self.stored.lock().unwrap().push(event.clone());
+            Ok(())
+        }
+
+        async fn get(&self, _id: EventId) -> Result<Option<Event>, StorageError> {
+            Ok(None)
+        }
+
+        async fn recent(&self, _limit: usize) -> Result<Vec<Event>, StorageError> {
+            Ok(self.stored.lock().unwrap().clone())
+        }
+
+        async fn prune_before(&self, _cutoff: OffsetDateTime) -> Result<u64, StorageError> {
+            Ok(0)
+        }
+    }
+
+    #[tokio::test]
+    async fn flush_task_persists_published_events() {
+        let (bus, backend) = backed_bus_with_caps(CHANNEL_CAP, RING_CAP).await;
+        EventBus::spawn_flush_task(Arc::clone(&bus));
+
+        let ev1 = core_event("flush.a");
+        let ev2 = core_event("flush.b");
+        let ev3 = core_event("flush.c");
+        let ids = [ev1.id, ev2.id, ev3.id];
+
+        bus.publish(ev1);
+        bus.publish(ev2);
+        bus.publish(ev3);
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let persisted = backend.event_log_repo().recent(100).await.unwrap();
+        let persisted_ids: Vec<_> = persisted.iter().map(|e| e.id).collect();
+        for id in ids {
+            assert!(
+                persisted_ids.contains(&id),
+                "event {id} not found in persisted log"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn flush_task_continues_after_insert_error() {
+        let repo: Arc<FailFirstRepo> = Arc::new(FailFirstRepo::new());
+        let bus = EventBus::with_caps(
+            Arc::clone(&repo) as Arc<dyn EventLogRepo>,
+            CHANNEL_CAP,
+            RING_CAP,
+        );
+        EventBus::spawn_flush_task(Arc::clone(&bus));
+
+        bus.publish(core_event("err.first"));
+        bus.publish(core_event("err.second"));
+        bus.publish(core_event("err.third"));
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        assert_eq!(
+            repo.stored_count(),
+            2,
+            "first insert must be rejected, subsequent two must succeed"
+        );
+    }
+
+    #[tokio::test]
+    async fn flush_task_shutdown_drains_pending_events() {
+        let (bus, backend) = backed_bus_with_caps(CHANNEL_CAP, RING_CAP).await;
+        EventBus::spawn_flush_task(Arc::clone(&bus));
+
+        let ev1 = core_event("drain.a");
+        let ev2 = core_event("drain.b");
+        let ev3 = core_event("drain.c");
+        let ids = [ev1.id, ev2.id, ev3.id];
+
+        bus.publish(ev1);
+        bus.publish(ev2);
+        bus.publish(ev3);
+        bus.shutdown();
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let persisted = backend.event_log_repo().recent(100).await.unwrap();
+        let persisted_ids: Vec<_> = persisted.iter().map(|e| e.id).collect();
+        for id in ids {
+            assert!(
+                persisted_ids.contains(&id),
+                "event {id} not persisted after shutdown drain"
+            );
+        }
     }
 }

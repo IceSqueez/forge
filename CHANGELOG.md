@@ -1,16 +1,81 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-alpha.7] - 2026-05-19
+### ⚠️ BREAKING CHANGES
+- **platform-core**: IntegrationStatus requires capability_flags() and header_actions()
+- **platform-core**: HealthMetric loses sublabel/color; HealthValue replaces; IntegrationHealth adds stream()
+- **types**: ExecutionContext.trigger_event_id replaced by metadata: ExecutionMetadata
+- **platform-core**: IntegrationCatalog removed; replaced by IntegrationContent + DetailSection enum (8 variants)
+- **platform-core**: QuickAction.payload removed; enabled, subaction_template, picker added; PickerKind enum with Copy+Hash added
+- **obs**: ObsClient::connect now requires Arc<dyn EventPublisher> parameter
+- **runtime**: ActionEngine now requires Option<Arc<dyn ObsSink>> as fourth argument to spawn_action_engine
+- **types**: TriggerKind gains ObsSceneChanged variant; exhaustive matches must add the arm
+
+### ⚙️ Miscellaneous Tasks
+- *(workspace)* Update Cargo.lock
+- *(deps)* Add futures-core to forge-platform-core lockfile
+- *(deps)* Update Cargo.lock for forge-events dep in forge-obs
+
+### 🐛 Bug Fixes
+- *(obs)* Align scene event kinds with EventSource::Obs taxonomy
+
+### 📚 Documentation
+- *(readme)* Add dynamic release and activity badge block
+- *(readme)* Refresh current status for alpha-7 OBS milestone
+
+### 🚀 Features
+- *(obs)* Add forge-obs crate skeleton
+- *(platform-core)* [**breaking**] Extend IntegrationStatus with capability flags
+- *(types)* Add OBS sub-action variants and runtime stubs
+- *(platform-core)* [**breaking**] Replace IntegrationHealth metrics with stream shape
+- *(types)* [**breaking**] Add ExecutionMetadata enum to ExecutionContext
+- *(platform-core)* [**breaking**] Replace IntegrationCatalog with DetailSection
+- *(platform-core)* [**breaking**] Rework QuickAction shape and add PickerKind
+- *(obs)* Define ObsSink and ObsSource traits
+- *(widgets)* Add integration_header_card widget
+- *(obs)* Implement ObsClient connect with challenge-response auth
+- *(widgets)* Add integration_health_grid widget
+- *(obs)* Add reconnect with exponential backoff and jitter
+- *(obs)* Impl IntegrationStatus for ObsClient
+- *(obs)* Impl IntegrationHealth with stream-based deltas
+- *(widgets)* Add integration_content_renderer dispatcher
+- *(obs)* Impl IntegrationContent with scenes and sources
+- *(obs)* Impl QuickActions with 4 actions and pickers
+- *(widgets)* Add integration_quick_actions_grid widget
+- *(obs)* Impl ObsSink methods via obws API calls
+- *(app)* Add IntegrationDetail generic screen
+- *(obs)* [**breaking**] Map obws events to forge bus EventSource::Obs
+- *(app)* Add StreamApps landing screen with OBS card
+- *(runtime)* [**breaking**] Wire OBS sub-action runners to ObsSink
+- *(widgets)* Add full-screen picker_modal widget
+- *(app)* Wire onboarding ConnectObs step to real flow
+- *(types)* [**breaking**] Add Trigger::ObsSceneChanged variant and evaluator
+- *(app)* Boot ObsClient and populate IntegrationDetail state
+- *(app)* Wire QuickAction picker to SubAction enqueue and toast
+
+### 🛠️ Build
+- Remove redundant token-redaction job from pr and nightly
+- *(manual)* Dedupe artifact upload via runner.os ternary
+- *(nightly)* Use gh api for commit check instead of full checkout
+- *(nightly)* Add explicit should_run guard to test job
+
+### 🧪 Testing
+- *(obs)* Add backoff monotonicity and reconnect-supervisor stub
+- *(runtime)* Add OBS sub-action delegation regression with RecordingSink
+- *(runtime)* Add QuickAction vs SubAction equivalence and event-kind regression
+
 ## [0.1.0-alpha.6] - 2026-05-18
 ### ⚠️ BREAKING CHANGES
 - **types**: VariantKind::color() removed — use forge_widgets::variant_kind_color(kind, palette) instead
-- **storage**: ScriptRecord.source_code renamed to body; description
-removed; contract: ScriptContract and body_hash: String added; upsert
-renamed to save. Migration 0003 was shipped in alpha.4/alpha.5; 0004
-adds the missing columns via ALTER TABLE on the existing scripts table.
+- **storage**: ScriptRecord.source_code renamed to body; description removed; contract: ScriptContract and body_hash: String added; upsert renamed to save.
 - **script**: Engine::with_config now stores wall_timer as field; Engine struct is no longer Send (was already not Send due to rhai::Engine).
 - **runtime**: dispatch signature gains registry param; bus changed to &Arc<EventBus>, dp to Arc<dyn DataProvider>
 - **runtime**: spawn_action_engine now requires Arc<ScriptRegistry>
+
+### ⚙️ Miscellaneous Tasks
+- *(release)* Release v0.1.0-alpha.6
+- Release
 
 ### 🐛 Bug Fixes
 - Remove stage-marker strings from docs and error messages

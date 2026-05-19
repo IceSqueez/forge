@@ -40,9 +40,9 @@ Forge is an open-source desktop application that automates stream workflows acro
 
 ## Current Status
 
-**Current alpha: v0.1.0-alpha.7** — OBS WebSocket integration milestone.
+**Current alpha: v0.1.0-alpha.8** — EventFeed / Replay debugging milestone.
 
-**What's included (alpha-1 through alpha-7):**
+**What's included (alpha-1 through alpha-8):**
 
 - **Workspace & storage layer:** 12-crate workspace; SQLite backend with AES-GCM encrypted credential storage; schema versioning with append-only migration pipeline.
 - **iced UI shell:** Catppuccin Mocha theme + Tokyo Night and Latte; sidebar navigation; Hub dashboard; Settings with sub-screens; cross-platform CI pipeline (Linux, Windows, macOS).
@@ -51,10 +51,11 @@ Forge is an open-source desktop application that automates stream workflows acro
 - **Globals system:** Per-key read/write counters; `%variable%` interpolation in action config; Globals editor with filter, JSON export, and Variant editor modal.
 - **Rhai scripting sandbox:** `ForgeApi` god-object with op-count and time limits; `ScriptRegistry` with hot-reload; `RunScript` sub-action; 3-pane ScriptEditor screen.
 - **OBS WebSocket v5 integration:** `forge-obs` crate; challenge-response auth; exponential-backoff reconnect; sub-actions: `SetScene`, `SetSourceVisible`, `SetInputMute`, `StartRecord`, `StopRecord`, `StartStream`, `StopStream`; `ObsSceneChanged` trigger; OBS events on the bus (`scene.changed`, `recording.*`, `streaming.*`, `source.visibility.changed`); generic `IntegrationDetail` screen; `StreamApps` landing screen; Onboarding ConnectObs step.
+- **EventFeed + Replay debugging:** 2-pane Event Feed screen with filter chips (All / Chat / Subs / Bits / Timers / OBS / Errors), Pause / Resume / Clear / Export controls, and a per-event payload inspector with syntax-highlighted JSON viewer. Every event persists to SQLite (`event_log`, 7-day retention) and carries a full causation chain (`caused_by`) across all subsystems. One-click replay of any captured event re-runs the full action pipeline — useful for debugging action flows without waiting for a live trigger. Replayed events are visually distinguished in the feed.
 
 **Feature timeline (pending):**
 
-- **beta-1+:** YouTube, Trovo, Kick chat platforms; TTS engines (local and cloud); VTube Studio; Discord webhooks; MIDI controllers; browser-source overlay server.
+- **beta-1+:** YouTube, Trovo, Kick chat platforms; TTS engines (local and cloud); VTube Studio; Discord webhooks; MIDI controllers; browser-source overlay server; audio engine.
 
 ## Building from Source
 

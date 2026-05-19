@@ -47,7 +47,7 @@ pub use icons::{
 pub use inputs::{search_input, select, text_input_field};
 pub use integration::{
     HeaderCardParams, integration_content_renderer, integration_header_card,
-    integration_health_grid,
+    integration_health_grid, integration_quick_actions_grid,
 };
 pub use layout::{
     TitleBarV2, breadcrumb, page_shell, title_bar, title_bar_v2, title_bar_with_logo, toolbar,

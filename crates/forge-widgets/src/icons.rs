@@ -22,3 +22,4 @@ pub const ICON_CHEVRON_UP: char = '\u{F286}';
 pub const ICON_CHEVRON_RIGHT: char = '\u{F285}';
 pub const ICON_DOWNLOAD: char = '\u{F30A}';
 pub const ICON_PLUS: char = '\u{F4FE}';
+pub const ICON_REPLAY: char = '\u{F116}';

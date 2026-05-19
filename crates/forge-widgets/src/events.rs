@@ -5,9 +5,9 @@ use iced::{
 };
 
 use crate::{
-    icons::{BOOTSTRAP_FONT, ICON_LIGHTNING},
+    icons::{BOOTSTRAP_FONT, ICON_LIGHTNING, ICON_REPLAY},
     palette::ForgePalette,
-    tokens::{FONT_CAPS, FONT_CAPS_SM, FONT_CAPS_XS, FontRole, Radius, font, radius},
+    tokens::{FONT_BODY_LG, FONT_CAPS, FONT_CAPS_SM, FONT_CAPS_XS, FontRole, Radius, font, radius},
 };
 
 pub fn color_for_source(source: EventSource, palette: &ForgePalette) -> Color {
@@ -472,6 +472,65 @@ pub fn json_viewer<'a, Msg: 'a>(
         .into()
 }
 
+pub fn replay_button<'a, Msg: Clone + 'a>(
+    on_click: Msg,
+    palette: &ForgePalette,
+) -> Element<'a, Msg> {
+    let brand = palette.brand;
+    let border_color = palette.border_regular;
+    let hover_bg = Color {
+        r: brand.r,
+        g: brand.g,
+        b: brand.b,
+        a: 0.08,
+    };
+
+    let icon = iced::widget::text(ICON_REPLAY.to_string())
+        .size(FONT_BODY_LG)
+        .color(brand)
+        .font(BOOTSTRAP_FONT);
+
+    let label = iced::widget::text("Replay this event")
+        .size(FONT_CAPS)
+        .color(brand);
+
+    let content = container(
+        row![icon, label]
+            .spacing(6)
+            .align_y(iced::Alignment::Center),
+    )
+    .center_x(Length::Fill);
+
+    button(content)
+        .on_press(on_click)
+        .padding(Padding {
+            top: 6.0,
+            right: 10.0,
+            bottom: 6.0,
+            left: 10.0,
+        })
+        .width(Length::Fill)
+        .style(
+            move |_theme: &iced::Theme, status: button::Status| button::Style {
+                background: match status {
+                    button::Status::Hovered | button::Status::Pressed => {
+                        Some(Background::Color(hover_bg))
+                    }
+                    _ => None,
+                },
+                text_color: brand,
+                border: Border {
+                    color: border_color,
+                    width: 0.5,
+                    radius: radius(Radius::Sm).into(),
+                },
+                shadow: iced::Shadow::default(),
+                snap: false,
+            },
+        )
+        .into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -581,6 +640,12 @@ mod tests {
     fn error_row_accent_is_random_color() {
         let color = color_for_source(EventSource::Http, &CATPPUCCIN_MOCHA);
         assert_eq!(color, CATPPUCCIN_MOCHA.random);
+    }
+
+    #[test]
+    fn replay_button_constructs_without_panic() {
+        let palette = &CATPPUCCIN_MOCHA;
+        let _: iced::Element<'_, ()> = replay_button((), palette);
     }
 
     #[test]

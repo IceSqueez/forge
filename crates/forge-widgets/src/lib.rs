@@ -41,14 +41,14 @@ pub use data::{
 };
 pub use events::{
     EventRowData, causation_chip, color_for_source, event_row_observability, json_viewer,
-    source_badge,
+    replay_button, source_badge,
 };
 pub use icons::{
     BOOTSTRAP_FONT, BOOTSTRAP_FONT_BYTES, ICON_ACTIVITY, ICON_BROADCAST, ICON_CHAT,
     ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CHEVRON_UP, ICON_CLOCK, ICON_DOWNLOAD,
     ICON_FILE_CODE, ICON_GEAR, ICON_GLOBE, ICON_GRID, ICON_HASH, ICON_HOME, ICON_JOURNAL,
-    ICON_LIGHTNING, ICON_MUSIC_NOTE, ICON_PEOPLE, ICON_PLUS, ICON_SERVER, ICON_SPEAKER,
-    ICON_TERMINAL,
+    ICON_LIGHTNING, ICON_MUSIC_NOTE, ICON_PEOPLE, ICON_PLUS, ICON_REPLAY, ICON_SERVER,
+    ICON_SPEAKER, ICON_TERMINAL,
 };
 pub use inputs::{input_padding, search_input, select, text_input_field};
 pub use integration::{

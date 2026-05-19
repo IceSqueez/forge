@@ -30,3 +30,6 @@ pub const ICON_REFRESH: char = '\u{F130}';
 pub const ICON_ALERT_TRIANGLE: char = '\u{F33B}';
 pub const ICON_LOCK: char = '\u{F470}';
 pub const ICON_X: char = '\u{F62C}';
+pub const ICON_CHECK_CIRCLE: char = '\u{F26D}';
+pub const ICON_INFO_CIRCLE: char = '\u{F431}';
+pub const ICON_KEYBOARD: char = '\u{F459}';

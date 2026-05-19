@@ -304,18 +304,7 @@ async fn both_paths_emit_subaction_run_with_obs_set_scene_kind() {
     engine.shutdown();
 }
 
-/// Regression: demonstrates that the event kind emitted by forge-obs events::map_obs_event
-/// ("obs.scene.changed") does not match what ObsTriggerEvaluator listens for ("scene.changed").
-/// The trigger evaluator will never fire in production from real OBS scene-changed events.
-///
-/// This test is marked #[ignore] because the current code is buggy — it would fail without
-/// fixing events.rs to emit "scene.changed" instead of "obs.scene.changed".
-///
-/// Fix: change map_obs_event in forge-obs/src/events.rs line 14 from "obs.scene.changed"
-/// to "scene.changed", matching the roadmap spec and the evaluator expectation.
 #[tokio::test]
-#[ignore = "regression: proves event kind mismatch — forge-obs emits obs.scene.changed but \
-            ObsTriggerEvaluator expects scene.changed; fix events.rs before removing #[ignore]"]
 async fn obs_scene_changed_event_from_real_emitter_triggers_evaluator() {
     use forge_events::{Event, EventSource};
     use forge_runtime::{ObsTriggerEvaluator, QueueScheduler};
@@ -375,14 +364,13 @@ async fn obs_scene_changed_event_from_real_emitter_triggers_evaluator() {
     // This MUST trigger the evaluator for exit criterion 6 to be satisfied.
     bus.publish(Event::new(
         EventSource::Obs,
-        "obs.scene.changed",
+        "scene.changed",
         serde_json::json!({ "scene": "Main" }),
     ));
 
     let fired = wait_for_event_kind(&mut sub, "action.done", 500).await;
     assert!(
         fired,
-        "action.done must fire when obs.scene.changed is published — \
-         currently fails due to event kind mismatch in events.rs"
+        "action.done must fire when scene.changed is published from EventSource::Obs"
     );
 }

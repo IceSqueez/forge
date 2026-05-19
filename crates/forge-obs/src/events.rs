@@ -11,22 +11,22 @@ pub(crate) fn map_obs_event(ev: &obws::events::Event) -> Option<Event> {
     match ev {
         obws::events::Event::CurrentProgramSceneChanged { id } => Some(Event::new(
             EventSource::Obs,
-            "obs.scene.changed",
+            "scene.changed",
             json!({ "scene": &id.name }),
         )),
         obws::events::Event::RecordStateChanged { active, .. } => {
             let kind = if *active {
-                "obs.recording.started"
+                "recording.started"
             } else {
-                "obs.recording.stopped"
+                "recording.stopped"
             };
             Some(Event::new(EventSource::Obs, kind, json!({})))
         }
         obws::events::Event::StreamStateChanged { active, .. } => {
             let kind = if *active {
-                "obs.streaming.started"
+                "streaming.started"
             } else {
-                "obs.streaming.stopped"
+                "streaming.stopped"
             };
             Some(Event::new(EventSource::Obs, kind, json!({})))
         }
@@ -37,7 +37,7 @@ pub(crate) fn map_obs_event(ev: &obws::events::Event) -> Option<Event> {
 pub(crate) fn map_scene_item_visibility(scene: &str, source: &str, enabled: bool) -> Event {
     Event::new(
         EventSource::Obs,
-        "obs.source.visibility.changed",
+        "source.visibility.changed",
         json!({ "scene": scene, "source": source, "visible": enabled }),
     )
 }
@@ -142,7 +142,7 @@ mod tests {
     fn map_scene_item_visibility_emits_obs_source_event() {
         let ev = map_scene_item_visibility("Gameplay", "Game Capture", true);
         assert_eq!(ev.source, EventSource::Obs);
-        assert_eq!(ev.kind, "obs.source.visibility.changed");
+        assert_eq!(ev.kind, "source.visibility.changed");
         assert_eq!(ev.payload["scene"], "Gameplay");
         assert_eq!(ev.payload["source"], "Game Capture");
         assert_eq!(ev.payload["visible"], true);

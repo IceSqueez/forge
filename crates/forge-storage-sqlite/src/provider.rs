@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_storage::{
@@ -8,13 +10,17 @@ use forge_storage::{
 };
 use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
+use tokio::sync::Notify;
 
 use crate::error::SqliteStorageError;
+use crate::retention_task::spawn_retention_task;
 use crate::{
     SqliteActionRepo, SqliteCommandRepo, SqliteCredentialsRepo, SqliteEventLogRepo,
     SqliteGlobalsRepo, SqliteHistoryRepo, SqliteQueueRepo, SqliteScriptRepo, SqliteSettingsRepo,
     SqliteTriggerRepo, SqliteUserGlobalsRepo, apply_migrations, connect,
 };
+
+const PRUNE_INTERVAL_PRODUCTION: Duration = Duration::from_secs(3600);
 
 pub struct SqliteBackend {
     pool: sqlx::SqlitePool,
@@ -29,6 +35,7 @@ pub struct SqliteBackend {
     credentials: SqliteCredentialsRepo,
     history: SqliteHistoryRepo,
     event_log: SqliteEventLogRepo,
+    shutdown: Arc<Notify>,
 }
 
 impl SqliteBackend {
@@ -36,7 +43,11 @@ impl SqliteBackend {
         let pool = connect(url).await?;
         apply_migrations(&pool).await?;
         let credentials = SqliteCredentialsRepo::new(pool.clone())?;
-        Ok(Self::from_pool_and_credentials(pool, credentials))
+        Ok(Self::from_pool_and_credentials(
+            pool,
+            credentials,
+            PRUNE_INTERVAL_PRODUCTION,
+        ))
     }
 
     #[doc(hidden)]
@@ -44,13 +55,52 @@ impl SqliteBackend {
         let pool = connect(url).await?;
         apply_migrations(&pool).await?;
         let credentials = SqliteCredentialsRepo::new_with_key(pool.clone(), key);
-        Ok(Self::from_pool_and_credentials(pool, credentials))
+        Ok(Self::from_pool_and_credentials(
+            pool,
+            credentials,
+            PRUNE_INTERVAL_PRODUCTION,
+        ))
+    }
+
+    #[doc(hidden)]
+    pub async fn open_with_key_and_interval(
+        url: &str,
+        key: [u8; 32],
+        prune_interval: Duration,
+    ) -> Result<Self, SqliteStorageError> {
+        let pool = connect(url).await?;
+        apply_migrations(&pool).await?;
+        let credentials = SqliteCredentialsRepo::new_with_key(pool.clone(), key);
+        Ok(Self::from_pool_and_credentials(
+            pool,
+            credentials,
+            prune_interval,
+        ))
+    }
+
+    pub fn shutdown_retention_pruner(&self) {
+        self.shutdown.notify_one();
     }
 
     fn from_pool_and_credentials(
         pool: sqlx::SqlitePool,
         credentials: SqliteCredentialsRepo,
+        prune_interval: Duration,
     ) -> Self {
+        let shutdown = Arc::new(Notify::new());
+
+        let repo_for_task =
+            Arc::new(SqliteEventLogRepo::new(pool.clone())) as Arc<dyn EventLogRepo>;
+        let settings_for_task =
+            Arc::new(SqliteSettingsRepo::new(pool.clone())) as Arc<dyn SettingsRepo>;
+
+        spawn_retention_task(
+            repo_for_task,
+            settings_for_task,
+            prune_interval,
+            Arc::clone(&shutdown),
+        );
+
         Self {
             globals: SqliteGlobalsRepo::new(pool.clone()),
             user_globals: SqliteUserGlobalsRepo::new(pool.clone()),
@@ -63,6 +113,7 @@ impl SqliteBackend {
             history: SqliteHistoryRepo::new(pool.clone()),
             event_log: SqliteEventLogRepo::new(pool.clone()),
             credentials,
+            shutdown,
             pool,
         }
     }

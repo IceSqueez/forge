@@ -10,6 +10,7 @@ pub mod migrations;
 pub mod pool;
 pub mod provider;
 pub mod queue_impl;
+pub(crate) mod retention_task;
 pub mod script_impl;
 pub mod settings_impl;
 pub mod trigger_impl;

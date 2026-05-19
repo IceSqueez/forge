@@ -82,6 +82,10 @@ impl SqliteBackend {
         self.shutdown.notify_one();
     }
 
+    pub fn event_log_repo_arc(&self) -> Arc<dyn EventLogRepo> {
+        Arc::new(SqliteEventLogRepo::new(self.pool.clone()))
+    }
+
     fn from_pool_and_credentials(
         pool: sqlx::SqlitePool,
         credentials: SqliteCredentialsRepo,

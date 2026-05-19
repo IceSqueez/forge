@@ -8,8 +8,8 @@ use forge_app::screen::OnboardingStep;
 use forge_platform_core::paths;
 use forge_platform_twitch::{ChatSendBridge, ChatSendBridgeHandle};
 use forge_runtime::{
-    ActionEngineHandle, CommandParser, CommandParserHandle, EventBus, NullEventLogRepo,
-    QueueScheduler, QueueSchedulerHandle, ScriptRegistry, spawn_action_engine,
+    ActionEngineHandle, CommandParser, CommandParserHandle, EventBus, QueueScheduler,
+    QueueSchedulerHandle, ScriptRegistry, spawn_action_engine,
 };
 use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo, reserved_keys};
 use forge_storage_sqlite::SqliteBackend;
@@ -142,7 +142,9 @@ fn main() -> iced::Result {
     let (backend, storage_offline) = boot_storage();
     let initial_screen = resolve_initial_screen(&backend);
 
-    let bus = EventBus::new(Arc::new(NullEventLogRepo));
+    let event_log = backend.event_log_repo_arc();
+    let bus = EventBus::new(event_log);
+    EventBus::spawn_flush_task(Arc::clone(&bus));
 
     let (script_registry, action_engine, scheduler, command_parser, chat_send_bridge) =
         if storage_offline {

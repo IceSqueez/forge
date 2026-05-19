@@ -2,10 +2,19 @@
 
 Cross-platform desktop tool for stream automation and multi-engine TTS — built in Rust.
 
-[![License: MIT OR Apache-1.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](./LICENSE)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](./LICENSE)
 [![Rust 1.95.0+](https://img.shields.io/badge/rust-1.95.0%2B-orange)](https://www.rust-lang.org/)
-[![Platform Support: Linux | Windows | macOS](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-green)](./docs/install/)
-[![Status: Alpha](https://img.shields.io/badge/status-alpha--1-yellow)](./docs/release-notes/)
+[![Platforms](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-green)](#installing-releases)
+
+[![Latest Release](https://img.shields.io/github/v/release/IceSqueez/forge?include_prereleases&logo=github&label=Latest&cacheSeconds=600)](https://github.com/IceSqueez/forge/releases)
+[![Release Date](https://img.shields.io/github/release-date-pre/IceSqueez/forge?logo=github&label=Released&cacheSeconds=600)](https://github.com/IceSqueez/forge/releases)
+[![Release Workflow](https://github.com/IceSqueez/forge/actions/workflows/release.yml/badge.svg)](https://github.com/IceSqueez/forge/actions/workflows/release.yml)
+[![Nightly Workflow](https://github.com/IceSqueez/forge/actions/workflows/nightly.yml/badge.svg)](https://github.com/IceSqueez/forge/actions/workflows/nightly.yml)
+
+[![Commits Since Latest Release](https://img.shields.io/github/commits-since/IceSqueez/forge/latest?include_prereleases&logo=github&label=Commits%20since&cacheSeconds=600)](https://github.com/IceSqueez/forge/commits/main)
+[![Open Issues](https://img.shields.io/github/issues/IceSqueez/forge?logo=github&label=Issues&cacheSeconds=600)](https://github.com/IceSqueez/forge/issues)
+[![Commit Activity](https://img.shields.io/github/commit-activity/m/IceSqueez/forge?logo=github&label=Activity&cacheSeconds=600)](https://github.com/IceSqueez/forge/pulse)
+[![Total Downloads](https://img.shields.io/github/downloads/IceSqueez/forge/total?logo=github&label=Downloads&cacheSeconds=600)](https://github.com/IceSqueez/forge/releases)
 
 ## What is forge?
 

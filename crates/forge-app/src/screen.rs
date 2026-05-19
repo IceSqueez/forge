@@ -120,6 +120,8 @@ pub enum SettingsSection {
     Diagnostics,
 }
 
+use forge_platform_core::IntegrationId;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Screen {
     Onboarding(OnboardingStep),
@@ -133,6 +135,7 @@ pub enum Screen {
     Platforms,
     StreamApps,
     Integrations,
+    IntegrationDetail(IntegrationId),
     Tts,
     Soundboard,
     ScriptEditor,

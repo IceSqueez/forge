@@ -41,6 +41,7 @@ fn test_app() -> App {
         action_engine: None,
         scheduler: None,
         command_parser: None,
+        integration_detail: None,
     }
 }
 

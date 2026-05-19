@@ -32,6 +32,10 @@ use crate::actions::{
 use crate::globals_view::{
     GlobalsState, globals_view, handle_globals_msg, handle_variant_editor_msg,
 };
+use crate::integration_detail::{
+    IntegrationDetailState, handle_integration_detail_msg, health_subscription,
+    view as integration_detail_view,
+};
 use crate::live_chat::{CHAT_LOG_MAX, LiveChatState, chat_row_from_event, live_chat_view};
 use crate::message::{
     ActionsMsg, GlobalsMsg, HubMsg, HubStatsData, PlatformId, SettingsMsg, SidebarMsg,
@@ -100,6 +104,7 @@ pub struct App {
     pub action_engine: Option<ActionEngineHandle>,
     pub scheduler: Option<QueueSchedulerHandle>,
     pub command_parser: Option<CommandParserHandle>,
+    pub integration_detail: Option<IntegrationDetailState>,
 }
 
 impl App {
@@ -134,6 +139,7 @@ impl App {
             action_engine,
             scheduler,
             command_parser,
+            integration_detail: None,
         }
     }
 }
@@ -172,6 +178,7 @@ impl Default for App {
             action_engine: None,
             scheduler: None,
             command_parser: None,
+            integration_detail: None,
         }
     }
 }
@@ -544,6 +551,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::AddSubAction(sub) => handle_add_sub_action_msg(app, sub),
         Message::RemoveSubAction(sub) => handle_remove_sub_action_msg(app, sub),
         Message::ScriptEditor(sub) => handle_script_editor_msg(app, sub),
+        Message::IntegrationDetail(sub) => handle_integration_detail_msg(app, sub),
         Message::Noop => Task::none(),
     }
 }
@@ -3708,7 +3716,7 @@ fn breadcrumb_icon_for(screen: &Screen) -> char {
         Screen::Actions => ICON_LIGHTNING,
         Screen::Commands => ICON_TERMINAL,
         Screen::Platforms => ICON_BROADCAST,
-        Screen::StreamApps | Screen::Integrations => ICON_GRID,
+        Screen::StreamApps | Screen::Integrations | Screen::IntegrationDetail(_) => ICON_GRID,
         Screen::LiveChat => ICON_CHAT,
         Screen::EventFeed => ICON_ACTIVITY,
         Screen::Globals => ICON_HASH,
@@ -3729,6 +3737,7 @@ fn screen_label(screen: &Screen) -> &'static str {
         Screen::Platforms => "Platforms",
         Screen::StreamApps => "Stream apps",
         Screen::Integrations => "Integrations",
+        Screen::IntegrationDetail(_) => "Integration",
         Screen::LiveChat => "Live chat",
         Screen::EventFeed => "Event feed",
         Screen::Globals => "Globals",
@@ -3895,6 +3904,13 @@ pub fn view(app: &App) -> Element<'_, Message> {
         }
         Screen::ScriptEditor => script_editor_view(app, palette),
         Screen::Onboarding(_) => unreachable!(),
+        Screen::IntegrationDetail(_id) => {
+            if let Some(state) = app.integration_detail.as_ref() {
+                integration_detail_view(state, palette)
+            } else {
+                coming_soon_view("IntegrationDetail".to_owned(), palette)
+            }
+        }
         other => coming_soon_view(format!("{other:?}"), palette),
     };
 
@@ -3935,7 +3951,12 @@ pub fn subscription(app: &App) -> Subscription<Message> {
         }
     }
 
-    from_recipe(BusRecipe(app.bus.clone()))
+    let bus = from_recipe(BusRecipe(app.bus.clone()));
+    if let Some(state) = app.integration_detail.as_ref() {
+        Subscription::batch([bus, health_subscription(state)])
+    } else {
+        bus
+    }
 }
 
 pub fn theme_callback(app: &App) -> Theme {
@@ -4656,6 +4677,7 @@ mod tests {
             action_engine: Some(engine),
             scheduler: Some(scheduler),
             command_parser: Some(parser),
+            integration_detail: None,
         };
 
         assert!(app.action_engine.is_some());
@@ -4925,6 +4947,7 @@ mod tests {
             action_engine: None,
             scheduler: None,
             command_parser: None,
+            integration_detail: None,
         };
 
         let mut form = crate::actions::AddActionForm::new();
@@ -5276,6 +5299,29 @@ mod tests {
         let _ = update(&mut app, Message::Navigate(Screen::Home));
         app.hub.actions_count = Some(47);
         app.hub.triggers_fired = Some(1284);
+        let _ = view(&app);
+    }
+
+    #[test]
+    fn navigate_to_integration_detail_sets_screen() {
+        use forge_platform_core::IntegrationId;
+        let mut app = App::default();
+        let id = IntegrationId::new("obs");
+        let _ = update(
+            &mut app,
+            Message::Navigate(Screen::IntegrationDetail(id.clone())),
+        );
+        assert_eq!(app.screen, Screen::IntegrationDetail(id));
+    }
+
+    #[test]
+    fn view_compiles_integration_detail_without_state() {
+        use forge_platform_core::IntegrationId;
+        let mut app = App::default();
+        let _ = update(
+            &mut app,
+            Message::Navigate(Screen::IntegrationDetail(IntegrationId::new("obs"))),
+        );
         let _ = view(&app);
     }
 }

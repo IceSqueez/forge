@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use forge_events::Event;
 use forge_platform_core::oauth::{DeviceCodeResponse, TokenResponse};
+use forge_platform_core::{HeaderAction, HealthDelta, PickerKind};
 use forge_storage::GlobalEntry;
 use forge_types::ActionId;
 use forge_widgets::{ThemeId, VariantKind};
@@ -134,6 +135,15 @@ pub enum GlobalsMsg {
 }
 
 #[derive(Debug, Clone)]
+pub enum IntegrationDetailMsg {
+    HealthDelta(HealthDelta),
+    HeaderActionClicked(HeaderAction),
+    QuickActionClicked(usize),
+    PickerOpened(PickerKind),
+    PickerClosed,
+}
+
+#[derive(Debug, Clone)]
 pub enum SidebarMsg {
     ToggleActionsQueues,
     TogglePlatforms,
@@ -155,6 +165,7 @@ pub enum Message {
     AddTrigger(AddTriggerMsg),
     AddSubAction(AddSubActionMsg),
     RemoveSubAction(RemoveSubActionMsg),
+    IntegrationDetail(IntegrationDetailMsg),
     ThemeChanged(ThemeId),
     EventArrived(Event),
     ChatInputChanged(String),

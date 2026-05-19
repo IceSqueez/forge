@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use forge_events::{Event, EventSource};
 use forge_runtime::{ActionEngineHandle, EventBus, ExecutionRequest};
-use forge_storage::{CredentialsRepo, DataProvider, GlobalsRepo};
+use forge_storage::{CredentialsRepo, DataProvider, GlobalsRepo, UserGlobalsRepo};
 use forge_types::{ActionId, ArgStack, CommandPermission, EventId, Variant};
 
 use crate::auth::AuthState;
@@ -439,6 +439,72 @@ async fn handle_set_global(
     }
 }
 
+async fn handle_get_user_globals(
+    broadcaster_id: String,
+    user_id: Option<String>,
+    ctx: &DispatchContext,
+) -> WsResponse {
+    let user_globals_repo: &dyn UserGlobalsRepo = ctx.dp.as_ref();
+    let result = match user_id {
+        Some(ref uid) => user_globals_repo.list_for_user(&broadcaster_id, uid).await,
+        None => {
+            user_globals_repo
+                .list_for_broadcaster(&broadcaster_id)
+                .await
+        }
+    };
+    match result {
+        Ok(list) => {
+            let wire: Vec<serde_json::Value> = list
+                .iter()
+                .map(|e| {
+                    let last_modified = e
+                        .last_modified
+                        .format(&time::format_description::well_known::Rfc3339)
+                        .unwrap_or_default();
+                    serde_json::json!({
+                        "user_id": e.user_id,
+                        "key": e.name,
+                        "value": variant_to_wire_value(&e.value),
+                        "type": e.value.type_tag().to_string(),
+                        "last_modified": last_modified,
+                    })
+                })
+                .collect();
+            WsResponse::Ok(serde_json::json!({ "globals": wire }))
+        }
+        Err(e) => WsResponse::Error {
+            code: Some("RUNTIME_ERROR".to_owned()),
+            message: e.to_string(),
+        },
+    }
+}
+
+fn valid_code_event_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+}
+
+async fn handle_trigger_code_event(
+    name: String,
+    args: serde_json::Value,
+    ctx: &DispatchContext,
+) -> WsResponse {
+    if !valid_code_event_name(&name) {
+        return WsResponse::Error {
+            code: Some("INVALID_PAYLOAD".to_owned()),
+            message: "name must match [a-z0-9_]{1,64}".to_owned(),
+        };
+    }
+    let kind = format!("custom.{name}");
+    ctx.bus
+        .publish(Event::new(EventSource::Server, &kind, args));
+    WsResponse::Ok(serde_json::json!({ "ok": true }))
+}
+
 async fn handle_get_actions(ctx: &DispatchContext) -> WsResponse {
     let actions = match ctx.dp.action_repo().list().await {
         Ok(list) => list,
@@ -642,18 +708,21 @@ async fn route(req: WsRequest, ctx: &DispatchContext) -> WsResponse {
             handle_set_global(name, value, persisted, ctx).await
         }
 
-        WsRequest::GetUserGlobals { .. } => {
+        WsRequest::GetUserGlobals {
+            broadcaster_id,
+            user_id,
+        } => {
             if ctx.auth_required_for_reads && !is_authenticated(ctx) {
                 return unauthenticated();
             }
-            not_implemented()
+            handle_get_user_globals(broadcaster_id, user_id, ctx).await
         }
 
-        WsRequest::TriggerCodeEvent { .. } => {
+        WsRequest::TriggerCodeEvent { name, args } => {
             if !is_authenticated(ctx) {
                 return unauthenticated();
             }
-            not_implemented()
+            handle_trigger_code_event(name, args, ctx).await
         }
 
         WsRequest::GetEvents { .. } => {
@@ -1366,6 +1435,171 @@ mod tests {
                 name: "counter".to_owned(),
                 value: serde_json::Value::Null,
                 persisted: false,
+            },
+        };
+        let resp = dispatch(req, &ctx).await;
+        match resp.inner {
+            WsResponse::Error {
+                code: Some(code), ..
+            } => assert_eq!(code, "INVALID_PAYLOAD"),
+            other => panic!("expected INVALID_PAYLOAD error, got {other:?}"),
+        }
+    }
+
+    fn sample_user_global_entry() -> forge_storage::UserGlobalEntry {
+        forge_storage::UserGlobalEntry {
+            broadcaster_id: "12345678".to_string(),
+            user_id: "87654321".to_string(),
+            name: "points".to_string(),
+            value: forge_types::Variant::Int(500),
+            last_modified: OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap(),
+        }
+    }
+
+    #[tokio::test]
+    async fn get_user_globals_empty_for_null_dp() {
+        let ctx = make_ctx(false, false);
+        let req = WsEnvelope {
+            id: Some("11".to_owned()),
+            inner: WsRequest::GetUserGlobals {
+                broadcaster_id: "12345678".to_owned(),
+                user_id: None,
+            },
+        };
+        let resp = dispatch(req, &ctx).await;
+        let json = serialize_response_frame(&resp);
+        assert_eq!(json["status"], "ok");
+        assert!(json["globals"].is_array());
+        assert_eq!(json["globals"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn get_user_globals_with_user_id_returns_filtered_globals() {
+        use crate::test_dp::VecUserGlobalsDp;
+        let entry = sample_user_global_entry();
+        let other_entry = forge_storage::UserGlobalEntry {
+            broadcaster_id: "12345678".to_string(),
+            user_id: "11111111".to_string(),
+            name: "other".to_string(),
+            value: forge_types::Variant::Int(0),
+            last_modified: OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap(),
+        };
+        let dp = VecUserGlobalsDp::with_entries(vec![entry, other_entry]);
+        let ctx = make_ctx_with_dp(false, dp);
+        let req = WsEnvelope {
+            id: Some("11".to_owned()),
+            inner: WsRequest::GetUserGlobals {
+                broadcaster_id: "12345678".to_owned(),
+                user_id: Some("87654321".to_owned()),
+            },
+        };
+        let resp = dispatch(req, &ctx).await;
+        let json = serialize_response_frame(&resp);
+        assert_eq!(json["status"], "ok");
+        let globals = json["globals"].as_array().unwrap();
+        assert_eq!(globals.len(), 1);
+        assert_eq!(globals[0]["user_id"], "87654321");
+        assert_eq!(globals[0]["key"], "points");
+        assert_eq!(globals[0]["value"], 500i64);
+        assert_eq!(globals[0]["type"], "int");
+        assert!(globals[0]["last_modified"].is_string());
+    }
+
+    #[tokio::test]
+    async fn get_user_globals_without_user_id_returns_all_broadcaster_globals() {
+        use crate::test_dp::VecUserGlobalsDp;
+        let entry1 = sample_user_global_entry();
+        let entry2 = forge_storage::UserGlobalEntry {
+            broadcaster_id: "12345678".to_string(),
+            user_id: "11111111".to_string(),
+            name: "level".to_string(),
+            value: forge_types::Variant::Int(5),
+            last_modified: OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap(),
+        };
+        let dp = VecUserGlobalsDp::with_entries(vec![entry1, entry2]);
+        let ctx = make_ctx_with_dp(false, dp);
+        let req = WsEnvelope {
+            id: Some("11".to_owned()),
+            inner: WsRequest::GetUserGlobals {
+                broadcaster_id: "12345678".to_owned(),
+                user_id: None,
+            },
+        };
+        let resp = dispatch(req, &ctx).await;
+        let json = serialize_response_frame(&resp);
+        assert_eq!(json["status"], "ok");
+        let globals = json["globals"].as_array().unwrap();
+        assert_eq!(globals.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn trigger_code_event_without_auth_returns_unauthenticated() {
+        let ctx = make_ctx(false, false);
+        let req = WsEnvelope {
+            id: Some("12".to_owned()),
+            inner: WsRequest::TriggerCodeEvent {
+                name: "my_event".to_owned(),
+                args: serde_json::json!({ "scene": "Gameplay" }),
+            },
+        };
+        let resp = dispatch(req, &ctx).await;
+        match resp.inner {
+            WsResponse::Error {
+                code: Some(code), ..
+            } => assert_eq!(code, "UNAUTHENTICATED"),
+            other => panic!("expected UNAUTHENTICATED error, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn trigger_code_event_with_auth_publishes_bus_event() {
+        let ctx = make_ctx(true, false);
+        let mut bus_sub = ctx.bus.subscribe();
+        let req = WsEnvelope {
+            id: Some("12".to_owned()),
+            inner: WsRequest::TriggerCodeEvent {
+                name: "my_event".to_owned(),
+                args: serde_json::json!({ "scene": "Gameplay" }),
+            },
+        };
+        let resp = dispatch(req, &ctx).await;
+        let json = serialize_response_frame(&resp);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["ok"], true);
+
+        let event = bus_sub.recv().await.unwrap();
+        assert_eq!(event.source, EventSource::Server);
+        assert_eq!(event.kind, "custom.my_event");
+        assert_eq!(event.payload["scene"], "Gameplay");
+    }
+
+    #[tokio::test]
+    async fn trigger_code_event_invalid_name_returns_invalid_payload() {
+        let ctx = make_ctx(true, false);
+        let req = WsEnvelope {
+            id: Some("12".to_owned()),
+            inner: WsRequest::TriggerCodeEvent {
+                name: "Invalid-Name!".to_owned(),
+                args: serde_json::json!({}),
+            },
+        };
+        let resp = dispatch(req, &ctx).await;
+        match resp.inner {
+            WsResponse::Error {
+                code: Some(code), ..
+            } => assert_eq!(code, "INVALID_PAYLOAD"),
+            other => panic!("expected INVALID_PAYLOAD error, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn trigger_code_event_empty_name_returns_invalid_payload() {
+        let ctx = make_ctx(true, false);
+        let req = WsEnvelope {
+            id: Some("12".to_owned()),
+            inner: WsRequest::TriggerCodeEvent {
+                name: String::new(),
+                args: serde_json::json!({}),
             },
         };
         let resp = dispatch(req, &ctx).await;

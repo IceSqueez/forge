@@ -114,6 +114,7 @@ pub enum TriggerCategory {
     Bits,
     Raids,
     Obs,
+    Server,
 }
 
 pub fn category_of(kind: &TriggerKind) -> TriggerCategory {
@@ -125,6 +126,7 @@ pub fn category_of(kind: &TriggerKind) -> TriggerCategory {
         TriggerKind::TwitchCheer => TriggerCategory::Bits,
         TriggerKind::TwitchRaid => TriggerCategory::Raids,
         TriggerKind::ObsSceneChanged { .. } => TriggerCategory::Obs,
+        TriggerKind::CodeEvent { .. } => TriggerCategory::Server,
     }
 }
 
@@ -138,6 +140,7 @@ pub fn kind_label(kind: &TriggerKind) -> &'static str {
         TriggerKind::TwitchCheer => "Twitch \u{00b7} Bits cheered",
         TriggerKind::TwitchRaid => "Twitch \u{00b7} Raid received",
         TriggerKind::ObsSceneChanged { .. } => "OBS \u{00b7} Scene changed",
+        TriggerKind::CodeEvent { .. } => "Server \u{00b7} Custom event",
     }
 }
 
@@ -151,6 +154,9 @@ pub fn kind_summary(kind: &TriggerKind) -> &'static str {
         TriggerKind::TwitchCheer => "Viewer sends bits",
         TriggerKind::TwitchRaid => "Another stream raids you",
         TriggerKind::ObsSceneChanged { .. } => "Fires when OBS switches the active scene",
+        TriggerKind::CodeEvent { .. } => {
+            "Fires when triggerCodeEvent is called via the WebSocket API"
+        }
     }
 }
 
@@ -165,10 +171,11 @@ pub fn kind_search_text(kind: &TriggerKind) -> &'static str {
         TriggerKind::TwitchCheer => "twitch cheer bits cheered donate",
         TriggerKind::TwitchRaid => "twitch raid incoming raided",
         TriggerKind::ObsSceneChanged { .. } => "obs scene changed obsscenechanged",
+        TriggerKind::CodeEvent { .. } => "server code event custom overlay api trigger",
     }
 }
 
-pub fn all_trigger_kinds() -> [TriggerKind; 8] {
+pub fn all_trigger_kinds() -> [TriggerKind; 9] {
     [
         TriggerKind::TwitchChatCommand,
         TriggerKind::TwitchChatAnyMessage,
@@ -178,6 +185,9 @@ pub fn all_trigger_kinds() -> [TriggerKind; 8] {
         TriggerKind::TwitchCheer,
         TriggerKind::TwitchRaid,
         TriggerKind::ObsSceneChanged { scene: None },
+        TriggerKind::CodeEvent {
+            name: String::new(),
+        },
     ]
 }
 

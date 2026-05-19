@@ -79,6 +79,18 @@ pub fn synthesize_test_event(trigger: &Trigger, commands: &[Command]) -> Event {
                 json!({ "scene": scene_name }),
             )
         }
+        TriggerKind::CodeEvent { name } => {
+            let event_name = if name.is_empty() {
+                "test"
+            } else {
+                name.as_str()
+            };
+            Event::new(
+                EventSource::Server,
+                format!("custom.{event_name}"),
+                json!({}),
+            )
+        }
     }
 }
 

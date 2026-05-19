@@ -17,6 +17,11 @@ pub enum TriggerKind {
     ObsSceneChanged {
         scene: Option<String>,
     },
+    /// Fires when `triggerCodeEvent` is called via the WebSocket API with a
+    /// matching `name`. `name` must satisfy `[a-z0-9_]{1,64}`.
+    CodeEvent {
+        name: String,
+    },
 }
 
 /// Kind-specific trigger parameters (cooldown_secs, perm, min_bits, etc.).
@@ -78,6 +83,9 @@ mod tests {
             TriggerKind::TwitchCheer,
             TriggerKind::TwitchRaid,
             TriggerKind::ObsSceneChanged { scene: None },
+            TriggerKind::CodeEvent {
+                name: "overlay_alert".to_string(),
+            },
         ];
         for kind in kinds {
             let json = serde_json::to_string(&kind).unwrap();

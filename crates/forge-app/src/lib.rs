@@ -7,6 +7,7 @@ pub mod message;
 pub mod onboarding_state;
 pub mod screen;
 pub mod script_editor;
+pub mod stream_apps;
 
 pub use actions::{
     ActionDetail, ActionSummary, ActionsGroup, ActionsState, AddActionForm, AddActionMsg,

@@ -45,6 +45,7 @@ use crate::screen::OnboardingStep;
 use crate::script_editor::{
     ScriptEditorMsg, ScriptEditorState, handle_script_editor_msg, script_editor_view,
 };
+use crate::stream_apps::view as stream_apps_view;
 use crate::{Message, OnboardingMsg, Screen, SettingsSection};
 
 pub struct SidebarExpandState {
@@ -3829,13 +3830,13 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Vec<NavItem<'a,
                     dot_color: palette.success,
                     label: "OBS Studio",
                     active: false,
-                    on_press: Message::Navigate(Screen::Integrations),
+                    on_press: Message::Navigate(Screen::StreamApps),
                 },
                 NavChild {
                     dot_color: palette.warning,
                     label: "VTube Studio",
                     active: false,
-                    on_press: Message::Navigate(Screen::Integrations),
+                    on_press: Message::Navigate(Screen::StreamApps),
                 },
             ],
         },
@@ -3903,6 +3904,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
             settings_view(section, app.twitch_chat_handle.as_ref(), palette)
         }
         Screen::ScriptEditor => script_editor_view(app, palette),
+        Screen::StreamApps => stream_apps_view(app, palette),
         Screen::Onboarding(_) => unreachable!(),
         Screen::IntegrationDetail(_id) => {
             if let Some(state) = app.integration_detail.as_ref() {

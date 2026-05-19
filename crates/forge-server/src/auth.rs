@@ -51,6 +51,14 @@ impl AuthState {
         let current = self.bearer_token.read().await;
         bool::from(current.as_bytes().ct_eq(candidate.as_bytes()))
     }
+
+    #[cfg(test)]
+    pub fn for_test(auth_required_for_reads: bool, token: impl Into<String>) -> Arc<Self> {
+        Arc::new(Self {
+            bearer_token: Arc::new(RwLock::new(token.into())),
+            auth_required_for_reads,
+        })
+    }
 }
 
 impl From<StorageError> for ServerError {

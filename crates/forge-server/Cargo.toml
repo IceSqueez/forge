@@ -33,3 +33,4 @@ arc-swap          = { workspace = true }
 async-trait       = { workspace = true }
 reqwest           = { workspace = true }
 time              = { workspace = true }
+tokio             = { workspace = true, features = ["test-util"] }

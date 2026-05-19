@@ -1,3 +1,4 @@
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::extract::{Request, State};
@@ -8,10 +9,21 @@ use axum::routing::{any, get};
 use axum::{Json, Router, middleware};
 use tokio::net::TcpListener;
 
+use forge_runtime::EventBus;
+use forge_storage::DataProvider;
+
 use crate::auth::AuthState;
 use crate::bus_adapter::BusAdapter;
 use crate::routes::{api, overlays, ws};
 use crate::{ServerConfig, ServerError, ServerHandle};
+
+#[derive(Clone)]
+pub struct AppState {
+    pub auth: Arc<AuthState>,
+    pub bus: Arc<EventBus>,
+    pub bus_adapter: Arc<BusAdapter>,
+    pub dp: Arc<dyn DataProvider>,
+}
 
 pub struct Server {
     pub config: ServerConfig,
@@ -25,15 +37,22 @@ impl Server {
             self.config.credentials.as_ref(),
         )
         .await?;
-        let bus_adapter = BusAdapter::new(self.config.event_bus);
+        let bus = Arc::clone(&self.config.event_bus);
+        let bus_adapter = BusAdapter::new(Arc::clone(&bus));
         bus_adapter.spawn();
+        let state = AppState {
+            auth,
+            bus,
+            bus_adapter,
+            dp: self.config.data_provider,
+        };
         let listener = TcpListener::bind(addr)
             .await
             .map_err(|e| ServerError::Bind {
                 addr: addr.to_string(),
                 reason: e.to_string(),
             })?;
-        Ok(serve_on(listener, auth))
+        Ok(serve_on(listener, state))
     }
 }
 
@@ -41,17 +60,13 @@ pub async fn start_server(config: ServerConfig) -> Result<ServerHandle, ServerEr
     Server { config }.start().await
 }
 
-async fn auth_middleware(
-    State(auth): State<Arc<AuthState>>,
-    request: Request,
-    next: Next,
-) -> Response {
+async fn auth_middleware(State(state): State<AppState>, request: Request, next: Next) -> Response {
     let is_mutating = matches!(
         *request.method(),
         Method::POST | Method::PUT | Method::PATCH | Method::DELETE
     );
 
-    if is_mutating || auth.auth_required_for_reads {
+    if is_mutating || state.auth.auth_required_for_reads {
         let maybe_token = request
             .headers()
             .get(header::AUTHORIZATION)
@@ -60,7 +75,7 @@ async fn auth_middleware(
             .map(str::trim);
 
         let authorized = match maybe_token {
-            Some(token) => auth.verify(token).await,
+            Some(token) => state.auth.verify(token).await,
             None => false,
         };
 
@@ -85,19 +100,23 @@ fn unauthenticated_response() -> Response {
         .into_response()
 }
 
-fn build_router(auth: Arc<AuthState>) -> Router {
+fn build_router(state: AppState) -> Router {
     let api_routes = Router::new()
         .route("/{*path}", any(api::api_not_implemented))
-        .route_layer(middleware::from_fn_with_state(auth, auth_middleware));
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth_middleware,
+        ));
 
     Router::new()
         .route("/ws/v1/", get(ws::ws_handler))
         .nest("/api/v1", api_routes)
         .route("/overlays/{*path}", get(overlays::overlays_not_implemented))
+        .with_state(state)
 }
 
-fn serve_on(listener: TcpListener, auth: Arc<AuthState>) -> ServerHandle {
-    let app = build_router(auth);
+fn serve_on(listener: TcpListener, state: AppState) -> ServerHandle {
+    let app = build_router(state).into_make_service_with_connect_info::<SocketAddr>();
     let handle = tokio::spawn(async move {
         axum::serve(listener, app)
             .await
@@ -113,11 +132,13 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use async_trait::async_trait;
-    use forge_storage::{CredentialId, CredentialsRepo, StorageError};
+    use forge_runtime::{EventBus, NullEventLogRepo};
+    use forge_storage::{CredentialId, CredentialsRepo, DataProvider, StorageError};
     use time::OffsetDateTime;
     use tokio::net::TcpListener;
 
-    use super::{AuthState, ServerHandle, serve_on};
+    use super::{AppState, AuthState, BusAdapter, ServerHandle, serve_on};
+    use crate::test_dp::null_dp;
 
     struct MemCreds(Mutex<HashMap<String, String>>);
 
@@ -179,6 +200,19 @@ mod tests {
         }
     }
 
+    fn make_app_state(auth: Arc<AuthState>) -> AppState {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let bus_adapter = BusAdapter::new(Arc::clone(&bus));
+        bus_adapter.spawn();
+        let dp: Arc<dyn DataProvider> = null_dp();
+        AppState {
+            auth,
+            bus,
+            bus_adapter,
+            dp,
+        }
+    }
+
     async fn make_server(
         auth_required_for_reads: bool,
         creds: Arc<MemCreds>,
@@ -186,9 +220,10 @@ mod tests {
         let auth = AuthState::load(auth_required_for_reads, &*creds)
             .await
             .expect("auth load");
+        let state = make_app_state(auth);
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("local addr");
-        let handle = serve_on(listener, auth);
+        let handle = serve_on(listener, state);
         (handle, addr)
     }
 
@@ -200,9 +235,10 @@ mod tests {
             .await
             .expect("auth load");
         let auth_ref = Arc::clone(&auth);
+        let state = make_app_state(auth);
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("local addr");
-        let handle = serve_on(listener, auth);
+        let handle = serve_on(listener, state);
         (handle, addr, auth_ref)
     }
 

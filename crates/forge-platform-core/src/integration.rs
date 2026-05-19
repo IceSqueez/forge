@@ -58,6 +58,21 @@ pub struct QuickAction {
     pub payload: serde_json::Value,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CapabilityFlags {
+    pub limited: bool,
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HeaderAction {
+    Reconnect,
+    RefreshToken,
+    Disconnect,
+    Settings,
+}
+
 pub trait IntegrationStatus: Send + Sync {
     fn id(&self) -> &IntegrationId;
     fn display_name(&self) -> &str;
@@ -65,6 +80,8 @@ pub trait IntegrationStatus: Send + Sync {
     fn connection(&self) -> ConnectionState;
     fn uptime(&self) -> Option<Duration>;
     fn endpoint(&self) -> Option<&str>;
+    fn capability_flags(&self) -> CapabilityFlags;
+    fn header_actions(&self) -> Vec<HeaderAction>;
 }
 
 pub trait IntegrationHealth: Send + Sync {
@@ -181,6 +198,44 @@ mod tests {
         assert_eq!(back.id, action.id);
         assert_eq!(back.icon, action.icon);
         assert_eq!(back.payload["scene"], "Main Scene");
+    }
+
+    #[test]
+    fn capability_flags_serde_with_label() {
+        let flags = CapabilityFlags {
+            limited: true,
+            label: Some("read-only".to_owned()),
+        };
+        let json = serde_json::to_string(&flags).unwrap();
+        let back: CapabilityFlags = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, flags);
+    }
+
+    #[test]
+    fn capability_flags_serde_without_label() {
+        let flags = CapabilityFlags {
+            limited: false,
+            label: None,
+        };
+        let json = serde_json::to_string(&flags).unwrap();
+        let back: CapabilityFlags = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, flags);
+    }
+
+    #[test]
+    fn header_action_serde_variants() {
+        let cases = [
+            (HeaderAction::Reconnect, r#""reconnect""#),
+            (HeaderAction::RefreshToken, r#""refresh_token""#),
+            (HeaderAction::Disconnect, r#""disconnect""#),
+            (HeaderAction::Settings, r#""settings""#),
+        ];
+        for (action, expected_json) in &cases {
+            let json = serde_json::to_string(action).unwrap();
+            assert_eq!(json, *expected_json);
+            let back: HeaderAction = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, *action);
+        }
     }
 
     #[allow(dead_code)]

@@ -2212,14 +2212,20 @@ dependencies = [
 name = "forge-server"
 version = "0.1.0-alpha.8"
 dependencies = [
+ "async-trait",
  "axum",
+ "base64",
  "forge-events",
  "forge-platform-core",
+ "forge-storage",
  "forge-types",
+ "rand 0.10.1",
  "reqwest",
  "serde",
  "serde_json",
+ "subtle",
  "thiserror 2.0.18",
+ "time",
  "tokio",
  "tokio-tungstenite",
  "tower-http",

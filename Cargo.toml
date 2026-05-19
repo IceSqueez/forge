@@ -58,7 +58,9 @@ keyring-core = { version = "1" }
 rand = { version = "0.10" }
 tempfile = { version = "3" }
 
-sha2 = { version = "0.10" }
+sha2    = { version = "0.10" }
+base64  = { version = "0.22" }
+subtle  = { version = "2" }
 
 rhai = { version = "1", features = ["sync"] }
 

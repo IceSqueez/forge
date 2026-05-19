@@ -2,11 +2,13 @@
 
 mod routes;
 
+pub mod auth;
 pub mod config;
 pub mod error;
 pub mod handle;
 pub mod server;
 
+pub use auth::AuthState;
 pub use config::ServerConfig;
 pub use error::ServerError;
 pub use handle::ServerHandle;

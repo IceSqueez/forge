@@ -3,6 +3,9 @@ pub enum ServerError {
     #[error("could not bind to {addr}: {reason}")]
     Bind { addr: String, reason: String },
 
+    #[error("storage error: {0}")]
+    Storage(String),
+
     #[error("authentication required for this request")]
     AuthRequired,
 

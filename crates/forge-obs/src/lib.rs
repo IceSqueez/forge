@@ -6,6 +6,7 @@ pub mod catalog;
 pub mod client;
 pub mod error;
 pub mod health;
+pub mod quick_actions;
 pub mod sink;
 pub mod source;
 

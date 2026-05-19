@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use forge_app::App;
 use forge_app::Screen;
-use forge_app::app::{subscription, theme_callback, update, view};
+use forge_app::app::{load_obs_and_connect, subscription, theme_callback, update, view};
 use forge_app::screen::OnboardingStep;
 use forge_platform_core::paths;
 use forge_platform_twitch::{ChatSendBridge, ChatSendBridgeHandle};
@@ -175,7 +175,11 @@ fn main() -> iced::Result {
         );
         app.bus = Arc::clone(&bus_boot);
         app.chat_send_bridge = chat_send_bridge.clone();
-        (app, iced::Task::none())
+        let obs_task = iced::Task::perform(
+            load_obs_and_connect(Arc::clone(&backend_boot), Arc::clone(&bus_boot)),
+            forge_app::Message::ObsBootResult,
+        );
+        (app, obs_task)
     };
 
     iced::application(boot, update, view)

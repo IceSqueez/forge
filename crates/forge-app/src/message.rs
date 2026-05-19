@@ -1,6 +1,8 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use forge_events::Event;
+use forge_obs::ObsClient;
 use forge_platform_core::oauth::{DeviceCodeResponse, TokenResponse};
 use forge_platform_core::{HeaderAction, HealthDelta, PickerKind};
 use forge_storage::GlobalEntry;
@@ -12,6 +14,32 @@ use crate::Screen;
 use crate::actions::{AddActionMsg, AddSubActionMsg, AddTriggerMsg, RemoveSubActionMsg};
 use crate::live_chat::ChatFilter;
 use crate::script_editor::ScriptEditorMsg;
+
+pub struct ObsClientRef(pub(crate) Arc<ObsClient>);
+
+impl ObsClientRef {
+    pub fn new(client: Arc<ObsClient>) -> Self {
+        Self(client)
+    }
+
+    pub(crate) fn into_arc(self) -> Arc<ObsClient> {
+        self.0
+    }
+}
+
+impl std::fmt::Debug for ObsClientRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("ObsClientRef")
+            .field(&self.0.endpoint())
+            .finish()
+    }
+}
+
+impl Clone for ObsClientRef {
+    fn clone(&self) -> Self {
+        Self(Arc::clone(&self.0))
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct HubStatsData {
@@ -170,6 +198,7 @@ pub enum Message {
     AddSubAction(AddSubActionMsg),
     RemoveSubAction(RemoveSubActionMsg),
     IntegrationDetail(IntegrationDetailMsg),
+    ObsBootResult(Result<ObsClientRef, String>),
     ThemeChanged(ThemeId),
     EventArrived(Event),
     ChatInputChanged(String),

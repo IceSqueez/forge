@@ -42,6 +42,7 @@ fn test_app() -> App {
         scheduler: None,
         command_parser: None,
         integration_detail: None,
+        obs_client: None,
     }
 }
 

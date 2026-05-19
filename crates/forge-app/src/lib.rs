@@ -14,7 +14,7 @@ pub use actions::{
     AddSubActionForm, AddSubActionMsg, AddTriggerForm, AddTriggerMsg, RemoveSubActionMsg,
     SubActionKindChoice, TriggerCategory,
 };
-pub use app::{App, SidebarExpandState};
+pub use app::{App, SidebarExpandState, load_obs_and_connect};
 pub use globals_view::{
     GlobalsState, VariantEditorFields, VariantEditorForm, handle_variant_editor_msg,
     load_globals_data,
@@ -25,8 +25,8 @@ pub use integration_detail::{
 pub use live_chat::{ChatFilter, LiveChatState};
 pub use message::{
     ActionsMsg, EditorMode, GlobalsFilter, GlobalsLoadData, GlobalsMsg, HubMsg, HubStatsData,
-    IntegrationDetailMsg, Message, OnboardingMsg, PlatformId, SettingsMsg, SidebarMsg,
-    VariantEditorMsg,
+    IntegrationDetailMsg, Message, ObsClientRef, OnboardingMsg, PlatformId, SettingsMsg,
+    SidebarMsg, VariantEditorMsg,
 };
 pub use onboarding_state::{DeviceCodeSession, DeviceCodeStatus, OnboardingState};
 pub use screen::{OnboardingStep, Screen, SettingsSection};

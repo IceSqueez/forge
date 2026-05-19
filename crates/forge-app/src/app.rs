@@ -3,6 +3,10 @@ use std::time::SystemTime;
 
 use forge_events::{EventPublisher, EventSource};
 use forge_obs::ObsClient;
+use forge_platform_core::{
+    IntegrationContent, IntegrationHealth, IntegrationId, IntegrationStatus, QuickActions,
+    SectionIcon,
+};
 use forge_platform_twitch::{ChatConnectionState, ChatSendBridgeHandle, TwitchChatHandle};
 use forge_runtime::{
     ActionEngineHandle, CommandParserHandle, EventBus, ExecutionRequest, QueueSchedulerHandle,
@@ -39,7 +43,7 @@ use crate::integration_detail::{
 };
 use crate::live_chat::{CHAT_LOG_MAX, LiveChatState, chat_row_from_event, live_chat_view};
 use crate::message::{
-    ActionsMsg, GlobalsMsg, HubMsg, HubStatsData, PlatformId, SettingsMsg, SidebarMsg,
+    ActionsMsg, GlobalsMsg, HubMsg, HubStatsData, ObsClientRef, PlatformId, SettingsMsg, SidebarMsg,
 };
 use crate::onboarding_state::{DeviceCodeSession, DeviceCodeStatus, OnboardingState};
 use crate::screen::OnboardingStep;
@@ -107,6 +111,7 @@ pub struct App {
     pub scheduler: Option<QueueSchedulerHandle>,
     pub command_parser: Option<CommandParserHandle>,
     pub integration_detail: Option<IntegrationDetailState>,
+    pub obs_client: Option<Arc<ObsClient>>,
 }
 
 impl App {
@@ -142,6 +147,7 @@ impl App {
             scheduler,
             command_parser,
             integration_detail: None,
+            obs_client: None,
         }
     }
 }
@@ -181,6 +187,7 @@ impl Default for App {
             scheduler: None,
             command_parser: None,
             integration_detail: None,
+            obs_client: None,
         }
     }
 }
@@ -601,6 +608,31 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::RemoveSubAction(sub) => handle_remove_sub_action_msg(app, sub),
         Message::ScriptEditor(sub) => handle_script_editor_msg(app, sub),
         Message::IntegrationDetail(sub) => handle_integration_detail_msg(app, sub),
+        Message::ObsBootResult(result) => match result {
+            Ok(handle) => {
+                let client = handle.into_arc();
+                let id = IntegrationId::new("obs");
+                let icon = SectionIcon::new("broadcast");
+                let status: Arc<dyn IntegrationStatus> = client.clone();
+                let health: Arc<dyn IntegrationHealth> = client.clone();
+                let content: Arc<dyn IntegrationContent> = client.clone();
+                let quick_actions: Arc<dyn QuickActions> = client.clone();
+                app.integration_detail = Some(IntegrationDetailState::new(
+                    id,
+                    icon,
+                    status,
+                    health,
+                    content,
+                    quick_actions,
+                ));
+                app.obs_client = Some(client);
+                Task::none()
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "OBS boot connection failed");
+                Task::none()
+            }
+        },
         Message::Noop => Task::none(),
     }
 }
@@ -1231,6 +1263,39 @@ async fn reconnect_twitch(backend: Arc<SqliteBackend>, bus: Arc<EventBus>) -> Re
     let token = forge_types::OAuthToken::new(access);
     TwitchChat::new(token, cid, user_id.clone(), user_id, bus).start();
     Ok(())
+}
+
+pub async fn load_obs_and_connect(
+    backend: Arc<SqliteBackend>,
+    bus: Arc<EventBus>,
+) -> Result<ObsClientRef, String> {
+    let Some(json) = backend
+        .load(&CredentialId::new("obs:default"))
+        .await
+        .map_err(|e| e.to_string())?
+    else {
+        return Err("obs:default credentials not stored".to_owned());
+    };
+
+    let bundle: serde_json::Value = serde_json::from_str(&json).map_err(|e| e.to_string())?;
+    let url = bundle["url"]
+        .as_str()
+        .ok_or_else(|| "missing url in OBS credential bundle".to_owned())?
+        .to_owned();
+    let password = bundle["password"].as_str().unwrap_or("").to_owned();
+
+    let publisher: Arc<dyn EventPublisher> = bus;
+    let pw: Option<&str> = if password.is_empty() {
+        None
+    } else {
+        Some(&password)
+    };
+
+    let client = ObsClient::connect(&url, pw, publisher)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(ObsClientRef::new(Arc::new(client)))
 }
 
 struct NoopRateLimiter;
@@ -4026,7 +4091,18 @@ pub fn view(app: &App) -> Element<'_, Message> {
             if let Some(state) = app.integration_detail.as_ref() {
                 integration_detail_view(state, palette)
             } else {
-                coming_soon_view("IntegrationDetail".to_owned(), palette)
+                iced::widget::container(forge_widgets::empty_state(
+                    "Not connected",
+                    "Configure OBS Studio in Onboarding or Settings to connect.",
+                    Some((
+                        "Go to Onboarding",
+                        Message::Navigate(Screen::Onboarding(OnboardingStep::ConnectObs)),
+                    )),
+                    palette,
+                ))
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
             }
         }
         other => coming_soon_view(format!("{other:?}"), palette),
@@ -4825,6 +4901,7 @@ mod tests {
             scheduler: Some(scheduler),
             command_parser: Some(parser),
             integration_detail: None,
+            obs_client: None,
         };
 
         assert!(app.action_engine.is_some());
@@ -5095,6 +5172,7 @@ mod tests {
             scheduler: None,
             command_parser: None,
             integration_detail: None,
+            obs_client: None,
         };
 
         let mut form = crate::actions::AddActionForm::new();
@@ -5470,5 +5548,34 @@ mod tests {
             Message::Navigate(Screen::IntegrationDetail(IntegrationId::new("obs"))),
         );
         let _ = view(&app);
+    }
+
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn obs_boot_result_ok_sets_obs_client_and_integration_detail() {
+        let mut app = App::default();
+        let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+        let bus = EventBus::new();
+        let publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as _;
+        let client = rt
+            .block_on(ObsClient::connect("ws://127.0.0.1:4455", None, publisher))
+            .expect("ObsClient::connect always returns Ok; supervisor connects in background");
+        let _ = update(
+            &mut app,
+            Message::ObsBootResult(Ok(ObsClientRef::new(Arc::new(client)))),
+        );
+        assert!(app.obs_client.is_some());
+        assert!(app.integration_detail.is_some());
+    }
+
+    #[test]
+    fn obs_boot_result_err_leaves_obs_client_none() {
+        let mut app = App::default();
+        let _ = update(
+            &mut app,
+            Message::ObsBootResult(Err("connection refused".into())),
+        );
+        assert!(app.obs_client.is_none());
+        assert!(app.integration_detail.is_none());
     }
 }

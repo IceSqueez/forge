@@ -1,4 +1,4 @@
-use forge_platform_core::IntegrationId;
+use forge_platform_core::{ConnectionState, IntegrationId};
 use forge_widgets::{
     BOOTSTRAP_FONT, ForgePalette, ICON_BROADCAST, StatusVariant, section_header, status_pill,
     tokens::{FONT_BODY_LG, FONT_BODY_MD, Radius, radius},
@@ -12,7 +12,7 @@ use crate::{App, Message, Screen};
 
 pub fn view<'a>(state: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
     let header = section_header("STREAM APPS", None, palette);
-    let obs_card = obs_card(palette);
+    let obs_card = obs_card(state, palette);
 
     let vtube_card = coming_card("VTube Studio", "Available in beta-3", palette);
 
@@ -22,8 +22,6 @@ pub fn view<'a>(state: &'a App, palette: &'a ForgePalette) -> Element<'a, Messag
 
     let body = column![header, cards].spacing(12).width(Length::Fill);
 
-    let _ = state;
-
     container(body)
         .width(Length::Fill)
         .height(Length::Fill)
@@ -31,7 +29,7 @@ pub fn view<'a>(state: &'a App, palette: &'a ForgePalette) -> Element<'a, Messag
         .into()
 }
 
-fn obs_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
+fn obs_card<'a>(state: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
     let obs_id = IntegrationId::new("obs");
     let on_press = Message::Navigate(Screen::IntegrationDetail(obs_id));
 
@@ -57,7 +55,15 @@ fn obs_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
         ..container::Style::default()
     });
 
-    let pill = status_pill("Not connected", StatusVariant::Neutral, palette);
+    let conn_state = state.obs_client.as_ref().map(|c| c.connection_state());
+    let (pill_label, pill_variant) = match conn_state {
+        Some(ConnectionState::Connected) => ("Connected", StatusVariant::Positive),
+        Some(ConnectionState::Connecting) | Some(ConnectionState::Reconnecting) => {
+            ("Connecting", StatusVariant::Neutral)
+        }
+        _ => ("Not connected", StatusVariant::Neutral),
+    };
+    let pill = status_pill(pill_label, pill_variant, palette);
 
     let name_row = row![
         text("OBS Studio")
@@ -69,7 +75,13 @@ fn obs_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     .align_y(Alignment::Center)
     .spacing(8);
 
-    let endpoint = text("—")
+    let endpoint_str = state
+        .obs_client
+        .as_ref()
+        .map(|c| c.endpoint().to_owned())
+        .unwrap_or_else(|| "\u{2014}".to_owned());
+
+    let endpoint = text(endpoint_str)
         .size(FONT_BODY_MD)
         .color(palette.text_faint)
         .font(forge_widgets::font(forge_widgets::FontRole::Monospace));

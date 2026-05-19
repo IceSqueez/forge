@@ -83,14 +83,14 @@ pub async fn send_chat(
     if !resp.status().is_success() {
         let retry_after = extract_retry_after(&resp);
         let body_text = resp.text().await.unwrap_or_default();
-        let snippet_end = body_text.len().min(200);
+        let body_snippet: String = body_text.chars().take(200).collect();
         bus.publish(Event::new(
             EventSource::Twitch,
             "request.fail",
             serde_json::json!({
                 "endpoint": SEND_CHAT_PATH,
                 "status_code": status,
-                "body_snippet": &body_text[..snippet_end],
+                "body_snippet": body_snippet,
                 "retry_after_secs": retry_after,
             }),
         ));

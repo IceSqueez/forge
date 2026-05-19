@@ -15,6 +15,7 @@ forge-types         = { path = "../forge-types" }
 
 obws         = { version = "0.15" }
 tokio        = { workspace = true }
+time         = { workspace = true }
 thiserror    = { workspace = true }
 tracing      = { workspace = true }
 serde        = { workspace = true }

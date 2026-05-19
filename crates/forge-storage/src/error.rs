@@ -24,6 +24,9 @@ pub enum StorageError {
     #[error("serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
 
+    #[error("validation failed for '{field}': {reason}")]
+    ValidationFailed { field: String, reason: String },
+
     #[error("parse error: {0}")]
     Parse(String),
 
@@ -67,6 +70,10 @@ mod tests {
             StorageError::TypeMismatch {
                 name: "counter".into(),
                 actual: "string".into(),
+            },
+            StorageError::ValidationFailed {
+                field: "server.bind_address".into(),
+                reason: "must be one of: 127.0.0.1, 0.0.0.0".into(),
             },
             StorageError::Serialization(make_serde_error()),
             StorageError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "missing")),

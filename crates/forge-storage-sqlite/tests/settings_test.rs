@@ -154,3 +154,125 @@ async fn event_log_retention_days_invalid_string_falls_back_to_seven() {
     let days = backend.event_log_retention_days().await.expect("fallback");
     assert_eq!(days, 7);
 }
+
+#[tokio::test]
+async fn server_bind_address_default_is_loopback() {
+    let backend = setup_backend().await;
+    let addr = backend.server_bind_address().await.expect("default addr");
+    assert_eq!(addr, "127.0.0.1");
+}
+
+#[tokio::test]
+async fn server_bind_address_roundtrip() {
+    let backend = setup_backend().await;
+    for addr in ["127.0.0.1", "0.0.0.0", "::1", "::"] {
+        backend
+            .set_server_bind_address(addr)
+            .await
+            .expect("set valid addr");
+        let got = backend.server_bind_address().await.expect("get addr");
+        assert_eq!(got, addr);
+    }
+}
+
+#[tokio::test]
+async fn server_bind_address_rejects_invalid() {
+    use forge_storage::StorageError;
+
+    let backend = setup_backend().await;
+    let err = backend
+        .set_server_bind_address("192.168.1.1")
+        .await
+        .expect_err("should reject");
+    assert!(
+        matches!(err, StorageError::ValidationFailed { .. }),
+        "expected ValidationFailed, got {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn server_port_default_is_8081() {
+    let backend = setup_backend().await;
+    let port = backend.server_port().await.expect("default port");
+    assert_eq!(port, 8081);
+}
+
+#[tokio::test]
+async fn server_port_roundtrip() {
+    let backend = setup_backend().await;
+    for port in [8081u16, 9000, 443] {
+        backend.set_server_port(port).await.expect("set port");
+        let got = backend.server_port().await.expect("get port");
+        assert_eq!(got, port);
+    }
+}
+
+#[tokio::test]
+async fn server_lan_bind_enabled_default_is_false() {
+    let backend = setup_backend().await;
+    let enabled = backend
+        .server_lan_bind_enabled()
+        .await
+        .expect("default lan_bind");
+    assert!(!enabled);
+}
+
+#[tokio::test]
+async fn server_lan_bind_enabled_roundtrip() {
+    let backend = setup_backend().await;
+    backend
+        .set_server_lan_bind_enabled(true)
+        .await
+        .expect("enable");
+    assert!(
+        backend
+            .server_lan_bind_enabled()
+            .await
+            .expect("get enabled")
+    );
+    backend
+        .set_server_lan_bind_enabled(false)
+        .await
+        .expect("disable");
+    assert!(
+        !backend
+            .server_lan_bind_enabled()
+            .await
+            .expect("get disabled")
+    );
+}
+
+#[tokio::test]
+async fn server_auth_required_for_reads_default_is_false() {
+    let backend = setup_backend().await;
+    let required = backend
+        .server_auth_required_for_reads()
+        .await
+        .expect("default auth_reads");
+    assert!(!required);
+}
+
+#[tokio::test]
+async fn server_auth_required_for_reads_roundtrip() {
+    let backend = setup_backend().await;
+    backend
+        .set_server_auth_required_for_reads(true)
+        .await
+        .expect("enable auth_reads");
+    assert!(
+        backend
+            .server_auth_required_for_reads()
+            .await
+            .expect("get enabled")
+    );
+    backend
+        .set_server_auth_required_for_reads(false)
+        .await
+        .expect("disable auth_reads");
+    assert!(
+        !backend
+            .server_auth_required_for_reads()
+            .await
+            .expect("get disabled")
+    );
+}

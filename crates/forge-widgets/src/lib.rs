@@ -9,6 +9,7 @@ pub mod console;
 pub mod data;
 pub mod icons;
 pub mod inputs;
+pub mod integration;
 pub mod layout;
 pub mod navigation;
 pub mod onboarding;
@@ -44,6 +45,7 @@ pub use icons::{
     ICON_TERMINAL,
 };
 pub use inputs::{search_input, select, text_input_field};
+pub use integration::{HeaderCardParams, integration_header_card};
 pub use layout::{
     TitleBarV2, breadcrumb, page_shell, title_bar, title_bar_v2, title_bar_with_logo, toolbar,
 };

@@ -13,9 +13,10 @@ workspace = true
 bundled-fonts = []
 
 [dependencies]
-iced        = { workspace = true }
-iced_fonts  = { workspace = true }
-forge-types = { path = "../forge-types" }
+iced                = { workspace = true }
+iced_fonts          = { workspace = true }
+forge-types         = { path = "../forge-types" }
+forge-platform-core = { path = "../forge-platform-core" }
 
 [dev-dependencies]
 time = { workspace = true }

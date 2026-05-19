@@ -2117,6 +2117,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "time",
  "tokio",
  "tracing",
 ]
@@ -2265,6 +2266,7 @@ dependencies = [
 name = "forge-widgets"
 version = "0.1.0-alpha.6"
 dependencies = [
+ "forge-platform-core",
  "forge-types",
  "iced",
  "iced_fonts",

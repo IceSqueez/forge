@@ -13,6 +13,7 @@ use forge_events::EventPublisher;
 use forge_platform_core::{
     CapabilityFlags, ConnectionState, HeaderAction, HealthDelta, IntegrationId, IntegrationStatus,
 };
+use forge_types::EventId;
 
 use crate::catalog::ObsCatalog;
 use crate::error::ObsError;
@@ -27,6 +28,7 @@ const STATE_RECONNECTING: u8 = 3;
 pub struct ObsClient {
     pub(crate) inner: Arc<tokio::sync::RwLock<Option<obws::Client>>>,
     pub(crate) scene_item_id_cache: Arc<Mutex<HashMap<(String, String), i64>>>,
+    pub(crate) last_set_scene_event_id: Arc<RwLock<Option<EventId>>>,
     endpoint: String,
     state: Arc<AtomicU8>,
     shutdown: Arc<Notify>,
@@ -56,6 +58,7 @@ impl ObsClient {
 
         let (health_tx, health_state) = make_health_channel();
         let catalog_state = Arc::new(RwLock::new(ObsCatalog::default()));
+        let last_set_scene_event_id = Arc::new(RwLock::new(None::<EventId>));
 
         let ctx = SupervisorContext {
             inner: Arc::clone(&inner),
@@ -68,6 +71,7 @@ impl ObsClient {
             health_tx: health_tx.clone(),
             publisher,
             item_cache: Arc::clone(&item_cache),
+            last_set_scene_event_id: Arc::clone(&last_set_scene_event_id),
         };
         let handle = tokio::spawn(run_supervisor(host, port, password.map(str::to_owned), ctx));
 
@@ -84,6 +88,7 @@ impl ObsClient {
             health_tx,
             catalog_state,
             scene_item_id_cache: item_cache,
+            last_set_scene_event_id,
         })
     }
 
@@ -128,6 +133,7 @@ impl ObsClient {
             health_tx,
             catalog_state: Arc::new(RwLock::new(ObsCatalog::default())),
             scene_item_id_cache: Arc::new(Mutex::new(HashMap::new())),
+            last_set_scene_event_id: Arc::new(RwLock::new(None)),
         }
     }
 }
@@ -201,6 +207,7 @@ struct SupervisorContext {
     health_tx: broadcast::Sender<HealthDelta>,
     publisher: Arc<dyn EventPublisher>,
     item_cache: Arc<Mutex<HashMap<(String, String), i64>>>,
+    last_set_scene_event_id: Arc<RwLock<Option<EventId>>>,
 }
 
 async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: SupervisorContext) {
@@ -215,6 +222,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
         health_tx,
         publisher,
         item_cache,
+        last_set_scene_event_id,
     } = ctx;
     let mut attempt: u32 = 0;
 
@@ -294,6 +302,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                                             &health_tx,
                                             &item_cache,
                                             &*publisher,
+                                            &last_set_scene_event_id,
                                         );
                                     }
                                 }
@@ -337,7 +346,19 @@ fn handle_obs_event(
     health_tx: &broadcast::Sender<HealthDelta>,
     item_cache: &Mutex<HashMap<(String, String), i64>>,
     publisher: &dyn EventPublisher,
+    last_set_scene_event_id: &RwLock<Option<EventId>>,
 ) {
+    let is_scene_change = matches!(ev, obws::events::Event::CurrentProgramSceneChanged { .. });
+
+    let from_scene = if is_scene_change {
+        catalog_state
+            .read()
+            .ok()
+            .and_then(|g| g.current_scene.clone())
+    } else {
+        None
+    };
+
     if let Ok(mut catalog) = catalog_state.write() {
         crate::events::apply_catalog_update(ev, &mut catalog);
     }
@@ -351,7 +372,16 @@ fn handle_obs_event(
         let _ = health_tx.send(delta);
     }
 
-    if let Some(bus_event) = crate::events::map_obs_event(ev) {
+    let cause = if is_scene_change {
+        last_set_scene_event_id
+            .write()
+            .ok()
+            .and_then(|mut g| g.take())
+    } else {
+        None
+    };
+
+    if let Some(bus_event) = crate::events::map_obs_event(ev, from_scene.as_deref(), cause) {
         publisher.publish(bus_event);
     }
 

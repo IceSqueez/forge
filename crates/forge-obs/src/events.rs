@@ -2,25 +2,47 @@ use std::collections::HashMap;
 
 use forge_events::{Event, EventSource};
 use forge_platform_core::{HealthDelta, HealthValue};
+use forge_types::EventId;
 use serde_json::json;
 
 use crate::catalog::ObsCatalog;
 use crate::health::HealthSnapshot;
 
-pub(crate) fn map_obs_event(ev: &obws::events::Event) -> Option<Event> {
+pub(crate) fn make_scene_changed_event(
+    from_scene: Option<&str>,
+    to_scene: &str,
+    cause: Option<EventId>,
+) -> Event {
+    let payload = json!({
+        "from_scene": from_scene.unwrap_or(""),
+        "to_scene": to_scene,
+    });
+    match cause {
+        Some(c) => Event::caused_by(EventSource::Obs, "scene.changed", payload, c),
+        None => Event::new(EventSource::Obs, "scene.changed", payload),
+    }
+}
+
+pub(crate) fn make_record_event(active: bool, path: Option<&str>) -> Event {
+    let kind = if active {
+        "recording.started"
+    } else {
+        "recording.stopped"
+    };
+    Event::new(EventSource::Obs, kind, json!({ "output_path": path }))
+}
+
+pub(crate) fn map_obs_event(
+    ev: &obws::events::Event,
+    from_scene: Option<&str>,
+    cause: Option<EventId>,
+) -> Option<Event> {
     match ev {
-        obws::events::Event::CurrentProgramSceneChanged { id } => Some(Event::new(
-            EventSource::Obs,
-            "scene.changed",
-            json!({ "scene": &id.name }),
-        )),
-        obws::events::Event::RecordStateChanged { active, .. } => {
-            let kind = if *active {
-                "recording.started"
-            } else {
-                "recording.stopped"
-            };
-            Some(Event::new(EventSource::Obs, kind, json!({})))
+        obws::events::Event::CurrentProgramSceneChanged { id } => {
+            Some(make_scene_changed_event(from_scene, &id.name, cause))
+        }
+        obws::events::Event::RecordStateChanged { active, path, .. } => {
+            Some(make_record_event(*active, path.as_deref()))
         }
         obws::events::Event::StreamStateChanged { active, .. } => {
             let kind = if *active {
@@ -134,9 +156,57 @@ pub(crate) fn apply_health_update(
 #[cfg(test)]
 mod tests {
     use super::*;
-    // obws::events::Event is #[non_exhaustive] — variants cannot be constructed outside the
-    // defining crate. Tests for map_obs_event / apply_catalog_update / apply_health_update
-    // are deferred to live-OBS integration tests (marked #[ignore]).
+    // obws::events::Event is #[non_exhaustive] — variants cannot be constructed outside
+    // the defining crate, so map_obs_event / apply_catalog_update / apply_health_update
+    // are covered by live-OBS integration tests (marked #[ignore]).  The payload-builder
+    // helpers make_scene_changed_event and make_record_event are tested here directly.
+
+    #[test]
+    fn make_scene_changed_event_emits_from_and_to_fields() {
+        let ev = make_scene_changed_event(Some("Menu"), "Gameplay", None);
+        assert_eq!(ev.source, EventSource::Obs);
+        assert_eq!(ev.kind, "scene.changed");
+        assert_eq!(ev.payload["from_scene"], "Menu");
+        assert_eq!(ev.payload["to_scene"], "Gameplay");
+        assert!(ev.caused_by.is_none());
+    }
+
+    #[test]
+    fn make_scene_changed_event_unknown_from_scene_uses_empty_string() {
+        let ev = make_scene_changed_event(None, "Gameplay", None);
+        assert_eq!(ev.payload["from_scene"], "");
+        assert_eq!(ev.payload["to_scene"], "Gameplay");
+    }
+
+    #[test]
+    fn make_scene_changed_event_with_cause_populates_caused_by() {
+        let cause = EventId::new();
+        let ev = make_scene_changed_event(Some("BRB"), "Gameplay", Some(cause));
+        assert_eq!(ev.caused_by, Some(cause));
+        assert_eq!(ev.payload["from_scene"], "BRB");
+        assert_eq!(ev.payload["to_scene"], "Gameplay");
+    }
+
+    #[test]
+    fn make_record_event_started_has_null_output_path() {
+        let ev = make_record_event(true, None);
+        assert_eq!(ev.source, EventSource::Obs);
+        assert_eq!(ev.kind, "recording.started");
+        assert_eq!(ev.payload["output_path"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn make_record_event_stopped_includes_output_path() {
+        let ev = make_record_event(false, Some("/home/user/recording.mkv"));
+        assert_eq!(ev.kind, "recording.stopped");
+        assert_eq!(ev.payload["output_path"], "/home/user/recording.mkv");
+    }
+
+    #[test]
+    fn make_record_event_stopped_null_path_when_none() {
+        let ev = make_record_event(false, None);
+        assert_eq!(ev.payload["output_path"], serde_json::Value::Null);
+    }
 
     #[test]
     fn map_scene_item_visibility_emits_obs_source_event() {

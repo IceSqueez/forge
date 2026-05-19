@@ -8,7 +8,7 @@ use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use forge_events::{Event, EventSource};
 use forge_storage::DataProvider;
@@ -97,28 +97,39 @@ impl CommandParser {
             }
         };
 
-        if let Some(last) = self.cooldowns.get(&command.id)
-            && last.elapsed().as_secs() < command.cooldown_secs
-        {
-            self.bus.publish(Event::caused_by(
-                EventSource::Core,
-                "command.cooldown_blocked",
-                json!({
-                    "command_name": normalized,
-                    "command_id": command.id.to_string(),
-                }),
-                event.id,
-            ));
-            return;
-        }
-
-        self.cooldowns.insert(command.id, Instant::now());
-
-        let user_login = event
+        let user_login: Option<String> = event
             .payload
             .get("user_login")
             .and_then(|v| v.as_str())
             .map(str::to_string);
+
+        let channel: Option<String> = event
+            .payload
+            .get("channel")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+
+        if let Some(last) = self.cooldowns.get(&command.id) {
+            let elapsed = last.elapsed();
+            let cooldown_dur = Duration::from_secs(command.cooldown_secs);
+            if elapsed < cooldown_dur {
+                let remaining_ms = (cooldown_dur - elapsed).as_millis() as u64;
+                self.bus.publish(Event::caused_by(
+                    EventSource::Core,
+                    "command.cooldown_blocked",
+                    json!({
+                        "command": normalized,
+                        "channel": channel.as_deref().unwrap_or(""),
+                        "user_login": user_login.as_deref().unwrap_or(""),
+                        "cooldown_remaining_ms": remaining_ms,
+                    }),
+                    event.id,
+                ));
+                return;
+            }
+        }
+
+        self.cooldowns.insert(command.id, Instant::now());
 
         let cmd_event = Event::caused_by(
             EventSource::Core,
@@ -497,6 +508,66 @@ mod tests {
 
         let done = collect_kind(&mut sub, "action.done", 30).await;
         assert!(done.is_some(), "action must execute after command.matched");
+    }
+
+    #[tokio::test]
+    async fn cooldown_blocked_has_causation_and_payload() {
+        let dp = make_dp().await;
+        let q_id = QueueId::new();
+        let a_id = ActionId::new();
+        let c_id = CommandId::new();
+        let queue = Queue {
+            id: q_id,
+            name: "default".into(),
+            blocking: false,
+        };
+        let action = log_action(a_id, q_id);
+        let command = make_command(c_id, a_id, "!ping", 60);
+        seed(&dp, &queue, &action, &command).await;
+
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let mut sub = bus.subscribe();
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            Arc::clone(&dp),
+            Arc::new(ScriptRegistry::new()),
+            None,
+        );
+        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
+        let _handle = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        bus.publish(chat_event("!ping", "user1"));
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let second = chat_event("!ping", "user1");
+        let second_id = second.id;
+        bus.publish(second);
+
+        let blocked = collect_kind(&mut sub, "command.cooldown_blocked", 40)
+            .await
+            .expect("command.cooldown_blocked must be emitted on second call");
+
+        assert_eq!(
+            blocked.caused_by,
+            Some(second_id),
+            "cooldown_blocked must be caused by the blocking chat.message"
+        );
+        assert_eq!(
+            blocked.payload["command"].as_str().unwrap(),
+            "!ping",
+            "command field must match the normalized command name"
+        );
+        assert!(
+            blocked.payload["cooldown_remaining_ms"].as_u64().unwrap() > 0,
+            "cooldown_remaining_ms must be positive"
+        );
+        assert_eq!(
+            blocked.payload["user_login"].as_str().unwrap(),
+            "user1",
+            "user_login must be propagated from chat.message payload"
+        );
     }
 
     #[tokio::test]

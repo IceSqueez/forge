@@ -44,6 +44,7 @@ enum SchedulerCommand {
 struct QueueSlot {
     sender: mpsc::UnboundedSender<QueueTask>,
     state: Arc<RwLock<PauseState>>,
+    name: String,
 }
 
 struct PauseState {
@@ -110,6 +111,7 @@ impl QueueScheduler {
     fn make_queue_slot(queue: Queue, engine: Arc<ActionEngineHandle>) -> QueueSlot {
         let (task_tx, task_rx) = mpsc::unbounded_channel::<QueueTask>();
         let state = Arc::new(RwLock::new(PauseState { paused: false }));
+        let name = queue.name.clone();
 
         if queue.blocking {
             let sem = Arc::new(Semaphore::new(1));
@@ -121,6 +123,7 @@ impl QueueScheduler {
         QueueSlot {
             sender: task_tx,
             state,
+            name,
         }
     }
 
@@ -263,7 +266,10 @@ impl QueueScheduler {
         bus.publish(Event::new(
             EventSource::Core,
             event_kind,
-            json!({ "queue_id": queue_id.to_string() }),
+            json!({
+                "queue_id": queue_id.to_string(),
+                "queue_name": slot.name,
+            }),
         ));
 
         Ok(())
@@ -566,6 +572,59 @@ mod tests {
         assert!(
             collect_events(&mut sub, "action.done", 30, 300).await,
             "resumed queue must execute actions"
+        );
+        sched.shutdown();
+    }
+
+    #[tokio::test]
+    async fn pause_emits_queue_paused_event() {
+        let dp = make_dp().await;
+        let q_id = QueueId::new();
+        let queue = nonblocking(q_id);
+        dp.queue_repo().save(&queue).await.unwrap();
+
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            Arc::clone(&dp),
+            Arc::new(ScriptRegistry::new()),
+            None,
+        );
+        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
+        let mut sub = bus.subscribe();
+
+        sched.pause(q_id).await.unwrap();
+
+        assert!(
+            collect_events(&mut sub, "queue.paused", 10, 200).await,
+            "pause must emit queue.paused"
+        );
+        sched.shutdown();
+    }
+
+    #[tokio::test]
+    async fn resume_emits_queue_resumed_event() {
+        let dp = make_dp().await;
+        let q_id = QueueId::new();
+        let queue = nonblocking(q_id);
+        dp.queue_repo().save(&queue).await.unwrap();
+
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            Arc::clone(&dp),
+            Arc::new(ScriptRegistry::new()),
+            None,
+        );
+        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
+        let mut sub = bus.subscribe();
+
+        sched.pause(q_id).await.unwrap();
+        sched.resume(q_id).await.unwrap();
+
+        assert!(
+            collect_events(&mut sub, "queue.resumed", 10, 200).await,
+            "resume must emit queue.resumed"
         );
         sched.shutdown();
     }

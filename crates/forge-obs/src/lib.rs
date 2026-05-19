@@ -2,6 +2,7 @@
 //! rule (CLAUDE.md §1): no `obws` type crosses a crate boundary; callers depend solely on
 //! `ObsSink` and `ObsSource`.
 
+pub mod catalog;
 pub mod client;
 pub mod error;
 pub mod health;

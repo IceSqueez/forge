@@ -12,6 +12,7 @@ use forge_platform_core::{
     CapabilityFlags, ConnectionState, HeaderAction, HealthDelta, IntegrationId, IntegrationStatus,
 };
 
+use crate::catalog::ObsCatalog;
 use crate::error::ObsError;
 use crate::health::{HealthSnapshot, make_health_channel};
 
@@ -32,6 +33,7 @@ pub struct ObsClient {
     obs_version: Arc<OnceLock<String>>,
     pub(crate) health_state: Arc<RwLock<HealthSnapshot>>,
     pub(crate) health_tx: broadcast::Sender<HealthDelta>,
+    pub(crate) catalog_state: Arc<RwLock<ObsCatalog>>,
 }
 
 impl ObsClient {
@@ -66,6 +68,7 @@ impl ObsClient {
             obs_version,
             health_state,
             health_tx,
+            catalog_state: Arc::new(RwLock::new(ObsCatalog::default())),
         })
     }
 
@@ -108,6 +111,7 @@ impl ObsClient {
             obs_version: Arc::new(OnceLock::new()),
             health_state,
             health_tx,
+            catalog_state: Arc::new(RwLock::new(ObsCatalog::default())),
         }
     }
 }

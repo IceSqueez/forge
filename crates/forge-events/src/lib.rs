@@ -22,6 +22,10 @@ pub struct Event {
     pub timestamp: OffsetDateTime,
     pub payload: serde_json::Value,
     pub caused_by: Option<EventId>,
+    /// `true` when this event was re-published via `EventBus::replay_and_publish`.
+    /// Persisted events written before this field was introduced deserialize as `false`.
+    #[serde(default)]
+    pub replay: bool,
 }
 
 impl Event {
@@ -33,6 +37,7 @@ impl Event {
             timestamp: OffsetDateTime::now_utc(),
             payload,
             caused_by: None,
+            replay: false,
         }
     }
 
@@ -93,6 +98,7 @@ mod tests {
         assert_eq!(e.source, back.source);
         assert_eq!(e.kind, back.kind);
         assert_eq!(e.caused_by, back.caused_by);
+        assert_eq!(e.replay, back.replay);
     }
 
     #[test]
@@ -102,6 +108,45 @@ mod tests {
         assert!(
             json.get("caused_by").is_some(),
             "caused_by must always be present in serialized Event"
+        );
+    }
+
+    #[test]
+    fn event_replay_defaults_to_false() {
+        let e = Event::new(EventSource::Core, "action.start", serde_json::Value::Null);
+        assert!(!e.replay);
+        let child = Event::caused_by(
+            EventSource::Core,
+            "subaction.run",
+            serde_json::Value::Null,
+            e.id,
+        );
+        assert!(!child.replay);
+    }
+
+    #[test]
+    fn event_replay_serde_roundtrip_explicit_true() {
+        let mut e = Event::new(EventSource::Core, "action.start", serde_json::Value::Null);
+        e.replay = true;
+        let json = serde_json::to_string(&e).unwrap();
+        let back: Event = serde_json::from_str(&json).unwrap();
+        assert!(back.replay);
+    }
+
+    #[test]
+    fn event_replay_backward_compat_missing_field() {
+        let json = serde_json::json!({
+            "id": "01900000000000000000000000",
+            "source": "core",
+            "kind": "action.start",
+            "timestamp": "1970-01-01T00:00:00Z",
+            "payload": null,
+            "caused_by": null
+        });
+        let e: Event = serde_json::from_value(json).unwrap();
+        assert!(
+            !e.replay,
+            "events without replay field must deserialize as false"
         );
     }
 }

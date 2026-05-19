@@ -63,7 +63,7 @@ impl EventBus {
     }
 
     /// Returns `None` when `event_id` is not in the retained ring.
-    pub fn replay(&self, event_id: EventId) -> Option<Event> {
+    pub fn lookup(&self, event_id: EventId) -> Option<Event> {
         self.ring
             .lock()
             .unwrap_or_else(|p| p.into_inner())
@@ -149,21 +149,21 @@ mod tests {
     }
 
     #[test]
-    fn replay_returns_stored_event_by_id() {
+    fn lookup_returns_stored_event_by_id() {
         let bus = EventBus::new();
         let ev = core_event("action.done");
         let id = ev.id;
         bus.publish(ev);
-        let replayed = bus.replay(id);
-        assert!(replayed.is_some());
-        assert_eq!(replayed.unwrap().id, id);
+        let found = bus.lookup(id);
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().id, id);
     }
 
     #[test]
-    fn replay_returns_none_for_missing_id() {
+    fn lookup_returns_none_for_missing_id() {
         let bus = EventBus::new();
         let ghost_id = EventId::new();
-        assert!(bus.replay(ghost_id).is_none());
+        assert!(bus.lookup(ghost_id).is_none());
     }
 
     #[tokio::test]

@@ -73,13 +73,116 @@ pub(super) async fn run(
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
     use async_trait::async_trait;
     use forge_obs::{ObsError, ObsSink};
     use forge_types::{SubActionOutcome, SubActionSpec, Variant};
 
     use super::run;
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    enum RecordedCall {
+        SetScene(String),
+        SetSourceVisible {
+            scene: String,
+            source: String,
+            visible: bool,
+        },
+        SetInputMute {
+            input: String,
+            muted: bool,
+        },
+        StartRecord,
+        StopRecord,
+        StartStream,
+        StopStream,
+        RawRequest(String),
+    }
+
+    struct RecordingSink {
+        calls: Arc<Mutex<Vec<RecordedCall>>>,
+    }
+
+    impl RecordingSink {
+        fn new() -> (Self, Arc<Mutex<Vec<RecordedCall>>>) {
+            let calls = Arc::new(Mutex::new(Vec::new()));
+            (
+                Self {
+                    calls: Arc::clone(&calls),
+                },
+                calls,
+            )
+        }
+    }
+
+    #[async_trait]
+    impl ObsSink for RecordingSink {
+        async fn set_scene(&self, scene: &str) -> Result<(), ObsError> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push(RecordedCall::SetScene(scene.to_owned()));
+            Ok(())
+        }
+
+        async fn set_source_visible(
+            &self,
+            scene: &str,
+            source: &str,
+            visible: bool,
+        ) -> Result<(), ObsError> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push(RecordedCall::SetSourceVisible {
+                    scene: scene.to_owned(),
+                    source: source.to_owned(),
+                    visible,
+                });
+            Ok(())
+        }
+
+        async fn set_input_mute(&self, input: &str, mute: bool) -> Result<(), ObsError> {
+            self.calls.lock().unwrap().push(RecordedCall::SetInputMute {
+                input: input.to_owned(),
+                muted: mute,
+            });
+            Ok(())
+        }
+
+        async fn start_record(&self) -> Result<(), ObsError> {
+            self.calls.lock().unwrap().push(RecordedCall::StartRecord);
+            Ok(())
+        }
+
+        async fn stop_record(&self) -> Result<(), ObsError> {
+            self.calls.lock().unwrap().push(RecordedCall::StopRecord);
+            Ok(())
+        }
+
+        async fn start_stream(&self) -> Result<(), ObsError> {
+            self.calls.lock().unwrap().push(RecordedCall::StartStream);
+            Ok(())
+        }
+
+        async fn stop_stream(&self) -> Result<(), ObsError> {
+            self.calls.lock().unwrap().push(RecordedCall::StopStream);
+            Ok(())
+        }
+
+        async fn raw_request(
+            &self,
+            request_type: &str,
+            _payload: &Variant,
+        ) -> Result<Variant, ObsError> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push(RecordedCall::RawRequest(request_type.to_owned()));
+            Ok(Variant::Bool(true))
+        }
+    }
 
     struct SuccessSink;
 
@@ -235,5 +338,114 @@ mod tests {
         let (telemetry, _) = run(&spec, 0, None).await;
         assert!(matches!(telemetry.outcome, SubActionOutcome::Skipped(_)));
         assert_eq!(telemetry.kind, "ObsStartStream");
+    }
+
+    #[tokio::test]
+    async fn recording_sink_set_scene_delegates_scene_name() {
+        let (sink, calls) = RecordingSink::new();
+        let spec = SubActionSpec::ObsSetScene {
+            scene_name: "Main".to_owned(),
+        };
+        let (telemetry, _) = run(&spec, 0, Some(Arc::new(sink))).await;
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
+        let guard = calls.lock().unwrap();
+        assert_eq!(guard.len(), 1);
+        assert_eq!(guard[0], RecordedCall::SetScene("Main".to_owned()));
+    }
+
+    #[tokio::test]
+    async fn recording_sink_set_source_visible_delegates_all_args() {
+        let (sink, calls) = RecordingSink::new();
+        let spec = SubActionSpec::ObsSetSourceVisible {
+            scene_name: "Gaming".to_owned(),
+            source_name: "Webcam".to_owned(),
+            visible: false,
+        };
+        let (telemetry, _) = run(&spec, 1, Some(Arc::new(sink))).await;
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
+        let guard = calls.lock().unwrap();
+        assert_eq!(guard.len(), 1);
+        assert_eq!(
+            guard[0],
+            RecordedCall::SetSourceVisible {
+                scene: "Gaming".to_owned(),
+                source: "Webcam".to_owned(),
+                visible: false,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn recording_sink_set_input_mute_delegates_all_args() {
+        let (sink, calls) = RecordingSink::new();
+        let spec = SubActionSpec::ObsSetInputMute {
+            input_name: "Mic".to_owned(),
+            muted: true,
+        };
+        let (telemetry, _) = run(&spec, 2, Some(Arc::new(sink))).await;
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
+        let guard = calls.lock().unwrap();
+        assert_eq!(guard.len(), 1);
+        assert_eq!(
+            guard[0],
+            RecordedCall::SetInputMute {
+                input: "Mic".to_owned(),
+                muted: true,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn recording_sink_start_record_delegates_correctly() {
+        let (sink, calls) = RecordingSink::new();
+        let (telemetry, _) = run(&SubActionSpec::ObsStartRecord, 3, Some(Arc::new(sink))).await;
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
+        let guard = calls.lock().unwrap();
+        assert_eq!(guard.len(), 1);
+        assert_eq!(guard[0], RecordedCall::StartRecord);
+    }
+
+    #[tokio::test]
+    async fn recording_sink_stop_record_delegates_correctly() {
+        let (sink, calls) = RecordingSink::new();
+        let (telemetry, _) = run(&SubActionSpec::ObsStopRecord, 4, Some(Arc::new(sink))).await;
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
+        let guard = calls.lock().unwrap();
+        assert_eq!(guard.len(), 1);
+        assert_eq!(guard[0], RecordedCall::StopRecord);
+    }
+
+    #[tokio::test]
+    async fn recording_sink_start_stream_delegates_correctly() {
+        let (sink, calls) = RecordingSink::new();
+        let (telemetry, _) = run(&SubActionSpec::ObsStartStream, 5, Some(Arc::new(sink))).await;
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
+        let guard = calls.lock().unwrap();
+        assert_eq!(guard.len(), 1);
+        assert_eq!(guard[0], RecordedCall::StartStream);
+    }
+
+    #[tokio::test]
+    async fn recording_sink_stop_stream_delegates_correctly() {
+        let (sink, calls) = RecordingSink::new();
+        let (telemetry, _) = run(&SubActionSpec::ObsStopStream, 6, Some(Arc::new(sink))).await;
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
+        let guard = calls.lock().unwrap();
+        assert_eq!(guard.len(), 1);
+        assert_eq!(guard[0], RecordedCall::StopStream);
+    }
+
+    #[tokio::test]
+    async fn recording_sink_raw_request_delegates_request_type() {
+        let (sink, calls) = RecordingSink::new();
+        let spec = SubActionSpec::ObsRaw {
+            request_type: "GetVersion".to_owned(),
+            payload: Variant::Object(std::collections::BTreeMap::new()),
+        };
+        let (telemetry, _) = run(&spec, 7, Some(Arc::new(sink))).await;
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
+        let guard = calls.lock().unwrap();
+        assert_eq!(guard.len(), 1);
+        assert_eq!(guard[0], RecordedCall::RawRequest("GetVersion".to_owned()));
     }
 }

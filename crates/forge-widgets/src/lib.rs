@@ -14,6 +14,7 @@ pub mod layout;
 pub mod navigation;
 pub mod onboarding;
 pub mod palette;
+pub mod picker;
 pub mod sections;
 pub mod status;
 pub mod theme;
@@ -62,6 +63,7 @@ pub use onboarding::{
     platform_picker_card,
 };
 pub use palette::{CATPPUCCIN_MOCHA, ForgePalette, LATTE, TOKYO_NIGHT};
+pub use picker::{PickerItem, PickerModalProps, picker_modal};
 pub use sections::{
     ToastVariant, counter_badge, empty_state, section_header, section_header_expandable,
     toast_banner,

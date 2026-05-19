@@ -1,6 +1,7 @@
-use axum::{Router, routing::get};
+use axum::{Router, routing::any, routing::get};
 use tokio::net::TcpListener;
 
+use crate::routes::{api, overlays, ws};
 use crate::{ServerConfig, ServerError, ServerHandle};
 
 pub struct Server {
@@ -20,8 +21,19 @@ impl Server {
     }
 }
 
+pub async fn start_server(config: ServerConfig) -> Result<ServerHandle, ServerError> {
+    Server { config }.start().await
+}
+
+fn build_router() -> Router {
+    Router::new()
+        .route("/ws/v1/", get(ws::ws_handler))
+        .route("/api/v1/{*path}", any(api::api_not_implemented))
+        .route("/overlays/{*path}", get(overlays::overlays_not_implemented))
+}
+
 fn serve_on(listener: TcpListener) -> ServerHandle {
-    let app: Router = Router::new().route("/", get(|| async { "forge server" }));
+    let app = build_router();
     let handle = tokio::spawn(async move {
         axum::serve(listener, app)
             .await
@@ -57,11 +69,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_root_returns_200() {
+    async fn server_accepts_tcp_connections() {
         let (handle, addr) = start_server().await;
-        let url = format!("http://{}/", addr);
+        tokio::net::TcpStream::connect(addr)
+            .await
+            .expect("tcp connect");
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn api_v1_any_path_returns_501() {
+        let (handle, addr) = start_server().await;
+        let url = format!("http://{}/api/v1/anything", addr);
         let resp = reqwest::get(&url).await.expect("HTTP request");
-        assert_eq!(resp.status().as_u16(), 200);
+        assert_eq!(resp.status().as_u16(), 501);
+        let body: serde_json::Value = resp.json().await.expect("JSON body");
+        assert_eq!(body["error"], "method not implemented");
         handle.abort();
     }
 }

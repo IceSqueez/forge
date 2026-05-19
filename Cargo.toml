@@ -68,7 +68,8 @@ reqwest = { version = "0.13", features = [
   "rustls",
 ], default-features = false }
 
-axum = { version = "0.8" }
+axum = { version = "0.8", features = ["ws"] }
+tower-http = { version = "0.6", features = ["cors", "fs"] }
 
 iced = { version = "0.14", features = ["tokio", "image", "svg", "advanced"] }
 iced_fonts = { version = "0.3", features = ["bootstrap"] }

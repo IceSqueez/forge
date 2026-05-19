@@ -14,6 +14,7 @@ forge-types         = { path = "../forge-types" }
 forge-events        = { path = "../forge-events" }
 forge-platform-core = { path = "../forge-platform-core" }
 axum              = { workspace = true }
+tower-http        = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tokio             = { workspace = true }
 serde             = { workspace = true }

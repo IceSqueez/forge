@@ -17,6 +17,7 @@ use crate::actions::{AddActionMsg, AddSubActionMsg, AddTriggerMsg, RemoveSubActi
 use crate::event_feed::EventFeedMsg;
 use crate::live_chat::ChatFilter;
 use crate::script_editor::ScriptEditorMsg;
+use crate::server_screen::ServerScreenMsg;
 
 pub struct ObsClientRef(pub(crate) Arc<ObsClient>);
 
@@ -213,5 +214,6 @@ pub enum Message {
     ChatFilterChanged(ChatFilter),
     ScriptEditor(ScriptEditorMsg),
     EventFeed(EventFeedMsg),
+    Server(ServerScreenMsg),
     Noop,
 }

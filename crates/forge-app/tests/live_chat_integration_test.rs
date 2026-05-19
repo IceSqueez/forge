@@ -44,6 +44,7 @@ fn test_app() -> App {
         command_parser: None,
         integration_detail: None,
         obs_client: None,
+        server_screen: forge_app::ServerScreenState::default(),
     }
 }
 

@@ -8,6 +8,7 @@ pub mod message;
 pub mod onboarding_state;
 pub mod screen;
 pub mod script_editor;
+pub mod server_screen;
 pub mod stream_apps;
 pub mod test_trigger;
 
@@ -38,4 +39,9 @@ pub use screen::{OnboardingStep, Screen, SettingsSection};
 pub use script_editor::{
     OpenScript, RunModalForm, RunModalInputField, RunResult, ScriptEditorMsg, ScriptEditorState,
     ScriptListEntry, handle_script_editor_msg, script_editor_view,
+};
+pub use server_screen::{
+    OwnedClientRow, OwnedFileMime, OwnedOverlayEntry, OwnedOverlayKind, OwnedSubscriptionChip,
+    ServerInfoSnapshot, ServerScreenMsg, ServerScreenState, ServerStats, ServerStatus,
+    handle_server_screen_msg, server_screen_view,
 };

@@ -51,6 +51,9 @@ use crate::screen::OnboardingStep;
 use crate::script_editor::{
     ScriptEditorMsg, ScriptEditorState, handle_script_editor_msg, script_editor_view,
 };
+use crate::server_screen::{
+    ServerScreenMsg, ServerScreenState, handle_server_screen_msg, server_screen_view,
+};
 use crate::stream_apps::view as stream_apps_view;
 use crate::test_trigger::synthesize_test_event;
 use crate::{Message, OnboardingMsg, Screen, SettingsSection};
@@ -115,6 +118,7 @@ pub struct App {
     pub command_parser: Option<CommandParserHandle>,
     pub integration_detail: Option<IntegrationDetailState>,
     pub obs_client: Option<Arc<ObsClient>>,
+    pub server_screen: ServerScreenState,
 }
 
 impl App {
@@ -152,6 +156,7 @@ impl App {
             command_parser,
             integration_detail: None,
             obs_client: None,
+            server_screen: ServerScreenState::default(),
         }
     }
 }
@@ -193,6 +198,7 @@ impl Default for App {
             command_parser: None,
             integration_detail: None,
             obs_client: None,
+            server_screen: ServerScreenState::default(),
         }
     }
 }
@@ -656,6 +662,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 Task::none()
             }
         },
+        Message::Server(sub) => handle_server_screen_msg(&mut app.server_screen, sub),
         Message::Noop => Task::none(),
     }
 }
@@ -4117,6 +4124,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Screen::ScriptEditor => script_editor_view(app, palette),
         Screen::StreamApps => stream_apps_view(app, palette),
         Screen::EventFeed => event_feed_view(&app.event_feed, palette),
+        Screen::Server => server_screen_view(&app.server_screen, palette),
         Screen::Onboarding(_) => unreachable!(),
         Screen::IntegrationDetail(_id) => {
             if let Some(state) = app.integration_detail.as_ref() {
@@ -4177,10 +4185,18 @@ pub fn subscription(app: &App) -> Subscription<Message> {
     }
 
     let bus = from_recipe(BusRecipe(app.bus.clone()));
-    if let Some(state) = app.integration_detail.as_ref() {
-        Subscription::batch([bus, health_subscription(state)])
+
+    let server_tick = if matches!(app.screen, Screen::Server) {
+        iced::time::every(std::time::Duration::from_secs(1))
+            .map(|_| Message::Server(ServerScreenMsg::BandwidthTick(0.0)))
     } else {
-        bus
+        Subscription::none()
+    };
+
+    if let Some(state) = app.integration_detail.as_ref() {
+        Subscription::batch([bus, health_subscription(state), server_tick])
+    } else {
+        Subscription::batch([bus, server_tick])
     }
 }
 
@@ -4934,6 +4950,7 @@ mod tests {
             command_parser: Some(parser),
             integration_detail: None,
             obs_client: None,
+            server_screen: ServerScreenState::default(),
         };
 
         assert!(app.action_engine.is_some());
@@ -5206,6 +5223,7 @@ mod tests {
             command_parser: None,
             integration_detail: None,
             obs_client: None,
+            server_screen: ServerScreenState::default(),
         };
 
         let mut form = crate::actions::AddActionForm::new();

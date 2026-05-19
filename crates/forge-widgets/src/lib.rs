@@ -45,7 +45,7 @@ pub use icons::{
     ICON_LIGHTNING, ICON_MUSIC_NOTE, ICON_PEOPLE, ICON_PLUS, ICON_SERVER, ICON_SPEAKER,
     ICON_TERMINAL,
 };
-pub use inputs::{search_input, select, text_input_field};
+pub use inputs::{input_padding, search_input, select, text_input_field};
 pub use integration::{
     HeaderCardParams, integration_content_renderer, integration_header_card,
     integration_health_grid, integration_quick_actions_grid,

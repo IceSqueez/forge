@@ -1,7 +1,8 @@
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use forge_events::EventSource;
+use forge_events::{EventPublisher, EventSource};
+use forge_obs::ObsClient;
 use forge_platform_twitch::{ChatConnectionState, ChatSendBridgeHandle, TwitchChatHandle};
 use forge_runtime::{
     ActionEngineHandle, CommandParserHandle, EventBus, ExecutionRequest, QueueSchedulerHandle,
@@ -413,6 +414,53 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 app.onboarding.sync_step(&next);
                 app.screen = Screen::Onboarding(next.clone());
                 persist_step(Arc::clone(&app.backend), next)
+            }
+            OnboardingMsg::ObsUrlChanged(v) => {
+                app.onboarding.obs_url = v;
+                Task::none()
+            }
+            OnboardingMsg::ObsPasswordChanged(v) => {
+                app.onboarding.obs_password = v;
+                Task::none()
+            }
+            OnboardingMsg::ObsConnectAttempt => {
+                app.onboarding.obs_connecting = true;
+                app.onboarding.obs_connect_error = None;
+                let url = app.onboarding.obs_url.clone();
+                let password = app.onboarding.obs_password.clone();
+                let bus: Arc<dyn EventPublisher> = Arc::clone(&app.bus) as _;
+                let backend = Arc::clone(&app.backend);
+                Task::perform(
+                    async move {
+                        let pw: Option<&str> = if password.is_empty() {
+                            None
+                        } else {
+                            Some(&password)
+                        };
+                        ObsClient::connect(&url, pw, bus)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        let bundle =
+                            serde_json::json!({ "url": url, "password": password }).to_string();
+                        backend
+                            .store(&CredentialId::new("obs:default"), &bundle)
+                            .await
+                            .map_err(|e| e.to_string())
+                    },
+                    |result| Message::Onboarding(OnboardingMsg::ObsConnectResult(result)),
+                )
+            }
+            OnboardingMsg::ObsConnectResult(Ok(())) => {
+                app.onboarding.obs_connecting = false;
+                let next = OnboardingStep::StarterPack;
+                app.onboarding.sync_step(&next);
+                app.screen = Screen::Onboarding(next.clone());
+                persist_step(Arc::clone(&app.backend), next)
+            }
+            OnboardingMsg::ObsConnectResult(Err(e)) => {
+                app.onboarding.obs_connecting = false;
+                app.onboarding.obs_connect_error = Some(e);
+                Task::none()
             }
             OnboardingMsg::AdvanceFromObs | OnboardingMsg::SkipObs => {
                 let next = OnboardingStep::StarterPack;
@@ -2254,48 +2302,106 @@ fn device_code_flow_content<'a>(
     .into()
 }
 
-fn connect_obs_content<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
+fn connect_obs_content<'a>(
+    onboarding: &'a OnboardingState,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    use forge_widgets::tokens::{BORDER_THIN, Radius, radius};
+    use iced::widget::text_input;
+
     let header =
         forge_widgets::onboarding_step_header(3, 5, "Connect OBS Studio", true, false, palette);
 
     let subtitle = iced::widget::text(
         "Forge talks to OBS via the WebSocket plugin (bundled since OBS 28). \
-         You'll need it running locally — we'll connect to localhost:4455 by default.",
+         Leave password blank if authentication is disabled in OBS.",
     )
     .size(11.5)
     .color(palette.text_muted);
 
-    let coming_soon_card = forge_widgets::card(
+    let p = *palette;
+
+    let url_label = iced::widget::text("WebSocket URL")
+        .size(12.0)
+        .color(palette.text_secondary);
+    let url_input = forge_widgets::text_input_field(
+        "ws://127.0.0.1:4455",
+        &onboarding.obs_url,
+        |v| Message::Onboarding(OnboardingMsg::ObsUrlChanged(v)),
+        palette,
+    );
+
+    let pw_label = iced::widget::text("Password (optional)")
+        .size(12.0)
+        .color(palette.text_secondary);
+    let pw_input: Element<'a, Message> = text_input("", &onboarding.obs_password)
+        .on_input(|v| Message::Onboarding(OnboardingMsg::ObsPasswordChanged(v)))
+        .secure(true)
+        .padding(forge_widgets::input_padding())
+        .width(iced::Length::Fill)
+        .style(move |_theme, status| {
+            let border_color = match status {
+                text_input::Status::Focused { .. } => p.border_input,
+                text_input::Status::Disabled => p.disabled,
+                _ => p.border_input,
+            };
+            let value_color = match status {
+                text_input::Status::Disabled => p.text_muted,
+                _ => p.text_primary,
+            };
+            text_input::Style {
+                background: iced::Background::Color(p.shell),
+                border: iced::Border {
+                    color: border_color,
+                    width: BORDER_THIN,
+                    radius: radius(Radius::Md).into(),
+                },
+                icon: p.text_muted,
+                placeholder: p.text_muted,
+                value: value_color,
+                selection: iced::Color { a: 0.25, ..p.brand },
+            }
+        })
+        .into();
+
+    let form_card = forge_widgets::card(
         [
-            iced::widget::text("Coming in alpha-3")
-                .size(13.0)
-                .color(palette.text_primary)
+            iced::widget::column![url_label, url_input]
+                .spacing(6.0)
                 .into(),
-            iced::widget::text(
-                "OBS connection wiring is implemented in alpha-3. \
-                 For now, this step is skippable and Forge will operate without OBS integration.",
-            )
-            .size(11.5)
-            .color(palette.text_muted)
-            .into(),
+            iced::widget::column![pw_label, pw_input]
+                .spacing(6.0)
+                .into(),
         ],
         palette,
     );
 
+    let error_el: Element<'a, Message> = if let Some(err) = &onboarding.obs_connect_error {
+        forge_widgets::toast_banner(
+            err.as_str(),
+            forge_widgets::ToastVariant::Error,
+            Message::Noop,
+            palette,
+        )
+    } else {
+        iced::widget::Space::new().height(0.0).into()
+    };
+
     let footer = forge_widgets::onboarding_footer(
         Some(Message::Onboarding(OnboardingMsg::BackFromObs)),
         Some(Message::Onboarding(OnboardingMsg::SkipObs)),
-        "I'll connect later",
+        "Connect",
         '→',
-        Message::Onboarding(OnboardingMsg::AdvanceFromObs),
-        true,
+        Message::Onboarding(OnboardingMsg::ObsConnectAttempt),
+        !onboarding.obs_connecting,
         palette,
     );
 
     iced::widget::column![
         header,
         subtitle,
-        coming_soon_card,
+        form_card,
+        error_el,
         iced::widget::Space::new().height(Length::Fill),
         footer,
     ]
@@ -2436,7 +2542,7 @@ fn onboarding_view<'a>(
         OnboardingStep::Welcome => welcome_step_content(palette),
         OnboardingStep::ConnectPlatform => connect_platform_content(onboarding, palette),
         OnboardingStep::DeviceCodeFlow(_) => device_code_flow_content(onboarding, palette),
-        OnboardingStep::ConnectObs => connect_obs_content(palette),
+        OnboardingStep::ConnectObs => connect_obs_content(onboarding, palette),
         OnboardingStep::StarterPack => starter_pack_content(palette),
         OnboardingStep::Ready => ready_content(palette),
     };
@@ -2941,8 +3047,18 @@ fn add_trigger_modal_view<'a>(
         form.category == TriggerCategory::Raids,
         Message::AddTrigger(AddTriggerMsg::CategorySelected(TriggerCategory::Raids)),
     );
+    let chip_obs = forge_widgets::category_chip(
+        palette,
+        "OBS",
+        palette.brand,
+        form.category == TriggerCategory::Obs,
+        Message::AddTrigger(AddTriggerMsg::CategorySelected(TriggerCategory::Obs)),
+    );
 
-    let chips_row = row![chip_all, chip_chat, chip_subs, chip_bits, chip_raids].spacing(6);
+    let chips_row = row![
+        chip_all, chip_chat, chip_subs, chip_bits, chip_raids, chip_obs
+    ]
+    .spacing(6);
 
     let visible = form.visible_kinds();
     let is_empty = visible.is_empty();
@@ -4169,6 +4285,34 @@ mod tests {
             Message::Onboarding(OnboardingMsg::PlatformSelected("twitch".into())),
         );
         let _ = view(&app);
+    }
+
+    #[test]
+    fn obs_url_changed_updates_onboarding_url_field() {
+        let mut app = App {
+            screen: Screen::Onboarding(OnboardingStep::ConnectObs),
+            ..App::default()
+        };
+        let _ = update(
+            &mut app,
+            Message::Onboarding(OnboardingMsg::ObsUrlChanged("ws://192.168.1.5:4455".into())),
+        );
+        assert_eq!(app.onboarding.obs_url, "ws://192.168.1.5:4455");
+    }
+
+    #[test]
+    fn obs_connect_result_ok_advances_to_starter_pack() {
+        let mut app = App {
+            screen: Screen::Onboarding(OnboardingStep::ConnectObs),
+            ..App::default()
+        };
+        app.onboarding.obs_connecting = true;
+        let _ = update(
+            &mut app,
+            Message::Onboarding(OnboardingMsg::ObsConnectResult(Ok(()))),
+        );
+        assert_eq!(app.screen, Screen::Onboarding(OnboardingStep::StarterPack));
+        assert!(!app.onboarding.obs_connecting);
     }
 
     #[test]

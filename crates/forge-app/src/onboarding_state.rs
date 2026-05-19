@@ -25,6 +25,10 @@ pub struct OnboardingState {
     pub selected_platform: Option<String>,
     pub step_infos: Vec<StepInfo>,
     pub device_code: Option<DeviceCodeSession>,
+    pub obs_url: String,
+    pub obs_password: String,
+    pub obs_connecting: bool,
+    pub obs_connect_error: Option<String>,
 }
 
 impl Default for OnboardingState {
@@ -39,6 +43,10 @@ impl OnboardingState {
             selected_platform: None,
             step_infos: Self::build_step_infos(&OnboardingStep::Welcome),
             device_code: None,
+            obs_url: "ws://127.0.0.1:4455".to_string(),
+            obs_password: String::new(),
+            obs_connecting: false,
+            obs_connect_error: None,
         }
     }
 

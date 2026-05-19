@@ -16,6 +16,7 @@ bundled-fonts = []
 iced                = { workspace = true }
 iced_fonts          = { workspace = true }
 forge-types         = { path = "../forge-types" }
+forge-events        = { path = "../forge-events" }
 forge-platform-core = { path = "../forge-platform-core" }
 
 [dev-dependencies]

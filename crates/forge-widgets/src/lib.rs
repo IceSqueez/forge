@@ -7,6 +7,7 @@ pub mod chat;
 pub mod code_editor;
 pub mod console;
 pub mod data;
+pub mod events;
 pub mod icons;
 pub mod inputs;
 pub mod integration;
@@ -38,6 +39,7 @@ pub use data::{
     FooterProps, VariantKind, data_screen_footer, data_table, persistence_toggle_inline, type_pill,
     value_preview, variant_kind_color,
 };
+pub use events::{color_for_source, source_badge};
 pub use icons::{
     BOOTSTRAP_FONT, BOOTSTRAP_FONT_BYTES, ICON_ACTIVITY, ICON_BROADCAST, ICON_CHAT,
     ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CHEVRON_UP, ICON_CLOCK, ICON_DOWNLOAD,

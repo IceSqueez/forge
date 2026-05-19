@@ -2129,6 +2129,7 @@ dependencies = [
  "directories",
  "forge-events",
  "forge-types",
+ "futures-core",
  "reqwest",
  "serde",
  "serde_json",

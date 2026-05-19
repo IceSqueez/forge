@@ -3,6 +3,7 @@
 pub mod actions;
 pub mod buttons;
 pub mod cards;
+pub mod charts;
 pub mod chat;
 pub mod code_editor;
 pub mod console;
@@ -30,6 +31,7 @@ pub use buttons::{
     primary_button_with_icon_right, secondary_button,
 };
 pub use cards::{card, card_with_radius, hero_card, metric_card, stat_row};
+pub use charts::throughput_sparkline;
 pub use chat::{
     BadgeKind, ChatBody, ChatRow, Platform, PlatformTarget, chat_row, filter_chip, input_bar,
 };

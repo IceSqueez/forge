@@ -1,5 +1,5 @@
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, OnceLock, RwLock};
 use std::time::Duration;
 
 use futures_util::StreamExt;
@@ -8,7 +8,9 @@ use time::OffsetDateTime;
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 
-use forge_platform_core::ConnectionState;
+use forge_platform_core::{
+    CapabilityFlags, ConnectionState, HeaderAction, IntegrationId, IntegrationStatus,
+};
 
 use crate::error::ObsError;
 
@@ -25,6 +27,8 @@ pub struct ObsClient {
     shutdown: Arc<Notify>,
     supervisor: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
     connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
+    obs_id: IntegrationId,
+    obs_version: Arc<OnceLock<String>>,
 }
 
 impl ObsClient {
@@ -35,16 +39,16 @@ impl ObsClient {
         let state = Arc::new(AtomicU8::new(STATE_CONNECTING));
         let shutdown = Arc::new(Notify::new());
         let connected_at = Arc::new(RwLock::new(None::<OffsetDateTime>));
+        let obs_version = Arc::new(OnceLock::new());
 
-        let handle = tokio::spawn(run_supervisor(
-            host,
-            port,
-            password.map(str::to_owned),
-            Arc::clone(&inner),
-            Arc::clone(&state),
-            Arc::clone(&shutdown),
-            Arc::clone(&connected_at),
-        ));
+        let ctx = SupervisorContext {
+            inner: Arc::clone(&inner),
+            state: Arc::clone(&state),
+            shutdown: Arc::clone(&shutdown),
+            connected_at: Arc::clone(&connected_at),
+            obs_version: Arc::clone(&obs_version),
+        };
+        let handle = tokio::spawn(run_supervisor(host, port, password.map(str::to_owned), ctx));
 
         Ok(Self {
             inner,
@@ -53,6 +57,8 @@ impl ObsClient {
             shutdown,
             supervisor: Arc::new(std::sync::Mutex::new(Some(handle))),
             connected_at,
+            obs_id: IntegrationId::new("obs"),
+            obs_version,
         })
     }
 
@@ -90,7 +96,59 @@ impl ObsClient {
             shutdown: Arc::new(Notify::new()),
             supervisor: Arc::new(std::sync::Mutex::new(None)),
             connected_at: Arc::new(RwLock::new(None)),
+            obs_id: IntegrationId::new("obs"),
+            obs_version: Arc::new(OnceLock::new()),
         }
+    }
+}
+
+impl IntegrationStatus for ObsClient {
+    fn id(&self) -> &IntegrationId {
+        &self.obs_id
+    }
+
+    fn display_name(&self) -> &str {
+        "OBS Studio"
+    }
+
+    fn version(&self) -> Option<&str> {
+        self.obs_version.get().map(|s| s.as_str())
+    }
+
+    fn connection(&self) -> ConnectionState {
+        self.connection_state()
+    }
+
+    fn uptime(&self) -> Option<Duration> {
+        let at = {
+            let guard = self.connected_at.read().ok()?;
+            *guard
+        }?;
+        let elapsed = OffsetDateTime::now_utc() - at;
+        if elapsed.is_positive() {
+            Some(elapsed.unsigned_abs())
+        } else {
+            None
+        }
+    }
+
+    fn endpoint(&self) -> Option<&str> {
+        Some(&self.endpoint)
+    }
+
+    fn capability_flags(&self) -> CapabilityFlags {
+        CapabilityFlags {
+            limited: false,
+            label: None,
+        }
+    }
+
+    fn header_actions(&self) -> Vec<HeaderAction> {
+        vec![
+            HeaderAction::Reconnect,
+            HeaderAction::Disconnect,
+            HeaderAction::Settings,
+        ]
     }
 }
 
@@ -102,15 +160,22 @@ pub(crate) fn compute_backoff(attempt: u32) -> Duration {
     Duration::from_millis(base_secs * 1000 + jitter_ms)
 }
 
-async fn run_supervisor(
-    host: String,
-    port: u16,
-    password: Option<String>,
+struct SupervisorContext {
     inner: Arc<tokio::sync::RwLock<Option<obws::Client>>>,
     state: Arc<AtomicU8>,
     shutdown: Arc<Notify>,
     connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
-) {
+    obs_version: Arc<OnceLock<String>>,
+}
+
+async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: SupervisorContext) {
+    let SupervisorContext {
+        inner,
+        state,
+        shutdown,
+        connected_at,
+        obs_version,
+    } = ctx;
     let mut attempt: u32 = 0;
 
     loop {
@@ -145,6 +210,15 @@ async fn run_supervisor(
             .map_err(map_obws_error)
         {
             Ok(client) => {
+                match client.general().version().await {
+                    Ok(v) => {
+                        let _ = obs_version.set(v.obs_studio_version.to_string());
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "failed to fetch OBS version");
+                    }
+                }
+
                 let events = client.events();
                 inner.write().await.replace(client);
 
@@ -303,5 +377,60 @@ mod tests {
     fn compute_backoff_attempt_five_under_60s() {
         let d = compute_backoff(5);
         assert!(d.as_secs() < 60);
+    }
+
+    #[test]
+    fn integration_status_id_is_obs() {
+        let client = ObsClient::new_for_test("localhost:4455".to_owned());
+        let status: &dyn IntegrationStatus = &client;
+        assert_eq!(status.id().as_str(), "obs");
+    }
+
+    #[test]
+    fn integration_status_display_name() {
+        let client = ObsClient::new_for_test("localhost:4455".to_owned());
+        let status: &dyn IntegrationStatus = &client;
+        assert_eq!(status.display_name(), "OBS Studio");
+    }
+
+    #[test]
+    fn integration_status_version_none_before_connect() {
+        let client = ObsClient::new_for_test("localhost:4455".to_owned());
+        let status: &dyn IntegrationStatus = &client;
+        assert!(status.version().is_none());
+    }
+
+    #[test]
+    fn integration_status_endpoint_reflects_constructor() {
+        let client = ObsClient::new_for_test("ws://127.0.0.1:4455".to_owned());
+        let status: &dyn IntegrationStatus = &client;
+        assert_eq!(status.endpoint(), Some("ws://127.0.0.1:4455"));
+    }
+
+    #[test]
+    fn integration_status_capability_flags_not_limited() {
+        let client = ObsClient::new_for_test("localhost:4455".to_owned());
+        let status: &dyn IntegrationStatus = &client;
+        let flags = status.capability_flags();
+        assert!(!flags.limited);
+        assert!(flags.label.is_none());
+    }
+
+    #[test]
+    fn integration_status_header_actions_no_refresh_token() {
+        let client = ObsClient::new_for_test("localhost:4455".to_owned());
+        let status: &dyn IntegrationStatus = &client;
+        let actions = status.header_actions();
+        assert!(!actions.contains(&HeaderAction::RefreshToken));
+        assert!(actions.contains(&HeaderAction::Reconnect));
+        assert!(actions.contains(&HeaderAction::Disconnect));
+        assert!(actions.contains(&HeaderAction::Settings));
+    }
+
+    #[test]
+    fn integration_status_uptime_none_before_connect() {
+        let client = ObsClient::new_for_test("localhost:4455".to_owned());
+        let status: &dyn IntegrationStatus = &client;
+        assert!(status.uptime().is_none());
     }
 }

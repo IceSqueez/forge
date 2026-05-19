@@ -39,7 +39,9 @@ pub use data::{
     FooterProps, VariantKind, data_screen_footer, data_table, persistence_toggle_inline, type_pill,
     value_preview, variant_kind_color,
 };
-pub use events::{EventRowData, color_for_source, event_row_observability, source_badge};
+pub use events::{
+    EventRowData, causation_chip, color_for_source, event_row_observability, source_badge,
+};
 pub use icons::{
     BOOTSTRAP_FONT, BOOTSTRAP_FONT_BYTES, ICON_ACTIVITY, ICON_BROADCAST, ICON_CHAT,
     ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CHEVRON_UP, ICON_CLOCK, ICON_DOWNLOAD,

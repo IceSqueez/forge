@@ -5,6 +5,7 @@ use iced::{
 };
 
 use crate::{
+    icons::{BOOTSTRAP_FONT, ICON_LIGHTNING},
     palette::ForgePalette,
     tokens::{FONT_CAPS, FONT_CAPS_SM, FONT_CAPS_XS, FontRole, Radius, font, radius},
 };
@@ -212,6 +213,75 @@ pub fn event_row_observability<'a, Msg: Clone + 'a>(
     column![btn, separator].into()
 }
 
+pub fn causation_chip<'a, Msg: Clone + 'a>(
+    label: &'a str,
+    action_id_display: &'a str,
+    on_click: Msg,
+    palette: &ForgePalette,
+) -> Element<'a, Msg> {
+    let mono = font(FontRole::Monospace);
+    let brand = palette.brand;
+    let elevated = palette.elevated;
+    let border_color = palette.border_regular;
+    let text_primary = palette.text_primary;
+    let text_faint = palette.text_faint;
+
+    let hover_bg = Color {
+        r: brand.r,
+        g: brand.g,
+        b: brand.b,
+        a: 0.10,
+    };
+
+    let icon = iced::widget::text(ICON_LIGHTNING.to_string())
+        .size(FONT_CAPS)
+        .color(brand)
+        .font(BOOTSTRAP_FONT);
+
+    let name = iced::widget::text(label)
+        .size(FONT_CAPS)
+        .color(text_primary)
+        .width(Length::Fill);
+
+    let badge = iced::widget::text(action_id_display)
+        .size(FONT_CAPS_XS)
+        .color(text_faint)
+        .font(mono);
+
+    let content = row![icon, name, badge]
+        .spacing(8)
+        .align_y(iced::Alignment::Center);
+
+    button(content)
+        .on_press(on_click)
+        .padding(Padding {
+            top: 7.0,
+            right: 10.0,
+            bottom: 7.0,
+            left: 10.0,
+        })
+        .width(Length::Fill)
+        .style(
+            move |_theme: &iced::Theme, status: button::Status| button::Style {
+                background: match status {
+                    button::Status::Hovered | button::Status::Pressed => {
+                        Some(Background::Color(hover_bg))
+                    }
+                    _ => Some(Background::Color(elevated)),
+                },
+                text_color: text_primary,
+                border: Border {
+                    color: border_color,
+                    width: 0.5,
+                    radius: radius(Radius::Md).into(),
+                },
+                shadow: iced::Shadow::default(),
+                snap: false,
+            },
+        )
+        .into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -321,5 +391,11 @@ mod tests {
     fn error_row_accent_is_random_color() {
         let color = color_for_source(EventSource::Http, &CATPPUCCIN_MOCHA);
         assert_eq!(color, CATPPUCCIN_MOCHA.random);
+    }
+
+    #[test]
+    fn causation_chip_renders_without_panic() {
+        let palette = &CATPPUCCIN_MOCHA;
+        let _: iced::Element<'_, ()> = causation_chip("ACTION: Sub Alert", "#ac_3f2a", (), palette);
     }
 }

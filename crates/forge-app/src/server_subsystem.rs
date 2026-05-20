@@ -129,6 +129,18 @@ pub async fn load_server_settings_and_start(
         .server_auth_required_for_reads()
         .await
         .map_err(|e| e.to_string())?;
+    let http_overlay_require_token = settings
+        .server_http_overlay_require_token()
+        .await
+        .map_err(|e| e.to_string())?;
+    let overlay_cors_any_origin = settings
+        .server_overlay_cors_any_origin()
+        .await
+        .map_err(|e| e.to_string())?;
+    let overlay_root_override = settings
+        .server_overlay_root()
+        .await
+        .map_err(|e| e.to_string())?;
 
     let ip: std::net::IpAddr = bind_str
         .parse()
@@ -144,6 +156,13 @@ pub async fn load_server_settings_and_start(
     config.bind_addr = bind_addr;
     config.auth_required_for_reads = auth_required_for_reads;
     config.lan_bind_enabled = lan_bind_enabled;
+    config.http_overlay_require_token = http_overlay_require_token;
+    config.overlay_cors_any_origin = overlay_cors_any_origin;
+    if let Some(root) = overlay_root_override
+        && !root.is_empty()
+    {
+        config.overlay_root = std::path::PathBuf::from(root);
+    }
 
     subsystem.start(config).await.map_err(|e| e.to_string())?;
 

@@ -17,6 +17,9 @@ pub mod reserved_keys {
     pub const SERVER_PORT_KEY: &str = "server.port";
     pub const SERVER_LAN_BIND_ENABLED_KEY: &str = "server.lan_bind_enabled";
     pub const SERVER_AUTH_REQUIRED_FOR_READS_KEY: &str = "server.auth_required_for_reads";
+    pub const SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_KEY: &str = "server.http_overlay_require_token";
+    pub const SERVER_OVERLAY_CORS_ANY_ORIGIN_KEY: &str = "server.overlay_cors_any_origin";
+    pub const SERVER_OVERLAY_ROOT_KEY: &str = "server.overlay_root";
 }
 
 const VALID_BIND_ADDRESSES: &[&str] = &["127.0.0.1", "0.0.0.0", "::1", "::"];
@@ -101,6 +104,25 @@ pub trait SettingsRepo: Send + Sync {
         )
         .await
     }
+
+    async fn server_http_overlay_require_token(&self) -> Result<bool, StorageError> {
+        let raw = self
+            .get_string(reserved_keys::SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_KEY)
+            .await?;
+        Ok(raw.as_deref().map(|s| s == "true").unwrap_or(false))
+    }
+
+    async fn server_overlay_cors_any_origin(&self) -> Result<bool, StorageError> {
+        let raw = self
+            .get_string(reserved_keys::SERVER_OVERLAY_CORS_ANY_ORIGIN_KEY)
+            .await?;
+        Ok(raw.as_deref().map(|s| s == "true").unwrap_or(true))
+    }
+
+    async fn server_overlay_root(&self) -> Result<Option<String>, StorageError> {
+        self.get_string(reserved_keys::SERVER_OVERLAY_ROOT_KEY)
+            .await
+    }
 }
 
 #[cfg(test)]
@@ -124,6 +146,9 @@ mod tests {
         assert!(!SERVER_PORT_KEY.is_empty());
         assert!(!SERVER_LAN_BIND_ENABLED_KEY.is_empty());
         assert!(!SERVER_AUTH_REQUIRED_FOR_READS_KEY.is_empty());
+        assert!(!SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_KEY.is_empty());
+        assert!(!SERVER_OVERLAY_CORS_ANY_ORIGIN_KEY.is_empty());
+        assert!(!SERVER_OVERLAY_ROOT_KEY.is_empty());
     }
 
     #[test]
@@ -141,6 +166,9 @@ mod tests {
             SERVER_PORT_KEY,
             SERVER_LAN_BIND_ENABLED_KEY,
             SERVER_AUTH_REQUIRED_FOR_READS_KEY,
+            SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_KEY,
+            SERVER_OVERLAY_CORS_ANY_ORIGIN_KEY,
+            SERVER_OVERLAY_ROOT_KEY,
         ];
         let unique: std::collections::HashSet<&str> = keys.iter().copied().collect();
         assert_eq!(unique.len(), keys.len());

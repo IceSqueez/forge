@@ -82,7 +82,20 @@ impl Default for SettingsWebSocketState {
 }
 
 #[derive(Debug, Clone)]
+pub struct SettingsWebSocketSnapshot {
+    pub bind_address: String,
+    pub port: u16,
+    pub require_ws_token: bool,
+    pub lan_bind_enabled: bool,
+    pub require_http_overlay_token: bool,
+    pub cors_any_origin: bool,
+    pub overlay_root: Option<String>,
+}
+
+#[derive(Debug, Clone)]
 pub enum SettingsWebSocketMsg {
+    LoadRequested,
+    LoadResult(Result<SettingsWebSocketSnapshot, String>),
     ToggleEnable(bool),
     SelectLocalhost,
     SelectLan,
@@ -98,12 +111,85 @@ pub enum SettingsWebSocketMsg {
     SaveStatus(Result<(), String>),
 }
 
+pub async fn load_settings_websocket(
+    backend: Arc<SqliteBackend>,
+) -> Result<SettingsWebSocketSnapshot, String> {
+    use forge_storage::SettingsRepo;
+
+    let settings: &dyn SettingsRepo = backend.as_ref();
+    let bind_address = settings
+        .server_bind_address()
+        .await
+        .map_err(|e| e.to_string())?;
+    let port = settings.server_port().await.map_err(|e| e.to_string())?;
+    let require_ws_token = settings
+        .server_auth_required_for_reads()
+        .await
+        .map_err(|e| e.to_string())?;
+    let lan_bind_enabled = settings
+        .server_lan_bind_enabled()
+        .await
+        .map_err(|e| e.to_string())?;
+    let require_http_overlay_token = settings
+        .server_http_overlay_require_token()
+        .await
+        .map_err(|e| e.to_string())?;
+    let cors_any_origin = settings
+        .server_overlay_cors_any_origin()
+        .await
+        .map_err(|e| e.to_string())?;
+    let overlay_root = settings
+        .server_overlay_root()
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(SettingsWebSocketSnapshot {
+        bind_address,
+        port,
+        require_ws_token,
+        lan_bind_enabled,
+        require_http_overlay_token,
+        cors_any_origin,
+        overlay_root,
+    })
+}
+
 pub fn handle_settings_websocket_msg(
     state: &mut SettingsWebSocketState,
     msg: SettingsWebSocketMsg,
     backend: &Arc<SqliteBackend>,
 ) -> Task<Message> {
     match msg {
+        SettingsWebSocketMsg::LoadRequested => {
+            let b = Arc::clone(backend);
+            Task::perform(async move { load_settings_websocket(b).await }, |r| {
+                Message::SettingsWebSocket(SettingsWebSocketMsg::LoadResult(r))
+            })
+        }
+        SettingsWebSocketMsg::LoadResult(Ok(snap)) => {
+            state.port = snap.port;
+            state.port_input = snap.port.to_string();
+            state.require_ws_token = snap.require_ws_token;
+            state.require_http_overlay_token = snap.require_http_overlay_token;
+            state.cors_any_origin = snap.cors_any_origin;
+            state.bind_address_radio = if snap.lan_bind_enabled {
+                BindAddressChoice::Lan
+            } else {
+                BindAddressChoice::Localhost
+            };
+            state.lan_bind_input = snap.bind_address;
+            if let Some(root) = snap.overlay_root
+                && !root.is_empty()
+            {
+                state.overlay_root = PathBuf::from(root);
+            }
+            state.all_changes_saved = true;
+            state.save_error = None;
+            Task::none()
+        }
+        SettingsWebSocketMsg::LoadResult(Err(e)) => {
+            state.save_error = Some(e);
+            Task::none()
+        }
         SettingsWebSocketMsg::ToggleEnable(val) => {
             state.enable_server = val;
             state.all_changes_saved = false;
@@ -178,7 +264,7 @@ pub fn handle_settings_websocket_msg(
             Task::perform(
                 async move {
                     b.set_string(
-                        "server.http_overlay_require_token",
+                        forge_storage::reserved_keys::SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_KEY,
                         if val { "true" } else { "false" },
                     )
                     .await
@@ -194,7 +280,7 @@ pub fn handle_settings_websocket_msg(
             Task::perform(
                 async move {
                     b.set_string(
-                        "server.overlay_cors_any_origin",
+                        forge_storage::reserved_keys::SERVER_OVERLAY_CORS_ANY_ORIGIN_KEY,
                         if val { "true" } else { "false" },
                     )
                     .await
@@ -210,9 +296,12 @@ pub fn handle_settings_websocket_msg(
             let b = Arc::clone(backend);
             Task::perform(
                 async move {
-                    b.set_string("server.overlay_root", &path_str)
-                        .await
-                        .map_err(|e| e.to_string())
+                    b.set_string(
+                        forge_storage::reserved_keys::SERVER_OVERLAY_ROOT_KEY,
+                        &path_str,
+                    )
+                    .await
+                    .map_err(|e| e.to_string())
                 },
                 |r| Message::SettingsWebSocket(SettingsWebSocketMsg::SaveStatus(r)),
             )

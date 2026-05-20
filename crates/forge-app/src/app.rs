@@ -246,6 +246,10 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             let is_hub = matches!(screen, Screen::Home);
             let is_globals = matches!(screen, Screen::Globals);
             let is_script_editor = matches!(screen, Screen::ScriptEditor);
+            let is_settings_ws = matches!(
+                screen,
+                Screen::Settings(crate::screen::SettingsSection::WebSocket)
+            );
             let editor_id = if let Screen::ActionEditor(id) = &screen {
                 Some(*id)
             } else {
@@ -262,6 +266,10 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 Task::done(Message::Globals(GlobalsMsg::LoadRequested))
             } else if is_script_editor {
                 Task::done(Message::ScriptEditor(ScriptEditorMsg::LoadRequested))
+            } else if is_settings_ws {
+                Task::done(Message::SettingsWebSocket(
+                    crate::settings_websocket::SettingsWebSocketMsg::LoadRequested,
+                ))
             } else if let Some(id) = editor_id {
                 let needs_load = app
                     .actions

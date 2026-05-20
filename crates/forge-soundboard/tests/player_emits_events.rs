@@ -1,7 +1,11 @@
 //! Integration tests verifying that SoundboardPlayer emits AudioEvents in the
 //! correct order when playback succeeds.
 
-#![allow(clippy::unwrap_used, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
 
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -21,7 +25,12 @@ struct RecordingEventSink {
 impl RecordingEventSink {
     fn new() -> (Self, Arc<Mutex<Vec<AudioEvent>>>) {
         let events = Arc::new(Mutex::new(Vec::new()));
-        (Self { events: Arc::clone(&events) }, events)
+        (
+            Self {
+                events: Arc::clone(&events),
+            },
+            events,
+        )
     }
 }
 
@@ -172,13 +181,20 @@ async fn play_with_device_override_routes_to_specified_device() {
 
     let (event_sink, _events) = RecordingEventSink::new();
     let player = SoundboardPlayer::new(
-        Arc::new(CapturingFactory { captured: captured_clone }),
+        Arc::new(CapturingFactory {
+            captured: captured_clone,
+        }),
         Arc::new(event_sink),
         Arc::new(MockClipsRepo { clip: Some(clip) }),
     );
 
-    let override_dev = OutputDevice::ByName { name: "Headphones".to_string() };
-    player.play(clip_id, Some(override_dev.clone())).await.unwrap();
+    let override_dev = OutputDevice::ByName {
+        name: "Headphones".to_string(),
+    };
+    player
+        .play(clip_id, Some(override_dev.clone()))
+        .await
+        .unwrap();
 
     let got = captured_device.lock().unwrap();
     assert_eq!(*got, Some(override_dev));

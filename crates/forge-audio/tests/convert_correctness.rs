@@ -3,7 +3,11 @@
 //! These tests verify the end-to-end 22050 Hz mono -> 48000 Hz stereo path that
 //! the soundboard uses for every clip played on a typical USB/HDMI audio device.
 
-#![allow(clippy::unwrap_used, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
 
 use forge_audio::PcmBuffer;
 use forge_audio::convert::{remix, resample};
@@ -60,7 +64,10 @@ fn pcmbuffer_from_22050_mono_resampled_to_48000_stereo_has_correct_metadata() {
 
     let buf = PcmBuffer::new(stereo, 48_000, 2);
 
-    assert_eq!(buf.sample_rate, 48_000, "sample_rate must be 48000 after resample");
+    assert_eq!(
+        buf.sample_rate, 48_000,
+        "sample_rate must be 48000 after resample"
+    );
     assert_eq!(buf.channels, 2, "channels must be 2 after remix");
     assert!(
         buf.frame_count().abs_diff(expected_frames) <= tolerance,

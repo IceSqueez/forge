@@ -91,10 +91,7 @@ fn decode_44100_stereo_500ms_has_correct_metadata() {
     let sample_rate = 44_100_u32;
     let channels = 2_u16;
     let samples = sine_samples(sample_rate, 440.0, 500);
-    let stereo: Vec<i16> = samples
-        .iter()
-        .flat_map(|&s| [s, s])
-        .collect();
+    let stereo: Vec<i16> = samples.iter().flat_map(|&s| [s, s]).collect();
     let wav_bytes = write_wav_bytes(sample_rate, channels, &stereo);
 
     let tmp = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();

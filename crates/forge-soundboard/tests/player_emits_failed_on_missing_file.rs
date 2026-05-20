@@ -21,7 +21,12 @@ struct RecordingEventSink {
 impl RecordingEventSink {
     fn new() -> (Self, Arc<Mutex<Vec<AudioEvent>>>) {
         let events = Arc::new(Mutex::new(Vec::new()));
-        (Self { events: Arc::clone(&events) }, events)
+        (
+            Self {
+                events: Arc::clone(&events),
+            },
+            events,
+        )
     }
 }
 
@@ -60,7 +65,11 @@ impl SoundboardClipsRepo for MockClipsRepo {
     }
 
     async fn get(&self, id: ClipId) -> Result<Option<StoredClip>, StorageError> {
-        Ok(if self.clip.id == id { Some(self.clip.clone()) } else { None })
+        Ok(if self.clip.id == id {
+            Some(self.clip.clone())
+        } else {
+            None
+        })
     }
 
     async fn save(&self, _clip: &StoredClip) -> Result<(), StorageError> {
@@ -137,7 +146,10 @@ async fn play_device_not_found_emits_playback_failed_and_returns_err() {
 
     let result = player.play(clip_id, None).await;
 
-    assert!(result.is_err(), "play with device-not-found must return Err");
+    assert!(
+        result.is_err(),
+        "play with device-not-found must return Err"
+    );
 
     let recorded = events.lock().unwrap();
     assert_eq!(recorded.len(), 1, "exactly one event must be emitted");

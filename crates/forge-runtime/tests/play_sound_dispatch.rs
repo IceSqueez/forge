@@ -21,8 +21,7 @@ use forge_runtime::{
 use forge_storage::DataProvider;
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
-    Action, ActionId, ArgStack, ClipId, EventId, LogLevel, OutputDevice, QueueId,
-    SubActionSpec,
+    Action, ActionId, ArgStack, ClipId, EventId, LogLevel, OutputDevice, QueueId, SubActionSpec,
 };
 
 const TEST_KEY: [u8; 32] = [0xab; 32];
@@ -35,10 +34,7 @@ async fn make_dp() -> Arc<dyn DataProvider> {
     )
 }
 
-async fn wait_for_action_done(
-    sub: &mut forge_runtime::EventSubscription,
-    timeout_ms: u64,
-) -> bool {
+async fn wait_for_action_done(sub: &mut forge_runtime::EventSubscription, timeout_ms: u64) -> bool {
     use forge_events::EventsError;
     let deadline = tokio::time::Instant::now() + Duration::from_millis(timeout_ms);
     loop {
@@ -56,7 +52,11 @@ async fn wait_for_action_done(
 }
 
 async fn make_action_with_play_sound(dp: &Arc<dyn DataProvider>) -> (ActionId, QueueId) {
-    let queue = dp.queue_repo().get_by_name("Default").await.unwrap()
+    let queue = dp
+        .queue_repo()
+        .get_by_name("Default")
+        .await
+        .unwrap()
         .expect("Default queue seeded by migration 0002");
     let queue_id = queue.id;
     let action_id = ActionId::new();

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use time::OffsetDateTime;
 use tokio::sync::RwLock;
@@ -13,6 +14,8 @@ pub struct ServerInfo {
     pub started_at: OffsetDateTime,
     pub connected_clients: Arc<RwLock<HashMap<ClientId, Arc<WsClient>>>>,
     pub bandwidth: Arc<BandwidthTracker>,
+    pub http_requests_total: AtomicU64,
+    pub events_out_total: AtomicU64,
 }
 
 impl ServerInfo {
@@ -22,7 +25,25 @@ impl ServerInfo {
             started_at: OffsetDateTime::now_utc(),
             connected_clients: Arc::new(RwLock::new(HashMap::new())),
             bandwidth: Arc::new(BandwidthTracker::new()),
+            http_requests_total: AtomicU64::new(0),
+            events_out_total: AtomicU64::new(0),
         })
+    }
+
+    pub fn record_http_request(&self) {
+        self.http_requests_total.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_event_out(&self) {
+        self.events_out_total.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn http_requests(&self) -> u64 {
+        self.http_requests_total.load(Ordering::Relaxed)
+    }
+
+    pub fn events_out(&self) -> u64 {
+        self.events_out_total.load(Ordering::Relaxed)
     }
 
     pub fn uptime_seconds(&self) -> i64 {

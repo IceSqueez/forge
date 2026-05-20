@@ -129,6 +129,7 @@ async fn handle_socket(
                         }
                         client.bytes_sent_session.fetch_add(len, Ordering::Relaxed);
                         state.server_info.bandwidth.record(len);
+                        state.server_info.record_event_out();
                         client.record_event();
                     }
                     Ok(WsFrame::Close) => {

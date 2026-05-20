@@ -104,6 +104,15 @@ pub(crate) async fn validate_lan_bind(
     Ok(())
 }
 
+async fn metrics_middleware(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    state.server_info.record_http_request();
+    next.run(request).await
+}
+
 async fn auth_middleware(State(state): State<AppState>, request: Request, next: Next) -> Response {
     let is_mutating = matches!(
         *request.method(),
@@ -154,6 +163,10 @@ fn build_router(state: AppState) -> Router {
         .route("/ws/v1/", get(ws::ws_handler))
         .nest("/api/v1", api_routes)
         .route("/overlays/{*path}", get(overlays::serve_overlay_file))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            metrics_middleware,
+        ))
         .with_state(state)
 }
 

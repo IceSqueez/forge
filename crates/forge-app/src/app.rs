@@ -4256,26 +4256,40 @@ pub fn subscription(app: &App) -> Subscription<Message> {
                         };
                         let clients_guard = info.connected_clients.read().await;
                         let mut rows: Vec<crate::server_screen::OwnedClientRow> = Vec::new();
+                        let mut events_per_second_total: f32 = 0.0;
                         for client in clients_guard.values() {
+                            let eps = client.events_per_second();
+                            events_per_second_total += eps;
                             rows.push(crate::server_screen::OwnedClientRow {
                                 identification: (**client.identification.load()).clone(),
                                 client_type_label: client.client_type.load().type_str().to_owned(),
                                 subscriptions: Vec::new(),
-                                events_per_second: client.events_per_second(),
+                                events_per_second: eps,
                                 uptime_short: format_short_duration(client.uptime()),
                                 active: true,
                             });
                         }
                         drop(clients_guard);
+                        let kbps = info.bandwidth.current_bps() as f32 / 1000.0;
+                        let peak_kbps = info.bandwidth.peak() as f32 / 1000.0;
+                        let total_bytes = info.bandwidth.total();
+                        let stats = crate::server_screen::ServerStats {
+                            events_per_second: events_per_second_total,
+                            events_per_second_avg: events_per_second_total,
+                            http_requests: info.http_requests(),
+                            bandwidth_kbps: kbps,
+                            bandwidth_peak_kbps: peak_kbps,
+                            total_bytes_sent: total_bytes,
+                            total_events_out: info.events_out(),
+                        };
                         let snapshot = crate::server_screen::ServerInfoSnapshot {
                             uptime_seconds: info.uptime_seconds(),
                             connected_clients: rows,
-                            stats: crate::server_screen::ServerStats::default(),
+                            stats,
                         };
                         let _ = tx.try_send(Message::Server(ServerScreenMsg::ServerInfoArrived(
                             snapshot,
                         )));
-                        let kbps = info.bandwidth.current_bps() as f32 / 1000.0;
                         let _ = tx.try_send(Message::Server(ServerScreenMsg::BandwidthTick(kbps)));
                     }
                 },

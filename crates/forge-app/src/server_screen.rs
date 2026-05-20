@@ -1008,6 +1008,11 @@ fn clients_panel<'a>(
         ..container::Style::default()
     });
 
+    let kick_hint = text("press K on a row to disconnect")
+        .font(font(FontRole::Monospace))
+        .size(FONT_CAPS_XS)
+        .color(text_faint);
+
     let header = row![
         text(ICON_PEOPLE.to_string())
             .font(BOOTSTRAP_FONT)
@@ -1018,6 +1023,7 @@ fn clients_panel<'a>(
             .size(FONT_CAPS)
             .color(text_faint),
         Space::new().width(Length::Fill),
+        kick_hint,
         count_badge,
     ]
     .spacing(8)

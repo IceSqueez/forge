@@ -6,12 +6,14 @@ use forge_app::Screen;
 use forge_app::app::{
     load_obs_and_connect, load_twitch_credential, subscription, theme_callback, update, view,
 };
+use forge_audio::NullAudioEventSink;
 use forge_platform_core::paths;
 use forge_platform_twitch::{ChatSendBridge, ChatSendBridgeHandle};
 use forge_runtime::{
     ActionEngineHandle, CommandParser, CommandParserHandle, EventBus, QueueScheduler,
     QueueSchedulerHandle, ScriptRegistry, spawn_action_engine,
 };
+use forge_soundboard::{CpalSinkFactory, SoundboardPlayer};
 use forge_storage::{CredentialsRepo, DataProvider};
 use forge_storage_sqlite::SqliteBackend;
 
@@ -182,6 +184,17 @@ fn main() -> iced::Result {
             }
         };
 
+    let sound_player: Option<Arc<SoundboardPlayer>> = if storage_offline {
+        None
+    } else {
+        let clips_repo = backend.soundboard_clips_repo_arc();
+        Some(Arc::new(SoundboardPlayer::new(
+            Arc::new(CpalSinkFactory),
+            Arc::new(NullAudioEventSink),
+            clips_repo,
+        )))
+    };
+
     let backend_boot = Arc::clone(&backend);
     let boot_screen = Arc::new(initial_screen);
     let bus_boot = Arc::clone(&bus);
@@ -194,7 +207,7 @@ fn main() -> iced::Result {
             action_engine.clone(),
             scheduler.clone(),
             command_parser.clone(),
-            None,
+            sound_player.clone(),
         );
         app.bus = Arc::clone(&bus_boot);
         app.chat_send_bridge = chat_send_bridge.clone();

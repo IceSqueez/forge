@@ -127,6 +127,10 @@ impl SqliteBackend {
     pub fn soundboard_clips_repo_impl(&self) -> &SqliteSoundboardClipsRepo {
         &self.soundboard
     }
+
+    pub fn soundboard_clips_repo_arc(&self) -> Arc<dyn SoundboardClipsRepo> {
+        Arc::new(SqliteSoundboardClipsRepo::new(self.pool.clone()))
+    }
 }
 
 #[async_trait]

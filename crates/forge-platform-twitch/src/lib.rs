@@ -3,6 +3,7 @@
 pub mod auth;
 pub mod chat;
 pub mod chat_send_bridge;
+pub mod integration;
 
 pub use auth::{
     TWITCH_BROADCASTER_SCOPES, TWITCH_DEVICE_ENDPOINT, TWITCH_TOKEN_ENDPOINT, TwitchAuthBundle,
@@ -12,3 +13,4 @@ pub use chat::{
     ChatConnectionState, ChatSendError, SentMessageId, TwitchChat, TwitchChatHandle, send_chat,
 };
 pub use chat_send_bridge::{ChatSendBridge, ChatSendBridgeHandle};
+pub use integration::TwitchIntegrationBundle;

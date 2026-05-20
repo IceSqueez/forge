@@ -20,6 +20,7 @@ forge-runtime        = { path = "../forge-runtime" }
 forge-storage        = { path = "../forge-storage" }
 forge-platform-core  = { path = "../forge-platform-core" }
 tokio               = { workspace = true }
+tokio-stream        = { workspace = true }
 tokio-tungstenite   = { workspace = true }
 serde               = { workspace = true }
 serde_json          = { workspace = true }

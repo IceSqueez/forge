@@ -7,7 +7,9 @@ use forge_platform_core::{
     IntegrationContent, IntegrationHealth, IntegrationId, IntegrationStatus, QuickActions,
     SectionIcon,
 };
-use forge_platform_twitch::{ChatConnectionState, ChatSendBridgeHandle, TwitchChatHandle};
+use forge_platform_twitch::{
+    ChatConnectionState, ChatSendBridgeHandle, TwitchChatHandle, TwitchIntegrationBundle,
+};
 use forge_runtime::{
     ActionEngineHandle, CommandParserHandle, EventBus, NullEventLogRepo, QueueSchedulerHandle,
     ScriptRegistry,
@@ -381,6 +383,11 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::IntegrationDetail(sub) => handle_integration_detail_msg(app, sub),
         Message::TwitchBootResult(result) => match result {
             Ok(Some(bundle)) => {
+                let login = if bundle.login.is_empty() {
+                    None
+                } else {
+                    Some(bundle.login.clone())
+                };
                 let chat = forge_platform_twitch::TwitchChat::new(
                     forge_types::OAuthToken::new(bundle.access_token),
                     bundle.client_id,
@@ -388,9 +395,27 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                     bundle.user_id,
                     Arc::clone(&app.bus),
                 );
-                app.twitch_chat_handle = Some(chat.start());
-                if !bundle.login.is_empty() {
-                    app.twitch_login = Some(bundle.login);
+                let handle = chat.start();
+                let state_rx = handle.state_receiver();
+                let (twitch_bundle, _health_tx) =
+                    TwitchIntegrationBundle::new(login.clone(), state_rx);
+                let id = IntegrationId::new("twitch");
+                let icon = SectionIcon::new("brand-twitch");
+                let status: Arc<dyn IntegrationStatus> = twitch_bundle.clone();
+                let health: Arc<dyn IntegrationHealth> = twitch_bundle.clone();
+                let content: Arc<dyn IntegrationContent> = twitch_bundle.clone();
+                let quick_actions: Arc<dyn QuickActions> = twitch_bundle.clone();
+                app.integration_detail = Some(IntegrationDetailState::new(
+                    id,
+                    icon,
+                    status,
+                    health,
+                    content,
+                    quick_actions,
+                ));
+                app.twitch_chat_handle = Some(handle);
+                if let Some(l) = login {
+                    app.twitch_login = Some(l);
                 }
                 tracing::info!("twitch chat session restarted from stored credentials");
                 Task::none()
@@ -604,7 +629,8 @@ fn handle_twitch_panel_msg(
                 id = %outcome.user_info.id,
                 "twitch authorization complete",
             );
-            app.twitch_login = Some(outcome.user_info.login.clone());
+            let login = Some(outcome.user_info.login.clone());
+            app.twitch_login = login.clone();
             let chat = forge_platform_twitch::TwitchChat::new(
                 outcome.token,
                 outcome.client_id,
@@ -612,7 +638,24 @@ fn handle_twitch_panel_msg(
                 outcome.user_info.id,
                 Arc::clone(&app.bus),
             );
-            app.twitch_chat_handle = Some(chat.start());
+            let handle = chat.start();
+            let state_rx = handle.state_receiver();
+            let (twitch_bundle, _health_tx) = TwitchIntegrationBundle::new(login, state_rx);
+            let id = IntegrationId::new("twitch");
+            let icon = SectionIcon::new("brand-twitch");
+            let status: Arc<dyn IntegrationStatus> = twitch_bundle.clone();
+            let health: Arc<dyn IntegrationHealth> = twitch_bundle.clone();
+            let content: Arc<dyn IntegrationContent> = twitch_bundle.clone();
+            let quick_actions: Arc<dyn QuickActions> = twitch_bundle.clone();
+            app.integration_detail = Some(IntegrationDetailState::new(
+                id,
+                icon,
+                status,
+                health,
+                content,
+                quick_actions,
+            ));
+            app.twitch_chat_handle = Some(handle);
             app.twitch_panel = TwitchPanelState::Disconnected;
             Task::none()
         }
@@ -3744,12 +3787,8 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Screen::EventFeed => event_feed_view(&app.event_feed, palette),
         Screen::Server => server_screen_view(&app.server_screen, palette),
         Screen::IntegrationDetail(id) => {
-            if id.as_str() == "twitch" {
-                if app.twitch_chat_handle.is_some() {
-                    crate::twitch_panel::twitch_connected_view(app.twitch_login.as_deref(), palette)
-                } else {
-                    crate::twitch_panel::twitch_disconnected_view(&app.twitch_panel, palette)
-                }
+            if id.as_str() == "twitch" && app.twitch_chat_handle.is_none() {
+                crate::twitch_panel::twitch_disconnected_view(&app.twitch_panel, palette)
             } else if id.as_str() == "obs" && app.obs_client.is_none() {
                 crate::obs_panel::obs_disconnected_view(&app.obs_panel, palette)
             } else if let Some(state) = app.integration_detail.as_ref() {

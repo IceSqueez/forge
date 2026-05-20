@@ -63,6 +63,10 @@ impl TwitchChatHandle {
         *self.state_rx.borrow()
     }
 
+    pub fn state_receiver(&self) -> watch::Receiver<ChatConnectionState> {
+        self.state_rx.clone()
+    }
+
     pub fn shutdown(mut self) {
         if let Some(tx) = self.shutdown_tx.take() {
             let _ = tx.send(());

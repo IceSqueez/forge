@@ -105,6 +105,10 @@ impl ServerHandle {
         Arc::clone(&self.inner.lock().await.state.bus_adapter)
     }
 
+    pub async fn overlay_root(&self) -> Arc<std::path::PathBuf> {
+        Arc::clone(&self.inner.lock().await.state.overlay_root)
+    }
+
     pub fn abort(&self) {
         let inner = Arc::clone(&self.inner);
         tokio::spawn(async move {

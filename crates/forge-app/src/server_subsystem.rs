@@ -92,6 +92,14 @@ impl ServerSubsystem {
         }
     }
 
+    pub async fn overlay_root(&self) -> Option<Arc<std::path::PathBuf>> {
+        let guard = self.handle.read().await;
+        match guard.as_ref() {
+            Some(handle) => Some(handle.overlay_root().await),
+            None => None,
+        }
+    }
+
     pub async fn bearer_token(&self) -> Result<Option<String>, ServerError> {
         let id = CredentialId::new(BEARER_CREDENTIAL_ID);
         self.credentials

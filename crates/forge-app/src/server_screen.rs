@@ -58,6 +58,25 @@ pub enum OwnedFileMime {
     Other,
 }
 
+impl OwnedFileMime {
+    pub fn from_path(path: &std::path::Path) -> Self {
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        match ext.as_str() {
+            "html" | "htm" => Self::Html,
+            "css" => Self::Css,
+            "js" | "mjs" => Self::Js,
+            "json" => Self::Json,
+            "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" => Self::Image,
+            "wasm" => Self::Wasm,
+            _ => Self::Other,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OwnedOverlayKind {
     File { mime: OwnedFileMime },
@@ -123,6 +142,12 @@ pub struct ServerInfoSnapshot {
 }
 
 #[derive(Debug, Clone)]
+pub struct OverlayListingSnapshot {
+    pub root: String,
+    pub entries: Vec<OwnedOverlayEntry>,
+}
+
+#[derive(Debug, Clone)]
 pub enum ServerScreenMsg {
     ToggleTokenReveal,
     CopyBindAddress,
@@ -135,6 +160,7 @@ pub enum ServerScreenMsg {
     SelectOverlayFile(usize),
     DisconnectClient(usize),
     ServerInfoArrived(ServerInfoSnapshot),
+    OverlayListingArrived(OverlayListingSnapshot),
     BandwidthTick(f32),
 }
 
@@ -187,6 +213,16 @@ pub fn handle_server_screen_msg(
             if state.bandwidth_samples.len() > MAX_BANDWIDTH_SAMPLES {
                 let excess = state.bandwidth_samples.len() - MAX_BANDWIDTH_SAMPLES;
                 state.bandwidth_samples.drain(..excess);
+            }
+            Task::none()
+        }
+        ServerScreenMsg::OverlayListingArrived(snapshot) => {
+            state.overlay_root = snapshot.root;
+            state.overlay_entries = snapshot.entries;
+            if let Some(idx) = state.selected_overlay_file
+                && idx >= state.overlay_entries.len()
+            {
+                state.selected_overlay_file = None;
             }
             Task::none()
         }

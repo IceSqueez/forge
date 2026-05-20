@@ -4211,6 +4211,72 @@ fn format_short_duration(d: time::Duration) -> String {
     }
 }
 
+async fn scan_overlay_root(root: &std::path::Path) -> crate::server_screen::OverlayListingSnapshot {
+    use crate::server_screen::{
+        OverlayListingSnapshot, OwnedFileMime, OwnedOverlayEntry, OwnedOverlayKind,
+    };
+
+    let root_str = root.to_string_lossy().into_owned();
+    let mut read_dir = match tokio::fs::read_dir(root).await {
+        Ok(rd) => rd,
+        Err(_) => {
+            return OverlayListingSnapshot {
+                root: root_str,
+                entries: Vec::new(),
+            };
+        }
+    };
+
+    let mut entries: Vec<OwnedOverlayEntry> = Vec::new();
+    while let Ok(Some(entry)) = read_dir.next_entry().await {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let meta = match entry.metadata().await {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if meta.is_dir() {
+            let mut count: u32 = 0;
+            if let Ok(mut child) = tokio::fs::read_dir(entry.path()).await {
+                while let Ok(Some(_)) = child.next_entry().await {
+                    count = count.saturating_add(1);
+                }
+            }
+            entries.push(OwnedOverlayEntry {
+                name,
+                kind: OwnedOverlayKind::Dir,
+                size_bytes: 0,
+                child_count: count,
+            });
+        } else {
+            let mime = OwnedFileMime::from_path(&entry.path());
+            entries.push(OwnedOverlayEntry {
+                name,
+                kind: OwnedOverlayKind::File { mime },
+                size_bytes: meta.len(),
+                child_count: 0,
+            });
+        }
+    }
+
+    entries.sort_by(|a, b| {
+        let dir_a = matches!(a.kind, OwnedOverlayKind::Dir);
+        let dir_b = matches!(b.kind, OwnedOverlayKind::Dir);
+        match (dir_a, dir_b) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => a
+                .name
+                .to_ascii_lowercase()
+                .cmp(&b.name.to_ascii_lowercase()),
+        }
+    });
+
+    OverlayListingSnapshot {
+        root: root_str,
+        entries,
+    }
+}
+
 pub fn subscription(app: &App) -> Subscription<Message> {
     use iced::advanced::subscription::{EventStream, Hasher, Recipe, from_recipe};
     use iced::futures::StreamExt as _;
@@ -4268,8 +4334,10 @@ pub fn subscription(app: &App) -> Subscription<Message> {
                 |mut tx: iced::futures::channel::mpsc::Sender<Message>| async move {
                     let mut ticker = tokio::time::interval(std::time::Duration::from_secs(1));
                     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                    let mut tick_count: u32 = 0;
                     loop {
                         ticker.tick().await;
+                        tick_count = tick_count.wrapping_add(1);
                         let Some(info) = subsystem.server_info().await else {
                             continue;
                         };
@@ -4338,6 +4406,14 @@ pub fn subscription(app: &App) -> Subscription<Message> {
                             snapshot,
                         )));
                         let _ = tx.try_send(Message::Server(ServerScreenMsg::BandwidthTick(kbps)));
+
+                        let should_scan = tick_count == 1 || tick_count.is_multiple_of(5);
+                        if should_scan && let Some(root) = subsystem.overlay_root().await {
+                            let listing = scan_overlay_root(root.as_ref()).await;
+                            let _ = tx.try_send(Message::Server(
+                                ServerScreenMsg::OverlayListingArrived(listing),
+                            ));
+                        }
                     }
                 },
             )

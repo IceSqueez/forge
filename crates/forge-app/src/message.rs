@@ -190,6 +190,16 @@ pub enum SidebarMsg {
 }
 
 #[derive(Debug, Clone)]
+pub enum SettingsAudioMsg {
+    LoadRequested,
+    DevicesLoaded(Result<Vec<DeviceLabel>, String>),
+    RefreshDevices,
+    DeviceSelected(usize),
+    TestToneRequested,
+    TestToneResult(Result<(), String>),
+}
+
+#[derive(Debug, Clone)]
 pub enum SoundboardMsg {
     LoadRequested,
     ClipsLoaded(Result<Vec<forge_storage::StoredClip>, String>),
@@ -247,5 +257,6 @@ pub enum Message {
     TwitchReauthRequested,
     ObsPanel(crate::obs_panel::ObsPanelMsg),
     Soundboard(SoundboardMsg),
+    SettingsAudio(SettingsAudioMsg),
     Noop,
 }

@@ -57,6 +57,7 @@ fn test_app() -> App {
         obs_panel: forge_app::obs_panel::ObsPanelState::default(),
         soundboard: forge_app::soundboard::SoundboardState::new(),
         sound_player: None,
+        settings_audio: forge_app::settings_audio::SettingsAudioState::new(),
     }
 }
 

@@ -12,6 +12,7 @@ pub mod screen;
 pub mod script_editor;
 pub mod server_screen;
 pub mod server_subsystem;
+pub mod settings_audio;
 pub mod settings_websocket;
 pub mod soundboard;
 pub mod stream_apps;
@@ -37,8 +38,8 @@ pub use integration_detail::{
 pub use live_chat::{ChatFilter, LiveChatState};
 pub use message::{
     ActionsMsg, EditorMode, GlobalsFilter, GlobalsLoadData, GlobalsMsg, HubMsg, HubStatsData,
-    IntegrationDetailMsg, Message, ObsClientRef, PlatformId, SettingsMsg, SidebarMsg,
-    SoundboardMsg, VariantEditorMsg,
+    IntegrationDetailMsg, Message, ObsClientRef, PlatformId, SettingsAudioMsg, SettingsMsg,
+    SidebarMsg, SoundboardMsg, VariantEditorMsg,
 };
 pub use screen::{Screen, SettingsSection};
 pub use script_editor::{

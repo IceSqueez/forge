@@ -7,6 +7,7 @@ pub enum SettingsSection {
     Language,
     Shortcuts,
     Notifications,
+    Audio,
     Platforms,
     Scripting,
     Queues,

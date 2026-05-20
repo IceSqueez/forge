@@ -61,6 +61,7 @@ use crate::server_screen::{
     ServerScreenMsg, ServerScreenState, handle_server_screen_msg, server_screen_view,
 };
 use crate::server_subsystem::ServerSubsystem;
+use crate::settings_audio::{SettingsAudioState, handle_settings_audio_msg, settings_audio_view};
 use crate::settings_websocket::{
     SettingsWebSocketState, handle_settings_websocket_msg, settings_websocket_view,
 };
@@ -139,6 +140,7 @@ pub struct App {
     pub obs_panel: crate::obs_panel::ObsPanelState,
     pub soundboard: SoundboardState,
     pub sound_player: Option<Arc<SoundboardPlayer>>,
+    pub settings_audio: SettingsAudioState,
 }
 
 impl App {
@@ -191,6 +193,7 @@ impl App {
             obs_panel: crate::obs_panel::ObsPanelState::default(),
             soundboard: SoundboardState::new(),
             sound_player,
+            settings_audio: SettingsAudioState::new(),
         }
     }
 }
@@ -245,6 +248,7 @@ impl Default for App {
             obs_panel: crate::obs_panel::ObsPanelState::default(),
             soundboard: SoundboardState::new(),
             sound_player: None,
+            settings_audio: SettingsAudioState::new(),
         }
     }
 }
@@ -258,6 +262,10 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             let is_globals = matches!(screen, Screen::Globals);
             let is_script_editor = matches!(screen, Screen::ScriptEditor);
             let is_soundboard = matches!(screen, Screen::Soundboard);
+            let is_settings_audio = matches!(
+                screen,
+                Screen::Settings(crate::screen::SettingsSection::Audio)
+            );
             let is_settings_ws = matches!(
                 screen,
                 Screen::Settings(crate::screen::SettingsSection::WebSocket)
@@ -281,6 +289,10 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             } else if is_soundboard {
                 Task::done(Message::Soundboard(
                     crate::message::SoundboardMsg::LoadRequested,
+                ))
+            } else if is_settings_audio {
+                Task::done(Message::SettingsAudio(
+                    crate::message::SettingsAudioMsg::LoadRequested,
                 ))
             } else if is_settings_ws {
                 Task::done(Message::SettingsWebSocket(
@@ -637,6 +649,10 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             let backend = Arc::clone(&app.backend);
             let player = app.sound_player.clone();
             handle_soundboard_msg(&mut app.soundboard, backend, player, sub)
+        }
+        Message::SettingsAudio(sub) => {
+            let backend = Arc::clone(&app.backend);
+            handle_settings_audio_msg(&mut app.settings_audio, backend, sub)
         }
         Message::Noop => Task::none(),
     }
@@ -2496,6 +2512,7 @@ fn settings_view<'a>(
     twitch_handle: Option<&'a TwitchChatHandle>,
     ws: &'a crate::settings_websocket::SettingsWebSocketState,
     server: &'a ServerScreenState,
+    audio: &'a SettingsAudioState,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let nav = iced::widget::column![
@@ -2511,6 +2528,7 @@ fn settings_view<'a>(
         ),
         iced::widget::Space::new().height(6),
         nav_group_header("ENGINE", palette),
+        settings_section_button("Audio", SettingsSection::Audio, section, palette),
         settings_section_button("Platforms", SettingsSection::Platforms, section, palette),
         settings_section_button("Scripting", SettingsSection::Scripting, section, palette),
         settings_section_button("Queues", SettingsSection::Queues, section, palette),
@@ -2544,6 +2562,7 @@ fn settings_view<'a>(
 
     let pane: Element<'a, Message> = match section {
         SettingsSection::Diagnostics => settings_diagnostics_pane(palette),
+        SettingsSection::Audio => settings_audio_view(audio, palette),
         SettingsSection::Platforms => settings_platforms_pane(twitch_handle, palette),
         SettingsSection::WebSocket => {
             settings_websocket_view(ws, &server.bearer_token, server.token_revealed, palette)
@@ -4186,6 +4205,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
             app.twitch_chat_handle.as_ref(),
             &app.settings_websocket,
             &app.server_screen,
+            &app.settings_audio,
             palette,
         ),
         Screen::ScriptEditor => script_editor_view(app, palette),
@@ -4758,6 +4778,7 @@ mod tests {
             obs_panel: crate::obs_panel::ObsPanelState::default(),
             soundboard: SoundboardState::new(),
             sound_player: None,
+            settings_audio: SettingsAudioState::new(),
         };
 
         assert!(app.action_engine.is_some());
@@ -5043,6 +5064,7 @@ mod tests {
             obs_panel: crate::obs_panel::ObsPanelState::default(),
             soundboard: SoundboardState::new(),
             sound_player: None,
+            settings_audio: SettingsAudioState::new(),
         };
 
         let mut form = crate::actions::AddActionForm::new();

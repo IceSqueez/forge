@@ -114,6 +114,62 @@ pub enum TwitchPanelMsg {
     AuthCompleted(Result<TwitchAuthOutcome, String>),
 }
 
+pub fn twitch_reauth_banner<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
+    use forge_widgets::icons::ICON_ALERT_TRIANGLE;
+    let icon = text(ICON_ALERT_TRIANGLE.to_string())
+        .size(14.0)
+        .font(BOOTSTRAP_FONT)
+        .color(palette.warning);
+    let title = text("Twitch token is missing required scopes")
+        .size(FONT_BODY_SM)
+        .color(palette.text_primary);
+    let detail = text(
+        "EventSub rejected the chat subscription. Re-authorize to refresh the token with all current scopes.",
+    )
+    .size(FONT_CAPS_SM)
+    .color(palette.text_muted)
+    .wrapping(iced::widget::text::Wrapping::Word);
+    let text_col = column![title, detail].spacing(2.0);
+
+    let cta = button(text("Re-authorize").size(FONT_CAPS_SM).color(palette.shell))
+        .on_press(Message::TwitchReauthRequested)
+        .padding(Padding::from([6_u16, 12_u16]))
+        .style(move |_theme: &Theme, _status| button::Style {
+            background: Some(Background::Color(palette.warning)),
+            text_color: palette.shell,
+            border: Border {
+                color: Color::TRANSPARENT,
+                width: 0.0,
+                radius: 6.0.into(),
+            },
+            shadow: Shadow::default(),
+            snap: false,
+        });
+
+    let inner = row![
+        icon,
+        text_col,
+        iced::widget::Space::new().width(Length::Fill),
+        cta,
+    ]
+    .spacing(10.0)
+    .align_y(Alignment::Center);
+
+    container(inner)
+        .width(Length::Fill)
+        .padding(Padding::from([10_u16, 14_u16]))
+        .style(move |_theme: &Theme| container::Style {
+            background: Some(Background::Color(palette.shell)),
+            border: Border {
+                color: palette.warning,
+                width: 0.5,
+                radius: 9.0.into(),
+            },
+            ..container::Style::default()
+        })
+        .into()
+}
+
 pub fn twitch_disconnected_view<'a>(
     state: &'a TwitchPanelState,
     palette: &'a ForgePalette,

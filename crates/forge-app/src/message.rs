@@ -219,6 +219,7 @@ pub enum Message {
     Server(ServerScreenMsg),
     SettingsWebSocket(SettingsWebSocketMsg),
     TwitchPanel(crate::twitch_panel::TwitchPanelMsg),
+    TwitchReauthRequested,
     ObsPanel(crate::obs_panel::ObsPanelMsg),
     Noop,
 }

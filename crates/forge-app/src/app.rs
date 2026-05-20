@@ -131,6 +131,7 @@ pub struct App {
     pub twitch_panel: crate::twitch_panel::TwitchPanelState,
     pub twitch_flow: Option<crate::twitch_panel::TwitchFlowHandle>,
     pub twitch_login: Option<String>,
+    pub twitch_reauth_required: bool,
     pub obs_panel: crate::obs_panel::ObsPanelState,
 }
 
@@ -178,6 +179,7 @@ impl App {
             twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
             twitch_flow: None,
             twitch_login: None,
+            twitch_reauth_required: false,
             obs_panel: crate::obs_panel::ObsPanelState::default(),
         }
     }
@@ -229,6 +231,7 @@ impl Default for App {
             twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
             twitch_flow: None,
             twitch_login: None,
+            twitch_reauth_required: false,
             obs_panel: crate::obs_panel::ObsPanelState::default(),
         }
     }
@@ -298,6 +301,11 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 } else {
                     format!("{label} — {outcome}")
                 });
+            }
+            if event.kind == "platform.reauth_required"
+                && event.payload["platform"].as_str() == Some("twitch")
+            {
+                app.twitch_reauth_required = true;
             }
             if !app.event_feed.paused {
                 app.event_feed.push_event(event);
@@ -558,6 +566,22 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             handle_settings_websocket_msg(&mut app.settings_websocket, sub, &app.backend)
         }
         Message::TwitchPanel(sub) => handle_twitch_panel_msg(app, sub),
+        Message::TwitchReauthRequested => {
+            if let Some(handle) = app.twitch_chat_handle.take() {
+                handle.shutdown();
+            }
+            app.integration_detail = None;
+            app.twitch_login = None;
+            app.twitch_reauth_required = false;
+            let backend = Arc::clone(&app.backend);
+            Task::perform(
+                async move {
+                    let id = CredentialId::new("twitch:broadcaster");
+                    let _ = backend.delete(&id).await;
+                },
+                |()| Message::Noop,
+            )
+        }
         Message::ObsPanel(sub) => handle_obs_panel_msg(app, sub),
         Message::Noop => Task::none(),
     }
@@ -4062,7 +4086,22 @@ pub fn view(app: &App) -> Element<'_, Message> {
             } else if id.as_str() == "obs" && app.obs_client.is_none() {
                 crate::obs_panel::obs_disconnected_view(&app.obs_panel, palette)
             } else if let Some(state) = app.integration_detail.as_ref() {
-                integration_detail_view(state, palette)
+                let inner = integration_detail_view(state, palette);
+                if id.as_str() == "twitch" && app.twitch_reauth_required {
+                    iced::widget::container(
+                        iced::widget::column![
+                            crate::twitch_panel::twitch_reauth_banner(palette),
+                            inner,
+                        ]
+                        .spacing(12.0),
+                    )
+                    .padding(iced::Padding::from([12_u16, 14_u16]))
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into()
+                } else {
+                    inner
+                }
             } else {
                 iced::widget::container(forge_widgets::empty_state(
                     "Not connected",
@@ -4428,6 +4467,7 @@ mod tests {
             twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
             twitch_flow: None,
             twitch_login: None,
+            twitch_reauth_required: false,
             obs_panel: crate::obs_panel::ObsPanelState::default(),
         };
 
@@ -4710,6 +4750,7 @@ mod tests {
             twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
             twitch_flow: None,
             twitch_login: None,
+            twitch_reauth_required: false,
             obs_panel: crate::obs_panel::ObsPanelState::default(),
         };
 

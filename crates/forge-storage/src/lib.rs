@@ -21,7 +21,7 @@ pub use credentials::{CredentialId, CredentialsRepo};
 pub use error::StorageError;
 pub use event_log::EventLogRepo;
 pub use globals::{GlobalEntry, GlobalsRepo};
-pub use history::HistoryRepo;
+pub use history::{ActionStats, HistoryRepo};
 pub use provider::DataProvider;
 pub use queue::QueueRepo;
 pub use script::{ScriptRecord, ScriptRepo};

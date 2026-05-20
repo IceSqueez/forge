@@ -1,10 +1,20 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
-use forge_storage::{HistoryRepo, StorageError};
+use forge_storage::{ActionStats, HistoryRepo, StorageError};
 use forge_types::{ActionId, ExecutionContext, ExecutionMetadata};
 use serde_json;
 use time::OffsetDateTime;
 
 use crate::error::SqliteStorageError;
+
+fn parse_action_id(s: &str) -> Result<ActionId, StorageError> {
+    serde_json::from_str(&format!("\"{s}\"")).map_err(|e| {
+        StorageError::from(SqliteStorageError::Decode(format!(
+            "invalid action id `{s}`: {e}"
+        )))
+    })
+}
 
 fn to_epoch_ms(dt: OffsetDateTime) -> i64 {
     (dt.unix_timestamp_nanos() / 1_000_000) as i64
@@ -87,5 +97,44 @@ impl HistoryRepo for SqliteHistoryRepo {
                 })
             })
             .collect()
+    }
+
+    async fn stats_summary(
+        &self,
+        since: OffsetDateTime,
+    ) -> Result<HashMap<ActionId, ActionStats>, StorageError> {
+        let since_ms = to_epoch_ms(since);
+
+        let rows: Vec<(String, i64, i64)> = sqlx::query_as(
+            "SELECT action_id,
+                    MAX(started_at) AS last_started,
+                    SUM(CASE WHEN started_at >= ? THEN 1 ELSE 0 END) AS runs_24h
+             FROM action_history
+             GROUP BY action_id",
+        )
+        .bind(since_ms)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        let mut out = HashMap::with_capacity(rows.len());
+        for (id_str, last_ms, runs_24h) in rows {
+            let id = parse_action_id(&id_str)?;
+            let last_ran_at =
+                OffsetDateTime::from_unix_timestamp_nanos(i128::from(last_ms) * 1_000_000)
+                    .map_err(|e| {
+                        StorageError::from(SqliteStorageError::Decode(format!(
+                            "invalid started_at {last_ms}: {e}"
+                        )))
+                    })?;
+            out.insert(
+                id,
+                ActionStats {
+                    last_ran_at,
+                    runs_24h: u32::try_from(runs_24h).unwrap_or(u32::MAX),
+                },
+            );
+        }
+        Ok(out)
     }
 }

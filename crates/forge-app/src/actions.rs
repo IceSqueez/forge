@@ -476,6 +476,8 @@ impl ActionsState {
 pub async fn load_actions_tree(dp: Arc<SqliteBackend>) -> Result<Vec<ActionsGroup>, StorageError> {
     let actions = dp.action_repo().list().await?;
     let all_queues = dp.queue_repo().list().await?;
+    let since = OffsetDateTime::now_utc() - time::Duration::hours(24);
+    let stats = dp.history_repo().stats_summary(since).await?;
 
     let mut by_category: std::collections::BTreeMap<TriggerCategory, Vec<ActionSummary>> =
         std::collections::BTreeMap::new();
@@ -494,10 +496,10 @@ pub async fn load_actions_tree(dp: Arc<SqliteBackend>) -> Result<Vec<ActionsGrou
             .map(|q| q.name.clone())
             .unwrap_or_else(|| "Default".to_string());
 
-        // TODO Phase 2: derive last_ran and runs_24h from history_repo once
-        // HistoryRepo exposes last_ran_for_action / count_since methods.
-        let last_ran: Option<OffsetDateTime> = None;
-        let runs_24h: u32 = 0;
+        let (last_ran, runs_24h) = stats
+            .get(&action.id)
+            .map(|s| (Some(s.last_ran_at), s.runs_24h))
+            .unwrap_or((None, 0));
 
         let summary = ActionSummary {
             id: action.id,

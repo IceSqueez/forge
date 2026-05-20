@@ -268,6 +268,13 @@ impl HistoryRepo for NullDp {
     ) -> Result<Vec<ExecutionContext>, StorageError> {
         Ok(vec![])
     }
+
+    async fn stats_summary(
+        &self,
+        _since: time::OffsetDateTime,
+    ) -> Result<std::collections::HashMap<ActionId, forge_storage::ActionStats>, StorageError> {
+        Ok(std::collections::HashMap::new())
+    }
 }
 
 #[async_trait]
@@ -601,6 +608,13 @@ impl HistoryRepo for VecCommandDp {
     ) -> Result<Vec<ExecutionContext>, StorageError> {
         Ok(vec![])
     }
+
+    async fn stats_summary(
+        &self,
+        _since: time::OffsetDateTime,
+    ) -> Result<std::collections::HashMap<ActionId, forge_storage::ActionStats>, StorageError> {
+        Ok(std::collections::HashMap::new())
+    }
 }
 
 #[async_trait]
@@ -930,6 +944,13 @@ impl HistoryRepo for VecGlobalsDp {
     ) -> Result<Vec<ExecutionContext>, StorageError> {
         Ok(vec![])
     }
+
+    async fn stats_summary(
+        &self,
+        _since: time::OffsetDateTime,
+    ) -> Result<std::collections::HashMap<ActionId, forge_storage::ActionStats>, StorageError> {
+        Ok(std::collections::HashMap::new())
+    }
 }
 
 #[async_trait]
@@ -1254,6 +1275,13 @@ impl HistoryRepo for VecActionDp {
         _limit: u32,
     ) -> Result<Vec<ExecutionContext>, StorageError> {
         Ok(vec![])
+    }
+
+    async fn stats_summary(
+        &self,
+        _since: time::OffsetDateTime,
+    ) -> Result<std::collections::HashMap<ActionId, forge_storage::ActionStats>, StorageError> {
+        Ok(std::collections::HashMap::new())
     }
 }
 
@@ -1593,6 +1621,13 @@ impl HistoryRepo for VecUserGlobalsDp {
         _limit: u32,
     ) -> Result<Vec<ExecutionContext>, StorageError> {
         Ok(vec![])
+    }
+
+    async fn stats_summary(
+        &self,
+        _since: time::OffsetDateTime,
+    ) -> Result<std::collections::HashMap<ActionId, forge_storage::ActionStats>, StorageError> {
+        Ok(std::collections::HashMap::new())
     }
 }
 

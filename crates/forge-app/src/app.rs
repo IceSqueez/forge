@@ -47,8 +47,10 @@ use crate::integration_detail::{
 };
 use crate::live_chat::{CHAT_LOG_MAX, LiveChatState, chat_row_from_event, live_chat_view};
 use crate::message::{
-    ActionsMsg, GlobalsMsg, HubMsg, HubStatsData, ObsClientRef, PlatformId, SettingsMsg, SidebarMsg,
+    ActionsMsg, GlobalsMsg, HubMsg, HubStatsData, ObsClientRef, PlatformId, QueuesMsg, SettingsMsg,
+    SidebarMsg,
 };
+use crate::queues_view::{QueuesState, load_queues, queues_view};
 use crate::script_editor::{
     ScriptEditorMsg, ScriptEditorState, handle_script_editor_msg, script_editor_view,
 };
@@ -112,6 +114,7 @@ pub struct App {
     pub event_feed: EventFeedState,
     pub live_chat: LiveChatState,
     pub actions: ActionsState,
+    pub queues: QueuesState,
     pub globals: GlobalsState,
     pub script_editor: ScriptEditorState,
     pub script_registry: Arc<ScriptRegistry>,
@@ -158,6 +161,7 @@ impl App {
             event_feed: EventFeedState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
+            queues: QueuesState::new(),
             globals: GlobalsState::new(),
             script_editor: ScriptEditorState::new(),
             script_registry,
@@ -208,6 +212,7 @@ impl Default for App {
             event_feed: EventFeedState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
+            queues: QueuesState::new(),
             globals: GlobalsState::new(),
             script_editor: ScriptEditorState::new(),
             script_registry: Arc::new(ScriptRegistry::new()),
@@ -233,12 +238,15 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
     match msg {
         Message::Navigate(screen) => {
             let is_actions = matches!(screen, Screen::Actions);
+            let is_queues = matches!(screen, Screen::Queues);
             let is_hub = matches!(screen, Screen::Home);
             let is_globals = matches!(screen, Screen::Globals);
             let is_script_editor = matches!(screen, Screen::ScriptEditor);
             app.screen = screen;
             if is_actions {
                 Task::done(Message::Actions(ActionsMsg::LoadRequested))
+            } else if is_queues {
+                Task::done(Message::Queues(QueuesMsg::LoadRequested))
             } else if is_hub {
                 Task::done(Message::Hub(HubMsg::LoadStats))
             } else if is_globals {
@@ -376,6 +384,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::Globals(sub) => handle_globals_msg(app, sub),
         Message::VariantEditor(sub) => handle_variant_editor_msg(app, sub),
         Message::Actions(sub) => handle_actions_msg(app, sub),
+        Message::Queues(sub) => handle_queues_msg(app, sub),
         Message::AddAction(sub) => handle_add_action_msg(app, sub),
         Message::AddTrigger(sub) => handle_add_trigger_msg(app, sub),
         Message::AddSubAction(sub) => handle_add_sub_action_msg(app, sub),
@@ -776,6 +785,90 @@ fn handle_hub_msg(app: &mut App, sub: HubMsg) -> Task<Message> {
         }
         HubMsg::StatsLoaded(Err(e)) => {
             tracing::warn!(error = %e, "hub stats load failed");
+            Task::none()
+        }
+    }
+}
+
+fn handle_queues_msg(app: &mut App, sub: QueuesMsg) -> Task<Message> {
+    match sub {
+        QueuesMsg::LoadRequested => {
+            app.queues.loading = true;
+            let dp = Arc::clone(&app.backend);
+            Task::perform(async move { load_queues(dp).await }, |r| {
+                Message::Queues(QueuesMsg::QueuesLoaded(r))
+            })
+        }
+        QueuesMsg::QueuesLoaded(Ok(qs)) => {
+            app.queues.queues = qs;
+            app.queues.loading = false;
+            Task::none()
+        }
+        QueuesMsg::QueuesLoaded(Err(e)) => {
+            app.queues.loading = false;
+            tracing::warn!(error = %e, "queues load failed");
+            Task::none()
+        }
+        QueuesMsg::PauseQueue(id) => {
+            if let Some(q) = app.queues.queues.iter_mut().find(|q| q.id == id) {
+                q.paused = true;
+            }
+            let Some(scheduler) = app.scheduler.clone() else {
+                return Task::none();
+            };
+            Task::perform(
+                async move { scheduler.pause(id).await.map_err(|e| e.to_string()) },
+                |r| Message::Queues(QueuesMsg::PauseResult(r)),
+            )
+        }
+        QueuesMsg::ResumeQueue(id) => {
+            if let Some(q) = app.queues.queues.iter_mut().find(|q| q.id == id) {
+                q.paused = false;
+            }
+            let Some(scheduler) = app.scheduler.clone() else {
+                return Task::none();
+            };
+            Task::perform(
+                async move { scheduler.resume(id).await.map_err(|e| e.to_string()) },
+                |r| Message::Queues(QueuesMsg::ResumeResult(r)),
+            )
+        }
+        QueuesMsg::DrainQueue(id) => {
+            // TODO Phase 2: drain in scheduler
+            tracing::info!(queue_id = %id, "drain requested — not yet implemented");
+            Task::none()
+        }
+        QueuesMsg::PauseAll => {
+            for q in &mut app.queues.queues {
+                q.paused = true;
+            }
+            let ids: Vec<_> = app.queues.queues.iter().map(|q| q.id).collect();
+            let Some(scheduler) = app.scheduler.clone() else {
+                return Task::none();
+            };
+            Task::perform(
+                async move {
+                    for id in ids {
+                        if let Err(e) = scheduler.pause(id).await {
+                            tracing::warn!(queue_id = %id, error = %e, "pause queue failed");
+                        }
+                    }
+                },
+                |()| Message::Noop,
+            )
+        }
+        QueuesMsg::NewQueue => {
+            tracing::info!("new queue modal: TODO");
+            Task::none()
+        }
+        QueuesMsg::PauseResult(Ok(())) => Task::none(),
+        QueuesMsg::PauseResult(Err(e)) => {
+            tracing::warn!(error = %e, "pause queue failed");
+            Task::none()
+        }
+        QueuesMsg::ResumeResult(Ok(())) => Task::none(),
+        QueuesMsg::ResumeResult(Err(e)) => {
+            tracing::warn!(error = %e, "resume queue failed");
             Task::none()
         }
     }
@@ -3752,7 +3845,7 @@ fn coming_soon_view(screen_label: String, palette: &ForgePalette) -> Element<'st
 fn breadcrumb_icon_for(screen: &Screen) -> char {
     match screen {
         Screen::Home => ICON_HOME,
-        Screen::Actions => ICON_LIGHTNING,
+        Screen::Actions | Screen::Queues => ICON_LIGHTNING,
         Screen::Commands => ICON_TERMINAL,
         Screen::Platforms => ICON_BROADCAST,
         Screen::StreamApps | Screen::Integrations | Screen::IntegrationDetail(_) => ICON_GRID,
@@ -3771,6 +3864,7 @@ fn screen_label(screen: &Screen) -> &'static str {
     match screen {
         Screen::Home => "Home",
         Screen::Actions => "Actions",
+        Screen::Queues => "Queues",
         Screen::Commands => "Commands",
         Screen::Platforms => "Platforms",
         Screen::StreamApps => "Stream apps",
@@ -3793,6 +3887,8 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Vec<NavItem<'a,
     let is_home = matches!(app.screen, Screen::Home);
     let is_viewers = matches!(app.screen, Screen::Viewers);
     let is_actions = matches!(app.screen, Screen::Actions);
+    let is_queues = matches!(app.screen, Screen::Queues);
+    let is_actions_queues = is_actions || is_queues;
     let is_commands = matches!(app.screen, Screen::Commands);
     let is_platforms = matches!(app.screen, Screen::Platforms);
     let is_stream_apps = matches!(app.screen, Screen::StreamApps);
@@ -3817,11 +3913,26 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Vec<NavItem<'a,
             active: is_viewers,
             on_press: Message::Navigate(Screen::Viewers),
         },
-        NavItem::Leaf {
+        NavItem::Group {
             icon: ICON_LIGHTNING,
             label: "Actions & Queues",
-            active: is_actions,
-            on_press: Message::Navigate(Screen::Actions),
+            active: is_actions_queues,
+            expanded: app.sidebar_state.actions_queues,
+            on_toggle: Message::Sidebar(SidebarMsg::ToggleActionsQueues),
+            children: vec![
+                NavChild {
+                    dot_color: palette.brand,
+                    label: "Actions",
+                    active: is_actions,
+                    on_press: Message::Navigate(Screen::Actions),
+                },
+                NavChild {
+                    dot_color: palette.info,
+                    label: "Queues",
+                    active: is_queues,
+                    on_press: Message::Navigate(Screen::Queues),
+                },
+            ],
         },
         NavItem::Leaf {
             icon: ICON_TERMINAL,
@@ -3933,6 +4044,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Screen::LiveChat => live_chat_view(&app.live_chat, palette),
         Screen::Globals => globals_view(app, palette),
         Screen::Actions => actions_view(app, palette),
+        Screen::Queues => queues_view(&app.queues, palette),
         Screen::Settings(section) => settings_view(
             section,
             app.twitch_chat_handle.as_ref(),
@@ -4299,6 +4411,7 @@ mod tests {
             event_feed: EventFeedState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
+            queues: QueuesState::new(),
             globals: GlobalsState::new(),
             script_editor: ScriptEditorState::new(),
             script_registry: registry,
@@ -4580,6 +4693,7 @@ mod tests {
             event_feed: EventFeedState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
+            queues: QueuesState::new(),
             globals: GlobalsState::new(),
             script_editor: ScriptEditorState::new(),
             script_registry: Arc::new(ScriptRegistry::new()),

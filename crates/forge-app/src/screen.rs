@@ -23,6 +23,7 @@ pub enum Screen {
     Viewers,
     Globals,
     Actions,
+    Queues,
     Commands,
     Platforms,
     StreamApps,

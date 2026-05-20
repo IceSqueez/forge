@@ -15,6 +15,7 @@ use crate::Screen;
 use crate::actions::{AddActionMsg, AddSubActionMsg, AddTriggerMsg, RemoveSubActionMsg};
 use crate::event_feed::EventFeedMsg;
 use crate::live_chat::ChatFilter;
+use crate::queues_view::QueueSummary;
 use crate::script_editor::ScriptEditorMsg;
 use crate::server_screen::ServerScreenMsg;
 use crate::settings_websocket::SettingsWebSocketMsg;
@@ -167,6 +168,19 @@ pub enum IntegrationDetailMsg {
 }
 
 #[derive(Debug, Clone)]
+pub enum QueuesMsg {
+    LoadRequested,
+    QueuesLoaded(Result<Vec<QueueSummary>, String>),
+    PauseQueue(forge_types::QueueId),
+    ResumeQueue(forge_types::QueueId),
+    DrainQueue(forge_types::QueueId),
+    PauseAll,
+    NewQueue,
+    PauseResult(Result<(), String>),
+    ResumeResult(Result<(), String>),
+}
+
+#[derive(Debug, Clone)]
 pub enum SidebarMsg {
     ToggleActionsQueues,
     TogglePlatforms,
@@ -182,6 +196,7 @@ pub enum Message {
     Globals(GlobalsMsg),
     VariantEditor(VariantEditorMsg),
     Actions(ActionsMsg),
+    Queues(QueuesMsg),
     AddAction(AddActionMsg),
     AddTrigger(AddTriggerMsg),
     AddSubAction(AddSubActionMsg),

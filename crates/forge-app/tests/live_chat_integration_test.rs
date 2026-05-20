@@ -33,6 +33,7 @@ fn test_app() -> App {
         event_feed: EventFeedState::new(),
         live_chat: forge_app::LiveChatState::new(),
         actions: forge_app::ActionsState::new(),
+        queues: forge_app::queues_view::QueuesState::new(),
         globals: forge_app::GlobalsState::new(),
         script_editor: ScriptEditorState::new(),
         script_registry: Arc::new(ScriptRegistry::new()),

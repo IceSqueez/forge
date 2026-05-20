@@ -11,6 +11,7 @@ pub mod pcm;
 pub mod sink;
 
 pub use cpal_sink::CpalSink;
+pub use decode::decode_file;
 pub use device::{DeviceId, DeviceInfo, OutputDevice, list_output_devices};
 pub use error::AudioError;
 pub use events::{AudioEvent, AudioEventSink, NullAudioEventSink};

@@ -470,9 +470,31 @@ fn client_row_elem<'a>(
 
     let x_cell = container(x_btn).width(Length::Fixed(22.0));
 
-    let content = row![dot_cell, id_cell, subs_cell, evs_cell, uptime_cell, x_cell]
-        .align_y(Alignment::Center)
-        .padding([8u16, 14u16]);
+    let content_row = row![dot_cell, id_cell, subs_cell, evs_cell, uptime_cell, x_cell]
+        .align_y(Alignment::Center);
+
+    let surface_overlay = palette.surface_overlay;
+    let row_button = button(content_row)
+        .padding([8u16, 14u16])
+        .width(Length::Fill)
+        .on_press(Message::Noop)
+        .style(move |_theme: &iced::Theme, status| {
+            use iced::widget::button::Status;
+            iced::widget::button::Style {
+                background: match status {
+                    Status::Hovered => Some(Background::Color(surface_overlay)),
+                    _ => None,
+                },
+                text_color: text_primary,
+                border: Border {
+                    color: Color::TRANSPARENT,
+                    width: 0.0,
+                    radius: 0.0.into(),
+                },
+                shadow: iced::Shadow::default(),
+                snap: false,
+            }
+        });
 
     let separator =
         container(Space::new().width(Length::Fill).height(1.0f32)).style(move |_: &iced::Theme| {
@@ -482,7 +504,7 @@ fn client_row_elem<'a>(
             }
         });
 
-    container(column![content, separator])
+    container(column![row_button, separator])
         .width(Length::Fill)
         .into()
 }

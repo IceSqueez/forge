@@ -128,10 +128,15 @@ pub fn title_bar_v2<'a, Msg: 'a>(
         .spacing(8)
         .align_y(iced::Alignment::Center);
 
-    let dot = crate::status::status_dot(success, 7.0);
-    let connected_label = text(format_connected(props.connected))
-        .size(11)
-        .color(text_secondary);
+    let is_empty = props.connected.0 == 0;
+    let dot_color = if is_empty { text_muted } else { success };
+    let connected_text = if is_empty {
+        "No connections".to_owned()
+    } else {
+        format_connected(props.connected)
+    };
+    let dot = crate::status::status_dot(dot_color, 7.0);
+    let connected_label = text(connected_text).size(11).color(text_secondary);
     let connected_pill = row![dot, connected_label]
         .spacing(6)
         .align_y(iced::Alignment::Center);

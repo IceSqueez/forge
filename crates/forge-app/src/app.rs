@@ -1254,15 +1254,16 @@ fn hub_nav_card<'a>(
     icon: char,
     icon_color: iced::Color,
     title: &'a str,
-    description: impl Into<String>,
+    leading: impl Into<String>,
+    cta: Option<&'a str>,
     on_press: Message,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     use forge_widgets::BOOTSTRAP_FONT;
-    use iced::widget::{button, column, container, text};
+    use iced::widget::{button, column, container, row, text};
     use iced::{Alignment, Background, Border, Color, Shadow};
 
-    let description: String = description.into();
+    let leading: String = leading.into();
 
     let icon_box = container(
         text(icon.to_string())
@@ -1284,10 +1285,25 @@ fn hub_nav_card<'a>(
         ..iced::widget::container::Style::default()
     });
 
+    let description_row: Element<'a, Message> = if let Some(cta_text) = cta {
+        row![
+            text(format!("{leading} \u{b7} "))
+                .size(FONT_CAPS)
+                .color(palette.text_muted),
+            text(cta_text).size(FONT_CAPS).color(palette.brand),
+        ]
+        .into()
+    } else {
+        text(leading)
+            .size(FONT_CAPS)
+            .color(palette.text_muted)
+            .into()
+    };
+
     let content = column![
         icon_box,
         text(title).size(FONT_BODY_LG).color(palette.text_primary),
-        text(description).size(FONT_CAPS).color(palette.text_muted),
+        description_row,
     ]
     .spacing(10.0)
     .width(Length::Fill);
@@ -1559,22 +1575,42 @@ fn hub_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message>
         .font(font(FontRole::Monospace));
 
     let platforms_connected = connected_count(app);
-    let actions_desc = format!(
-        "{} configured \u{b7} {} fired",
-        app.hub.actions_count.unwrap_or(0),
-        app.hub.triggers_fired.unwrap_or(0),
-    );
-    let commands_desc = format!(
-        "{} commands across chat",
-        app.hub.commands_count.unwrap_or(0),
-    );
-    let platforms_desc = format!("{platforms_connected} connected");
+    let stream_apps_connected: u8 = app.obs_client.is_some().into();
+
+    let actions_count = app.hub.actions_count.unwrap_or(0);
+    let commands_count = app.hub.commands_count.unwrap_or(0);
+    let triggers_fired = app.hub.triggers_fired.unwrap_or(0);
+
+    let (actions_leading, actions_cta) = if actions_count == 0 {
+        ("None yet".to_owned(), Some("create one"))
+    } else {
+        (
+            format!("{actions_count} configured \u{b7} {triggers_fired} fired"),
+            None,
+        )
+    };
+    let (commands_leading, commands_cta) = if commands_count == 0 {
+        ("None yet".to_owned(), Some("create one"))
+    } else {
+        (format!("{commands_count} commands across chat"), None)
+    };
+    let (platforms_leading, platforms_cta) = if platforms_connected == 0 {
+        ("0 connected".to_owned(), Some("connect"))
+    } else {
+        (format!("{platforms_connected} connected"), None)
+    };
+    let (stream_apps_leading, stream_apps_cta) = if stream_apps_connected == 0 {
+        ("0 connected".to_owned(), Some("connect"))
+    } else {
+        (format!("{stream_apps_connected} connected"), None)
+    };
 
     let actions_card = hub_nav_card(
         ICON_LIGHTNING,
         palette.brand,
         "Actions",
-        actions_desc,
+        actions_leading,
+        actions_cta,
         Message::Navigate(Screen::Actions),
         palette,
     );
@@ -1582,7 +1618,8 @@ fn hub_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message>
         ICON_TERMINAL,
         palette.info,
         "Commands",
-        commands_desc,
+        commands_leading,
+        commands_cta,
         Message::Navigate(Screen::Commands),
         palette,
     );
@@ -1590,7 +1627,8 @@ fn hub_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message>
         ICON_BROADCAST,
         palette.random,
         "Platforms",
-        platforms_desc,
+        platforms_leading,
+        platforms_cta,
         Message::Navigate(Screen::Platforms),
         palette,
     );
@@ -1598,7 +1636,8 @@ fn hub_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message>
         ICON_GRID,
         palette.success,
         "Stream apps",
-        "OBS, VTube Studio",
+        stream_apps_leading,
+        stream_apps_cta,
         Message::Navigate(Screen::StreamApps),
         palette,
     );
@@ -1613,11 +1652,19 @@ fn hub_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message>
     .width(Length::Fill);
 
     let recent_events = {
-        let live_dot = container(iced::widget::Space::new())
+        let events = app.bus.recent(4);
+        let is_empty = events.is_empty();
+
+        let status_dot_color = if is_empty {
+            palette.text_muted
+        } else {
+            palette.success
+        };
+        let status_dot = container(iced::widget::Space::new())
             .width(6.0)
             .height(6.0)
             .style(move |_theme: &Theme| iced::widget::container::Style {
-                background: Some(Background::Color(palette.success)),
+                background: Some(Background::Color(status_dot_color)),
                 border: Border {
                     radius: 3.0.into(),
                     color: iced::Color::TRANSPARENT,
@@ -1625,11 +1672,11 @@ fn hub_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message>
                 },
                 ..iced::widget::container::Style::default()
             });
-        let live_label = text("LIVE")
+        let status_label = text(if is_empty { "IDLE" } else { "LIVE" })
             .size(FONT_CAPS_SM)
             .color(palette.text_faint)
             .font(font(FontRole::Monospace));
-        let live_row = row![live_dot, live_label]
+        let status_row = row![status_dot, status_label]
             .spacing(5.0)
             .align_y(Alignment::Center);
 
@@ -1638,29 +1685,49 @@ fn hub_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message>
                 .size(FONT_BODY_LG)
                 .color(palette.text_primary),
             iced::widget::Space::new().width(Length::Fill),
-            live_row,
+            status_row,
         ]
         .align_y(Alignment::Center);
 
-        let events = app.bus.recent(4);
+        let body: Element<'a, Message> = if is_empty {
+            let icon = text(ICON_ACTIVITY.to_string())
+                .size(28.0)
+                .font(forge_widgets::BOOTSTRAP_FONT)
+                .color(palette.border_regular);
+            let primary = text("No events yet")
+                .size(FONT_BODY_MD)
+                .color(palette.text_secondary);
+            let secondary = text(
+                "Events will appear here as soon as you connect a platform and start streaming.",
+            )
+            .size(FONT_CAPS)
+            .color(palette.text_muted)
+            .wrapping(iced::widget::text::Wrapping::Word);
 
-        let mut events_col = column![header].spacing(0.0);
-
-        if events.is_empty() {
-            events_col = events_col.push(
-                text("No events yet \u{2014} interact with the app to see live activity here.")
-                    .size(FONT_BODY_SM)
-                    .color(palette.text_faint),
-            );
+            container(
+                column![icon, primary, secondary]
+                    .spacing(6.0)
+                    .align_x(Alignment::Center),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill)
+            .padding(20.0)
+            .into()
         } else {
+            let mut events_col = column![].spacing(0.0);
             let count = events.len();
             for (i, event) in events.iter().enumerate() {
                 let has_border = i + 1 < count;
                 events_col = events_col.push(hub_event_row(event, has_border, palette));
             }
-        }
+            events_col.into()
+        };
 
-        container(events_col)
+        let card_content = column![header, body].spacing(10.0);
+
+        container(card_content)
             .width(Length::FillPortion(7))
             .padding(14.0)
             .style(hub_card_style(palette))
@@ -1671,31 +1738,53 @@ fn hub_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message>
             .size(FONT_BODY_LG)
             .color(palette.text_primary);
 
+        let actions_color = if actions_count == 0 {
+            palette.text_muted
+        } else {
+            palette.brand
+        };
+        let commands_color = if commands_count == 0 {
+            palette.text_muted
+        } else {
+            palette.info
+        };
+        let triggers_color = if triggers_fired == 0 {
+            palette.text_muted
+        } else {
+            palette.success
+        };
+        let globals_count = app.hub.globals_count.unwrap_or(0);
+        let globals_color = if globals_count == 0 {
+            palette.text_muted
+        } else {
+            palette.warning
+        };
+
         let actions_row = hub_stat_row(
             "Actions",
             fmt_count(app.hub.actions_count),
-            palette.brand,
+            actions_color,
             true,
             palette,
         );
         let commands_row = hub_stat_row(
             "Commands",
             fmt_count(app.hub.commands_count),
-            palette.info,
+            commands_color,
             true,
             palette,
         );
         let triggers_row = hub_stat_row(
             "Triggers fired",
             fmt_count(app.hub.triggers_fired),
-            palette.success,
+            triggers_color,
             true,
             palette,
         );
         let globals_row = hub_stat_row(
             "Globals",
             fmt_count(app.hub.globals_count),
-            palette.warning,
+            globals_color,
             false,
             palette,
         );

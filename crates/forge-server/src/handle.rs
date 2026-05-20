@@ -97,6 +97,10 @@ impl ServerHandle {
         self.inner.lock().await.bind_addr
     }
 
+    pub async fn server_info(&self) -> Arc<crate::server_info::ServerInfo> {
+        Arc::clone(&self.inner.lock().await.state.server_info)
+    }
+
     pub fn abort(&self) {
         let inner = Arc::clone(&self.inner);
         tokio::spawn(async move {

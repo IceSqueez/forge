@@ -76,6 +76,14 @@ impl ServerSubsystem {
         self.handle.read().await.is_some()
     }
 
+    pub async fn server_info(&self) -> Option<Arc<forge_server::ServerInfo>> {
+        let guard = self.handle.read().await;
+        match guard.as_ref() {
+            Some(handle) => Some(handle.server_info().await),
+            None => None,
+        }
+    }
+
     pub async fn bearer_token(&self) -> Result<Option<String>, ServerError> {
         let id = CredentialId::new(BEARER_CREDENTIAL_ID);
         self.credentials

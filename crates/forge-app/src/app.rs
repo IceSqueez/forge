@@ -4298,6 +4298,17 @@ pub fn view(app: &App) -> Element<'_, Message> {
     page_shell(title_bar, None, sidebar, content)
 }
 
+fn format_short_duration(d: time::Duration) -> String {
+    let secs = d.whole_seconds().max(0);
+    if secs < 60 {
+        format!("{secs}s")
+    } else if secs < 3600 {
+        format!("{}m", secs / 60)
+    } else {
+        format!("{}h", secs / 3600)
+    }
+}
+
 pub fn subscription(app: &App) -> Subscription<Message> {
     use iced::advanced::subscription::{EventStream, Hasher, Recipe, from_recipe};
     use iced::futures::StreamExt as _;
@@ -4334,9 +4345,64 @@ pub fn subscription(app: &App) -> Subscription<Message> {
 
     let bus = from_recipe(BusRecipe(app.bus.clone()));
 
+    struct ServerMetricsRecipe(Arc<crate::server_subsystem::ServerSubsystem>);
+
+    impl Recipe for ServerMetricsRecipe {
+        type Output = Message;
+
+        fn hash(&self, state: &mut Hasher) {
+            use std::hash::Hash as _;
+            "server-metrics-tick".hash(state);
+            (Arc::as_ptr(&self.0) as usize).hash(state);
+        }
+
+        fn stream(
+            self: Box<Self>,
+            _input: EventStream,
+        ) -> iced::futures::stream::BoxStream<'static, Self::Output> {
+            let subsystem = self.0;
+            iced::stream::channel(
+                4,
+                |mut tx: iced::futures::channel::mpsc::Sender<Message>| async move {
+                    let mut ticker = tokio::time::interval(std::time::Duration::from_secs(1));
+                    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                    loop {
+                        ticker.tick().await;
+                        let Some(info) = subsystem.server_info().await else {
+                            continue;
+                        };
+                        let clients_guard = info.connected_clients.read().await;
+                        let mut rows: Vec<crate::server_screen::OwnedClientRow> = Vec::new();
+                        for client in clients_guard.values() {
+                            rows.push(crate::server_screen::OwnedClientRow {
+                                identification: (**client.identification.load()).clone(),
+                                client_type_label: client.client_type.load().type_str().to_owned(),
+                                subscriptions: Vec::new(),
+                                events_per_second: client.events_per_second(),
+                                uptime_short: format_short_duration(client.uptime()),
+                                active: true,
+                            });
+                        }
+                        drop(clients_guard);
+                        let snapshot = crate::server_screen::ServerInfoSnapshot {
+                            uptime_seconds: info.uptime_seconds(),
+                            connected_clients: rows,
+                            stats: crate::server_screen::ServerStats::default(),
+                        };
+                        let _ = tx.try_send(Message::Server(ServerScreenMsg::ServerInfoArrived(
+                            snapshot,
+                        )));
+                        let kbps = info.bandwidth.current_bps() as f32 / 1000.0;
+                        let _ = tx.try_send(Message::Server(ServerScreenMsg::BandwidthTick(kbps)));
+                    }
+                },
+            )
+            .boxed()
+        }
+    }
+
     let server_tick = if matches!(app.screen, Screen::Server) {
-        iced::time::every(std::time::Duration::from_secs(1))
-            .map(|_| Message::Server(ServerScreenMsg::BandwidthTick(0.0)))
+        from_recipe(ServerMetricsRecipe(Arc::clone(&app.server_subsystem)))
     } else {
         Subscription::none()
     };

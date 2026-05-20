@@ -3,7 +3,9 @@ use crate::error::SqliteStorageError;
 pub static MIGRATIONS: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 
 pub async fn apply(pool: &sqlx::SqlitePool) -> Result<(), SqliteStorageError> {
-    MIGRATIONS
+    let mut migrator = sqlx::migrate!("./migrations");
+    migrator.set_ignore_missing(true);
+    migrator
         .run(pool)
         .await
         .map_err(|e| SqliteStorageError::Migration {

@@ -4465,15 +4465,65 @@ pub fn subscription(app: &App) -> Subscription<Message> {
         Subscription::none()
     };
 
-    if let Some(state) = app.integration_detail.as_ref() {
-        Subscription::batch([bus, health_subscription(state), server_tick])
+    let soundboard_keys = if matches!(app.screen, Screen::Soundboard) {
+        iced::keyboard::listen().filter_map(soundboard_hotkey_filter)
     } else {
-        Subscription::batch([bus, server_tick])
+        Subscription::none()
+    };
+
+    if let Some(state) = app.integration_detail.as_ref() {
+        Subscription::batch([
+            bus,
+            health_subscription(state),
+            server_tick,
+            soundboard_keys,
+        ])
+    } else {
+        Subscription::batch([bus, server_tick, soundboard_keys])
     }
 }
 
 pub fn theme_callback(app: &App) -> Theme {
     app.theme.clone()
+}
+
+fn soundboard_hotkey_filter(event: iced::keyboard::Event) -> Option<Message> {
+    use iced::keyboard::Event::KeyPressed;
+    use iced::keyboard::Key::Character;
+    use iced::keyboard::key::Named;
+
+    let KeyPressed { key, modifiers, .. } = event else {
+        return None;
+    };
+
+    let label = match &key {
+        Character(c) => {
+            if modifiers.control() {
+                format!("Ctrl+{}", c.to_uppercase())
+            } else if modifiers.shift() {
+                format!("Shift+{}", c.to_uppercase())
+            } else {
+                return None;
+            }
+        }
+        iced::keyboard::Key::Named(Named::F1) => "F1".to_string(),
+        iced::keyboard::Key::Named(Named::F2) => "F2".to_string(),
+        iced::keyboard::Key::Named(Named::F3) => "F3".to_string(),
+        iced::keyboard::Key::Named(Named::F4) => "F4".to_string(),
+        iced::keyboard::Key::Named(Named::F5) => "F5".to_string(),
+        iced::keyboard::Key::Named(Named::F6) => "F6".to_string(),
+        iced::keyboard::Key::Named(Named::F7) => "F7".to_string(),
+        iced::keyboard::Key::Named(Named::F8) => "F8".to_string(),
+        iced::keyboard::Key::Named(Named::F9) => "F9".to_string(),
+        iced::keyboard::Key::Named(Named::F10) => "F10".to_string(),
+        iced::keyboard::Key::Named(Named::F11) => "F11".to_string(),
+        iced::keyboard::Key::Named(Named::F12) => "F12".to_string(),
+        _ => return None,
+    };
+
+    Some(Message::Soundboard(
+        crate::message::SoundboardMsg::HotkeyPressed(label),
+    ))
 }
 
 #[cfg(test)]

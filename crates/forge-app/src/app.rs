@@ -1233,7 +1233,7 @@ fn event_kind_description(source: EventSource, kind: &str) -> String {
 }
 
 fn fmt_count<T: std::fmt::Display>(v: Option<T>) -> String {
-    v.map_or_else(|| "\u{2014}".to_string(), |n| n.to_string())
+    v.map_or_else(|| "0".to_string(), |n| n.to_string())
 }
 
 fn hub_card_style(
@@ -1726,7 +1726,7 @@ fn hub_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message>
         let card_content = column![header, body].spacing(10.0);
 
         container(card_content)
-            .width(Length::FillPortion(7))
+            .width(Length::FillPortion(1))
             .padding(14.0)
             .style(hub_card_style(palette))
     };
@@ -1780,10 +1780,10 @@ fn hub_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message>
             palette,
         );
         let globals_row = hub_stat_row(
-            "Globals",
+            "Global variables",
             fmt_count(app.hub.globals_count),
             globals_color,
-            false,
+            true,
             palette,
         );
 
@@ -1791,7 +1791,7 @@ fn hub_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message>
             column![header, actions_row, commands_row, triggers_row, globals_row].spacing(4.0);
 
         container(stats_col)
-            .width(Length::FillPortion(5))
+            .width(Length::FillPortion(1))
             .padding(14.0)
             .style(hub_card_style(palette))
     };

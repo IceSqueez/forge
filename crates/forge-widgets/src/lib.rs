@@ -15,6 +15,7 @@ pub mod integration;
 pub mod layout;
 pub mod navigation;
 pub mod onboarding;
+pub mod output_device_picker;
 pub mod palette;
 pub mod picker;
 pub mod sections;
@@ -74,6 +75,7 @@ pub use onboarding::{
     numbered_box_step, onboarding_footer, onboarding_step_header, onboarding_stepper,
     platform_picker_card,
 };
+pub use output_device_picker::{DeviceLabel, output_device_picker};
 pub use palette::{CATPPUCCIN_MOCHA, ForgePalette, LATTE, TOKYO_NIGHT};
 pub use picker::{PickerItem, PickerModalProps, picker_modal};
 pub use sections::{

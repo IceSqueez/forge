@@ -17,6 +17,7 @@ pub enum EventSource {
     Hotkey,
     Timer,
     Server,
+    Audio,
 }
 
 #[cfg(test)]
@@ -41,6 +42,7 @@ mod tests {
             EventSource::Hotkey,
             EventSource::Timer,
             EventSource::Server,
+            EventSource::Audio,
         ];
         for src in variants {
             let json = serde_json::to_string(&src).unwrap();
@@ -50,7 +52,7 @@ mod tests {
     }
 
     #[test]
-    fn source_count_is_fourteen() {
+    fn source_count_is_fifteen() {
         let variants = [
             EventSource::Twitch,
             EventSource::YouTube,
@@ -66,11 +68,12 @@ mod tests {
             EventSource::Hotkey,
             EventSource::Timer,
             EventSource::Server,
+            EventSource::Audio,
         ];
         assert_eq!(
             variants.len(),
-            14,
-            "EventSource must have exactly 14 variants per CLAUDE.md §12b"
+            15,
+            "EventSource must have exactly 15 variants per CLAUDE.md §12b"
         );
     }
 }

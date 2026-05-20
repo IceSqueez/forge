@@ -1706,6 +1706,7 @@ fn event_source_color(source: EventSource, palette: &ForgePalette) -> iced::Colo
         EventSource::Hotkey => palette.info,
         EventSource::Timer => palette.warning,
         EventSource::Server => palette.info,
+        EventSource::Audio => palette.bits,
     }
 }
 
@@ -1725,6 +1726,7 @@ fn event_source_label(source: EventSource) -> &'static str {
         EventSource::Hotkey => "hotkey",
         EventSource::Timer => "timer",
         EventSource::Server => "server",
+        EventSource::Audio => "audio",
     }
 }
 
@@ -1744,6 +1746,7 @@ fn event_kind_description(source: EventSource, kind: &str) -> String {
         EventSource::Hotkey => "Hotkey",
         EventSource::Timer => "Timer",
         EventSource::Server => "Server",
+        EventSource::Audio => "Audio",
     };
     format!("{src_label}: {kind}")
 }

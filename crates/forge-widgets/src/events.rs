@@ -26,6 +26,7 @@ pub fn color_for_source(source: EventSource, palette: &ForgePalette) -> Color {
         EventSource::Hotkey => palette.bits,
         EventSource::Timer => palette.warning,
         EventSource::Server => palette.info,
+        EventSource::Audio => palette.bits,
     }
 }
 
@@ -45,6 +46,7 @@ fn source_label(source: EventSource) -> &'static str {
         EventSource::Hotkey => "HOTKEY",
         EventSource::Timer => "TIMER",
         EventSource::Server => "SERVER",
+        EventSource::Audio => "AUDIO",
     }
 }
 
@@ -646,6 +648,7 @@ mod tests {
             EventSource::Hotkey,
             EventSource::Timer,
             EventSource::Server,
+            EventSource::Audio,
         ];
         for source in sources {
             let _: iced::Element<'_, ()> = source_badge(source, palette);

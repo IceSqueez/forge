@@ -146,18 +146,11 @@ impl DeviceCodePoller {
                         truncate_for_log(&body_text)
                     ),
                 })?;
-            let scopes = body
-                .scope
-                .as_deref()
-                .unwrap_or("")
-                .split_whitespace()
-                .map(str::to_owned)
-                .collect();
             return Ok(PollOutcome::Success(TokenResponse {
                 access_token: OAuthToken::new(body.access_token),
                 refresh_token: body.refresh_token.map(RefreshToken::new),
                 expires_in: Duration::from_secs(body.expires_in),
-                scopes,
+                scopes: body.scope,
             }));
         }
 
@@ -264,7 +257,25 @@ struct TokenEndpointSuccess {
     access_token: String,
     refresh_token: Option<String>,
     expires_in: u64,
-    scope: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_scope")]
+    scope: Vec<String>,
+}
+
+fn deserialize_scope<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum ScopeForm {
+        Spaced(String),
+        Array(Vec<String>),
+    }
+    Option::<ScopeForm>::deserialize(deserializer).map(|opt| match opt {
+        Some(ScopeForm::Spaced(s)) => s.split_whitespace().map(str::to_owned).collect(),
+        Some(ScopeForm::Array(v)) => v,
+        None => Vec::new(),
+    })
 }
 
 #[derive(Debug, Deserialize)]

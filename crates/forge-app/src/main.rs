@@ -139,7 +139,13 @@ fn main() -> iced::Result {
     tracing_subscriber::fmt().with_env_filter("info").init();
     tracing::info!("forge starting");
 
-    let runtime = tokio::runtime::Runtime::new().expect("tokio runtime required for forge");
+    let runtime = match tokio::runtime::Runtime::new() {
+        Ok(rt) => rt,
+        Err(e) => {
+            tracing::error!("failed to create tokio runtime: {e}");
+            return Ok(());
+        }
+    };
     let _runtime_guard = runtime.enter();
 
     let (backend, storage_offline) = boot_storage();

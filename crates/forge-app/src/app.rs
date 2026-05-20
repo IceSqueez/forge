@@ -406,17 +406,19 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 } else {
                     Some(bundle.login.clone())
                 };
+                let tracker = forge_platform_twitch::SubscriptionTracker::default();
                 let chat = forge_platform_twitch::TwitchChat::new(
                     forge_types::OAuthToken::new(bundle.access_token),
                     bundle.client_id,
                     bundle.user_id.clone(),
                     bundle.user_id,
                     Arc::clone(&app.bus),
+                    Arc::clone(&tracker),
                 );
                 let handle = chat.start();
                 let state_rx = handle.state_receiver();
                 let (twitch_bundle, _health_tx) =
-                    TwitchIntegrationBundle::new(login.clone(), state_rx);
+                    TwitchIntegrationBundle::new(login.clone(), state_rx, tracker);
                 let id = IntegrationId::new("twitch");
                 let icon = SectionIcon::new("brand-twitch");
                 let status: Arc<dyn IntegrationStatus> = twitch_bundle.clone();
@@ -665,16 +667,19 @@ fn handle_twitch_panel_msg(
             );
             let login = Some(outcome.user_info.login.clone());
             app.twitch_login = login.clone();
+            let tracker = forge_platform_twitch::SubscriptionTracker::default();
             let chat = forge_platform_twitch::TwitchChat::new(
                 outcome.token,
                 outcome.client_id,
                 outcome.user_info.id.clone(),
                 outcome.user_info.id,
                 Arc::clone(&app.bus),
+                Arc::clone(&tracker),
             );
             let handle = chat.start();
             let state_rx = handle.state_receiver();
-            let (twitch_bundle, _health_tx) = TwitchIntegrationBundle::new(login, state_rx);
+            let (twitch_bundle, _health_tx) =
+                TwitchIntegrationBundle::new(login, state_rx, tracker);
             let id = IntegrationId::new("twitch");
             let icon = SectionIcon::new("brand-twitch");
             let status: Arc<dyn IntegrationStatus> = twitch_bundle.clone();
@@ -1522,7 +1527,8 @@ async fn reconnect_twitch(backend: Arc<SqliteBackend>, bus: Arc<EventBus>) -> Re
         .to_owned();
 
     let token = forge_types::OAuthToken::new(access);
-    TwitchChat::new(token, cid, user_id.clone(), user_id, bus).start();
+    let tracker = forge_platform_twitch::SubscriptionTracker::default();
+    TwitchChat::new(token, cid, user_id.clone(), user_id, bus, tracker).start();
     Ok(())
 }
 

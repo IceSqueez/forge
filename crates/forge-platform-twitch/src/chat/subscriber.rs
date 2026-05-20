@@ -1,19 +1,17 @@
+use crate::subscriptions::{SubStatus, SubscriptionRecord, SubscriptionTracker};
 use forge_events::{Event, EventSource};
 use forge_runtime::EventBus;
 use forge_types::OAuthToken;
 use serde::Deserialize;
 use std::sync::Arc;
 use thiserror::Error;
+use tracing::warn;
 
 const EVENTSUB_URL: &str = "https://api.twitch.tv/helix/eventsub/subscriptions";
 const EVENTSUB_PATH: &str = "/helix/eventsub/subscriptions";
 
 #[derive(Debug, Error)]
 pub(crate) enum SubscribeError {
-    #[error("subscription HTTP {status}: {body}")]
-    Http { status: u16, body: String },
-    #[error("network error during subscription: {0}")]
-    Network(String),
     #[error("scope missing; re-authentication required")]
     ScopeMissing,
 }
@@ -31,90 +29,213 @@ struct SubscriptionData {
     condition: serde_json::Value,
 }
 
-pub(crate) async fn subscribe_chat_message(
+struct TopicSpec {
+    kind: &'static str,
+    version: &'static str,
+    condition_fn: fn(&str, &str) -> serde_json::Value,
+}
+
+fn condition_broadcaster(broadcaster_id: &str, _user_id: &str) -> serde_json::Value {
+    serde_json::json!({ "broadcaster_user_id": broadcaster_id })
+}
+
+fn condition_chat(broadcaster_id: &str, user_id: &str) -> serde_json::Value {
+    serde_json::json!({
+        "broadcaster_user_id": broadcaster_id,
+        "user_id": user_id,
+    })
+}
+
+fn condition_follow(broadcaster_id: &str, user_id: &str) -> serde_json::Value {
+    serde_json::json!({
+        "broadcaster_user_id": broadcaster_id,
+        "moderator_user_id": user_id,
+    })
+}
+
+fn condition_raid(broadcaster_id: &str, _user_id: &str) -> serde_json::Value {
+    serde_json::json!({ "to_broadcaster_user_id": broadcaster_id })
+}
+
+const TOPICS: &[TopicSpec] = &[
+    TopicSpec {
+        kind: "channel.chat.message",
+        version: "1",
+        condition_fn: condition_chat,
+    },
+    TopicSpec {
+        kind: "channel.subscribe",
+        version: "1",
+        condition_fn: condition_broadcaster,
+    },
+    TopicSpec {
+        kind: "channel.subscription.gift",
+        version: "1",
+        condition_fn: condition_broadcaster,
+    },
+    TopicSpec {
+        kind: "channel.subscription.message",
+        version: "1",
+        condition_fn: condition_broadcaster,
+    },
+    TopicSpec {
+        kind: "channel.cheer",
+        version: "1",
+        condition_fn: condition_broadcaster,
+    },
+    TopicSpec {
+        kind: "channel.follow",
+        version: "2",
+        condition_fn: condition_follow,
+    },
+    TopicSpec {
+        kind: "channel.raid",
+        version: "1",
+        condition_fn: condition_raid,
+    },
+    TopicSpec {
+        kind: "stream.online",
+        version: "1",
+        condition_fn: condition_broadcaster,
+    },
+    TopicSpec {
+        kind: "stream.offline",
+        version: "1",
+        condition_fn: condition_broadcaster,
+    },
+];
+
+pub(crate) async fn subscribe_all(
     token: &OAuthToken,
     client_id: &str,
     session_id: &str,
     broadcaster_id: &str,
     user_id: &str,
     bus: &Arc<EventBus>,
+    tracker: &SubscriptionTracker,
 ) -> Result<(), SubscribeError> {
-    let http = reqwest::Client::new();
-    let body = serde_json::json!({
-        "type": "channel.chat.message",
-        "version": "1",
-        "condition": {
-            "broadcaster_user_id": broadcaster_id,
-            "user_id": user_id
-        },
-        "transport": {
-            "method": "websocket",
-            "session_id": session_id
-        }
-    });
-
-    let resp = http
-        .post(EVENTSUB_URL)
-        .header("Authorization", format!("Bearer {}", token.expose()))
-        .header("Client-Id", client_id)
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| SubscribeError::Network(e.to_string()))?;
-
-    let status = resp.status().as_u16();
-
-    if status == 401 {
-        bus.publish(Event::new(
-            EventSource::Twitch,
-            "request.fail",
-            serde_json::json!({
-                "endpoint": EVENTSUB_PATH,
-                "status_code": status,
-                "body_snippet": "unauthorized",
-                "retry_after_secs": null,
-            }),
-        ));
-        return Err(SubscribeError::ScopeMissing);
-    }
-
-    if !resp.status().is_success() {
-        let retry_after = extract_retry_after(&resp);
-        let body_text = resp.text().await.unwrap_or_default();
-        let body_snippet: String = body_text.chars().take(200).collect();
-        bus.publish(Event::new(
-            EventSource::Twitch,
-            "request.fail",
-            serde_json::json!({
-                "endpoint": EVENTSUB_PATH,
-                "status_code": status,
-                "body_snippet": body_snippet,
-                "retry_after_secs": retry_after,
-            }),
-        ));
-        return Err(SubscribeError::Http {
-            status,
-            body: body_text,
-        });
-    }
-
-    let body_text = resp.text().await.unwrap_or_default();
-    if let Ok(parsed) = serde_json::from_str::<SubscribeResponse>(&body_text)
-        && let Some(sub) = parsed.data.first()
     {
-        bus.publish(Event::new(
-            EventSource::Twitch,
-            "eventsub.subscription.created",
-            serde_json::json!({
-                "type": sub.subscription_type,
-                "subscription_id": sub.id,
-                "condition": sub.condition,
-            }),
-        ));
+        let mut records = tracker.write().unwrap_or_else(|p| p.into_inner());
+        records.clear();
+        for topic in TOPICS {
+            records.push(SubscriptionRecord {
+                kind: topic.kind.to_owned(),
+                version: topic.version.to_owned(),
+                status: SubStatus::Pending,
+                subscription_id: None,
+            });
+        }
+    }
+
+    let http = reqwest::Client::new();
+
+    for (i, topic) in TOPICS.iter().enumerate() {
+        let condition = (topic.condition_fn)(broadcaster_id, user_id);
+        let body = serde_json::json!({
+            "type": topic.kind,
+            "version": topic.version,
+            "condition": condition,
+            "transport": {
+                "method": "websocket",
+                "session_id": session_id,
+            }
+        });
+
+        let result = http
+            .post(EVENTSUB_URL)
+            .header("Authorization", format!("Bearer {}", token.expose()))
+            .header("Client-Id", client_id)
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .await;
+
+        match result {
+            Err(e) => {
+                let reason = e.to_string();
+                warn!(kind = topic.kind, error = %reason, "eventsub subscription network error");
+                set_tracker_status(tracker, i, SubStatus::Failed(reason));
+            }
+            Ok(resp) => {
+                let status = resp.status().as_u16();
+
+                if status == 401 {
+                    bus.publish(Event::new(
+                        EventSource::Twitch,
+                        "request.fail",
+                        serde_json::json!({
+                            "endpoint": EVENTSUB_PATH,
+                            "status_code": status,
+                            "body_snippet": "unauthorized",
+                            "retry_after_secs": null,
+                        }),
+                    ));
+                    set_tracker_status(tracker, i, SubStatus::Failed("unauthorized".to_owned()));
+                    return Err(SubscribeError::ScopeMissing);
+                }
+
+                if !resp.status().is_success() {
+                    let retry_after = extract_retry_after(&resp);
+                    let body_text = resp.text().await.unwrap_or_default();
+                    let body_snippet: String = body_text.chars().take(200).collect();
+                    warn!(
+                        kind = topic.kind,
+                        status,
+                        snippet = %body_snippet,
+                        "eventsub subscription failed; continuing"
+                    );
+                    bus.publish(Event::new(
+                        EventSource::Twitch,
+                        "request.fail",
+                        serde_json::json!({
+                            "endpoint": EVENTSUB_PATH,
+                            "status_code": status,
+                            "body_snippet": body_snippet,
+                            "retry_after_secs": retry_after,
+                        }),
+                    ));
+                    set_tracker_status(tracker, i, SubStatus::Failed(format!("HTTP {status}")));
+                    continue;
+                }
+
+                let body_text = resp.text().await.unwrap_or_default();
+                if let Ok(parsed) = serde_json::from_str::<SubscribeResponse>(&body_text)
+                    && let Some(sub) = parsed.data.first()
+                {
+                    bus.publish(Event::new(
+                        EventSource::Twitch,
+                        "eventsub.subscription.created",
+                        serde_json::json!({
+                            "type": sub.subscription_type,
+                            "subscription_id": sub.id,
+                            "condition": sub.condition,
+                        }),
+                    ));
+                    let sub_id = sub.id.clone();
+                    let mut records = tracker.write().unwrap_or_else(|p| p.into_inner());
+                    if let Some(rec) = records.get_mut(i) {
+                        rec.status = SubStatus::Active;
+                        rec.subscription_id = Some(sub_id);
+                    }
+                } else {
+                    set_tracker_status(
+                        tracker,
+                        i,
+                        SubStatus::Failed("unreadable response".to_owned()),
+                    );
+                }
+            }
+        }
     }
 
     Ok(())
+}
+
+fn set_tracker_status(tracker: &SubscriptionTracker, index: usize, status: SubStatus) {
+    let mut records = tracker.write().unwrap_or_else(|p| p.into_inner());
+    if let Some(rec) = records.get_mut(index) {
+        rec.status = status;
+    }
 }
 
 fn extract_retry_after(resp: &reqwest::Response) -> Option<u64> {
@@ -129,16 +250,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn subscribe_error_displays_non_empty() {
-        let e = SubscribeError::Http {
-            status: 400,
-            body: "bad request".into(),
-        };
-        assert!(!e.to_string().is_empty());
-
-        let e = SubscribeError::Network("timeout".into());
-        assert!(!e.to_string().is_empty());
-
+    fn subscribe_error_scope_missing_displays_non_empty() {
         let e = SubscribeError::ScopeMissing;
         assert!(!e.to_string().is_empty());
     }

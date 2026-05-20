@@ -6,6 +6,7 @@ mod subscriber;
 pub use send::{ChatSendError, SentMessageId, send_chat};
 pub use session::ChatConnectionState;
 
+use crate::subscriptions::SubscriptionTracker;
 use forge_runtime::EventBus;
 use forge_types::OAuthToken;
 use std::sync::Arc;
@@ -17,6 +18,7 @@ pub struct TwitchChat {
     broadcaster_id: String,
     user_id: String,
     bus: Arc<EventBus>,
+    tracker: SubscriptionTracker,
 }
 
 pub struct TwitchChatHandle {
@@ -31,6 +33,7 @@ impl TwitchChat {
         broadcaster_id: String,
         user_id: String,
         bus: Arc<EventBus>,
+        tracker: SubscriptionTracker,
     ) -> Self {
         Self {
             token,
@@ -38,6 +41,7 @@ impl TwitchChat {
             broadcaster_id,
             user_id,
             bus,
+            tracker,
         }
     }
 
@@ -49,6 +53,7 @@ impl TwitchChat {
             self.broadcaster_id,
             self.user_id,
             self.bus,
+            self.tracker,
         );
         tokio::spawn(sess.run());
         TwitchChatHandle {

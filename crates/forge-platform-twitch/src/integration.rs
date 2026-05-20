@@ -10,23 +10,27 @@ use forge_platform_core::{
     CapabilityFlags, ConnectionState, ContentList, ContentListItem, DetailSection, HeaderAction,
     HealthDelta, HealthMetric, HealthStream, HealthValue, IntegrationContent, IntegrationHealth,
     IntegrationId, IntegrationStatus, ListFooter, QuickAction, QuickActions, SectionIcon,
+    TrailingToken,
 };
 use forge_types::SubActionSpec;
 
 use crate::TWITCH_BROADCASTER_SCOPES;
 use crate::chat::ChatConnectionState;
+use crate::subscriptions::{SubStatus, SubscriptionTracker};
 
 pub struct TwitchIntegrationBundle {
     id: IntegrationId,
     login: Option<String>,
     state_rx: watch::Receiver<ChatConnectionState>,
     health_tx: broadcast::Sender<HealthDelta>,
+    tracker: SubscriptionTracker,
 }
 
 impl TwitchIntegrationBundle {
     pub fn new(
         login: Option<String>,
         state_rx: watch::Receiver<ChatConnectionState>,
+        tracker: SubscriptionTracker,
     ) -> (Arc<Self>, broadcast::Sender<HealthDelta>) {
         let (health_tx, _) = broadcast::channel(16);
         let bundle = Arc::new(Self {
@@ -34,6 +38,7 @@ impl TwitchIntegrationBundle {
             login,
             state_rx,
             health_tx: health_tx.clone(),
+            tracker,
         });
         (bundle, health_tx)
     }
@@ -59,6 +64,14 @@ impl TwitchIntegrationBundle {
             ChatConnectionState::Reconnecting { .. } => "Reconnecting".to_owned(),
             ChatConnectionState::Disconnected => "Disconnected".to_owned(),
         }
+    }
+
+    fn active_sub_count(&self) -> usize {
+        let records = self.tracker.read().unwrap_or_else(|p| p.into_inner());
+        records
+            .iter()
+            .filter(|r| matches!(r.status, SubStatus::Active))
+            .count()
     }
 }
 
@@ -108,6 +121,7 @@ impl IntegrationHealth for TwitchIntegrationBundle {
     fn metrics(&self) -> [HealthMetric; 4] {
         let chat_active = self.is_chat_connected();
         let chat_label = self.chat_label();
+        let active_count = self.active_sub_count();
 
         [
             HealthMetric {
@@ -120,15 +134,13 @@ impl IntegrationHealth for TwitchIntegrationBundle {
             },
             HealthMetric {
                 label: "EventSub".to_owned(),
-                // TODO Phase 2: fetch live sub count from EventSub WS session
                 value: HealthValue::Text {
-                    primary: "0 subs".to_owned(),
+                    primary: format!("{active_count} subs"),
                     secondary: Some("WebSocket".to_owned()),
                 },
             },
             HealthMetric {
                 label: "Viewers".to_owned(),
-                // TODO Phase 2: fetch from Helix get_streams
                 value: HealthValue::Text {
                     primary: "\u{2014}".to_owned(),
                     secondary: None,
@@ -136,7 +148,6 @@ impl IntegrationHealth for TwitchIntegrationBundle {
             },
             HealthMetric {
                 label: "API Calls".to_owned(),
-                // TODO Phase 2: track Helix rate-limit headers
                 value: HealthValue::Text {
                     primary: "\u{2014}".to_owned(),
                     secondary: None,
@@ -178,12 +189,40 @@ impl IntegrationContent for TwitchIntegrationBundle {
             }),
         };
 
-        // TODO Phase 2: populate from live EventSub WebSocket subscriptions.
+        let records = self.tracker.read().unwrap_or_else(|p| p.into_inner());
+        let active_count = records
+            .iter()
+            .filter(|r| matches!(r.status, SubStatus::Active))
+            .count();
+
+        let sub_items: Vec<ContentListItem> = records
+            .iter()
+            .map(|r| {
+                let (active, status_label) = match &r.status {
+                    SubStatus::Active => (true, "active".to_owned()),
+                    SubStatus::Pending => (false, "pending".to_owned()),
+                    SubStatus::Failed(_) => (false, "failed".to_owned()),
+                };
+                ContentListItem {
+                    icon: SectionIcon::new("circle"),
+                    name: r.kind.clone(),
+                    monospace_name: true,
+                    active,
+                    active_label: None,
+                    trailing: vec![
+                        TrailingToken::Label(format!("v{}", r.version)),
+                        TrailingToken::Label(status_label),
+                    ],
+                    enabled: true,
+                }
+            })
+            .collect();
+
         let eventsub_list = ContentList {
             title: "EventSub subscriptions".to_owned(),
             icon: SectionIcon::new("rss"),
-            count_label: Some("0 active".to_owned()),
-            items: vec![],
+            count_label: Some(format!("{active_count} active")),
+            items: sub_items,
             footer: Some(ListFooter {
                 cta_label: Some("Subscribe to event".to_owned()),
                 trailing_label: Some("subscribing on session start".to_owned()),
@@ -200,8 +239,6 @@ impl IntegrationContent for TwitchIntegrationBundle {
 impl QuickActions for TwitchIntegrationBundle {
     fn actions(&self) -> Vec<QuickAction> {
         let connected = self.is_chat_connected();
-        // TODO Phase 2: each action emits a typed Twitch sub-action; for now we
-        // route through SendChat / Log templates as placeholder targets.
         vec![
             QuickAction {
                 label: "Send chat message".to_owned(),
@@ -254,11 +291,19 @@ mod tests {
     use tokio::sync::watch;
 
     use super::*;
+    use crate::subscriptions::{SubStatus, SubscriptionRecord, SubscriptionTracker};
 
     fn make_bundle(state: ChatConnectionState) -> Arc<TwitchIntegrationBundle> {
+        make_bundle_with_tracker(state, SubscriptionTracker::default())
+    }
+
+    fn make_bundle_with_tracker(
+        state: ChatConnectionState,
+        tracker: SubscriptionTracker,
+    ) -> Arc<TwitchIntegrationBundle> {
         let (tx, rx) = watch::channel(state);
         let _ = tx;
-        let (bundle, _) = TwitchIntegrationBundle::new(Some("streamer".to_owned()), rx);
+        let (bundle, _) = TwitchIntegrationBundle::new(Some("streamer".to_owned()), rx, tracker);
         bundle
     }
 
@@ -349,6 +394,33 @@ mod tests {
         assert_eq!(label, "Disconnected");
     }
 
+    #[test]
+    fn eventsub_metric_shows_active_count_from_tracker() {
+        let tracker = SubscriptionTracker::default();
+        {
+            let mut records = tracker.write().unwrap();
+            records.push(SubscriptionRecord {
+                kind: "channel.chat.message".to_owned(),
+                version: "1".to_owned(),
+                status: SubStatus::Active,
+                subscription_id: Some("sub-1".to_owned()),
+            });
+            records.push(SubscriptionRecord {
+                kind: "channel.subscribe".to_owned(),
+                version: "1".to_owned(),
+                status: SubStatus::Pending,
+                subscription_id: None,
+            });
+        }
+        let b = make_bundle_with_tracker(ChatConnectionState::Connected, tracker);
+        let health: &dyn IntegrationHealth = b.as_ref();
+        let metrics = health.metrics();
+        let HealthValue::Text { primary, .. } = &metrics[1].value else {
+            panic!("expected Text variant for EventSub metric");
+        };
+        assert_eq!(primary, "1 subs");
+    }
+
     #[tokio::test]
     async fn health_stream_is_subscribable() {
         let b = make_bundle(ChatConnectionState::Connected);
@@ -393,6 +465,86 @@ mod tests {
         assert_eq!(left.title, "OAuth scopes");
         assert_eq!(left.items.len(), TWITCH_BROADCASTER_SCOPES.len());
         assert_eq!(right.title, "EventSub subscriptions");
+    }
+
+    #[test]
+    fn content_eventsub_empty_tracker_shows_zero_active() {
+        let b = make_bundle(ChatConnectionState::Connected);
+        let content: &dyn IntegrationContent = b.as_ref();
+        let sections = content.sections();
+        let DetailSection::TwoColumnLists { right, .. } = &sections[0] else {
+            panic!("expected TwoColumnLists");
+        };
+        assert_eq!(right.count_label.as_deref(), Some("0 active"));
+        assert!(right.items.is_empty());
+    }
+
+    #[test]
+    fn content_eventsub_populated_tracker_renders_items() {
+        let tracker = SubscriptionTracker::default();
+        {
+            let mut records = tracker.write().unwrap();
+            records.push(SubscriptionRecord {
+                kind: "channel.chat.message".to_owned(),
+                version: "1".to_owned(),
+                status: SubStatus::Active,
+                subscription_id: Some("sub-abc".to_owned()),
+            });
+            records.push(SubscriptionRecord {
+                kind: "channel.subscribe".to_owned(),
+                version: "1".to_owned(),
+                status: SubStatus::Pending,
+                subscription_id: None,
+            });
+            records.push(SubscriptionRecord {
+                kind: "channel.cheer".to_owned(),
+                version: "1".to_owned(),
+                status: SubStatus::Failed("HTTP 403".to_owned()),
+                subscription_id: None,
+            });
+        }
+        let b = make_bundle_with_tracker(ChatConnectionState::Connected, tracker);
+        let content: &dyn IntegrationContent = b.as_ref();
+        let sections = content.sections();
+        let DetailSection::TwoColumnLists { right, .. } = &sections[0] else {
+            panic!("expected TwoColumnLists");
+        };
+        assert_eq!(right.count_label.as_deref(), Some("1 active"));
+        assert_eq!(right.items.len(), 3);
+
+        let active_item = &right.items[0];
+        assert_eq!(active_item.name, "channel.chat.message");
+        assert!(active_item.active);
+        assert!(active_item.monospace_name);
+        assert_eq!(
+            active_item.trailing,
+            vec![
+                TrailingToken::Label("v1".to_owned()),
+                TrailingToken::Label("active".to_owned()),
+            ]
+        );
+
+        let pending_item = &right.items[1];
+        assert_eq!(pending_item.name, "channel.subscribe");
+        assert!(!pending_item.active);
+        assert_eq!(
+            pending_item.trailing,
+            vec![
+                TrailingToken::Label("v1".to_owned()),
+                TrailingToken::Label("pending".to_owned()),
+            ]
+        );
+
+        let failed_item = &right.items[2];
+        assert_eq!(failed_item.name, "channel.cheer");
+        assert!(!failed_item.active);
+        assert_eq!(
+            failed_item.trailing,
+            vec![
+                TrailingToken::Label("v1".to_owned()),
+                TrailingToken::Label("failed".to_owned()),
+            ]
+        );
     }
 
     #[test]

@@ -1,5 +1,6 @@
 use crate::chat::reconnect;
-use crate::chat::subscriber::{SubscribeError, subscribe_chat_message};
+use crate::chat::subscriber::{SubscribeError, subscribe_all};
+use crate::subscriptions::SubscriptionTracker;
 use forge_events::{Event, EventSource};
 use forge_runtime::EventBus;
 use forge_types::OAuthToken;
@@ -28,6 +29,7 @@ struct SessionConfig {
     broadcaster_id: String,
     user_id: String,
     bus: Arc<EventBus>,
+    tracker: SubscriptionTracker,
 }
 
 pub(crate) struct ChatSession {
@@ -43,6 +45,7 @@ impl ChatSession {
         broadcaster_id: String,
         user_id: String,
         bus: Arc<EventBus>,
+        tracker: SubscriptionTracker,
     ) -> (
         Self,
         watch::Receiver<ChatConnectionState>,
@@ -57,6 +60,7 @@ impl ChatSession {
                 broadcaster_id,
                 user_id,
                 bus,
+                tracker,
             },
             state_tx,
             shutdown_rx,
@@ -181,13 +185,14 @@ impl ChatSession {
                 debug!("session_welcome received, subscribing topics");
                 *session_id = Some(id.clone());
 
-                match subscribe_chat_message(
+                match subscribe_all(
                     &self.config.token,
                     &self.config.client_id,
                     &id,
                     &self.config.broadcaster_id,
                     &self.config.user_id,
                     &self.config.bus,
+                    &self.config.tracker,
                 )
                 .await
                 {
@@ -204,10 +209,6 @@ impl ChatSession {
                             serde_json::json!({ "platform": "twitch" }),
                         ));
                         return FrameAction::ReauthRequired;
-                    }
-                    Err(e) => {
-                        warn!(error = %e, "chat subscription failed");
-                        return FrameAction::Disconnect;
                     }
                 }
             }
@@ -474,12 +475,14 @@ mod tests {
 
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let token = OAuthToken::new("dummy".to_string());
+        let tracker = crate::subscriptions::SubscriptionTracker::default();
         let (session, _, _) = ChatSession::new(
             token,
             "client".to_string(),
             "bcast".to_string(),
             "user".to_string(),
             Arc::clone(&bus),
+            tracker,
         );
         let mut sub = bus.subscribe();
 

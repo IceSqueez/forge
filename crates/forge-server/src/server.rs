@@ -292,6 +292,7 @@ mod tests {
             Arc::clone(&dp),
             registry,
             None,
+            None,
         ));
         AppState {
             auth,

@@ -314,6 +314,7 @@ mod tests {
             Arc::clone(&dp),
             registry,
             None,
+            None,
         ));
         let state = AppState {
             auth,

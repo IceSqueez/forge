@@ -17,6 +17,7 @@ use tracing::warn;
 
 use crate::EventBus;
 use crate::script_registry::ScriptRegistry;
+use crate::sound_player::SoundPlayer;
 use crate::sub_actions::dispatch;
 
 struct QuickActionRequest {
@@ -78,6 +79,7 @@ struct ActionEngine {
     dp: Arc<dyn DataProvider>,
     registry: Arc<ScriptRegistry>,
     obs_sink: Option<Arc<dyn ObsSink>>,
+    sound_player: Option<Arc<dyn SoundPlayer>>,
     input: mpsc::Receiver<ExecutionRequest>,
 }
 
@@ -87,6 +89,7 @@ impl ActionEngine {
         dp: Arc<dyn DataProvider>,
         registry: Arc<ScriptRegistry>,
         obs_sink: Option<Arc<dyn ObsSink>>,
+        sound_player: Option<Arc<dyn SoundPlayer>>,
     ) -> ActionEngineHandle {
         let (tx, rx) = mpsc::channel(256);
         let (quick_tx, quick_rx) = mpsc::channel(64);
@@ -97,10 +100,18 @@ impl ActionEngine {
             dp: Arc::clone(&dp),
             registry: Arc::clone(&registry),
             obs_sink: obs_sink.clone(),
+            sound_player: sound_player.clone(),
             input: rx,
         };
         tokio::spawn(async move { engine.run(cancel_clone).await });
-        tokio::spawn(run_quick_action_loop(quick_rx, bus, dp, registry, obs_sink));
+        tokio::spawn(run_quick_action_loop(
+            quick_rx,
+            bus,
+            dp,
+            registry,
+            obs_sink,
+            sound_player,
+        ));
         ActionEngineHandle {
             sender: tx,
             quick_sender: quick_tx,
@@ -217,6 +228,7 @@ impl ActionEngine {
                 Arc::clone(&self.dp),
                 Some(self.registry.as_ref()),
                 self.obs_sink.clone(),
+                self.sound_player.as_ref(),
             )
             .await;
 
@@ -270,6 +282,7 @@ impl ActionEngine {
                     Arc::clone(&self.dp),
                     Some(self.registry.as_ref()),
                     self.obs_sink.clone(),
+                    self.sound_player.as_ref(),
                 )
             })
             .collect();
@@ -298,6 +311,7 @@ async fn run_quick_action_loop(
     dp: Arc<dyn DataProvider>,
     registry: Arc<ScriptRegistry>,
     obs_sink: Option<Arc<dyn ObsSink>>,
+    sound_player: Option<Arc<dyn SoundPlayer>>,
 ) {
     while let Some(req) = rx.recv().await {
         let run_event = Event::new(
@@ -317,6 +331,7 @@ async fn run_quick_action_loop(
             Arc::clone(&dp),
             Some(registry.as_ref()),
             obs_sink.clone(),
+            sound_player.as_ref(),
         )
         .await;
 
@@ -345,8 +360,9 @@ pub fn spawn_action_engine(
     dp: Arc<dyn DataProvider>,
     registry: Arc<ScriptRegistry>,
     obs_sink: Option<Arc<dyn ObsSink>>,
+    sound_player: Option<Arc<dyn SoundPlayer>>,
 ) -> ActionEngineHandle {
-    ActionEngine::spawn(bus, dp, registry, obs_sink)
+    ActionEngine::spawn(bus, dp, registry, obs_sink, sound_player)
 }
 
 #[cfg(test)]
@@ -410,6 +426,7 @@ mod tests {
             Arc::clone(&dp),
             Arc::new(ScriptRegistry::new()),
             None,
+            None,
         );
 
         handle
@@ -440,6 +457,7 @@ mod tests {
             Arc::clone(&bus),
             Arc::clone(&dp),
             Arc::new(ScriptRegistry::new()),
+            None,
             None,
         );
 
@@ -490,6 +508,7 @@ mod tests {
             Arc::clone(&dp),
             Arc::new(ScriptRegistry::new()),
             None,
+            None,
         );
 
         let trigger_id = EventId::new();
@@ -535,6 +554,7 @@ mod tests {
             Arc::clone(&bus),
             Arc::clone(&dp),
             Arc::new(ScriptRegistry::new()),
+            None,
             None,
         );
 
@@ -587,6 +607,7 @@ mod tests {
             Arc::clone(&bus),
             Arc::clone(&dp),
             Arc::new(ScriptRegistry::new()),
+            None,
             None,
         );
 
@@ -648,6 +669,7 @@ mod tests {
             Arc::clone(&bus),
             Arc::clone(&dp),
             Arc::new(ScriptRegistry::new()),
+            None,
             None,
         );
 
@@ -717,6 +739,7 @@ mod tests {
             Arc::clone(&dp),
             Arc::new(ScriptRegistry::new()),
             None,
+            None,
         );
 
         handle
@@ -784,6 +807,7 @@ mod tests {
             Arc::clone(&bus),
             Arc::clone(&dp),
             Arc::new(ScriptRegistry::new()),
+            None,
             None,
         );
 
@@ -867,6 +891,7 @@ mod tests {
             Arc::clone(&bus),
             Arc::clone(&dp),
             Arc::clone(&registry),
+            None,
             None,
         );
 

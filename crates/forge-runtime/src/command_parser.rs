@@ -310,6 +310,7 @@ mod tests {
             Arc::clone(&dp),
             Arc::new(ScriptRegistry::new()),
             None,
+            None,
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let _handle = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
@@ -346,6 +347,7 @@ mod tests {
             Arc::clone(&bus),
             Arc::clone(&dp),
             Arc::new(ScriptRegistry::new()),
+            None,
             None,
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
@@ -395,6 +397,7 @@ mod tests {
             Arc::clone(&dp),
             Arc::new(ScriptRegistry::new()),
             None,
+            None,
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let _handle = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
@@ -430,6 +433,7 @@ mod tests {
             Arc::clone(&dp),
             Arc::new(ScriptRegistry::new()),
             None,
+            None,
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let _handle = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
@@ -462,6 +466,7 @@ mod tests {
             Arc::clone(&dp),
             Arc::new(ScriptRegistry::new()),
             None,
+            None,
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let _handle = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
@@ -493,6 +498,7 @@ mod tests {
             Arc::clone(&bus),
             Arc::clone(&dp),
             Arc::new(ScriptRegistry::new()),
+            None,
             None,
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
@@ -531,6 +537,7 @@ mod tests {
             Arc::clone(&bus),
             Arc::clone(&dp),
             Arc::new(ScriptRegistry::new()),
+            None,
             None,
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
@@ -607,6 +614,7 @@ mod tests {
             Arc::clone(&bus),
             Arc::clone(&dp),
             Arc::new(ScriptRegistry::new()),
+            None,
             None,
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);

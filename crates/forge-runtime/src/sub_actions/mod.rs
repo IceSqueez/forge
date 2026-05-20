@@ -4,6 +4,7 @@ mod get_global;
 mod increment_global;
 mod log;
 mod obs;
+mod play_sound;
 mod run_script;
 mod send_chat;
 mod set_global;
@@ -17,6 +18,7 @@ use time::OffsetDateTime;
 
 use crate::EventBus;
 use crate::script_registry::ScriptRegistry;
+use crate::sound_player::SoundPlayer;
 
 pub(crate) async fn interpolate_with_globals(
     template: &str,
@@ -72,6 +74,7 @@ pub async fn dispatch(
     dp: Arc<dyn DataProvider>,
     registry: Option<&ScriptRegistry>,
     obs_sink: Option<Arc<dyn ObsSink>>,
+    sound_player: Option<&Arc<dyn SoundPlayer>>,
 ) -> (SubActionTelemetry, Option<ArgStack>) {
     match spec {
         SubActionSpec::Log { message, .. } => {
@@ -127,18 +130,7 @@ pub async fn dispatch(
         | SubActionSpec::ObsStartStream
         | SubActionSpec::ObsStopStream
         | SubActionSpec::ObsRaw { .. } => obs::run(spec, index, obs_sink).await,
-        SubActionSpec::PlaySound { .. } => (
-            SubActionTelemetry {
-                kind: "PlaySound".to_string(),
-                started_at: OffsetDateTime::now_utc(),
-                duration_ms: 0,
-                outcome: SubActionOutcome::Skipped(
-                    "soundboard subsystem not yet wired (alpha-10 P3)".to_string(),
-                ),
-                index,
-            },
-            None,
-        ),
+        SubActionSpec::PlaySound { .. } => play_sound::run(spec, index, sound_player).await,
     }
 }
 
@@ -179,6 +171,7 @@ mod tests {
             Arc::clone(&dp),
             None,
             None,
+            None,
         )
         .await;
         assert_eq!(telemetry.kind, "Log");
@@ -205,6 +198,7 @@ mod tests {
             Arc::clone(&dp),
             None,
             None,
+            None,
         )
         .await;
         assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
@@ -228,6 +222,7 @@ mod tests {
             parent_id,
             &bus,
             Arc::clone(&dp),
+            None,
             None,
             None,
         )
@@ -259,6 +254,7 @@ mod tests {
             Arc::clone(&dp),
             None,
             None,
+            None,
         )
         .await;
         let val = GlobalsRepo::get(dp.as_ref(), "counter").await.unwrap();
@@ -281,6 +277,7 @@ mod tests {
             EventId::new(),
             &bus,
             Arc::clone(&dp),
+            None,
             None,
             None,
         )
@@ -306,6 +303,7 @@ mod tests {
             parent_id,
             &bus,
             Arc::clone(&dp),
+            None,
             None,
             None,
         )
@@ -342,6 +340,7 @@ mod tests {
             Arc::clone(&dp),
             None,
             None,
+            None,
         )
         .await;
         let event = tokio::time::timeout(Duration::from_millis(100), sub.recv())
@@ -374,6 +373,7 @@ mod tests {
             parent_id,
             &bus,
             Arc::clone(&dp),
+            None,
             None,
             None,
         )
@@ -410,6 +410,7 @@ mod tests {
             Arc::clone(&dp),
             None,
             None,
+            None,
         )
         .await;
         let event = tokio::time::timeout(Duration::from_millis(100), sub.recv())
@@ -439,6 +440,7 @@ mod tests {
             EventId::new(),
             &bus,
             Arc::clone(&dp),
+            None,
             None,
             None,
         )
@@ -516,6 +518,7 @@ mod tests {
             Arc::clone(&dp),
             None,
             None,
+            None,
         )
         .await;
         assert!(
@@ -543,6 +546,7 @@ mod tests {
             &bus,
             Arc::clone(&dp),
             Some(&registry),
+            None,
             None,
         )
         .await;
@@ -598,6 +602,7 @@ mod tests {
             &bus,
             Arc::clone(&dp),
             Some(&registry),
+            None,
             None,
         )
         .await;
@@ -664,6 +669,7 @@ mod tests {
             &bus,
             Arc::clone(&dp),
             Some(&registry),
+            None,
             None,
         )
         .await;
@@ -738,6 +744,7 @@ mod tests {
             &bus,
             Arc::clone(&dp),
             Some(&registry),
+            None,
             None,
         )
         .await;

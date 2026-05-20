@@ -991,6 +991,7 @@ mod tests {
             Arc::clone(dp),
             registry,
             None,
+            None,
         ))
     }
 

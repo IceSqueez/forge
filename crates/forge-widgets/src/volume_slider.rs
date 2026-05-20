@@ -1,0 +1,61 @@
+use iced::{
+    Alignment, Element, Length,
+    widget::{row, slider, text},
+};
+
+use crate::palette::ForgePalette;
+use crate::tokens::{Density, FONT_BODY_SM, FontRole, Spacing, font, spacing};
+
+pub fn volume_slider<'a, Msg: 'a + Clone>(
+    value: f32,
+    on_change: impl Fn(f32) -> Msg + 'a,
+    palette: &'a ForgePalette,
+) -> Element<'a, Msg> {
+    let pct = (value * 100.0).round() as u32;
+    let pct_color = if value > 1.0 {
+        palette.warning
+    } else {
+        palette.text_secondary
+    };
+    let pct_label = format!("{pct}%");
+    let label_w = 36.0_f32;
+    let gap = f32::from(spacing(Spacing::Md, Density::Cozy));
+
+    row![
+        text("VOL")
+            .size(FONT_BODY_SM)
+            .color(palette.text_muted)
+            .font(font(FontRole::Monospace))
+            .width(label_w),
+        slider(0.0..=1.5, value, on_change).width(Length::Fill),
+        text(pct_label)
+            .size(FONT_BODY_SM)
+            .color(pct_color)
+            .font(font(FontRole::Monospace))
+            .width(label_w),
+    ]
+    .spacing(gap)
+    .align_y(Alignment::Center)
+    .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::palette::CATPPUCCIN_MOCHA;
+
+    #[test]
+    fn volume_slider_below_100_pct_constructs() {
+        let _ = volume_slider::<f32>(0.8, |v| v, &CATPPUCCIN_MOCHA);
+    }
+
+    #[test]
+    fn volume_slider_above_100_pct_constructs() {
+        let _ = volume_slider::<f32>(1.2, |v| v, &CATPPUCCIN_MOCHA);
+    }
+
+    #[test]
+    fn volume_slider_at_zero_constructs() {
+        let _ = volume_slider::<f32>(0.0, |v| v, &CATPPUCCIN_MOCHA);
+    }
+}

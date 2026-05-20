@@ -634,6 +634,71 @@ async fn handle_get_events(
     WsResponse::Ok(serde_json::json!({ "events": wire }))
 }
 
+const ACTIVE_VIEWER_WINDOW_SECS: i64 = 300;
+const ACTIVE_VIEWER_LOOKBACK_LIMIT: usize = 500;
+
+async fn handle_get_active_viewers(ctx: &DispatchContext) -> WsResponse {
+    use std::collections::BTreeMap;
+
+    let events = ctx
+        .bus
+        .recent_since(ACTIVE_VIEWER_LOOKBACK_LIMIT, None)
+        .await;
+    let cutoff =
+        time::OffsetDateTime::now_utc() - time::Duration::seconds(ACTIVE_VIEWER_WINDOW_SECS);
+
+    let mut viewers: BTreeMap<(&'static str, String), serde_json::Value> = BTreeMap::new();
+
+    for ev in events.iter() {
+        if ev.kind != "chat.message" {
+            continue;
+        }
+        if ev.timestamp < cutoff {
+            continue;
+        }
+        let platform = match ev.source {
+            EventSource::Twitch => "twitch",
+            EventSource::YouTube => "youtube",
+            EventSource::Kick => "kick",
+            EventSource::Trovo => "trovo",
+            _ => continue,
+        };
+        let user = match ev.payload.get("user") {
+            Some(u) if u.is_object() => u,
+            _ => continue,
+        };
+        let login = user
+            .get("login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        let id = user.get("id").and_then(|v| v.as_str()).unwrap_or_default();
+        if login.is_empty() || id.is_empty() {
+            continue;
+        }
+        let roles: Vec<String> = user
+            .get("roles")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|r| r.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        viewers.entry((platform, id.to_owned())).or_insert_with(|| {
+            serde_json::json!({
+                "platform": platform,
+                "login": login,
+                "id": id,
+                "roles": roles,
+            })
+        });
+    }
+
+    let wire: Vec<serde_json::Value> = viewers.into_values().collect();
+    WsResponse::Ok(serde_json::json!({ "viewers": wire }))
+}
+
 async fn handle_replay_event(event_id: String, ctx: &DispatchContext) -> WsResponse {
     let eid: EventId = match serde_json::from_value(serde_json::Value::String(event_id)) {
         Ok(id) => id,
@@ -804,7 +869,7 @@ async fn route(req: WsRequest, ctx: &DispatchContext) -> WsResponse {
             if ctx.auth_required_for_reads && !is_authenticated(ctx) {
                 return unauthenticated();
             }
-            not_implemented()
+            handle_get_active_viewers(ctx).await
         }
 
         WsRequest::GetOverlayFiles { .. } => {
@@ -1835,6 +1900,79 @@ mod tests {
             other => panic!("expected AUTH_FAILED error, got {other:?}"),
         }
         assert!(!ctx.client.authenticated.load(Ordering::Acquire));
+    }
+
+    #[tokio::test]
+    async fn get_active_viewers_empty_bus_returns_empty_list() {
+        let ctx = make_ctx(false, false);
+        let req = WsEnvelope {
+            id: Some("av1".to_owned()),
+            inner: WsRequest::GetActiveViewers,
+        };
+        let resp = dispatch(req, &ctx).await;
+        let json = serialize_response_frame(&resp);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["viewers"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn get_active_viewers_dedupes_by_platform_and_user_id() {
+        let ctx = make_ctx(false, false);
+        let chat_payload = |login: &str, id: &str| {
+            serde_json::json!({
+                "channel": "ch",
+                "user": { "login": login, "id": id, "roles": [] },
+                "message": "hi",
+            })
+        };
+        ctx.bus.publish(Event::new(
+            EventSource::Twitch,
+            "chat.message",
+            chat_payload("alice", "111"),
+        ));
+        ctx.bus.publish(Event::new(
+            EventSource::Twitch,
+            "chat.message",
+            chat_payload("alice", "111"),
+        ));
+        ctx.bus.publish(Event::new(
+            EventSource::Twitch,
+            "chat.message",
+            chat_payload("bob", "222"),
+        ));
+        let req = WsEnvelope {
+            id: Some("av2".to_owned()),
+            inner: WsRequest::GetActiveViewers,
+        };
+        let resp = dispatch(req, &ctx).await;
+        let json = serialize_response_frame(&resp);
+        let viewers = json["viewers"].as_array().unwrap();
+        assert_eq!(viewers.len(), 2);
+        let ids: HashSet<&str> = viewers.iter().map(|v| v["id"].as_str().unwrap()).collect();
+        assert!(ids.contains("111"));
+        assert!(ids.contains("222"));
+    }
+
+    #[tokio::test]
+    async fn get_active_viewers_ignores_non_chat_events() {
+        let ctx = make_ctx(false, false);
+        ctx.bus.publish(Event::new(
+            EventSource::Twitch,
+            "platform.connection.changed",
+            serde_json::json!({ "state": "connected" }),
+        ));
+        ctx.bus.publish(Event::new(
+            EventSource::Core,
+            "action.start",
+            serde_json::json!({}),
+        ));
+        let req = WsEnvelope {
+            id: Some("av3".to_owned()),
+            inner: WsRequest::GetActiveViewers,
+        };
+        let resp = dispatch(req, &ctx).await;
+        let json = serialize_response_frame(&resp);
+        assert_eq!(json["viewers"].as_array().unwrap().len(), 0);
     }
 
     #[tokio::test]

@@ -228,7 +228,7 @@ pub fn onboarding_step_header<'a, Msg: 'a>(
                 .size(FONT_CAPS - 2.0)
                 .color(palette.warning),
         )
-        .padding(Padding::from([1_u16, 7_u16]))
+        .padding(Padding::from([4_u16, 10_u16]))
         .style(move |_theme: &iced::Theme| container::Style {
             background: Some(iced::Background::Color(palette.surface_overlay)),
             border: Border {
@@ -252,7 +252,7 @@ pub fn onboarding_step_header<'a, Msg: 'a>(
         .align_y(Alignment::Center);
 
         let pill = container(pill_content)
-            .padding(Padding::from([1_u16, 7_u16]))
+            .padding(Padding::from([4_u16, 10_u16]))
             .style(move |_theme: &iced::Theme| container::Style {
                 background: Some(iced::Background::Color(palette.surface_overlay)),
                 border: Border {
@@ -608,7 +608,8 @@ pub fn live_status_banner<'a, Msg: 'a>(
             text(hint_text)
                 .font(font(FontRole::Monospace))
                 .size(FONT_CAPS_SM)
-                .color(palette.text_faint),
+                .color(palette.text_faint)
+                .wrapping(iced::widget::text::Wrapping::Word),
         );
     }
 

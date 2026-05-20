@@ -1,10 +1,10 @@
 use std::time::Duration;
 
 use forge_platform_core::{
-    ActiveRow, BannerLevel, CapabilityFlags, ConnectionState, ContentList, ContentListItem,
-    DetailSection, HeaderAction, HealthBar, HealthLevel, InfoField, KeyValueRow, ListFooter,
-    QuickAction, RowAction, SectionIcon, StatColumn, SubscriptionRow, SubscriptionStatus,
-    TokenColor, TrailingToken,
+    ActiveRow, BadgeTone, BannerLevel, CapabilityFlags, ConnectionState, ContentList,
+    ContentListItem, DetailSection, HeaderAction, HealthBar, HealthLevel, InfoField, KeyValueRow,
+    ListFooter, QuickAction, RowAction, SectionIcon, StatColumn, SubscriptionRow,
+    SubscriptionStatus, TokenColor, TrailingToken,
 };
 use iced::{
     Alignment, Border, Color, Element, Length,
@@ -30,6 +30,7 @@ pub struct HeaderCardParams<'a> {
     pub header_actions: &'a [HeaderAction],
     pub connection: ConnectionState,
     pub icon: SectionIcon,
+    pub badges: &'a [(String, BadgeTone)],
 }
 
 pub fn integration_header_card<'a, Msg: Clone + 'a>(
@@ -127,6 +128,11 @@ fn info_column<'a, Msg: 'a>(
         name_row = name_row.push(version_pill(version, surface_overlay, text_muted));
     }
 
+    for (label, tone) in params.badges {
+        let text_color = badge_tone_color(*tone, palette);
+        name_row = name_row.push(version_pill(label, surface_overlay, text_color));
+    }
+
     if params.capability_flags.limited {
         let label = params
             .capability_flags
@@ -145,6 +151,14 @@ fn info_column<'a, Msg: 'a>(
     iced::widget::column![name_row, sub_text]
         .spacing(spacing(Spacing::Xs, Density::Cozy) as f32)
         .into()
+}
+
+fn badge_tone_color(tone: BadgeTone, palette: &ForgePalette) -> iced::Color {
+    match tone {
+        BadgeTone::Neutral => palette.text_muted,
+        BadgeTone::Positive => palette.success,
+        BadgeTone::Warning => palette.warning,
+    }
 }
 
 fn version_pill<'a, Msg: 'a>(version: &'a str, bg: Color, text_color: Color) -> Element<'a, Msg> {
@@ -284,10 +298,10 @@ pub fn integration_health_grid<'a, Msg: 'a>(
 
     iced::widget::Row::new()
         .spacing(gap)
-        .push(health_metric_card(&metrics[0], palette))
-        .push(health_metric_card(&metrics[1], palette))
-        .push(health_metric_card(&metrics[2], palette))
-        .push(health_metric_card(&metrics[3], palette))
+        .push(container(health_metric_card(&metrics[0], palette)).width(Length::FillPortion(1)))
+        .push(container(health_metric_card(&metrics[1], palette)).width(Length::FillPortion(1)))
+        .push(container(health_metric_card(&metrics[2], palette)).width(Length::FillPortion(1)))
+        .push(container(health_metric_card(&metrics[3], palette)).width(Length::FillPortion(1)))
         .into()
 }
 
@@ -312,6 +326,7 @@ fn health_metric_card<'a, Msg: 'a>(
         HealthValue::Status {
             label: val_label,
             active,
+            detail,
         } => {
             let color = if *active {
                 palette.success
@@ -322,10 +337,21 @@ fn health_metric_card<'a, Msg: 'a>(
             let val_text = iced::widget::text(val_label.clone())
                 .size(FONT_VALUE)
                 .color(color);
-            iced::widget::row![dot, val_text]
+            let value_row: Element<'a, Msg> = iced::widget::row![dot, val_text]
                 .spacing(spacing(Spacing::Sm, Density::Cozy) as f32)
                 .align_y(Alignment::Center)
-                .into()
+                .into();
+            if let Some(d) = detail {
+                let detail_text = iced::widget::text(d.clone())
+                    .font(font(FontRole::Monospace))
+                    .size(FONT_CAPS_SM)
+                    .color(palette.text_faint);
+                iced::widget::column![value_row, detail_text]
+                    .spacing(spacing(Spacing::Xs, Density::Cozy) as f32)
+                    .into()
+            } else {
+                value_row
+            }
         }
         HealthValue::Text { primary, secondary } => {
             let primary_text = iced::widget::text(primary.clone())
@@ -455,8 +481,8 @@ pub(crate) fn render_two_column_lists<'a, Msg: 'a>(
     let gap = spacing(Spacing::Xl, Density::Cozy) as f32;
     Row::new()
         .spacing(gap)
-        .push(content_list_panel(left, palette))
-        .push(content_list_panel(right, palette))
+        .push(container(content_list_panel(left, palette)).width(Length::FillPortion(10)))
+        .push(container(content_list_panel(right, palette)).width(Length::FillPortion(13)))
         .into()
 }
 
@@ -1439,13 +1465,22 @@ fn health_level_color(level: &HealthLevel, palette: &ForgePalette) -> Color {
 pub fn integration_quick_actions_grid<'a, Msg: Clone + 'a>(
     actions: &'a [QuickAction],
     on_click: impl Fn(usize) -> Msg + 'a,
-    palette: &ForgePalette,
+    palette: &'a ForgePalette,
+) -> Element<'a, Msg> {
+    integration_quick_actions_grid_with_hint(actions, on_click, None, palette)
+}
+
+pub fn integration_quick_actions_grid_with_hint<'a, Msg: Clone + 'a>(
+    actions: &'a [QuickAction],
+    on_click: impl Fn(usize) -> Msg + 'a,
+    hint: Option<&'a str>,
+    palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
     let bg = palette.elevated;
     let border_color = palette.border_regular;
     let r = radius(Radius::Xxl);
 
-    let header = quick_actions_section_header(palette);
+    let header = quick_actions_section_header(hint, palette);
     let divider = horizontal_divider(border_color);
 
     let capped: &[QuickAction] = if actions.len() > 4 {
@@ -1486,7 +1521,10 @@ pub fn integration_quick_actions_grid<'a, Msg: Clone + 'a>(
     )
 }
 
-fn quick_actions_section_header<'a, Msg: 'a>(palette: &ForgePalette) -> Element<'a, Msg> {
+fn quick_actions_section_header<'a, Msg: 'a>(
+    hint: Option<&'a str>,
+    palette: &'a ForgePalette,
+) -> Element<'a, Msg> {
     use crate::icons::ICON_LIGHTNING;
 
     let icon_elem = text(ICON_LIGHTNING.to_string())
@@ -1498,13 +1536,26 @@ fn quick_actions_section_header<'a, Msg: 'a>(palette: &ForgePalette) -> Element<
         .size(FONT_BODY_MD)
         .color(palette.text_primary);
 
-    let left = Row::new()
+    let left: Element<'a, Msg> = Row::new()
         .spacing(spacing(Spacing::Sm, Density::Cozy) as f32)
         .align_y(Alignment::Center)
         .push(icon_elem)
-        .push(title_elem);
+        .push(title_elem)
+        .into();
 
-    container(left)
+    let mut outer = Row::new()
+        .align_y(Alignment::Center)
+        .push(container(left).width(Length::Fill));
+
+    if let Some(h) = hint {
+        outer = outer.push(
+            text(h.to_owned())
+                .size(FONT_CAPS_SM)
+                .color(palette.text_faint),
+        );
+    }
+
+    container(outer)
         .padding([
             spacing(Spacing::Lg, Density::Cozy),
             spacing(Spacing::Xxl, Density::Cozy),
@@ -1642,6 +1693,7 @@ mod tests {
             header_actions: &actions,
             connection: ConnectionState::Connected,
             icon: SectionIcon::new("\u{F1D6}"),
+            badges: &[],
         };
         let _: Element<'_, ()> = integration_header_card(params, |_action| (), &CATPPUCCIN_MOCHA);
     }
@@ -1662,6 +1714,7 @@ mod tests {
             header_actions: &actions,
             connection: ConnectionState::Connected,
             icon: SectionIcon::new("K"),
+            badges: &[],
         };
         let _: Element<'_, ()> = integration_header_card(params, |_action| (), &CATPPUCCIN_MOCHA);
     }
@@ -1679,6 +1732,7 @@ mod tests {
             header_actions: &actions,
             connection: ConnectionState::Disconnected,
             icon: SectionIcon::new("\u{F1D6}"),
+            badges: &[],
         };
         let _: Element<'_, ()> = integration_header_card(params, |_action| (), &CATPPUCCIN_MOCHA);
     }
@@ -1695,6 +1749,7 @@ mod tests {
             header_actions: &[],
             connection: ConnectionState::Connecting,
             icon: SectionIcon::new("\u{F1D6}"),
+            badges: &[],
         };
         let _: Element<'_, ()> = integration_header_card(params, |_action| (), &CATPPUCCIN_MOCHA);
     }
@@ -1767,6 +1822,7 @@ mod tests {
             header_actions: &actions,
             connection: ConnectionState::Connected,
             icon: SectionIcon::new("K"),
+            badges: &[],
         };
         let _: Element<'_, ()> = integration_header_card(params, |_action| (), &CATPPUCCIN_MOCHA);
     }
@@ -1781,6 +1837,7 @@ mod tests {
                 value: HealthValue::Status {
                     label: "Live".to_owned(),
                     active: true,
+                    detail: None,
                 },
             },
             HealthMetric {
@@ -1820,6 +1877,7 @@ mod tests {
                 value: HealthValue::Status {
                     label: "Off".to_owned(),
                     active: false,
+                    detail: None,
                 },
             },
             HealthMetric {
@@ -1834,6 +1892,7 @@ mod tests {
                 value: HealthValue::Status {
                     label: "11 subs".to_owned(),
                     active: true,
+                    detail: Some("WebSocket".to_owned()),
                 },
             },
             HealthMetric {
@@ -2103,5 +2162,28 @@ mod tests {
 
         let _: Element<'_, ()> =
             integration_quick_actions_grid(&actions, |_idx| (), &CATPPUCCIN_MOCHA);
+    }
+
+    #[test]
+    fn quick_actions_grid_with_hint_compiles() {
+        use forge_platform_core::{QuickAction, SectionIcon};
+        use forge_types::SubActionSpec;
+
+        let actions: Vec<QuickAction> = (0..4)
+            .map(|i| QuickAction {
+                label: format!("Action {i}"),
+                icon: SectionIcon::new("b"),
+                enabled: true,
+                subaction_template: SubActionSpec::Delay { ms: 0 },
+                picker: None,
+            })
+            .collect();
+
+        let _: Element<'_, ()> = integration_quick_actions_grid_with_hint(
+            &actions,
+            |_idx| (),
+            Some("Test commands without writing an action"),
+            &CATPPUCCIN_MOCHA,
+        );
     }
 }

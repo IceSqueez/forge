@@ -44,6 +44,7 @@ impl IntegrationHealth for ObsClient {
                         "Offline".to_owned()
                     },
                     active: snap.stream_active,
+                    detail: None,
                 },
             },
             HealthMetric {
@@ -55,6 +56,7 @@ impl IntegrationHealth for ObsClient {
                         "Off".to_owned()
                     },
                     active: snap.record_active,
+                    detail: None,
                 },
             },
             HealthMetric {

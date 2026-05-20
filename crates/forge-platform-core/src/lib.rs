@@ -13,11 +13,11 @@ pub use capabilities::PlatformCapabilities;
 pub use chat::{ChatPlatform, ConnectionState};
 pub use error::PlatformError;
 pub use integration::{
-    ActiveRow, BannerLevel, CapabilityFlags, ContentList, ContentListItem, DetailSection,
-    HeaderAction, HealthBar, HealthDelta, HealthLevel, HealthMetric, HealthStream, HealthValue,
-    InfoField, IntegrationContent, IntegrationHealth, IntegrationId, IntegrationStatus,
-    KeyValueRow, ListFooter, PickerKind, QuickAction, QuickActions, RowAction, SectionIcon,
-    StatColumn, SubscriptionRow, SubscriptionStatus, TokenColor, TrailingToken,
+    ActiveRow, BadgeTone, BannerLevel, CapabilityFlags, ContentList, ContentListItem,
+    DetailSection, HeaderAction, HealthBar, HealthDelta, HealthLevel, HealthMetric, HealthStream,
+    HealthValue, InfoField, IntegrationContent, IntegrationHealth, IntegrationId,
+    IntegrationStatus, KeyValueRow, ListFooter, PickerKind, QuickAction, QuickActions, RowAction,
+    SectionIcon, StatColumn, SubscriptionRow, SubscriptionStatus, TokenColor, TrailingToken,
 };
 pub use oauth::{
     DeviceCodePoller, DeviceCodeRequest, DeviceCodeResponse, PollOutcome, TokenResponse,

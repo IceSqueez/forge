@@ -49,6 +49,8 @@ pub enum HealthValue {
     Status {
         label: String,
         active: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        detail: Option<String>,
     },
     Text {
         primary: String,
@@ -271,6 +273,14 @@ pub struct CapabilityFlags {
     pub label: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BadgeTone {
+    Neutral,
+    Positive,
+    Warning,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HeaderAction {
@@ -347,6 +357,7 @@ mod tests {
             value: HealthValue::Status {
                 label: "Connected".to_owned(),
                 active: true,
+                detail: None,
             },
         };
         let json = serde_json::to_string(&metric).unwrap();
@@ -359,6 +370,7 @@ mod tests {
         let v = HealthValue::Status {
             label: "Connected".to_owned(),
             active: true,
+            detail: None,
         };
         let json = serde_json::to_string(&v).unwrap();
         let back: HealthValue = serde_json::from_str(&json).unwrap();

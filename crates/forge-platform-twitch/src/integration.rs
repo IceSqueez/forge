@@ -90,7 +90,7 @@ impl IntegrationStatus for TwitchIntegrationBundle {
     }
 
     fn endpoint(&self) -> Option<&str> {
-        Some("wss://eventsub.wss.twitch.tv/ws")
+        Some("Connected via device code")
     }
 
     fn capability_flags(&self) -> CapabilityFlags {
@@ -116,6 +116,7 @@ impl IntegrationHealth for TwitchIntegrationBundle {
                 value: HealthValue::Status {
                     label: chat_label,
                     active: chat_active,
+                    detail: self.login.as_ref().map(|l| format!("#{l}")),
                 },
             },
             HealthMetric {
@@ -338,7 +339,7 @@ mod tests {
         let b = make_bundle(ChatConnectionState::Connected);
         let health: &dyn IntegrationHealth = b.as_ref();
         let metrics = health.metrics();
-        let HealthValue::Status { active, label } = &metrics[0].value else {
+        let HealthValue::Status { active, label, .. } = &metrics[0].value else {
             panic!("expected Status variant");
         };
         assert!(*active);
@@ -350,7 +351,7 @@ mod tests {
         let b = make_bundle(ChatConnectionState::Disconnected);
         let health: &dyn IntegrationHealth = b.as_ref();
         let metrics = health.metrics();
-        let HealthValue::Status { active, label } = &metrics[0].value else {
+        let HealthValue::Status { active, label, .. } = &metrics[0].value else {
             panic!("expected Status variant");
         };
         assert!(!*active);

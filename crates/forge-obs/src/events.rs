@@ -129,6 +129,7 @@ pub(crate) fn apply_health_update(
                         "Offline".to_owned()
                     },
                     active: *active,
+                    detail: None,
                 },
             }]
         }
@@ -146,6 +147,7 @@ pub(crate) fn apply_health_update(
                         "Off".to_owned()
                     },
                     active: *active,
+                    detail: None,
                 },
             }]
         }

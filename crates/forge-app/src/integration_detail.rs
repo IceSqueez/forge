@@ -326,6 +326,7 @@ pub fn view<'a>(
         header_actions: &state.header_actions,
         connection: state.integration_status.connection(),
         icon: state.icon.clone(),
+        badges: &[],
     };
 
     let header = integration_header_card(

@@ -55,6 +55,8 @@ fn test_app() -> App {
         twitch_login: None,
         twitch_reauth_required: false,
         obs_panel: forge_app::obs_panel::ObsPanelState::default(),
+        soundboard: forge_app::soundboard::SoundboardState::new(),
+        sound_player: None,
     }
 }
 

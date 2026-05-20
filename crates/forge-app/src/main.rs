@@ -194,6 +194,7 @@ fn main() -> iced::Result {
             action_engine.clone(),
             scheduler.clone(),
             command_parser.clone(),
+            None,
         );
         app.bus = Arc::clone(&bus_boot);
         app.chat_send_bridge = chat_send_bridge.clone();

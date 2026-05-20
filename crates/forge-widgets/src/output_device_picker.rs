@@ -7,6 +7,7 @@ use crate::icons::{BOOTSTRAP_FONT, ICON_PLAY, ICON_REFRESH};
 use crate::palette::ForgePalette;
 use crate::tokens::{Density, FONT_BODY_SM, FontRole, Spacing, font, spacing};
 
+#[derive(Debug, Clone)]
 pub struct DeviceLabel {
     pub id: String,
     pub name: String,

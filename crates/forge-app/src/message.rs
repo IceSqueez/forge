@@ -1,9 +1,11 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use forge_types::ClipId;
+
 use forge_events::Event;
 use forge_obs::ObsClient;
-use forge_widgets::PickerItem;
+use forge_widgets::{DeviceLabel, PickerItem};
 
 use forge_platform_core::{HeaderAction, HealthDelta};
 use forge_storage::GlobalEntry;
@@ -188,6 +190,29 @@ pub enum SidebarMsg {
 }
 
 #[derive(Debug, Clone)]
+pub enum SoundboardMsg {
+    LoadRequested,
+    ClipsLoaded(Result<Vec<forge_storage::StoredClip>, String>),
+    OpenAddModal,
+    OpenEditModal(ClipId),
+    ModalDevicesLoaded(Result<Vec<DeviceLabel>, String>),
+    ModalFilePickRequested,
+    ModalFilePicked(Option<std::path::PathBuf>),
+    ModalNameChanged(String),
+    ModalHotkeyChanged(String),
+    ModalDeviceSelected(usize),
+    ModalVolumeChanged(f32),
+    ModalSave,
+    ModalSaved(Result<(), String>),
+    ModalCancel,
+    PlayClip(ClipId),
+    PlayResult(Result<(), String>),
+    DeleteClip(ClipId),
+    ClipDeleted(Result<(), String>),
+    HotkeyPressed(String),
+}
+
+#[derive(Debug, Clone)]
 pub enum Message {
     Navigate(Screen),
     Sidebar(SidebarMsg),
@@ -221,5 +246,6 @@ pub enum Message {
     TwitchPanel(crate::twitch_panel::TwitchPanelMsg),
     TwitchReauthRequested,
     ObsPanel(crate::obs_panel::ObsPanelMsg),
+    Soundboard(SoundboardMsg),
     Noop,
 }

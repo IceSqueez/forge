@@ -1,6 +1,8 @@
 use std::sync::Arc;
 use std::time::SystemTime;
 
+use forge_soundboard::SoundboardPlayer;
+
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_obs::ObsClient;
 use forge_platform_core::{
@@ -62,6 +64,7 @@ use crate::server_subsystem::ServerSubsystem;
 use crate::settings_websocket::{
     SettingsWebSocketState, handle_settings_websocket_msg, settings_websocket_view,
 };
+use crate::soundboard::{SoundboardState, handle_soundboard_msg, soundboard_view};
 use crate::stream_apps::view as stream_apps_view;
 use crate::test_trigger::synthesize_test_event;
 use crate::{Message, Screen, SettingsSection};
@@ -134,9 +137,12 @@ pub struct App {
     pub twitch_login: Option<String>,
     pub twitch_reauth_required: bool,
     pub obs_panel: crate::obs_panel::ObsPanelState,
+    pub soundboard: SoundboardState,
+    pub sound_player: Option<Arc<SoundboardPlayer>>,
 }
 
 impl App {
+    #[allow(clippy::too_many_arguments)]
     pub fn default_with(
         initial: Screen,
         backend: Arc<SqliteBackend>,
@@ -145,6 +151,7 @@ impl App {
         action_engine: Option<ActionEngineHandle>,
         scheduler: Option<QueueSchedulerHandle>,
         command_parser: Option<CommandParserHandle>,
+        sound_player: Option<Arc<SoundboardPlayer>>,
     ) -> Self {
         let (theme, palette) = forge_widgets::catppuccin_mocha();
         let server_subsystem = Arc::new(ServerSubsystem::new(
@@ -182,6 +189,8 @@ impl App {
             twitch_login: None,
             twitch_reauth_required: false,
             obs_panel: crate::obs_panel::ObsPanelState::default(),
+            soundboard: SoundboardState::new(),
+            sound_player,
         }
     }
 }
@@ -234,6 +243,8 @@ impl Default for App {
             twitch_login: None,
             twitch_reauth_required: false,
             obs_panel: crate::obs_panel::ObsPanelState::default(),
+            soundboard: SoundboardState::new(),
+            sound_player: None,
         }
     }
 }
@@ -246,6 +257,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             let is_hub = matches!(screen, Screen::Home);
             let is_globals = matches!(screen, Screen::Globals);
             let is_script_editor = matches!(screen, Screen::ScriptEditor);
+            let is_soundboard = matches!(screen, Screen::Soundboard);
             let is_settings_ws = matches!(
                 screen,
                 Screen::Settings(crate::screen::SettingsSection::WebSocket)
@@ -266,6 +278,10 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 Task::done(Message::Globals(GlobalsMsg::LoadRequested))
             } else if is_script_editor {
                 Task::done(Message::ScriptEditor(ScriptEditorMsg::LoadRequested))
+            } else if is_soundboard {
+                Task::done(Message::Soundboard(
+                    crate::message::SoundboardMsg::LoadRequested,
+                ))
             } else if is_settings_ws {
                 Task::done(Message::SettingsWebSocket(
                     crate::settings_websocket::SettingsWebSocketMsg::LoadRequested,
@@ -617,6 +633,11 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             )
         }
         Message::ObsPanel(sub) => handle_obs_panel_msg(app, sub),
+        Message::Soundboard(sub) => {
+            let backend = Arc::clone(&app.backend);
+            let player = app.sound_player.clone();
+            handle_soundboard_msg(&mut app.soundboard, backend, player, sub)
+        }
         Message::Noop => Task::none(),
     }
 }
@@ -4205,6 +4226,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
                 .into()
             }
         }
+        Screen::Soundboard => soundboard_view(&app.soundboard, palette),
         other => coming_soon_view(format!("{other:?}"), palette),
     };
 
@@ -4684,6 +4706,8 @@ mod tests {
             twitch_login: None,
             twitch_reauth_required: false,
             obs_panel: crate::obs_panel::ObsPanelState::default(),
+            soundboard: SoundboardState::new(),
+            sound_player: None,
         };
 
         assert!(app.action_engine.is_some());
@@ -4967,6 +4991,8 @@ mod tests {
             twitch_login: None,
             twitch_reauth_required: false,
             obs_panel: crate::obs_panel::ObsPanelState::default(),
+            soundboard: SoundboardState::new(),
+            sound_player: None,
         };
 
         let mut form = crate::actions::AddActionForm::new();

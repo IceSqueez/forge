@@ -13,6 +13,7 @@ pub mod script_editor;
 pub mod server_screen;
 pub mod server_subsystem;
 pub mod settings_websocket;
+pub mod soundboard;
 pub mod stream_apps;
 pub mod test_trigger;
 pub mod twitch_panel;
@@ -37,7 +38,7 @@ pub use live_chat::{ChatFilter, LiveChatState};
 pub use message::{
     ActionsMsg, EditorMode, GlobalsFilter, GlobalsLoadData, GlobalsMsg, HubMsg, HubStatsData,
     IntegrationDetailMsg, Message, ObsClientRef, PlatformId, SettingsMsg, SidebarMsg,
-    VariantEditorMsg,
+    SoundboardMsg, VariantEditorMsg,
 };
 pub use screen::{Screen, SettingsSection};
 pub use script_editor::{

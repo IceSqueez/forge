@@ -28,7 +28,9 @@ forge-platform-core   = { path = "../forge-platform-core" }
 forge-obs             = { path = "../forge-obs" }
 forge-platform-twitch = { path = "../forge-platform-twitch" }
 async-trait          = { workspace = true }
+forge-audio           = { path = "../forge-audio" }
 forge-server          = { path = "../forge-server" }
+forge-soundboard      = { path = "../forge-soundboard" }
 forge-widgets        = { path = "../forge-widgets" }
 iced                = { workspace = true }
 rfd                 = { workspace = true }

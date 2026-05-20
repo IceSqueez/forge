@@ -2,10 +2,19 @@ use std::sync::Arc;
 
 use tokio::sync::RwLock;
 
+use forge_runtime::{ActionEngineHandle, EventBus};
 use forge_server::{ServerConfig, ServerError, ServerHandle, start_server};
-use forge_storage::{CredentialId, CredentialsRepo};
+use forge_storage::{
+    CredentialId, CredentialsRepo, DataProvider, SettingsRepo, reserved_keys::SERVER_PORT_KEY,
+};
 
 const BEARER_CREDENTIAL_ID: &str = "server:bearer";
+
+#[derive(Debug, Clone)]
+pub struct ServerBootSnapshot {
+    pub bind_address: String,
+    pub bearer_token: String,
+}
 
 pub struct ServerSubsystem {
     handle: Arc<RwLock<Option<ServerHandle>>>,
@@ -74,6 +83,56 @@ impl ServerSubsystem {
             .await
             .map_err(|e| ServerError::Storage(e.to_string()))
     }
+}
+
+pub async fn load_server_settings_and_start(
+    backend: Arc<dyn DataProvider>,
+    bus: Arc<EventBus>,
+    action_engine: Arc<ActionEngineHandle>,
+    subsystem: Arc<ServerSubsystem>,
+) -> Result<ServerBootSnapshot, String> {
+    let settings: &dyn SettingsRepo = backend.as_ref();
+    let bind_str = settings
+        .server_bind_address()
+        .await
+        .map_err(|e| e.to_string())?;
+    let port = settings.server_port().await.map_err(|e| e.to_string())?;
+    let lan_bind_enabled = settings
+        .server_lan_bind_enabled()
+        .await
+        .map_err(|e| e.to_string())?;
+    let auth_required_for_reads = settings
+        .server_auth_required_for_reads()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let ip: std::net::IpAddr = bind_str
+        .parse()
+        .map_err(|e: std::net::AddrParseError| format!("invalid {SERVER_PORT_KEY}: {e}"))?;
+    let bind_addr = std::net::SocketAddr::new(ip, port);
+
+    let mut config = ServerConfig::new(
+        Arc::clone(&subsystem.credentials),
+        bus,
+        backend,
+        action_engine,
+    );
+    config.bind_addr = bind_addr;
+    config.auth_required_for_reads = auth_required_for_reads;
+    config.lan_bind_enabled = lan_bind_enabled;
+
+    subsystem.start(config).await.map_err(|e| e.to_string())?;
+
+    let token = subsystem
+        .bearer_token()
+        .await
+        .map_err(|e| e.to_string())?
+        .unwrap_or_default();
+
+    Ok(ServerBootSnapshot {
+        bind_address: bind_addr.to_string(),
+        bearer_token: token,
+    })
 }
 
 #[cfg(test)]

@@ -181,7 +181,24 @@ fn main() -> iced::Result {
             load_obs_and_connect(Arc::clone(&backend_boot), Arc::clone(&bus_boot)),
             forge_app::Message::ObsBootResult,
         );
-        (app, obs_task)
+        let boot_task = match app.action_engine.clone() {
+            Some(engine) => {
+                let dp: std::sync::Arc<dyn forge_storage::DataProvider> =
+                    Arc::clone(&backend_boot) as std::sync::Arc<dyn forge_storage::DataProvider>;
+                let server_boot_task = iced::Task::perform(
+                    forge_app::server_subsystem::load_server_settings_and_start(
+                        dp,
+                        Arc::clone(&bus_boot),
+                        std::sync::Arc::new(engine),
+                        Arc::clone(&app.server_subsystem),
+                    ),
+                    forge_app::Message::ServerBootResult,
+                );
+                iced::Task::batch([obs_task, server_boot_task])
+            }
+            None => obs_task,
+        };
+        (app, boot_task)
     };
 
     iced::application(boot, update, view)

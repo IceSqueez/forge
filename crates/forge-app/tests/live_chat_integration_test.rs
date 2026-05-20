@@ -20,6 +20,9 @@ fn test_app() -> App {
             .expect("in-memory SQLite always opens"),
     );
     let (theme, palette) = forge_widgets::catppuccin_mocha();
+    let server_subsystem = Arc::new(forge_app::server_subsystem::ServerSubsystem::new(
+        Arc::clone(&backend) as Arc<dyn forge_storage::CredentialsRepo>,
+    ));
     App {
         screen: Screen::Onboarding(OnboardingStep::Welcome),
         theme,
@@ -45,6 +48,7 @@ fn test_app() -> App {
         integration_detail: None,
         obs_client: None,
         server_screen: forge_app::ServerScreenState::default(),
+        server_subsystem,
         settings_websocket: forge_app::SettingsWebSocketState::default(),
     }
 }

@@ -207,6 +207,7 @@ pub enum Message {
     RemoveSubAction(RemoveSubActionMsg),
     IntegrationDetail(IntegrationDetailMsg),
     ObsBootResult(Result<ObsClientRef, String>),
+    ServerBootResult(Result<crate::server_subsystem::ServerBootSnapshot, String>),
     ThemeChanged(ThemeId),
     EventArrived(Event),
     ChatInputChanged(String),

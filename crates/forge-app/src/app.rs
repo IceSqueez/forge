@@ -54,6 +54,7 @@ use crate::script_editor::{
 use crate::server_screen::{
     ServerScreenMsg, ServerScreenState, handle_server_screen_msg, server_screen_view,
 };
+use crate::server_subsystem::ServerSubsystem;
 use crate::settings_websocket::{
     SettingsWebSocketState, handle_settings_websocket_msg, settings_websocket_view,
 };
@@ -122,6 +123,7 @@ pub struct App {
     pub integration_detail: Option<IntegrationDetailState>,
     pub obs_client: Option<Arc<ObsClient>>,
     pub server_screen: ServerScreenState,
+    pub server_subsystem: Arc<ServerSubsystem>,
     pub settings_websocket: SettingsWebSocketState,
 }
 
@@ -136,6 +138,9 @@ impl App {
         command_parser: Option<CommandParserHandle>,
     ) -> Self {
         let (theme, palette) = forge_widgets::catppuccin_mocha();
+        let server_subsystem = Arc::new(ServerSubsystem::new(
+            Arc::clone(&backend) as Arc<dyn CredentialsRepo>
+        ));
         Self {
             screen: initial,
             theme,
@@ -161,6 +166,7 @@ impl App {
             integration_detail: None,
             obs_client: None,
             server_screen: ServerScreenState::default(),
+            server_subsystem,
             settings_websocket: SettingsWebSocketState::default(),
         }
     }
@@ -179,6 +185,9 @@ impl Default for App {
                 .expect("in-memory SQLite always opens"),
         );
         let (theme, palette) = forge_widgets::catppuccin_mocha();
+        let server_subsystem = Arc::new(ServerSubsystem::new(
+            Arc::clone(&backend) as Arc<dyn CredentialsRepo>
+        ));
         Self {
             screen: Screen::Onboarding(OnboardingStep::Welcome),
             theme,
@@ -204,6 +213,7 @@ impl Default for App {
             integration_detail: None,
             obs_client: None,
             server_screen: ServerScreenState::default(),
+            server_subsystem,
             settings_websocket: SettingsWebSocketState::default(),
         }
     }
@@ -668,6 +678,20 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 Task::none()
             }
         },
+        Message::ServerBootResult(result) => {
+            match result {
+                Ok(snapshot) => {
+                    app.server_screen.bind_address = snapshot.bind_address;
+                    app.server_screen.bearer_token = snapshot.bearer_token;
+                    app.server_screen.server_status = crate::server_screen::ServerStatus::Running;
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "server boot failed");
+                    app.server_screen.server_status = crate::server_screen::ServerStatus::Error(e);
+                }
+            }
+            Task::none()
+        }
         Message::Server(sub) => handle_server_screen_msg(&mut app.server_screen, sub),
         Message::SettingsWebSocket(sub) => {
             handle_settings_websocket_msg(&mut app.settings_websocket, sub, &app.backend)
@@ -4972,6 +4996,9 @@ mod tests {
         );
 
         let (theme, palette) = forge_widgets::catppuccin_mocha();
+        let server_subsystem = Arc::new(ServerSubsystem::new(
+            Arc::clone(&sqlite) as Arc<dyn CredentialsRepo>
+        ));
         let app = App {
             screen: Screen::Home,
             theme,
@@ -4997,6 +5024,7 @@ mod tests {
             integration_detail: None,
             obs_client: None,
             server_screen: ServerScreenState::default(),
+            server_subsystem,
             settings_websocket: SettingsWebSocketState::default(),
         };
 
@@ -5246,6 +5274,9 @@ mod tests {
         dp.queue_repo().save(&queue).await.expect("save queue");
 
         let (theme, palette) = forge_widgets::catppuccin_mocha();
+        let server_subsystem = Arc::new(ServerSubsystem::new(
+            Arc::clone(&dp) as Arc<dyn CredentialsRepo>
+        ));
         let mut app = App {
             screen: Screen::Actions,
             theme,
@@ -5271,6 +5302,7 @@ mod tests {
             integration_detail: None,
             obs_client: None,
             server_screen: ServerScreenState::default(),
+            server_subsystem,
             settings_websocket: SettingsWebSocketState::default(),
         };
 

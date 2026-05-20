@@ -92,8 +92,12 @@ pub fn bootstrap_icon_for(name: &str) -> char {
         "eraser" => ICON_ERASER,
         "dots-vertical" => ICON_DOTS_VERTICAL,
         "circle-dashed" => ICON_CIRCLE_DASHED,
-        "device-desktop" | "layout" | "stack-2" | "record" | "rss" => ICON_BROADCAST,
+        "device-desktop" | "layout" | "stack-2" | "record" => ICON_BROADCAST,
         "brand-twitch" | "twitch" | "brand-obs" | "obs" => ICON_BROADCAST,
+        "rss" => ICON_ACTIVITY,
+        "send" => ICON_CHEVRON_RIGHT,
+        "flag" => ICON_ALERT_TRIANGLE,
+        "edit" | "pencil" => ICON_INFO_CIRCLE,
         _ => ICON_INFO_CIRCLE,
     }
 }

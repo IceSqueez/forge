@@ -10,7 +10,6 @@ use forge_platform_core::{
     CapabilityFlags, ConnectionState, ContentList, ContentListItem, DetailSection, HeaderAction,
     HealthDelta, HealthMetric, HealthStream, HealthValue, IntegrationContent, IntegrationHealth,
     IntegrationId, IntegrationStatus, ListFooter, QuickAction, QuickActions, SectionIcon,
-    SubscriptionRow,
 };
 use forge_types::SubActionSpec;
 
@@ -169,86 +168,78 @@ impl IntegrationContent for TwitchIntegrationBundle {
 
         let scopes_count = format!("{}", scope_items.len());
         let scopes_list = ContentList {
-            title: "OAuth Scopes".to_owned(),
-            icon: SectionIcon::new("lock"),
+            title: "OAuth scopes".to_owned(),
+            icon: SectionIcon::new("key"),
             count_label: Some(scopes_count),
             items: scope_items,
             footer: Some(ListFooter {
-                cta_label: None,
-                trailing_label: Some("all granted".to_owned()),
-            }),
-        };
-
-        // TODO Phase 2: populate from live EventSub subscriptions
-        let eventsub_section = DetailSection::SubscriptionList {
-            title: "EventSub Subscriptions".to_owned(),
-            icon: SectionIcon::new("bolt"),
-            items: Vec::<SubscriptionRow>::new(),
-            footer: Some(ListFooter {
-                cta_label: Some("No subscriptions".to_owned()),
+                cta_label: Some("Request more scopes".to_owned()),
                 trailing_label: None,
             }),
         };
 
-        let scopes_section = DetailSection::TwoColumnLists {
-            left: scopes_list,
-            right: ContentList {
-                title: "Granted Permissions".to_owned(),
-                icon: SectionIcon::new("shield-check"),
-                count_label: Some(format!("{}", TWITCH_BROADCASTER_SCOPES.len())),
-                items: vec![],
-                footer: Some(ListFooter {
-                    cta_label: Some("All scopes granted at login".to_owned()),
-                    trailing_label: None,
-                }),
-            },
+        // TODO Phase 2: populate from live EventSub WebSocket subscriptions.
+        let eventsub_list = ContentList {
+            title: "EventSub subscriptions".to_owned(),
+            icon: SectionIcon::new("rss"),
+            count_label: Some("0 active".to_owned()),
+            items: vec![],
+            footer: Some(ListFooter {
+                cta_label: Some("Subscribe to event".to_owned()),
+                trailing_label: Some("subscribing on session start".to_owned()),
+            }),
         };
 
-        vec![scopes_section, eventsub_section]
+        vec![DetailSection::TwoColumnLists {
+            left: scopes_list,
+            right: eventsub_list,
+        }]
     }
 }
 
 impl QuickActions for TwitchIntegrationBundle {
     fn actions(&self) -> Vec<QuickAction> {
         let connected = self.is_chat_connected();
+        // TODO Phase 2: each action emits a typed Twitch sub-action; for now we
+        // route through SendChat / Log templates as placeholder targets.
         vec![
             QuickAction {
-                label: "Reconnect chat".to_owned(),
-                icon: SectionIcon::new("refresh"),
-                enabled: !connected,
+                label: "Send chat message".to_owned(),
+                icon: SectionIcon::new("send"),
+                enabled: connected,
                 subaction_template: SubActionSpec::SendChat {
-                    message: "platform.reconnect_requested".to_owned(),
+                    message: String::new(),
                     target: "twitch".to_owned(),
                 },
                 picker: None,
             },
             QuickAction {
-                label: "Refresh token".to_owned(),
-                icon: SectionIcon::new("key"),
-                enabled: true,
+                label: "Run shoutout".to_owned(),
+                icon: SectionIcon::new("flag"),
+                enabled: connected,
                 subaction_template: SubActionSpec::Log {
                     level: forge_types::LogLevel::Info,
-                    message: "twitch.refresh_token_requested".to_owned(),
+                    message: "twitch.shoutout_requested".to_owned(),
                 },
                 picker: None,
             },
             QuickAction {
-                label: "Copy user ID".to_owned(),
-                icon: SectionIcon::new("copy"),
-                enabled: true,
+                label: "Run commercial".to_owned(),
+                icon: SectionIcon::new("clock"),
+                enabled: connected,
                 subaction_template: SubActionSpec::Log {
                     level: forge_types::LogLevel::Info,
-                    message: "twitch.copy_user_id_requested".to_owned(),
+                    message: "twitch.commercial_requested".to_owned(),
                 },
                 picker: None,
             },
             QuickAction {
-                label: "Open Twitch dashboard".to_owned(),
-                icon: SectionIcon::new("external-link"),
-                enabled: true,
+                label: "Update title/game".to_owned(),
+                icon: SectionIcon::new("edit"),
+                enabled: connected,
                 subaction_template: SubActionSpec::Log {
                     level: forge_types::LogLevel::Info,
-                    message: "twitch.open_dashboard_requested".to_owned(),
+                    message: "twitch.update_channel_requested".to_owned(),
                 },
                 picker: None,
             },
@@ -367,11 +358,12 @@ mod tests {
     }
 
     #[test]
-    fn content_sections_returns_two() {
+    fn content_sections_returns_one_two_column() {
         let b = make_bundle(ChatConnectionState::Connected);
         let content: &dyn IntegrationContent = b.as_ref();
         let sections = content.sections();
-        assert_eq!(sections.len(), 2);
+        assert_eq!(sections.len(), 1);
+        assert!(matches!(&sections[0], DetailSection::TwoColumnLists { .. }));
     }
 
     #[test]
@@ -390,14 +382,17 @@ mod tests {
     }
 
     #[test]
-    fn content_eventsub_section_is_subscription_list() {
+    fn content_sections_two_column_scopes_and_eventsub() {
         let b = make_bundle(ChatConnectionState::Connected);
         let content: &dyn IntegrationContent = b.as_ref();
         let sections = content.sections();
-        assert!(matches!(
-            &sections[1],
-            DetailSection::SubscriptionList { .. }
-        ));
+        assert_eq!(sections.len(), 1);
+        let DetailSection::TwoColumnLists { left, right } = &sections[0] else {
+            panic!("expected TwoColumnLists");
+        };
+        assert_eq!(left.title, "OAuth scopes");
+        assert_eq!(left.items.len(), TWITCH_BROADCASTER_SCOPES.len());
+        assert_eq!(right.title, "EventSub subscriptions");
     }
 
     #[test]
@@ -411,29 +406,23 @@ mod tests {
     fn quick_actions_labels_in_order() {
         let b = make_bundle(ChatConnectionState::Connected);
         let actions = b.actions();
-        assert_eq!(actions[0].label, "Reconnect chat");
-        assert_eq!(actions[1].label, "Refresh token");
-        assert_eq!(actions[2].label, "Copy user ID");
-        assert_eq!(actions[3].label, "Open Twitch dashboard");
+        assert_eq!(actions[0].label, "Send chat message");
+        assert_eq!(actions[1].label, "Run shoutout");
+        assert_eq!(actions[2].label, "Run commercial");
+        assert_eq!(actions[3].label, "Update title/game");
     }
 
     #[test]
-    fn reconnect_chat_disabled_when_connected() {
+    fn quick_actions_enabled_when_chat_connected() {
         let b = make_bundle(ChatConnectionState::Connected);
         let actions = b.actions();
-        assert!(
-            !actions[0].enabled,
-            "reconnect must be disabled when connected"
-        );
+        assert!(actions.iter().all(|a| a.enabled));
     }
 
     #[test]
-    fn reconnect_chat_enabled_when_disconnected() {
+    fn quick_actions_disabled_when_chat_disconnected() {
         let b = make_bundle(ChatConnectionState::Disconnected);
         let actions = b.actions();
-        assert!(
-            actions[0].enabled,
-            "reconnect must be enabled when disconnected"
-        );
+        assert!(actions.iter().all(|a| !a.enabled));
     }
 }

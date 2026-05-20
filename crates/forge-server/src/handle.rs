@@ -5,6 +5,7 @@ use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, watch};
 
+use crate::auth::AuthState;
 use crate::server::AppState;
 use crate::{ServerError, server};
 
@@ -86,6 +87,14 @@ impl ServerHandle {
         guard.bind_addr = bind_addr;
 
         Ok(())
+    }
+
+    pub async fn auth_state(&self) -> Arc<AuthState> {
+        Arc::clone(&self.inner.lock().await.state.auth)
+    }
+
+    pub async fn bind_addr(&self) -> SocketAddr {
+        self.inner.lock().await.bind_addr
     }
 
     pub fn abort(&self) {

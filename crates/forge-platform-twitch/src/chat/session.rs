@@ -88,6 +88,13 @@ impl ChatSession {
                     continue;
                 }
                 SessionOutcome::Disconnected => {}
+                SessionOutcome::ReauthRequired => {
+                    warn!(
+                        "twitch chat session stopped: token is missing required scope. \
+                         Click Refresh token to re-authorize."
+                    );
+                    break;
+                }
             }
 
             attempt += 1;
@@ -137,6 +144,9 @@ impl ChatSession {
                                     return SessionOutcome::Reconnect(new_url);
                                 }
                                 FrameAction::Disconnect => return SessionOutcome::Disconnected,
+                                FrameAction::ReauthRequired => {
+                                    return SessionOutcome::ReauthRequired;
+                                }
                             }
                         }
                         Some(Ok(Message::Close(_))) => {
@@ -193,7 +203,7 @@ impl ChatSession {
                             "platform.reauth_required",
                             serde_json::json!({ "platform": "twitch" }),
                         ));
-                        return FrameAction::Disconnect;
+                        return FrameAction::ReauthRequired;
                     }
                     Err(e) => {
                         warn!(error = %e, "chat subscription failed");
@@ -343,12 +353,14 @@ fn extract_roles_from_badges(badges: Option<&serde_json::Value>) -> Vec<String> 
 enum SessionOutcome {
     Reconnect(String),
     Disconnected,
+    ReauthRequired,
 }
 
 enum FrameAction {
     Continue,
     Reconnect(String),
     Disconnect,
+    ReauthRequired,
 }
 
 #[derive(Debug, Deserialize)]

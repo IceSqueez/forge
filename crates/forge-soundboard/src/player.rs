@@ -43,12 +43,32 @@ impl SoundboardPlayer {
         let device = override_device.unwrap_or_else(|| clip.output_device.clone());
         let device_label = device_label(&device);
 
-        let sink = self.sink_factory.build(&device).await?;
+        let sink = match self.sink_factory.build(&device).await {
+            Ok(s) => s,
+            Err(e) => {
+                self.event_sink.emit(AudioEvent::PlaybackFailed {
+                    clip_id: Some(clip_id),
+                    error: e.to_string(),
+                });
+                return Err(SoundboardError::Audio(e));
+            }
+        };
 
         let path = clip.file_path.clone();
-        let buffer = tokio::task::spawn_blocking(move || forge_audio::decode_file(&path))
+        let buffer = match tokio::task::spawn_blocking(move || forge_audio::decode_file(&path))
             .await
-            .map_err(|e| SoundboardError::JoinError(e.to_string()))??;
+            .map_err(|e| SoundboardError::JoinError(e.to_string()))
+            .and_then(|r| r.map_err(SoundboardError::Audio))
+        {
+            Ok(b) => b,
+            Err(e) => {
+                self.event_sink.emit(AudioEvent::PlaybackFailed {
+                    clip_id: Some(clip_id),
+                    error: e.to_string(),
+                });
+                return Err(e);
+            }
+        };
 
         let volume = clip.volume;
         let scaled: Vec<i16> = buffer

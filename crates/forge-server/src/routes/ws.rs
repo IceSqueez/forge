@@ -134,6 +134,13 @@ async fn handle_socket(
                     Ok(WsFrame::Close) | Err(RecvError::Closed) => break,
                     Err(RecvError::Lagged(n)) => {
                         client.drop_counter.fetch_add(n, Ordering::Relaxed);
+                        let notice = dropped_notification(n);
+                        let len = notice.len() as u64;
+                        if socket.send(Message::Text(notice.into())).await.is_err() {
+                            break;
+                        }
+                        client.bytes_sent_session.fetch_add(len, Ordering::Relaxed);
+                        state.server_info.bandwidth.record(len);
                     }
                 }
             }
@@ -142,4 +149,28 @@ async fn handle_socket(
 
     state.bus_adapter.unregister_client(handle.id).await;
     state.server_info.unregister(handle.id).await;
+}
+
+fn dropped_notification(n: u64) -> String {
+    serde_json::json!({ "dropped": n }).to_string()
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
+mod tests {
+    use super::dropped_notification;
+
+    #[test]
+    fn dropped_notification_serializes_count() {
+        let frame = dropped_notification(42);
+        let parsed: serde_json::Value = serde_json::from_str(&frame).expect("valid json");
+        assert_eq!(parsed["dropped"], 42);
+    }
+
+    #[test]
+    fn dropped_notification_emits_zero_when_no_drops() {
+        let frame = dropped_notification(0);
+        let parsed: serde_json::Value = serde_json::from_str(&frame).expect("valid json");
+        assert_eq!(parsed["dropped"], 0);
+    }
 }

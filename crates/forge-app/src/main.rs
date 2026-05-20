@@ -139,6 +139,9 @@ fn main() -> iced::Result {
     tracing_subscriber::fmt().with_env_filter("info").init();
     tracing::info!("forge starting");
 
+    let runtime = tokio::runtime::Runtime::new().expect("tokio runtime required for forge");
+    let _runtime_guard = runtime.enter();
+
     let (backend, storage_offline) = boot_storage();
     let initial_screen = resolve_initial_screen(&backend);
 

@@ -756,6 +756,21 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             )
         }
         Message::Server(sub) => handle_server_screen_msg(&mut app.server_screen, sub),
+        Message::SettingsWebSocket(
+            crate::settings_websocket::SettingsWebSocketMsg::SaveStatus(Ok(())),
+        ) => {
+            if !matches!(
+                app.server_screen.server_status,
+                crate::server_screen::ServerStatus::Running
+            ) {
+                return Task::none();
+            }
+            let subsystem = Arc::clone(&app.server_subsystem);
+            Task::perform(
+                async move { subsystem.restart().await.map_err(|e| e.to_string()) },
+                Message::ServerRestartResult,
+            )
+        }
         Message::SettingsWebSocket(sub) => {
             handle_settings_websocket_msg(&mut app.settings_websocket, sub, &app.backend)
         }

@@ -66,6 +66,7 @@ async fn handle_socket(
         credentials: Arc::clone(&state.credentials),
         server_info: Arc::clone(&state.server_info),
         action_engine: Arc::clone(&state.action_engine),
+        overlay_root: Arc::clone(&state.overlay_root),
     };
 
     loop {

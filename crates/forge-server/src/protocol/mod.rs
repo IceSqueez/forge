@@ -192,6 +192,7 @@ pub struct DispatchContext {
     pub credentials: Arc<dyn CredentialsRepo>,
     pub server_info: Arc<ServerInfo>,
     pub action_engine: Arc<ActionEngineHandle>,
+    pub overlay_root: Arc<std::path::PathBuf>,
 }
 
 const PLATFORM_PREFIXES: &[&str] = &["twitch:", "youtube:", "kick:", "trovo:"];
@@ -287,13 +288,6 @@ fn parse_wire_filter(wf: &WireEventFilter) -> EventFilter {
         Some(k) => Some(k.to_owned()),
     };
     EventFilter::new(source, kind)
-}
-
-fn not_implemented() -> WsResponse {
-    WsResponse::Error {
-        code: None,
-        message: "method not implemented".to_owned(),
-    }
 }
 
 fn variant_to_wire_value(v: &Variant) -> serde_json::Value {
@@ -699,6 +693,94 @@ async fn handle_get_active_viewers(ctx: &DispatchContext) -> WsResponse {
     WsResponse::Ok(serde_json::json!({ "viewers": wire }))
 }
 
+fn mime_for_extension(ext: &str) -> Option<&'static str> {
+    match ext.to_ascii_lowercase().as_str() {
+        "html" | "htm" => Some("text/html"),
+        "js" | "mjs" => Some("application/javascript"),
+        "css" => Some("text/css"),
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "svg" => Some("image/svg+xml"),
+        "wav" => Some("audio/wav"),
+        "mp3" => Some("audio/mpeg"),
+        _ => None,
+    }
+}
+
+async fn handle_get_overlay_files(recursive: bool, ctx: &DispatchContext) -> WsResponse {
+    use std::path::{Path, PathBuf};
+
+    let root: &Path = ctx.overlay_root.as_path();
+    let root_path_str = root.to_string_lossy().into_owned();
+
+    let canon_root = match tokio::fs::canonicalize(root).await {
+        Ok(p) => p,
+        Err(_) => {
+            return WsResponse::Ok(serde_json::json!({
+                "root_path": root_path_str,
+                "files": [],
+            }));
+        }
+    };
+
+    let mut files: Vec<serde_json::Value> = Vec::new();
+    let mut dirs_to_visit: Vec<PathBuf> = vec![canon_root.clone()];
+
+    while let Some(dir) = dirs_to_visit.pop() {
+        let mut read_dir = match tokio::fs::read_dir(&dir).await {
+            Ok(rd) => rd,
+            Err(_) => continue,
+        };
+        while let Ok(Some(entry)) = read_dir.next_entry().await {
+            let canon_entry = match tokio::fs::canonicalize(entry.path()).await {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            if !canon_entry.starts_with(&canon_root) {
+                continue;
+            }
+            let rel = match canon_entry.strip_prefix(&canon_root) {
+                Ok(r) => r.to_owned(),
+                Err(_) => continue,
+            };
+            if rel
+                .components()
+                .any(|c| matches!(c, std::path::Component::ParentDir))
+            {
+                continue;
+            }
+            let meta = match entry.metadata().await {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            let is_dir = meta.is_dir();
+            if is_dir && recursive {
+                dirs_to_visit.push(canon_entry.clone());
+            }
+            let (kind, size_bytes, mime) = if is_dir {
+                ("dir", 0u64, serde_json::Value::Null)
+            } else {
+                let ext = rel.extension().and_then(|e| e.to_str()).unwrap_or_default();
+                let mime = mime_for_extension(ext)
+                    .map(|s| serde_json::Value::String(s.to_owned()))
+                    .unwrap_or(serde_json::Value::Null);
+                ("file", meta.len(), mime)
+            };
+            files.push(serde_json::json!({
+                "name": rel.to_string_lossy(),
+                "kind": kind,
+                "size_bytes": size_bytes,
+                "mime": mime,
+            }));
+        }
+    }
+
+    WsResponse::Ok(serde_json::json!({
+        "root_path": root_path_str,
+        "files": files,
+    }))
+}
+
 async fn handle_replay_event(event_id: String, ctx: &DispatchContext) -> WsResponse {
     let eid: EventId = match serde_json::from_value(serde_json::Value::String(event_id)) {
         Ok(id) => id,
@@ -872,11 +954,11 @@ async fn route(req: WsRequest, ctx: &DispatchContext) -> WsResponse {
             handle_get_active_viewers(ctx).await
         }
 
-        WsRequest::GetOverlayFiles { .. } => {
+        WsRequest::GetOverlayFiles { recursive } => {
             if ctx.auth_required_for_reads && !is_authenticated(ctx) {
                 return unauthenticated();
             }
-            not_implemented()
+            handle_get_overlay_files(recursive, ctx).await
         }
     }
 }
@@ -935,6 +1017,7 @@ mod tests {
             credentials: null_creds(),
             server_info: ServerInfo::new(),
             action_engine,
+            overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
         }
     }
 
@@ -960,6 +1043,7 @@ mod tests {
             credentials: null_creds(),
             server_info: ServerInfo::new(),
             action_engine,
+            overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
         }
     }
 
@@ -991,6 +1075,7 @@ mod tests {
             credentials: null_creds(),
             server_info: ServerInfo::new(),
             action_engine,
+            overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
         }
     }
 
@@ -1992,5 +2077,75 @@ mod tests {
             other => panic!("expected AUTH_FAILED error, got {other:?}"),
         }
         assert!(!ctx.client.authenticated.load(Ordering::Acquire));
+    }
+
+    fn make_ctx_with_overlay_root(root: std::path::PathBuf) -> DispatchContext {
+        let mut ctx = make_ctx(false, false);
+        ctx.overlay_root = Arc::new(root);
+        ctx
+    }
+
+    #[tokio::test]
+    async fn get_overlay_files_empty_dir_returns_empty_list() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let ctx = make_ctx_with_overlay_root(tmp.path().to_path_buf());
+        let req = WsEnvelope {
+            id: Some("of1".to_owned()),
+            inner: WsRequest::GetOverlayFiles { recursive: false },
+        };
+        let resp = dispatch(req, &ctx).await;
+        let json = serialize_response_frame(&resp);
+        assert_eq!(json["status"], "ok");
+        assert!(json["root_path"].is_string());
+        assert_eq!(json["files"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn get_overlay_files_non_recursive_lists_only_depth_one() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        std::fs::write(root.join("alerts.html"), b"<html/>").expect("write");
+        std::fs::create_dir_all(root.join("sub")).expect("mkdir");
+        std::fs::write(root.join("sub").join("nested.js"), b"//").expect("write nested");
+
+        let ctx = make_ctx_with_overlay_root(root.to_path_buf());
+        let req = WsEnvelope {
+            id: Some("of2".to_owned()),
+            inner: WsRequest::GetOverlayFiles { recursive: false },
+        };
+        let resp = dispatch(req, &ctx).await;
+        let json = serialize_response_frame(&resp);
+        let files = json["files"].as_array().unwrap();
+        assert_eq!(files.len(), 2);
+        let names: HashSet<&str> = files.iter().map(|f| f["name"].as_str().unwrap()).collect();
+        assert!(names.contains("alerts.html"));
+        assert!(names.contains("sub"));
+        assert!(!names.iter().any(|n| n.contains("nested.js")));
+        let alerts = files.iter().find(|f| f["name"] == "alerts.html").unwrap();
+        assert_eq!(alerts["mime"], "text/html");
+        assert_eq!(alerts["kind"], "file");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn get_overlay_files_symlink_escape_is_filtered() {
+        let outside = tempfile::tempdir().expect("outside tempdir");
+        std::fs::write(outside.path().join("secret.txt"), b"shh").expect("write secret");
+        let root = tempfile::tempdir().expect("root tempdir");
+        std::os::unix::fs::symlink(outside.path(), root.path().join("escape")).expect("symlink");
+
+        let ctx = make_ctx_with_overlay_root(root.path().to_path_buf());
+        let req = WsEnvelope {
+            id: Some("of3".to_owned()),
+            inner: WsRequest::GetOverlayFiles { recursive: true },
+        };
+        let resp = dispatch(req, &ctx).await;
+        let json = serialize_response_frame(&resp);
+        let files = json["files"].as_array().unwrap();
+        assert!(
+            !files
+                .iter()
+                .any(|f| f["name"].as_str().unwrap().contains("secret"))
+        );
     }
 }

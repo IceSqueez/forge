@@ -27,6 +27,7 @@ pub struct AppState {
     pub credentials: Arc<dyn CredentialsRepo>,
     pub server_info: Arc<ServerInfo>,
     pub action_engine: Arc<ActionEngineHandle>,
+    pub overlay_root: Arc<std::path::PathBuf>,
 }
 
 pub struct Server {
@@ -45,6 +46,7 @@ impl Server {
         let bus = Arc::clone(&self.config.event_bus);
         let bus_adapter = BusAdapter::new(Arc::clone(&bus));
         bus_adapter.spawn();
+        let overlay_root = Arc::new(self.config.overlay_root.clone());
         let state = AppState {
             auth,
             bus,
@@ -53,6 +55,7 @@ impl Server {
             credentials,
             server_info: ServerInfo::new(),
             action_engine: self.config.action_engine,
+            overlay_root,
         };
         let listener = TcpListener::bind(addr)
             .await
@@ -229,6 +232,7 @@ mod tests {
             credentials: creds,
             server_info: ServerInfo::new(),
             action_engine,
+            overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
         }
     }
 

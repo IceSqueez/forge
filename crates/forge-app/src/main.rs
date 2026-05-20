@@ -6,14 +6,13 @@ use forge_app::Screen;
 use forge_app::app::{
     load_obs_and_connect, load_twitch_credential, subscription, theme_callback, update, view,
 };
-use forge_audio::NullAudioEventSink;
 use forge_platform_core::paths;
 use forge_platform_twitch::{ChatSendBridge, ChatSendBridgeHandle};
 use forge_runtime::{
     ActionEngineHandle, CommandParser, CommandParserHandle, EventBus, QueueScheduler,
     QueueSchedulerHandle, ScriptRegistry, spawn_action_engine,
 };
-use forge_soundboard::{CpalSinkFactory, SoundboardPlayer};
+use forge_soundboard::{BusAudioEventSink, CpalSinkFactory, SoundboardPlayer};
 use forge_storage::{CredentialsRepo, DataProvider};
 use forge_storage_sqlite::SqliteBackend;
 
@@ -190,7 +189,7 @@ fn main() -> iced::Result {
         let clips_repo = backend.soundboard_clips_repo_arc();
         Some(Arc::new(SoundboardPlayer::new(
             Arc::new(CpalSinkFactory),
-            Arc::new(NullAudioEventSink),
+            Arc::new(BusAudioEventSink::new(Arc::clone(&bus))),
             clips_repo,
         )))
     };

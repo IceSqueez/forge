@@ -124,6 +124,7 @@ pub struct App {
     pub settings_websocket: SettingsWebSocketState,
     pub twitch_panel: crate::twitch_panel::TwitchPanelState,
     pub twitch_flow: Option<crate::twitch_panel::TwitchFlowHandle>,
+    pub twitch_login: Option<String>,
 }
 
 impl App {
@@ -168,6 +169,7 @@ impl App {
             settings_websocket: SettingsWebSocketState::default(),
             twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
             twitch_flow: None,
+            twitch_login: None,
         }
     }
 }
@@ -216,6 +218,7 @@ impl Default for App {
             settings_websocket: SettingsWebSocketState::default(),
             twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
             twitch_flow: None,
+            twitch_login: None,
         }
     }
 }
@@ -383,6 +386,9 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                     Arc::clone(&app.bus),
                 );
                 app.twitch_chat_handle = Some(chat.start());
+                if !bundle.login.is_empty() {
+                    app.twitch_login = Some(bundle.login);
+                }
                 tracing::info!("twitch chat session restarted from stored credentials");
                 Task::none()
             }
@@ -594,6 +600,7 @@ fn handle_twitch_panel_msg(
                 id = %outcome.user_info.id,
                 "twitch authorization complete",
             );
+            app.twitch_login = Some(outcome.user_info.login.clone());
             let chat = forge_platform_twitch::TwitchChat::new(
                 outcome.token,
                 outcome.client_id,
@@ -1270,10 +1277,12 @@ pub async fn load_twitch_credential(
         .as_str()
         .ok_or_else(|| "missing user_id in twitch credential bundle".to_owned())?
         .to_owned();
+    let login = bundle["login"].as_str().unwrap_or_default().to_owned();
     Ok(Some(crate::message::TwitchBootBundle {
         access_token,
         client_id,
         user_id,
+        login,
     }))
 }
 
@@ -3641,8 +3650,12 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Screen::EventFeed => event_feed_view(&app.event_feed, palette),
         Screen::Server => server_screen_view(&app.server_screen, palette),
         Screen::IntegrationDetail(id) => {
-            if id.as_str() == "twitch" && app.twitch_chat_handle.is_none() {
-                crate::twitch_panel::twitch_disconnected_view(&app.twitch_panel, palette)
+            if id.as_str() == "twitch" {
+                if app.twitch_chat_handle.is_some() {
+                    crate::twitch_panel::twitch_connected_view(app.twitch_login.as_deref(), palette)
+                } else {
+                    crate::twitch_panel::twitch_disconnected_view(&app.twitch_panel, palette)
+                }
             } else if let Some(state) = app.integration_detail.as_ref() {
                 integration_detail_view(state, palette)
             } else {
@@ -4008,6 +4021,7 @@ mod tests {
             settings_websocket: SettingsWebSocketState::default(),
             twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
             twitch_flow: None,
+            twitch_login: None,
         };
 
         assert!(app.action_engine.is_some());
@@ -4287,6 +4301,7 @@ mod tests {
             settings_websocket: SettingsWebSocketState::default(),
             twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
             twitch_flow: None,
+            twitch_login: None,
         };
 
         let mut form = crate::actions::AddActionForm::new();

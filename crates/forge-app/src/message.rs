@@ -24,6 +24,7 @@ pub struct TwitchBootBundle {
     pub access_token: String,
     pub client_id: String,
     pub user_id: String,
+    pub login: String,
 }
 
 pub struct ObsClientRef(pub(crate) Arc<ObsClient>);

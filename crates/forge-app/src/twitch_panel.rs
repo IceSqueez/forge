@@ -122,6 +122,52 @@ pub enum TwitchPanelMsg {
     AuthCompleted(Result<TwitchAuthOutcome, String>),
 }
 
+pub fn twitch_connected_view<'a>(
+    login: Option<&'a str>,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    let header = twitch_header_card(palette);
+
+    let title_row = row![
+        text(ICON_CHECK_CIRCLE.to_string())
+            .size(14.0)
+            .font(BOOTSTRAP_FONT)
+            .color(palette.success),
+        text("Connected")
+            .size(FONT_BODY_MD)
+            .color(palette.text_primary),
+    ]
+    .spacing(8.0)
+    .align_y(Alignment::Center);
+
+    let as_label = match login {
+        Some(name) => format!("Signed in as {name}"),
+        None => "Signed in".to_owned(),
+    };
+    let detail = text(as_label).size(FONT_BODY_SM).color(palette.text_muted);
+
+    let status_card = container(column![title_row, detail].spacing(6.0))
+        .width(Length::Fill)
+        .padding(Padding::from([14_u16, 18_u16]))
+        .style(card_style(palette));
+
+    let chat_link = primary_button(
+        "Open live chat",
+        Message::Navigate(crate::Screen::LiveChat),
+        palette,
+    );
+    let chat_card = container(chat_link)
+        .width(Length::Fill)
+        .padding(Padding::from([14_u16, 18_u16]))
+        .style(card_style(palette));
+
+    container(column![header, status_card, chat_card].spacing(14.0))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(Padding::from([18_u16, 22_u16]))
+        .into()
+}
+
 pub fn twitch_disconnected_view<'a>(
     state: &'a TwitchPanelState,
     palette: &'a ForgePalette,

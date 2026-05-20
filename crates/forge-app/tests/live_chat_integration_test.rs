@@ -51,6 +51,7 @@ fn test_app() -> App {
         settings_websocket: forge_app::SettingsWebSocketState::default(),
         twitch_panel: forge_app::twitch_panel::TwitchPanelState::default(),
         twitch_flow: None,
+        twitch_login: None,
     }
 }
 

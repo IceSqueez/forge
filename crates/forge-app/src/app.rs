@@ -888,9 +888,30 @@ fn handle_queues_msg(app: &mut App, sub: QueuesMsg) -> Task<Message> {
             )
         }
         QueuesMsg::DrainQueue(id) => {
-            // TODO Phase 2: drain in scheduler
-            tracing::info!(queue_id = %id, "drain requested — not yet implemented");
-            Task::none()
+            // Drain is currently implemented as "pause new dispatches" plus a
+            // bus event so observers know the intent. True drain semantics
+            // (let in-flight finish, then auto-pause) require scheduler state
+            // machine support that is not yet in place.
+            for q in &mut app.queues.queues {
+                if q.id == id {
+                    q.paused = true;
+                }
+            }
+            let Some(scheduler) = app.scheduler.clone() else {
+                return Task::none();
+            };
+            let bus = Arc::clone(&app.bus);
+            Task::perform(
+                async move {
+                    bus.publish(forge_events::Event::new(
+                        forge_events::EventSource::Core,
+                        "queue.drain_requested",
+                        serde_json::json!({ "queue_id": id.to_string() }),
+                    ));
+                    scheduler.pause(id).await.map_err(|e| e.to_string())
+                },
+                |r| Message::Queues(QueuesMsg::PauseResult(r)),
+            )
         }
         QueuesMsg::PauseAll => {
             for q in &mut app.queues.queues {

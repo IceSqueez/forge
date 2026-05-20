@@ -99,6 +99,8 @@ open = { version = "5" }
 cpal = { version = "0.17" }
 rubato = { version = "0.16" }
 symphonia = { version = "0.5", features = ["all-codecs", "all-formats"] }
+crossbeam-channel = { version = "0.5" }
+futures = { version = "0.3" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

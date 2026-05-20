@@ -134,10 +134,17 @@ impl DeviceCodePoller {
                 reason: e.to_string(),
             })?;
 
-        if resp.status().is_success() {
+        let status = resp.status().as_u16();
+        let body_text = resp.text().await.unwrap_or_default();
+        tracing::debug!(status, body = %body_text, "token poll response");
+
+        if (200..300).contains(&status) {
             let body: TokenEndpointSuccess =
-                resp.json().await.map_err(|e| PlatformError::Network {
-                    reason: e.to_string(),
+                serde_json::from_str(&body_text).map_err(|e| PlatformError::Auth {
+                    reason: format!(
+                        "token response decode failed: {e}; body: {}",
+                        truncate_for_log(&body_text)
+                    ),
                 })?;
             let scopes = body
                 .scope
@@ -155,11 +162,14 @@ impl DeviceCodePoller {
         }
 
         let error_body: TokenEndpointError =
-            resp.json().await.map_err(|e| PlatformError::Network {
-                reason: e.to_string(),
+            serde_json::from_str(&body_text).map_err(|e| PlatformError::Auth {
+                reason: format!(
+                    "token error response decode failed (status {status}): {e}; body: {}",
+                    truncate_for_log(&body_text)
+                ),
             })?;
 
-        Ok(error_field_to_outcome(&error_body.error))
+        Ok(error_field_to_outcome(error_body.code()))
     }
 
     pub async fn run(&mut self) -> Result<TokenResponse, PlatformError> {
@@ -259,7 +269,19 @@ struct TokenEndpointSuccess {
 
 #[derive(Debug, Deserialize)]
 struct TokenEndpointError {
-    error: String,
+    #[serde(default)]
+    error: Option<String>,
+    #[serde(default)]
+    message: Option<String>,
+}
+
+impl TokenEndpointError {
+    fn code(&self) -> &str {
+        self.error
+            .as_deref()
+            .or(self.message.as_deref())
+            .unwrap_or("")
+    }
 }
 
 #[cfg(test)]

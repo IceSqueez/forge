@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use forge_storage::{
     ActionRepo, CommandRepo, CredentialId, CredentialsRepo, DataProvider, EventLogRepo,
     GlobalEntry, GlobalTransit, GlobalsRepo, HistoryRepo, QueueRepo, ScriptRecord, ScriptRepo,
-    SettingsRepo, StorageError, TriggerRepo, UserGlobalEntry, UserGlobalsRepo,
+    SettingsRepo, SoundboardClipsRepo, StorageError, TriggerRepo, UserGlobalEntry, UserGlobalsRepo,
 };
 use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
@@ -17,7 +17,7 @@ use crate::retention_task::spawn_retention_task;
 use crate::{
     SqliteActionRepo, SqliteCommandRepo, SqliteCredentialsRepo, SqliteEventLogRepo,
     SqliteGlobalsRepo, SqliteHistoryRepo, SqliteQueueRepo, SqliteScriptRepo, SqliteSettingsRepo,
-    SqliteTriggerRepo, SqliteUserGlobalsRepo, apply_migrations, connect,
+    SqliteSoundboardClipsRepo, SqliteTriggerRepo, SqliteUserGlobalsRepo, apply_migrations, connect,
 };
 
 const PRUNE_INTERVAL_PRODUCTION: Duration = Duration::from_secs(3600);
@@ -35,6 +35,7 @@ pub struct SqliteBackend {
     credentials: SqliteCredentialsRepo,
     history: SqliteHistoryRepo,
     event_log: SqliteEventLogRepo,
+    soundboard: SqliteSoundboardClipsRepo,
     shutdown: Arc<Notify>,
 }
 
@@ -116,10 +117,15 @@ impl SqliteBackend {
             script: SqliteScriptRepo::new(pool.clone()),
             history: SqliteHistoryRepo::new(pool.clone()),
             event_log: SqliteEventLogRepo::new(pool.clone()),
+            soundboard: SqliteSoundboardClipsRepo::new(pool.clone()),
             credentials,
             shutdown,
             pool,
         }
+    }
+
+    pub fn soundboard_clips_repo_impl(&self) -> &SqliteSoundboardClipsRepo {
+        &self.soundboard
     }
 }
 
@@ -310,6 +316,10 @@ impl DataProvider for SqliteBackend {
 
     fn event_log_repo(&self) -> &dyn EventLogRepo {
         &self.event_log
+    }
+
+    fn soundboard_clips_repo(&self) -> &dyn SoundboardClipsRepo {
+        &self.soundboard
     }
 
     async fn schema_version(&self) -> Result<u32, StorageError> {

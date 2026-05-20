@@ -7,11 +7,11 @@ use forge_events::Event;
 use forge_storage::{
     ActionRepo, CommandRepo, CredentialId, CredentialsRepo, DataProvider, EventLogRepo,
     GlobalEntry, GlobalsRepo, HistoryRepo, QueueRepo, ScriptRecord, ScriptRepo, SettingsRepo,
-    StorageError, TriggerRepo, UserGlobalEntry, UserGlobalsRepo,
+    SoundboardClipsRepo, StorageError, StoredClip, TriggerRepo, UserGlobalEntry, UserGlobalsRepo,
 };
 use forge_types::{
-    Action, ActionId, Command, CommandId, ExecutionContext, Queue, QueueId, ScriptId, Trigger,
-    TriggerId, Variant,
+    Action, ActionId, ClipId, Command, CommandId, ExecutionContext, Queue, QueueId, ScriptId,
+    Trigger, TriggerId, Variant,
 };
 use time::OffsetDateTime;
 
@@ -330,6 +330,10 @@ impl DataProvider for NullDp {
         self
     }
 
+    fn soundboard_clips_repo(&self) -> &dyn SoundboardClipsRepo {
+        self
+    }
+
     async fn schema_version(&self) -> Result<u32, StorageError> {
         Ok(0)
     }
@@ -346,6 +350,30 @@ pub fn null_dp() -> Arc<dyn DataProvider> {
 pub fn null_creds() -> Arc<dyn forge_storage::CredentialsRepo> {
     Arc::new(NullDp)
 }
+
+macro_rules! impl_null_soundboard {
+    ($t:ty) => {
+        #[async_trait]
+        impl SoundboardClipsRepo for $t {
+            async fn list(&self) -> Result<Vec<StoredClip>, StorageError> {
+                Ok(vec![])
+            }
+            async fn get(&self, _id: ClipId) -> Result<Option<StoredClip>, StorageError> {
+                Ok(None)
+            }
+            async fn save(&self, _clip: &StoredClip) -> Result<(), StorageError> {
+                Ok(())
+            }
+            async fn delete(&self, _id: ClipId) -> Result<bool, StorageError> {
+                Ok(false)
+            }
+        }
+    };
+}
+
+impl_null_soundboard!(NullDp);
+
+impl_null_soundboard!(VecCommandDp);
 
 pub struct VecCommandDp {
     commands: Vec<forge_types::Command>,
@@ -670,6 +698,10 @@ impl DataProvider for VecCommandDp {
         self
     }
 
+    fn soundboard_clips_repo(&self) -> &dyn SoundboardClipsRepo {
+        self
+    }
+
     async fn schema_version(&self) -> Result<u32, StorageError> {
         Ok(0)
     }
@@ -678,6 +710,8 @@ impl DataProvider for VecCommandDp {
         Ok(())
     }
 }
+
+impl_null_soundboard!(VecGlobalsDp);
 
 pub struct VecGlobalsDp {
     entries: Vec<GlobalEntry>,
@@ -1006,6 +1040,10 @@ impl DataProvider for VecGlobalsDp {
         self
     }
 
+    fn soundboard_clips_repo(&self) -> &dyn SoundboardClipsRepo {
+        self
+    }
+
     async fn schema_version(&self) -> Result<u32, StorageError> {
         Ok(0)
     }
@@ -1014,6 +1052,8 @@ impl DataProvider for VecGlobalsDp {
         Ok(())
     }
 }
+
+impl_null_soundboard!(VecActionDp);
 
 pub struct VecActionDp {
     actions: Vec<Action>,
@@ -1338,6 +1378,10 @@ impl DataProvider for VecActionDp {
         self
     }
 
+    fn soundboard_clips_repo(&self) -> &dyn SoundboardClipsRepo {
+        self
+    }
+
     async fn schema_version(&self) -> Result<u32, StorageError> {
         Ok(0)
     }
@@ -1346,6 +1390,8 @@ impl DataProvider for VecActionDp {
         Ok(())
     }
 }
+
+impl_null_soundboard!(VecUserGlobalsDp);
 
 pub struct VecUserGlobalsDp {
     entries: Vec<UserGlobalEntry>,
@@ -1681,6 +1727,10 @@ impl DataProvider for VecUserGlobalsDp {
     }
 
     fn event_log_repo(&self) -> &dyn EventLogRepo {
+        self
+    }
+
+    fn soundboard_clips_repo(&self) -> &dyn SoundboardClipsRepo {
         self
     }
 

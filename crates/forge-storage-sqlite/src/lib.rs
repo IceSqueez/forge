@@ -13,6 +13,7 @@ pub mod queue_impl;
 pub(crate) mod retention_task;
 pub mod script_impl;
 pub mod settings_impl;
+pub mod soundboard_impl;
 pub mod trigger_impl;
 pub mod user_globals_impl;
 
@@ -29,5 +30,6 @@ pub use provider::SqliteBackend;
 pub use queue_impl::SqliteQueueRepo;
 pub use script_impl::SqliteScriptRepo;
 pub use settings_impl::SqliteSettingsRepo;
+pub use soundboard_impl::SqliteSoundboardClipsRepo;
 pub use trigger_impl::SqliteTriggerRepo;
 pub use user_globals_impl::SqliteUserGlobalsRepo;

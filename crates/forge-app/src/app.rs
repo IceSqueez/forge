@@ -12,7 +12,7 @@ use forge_runtime::{
     ActionEngineHandle, CommandParserHandle, EventBus, NullEventLogRepo, QueueSchedulerHandle,
     ScriptRegistry,
 };
-use forge_storage::{CredentialId, CredentialsRepo, DataProvider, SettingsRepo, reserved_keys};
+use forge_storage::{CredentialId, CredentialsRepo, DataProvider};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{Action, ActionId};
 use forge_widgets::icons::{
@@ -24,8 +24,8 @@ use forge_widgets::tokens::{
     FONT_VALUE,
 };
 use forge_widgets::{
-    BannerKind, FontRole, ForgePalette, NavChild, NavItem, Radius, SidebarV2, StepInfo, ThemeId,
-    TitleBarV2, font, page_shell, radius, sidebar_v2, title_bar_v2,
+    FontRole, ForgePalette, NavChild, NavItem, Radius, SidebarV2, ThemeId, TitleBarV2, font,
+    page_shell, radius, sidebar_v2, title_bar_v2,
 };
 use iced::{Element, Length, Subscription, Task, Theme};
 
@@ -46,8 +46,6 @@ use crate::live_chat::{CHAT_LOG_MAX, LiveChatState, chat_row_from_event, live_ch
 use crate::message::{
     ActionsMsg, GlobalsMsg, HubMsg, HubStatsData, ObsClientRef, PlatformId, SettingsMsg, SidebarMsg,
 };
-use crate::onboarding_state::{DeviceCodeSession, DeviceCodeStatus, OnboardingState};
-use crate::screen::OnboardingStep;
 use crate::script_editor::{
     ScriptEditorMsg, ScriptEditorState, handle_script_editor_msg, script_editor_view,
 };
@@ -60,7 +58,7 @@ use crate::settings_websocket::{
 };
 use crate::stream_apps::view as stream_apps_view;
 use crate::test_trigger::synthesize_test_event;
-use crate::{Message, OnboardingMsg, Screen, SettingsSection};
+use crate::{Message, Screen, SettingsSection};
 
 pub struct SidebarExpandState {
     pub actions_queues: bool,
@@ -108,7 +106,6 @@ pub struct App {
     pub boot_time: SystemTime,
     pub hub: HubStats,
     pub sidebar_state: SidebarExpandState,
-    pub onboarding: OnboardingState,
     pub event_feed: EventFeedState,
     pub live_chat: LiveChatState,
     pub actions: ActionsState,
@@ -151,7 +148,6 @@ impl App {
             boot_time: SystemTime::now(),
             hub: HubStats::new(),
             sidebar_state: SidebarExpandState::new(),
-            onboarding: OnboardingState::new(),
             event_feed: EventFeedState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
@@ -189,7 +185,7 @@ impl Default for App {
             Arc::clone(&backend) as Arc<dyn CredentialsRepo>
         ));
         Self {
-            screen: Screen::Onboarding(OnboardingStep::Welcome),
+            screen: Screen::Home,
             theme,
             palette,
             backend,
@@ -198,7 +194,6 @@ impl Default for App {
             boot_time: SystemTime::now(),
             hub: HubStats::new(),
             sidebar_state: SidebarExpandState::new(),
-            onboarding: OnboardingState::new(),
             event_feed: EventFeedState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
@@ -219,24 +214,9 @@ impl Default for App {
     }
 }
 
-fn persist_step(backend: Arc<SqliteBackend>, step: OnboardingStep) -> Task<Message> {
-    Task::perform(
-        async move {
-            backend
-                .set_string(reserved_keys::LAST_ONBOARDING_STEP, step.as_key())
-                .await
-                .map_err(|e| e.to_string())
-        },
-        Message::OnboardingPersistResult,
-    )
-}
-
 pub fn update(app: &mut App, msg: Message) -> Task<Message> {
     match msg {
         Message::Navigate(screen) => {
-            if let Screen::Onboarding(ref step) = screen {
-                app.onboarding.sync_step(step);
-            }
             let is_actions = matches!(screen, Screen::Actions);
             let is_hub = matches!(screen, Screen::Home);
             let is_globals = matches!(screen, Screen::Globals);
@@ -268,304 +248,6 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             }
             Task::none()
         }
-        Message::OnboardingPersistResult(result) => {
-            if let Err(ref e) = result {
-                tracing::warn!(error = %e, "failed to persist onboarding_completed flag");
-            }
-            Task::none()
-        }
-        Message::Onboarding(sub) => match sub {
-            OnboardingMsg::SkipSetup => {
-                app.screen = Screen::Home;
-                let backend = Arc::clone(&app.backend);
-                Task::perform(
-                    async move {
-                        backend
-                            .set_string(reserved_keys::ONBOARDING_COMPLETED, "true")
-                            .await
-                            .map_err(|e| e.to_string())
-                    },
-                    Message::OnboardingPersistResult,
-                )
-            }
-            OnboardingMsg::AdvanceFromWelcome => {
-                let next = OnboardingStep::ConnectPlatform;
-                app.onboarding.sync_step(&next);
-                app.screen = Screen::Onboarding(next.clone());
-                persist_step(Arc::clone(&app.backend), next)
-            }
-            OnboardingMsg::PlatformSelected(id) => {
-                app.onboarding.select_platform(id);
-                Task::none()
-            }
-            OnboardingMsg::AdvanceFromPicker => {
-                let next = match app.onboarding.selected_platform.as_deref() {
-                    Some("twitch") => OnboardingStep::DeviceCodeFlow("twitch".into()),
-                    _ => OnboardingStep::ConnectObs,
-                };
-                app.onboarding.sync_step(&next);
-                app.screen = Screen::Onboarding(next.clone());
-                let persist = persist_step(Arc::clone(&app.backend), next.clone());
-                let nav_task = match &next {
-                    OnboardingStep::DeviceCodeFlow(id) => Task::done(Message::Onboarding(
-                        OnboardingMsg::EnterDeviceCodeFlow(id.clone()),
-                    )),
-                    _ => Task::none(),
-                };
-                Task::batch([persist, nav_task])
-            }
-            OnboardingMsg::EnterDeviceCodeFlow(_id) => {
-                let Some(client_id) = forge_platform_twitch::client_id() else {
-                    app.onboarding.device_code = Some(DeviceCodeSession {
-                        user_code: String::new(),
-                        verification_uri: String::new(),
-                        expires_at: SystemTime::now(),
-                        status: DeviceCodeStatus::MissingClientId,
-                    });
-                    return Task::none();
-                };
-                app.onboarding.device_code = Some(DeviceCodeSession {
-                    user_code: String::new(),
-                    verification_uri: String::new(),
-                    expires_at: SystemTime::now(),
-                    status: DeviceCodeStatus::Requesting,
-                });
-                Task::perform(
-                    async move {
-                        forge_platform_twitch::request_twitch_device_code(&client_id)
-                            .await
-                            .map_err(|e| e.to_string())
-                    },
-                    |result| Message::Onboarding(OnboardingMsg::DeviceCodeReceived(result)),
-                )
-            }
-            OnboardingMsg::DeviceCodeReceived(Ok(resp)) => {
-                let Some(client_id) = forge_platform_twitch::client_id() else {
-                    return Task::none();
-                };
-                if let Some(session) = app.onboarding.device_code.as_mut() {
-                    session.user_code = resp.user_code.clone();
-                    session.verification_uri = resp.verification_uri.clone();
-                    session.expires_at = SystemTime::now() + resp.expires_in;
-                    session.status = DeviceCodeStatus::Waiting;
-                }
-                let mut poller = forge_platform_twitch::new_twitch_poller(
-                    client_id,
-                    resp.device_code.clone(),
-                    resp.interval,
-                    resp.expires_in,
-                );
-                Task::perform(
-                    async move { poller.run().await.map_err(|e| e.to_string()) },
-                    |result| Message::Onboarding(OnboardingMsg::TokenReceived(result)),
-                )
-            }
-            OnboardingMsg::DeviceCodeReceived(Err(e)) => {
-                if let Some(session) = app.onboarding.device_code.as_mut() {
-                    session.status = DeviceCodeStatus::Error(e);
-                }
-                Task::none()
-            }
-            OnboardingMsg::TokenReceived(Ok(tokens)) => {
-                if app.onboarding.device_code.is_none() {
-                    return Task::none();
-                }
-                let Some(client_id) = forge_platform_twitch::client_id() else {
-                    if let Some(session) = app.onboarding.device_code.as_mut() {
-                        session.status =
-                            DeviceCodeStatus::Error("FORGE_TWITCH_CLIENT_ID not set".into());
-                    }
-                    return Task::none();
-                };
-                let backend = Arc::clone(&app.backend);
-                let access = tokens.access_token.expose().to_owned();
-                let refresh = tokens.refresh_token.as_ref().map(|r| r.expose().to_owned());
-                let expires_secs = tokens.expires_in.as_secs();
-                Task::perform(
-                    async move {
-                        let token = forge_types::OAuthToken::new(access.clone());
-                        let user_info = forge_platform_twitch::fetch_user_info(&token, &client_id)
-                            .await
-                            .map_err(|e| e.to_string())?;
-                        let bundle = serde_json::json!({
-                            "access_token": access,
-                            "refresh_token": refresh,
-                            "expires_in_secs": expires_secs,
-                            "user_id": user_info.id,
-                            "login": user_info.login,
-                        })
-                        .to_string();
-                        backend
-                            .store(&CredentialId::new("twitch:broadcaster"), &bundle)
-                            .await
-                            .map_err(|e| e.to_string())
-                    },
-                    |result| Message::Onboarding(OnboardingMsg::CredentialsStored(result)),
-                )
-            }
-            OnboardingMsg::CredentialsStored(Ok(())) => {
-                if let Some(session) = app.onboarding.device_code.as_mut() {
-                    session.status = DeviceCodeStatus::Success;
-                }
-                let next = OnboardingStep::ConnectObs;
-                app.onboarding.sync_step(&next);
-                app.screen = Screen::Onboarding(next.clone());
-                persist_step(Arc::clone(&app.backend), next)
-            }
-            OnboardingMsg::CredentialsStored(Err(e)) => {
-                if let Some(session) = app.onboarding.device_code.as_mut() {
-                    session.status = DeviceCodeStatus::Error(e);
-                }
-                Task::none()
-            }
-            OnboardingMsg::TokenReceived(Err(e)) => {
-                if let Some(session) = app.onboarding.device_code.as_mut() {
-                    session.status = DeviceCodeStatus::Error(e);
-                }
-                Task::none()
-            }
-            OnboardingMsg::BackFromDeviceCode => {
-                app.onboarding.clear_device_code();
-                let prev = OnboardingStep::ConnectPlatform;
-                app.onboarding.sync_step(&prev);
-                app.screen = Screen::Onboarding(prev.clone());
-                persist_step(Arc::clone(&app.backend), prev)
-            }
-            OnboardingMsg::RetryDeviceCode => {
-                app.onboarding.clear_device_code();
-                Task::done(Message::Onboarding(OnboardingMsg::EnterDeviceCodeFlow(
-                    "twitch".into(),
-                )))
-            }
-            OnboardingMsg::CopyDeviceCode => {
-                let code = app
-                    .onboarding
-                    .device_code
-                    .as_ref()
-                    .map(|s| s.user_code.clone())
-                    .unwrap_or_default();
-                if code.is_empty() {
-                    Task::none()
-                } else {
-                    iced::clipboard::write::<Message>(code)
-                }
-            }
-            OnboardingMsg::OpenVerificationUrl => {
-                if let Some(session) = app.onboarding.device_code.as_ref() {
-                    let uri = session.verification_uri.clone();
-                    if !uri.is_empty() {
-                        Task::perform(
-                            async move {
-                                if let Err(e) = open::that(&uri) {
-                                    tracing::warn!(error = %e, url = %uri, "open browser failed");
-                                }
-                            },
-                            |()| Message::Noop,
-                        )
-                    } else {
-                        Task::none()
-                    }
-                } else {
-                    Task::none()
-                }
-            }
-            OnboardingMsg::BackFromPicker => {
-                let prev = OnboardingStep::Welcome;
-                app.onboarding.sync_step(&prev);
-                app.screen = Screen::Onboarding(prev.clone());
-                persist_step(Arc::clone(&app.backend), prev)
-            }
-            OnboardingMsg::SkipPicker => {
-                let next = OnboardingStep::ConnectObs;
-                app.onboarding.sync_step(&next);
-                app.screen = Screen::Onboarding(next.clone());
-                persist_step(Arc::clone(&app.backend), next)
-            }
-            OnboardingMsg::ObsUrlChanged(v) => {
-                app.onboarding.obs_url = v;
-                Task::none()
-            }
-            OnboardingMsg::ObsPasswordChanged(v) => {
-                app.onboarding.obs_password = v;
-                Task::none()
-            }
-            OnboardingMsg::ObsConnectAttempt => {
-                app.onboarding.obs_connecting = true;
-                app.onboarding.obs_connect_error = None;
-                let url = app.onboarding.obs_url.clone();
-                let password = app.onboarding.obs_password.clone();
-                let bus: Arc<dyn EventPublisher> = Arc::clone(&app.bus) as _;
-                let backend = Arc::clone(&app.backend);
-                Task::perform(
-                    async move {
-                        let pw: Option<&str> = if password.is_empty() {
-                            None
-                        } else {
-                            Some(&password)
-                        };
-                        ObsClient::connect(&url, pw, bus)
-                            .await
-                            .map_err(|e| e.to_string())?;
-                        let bundle =
-                            serde_json::json!({ "url": url, "password": password }).to_string();
-                        backend
-                            .store(&CredentialId::new("obs:default"), &bundle)
-                            .await
-                            .map_err(|e| e.to_string())
-                    },
-                    |result| Message::Onboarding(OnboardingMsg::ObsConnectResult(result)),
-                )
-            }
-            OnboardingMsg::ObsConnectResult(Ok(())) => {
-                app.onboarding.obs_connecting = false;
-                let next = OnboardingStep::StarterPack;
-                app.onboarding.sync_step(&next);
-                app.screen = Screen::Onboarding(next.clone());
-                persist_step(Arc::clone(&app.backend), next)
-            }
-            OnboardingMsg::ObsConnectResult(Err(e)) => {
-                app.onboarding.obs_connecting = false;
-                app.onboarding.obs_connect_error = Some(e);
-                Task::none()
-            }
-            OnboardingMsg::AdvanceFromObs | OnboardingMsg::SkipObs => {
-                let next = OnboardingStep::StarterPack;
-                app.onboarding.sync_step(&next);
-                app.screen = Screen::Onboarding(next.clone());
-                persist_step(Arc::clone(&app.backend), next)
-            }
-            OnboardingMsg::BackFromObs => {
-                let prev = OnboardingStep::ConnectPlatform;
-                app.onboarding.sync_step(&prev);
-                app.screen = Screen::Onboarding(prev.clone());
-                persist_step(Arc::clone(&app.backend), prev)
-            }
-            OnboardingMsg::AdvanceFromStarterPack | OnboardingMsg::SkipStarterPack => {
-                let next = OnboardingStep::Ready;
-                app.onboarding.sync_step(&next);
-                app.screen = Screen::Onboarding(next.clone());
-                persist_step(Arc::clone(&app.backend), next)
-            }
-            OnboardingMsg::BackFromStarterPack => {
-                let prev = OnboardingStep::ConnectObs;
-                app.onboarding.sync_step(&prev);
-                app.screen = Screen::Onboarding(prev.clone());
-                persist_step(Arc::clone(&app.backend), prev)
-            }
-            OnboardingMsg::FinishOnboarding => {
-                app.screen = Screen::Home;
-                let backend = Arc::clone(&app.backend);
-                Task::perform(
-                    async move {
-                        backend
-                            .set_string(reserved_keys::ONBOARDING_COMPLETED, "true")
-                            .await
-                            .map_err(|e| e.to_string())
-                    },
-                    Message::OnboardingPersistResult,
-                )
-            }
-        },
         Message::ThemeChanged(id) => {
             let (theme, palette) = match id {
                 ThemeId::CatppuccinMocha => forge_widgets::catppuccin_mocha(),
@@ -2256,608 +1938,6 @@ fn settings_view<'a>(
     iced::widget::row![nav_container, pane].spacing(0).into()
 }
 
-fn onboarding_left_column<'a>(
-    steps: &'a [StepInfo],
-    palette: &'a ForgePalette,
-) -> Element<'a, Message> {
-    let hero_box = iced::widget::container(iced::widget::text("S").size(30.0).color(palette.shell))
-        .width(60.0)
-        .height(60.0)
-        .align_x(iced::Alignment::Center)
-        .align_y(iced::Alignment::Center)
-        .style(move |_theme: &iced::Theme| iced::widget::container::Style {
-            background: Some(iced::Background::Color(palette.brand)),
-            border: iced::Border {
-                radius: 14.0.into(),
-                ..iced::Border::default()
-            },
-            ..iced::widget::container::Style::default()
-        });
-
-    let heading = iced::widget::text("Weave your\nfirst loom")
-        .size(22.0)
-        .color(palette.text_primary);
-
-    let subtitle = iced::widget::text(
-        "Optional setup. Skip anything you want and configure it later from settings.",
-    )
-    .size(12.5)
-    .color(palette.text_muted);
-
-    let stepper = forge_widgets::onboarding_stepper(steps, palette);
-
-    iced::widget::column![hero_box, heading, subtitle, stepper]
-        .spacing(20.0)
-        .width(Length::Fixed(240.0))
-        .into()
-}
-
-fn welcome_step_content<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
-    let header =
-        forge_widgets::onboarding_step_header(1, 5, "Welcome to Forge", false, false, palette);
-
-    let subtitle = iced::widget::text(
-        "Forge your show with powerful automation, integrations, and TTS — all in one place.",
-    )
-    .size(13.0)
-    .color(palette.text_muted);
-
-    let footer = forge_widgets::onboarding_footer(
-        None,
-        None,
-        "Get started",
-        '→',
-        Message::Onboarding(OnboardingMsg::AdvanceFromWelcome),
-        true,
-        palette,
-    );
-
-    iced::widget::column![
-        header,
-        subtitle,
-        iced::widget::Space::new().height(Length::Fill),
-        footer,
-    ]
-    .spacing(16.0)
-    .height(Length::Fill)
-    .into()
-}
-
-fn connect_platform_content<'a>(
-    onboarding: &'a OnboardingState,
-    palette: &'a ForgePalette,
-) -> Element<'a, Message> {
-    let header = forge_widgets::onboarding_step_header(
-        2,
-        5,
-        "Connect a streaming platform",
-        true,
-        false,
-        palette,
-    );
-
-    let subtitle = iced::widget::text(
-        "You can connect more later from settings. Pick one to start — we'll show you a code to enter on the platform's site.",
-    )
-    .size(13.0)
-    .color(palette.text_muted);
-
-    let selected = onboarding.selected_platform.as_deref();
-
-    let twitch = forge_widgets::platform_picker_card(
-        forge_widgets::PlatformCardProps {
-            name: "Twitch",
-            letter: "T",
-            brand_color: palette.brand,
-            subtitle: "Most popular",
-            capability_summary: "Chat, subs, bits, raids, channel points, EventSub",
-            selected: selected == Some("twitch"),
-        },
-        Message::Onboarding(OnboardingMsg::PlatformSelected("twitch".into())),
-        palette,
-    );
-
-    let youtube = forge_widgets::platform_picker_card(
-        forge_widgets::PlatformCardProps {
-            name: "YouTube",
-            letter: "Y",
-            brand_color: palette.random,
-            subtitle: "Live streaming",
-            capability_summary: "Chat, super chat, memberships, sponsorships",
-            selected: selected == Some("youtube"),
-        },
-        Message::Onboarding(OnboardingMsg::PlatformSelected("youtube".into())),
-        palette,
-    );
-
-    let kick = forge_widgets::platform_picker_card(
-        forge_widgets::PlatformCardProps {
-            name: "Kick",
-            letter: "K",
-            brand_color: palette.info,
-            subtitle: "Growing platform",
-            capability_summary: "Chat, subscribers, gifted subs, host events",
-            selected: selected == Some("kick"),
-        },
-        Message::Onboarding(OnboardingMsg::PlatformSelected("kick".into())),
-        palette,
-    );
-
-    let trovo = forge_widgets::platform_picker_card(
-        forge_widgets::PlatformCardProps {
-            name: "Trovo",
-            letter: "Tr",
-            brand_color: palette.success,
-            subtitle: "Niche audience",
-            capability_summary: "Chat, mana, spells, gift subs, follows",
-            selected: selected == Some("trovo"),
-        },
-        Message::Onboarding(OnboardingMsg::PlatformSelected("trovo".into())),
-        palette,
-    );
-
-    let grid = iced::widget::column![
-        iced::widget::row![twitch, youtube].spacing(10),
-        iced::widget::row![kick, trovo].spacing(10),
-    ]
-    .spacing(10);
-
-    let locale_tip = forge_widgets::locale_tip_card(
-        "Streaming in Ukrainian? Forge has full UA localization, UTF-8 chat handling, and a community starter pack tailored for UA streamers.",
-        Some("Learn more →"),
-        Some(Message::Onboarding(OnboardingMsg::SkipSetup)),
-        palette,
-    );
-
-    let footer = forge_widgets::onboarding_footer(
-        Some(Message::Onboarding(OnboardingMsg::BackFromPicker)),
-        Some(Message::Onboarding(OnboardingMsg::SkipPicker)),
-        onboarding.continue_label(),
-        '→',
-        Message::Onboarding(OnboardingMsg::AdvanceFromPicker),
-        onboarding.selected_platform.is_some(),
-        palette,
-    );
-
-    iced::widget::column![
-        header,
-        subtitle,
-        grid,
-        locale_tip,
-        iced::widget::Space::new().height(Length::Fill),
-        footer,
-    ]
-    .spacing(16.0)
-    .height(Length::Fill)
-    .into()
-}
-
-fn twitch_scope_hint() -> &'static str {
-    "polling every 5s · scopes: chat:read chat:edit channel:read:subscriptions bits:read moderator:read:followers"
-}
-
-fn device_code_error_body<'a>(detail: &'a str, palette: &'a ForgePalette) -> Element<'a, Message> {
-    let banner = forge_widgets::live_status_banner(
-        BannerKind::Error,
-        "Authorization failed.",
-        Some(detail),
-        palette,
-    );
-    let retry = forge_widgets::primary_button(
-        "Try again",
-        Message::Onboarding(OnboardingMsg::RetryDeviceCode),
-        palette,
-    );
-    iced::widget::column![banner, retry].spacing(10.0).into()
-}
-
-fn device_code_body<'a>(
-    onboarding: &'a OnboardingState,
-    palette: &'a ForgePalette,
-) -> Element<'a, Message> {
-    let session = match onboarding.device_code.as_ref() {
-        None => {
-            return forge_widgets::live_status_banner(
-                BannerKind::Waiting,
-                "Requesting authorization code...",
-                None,
-                palette,
-            );
-        }
-        Some(s) => s,
-    };
-
-    match &session.status {
-        DeviceCodeStatus::Requesting => forge_widgets::live_status_banner(
-            BannerKind::Waiting,
-            "Requesting authorization code...",
-            None,
-            palette,
-        ),
-        DeviceCodeStatus::Waiting => {
-            let remaining = session
-                .expires_at
-                .duration_since(SystemTime::now())
-                .unwrap_or_default();
-
-            let open_btn = iced::widget::button(
-                iced::widget::row![
-                    iced::widget::text("Open URL in browser").size(13.0),
-                    iced::widget::text("↗").size(13.0),
-                ]
-                .spacing(6.0),
-            )
-            .on_press(Message::Onboarding(OnboardingMsg::OpenVerificationUrl))
-            .padding(iced::Padding::from([6_u16, 12_u16]))
-            .style(
-                move |_theme: &iced::Theme, _status| iced::widget::button::Style {
-                    background: Some(iced::Background::Color(palette.brand)),
-                    text_color: palette.shell,
-                    border: iced::Border {
-                        color: iced::Color::TRANSPARENT,
-                        width: 0.0,
-                        radius: 6.0.into(),
-                    },
-                    shadow: iced::Shadow::default(),
-                    snap: false,
-                },
-            );
-
-            let steps = iced::widget::row![
-                forge_widgets::numbered_box_step(
-                    1,
-                    "Open this URL in your browser",
-                    &session.verification_uri,
-                    false,
-                    palette,
-                ),
-                forge_widgets::numbered_box_step(
-                    2,
-                    "Enter the code shown above",
-                    "Twitch will display a confirmation when authorized.",
-                    true,
-                    palette,
-                ),
-            ]
-            .spacing(10.0)
-            .width(Length::Fill);
-
-            let scope_hint = twitch_scope_hint();
-
-            iced::widget::column![
-                forge_widgets::device_code_display(
-                    &session.user_code,
-                    Message::Onboarding(OnboardingMsg::CopyDeviceCode),
-                    palette,
-                ),
-                forge_widgets::expiration_timer(
-                    remaining,
-                    "Get new code",
-                    Message::Onboarding(OnboardingMsg::RetryDeviceCode),
-                    palette,
-                ),
-                open_btn,
-                steps,
-                forge_widgets::live_status_banner(
-                    BannerKind::Waiting,
-                    "Waiting for authorization...",
-                    Some(scope_hint),
-                    palette,
-                ),
-            ]
-            .spacing(14.0)
-            .into()
-        }
-        DeviceCodeStatus::Success => forge_widgets::live_status_banner(
-            BannerKind::Success,
-            "Authorized successfully. Continuing setup...",
-            None,
-            palette,
-        ),
-        DeviceCodeStatus::Error(msg) => device_code_error_body(msg, palette),
-        DeviceCodeStatus::MissingClientId => forge_widgets::live_status_banner(
-            BannerKind::Error,
-            "Twitch integration is not configured.",
-            Some(
-                "Set FORGE_TWITCH_CLIENT_ID env var with your own registered app's client_id. See KNOWN_ISSUES.md.",
-            ),
-            palette,
-        ),
-    }
-}
-
-fn device_code_flow_content<'a>(
-    onboarding: &'a OnboardingState,
-    palette: &'a ForgePalette,
-) -> Element<'a, Message> {
-    let header =
-        forge_widgets::onboarding_step_header(2, 5, "Authorize on Twitch", false, true, palette);
-
-    let subtitle = iced::widget::text(
-        "Enter the code below on Twitch's activation page. We'll automatically continue when you authorize.",
-    )
-    .size(13.0)
-    .color(palette.text_muted);
-
-    let body = device_code_body(onboarding, palette);
-
-    let footer = forge_widgets::onboarding_footer(
-        Some(Message::Onboarding(OnboardingMsg::BackFromDeviceCode)),
-        None,
-        "Continue",
-        '→',
-        Message::Onboarding(OnboardingMsg::BackFromDeviceCode),
-        false,
-        palette,
-    );
-
-    iced::widget::column![
-        header,
-        subtitle,
-        body,
-        iced::widget::Space::new().height(Length::Fill),
-        footer,
-    ]
-    .spacing(16.0)
-    .height(Length::Fill)
-    .into()
-}
-
-fn connect_obs_content<'a>(
-    onboarding: &'a OnboardingState,
-    palette: &'a ForgePalette,
-) -> Element<'a, Message> {
-    use forge_widgets::tokens::{BORDER_THIN, Radius, radius};
-    use iced::widget::text_input;
-
-    let header =
-        forge_widgets::onboarding_step_header(3, 5, "Connect OBS Studio", true, false, palette);
-
-    let subtitle = iced::widget::text(
-        "Forge talks to OBS via the WebSocket plugin (bundled since OBS 28). \
-         Leave password blank if authentication is disabled in OBS.",
-    )
-    .size(11.5)
-    .color(palette.text_muted);
-
-    let p = *palette;
-
-    let url_label = iced::widget::text("WebSocket URL")
-        .size(12.0)
-        .color(palette.text_secondary);
-    let url_input = forge_widgets::text_input_field(
-        "ws://127.0.0.1:4455",
-        &onboarding.obs_url,
-        |v| Message::Onboarding(OnboardingMsg::ObsUrlChanged(v)),
-        palette,
-    );
-
-    let pw_label = iced::widget::text("Password (optional)")
-        .size(12.0)
-        .color(palette.text_secondary);
-    let pw_input: Element<'a, Message> = text_input("", &onboarding.obs_password)
-        .on_input(|v| Message::Onboarding(OnboardingMsg::ObsPasswordChanged(v)))
-        .secure(true)
-        .padding(forge_widgets::input_padding())
-        .width(iced::Length::Fill)
-        .style(move |_theme, status| {
-            let border_color = match status {
-                text_input::Status::Focused { .. } => p.border_input,
-                text_input::Status::Disabled => p.disabled,
-                _ => p.border_input,
-            };
-            let value_color = match status {
-                text_input::Status::Disabled => p.text_muted,
-                _ => p.text_primary,
-            };
-            text_input::Style {
-                background: iced::Background::Color(p.shell),
-                border: iced::Border {
-                    color: border_color,
-                    width: BORDER_THIN,
-                    radius: radius(Radius::Md).into(),
-                },
-                icon: p.text_muted,
-                placeholder: p.text_muted,
-                value: value_color,
-                selection: iced::Color { a: 0.25, ..p.brand },
-            }
-        })
-        .into();
-
-    let form_card = forge_widgets::card(
-        [
-            iced::widget::column![url_label, url_input]
-                .spacing(6.0)
-                .into(),
-            iced::widget::column![pw_label, pw_input]
-                .spacing(6.0)
-                .into(),
-        ],
-        palette,
-    );
-
-    let error_el: Element<'a, Message> = if let Some(err) = &onboarding.obs_connect_error {
-        forge_widgets::toast_banner(
-            err.as_str(),
-            forge_widgets::ToastVariant::Error,
-            Message::Noop,
-            palette,
-        )
-    } else {
-        iced::widget::Space::new().height(0.0).into()
-    };
-
-    let footer = forge_widgets::onboarding_footer(
-        Some(Message::Onboarding(OnboardingMsg::BackFromObs)),
-        Some(Message::Onboarding(OnboardingMsg::SkipObs)),
-        "Connect",
-        '→',
-        Message::Onboarding(OnboardingMsg::ObsConnectAttempt),
-        !onboarding.obs_connecting,
-        palette,
-    );
-
-    iced::widget::column![
-        header,
-        subtitle,
-        form_card,
-        error_el,
-        iced::widget::Space::new().height(Length::Fill),
-        footer,
-    ]
-    .spacing(16.0)
-    .height(Length::Fill)
-    .into()
-}
-
-fn starter_pack_content<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
-    let header = forge_widgets::onboarding_step_header(4, 5, "Starter pack", true, false, palette);
-
-    let subtitle = iced::widget::text(
-        "Pre-built actions, commands, and overlays for common streamer setups. \
-         Pick a pack to install or skip and add later from settings.",
-    )
-    .size(11.5)
-    .color(palette.text_muted);
-
-    let ua_pack = forge_widgets::card(
-        [
-            iced::widget::text("UA streamer pack")
-                .size(13.0)
-                .color(palette.text_primary)
-                .into(),
-            iced::widget::text("Coming in alpha-2 RC — placeholder for now.")
-                .size(11.5)
-                .color(palette.text_muted)
-                .into(),
-        ],
-        palette,
-    );
-
-    let generic_pack = forge_widgets::card(
-        [
-            iced::widget::text("Generic essentials")
-                .size(13.0)
-                .color(palette.text_primary)
-                .into(),
-            iced::widget::text("Coming in alpha-2 RC — placeholder for now.")
-                .size(11.5)
-                .color(palette.text_muted)
-                .into(),
-        ],
-        palette,
-    );
-
-    let pack_grid = iced::widget::row![ua_pack, generic_pack].spacing(10);
-
-    let footer = forge_widgets::onboarding_footer(
-        Some(Message::Onboarding(OnboardingMsg::BackFromStarterPack)),
-        Some(Message::Onboarding(OnboardingMsg::SkipStarterPack)),
-        "Continue",
-        '→',
-        Message::Onboarding(OnboardingMsg::AdvanceFromStarterPack),
-        true,
-        palette,
-    );
-
-    iced::widget::column![
-        header,
-        subtitle,
-        pack_grid,
-        iced::widget::Space::new().height(Length::Fill),
-        footer,
-    ]
-    .spacing(16.0)
-    .height(Length::Fill)
-    .into()
-}
-
-fn ready_content<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
-    let header = forge_widgets::onboarding_step_header(5, 5, "You're ready", false, false, palette);
-
-    let subtitle = iced::widget::text(
-        "Everything you configured is saved. You can change any of these later from Settings.",
-    )
-    .size(11.5)
-    .color(palette.text_muted);
-
-    let banner = forge_widgets::live_status_banner(
-        forge_widgets::BannerKind::Success,
-        "Forge is ready to run your show.",
-        None,
-        palette,
-    );
-
-    let summary_card = forge_widgets::card(
-        [iced::widget::text(
-            "Click Enter Forge to open the Hub. From there you can configure \
-             actions, triggers, integrations, and TTS.",
-        )
-        .size(11.5)
-        .color(palette.text_muted)
-        .into()],
-        palette,
-    );
-
-    let footer = forge_widgets::onboarding_footer(
-        None,
-        None,
-        "Enter Forge",
-        '→',
-        Message::Onboarding(OnboardingMsg::FinishOnboarding),
-        true,
-        palette,
-    );
-
-    iced::widget::column![
-        header,
-        subtitle,
-        banner,
-        summary_card,
-        iced::widget::Space::new().height(Length::Fill),
-        footer,
-    ]
-    .spacing(16.0)
-    .height(Length::Fill)
-    .into()
-}
-
-fn onboarding_view<'a>(
-    step: &'a OnboardingStep,
-    onboarding: &'a OnboardingState,
-    palette: &'a ForgePalette,
-) -> Element<'a, Message> {
-    let skip_action: Element<'a, Message> = forge_widgets::ghost_button(
-        "Skip setup, just let me explore →",
-        Message::Onboarding(OnboardingMsg::SkipSetup),
-        palette,
-    );
-
-    let title_bar =
-        forge_widgets::title_bar_with_logo("Forge", "Quick setup", 'S', vec![skip_action], palette);
-
-    let left = onboarding_left_column(&onboarding.step_infos, palette);
-
-    let right: Element<'a, Message> = match step {
-        OnboardingStep::Welcome => welcome_step_content(palette),
-        OnboardingStep::ConnectPlatform => connect_platform_content(onboarding, palette),
-        OnboardingStep::DeviceCodeFlow(_) => device_code_flow_content(onboarding, palette),
-        OnboardingStep::ConnectObs => connect_obs_content(onboarding, palette),
-        OnboardingStep::StarterPack => starter_pack_content(palette),
-        OnboardingStep::Ready => ready_content(palette),
-    };
-
-    let body = iced::widget::row![left, right]
-        .spacing(40.0)
-        .padding(iced::Padding::from([32_u16, 40_u16]))
-        .height(Length::Fill);
-
-    iced::widget::column![title_bar, body]
-        .height(Length::Fill)
-        .into()
-}
-
 fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
     use forge_widgets::{NodeProps, NodeStatus, ToggleProps};
     use iced::widget::{column, container, row, scrollable, text};
@@ -4143,7 +3223,6 @@ fn breadcrumb_icon_for(screen: &Screen) -> char {
         Screen::Tts | Screen::Soundboard => ICON_PEOPLE,
         Screen::ScriptEditor => ICON_TERMINAL,
         Screen::Server | Screen::Logs => ICON_GEAR,
-        Screen::Onboarding(_) => ICON_HOME,
     }
 }
 
@@ -4166,7 +3245,6 @@ fn screen_label(screen: &Screen) -> &'static str {
         Screen::ScriptEditor => "Script editor",
         Screen::Server => "Server",
         Screen::Logs => "Logs",
-        Screen::Onboarding(_) => "Setup",
     }
 }
 
@@ -4187,12 +3265,12 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Vec<NavItem<'a,
     let twitch_target = if twitch_connected {
         Message::Navigate(Screen::IntegrationDetail(IntegrationId::new("twitch")))
     } else {
-        Message::Navigate(Screen::Onboarding(OnboardingStep::ConnectPlatform))
+        Message::Navigate(Screen::Platforms)
     };
     let obs_target = if obs_connected {
         Message::Navigate(Screen::IntegrationDetail(IntegrationId::new("obs")))
     } else {
-        Message::Navigate(Screen::Onboarding(OnboardingStep::ConnectObs))
+        Message::Navigate(Screen::StreamApps)
     };
 
     vec![
@@ -4299,10 +3377,6 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Vec<NavItem<'a,
 pub fn view(app: &App) -> Element<'_, Message> {
     let palette = &app.palette;
 
-    if let Screen::Onboarding(step) = &app.screen {
-        return onboarding_view(step, &app.onboarding, palette);
-    }
-
     let elapsed = app.boot_time.elapsed().unwrap_or_default();
 
     let title_bar = title_bar_v2(
@@ -4339,18 +3413,14 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Screen::StreamApps => stream_apps_view(app, palette),
         Screen::EventFeed => event_feed_view(&app.event_feed, palette),
         Screen::Server => server_screen_view(&app.server_screen, palette),
-        Screen::Onboarding(_) => unreachable!(),
         Screen::IntegrationDetail(_id) => {
             if let Some(state) = app.integration_detail.as_ref() {
                 integration_detail_view(state, palette)
             } else {
                 iced::widget::container(forge_widgets::empty_state(
                     "Not connected",
-                    "Configure OBS Studio in Onboarding or Settings to connect.",
-                    Some((
-                        "Go to Onboarding",
-                        Message::Navigate(Screen::Onboarding(OnboardingStep::ConnectObs)),
-                    )),
+                    "Open this integration in Platforms or Stream Apps to connect.",
+                    None::<(&str, Message)>,
                     palette,
                 ))
                 .width(Length::Fill)
@@ -4517,17 +3587,6 @@ mod tests {
     }
 
     #[test]
-    fn navigate_to_onboarding_welcome() {
-        let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::Home));
-        let _ = update(
-            &mut app,
-            Message::Navigate(Screen::Onboarding(OnboardingStep::Welcome)),
-        );
-        assert_eq!(app.screen, Screen::Onboarding(OnboardingStep::Welcome));
-    }
-
-    #[test]
     fn theme_changed_tokyo_night() {
         let mut app = App::default();
         let _ = update(&mut app, Message::ThemeChanged(ThemeId::TokyoNight));
@@ -4545,7 +3604,7 @@ mod tests {
     fn noop_does_not_change_screen() {
         let mut app = App::default();
         let _ = update(&mut app, Message::Noop);
-        assert_eq!(app.screen, Screen::Onboarding(OnboardingStep::Welcome));
+        assert_eq!(app.screen, Screen::Home);
     }
 
     #[test]
@@ -4555,480 +3614,9 @@ mod tests {
     }
 
     #[test]
-    fn onboarding_skip_setup_navigates_to_hub() {
-        let mut app = App::default();
-        let _ = update(&mut app, Message::Onboarding(OnboardingMsg::SkipSetup));
-        assert_eq!(app.screen, Screen::Home);
-    }
-
-    #[test]
-    fn onboarding_advance_from_welcome_navigates_to_connect_platform() {
-        let mut app = App::default();
-        let _ = update(
-            &mut app,
-            Message::Onboarding(OnboardingMsg::AdvanceFromWelcome),
-        );
-        assert_eq!(
-            app.screen,
-            Screen::Onboarding(OnboardingStep::ConnectPlatform)
-        );
-    }
-
-    #[test]
-    fn onboarding_state_initialized_with_no_platform() {
-        let app = App::default();
-        assert!(app.onboarding.selected_platform.is_none());
-    }
-
-    #[test]
-    fn view_compiles_onboarding_welcome() {
-        let app = App::default();
-        let _ = view(&app);
-    }
-
-    #[test]
     fn view_compiles_hub() {
         let mut app = App::default();
         let _ = update(&mut app, Message::Navigate(Screen::Home));
-        let _ = view(&app);
-    }
-
-    #[test]
-    fn platform_selected_stores_id() {
-        let mut app = App::default();
-        let _ = update(
-            &mut app,
-            Message::Onboarding(OnboardingMsg::PlatformSelected("twitch".into())),
-        );
-        assert_eq!(app.onboarding.selected_platform.as_deref(), Some("twitch"));
-    }
-
-    #[test]
-    fn platform_selected_replaces_previous_selection() {
-        let mut app = App::default();
-        let _ = update(
-            &mut app,
-            Message::Onboarding(OnboardingMsg::PlatformSelected("twitch".into())),
-        );
-        let _ = update(
-            &mut app,
-            Message::Onboarding(OnboardingMsg::PlatformSelected("youtube".into())),
-        );
-        assert_eq!(app.onboarding.selected_platform.as_deref(), Some("youtube"));
-    }
-
-    #[test]
-    fn advance_from_picker_with_twitch_goes_to_device_code_flow() {
-        let mut app = App::default();
-        let _ = update(
-            &mut app,
-            Message::Onboarding(OnboardingMsg::PlatformSelected("twitch".into())),
-        );
-        let _ = update(
-            &mut app,
-            Message::Onboarding(OnboardingMsg::AdvanceFromPicker),
-        );
-        assert_eq!(
-            app.screen,
-            Screen::Onboarding(OnboardingStep::DeviceCodeFlow("twitch".into()))
-        );
-    }
-
-    #[test]
-    fn advance_from_picker_without_twitch_goes_to_connect_obs() {
-        let mut app = App::default();
-        let _ = update(
-            &mut app,
-            Message::Onboarding(OnboardingMsg::PlatformSelected("kick".into())),
-        );
-        let _ = update(
-            &mut app,
-            Message::Onboarding(OnboardingMsg::AdvanceFromPicker),
-        );
-        assert_eq!(app.screen, Screen::Onboarding(OnboardingStep::ConnectObs));
-    }
-
-    #[test]
-    fn back_from_picker_returns_to_welcome() {
-        let mut app = App::default();
-        let _ = update(
-            &mut app,
-            Message::Onboarding(OnboardingMsg::AdvanceFromWelcome),
-        );
-        let _ = update(&mut app, Message::Onboarding(OnboardingMsg::BackFromPicker));
-        assert_eq!(app.screen, Screen::Onboarding(OnboardingStep::Welcome));
-    }
-
-    #[test]
-    fn skip_picker_advances_to_connect_obs() {
-        let mut app = App::default();
-        let _ = update(&mut app, Message::Onboarding(OnboardingMsg::SkipPicker));
-        assert_eq!(app.screen, Screen::Onboarding(OnboardingStep::ConnectObs));
-    }
-
-    #[test]
-    fn view_compiles_connect_platform() {
-        let mut app = App::default();
-        let _ = update(
-            &mut app,
-            Message::Onboarding(OnboardingMsg::AdvanceFromWelcome),
-        );
-        let _ = view(&app);
-    }
-
-    #[test]
-    fn view_compiles_connect_platform_with_selection() {
-        let mut app = App::default();
-        let _ = update(
-            &mut app,
-            Message::Onboarding(OnboardingMsg::AdvanceFromWelcome),
-        );
-        let _ = update(
-            &mut app,
-            Message::Onboarding(OnboardingMsg::PlatformSelected("twitch".into())),
-        );
-        let _ = view(&app);
-    }
-
-    #[test]
-    fn obs_url_changed_updates_onboarding_url_field() {
-        let mut app = App {
-            screen: Screen::Onboarding(OnboardingStep::ConnectObs),
-            ..App::default()
-        };
-        let _ = update(
-            &mut app,
-            Message::Onboarding(OnboardingMsg::ObsUrlChanged("ws://192.168.1.5:4455".into())),
-        );
-        assert_eq!(app.onboarding.obs_url, "ws://192.168.1.5:4455");
-    }
-
-    #[test]
-    fn obs_connect_result_ok_advances_to_starter_pack() {
-        let mut app = App {
-            screen: Screen::Onboarding(OnboardingStep::ConnectObs),
-            ..App::default()
-        };
-        app.onboarding.obs_connecting = true;
-        let _ = update(
-            &mut app,
-            Message::Onboarding(OnboardingMsg::ObsConnectResult(Ok(()))),
-        );
-        assert_eq!(app.screen, Screen::Onboarding(OnboardingStep::StarterPack));
-        assert!(!app.onboarding.obs_connecting);
-    }
-
-    #[test]
-    fn advance_from_obs_navigates_to_starter_pack() {
-        let mut app = App::default();
-        let _ = update(&mut app, Message::Onboarding(OnboardingMsg::AdvanceFromObs));
-        assert_eq!(app.screen, Screen::Onboarding(OnboardingStep::StarterPack));
-    }
-
-    #[test]
-    fn skip_obs_navigates_to_starter_pack() {
-        let mut app = App::default();
-        let _ = update(&mut app, Message::Onboarding(OnboardingMsg::SkipObs));
-        assert_eq!(app.screen, Screen::Onboarding(OnboardingStep::StarterPack));
-    }
-
-    #[test]
-    fn back_from_obs_returns_to_connect_platform() {
-        let mut app = App::default();
-        let _ = update(&mut app, Message::Onboarding(OnboardingMsg::BackFromObs));
-        assert_eq!(
-            app.screen,
-            Screen::Onboarding(OnboardingStep::ConnectPlatform)
-        );
-    }
-
-    #[test]
-    fn advance_from_starter_pack_navigates_to_ready() {
-        let mut app = App::default();
-        let _ = update(
-            &mut app,
-            Message::Onboarding(OnboardingMsg::AdvanceFromStarterPack),
-        );
-        assert_eq!(app.screen, Screen::Onboarding(OnboardingStep::Ready));
-    }
-
-    #[test]
-    fn skip_starter_pack_navigates_to_ready() {
-        let mut app = App::default();
-        let _ = update(
-            &mut app,
-            Message::Onboarding(OnboardingMsg::SkipStarterPack),
-        );
-        assert_eq!(app.screen, Screen::Onboarding(OnboardingStep::Ready));
-    }
-
-    #[test]
-    fn back_from_starter_pack_returns_to_connect_obs() {
-        let mut app = App::default();
-        let _ = update(
-            &mut app,
-            Message::Onboarding(OnboardingMsg::BackFromStarterPack),
-        );
-        assert_eq!(app.screen, Screen::Onboarding(OnboardingStep::ConnectObs));
-    }
-
-    #[test]
-    fn finish_onboarding_navigates_to_hub() {
-        let mut app = App::default();
-        let _ = update(
-            &mut app,
-            Message::Onboarding(OnboardingMsg::FinishOnboarding),
-        );
-        assert_eq!(app.screen, Screen::Home);
-    }
-
-    #[test]
-    fn persist_result_ok_leaves_screen_unchanged() {
-        let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::Home));
-        let _ = update(&mut app, Message::OnboardingPersistResult(Ok(())));
-        assert_eq!(app.screen, Screen::Home);
-    }
-
-    #[test]
-    fn persist_result_err_leaves_screen_unchanged() {
-        let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::Home));
-        let _ = update(
-            &mut app,
-            Message::OnboardingPersistResult(Err("disk full".into())),
-        );
-        assert_eq!(app.screen, Screen::Home);
-    }
-
-    #[test]
-    fn view_compiles_connect_obs() {
-        let mut app = App::default();
-        let _ = update(&mut app, Message::Onboarding(OnboardingMsg::AdvanceFromObs));
-        let _ = update(
-            &mut app,
-            Message::Onboarding(OnboardingMsg::BackFromStarterPack),
-        );
-        let _ = view(&app);
-    }
-
-    #[test]
-    fn view_compiles_starter_pack() {
-        let mut app = App::default();
-        let _ = update(&mut app, Message::Onboarding(OnboardingMsg::AdvanceFromObs));
-        let _ = view(&app);
-    }
-
-    #[test]
-    fn view_compiles_ready() {
-        let mut app = App::default();
-        let _ = update(&mut app, Message::Onboarding(OnboardingMsg::AdvanceFromObs));
-        let _ = update(
-            &mut app,
-            Message::Onboarding(OnboardingMsg::AdvanceFromStarterPack),
-        );
-        let _ = view(&app);
-    }
-
-    #[test]
-    fn stepper_shows_connect_obs_as_current_on_step_3() {
-        let mut app = App::default();
-        app.onboarding.sync_step(&OnboardingStep::ConnectObs);
-        assert_eq!(
-            app.onboarding.step_infos[2].status,
-            forge_widgets::StepStatus::Current
-        );
-        assert_eq!(
-            app.onboarding.step_infos[0].status,
-            forge_widgets::StepStatus::Done
-        );
-    }
-
-    #[test]
-    fn stepper_shows_starter_pack_as_current_on_step_4() {
-        let mut app = App::default();
-        app.onboarding.sync_step(&OnboardingStep::StarterPack);
-        assert_eq!(
-            app.onboarding.step_infos[3].status,
-            forge_widgets::StepStatus::Current
-        );
-    }
-
-    #[test]
-    fn stepper_shows_ready_as_current_on_step_5() {
-        let mut app = App::default();
-        app.onboarding.sync_step(&OnboardingStep::Ready);
-        assert_eq!(
-            app.onboarding.step_infos[4].status,
-            forge_widgets::StepStatus::Current
-        );
-    }
-
-    #[test]
-    fn enter_device_code_flow_sets_requesting_or_missing_client_id() {
-        let mut app = App::default();
-        let _ = update(
-            &mut app,
-            Message::Onboarding(OnboardingMsg::EnterDeviceCodeFlow("twitch".into())),
-        );
-        assert!(app.onboarding.device_code.is_some());
-        let is_valid_initial = app.onboarding.device_code.as_ref().is_some_and(|s| {
-            matches!(
-                s.status,
-                DeviceCodeStatus::MissingClientId | DeviceCodeStatus::Requesting
-            )
-        });
-        assert!(is_valid_initial);
-    }
-
-    #[test]
-    fn back_from_device_code_clears_session_and_returns_to_platform_picker() {
-        let mut app = App::default();
-        app.onboarding.device_code = Some(crate::DeviceCodeSession {
-            user_code: "ABCD-1234".into(),
-            verification_uri: "https://twitch.tv/activate".into(),
-            expires_at: std::time::SystemTime::now(),
-            status: DeviceCodeStatus::Waiting,
-        });
-        let _ = update(
-            &mut app,
-            Message::Onboarding(OnboardingMsg::BackFromDeviceCode),
-        );
-        assert!(app.onboarding.device_code.is_none());
-        assert_eq!(
-            app.screen,
-            Screen::Onboarding(OnboardingStep::ConnectPlatform)
-        );
-    }
-
-    #[test]
-    fn retry_device_code_clears_session() {
-        let mut app = App::default();
-        app.onboarding.device_code = Some(crate::DeviceCodeSession {
-            user_code: "ABCD-1234".into(),
-            verification_uri: "https://twitch.tv/activate".into(),
-            expires_at: std::time::SystemTime::now(),
-            status: DeviceCodeStatus::Error("timeout".into()),
-        });
-        let _ = update(
-            &mut app,
-            Message::Onboarding(OnboardingMsg::RetryDeviceCode),
-        );
-        assert!(app.onboarding.device_code.is_none());
-    }
-
-    #[test]
-    fn device_code_received_err_sets_error_status() {
-        let mut app = App::default();
-        app.onboarding.device_code = Some(crate::DeviceCodeSession {
-            user_code: String::new(),
-            verification_uri: String::new(),
-            expires_at: std::time::SystemTime::now(),
-            status: DeviceCodeStatus::Requesting,
-        });
-        let _ = update(
-            &mut app,
-            Message::Onboarding(OnboardingMsg::DeviceCodeReceived(Err("HTTP 400".into()))),
-        );
-        assert!(
-            app.onboarding
-                .device_code
-                .as_ref()
-                .is_some_and(|s| { matches!(s.status, DeviceCodeStatus::Error(_)) })
-        );
-    }
-
-    #[test]
-    fn token_received_err_sets_error_status() {
-        let mut app = App::default();
-        app.onboarding.device_code = Some(crate::DeviceCodeSession {
-            user_code: "ABCD-1234".into(),
-            verification_uri: "https://twitch.tv/activate".into(),
-            expires_at: std::time::SystemTime::now(),
-            status: DeviceCodeStatus::Waiting,
-        });
-        let _ = update(
-            &mut app,
-            Message::Onboarding(OnboardingMsg::TokenReceived(Err("user denied".into()))),
-        );
-        assert!(
-            app.onboarding
-                .device_code
-                .as_ref()
-                .is_some_and(|s| { matches!(s.status, DeviceCodeStatus::Error(_)) })
-        );
-    }
-
-    #[test]
-    fn token_received_ok_ignored_when_session_cleared() {
-        use forge_platform_core::oauth::TokenResponse;
-        use forge_types::{OAuthToken, RefreshToken};
-        use std::time::Duration;
-
-        let mut app = App::default();
-        app.onboarding.device_code = None;
-        let fake_token = TokenResponse {
-            access_token: OAuthToken::new("access"),
-            refresh_token: Some(RefreshToken::new("refresh")),
-            expires_in: Duration::from_secs(3600),
-            scopes: vec!["chat:read".into()],
-        };
-        let _ = update(
-            &mut app,
-            Message::Onboarding(OnboardingMsg::TokenReceived(Ok(fake_token))),
-        );
-        assert_eq!(app.screen, Screen::Onboarding(OnboardingStep::Welcome));
-    }
-
-    fn make_device_code_app(status: DeviceCodeStatus) -> App {
-        let mut app = App::default();
-        app.onboarding
-            .sync_step(&OnboardingStep::DeviceCodeFlow("twitch".into()));
-        app.screen = Screen::Onboarding(OnboardingStep::DeviceCodeFlow("twitch".into()));
-        app.onboarding.device_code = Some(crate::DeviceCodeSession {
-            user_code: "WDJB-MJHT".into(),
-            verification_uri: "https://www.twitch.tv/activate".into(),
-            expires_at: std::time::SystemTime::now() + std::time::Duration::from_secs(300),
-            status,
-        });
-        app
-    }
-
-    #[test]
-    fn view_compiles_device_code_flow_no_session() {
-        let mut app = App::default();
-        let _ = update(
-            &mut app,
-            Message::Onboarding(OnboardingMsg::PlatformSelected("twitch".into())),
-        );
-        let _ = update(
-            &mut app,
-            Message::Onboarding(OnboardingMsg::AdvanceFromPicker),
-        );
-        let _ = view(&app);
-    }
-
-    #[test]
-    fn view_compiles_device_code_flow_requesting() {
-        let app = make_device_code_app(DeviceCodeStatus::Requesting);
-        let _ = view(&app);
-    }
-
-    #[test]
-    fn view_compiles_device_code_flow_waiting() {
-        let app = make_device_code_app(DeviceCodeStatus::Waiting);
-        let _ = view(&app);
-    }
-
-    #[test]
-    fn view_compiles_device_code_flow_missing_client_id() {
-        let app = make_device_code_app(DeviceCodeStatus::MissingClientId);
-        let _ = view(&app);
-    }
-
-    #[test]
-    fn view_compiles_device_code_flow_error() {
-        let app = make_device_code_app(DeviceCodeStatus::Error("bad client id".into()));
         let _ = view(&app);
     }
 
@@ -5115,52 +3703,6 @@ mod tests {
     }
 
     #[test]
-    fn credentials_stored_ok_sets_success_status_and_navigates_to_connect_obs() {
-        let mut app = App::default();
-        app.onboarding.device_code = Some(crate::DeviceCodeSession {
-            user_code: "ABCD-1234".into(),
-            verification_uri: "https://twitch.tv/activate".into(),
-            expires_at: std::time::SystemTime::now(),
-            status: DeviceCodeStatus::Waiting,
-        });
-        let _ = update(
-            &mut app,
-            Message::Onboarding(OnboardingMsg::CredentialsStored(Ok(()))),
-        );
-        assert_eq!(app.screen, Screen::Onboarding(OnboardingStep::ConnectObs));
-        assert!(
-            app.onboarding
-                .device_code
-                .as_ref()
-                .is_some_and(|s| matches!(s.status, DeviceCodeStatus::Success))
-        );
-    }
-
-    #[test]
-    fn credentials_stored_err_sets_error_status_and_does_not_navigate() {
-        let mut app = App::default();
-        app.onboarding.device_code = Some(crate::DeviceCodeSession {
-            user_code: "ABCD-1234".into(),
-            verification_uri: "https://twitch.tv/activate".into(),
-            expires_at: std::time::SystemTime::now(),
-            status: DeviceCodeStatus::Waiting,
-        });
-        let _ = update(
-            &mut app,
-            Message::Onboarding(OnboardingMsg::CredentialsStored(Err(
-                "keyring write failed".into(),
-            ))),
-        );
-        assert_eq!(app.screen, Screen::Onboarding(OnboardingStep::Welcome));
-        assert!(
-            app.onboarding
-                .device_code
-                .as_ref()
-                .is_some_and(|s| matches!(s.status, DeviceCodeStatus::Error(_)))
-        );
-    }
-
-    #[test]
     fn chat_submit_empty_input_is_noop() {
         let mut app = App::default();
         app.live_chat.chat_input = String::new();
@@ -5219,7 +3761,6 @@ mod tests {
             boot_time: std::time::SystemTime::now(),
             hub: HubStats::new(),
             sidebar_state: SidebarExpandState::new(),
-            onboarding: OnboardingState::new(),
             event_feed: EventFeedState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
@@ -5497,7 +4038,6 @@ mod tests {
             boot_time: std::time::SystemTime::now(),
             hub: HubStats::new(),
             sidebar_state: SidebarExpandState::new(),
-            onboarding: OnboardingState::new(),
             event_feed: EventFeedState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),

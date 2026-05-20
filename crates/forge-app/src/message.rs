@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use forge_events::Event;
 use forge_obs::ObsClient;
-use forge_platform_core::oauth::{DeviceCodeResponse, TokenResponse};
 use forge_widgets::PickerItem;
 
 use forge_platform_core::{HeaderAction, HealthDelta};
@@ -72,35 +71,6 @@ pub enum PlatformId {
 pub enum SettingsMsg {
     ReconnectPlatform(PlatformId),
     PlatformReconnectResult(Result<(), String>),
-}
-
-#[derive(Debug, Clone)]
-pub enum OnboardingMsg {
-    SkipSetup,
-    AdvanceFromWelcome,
-    PlatformSelected(String),
-    AdvanceFromPicker,
-    BackFromPicker,
-    SkipPicker,
-    EnterDeviceCodeFlow(String),
-    DeviceCodeReceived(Result<DeviceCodeResponse, String>),
-    TokenReceived(Result<TokenResponse, String>),
-    CredentialsStored(Result<(), String>),
-    BackFromDeviceCode,
-    RetryDeviceCode,
-    CopyDeviceCode,
-    OpenVerificationUrl,
-    ObsUrlChanged(String),
-    ObsPasswordChanged(String),
-    ObsConnectAttempt,
-    ObsConnectResult(Result<(), String>),
-    AdvanceFromObs,
-    BackFromObs,
-    SkipObs,
-    AdvanceFromStarterPack,
-    BackFromStarterPack,
-    SkipStarterPack,
-    FinishOnboarding,
 }
 
 #[derive(Debug, Clone)]
@@ -196,8 +166,6 @@ pub enum SidebarMsg {
 pub enum Message {
     Navigate(Screen),
     Sidebar(SidebarMsg),
-    Onboarding(OnboardingMsg),
-    OnboardingPersistResult(Result<(), String>),
     Settings(SettingsMsg),
     Hub(HubMsg),
     Globals(GlobalsMsg),

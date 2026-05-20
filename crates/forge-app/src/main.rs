@@ -4,14 +4,13 @@ use std::sync::Arc;
 use forge_app::App;
 use forge_app::Screen;
 use forge_app::app::{load_obs_and_connect, subscription, theme_callback, update, view};
-use forge_app::screen::OnboardingStep;
 use forge_platform_core::paths;
 use forge_platform_twitch::{ChatSendBridge, ChatSendBridgeHandle};
 use forge_runtime::{
     ActionEngineHandle, CommandParser, CommandParserHandle, EventBus, QueueScheduler,
     QueueSchedulerHandle, ScriptRegistry, spawn_action_engine,
 };
-use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo, reserved_keys};
+use forge_storage::{CredentialsRepo, DataProvider};
 use forge_storage_sqlite::SqliteBackend;
 
 fn default_db_path() -> PathBuf {
@@ -89,31 +88,6 @@ fn open_memory_backend() -> (Arc<SqliteBackend>, bool) {
     (Arc::new(backend), true)
 }
 
-#[allow(clippy::expect_used)]
-fn resolve_initial_screen(backend: &SqliteBackend) -> Screen {
-    let rt = tokio::runtime::Runtime::new().expect("tokio runtime required for settings read");
-    rt.block_on(async {
-        let completed = backend
-            .get_string(reserved_keys::ONBOARDING_COMPLETED)
-            .await
-            .ok()
-            .flatten();
-        if matches!(completed.as_deref(), Some("true")) {
-            return Screen::Home;
-        }
-        let last_step = backend
-            .get_string(reserved_keys::LAST_ONBOARDING_STEP)
-            .await
-            .ok()
-            .flatten();
-        let step = last_step
-            .as_deref()
-            .and_then(OnboardingStep::from_key)
-            .unwrap_or(OnboardingStep::Welcome);
-        Screen::Onboarding(step)
-    })
-}
-
 struct RuntimeHandles {
     registry: Arc<ScriptRegistry>,
     engine: ActionEngineHandle,
@@ -183,7 +157,7 @@ fn main() -> iced::Result {
     let _runtime_guard = runtime.enter();
 
     let (backend, storage_offline) = boot_storage();
-    let initial_screen = resolve_initial_screen(&backend);
+    let initial_screen = Screen::Home;
 
     let event_log = backend.event_log_repo_arc();
     let bus = EventBus::new(event_log);

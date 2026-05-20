@@ -5,7 +5,6 @@ pub mod globals_view;
 pub mod integration_detail;
 pub mod live_chat;
 pub mod message;
-pub mod onboarding_state;
 pub mod screen;
 pub mod script_editor;
 pub mod server_screen;
@@ -33,11 +32,10 @@ pub use integration_detail::{
 pub use live_chat::{ChatFilter, LiveChatState};
 pub use message::{
     ActionsMsg, EditorMode, GlobalsFilter, GlobalsLoadData, GlobalsMsg, HubMsg, HubStatsData,
-    IntegrationDetailMsg, Message, ObsClientRef, OnboardingMsg, PlatformId, SettingsMsg,
-    SidebarMsg, VariantEditorMsg,
+    IntegrationDetailMsg, Message, ObsClientRef, PlatformId, SettingsMsg, SidebarMsg,
+    VariantEditorMsg,
 };
-pub use onboarding_state::{DeviceCodeSession, DeviceCodeStatus, OnboardingState};
-pub use screen::{OnboardingStep, Screen, SettingsSection};
+pub use screen::{Screen, SettingsSection};
 pub use script_editor::{
     OpenScript, RunModalForm, RunModalInputField, RunResult, ScriptEditorMsg, ScriptEditorState,
     ScriptListEntry, handle_script_editor_msg, script_editor_view,

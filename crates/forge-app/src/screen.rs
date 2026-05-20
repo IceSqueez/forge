@@ -1,4 +1,5 @@
 use forge_platform_core::IntegrationId;
+use forge_types::ActionId;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SettingsSection {
@@ -23,6 +24,7 @@ pub enum Screen {
     Viewers,
     Globals,
     Actions,
+    ActionEditor(ActionId),
     Queues,
     Commands,
     Platforms,

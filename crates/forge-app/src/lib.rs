@@ -1,3 +1,4 @@
+pub mod action_editor;
 pub mod actions;
 pub mod app;
 pub mod event_feed;

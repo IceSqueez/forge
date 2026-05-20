@@ -31,6 +31,7 @@ use forge_widgets::{
 };
 use iced::{Element, Length, Subscription, Task, Theme};
 
+use crate::action_editor::action_editor_view;
 use crate::actions::{
     ActionsFilter, ActionsState, AddActionForm, AddActionMsg, AddSubActionForm, AddSubActionMsg,
     AddTriggerForm, AddTriggerMsg, RemoveSubActionMsg, SubActionKindChoice, TriggerCategory,
@@ -245,6 +246,11 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             let is_hub = matches!(screen, Screen::Home);
             let is_globals = matches!(screen, Screen::Globals);
             let is_script_editor = matches!(screen, Screen::ScriptEditor);
+            let editor_id = if let Screen::ActionEditor(id) = &screen {
+                Some(*id)
+            } else {
+                None
+            };
             app.screen = screen;
             if is_actions {
                 Task::done(Message::Actions(ActionsMsg::LoadRequested))
@@ -256,6 +262,21 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 Task::done(Message::Globals(GlobalsMsg::LoadRequested))
             } else if is_script_editor {
                 Task::done(Message::ScriptEditor(ScriptEditorMsg::LoadRequested))
+            } else if let Some(id) = editor_id {
+                let needs_load = app
+                    .actions
+                    .detail
+                    .as_ref()
+                    .map(|d| d.action.id != id)
+                    .unwrap_or(true);
+                if needs_load {
+                    Task::batch([
+                        Task::done(Message::Actions(ActionsMsg::LoadRequested)),
+                        Task::done(Message::Actions(ActionsMsg::ActionSelected(id))),
+                    ])
+                } else {
+                    Task::none()
+                }
             } else {
                 Task::none()
             }
@@ -2967,7 +2988,7 @@ fn actions_row<'a>(
 
     let action_id = summary.id;
     button(container(inner_row).width(Length::Fill).padding([8, 16]))
-        .on_press(Message::Actions(ActionsMsg::ActionSelected(action_id)))
+        .on_press(Message::Navigate(Screen::ActionEditor(action_id)))
         .padding(0)
         .width(Length::Fill)
         .style(move |_theme: &iced::Theme, status| {
@@ -3875,7 +3896,7 @@ fn coming_soon_view(screen_label: String, palette: &ForgePalette) -> Element<'st
 fn breadcrumb_icon_for(screen: &Screen) -> char {
     match screen {
         Screen::Home => ICON_HOME,
-        Screen::Actions | Screen::Queues => ICON_LIGHTNING,
+        Screen::Actions | Screen::ActionEditor(_) | Screen::Queues => ICON_LIGHTNING,
         Screen::Commands => ICON_TERMINAL,
         Screen::Platforms => ICON_BROADCAST,
         Screen::StreamApps | Screen::Integrations | Screen::IntegrationDetail(_) => ICON_GRID,
@@ -3894,6 +3915,7 @@ fn screen_label(screen: &Screen) -> &'static str {
     match screen {
         Screen::Home => "Home",
         Screen::Actions => "Actions",
+        Screen::ActionEditor(_) => "Actions",
         Screen::Queues => "Queues",
         Screen::Commands => "Commands",
         Screen::Platforms => "Platforms",
@@ -3916,7 +3938,7 @@ fn screen_label(screen: &Screen) -> &'static str {
 fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Vec<NavItem<'a, Message>> {
     let is_home = matches!(app.screen, Screen::Home);
     let is_viewers = matches!(app.screen, Screen::Viewers);
-    let is_actions = matches!(app.screen, Screen::Actions);
+    let is_actions = matches!(app.screen, Screen::Actions | Screen::ActionEditor(_));
     let is_queues = matches!(app.screen, Screen::Queues);
     let is_actions_queues = is_actions || is_queues;
     let is_commands = matches!(app.screen, Screen::Commands);
@@ -4074,6 +4096,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Screen::LiveChat => live_chat_view(&app.live_chat, palette),
         Screen::Globals => globals_view(app, palette),
         Screen::Actions => actions_view(app, palette),
+        Screen::ActionEditor(id) => action_editor_view(app, *id, palette),
         Screen::Queues => queues_view(&app.queues, palette),
         Screen::Settings(section) => settings_view(
             section,

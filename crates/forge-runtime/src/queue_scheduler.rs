@@ -38,6 +38,7 @@ enum SchedulerCommand {
     Enqueue(SchedulerRequest),
     Pause(QueueId, oneshot::Sender<Result<(), SchedulerError>>),
     Resume(QueueId, oneshot::Sender<Result<(), SchedulerError>>),
+    QueryPaused(oneshot::Sender<std::collections::HashSet<QueueId>>),
     Shutdown,
 }
 
@@ -82,6 +83,16 @@ impl QueueSchedulerHandle {
 
     pub fn shutdown(self) {
         let _ = self.sender.send(SchedulerCommand::Shutdown);
+    }
+
+    pub async fn paused_queues(
+        &self,
+    ) -> Result<std::collections::HashSet<QueueId>, SchedulerError> {
+        let (tx, rx) = oneshot::channel();
+        self.sender
+            .send(SchedulerCommand::QueryPaused(tx))
+            .map_err(|_| SchedulerError::ChannelClosed)?;
+        rx.await.map_err(|_| SchedulerError::ChannelClosed)
     }
 }
 
@@ -192,6 +203,15 @@ impl QueueScheduler {
                 SchedulerCommand::Resume(queue_id, reply) => {
                     let r = Self::set_paused(&queue_id, false, &slots, &bus, "queue.resumed").await;
                     let _ = reply.send(r);
+                }
+                SchedulerCommand::QueryPaused(reply) => {
+                    let mut paused = std::collections::HashSet::new();
+                    for (id, slot) in &slots {
+                        if slot.state.read().await.paused {
+                            paused.insert(*id);
+                        }
+                    }
+                    let _ = reply.send(paused);
                 }
                 SchedulerCommand::Shutdown => break,
             }

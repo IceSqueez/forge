@@ -848,7 +848,8 @@ fn handle_queues_msg(app: &mut App, sub: QueuesMsg) -> Task<Message> {
         QueuesMsg::LoadRequested => {
             app.queues.loading = true;
             let dp = Arc::clone(&app.backend);
-            Task::perform(async move { load_queues(dp).await }, |r| {
+            let scheduler = app.scheduler.clone();
+            Task::perform(async move { load_queues(dp, scheduler).await }, |r| {
                 Message::Queues(QueuesMsg::QueuesLoaded(r))
             })
         }

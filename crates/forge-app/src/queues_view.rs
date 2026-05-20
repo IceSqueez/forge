@@ -73,27 +73,38 @@ fn default_description(name: &str) -> Option<String> {
     }
 }
 
-pub async fn load_queues(dp: Arc<SqliteBackend>) -> Result<Vec<QueueSummary>, String> {
+pub async fn load_queues(
+    dp: Arc<SqliteBackend>,
+    scheduler: Option<forge_runtime::QueueSchedulerHandle>,
+) -> Result<Vec<QueueSummary>, String> {
     let queues = dp.queue_repo().list().await.map_err(|e| e.to_string())?;
 
     let actions = dp.action_repo().list().await.map_err(|e| e.to_string())?;
+
+    let paused_ids = match scheduler {
+        Some(h) => h.paused_queues().await.unwrap_or_default(),
+        None => std::collections::HashSet::new(),
+    };
 
     let summaries = queues
         .into_iter()
         .map(|q| {
             let assigned_actions = actions.iter().filter(|a| a.queue_id == q.id).count() as u32;
 
-            // TODO Phase 2: concurrency field on Queue model
+            // Queue concurrency is not yet a persisted column — derive from
+            // blocking flag. Schema bump will land with Queue::concurrency once
+            // the scheduler supports tunable parallelism.
             let concurrency: u32 = if q.blocking { 1 } else { 8 };
 
             let description = default_description(&q.name);
+            let paused = paused_ids.contains(&q.id);
 
             QueueSummary {
                 id: q.id,
                 name: q.name,
                 blocking: q.blocking,
                 concurrency,
-                paused: false, // TODO Phase 2: query scheduler
+                paused,
                 assigned_actions,
                 pending: 0,
                 in_flight: 0,

@@ -43,6 +43,7 @@ define_id!(QueueId);
 define_id!(ScriptId);
 define_id!(GlobalId);
 define_id!(UserId);
+define_id!(ClipId);
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]

@@ -15,10 +15,12 @@ pub use execution::{
     ArgStack, ExecutionContext, ExecutionMetadata, ExecutionOutcome, SubActionOutcome,
     SubActionTelemetry,
 };
-pub use ids::{ActionId, CommandId, EventId, GlobalId, QueueId, ScriptId, TriggerId, UserId};
+pub use ids::{
+    ActionId, ClipId, CommandId, EventId, GlobalId, QueueId, ScriptId, TriggerId, UserId,
+};
 pub use queue::Queue;
 pub use script::{ScriptContract, ScriptInput};
-pub use sub_action::{LogLevel, SubActionSpec, VariantTemplate};
+pub use sub_action::{LogLevel, OutputDevice, SubActionSpec, VariantTemplate};
 pub use token::{ApiKey, OAuthToken, RefreshToken};
 pub use trigger::{Trigger, TriggerConfig, TriggerKind};
 pub use variant::{Variant, VariantError, VariantKind, VariantType};

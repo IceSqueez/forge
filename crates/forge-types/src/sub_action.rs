@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::Variant;
+use crate::{ClipId, Variant};
 
 /// Inline template string passed through `ArgInterpolator` before execution.
 pub type VariantTemplate = String;
@@ -12,6 +12,14 @@ pub enum LogLevel {
     Info,
     Warn,
     Error,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum OutputDevice {
+    Default,
+    ByName { name: String },
+    ById { id: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -65,6 +73,10 @@ pub enum SubActionSpec {
         request_type: String,
         payload: Variant,
     },
+    PlaySound {
+        clip_id: ClipId,
+        output_device_override: Option<OutputDevice>,
+    },
 }
 
 impl SubActionSpec {
@@ -86,6 +98,7 @@ impl SubActionSpec {
             Self::ObsStartStream => "ObsStartStream",
             Self::ObsStopStream => "ObsStopStream",
             Self::ObsRaw { .. } => "ObsRaw",
+            Self::PlaySound { .. } => "PlaySound",
         }
     }
 }
@@ -281,6 +294,46 @@ mod tests {
             .kind_label(),
             "RunScript"
         );
+    }
+
+    #[test]
+    fn play_sound_serde_roundtrip() {
+        let spec = SubActionSpec::PlaySound {
+            clip_id: crate::ClipId::new(),
+            output_device_override: Some(OutputDevice::ByName {
+                name: "VirtualCable".to_string(),
+            }),
+        };
+        let json = serde_json::to_string(&spec).unwrap();
+        let back: SubActionSpec = serde_json::from_str(&json).unwrap();
+        assert_eq!(spec, back);
+    }
+
+    #[test]
+    fn output_device_variants_serde_roundtrip() {
+        let variants = [
+            OutputDevice::Default,
+            OutputDevice::ByName {
+                name: "Speakers".to_string(),
+            },
+            OutputDevice::ById {
+                id: "alsa:hw:0,0".to_string(),
+            },
+        ];
+        for dev in variants {
+            let json = serde_json::to_string(&dev).unwrap();
+            let back: OutputDevice = serde_json::from_str(&json).unwrap();
+            assert_eq!(dev, back);
+        }
+    }
+
+    #[test]
+    fn play_sound_kind_label() {
+        let spec = SubActionSpec::PlaySound {
+            clip_id: crate::ClipId::new(),
+            output_device_override: None,
+        };
+        assert_eq!(spec.kind_label(), "PlaySound");
     }
 
     #[test]

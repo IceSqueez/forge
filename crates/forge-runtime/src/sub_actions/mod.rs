@@ -127,6 +127,18 @@ pub async fn dispatch(
         | SubActionSpec::ObsStartStream
         | SubActionSpec::ObsStopStream
         | SubActionSpec::ObsRaw { .. } => obs::run(spec, index, obs_sink).await,
+        SubActionSpec::PlaySound { .. } => (
+            SubActionTelemetry {
+                kind: "PlaySound".to_string(),
+                started_at: OffsetDateTime::now_utc(),
+                duration_ms: 0,
+                outcome: SubActionOutcome::Skipped(
+                    "soundboard subsystem not yet wired (alpha-10 P3)".to_string(),
+                ),
+                index,
+            },
+            None,
+        ),
     }
 }
 

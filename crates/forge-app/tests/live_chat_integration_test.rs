@@ -49,6 +49,7 @@ fn test_app() -> App {
         server_screen: forge_app::ServerScreenState::default(),
         server_subsystem,
         settings_websocket: forge_app::SettingsWebSocketState::default(),
+        twitch_panel: forge_app::twitch_panel::TwitchPanelState::default(),
     }
 }
 

@@ -122,6 +122,7 @@ pub struct App {
     pub server_screen: ServerScreenState,
     pub server_subsystem: Arc<ServerSubsystem>,
     pub settings_websocket: SettingsWebSocketState,
+    pub twitch_panel: crate::twitch_panel::TwitchPanelState,
 }
 
 impl App {
@@ -164,6 +165,7 @@ impl App {
             server_screen: ServerScreenState::default(),
             server_subsystem,
             settings_websocket: SettingsWebSocketState::default(),
+            twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
         }
     }
 }
@@ -210,6 +212,7 @@ impl Default for App {
             server_screen: ServerScreenState::default(),
             server_subsystem,
             settings_websocket: SettingsWebSocketState::default(),
+            twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
         }
     }
 }
@@ -488,7 +491,54 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::SettingsWebSocket(sub) => {
             handle_settings_websocket_msg(&mut app.settings_websocket, sub, &app.backend)
         }
+        Message::TwitchPanel(sub) => handle_twitch_panel_msg(app, sub),
         Message::Noop => Task::none(),
+    }
+}
+
+fn handle_twitch_panel_msg(
+    app: &mut App,
+    msg: crate::twitch_panel::TwitchPanelMsg,
+) -> Task<Message> {
+    use crate::twitch_panel::{TwitchPanelMsg, TwitchPanelState};
+    match msg {
+        TwitchPanelMsg::StartConnect => {
+            if forge_platform_twitch::client_id().is_none() {
+                app.twitch_panel = TwitchPanelState::MissingClientId;
+            } else {
+                app.twitch_panel = TwitchPanelState::Requesting;
+            }
+            Task::none()
+        }
+        TwitchPanelMsg::Cancel => {
+            app.twitch_panel = TwitchPanelState::Disconnected;
+            Task::none()
+        }
+        TwitchPanelMsg::CopyCode => {
+            if let TwitchPanelState::AwaitingAuthorization { user_code, .. } = &app.twitch_panel {
+                iced::clipboard::write::<Message>(user_code.clone())
+            } else {
+                Task::none()
+            }
+        }
+        TwitchPanelMsg::OpenVerificationUrl => {
+            if let TwitchPanelState::AwaitingAuthorization {
+                verification_uri, ..
+            } = &app.twitch_panel
+            {
+                let uri = verification_uri.clone();
+                Task::perform(
+                    async move {
+                        if let Err(e) = open::that(&uri) {
+                            tracing::warn!(error = %e, url = %uri, "open browser failed");
+                        }
+                    },
+                    |()| Message::Noop,
+                )
+            } else {
+                Task::none()
+            }
+        }
     }
 }
 
@@ -3500,8 +3550,10 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Screen::StreamApps => stream_apps_view(app, palette),
         Screen::EventFeed => event_feed_view(&app.event_feed, palette),
         Screen::Server => server_screen_view(&app.server_screen, palette),
-        Screen::IntegrationDetail(_id) => {
-            if let Some(state) = app.integration_detail.as_ref() {
+        Screen::IntegrationDetail(id) => {
+            if id.as_str() == "twitch" && app.twitch_chat_handle.is_none() {
+                crate::twitch_panel::twitch_disconnected_view(&app.twitch_panel, palette)
+            } else if let Some(state) = app.integration_detail.as_ref() {
                 integration_detail_view(state, palette)
             } else {
                 iced::widget::container(forge_widgets::empty_state(
@@ -3864,6 +3916,7 @@ mod tests {
             server_screen: ServerScreenState::default(),
             server_subsystem,
             settings_websocket: SettingsWebSocketState::default(),
+            twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
         };
 
         assert!(app.action_engine.is_some());
@@ -4141,6 +4194,7 @@ mod tests {
             server_screen: ServerScreenState::default(),
             server_subsystem,
             settings_websocket: SettingsWebSocketState::default(),
+            twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
         };
 
         let mut form = crate::actions::AddActionForm::new();

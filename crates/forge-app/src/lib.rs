@@ -12,6 +12,7 @@ pub mod server_subsystem;
 pub mod settings_websocket;
 pub mod stream_apps;
 pub mod test_trigger;
+pub mod twitch_panel;
 
 pub use actions::{
     ActionDetail, ActionSummary, ActionsGroup, ActionsState, AddActionForm, AddActionMsg,

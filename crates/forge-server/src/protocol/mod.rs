@@ -693,7 +693,7 @@ pub(crate) async fn handle_get_active_viewers(ctx: &DispatchContext) -> WsRespon
     WsResponse::Ok(serde_json::json!({ "viewers": wire }))
 }
 
-fn mime_for_extension(ext: &str) -> Option<&'static str> {
+pub(crate) fn mime_for_extension(ext: &str) -> Option<&'static str> {
     match ext.to_ascii_lowercase().as_str() {
         "html" | "htm" => Some("text/html"),
         "js" | "mjs" => Some("application/javascript"),

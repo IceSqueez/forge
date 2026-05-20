@@ -324,6 +324,9 @@ mod tests {
             server_info: ServerInfo::new(),
             action_engine,
             overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
+            http_overlay_require_token: false,
+            overlay_cors_any_origin: true,
+            bind_addr: "127.0.0.1:9515".parse().expect("addr"),
         };
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("local addr");

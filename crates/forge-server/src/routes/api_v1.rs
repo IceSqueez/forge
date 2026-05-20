@@ -330,15 +330,12 @@ mod tests {
         };
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("local addr");
-        use crate::server::build_router_for_test;
-        let app = build_router_for_test(state)
-            .into_make_service_with_connect_info::<std::net::SocketAddr>();
-        let handle = tokio::spawn(async move {
-            axum::serve(listener, app)
-                .await
-                .map_err(|e| crate::ServerError::Io(std::io::Error::other(e)))
-        });
-        (crate::ServerHandle::new(handle), addr)
+        let bind_addr = addr;
+        let (join, shutdown_tx) = crate::server::serve_on_with_shutdown(listener, state.clone());
+        (
+            crate::ServerHandle::new(join, shutdown_tx, state, bind_addr),
+            addr,
+        )
     }
 
     #[tokio::test]

@@ -125,7 +125,7 @@ mod tests {
     use crate::ServerHandle;
     use crate::auth::AuthState;
     use crate::bus_adapter::BusAdapter;
-    use crate::server::{AppState, build_router_for_test};
+    use crate::server::AppState;
     use crate::server_info::ServerInfo;
     use crate::test_dp::null_dp;
 
@@ -224,13 +224,8 @@ mod tests {
         };
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("local addr");
-        let app = build_router_for_test(state).into_make_service_with_connect_info::<SocketAddr>();
-        let handle = tokio::spawn(async move {
-            axum::serve(listener, app)
-                .await
-                .map_err(|e| crate::ServerError::Io(std::io::Error::other(e)))
-        });
-        (ServerHandle::new(handle), addr)
+        let (join, shutdown_tx) = crate::server::serve_on_with_shutdown(listener, state.clone());
+        (ServerHandle::new(join, shutdown_tx, state, addr), addr)
     }
 
     #[tokio::test]

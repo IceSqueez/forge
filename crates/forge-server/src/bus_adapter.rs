@@ -231,6 +231,13 @@ impl BusAdapter {
             .find(|c| c.id == id)
             .map(|c| c.drop_counter.load(Ordering::Relaxed))
     }
+
+    pub async fn broadcast_close(&self) {
+        let reg = self.registry.read().await;
+        for client in reg.iter() {
+            let _ = client.sender.send(WsFrame::Close);
+        }
+    }
 }
 
 #[cfg(test)]

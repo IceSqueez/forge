@@ -130,19 +130,38 @@ fn build_router(state: AppState) -> Router {
         .with_state(state)
 }
 
-#[cfg(test)]
-pub(crate) fn build_router_for_test(state: AppState) -> Router {
-    build_router(state)
-}
-
-fn serve_on(listener: TcpListener, state: AppState) -> ServerHandle {
+pub fn serve_on_with_shutdown(
+    listener: TcpListener,
+    state: AppState,
+) -> (
+    tokio::task::JoinHandle<Result<(), ServerError>>,
+    tokio::sync::watch::Sender<bool>,
+) {
+    let (shutdown_tx, mut shutdown_rx) = tokio::sync::watch::channel(false);
     let app = build_router(state).into_make_service_with_connect_info::<SocketAddr>();
-    let handle = tokio::spawn(async move {
+    let join = tokio::spawn(async move {
         axum::serve(listener, app)
+            .with_graceful_shutdown(async move {
+                loop {
+                    if shutdown_rx.changed().await.is_err() {
+                        break;
+                    }
+                    if *shutdown_rx.borrow() {
+                        break;
+                    }
+                }
+            })
             .await
             .map_err(|e| ServerError::Io(std::io::Error::other(e)))
     });
-    ServerHandle::new(handle)
+    (join, shutdown_tx)
+}
+
+fn serve_on(listener: TcpListener, state: AppState) -> ServerHandle {
+    let bind_addr = listener.local_addr().unwrap_or(state.bind_addr);
+    let stored_state = state.clone();
+    let (join, shutdown_tx) = serve_on_with_shutdown(listener, state);
+    ServerHandle::new(join, shutdown_tx, stored_state, bind_addr)
 }
 
 #[cfg(test)]
@@ -422,5 +441,58 @@ mod tests {
         );
 
         handle.abort();
+    }
+
+    #[tokio::test]
+    async fn stop_is_idempotent() {
+        let (handle, _) = make_server(false, MemCreds::new()).await;
+        handle.stop().await.expect("first stop");
+        handle.stop().await.expect("second stop is no-op");
+    }
+
+    #[tokio::test]
+    async fn stop_disconnects_clients_within_timeout() {
+        use tokio_tungstenite::connect_async;
+
+        let (handle, addr) = make_server(false, MemCreds::new()).await;
+
+        let ws_url = format!("ws://{}/ws/v1/", addr);
+        let (mut ws_stream, _) = connect_async(&ws_url).await.expect("ws connect");
+
+        handle.stop().await.expect("stop");
+
+        let close_msg = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            futures_util::StreamExt::next(&mut ws_stream),
+        )
+        .await
+        .expect("timeout waiting for close")
+        .expect("stream ended without message");
+
+        assert!(
+            matches!(
+                close_msg.expect("ws error"),
+                tokio_tungstenite::tungstenite::Message::Close(_)
+            ),
+            "expected Close frame from server"
+        );
+    }
+
+    #[tokio::test]
+    async fn restart_rebinds_on_same_port() {
+        let creds = MemCreds::with_token("my-token");
+        let (handle, addr) = make_server(false, Arc::clone(&creds)).await;
+
+        handle.restart().await.expect("restart");
+
+        let url = format!("http://{}/api/v1/info", addr);
+        let resp = reqwest::Client::new()
+            .get(&url)
+            .send()
+            .await
+            .expect("HTTP request after restart");
+        assert_eq!(resp.status().as_u16(), 200);
+
+        handle.stop().await.expect("stop after restart");
     }
 }

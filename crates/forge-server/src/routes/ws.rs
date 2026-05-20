@@ -131,7 +131,11 @@ async fn handle_socket(
                         state.server_info.bandwidth.record(len);
                         client.record_event();
                     }
-                    Ok(WsFrame::Close) | Err(RecvError::Closed) => break,
+                    Ok(WsFrame::Close) => {
+                        let _ = socket.send(Message::Close(None)).await;
+                        break;
+                    }
+                    Err(RecvError::Closed) => break,
                     Err(RecvError::Lagged(n)) => {
                         client.drop_counter.fetch_add(n, Ordering::Relaxed);
                         let notice = dropped_notification(n);

@@ -1,9 +1,15 @@
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use iced::widget::{button, column, container, row, text};
 use iced::{Alignment, Background, Border, Color, Element, Length, Padding, Shadow, Theme};
 
-use forge_platform_twitch::TWITCH_BROADCASTER_SCOPES;
+use forge_platform_core::oauth::{DeviceCodePoller, DeviceCodeRequest};
+use forge_platform_twitch::{
+    TWITCH_BROADCASTER_SCOPES, TWITCH_DEVICE_ENDPOINT, UserInfo, fetch_user_info, new_twitch_poller,
+};
+use forge_storage::{CredentialId, CredentialsRepo};
+use forge_types::OAuthToken;
 use forge_widgets::ForgePalette;
 use forge_widgets::icons::{
     BOOTSTRAP_FONT, ICON_CHECK_CIRCLE, ICON_CLOCK, ICON_COPY, ICON_EXTERNAL_LINK, ICON_LOCK,
@@ -14,6 +20,93 @@ use forge_widgets::tokens::{
 };
 
 use crate::Message;
+
+const TWITCH_CREDENTIAL_ID: &str = "twitch:broadcaster";
+
+#[derive(Debug, Clone)]
+pub struct PollData {
+    pub client_id: String,
+    pub device_code: String,
+    pub interval: Duration,
+    pub expires_in: Duration,
+}
+
+#[derive(Debug, Clone)]
+pub struct DcfCodeData {
+    pub user_code: String,
+    pub verification_uri: String,
+    pub expires_at: SystemTime,
+    pub poll_data: PollData,
+}
+
+#[derive(Debug, Clone)]
+pub struct TwitchAuthOutcome {
+    pub token: OAuthToken,
+    pub user_info: UserInfo,
+    pub client_id: String,
+}
+
+pub async fn request_code(client_id: String) -> Result<DcfCodeData, String> {
+    let req = DeviceCodeRequest {
+        client_id: client_id.clone(),
+        scopes: TWITCH_BROADCASTER_SCOPES
+            .iter()
+            .map(|s| (*s).to_owned())
+            .collect(),
+    };
+    let resp = DeviceCodePoller::request_device_code(TWITCH_DEVICE_ENDPOINT, req)
+        .await
+        .map_err(|e| e.to_string())?;
+    let expires_at = SystemTime::now() + resp.expires_in;
+    Ok(DcfCodeData {
+        user_code: resp.user_code,
+        verification_uri: resp.verification_uri,
+        expires_at,
+        poll_data: PollData {
+            client_id,
+            device_code: resp.device_code,
+            interval: resp.interval,
+            expires_in: resp.expires_in,
+        },
+    })
+}
+
+pub async fn poll_and_authorize(
+    poll_data: PollData,
+    credentials: Arc<dyn CredentialsRepo>,
+) -> Result<TwitchAuthOutcome, String> {
+    let mut poller = new_twitch_poller(
+        poll_data.client_id.clone(),
+        poll_data.device_code,
+        poll_data.interval,
+        poll_data.expires_in,
+    );
+    let token_resp = poller.run().await.map_err(|e| e.to_string())?;
+    let token = token_resp.access_token;
+
+    let user_info = fetch_user_info(&token, &poll_data.client_id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let bundle = serde_json::json!({
+        "access_token": token.expose(),
+        "user_id": user_info.id,
+        "login": user_info.login,
+    });
+    credentials
+        .store(
+            &CredentialId::new(TWITCH_CREDENTIAL_ID),
+            &bundle.to_string(),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(TwitchAuthOutcome {
+        token,
+        user_info,
+        client_id: poll_data.client_id,
+    })
+}
 
 #[derive(Debug, Clone, Default)]
 pub enum TwitchPanelState {
@@ -36,6 +129,8 @@ pub enum TwitchPanelMsg {
     Cancel,
     CopyCode,
     OpenVerificationUrl,
+    DeviceCodeReceived(Result<DcfCodeData, String>),
+    AuthCompleted(Result<TwitchAuthOutcome, String>),
 }
 
 pub fn twitch_disconnected_view<'a>(

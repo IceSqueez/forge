@@ -503,12 +503,14 @@ fn handle_twitch_panel_msg(
     use crate::twitch_panel::{TwitchPanelMsg, TwitchPanelState};
     match msg {
         TwitchPanelMsg::StartConnect => {
-            if forge_platform_twitch::client_id().is_none() {
+            let Some(cid) = forge_platform_twitch::client_id() else {
                 app.twitch_panel = TwitchPanelState::MissingClientId;
-            } else {
-                app.twitch_panel = TwitchPanelState::Requesting;
-            }
-            Task::none()
+                return Task::none();
+            };
+            app.twitch_panel = TwitchPanelState::Requesting;
+            Task::perform(crate::twitch_panel::request_code(cid), |r| {
+                Message::TwitchPanel(TwitchPanelMsg::DeviceCodeReceived(r))
+            })
         }
         TwitchPanelMsg::Cancel => {
             app.twitch_panel = TwitchPanelState::Disconnected;
@@ -538,6 +540,47 @@ fn handle_twitch_panel_msg(
             } else {
                 Task::none()
             }
+        }
+        TwitchPanelMsg::DeviceCodeReceived(Ok(data)) => {
+            let poll_data = data.poll_data.clone();
+            app.twitch_panel = TwitchPanelState::AwaitingAuthorization {
+                user_code: data.user_code,
+                verification_uri: data.verification_uri,
+                expires_at: data.expires_at,
+            };
+            let creds: Arc<dyn CredentialsRepo> =
+                Arc::clone(&app.backend) as Arc<dyn CredentialsRepo>;
+            Task::perform(
+                crate::twitch_panel::poll_and_authorize(poll_data, creds),
+                |r| Message::TwitchPanel(TwitchPanelMsg::AuthCompleted(r)),
+            )
+        }
+        TwitchPanelMsg::DeviceCodeReceived(Err(e)) => {
+            tracing::warn!(error = %e, "twitch device code request failed");
+            app.twitch_panel = TwitchPanelState::Error(e);
+            Task::none()
+        }
+        TwitchPanelMsg::AuthCompleted(Ok(outcome)) => {
+            tracing::info!(
+                login = %outcome.user_info.login,
+                id = %outcome.user_info.id,
+                "twitch authorization complete",
+            );
+            let chat = forge_platform_twitch::TwitchChat::new(
+                outcome.token,
+                outcome.client_id,
+                outcome.user_info.id.clone(),
+                outcome.user_info.id,
+                Arc::clone(&app.bus),
+            );
+            app.twitch_chat_handle = Some(chat.start());
+            app.twitch_panel = TwitchPanelState::Disconnected;
+            Task::none()
+        }
+        TwitchPanelMsg::AuthCompleted(Err(e)) => {
+            tracing::warn!(error = %e, "twitch authorization failed");
+            app.twitch_panel = TwitchPanelState::Error(e);
+            Task::none()
         }
     }
 }

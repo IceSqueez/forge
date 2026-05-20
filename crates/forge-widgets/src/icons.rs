@@ -43,3 +43,57 @@ pub const ICON_ERASER: char = '\u{F331}';
 pub const ICON_DOTS_VERTICAL: char = '\u{F5D3}';
 pub const ICON_CIRCLE_DASHED: char = '\u{F2E6}';
 pub const ICON_LOADER: char = '\u{F116}';
+
+/// Maps an icon name (Tabler-style kebab-case) to its bundled Bootstrap-font
+/// codepoint. Returns `ICON_INFO_CIRCLE` for unknown names so missing icons
+/// render as a recognizable placeholder rather than as several broken
+/// replacement glyphs.
+pub fn bootstrap_icon_for(name: &str) -> char {
+    match name {
+        "home" => ICON_HOME,
+        "clock" => ICON_CLOCK,
+        "bolt" | "lightning" => ICON_LIGHTNING,
+        "terminal" => ICON_TERMINAL,
+        "broadcast" => ICON_BROADCAST,
+        "grid" | "apps" | "layout-grid" => ICON_GRID,
+        "speaker" | "volume" => ICON_SPEAKER,
+        "music" => ICON_MUSIC_NOTE,
+        "file-code" => ICON_FILE_CODE,
+        "server" => ICON_SERVER,
+        "journal" | "logs" => ICON_JOURNAL,
+        "gear" | "settings" => ICON_GEAR,
+        "people" | "users" => ICON_PEOPLE,
+        "chat" | "message-circle" => ICON_CHAT,
+        "globe" => ICON_GLOBE,
+        "activity" => ICON_ACTIVITY,
+        "hash" | "variable" => ICON_HASH,
+        "chevron-down" => ICON_CHEVRON_DOWN,
+        "chevron-up" => ICON_CHEVRON_UP,
+        "chevron-right" => ICON_CHEVRON_RIGHT,
+        "download" => ICON_DOWNLOAD,
+        "plus" => ICON_PLUS,
+        "replay" => ICON_REPLAY,
+        "eye" => ICON_EYE,
+        "eye-slash" | "eye-off" => ICON_EYE_SLASH,
+        "copy" => ICON_COPY,
+        "refresh" | "arrows-shuffle" | "loader" | "loader-2" => ICON_REFRESH,
+        "alert-triangle" | "warning" => ICON_ALERT_TRIANGLE,
+        "lock" | "key" => ICON_LOCK,
+        "x" | "close" => ICON_X,
+        "check" | "check-circle" | "shield-check" => ICON_CHECK_CIRCLE,
+        "info-circle" | "info" | "list" => ICON_INFO_CIRCLE,
+        "keyboard" => ICON_KEYBOARD,
+        "folder" => ICON_FOLDER,
+        "folder-open" => ICON_FOLDER_OPEN,
+        "file-image" | "image" | "camera" => ICON_FILE_IMAGE,
+        "external-link" | "external" => ICON_EXTERNAL_LINK,
+        "pause" | "player-pause" => ICON_PAUSE,
+        "play" | "player-play" => ICON_PLAY,
+        "eraser" => ICON_ERASER,
+        "dots-vertical" => ICON_DOTS_VERTICAL,
+        "circle-dashed" => ICON_CIRCLE_DASHED,
+        "device-desktop" | "layout" | "stack-2" | "record" | "rss" => ICON_BROADCAST,
+        "brand-twitch" | "twitch" | "brand-obs" | "obs" => ICON_BROADCAST,
+        _ => ICON_INFO_CIRCLE,
+    }
+}

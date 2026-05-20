@@ -85,7 +85,8 @@ fn icon_box<'a, Msg: 'a>(
     let box_bg = palette.surface_overlay;
     let r = radius(Radius::Xxxl);
 
-    let icon_text = iced::widget::text(icon_str)
+    let glyph = crate::icons::bootstrap_icon_for(&icon_str);
+    let icon_text = iced::widget::text(glyph.to_string())
         .font(BOOTSTRAP_FONT)
         .size(24.0)
         .color(icon_color);
@@ -814,7 +815,7 @@ fn content_list_item_row<'a, Msg: 'a>(
         palette.text_faint
     };
 
-    let icon_elem = text(item.icon.as_str().to_owned())
+    let icon_elem = text(crate::icons::bootstrap_icon_for(item.icon.as_str()).to_string())
         .font(BOOTSTRAP_FONT)
         .size(FONT_BODY_LG)
         .color(icon_color);
@@ -865,7 +866,7 @@ fn key_value_row_elem<'a, Msg: 'a>(
     item: &'a KeyValueRow,
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
-    let icon_elem = text(item.icon.as_str().to_owned())
+    let icon_elem = text(crate::icons::bootstrap_icon_for(item.icon.as_str()).to_string())
         .font(BOOTSTRAP_FONT)
         .size(FONT_BODY_LG)
         .color(palette.text_secondary);
@@ -1140,7 +1141,8 @@ fn panel_header_row<'a, Msg: 'a>(
     count: Option<&str>,
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
-    let icon_elem = text(icon_str.to_owned())
+    let glyph = crate::icons::bootstrap_icon_for(icon_str);
+    let icon_elem = text(glyph.to_string())
         .font(BOOTSTRAP_FONT)
         .size(FONT_BODY_LG)
         .color(palette.text_secondary);
@@ -1415,11 +1417,13 @@ fn trailing_token_elem<'a, Msg: 'a>(
                 })
                 .into()
         }
-        TrailingToken::Icon(icon) => text(icon.as_str().to_owned())
-            .font(BOOTSTRAP_FONT)
-            .size(FONT_BODY_SM)
-            .color(icon_color)
-            .into(),
+        TrailingToken::Icon(icon) => {
+            text(crate::icons::bootstrap_icon_for(icon.as_str()).to_string())
+                .font(BOOTSTRAP_FONT)
+                .size(FONT_BODY_SM)
+                .color(icon_color)
+                .into()
+        }
         TrailingToken::Label(label) => text(label.clone())
             .font(font(FontRole::Monospace))
             .size(FONT_CAPS_SM)
@@ -1599,11 +1603,12 @@ fn quick_action_btn<'a, Msg: Clone + 'a>(
         )
     };
 
-    let icon_elem: Element<'a, Msg> = text(action.icon.as_str().to_owned())
-        .font(BOOTSTRAP_FONT)
-        .size(FONT_BODY)
-        .color(icon_color)
-        .into();
+    let icon_elem: Element<'a, Msg> =
+        text(crate::icons::bootstrap_icon_for(action.icon.as_str()).to_string())
+            .font(BOOTSTRAP_FONT)
+            .size(FONT_BODY)
+            .color(icon_color)
+            .into();
 
     let label_elem: Element<'a, Msg> = text(action.label.clone())
         .size(FONT_BODY_SM)

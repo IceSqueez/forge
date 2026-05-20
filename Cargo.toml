@@ -11,6 +11,8 @@ members = [
   "crates/forge-platform-twitch",
   "crates/forge-obs",
   "crates/forge-server",
+  "crates/forge-audio",
+  "crates/forge-soundboard",
   "crates/forge-widgets",
   "crates/forge-app",
 ]
@@ -95,6 +97,8 @@ rfd = { version = "0.17", default-features = false, features = [
 open = { version = "5" }
 
 cpal = { version = "0.17" }
+rubato = { version = "0.16" }
+symphonia = { version = "0.5", features = ["all-codecs", "all-formats"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

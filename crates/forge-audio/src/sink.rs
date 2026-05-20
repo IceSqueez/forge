@@ -1,0 +1,37 @@
+use async_trait::async_trait;
+
+use crate::error::AudioError;
+use crate::pcm::PcmBuffer;
+
+/// Output target for synthesized or decoded audio.
+///
+/// Implementations must NOT block — `play` returns once playback is queued/started,
+/// not once it completes. Lifecycle events flow over the bus instead (see RFC-038).
+#[async_trait]
+pub trait AudioSink: Send + Sync {
+    async fn play(&self, buffer: PcmBuffer) -> Result<(), AudioError>;
+}
+
+/// No-op sink used by the runtime when the soundboard subsystem is not yet wired
+/// (alpha-10 P2 — replaced with cpal-backed sink in P3).
+pub struct NullSink;
+
+#[async_trait]
+impl AudioSink for NullSink {
+    async fn play(&self, _buffer: PcmBuffer) -> Result<(), AudioError> {
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn null_sink_accepts_buffer() {
+        let sink = NullSink;
+        let buf = PcmBuffer::new(vec![0; 100], 44_100, 1);
+        sink.play(buf).await.unwrap();
+    }
+}

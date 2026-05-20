@@ -437,6 +437,38 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                     "twitch".into(),
                 )))
             }
+            OnboardingMsg::CopyDeviceCode => {
+                let code = app
+                    .onboarding
+                    .device_code
+                    .as_ref()
+                    .map(|s| s.user_code.clone())
+                    .unwrap_or_default();
+                if code.is_empty() {
+                    Task::none()
+                } else {
+                    iced::clipboard::write::<Message>(code)
+                }
+            }
+            OnboardingMsg::OpenVerificationUrl => {
+                if let Some(session) = app.onboarding.device_code.as_ref() {
+                    let uri = session.verification_uri.clone();
+                    if !uri.is_empty() {
+                        Task::perform(
+                            async move {
+                                if let Err(e) = open::that(&uri) {
+                                    tracing::warn!(error = %e, url = %uri, "open browser failed");
+                                }
+                            },
+                            |()| Message::Noop,
+                        )
+                    } else {
+                        Task::none()
+                    }
+                } else {
+                    Task::none()
+                }
+            }
             OnboardingMsg::BackFromPicker => {
                 let prev = OnboardingStep::Welcome;
                 app.onboarding.sync_step(&prev);
@@ -2448,6 +2480,29 @@ fn device_code_body<'a>(
                 .duration_since(SystemTime::now())
                 .unwrap_or_default();
 
+            let open_btn = iced::widget::button(
+                iced::widget::row![
+                    iced::widget::text("Open URL in browser").size(13.0),
+                    iced::widget::text("↗").size(13.0),
+                ]
+                .spacing(6.0),
+            )
+            .on_press(Message::Onboarding(OnboardingMsg::OpenVerificationUrl))
+            .padding(iced::Padding::from([6_u16, 12_u16]))
+            .style(
+                move |_theme: &iced::Theme, _status| iced::widget::button::Style {
+                    background: Some(iced::Background::Color(palette.brand)),
+                    text_color: palette.shell,
+                    border: iced::Border {
+                        color: iced::Color::TRANSPARENT,
+                        width: 0.0,
+                        radius: 6.0.into(),
+                    },
+                    shadow: iced::Shadow::default(),
+                    snap: false,
+                },
+            );
+
             let steps = iced::widget::row![
                 forge_widgets::numbered_box_step(
                     1,
@@ -2470,10 +2525,9 @@ fn device_code_body<'a>(
             let scope_hint = twitch_scope_hint();
 
             iced::widget::column![
-                // clipboard wiring is deferred; copy button dispatches RetryDeviceCode as placeholder
                 forge_widgets::device_code_display(
                     &session.user_code,
-                    Message::Onboarding(OnboardingMsg::RetryDeviceCode),
+                    Message::Onboarding(OnboardingMsg::CopyDeviceCode),
                     palette,
                 ),
                 forge_widgets::expiration_timer(
@@ -2482,6 +2536,7 @@ fn device_code_body<'a>(
                     Message::Onboarding(OnboardingMsg::RetryDeviceCode),
                     palette,
                 ),
+                open_btn,
                 steps,
                 forge_widgets::live_status_banner(
                     BannerKind::Waiting,

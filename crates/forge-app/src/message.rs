@@ -88,6 +88,8 @@ pub enum OnboardingMsg {
     CredentialsStored(Result<(), String>),
     BackFromDeviceCode,
     RetryDeviceCode,
+    CopyDeviceCode,
+    OpenVerificationUrl,
     ObsUrlChanged(String),
     ObsPasswordChanged(String),
     ObsConnectAttempt,

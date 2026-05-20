@@ -78,6 +78,7 @@ iced = { version = "0.14", features = ["tokio", "image", "svg", "advanced", "can
 iced_fonts = { version = "0.3", features = ["bootstrap"] }
 
 rfd = { version = "0.17", default-features = false, features = ["xdg-portal", "wayland"] }
+open = { version = "5" }
 
 cpal = { version = "0.17" }
 

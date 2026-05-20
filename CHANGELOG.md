@@ -1,6 +1,102 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-alpha.9] - 2026-05-20
+### ⚠️ BREAKING CHANGES
+- **runtime**: EventLogRepo gains recent_since() method
+- **server**: ServerConfig::new now requires data_provider argument
+- **server**: TriggerKind gains CodeEvent variant; exhaustive matches must handle it
+
+### 🐛 Bug Fixes
+- *(app)* Hold tokio runtime guard so background spawns don't panic
+- *(app)* Handle tokio runtime init error without panicking
+- *(app)* Make sidebar Actions Twitch and OBS items reach real screens
+- *(app)* Wire device code copy button and verification URL open
+- *(widgets)* Pad onboarding step pills so text doesn't crowd the edges
+- *(platform-core)* Surface Twitch device-code response body in errors
+- *(storage-sqlite)* Ignore missing migrations to survive binary downgrade
+- *(app)* Tighten Home empty card height and add stat row padding
+- *(app)* Even Home bottom cards width and zero-default At a glance counts
+- *(app)* Always route sidebar Twitch and OBS to IntegrationDetail
+- *(platform-core)* Accept Twitch token error format with message field
+- *(platform-core)* Accept Twitch scope field as either string or array
+- *(storage-sqlite)* Hex-encode digest by byte for sha2 0.11 compat
+- *(workspace)* Enable rustls TLS feature on tokio-tungstenite for EventSub
+- *(widgets)* Map kebab-case icon names to bundled bootstrap codepoints
+- *(platform-twitch)* Align scopes and quick actions with Twitch design
+- *(platform-twitch)* Stop chat reconnect loop when token scope is missing
+
+### 📚 Documentation
+- *(readme)* Refresh current status for alpha-9 server milestone
+
+### 🚀 Features
+- *(server)* Add axum router skeleton with ws/api/overlays routes
+- *(storage)* Add 4 server config settings keys
+- *(runtime)* [**breaking**] Add EventBus::recent_since with DB fallback
+- *(server)* Add bearer-token auth middleware for /api/v1
+- *(server)* Add bus-adapter with per-client filter dispatch
+- *(server)* Add WsClient state with per-client ev/s tracking
+- *(widgets)* Add throughput_sparkline canvas widget
+- *(widgets)* Add bearer_token_display widget with mask and reveal
+- *(server)* [**breaking**] Add WS protocol envelope and method dispatcher base
+- *(server)* Implement subscribe and unsubscribe WS methods
+- *(widgets)* Add client_table_row with 3-state dot and chips
+- *(widgets)* Add bind_address_card radio widget
+- *(server)* Implement getInfo with clients and bandwidth telemetry
+- *(server)* Implement getActions and doAction WS methods
+- *(widgets)* Add type_to_confirm_modal blocking widget
+- *(widgets)* Add overlay_file_list with sizes and browser URL
+- *(server)* Implement getCommands, getGlobals, getGlobal, setGlobal
+- *(server)* [**breaking**] Implement getUserGlobals and triggerCodeEvent methods
+- *(app)* Add Server screen with stats clients and overlay list
+- *(server)* Implement getEvents and replayEvent WS methods
+- *(app)* Add Settings WebSocket sub-screen with LAN-bind modal
+- *(server)* Implement WS authenticate first-frame method
+- *(server)* Implement getActiveViewers WS method
+- *(server)* Implement getOverlayFiles WS method with sandbox
+- *(server)* Add HTTP REST mirror at /api/v1
+- *(server)* Serve overlay files with sandbox and CORS toggle
+- *(server)* Notify clients of dropped events on backpressure lag
+- *(server)* Add ServerHandle stop and restart lifecycle
+- *(server)* Guard against unsafe LAN bind without token or flag
+- *(server)* Expose auth_state and bind_addr getters on ServerHandle
+- *(app)* Add server_subsystem wrapping ServerHandle lifecycle
+- *(app)* Autostart server from settings on app boot
+- *(app)* Wire server screen restart stop and regenerate buttons
+- *(app)* Auto-restart server when WebSocket settings change
+- *(app)* Subscribe to live server metrics when Server screen visible
+- *(app)* Write tracing logs to daily-rotated files alongside console
+- *(widgets)* Bundle Inter and JetBrains Mono so UI looks the same everywhere
+- *(app)* Redesign Home empty state with dimmed values and create CTAs
+- *(app)* Add Twitch disconnected inline panel with device code mockup
+- *(app)* Wire Twitch device code flow polling and credential storage
+- *(app)* Reconnect Twitch chat from stored credentials on app boot
+- *(app)* Show Twitch connected panel with login when chat session is live
+- *(app)* Add OBS disconnected inline panel with form and test connect
+- *(platform-twitch)* Impl 4 integration traits for full connected view
+- *(app)* Redesign Actions list as grouped table with filters and stats
+- *(app)* Add Queues management screen with cards and pause controls
+- *(app)* Show re-auth banner when Twitch token scope is missing
+- *(platform-twitch)* Subscribe to all EventSub topics with shared tracker
+- *(storage)* Aggregate last_ran and runs_24h via HistoryRepo stats_summary
+- *(app)* Add Action editor screen with 2-pane tree and sub-action flow
+- *(app)* Seed Hub triggers_fired from 24h history and increment on action.done
+- *(runtime)* Expose paused_queues query and feed Queues view live state
+- *(app)* Treat Drain as pause plus queue.drain_requested bus event
+- *(server)* Track http_requests and events_out counters in ServerInfo
+- *(app)* Surface live WS client subscriptions in Server screen rows
+- *(app)* Scan overlay root from disk and feed Server screen file list
+- *(app)* Replace active bool with 3-state liveness on Server client rows
+- *(app)* Load Settings WebSocket state from storage and apply overlay config to server
+- *(app)* Add hover affordance to Server connected-clients rows
+- *(app)* Add kick-to-disconnect hint to Server clients header
+
+### 🚜 Refactor
+- *(app)* Remove Onboarding screen and route boot directly to Home
+- *(platform-twitch)* Replace custom DCF with twitch_api and twitch_oauth2
+- *(widgets)* Rewrite IntegrationDetail layout to match HTML designs
+- *(platform-core)* Remove dead custom OAuth code now handled by twitch_oauth2
+
 ## [0.1.0-alpha.8] - 2026-05-19
 ### ⚠️ BREAKING CHANGES
 - **storage**: DataProvider gains event_log_repo() method
@@ -12,6 +108,7 @@ All notable changes to this project will be documented in this file.
 - *(workspace)* Update Cargo.lock
 - *(deps)* Update lockfile for forge-widgets forge-events dep
 - *(workspace)* Update Cargo.lock and rustfmt cleanup
+- Release
 
 ### 🐛 Bug Fixes
 - *(obs)* Align event payloads with RFC-031 and populate caused_by
@@ -23,6 +120,7 @@ All notable changes to this project will be documented in this file.
 ### 📚 Documentation
 - *(readme)* Remove Twitch client_id manual-setup limitation
 - *(readme)* Refresh current status for alpha-8 EventFeed milestone
+- *(release)* Release v0.1.0-alpha.8
 
 ### 🚀 Features
 - *(events)* Add Event::replay flag for replay_and_publish

@@ -9,9 +9,6 @@ rust-version.workspace = true
 [lints]
 workspace = true
 
-[features]
-bundled-fonts = []
-
 [dependencies]
 iced                = { workspace = true }
 iced_fonts          = { workspace = true }

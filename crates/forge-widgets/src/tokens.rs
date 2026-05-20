@@ -122,19 +122,13 @@ pub fn font(role: FontRole) -> Font {
     }
 }
 
-/// Empty when the `bundled-fonts` feature is off; iced then uses system fonts.
+/// Returns bundled Inter + JetBrains Mono font bytes; iced loads these so the
+/// UI looks consistent across systems regardless of installed fonts.
 pub fn load_fonts() -> Vec<std::borrow::Cow<'static, [u8]>> {
-    #[cfg(feature = "bundled-fonts")]
-    {
-        vec![
-            std::borrow::Cow::Borrowed(include_bytes!("../assets/fonts/Inter-Regular.otf")),
-            std::borrow::Cow::Borrowed(include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf")),
-        ]
-    }
-    #[cfg(not(feature = "bundled-fonts"))]
-    {
-        vec![]
-    }
+    vec![
+        std::borrow::Cow::Borrowed(include_bytes!("../assets/fonts/Inter-Regular.ttf")),
+        std::borrow::Cow::Borrowed(include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf")),
+    ]
 }
 
 #[cfg(test)]

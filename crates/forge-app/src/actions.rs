@@ -1,8 +1,8 @@
 use forge_storage::{DataProvider, StorageError};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
-    Action, ActionId, Command, CommandPermission, LogLevel, QueueId, SubActionSpec, Trigger,
-    TriggerId, TriggerKind,
+    Action, ActionId, ClipId, Command, CommandPermission, LogLevel, QueueId, SubActionSpec,
+    Trigger, TriggerId, TriggerKind,
 };
 use std::sync::Arc;
 use time::OffsetDateTime;
@@ -345,6 +345,7 @@ pub enum SubActionKindChoice {
     SetGlobal,
     Delay,
     Log,
+    PlaySound,
 }
 
 #[derive(Debug, Clone)]
@@ -356,6 +357,7 @@ pub struct SubActionConfigForm {
     pub delay_ms: String,
     pub log_level: LogLevel,
     pub log_message: String,
+    pub play_sound_clip_id: Option<ClipId>,
 }
 
 impl Default for SubActionConfigForm {
@@ -368,6 +370,7 @@ impl Default for SubActionConfigForm {
             delay_ms: "500".to_string(),
             log_level: LogLevel::Info,
             log_message: String::new(),
+            play_sound_clip_id: None,
         }
     }
 }
@@ -377,6 +380,7 @@ pub struct AddSubActionForm {
     pub for_action_id: ActionId,
     pub kind: SubActionKindChoice,
     pub config: SubActionConfigForm,
+    pub available_clips: Vec<(ClipId, String)>,
     pub error: Option<String>,
     pub saving: bool,
 }
@@ -387,6 +391,7 @@ impl AddSubActionForm {
             for_action_id,
             kind: SubActionKindChoice::SendChat,
             config: SubActionConfigForm::default(),
+            available_clips: vec![],
             error: None,
             saving: false,
         }
@@ -398,6 +403,7 @@ impl AddSubActionForm {
             SubActionKindChoice::SetGlobal => !self.config.set_global_name.trim().is_empty(),
             SubActionKindChoice::Delay => self.config.delay_ms.trim().parse::<u64>().is_ok(),
             SubActionKindChoice::Log => !self.config.log_message.trim().is_empty(),
+            SubActionKindChoice::PlaySound => self.config.play_sound_clip_id.is_some(),
         }
     }
 }
@@ -413,6 +419,8 @@ pub enum AddSubActionMsg {
     DelayMsChanged(String),
     LogLevelSelected(LogLevel),
     LogMessageChanged(String),
+    PlaySoundClipSelected(ClipId),
+    ClipsLoaded(Vec<(ClipId, String)>),
     Cancel,
     Submit,
     Saved(Result<(), String>),
@@ -571,6 +579,14 @@ pub async fn save_sub_action(
     };
     action.sub_actions.push(spec);
     dp.action_repo().save(&action).await
+}
+
+pub async fn load_clip_options(dp: Arc<SqliteBackend>) -> Vec<(ClipId, String)> {
+    dp.soundboard_clips_repo()
+        .list()
+        .await
+        .map(|clips| clips.into_iter().map(|c| (c.id, c.name)).collect())
+        .unwrap_or_default()
 }
 
 pub async fn remove_sub_action(
@@ -957,6 +973,28 @@ mod tests {
         form.kind = SubActionKindChoice::Log;
         form.config.log_message = "action started".to_string();
         assert!(form.is_valid());
+    }
+
+    #[test]
+    fn add_sub_action_form_play_sound_invalid_without_clip() {
+        let mut form = AddSubActionForm::new(ActionId::new());
+        form.kind = SubActionKindChoice::PlaySound;
+        assert!(!form.is_valid());
+    }
+
+    #[test]
+    fn add_sub_action_form_play_sound_valid_with_clip() {
+        let mut form = AddSubActionForm::new(ActionId::new());
+        form.kind = SubActionKindChoice::PlaySound;
+        form.config.play_sound_clip_id = Some(ClipId::new());
+        assert!(form.is_valid());
+    }
+
+    #[tokio::test]
+    async fn load_clip_options_empty_db_returns_empty() {
+        let dp = open_backend().await;
+        let clips = load_clip_options(dp).await;
+        assert!(clips.is_empty());
     }
 
     #[tokio::test]

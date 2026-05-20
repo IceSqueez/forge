@@ -37,8 +37,8 @@ use crate::action_editor::action_editor_view;
 use crate::actions::{
     ActionsFilter, ActionsState, AddActionForm, AddActionMsg, AddSubActionForm, AddSubActionMsg,
     AddTriggerForm, AddTriggerMsg, RemoveSubActionMsg, SubActionKindChoice, TriggerCategory,
-    kind_label, kind_summary, load_action_detail, load_actions_tree, remove_sub_action,
-    save_sub_action,
+    kind_label, kind_summary, load_action_detail, load_actions_tree, load_clip_options,
+    remove_sub_action, save_sub_action,
 };
 use crate::event_feed::{EventFeedState, event_feed_view, handle_event_feed_msg};
 use crate::globals_view::{
@@ -1435,7 +1435,10 @@ fn handle_add_sub_action_msg(app: &mut App, sub: AddSubActionMsg) -> Task<Messag
     match sub {
         AddSubActionMsg::OpenRequested(action_id) => {
             app.actions.add_sub_action_modal = Some(AddSubActionForm::new(action_id));
-            Task::none()
+            let dp = Arc::clone(&app.backend);
+            Task::perform(load_clip_options(dp), |clips| {
+                Message::AddSubAction(AddSubActionMsg::ClipsLoaded(clips))
+            })
         }
         AddSubActionMsg::KindSelected(kind) => {
             if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
@@ -1486,6 +1489,19 @@ fn handle_add_sub_action_msg(app: &mut App, sub: AddSubActionMsg) -> Task<Messag
             }
             Task::none()
         }
+        AddSubActionMsg::PlaySoundClipSelected(clip_id) => {
+            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
+                f.config.play_sound_clip_id = Some(clip_id);
+                f.error = None;
+            }
+            Task::none()
+        }
+        AddSubActionMsg::ClipsLoaded(clips) => {
+            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
+                f.available_clips = clips;
+            }
+            Task::none()
+        }
         AddSubActionMsg::Cancel => {
             app.actions.add_sub_action_modal = None;
             Task::none()
@@ -1500,6 +1516,7 @@ fn handle_add_sub_action_msg(app: &mut App, sub: AddSubActionMsg) -> Task<Messag
                     SubActionKindChoice::SetGlobal => "Variable name is required.",
                     SubActionKindChoice::Delay => "Milliseconds must be a non-negative integer.",
                     SubActionKindChoice::Log => "Log message is required.",
+                    SubActionKindChoice::PlaySound => "Select a clip to play.",
                 };
                 if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
                     f.error = Some(error_msg.to_string());
@@ -1522,6 +1539,10 @@ fn handle_add_sub_action_msg(app: &mut App, sub: AddSubActionMsg) -> Task<Messag
                 SubActionKindChoice::Log => forge_types::SubActionSpec::Log {
                     level: form.config.log_level.clone(),
                     message: form.config.log_message.clone(),
+                },
+                SubActionKindChoice::PlaySound => forge_types::SubActionSpec::PlaySound {
+                    clip_id: form.config.play_sound_clip_id.unwrap_or_default(),
+                    output_device_override: None,
                 },
             };
             let action_id = form.for_action_id;
@@ -3681,7 +3702,23 @@ fn add_sub_action_modal_view<'a>(
         form.kind == SubActionKindChoice::Log,
         Message::AddSubAction(AddSubActionMsg::KindSelected(SubActionKindChoice::Log)),
     );
-    let chips_row = row![chip_send_chat, chip_set_global, chip_delay, chip_log].spacing(6);
+    let chip_play_sound = forge_widgets::category_chip(
+        palette,
+        "Play sound",
+        palette.success,
+        form.kind == SubActionKindChoice::PlaySound,
+        Message::AddSubAction(AddSubActionMsg::KindSelected(
+            SubActionKindChoice::PlaySound,
+        )),
+    );
+    let chips_row = row![
+        chip_send_chat,
+        chip_set_global,
+        chip_delay,
+        chip_log,
+        chip_play_sound
+    ]
+    .spacing(6);
 
     let config_block: iced::Element<'_, Message> = match form.kind {
         SubActionKindChoice::SendChat => {
@@ -3840,6 +3877,66 @@ fn add_sub_action_modal_view<'a>(
             .spacing(6);
 
             column![level_block, msg_block].spacing(12).into()
+        }
+        SubActionKindChoice::PlaySound => {
+            if form.available_clips.is_empty() {
+                let hint = text("No clips yet \u{2014} add one in the Soundboard screen first.")
+                    .size(11.5)
+                    .color(palette.text_muted);
+                column![forge_widgets::section_header("CLIP", None, palette), hint]
+                    .spacing(6)
+                    .into()
+            } else {
+                let p = *palette;
+                let clip_names: Vec<String> = form
+                    .available_clips
+                    .iter()
+                    .map(|(_, n)| n.clone())
+                    .collect();
+                let selected_name = form.config.play_sound_clip_id.and_then(|id| {
+                    form.available_clips
+                        .iter()
+                        .find(|(cid, _)| *cid == id)
+                        .map(|(_, n)| n.clone())
+                });
+                let clips_for_closure = form.available_clips.clone();
+                let clip_select: iced::Element<'_, Message> =
+                    iced::widget::pick_list(clip_names, selected_name, move |name: String| {
+                        let clip_id = clips_for_closure
+                            .iter()
+                            .find(|(_, n)| *n == name)
+                            .map(|(id, _)| *id)
+                            .unwrap_or_default();
+                        Message::AddSubAction(AddSubActionMsg::PlaySoundClipSelected(clip_id))
+                    })
+                    .padding(forge_widgets::inputs::input_padding())
+                    .width(Length::Fill)
+                    .style(move |_theme, status| {
+                        use iced::widget::pick_list;
+                        let border_color = match status {
+                            pick_list::Status::Opened { .. } => p.border_active,
+                            _ => p.border_regular,
+                        };
+                        pick_list::Style {
+                            text_color: p.text_primary,
+                            placeholder_color: p.text_muted,
+                            handle_color: p.text_muted,
+                            background: iced::Background::Color(p.shell),
+                            border: iced::Border {
+                                color: border_color,
+                                width: 0.5,
+                                radius: forge_widgets::radius(forge_widgets::Radius::Md).into(),
+                            },
+                        }
+                    })
+                    .into();
+                column![
+                    forge_widgets::section_header("CLIP", None, palette),
+                    clip_select
+                ]
+                .spacing(6)
+                .into()
+            }
         }
     };
 
@@ -5210,6 +5307,77 @@ mod tests {
         let _ = update(&mut app, Message::Navigate(Screen::Actions));
         app.actions.add_sub_action_modal =
             Some(crate::actions::AddSubActionForm::new(ActionId::new()));
+        let _ = view(&app);
+    }
+
+    #[test]
+    fn clips_loaded_populates_available_clips() {
+        use forge_types::{ActionId, ClipId};
+        let mut app = App::default();
+        app.actions.add_sub_action_modal =
+            Some(crate::actions::AddSubActionForm::new(ActionId::new()));
+        let clip_id = ClipId::new();
+        let _ = update(
+            &mut app,
+            Message::AddSubAction(AddSubActionMsg::ClipsLoaded(vec![(
+                clip_id,
+                "Airhorn".to_string(),
+            )])),
+        );
+        let clips = &app
+            .actions
+            .add_sub_action_modal
+            .as_ref()
+            .unwrap()
+            .available_clips;
+        assert_eq!(clips.len(), 1);
+        assert_eq!(clips[0].1, "Airhorn");
+    }
+
+    #[test]
+    fn play_sound_clip_selected_updates_config() {
+        use forge_types::{ActionId, ClipId};
+        let mut app = App::default();
+        let mut form = crate::actions::AddSubActionForm::new(ActionId::new());
+        form.kind = SubActionKindChoice::PlaySound;
+        app.actions.add_sub_action_modal = Some(form);
+        let clip_id = ClipId::new();
+        let _ = update(
+            &mut app,
+            Message::AddSubAction(AddSubActionMsg::PlaySoundClipSelected(clip_id)),
+        );
+        assert_eq!(
+            app.actions
+                .add_sub_action_modal
+                .as_ref()
+                .unwrap()
+                .config
+                .play_sound_clip_id,
+            Some(clip_id)
+        );
+    }
+
+    #[test]
+    fn submit_play_sound_without_clip_sets_error() {
+        use forge_types::ActionId;
+        let mut app = App::default();
+        let mut form = crate::actions::AddSubActionForm::new(ActionId::new());
+        form.kind = SubActionKindChoice::PlaySound;
+        app.actions.add_sub_action_modal = Some(form);
+        let _ = update(&mut app, Message::AddSubAction(AddSubActionMsg::Submit));
+        let f = app.actions.add_sub_action_modal.as_ref().unwrap();
+        assert!(f.error.is_some());
+    }
+
+    #[test]
+    fn view_compiles_play_sound_with_clips() {
+        use forge_types::{ActionId, ClipId};
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Navigate(Screen::Actions));
+        let mut form = crate::actions::AddSubActionForm::new(ActionId::new());
+        form.kind = SubActionKindChoice::PlaySound;
+        form.available_clips = vec![(ClipId::new(), "Airhorn".to_string())];
+        app.actions.add_sub_action_modal = Some(form);
         let _ = view(&app);
     }
 

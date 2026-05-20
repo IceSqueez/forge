@@ -83,16 +83,22 @@ impl DeviceCodePoller {
             })?;
 
         let status = resp.status().as_u16();
-        if !resp.status().is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(PlatformError::Http { status, body });
+        let body_text = resp.text().await.unwrap_or_default();
+        tracing::debug!(status, body = %body_text, "device-code request response");
+
+        if !(200..300).contains(&status) {
+            return Err(PlatformError::Http {
+                status,
+                body: body_text,
+            });
         }
 
-        resp.json::<DeviceCodeResponse>()
-            .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.to_string(),
-            })
+        serde_json::from_str::<DeviceCodeResponse>(&body_text).map_err(|e| PlatformError::Auth {
+            reason: format!(
+                "device-code response decode failed (status {status}): {e}; body: {}",
+                truncate_for_log(&body_text)
+            ),
+        })
     }
 
     pub fn new(
@@ -209,6 +215,19 @@ impl DeviceCodePoller {
 
     pub fn cancel_token(&self) -> Arc<AtomicBool> {
         Arc::clone(&self.cancel)
+    }
+}
+
+fn truncate_for_log(s: &str) -> String {
+    const MAX: usize = 400;
+    if s.chars().count() <= MAX {
+        s.to_owned()
+    } else {
+        let truncated: String = s.chars().take(MAX).collect();
+        format!(
+            "{truncated}… (truncated, full length {} chars)",
+            s.chars().count()
+        )
     }
 }
 

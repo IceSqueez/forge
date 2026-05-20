@@ -37,14 +37,21 @@ pub struct OwnedSubscriptionChip {
     pub source: EventSource,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClientLiveness {
+    Active,
+    Idle,
+    Disconnecting,
+}
+
 #[derive(Debug, Clone)]
 pub struct OwnedClientRow {
     pub identification: String,
     pub client_type_label: String,
+    pub liveness: ClientLiveness,
     pub subscriptions: Vec<OwnedSubscriptionChip>,
     pub events_per_second: f32,
     pub uptime_short: String,
-    pub active: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -377,10 +384,10 @@ fn client_row_elem<'a>(
     row_data: &'a OwnedClientRow,
     palette: &ForgePalette,
 ) -> Element<'a, Message> {
-    let dot_color = if row_data.active {
-        palette.success
-    } else {
-        palette.warning
+    let dot_color = match row_data.liveness {
+        ClientLiveness::Active => palette.success,
+        ClientLiveness::Idle => palette.warning,
+        ClientLiveness::Disconnecting => palette.random,
     };
     let elevated = palette.elevated;
     let text_faint = palette.text_faint;

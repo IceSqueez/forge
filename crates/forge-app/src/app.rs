@@ -4375,13 +4375,18 @@ pub fn subscription(app: &App) -> Subscription<Message> {
                                 }
                                 None => Vec::new(),
                             };
+                            let liveness = if eps > 0.0 {
+                                crate::server_screen::ClientLiveness::Active
+                            } else {
+                                crate::server_screen::ClientLiveness::Idle
+                            };
                             rows.push(crate::server_screen::OwnedClientRow {
                                 identification: (**client.identification.load()).clone(),
                                 client_type_label: client.client_type.load().type_str().to_owned(),
+                                liveness,
                                 subscriptions,
                                 events_per_second: eps,
                                 uptime_short: format_short_duration(client.uptime()),
-                                active: true,
                             });
                         }
                         drop(clients_guard);

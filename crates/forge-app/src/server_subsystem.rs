@@ -84,6 +84,14 @@ impl ServerSubsystem {
         }
     }
 
+    pub async fn bus_adapter(&self) -> Option<Arc<forge_server::BusAdapter>> {
+        let guard = self.handle.read().await;
+        match guard.as_ref() {
+            Some(handle) => Some(handle.bus_adapter().await),
+            None => None,
+        }
+    }
+
     pub async fn bearer_token(&self) -> Result<Option<String>, ServerError> {
         let id = CredentialId::new(BEARER_CREDENTIAL_ID);
         self.credentials

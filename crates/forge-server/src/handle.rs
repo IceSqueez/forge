@@ -101,6 +101,10 @@ impl ServerHandle {
         Arc::clone(&self.inner.lock().await.state.server_info)
     }
 
+    pub async fn bus_adapter(&self) -> Arc<crate::bus_adapter::BusAdapter> {
+        Arc::clone(&self.inner.lock().await.state.bus_adapter)
+    }
+
     pub fn abort(&self) {
         let inner = Arc::clone(&self.inner);
         tokio::spawn(async move {

@@ -1701,6 +1701,25 @@ fn event_source_color(source: EventSource, palette: &ForgePalette) -> iced::Colo
     }
 }
 
+fn event_source_label(source: EventSource) -> &'static str {
+    match source {
+        EventSource::Twitch => "twitch",
+        EventSource::YouTube => "youtube",
+        EventSource::Kick => "kick",
+        EventSource::Trovo => "trovo",
+        EventSource::Core => "core",
+        EventSource::Rhai => "rhai",
+        EventSource::Http => "http",
+        EventSource::Obs => "obs",
+        EventSource::VTube => "vtube",
+        EventSource::Discord => "discord",
+        EventSource::Midi => "midi",
+        EventSource::Hotkey => "hotkey",
+        EventSource::Timer => "timer",
+        EventSource::Server => "server",
+    }
+}
+
 fn event_kind_description(source: EventSource, kind: &str) -> String {
     let src_label = match source {
         EventSource::Twitch => "Twitch",
@@ -4254,16 +4273,44 @@ pub fn subscription(app: &App) -> Subscription<Message> {
                         let Some(info) = subsystem.server_info().await else {
                             continue;
                         };
+                        let bus_adapter = subsystem.bus_adapter().await;
                         let clients_guard = info.connected_clients.read().await;
                         let mut rows: Vec<crate::server_screen::OwnedClientRow> = Vec::new();
                         let mut events_per_second_total: f32 = 0.0;
-                        for client in clients_guard.values() {
+                        for (client_id, client) in clients_guard.iter() {
                             let eps = client.events_per_second();
                             events_per_second_total += eps;
+                            let subscriptions = match bus_adapter.as_ref() {
+                                Some(adapter) => {
+                                    let filters = adapter.current_subscriptions(*client_id).await;
+                                    filters
+                                        .into_iter()
+                                        .map(|f| {
+                                            let label = match (&f.source, &f.kind) {
+                                                (Some(s), Some(k)) => {
+                                                    format!("{}.{}", event_source_label(*s), k)
+                                                }
+                                                (Some(s), None) => {
+                                                    format!("{}.*", event_source_label(*s))
+                                                }
+                                                (None, Some(k)) => k.clone(),
+                                                (None, None) => "*".to_owned(),
+                                            };
+                                            let source =
+                                                f.source.unwrap_or(forge_events::EventSource::Core);
+                                            crate::server_screen::OwnedSubscriptionChip {
+                                                label,
+                                                source,
+                                            }
+                                        })
+                                        .collect()
+                                }
+                                None => Vec::new(),
+                            };
                             rows.push(crate::server_screen::OwnedClientRow {
                                 identification: (**client.identification.load()).clone(),
                                 client_type_label: client.client_type.load().type_str().to_owned(),
-                                subscriptions: Vec::new(),
+                                subscriptions,
                                 events_per_second: eps,
                                 uptime_short: format_short_duration(client.uptime()),
                                 active: true,

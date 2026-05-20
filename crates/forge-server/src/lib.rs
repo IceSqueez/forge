@@ -18,6 +18,7 @@ pub mod test_dp;
 
 pub use auth::AuthState;
 pub use bandwidth::BandwidthTracker;
+pub use bus_adapter::{BusAdapter, ClientId, EventFilter};
 pub use config::ServerConfig;
 pub use error::ServerError;
 pub use handle::ServerHandle;

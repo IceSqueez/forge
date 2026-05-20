@@ -668,6 +668,18 @@ fn is_authenticated(ctx: &DispatchContext) -> bool {
     ctx.client.authenticated.load(Ordering::Acquire)
 }
 
+async fn handle_authenticate(token: String, ctx: &DispatchContext) -> WsResponse {
+    if ctx.auth_state.verify(&token).await {
+        ctx.client.authenticated.store(true, Ordering::SeqCst);
+        WsResponse::Ok(serde_json::json!({ "authenticated": true }))
+    } else {
+        WsResponse::Error {
+            code: Some("AUTH_FAILED".to_owned()),
+            message: "invalid token".to_owned(),
+        }
+    }
+}
+
 pub async fn dispatch(req: WsEnvelope<WsRequest>, ctx: &DispatchContext) -> WsEnvelope<WsResponse> {
     let id = req.id.clone();
     let inner = route(req.inner, ctx).await;
@@ -676,7 +688,7 @@ pub async fn dispatch(req: WsEnvelope<WsRequest>, ctx: &DispatchContext) -> WsEn
 
 async fn route(req: WsRequest, ctx: &DispatchContext) -> WsResponse {
     match req {
-        WsRequest::Auth { .. } => not_implemented(),
+        WsRequest::Auth { token } => handle_authenticate(token, ctx).await,
 
         WsRequest::Subscribe { events } => {
             if ctx.auth_required_for_reads && !is_authenticated(ctx) {
@@ -1785,5 +1797,62 @@ mod tests {
             } => assert_eq!(code, "INVALID_PAYLOAD"),
             other => panic!("expected INVALID_PAYLOAD error, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn authenticate_correct_token_marks_session_authenticated() {
+        let ctx = make_ctx(false, true);
+        let req = WsEnvelope {
+            id: Some("a1".to_owned()),
+            inner: WsRequest::Auth {
+                token: "test-token".to_owned(),
+            },
+        };
+        let resp = dispatch(req, &ctx).await;
+        match resp.inner {
+            WsResponse::Ok(data) => {
+                assert_eq!(data.get("authenticated"), Some(&serde_json::json!(true)));
+            }
+            other => panic!("expected ok response, got {other:?}"),
+        }
+        assert!(ctx.client.authenticated.load(Ordering::Acquire));
+    }
+
+    #[tokio::test]
+    async fn authenticate_wrong_token_returns_auth_failed() {
+        let ctx = make_ctx(false, true);
+        let req = WsEnvelope {
+            id: Some("a2".to_owned()),
+            inner: WsRequest::Auth {
+                token: "wrong-token".to_owned(),
+            },
+        };
+        let resp = dispatch(req, &ctx).await;
+        match resp.inner {
+            WsResponse::Error {
+                code: Some(code), ..
+            } => assert_eq!(code, "AUTH_FAILED"),
+            other => panic!("expected AUTH_FAILED error, got {other:?}"),
+        }
+        assert!(!ctx.client.authenticated.load(Ordering::Acquire));
+    }
+
+    #[tokio::test]
+    async fn authenticate_empty_token_returns_auth_failed() {
+        let ctx = make_ctx(false, true);
+        let req = WsEnvelope {
+            id: Some("a3".to_owned()),
+            inner: WsRequest::Auth {
+                token: String::new(),
+            },
+        };
+        let resp = dispatch(req, &ctx).await;
+        match resp.inner {
+            WsResponse::Error {
+                code: Some(code), ..
+            } => assert_eq!(code, "AUTH_FAILED"),
+            other => panic!("expected AUTH_FAILED error, got {other:?}"),
+        }
+        assert!(!ctx.client.authenticated.load(Ordering::Acquire));
     }
 }

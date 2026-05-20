@@ -13,4 +13,7 @@ pub enum SoundboardError {
 
     #[error("storage error: {0}")]
     Storage(String),
+
+    #[error("blocking task panicked: {0}")]
+    JoinError(String),
 }

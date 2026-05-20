@@ -5,7 +5,6 @@ pub mod capabilities;
 pub mod chat;
 pub mod error;
 pub mod integration;
-pub mod oauth;
 pub mod paths;
 pub mod rate_limit;
 pub use auth::AuthFlow;
@@ -18,8 +17,5 @@ pub use integration::{
     HealthValue, InfoField, IntegrationContent, IntegrationHealth, IntegrationId,
     IntegrationStatus, KeyValueRow, ListFooter, PickerKind, QuickAction, QuickActions, RowAction,
     SectionIcon, StatColumn, SubscriptionRow, SubscriptionStatus, TokenColor, TrailingToken,
-};
-pub use oauth::{
-    DeviceCodePoller, DeviceCodeRequest, DeviceCodeResponse, PollOutcome, TokenResponse,
 };
 pub use rate_limit::{RateLimitOutcome, RateLimiter};

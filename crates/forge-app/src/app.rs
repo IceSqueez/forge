@@ -328,6 +328,9 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             {
                 app.twitch_reauth_required = true;
             }
+            if event.kind == "action.done" {
+                app.hub.triggers_fired = Some(app.hub.triggers_fired.unwrap_or(0) + 1);
+            }
             if !app.event_feed.paused {
                 app.event_feed.push_event(event);
             }
@@ -940,10 +943,17 @@ async fn load_hub_stats(dp: Arc<SqliteBackend>) -> Result<HubStatsData, String> 
         .map_err(|e| e.to_string())?
         .len();
     let globals = dp.list().await.map_err(|e| e.to_string())?.len();
+    let since = time::OffsetDateTime::now_utc() - time::Duration::hours(24);
+    let stats = dp
+        .history_repo()
+        .stats_summary(since)
+        .await
+        .map_err(|e| e.to_string())?;
+    let triggers_fired: u64 = stats.values().map(|s| u64::from(s.runs_24h)).sum();
     Ok(HubStatsData {
         actions_count: actions,
         commands_count: commands,
-        triggers_fired: 0,
+        triggers_fired,
         globals_count: globals,
     })
 }

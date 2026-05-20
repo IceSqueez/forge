@@ -94,6 +94,9 @@ pub enum ActionsMsg {
     ActionDeleted(Result<(), String>),
     OpenAddActionModal,
     OpenAddTriggerModal(ActionId),
+    SearchChanged(String),
+    FilterChanged(crate::actions::ActionsFilter),
+    ToggleGroupCollapsed(crate::actions::TriggerCategory),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

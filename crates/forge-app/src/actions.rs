@@ -5,6 +5,7 @@ use forge_types::{
     TriggerId, TriggerKind,
 };
 use std::sync::Arc;
+use time::OffsetDateTime;
 
 #[derive(Debug, Clone)]
 pub struct ActionSummary {
@@ -12,11 +13,18 @@ pub struct ActionSummary {
     pub name: String,
     pub enabled: bool,
     pub sub_action_count: u16,
+    pub trigger_category: TriggerCategory,
+    pub trigger_label: String,
+    pub queue_name: String,
+    pub last_ran: Option<OffsetDateTime>,
+    pub runs_24h: u32,
+    pub extra_subtitle: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ActionsGroup {
-    pub name: String,
+    pub category: TriggerCategory,
+    pub fired_24h: u32,
     pub actions: Vec<ActionSummary>,
 }
 
@@ -106,15 +114,41 @@ pub enum AddActionMsg {
     Saved(Result<ActionId, String>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TriggerCategory {
-    All,
     Chat,
     Subscriptions,
     Bits,
     Raids,
     Obs,
     Server,
+    Timer,
+    Ungrouped,
+    All,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ActionsFilter {
+    #[default]
+    All,
+    Enabled,
+    Disabled,
+}
+
+impl TriggerCategory {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            TriggerCategory::Chat => "CHAT COMMANDS",
+            TriggerCategory::Subscriptions => "SUBS & BITS",
+            TriggerCategory::Bits => "BITS",
+            TriggerCategory::Raids => "RAIDS",
+            TriggerCategory::Obs => "OBS EVENTS",
+            TriggerCategory::Server => "SERVER EVENTS",
+            TriggerCategory::Timer => "TIMERS",
+            TriggerCategory::Ungrouped => "UNGROUPED",
+            TriggerCategory::All => "ALL",
+        }
+    }
 }
 
 pub fn category_of(kind: &TriggerKind) -> TriggerCategory {
@@ -127,6 +161,20 @@ pub fn category_of(kind: &TriggerKind) -> TriggerCategory {
         TriggerKind::TwitchRaid => TriggerCategory::Raids,
         TriggerKind::ObsSceneChanged { .. } => TriggerCategory::Obs,
         TriggerKind::CodeEvent { .. } => TriggerCategory::Server,
+    }
+}
+
+pub fn trigger_label_of(kind: &TriggerKind) -> String {
+    match kind {
+        TriggerKind::TwitchChatCommand => "Twitch \u{00b7} chat command".to_string(),
+        TriggerKind::TwitchChatAnyMessage => "Twitch \u{00b7} any chat message".to_string(),
+        TriggerKind::TwitchSubscribe => "Twitch \u{00b7} new subscriber".to_string(),
+        TriggerKind::TwitchResubscribe => "Twitch \u{00b7} re-subscribe".to_string(),
+        TriggerKind::TwitchGiftSub => "Twitch \u{00b7} gift subs".to_string(),
+        TriggerKind::TwitchCheer => "Twitch \u{00b7} bits cheered".to_string(),
+        TriggerKind::TwitchRaid => "Twitch \u{00b7} raid received".to_string(),
+        TriggerKind::ObsSceneChanged { .. } => "OBS \u{00b7} scene changed".to_string(),
+        TriggerKind::CodeEvent { .. } => "Server \u{00b7} custom event".to_string(),
     }
 }
 
@@ -382,6 +430,9 @@ pub struct ActionsState {
     pub selected: Option<ActionId>,
     pub detail: Option<ActionDetail>,
     pub loading: bool,
+    pub search: String,
+    pub filter: ActionsFilter,
+    pub collapsed_groups: std::collections::HashSet<TriggerCategory>,
     pub add_action_modal: Option<AddActionForm>,
     pub add_trigger_modal: Option<AddTriggerForm>,
     pub add_sub_action_modal: Option<AddSubActionForm>,
@@ -391,40 +442,93 @@ impl ActionsState {
     pub fn new() -> Self {
         Self::default()
     }
+
+    pub fn total_actions(&self) -> usize {
+        self.tree.iter().map(|g| g.actions.len()).sum()
+    }
+
+    pub fn visible_actions(&self) -> usize {
+        self.tree
+            .iter()
+            .flat_map(|g| g.actions.iter())
+            .filter(|a| self.action_passes_filter(a))
+            .count()
+    }
+
+    pub fn action_passes_filter(&self, summary: &ActionSummary) -> bool {
+        let filter_ok = match self.filter {
+            ActionsFilter::All => true,
+            ActionsFilter::Enabled => summary.enabled,
+            ActionsFilter::Disabled => !summary.enabled,
+        };
+        let search_ok = if self.search.is_empty() {
+            true
+        } else {
+            let q = self.search.to_lowercase();
+            summary.name.to_lowercase().contains(&q)
+                || summary.trigger_label.to_lowercase().contains(&q)
+                || summary.queue_name.to_lowercase().contains(&q)
+        };
+        filter_ok && search_ok
+    }
 }
 
 pub async fn load_actions_tree(dp: Arc<SqliteBackend>) -> Result<Vec<ActionsGroup>, StorageError> {
     let actions = dp.action_repo().list().await?;
+    let all_queues = dp.queue_repo().list().await?;
 
-    let mut ungrouped: Vec<ActionSummary> = Vec::new();
-    let mut grouped: std::collections::BTreeMap<String, Vec<ActionSummary>> =
+    let mut by_category: std::collections::BTreeMap<TriggerCategory, Vec<ActionSummary>> =
         std::collections::BTreeMap::new();
 
     for action in actions {
+        let action_triggers = dp.trigger_repo().list_for_action(action.id).await?;
+
+        let (trigger_category, trigger_label) = action_triggers
+            .first()
+            .map(|t| (category_of(&t.kind), trigger_label_of(&t.kind)))
+            .unwrap_or((TriggerCategory::Ungrouped, "\u{2014}".to_string()));
+
+        let queue_name = all_queues
+            .iter()
+            .find(|q| q.id == action.queue_id)
+            .map(|q| q.name.clone())
+            .unwrap_or_else(|| "Default".to_string());
+
+        // TODO Phase 2: derive last_ran and runs_24h from history_repo once
+        // HistoryRepo exposes last_ran_for_action / count_since methods.
+        let last_ran: Option<OffsetDateTime> = None;
+        let runs_24h: u32 = 0;
+
         let summary = ActionSummary {
             id: action.id,
             name: action.name,
             enabled: action.enabled,
             sub_action_count: action.sub_actions.len() as u16,
+            trigger_category: trigger_category.clone(),
+            trigger_label,
+            queue_name,
+            last_ran,
+            runs_24h,
+            extra_subtitle: None,
         };
-        match action.group {
-            None => ungrouped.push(summary),
-            Some(g) => grouped.entry(g).or_default().push(summary),
-        }
+
+        by_category
+            .entry(trigger_category)
+            .or_default()
+            .push(summary);
     }
 
-    let mut result: Vec<ActionsGroup> = Vec::new();
-
-    if !ungrouped.is_empty() {
-        result.push(ActionsGroup {
-            name: "Ungrouped".to_string(),
-            actions: ungrouped,
-        });
-    }
-
-    for (name, actions) in grouped {
-        result.push(ActionsGroup { name, actions });
-    }
+    let result = by_category
+        .into_iter()
+        .map(|(category, actions)| {
+            let fired_24h = actions.iter().map(|a| a.runs_24h).sum();
+            ActionsGroup {
+                category,
+                fired_24h,
+                actions,
+            }
+        })
+        .collect();
 
     Ok(result)
 }
@@ -674,7 +778,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn two_actions_different_groups_produce_two_groups() {
+    async fn actions_without_triggers_land_in_ungrouped() {
         let dp = open_backend().await;
         let a1 = make_action(&dp, "!so", Some("Chat Commands")).await;
         let a2 = make_action(&dp, "HydrateCheck", Some("Timers")).await;
@@ -682,10 +786,28 @@ mod tests {
         dp.action_repo().save(&a2).await.unwrap();
 
         let tree = load_actions_tree(dp).await.unwrap();
-        assert_eq!(tree.len(), 2);
-        let names: Vec<&str> = tree.iter().map(|g| g.name.as_str()).collect();
-        assert!(names.contains(&"Chat Commands"));
-        assert!(names.contains(&"Timers"));
+        assert_eq!(tree.len(), 1);
+        assert_eq!(tree[0].category, TriggerCategory::Ungrouped);
+        assert_eq!(tree[0].actions.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn chat_trigger_produces_chat_group() {
+        use forge_types::TriggerId;
+        let dp = open_backend().await;
+        let a = make_action(&dp, "!quote", None).await;
+        dp.action_repo().save(&a).await.unwrap();
+        let t = Trigger {
+            id: TriggerId::new(),
+            action_id: a.id,
+            kind: TriggerKind::TwitchChatCommand,
+            config: std::collections::BTreeMap::new(),
+        };
+        dp.trigger_repo().save(&t).await.unwrap();
+
+        let tree = load_actions_tree(dp).await.unwrap();
+        assert_eq!(tree.len(), 1);
+        assert_eq!(tree[0].category, TriggerCategory::Chat);
     }
 
     #[tokio::test]
@@ -696,7 +818,7 @@ mod tests {
 
         let tree = load_actions_tree(dp).await.unwrap();
         assert_eq!(tree.len(), 1);
-        assert_eq!(tree[0].name, "Ungrouped");
+        assert_eq!(tree[0].category, TriggerCategory::Ungrouped);
     }
 
     #[tokio::test]

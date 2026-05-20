@@ -1,11 +1,12 @@
 use std::time::Duration;
 
-use forge_platform_core::{
-    AuthFlow, PlatformError,
-    oauth::{DeviceCodePoller, DeviceCodeRequest, DeviceCodeResponse},
-};
+use forge_platform_core::{AuthFlow, PlatformError};
 use forge_types::OAuthToken;
-use serde::Deserialize;
+
+use twitch_api::HelixClient;
+use twitch_api::twitch_oauth2::{
+    AccessToken, ClientId, DeviceUserTokenBuilder, Scope, TwitchToken, UserToken,
+};
 
 pub const TWITCH_DEVICE_ENDPOINT: &str = "https://id.twitch.tv/oauth2/device";
 pub const TWITCH_TOKEN_ENDPOINT: &str = "https://id.twitch.tv/oauth2/token";
@@ -26,43 +27,10 @@ pub fn twitch_auth_flow() -> AuthFlow {
         token_endpoint: TWITCH_TOKEN_ENDPOINT.to_owned(),
         scopes: TWITCH_BROADCASTER_SCOPES
             .iter()
-            .map(|s| s.to_string())
+            .map(|s| (*s).to_owned())
             .collect(),
     }
 }
-
-pub async fn request_twitch_device_code(
-    client_id: &str,
-) -> Result<DeviceCodeResponse, PlatformError> {
-    DeviceCodePoller::request_device_code(
-        TWITCH_DEVICE_ENDPOINT,
-        DeviceCodeRequest {
-            client_id: client_id.to_owned(),
-            scopes: TWITCH_BROADCASTER_SCOPES
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
-        },
-    )
-    .await
-}
-
-pub fn new_twitch_poller(
-    client_id: String,
-    device_code: String,
-    interval: Duration,
-    expires_in: Duration,
-) -> DeviceCodePoller {
-    DeviceCodePoller::new(
-        client_id,
-        TWITCH_TOKEN_ENDPOINT,
-        device_code,
-        interval,
-        expires_in,
-    )
-}
-
-const HELIX_USERS_URL: &str = "https://api.twitch.tv/helix/users";
 
 #[derive(Debug, Clone)]
 pub struct UserInfo {
@@ -71,60 +39,138 @@ pub struct UserInfo {
     pub display_name: String,
 }
 
-#[derive(Deserialize)]
-struct HelixUsersResponse {
-    data: Vec<HelixUser>,
+/// Public DCF code data returned to UI before polling.
+#[derive(Debug, Clone)]
+pub struct TwitchDeviceCode {
+    pub user_code: String,
+    pub verification_uri: String,
+    pub expires_in: Duration,
+    pub interval: Duration,
+    pub device_code: String,
 }
 
-#[derive(Deserialize)]
-struct HelixUser {
-    id: String,
-    login: String,
-    display_name: String,
+/// Bundle returned from the polling loop once the user completes authorization.
+#[derive(Debug, Clone)]
+pub struct TwitchAuthBundle {
+    pub access_token: OAuthToken,
+    pub user_info: UserInfo,
+    pub client_id: String,
 }
 
-/// Fetches the authorized user's Twitch ID + login via Helix GET /users.
-///
-/// Returns the user's own info; `id` serves as both `broadcaster_id`
-/// and `user_id` in EventSub conditions.
+fn build_scopes() -> Vec<Scope> {
+    TWITCH_BROADCASTER_SCOPES
+        .iter()
+        .map(|s| Scope::parse(*s))
+        .collect()
+}
+
+/// Owns a `DeviceUserTokenBuilder` mid-flow and an HTTP client for both the
+/// token endpoint and the subsequent Helix lookup.
+pub struct TwitchAuthFlow {
+    builder: DeviceUserTokenBuilder,
+    client: reqwest::Client,
+    helix: HelixClient<'static, reqwest::Client>,
+    client_id: String,
+}
+
+impl TwitchAuthFlow {
+    pub fn new(client_id: String) -> Self {
+        let builder = DeviceUserTokenBuilder::new(ClientId::new(client_id.clone()), build_scopes());
+        let client = reqwest::Client::new();
+        let helix = HelixClient::with_client(client.clone());
+        Self {
+            builder,
+            client,
+            helix,
+            client_id,
+        }
+    }
+
+    /// Asks Twitch for a device code. Returns the user-facing code + URL.
+    pub async fn start(&mut self) -> Result<TwitchDeviceCode, PlatformError> {
+        let resp = self
+            .builder
+            .start(&self.client)
+            .await
+            .map_err(|e| PlatformError::Auth {
+                reason: format!("device code request failed: {e}"),
+            })?;
+        Ok(TwitchDeviceCode {
+            user_code: resp.user_code.clone(),
+            verification_uri: resp.verification_uri.clone(),
+            expires_in: Duration::from_secs(resp.expires_in),
+            interval: Duration::from_secs(resp.interval),
+            device_code: resp.device_code.clone(),
+        })
+    }
+
+    /// Polls the token endpoint until the user authorizes, then resolves the
+    /// signed-in user's Helix profile. Returns the full auth bundle.
+    pub async fn wait_for_authorization(&mut self) -> Result<TwitchAuthBundle, PlatformError> {
+        let user_token = self
+            .builder
+            .wait_for_code(&self.client, tokio::time::sleep)
+            .await
+            .map_err(|e| PlatformError::Auth {
+                reason: format!("device code polling failed: {e}"),
+            })?;
+
+        let user_info = fetch_user_info_from_token(&user_token, &self.helix).await?;
+
+        Ok(TwitchAuthBundle {
+            access_token: OAuthToken::new(user_token.access_token.secret().to_owned()),
+            user_info,
+            client_id: self.client_id.clone(),
+        })
+    }
+}
+
+async fn fetch_user_info_from_token(
+    token: &UserToken,
+    helix: &HelixClient<'static, reqwest::Client>,
+) -> Result<UserInfo, PlatformError> {
+    let user = helix
+        .get_user_from_id(&token.user_id, token)
+        .await
+        .map_err(|e| PlatformError::Auth {
+            reason: format!("helix get_user failed: {e}"),
+        })?
+        .ok_or_else(|| PlatformError::Auth {
+            reason: "helix returned empty user list".into(),
+        })?;
+    Ok(UserInfo {
+        id: user.id.to_string(),
+        login: user.login.to_string(),
+        display_name: user.display_name.to_string(),
+    })
+}
+
+/// Fetches the authorized user's Twitch ID + login via Helix GET /users using
+/// a stored access token. Used by the chat-send bridge to resolve the
+/// broadcaster ID on demand.
 pub async fn fetch_user_info(
     token: &OAuthToken,
     client_id: &str,
 ) -> Result<UserInfo, PlatformError> {
+    let access = AccessToken::new(token.expose().to_owned());
+    let client_id_owned = ClientId::new(client_id.to_owned());
     let http = reqwest::Client::new();
-    let resp = http
-        .get(HELIX_USERS_URL)
-        .bearer_auth(token.expose())
-        .header("Client-Id", client_id)
-        .send()
-        .await
-        .map_err(|e| PlatformError::Network {
-            reason: e.to_string(),
-        })?;
+    let helix = HelixClient::with_client(http);
 
-    let status = resp.status().as_u16();
-    tracing::debug!(status = %resp.status(), "helix user fetch");
+    let user_token =
+        UserToken::from_token(&helix, access)
+            .await
+            .map_err(|e| PlatformError::Auth {
+                reason: format!("validate token failed: {e}"),
+            })?;
 
-    if !resp.status().is_success() {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(PlatformError::Http { status, body });
+    if user_token.client_id() != &client_id_owned {
+        return Err(PlatformError::Auth {
+            reason: "stored token client_id does not match configured client_id".into(),
+        });
     }
 
-    let body: HelixUsersResponse = resp.json().await.map_err(|e| PlatformError::Network {
-        reason: e.to_string(),
-    })?;
-
-    body.data
-        .into_iter()
-        .next()
-        .map(|u| UserInfo {
-            id: u.id,
-            login: u.login,
-            display_name: u.display_name,
-        })
-        .ok_or_else(|| PlatformError::Auth {
-            reason: "helix returned empty user list".into(),
-        })
+    fetch_user_info_from_token(&user_token, &helix).await
 }
 
 /// Priority: runtime env `FORGE_TWITCH_CLIENT_ID` → compile-time `option_env!` → `None`.
@@ -139,8 +185,8 @@ fn resolve_client_id(
 ) -> Option<String> {
     runtime_env
         .filter(|s| !s.is_empty())
-        .map(|s| s.to_owned())
-        .or_else(|| compile_env.filter(|s| !s.is_empty()).map(|s| s.to_owned()))
+        .map(str::to_owned)
+        .or_else(|| compile_env.filter(|s| !s.is_empty()).map(str::to_owned))
 }
 
 #[cfg(test)]
@@ -165,7 +211,7 @@ mod tests {
             scopes,
             TWITCH_BROADCASTER_SCOPES
                 .iter()
-                .map(|s| s.to_string())
+                .map(|s| (*s).to_owned())
                 .collect::<Vec<_>>()
         );
     }
@@ -210,25 +256,7 @@ mod tests {
     }
 
     #[test]
-    fn helix_users_response_parses_canonical_shape() {
-        let json = r#"{"data":[{"id":"123","login":"foo","display_name":"Foo"}]}"#;
-        let parsed: HelixUsersResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(parsed.data.len(), 1);
-        assert_eq!(parsed.data[0].id, "123");
-        assert_eq!(parsed.data[0].login, "foo");
-        assert_eq!(parsed.data[0].display_name, "Foo");
-    }
-
-    #[test]
-    fn helix_users_response_parses_empty_data() {
-        let json = r#"{"data":[]}"#;
-        let parsed: HelixUsersResponse = serde_json::from_str(json).unwrap();
-        assert!(parsed.data.is_empty());
-    }
-
-    #[test]
-    fn helix_users_response_rejects_missing_data_field() {
-        let json = r#"{"other":"value"}"#;
-        assert!(serde_json::from_str::<HelixUsersResponse>(json).is_err());
+    fn build_scopes_returns_seven_entries() {
+        assert_eq!(build_scopes().len(), TWITCH_BROADCASTER_SCOPES.len());
     }
 }

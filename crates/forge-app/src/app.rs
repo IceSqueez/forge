@@ -123,6 +123,7 @@ pub struct App {
     pub server_subsystem: Arc<ServerSubsystem>,
     pub settings_websocket: SettingsWebSocketState,
     pub twitch_panel: crate::twitch_panel::TwitchPanelState,
+    pub twitch_flow: Option<crate::twitch_panel::TwitchFlowHandle>,
 }
 
 impl App {
@@ -166,6 +167,7 @@ impl App {
             server_subsystem,
             settings_websocket: SettingsWebSocketState::default(),
             twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
+            twitch_flow: None,
         }
     }
 }
@@ -213,6 +215,7 @@ impl Default for App {
             server_subsystem,
             settings_websocket: SettingsWebSocketState::default(),
             twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
+            twitch_flow: None,
         }
     }
 }
@@ -508,7 +511,11 @@ fn handle_twitch_panel_msg(
                 return Task::none();
             };
             app.twitch_panel = TwitchPanelState::Requesting;
-            Task::perform(crate::twitch_panel::request_code(cid), |r| {
+            let flow = Arc::new(tokio::sync::Mutex::new(
+                forge_platform_twitch::TwitchAuthFlow::new(cid),
+            ));
+            app.twitch_flow = Some(Arc::clone(&flow));
+            Task::perform(crate::twitch_panel::request_code(flow), |r| {
                 Message::TwitchPanel(TwitchPanelMsg::DeviceCodeReceived(r))
             })
         }
@@ -542,18 +549,20 @@ fn handle_twitch_panel_msg(
             }
         }
         TwitchPanelMsg::DeviceCodeReceived(Ok(data)) => {
-            let poll_data = data.poll_data.clone();
             app.twitch_panel = TwitchPanelState::AwaitingAuthorization {
                 user_code: data.user_code,
                 verification_uri: data.verification_uri,
                 expires_at: data.expires_at,
             };
+            let Some(flow) = app.twitch_flow.clone() else {
+                app.twitch_panel = TwitchPanelState::Error("no active flow handle".into());
+                return Task::none();
+            };
             let creds: Arc<dyn CredentialsRepo> =
                 Arc::clone(&app.backend) as Arc<dyn CredentialsRepo>;
-            Task::perform(
-                crate::twitch_panel::poll_and_authorize(poll_data, creds),
-                |r| Message::TwitchPanel(TwitchPanelMsg::AuthCompleted(r)),
-            )
+            Task::perform(crate::twitch_panel::wait_for_auth(flow, creds), |r| {
+                Message::TwitchPanel(TwitchPanelMsg::AuthCompleted(r))
+            })
         }
         TwitchPanelMsg::DeviceCodeReceived(Err(e)) => {
             tracing::warn!(error = %e, "twitch device code request failed");
@@ -3950,6 +3959,7 @@ mod tests {
             server_subsystem,
             settings_websocket: SettingsWebSocketState::default(),
             twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
+            twitch_flow: None,
         };
 
         assert!(app.action_engine.is_some());
@@ -4228,6 +4238,7 @@ mod tests {
             server_subsystem,
             settings_websocket: SettingsWebSocketState::default(),
             twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
+            twitch_flow: None,
         };
 
         let mut form = crate::actions::AddActionForm::new();

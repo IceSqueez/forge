@@ -53,32 +53,45 @@ sqlx = { version = "0.8", features = [
 ] }
 
 aes-gcm = { version = "0.10" }
-directories = { version = "5" }
+directories = { version = "6" }
 keyring = { version = "4" }
 keyring-core = { version = "1" }
 rand = { version = "0.10" }
 tempfile = { version = "3" }
 
-sha2      = { version = "0.10" }
-base64    = { version = "0.22" }
-subtle    = { version = "2" }
-arc-swap  = { version = "1" }
+sha2 = { version = "0.11" }
+base64 = { version = "0.22" }
+subtle = { version = "2" }
+arc-swap = { version = "1" }
 
 rhai = { version = "1", features = ["sync"] }
 
-reqwest = { version = "0.13", features = [
+reqwest = { version = "0.12", features = [
   "json",
-  "form",
-  "rustls",
+  "rustls-tls",
+], default-features = false }
+
+twitch_api = { version = "0.7", features = [
+  "reqwest",
+  "helix",
 ], default-features = false }
 
 axum = { version = "0.8", features = ["ws"] }
 tower-http = { version = "0.6", features = ["cors", "fs"] }
 
-iced = { version = "0.14", features = ["tokio", "image", "svg", "advanced", "canvas"] }
+iced = { version = "0.14", features = [
+  "tokio",
+  "image",
+  "svg",
+  "advanced",
+  "canvas",
+] }
 iced_fonts = { version = "0.3", features = ["bootstrap"] }
 
-rfd = { version = "0.17", default-features = false, features = ["xdg-portal", "wayland"] }
+rfd = { version = "0.17", default-features = false, features = [
+  "xdg-portal",
+  "wayland",
+] }
 open = { version = "5" }
 
 cpal = { version = "0.17" }
@@ -118,7 +131,12 @@ ci = "github"
 # The installers to generate for each app
 installers = ["shell", "powershell"]
 # Target platforms to build apps for (Rust target-triple syntax)
-targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+]
 # Which actions to run on pull requests
 pr-run-mode = "plan"
 # Path that installers should place binaries in

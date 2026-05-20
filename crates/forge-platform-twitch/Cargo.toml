@@ -30,3 +30,4 @@ time                = { workspace = true }
 reqwest             = { workspace = true }
 rand                = { workspace = true }
 futures-util        = { workspace = true }
+twitch_api          = { workspace = true }

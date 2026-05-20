@@ -5,8 +5,8 @@ pub mod chat;
 pub mod chat_send_bridge;
 
 pub use auth::{
-    TWITCH_BROADCASTER_SCOPES, TWITCH_DEVICE_ENDPOINT, TWITCH_TOKEN_ENDPOINT, UserInfo, client_id,
-    fetch_user_info, new_twitch_poller, request_twitch_device_code, twitch_auth_flow,
+    TWITCH_BROADCASTER_SCOPES, TWITCH_DEVICE_ENDPOINT, TWITCH_TOKEN_ENDPOINT, TwitchAuthBundle,
+    TwitchAuthFlow, TwitchDeviceCode, UserInfo, client_id, fetch_user_info, twitch_auth_flow,
 };
 pub use chat::{
     ChatConnectionState, ChatSendError, SentMessageId, TwitchChat, TwitchChatHandle, send_chat,

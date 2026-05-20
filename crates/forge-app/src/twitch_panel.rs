@@ -4,9 +4,8 @@ use std::time::{Duration, SystemTime};
 use iced::widget::{button, column, container, row, text};
 use iced::{Alignment, Background, Border, Color, Element, Length, Padding, Shadow, Theme};
 
-use forge_platform_core::oauth::{DeviceCodePoller, DeviceCodeRequest};
 use forge_platform_twitch::{
-    TWITCH_BROADCASTER_SCOPES, TWITCH_DEVICE_ENDPOINT, UserInfo, fetch_user_info, new_twitch_poller,
+    TWITCH_BROADCASTER_SCOPES, TwitchAuthBundle, TwitchAuthFlow, TwitchDeviceCode, UserInfo,
 };
 use forge_storage::{CredentialId, CredentialsRepo};
 use forge_types::OAuthToken;
@@ -18,25 +17,22 @@ use forge_widgets::icons::{
 use forge_widgets::tokens::{
     FONT_BODY_LG, FONT_BODY_MD, FONT_BODY_SM, FONT_CAPS, FONT_CAPS_SM, FontRole, font,
 };
+use tokio::sync::Mutex as TokioMutex;
 
 use crate::Message;
 
 const TWITCH_CREDENTIAL_ID: &str = "twitch:broadcaster";
 
-#[derive(Debug, Clone)]
-pub struct PollData {
-    pub client_id: String,
-    pub device_code: String,
-    pub interval: Duration,
-    pub expires_in: Duration,
-}
+/// Shared handle to an in-progress device code flow. Wrapped in a tokio Mutex
+/// so `request_code` (which calls `TwitchAuthFlow::start`) and `wait_for_auth`
+/// (which calls `wait_for_authorization`) operate on the same builder state.
+pub type TwitchFlowHandle = Arc<TokioMutex<TwitchAuthFlow>>;
 
 #[derive(Debug, Clone)]
 pub struct DcfCodeData {
     pub user_code: String,
     pub verification_uri: String,
     pub expires_at: SystemTime,
-    pub poll_data: PollData,
 }
 
 #[derive(Debug, Clone)]
@@ -46,50 +42,35 @@ pub struct TwitchAuthOutcome {
     pub client_id: String,
 }
 
-pub async fn request_code(client_id: String) -> Result<DcfCodeData, String> {
-    let req = DeviceCodeRequest {
-        client_id: client_id.clone(),
-        scopes: TWITCH_BROADCASTER_SCOPES
-            .iter()
-            .map(|s| (*s).to_owned())
-            .collect(),
-    };
-    let resp = DeviceCodePoller::request_device_code(TWITCH_DEVICE_ENDPOINT, req)
-        .await
-        .map_err(|e| e.to_string())?;
-    let expires_at = SystemTime::now() + resp.expires_in;
+pub async fn request_code(flow: TwitchFlowHandle) -> Result<DcfCodeData, String> {
+    let mut guard = flow.lock().await;
+    let code = guard.start().await.map_err(|e| e.to_string())?;
+    let expires_at = SystemTime::now() + code.expires_in;
     Ok(DcfCodeData {
-        user_code: resp.user_code,
-        verification_uri: resp.verification_uri,
+        user_code: code.user_code,
+        verification_uri: code.verification_uri,
         expires_at,
-        poll_data: PollData {
-            client_id,
-            device_code: resp.device_code,
-            interval: resp.interval,
-            expires_in: resp.expires_in,
-        },
     })
 }
 
-pub async fn poll_and_authorize(
-    poll_data: PollData,
+pub async fn wait_for_auth(
+    flow: TwitchFlowHandle,
     credentials: Arc<dyn CredentialsRepo>,
 ) -> Result<TwitchAuthOutcome, String> {
-    let mut poller = new_twitch_poller(
-        poll_data.client_id.clone(),
-        poll_data.device_code,
-        poll_data.interval,
-        poll_data.expires_in,
-    );
-    let token_resp = poller.run().await.map_err(|e| e.to_string())?;
-    let token = token_resp.access_token;
-
-    let user_info = fetch_user_info(&token, &poll_data.client_id)
-        .await
-        .map_err(|e| e.to_string())?;
+    let TwitchAuthBundle {
+        access_token,
+        user_info,
+        client_id,
+    } = {
+        let mut guard = flow.lock().await;
+        guard
+            .wait_for_authorization()
+            .await
+            .map_err(|e| e.to_string())?
+    };
 
     let bundle = serde_json::json!({
-        "access_token": token.expose(),
+        "access_token": access_token.expose(),
         "user_id": user_info.id,
         "login": user_info.login,
     });
@@ -102,11 +83,19 @@ pub async fn poll_and_authorize(
         .map_err(|e| e.to_string())?;
 
     Ok(TwitchAuthOutcome {
-        token,
+        token: access_token,
         user_info,
-        client_id: poll_data.client_id,
+        client_id,
     })
 }
+
+/// Convenience for callers that want unused imports preserved when chat is
+/// wired later. Keeps `TwitchDeviceCode` re-exported through this crate even
+/// though `request_code` only returns the simplified `DcfCodeData`.
+#[allow(dead_code)]
+fn _phase2_keep_alive(_: TwitchDeviceCode) {}
+#[allow(dead_code)]
+const _PHASE2_SCOPES: &[&str] = TWITCH_BROADCASTER_SCOPES;
 
 #[derive(Debug, Clone, Default)]
 pub enum TwitchPanelState {

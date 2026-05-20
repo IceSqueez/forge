@@ -692,6 +692,69 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             }
             Task::none()
         }
+        Message::ServerRestartResult(result) => {
+            match result {
+                Ok(()) => {
+                    app.server_screen.server_status = crate::server_screen::ServerStatus::Running;
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "server restart failed");
+                    app.server_screen.server_status = crate::server_screen::ServerStatus::Error(e);
+                }
+            }
+            Task::none()
+        }
+        Message::ServerStopResult(result) => {
+            match result {
+                Ok(()) => {
+                    app.server_screen.server_status = crate::server_screen::ServerStatus::Stopped;
+                    app.server_screen.connected_clients.clear();
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "server stop failed");
+                    app.server_screen.server_status = crate::server_screen::ServerStatus::Error(e);
+                }
+            }
+            Task::none()
+        }
+        Message::ServerTokenRotated(result) => {
+            match result {
+                Ok(token) => {
+                    app.server_screen.bearer_token = token;
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "token regeneration failed");
+                    app.server_screen.server_status = crate::server_screen::ServerStatus::Error(e);
+                }
+            }
+            Task::none()
+        }
+        Message::Server(crate::server_screen::ServerScreenMsg::RestartServer) => {
+            let subsystem = Arc::clone(&app.server_subsystem);
+            Task::perform(
+                async move { subsystem.restart().await.map_err(|e| e.to_string()) },
+                Message::ServerRestartResult,
+            )
+        }
+        Message::Server(crate::server_screen::ServerScreenMsg::StopServer) => {
+            let subsystem = Arc::clone(&app.server_subsystem);
+            Task::perform(
+                async move { subsystem.stop().await.map_err(|e| e.to_string()) },
+                Message::ServerStopResult,
+            )
+        }
+        Message::Server(crate::server_screen::ServerScreenMsg::RegenerateToken) => {
+            let subsystem = Arc::clone(&app.server_subsystem);
+            Task::perform(
+                async move {
+                    subsystem
+                        .regenerate_token()
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                Message::ServerTokenRotated,
+            )
+        }
         Message::Server(sub) => handle_server_screen_msg(&mut app.server_screen, sub),
         Message::SettingsWebSocket(sub) => {
             handle_settings_websocket_msg(&mut app.settings_websocket, sub, &app.backend)

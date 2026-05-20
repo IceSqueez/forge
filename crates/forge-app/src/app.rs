@@ -1425,10 +1425,10 @@ fn hub_stat_row<'a>(
     container(inner)
         .width(Length::Fill)
         .padding(iced::Padding {
-            top: 5.0,
-            right: 0.0,
-            bottom: 5.0,
-            left: 0.0,
+            top: 8.0,
+            right: 10.0,
+            bottom: 8.0,
+            left: 10.0,
         })
         .style(move |_theme: &Theme| iced::widget::container::Style {
             border: Border {
@@ -1710,9 +1710,7 @@ fn hub_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message>
                     .align_x(Alignment::Center),
             )
             .width(Length::Fill)
-            .height(Length::Fill)
             .center_x(Length::Fill)
-            .center_y(Length::Fill)
             .padding(20.0)
             .into()
         } else {

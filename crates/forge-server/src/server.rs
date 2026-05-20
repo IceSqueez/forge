@@ -5,7 +5,7 @@ use axum::extract::{Request, State};
 use axum::http::{Method, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{any, get};
+use axum::routing::get;
 use axum::{Json, Router, middleware};
 use tokio::net::TcpListener;
 
@@ -14,7 +14,7 @@ use forge_storage::{CredentialsRepo, DataProvider};
 
 use crate::auth::AuthState;
 use crate::bus_adapter::BusAdapter;
-use crate::routes::{api, overlays, ws};
+use crate::routes::{api_v1, overlays, ws};
 use crate::server_info::ServerInfo;
 use crate::{ServerConfig, ServerError, ServerHandle};
 
@@ -112,18 +112,21 @@ fn unauthenticated_response() -> Response {
 }
 
 fn build_router(state: AppState) -> Router {
-    let api_routes = Router::new()
-        .route("/{*path}", any(api::api_not_implemented))
-        .route_layer(middleware::from_fn_with_state(
-            state.clone(),
-            auth_middleware,
-        ));
+    let api_routes = api_v1::router().route_layer(middleware::from_fn_with_state(
+        state.clone(),
+        auth_middleware,
+    ));
 
     Router::new()
         .route("/ws/v1/", get(ws::ws_handler))
         .nest("/api/v1", api_routes)
         .route("/overlays/{*path}", get(overlays::overlays_not_implemented))
         .with_state(state)
+}
+
+#[cfg(test)]
+pub(crate) fn build_router_for_test(state: AppState) -> Router {
+    build_router(state)
 }
 
 fn serve_on(listener: TcpListener, state: AppState) -> ServerHandle {
@@ -289,11 +292,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_api_without_auth_returns_501_when_reads_not_required() {
+    async fn get_info_without_auth_returns_200_when_reads_not_required() {
         let (handle, addr) = make_server(false, MemCreds::new()).await;
         let url = format!("http://{}/api/v1/info", addr);
         let resp = reqwest::get(&url).await.expect("HTTP request");
-        assert_eq!(resp.status().as_u16(), 501);
+        assert_eq!(resp.status().as_u16(), 200);
         handle.abort();
     }
 
@@ -324,7 +327,10 @@ mod tests {
             .send()
             .await
             .expect("HTTP request");
-        assert_eq!(resp.status().as_u16(), 501);
+        assert!(
+            resp.status().as_u16() != 401,
+            "expected auth to pass, got 401"
+        );
         handle.abort();
     }
 
@@ -364,7 +370,7 @@ mod tests {
             .send()
             .await
             .expect("HTTP request");
-        assert_eq!(resp.status().as_u16(), 501);
+        assert_eq!(resp.status().as_u16(), 200);
         handle.abort();
     }
 
@@ -380,7 +386,10 @@ mod tests {
             .send()
             .await
             .expect("request");
-        assert_eq!(resp.status().as_u16(), 501);
+        assert!(
+            resp.status().as_u16() != 401,
+            "old token should be accepted before regenerate"
+        );
 
         let new_token = auth.regenerate(&*creds).await.expect("regenerate");
 
@@ -398,7 +407,10 @@ mod tests {
             .send()
             .await
             .expect("request");
-        assert_eq!(resp.status().as_u16(), 501);
+        assert!(
+            resp.status().as_u16() != 401,
+            "new token should be accepted after regenerate"
+        );
 
         handle.abort();
     }

@@ -260,7 +260,7 @@ async fn build_connected_clients(
     result
 }
 
-async fn handle_get_info(ctx: &DispatchContext) -> WsResponse {
+pub(crate) async fn handle_get_info(ctx: &DispatchContext) -> WsResponse {
     let connected_accounts = build_connected_accounts(ctx.credentials.as_ref()).await;
     let connected_clients = build_connected_clients(&ctx.server_info, &ctx.bus_adapter).await;
     let bw = &ctx.server_info.bandwidth;
@@ -321,7 +321,7 @@ fn permission_str(p: &CommandPermission) -> &'static str {
     }
 }
 
-async fn handle_get_commands(ctx: &DispatchContext) -> WsResponse {
+pub(crate) async fn handle_get_commands(ctx: &DispatchContext) -> WsResponse {
     let commands = match ctx.dp.command_repo().list().await {
         Ok(list) => list,
         Err(e) => {
@@ -347,7 +347,7 @@ async fn handle_get_commands(ctx: &DispatchContext) -> WsResponse {
     WsResponse::Ok(serde_json::json!({ "commands": wire_commands }))
 }
 
-async fn handle_get_globals(ctx: &DispatchContext) -> WsResponse {
+pub(crate) async fn handle_get_globals(ctx: &DispatchContext) -> WsResponse {
     let globals_repo: &dyn GlobalsRepo = ctx.dp.as_ref();
     let globals = match globals_repo.list().await {
         Ok(list) => list,
@@ -379,7 +379,7 @@ async fn handle_get_globals(ctx: &DispatchContext) -> WsResponse {
     WsResponse::Ok(serde_json::json!({ "globals": wire_globals }))
 }
 
-async fn handle_get_global(name: String, ctx: &DispatchContext) -> WsResponse {
+pub(crate) async fn handle_get_global(name: String, ctx: &DispatchContext) -> WsResponse {
     let globals_repo: &dyn GlobalsRepo = ctx.dp.as_ref();
     match globals_repo.get(&name).await {
         Ok(Some(value)) => WsResponse::Ok(serde_json::json!({
@@ -398,7 +398,7 @@ async fn handle_get_global(name: String, ctx: &DispatchContext) -> WsResponse {
     }
 }
 
-async fn handle_set_global(
+pub(crate) async fn handle_set_global(
     name: String,
     value: serde_json::Value,
     persisted: bool,
@@ -433,7 +433,7 @@ async fn handle_set_global(
     }
 }
 
-async fn handle_get_user_globals(
+pub(crate) async fn handle_get_user_globals(
     broadcaster_id: String,
     user_id: Option<String>,
     ctx: &DispatchContext,
@@ -482,7 +482,7 @@ fn valid_code_event_name(name: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
-async fn handle_trigger_code_event(
+pub(crate) async fn handle_trigger_code_event(
     name: String,
     args: serde_json::Value,
     ctx: &DispatchContext,
@@ -499,7 +499,7 @@ async fn handle_trigger_code_event(
     WsResponse::Ok(serde_json::json!({ "ok": true }))
 }
 
-async fn handle_get_actions(ctx: &DispatchContext) -> WsResponse {
+pub(crate) async fn handle_get_actions(ctx: &DispatchContext) -> WsResponse {
     let actions = match ctx.dp.action_repo().list().await {
         Ok(list) => list,
         Err(e) => {
@@ -528,7 +528,7 @@ async fn handle_get_actions(ctx: &DispatchContext) -> WsResponse {
     WsResponse::Ok(serde_json::json!({ "actions": wire_actions }))
 }
 
-async fn handle_do_action(
+pub(crate) async fn handle_do_action(
     action_id: String,
     args: serde_json::Value,
     ctx: &DispatchContext,
@@ -602,7 +602,7 @@ fn build_arg_stack(args: serde_json::Value) -> ArgStack {
         .fold(ArgStack::new(), |stack, (k, v)| stack.set(k, v))
 }
 
-async fn handle_get_events(
+pub(crate) async fn handle_get_events(
     limit: Option<u32>,
     since: Option<String>,
     ctx: &DispatchContext,
@@ -631,7 +631,7 @@ async fn handle_get_events(
 const ACTIVE_VIEWER_WINDOW_SECS: i64 = 300;
 const ACTIVE_VIEWER_LOOKBACK_LIMIT: usize = 500;
 
-async fn handle_get_active_viewers(ctx: &DispatchContext) -> WsResponse {
+pub(crate) async fn handle_get_active_viewers(ctx: &DispatchContext) -> WsResponse {
     use std::collections::BTreeMap;
 
     let events = ctx
@@ -707,7 +707,7 @@ fn mime_for_extension(ext: &str) -> Option<&'static str> {
     }
 }
 
-async fn handle_get_overlay_files(recursive: bool, ctx: &DispatchContext) -> WsResponse {
+pub(crate) async fn handle_get_overlay_files(recursive: bool, ctx: &DispatchContext) -> WsResponse {
     use std::path::{Path, PathBuf};
 
     let root: &Path = ctx.overlay_root.as_path();
@@ -781,7 +781,7 @@ async fn handle_get_overlay_files(recursive: bool, ctx: &DispatchContext) -> WsR
     }))
 }
 
-async fn handle_replay_event(event_id: String, ctx: &DispatchContext) -> WsResponse {
+pub(crate) async fn handle_replay_event(event_id: String, ctx: &DispatchContext) -> WsResponse {
     let eid: EventId = match serde_json::from_value(serde_json::Value::String(event_id)) {
         Ok(id) => id,
         Err(_) => {

@@ -373,6 +373,25 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::RemoveSubAction(sub) => handle_remove_sub_action_msg(app, sub),
         Message::ScriptEditor(sub) => handle_script_editor_msg(app, sub),
         Message::IntegrationDetail(sub) => handle_integration_detail_msg(app, sub),
+        Message::TwitchBootResult(result) => match result {
+            Ok(Some(bundle)) => {
+                let chat = forge_platform_twitch::TwitchChat::new(
+                    forge_types::OAuthToken::new(bundle.access_token),
+                    bundle.client_id,
+                    bundle.user_id.clone(),
+                    bundle.user_id,
+                    Arc::clone(&app.bus),
+                );
+                app.twitch_chat_handle = Some(chat.start());
+                tracing::info!("twitch chat session restarted from stored credentials");
+                Task::none()
+            }
+            Ok(None) => Task::none(),
+            Err(e) => {
+                tracing::warn!(error = %e, "twitch boot reconnect failed");
+                Task::none()
+            }
+        },
         Message::ObsBootResult(result) => match result {
             Ok(handle) => {
                 let client = handle.into_arc();
@@ -1227,6 +1246,35 @@ async fn reconnect_twitch(backend: Arc<SqliteBackend>, bus: Arc<EventBus>) -> Re
     let token = forge_types::OAuthToken::new(access);
     TwitchChat::new(token, cid, user_id.clone(), user_id, bus).start();
     Ok(())
+}
+
+pub async fn load_twitch_credential(
+    backend: Arc<SqliteBackend>,
+) -> Result<Option<crate::message::TwitchBootBundle>, String> {
+    let Some(client_id) = forge_platform_twitch::client_id() else {
+        return Ok(None);
+    };
+    let Some(json) = backend
+        .load(&CredentialId::new("twitch:broadcaster"))
+        .await
+        .map_err(|e| e.to_string())?
+    else {
+        return Ok(None);
+    };
+    let bundle: serde_json::Value = serde_json::from_str(&json).map_err(|e| e.to_string())?;
+    let access_token = bundle["access_token"]
+        .as_str()
+        .ok_or_else(|| "missing access_token in twitch credential bundle".to_owned())?
+        .to_owned();
+    let user_id = bundle["user_id"]
+        .as_str()
+        .ok_or_else(|| "missing user_id in twitch credential bundle".to_owned())?
+        .to_owned();
+    Ok(Some(crate::message::TwitchBootBundle {
+        access_token,
+        client_id,
+        user_id,
+    }))
 }
 
 pub async fn load_obs_and_connect(

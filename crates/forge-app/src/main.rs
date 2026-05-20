@@ -3,7 +3,9 @@ use std::sync::Arc;
 
 use forge_app::App;
 use forge_app::Screen;
-use forge_app::app::{load_obs_and_connect, subscription, theme_callback, update, view};
+use forge_app::app::{
+    load_obs_and_connect, load_twitch_credential, subscription, theme_callback, update, view,
+};
 use forge_platform_core::paths;
 use forge_platform_twitch::{ChatSendBridge, ChatSendBridgeHandle};
 use forge_runtime::{
@@ -198,6 +200,10 @@ fn main() -> iced::Result {
             load_obs_and_connect(Arc::clone(&backend_boot), Arc::clone(&bus_boot)),
             forge_app::Message::ObsBootResult,
         );
+        let twitch_task = iced::Task::perform(
+            load_twitch_credential(Arc::clone(&backend_boot)),
+            forge_app::Message::TwitchBootResult,
+        );
         let boot_task = match app.action_engine.clone() {
             Some(engine) => {
                 let dp: std::sync::Arc<dyn forge_storage::DataProvider> =
@@ -211,9 +217,9 @@ fn main() -> iced::Result {
                     ),
                     forge_app::Message::ServerBootResult,
                 );
-                iced::Task::batch([obs_task, server_boot_task])
+                iced::Task::batch([obs_task, twitch_task, server_boot_task])
             }
-            None => obs_task,
+            None => iced::Task::batch([obs_task, twitch_task]),
         };
         (app, boot_task)
     };

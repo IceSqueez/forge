@@ -19,6 +19,13 @@ use crate::script_editor::ScriptEditorMsg;
 use crate::server_screen::ServerScreenMsg;
 use crate::settings_websocket::SettingsWebSocketMsg;
 
+#[derive(Debug, Clone)]
+pub struct TwitchBootBundle {
+    pub access_token: String,
+    pub client_id: String,
+    pub user_id: String,
+}
+
 pub struct ObsClientRef(pub(crate) Arc<ObsClient>);
 
 impl ObsClientRef {
@@ -177,6 +184,7 @@ pub enum Message {
     RemoveSubAction(RemoveSubActionMsg),
     IntegrationDetail(IntegrationDetailMsg),
     ObsBootResult(Result<ObsClientRef, String>),
+    TwitchBootResult(Result<Option<TwitchBootBundle>, String>),
     ServerBootResult(Result<crate::server_subsystem::ServerBootSnapshot, String>),
     ServerRestartResult(Result<(), String>),
     ServerStopResult(Result<(), String>),

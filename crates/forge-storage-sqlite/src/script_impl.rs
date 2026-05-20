@@ -7,9 +7,15 @@ use time::OffsetDateTime;
 use crate::error::SqliteStorageError;
 
 fn hash_body(body: &str) -> String {
+    use std::fmt::Write as _;
     let mut hasher = Sha256::new();
     hasher.update(body.as_bytes());
-    format!("{:x}", hasher.finalize())
+    let digest = hasher.finalize();
+    let mut out = String::with_capacity(digest.len() * 2);
+    for b in digest.iter() {
+        let _ = write!(out, "{b:02x}");
+    }
+    out
 }
 
 fn epoch_ms_now() -> i64 {

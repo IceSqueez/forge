@@ -4127,6 +4127,19 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Vec<NavItem<'a,
     let is_globals = matches!(app.screen, Screen::Globals);
     let is_settings = matches!(app.screen, Screen::Settings(_));
 
+    let twitch_connected = app.twitch_chat_handle.is_some();
+    let obs_connected = app.obs_client.is_some();
+    let twitch_target = if twitch_connected {
+        Message::Navigate(Screen::IntegrationDetail(IntegrationId::new("twitch")))
+    } else {
+        Message::Navigate(Screen::Onboarding(OnboardingStep::ConnectPlatform))
+    };
+    let obs_target = if obs_connected {
+        Message::Navigate(Screen::IntegrationDetail(IntegrationId::new("obs")))
+    } else {
+        Message::Navigate(Screen::Onboarding(OnboardingStep::ConnectObs))
+    };
+
     vec![
         NavItem::Leaf {
             icon: ICON_HOME,
@@ -4140,13 +4153,11 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Vec<NavItem<'a,
             active: is_viewers,
             on_press: Message::Navigate(Screen::Viewers),
         },
-        NavItem::Group {
+        NavItem::Leaf {
             icon: ICON_LIGHTNING,
             label: "Actions & Queues",
             active: is_actions,
-            expanded: app.sidebar_state.actions_queues,
-            on_toggle: Message::Sidebar(SidebarMsg::ToggleActionsQueues),
-            children: vec![],
+            on_press: Message::Navigate(Screen::Actions),
         },
         NavItem::Leaf {
             icon: ICON_TERMINAL,
@@ -4165,7 +4176,7 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Vec<NavItem<'a,
                     dot_color: palette.brand,
                     label: "Twitch",
                     active: false,
-                    on_press: Message::Navigate(Screen::Platforms),
+                    on_press: twitch_target.clone(),
                 },
                 NavChild {
                     dot_color: palette.random,
@@ -4192,7 +4203,7 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Vec<NavItem<'a,
                     dot_color: palette.success,
                     label: "OBS Studio",
                     active: false,
-                    on_press: Message::Navigate(Screen::StreamApps),
+                    on_press: obs_target.clone(),
                 },
                 NavChild {
                     dot_color: palette.warning,

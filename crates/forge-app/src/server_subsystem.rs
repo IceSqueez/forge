@@ -1,0 +1,190 @@
+use std::sync::Arc;
+
+use tokio::sync::RwLock;
+
+use forge_server::{ServerConfig, ServerError, ServerHandle, start_server};
+use forge_storage::{CredentialId, CredentialsRepo};
+
+const BEARER_CREDENTIAL_ID: &str = "server:bearer";
+
+pub struct ServerSubsystem {
+    handle: Arc<RwLock<Option<ServerHandle>>>,
+    credentials: Arc<dyn CredentialsRepo>,
+}
+
+impl ServerSubsystem {
+    pub fn new(credentials: Arc<dyn CredentialsRepo>) -> Self {
+        Self {
+            handle: Arc::new(RwLock::new(None)),
+            credentials,
+        }
+    }
+
+    pub async fn start(&self, config: ServerConfig) -> Result<(), ServerError> {
+        let mut guard = self.handle.write().await;
+        if guard.is_some() {
+            return Ok(());
+        }
+        let handle = start_server(config).await?;
+        *guard = Some(handle);
+        Ok(())
+    }
+
+    pub async fn stop(&self) -> Result<(), ServerError> {
+        let mut guard = self.handle.write().await;
+        if let Some(handle) = guard.take() {
+            handle.stop().await?;
+        }
+        Ok(())
+    }
+
+    pub async fn restart(&self) -> Result<(), ServerError> {
+        let guard = self.handle.read().await;
+        match guard.as_ref() {
+            Some(handle) => handle.restart().await,
+            None => Err(ServerError::AuthInvalid {
+                reason: "server is not running".to_owned(),
+            }),
+        }
+    }
+
+    pub async fn regenerate_token(&self) -> Result<String, ServerError> {
+        let auth = {
+            let guard = self.handle.read().await;
+            match guard.as_ref() {
+                Some(handle) => handle.auth_state().await,
+                None => {
+                    return Err(ServerError::AuthInvalid {
+                        reason: "server is not running".to_owned(),
+                    });
+                }
+            }
+        };
+        auth.regenerate(self.credentials.as_ref()).await
+    }
+
+    pub async fn is_running(&self) -> bool {
+        self.handle.read().await.is_some()
+    }
+
+    pub async fn bearer_token(&self) -> Result<Option<String>, ServerError> {
+        let id = CredentialId::new(BEARER_CREDENTIAL_ID);
+        self.credentials
+            .load(&id)
+            .await
+            .map_err(|e| ServerError::Storage(e.to_string()))
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+
+    use async_trait::async_trait;
+    use forge_storage::StorageError;
+    use time::OffsetDateTime;
+
+    use super::*;
+
+    struct MemCreds(Mutex<HashMap<String, String>>);
+
+    impl MemCreds {
+        fn new() -> Arc<Self> {
+            Arc::new(Self(Mutex::new(HashMap::new())))
+        }
+    }
+
+    #[async_trait]
+    impl CredentialsRepo for MemCreds {
+        async fn store(&self, id: &CredentialId, bundle: &str) -> Result<(), StorageError> {
+            self.0
+                .lock()
+                .unwrap()
+                .insert(id.as_str().to_owned(), bundle.to_owned());
+            Ok(())
+        }
+
+        async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
+            Ok(self.0.lock().unwrap().get(id.as_str()).cloned())
+        }
+
+        async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
+            Ok(self.0.lock().unwrap().remove(id.as_str()).is_some())
+        }
+
+        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
+            Ok(self
+                .0
+                .lock()
+                .unwrap()
+                .keys()
+                .map(|k| CredentialId::new(k.clone()))
+                .collect())
+        }
+
+        async fn last_refresh(
+            &self,
+            _id: &CredentialId,
+        ) -> Result<Option<OffsetDateTime>, StorageError> {
+            Ok(None)
+        }
+
+        async fn mark_refreshed(&self, _id: &CredentialId) -> Result<(), StorageError> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn new_subsystem_is_not_running() {
+        let creds: Arc<dyn CredentialsRepo> = MemCreds::new();
+        let sub = ServerSubsystem::new(creds);
+        assert!(!sub.is_running().await);
+    }
+
+    #[tokio::test]
+    async fn stop_when_not_running_returns_ok() {
+        let creds: Arc<dyn CredentialsRepo> = MemCreds::new();
+        let sub = ServerSubsystem::new(creds);
+        sub.stop().await.expect("stop must succeed when idle");
+    }
+
+    #[tokio::test]
+    async fn restart_when_not_running_returns_error() {
+        let creds: Arc<dyn CredentialsRepo> = MemCreds::new();
+        let sub = ServerSubsystem::new(creds);
+        let err = sub.restart().await.expect_err("must error");
+        assert!(matches!(err, ServerError::AuthInvalid { .. }));
+    }
+
+    #[tokio::test]
+    async fn regenerate_token_when_not_running_returns_error() {
+        let creds: Arc<dyn CredentialsRepo> = MemCreds::new();
+        let sub = ServerSubsystem::new(creds);
+        let err = sub.regenerate_token().await.expect_err("must error");
+        assert!(matches!(err, ServerError::AuthInvalid { .. }));
+    }
+
+    #[tokio::test]
+    async fn bearer_token_when_credential_missing_returns_none() {
+        let creds: Arc<dyn CredentialsRepo> = MemCreds::new();
+        let sub = ServerSubsystem::new(creds);
+        assert_eq!(sub.bearer_token().await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn bearer_token_returns_stored_value() {
+        let creds_mem = MemCreds::new();
+        creds_mem
+            .store(&CredentialId::new(BEARER_CREDENTIAL_ID), "tok-abc")
+            .await
+            .unwrap();
+        let creds: Arc<dyn CredentialsRepo> = creds_mem;
+        let sub = ServerSubsystem::new(creds);
+        assert_eq!(
+            sub.bearer_token().await.unwrap().as_deref(),
+            Some("tok-abc")
+        );
+    }
+}

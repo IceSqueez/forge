@@ -9,6 +9,7 @@ pub mod onboarding_state;
 pub mod screen;
 pub mod script_editor;
 pub mod server_screen;
+pub mod server_subsystem;
 pub mod settings_websocket;
 pub mod stream_apps;
 pub mod test_trigger;

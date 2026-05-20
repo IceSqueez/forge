@@ -3397,18 +3397,8 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Vec<NavItem<'a,
     let is_globals = matches!(app.screen, Screen::Globals);
     let is_settings = matches!(app.screen, Screen::Settings(_));
 
-    let twitch_connected = app.twitch_chat_handle.is_some();
-    let obs_connected = app.obs_client.is_some();
-    let twitch_target = if twitch_connected {
-        Message::Navigate(Screen::IntegrationDetail(IntegrationId::new("twitch")))
-    } else {
-        Message::Navigate(Screen::Platforms)
-    };
-    let obs_target = if obs_connected {
-        Message::Navigate(Screen::IntegrationDetail(IntegrationId::new("obs")))
-    } else {
-        Message::Navigate(Screen::StreamApps)
-    };
+    let twitch_target = Message::Navigate(Screen::IntegrationDetail(IntegrationId::new("twitch")));
+    let obs_target = Message::Navigate(Screen::IntegrationDetail(IntegrationId::new("obs")));
 
     vec![
         NavItem::Leaf {

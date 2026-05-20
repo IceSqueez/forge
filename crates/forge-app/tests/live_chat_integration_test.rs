@@ -52,6 +52,7 @@ fn test_app() -> App {
         twitch_panel: forge_app::twitch_panel::TwitchPanelState::default(),
         twitch_flow: None,
         twitch_login: None,
+        obs_panel: forge_app::obs_panel::ObsPanelState::default(),
     }
 }
 

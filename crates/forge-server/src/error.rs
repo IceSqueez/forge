@@ -26,6 +26,14 @@ pub enum ServerError {
 
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("refusing to bind to {addr}: server.lan_bind_enabled is false")]
+    LanBindNotEnabled { addr: String },
+
+    #[error(
+        "refusing to bind to {addr}: bearer token missing — generate one before exposing the server"
+    )]
+    NoTokenForLanBind { addr: String },
 }
 
 #[cfg(test)]

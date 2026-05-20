@@ -41,6 +41,7 @@ impl Server {
     pub async fn start(self) -> Result<ServerHandle, ServerError> {
         let addr = self.config.bind_addr;
         let credentials = Arc::clone(&self.config.credentials);
+        validate_lan_bind(&addr, self.config.lan_bind_enabled, credentials.as_ref()).await?;
         let auth = AuthState::load(
             self.config.auth_required_for_reads,
             self.config.credentials.as_ref(),
@@ -75,6 +76,32 @@ impl Server {
 
 pub async fn start_server(config: ServerConfig) -> Result<ServerHandle, ServerError> {
     Server { config }.start().await
+}
+
+pub(crate) async fn validate_lan_bind(
+    addr: &SocketAddr,
+    lan_bind_enabled: bool,
+    credentials: &dyn CredentialsRepo,
+) -> Result<(), ServerError> {
+    if !addr.ip().is_unspecified() {
+        return Ok(());
+    }
+    if !lan_bind_enabled {
+        return Err(ServerError::LanBindNotEnabled {
+            addr: addr.to_string(),
+        });
+    }
+    let token_present = credentials
+        .load(&forge_storage::CredentialId::new("server:bearer"))
+        .await
+        .map_err(|e| ServerError::Storage(e.to_string()))?
+        .is_some();
+    if !token_present {
+        return Err(ServerError::NoTokenForLanBind {
+            addr: addr.to_string(),
+        });
+    }
+    Ok(())
 }
 
 async fn auth_middleware(State(state): State<AppState>, request: Request, next: Next) -> Response {
@@ -176,7 +203,8 @@ mod tests {
     use time::OffsetDateTime;
     use tokio::net::TcpListener;
 
-    use super::{AppState, AuthState, BusAdapter, ServerHandle, serve_on};
+    use super::{AppState, AuthState, BusAdapter, ServerHandle, serve_on, validate_lan_bind};
+    use crate::ServerError;
     use crate::server_info::ServerInfo;
     use crate::test_dp::null_dp;
 
@@ -494,5 +522,43 @@ mod tests {
         assert_eq!(resp.status().as_u16(), 200);
 
         handle.stop().await.expect("stop after restart");
+    }
+
+    #[tokio::test]
+    async fn validate_lan_bind_allows_loopback_regardless_of_flag() {
+        let creds = MemCreds::new();
+        let addr: std::net::SocketAddr = "127.0.0.1:9595".parse().expect("addr");
+        validate_lan_bind(&addr, false, &*creds)
+            .await
+            .expect("loopback always allowed");
+    }
+
+    #[tokio::test]
+    async fn validate_lan_bind_rejects_unspecified_without_flag() {
+        let creds = MemCreds::with_token("tok");
+        let addr: std::net::SocketAddr = "0.0.0.0:9595".parse().expect("addr");
+        let err = validate_lan_bind(&addr, false, &*creds)
+            .await
+            .expect_err("must refuse");
+        assert!(matches!(err, ServerError::LanBindNotEnabled { .. }));
+    }
+
+    #[tokio::test]
+    async fn validate_lan_bind_rejects_unspecified_without_token() {
+        let creds = MemCreds::new();
+        let addr: std::net::SocketAddr = "0.0.0.0:9595".parse().expect("addr");
+        let err = validate_lan_bind(&addr, true, &*creds)
+            .await
+            .expect_err("must refuse");
+        assert!(matches!(err, ServerError::NoTokenForLanBind { .. }));
+    }
+
+    #[tokio::test]
+    async fn validate_lan_bind_accepts_unspecified_with_flag_and_token() {
+        let creds = MemCreds::with_token("tok");
+        let addr: std::net::SocketAddr = "0.0.0.0:9595".parse().expect("addr");
+        validate_lan_bind(&addr, true, &*creds)
+            .await
+            .expect("must pass");
     }
 }

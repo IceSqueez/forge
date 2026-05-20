@@ -5,6 +5,7 @@ pub mod buttons;
 pub mod cards;
 pub mod charts;
 pub mod chat;
+pub mod clip_card;
 pub mod code_editor;
 pub mod console;
 pub mod data;
@@ -38,6 +39,7 @@ pub use charts::throughput_sparkline;
 pub use chat::{
     BadgeKind, ChatBody, ChatRow, Platform, PlatformTarget, chat_row, filter_chip, input_bar,
 };
+pub use clip_card::{ClipCardData, clip_card};
 pub use code_editor::{CodeEditorState, code_editor};
 pub use console::{ConsoleLevel, ConsoleLine, console};
 pub use data::{

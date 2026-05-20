@@ -2216,8 +2216,9 @@ version = "0.1.0-alpha.9"
 dependencies = [
  "async-trait",
  "cpal",
- "forge-events",
+ "crossbeam-channel",
  "forge-types",
+ "futures",
  "rubato",
  "serde",
  "serde_json",

@@ -299,7 +299,7 @@ mod tests {
     #[test]
     fn title_bar_with_logo_compiles() {
         let _: Element<'_, ()> =
-            title_bar_with_logo("forge", "Hub", 'S', vec![], &CATPPUCCIN_MOCHA);
+            title_bar_with_logo("forge", "Home", 'S', vec![], &CATPPUCCIN_MOCHA);
     }
 
     #[test]
@@ -323,14 +323,17 @@ mod tests {
 
     #[test]
     fn breadcrumb_compiles_with_static_terminal() {
-        let segments = vec![("Hub".to_string(), Some(())), ("Actions".to_string(), None)];
+        let segments = vec![
+            ("Home".to_string(), Some(())),
+            ("Actions".to_string(), None),
+        ];
         let _: Element<'_, ()> = breadcrumb(segments, &CATPPUCCIN_MOCHA);
     }
 
     #[test]
     fn breadcrumb_compiles_with_all_clickable() {
         let segments = vec![
-            ("Hub".to_string(), Some(())),
+            ("Home".to_string(), Some(())),
             ("Platforms".to_string(), Some(())),
             ("Twitch".to_string(), Some(())),
         ];

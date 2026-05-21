@@ -51,8 +51,8 @@ use crate::integration_detail::{
 };
 use crate::live_chat::{CHAT_LOG_MAX, LiveChatState, chat_row_from_event, live_chat_view};
 use crate::message::{
-    ActionsMsg, GlobalsMsg, HubMsg, HubStatsData, ObsClientRef, PlatformId, QueuesMsg, SettingsMsg,
-    SidebarMsg,
+    ActionsMsg, GlobalsMsg, HomeMsg, HomeStatsData, ObsClientRef, PlatformId, QueuesMsg,
+    SettingsMsg, SidebarMsg,
 };
 use crate::queues_view::{QueuesState, load_queues, queues_view};
 use crate::script_editor::{
@@ -99,14 +99,14 @@ impl Default for SidebarExpandState {
 }
 
 #[derive(Default)]
-pub struct HubStats {
+pub struct HomeStats {
     pub actions_count: Option<usize>,
     pub commands_count: Option<usize>,
     pub triggers_fired: Option<u64>,
     pub globals_count: Option<usize>,
 }
 
-impl HubStats {
+impl HomeStats {
     pub fn new() -> Self {
         Self::default()
     }
@@ -120,7 +120,7 @@ pub struct App {
     pub bus: Arc<EventBus>,
     pub storage_offline: bool,
     pub boot_time: SystemTime,
-    pub hub: HubStats,
+    pub home: HomeStats,
     pub sidebar_state: SidebarExpandState,
     pub event_feed: EventFeedState,
     pub live_chat: LiveChatState,
@@ -180,7 +180,7 @@ impl App {
             bus: EventBus::new(Arc::new(NullEventLogRepo)),
             storage_offline,
             boot_time: SystemTime::now(),
-            hub: HubStats::new(),
+            home: HomeStats::new(),
             sidebar_state: SidebarExpandState::new(),
             event_feed: EventFeedState::new(),
             live_chat: LiveChatState::new(),
@@ -242,7 +242,7 @@ impl Default for App {
             bus: EventBus::new(Arc::new(NullEventLogRepo)),
             storage_offline: false,
             boot_time: SystemTime::now(),
-            hub: HubStats::new(),
+            home: HomeStats::new(),
             sidebar_state: SidebarExpandState::new(),
             event_feed: EventFeedState::new(),
             live_chat: LiveChatState::new(),
@@ -311,7 +311,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             } else if is_viewers {
                 Task::done(Message::Viewers(crate::viewers::ViewersMsg::LoadRequested))
             } else if is_hub {
-                Task::done(Message::Hub(HubMsg::LoadStats))
+                Task::done(Message::Home(HomeMsg::LoadStats))
             } else if is_globals {
                 Task::done(Message::Globals(GlobalsMsg::LoadRequested))
             } else if is_script_editor {
@@ -395,7 +395,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 app.twitch_reauth_required = true;
             }
             if event.kind == "action.done" {
-                app.hub.triggers_fired = Some(app.hub.triggers_fired.unwrap_or(0) + 1);
+                app.home.triggers_fired = Some(app.home.triggers_fired.unwrap_or(0) + 1);
             }
             if !app.event_feed.paused {
                 app.event_feed.push_event(event);
@@ -540,7 +540,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 Task::none()
             }
         },
-        Message::Hub(sub) => handle_hub_msg(app, sub),
+        Message::Home(sub) => handle_home_msg(app, sub),
         Message::Globals(sub) => handle_globals_msg(app, sub),
         Message::VariantEditor(sub) => handle_variant_editor_msg(app, sub),
         Message::Actions(sub) => handle_actions_msg(app, sub),
@@ -959,24 +959,24 @@ fn handle_obs_panel_msg(app: &mut App, msg: crate::obs_panel::ObsPanelMsg) -> Ta
     }
 }
 
-fn handle_hub_msg(app: &mut App, sub: HubMsg) -> Task<Message> {
+fn handle_home_msg(app: &mut App, sub: HomeMsg) -> Task<Message> {
     match sub {
-        HubMsg::LoadStats => {
+        HomeMsg::LoadStats => {
             let dp = Arc::clone(&app.backend);
             Task::perform(
-                async move { load_hub_stats(dp).await.map_err(|e| e.to_string()) },
-                |r| Message::Hub(HubMsg::StatsLoaded(r)),
+                async move { load_home_stats(dp).await.map_err(|e| e.to_string()) },
+                |r| Message::Home(HomeMsg::StatsLoaded(r)),
             )
         }
-        HubMsg::StatsLoaded(Ok(data)) => {
-            app.hub.actions_count = Some(data.actions_count);
-            app.hub.commands_count = Some(data.commands_count);
-            app.hub.triggers_fired = Some(data.triggers_fired);
-            app.hub.globals_count = Some(data.globals_count);
+        HomeMsg::StatsLoaded(Ok(data)) => {
+            app.home.actions_count = Some(data.actions_count);
+            app.home.commands_count = Some(data.commands_count);
+            app.home.triggers_fired = Some(data.triggers_fired);
+            app.home.globals_count = Some(data.globals_count);
             Task::none()
         }
-        HubMsg::StatsLoaded(Err(e)) => {
-            tracing::warn!(error = %e, "hub stats load failed");
+        HomeMsg::StatsLoaded(Err(e)) => {
+            tracing::warn!(error = %e, "home stats load failed");
             Task::none()
         }
     }
@@ -1088,7 +1088,7 @@ fn handle_queues_msg(app: &mut App, sub: QueuesMsg) -> Task<Message> {
     }
 }
 
-async fn load_hub_stats(dp: Arc<SqliteBackend>) -> Result<HubStatsData, String> {
+async fn load_home_stats(dp: Arc<SqliteBackend>) -> Result<HomeStatsData, String> {
     use forge_storage::GlobalsRepo;
 
     let actions = dp
@@ -1111,7 +1111,7 @@ async fn load_hub_stats(dp: Arc<SqliteBackend>) -> Result<HubStatsData, String> 
         .await
         .map_err(|e| e.to_string())?;
     let triggers_fired: u64 = stats.values().map(|s| u64::from(s.runs_24h)).sum();
-    Ok(HubStatsData {
+    Ok(HomeStatsData {
         actions_count: actions,
         commands_count: commands,
         triggers_fired,
@@ -2002,7 +2002,7 @@ fn fmt_count<T: std::fmt::Display>(v: Option<T>) -> String {
     v.map_or_else(|| "0".to_string(), |n| n.to_string())
 }
 
-fn hub_card_style(
+fn home_card_style(
     palette: &ForgePalette,
 ) -> impl Fn(&Theme) -> iced::widget::container::Style + '_ {
     move |_theme: &Theme| iced::widget::container::Style {
@@ -2016,7 +2016,7 @@ fn hub_card_style(
     }
 }
 
-fn hub_nav_card<'a>(
+fn home_nav_card<'a>(
     icon: char,
     icon_color: iced::Color,
     title: &'a str,
@@ -2102,7 +2102,7 @@ fn hub_nav_card<'a>(
         .into()
 }
 
-fn hub_event_row<'a>(
+fn home_event_row<'a>(
     event: &forge_events::Event,
     has_bottom_border: bool,
     palette: &'a ForgePalette,
@@ -2166,7 +2166,7 @@ fn hub_event_row<'a>(
         .into()
 }
 
-fn hub_stat_row<'a>(
+fn home_stat_row<'a>(
     label: &'a str,
     value_text: String,
     value_color: iced::Color,
@@ -2245,7 +2245,7 @@ pub(crate) fn subsystem_connectivity(app: &App) -> (u8, u8) {
     (connected, 8)
 }
 
-fn hub_inline_button<'a>(
+fn home_inline_button<'a>(
     icon: char,
     label: &'a str,
     on_press: Message,
@@ -2297,7 +2297,7 @@ fn hub_inline_button<'a>(
         .into()
 }
 
-fn hub_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
+fn home_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
     use iced::widget::{column, container, row, text};
     use iced::{Alignment, Background, Border};
 
@@ -2335,8 +2335,8 @@ fn hub_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message>
     ]
     .spacing(2.0);
 
-    let import_btn = hub_inline_button(ICON_DOWNLOAD, "Import", Message::Noop, palette);
-    let new_action_btn = hub_inline_button(
+    let import_btn = home_inline_button(ICON_DOWNLOAD, "Import", Message::Noop, palette);
+    let new_action_btn = home_inline_button(
         ICON_PLUS,
         "New action",
         Message::Navigate(Screen::Actions),
@@ -2379,9 +2379,9 @@ fn hub_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message>
     let platforms_connected = connected_count(app);
     let stream_apps_connected: u8 = app.obs_client.is_some().into();
 
-    let actions_count = app.hub.actions_count.unwrap_or(0);
-    let commands_count = app.hub.commands_count.unwrap_or(0);
-    let triggers_fired = app.hub.triggers_fired.unwrap_or(0);
+    let actions_count = app.home.actions_count.unwrap_or(0);
+    let commands_count = app.home.commands_count.unwrap_or(0);
+    let triggers_fired = app.home.triggers_fired.unwrap_or(0);
 
     let (actions_leading, actions_cta) = if actions_count == 0 {
         ("None yet".to_owned(), Some("create one"))
@@ -2407,7 +2407,7 @@ fn hub_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message>
         (format!("{stream_apps_connected} connected"), None)
     };
 
-    let actions_card = hub_nav_card(
+    let actions_card = home_nav_card(
         ICON_LIGHTNING,
         palette.brand,
         "Actions",
@@ -2416,7 +2416,7 @@ fn hub_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message>
         Message::Navigate(Screen::Actions),
         palette,
     );
-    let commands_card = hub_nav_card(
+    let commands_card = home_nav_card(
         ICON_TERMINAL,
         palette.info,
         "Commands",
@@ -2425,7 +2425,7 @@ fn hub_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message>
         Message::Navigate(Screen::Commands),
         palette,
     );
-    let platforms_card = hub_nav_card(
+    let platforms_card = home_nav_card(
         ICON_BROADCAST,
         palette.random,
         "Platforms",
@@ -2434,7 +2434,7 @@ fn hub_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message>
         Message::Navigate(Screen::Platforms),
         palette,
     );
-    let stream_apps_card = hub_nav_card(
+    let stream_apps_card = home_nav_card(
         ICON_GRID,
         palette.success,
         "Stream apps",
@@ -2520,7 +2520,7 @@ fn hub_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message>
             let count = events.len();
             for (i, event) in events.iter().enumerate() {
                 let has_border = i + 1 < count;
-                events_col = events_col.push(hub_event_row(event, has_border, palette));
+                events_col = events_col.push(home_event_row(event, has_border, palette));
             }
             events_col.into()
         };
@@ -2530,7 +2530,7 @@ fn hub_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message>
         container(card_content)
             .width(Length::FillPortion(1))
             .padding(14.0)
-            .style(hub_card_style(palette))
+            .style(home_card_style(palette))
     };
 
     let at_a_glance = {
@@ -2553,37 +2553,37 @@ fn hub_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message>
         } else {
             palette.success
         };
-        let globals_count = app.hub.globals_count.unwrap_or(0);
+        let globals_count = app.home.globals_count.unwrap_or(0);
         let globals_color = if globals_count == 0 {
             palette.text_muted
         } else {
             palette.warning
         };
 
-        let actions_row = hub_stat_row(
+        let actions_row = home_stat_row(
             "Actions",
-            fmt_count(app.hub.actions_count),
+            fmt_count(app.home.actions_count),
             actions_color,
             true,
             palette,
         );
-        let commands_row = hub_stat_row(
+        let commands_row = home_stat_row(
             "Commands",
-            fmt_count(app.hub.commands_count),
+            fmt_count(app.home.commands_count),
             commands_color,
             true,
             palette,
         );
-        let triggers_row = hub_stat_row(
+        let triggers_row = home_stat_row(
             "Triggers fired",
-            fmt_count(app.hub.triggers_fired),
+            fmt_count(app.home.triggers_fired),
             triggers_color,
             true,
             palette,
         );
-        let globals_row = hub_stat_row(
+        let globals_row = home_stat_row(
             "Global variables",
-            fmt_count(app.hub.globals_count),
+            fmt_count(app.home.globals_count),
             globals_color,
             true,
             palette,
@@ -2595,7 +2595,7 @@ fn hub_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message>
         container(stats_col)
             .width(Length::FillPortion(1))
             .padding(14.0)
-            .style(hub_card_style(palette))
+            .style(home_card_style(palette))
     };
 
     let bottom_row = row![recent_events, at_a_glance]
@@ -4861,7 +4861,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
     );
 
     let content: Element<'_, Message> = match &app.screen {
-        Screen::Home => hub_view(app, palette),
+        Screen::Home => home_view(app, palette),
         Screen::LiveChat => live_chat_view(&app.live_chat, palette),
         Screen::Globals => globals_view(app, palette),
         Screen::Actions => actions_view(app, palette),
@@ -5468,7 +5468,7 @@ mod tests {
             bus,
             storage_offline: false,
             boot_time: std::time::SystemTime::now(),
-            hub: HubStats::new(),
+            home: HomeStats::new(),
             sidebar_state: SidebarExpandState::new(),
             event_feed: EventFeedState::new(),
             live_chat: LiveChatState::new(),
@@ -5761,7 +5761,7 @@ mod tests {
             bus: EventBus::new(Arc::new(NullEventLogRepo)),
             storage_offline: false,
             boot_time: std::time::SystemTime::now(),
-            hub: HubStats::new(),
+            home: HomeStats::new(),
             sidebar_state: SidebarExpandState::new(),
             event_feed: EventFeedState::new(),
             live_chat: LiveChatState::new(),
@@ -6045,10 +6045,10 @@ mod tests {
     fn hub_view_compiles_with_populated_stats() {
         let mut app = App::default();
         let _ = update(&mut app, Message::Navigate(Screen::Home));
-        app.hub.actions_count = Some(47);
-        app.hub.commands_count = Some(23);
-        app.hub.triggers_fired = Some(1284);
-        app.hub.globals_count = Some(31);
+        app.home.actions_count = Some(47);
+        app.home.commands_count = Some(23);
+        app.home.triggers_fired = Some(1284);
+        app.home.globals_count = Some(31);
         let _ = view(&app);
     }
 
@@ -6061,34 +6061,34 @@ mod tests {
     }
 
     #[test]
-    fn hub_stats_loaded_ok_updates_all_fields() {
+    fn home_stats_loaded_ok_updates_all_fields() {
         let mut app = App::default();
         let _ = update(&mut app, Message::Navigate(Screen::Home));
-        let data = HubStatsData {
+        let data = HomeStatsData {
             actions_count: 5,
             commands_count: 3,
             triggers_fired: 42,
             globals_count: 7,
         };
-        let _ = update(&mut app, Message::Hub(HubMsg::StatsLoaded(Ok(data))));
-        assert_eq!(app.hub.actions_count, Some(5));
-        assert_eq!(app.hub.commands_count, Some(3));
-        assert_eq!(app.hub.triggers_fired, Some(42));
-        assert_eq!(app.hub.globals_count, Some(7));
+        let _ = update(&mut app, Message::Home(HomeMsg::StatsLoaded(Ok(data))));
+        assert_eq!(app.home.actions_count, Some(5));
+        assert_eq!(app.home.commands_count, Some(3));
+        assert_eq!(app.home.triggers_fired, Some(42));
+        assert_eq!(app.home.globals_count, Some(7));
     }
 
     #[test]
-    fn hub_stats_loaded_err_leaves_nones() {
+    fn home_stats_loaded_err_leaves_nones() {
         let mut app = App::default();
         let _ = update(&mut app, Message::Navigate(Screen::Home));
         let _ = update(
             &mut app,
-            Message::Hub(HubMsg::StatsLoaded(Err("db error".into()))),
+            Message::Home(HomeMsg::StatsLoaded(Err("db error".into()))),
         );
-        assert!(app.hub.actions_count.is_none());
-        assert!(app.hub.commands_count.is_none());
-        assert!(app.hub.triggers_fired.is_none());
-        assert!(app.hub.globals_count.is_none());
+        assert!(app.home.actions_count.is_none());
+        assert!(app.home.commands_count.is_none());
+        assert!(app.home.triggers_fired.is_none());
+        assert!(app.home.globals_count.is_none());
     }
 
     #[test]
@@ -6181,10 +6181,10 @@ mod tests {
     fn view_home_renders_with_v2_chrome() {
         let mut app = App::default();
         let _ = update(&mut app, Message::Navigate(Screen::Home));
-        app.hub.actions_count = Some(12);
-        app.hub.commands_count = Some(5);
-        app.hub.triggers_fired = Some(99);
-        app.hub.globals_count = Some(3);
+        app.home.actions_count = Some(12);
+        app.home.commands_count = Some(5);
+        app.home.triggers_fired = Some(99);
+        app.home.globals_count = Some(3);
         let _ = view(&app);
     }
 
@@ -6215,8 +6215,8 @@ mod tests {
     fn hub_view_desc_shows_actions_count() {
         let mut app = App::default();
         let _ = update(&mut app, Message::Navigate(Screen::Home));
-        app.hub.actions_count = Some(47);
-        app.hub.triggers_fired = Some(1284);
+        app.home.actions_count = Some(47);
+        app.home.triggers_fired = Some(1284);
         let _ = view(&app);
     }
 

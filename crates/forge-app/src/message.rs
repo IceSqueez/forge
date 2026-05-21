@@ -58,7 +58,7 @@ impl Clone for ObsClientRef {
 }
 
 #[derive(Debug, Clone)]
-pub struct HubStatsData {
+pub struct HomeStatsData {
     pub actions_count: usize,
     pub commands_count: usize,
     pub triggers_fired: u64,
@@ -66,9 +66,9 @@ pub struct HubStatsData {
 }
 
 #[derive(Debug, Clone)]
-pub enum HubMsg {
+pub enum HomeMsg {
     LoadStats,
-    StatsLoaded(Result<HubStatsData, String>),
+    StatsLoaded(Result<HomeStatsData, String>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -284,7 +284,7 @@ pub enum Message {
     Navigate(Screen),
     Sidebar(SidebarMsg),
     Settings(SettingsMsg),
-    Hub(HubMsg),
+    Home(HomeMsg),
     Globals(GlobalsMsg),
     VariantEditor(VariantEditorMsg),
     Actions(ActionsMsg),

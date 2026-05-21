@@ -39,7 +39,7 @@ fn test_app() -> App {
         script_editor: ScriptEditorState::new(),
         script_registry: Arc::new(ScriptRegistry::new()),
         boot_time: std::time::SystemTime::now(),
-        hub: forge_app::app::HubStats::new(),
+        home: forge_app::app::HomeStats::new(),
         sidebar_state: SidebarExpandState::new(),
         twitch_chat_handle: None,
         chat_send_bridge: None,

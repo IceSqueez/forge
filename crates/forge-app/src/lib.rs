@@ -45,7 +45,7 @@ pub use integration_detail::{
 };
 pub use live_chat::{ChatFilter, LiveChatState};
 pub use message::{
-    ActionsMsg, EditorMode, GlobalsFilter, GlobalsLoadData, GlobalsMsg, HubMsg, HubStatsData,
+    ActionsMsg, EditorMode, GlobalsFilter, GlobalsLoadData, GlobalsMsg, HomeMsg, HomeStatsData,
     IntegrationDetailMsg, Message, ObsClientRef, PlatformId, SettingsAudioMsg, SettingsMsg,
     SidebarMsg, SoundboardMsg, TtsDashMsg, TtsEnginesMsg, TtsFiltersMsg, TtsMsg, TtsTriggersMsg,
     VariantEditorMsg, VoiceAliasesMsg,

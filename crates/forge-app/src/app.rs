@@ -4742,7 +4742,7 @@ fn screen_label(screen: &Screen) -> &'static str {
     }
 }
 
-fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Vec<NavItem<'a, Message>> {
+fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> SidebarV2<'a, Message> {
     let is_home = matches!(app.screen, Screen::Home);
     let is_actions = matches!(app.screen, Screen::Actions | Screen::ActionEditor(_));
     let is_queues = matches!(app.screen, Screen::Queues);
@@ -4760,7 +4760,7 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Vec<NavItem<'a,
     let twitch_target = Message::Navigate(Screen::IntegrationDetail(IntegrationId::new("twitch")));
     let obs_target = Message::Navigate(Screen::IntegrationDetail(IntegrationId::new("obs")));
 
-    vec![
+    let items = vec![
         NavItem::Leaf {
             icon: ICON_HOME,
             label: "Home",
@@ -4878,6 +4878,9 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Vec<NavItem<'a,
             active: is_server,
             on_press: Message::Navigate(Screen::Server),
         },
+    ];
+
+    let bottom_items = vec![
         NavItem::Divider,
         NavItem::Leaf {
             icon: ICON_GEAR,
@@ -4885,7 +4888,12 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Vec<NavItem<'a,
             active: is_settings,
             on_press: Message::Navigate(Screen::Settings(SettingsSection::Appearance)),
         },
-    ]
+    ];
+
+    SidebarV2 {
+        items,
+        bottom_items,
+    }
 }
 
 fn tts_tab_button<'a>(
@@ -4988,12 +4996,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         palette,
     );
 
-    let sidebar = sidebar_v2(
-        palette,
-        SidebarV2 {
-            items: nav_items_for(app, palette),
-        },
-    );
+    let sidebar = sidebar_v2(palette, nav_items_for(app, palette));
 
     let screen_content: Element<'_, Message> = match &app.screen {
         Screen::Home => home_view(app, palette),

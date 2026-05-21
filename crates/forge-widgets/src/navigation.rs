@@ -135,6 +135,7 @@ pub fn tree_node<'a, Msg: 'a + Clone>(
 
 pub struct SidebarV2<'a, Msg> {
     pub items: Vec<NavItem<'a, Msg>>,
+    pub bottom_items: Vec<NavItem<'a, Msg>>,
 }
 
 pub enum NavItem<'a, Msg> {
@@ -175,10 +176,18 @@ pub fn sidebar_v2<'a, Msg: 'a + Clone>(
         .into_iter()
         .map(|item| render_nav_item(item, palette))
         .collect();
+    let bottom: Vec<Element<'a, Msg>> = props
+        .bottom_items
+        .into_iter()
+        .map(|item| render_nav_item(item, palette))
+        .collect();
 
-    let content = column(items).spacing(2);
+    let main = column(items).spacing(2);
+    let bottom_col = column(bottom).spacing(2);
 
-    container(scrollable(content).height(iced::Length::Fill))
+    let body = column![scrollable(main).height(iced::Length::Fill), bottom_col,];
+
+    container(body)
         .width(u32::from(SIDEBAR_WIDTH))
         .height(iced::Length::Fill)
         .padding([12, 8])
@@ -537,7 +546,13 @@ mod tests {
 
     #[test]
     fn sidebar_v2_builds_empty() {
-        let _: Element<'_, ()> = sidebar_v2(&CATPPUCCIN_MOCHA, SidebarV2 { items: vec![] });
+        let _: Element<'_, ()> = sidebar_v2(
+            &CATPPUCCIN_MOCHA,
+            SidebarV2 {
+                items: vec![],
+                bottom_items: vec![],
+            },
+        );
     }
 
     #[test]
@@ -551,6 +566,7 @@ mod tests {
                     active: false,
                     on_press: (),
                 }],
+                bottom_items: vec![],
             },
         );
     }
@@ -566,6 +582,7 @@ mod tests {
                     active: true,
                     on_press: (),
                 }],
+                bottom_items: vec![],
             },
         );
     }
@@ -583,6 +600,7 @@ mod tests {
                     on_toggle: (),
                     children: vec![],
                 }],
+                bottom_items: vec![],
             },
         );
     }
@@ -613,6 +631,7 @@ mod tests {
                         },
                     ],
                 }],
+                bottom_items: vec![],
             },
         );
     }
@@ -637,6 +656,7 @@ mod tests {
                         on_press: (),
                     },
                 ],
+                bottom_items: vec![],
             },
         );
     }
@@ -659,6 +679,7 @@ mod tests {
                         on_press: (),
                     }],
                 }],
+                bottom_items: vec![],
             },
         );
     }

@@ -40,9 +40,9 @@ Forge is an open-source desktop application that automates stream workflows acro
 
 ## Current Status
 
-**Current alpha: v0.1.0-alpha.10** — Audio foundation (cpal, multi-sink fan-out) + Soundboard milestone.
+**Current alpha: v0.1.0-alpha.12** — Final alpha stage; Hub fully functional, viewer tracking, hardening, and retro polish. Gate to beta-1.
 
-**What's included (alpha-1 through alpha-10):**
+**What's included (alpha-1 through alpha-12):**
 
 - **Workspace & storage layer:** 14-crate workspace; SQLite backend with AES-GCM encrypted credential storage; schema versioning with append-only migration pipeline.
 - **iced UI shell:** Catppuccin Mocha theme + Tokyo Night and Latte; sidebar navigation; Hub dashboard; Settings with sub-screens; cross-platform CI pipeline (Linux, Windows, macOS).
@@ -57,11 +57,18 @@ Forge is an open-source desktop application that automates stream workflows acro
 - **Settings → WebSocket:** Configurable bind address (127.0.0.1 vs 0.0.0.0 with LAN-bind warning), port, auth toggles, overlay-root picker, and CORS policy.
 - **Audio engine (alpha-10):** `forge-audio` crate with `AudioSink` trait, cpal device discovery, multi-sink fan-out, symphonia decoder, rubato resampler, channel remix. `AudioEvent` and `AudioEventSink` abstraction. Audio events on the bus (`playback.started`, `playback.finished`, `playback.failed`). Settings → Audio sub-screen with device test-tone.
 - **Soundboard (alpha-10):** `forge-soundboard` crate with clip schema (file path, hotkey, output device, volume). Grid-based Soundboard screen with add-clip modal. In-app hotkey listener scoped to Soundboard. `PlaySound` sub-action picker in Action editor. `SoundboardPlayer` decodes, resamples, applies volume, and routes to selected output device.
+- **Variant::Datetime (alpha-12):** 8th first-class Variant type; `forge::time::now()` and `forge::time::unix()` rhai builtins for timestamp capture and Unix-epoch access in scripts.
+- **Sub-actions: ReadFile & RandomInt (alpha-12):** `ReadFile` reads sandboxed files (under data dir/assets, 1 MiB cap, no path traversal) into globals. `RandomInt` generates random i64 into a global. Both in Sub-Action picker in Action editor.
+- **Action execution modes (alpha-12):** `ExecutionMode::Sequential` (default: run all sub-actions in order) or `ExecutionMode::RandomPick` (pick and run exactly one sub-action per trigger fire). Toggle in Add Action modal.
+- **Viewers screen (alpha-12):** Track chat participants across all connected platforms. List shows avatar, platform pill, message count, last-seen time, and custom-greeting badge. Filter by platform and search by username. ViewerTracker task subscribes to `chat.message` events and upserts viewer data in real-time.
+- **Settings sub-screens (alpha-12):** Storage & backups (DB path display, Vacuum button, timestamped backup), Diagnostics (log dir path, Open log directory button, RUST_LOG hint), Queues & threading (tokio worker count and link to Queues screen).
+- **Home (Hub renamed, alpha-12):** Hero card with version and uptime ticker. Title bar shows 8-subsystem connectivity counter (Twitch chat, EventSub, OBS, Server WS, Audio, Soundboard, Speak queue, DataProvider).
+- **Retro polish (alpha-12):** Event Feed export to JSON via native dialog. Actions Duplicate button (clones with `(copy)` suffix). Sub-action timing badges showing rolling 20-execution average. Twitch detail header shows token expiry countdown. Trigger row Delete button for inline removal. cpal device enumeration cached 5s for Settings → Audio refresh performance.
 
 **Feature timeline (pending):**
 
-- **alpha-11:** TTS engines (local: Piper, eSpeak-NG; cloud: Azure, OpenAI, ElevenLabs, Google). Voice aliases & preprocessing pipeline. TTS queue with streaming synthesis. Speak-Queue screen.
-- **beta-1+:** YouTube, Trovo, Kick chat platforms; VTube Studio; Discord webhooks; MIDI controllers; system hotkeys.
+- **beta-1:** YouTube chat platform. VTube Studio integration. OBS dB level meters for input monitoring. Twitch viewer count delta polling. Full Trigger kebab menu dropdown (Actions, Duplicate, Delete in one menu).
+- **beta-2+:** Trovo and Kick chat platforms; Discord webhooks; MIDI controllers; system hotkeys; TTS engines (Piper, eSpeak-NG, cloud services). Voice aliases & preprocessing pipeline. Full notifications customization.
 
 ## Building from Source
 
@@ -102,12 +109,12 @@ Per-platform installation details will be added as packaging matures.
 
 ## Known limitations
 
-Forge is in active alpha development. Current gaps:
+Forge is completing alpha and transitioning to beta. Current gaps:
 
 - **`ObsRaw` sub-action is non-functional.** The variant exists in the schema for forward compatibility, but `obws` v0.15 does not expose a raw-request passthrough. Execution returns a protocol error at runtime. Resolves when `obws` 0.16+ ships a `send_raw` API.
-- **Additional chat platforms** (YouTube, Trovo, Kick) are not yet implemented; Twitch is the primary source.
-- **TTS engines** (Piper, eSpeak-NG, cloud services: Azure, OpenAI, ElevenLabs, Google) and **voice aliases & preprocessing pipeline** landing in alpha-11.
-- **VTube Studio integration, Discord webhooks, MIDI controllers, system hotkeys** coming in subsequent stages.
+- **Additional chat platforms** (YouTube, Trovo, Kick) landing in beta-1 and beyond; Twitch is the current primary source.
+- **VTube Studio integration, Discord webhooks, MIDI controllers, system hotkeys** coming in beta and rc stages.
+- **TTS engines** (Piper, eSpeak-NG, cloud services: Azure, OpenAI, ElevenLabs, Google) and **voice aliases & preprocessing pipeline** deferred to beta-2+.
 - **TLS/WSS** for the WebSocket server is deferred to beta or rc; current use is local-network only.
 
 ## Contributing

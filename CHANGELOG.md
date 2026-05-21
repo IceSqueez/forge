@@ -1,18 +1,41 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-alpha.12] - 2026-05-21
+### ⚡ Performance
+- *(audio)* Cache cpal device enumeration with 5s TTL and explicit refresh
+
+### 📚 Documentation
+- *(readme)* Refresh current status for alpha-12 release
+
+### 🚀 Features
+- *(scripts)* Add Variant::Datetime sub-actions ReadFile, RandomInt and forge::time rhai
+- *(app)* Add ReadFile and RandomInt to Add SubAction picker
+- *(app)* Add Viewers screen with ViewerRepo and platform tracking
+- *(app)* Add Viewers screen Settings sub-screens and viewer tracker
+- *(app)* Wire Hub hero uptime and title bar 8-subsystem counter
+- *(app)* Wire Event Feed export and Actions duplicate button
+- *(app)* Retro polish across actions twitch and event feed
+
+### 🚜 Refactor
+- *(app)* Rename Hub to Home across messages widgets and state
+
 ## [0.1.0-alpha.11] - 2026-05-21
 ### Deps
 - *(libs)* Bump libraries versions
 
 ### ⚙️ Miscellaneous Tasks
 - *(workspace)* Sync Cargo.lock for tts crate deps
+- Release
 
 ### 🐛 Bug Fixes
 - *(audio)* Adapt to rubato 3.0 and symphonia 0.6 APIs after bump
 - *(app)* Register Piper engine and wire CpalSink in speak queue boot
 - *(app)* Register Piper engine and wire CpalSink in speak queue boot
 - *(ci)* Add libasound2-dev apt dep for cpal Linux build
+
+### 📚 Documentation
+- *(release)* Release v0.1.0-alpha.11
 
 ### 🚀 Features
 - *(tts-core)* Create forge-tts-core crate with TtsEngine trait

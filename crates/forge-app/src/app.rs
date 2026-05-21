@@ -126,6 +126,7 @@ pub struct App {
     pub live_chat: LiveChatState,
     pub actions: ActionsState,
     pub queues: QueuesState,
+    pub viewers: crate::viewers::ViewersState,
     pub globals: GlobalsState,
     pub script_editor: ScriptEditorState,
     pub script_registry: Arc<ScriptRegistry>,
@@ -185,6 +186,7 @@ impl App {
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
             queues: QueuesState::new(),
+            viewers: crate::viewers::ViewersState::default(),
             globals: GlobalsState::new(),
             script_editor: ScriptEditorState::new(),
             script_registry,
@@ -246,6 +248,7 @@ impl Default for App {
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
             queues: QueuesState::new(),
+            viewers: crate::viewers::ViewersState::default(),
             globals: GlobalsState::new(),
             script_editor: ScriptEditorState::new(),
             script_registry: Arc::new(ScriptRegistry::new()),
@@ -282,6 +285,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::Navigate(screen) => {
             let is_actions = matches!(screen, Screen::Actions);
             let is_queues = matches!(screen, Screen::Queues);
+            let is_viewers = matches!(screen, Screen::Viewers);
             let is_hub = matches!(screen, Screen::Home);
             let is_globals = matches!(screen, Screen::Globals);
             let is_script_editor = matches!(screen, Screen::ScriptEditor);
@@ -304,6 +308,8 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 Task::done(Message::Actions(ActionsMsg::LoadRequested))
             } else if is_queues {
                 Task::done(Message::Queues(QueuesMsg::LoadRequested))
+            } else if is_viewers {
+                Task::done(Message::Viewers(crate::viewers::ViewersMsg::LoadRequested))
             } else if is_hub {
                 Task::done(Message::Hub(HubMsg::LoadStats))
             } else if is_globals {
@@ -477,6 +483,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::VariantEditor(sub) => handle_variant_editor_msg(app, sub),
         Message::Actions(sub) => handle_actions_msg(app, sub),
         Message::Queues(sub) => handle_queues_msg(app, sub),
+        Message::Viewers(sub) => crate::viewers::handle_msg(&mut app.viewers, sub, &app.backend),
         Message::AddAction(sub) => handle_add_action_msg(app, sub),
         Message::AddTrigger(sub) => handle_add_trigger_msg(app, sub),
         Message::AddSubAction(sub) => handle_add_sub_action_msg(app, sub),
@@ -4626,6 +4633,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Screen::Actions => actions_view(app, palette),
         Screen::ActionEditor(id) => action_editor_view(app, *id, palette),
         Screen::Queues => queues_view(&app.queues, palette),
+        Screen::Viewers => crate::viewers::viewers_view(&app.viewers, palette),
         Screen::Settings(section) => settings_view(
             section,
             app.twitch_chat_handle.as_ref(),
@@ -5232,6 +5240,7 @@ mod tests {
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
             queues: QueuesState::new(),
+            viewers: crate::viewers::ViewersState::default(),
             globals: GlobalsState::new(),
             script_editor: ScriptEditorState::new(),
             script_registry: registry,
@@ -5524,6 +5533,7 @@ mod tests {
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
             queues: QueuesState::new(),
+            viewers: crate::viewers::ViewersState::default(),
             globals: GlobalsState::new(),
             script_editor: ScriptEditorState::new(),
             script_registry: Arc::new(ScriptRegistry::new()),

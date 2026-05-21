@@ -213,6 +213,8 @@ fn spawn_runtime(backend: Arc<SqliteBackend>, bus: Arc<EventBus>) -> Option<Runt
     };
 
     let speak_queue = spawn_speak_queue(Arc::clone(&bus));
+    let _viewer_tracker =
+        forge_app::viewer_tracker::spawn(Arc::clone(&bus), backend.viewer_repo_arc());
     let speak_bridge_concrete = Arc::new(SpeakBridge::new(Arc::clone(&speak_queue)));
     let speak_dispatcher: Arc<dyn forge_runtime::SpeakDispatcher> = speak_bridge_concrete.clone();
     let speak_requester: Arc<dyn forge_script::SpeakRequester> = speak_bridge_concrete;

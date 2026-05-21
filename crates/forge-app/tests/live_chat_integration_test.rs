@@ -34,6 +34,7 @@ fn test_app() -> App {
         live_chat: forge_app::LiveChatState::new(),
         actions: forge_app::ActionsState::new(),
         queues: forge_app::queues_view::QueuesState::new(),
+        viewers: forge_app::viewers::ViewersState::default(),
         globals: forge_app::GlobalsState::new(),
         script_editor: ScriptEditorState::new(),
         script_registry: Arc::new(ScriptRegistry::new()),

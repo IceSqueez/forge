@@ -7,7 +7,7 @@ use forge_storage::{
     ActionRepo, CommandRepo, CredentialId, CredentialsRepo, DataProvider, EventLogRepo,
     GlobalEntry, GlobalTransit, GlobalsRepo, HistoryRepo, QueueRepo, ScriptRecord, ScriptRepo,
     SettingsRepo, SoundboardClipsRepo, StorageError, TriggerRepo, UserGlobalEntry, UserGlobalsRepo,
-    VoiceAliasRepo,
+    ViewerRepo, VoiceAliasRepo,
 };
 use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
@@ -18,8 +18,8 @@ use crate::retention_task::spawn_retention_task;
 use crate::{
     SqliteActionRepo, SqliteCommandRepo, SqliteCredentialsRepo, SqliteEventLogRepo,
     SqliteGlobalsRepo, SqliteHistoryRepo, SqliteQueueRepo, SqliteScriptRepo, SqliteSettingsRepo,
-    SqliteSoundboardClipsRepo, SqliteTriggerRepo, SqliteUserGlobalsRepo, SqliteVoiceAliasRepo,
-    apply_migrations, connect,
+    SqliteSoundboardClipsRepo, SqliteTriggerRepo, SqliteUserGlobalsRepo, SqliteViewerRepo,
+    SqliteVoiceAliasRepo, apply_migrations, connect,
 };
 
 const PRUNE_INTERVAL_PRODUCTION: Duration = Duration::from_secs(3600);
@@ -39,6 +39,7 @@ pub struct SqliteBackend {
     event_log: SqliteEventLogRepo,
     soundboard: SqliteSoundboardClipsRepo,
     voice_alias: SqliteVoiceAliasRepo,
+    viewer: SqliteViewerRepo,
     shutdown: Arc<Notify>,
 }
 
@@ -122,6 +123,7 @@ impl SqliteBackend {
             event_log: SqliteEventLogRepo::new(pool.clone()),
             soundboard: SqliteSoundboardClipsRepo::new(pool.clone()),
             voice_alias: SqliteVoiceAliasRepo::new(pool.clone()),
+            viewer: SqliteViewerRepo::new(pool.clone()),
             credentials,
             shutdown,
             pool,
@@ -134,6 +136,14 @@ impl SqliteBackend {
 
     pub fn soundboard_clips_repo_arc(&self) -> Arc<dyn SoundboardClipsRepo> {
         Arc::new(SqliteSoundboardClipsRepo::new(self.pool.clone()))
+    }
+
+    pub fn viewer_repo_impl(&self) -> &SqliteViewerRepo {
+        &self.viewer
+    }
+
+    pub fn viewer_repo_arc(&self) -> Arc<dyn ViewerRepo> {
+        Arc::new(SqliteViewerRepo::new(self.pool.clone()))
     }
 }
 
@@ -332,6 +342,10 @@ impl DataProvider for SqliteBackend {
 
     fn voice_alias_repo(&self) -> &dyn VoiceAliasRepo {
         &self.voice_alias
+    }
+
+    fn viewer_repo(&self) -> &dyn ViewerRepo {
+        &self.viewer
     }
 
     async fn schema_version(&self) -> Result<u32, StorageError> {

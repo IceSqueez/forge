@@ -8,7 +8,8 @@ use forge_storage::{
     ActionRepo, AliasId, AssignmentStrategy, CommandRepo, CredentialId, CredentialsRepo,
     DataProvider, EventLogRepo, GlobalEntry, GlobalsRepo, HistoryRepo, IgnoreProfile, QueueRepo,
     ScriptRecord, ScriptRepo, SettingsRepo, SoundboardClipsRepo, StorageError, StoredClip,
-    TriggerRepo, UserGlobalEntry, UserGlobalsRepo, VoiceAlias, VoiceAliasRepo,
+    TriggerRepo, UserGlobalEntry, UserGlobalsRepo, Viewer, ViewerPlatform, ViewerRepo, VoiceAlias,
+    VoiceAliasRepo,
 };
 use forge_types::{
     Action, ActionId, ClipId, Command, CommandId, ExecutionContext, Queue, QueueId, ScriptId,
@@ -339,6 +340,10 @@ impl DataProvider for NullDp {
         self
     }
 
+    fn viewer_repo(&self) -> &dyn ViewerRepo {
+        self
+    }
+
     async fn schema_version(&self) -> Result<u32, StorageError> {
         Ok(0)
     }
@@ -417,11 +422,47 @@ macro_rules! impl_null_voice_alias {
     };
 }
 
+macro_rules! impl_null_viewer {
+    ($t:ty) => {
+        #[async_trait]
+        impl ViewerRepo for $t {
+            async fn list(&self) -> Result<Vec<Viewer>, StorageError> {
+                Ok(vec![])
+            }
+            async fn get(
+                &self,
+                _platform: ViewerPlatform,
+                _viewer_id: &str,
+            ) -> Result<Option<Viewer>, StorageError> {
+                Ok(None)
+            }
+            async fn record_message(
+                &self,
+                _platform: ViewerPlatform,
+                _viewer_id: &str,
+                _username: &str,
+            ) -> Result<(), StorageError> {
+                Ok(())
+            }
+            async fn set_custom_greeting(
+                &self,
+                _platform: ViewerPlatform,
+                _viewer_id: &str,
+                _enabled: bool,
+            ) -> Result<bool, StorageError> {
+                Ok(false)
+            }
+        }
+    };
+}
+
 impl_null_soundboard!(NullDp);
 impl_null_voice_alias!(NullDp);
+impl_null_viewer!(NullDp);
 
 impl_null_soundboard!(VecCommandDp);
 impl_null_voice_alias!(VecCommandDp);
+impl_null_viewer!(VecCommandDp);
 
 pub struct VecCommandDp {
     commands: Vec<forge_types::Command>,
@@ -754,6 +795,10 @@ impl DataProvider for VecCommandDp {
         self
     }
 
+    fn viewer_repo(&self) -> &dyn ViewerRepo {
+        self
+    }
+
     async fn schema_version(&self) -> Result<u32, StorageError> {
         Ok(0)
     }
@@ -765,6 +810,7 @@ impl DataProvider for VecCommandDp {
 
 impl_null_soundboard!(VecGlobalsDp);
 impl_null_voice_alias!(VecGlobalsDp);
+impl_null_viewer!(VecGlobalsDp);
 
 pub struct VecGlobalsDp {
     entries: Vec<GlobalEntry>,
@@ -1101,6 +1147,10 @@ impl DataProvider for VecGlobalsDp {
         self
     }
 
+    fn viewer_repo(&self) -> &dyn ViewerRepo {
+        self
+    }
+
     async fn schema_version(&self) -> Result<u32, StorageError> {
         Ok(0)
     }
@@ -1112,6 +1162,7 @@ impl DataProvider for VecGlobalsDp {
 
 impl_null_soundboard!(VecActionDp);
 impl_null_voice_alias!(VecActionDp);
+impl_null_viewer!(VecActionDp);
 
 pub struct VecActionDp {
     actions: Vec<Action>,
@@ -1444,6 +1495,10 @@ impl DataProvider for VecActionDp {
         self
     }
 
+    fn viewer_repo(&self) -> &dyn ViewerRepo {
+        self
+    }
+
     async fn schema_version(&self) -> Result<u32, StorageError> {
         Ok(0)
     }
@@ -1455,6 +1510,7 @@ impl DataProvider for VecActionDp {
 
 impl_null_soundboard!(VecUserGlobalsDp);
 impl_null_voice_alias!(VecUserGlobalsDp);
+impl_null_viewer!(VecUserGlobalsDp);
 
 pub struct VecUserGlobalsDp {
     entries: Vec<UserGlobalEntry>,
@@ -1798,6 +1854,10 @@ impl DataProvider for VecUserGlobalsDp {
     }
 
     fn voice_alias_repo(&self) -> &dyn VoiceAliasRepo {
+        self
+    }
+
+    fn viewer_repo(&self) -> &dyn ViewerRepo {
         self
     }
 

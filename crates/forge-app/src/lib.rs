@@ -23,6 +23,8 @@ pub mod tts_engines;
 pub mod tts_filters;
 pub mod tts_triggers;
 pub mod twitch_panel;
+pub mod viewer_tracker;
+pub mod viewers;
 pub mod voice_aliases;
 
 pub use actions::{

@@ -283,6 +283,7 @@ pub enum Message {
     VariantEditor(VariantEditorMsg),
     Actions(ActionsMsg),
     Queues(QueuesMsg),
+    Viewers(crate::viewers::ViewersMsg),
     AddAction(AddActionMsg),
     AddTrigger(AddTriggerMsg),
     AddSubAction(AddSubActionMsg),

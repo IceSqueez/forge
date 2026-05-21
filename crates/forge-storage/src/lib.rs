@@ -15,6 +15,7 @@ pub mod soundboard;
 pub mod transit;
 pub mod trigger;
 pub mod user_globals;
+pub mod viewer;
 pub mod voice_aliases;
 
 pub use action::ActionRepo;
@@ -32,4 +33,5 @@ pub use soundboard::{SoundboardClipsRepo, StoredClip};
 pub use transit::{CURRENT_FORMAT_VERSION, GlobalTransit, GlobalsExport};
 pub use trigger::TriggerRepo;
 pub use user_globals::{UserGlobalEntry, UserGlobalsRepo};
+pub use viewer::{Viewer, ViewerPlatform, ViewerRepo};
 pub use voice_aliases::{AliasId, AssignmentStrategy, IgnoreProfile, VoiceAlias, VoiceAliasRepo};

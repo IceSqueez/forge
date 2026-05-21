@@ -5,9 +5,10 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_events::Event;
 use forge_storage::{
-    ActionRepo, CommandRepo, CredentialId, CredentialsRepo, DataProvider, EventLogRepo,
-    GlobalEntry, GlobalsRepo, HistoryRepo, QueueRepo, ScriptRecord, ScriptRepo, SettingsRepo,
-    SoundboardClipsRepo, StorageError, StoredClip, TriggerRepo, UserGlobalEntry, UserGlobalsRepo,
+    ActionRepo, AliasId, AssignmentStrategy, CommandRepo, CredentialId, CredentialsRepo,
+    DataProvider, EventLogRepo, GlobalEntry, GlobalsRepo, HistoryRepo, IgnoreProfile, QueueRepo,
+    ScriptRecord, ScriptRepo, SettingsRepo, SoundboardClipsRepo, StorageError, StoredClip,
+    TriggerRepo, UserGlobalEntry, UserGlobalsRepo, VoiceAlias, VoiceAliasRepo,
 };
 use forge_types::{
     Action, ActionId, ClipId, Command, CommandId, ExecutionContext, Queue, QueueId, ScriptId,
@@ -334,6 +335,10 @@ impl DataProvider for NullDp {
         self
     }
 
+    fn voice_alias_repo(&self) -> &dyn VoiceAliasRepo {
+        self
+    }
+
     async fn schema_version(&self) -> Result<u32, StorageError> {
         Ok(0)
     }
@@ -371,9 +376,52 @@ macro_rules! impl_null_soundboard {
     };
 }
 
+macro_rules! impl_null_voice_alias {
+    ($t:ty) => {
+        #[async_trait]
+        impl VoiceAliasRepo for $t {
+            async fn list(&self) -> Result<Vec<VoiceAlias>, StorageError> {
+                Ok(vec![])
+            }
+            async fn upsert(&self, _alias: &VoiceAlias) -> Result<(), StorageError> {
+                Ok(())
+            }
+            async fn delete(&self, _id: &AliasId) -> Result<(), StorageError> {
+                Ok(())
+            }
+            async fn find_by_viewer(
+                &self,
+                _viewer_id: &str,
+            ) -> Result<Option<VoiceAlias>, StorageError> {
+                Ok(None)
+            }
+            async fn get_strategy(&self) -> Result<AssignmentStrategy, StorageError> {
+                Ok(AssignmentStrategy::default())
+            }
+            async fn set_strategy(
+                &self,
+                _strategy: &AssignmentStrategy,
+            ) -> Result<(), StorageError> {
+                Ok(())
+            }
+            async fn get_ignore_profile(&self) -> Result<IgnoreProfile, StorageError> {
+                Ok(IgnoreProfile::default())
+            }
+            async fn set_ignore_profile(
+                &self,
+                _profile: &IgnoreProfile,
+            ) -> Result<(), StorageError> {
+                Ok(())
+            }
+        }
+    };
+}
+
 impl_null_soundboard!(NullDp);
+impl_null_voice_alias!(NullDp);
 
 impl_null_soundboard!(VecCommandDp);
+impl_null_voice_alias!(VecCommandDp);
 
 pub struct VecCommandDp {
     commands: Vec<forge_types::Command>,
@@ -702,6 +750,10 @@ impl DataProvider for VecCommandDp {
         self
     }
 
+    fn voice_alias_repo(&self) -> &dyn VoiceAliasRepo {
+        self
+    }
+
     async fn schema_version(&self) -> Result<u32, StorageError> {
         Ok(0)
     }
@@ -712,6 +764,7 @@ impl DataProvider for VecCommandDp {
 }
 
 impl_null_soundboard!(VecGlobalsDp);
+impl_null_voice_alias!(VecGlobalsDp);
 
 pub struct VecGlobalsDp {
     entries: Vec<GlobalEntry>,
@@ -1044,6 +1097,10 @@ impl DataProvider for VecGlobalsDp {
         self
     }
 
+    fn voice_alias_repo(&self) -> &dyn VoiceAliasRepo {
+        self
+    }
+
     async fn schema_version(&self) -> Result<u32, StorageError> {
         Ok(0)
     }
@@ -1054,6 +1111,7 @@ impl DataProvider for VecGlobalsDp {
 }
 
 impl_null_soundboard!(VecActionDp);
+impl_null_voice_alias!(VecActionDp);
 
 pub struct VecActionDp {
     actions: Vec<Action>,
@@ -1382,6 +1440,10 @@ impl DataProvider for VecActionDp {
         self
     }
 
+    fn voice_alias_repo(&self) -> &dyn VoiceAliasRepo {
+        self
+    }
+
     async fn schema_version(&self) -> Result<u32, StorageError> {
         Ok(0)
     }
@@ -1392,6 +1454,7 @@ impl DataProvider for VecActionDp {
 }
 
 impl_null_soundboard!(VecUserGlobalsDp);
+impl_null_voice_alias!(VecUserGlobalsDp);
 
 pub struct VecUserGlobalsDp {
     entries: Vec<UserGlobalEntry>,
@@ -1731,6 +1794,10 @@ impl DataProvider for VecUserGlobalsDp {
     }
 
     fn soundboard_clips_repo(&self) -> &dyn SoundboardClipsRepo {
+        self
+    }
+
+    fn voice_alias_repo(&self) -> &dyn VoiceAliasRepo {
         self
     }
 

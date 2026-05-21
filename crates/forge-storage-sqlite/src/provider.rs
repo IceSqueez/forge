@@ -7,6 +7,7 @@ use forge_storage::{
     ActionRepo, CommandRepo, CredentialId, CredentialsRepo, DataProvider, EventLogRepo,
     GlobalEntry, GlobalTransit, GlobalsRepo, HistoryRepo, QueueRepo, ScriptRecord, ScriptRepo,
     SettingsRepo, SoundboardClipsRepo, StorageError, TriggerRepo, UserGlobalEntry, UserGlobalsRepo,
+    VoiceAliasRepo,
 };
 use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
@@ -17,7 +18,8 @@ use crate::retention_task::spawn_retention_task;
 use crate::{
     SqliteActionRepo, SqliteCommandRepo, SqliteCredentialsRepo, SqliteEventLogRepo,
     SqliteGlobalsRepo, SqliteHistoryRepo, SqliteQueueRepo, SqliteScriptRepo, SqliteSettingsRepo,
-    SqliteSoundboardClipsRepo, SqliteTriggerRepo, SqliteUserGlobalsRepo, apply_migrations, connect,
+    SqliteSoundboardClipsRepo, SqliteTriggerRepo, SqliteUserGlobalsRepo, SqliteVoiceAliasRepo,
+    apply_migrations, connect,
 };
 
 const PRUNE_INTERVAL_PRODUCTION: Duration = Duration::from_secs(3600);
@@ -36,6 +38,7 @@ pub struct SqliteBackend {
     history: SqliteHistoryRepo,
     event_log: SqliteEventLogRepo,
     soundboard: SqliteSoundboardClipsRepo,
+    voice_alias: SqliteVoiceAliasRepo,
     shutdown: Arc<Notify>,
 }
 
@@ -118,6 +121,7 @@ impl SqliteBackend {
             history: SqliteHistoryRepo::new(pool.clone()),
             event_log: SqliteEventLogRepo::new(pool.clone()),
             soundboard: SqliteSoundboardClipsRepo::new(pool.clone()),
+            voice_alias: SqliteVoiceAliasRepo::new(pool.clone()),
             credentials,
             shutdown,
             pool,
@@ -324,6 +328,10 @@ impl DataProvider for SqliteBackend {
 
     fn soundboard_clips_repo(&self) -> &dyn SoundboardClipsRepo {
         &self.soundboard
+    }
+
+    fn voice_alias_repo(&self) -> &dyn VoiceAliasRepo {
+        &self.voice_alias
     }
 
     async fn schema_version(&self) -> Result<u32, StorageError> {

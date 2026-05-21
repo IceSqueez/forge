@@ -16,6 +16,7 @@ pub mod settings_impl;
 pub mod soundboard_impl;
 pub mod trigger_impl;
 pub mod user_globals_impl;
+pub mod voice_alias_impl;
 
 pub use action_impl::SqliteActionRepo;
 pub use command_impl::SqliteCommandRepo;
@@ -33,3 +34,4 @@ pub use settings_impl::SqliteSettingsRepo;
 pub use soundboard_impl::SqliteSoundboardClipsRepo;
 pub use trigger_impl::SqliteTriggerRepo;
 pub use user_globals_impl::SqliteUserGlobalsRepo;
+pub use voice_alias_impl::SqliteVoiceAliasRepo;

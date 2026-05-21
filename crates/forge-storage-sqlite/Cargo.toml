@@ -14,6 +14,8 @@ forge-types          = { path = "../forge-types" }
 forge-storage        = { path = "../forge-storage" }
 forge-events         = { path = "../forge-events" }
 forge-platform-core  = { path = "../forge-platform-core" }
+forge-tts-core       = { path = "../forge-tts-core" }
+forge-voice          = { path = "../forge-voice" }
 serde        = { workspace = true }
 serde_json   = { workspace = true }
 thiserror    = { workspace = true }
@@ -32,3 +34,4 @@ tracing      = { workspace = true }
 tempfile     = { workspace = true }
 sha2         = { workspace = true }
 tokio        = { workspace = true, features = ["test-util"] }
+ulid         = { workspace = true }

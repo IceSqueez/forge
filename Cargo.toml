@@ -73,7 +73,7 @@ arc-swap = { version = "1" }
 
 rhai = { version = "1", features = ["sync"] }
 
-reqwest = { version = "0.12", features = [
+reqwest = { version = "0.13", features = [
   "json",
   "rustls-tls",
 ], default-features = false }
@@ -102,10 +102,10 @@ rfd = { version = "0.17", default-features = false, features = [
 open = { version = "5" }
 
 cpal = { version = "0.17" }
-rubato = { version = "0.16" }
+rubato = { version = "3.0" }
 regex = { version = "1" }
 once_cell = { version = "1" }
-symphonia = { version = "0.5", features = ["all-codecs", "all-formats"] }
+symphonia = { version = "0.6", features = ["all-codecs", "all-formats"] }
 crossbeam-channel = { version = "0.5" }
 futures = { version = "0.3" }
 

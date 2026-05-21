@@ -70,9 +70,7 @@ pub use integration::{
     integration_quick_actions_grid_with_hint,
 };
 pub use layout::{app_footer, page_shell, title_bar, toolbar};
-pub use navigation::{
-    NavChild, NavItem, SIDEBAR_WIDTH, SidebarV2, sidebar, sidebar_section, sidebar_v2, tree_node,
-};
+pub use navigation::{NavChild, NavItem, SIDEBAR_WIDTH, Sidebar, sidebar};
 pub use onboarding::{
     BannerKind, PlatformCardProps, Severity, StepEntry, StepInfo, StepStatus, device_code_display,
     expiration_color_band, expiration_timer, live_status_banner, locale_tip_card,

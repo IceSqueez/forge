@@ -26,8 +26,8 @@ use forge_widgets::icons::{
 };
 use forge_widgets::tokens::{FONT_BODY, FONT_LG, FONT_MD, FONT_SM, FONT_XS};
 use forge_widgets::{
-    BreadcrumbCrumb, FontRole, ForgePalette, NavChild, NavItem, Radius, SidebarV2, ThemeId,
-    ToastQueue, app_footer, breadcrumb, font, page_shell, radius, sidebar_v2, title_bar,
+    BreadcrumbCrumb, FontRole, ForgePalette, NavChild, NavItem, Radius, Sidebar, ThemeId,
+    ToastQueue, app_footer, breadcrumb, font, page_shell, radius, sidebar, title_bar,
     toast_viewport,
 };
 use iced::{Element, Length, Subscription, Task, Theme};
@@ -4742,7 +4742,7 @@ fn screen_label(screen: &Screen) -> &'static str {
     }
 }
 
-fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> SidebarV2<'a, Message> {
+fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Sidebar<'a, Message> {
     let is_home = matches!(app.screen, Screen::Home);
     let is_actions = matches!(app.screen, Screen::Actions | Screen::ActionEditor(_));
     let is_queues = matches!(app.screen, Screen::Queues);
@@ -4890,7 +4890,7 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> SidebarV2<'a, M
         },
     ];
 
-    SidebarV2 {
+    Sidebar {
         items,
         bottom_items,
     }
@@ -4996,7 +4996,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         palette,
     );
 
-    let sidebar = sidebar_v2(palette, nav_items_for(app, palette));
+    let sidebar = sidebar(palette, nav_items_for(app, palette));
 
     let screen_content: Element<'_, Message> = match &app.screen {
         Screen::Home => home_view(app, palette),
@@ -6340,7 +6340,7 @@ mod tests {
     }
 
     #[test]
-    fn view_home_renders_with_v2_chrome() {
+    fn view_home_renders() {
         let mut app = App::default();
         let _ = update(&mut app, Message::Navigate(Screen::Home));
         app.home.actions_count = Some(12);
@@ -6351,14 +6351,14 @@ mod tests {
     }
 
     #[test]
-    fn view_live_chat_renders_with_v2_chrome() {
+    fn view_live_chat_renders() {
         let mut app = App::default();
         let _ = update(&mut app, Message::Navigate(Screen::LiveChat));
         let _ = view(&app);
     }
 
     #[test]
-    fn view_coming_soon_screen_renders_with_v2_chrome() {
+    fn view_coming_soon_screen_renders() {
         let mut app = App::default();
         let _ = update(&mut app, Message::Navigate(Screen::Viewers));
         let _ = view(&app);

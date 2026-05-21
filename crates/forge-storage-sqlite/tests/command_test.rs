@@ -28,6 +28,7 @@ async fn insert_action(backend: &SqliteBackend) -> ActionId {
         enabled: true,
         concurrent: false,
         bypass_pause: false,
+        execution_mode: forge_types::ExecutionMode::Sequential,
         description: None,
         sub_actions: vec![],
     };

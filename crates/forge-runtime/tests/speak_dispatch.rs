@@ -54,6 +54,7 @@ async fn make_action_with_speak(dp: &Arc<dyn DataProvider>) -> ActionId {
         enabled: true,
         concurrent: false,
         bypass_pause: false,
+        execution_mode: forge_types::ExecutionMode::Sequential,
         description: None,
         sub_actions: vec![SubActionSpec::Speak {
             text: "Hello from test".to_owned(),
@@ -235,6 +236,7 @@ async fn voice_override_forwarded_to_dispatcher() {
         enabled: true,
         concurrent: false,
         bypass_pause: false,
+        execution_mode: forge_types::ExecutionMode::Sequential,
         description: None,
         sub_actions: vec![SubActionSpec::Speak {
             text: "override test".to_owned(),

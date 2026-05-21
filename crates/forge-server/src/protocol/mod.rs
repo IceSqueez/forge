@@ -1090,6 +1090,7 @@ mod tests {
             enabled: true,
             concurrent: false,
             bypass_pause: false,
+            execution_mode: forge_types::ExecutionMode::Sequential,
             description: Some("A test action".to_string()),
             sub_actions: vec![SubActionSpec::Log {
                 level: LogLevel::Info,

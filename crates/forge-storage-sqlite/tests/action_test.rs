@@ -30,6 +30,7 @@ fn make_action(name: &str, queue_id: QueueId) -> Action {
         enabled: true,
         concurrent: false,
         bypass_pause: false,
+        execution_mode: forge_types::ExecutionMode::Sequential,
         description: None,
         sub_actions: vec![],
     }

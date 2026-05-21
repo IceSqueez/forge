@@ -33,6 +33,9 @@ pub struct ActionDetail {
     pub action: Action,
     pub triggers: Vec<Trigger>,
     pub commands: Vec<Command>,
+    /// Rolling average duration (ms) per sub-action index across recent executions.
+    /// `None` at an index means no telemetry yet recorded for that step.
+    pub sub_action_avg_ms: Vec<Option<u64>>,
 }
 
 pub struct AddActionForm {
@@ -43,6 +46,7 @@ pub struct AddActionForm {
     pub enabled: bool,
     pub concurrent: bool,
     pub bypass_pause: bool,
+    pub random_pick: bool,
     pub queue_options: Vec<(QueueId, String)>,
     pub selected_queue_name: Option<String>,
     pub error: Option<String>,
@@ -59,6 +63,7 @@ impl AddActionForm {
             enabled: true,
             concurrent: false,
             bypass_pause: false,
+            random_pick: false,
             queue_options: vec![],
             selected_queue_name: None,
             error: None,
@@ -109,6 +114,7 @@ pub enum AddActionMsg {
     EnabledToggled(bool),
     ConcurrentToggled(bool),
     BypassPauseToggled(bool),
+    RandomPickToggled(bool),
     Cancel,
     Submit,
     Saved(Result<ActionId, String>),
@@ -591,15 +597,40 @@ pub async fn load_action_detail(
         })?;
     let triggers = dp.trigger_repo().list_for_action(id).await?;
     let all_commands = dp.command_repo().list().await?;
-    let commands = all_commands
+    let commands: Vec<_> = all_commands
         .into_iter()
         .filter(|c| c.action_id == id)
         .collect();
+
+    let recent = dp.history_repo().recent_for_action(id, 20).await?;
+    let sub_action_avg_ms = compute_sub_action_averages(&recent, action.sub_actions.len());
+
     Ok(ActionDetail {
         action,
         triggers,
         commands,
+        sub_action_avg_ms,
     })
+}
+
+fn compute_sub_action_averages(
+    history: &[forge_types::ExecutionContext],
+    sub_action_count: usize,
+) -> Vec<Option<u64>> {
+    let mut sums: Vec<u64> = vec![0; sub_action_count];
+    let mut counts: Vec<u64> = vec![0; sub_action_count];
+    for ctx in history {
+        for t in &ctx.telemetry {
+            if t.index < sub_action_count {
+                sums[t.index] += t.duration_ms;
+                counts[t.index] += 1;
+            }
+        }
+    }
+    sums.iter()
+        .zip(counts.iter())
+        .map(|(s, c)| if *c > 0 { Some(s / c) } else { None })
+        .collect()
 }
 
 pub async fn save_sub_action(
@@ -818,6 +849,7 @@ mod tests {
             enabled: true,
             concurrent: false,
             bypass_pause: false,
+            execution_mode: forge_types::ExecutionMode::Sequential,
             description: None,
             sub_actions: vec![],
         }

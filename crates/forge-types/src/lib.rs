@@ -9,7 +9,7 @@ pub mod token;
 pub mod trigger;
 pub mod variant;
 
-pub use action::Action;
+pub use action::{Action, ExecutionMode};
 pub use command::{Command, CommandPermission};
 pub use execution::{
     ArgStack, ExecutionContext, ExecutionMetadata, ExecutionOutcome, SubActionOutcome,

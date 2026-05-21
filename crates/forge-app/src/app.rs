@@ -143,6 +143,7 @@ pub struct App {
     pub twitch_panel: crate::twitch_panel::TwitchPanelState,
     pub twitch_flow: Option<crate::twitch_panel::TwitchFlowHandle>,
     pub twitch_login: Option<String>,
+    pub twitch_token_expires: Option<std::time::SystemTime>,
     pub twitch_reauth_required: bool,
     pub obs_panel: crate::obs_panel::ObsPanelState,
     pub soundboard: SoundboardState,
@@ -203,6 +204,7 @@ impl App {
             twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
             twitch_flow: None,
             twitch_login: None,
+            twitch_token_expires: None,
             twitch_reauth_required: false,
             obs_panel: crate::obs_panel::ObsPanelState::default(),
             soundboard: SoundboardState::new(),
@@ -265,6 +267,7 @@ impl Default for App {
             twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
             twitch_flow: None,
             twitch_login: None,
+            twitch_token_expires: None,
             twitch_reauth_required: false,
             obs_panel: crate::obs_panel::ObsPanelState::default(),
             soundboard: SoundboardState::new(),
@@ -587,6 +590,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                     quick_actions,
                 ));
                 app.twitch_chat_handle = Some(handle);
+                app.twitch_token_expires = bundle.expires_at;
                 if let Some(l) = login {
                     app.twitch_login = Some(l);
                 }
@@ -1267,6 +1271,26 @@ fn handle_actions_msg(app: &mut App, sub: ActionsMsg) -> Task<Message> {
             tracing::warn!(error = %e, "duplicate action failed");
             Task::none()
         }
+        ActionsMsg::DeleteTrigger(trigger_id, action_id) => {
+            let dp = Arc::clone(&app.backend);
+            Task::perform(
+                async move {
+                    dp.trigger_repo()
+                        .delete(trigger_id)
+                        .await
+                        .map(|_| action_id)
+                        .map_err(|e| e.to_string())
+                },
+                |r| Message::Actions(ActionsMsg::TriggerDeleted(r)),
+            )
+        }
+        ActionsMsg::TriggerDeleted(Ok(action_id)) => {
+            Task::done(Message::Actions(ActionsMsg::ActionSelected(action_id)))
+        }
+        ActionsMsg::TriggerDeleted(Err(e)) => {
+            tracing::warn!(error = %e, "delete trigger failed");
+            Task::none()
+        }
         ActionsMsg::OpenAddActionModal => {
             Task::done(Message::AddAction(AddActionMsg::OpenRequested))
         }
@@ -1362,6 +1386,12 @@ fn handle_add_action_msg(app: &mut App, sub: AddActionMsg) -> Task<Message> {
             }
             Task::none()
         }
+        AddActionMsg::RandomPickToggled(v) => {
+            if let Some(f) = app.actions.add_action_modal.as_mut() {
+                f.random_pick = v;
+            }
+            Task::none()
+        }
         AddActionMsg::Cancel => {
             app.actions.add_action_modal = None;
             Task::none()
@@ -1388,6 +1418,11 @@ fn handle_add_action_msg(app: &mut App, sub: AddActionMsg) -> Task<Message> {
                 enabled: form.enabled,
                 concurrent: form.concurrent,
                 bypass_pause: form.bypass_pause,
+                execution_mode: if form.random_pick {
+                    forge_types::ExecutionMode::RandomPick
+                } else {
+                    forge_types::ExecutionMode::Sequential
+                },
                 description: if form.description.trim().is_empty() {
                     None
                 } else {
@@ -1882,11 +1917,19 @@ pub async fn load_twitch_credential(
         .ok_or_else(|| "missing user_id in twitch credential bundle".to_owned())?
         .to_owned();
     let login = bundle["login"].as_str().unwrap_or_default().to_owned();
+    let expires_at = bundle["expires_at_unix"].as_i64().and_then(|secs| {
+        if secs <= 0 {
+            None
+        } else {
+            Some(std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs as u64))
+        }
+    });
     Ok(Some(crate::message::TwitchBootBundle {
         access_token,
         client_id,
         user_id,
         login,
+        expires_at,
     }))
 }
 
@@ -2822,6 +2865,7 @@ pub(crate) fn status_pill_for(
 
 fn twitch_platform_card<'a>(
     handle: Option<&'a TwitchChatHandle>,
+    token_expires: Option<std::time::SystemTime>,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let state = handle.map_or(ChatConnectionState::Disconnected, |h| h.connection_state());
@@ -2836,6 +2880,10 @@ fn twitch_platform_card<'a>(
     })
     .size(11.5)
     .color(palette.text_muted);
+
+    let expiry_text = iced::widget::text(format_token_expiry(token_expires))
+        .size(11.0)
+        .color(palette.text_faint);
 
     let reconnect_btn = forge_widgets::primary_button(
         "Reconnect",
@@ -2854,9 +2902,33 @@ fn twitch_platform_card<'a>(
     .spacing(8);
 
     forge_widgets::card(
-        [header_row.into(), state_text.into(), reconnect_btn],
+        [
+            header_row.into(),
+            state_text.into(),
+            expiry_text.into(),
+            reconnect_btn,
+        ],
         palette,
     )
+}
+
+fn format_token_expiry(expires_at: Option<std::time::SystemTime>) -> String {
+    let Some(exp) = expires_at else {
+        return "Token: never expires".to_owned();
+    };
+    match exp.duration_since(std::time::SystemTime::now()) {
+        Ok(d) => {
+            let total_secs = d.as_secs();
+            let hours = total_secs / 3600;
+            let mins = (total_secs % 3600) / 60;
+            if hours > 0 {
+                format!("Token: {hours}h {mins}m")
+            } else {
+                format!("Token: {mins}m")
+            }
+        }
+        Err(_) => "Token: expired".to_owned(),
+    }
 }
 
 fn coming_platform_card<'a>(
@@ -2887,11 +2959,12 @@ fn coming_platform_card<'a>(
 
 fn settings_platforms_pane<'a>(
     twitch_handle: Option<&'a TwitchChatHandle>,
+    twitch_token_expires: Option<std::time::SystemTime>,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let header = forge_widgets::section_header("PLATFORMS", None, palette);
 
-    let twitch_card = twitch_platform_card(twitch_handle, palette);
+    let twitch_card = twitch_platform_card(twitch_handle, twitch_token_expires, palette);
     let youtube_card =
         coming_platform_card("YouTube", "Available in beta-1 — see roadmap", palette);
     let kick_card = coming_platform_card("Kick", "Available in beta-2 — see roadmap", palette);
@@ -2919,6 +2992,7 @@ fn nav_group_header<'a>(label: &'a str, palette: &'a ForgePalette) -> Element<'a
 fn settings_view<'a>(
     section: &'a SettingsSection,
     twitch_handle: Option<&'a TwitchChatHandle>,
+    twitch_token_expires: Option<std::time::SystemTime>,
     ws: &'a crate::settings_websocket::SettingsWebSocketState,
     server: &'a ServerScreenState,
     audio: &'a SettingsAudioState,
@@ -2972,7 +3046,9 @@ fn settings_view<'a>(
     let pane: Element<'a, Message> = match section {
         SettingsSection::Diagnostics => settings_diagnostics_pane(palette),
         SettingsSection::Audio => settings_audio_view(audio, palette),
-        SettingsSection::Platforms => settings_platforms_pane(twitch_handle, palette),
+        SettingsSection::Platforms => {
+            settings_platforms_pane(twitch_handle, twitch_token_expires, palette)
+        }
         SettingsSection::WebSocket => {
             settings_websocket_view(ws, &server.bearer_token, server.token_revealed, palette)
         }
@@ -3714,6 +3790,16 @@ fn add_action_modal_view<'a>(
         },
     );
 
+    let random_pick_toggle = forge_widgets::toggle(
+        palette,
+        ToggleProps {
+            label: "Random pick",
+            description: "Run ONE random sub-action per trigger instead of all.",
+            value: form.random_pick,
+            on_toggle: Message::AddAction(AddActionMsg::RandomPickToggled(!form.random_pick)),
+        },
+    );
+
     let behavior_header = forge_widgets::section_header("BEHAVIOR", None, palette);
 
     let mut body_col = column![
@@ -3724,6 +3810,7 @@ fn add_action_modal_view<'a>(
         enabled_toggle,
         concurrent_toggle,
         bypass_toggle,
+        random_pick_toggle,
     ]
     .spacing(14);
 
@@ -4901,6 +4988,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Screen::Settings(section) => settings_view(
             section,
             app.twitch_chat_handle.as_ref(),
+            app.twitch_token_expires,
             &app.settings_websocket,
             &app.server_screen,
             &app.settings_audio,
@@ -5521,6 +5609,7 @@ mod tests {
             twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
             twitch_flow: None,
             twitch_login: None,
+            twitch_token_expires: None,
             twitch_reauth_required: false,
             obs_panel: crate::obs_panel::ObsPanelState::default(),
             soundboard: SoundboardState::new(),
@@ -5614,10 +5703,12 @@ mod tests {
             enabled: true,
             concurrent: false,
             bypass_pause: false,
+            execution_mode: forge_types::ExecutionMode::Sequential,
             description: None,
             sub_actions: vec![],
         };
         let detail = crate::actions::ActionDetail {
+            sub_action_avg_ms: vec![],
             action,
             triggers: vec![],
             commands: vec![],
@@ -5653,10 +5744,12 @@ mod tests {
             enabled: true,
             concurrent: false,
             bypass_pause: false,
+            execution_mode: forge_types::ExecutionMode::Sequential,
             description: None,
             sub_actions: vec![],
         };
         app.actions.detail = Some(crate::actions::ActionDetail {
+            sub_action_avg_ms: vec![],
             action,
             triggers: vec![],
             commands: vec![],
@@ -5814,6 +5907,7 @@ mod tests {
             twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
             twitch_flow: None,
             twitch_login: None,
+            twitch_token_expires: None,
             twitch_reauth_required: false,
             obs_panel: crate::obs_panel::ObsPanelState::default(),
             soundboard: SoundboardState::new(),

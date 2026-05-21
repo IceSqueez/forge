@@ -2,6 +2,15 @@ use crate::ids::{ActionId, QueueId};
 use crate::sub_action::SubActionSpec;
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutionMode {
+    #[default]
+    Sequential,
+    /// Picks ONE sub-action at random per trigger fire instead of running all.
+    RandomPick,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Action {
     pub id: ActionId,
@@ -11,6 +20,8 @@ pub struct Action {
     pub enabled: bool,
     pub concurrent: bool,
     pub bypass_pause: bool,
+    #[serde(default)]
+    pub execution_mode: ExecutionMode,
     pub description: Option<String>,
     pub sub_actions: Vec<SubActionSpec>,
 }
@@ -30,6 +41,7 @@ mod tests {
             enabled: true,
             concurrent: false,
             bypass_pause: false,
+            execution_mode: ExecutionMode::Sequential,
             description: Some("Sends a greeting".to_string()),
             sub_actions: vec![
                 SubActionSpec::SendChat {

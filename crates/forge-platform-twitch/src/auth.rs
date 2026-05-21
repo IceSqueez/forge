@@ -55,6 +55,8 @@ pub struct TwitchAuthBundle {
     pub access_token: OAuthToken,
     pub user_info: UserInfo,
     pub client_id: String,
+    /// Absolute expiry time. `None` if the upstream token never expires.
+    pub expires_at: Option<std::time::SystemTime>,
 }
 
 fn build_scopes() -> Vec<Scope> {
@@ -116,13 +118,22 @@ impl TwitchAuthFlow {
             })?;
 
         let user_info = fetch_user_info_from_token(&user_token, &self.helix).await?;
+        let expires_at = expires_at_from_token(&user_token);
 
         Ok(TwitchAuthBundle {
             access_token: OAuthToken::new(user_token.access_token.secret().to_owned()),
             user_info,
             client_id: self.client_id.clone(),
+            expires_at,
         })
     }
+}
+
+fn expires_at_from_token(token: &UserToken) -> Option<std::time::SystemTime> {
+    if token.never_expires() {
+        return None;
+    }
+    Some(std::time::SystemTime::now() + token.expires_in())
 }
 
 async fn fetch_user_info_from_token(

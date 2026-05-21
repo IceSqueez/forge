@@ -48,6 +48,7 @@ async fn dataprovider_action_repo_accessor_is_reachable() {
         enabled: true,
         concurrent: false,
         bypass_pause: false,
+        execution_mode: forge_types::ExecutionMode::Sequential,
         description: None,
         sub_actions: vec![],
     };

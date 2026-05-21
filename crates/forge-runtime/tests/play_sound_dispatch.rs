@@ -68,6 +68,7 @@ async fn make_action_with_play_sound(dp: &Arc<dyn DataProvider>) -> (ActionId, Q
         enabled: true,
         concurrent: false,
         bypass_pause: false,
+        execution_mode: forge_types::ExecutionMode::Sequential,
         description: None,
         sub_actions: vec![SubActionSpec::PlaySound {
             clip_id: ClipId::new(),
@@ -220,6 +221,7 @@ async fn play_sound_with_log_subaction_demonstrates_mixed_outcome() {
         enabled: true,
         concurrent: false,
         bypass_pause: false,
+        execution_mode: forge_types::ExecutionMode::Sequential,
         description: None,
         sub_actions: vec![
             SubActionSpec::PlaySound {

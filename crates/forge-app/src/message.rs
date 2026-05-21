@@ -29,6 +29,7 @@ pub struct TwitchBootBundle {
     pub client_id: String,
     pub user_id: String,
     pub login: String,
+    pub expires_at: Option<std::time::SystemTime>,
 }
 
 pub struct ObsClientRef(pub(crate) Arc<ObsClient>);
@@ -104,6 +105,8 @@ pub enum ActionsMsg {
     ActionDeleted(Result<(), String>),
     DuplicateAction(ActionId),
     ActionDuplicated(Result<ActionId, String>),
+    DeleteTrigger(forge_types::TriggerId, ActionId),
+    TriggerDeleted(Result<ActionId, String>),
     OpenAddActionModal,
     OpenAddTriggerModal(ActionId),
     SearchChanged(String),

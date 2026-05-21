@@ -61,6 +61,7 @@ pub async fn wait_for_auth(
         access_token,
         user_info,
         client_id,
+        expires_at,
     } = {
         let mut guard = flow.lock().await;
         guard
@@ -69,10 +70,16 @@ pub async fn wait_for_auth(
             .map_err(|e| e.to_string())?
     };
 
+    let expires_at_unix: Option<i64> = expires_at.and_then(|t| {
+        t.duration_since(std::time::UNIX_EPOCH)
+            .ok()
+            .map(|d| d.as_secs() as i64)
+    });
     let bundle = serde_json::json!({
         "access_token": access_token.expose(),
         "user_id": user_info.id,
         "login": user_info.login,
+        "expires_at_unix": expires_at_unix,
     });
     credentials
         .store(

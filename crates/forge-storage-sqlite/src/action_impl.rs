@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use forge_storage::{ActionRepo, StorageError};
-use forge_types::{Action, ActionId, QueueId, SubActionSpec};
+use forge_types::{Action, ActionId, ExecutionMode, QueueId, SubActionSpec};
 use serde_json;
 
 use crate::error::SqliteStorageError;
@@ -20,7 +20,22 @@ type ActionRow = (
     i64,
     String,
     String,
+    String,
 );
+
+fn parse_execution_mode(s: &str) -> ExecutionMode {
+    match s {
+        "random_pick" => ExecutionMode::RandomPick,
+        _ => ExecutionMode::Sequential,
+    }
+}
+
+fn encode_execution_mode(m: ExecutionMode) -> &'static str {
+    match m {
+        ExecutionMode::Sequential => "sequential",
+        ExecutionMode::RandomPick => "random_pick",
+    }
+}
 
 fn decode_row(row: ActionRow) -> Result<Action, SqliteStorageError> {
     let (
@@ -33,6 +48,7 @@ fn decode_row(row: ActionRow) -> Result<Action, SqliteStorageError> {
         bypass_pause,
         description,
         sub_actions_json,
+        execution_mode_str,
     ) = row;
     let id: ActionId = parse_id(&id_str, "action")?;
     let queue_id: QueueId = parse_id(&queue_id_str, "queue")?;
@@ -51,6 +67,7 @@ fn decode_row(row: ActionRow) -> Result<Action, SqliteStorageError> {
         enabled: enabled != 0,
         concurrent: concurrent != 0,
         bypass_pause: bypass_pause != 0,
+        execution_mode: parse_execution_mode(&execution_mode_str),
         description: if description.is_empty() {
             None
         } else {
@@ -74,7 +91,7 @@ impl SqliteActionRepo {
 impl ActionRepo for SqliteActionRepo {
     async fn list(&self) -> Result<Vec<Action>, StorageError> {
         let rows: Vec<ActionRow> = sqlx::query_as(
-            "SELECT id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions
+            "SELECT id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions, execution_mode
              FROM actions ORDER BY name",
         )
         .fetch_all(&self.pool)
@@ -89,7 +106,7 @@ impl ActionRepo for SqliteActionRepo {
     async fn get(&self, id: ActionId) -> Result<Option<Action>, StorageError> {
         let id_str = id.to_string();
         let row: Option<ActionRow> = sqlx::query_as(
-            "SELECT id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions
+            "SELECT id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions, execution_mode
              FROM actions WHERE id = ?",
         )
         .bind(&id_str)
@@ -111,19 +128,21 @@ impl ActionRepo for SqliteActionRepo {
         let enabled: i64 = if action.enabled { 1 } else { 0 };
         let concurrent: i64 = if action.concurrent { 1 } else { 0 };
         let bypass_pause: i64 = if action.bypass_pause { 1 } else { 0 };
+        let execution_mode = encode_execution_mode(action.execution_mode);
 
         sqlx::query(
-            "INSERT INTO actions (id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "INSERT INTO actions (id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions, execution_mode)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
-                 name         = excluded.name,
-                 group_name   = excluded.group_name,
-                 queue_id     = excluded.queue_id,
-                 enabled      = excluded.enabled,
-                 concurrent   = excluded.concurrent,
-                 bypass_pause = excluded.bypass_pause,
-                 description  = excluded.description,
-                 sub_actions  = excluded.sub_actions",
+                 name           = excluded.name,
+                 group_name     = excluded.group_name,
+                 queue_id       = excluded.queue_id,
+                 enabled        = excluded.enabled,
+                 concurrent     = excluded.concurrent,
+                 bypass_pause   = excluded.bypass_pause,
+                 description    = excluded.description,
+                 sub_actions    = excluded.sub_actions,
+                 execution_mode = excluded.execution_mode",
         )
         .bind(&id_str)
         .bind(&action.name)
@@ -134,6 +153,7 @@ impl ActionRepo for SqliteActionRepo {
         .bind(bypass_pause)
         .bind(&description)
         .bind(&sub_actions_json)
+        .bind(execution_mode)
         .execute(&self.pool)
         .await
         .map_err(SqliteStorageError::Sqlx)?;
@@ -155,7 +175,7 @@ impl ActionRepo for SqliteActionRepo {
     async fn list_by_group(&self, group: Option<&str>) -> Result<Vec<Action>, StorageError> {
         let group_val = group.unwrap_or("");
         let rows: Vec<ActionRow> = sqlx::query_as(
-            "SELECT id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions
+            "SELECT id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions, execution_mode
              FROM actions WHERE group_name = ? ORDER BY name",
         )
         .bind(group_val)

@@ -101,6 +101,7 @@ async fn spawn_pipeline() -> PipelineFixture {
         enabled: true,
         concurrent: false,
         bypass_pause: false,
+        execution_mode: forge_types::ExecutionMode::Sequential,
         description: None,
         sub_actions: vec![SubActionSpec::Log {
             level: LogLevel::Info,

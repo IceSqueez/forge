@@ -351,12 +351,45 @@ fn detail_pane<'a>(
             .spacing(1)
             .into();
 
+            let trigger_id = trigger.id;
+            let action_id_local = action_id;
+            let p_btn = p;
+            let delete_btn = iced::widget::button(
+                text("Delete")
+                    .size(11.0)
+                    .color(p.random)
+                    .font(forge_widgets::font(forge_widgets::FontRole::Monospace)),
+            )
+            .padding([2u16, 8u16])
+            .on_press(Message::Actions(ActionsMsg::DeleteTrigger(
+                trigger_id,
+                action_id_local,
+            )))
+            .style(move |_t, status| iced::widget::button::Style {
+                background: if matches!(status, iced::widget::button::Status::Hovered) {
+                    Some(iced::Background::Color(iced::Color {
+                        a: 0.08,
+                        ..p_btn.random
+                    }))
+                } else {
+                    None
+                },
+                text_color: p_btn.random,
+                border: iced::Border {
+                    color: iced::Color::TRANSPARENT,
+                    width: 0.0,
+                    radius: 4.0.into(),
+                },
+                shadow: iced::Shadow::default(),
+                snap: false,
+            });
+
             let dots = text(ICON_DOTS_VERTICAL.to_string())
                 .size(14.0)
                 .color(p.text_faint)
                 .font(BOOTSTRAP_FONT);
 
-            let trigger_row: Element<'_, Message> = row![icon_box, info_col, dots]
+            let trigger_row: Element<'_, Message> = row![icon_box, info_col, delete_btn, dots]
                 .spacing(10)
                 .align_y(Alignment::Center)
                 .into();
@@ -424,6 +457,11 @@ fn detail_pane<'a>(
         let is_last = step_num == total;
         let (icon_name, title, details) = sub_action_summary(spec);
         let icon_char = forge_widgets::icons::bootstrap_icon_for(icon_name);
+        let avg_ms_label = detail
+            .sub_action_avg_ms
+            .get(i)
+            .and_then(|v| *v)
+            .map(|ms| format!("{ms} ms avg"));
 
         let circle_label = text(step_num.to_string())
             .size(11.0)
@@ -469,10 +507,24 @@ fn detail_pane<'a>(
 
         let title_el = text(title).size(12.5).color(p.text_primary);
 
-        let title_row: Element<'_, Message> = row![icon_el, title_el]
-            .spacing(8)
-            .align_y(Alignment::Center)
-            .into();
+        let timing_el: Element<'_, Message> = match avg_ms_label {
+            Some(label) => text(label)
+                .size(10.5)
+                .color(p.text_faint)
+                .font(forge_widgets::font(forge_widgets::FontRole::Monospace))
+                .into(),
+            None => iced::widget::Space::new().width(Length::Shrink).into(),
+        };
+
+        let title_row: Element<'_, Message> = row![
+            icon_el,
+            title_el,
+            iced::widget::Space::new().width(Length::Fill),
+            timing_el,
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center)
+        .into();
 
         let details_el = text(details).size(11.0).color(p.text_muted).font(mono);
 

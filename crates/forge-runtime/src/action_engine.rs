@@ -170,11 +170,23 @@ impl ActionEngine {
         let start_event_id = start_event.id;
         self.bus.publish(start_event);
 
+        let pick: Vec<forge_types::SubActionSpec> = if matches!(
+            action.execution_mode,
+            forge_types::ExecutionMode::RandomPick
+        ) && !action.sub_actions.is_empty()
+        {
+            use rand::RngExt;
+            let idx = rand::rng().random_range(0..action.sub_actions.len());
+            vec![action.sub_actions[idx].clone()]
+        } else {
+            action.sub_actions.clone()
+        };
+
         if action.concurrent {
-            self.run_concurrent(&action.sub_actions, &arg_stack, &mut ctx, start_event_id)
+            self.run_concurrent(&pick, &arg_stack, &mut ctx, start_event_id)
                 .await;
         } else {
-            self.run_sequential(&action.sub_actions, &arg_stack, &mut ctx, start_event_id)
+            self.run_sequential(&pick, &arg_stack, &mut ctx, start_event_id)
                 .await;
         }
 
@@ -414,6 +426,7 @@ mod tests {
             enabled: true,
             concurrent,
             bypass_pause: false,
+            execution_mode: forge_types::ExecutionMode::Sequential,
             description: None,
             sub_actions: vec![SubActionSpec::Log {
                 level: LogLevel::Info,
@@ -670,6 +683,7 @@ mod tests {
             enabled: true,
             concurrent: false,
             bypass_pause: false,
+            execution_mode: forge_types::ExecutionMode::Sequential,
             description: None,
             sub_actions: vec![SubActionSpec::SetGlobal {
                 name: "counter".to_string(),
@@ -740,6 +754,7 @@ mod tests {
             enabled: true,
             concurrent: false,
             bypass_pause: false,
+            execution_mode: forge_types::ExecutionMode::Sequential,
             description: None,
             sub_actions: vec![SubActionSpec::IncrementGlobal {
                 name: "hits".to_string(),
@@ -811,6 +826,7 @@ mod tests {
             enabled: true,
             concurrent: false,
             bypass_pause: false,
+            execution_mode: forge_types::ExecutionMode::Sequential,
             description: None,
             sub_actions: vec![SubActionSpec::DeleteGlobal {
                 name: "temp_key".to_string(),
@@ -898,6 +914,7 @@ mod tests {
             enabled: true,
             concurrent: false,
             bypass_pause: false,
+            execution_mode: forge_types::ExecutionMode::Sequential,
             description: None,
             sub_actions: vec![run_script],
         };

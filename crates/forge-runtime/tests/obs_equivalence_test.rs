@@ -166,6 +166,7 @@ async fn set_scene_trigger_path_and_quick_action_path_both_call_obs_sink() {
         enabled: true,
         concurrent: false,
         bypass_pause: false,
+        execution_mode: forge_types::ExecutionMode::Sequential,
         description: None,
         sub_actions: vec![SubActionSpec::ObsSetScene {
             scene_name: "Main".to_owned(),
@@ -266,6 +267,7 @@ async fn both_paths_emit_subaction_run_with_obs_set_scene_kind() {
         enabled: true,
         concurrent: false,
         bypass_pause: false,
+        execution_mode: forge_types::ExecutionMode::Sequential,
         description: None,
         sub_actions: vec![SubActionSpec::ObsSetScene {
             scene_name: "BRB".to_owned(),
@@ -336,6 +338,7 @@ async fn obs_scene_changed_event_from_real_emitter_triggers_evaluator() {
         enabled: true,
         concurrent: false,
         bypass_pause: false,
+        execution_mode: forge_types::ExecutionMode::Sequential,
         description: None,
         sub_actions: vec![SubActionSpec::Log {
             level: LogLevel::Info,

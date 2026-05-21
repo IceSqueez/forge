@@ -42,6 +42,7 @@ async fn full_action_pipeline_emits_causation_chain() {
         enabled: true,
         concurrent: false,
         bypass_pause: false,
+        execution_mode: forge_types::ExecutionMode::Sequential,
         description: None,
         sub_actions: vec![SubActionSpec::SendChat {
             message: "Hello %user%, you said %args%".into(),

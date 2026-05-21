@@ -1,3 +1,5 @@
+mod actor;
+
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -49,6 +51,10 @@ pub enum SpeakCommand {
     Pause,
     Resume,
     Replay,
+    /// Sent by `forge-audio` when the VoiceGate mic threshold is crossed.
+    VoiceGateActivated,
+    /// Sent by `forge-audio` when the VoiceGate mic level drops below threshold.
+    VoiceGateDeactivated,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -127,7 +133,7 @@ pub struct QueueDeps {
     pub registry: Arc<TtsRegistry>,
     pub resolver: Arc<std::sync::RwLock<VoiceAliasResolver>>,
     pub pipeline: Arc<forge_tts_pipeline::PipelineConfig>,
-    pub audio_sink: Box<dyn forge_audio::AudioSink>,
+    pub audio_sink: Arc<dyn forge_audio::AudioSink>,
     pub event_bus: Arc<dyn forge_events::EventPublisher>,
 }
 
@@ -147,6 +153,14 @@ impl SpeakQueueHandle {
             .blocking_send(cmd)
             .map_err(|_| SpeakError::ActorGone)
     }
+
+    pub async fn notify_voicegate_active(&self) -> Result<(), SpeakError> {
+        self.send(SpeakCommand::VoiceGateActivated).await
+    }
+
+    pub async fn notify_voicegate_inactive(&self) -> Result<(), SpeakError> {
+        self.send(SpeakCommand::VoiceGateDeactivated).await
+    }
 }
 
 /// Receive end for the speak queue event broadcast.
@@ -162,20 +176,20 @@ impl SpeakEventStream {
 ///
 /// Returns a `SpeakQueueHandle` for command dispatch and a `SpeakEventStream`
 /// for UI subscriptions.
-pub fn spawn(_config: QueueConfig, _deps: QueueDeps) -> (SpeakQueueHandle, SpeakEventStream) {
-    let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::channel::<SpeakCommand>(256);
+pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEventStream) {
+    let (cmd_tx, cmd_rx) = tokio::sync::mpsc::channel::<SpeakCommand>(256);
     let (event_tx, event_rx) = tokio::sync::broadcast::channel::<SpeakEvent>(256);
 
+    let event_tx_clone = event_tx.clone();
     tokio::spawn(async move {
-        while cmd_rx.recv().await.is_some() {}
-        drop(event_tx);
+        actor::run_actor(config, deps, cmd_rx, event_tx_clone).await;
     });
 
     (SpeakQueueHandle { tx: cmd_tx }, SpeakEventStream(event_rx))
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 

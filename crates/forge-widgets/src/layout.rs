@@ -30,12 +30,10 @@ fn logo_box<'a, Msg: 'a>(palette: &ForgePalette) -> Element<'a, Msg> {
     .into()
 }
 
-pub fn title_bar<'a, Msg: 'a>(profile_name: &str, palette: &'a ForgePalette) -> Element<'a, Msg> {
+pub fn title_bar<'a, Msg: 'a>(palette: &'a ForgePalette) -> Element<'a, Msg> {
     let shell = palette.shell;
     let border_color = palette.border_regular;
     let text_primary = palette.text_primary;
-    let text_muted = palette.text_muted;
-    let text_faint = palette.text_faint;
 
     let logo = logo_box(palette);
     let forge_label = text("Forge")
@@ -45,15 +43,8 @@ pub fn title_bar<'a, Msg: 'a>(profile_name: &str, palette: &'a ForgePalette) -> 
             weight: iced::font::Weight::Medium,
             ..iced::Font::DEFAULT
         });
-    let sep = text(" · ")
-        .size(FONT_BODY)
-        .color(text_faint)
-        .font(font(FontRole::Monospace));
-    let profile = text(profile_name.to_owned())
-        .size(FONT_BODY)
-        .color(text_muted);
 
-    let content = row![logo, forge_label, sep, profile]
+    let content = row![logo, forge_label]
         .spacing(6)
         .align_y(iced::Alignment::Center)
         .padding([0, 14]);
@@ -207,7 +198,7 @@ mod tests {
 
     #[test]
     fn title_bar_compiles() {
-        let _: Element<'_, ()> = title_bar("main", &CATPPUCCIN_MOCHA);
+        let _: Element<'_, ()> = title_bar(&CATPPUCCIN_MOCHA);
     }
 
     #[test]

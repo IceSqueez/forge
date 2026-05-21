@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use forge_speak_queue::SpeakEvent;
 use forge_types::ClipId;
 
 use forge_events::Event;
@@ -223,6 +224,56 @@ pub enum SoundboardMsg {
 }
 
 #[derive(Debug, Clone)]
+pub enum TtsDashMsg {
+    SpeakEventReceived(SpeakEvent),
+    PauseQueue,
+    SkipCurrent,
+    StopAll,
+    VolumeChanged(f32),
+    TestInputChanged(String),
+    SpeakTest,
+    CommandResult(Result<(), String>),
+}
+
+#[derive(Debug, Clone)]
+pub enum TtsEnginesMsg {
+    SelectEngine(String),
+}
+
+#[derive(Debug, Clone)]
+pub enum VoiceAliasesMsg {
+    SearchChanged(String),
+    StrategyChanged(crate::voice_aliases::AssignmentStrategyChoice),
+}
+
+#[derive(Debug, Clone)]
+pub enum TtsFiltersMsg {
+    PreviewInputChanged(String),
+    BlocklistModeChanged(crate::tts_filters::BlocklistModeChoice),
+    AddRuleClicked,
+}
+
+#[derive(Debug, Clone)]
+pub enum TtsTriggersMsg {
+    CommandEnabledToggled(bool),
+    ChannelPointsEnabledToggled(bool),
+    BitsEnabledToggled(bool),
+    SubMessagesEnabledToggled(bool),
+    ReadUsernameToggled(bool),
+    SpeakEmotesToggled(bool),
+    BitsSkipLineToggled(bool),
+}
+
+#[derive(Debug, Clone)]
+pub enum TtsMsg {
+    Dashboard(TtsDashMsg),
+    Engines(TtsEnginesMsg),
+    Aliases(VoiceAliasesMsg),
+    Filters(TtsFiltersMsg),
+    Triggers(TtsTriggersMsg),
+}
+
+#[derive(Debug, Clone)]
 pub enum Message {
     Navigate(Screen),
     Sidebar(SidebarMsg),
@@ -258,5 +309,6 @@ pub enum Message {
     ObsPanel(crate::obs_panel::ObsPanelMsg),
     Soundboard(SoundboardMsg),
     SettingsAudio(SettingsAudioMsg),
+    Tts(TtsMsg),
     Noop,
 }

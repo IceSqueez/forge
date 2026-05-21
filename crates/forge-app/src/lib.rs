@@ -17,7 +17,12 @@ pub mod settings_websocket;
 pub mod soundboard;
 pub mod stream_apps;
 pub mod test_trigger;
+pub mod tts_dashboard;
+pub mod tts_engines;
+pub mod tts_filters;
+pub mod tts_triggers;
 pub mod twitch_panel;
+pub mod voice_aliases;
 
 pub use actions::{
     ActionDetail, ActionSummary, ActionsGroup, ActionsState, AddActionForm, AddActionMsg,
@@ -39,7 +44,8 @@ pub use live_chat::{ChatFilter, LiveChatState};
 pub use message::{
     ActionsMsg, EditorMode, GlobalsFilter, GlobalsLoadData, GlobalsMsg, HubMsg, HubStatsData,
     IntegrationDetailMsg, Message, ObsClientRef, PlatformId, SettingsAudioMsg, SettingsMsg,
-    SidebarMsg, SoundboardMsg, VariantEditorMsg,
+    SidebarMsg, SoundboardMsg, TtsDashMsg, TtsEnginesMsg, TtsFiltersMsg, TtsMsg, TtsTriggersMsg,
+    VariantEditorMsg, VoiceAliasesMsg,
 };
 pub use screen::{Screen, SettingsSection, TtsSection};
 pub use script_editor::{

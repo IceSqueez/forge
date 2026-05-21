@@ -477,6 +477,68 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 tracing::warn!(error = %e, "platform reconnect failed");
                 Task::none()
             }
+            SettingsMsg::DbVacuumRequested => {
+                let dp = Arc::clone(&app.backend) as Arc<dyn DataProvider>;
+                Task::perform(
+                    async move {
+                        let tmp_target = std::env::temp_dir().join("forge_vacuum.db");
+                        dp.export(&tmp_target)
+                            .await
+                            .map(|()| tmp_target.metadata().map(|m| m.len()).unwrap_or(0))
+                            .map_err(|e| e.to_string())
+                    },
+                    |r| Message::Settings(SettingsMsg::DbVacuumDone(r)),
+                )
+            }
+            SettingsMsg::DbVacuumDone(result) => {
+                match result {
+                    Ok(bytes) => tracing::info!(bytes, "DB vacuum exported snapshot"),
+                    Err(e) => tracing::warn!(error = %e, "DB vacuum failed"),
+                }
+                Task::none()
+            }
+            SettingsMsg::DbBackupRequested => {
+                let dp = Arc::clone(&app.backend) as Arc<dyn DataProvider>;
+                Task::perform(
+                    async move {
+                        let stamp = time::OffsetDateTime::now_utc().unix_timestamp();
+                        let path = forge_platform_core::paths::data_dir()
+                            .join(format!("forge-backup-{stamp}.db"));
+                        dp.export(&path)
+                            .await
+                            .map(|()| path.display().to_string())
+                            .map_err(|e| e.to_string())
+                    },
+                    |r| Message::Settings(SettingsMsg::DbBackupDone(r)),
+                )
+            }
+            SettingsMsg::DbBackupDone(result) => {
+                match result {
+                    Ok(path) => tracing::info!(path = %path, "DB backup created"),
+                    Err(e) => tracing::warn!(error = %e, "DB backup failed"),
+                }
+                Task::none()
+            }
+            SettingsMsg::OpenLogDirectoryRequested => {
+                let log_dir = forge_platform_core::paths::data_dir().join("logs");
+                Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(move || {
+                            open::that(&log_dir).map_err(|e| e.to_string())
+                        })
+                        .await
+                        .map_err(|e| e.to_string())
+                        .and_then(|r| r)
+                    },
+                    |r| Message::Settings(SettingsMsg::OpenLogDirectoryResult(r)),
+                )
+            }
+            SettingsMsg::OpenLogDirectoryResult(result) => {
+                if let Err(e) = result {
+                    tracing::warn!(error = %e, "failed to open log directory");
+                }
+                Task::none()
+            }
         },
         Message::Hub(sub) => handle_hub_msg(app, sub),
         Message::Globals(sub) => handle_globals_msg(app, sub),
@@ -2530,6 +2592,8 @@ fn settings_section_button<'a>(
 
 fn settings_diagnostics_pane(palette: &ForgePalette) -> Element<'static, Message> {
     let version = env!("CARGO_PKG_VERSION");
+    let log_dir = forge_platform_core::paths::data_dir().join("logs");
+
     let metrics = iced::widget::row![
         forge_widgets::metric_card("Build", version, None::<&str>, palette),
         forge_widgets::metric_card("Rust", "1.95.0", None::<&str>, palette),
@@ -2537,7 +2601,138 @@ fn settings_diagnostics_pane(palette: &ForgePalette) -> Element<'static, Message
     ]
     .spacing(12);
 
-    iced::widget::container(metrics)
+    let log_path_label = iced::widget::text(format!("Log directory: {}", log_dir.display()))
+        .size(11.5)
+        .color(palette.text_muted);
+    let open_logs_btn = forge_widgets::primary_button(
+        "Open log directory",
+        Message::Settings(SettingsMsg::OpenLogDirectoryRequested),
+        palette,
+    );
+    let level_label =
+        iced::widget::text("Log level: controlled via RUST_LOG env var (e.g. info, debug, trace).")
+            .size(11.5)
+            .color(palette.text_muted);
+
+    let logs_card = forge_widgets::card(
+        [
+            iced::widget::text("Logs & diagnostics")
+                .size(14.0)
+                .color(palette.text_primary)
+                .into(),
+            log_path_label.into(),
+            open_logs_btn,
+            level_label.into(),
+        ],
+        palette,
+    );
+
+    iced::widget::container(iced::widget::column![metrics, logs_card].spacing(16))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(16)
+        .into()
+}
+
+fn settings_storage_pane(palette: &ForgePalette) -> Element<'static, Message> {
+    let db_path = forge_platform_core::paths::data_dir().join("forge.db");
+    let path_label = iced::widget::text(format!("Database: {}", db_path.display()))
+        .size(11.5)
+        .color(palette.text_muted);
+
+    let vacuum_btn = forge_widgets::primary_button(
+        "Vacuum (export compact snapshot)",
+        Message::Settings(SettingsMsg::DbVacuumRequested),
+        palette,
+    );
+    let vacuum_hint = iced::widget::text(
+        "Writes a vacuumed snapshot to a temp file; useful before manual backups.",
+    )
+    .size(11.0)
+    .color(palette.text_faint);
+
+    let backup_btn = forge_widgets::primary_button(
+        "Backup now",
+        Message::Settings(SettingsMsg::DbBackupRequested),
+        palette,
+    );
+    let backup_hint = iced::widget::text("Creates a timestamped DB copy in the data directory.")
+        .size(11.0)
+        .color(palette.text_faint);
+
+    let storage_card = forge_widgets::card(
+        [
+            iced::widget::text("Storage & backups")
+                .size(14.0)
+                .color(palette.text_primary)
+                .into(),
+            path_label.into(),
+            vacuum_btn,
+            vacuum_hint.into(),
+            backup_btn,
+            backup_hint.into(),
+        ],
+        palette,
+    );
+
+    iced::widget::container(storage_card)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(16)
+        .into()
+}
+
+fn settings_queues_pane(palette: &ForgePalette) -> Element<'static, Message> {
+    let thread_hint = format!(
+        "Tokio threadpool: {} worker(s) (auto-sized to system).",
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(0)
+    );
+    let card = forge_widgets::card(
+        [
+            iced::widget::text("Queues & threading")
+                .size(14.0)
+                .color(palette.text_primary)
+                .into(),
+            iced::widget::text(thread_hint)
+                .size(11.5)
+                .color(palette.text_muted)
+                .into(),
+            iced::widget::text(
+                "Per-queue concurrency limits and blocking flags are managed on the Queues screen.",
+            )
+            .size(11.0)
+            .color(palette.text_faint)
+            .into(),
+        ],
+        palette,
+    );
+    iced::widget::container(card)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(16)
+        .into()
+}
+
+fn settings_notifications_pane(palette: &ForgePalette) -> Element<'static, Message> {
+    let card = forge_widgets::card(
+        [
+            iced::widget::text("Notifications")
+                .size(14.0)
+                .color(palette.text_primary)
+                .into(),
+            iced::widget::text(
+                "Per-event-type toast customisation lands in beta-2. Errors and connection \
+                 changes always surface in the status bar.",
+            )
+            .size(11.5)
+            .color(palette.text_muted)
+            .into(),
+        ],
+        palette,
+    );
+    iced::widget::container(card)
         .width(Length::Fill)
         .height(Length::Fill)
         .padding(16)
@@ -2715,6 +2910,9 @@ fn settings_view<'a>(
         SettingsSection::WebSocket => {
             settings_websocket_view(ws, &server.bearer_token, server.token_revealed, palette)
         }
+        SettingsSection::Storage => settings_storage_pane(palette),
+        SettingsSection::Queues => settings_queues_pane(palette),
+        SettingsSection::Notifications => settings_notifications_pane(palette),
         other => {
             let label = format!("Settings · {other:?}");
             iced::widget::container(forge_widgets::empty_state(

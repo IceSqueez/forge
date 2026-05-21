@@ -41,7 +41,7 @@ pub use message::{
     IntegrationDetailMsg, Message, ObsClientRef, PlatformId, SettingsAudioMsg, SettingsMsg,
     SidebarMsg, SoundboardMsg, VariantEditorMsg,
 };
-pub use screen::{Screen, SettingsSection};
+pub use screen::{Screen, SettingsSection, TtsSection};
 pub use script_editor::{
     OpenScript, RunModalForm, RunModalInputField, RunResult, ScriptEditorMsg, ScriptEditorState,
     ScriptListEntry, handle_script_editor_msg, script_editor_view,

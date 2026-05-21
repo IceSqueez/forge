@@ -21,7 +21,8 @@ use forge_storage_sqlite::SqliteBackend;
 use forge_types::{Action, ActionId};
 use forge_widgets::icons::{
     ICON_ACTIVITY, ICON_BROADCAST, ICON_CHAT, ICON_DOWNLOAD, ICON_GEAR, ICON_GRID, ICON_HASH,
-    ICON_HOME, ICON_LIGHTNING, ICON_MUSIC_NOTE, ICON_PEOPLE, ICON_PLUS, ICON_TERMINAL,
+    ICON_HOME, ICON_LIGHTNING, ICON_MUSIC_NOTE, ICON_PEOPLE, ICON_PLUS, ICON_SPEAKER,
+    ICON_TERMINAL,
 };
 use forge_widgets::tokens::{
     FONT_BODY, FONT_BODY_LG, FONT_BODY_MD, FONT_BODY_SM, FONT_CAPS, FONT_CAPS_SM, FONT_PAGE_TITLE,
@@ -68,7 +69,7 @@ use crate::settings_websocket::{
 use crate::soundboard::{SoundboardState, handle_soundboard_msg, soundboard_view};
 use crate::stream_apps::view as stream_apps_view;
 use crate::test_trigger::synthesize_test_event;
-use crate::{Message, Screen, SettingsSection};
+use crate::{Message, Screen, SettingsSection, TtsSection};
 
 pub struct SidebarExpandState {
     pub actions_queues: bool,
@@ -4104,7 +4105,7 @@ fn breadcrumb_icon_for(screen: &Screen) -> char {
         Screen::Globals => ICON_HASH,
         Screen::Viewers => ICON_PEOPLE,
         Screen::Settings(_) => ICON_GEAR,
-        Screen::Tts => ICON_PEOPLE,
+        Screen::Tts(_) => ICON_SPEAKER,
         Screen::Soundboard => ICON_MUSIC_NOTE,
         Screen::ScriptEditor => ICON_TERMINAL,
         Screen::Server | Screen::Logs => ICON_GEAR,
@@ -4127,7 +4128,7 @@ fn screen_label(screen: &Screen) -> &'static str {
         Screen::Globals => "Globals",
         Screen::Viewers => "Viewers",
         Screen::Settings(_) => "Settings",
-        Screen::Tts => "TTS",
+        Screen::Tts(_) => "TTS",
         Screen::Soundboard => "Soundboard",
         Screen::ScriptEditor => "Script editor",
         Screen::Server => "Server",
@@ -4148,6 +4149,7 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Vec<NavItem<'a,
     let is_event_feed = matches!(app.screen, Screen::EventFeed);
     let is_globals = matches!(app.screen, Screen::Globals);
     let is_soundboard = matches!(app.screen, Screen::Soundboard);
+    let is_tts = matches!(app.screen, Screen::Tts(_));
     let is_settings = matches!(app.screen, Screen::Settings(_));
 
     let twitch_target = Message::Navigate(Screen::IntegrationDetail(IntegrationId::new("twitch")));
@@ -4264,6 +4266,12 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Vec<NavItem<'a,
             label: "Soundboard",
             active: is_soundboard,
             on_press: Message::Navigate(Screen::Soundboard),
+        },
+        NavItem::Leaf {
+            icon: ICON_SPEAKER,
+            label: "Text-to-Speech",
+            active: is_tts,
+            on_press: Message::Navigate(Screen::Tts(TtsSection::Dashboard)),
         },
         NavItem::Divider,
         NavItem::Leaf {

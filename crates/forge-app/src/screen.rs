@@ -18,6 +18,15 @@ pub enum SettingsSection {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TtsSection {
+    Dashboard,
+    Engines,
+    Aliases,
+    Filters,
+    Triggers,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Screen {
     Home,
     LiveChat,
@@ -32,7 +41,7 @@ pub enum Screen {
     StreamApps,
     Integrations,
     IntegrationDetail(IntegrationId),
-    Tts,
+    Tts(TtsSection),
     Soundboard,
     ScriptEditor,
     Server,

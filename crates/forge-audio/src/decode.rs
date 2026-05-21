@@ -1,12 +1,12 @@
 use std::path::Path;
 
-use symphonia::core::audio::SampleBuffer;
-use symphonia::core::codecs::{CODEC_TYPE_NULL, DecoderOptions};
+use symphonia::core::codecs::audio::AudioDecoderOptions;
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::FormatOptions;
+use symphonia::core::formats::TrackType;
+use symphonia::core::formats::probe::Hint;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::Hint;
 
 use crate::error::AudioError;
 use crate::pcm::PcmBuffer;
@@ -20,47 +20,47 @@ pub fn decode_file(path: &Path) -> Result<PcmBuffer, AudioError> {
         hint.with_extension(ext);
     }
 
-    let probed = symphonia::default::get_probe()
-        .format(
+    let mut format = symphonia::default::get_probe()
+        .probe(
             &hint,
             mss,
-            &FormatOptions::default(),
-            &MetadataOptions::default(),
+            FormatOptions::default(),
+            MetadataOptions::default(),
         )
         .map_err(|e| AudioError::Decode(e.to_string()))?;
 
-    let mut format = probed.format;
-
     let track = format
-        .tracks()
-        .iter()
-        .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+        .default_track(TrackType::Audio)
         .ok_or_else(|| AudioError::Decode("no decodable audio track found".to_string()))?;
 
     let track_id = track.id;
-    let sample_rate = track
+    let codec_params = track
         .codec_params
+        .as_ref()
+        .ok_or_else(|| AudioError::Decode("track has no codec parameters".to_string()))?
+        .audio()
+        .ok_or_else(|| AudioError::Decode("track is not audio".to_string()))?;
+
+    let sample_rate = codec_params
         .sample_rate
         .ok_or_else(|| AudioError::Decode("track has no sample rate".to_string()))?;
-    let channels = track
-        .codec_params
+    let channels = codec_params
         .channels
+        .as_ref()
         .map(|c| c.count() as u16)
         .ok_or_else(|| AudioError::Decode("track has no channel info".to_string()))?;
 
     let mut decoder = symphonia::default::get_codecs()
-        .make(&track.codec_params, &DecoderOptions::default())
+        .make_audio_decoder(codec_params, &AudioDecoderOptions::default())
         .map_err(|e| AudioError::Decode(e.to_string()))?;
 
     let mut all_samples: Vec<i16> = Vec::new();
-    let mut sample_buf: Option<SampleBuffer<f32>> = None;
+    let mut interleaved_buf: Vec<f32> = Vec::new();
 
     loop {
         let packet = match format.next_packet() {
-            Ok(p) => p,
-            Err(SymphoniaError::IoError(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-                break;
-            }
+            Ok(Some(p)) => p,
+            Ok(None) => break,
             Err(SymphoniaError::ResetRequired) => {
                 decoder.reset();
                 continue;
@@ -68,21 +68,15 @@ pub fn decode_file(path: &Path) -> Result<PcmBuffer, AudioError> {
             Err(e) => return Err(AudioError::Decode(e.to_string())),
         };
 
-        if packet.track_id() != track_id {
+        if packet.track_id != track_id {
             continue;
         }
 
         match decoder.decode(&packet) {
             Ok(decoded) => {
-                let spec = *decoded.spec();
-                let capacity = decoded.capacity() as u64;
-
-                let buf =
-                    sample_buf.get_or_insert_with(|| SampleBuffer::<f32>::new(capacity, spec));
-
-                buf.copy_interleaved_ref(decoded);
-
-                for &s in buf.samples() {
+                interleaved_buf.clear();
+                decoded.copy_to_vec_interleaved(&mut interleaved_buf);
+                for &s in interleaved_buf.iter() {
                     all_samples.push((s.clamp(-1.0, 1.0) * 32767.0) as i16);
                 }
             }

@@ -1,11 +1,13 @@
 //! PCM format conversion: sample-rate resampling and channel count remixing.
 //!
-//! `FastFixedIn` is chosen over `SincFixedIn` because it processes the entire input
-//! as a single fixed-size chunk (no streaming latency) and is fast enough for
-//! pre-rendered soundboard clips. Quality difference is inaudible at >=44.1 kHz.
-//! Reference: <https://docs.rs/rubato/0.16/>
+//! Uses rubato's `Async` polynomial resampler (Septic degree) — processes the entire
+//! input as a single fixed-size chunk (no streaming latency) and is fast enough for
+//! pre-rendered soundboard clips. Quality difference vs sinc-based is inaudible at >=44.1 kHz.
+//! Reference: <https://docs.rs/rubato/3.0/>
 
-use rubato::{FastFixedIn, PolynomialDegree, Resampler};
+use rubato::audioadapter::Adapter;
+use rubato::audioadapter_buffers::direct::SequentialSliceOfVecs;
+use rubato::{Async, FixedAsync, PolynomialDegree, Resampler};
 
 use crate::error::AudioError;
 
@@ -31,26 +33,38 @@ pub fn resample(
     let waves_in: Vec<Vec<f32>> = (0..ch)
         .map(|c| {
             (0..frame_count)
-                .map(|f| src[f * ch + c] as f32 / 32768.0)
+                .map(|f| f32::from(src[f * ch + c]) / 32768.0)
                 .collect()
         })
         .collect();
 
-    let ratio = dst_rate as f64 / src_rate as f64;
+    let ratio = f64::from(dst_rate) / f64::from(src_rate);
 
-    let mut resampler =
-        FastFixedIn::<f32>::new(ratio, 2.0, PolynomialDegree::Septic, frame_count, ch)
-            .map_err(|e| AudioError::Resample(e.to_string()))?;
+    let mut resampler = Async::<f32>::new_poly(
+        ratio,
+        2.0,
+        PolynomialDegree::Septic,
+        frame_count,
+        ch,
+        FixedAsync::Input,
+    )
+    .map_err(|e| AudioError::Resample(e.to_string()))?;
 
-    let waves_out = resampler
-        .process(&waves_in, None)
+    let input_adapter = SequentialSliceOfVecs::new(waves_in.as_slice(), ch, frame_count)
         .map_err(|e| AudioError::Resample(e.to_string()))?;
 
-    let out_frames = waves_out[0].len();
+    let output = resampler
+        .process(&input_adapter, 0, None)
+        .map_err(|e| AudioError::Resample(e.to_string()))?;
+
+    let out_frames = output.frames();
     let mut out = Vec::with_capacity(out_frames * ch);
     for frame_idx in 0..out_frames {
-        for channel in &waves_out {
-            let s = channel[frame_idx].clamp(-1.0, 1.0);
+        for c in 0..ch {
+            let s = output
+                .read_sample(c, frame_idx)
+                .unwrap_or(0.0)
+                .clamp(-1.0, 1.0);
             out.push((s * 32767.0) as i16);
         }
     }

@@ -2186,6 +2186,7 @@ name = "forge-app"
 version = "0.1.0-alpha.9"
 dependencies = [
  "async-trait",
+ "forge-audio",
  "forge-events",
  "forge-obs",
  "forge-platform-core",
@@ -2193,6 +2194,7 @@ dependencies = [
  "forge-runtime",
  "forge-script",
  "forge-server",
+ "forge-soundboard",
  "forge-storage",
  "forge-storage-sqlite",
  "forge-types",

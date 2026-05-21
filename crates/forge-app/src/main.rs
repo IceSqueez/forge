@@ -7,7 +7,7 @@ use forge_app::app::{
     load_obs_and_connect, load_twitch_credential, subscription, theme_callback, update, view,
 };
 use forge_app::speak_bridge::SpeakBridge;
-use forge_audio::NullSink;
+use forge_audio::{CpalSink, DeviceId, NullSink};
 use forge_platform_core::paths;
 use forge_platform_twitch::{ChatSendBridge, ChatSendBridgeHandle};
 use forge_runtime::{
@@ -18,7 +18,8 @@ use forge_soundboard::{BusAudioEventSink, CpalSinkFactory, SoundboardPlayer};
 use forge_speak_queue::{QueueConfig, QueueDeps, SpeakQueueHandle};
 use forge_storage::{CredentialsRepo, DataProvider};
 use forge_storage_sqlite::SqliteBackend;
-use forge_tts_core::TtsRegistry;
+use forge_tts_core::{EngineId, TtsRegistry};
+use forge_tts_piper::{PiperEngine, PiperEngineFactory};
 use forge_voice::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults, VoiceAliasResolver};
 
 fn default_db_path() -> PathBuf {
@@ -105,8 +106,57 @@ struct RuntimeHandles {
     speak_queue: Arc<SpeakQueueHandle>,
 }
 
+fn find_piper_binary() -> Option<PathBuf> {
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent()
+    {
+        let bundled = dir.join("piper");
+        if bundled.exists() {
+            return Some(bundled);
+        }
+    }
+    std::env::var_os("PATH").and_then(|paths| {
+        std::env::split_paths(&paths)
+            .map(|p| p.join("piper"))
+            .find(|p| p.exists())
+    })
+}
+
+fn default_audio_device_id() -> Option<DeviceId> {
+    forge_audio::list_output_devices().ok().and_then(|devices| {
+        devices
+            .iter()
+            .find(|d| d.is_default)
+            .map(|d| d.id.clone())
+            .or_else(|| devices.first().map(|d| d.id.clone()))
+    })
+}
+
 fn spawn_speak_queue(bus: Arc<EventBus>) -> Arc<SpeakQueueHandle> {
-    let registry = Arc::new(TtsRegistry::new());
+    let mut registry = TtsRegistry::new();
+    if let Some(piper_binary) = find_piper_binary() {
+        let voices_dir = PiperEngine::voices_dir(&paths::data_dir());
+        if let Err(e) = std::fs::create_dir_all(&voices_dir) {
+            tracing::warn!(
+                path = %voices_dir.display(),
+                error = %e,
+                "failed to create piper voices dir"
+            );
+        }
+        registry.register(
+            EngineId("piper".into()),
+            Arc::new(PiperEngineFactory {
+                piper_binary: piper_binary.clone(),
+                voices_dir,
+                timeout: std::time::Duration::from_secs(30),
+            }),
+        );
+        tracing::info!(binary = %piper_binary.display(), "registered Piper TTS engine");
+    } else {
+        tracing::warn!("Piper binary not found in <exe_dir>/piper or PATH; TTS disabled");
+    }
+    let registry = Arc::new(registry);
+
     let resolver = Arc::new(std::sync::RwLock::new(VoiceAliasResolver::new(
         vec![],
         AssignmentStrategy::DeterministicByName,
@@ -117,7 +167,19 @@ fn spawn_speak_queue(bus: Arc<EventBus>) -> Arc<SpeakQueueHandle> {
         SynthesisDefaults::default(),
     )));
     let pipeline = Arc::new(forge_tts_pipeline::PipelineConfig::default());
-    let audio_sink: Arc<dyn forge_audio::AudioSink> = Arc::new(NullSink);
+
+    let audio_sink: Arc<dyn forge_audio::AudioSink> = match default_audio_device_id() {
+        Some(device_id) => {
+            let event_sink = Arc::new(forge_audio::NullAudioEventSink);
+            tracing::info!(device = %device_id.0, "speak queue audio sink ready");
+            Arc::new(CpalSink::new(device_id, None, None, event_sink))
+        }
+        None => {
+            tracing::warn!("no audio output device found; speak queue using NullSink");
+            Arc::new(NullSink)
+        }
+    };
+
     let deps = QueueDeps {
         registry,
         resolver,
@@ -150,21 +212,25 @@ fn spawn_runtime(backend: Arc<SqliteBackend>, bus: Arc<EventBus>) -> Option<Runt
         }
     };
 
-    let registry = Arc::new(ScriptRegistry::new());
+    let speak_queue = spawn_speak_queue(Arc::clone(&bus));
+    let speak_bridge_concrete = Arc::new(SpeakBridge::new(Arc::clone(&speak_queue)));
+    let speak_dispatcher: Arc<dyn forge_runtime::SpeakDispatcher> = speak_bridge_concrete.clone();
+    let speak_requester: Arc<dyn forge_script::SpeakRequester> = speak_bridge_concrete;
+
+    let mut registry_mut = ScriptRegistry::new();
+    registry_mut.set_speak_requester(speak_requester);
+    let registry = Arc::new(registry_mut);
     if let Err(e) = rt.block_on(registry.load_all(dp.as_ref())) {
         tracing::warn!("script registry load failed at boot: {e}");
     }
 
-    let speak_queue = spawn_speak_queue(Arc::clone(&bus));
-    let speak_bridge: Arc<dyn forge_runtime::SpeakDispatcher> =
-        Arc::new(SpeakBridge::new(Arc::clone(&speak_queue)));
     let engine = spawn_action_engine(
         Arc::clone(&bus),
         Arc::clone(&dp),
         Arc::clone(&registry),
         None,
         None,
-        Some(speak_bridge),
+        Some(speak_dispatcher),
     );
     let scheduler = QueueScheduler::spawn(engine.clone(), Arc::clone(&bus), queues);
     let parser = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), scheduler.clone());

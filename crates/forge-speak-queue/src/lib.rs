@@ -141,6 +141,7 @@ pub struct QueueDeps {
 #[derive(Clone)]
 pub struct SpeakQueueHandle {
     tx: tokio::sync::mpsc::Sender<SpeakCommand>,
+    event_tx: tokio::sync::broadcast::Sender<SpeakEvent>,
 }
 
 impl SpeakQueueHandle {
@@ -160,6 +161,15 @@ impl SpeakQueueHandle {
 
     pub async fn notify_voicegate_inactive(&self) -> Result<(), SpeakError> {
         self.send(SpeakCommand::VoiceGateDeactivated).await
+    }
+
+    /// Create a new broadcast receiver for `SpeakEvent`s.
+    ///
+    /// Each call returns an independent receiver starting from the next published
+    /// event. Callers may wrap this in `tokio_stream::wrappers::BroadcastStream`
+    /// to adapt it for use with `iced::Subscription`.
+    pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<SpeakEvent> {
+        self.event_tx.subscribe()
     }
 }
 
@@ -185,7 +195,13 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
         actor::run_actor(config, deps, cmd_rx, event_tx_clone).await;
     });
 
-    (SpeakQueueHandle { tx: cmd_tx }, SpeakEventStream(event_rx))
+    (
+        SpeakQueueHandle {
+            tx: cmd_tx,
+            event_tx,
+        },
+        SpeakEventStream(event_rx),
+    )
 }
 
 #[cfg(test)]
@@ -216,9 +232,29 @@ mod tests {
     #[tokio::test]
     async fn handle_send_returns_actor_gone_after_drop() {
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::channel::<SpeakCommand>(1);
+        let (event_tx, _event_rx) = tokio::sync::broadcast::channel::<SpeakEvent>(1);
         drop(cmd_rx);
-        let handle = SpeakQueueHandle { tx: cmd_tx };
+        let handle = SpeakQueueHandle {
+            tx: cmd_tx,
+            event_tx,
+        };
         let result = handle.send(SpeakCommand::Skip).await;
         assert!(matches!(result, Err(SpeakError::ActorGone)));
+    }
+
+    #[tokio::test]
+    async fn subscribe_returns_new_receiver() {
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel::<SpeakCommand>(1);
+        let (event_tx, _event_rx) = tokio::sync::broadcast::channel::<SpeakEvent>(8);
+        let handle = SpeakQueueHandle {
+            tx: cmd_tx,
+            event_tx: event_tx.clone(),
+        };
+        let mut sub = handle.subscribe();
+        event_tx
+            .send(SpeakEvent::Cleared)
+            .expect("send must succeed");
+        let received = sub.try_recv().expect("receiver must see the event");
+        assert!(matches!(received, SpeakEvent::Cleared));
     }
 }

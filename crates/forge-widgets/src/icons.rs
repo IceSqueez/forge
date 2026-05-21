@@ -45,6 +45,9 @@ pub const ICON_CIRCLE_DASHED: char = '\u{F2E6}';
 pub const ICON_LOADER: char = '\u{F116}';
 pub const ICON_X_CIRCLE: char = '\u{F62A}';
 pub const ICON_ROTATE_CCW: char = '\u{F131}';
+pub const ICON_STAR: char = '\u{F588}';
+pub const ICON_FLAG: char = '\u{F35F}';
+pub const ICON_SIDEBAR: char = '\u{F45C}';
 
 /// Maps an icon name (Tabler-style kebab-case) to its bundled Bootstrap-font
 /// codepoint. Returns `ICON_INFO_CIRCLE` for unknown names so missing icons
@@ -96,12 +99,14 @@ pub fn bootstrap_icon_for(name: &str) -> char {
         "circle-dashed" => ICON_CIRCLE_DASHED,
         "x-circle" => ICON_X_CIRCLE,
         "rotate-ccw" | "undo" | "arrow-counterclockwise" => ICON_ROTATE_CCW,
+        "star" | "star-fill" => ICON_STAR,
+        "flag" | "flag-fill" => ICON_FLAG,
+        "sidebar" | "layout-sidebar-right" | "layout-sidebar-right-collapse" => ICON_SIDEBAR,
         "device-desktop" | "layout" | "stack-2" | "record" => ICON_BROADCAST,
         "brand-twitch" | "twitch" | "brand-obs" | "obs" => ICON_BROADCAST,
         "rss" => ICON_ACTIVITY,
         "send" => ICON_CHEVRON_RIGHT,
-        "flag" => ICON_ALERT_TRIANGLE,
-        "edit" | "pencil" => ICON_INFO_CIRCLE,
+        "edit" | "pencil" | "flag-alert" => ICON_INFO_CIRCLE,
         _ => ICON_INFO_CIRCLE,
     }
 }

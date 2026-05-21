@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use forge_app::{
-    App, ChatFilter, EventFeedState, Message, Screen, ScriptEditorState, SidebarExpandState,
+    App, EventFeedState, Message, PlatformFilter, Screen, ScriptEditorState, SidebarExpandState,
     app::update,
 };
 use forge_events::{Event, EventSource};
@@ -86,6 +86,7 @@ fn make_twitch_chat_event(username: &str, message: &str) -> Event {
 #[test]
 fn chat_message_event_appends_to_log() {
     let mut app = test_app();
+    app.live_chat.chat_log.clear();
     let ev = make_twitch_chat_event("INTEGRATION_TEST_USERNAME", "INTEGRATION_TEST_MESSAGE_BODY");
     let _ = update(&mut app, Message::EventArrived(ev));
     assert_eq!(app.live_chat.chat_log.len(), 1);
@@ -100,6 +101,7 @@ fn chat_message_event_appends_to_log() {
 #[test]
 fn chat_log_trims_at_1000_entries() {
     let mut app = test_app();
+    app.live_chat.chat_log.clear();
     let limit = forge_app::live_chat::CHAT_LOG_MAX;
     for i in 0..=limit {
         let ev = make_twitch_chat_event(
@@ -116,6 +118,7 @@ fn chat_log_trims_at_1000_entries() {
 #[test]
 fn non_chat_events_are_ignored() {
     let mut app = test_app();
+    app.live_chat.chat_log.clear();
     let ev = Event::new(
         EventSource::Twitch,
         "platform.connected",
@@ -128,8 +131,20 @@ fn non_chat_events_are_ignored() {
 #[test]
 fn filter_changed_updates_filter_state() {
     let mut app = test_app();
-    let _ = update(&mut app, Message::ChatFilterChanged(ChatFilter::HideBots));
-    assert_eq!(app.live_chat.chat_filter, ChatFilter::HideBots);
+    let _ = update(&mut app, Message::ChatToggleHideBots);
+    assert!(app.live_chat.chat_filter.hide_bots);
+    let _ = update(&mut app, Message::ChatToggleHideBots);
+    assert!(!app.live_chat.chat_filter.hide_bots);
+}
+
+#[test]
+fn platform_filter_changed_updates_state() {
+    let mut app = test_app();
+    let _ = update(
+        &mut app,
+        Message::ChatPlatformFilter(PlatformFilter::Twitch),
+    );
+    assert_eq!(app.live_chat.chat_filter.platform, PlatformFilter::Twitch);
 }
 
 #[test]

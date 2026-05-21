@@ -43,7 +43,7 @@ pub use globals_view::{
 pub use integration_detail::{
     IntegrationDetailState, handle_integration_detail_msg, health_subscription,
 };
-pub use live_chat::{ChatFilter, LiveChatState};
+pub use live_chat::{ChatFilters, LiveChatState, PlatformFilter};
 pub use message::{
     ActionsMsg, EditorMode, GlobalsFilter, GlobalsLoadData, GlobalsMsg, HomeMsg, HomeStatsData,
     IntegrationDetailMsg, Message, ObsClientRef, PlatformId, SettingsAudioMsg, SettingsMsg,

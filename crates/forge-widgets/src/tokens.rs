@@ -80,9 +80,9 @@ pub fn modal_width(s: ModalSize) -> f32 {
 pub const BORDER_THIN: f32 = 1.0;
 pub const BORDER_ACCENT: f32 = 1.0;
 
-pub const FONT_XS: f32 = 10.5;
-pub const FONT_SM: f32 = 12.0;
-pub const FONT_MD: f32 = 14.0;
+pub const FONT_XS: f32 = 12.0;
+pub const FONT_SM: f32 = 14.0;
+pub const FONT_MD: f32 = 16.0;
 pub const FONT_LG: f32 = 18.0;
 
 pub const FONT_BODY: f32 = 13.0;

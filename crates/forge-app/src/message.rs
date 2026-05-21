@@ -18,7 +18,7 @@ use time::OffsetDateTime;
 use crate::Screen;
 use crate::actions::{AddActionMsg, AddSubActionMsg, AddTriggerMsg, RemoveSubActionMsg};
 use crate::event_feed::EventFeedMsg;
-use crate::live_chat::ChatFilter;
+use crate::live_chat::PlatformFilter;
 use crate::queues_view::QueueSummary;
 use crate::script_editor::ScriptEditorMsg;
 use crate::server_screen::ServerScreenMsg;
@@ -324,7 +324,10 @@ pub enum Message {
     ChatInputChanged(String),
     ChatSubmit,
     ChatSent(Result<(), String>),
-    ChatFilterChanged(ChatFilter),
+    ChatPlatformFilter(PlatformFilter),
+    ChatToggleEventsOnly,
+    ChatToggleHideBots,
+    ChatToggleDrawer,
     ScriptEditor(ScriptEditorMsg),
     EventFeed(EventFeedMsg),
     Server(ServerScreenMsg),

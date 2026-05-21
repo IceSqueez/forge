@@ -459,8 +459,20 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             tracing::warn!(error = %e, "chat send failed");
             Task::none()
         }
-        Message::ChatFilterChanged(filter) => {
-            app.live_chat.chat_filter = filter;
+        Message::ChatPlatformFilter(platform) => {
+            app.live_chat.chat_filter.platform = platform;
+            Task::none()
+        }
+        Message::ChatToggleEventsOnly => {
+            app.live_chat.chat_filter.events_only = !app.live_chat.chat_filter.events_only;
+            Task::none()
+        }
+        Message::ChatToggleHideBots => {
+            app.live_chat.chat_filter.hide_bots = !app.live_chat.chat_filter.hide_bots;
+            Task::none()
+        }
+        Message::ChatToggleDrawer => {
+            app.live_chat.drawer_open = !app.live_chat.drawer_open;
             Task::none()
         }
         Message::Settings(sub) => match sub {

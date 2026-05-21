@@ -6,6 +6,8 @@ use forge_app::Screen;
 use forge_app::app::{
     load_obs_and_connect, load_twitch_credential, subscription, theme_callback, update, view,
 };
+use forge_app::speak_bridge::SpeakBridge;
+use forge_audio::NullSink;
 use forge_platform_core::paths;
 use forge_platform_twitch::{ChatSendBridge, ChatSendBridgeHandle};
 use forge_runtime::{
@@ -13,8 +15,11 @@ use forge_runtime::{
     QueueSchedulerHandle, ScriptRegistry, spawn_action_engine,
 };
 use forge_soundboard::{BusAudioEventSink, CpalSinkFactory, SoundboardPlayer};
+use forge_speak_queue::{QueueConfig, QueueDeps, SpeakQueueHandle};
 use forge_storage::{CredentialsRepo, DataProvider};
 use forge_storage_sqlite::SqliteBackend;
+use forge_tts_core::TtsRegistry;
+use forge_voice::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults, VoiceAliasResolver};
 
 fn default_db_path() -> PathBuf {
     paths::data_dir().join("forge.db")
@@ -97,6 +102,32 @@ struct RuntimeHandles {
     scheduler: QueueSchedulerHandle,
     parser: CommandParserHandle,
     chat_send_bridge: ChatSendBridgeHandle,
+    speak_queue: Arc<SpeakQueueHandle>,
+}
+
+fn spawn_speak_queue(bus: Arc<EventBus>) -> Arc<SpeakQueueHandle> {
+    let registry = Arc::new(TtsRegistry::new());
+    let resolver = Arc::new(std::sync::RwLock::new(VoiceAliasResolver::new(
+        vec![],
+        AssignmentStrategy::DeterministicByName,
+        IgnoreProfile {
+            excluded_voice_ids: vec![],
+            excluded_locales: vec![],
+        },
+        SynthesisDefaults::default(),
+    )));
+    let pipeline = Arc::new(forge_tts_pipeline::PipelineConfig::default());
+    let audio_sink: Arc<dyn forge_audio::AudioSink> = Arc::new(NullSink);
+    let deps = QueueDeps {
+        registry,
+        resolver,
+        pipeline,
+        audio_sink,
+        event_bus: bus as Arc<dyn forge_events::EventPublisher>,
+    };
+    let config = QueueConfig::default();
+    let (handle, _stream) = forge_speak_queue::spawn(config, deps);
+    Arc::new(handle)
 }
 
 #[allow(clippy::expect_used)]
@@ -124,13 +155,16 @@ fn spawn_runtime(backend: Arc<SqliteBackend>, bus: Arc<EventBus>) -> Option<Runt
         tracing::warn!("script registry load failed at boot: {e}");
     }
 
+    let speak_queue = spawn_speak_queue(Arc::clone(&bus));
+    let speak_bridge: Arc<dyn forge_runtime::SpeakDispatcher> =
+        Arc::new(SpeakBridge::new(Arc::clone(&speak_queue)));
     let engine = spawn_action_engine(
         Arc::clone(&bus),
         Arc::clone(&dp),
         Arc::clone(&registry),
         None,
         None,
-        None,
+        Some(speak_bridge),
     );
     let scheduler = QueueScheduler::spawn(engine.clone(), Arc::clone(&bus), queues);
     let parser = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), scheduler.clone());
@@ -145,6 +179,7 @@ fn spawn_runtime(backend: Arc<SqliteBackend>, bus: Arc<EventBus>) -> Option<Runt
         scheduler,
         parser,
         chat_send_bridge,
+        speak_queue,
     })
 }
 
@@ -168,9 +203,16 @@ fn main() -> iced::Result {
     let bus = EventBus::new(event_log);
     EventBus::spawn_flush_task(Arc::clone(&bus));
 
-    let (script_registry, action_engine, scheduler, command_parser, chat_send_bridge) =
+    let (script_registry, action_engine, scheduler, command_parser, chat_send_bridge, speak_queue) =
         if storage_offline {
-            (Arc::new(ScriptRegistry::new()), None, None, None, None)
+            (
+                Arc::new(ScriptRegistry::new()),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
         } else {
             match spawn_runtime(Arc::clone(&backend), Arc::clone(&bus)) {
                 Some(h) => (
@@ -179,8 +221,16 @@ fn main() -> iced::Result {
                     Some(h.scheduler),
                     Some(h.parser),
                     Some(h.chat_send_bridge),
+                    Some(h.speak_queue),
                 ),
-                None => (Arc::new(ScriptRegistry::new()), None, None, None, None),
+                None => (
+                    Arc::new(ScriptRegistry::new()),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                ),
             }
         };
 
@@ -211,6 +261,7 @@ fn main() -> iced::Result {
         );
         app.bus = Arc::clone(&bus_boot);
         app.chat_send_bridge = chat_send_bridge.clone();
+        app.speak_queue = speak_queue.clone();
         let obs_task = iced::Task::perform(
             load_obs_and_connect(Arc::clone(&backend_boot), Arc::clone(&bus_boot)),
             forge_app::Message::ObsBootResult,

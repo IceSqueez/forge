@@ -2198,6 +2198,7 @@ dependencies = [
  "forge-speak-queue",
  "forge-storage",
  "forge-storage-sqlite",
+ "forge-tts-core",
  "forge-tts-pipeline",
  "forge-types",
  "forge-voice",

@@ -147,6 +147,7 @@ pub struct App {
     pub soundboard: SoundboardState,
     pub sound_player: Option<Arc<SoundboardPlayer>>,
     pub settings_audio: SettingsAudioState,
+    pub speak_queue: Option<Arc<forge_speak_queue::SpeakQueueHandle>>,
     pub tts_dashboard: TtsDashState,
     pub tts_engines: TtsEnginesState,
     pub tts_aliases: VoiceAliasesState,
@@ -205,6 +206,7 @@ impl App {
             soundboard: SoundboardState::new(),
             sound_player,
             settings_audio: SettingsAudioState::new(),
+            speak_queue: None,
             tts_dashboard: TtsDashState::new(),
             tts_engines: TtsEnginesState::new(),
             tts_aliases: VoiceAliasesState::new(),
@@ -265,6 +267,7 @@ impl Default for App {
             soundboard: SoundboardState::new(),
             sound_player: None,
             settings_audio: SettingsAudioState::new(),
+            speak_queue: None,
             tts_dashboard: TtsDashState::new(),
             tts_engines: TtsEnginesState::new(),
             tts_aliases: VoiceAliasesState::new(),
@@ -4717,15 +4720,61 @@ pub fn subscription(app: &App) -> Subscription<Message> {
         Subscription::none()
     };
 
+    struct SpeakEventRecipe(Arc<forge_speak_queue::SpeakQueueHandle>);
+
+    impl Recipe for SpeakEventRecipe {
+        type Output = Message;
+
+        fn hash(&self, state: &mut Hasher) {
+            use std::hash::Hash as _;
+            "speak-event-stream".hash(state);
+            (Arc::as_ptr(&self.0) as usize).hash(state);
+        }
+
+        fn stream(
+            self: Box<Self>,
+            _input: EventStream,
+        ) -> iced::futures::stream::BoxStream<'static, Self::Output> {
+            let mut rx = self.0.subscribe();
+            iced::stream::channel(
+                64,
+                |mut tx: iced::futures::channel::mpsc::Sender<Message>| async move {
+                    loop {
+                        match rx.recv().await {
+                            Ok(event) => {
+                                let _ =
+                                    tx.try_send(Message::Tts(crate::message::TtsMsg::Dashboard(
+                                        crate::message::TtsDashMsg::SpeakEventReceived(event),
+                                    )));
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                            Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                        }
+                    }
+                },
+            )
+            .boxed()
+        }
+    }
+
+    let tts_events = if matches!(app.screen, Screen::Tts(_))
+        && let Some(handle) = app.speak_queue.as_ref()
+    {
+        from_recipe(SpeakEventRecipe(Arc::clone(handle)))
+    } else {
+        Subscription::none()
+    };
+
     if let Some(state) = app.integration_detail.as_ref() {
         Subscription::batch([
             bus,
             health_subscription(state),
             server_tick,
             soundboard_keys,
+            tts_events,
         ])
     } else {
-        Subscription::batch([bus, server_tick, soundboard_keys])
+        Subscription::batch([bus, server_tick, soundboard_keys, tts_events])
     }
 }
 
@@ -5006,6 +5055,7 @@ mod tests {
             soundboard: SoundboardState::new(),
             sound_player: None,
             settings_audio: SettingsAudioState::new(),
+            speak_queue: None,
             tts_dashboard: TtsDashState::new(),
             tts_engines: TtsEnginesState::new(),
             tts_aliases: VoiceAliasesState::new(),
@@ -5297,6 +5347,7 @@ mod tests {
             soundboard: SoundboardState::new(),
             sound_player: None,
             settings_audio: SettingsAudioState::new(),
+            speak_queue: None,
             tts_dashboard: TtsDashState::new(),
             tts_engines: TtsEnginesState::new(),
             tts_aliases: VoiceAliasesState::new(),

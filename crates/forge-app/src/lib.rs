@@ -15,6 +15,7 @@ pub mod server_subsystem;
 pub mod settings_audio;
 pub mod settings_websocket;
 pub mod soundboard;
+pub mod speak_bridge;
 pub mod stream_apps;
 pub mod test_trigger;
 pub mod tts_dashboard;

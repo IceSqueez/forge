@@ -33,6 +33,7 @@ forge-server          = { path = "../forge-server" }
 forge-soundboard      = { path = "../forge-soundboard" }
 forge-speak-queue     = { path = "../forge-speak-queue" }
 forge-tts-core        = { path = "../forge-tts-core" }
+forge-tts-piper       = { path = "../forge-tts-piper" }
 forge-tts-pipeline    = { path = "../forge-tts-pipeline" }
 forge-voice           = { path = "../forge-voice" }
 forge-widgets        = { path = "../forge-widgets" }

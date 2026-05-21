@@ -203,7 +203,7 @@ fn row_chrome<'a, Msg: 'a>(
     body_bg: Color,
     palette: &ForgePalette,
 ) -> Element<'a, Msg> {
-    let _ = palette;
+    let sep_color = palette.border_regular;
     let stripe = container(iced::widget::Space::new().width(2).height(Length::Fill))
         .width(2)
         .height(Length::Fill)
@@ -227,7 +227,16 @@ fn row_chrome<'a, Msg: 'a>(
             ..container::Style::default()
         });
 
-    row![stripe, body].spacing(0).into()
+    let main = row![stripe, body].spacing(0);
+    let separator = container(iced::widget::Space::new().height(0.5).width(Length::Fill))
+        .height(0.5)
+        .width(Length::Fill)
+        .style(move |_theme: &iced::Theme| container::Style {
+            background: Some(Background::Color(sep_color)),
+            ..container::Style::default()
+        });
+
+    column![main, separator].spacing(0).into()
 }
 
 fn triggered_badge<'a, Msg: 'a>(action: &str, palette: &ForgePalette) -> Element<'a, Msg> {
@@ -255,19 +264,12 @@ fn triggered_badge<'a, Msg: 'a>(action: &str, palette: &ForgePalette) -> Element
     .into()
 }
 
-fn timestamp_cell<'a, Msg: 'a>(ts: &str, palette: &ForgePalette) -> Element<'a, Msg> {
-    container(
-        text(ts.to_owned())
-            .size(FONT_XS)
-            .color(palette.text_faint)
-            .font(font(FontRole::Monospace)),
-    )
-    .width(54)
-    .padding(Padding {
-        top: 2.0,
-        ..Padding::ZERO
-    })
-    .into()
+fn timestamp_top<'a, Msg: 'a>(ts: &str, palette: &ForgePalette) -> Element<'a, Msg> {
+    text(ts.to_owned())
+        .size(FONT_XS)
+        .color(palette.text_faint)
+        .font(font(FontRole::Monospace))
+        .into()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -280,48 +282,34 @@ pub fn chat_row_msg<'a, Msg: Clone + 'a>(
     username_color: Color,
     text_body: &str,
 ) -> Element<'a, Msg> {
-    let ts = timestamp_cell(timestamp, palette);
+    let ts_top = timestamp_top(timestamp, palette);
+    let p_badge = platform_badge(platform, palette);
 
-    let dot = container(platform_badge(platform, palette)).padding(Padding {
-        top: 2.0,
-        ..Padding::ZERO
-    });
+    let mut top_items: Vec<Element<'a, Msg>> = vec![ts_top, p_badge];
+    for &b in badges {
+        top_items.push(badge_pill::<Msg>(b, palette));
+    }
+    let top_row = row(top_items).spacing(6).align_y(iced::Alignment::Center);
 
-    let mut content_items: Vec<Element<'a, Msg>> = badges
-        .iter()
-        .map(|&b| badge_pill::<Msg>(b, palette))
-        .collect();
-
-    content_items.push(
+    let bottom_row = row![
         text(username.to_owned())
             .size(FONT_SM)
             .color(username_color)
-            .font(font(FontRole::Body))
-            .into(),
-    );
-    content_items.push(
+            .font(font(FontRole::Body)),
         text(": ")
             .size(FONT_SM)
             .color(palette.text_secondary)
-            .font(font(FontRole::Body))
-            .into(),
-    );
-    content_items.push(
+            .font(font(FontRole::Body)),
         text(text_body.to_owned())
             .size(FONT_SM)
             .color(palette.text_primary)
-            .font(font(FontRole::Body))
-            .into(),
-    );
+            .font(font(FontRole::Body)),
+    ]
+    .spacing(4)
+    .align_y(iced::Alignment::Center)
+    .wrap();
 
-    let content = row(content_items)
-        .spacing(4)
-        .align_y(iced::Alignment::Center)
-        .wrap();
-
-    let inner = row![ts, dot, container(content).width(Length::Fill)]
-        .spacing(8)
-        .align_y(iced::Alignment::Start);
+    let inner = column![top_row, bottom_row].spacing(2);
 
     row_chrome(
         inner.into(),
@@ -343,7 +331,7 @@ pub fn chat_row_sub<'a, Msg: Clone + 'a>(
     sub_message: Option<&str>,
     triggered_action: Option<&str>,
 ) -> Element<'a, Msg> {
-    let ts = timestamp_cell(timestamp, palette);
+    let ts_top = timestamp_top(timestamp, palette);
     let icon = money_event_icon(Icon::Star, palette.brand);
     let p_badge = platform_badge(platform, palette);
     let p = *palette;
@@ -387,15 +375,18 @@ pub fn chat_row_sub<'a, Msg: Clone + 'a>(
         );
     }
 
-    if let Some(action) = triggered_action {
-        body_col_items.push(triggered_badge(action, palette));
-    }
-
     let body_col = column(body_col_items).spacing(3).width(Length::Fill);
 
-    let inner = row![ts, p_badge, icon, body_col]
+    let mut top_items: Vec<Element<'a, Msg>> = vec![ts_top, p_badge];
+    if let Some(action) = triggered_action {
+        top_items.push(iced::widget::Space::new().width(Length::Fill).into());
+        top_items.push(triggered_badge(action, palette));
+    }
+    let top_row = row(top_items).spacing(6).align_y(iced::Alignment::Center);
+    let bottom_row = row![icon, body_col]
         .spacing(8)
         .align_y(iced::Alignment::Start);
+    let inner = column![top_row, bottom_row].spacing(2);
 
     row_chrome(inner.into(), p.brand, p.elevated, palette)
 }
@@ -409,7 +400,7 @@ pub fn chat_row_cheer<'a, Msg: Clone + 'a>(
     bits: u64,
     cheer_text: &str,
 ) -> Element<'a, Msg> {
-    let ts = timestamp_cell(timestamp, palette);
+    let ts_top = timestamp_top(timestamp, palette);
     let icon = money_event_icon(Icon::Bolt, palette.warning);
     let p_badge = platform_badge(platform, palette);
     let p = *palette;
@@ -442,9 +433,13 @@ pub fn chat_row_cheer<'a, Msg: Clone + 'a>(
 
     let body_col = column![first_row, msg_line].spacing(3).width(Length::Fill);
 
-    let inner = row![ts, p_badge, icon, body_col]
+    let top_row = row![ts_top, p_badge]
+        .spacing(6)
+        .align_y(iced::Alignment::Center);
+    let bottom_row = row![icon, body_col]
         .spacing(8)
         .align_y(iced::Alignment::Start);
+    let inner = column![top_row, bottom_row].spacing(2);
 
     row_chrome(inner.into(), p.warning, p.elevated, palette)
 }
@@ -457,7 +452,7 @@ pub fn chat_row_raid<'a, Msg: Clone + 'a>(
     viewers: u64,
     triggered_action: Option<&str>,
 ) -> Element<'a, Msg> {
-    let ts = timestamp_cell(timestamp, palette);
+    let ts_top = timestamp_top(timestamp, palette);
     let icon = money_event_icon(Icon::Flag, palette.random);
     let p_badge = platform_badge(platform, palette);
     let p = *palette;
@@ -483,17 +478,18 @@ pub fn chat_row_raid<'a, Msg: Clone + 'a>(
     .align_y(iced::Alignment::Center)
     .into();
 
-    let mut body_col_items: Vec<Element<'a, Msg>> = vec![first_row];
+    let body_col = column![first_row].spacing(3).width(Length::Fill);
 
+    let mut top_items: Vec<Element<'a, Msg>> = vec![ts_top, p_badge];
     if let Some(action) = triggered_action {
-        body_col_items.push(triggered_badge(action, palette));
+        top_items.push(iced::widget::Space::new().width(Length::Fill).into());
+        top_items.push(triggered_badge(action, palette));
     }
-
-    let body_col = column(body_col_items).spacing(3).width(Length::Fill);
-
-    let inner = row![ts, p_badge, icon, body_col]
+    let top_row = row(top_items).spacing(6).align_y(iced::Alignment::Center);
+    let bottom_row = row![icon, body_col]
         .spacing(8)
         .align_y(iced::Alignment::Start);
+    let inner = column![top_row, bottom_row].spacing(2);
 
     row_chrome(inner.into(), p.random, p.elevated, palette)
 }
@@ -510,32 +506,8 @@ pub fn chat_row_cmd<'a, Msg: Clone + 'a>(
     action_name: Option<&str>,
     action_duration_ms: Option<u64>,
 ) -> Element<'a, Msg> {
-    let ts = timestamp_cell(timestamp, palette);
-
-    let dot = container(platform_badge(platform, palette)).padding(Padding {
-        top: 2.0,
-        ..Padding::ZERO
-    });
-
-    let mut first_row_items: Vec<Element<'a, Msg>> = badges
-        .iter()
-        .map(|&b| badge_pill::<Msg>(b, palette))
-        .collect();
-
-    first_row_items.push(
-        text(username.to_owned())
-            .size(FONT_SM)
-            .color(username_color)
-            .font(font(FontRole::Body))
-            .into(),
-    );
-    first_row_items.push(
-        text(": ")
-            .size(FONT_SM)
-            .color(palette.text_secondary)
-            .font(font(FontRole::Body))
-            .into(),
-    );
+    let ts_top = timestamp_top(timestamp, palette);
+    let p_badge = platform_badge(platform, palette);
 
     let cmd_bg = Color {
         a: 0.25,
@@ -558,71 +530,39 @@ pub fn chat_row_cmd<'a, Msg: Clone + 'a>(
         ..container::Style::default()
     });
 
-    first_row_items.push(cmd_text.into());
+    let first_row = row![
+        text(username.to_owned())
+            .size(FONT_SM)
+            .color(username_color)
+            .font(font(FontRole::Body)),
+        text(": ")
+            .size(FONT_SM)
+            .color(palette.text_secondary)
+            .font(font(FontRole::Body)),
+        cmd_text,
+    ]
+    .spacing(4)
+    .align_y(iced::Alignment::Center);
 
-    let first_row = row(first_row_items)
-        .spacing(4)
-        .align_y(iced::Alignment::Center);
+    let outcome_badge: Option<Element<'a, Msg>> = match (action_name, action_duration_ms) {
+        (Some(name), Some(ms)) => Some(triggered_badge(&format!("{name} · {ms}ms"), palette)),
+        (Some(name), None) => Some(triggered_badge(name, palette)),
+        _ => None,
+    };
 
-    let mut body_col_items: Vec<Element<'a, Msg>> = vec![first_row.into()];
+    let body_col = column![first_row].spacing(3).width(Length::Fill);
 
-    if let (Some(name), Some(ms)) = (action_name, action_duration_ms) {
-        let outcome = format!("Action: {name} · ran in {ms}ms");
-        let outcome_bg = Color {
-            a: 0.18,
-            ..palette.success
-        };
-        body_col_items.push(
-            container(
-                text(outcome)
-                    .size(FONT_XS)
-                    .color(palette.success)
-                    .font(font(FontRole::Body)),
-            )
-            .padding([2, 8])
-            .style(move |_theme: &iced::Theme| container::Style {
-                background: Some(Background::Color(outcome_bg)),
-                border: Border {
-                    radius: radius(Radius::Sm).into(),
-                    color: Color::TRANSPARENT,
-                    width: 0.0,
-                },
-                ..container::Style::default()
-            })
-            .into(),
-        );
-    } else if let Some(name) = action_name {
-        let outcome = format!("Action: {name}");
-        let outcome_bg = Color {
-            a: 0.18,
-            ..palette.success
-        };
-        body_col_items.push(
-            container(
-                text(outcome)
-                    .size(FONT_XS)
-                    .color(palette.success)
-                    .font(font(FontRole::Body)),
-            )
-            .padding([2, 8])
-            .style(move |_theme: &iced::Theme| container::Style {
-                background: Some(Background::Color(outcome_bg)),
-                border: Border {
-                    radius: radius(Radius::Sm).into(),
-                    color: Color::TRANSPARENT,
-                    width: 0.0,
-                },
-                ..container::Style::default()
-            })
-            .into(),
-        );
+    let mut top_items: Vec<Element<'a, Msg>> = vec![ts_top, p_badge];
+    for &b in badges {
+        top_items.push(badge_pill::<Msg>(b, palette));
     }
+    if let Some(badge) = outcome_badge {
+        top_items.push(iced::widget::Space::new().width(Length::Fill).into());
+        top_items.push(badge);
+    }
+    let top_row = row(top_items).spacing(6).align_y(iced::Alignment::Center);
 
-    let body_col = column(body_col_items).spacing(3).width(Length::Fill);
-
-    let inner = row![ts, dot, body_col]
-        .spacing(8)
-        .align_y(iced::Alignment::Start);
+    let inner = column![top_row, body_col].spacing(2);
 
     row_chrome(
         inner.into(),

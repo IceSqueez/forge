@@ -16,7 +16,6 @@ pub enum Density {
     Spacious,
 }
 
-/// Design tokens (4 levels). Matches theme.css `--sp-xs/sm/md/lg`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Spacing {
     Xs,
@@ -36,7 +35,6 @@ impl Spacing {
     }
 }
 
-/// Returns spacing in logical pixels, density-adjusted and rounded to nearest integer.
 pub fn spacing(s: Spacing, d: Density) -> u16 {
     let multiplier = match d {
         Density::Compact => 0.85,
@@ -64,7 +62,6 @@ pub fn radius(r: Radius) -> f32 {
     }
 }
 
-/// Design tokens for modal viewport width. Matches theme.css `--modal-sm/md/lg`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModalSize {
     Sm,

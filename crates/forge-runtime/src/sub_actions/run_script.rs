@@ -45,6 +45,7 @@ pub(super) async fn run(
     let bus_arc: Arc<EventBus> = Arc::clone(bus);
     let publisher: Arc<dyn forge_events::EventPublisher> = bus_arc;
     let dp_for_api = Arc::clone(&dp);
+    let speak_requester = registry.speak_requester();
 
     let exec_event = Event::caused_by(
         EventSource::Rhai,
@@ -67,7 +68,10 @@ pub(super) async fn run(
         })?;
         let cfg = EngineConfig::default();
         let deadline = Instant::now() + Duration::from_millis(cfg.wall_time_ms);
-        let api = ForgeApi::new(publisher, dp_for_api, parent_event_id, deadline);
+        let mut api = ForgeApi::new(publisher, dp_for_api, parent_event_id, deadline);
+        if let Some(req) = speak_requester {
+            api = api.with_speak_requester(req);
+        }
         let engine = Engine::with_api(cfg, api);
         let mut scope = scope;
         engine.eval_script_with_scope(&body, &mut scope)

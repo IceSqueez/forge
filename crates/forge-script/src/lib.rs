@@ -6,7 +6,7 @@ pub mod convert;
 pub mod engine;
 pub mod error;
 
-pub use api::ForgeApi;
+pub use api::{ForgeApi, SpeakRequester};
 pub use contract::{
     ContractParseError, InputMismatchError, build_scope_for_contract, parse_contract,
 };

@@ -2228,6 +2228,7 @@ dependencies = [
  "forge-storage-sqlite",
  "forge-tts-core",
  "forge-tts-pipeline",
+ "forge-tts-piper",
  "forge-types",
  "forge-voice",
  "forge-widgets",
@@ -2365,6 +2366,7 @@ dependencies = [
 name = "forge-script"
 version = "0.1.0-alpha.10"
 dependencies = [
+ "async-trait",
  "forge-events",
  "forge-storage",
  "forge-storage-sqlite",

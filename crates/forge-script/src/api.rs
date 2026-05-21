@@ -9,6 +9,16 @@ use tokio::runtime::Handle;
 
 use crate::convert::{dynamic_to_variant, variant_to_dynamic};
 
+/// Async TTS hook exposed to rhai scripts as `forge::tts::*`. The concrete impl
+/// lives in `forge-app::speak_bridge` to keep this crate cycle-free with respect
+/// to `forge-speak-queue`.
+#[async_trait::async_trait]
+pub trait SpeakRequester: Send + Sync {
+    async fn speak(&self, text: String, voice_id_override: Option<String>);
+    async fn skip(&self);
+    async fn clear(&self);
+}
+
 /// The god-object exposed to rhai scripts as the `forge::*` namespace.
 ///
 /// Holds `Arc` clones of the event publisher and storage needed by script-callable
@@ -18,6 +28,7 @@ pub struct ForgeApi {
     publisher: Arc<dyn EventPublisher>,
     dp: Arc<dyn DataProvider>,
     caused_by: EventId,
+    speak: Option<Arc<dyn SpeakRequester>>,
     pub deadline: Instant,
 }
 
@@ -32,8 +43,16 @@ impl ForgeApi {
             publisher,
             dp,
             caused_by,
+            speak: None,
             deadline,
         }
+    }
+
+    /// Optional builder — wires the TTS hook so `forge::tts::*` rhai functions become
+    /// active. Without this, the `tts` sub-module is registered but empty.
+    pub fn with_speak_requester(mut self, requester: Arc<dyn SpeakRequester>) -> Self {
+        self.speak = Some(requester);
+        self
     }
 
     /// Consumes `self` and builds the full `forge::*` module tree ready for
@@ -83,12 +102,59 @@ impl ForgeApi {
         root.set_sub_module("globals", globals);
 
         root.set_sub_module("audio", Module::new());
-        root.set_sub_module("tts", Module::new());
+        let tts = match self.speak {
+            Some(requester) => build_tts_module(requester),
+            None => Module::new(),
+        };
+        root.set_sub_module("tts", tts);
         root.set_sub_module("obs", Module::new());
         root.set_sub_module("http", Module::new());
 
         Arc::new(root)
     }
+}
+
+fn build_tts_module(requester: Arc<dyn SpeakRequester>) -> Module {
+    let mut m = Module::new();
+
+    let r_speak = Arc::clone(&requester);
+    m.set_native_fn(
+        "speak",
+        move |text: ImmutableString| -> Result<(), Box<EvalAltResult>> {
+            let r = Arc::clone(&r_speak);
+            let text_owned = text.to_string();
+            Handle::current().block_on(async move { r.speak(text_owned, None).await });
+            Ok(())
+        },
+    );
+
+    let r_speak_as = Arc::clone(&requester);
+    m.set_native_fn(
+        "speak_as",
+        move |voice_id: ImmutableString, text: ImmutableString| -> Result<(), Box<EvalAltResult>> {
+            let r = Arc::clone(&r_speak_as);
+            let voice_owned = voice_id.to_string();
+            let text_owned = text.to_string();
+            Handle::current().block_on(async move { r.speak(text_owned, Some(voice_owned)).await });
+            Ok(())
+        },
+    );
+
+    let r_skip = Arc::clone(&requester);
+    m.set_native_fn("skip", move || -> Result<(), Box<EvalAltResult>> {
+        let r = Arc::clone(&r_skip);
+        Handle::current().block_on(async move { r.skip().await });
+        Ok(())
+    });
+
+    let r_clear = requester;
+    m.set_native_fn("clear", move || -> Result<(), Box<EvalAltResult>> {
+        let r = Arc::clone(&r_clear);
+        Handle::current().block_on(async move { r.clear().await });
+        Ok(())
+    });
+
+    m
 }
 
 fn build_chat_module(publisher: Arc<dyn EventPublisher>, caused_by: EventId) -> Module {

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use forge_events::{Event, EventSource};
+use forge_script::SpeakRequester;
 use forge_storage::{ScriptRecord, ScriptRepo};
 use forge_types::ScriptId;
 use tokio::sync::RwLock;
@@ -15,6 +16,7 @@ pub struct CompiledScript {
 
 pub struct ScriptRegistry {
     inner: Arc<RwLock<HashMap<ScriptId, Arc<CompiledScript>>>>,
+    speak_requester: Option<Arc<dyn SpeakRequester>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -29,7 +31,18 @@ impl ScriptRegistry {
     pub fn new() -> Self {
         Self {
             inner: Arc::new(RwLock::new(HashMap::new())),
+            speak_requester: None,
         }
+    }
+
+    /// Attach the TTS hook used by `forge::tts::*` rhai functions. Call before
+    /// wrapping the registry in an `Arc` and handing it to the action engine.
+    pub fn set_speak_requester(&mut self, requester: Arc<dyn SpeakRequester>) {
+        self.speak_requester = Some(requester);
+    }
+
+    pub fn speak_requester(&self) -> Option<Arc<dyn SpeakRequester>> {
+        self.speak_requester.clone()
     }
 
     pub async fn load_all(&self, repo: &dyn ScriptRepo) -> Result<(), ScriptRegistryError> {

@@ -347,6 +347,8 @@ pub enum SubActionKindChoice {
     Log,
     PlaySound,
     Speak,
+    ReadFile,
+    RandomInt,
 }
 
 #[derive(Debug, Clone)]
@@ -361,6 +363,11 @@ pub struct SubActionConfigForm {
     pub play_sound_clip_id: Option<ClipId>,
     pub speak_text: String,
     pub speak_voice_override: String,
+    pub read_file_path: String,
+    pub read_file_target_var: String,
+    pub random_int_min: String,
+    pub random_int_max: String,
+    pub random_int_target_var: String,
 }
 
 impl Default for SubActionConfigForm {
@@ -376,6 +383,11 @@ impl Default for SubActionConfigForm {
             play_sound_clip_id: None,
             speak_text: String::new(),
             speak_voice_override: String::new(),
+            read_file_path: String::new(),
+            read_file_target_var: String::new(),
+            random_int_min: "1".to_string(),
+            random_int_max: "100".to_string(),
+            random_int_target_var: String::new(),
         }
     }
 }
@@ -410,6 +422,16 @@ impl AddSubActionForm {
             SubActionKindChoice::Log => !self.config.log_message.trim().is_empty(),
             SubActionKindChoice::PlaySound => self.config.play_sound_clip_id.is_some(),
             SubActionKindChoice::Speak => !self.config.speak_text.trim().is_empty(),
+            SubActionKindChoice::ReadFile => {
+                !self.config.read_file_path.trim().is_empty()
+                    && !self.config.read_file_target_var.trim().is_empty()
+            }
+            SubActionKindChoice::RandomInt => {
+                let min = self.config.random_int_min.trim().parse::<i64>().ok();
+                let max = self.config.random_int_max.trim().parse::<i64>().ok();
+                let target_ok = !self.config.random_int_target_var.trim().is_empty();
+                matches!((min, max), (Some(lo), Some(hi)) if lo <= hi) && target_ok
+            }
         }
     }
 }
@@ -428,6 +450,11 @@ pub enum AddSubActionMsg {
     PlaySoundClipSelected(ClipId),
     SpeakTextChanged(String),
     SpeakVoiceOverrideChanged(String),
+    ReadFilePathChanged(String),
+    ReadFileTargetVarChanged(String),
+    RandomIntMinChanged(String),
+    RandomIntMaxChanged(String),
+    RandomIntTargetVarChanged(String),
     ClipsLoaded(Vec<(ClipId, String)>),
     Cancel,
     Submit,

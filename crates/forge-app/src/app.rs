@@ -1534,6 +1534,41 @@ fn handle_add_sub_action_msg(app: &mut App, sub: AddSubActionMsg) -> Task<Messag
             }
             Task::none()
         }
+        AddSubActionMsg::ReadFilePathChanged(v) => {
+            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
+                f.config.read_file_path = v;
+                f.error = None;
+            }
+            Task::none()
+        }
+        AddSubActionMsg::ReadFileTargetVarChanged(v) => {
+            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
+                f.config.read_file_target_var = v;
+                f.error = None;
+            }
+            Task::none()
+        }
+        AddSubActionMsg::RandomIntMinChanged(v) => {
+            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
+                f.config.random_int_min = v;
+                f.error = None;
+            }
+            Task::none()
+        }
+        AddSubActionMsg::RandomIntMaxChanged(v) => {
+            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
+                f.config.random_int_max = v;
+                f.error = None;
+            }
+            Task::none()
+        }
+        AddSubActionMsg::RandomIntTargetVarChanged(v) => {
+            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
+                f.config.random_int_target_var = v;
+                f.error = None;
+            }
+            Task::none()
+        }
         AddSubActionMsg::ClipsLoaded(clips) => {
             if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
                 f.available_clips = clips;
@@ -1556,6 +1591,10 @@ fn handle_add_sub_action_msg(app: &mut App, sub: AddSubActionMsg) -> Task<Messag
                     SubActionKindChoice::Log => "Log message is required.",
                     SubActionKindChoice::PlaySound => "Select a clip to play.",
                     SubActionKindChoice::Speak => "Speak text is required.",
+                    SubActionKindChoice::ReadFile => "Path and target variable are required.",
+                    SubActionKindChoice::RandomInt => {
+                        "min, max (min ≤ max), and target variable are required."
+                    }
                 };
                 if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
                     f.error = Some(error_msg.to_string());
@@ -1591,6 +1630,29 @@ fn handle_add_sub_action_msg(app: &mut App, sub: AddSubActionMsg) -> Task<Messag
                         Some(form.config.speak_voice_override.trim().to_owned())
                     },
                 },
+                SubActionKindChoice::ReadFile => forge_types::SubActionSpec::ReadFile {
+                    path: form.config.read_file_path.trim().to_owned(),
+                    target_var: form.config.read_file_target_var.trim().to_owned(),
+                },
+                SubActionKindChoice::RandomInt => {
+                    let min = form
+                        .config
+                        .random_int_min
+                        .trim()
+                        .parse::<i64>()
+                        .unwrap_or(0);
+                    let max = form
+                        .config
+                        .random_int_max
+                        .trim()
+                        .parse::<i64>()
+                        .unwrap_or(0);
+                    forge_types::SubActionSpec::RandomInt {
+                        min,
+                        max,
+                        target_var: form.config.random_int_target_var.trim().to_owned(),
+                    }
+                }
             };
             let action_id = form.for_action_id;
             if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
@@ -3776,13 +3838,31 @@ fn add_sub_action_modal_view<'a>(
         form.kind == SubActionKindChoice::Speak,
         Message::AddSubAction(AddSubActionMsg::KindSelected(SubActionKindChoice::Speak)),
     );
+    let chip_read_file = forge_widgets::category_chip(
+        palette,
+        "Read file",
+        palette.random,
+        form.kind == SubActionKindChoice::ReadFile,
+        Message::AddSubAction(AddSubActionMsg::KindSelected(SubActionKindChoice::ReadFile)),
+    );
+    let chip_random_int = forge_widgets::category_chip(
+        palette,
+        "Random int",
+        palette.warning,
+        form.kind == SubActionKindChoice::RandomInt,
+        Message::AddSubAction(AddSubActionMsg::KindSelected(
+            SubActionKindChoice::RandomInt,
+        )),
+    );
     let chips_row = row![
         chip_send_chat,
         chip_set_global,
         chip_delay,
         chip_log,
         chip_play_sound,
-        chip_speak
+        chip_speak,
+        chip_read_file,
+        chip_random_int,
     ]
     .spacing(6);
 
@@ -4027,6 +4107,70 @@ fn add_sub_action_modal_view<'a>(
             ]
             .spacing(6);
             column![text_block, voice_block].spacing(12).into()
+        }
+        SubActionKindChoice::ReadFile => {
+            use iced::widget::column;
+            let path_block = column![
+                forge_widgets::section_header("PATH (relative to assets sandbox)", None, palette),
+                forge_widgets::inputs::text_input_field(
+                    "greetings/welcome.txt",
+                    &form.config.read_file_path,
+                    |v| Message::AddSubAction(AddSubActionMsg::ReadFilePathChanged(v)),
+                    palette,
+                ),
+                text("Sandboxed under data_dir/assets/ · no ../ traversal · max 1 MiB")
+                    .size(10.5)
+                    .color(palette.text_muted)
+                    .font(forge_widgets::font(forge_widgets::FontRole::Monospace)),
+            ]
+            .spacing(4);
+            let target_block = column![
+                forge_widgets::section_header("TARGET VARIABLE", None, palette),
+                forge_widgets::inputs::text_input_field(
+                    "welcome_text",
+                    &form.config.read_file_target_var,
+                    |v| Message::AddSubAction(AddSubActionMsg::ReadFileTargetVarChanged(v)),
+                    palette,
+                ),
+            ]
+            .spacing(6);
+            column![path_block, target_block].spacing(12).into()
+        }
+        SubActionKindChoice::RandomInt => {
+            use iced::widget::column;
+            let min_block = column![
+                forge_widgets::section_header("MIN", None, palette),
+                forge_widgets::inputs::text_input_field(
+                    "1",
+                    &form.config.random_int_min,
+                    |v| Message::AddSubAction(AddSubActionMsg::RandomIntMinChanged(v)),
+                    palette,
+                ),
+            ]
+            .spacing(6);
+            let max_block = column![
+                forge_widgets::section_header("MAX", None, palette),
+                forge_widgets::inputs::text_input_field(
+                    "100",
+                    &form.config.random_int_max,
+                    |v| Message::AddSubAction(AddSubActionMsg::RandomIntMaxChanged(v)),
+                    palette,
+                ),
+            ]
+            .spacing(6);
+            let target_block = column![
+                forge_widgets::section_header("TARGET VARIABLE", None, palette),
+                forge_widgets::inputs::text_input_field(
+                    "dice_roll",
+                    &form.config.random_int_target_var,
+                    |v| Message::AddSubAction(AddSubActionMsg::RandomIntTargetVarChanged(v)),
+                    palette,
+                ),
+            ]
+            .spacing(6);
+            column![row![min_block, max_block].spacing(8), target_block]
+                .spacing(12)
+                .into()
         }
     };
 

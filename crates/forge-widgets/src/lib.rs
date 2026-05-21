@@ -19,6 +19,7 @@ pub mod onboarding;
 pub mod output_device_picker;
 pub mod palette;
 pub mod picker;
+pub mod popover;
 pub mod sections;
 pub mod server;
 pub mod status;
@@ -81,6 +82,7 @@ pub use onboarding::{
 pub use output_device_picker::{DeviceLabel, output_device_picker};
 pub use palette::{CATPPUCCIN_MOCHA, ForgePalette, LATTE, TOKYO_NIGHT};
 pub use picker::{PickerItem, PickerModalProps, picker_modal};
+pub use popover::{MenuItem, MenuPlacement, RowAction, actionable_count, menu_button, row_actions};
 pub use sections::{
     ToastVariant, counter_badge, empty_state, section_header, section_header_expandable,
     toast_banner,

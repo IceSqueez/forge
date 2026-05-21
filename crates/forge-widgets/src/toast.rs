@@ -180,9 +180,7 @@ fn toast_row<'a, Msg: Clone + 'a>(
     let mut content_children: Vec<Element<'a, Msg>> = vec![
         icon_el.into(),
         msg_el.into(),
-        iced::widget::Space::new()
-            .width(Length::Fill)
-            .into(),
+        iced::widget::Space::new().width(Length::Fill).into(),
     ];
 
     if let Some(action) = &toast.action {

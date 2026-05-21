@@ -125,6 +125,7 @@ pub fn app_footer<'a, Msg: 'a>(
     container(content)
         .width(Length::Fill)
         .height(24)
+        .align_y(iced::Alignment::Center)
         .style(move |_theme: &iced::Theme| iced::widget::container::Style {
             background: Some(iced::Background::Color(shell)),
             border: Border {

@@ -3,8 +3,7 @@ use forge_tts_pipeline::{
 };
 use forge_widgets::ForgePalette;
 use forge_widgets::tokens::{
-    BORDER_THIN, Density, FONT_BODY, FONT_BODY_SM, FONT_CAPS_SM, FontRole, Radius, Spacing, font,
-    radius, spacing,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spacing,
 };
 use iced::widget::{button, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Background, Border, Color, Element, Length, Task};
@@ -134,11 +133,11 @@ fn pipeline_column_view<'a>(
 ) -> Element<'a, Message> {
     let header = column![
         text("PROCESSING PIPELINE")
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace)),
         text("Each message passes through these stages in order before being spoken")
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_muted),
     ]
     .spacing(4);
@@ -243,7 +242,7 @@ fn pipeline_stage<'a>(
 
     let stage_header = row![
         text(title)
-            .size(FONT_BODY)
+            .size(FONT_SM)
             .color(palette.text_primary)
             .width(Length::Fill),
         text(subtitle)
@@ -378,7 +377,7 @@ fn blocklist_content<'a>(
 
     let manage_box = container(
         text("Manage blocklist...")
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_muted),
     )
     .style(move |_| container::Style {
@@ -435,7 +434,7 @@ fn replacements_content<'a>(
     if state.replacement_rules.is_empty() {
         return container(
             text("No replacement rules")
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(palette.text_muted),
         )
         .padding([4, 0])
@@ -517,7 +516,7 @@ fn preview_column_view<'a>(
     gap_md: f32,
 ) -> Element<'a, Message> {
     let header = text("PIPELINE PREVIEW")
-        .size(FONT_CAPS_SM)
+        .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
@@ -528,7 +527,7 @@ fn preview_column_view<'a>(
 
     let input_box = text_input("Type a message to preview...", &state.preview_input)
         .on_input(|s| Message::Tts(TtsMsg::Filters(TtsFiltersMsg::PreviewInputChanged(s))))
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .width(Length::Fill)
         .style(move |_, _| text_input::Style {
             background: Background::Color(palette.elevated),
@@ -547,7 +546,7 @@ fn preview_column_view<'a>(
         preview_stage_rows(preview, palette, gap_sm)
     } else {
         text("Enter a message above to preview")
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_muted)
             .into()
     };
@@ -579,7 +578,7 @@ fn preview_column_view<'a>(
 
     let output_box = container(
         text(output_text)
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_primary)
             .font(font(FontRole::Monospace))
             .width(Length::Fill),
@@ -596,7 +595,7 @@ fn preview_column_view<'a>(
     .padding([9, 11])
     .width(Length::Fill);
 
-    let speak_btn = button(text("Speak preview").size(FONT_BODY_SM))
+    let speak_btn = button(text("Speak preview").size(FONT_SM))
         .on_press(Message::Noop)
         .style(move |_, _| button::Style {
             background: Some(Background::Color(palette.brand)),

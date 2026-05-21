@@ -8,7 +8,7 @@ use forge_types::{ActionId, EventId};
 use forge_widgets::{
     EventInspectorParams, EventRowData, FontRole, ForgePalette, Radius, category_chip,
     event_inspector, event_row_observability, font, radius,
-    tokens::{FONT_BODY_SM, FONT_CAPS, FONT_CAPS_SM, FONT_CAPS_XS},
+    tokens::{FONT_SM, FONT_XS},
 };
 use iced::widget::{button, column, container, row, scrollable, text};
 use iced::{Background, Border, Color, Element, Length, Padding};
@@ -425,7 +425,7 @@ fn toolbar_action_btn<'a>(
         ..palette.border_regular
     };
 
-    button(text(label).size(FONT_CAPS_SM).color(text_color))
+    button(text(label).size(FONT_XS).color(text_color))
         .on_press(on_press)
         .padding([4, 8])
         .style(move |_theme: &iced::Theme, status| button::Style {
@@ -467,10 +467,7 @@ pub fn event_feed_view<'a>(
 
     let live_pill_content = row![
         live_dot,
-        text("LIVE")
-            .size(FONT_CAPS_XS)
-            .color(palette.success)
-            .font(mono),
+        text("LIVE").size(FONT_XS).color(palette.success).font(mono),
     ]
     .spacing(5)
     .align_y(iced::Alignment::Center);
@@ -488,15 +485,13 @@ pub fn event_feed_view<'a>(
 
     let total_count = state.events.len();
     let count_text = text(format!("{total_count} events \u{b7} in buffer"))
-        .size(FONT_CAPS_SM)
+        .size(FONT_XS)
         .color(palette.text_secondary)
         .font(mono);
 
     let top_bar = container(
         row![
-            text("Event feed")
-                .size(FONT_CAPS_SM)
-                .color(palette.text_primary),
+            text("Event feed").size(FONT_XS).color(palette.text_primary),
             live_pill,
             iced::widget::Space::new().width(Length::Fill),
             count_text,
@@ -693,7 +688,7 @@ pub fn event_feed_view<'a>(
             } else {
                 "No events match the active filter."
             })
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_faint)
         ]
         .padding([12, 14])
@@ -757,11 +752,11 @@ pub fn event_feed_view<'a>(
         .into()
     } else {
         let inspector_header = text("Event inspector")
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_primary);
 
         let placeholder = text("Select an event to inspect its payload.")
-            .size(FONT_CAPS)
+            .size(FONT_XS)
             .color(palette.text_faint)
             .font(mono);
 
@@ -809,18 +804,18 @@ pub fn event_feed_view<'a>(
 
     let footer_right = row![
         text(format!("Buffer: {buf_count:>5} / 10,000"))
-            .size(FONT_CAPS_XS)
+            .size(FONT_XS)
             .color(palette.text_faint)
             .font(mono),
         text(format!("{:.1} ev/s", rate))
-            .size(FONT_CAPS_XS)
+            .size(FONT_XS)
             .color(palette.text_faint)
             .font(mono),
         container(
             row![
                 auto_scroll_dot,
                 text(auto_scroll_label)
-                    .size(FONT_CAPS_XS)
+                    .size(FONT_XS)
                     .color(palette.text_faint)
                     .font(mono),
             ]
@@ -834,7 +829,7 @@ pub fn event_feed_view<'a>(
     let footer = container(
         row![
             text("Streaming \u{b7} WebSocket :8081")
-                .size(FONT_CAPS_XS)
+                .size(FONT_XS)
                 .color(palette.text_faint)
                 .font(mono),
             iced::widget::Space::new().width(Length::Fill),

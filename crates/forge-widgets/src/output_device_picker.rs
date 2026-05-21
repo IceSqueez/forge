@@ -5,7 +5,7 @@ use iced::{
 
 use crate::icons::{BOOTSTRAP_FONT, ICON_PLAY, ICON_REFRESH};
 use crate::palette::ForgePalette;
-use crate::tokens::{Density, FONT_BODY_SM, FontRole, Spacing, font, spacing};
+use crate::tokens::{Density, FONT_SM, FontRole, Spacing, font, spacing};
 
 #[derive(Debug, Clone)]
 pub struct DeviceLabel {
@@ -63,7 +63,7 @@ pub fn output_device_picker<'a, Msg: 'a + Clone>(
             .unwrap_or(0);
         on_select(idx)
     })
-    .text_size(FONT_BODY_SM)
+    .text_size(FONT_SM)
     .font(font(FontRole::Body))
     .width(Length::Fill);
 
@@ -86,7 +86,7 @@ pub fn output_device_picker<'a, Msg: 'a + Clone>(
                 .size(11.0)
                 .color(p2.text_secondary),
             text("Test")
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(p2.text_secondary)
                 .font(font(FontRole::Body)),
         ]

@@ -7,7 +7,7 @@ use forge_script::{Engine, EngineConfig, ForgeApi, build_scope_for_contract, par
 use forge_storage::{ScriptRecord, ScriptRepo};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{ArgStack, EventId, ScriptContract, ScriptId, Variant, VariantKind};
-use forge_widgets::tokens::{FONT_BODY, FONT_BODY_SM, FONT_CAPS_SM, FONT_CAPS_XS, FontRole, font};
+use forge_widgets::tokens::{FONT_SM, FONT_XS, FontRole, font};
 use forge_widgets::{CodeEditorState, ConsoleLevel, ConsoleLine, ForgePalette, ModalProps, modal};
 use iced::widget::{column, container, row, scrollable, text};
 use iced::{Alignment, Background, Border, Element, Length};
@@ -642,7 +642,7 @@ fn toolbar_row<'a>(
         col + 1,
     );
     let right = text(sandbox_info)
-        .size(FONT_CAPS_XS)
+        .size(FONT_XS)
         .color(palette.text_faint)
         .font(font(FontRole::Monospace));
 
@@ -670,7 +670,7 @@ fn run_button<'a>(enabled: bool, palette: &'a ForgePalette) -> Element<'a, Messa
 
     let success = palette.success;
     let shell = palette.shell;
-    let label = text("Run").size(FONT_BODY_SM).color(Color {
+    let label = text("Run").size(FONT_SM).color(Color {
         a: if enabled { 1.0 } else { 0.4 },
         ..shell
     });
@@ -708,7 +708,7 @@ fn save_button<'a>(dirty: bool, palette: &'a ForgePalette) -> Element<'a, Messag
     } else {
         palette.text_faint
     };
-    let label = text("Save").size(FONT_BODY_SM).color(fg);
+    let label = text("Save").size(FONT_SM).color(fg);
     let msg = if dirty {
         Some(Message::ScriptEditor(ScriptEditorMsg::SaveRequested))
     } else {
@@ -736,7 +736,7 @@ fn disabled_toolbar_button<'a>(label: &'a str, palette: &'a ForgePalette) -> Ele
     use iced::{Color, Shadow};
 
     let fg = palette.text_faint;
-    button(text(label).size(FONT_BODY_SM).color(fg))
+    button(text(label).size(FONT_SM).color(fg))
         .padding([4.0, 10.0])
         .style(move |_: &iced::Theme, _status| button::Style {
             background: Some(Background::Color(Color::TRANSPARENT)),
@@ -756,7 +756,7 @@ fn left_pane<'a>(state: &'a ScriptEditorState, palette: &'a ForgePalette) -> Ele
     use iced::{Color, Shadow};
 
     let scripts_label = text("SCRIPTS")
-        .size(FONT_CAPS_SM)
+        .size(FONT_XS)
         .color(palette.text_faint)
         .font(font(FontRole::Monospace));
     let scripts_header = container(scripts_label).padding([4.0, 8.0]);
@@ -765,7 +765,7 @@ fn left_pane<'a>(state: &'a ScriptEditorState, palette: &'a ForgePalette) -> Ele
 
     if state.scripts.is_empty() {
         let empty_label = text("No scripts yet")
-            .size(FONT_CAPS_XS)
+            .size(FONT_XS)
             .color(palette.text_extreme_faint)
             .font(font(FontRole::Monospace));
         tree_col = tree_col.push(container(empty_label).padding([4.0, 8.0]));
@@ -773,7 +773,7 @@ fn left_pane<'a>(state: &'a ScriptEditorState, palette: &'a ForgePalette) -> Ele
         for entry in &state.scripts {
             let selected = state.selected == Some(entry.id);
             let name_text = text(entry.name.clone())
-                .size(FONT_CAPS_SM)
+                .size(FONT_XS)
                 .color(if selected {
                     palette.text_primary
                 } else {
@@ -810,27 +810,23 @@ fn left_pane<'a>(state: &'a ScriptEditorState, palette: &'a ForgePalette) -> Ele
         }
     }
 
-    let new_script_btn = button(
-        text("+ New")
-            .size(FONT_BODY_SM)
-            .color(palette.text_secondary),
-    )
-    .on_press(Message::ScriptEditor(ScriptEditorMsg::NewScriptRequested))
-    .padding([4.0, 8.0])
-    .width(Length::Fill)
-    .style(move |_: &iced::Theme, _status| button::Style {
-        background: Some(Background::Color(Color::TRANSPARENT)),
-        border: Border::default(),
-        text_color: palette.text_secondary,
-        shadow: Shadow::default(),
-        snap: false,
-    });
+    let new_script_btn = button(text("+ New").size(FONT_SM).color(palette.text_secondary))
+        .on_press(Message::ScriptEditor(ScriptEditorMsg::NewScriptRequested))
+        .padding([4.0, 8.0])
+        .width(Length::Fill)
+        .style(move |_: &iced::Theme, _status| button::Style {
+            background: Some(Background::Color(Color::TRANSPARENT)),
+            border: Border::default(),
+            text_color: palette.text_secondary,
+            shadow: Shadow::default(),
+            snap: false,
+        });
 
     tree_col = tree_col.push(new_script_btn);
 
     if !state.variables_in_scope.is_empty() {
         let vars_label = text("VARIABLES IN SCOPE")
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(palette.text_faint)
             .font(font(FontRole::Monospace));
         let vars_header = container(vars_label).padding([4.0, 8.0]);
@@ -838,11 +834,11 @@ fn left_pane<'a>(state: &'a ScriptEditorState, palette: &'a ForgePalette) -> Ele
 
         for (name, kind) in &state.variables_in_scope {
             let name_text = text(format!("%{name}%"))
-                .size(FONT_CAPS_SM)
+                .size(FONT_XS)
                 .color(palette.warning)
                 .font(font(FontRole::Monospace));
             let kind_text = text(kind.label().to_lowercase())
-                .size(FONT_CAPS_XS)
+                .size(FONT_XS)
                 .color(palette.text_faint)
                 .font(font(FontRole::Monospace));
             let var_row = row![
@@ -883,10 +879,10 @@ fn center_pane<'a>(
         container(
             column![
                 text("Select a script or click + New")
-                    .size(FONT_BODY)
+                    .size(FONT_SM)
                     .color(palette.text_faint),
                 text("Scripts let you run rhai code from any action.")
-                    .size(FONT_BODY_SM)
+                    .size(FONT_SM)
                     .color(palette.text_extreme_faint),
             ]
             .spacing(6.0)
@@ -900,13 +896,11 @@ fn center_pane<'a>(
     };
 
     let output_header = {
-        let out_label = text("Output")
-            .size(FONT_BODY_SM)
-            .color(palette.text_primary);
+        let out_label = text("Output").size(FONT_SM).color(palette.text_primary);
         let clear_btn = {
             use iced::widget::button;
             use iced::{Color, Shadow};
-            button(text("Clear").size(FONT_CAPS_SM).color(palette.text_faint))
+            button(text("Clear").size(FONT_XS).color(palette.text_faint))
                 .on_press(Message::ScriptEditor(ScriptEditorMsg::ConsoleClear))
                 .padding([2.0, 6.0])
                 .style(move |_: &iced::Theme, _status| button::Style {
@@ -960,7 +954,7 @@ fn center_pane<'a>(
 fn right_pane<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     let header = row![
         text("API reference")
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_primary),
         iced::widget::Space::new().width(Length::Fill),
     ]
@@ -977,7 +971,7 @@ fn right_pane<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
 
     for ns in &catalog {
         let ns_label = text(ns.name)
-            .size(FONT_CAPS_XS)
+            .size(FONT_XS)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace));
         api_col = api_col.push(container(ns_label).padding(iced::Padding {
@@ -993,7 +987,7 @@ fn right_pane<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
                 use iced::widget::button;
                 let shell_color = palette.shell;
                 let badge_text = text("fn")
-                    .size(FONT_CAPS_XS)
+                    .size(FONT_XS)
                     .color(shell_color)
                     .font(font(FontRole::Monospace));
                 button(badge_text)
@@ -1010,7 +1004,7 @@ fn right_pane<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
                     })
             };
             let sig = text(entry.signature)
-                .size(FONT_CAPS_SM)
+                .size(FONT_XS)
                 .color(palette.text_primary)
                 .font(font(FontRole::Monospace));
             let entry_row = row![kind_badge, sig]
@@ -1058,7 +1052,7 @@ fn run_modal_view<'a>(
             field.name,
             field.kind.label().to_lowercase()
         ))
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .color(palette.text_muted);
         let input = iced::widget::text_input(
             &format!("Enter {} value...", field.kind.label().to_lowercase()),
@@ -1066,7 +1060,7 @@ fn run_modal_view<'a>(
         )
         .on_input(move |v| Message::ScriptEditor(ScriptEditorMsg::RunModalInputChanged(idx, v)))
         .padding([6.0, 10.0])
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .style(
             move |_: &iced::Theme, _status| iced::widget::text_input::Style {
                 background: Background::Color(palette.elevated),
@@ -1088,7 +1082,7 @@ fn run_modal_view<'a>(
     }
 
     if let Some(err) = &form.error {
-        let err_text = text(err.clone()).size(FONT_BODY_SM).color(palette.random);
+        let err_text = text(err.clone()).size(FONT_SM).color(palette.random);
         body_col = body_col.push(err_text);
     }
 

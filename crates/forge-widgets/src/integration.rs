@@ -15,8 +15,7 @@ use crate::{
     BOOTSTRAP_FONT,
     palette::ForgePalette,
     tokens::{
-        BORDER_THIN, Density, FONT_BODY, FONT_BODY_LG, FONT_BODY_MD, FONT_BODY_SM, FONT_CAPS,
-        FONT_CAPS_SM, FONT_CAPS_XS, FONT_HEADING, FONT_HEADING_SM, FONT_VALUE, FontRole, Radius,
+        BORDER_THIN, Density, FONT_BODY, FONT_LG, FONT_MD, FONT_SM, FONT_XS, FontRole, Radius,
         Spacing, font, radius, spacing,
     },
 };
@@ -121,7 +120,7 @@ fn info_column<'a, Msg: 'a>(
         .align_y(Alignment::Center)
         .push(
             iced::widget::text(params.display_name)
-                .size(FONT_HEADING_SM)
+                .size(FONT_LG)
                 .color(text_primary),
         );
 
@@ -146,7 +145,7 @@ fn info_column<'a, Msg: 'a>(
     let sub = sub_line(params.endpoint, params.uptime);
     let sub_text = iced::widget::text(sub)
         .font(font(FontRole::Monospace))
-        .size(FONT_BODY)
+        .size(FONT_SM)
         .color(text_muted);
 
     iced::widget::column![name_row, sub_text]
@@ -167,7 +166,7 @@ fn version_pill<'a, Msg: 'a>(version: &'a str, bg: Color, text_color: Color) -> 
     container(
         iced::widget::text(version)
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS_XS)
+            .size(FONT_XS)
             .color(text_color),
     )
     .padding([1, 7])
@@ -187,7 +186,7 @@ fn limited_badge<'a, Msg: 'a>(label: &'a str, bg: Color, text_color: Color) -> E
     container(
         iced::widget::text(label.to_uppercase())
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS_XS)
+            .size(FONT_XS)
             .color(text_color),
     )
     .padding([1, 7])
@@ -224,34 +223,30 @@ fn action_buttons<'a, Msg: Clone + 'a>(
         };
         let msg = on_action(action.clone());
 
-        let btn = iced::widget::button(
-            iced::widget::text(label)
-                .size(FONT_BODY_SM)
-                .color(text_color),
-        )
-        .on_press(msg)
-        .padding([v_pad, h_pad])
-        .style(move |_theme: &iced::Theme, status| {
-            use iced::widget::button::Status;
-            let bg_color = match status {
-                Status::Hovered => Some(iced::Background::Color(Color {
-                    a: 0.06,
-                    ..border_color
-                })),
-                Status::Active | Status::Pressed | Status::Disabled => None,
-            };
-            iced::widget::button::Style {
-                background: bg_color,
-                text_color,
-                border: Border {
-                    color: border_color,
-                    width: BORDER_THIN,
-                    radius: r.into(),
-                },
-                shadow: iced::Shadow::default(),
-                snap: false,
-            }
-        });
+        let btn = iced::widget::button(iced::widget::text(label).size(FONT_SM).color(text_color))
+            .on_press(msg)
+            .padding([v_pad, h_pad])
+            .style(move |_theme: &iced::Theme, status| {
+                use iced::widget::button::Status;
+                let bg_color = match status {
+                    Status::Hovered => Some(iced::Background::Color(Color {
+                        a: 0.06,
+                        ..border_color
+                    })),
+                    Status::Active | Status::Pressed | Status::Disabled => None,
+                };
+                iced::widget::button::Style {
+                    background: bg_color,
+                    text_color,
+                    border: Border {
+                        color: border_color,
+                        width: BORDER_THIN,
+                        radius: r.into(),
+                    },
+                    shadow: iced::Shadow::default(),
+                    snap: false,
+                }
+            });
 
         row = row.push(btn);
     }
@@ -320,7 +315,7 @@ fn health_metric_card<'a, Msg: 'a>(
 
     let cap_label = iced::widget::text(metric.label.to_uppercase())
         .font(font(FontRole::Monospace))
-        .size(FONT_CAPS_SM)
+        .size(FONT_XS)
         .color(palette.text_muted);
 
     let value_col: Element<'a, Msg> = match &metric.value {
@@ -336,7 +331,7 @@ fn health_metric_card<'a, Msg: 'a>(
             };
             let dot = crate::status::status_dot(color, 7.0);
             let val_text = iced::widget::text(val_label.clone())
-                .size(FONT_VALUE)
+                .size(FONT_MD)
                 .color(color);
             let value_row: Element<'a, Msg> = iced::widget::row![dot, val_text]
                 .spacing(spacing(Spacing::Xs, Density::Cozy) as f32)
@@ -345,7 +340,7 @@ fn health_metric_card<'a, Msg: 'a>(
             if let Some(d) = detail {
                 let detail_text = iced::widget::text(d.clone())
                     .font(font(FontRole::Monospace))
-                    .size(FONT_CAPS_SM)
+                    .size(FONT_XS)
                     .color(palette.text_faint);
                 iced::widget::column![value_row, detail_text]
                     .spacing(spacing(Spacing::Xs, Density::Cozy) as f32)
@@ -356,12 +351,12 @@ fn health_metric_card<'a, Msg: 'a>(
         }
         HealthValue::Text { primary, secondary } => {
             let primary_text = iced::widget::text(primary.clone())
-                .size(FONT_VALUE)
+                .size(FONT_MD)
                 .color(palette.text_primary);
             if let Some(sec) = secondary {
                 let sub = iced::widget::text(sec.clone())
                     .font(font(FontRole::Monospace))
-                    .size(FONT_CAPS_SM)
+                    .size(FONT_XS)
                     .color(palette.text_faint);
                 iced::widget::column![primary_text, sub]
                     .spacing(spacing(Spacing::Xs, Density::Cozy) as f32)
@@ -372,7 +367,7 @@ fn health_metric_card<'a, Msg: 'a>(
         }
         HealthValue::Pair { left, right } => iced::widget::text(format!("{left} · {right}"))
             .font(font(FontRole::Monospace))
-            .size(FONT_VALUE)
+            .size(FONT_MD)
             .color(palette.text_primary)
             .into(),
         HealthValue::Ratio {
@@ -381,12 +376,12 @@ fn health_metric_card<'a, Msg: 'a>(
             reset_hint,
         } => {
             let ratio_text = iced::widget::text(format!("{used} / {total}"))
-                .size(FONT_VALUE)
+                .size(FONT_MD)
                 .color(palette.text_primary);
             if let Some(hint) = reset_hint {
                 let hint_text = iced::widget::text(hint.clone())
                     .font(font(FontRole::Monospace))
-                    .size(FONT_CAPS_SM)
+                    .size(FONT_XS)
                     .color(palette.text_faint);
                 iced::widget::column![ratio_text, hint_text]
                     .spacing(spacing(Spacing::Xs, Density::Cozy) as f32)
@@ -564,13 +559,13 @@ pub(crate) fn render_warning_banner<'a, Msg: 'a>(
     };
 
     let icon_elem = text(icon_char.to_string())
-        .size(FONT_BODY_LG)
+        .size(FONT_BODY)
         .color(level_color);
     let title_elem = text(title.to_owned())
-        .size(FONT_BODY_MD)
+        .size(FONT_BODY)
         .color(palette.text_primary);
     let body_elem = text(body.to_owned())
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .color(palette.text_muted);
 
     let mut text_col = Column::new()
@@ -582,7 +577,7 @@ pub(crate) fn render_warning_banner<'a, Msg: 'a>(
         let brand = palette.brand;
         text_col = text_col.push(
             text(format!("{cta_label} \u{2192}"))
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(brand),
         );
     }
@@ -817,18 +812,18 @@ fn content_list_item_row<'a, Msg: 'a>(
 
     let icon_elem = text(crate::icons::bootstrap_icon_for(item.icon.as_str()).to_string())
         .font(BOOTSTRAP_FONT)
-        .size(FONT_BODY_LG)
+        .size(FONT_BODY)
         .color(icon_color);
 
     let name_elem: Element<'a, Msg> = if item.monospace_name {
         text(item.name.clone())
             .font(font(FontRole::Monospace))
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(text_color)
             .into()
     } else {
         text(item.name.clone())
-            .size(FONT_BODY)
+            .size(FONT_SM)
             .color(text_color)
             .into()
     };
@@ -868,12 +863,12 @@ fn key_value_row_elem<'a, Msg: 'a>(
 ) -> Element<'a, Msg> {
     let icon_elem = text(crate::icons::bootstrap_icon_for(item.icon.as_str()).to_string())
         .font(BOOTSTRAP_FONT)
-        .size(FONT_BODY_LG)
+        .size(FONT_BODY)
         .color(palette.text_secondary);
 
     let name_elem = text(item.name.clone())
         .font(font(FontRole::Monospace))
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .color(palette.text_primary);
 
     let mut row = Row::new()
@@ -886,7 +881,7 @@ fn key_value_row_elem<'a, Msg: 'a>(
         row = row.push(
             text(tag.clone())
                 .font(font(FontRole::Monospace))
-                .size(FONT_CAPS)
+                .size(FONT_XS)
                 .color(palette.text_faint),
         );
     }
@@ -895,11 +890,7 @@ fn key_value_row_elem<'a, Msg: 'a>(
         let ch = match action {
             RowAction::Play => '\u{25B6}',
         };
-        row = row.push(
-            text(ch.to_string())
-                .size(FONT_BODY_SM)
-                .color(palette.success),
-        );
+        row = row.push(text(ch.to_string()).size(FONT_SM).color(palette.success));
     }
 
     plain_row_wrapper(row.into(), palette.elevated)
@@ -917,7 +908,7 @@ fn active_item_row_elem<'a, Msg: 'a>(
 
     let name_elem = text(item.name.clone())
         .font(font(FontRole::Monospace))
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .color(text_color);
 
     let mut row = Row::new()
@@ -928,7 +919,7 @@ fn active_item_row_elem<'a, Msg: 'a>(
     if item.active {
         row = row.push(active_badge("ACTIVE", palette));
     } else if let Some(mode) = &item.mode_label {
-        row = row.push(text(mode.clone()).size(FONT_CAPS).color(palette.text_faint));
+        row = row.push(text(mode.clone()).size(FONT_XS).color(palette.text_faint));
     }
 
     if item.active {
@@ -947,7 +938,7 @@ fn subscription_row_elem<'a, Msg: 'a>(
 
     let name_elem = text(item.name.clone())
         .font(font(FontRole::Monospace))
-        .size(FONT_CAPS)
+        .size(FONT_XS)
         .color(palette.text_primary);
 
     let mut row = Row::new()
@@ -960,23 +951,20 @@ fn subscription_row_elem<'a, Msg: 'a>(
         row = row.push(
             text(ver.clone())
                 .font(font(FontRole::Monospace))
-                .size(FONT_CAPS)
+                .size(FONT_XS)
                 .color(palette.text_faint),
         );
     }
 
     let trailing: Element<'a, Msg> = if let Some(err) = &item.error_label {
-        text(err.clone())
-            .size(FONT_CAPS)
-            .color(palette.random)
-            .into()
+        text(err.clone()).size(FONT_XS).color(palette.random).into()
     } else if let Some(count) = item.event_count {
         let label = if count == 1 {
             format!("{count} event")
         } else {
             format!("{count} events")
         };
-        text(label).size(FONT_CAPS).color(palette.text_muted).into()
+        text(label).size(FONT_XS).color(palette.text_muted).into()
     } else {
         Space::new().into()
     };
@@ -986,10 +974,10 @@ fn subscription_row_elem<'a, Msg: 'a>(
 }
 
 fn scope_row_elem<'a, Msg: 'a>(scope: &str, palette: &'a ForgePalette) -> Element<'a, Msg> {
-    let check = text("\u{2713}").size(FONT_BODY_SM).color(palette.success);
+    let check = text("\u{2713}").size(FONT_SM).color(palette.success);
     let scope_text = text(scope.to_owned())
         .font(font(FontRole::Monospace))
-        .size(FONT_CAPS)
+        .size(FONT_XS)
         .color(palette.text_primary);
 
     plain_row_wrapper(
@@ -1009,18 +997,18 @@ fn info_field_cell<'a, Msg: 'a>(
 ) -> Element<'a, Msg> {
     let label_elem = text(field.label.to_uppercase())
         .font(font(FontRole::Monospace))
-        .size(FONT_CAPS_SM)
+        .size(FONT_XS)
         .color(palette.text_muted);
 
     let value_elem: Element<'a, Msg> = if field.monospace_value {
         text(field.value.clone())
             .font(font(FontRole::Monospace))
-            .size(FONT_BODY)
+            .size(FONT_SM)
             .color(palette.text_primary)
             .into()
     } else {
         text(field.value.clone())
-            .size(FONT_BODY)
+            .size(FONT_SM)
             .color(palette.text_primary)
             .into()
     };
@@ -1080,7 +1068,7 @@ fn health_bar_section<'a, Msg: 'a>(
 
     let health_label = text("STREAM HEALTH")
         .font(font(FontRole::Monospace))
-        .size(FONT_CAPS_SM)
+        .size(FONT_XS)
         .color(palette.text_muted);
 
     let bar_row = Row::new()
@@ -1090,7 +1078,7 @@ fn health_bar_section<'a, Msg: 'a>(
         .push(
             text(bar.label.clone())
                 .font(font(FontRole::Monospace))
-                .size(FONT_CAPS)
+                .size(FONT_XS)
                 .color(level_color),
         );
 
@@ -1111,19 +1099,19 @@ fn stat_column_cell<'a, Msg: 'a>(
             .push(
                 text(col.label.to_uppercase())
                     .font(font(FontRole::Monospace))
-                    .size(FONT_CAPS_SM)
+                    .size(FONT_XS)
                     .color(palette.text_muted),
             )
             .push(
                 text(col.value.clone())
                     .font(font(FontRole::Monospace))
-                    .size(FONT_HEADING)
+                    .size(FONT_LG)
                     .color(palette.text_primary),
             )
             .push(
                 text(col.subtitle.clone())
                     .font(font(FontRole::Monospace))
-                    .size(FONT_CAPS_SM)
+                    .size(FONT_XS)
                     .color(palette.success),
             ),
     )
@@ -1144,7 +1132,7 @@ fn panel_header_row<'a, Msg: 'a>(
     let glyph = crate::icons::bootstrap_icon_for(icon_str);
     let icon_elem = text(glyph.to_string())
         .font(BOOTSTRAP_FONT)
-        .size(FONT_BODY_LG)
+        .size(FONT_BODY)
         .color(palette.text_secondary);
 
     let left = Row::new()
@@ -1153,7 +1141,7 @@ fn panel_header_row<'a, Msg: 'a>(
         .push(icon_elem)
         .push(
             text(title.to_owned())
-                .size(FONT_BODY_MD)
+                .size(FONT_BODY)
                 .color(palette.text_primary),
         );
 
@@ -1165,7 +1153,7 @@ fn panel_header_row<'a, Msg: 'a>(
         outer = outer.push(
             text(c.to_owned())
                 .font(font(FontRole::Monospace))
-                .size(FONT_CAPS_SM)
+                .size(FONT_XS)
                 .color(palette.text_faint),
         );
     }
@@ -1186,7 +1174,7 @@ fn scopes_list_header<'a, Msg: 'a>(
 ) -> Element<'a, Msg> {
     let count_elem = text(count.to_owned())
         .font(font(FontRole::Monospace))
-        .size(FONT_CAPS_SM)
+        .size(FONT_XS)
         .color(palette.text_faint);
 
     container(
@@ -1195,7 +1183,7 @@ fn scopes_list_header<'a, Msg: 'a>(
             .push(
                 container(
                     text(title.to_owned())
-                        .size(FONT_BODY_MD)
+                        .size(FONT_BODY)
                         .color(palette.text_primary),
                 )
                 .width(Length::Fill),
@@ -1218,7 +1206,7 @@ fn info_card_header<'a, Msg: 'a>(
     let mut row = Row::new().align_y(Alignment::Center).push(
         container(
             text(title.to_owned())
-                .size(FONT_BODY_MD)
+                .size(FONT_BODY)
                 .color(palette.text_primary),
         )
         .width(Length::Fill),
@@ -1233,7 +1221,7 @@ fn info_card_header<'a, Msg: 'a>(
                 .spacing(5.0)
                 .align_y(Alignment::Center)
                 .push(dot)
-                .push(text("LIVE").size(FONT_CAPS_XS).color(success)),
+                .push(text("LIVE").size(FONT_XS).color(success)),
         )
         .padding([1, 7])
         .style(move |_: &iced::Theme| container::Style {
@@ -1269,8 +1257,7 @@ fn list_footer_bar<'a, Msg: 'a>(
 
     if let Some(cta) = &footer.cta_label {
         let brand = palette.brand;
-        row =
-            row.push(container(text(cta.clone()).size(FONT_CAPS).color(brand)).width(Length::Fill));
+        row = row.push(container(text(cta.clone()).size(FONT_XS).color(brand)).width(Length::Fill));
     } else {
         row = row.push(container(Space::new()).width(Length::Fill));
     }
@@ -1279,7 +1266,7 @@ fn list_footer_bar<'a, Msg: 'a>(
         row = row.push(
             text(trail.clone())
                 .font(font(FontRole::Monospace))
-                .size(FONT_CAPS)
+                .size(FONT_XS)
                 .color(palette.text_faint),
         );
     }
@@ -1382,7 +1369,7 @@ fn active_badge<'a, Msg: 'a>(label: &str, palette: &'a ForgePalette) -> Element<
     let success = palette.success;
     let surface = palette.surface_overlay;
     let r = radius(Radius::Xxl);
-    container(text(label.to_uppercase()).size(FONT_CAPS_XS).color(success))
+    container(text(label.to_uppercase()).size(FONT_XS).color(success))
         .padding([1, 6])
         .style(move |_: &iced::Theme| container::Style {
             background: Some(iced::Background::Color(surface)),
@@ -1405,7 +1392,7 @@ fn trailing_token_elem<'a, Msg: 'a>(
             let tc = token_color_value(color, palette);
             let surface = palette.surface_overlay;
             let r = radius(Radius::Xxl);
-            container(text(label.clone()).size(FONT_CAPS_XS).color(tc))
+            container(text(label.clone()).size(FONT_XS).color(tc))
                 .padding([1, 6])
                 .style(move |_: &iced::Theme| container::Style {
                     background: Some(iced::Background::Color(surface)),
@@ -1420,13 +1407,13 @@ fn trailing_token_elem<'a, Msg: 'a>(
         TrailingToken::Icon(icon) => {
             text(crate::icons::bootstrap_icon_for(icon.as_str()).to_string())
                 .font(BOOTSTRAP_FONT)
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(icon_color)
                 .into()
         }
         TrailingToken::Label(label) => text(label.clone())
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(palette.text_faint)
             .into(),
     }
@@ -1533,11 +1520,11 @@ fn quick_actions_section_header<'a, Msg: 'a>(
 
     let icon_elem = text(ICON_LIGHTNING.to_string())
         .font(BOOTSTRAP_FONT)
-        .size(FONT_BODY_LG)
+        .size(FONT_BODY)
         .color(palette.warning);
 
     let title_elem = text("Quick actions")
-        .size(FONT_BODY_MD)
+        .size(FONT_BODY)
         .color(palette.text_primary);
 
     let left: Element<'a, Msg> = Row::new()
@@ -1552,11 +1539,7 @@ fn quick_actions_section_header<'a, Msg: 'a>(
         .push(container(left).width(Length::Fill));
 
     if let Some(h) = hint {
-        outer = outer.push(
-            text(h.to_owned())
-                .size(FONT_CAPS_SM)
-                .color(palette.text_faint),
-        );
+        outer = outer.push(text(h.to_owned()).size(FONT_XS).color(palette.text_faint));
     }
 
     container(outer)
@@ -1606,12 +1589,12 @@ fn quick_action_btn<'a, Msg: Clone + 'a>(
     let icon_elem: Element<'a, Msg> =
         text(crate::icons::bootstrap_icon_for(action.icon.as_str()).to_string())
             .font(BOOTSTRAP_FONT)
-            .size(FONT_BODY)
+            .size(FONT_SM)
             .color(icon_color)
             .into();
 
     let label_elem: Element<'a, Msg> = text(action.label.clone())
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .color(label_color)
         .into();
 
@@ -1628,7 +1611,7 @@ fn quick_action_btn<'a, Msg: Clone + 'a>(
         };
         content_row = content_row
             .push(Space::new().width(Length::Fill))
-            .push(text("N/A").size(FONT_CAPS_XS).color(na_color));
+            .push(text("N/A").size(FONT_XS).color(na_color));
     }
 
     let mut btn = iced::widget::button(container(content_row).width(Length::Fill))

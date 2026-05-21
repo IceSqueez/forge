@@ -11,7 +11,7 @@ use forge_widgets::{
         ICON_LOCK, ICON_SERVER,
     },
     toggle,
-    tokens::{FONT_BODY, FONT_BODY_MD, FONT_BODY_SM, FontRole, font, radius},
+    tokens::{FONT_BODY, FONT_SM, FontRole, font, radius},
     type_to_confirm_modal,
 };
 use iced::{
@@ -385,9 +385,9 @@ fn auth_toggle_row<'a>(
         .size(14.0_f32)
         .color(icon_color);
 
-    let label_el = text(label).size(FONT_BODY_MD).color(palette.text_primary);
+    let label_el = text(label).size(FONT_BODY).color(palette.text_primary);
     let sub_el = text(sublabel)
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .color(palette.text_faint)
         .font(font(FontRole::Body));
     let label_col = column![label_el, sub_el].spacing(2);
@@ -478,7 +478,7 @@ fn overlay_path_display<'a>(root: &'a Path, palette: &'a ForgePalette) -> Elemen
     let path_box = container(
         text(path_str)
             .font(font(FontRole::Monospace))
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_primary),
     )
     .width(Length::Fill)
@@ -501,7 +501,7 @@ fn overlay_path_display<'a>(root: &'a Path, palette: &'a ForgePalette) -> Elemen
                 .font(BOOTSTRAP_FONT)
                 .size(12.0_f32)
                 .color(text_sec),
-            text("Browse").size(FONT_BODY_SM).color(text_sec),
+            text("Browse").size(FONT_SM).color(text_sec),
         ]
         .spacing(5)
         .align_y(Alignment::Center),
@@ -530,7 +530,7 @@ fn overlay_path_display<'a>(root: &'a Path, palette: &'a ForgePalette) -> Elemen
 
 fn section_label<'a>(label: &'a str, palette: &'a ForgePalette) -> Element<'a, Message> {
     text(label)
-        .size(FONT_BODY_MD)
+        .size(FONT_BODY)
         .color(palette.text_primary)
         .font(iced::Font {
             weight: iced::font::Weight::Medium,
@@ -549,7 +549,7 @@ pub fn settings_websocket_view<'a>(
 
     let save_indicator: Element<'a, Message> = if let Some(ref err) = state.save_error {
         text(format!("Save failed: {err}"))
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(p.random)
             .into()
     } else if state.all_changes_saved {
@@ -558,18 +558,13 @@ pub fn settings_websocket_view<'a>(
                 .font(BOOTSTRAP_FONT)
                 .size(13.0_f32)
                 .color(p.success),
-            text("All changes saved")
-                .size(FONT_BODY_SM)
-                .color(p.success),
+            text("All changes saved").size(FONT_SM).color(p.success),
         ]
         .spacing(6)
         .align_y(Alignment::Center)
         .into()
     } else {
-        text("Saving…")
-            .size(FONT_BODY_SM)
-            .color(p.text_faint)
-            .into()
+        text("Saving…").size(FONT_SM).color(p.text_faint).into()
     };
 
     let header_row = row![
@@ -591,7 +586,7 @@ pub fn settings_websocket_view<'a>(
     .align_y(Alignment::Center);
 
     let subtitle = text("Configure how overlays and third-party tools connect to Forge.")
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .color(p.text_muted);
 
     let enable_toggle = toggle(
@@ -633,7 +628,7 @@ pub fn settings_websocket_view<'a>(
     let mut bind_col = column![
         section_label("Bind address", p),
         text("Which interface the server listens on")
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(p.text_muted),
         localhost_card,
         lan_card
@@ -643,7 +638,7 @@ pub fn settings_websocket_view<'a>(
     if state.bind_address_radio == BindAddressChoice::Lan {
         bind_col = bind_col.push(
             text("Restart server to apply bind address change.")
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(p.warning),
         );
     }
@@ -654,7 +649,7 @@ pub fn settings_websocket_view<'a>(
             SettingsWebSocketMsg::PortFocusLost,
         ))
         .font(font(FontRole::Monospace))
-        .size(FONT_BODY)
+        .size(FONT_SM)
         .padding([7_u16, 12_u16])
         .width(Length::Fill)
         .style(port_input_style(*p));
@@ -663,7 +658,7 @@ pub fn settings_websocket_view<'a>(
         column![
             section_label("Port", p),
             text("Default 8081 · range 1024–65535")
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(p.text_muted),
             port_field,
         ]
@@ -673,11 +668,11 @@ pub fn settings_websocket_view<'a>(
 
     let token_desc_row = row![
         text("Clients send this in ")
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(p.text_muted),
         text("Authorization: Bearer …")
             .font(font(FontRole::Monospace))
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(p.text_primary),
     ]
     .align_y(Alignment::Center);
@@ -706,7 +701,7 @@ pub fn settings_websocket_view<'a>(
     let auth_section = column![
         section_label("Authentication", p),
         text("Which clients need to authenticate")
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(p.text_muted),
         auth_toggle_row(
             ICON_LOCK,
@@ -745,12 +740,10 @@ pub fn settings_websocket_view<'a>(
     .spacing(0);
 
     let overlay_desc_row = row![
-        text("Folder served at ")
-            .size(FONT_BODY_SM)
-            .color(p.text_muted),
+        text("Folder served at ").size(FONT_SM).color(p.text_muted),
         text("http://<bind>/")
             .font(font(FontRole::Monospace))
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(p.text_primary),
     ]
     .align_y(Alignment::Center);

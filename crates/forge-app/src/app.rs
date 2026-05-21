@@ -24,10 +24,7 @@ use forge_widgets::icons::{
     ICON_HOME, ICON_LIGHTNING, ICON_MUSIC_NOTE, ICON_PEOPLE, ICON_PLUS, ICON_SPEAKER,
     ICON_TERMINAL,
 };
-use forge_widgets::tokens::{
-    FONT_BODY, FONT_BODY_LG, FONT_BODY_MD, FONT_BODY_SM, FONT_CAPS, FONT_CAPS_SM, FONT_PAGE_TITLE,
-    FONT_VALUE,
-};
+use forge_widgets::tokens::{FONT_BODY, FONT_LG, FONT_MD, FONT_SM, FONT_XS};
 use forge_widgets::{
     FontRole, ForgePalette, NavChild, NavItem, Radius, SidebarV2, ThemeId, TitleBarV2, font,
     page_shell, radius, sidebar_v2, title_bar_v2,
@@ -2127,21 +2124,18 @@ fn home_nav_card<'a>(
     let description_row: Element<'a, Message> = if let Some(cta_text) = cta {
         row![
             text(format!("{leading} \u{b7} "))
-                .size(FONT_CAPS)
+                .size(FONT_XS)
                 .color(palette.text_muted),
-            text(cta_text).size(FONT_CAPS).color(palette.brand),
+            text(cta_text).size(FONT_XS).color(palette.brand),
         ]
         .into()
     } else {
-        text(leading)
-            .size(FONT_CAPS)
-            .color(palette.text_muted)
-            .into()
+        text(leading).size(FONT_XS).color(palette.text_muted).into()
     };
 
     let content = column![
         icon_box,
-        text(title).size(FONT_BODY_LG).color(palette.text_primary),
+        text(title).size(FONT_BODY).color(palette.text_primary),
         description_row,
     ]
     .spacing(10.0)
@@ -2203,14 +2197,14 @@ fn home_event_row<'a>(
 
     let timestamp = container(
         text(ts_str)
-            .size(FONT_CAPS)
+            .size(FONT_XS)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace)),
     )
     .width(48.0);
 
     let description = text(event_kind_description(event.source, &event.kind))
-        .size(FONT_BODY)
+        .size(FONT_SM)
         .color(palette.text_primary)
         .width(Length::Fill);
 
@@ -2250,10 +2244,10 @@ fn home_stat_row<'a>(
     use iced::{Alignment, Border};
 
     let inner = row![
-        text(label).size(FONT_BODY_SM).color(palette.text_muted),
+        text(label).size(FONT_SM).color(palette.text_muted),
         iced::widget::Space::new().width(Length::Fill),
         text(value_text)
-            .size(FONT_VALUE)
+            .size(FONT_MD)
             .color(value_color)
             .font(font(FontRole::Monospace)),
     ]
@@ -2338,7 +2332,7 @@ fn home_inline_button<'a>(
             .size(12.0)
             .font(BOOTSTRAP_FONT)
             .color(icon_color),
-        text(label).size(FONT_BODY_SM).color(text_color),
+        text(label).size(FONT_SM).color(text_color),
     ]
     .spacing(5.0)
     .align_y(Alignment::Center);
@@ -2395,14 +2389,12 @@ fn home_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message
     let version = env!("CARGO_PKG_VERSION");
     let uptime_str = format_uptime(app.boot_time.elapsed().unwrap_or_default());
     let title_col = column![
-        text("Forge")
-            .size(FONT_PAGE_TITLE)
-            .color(palette.text_primary),
+        text("Forge").size(FONT_LG).color(palette.text_primary),
         text("Open-source stream automation, forged for streamers")
-            .size(FONT_BODY_MD)
+            .size(FONT_BODY)
             .color(palette.text_muted),
         text(format!("v{version} · up {uptime_str}"))
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(palette.text_faint)
             .font(font(FontRole::Monospace)),
     ]
@@ -2445,7 +2437,7 @@ fn home_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message
         });
 
     let manage_header = text("MANAGE")
-        .size(FONT_CAPS_SM)
+        .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
@@ -2548,7 +2540,7 @@ fn home_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message
                 ..iced::widget::container::Style::default()
             });
         let status_label = text(if is_empty { "IDLE" } else { "LIVE" })
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(palette.text_faint)
             .font(font(FontRole::Monospace));
         let status_row = row![status_dot, status_label]
@@ -2557,7 +2549,7 @@ fn home_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message
 
         let header = row![
             text("Recent events")
-                .size(FONT_BODY_LG)
+                .size(FONT_BODY)
                 .color(palette.text_primary),
             iced::widget::Space::new().width(Length::Fill),
             status_row,
@@ -2570,12 +2562,12 @@ fn home_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message
                 .font(forge_widgets::BOOTSTRAP_FONT)
                 .color(palette.border_regular);
             let primary = text("No events yet")
-                .size(FONT_BODY_MD)
+                .size(FONT_BODY)
                 .color(palette.text_secondary);
             let secondary = text(
                 "Events will appear here as soon as you connect a platform and start streaming.",
             )
-            .size(FONT_CAPS)
+            .size(FONT_XS)
             .color(palette.text_muted)
             .wrapping(iced::widget::text::Wrapping::Word);
 
@@ -2608,7 +2600,7 @@ fn home_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message
 
     let at_a_glance = {
         let header = text("At a glance")
-            .size(FONT_BODY_LG)
+            .size(FONT_BODY)
             .color(palette.text_primary);
 
         let actions_color = if actions_count == 0 {
@@ -2984,7 +2976,7 @@ fn nav_group_header<'a>(label: &'a str, palette: &'a ForgePalette) -> Element<'a
         .font(forge_widgets::tokens::font(
             forge_widgets::tokens::FontRole::Monospace,
         ))
-        .size(forge_widgets::tokens::FONT_CAPS_SM)
+        .size(forge_widgets::tokens::FONT_XS)
         .color(palette.text_faint)
         .into()
 }
@@ -4893,7 +4885,7 @@ fn tts_tab_button<'a>(
         iced::Color::TRANSPARENT
     };
     let inner = column![
-        text(label).size(FONT_BODY_SM).color(fg),
+        text(label).size(FONT_SM).color(fg),
         container(iced::widget::Space::new())
             .width(iced::Length::Fill)
             .height(2)

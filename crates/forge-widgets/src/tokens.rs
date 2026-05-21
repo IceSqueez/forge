@@ -77,19 +77,13 @@ pub fn radius(r: Radius) -> f32 {
 pub const BORDER_THIN: f32 = 1.0;
 pub const BORDER_ACCENT: f32 = 1.0;
 
-pub const FONT_CAPS_XS: f32 = 9.5;
-pub const FONT_CAPS_SM: f32 = 10.5;
-pub const FONT_CAPS: f32 = 11.0;
-pub const FONT_BODY_SM: f32 = 11.5;
-pub const FONT_BODY: f32 = 12.0;
-pub const FONT_BODY_MD: f32 = 12.5;
-pub const FONT_BODY_LG: f32 = 13.0;
-pub const FONT_PLATFORM_NAME: f32 = 13.5;
-pub const FONT_VALUE: f32 = 14.0;
-pub const FONT_HEADING_SM: f32 = 16.0;
-pub const FONT_HEADING: f32 = 18.0;
-pub const FONT_PAGE_TITLE: f32 = 20.0;
-pub const FONT_HERO: f32 = 22.0;
+pub const FONT_XS: f32 = 10.5;
+pub const FONT_SM: f32 = 12.0;
+pub const FONT_MD: f32 = 14.0;
+pub const FONT_LG: f32 = 18.0;
+
+pub const FONT_BODY: f32 = 13.0;
+
 pub const FONT_DEVICE_CODE: f32 = 28.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

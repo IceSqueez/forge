@@ -4,7 +4,7 @@ use iced::{
 };
 
 use crate::palette::ForgePalette;
-use crate::tokens::{Density, FONT_CAPS_SM, FontRole, Radius, Spacing, font, radius, spacing};
+use crate::tokens::{Density, FONT_XS, FontRole, Radius, Spacing, font, radius, spacing};
 
 const RING_LEN: usize = 60;
 const CANVAS_HEIGHT: f32 = 80.0;
@@ -124,12 +124,12 @@ pub fn throughput_sparkline<'a, Msg: 'a>(
 
     let header = row![
         text("THROUGHPUT")
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(palette.text_primary)
             .font(font(FontRole::Monospace)),
         Space::new().width(Length::Fill),
         text(scale_label.to_owned())
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(palette.text_faint)
             .font(font(FontRole::Monospace)),
     ]

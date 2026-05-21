@@ -1,7 +1,6 @@
 use forge_widgets::ForgePalette;
 use forge_widgets::tokens::{
-    BORDER_THIN, Density, FONT_BODY, FONT_BODY_SM, FONT_CAPS_SM, FontRole, Radius, Spacing, font,
-    radius, spacing,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spacing,
 };
 use iced::widget::{button, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Background, Border, Color, Element, Length, Task};
@@ -113,7 +112,7 @@ fn engine_list_view<'a>(
     gap_sm: f32,
 ) -> Element<'a, Message> {
     let header = text(format!("CONFIGURED \u{b7} {}", STATIC_ENGINES.len()))
-        .size(FONT_CAPS_SM)
+        .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
@@ -124,7 +123,7 @@ fn engine_list_view<'a>(
 
     let placeholder = container(
         text("+ More engines in future releases")
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_muted),
     )
     .style(move |_| container::Style {
@@ -170,7 +169,7 @@ fn engine_list_card<'a>(
 
     let name_row = row![
         text(engine.name)
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_primary)
             .width(Length::Fill),
         status_dot,
@@ -226,7 +225,7 @@ fn engine_detail_view<'a>(
     } else {
         container(
             text("Select an engine to configure")
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(palette.text_muted),
         )
         .center_x(Length::Fill)
@@ -289,7 +288,7 @@ fn engine_detail_header<'a>(
             })
             .width(7)
             .height(7),
-        text("Ready").size(FONT_BODY_SM).color(status_color),
+        text("Ready").size(FONT_SM).color(status_color),
     ]
     .align_y(Alignment::Center)
     .spacing(gap_sm);
@@ -316,9 +315,7 @@ fn engine_detail_header<'a>(
     };
 
     let title_row = row![
-        text(engine.name)
-            .size(FONT_BODY)
-            .color(palette.text_primary),
+        text(engine.name).size(FONT_SM).color(palette.text_primary),
         default_badge,
     ]
     .align_y(Alignment::Center)
@@ -328,7 +325,7 @@ fn engine_detail_header<'a>(
         "local TTS engine \u{b7} {} voices",
         engine.voice_count
     ))
-    .size(FONT_BODY_SM)
+    .size(FONT_SM)
     .color(palette.text_muted);
 
     container(
@@ -354,14 +351,14 @@ fn engine_detail_header<'a>(
 
 fn credentials_section<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     let header = text("ENGINE")
-        .size(FONT_CAPS_SM)
+        .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
     let keyring_notice = container(
         row![
             text("Credentials stored in system keyring, never in config files")
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(palette.text_muted)
                 .width(Length::Fill),
             container(
@@ -417,7 +414,7 @@ fn param_slider_row<'a>(
 ) -> Element<'a, Message> {
     row![
         text(label)
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_muted)
             .width(70),
         container(text(""))
@@ -428,7 +425,7 @@ fn param_slider_row<'a>(
             .height(4)
             .width(Length::Fill),
         text(value_label)
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace))
             .width(42),
@@ -440,7 +437,7 @@ fn param_slider_row<'a>(
 
 fn params_section<'a>(palette: &'a ForgePalette, gap_sm: f32) -> Element<'a, Message> {
     let header = text("DEFAULT VOICE PARAMETERS")
-        .size(FONT_CAPS_SM)
+        .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
@@ -476,7 +473,7 @@ fn voices_section<'a>(
 
     let header_row = row![
         text(format!("AVAILABLE VOICES \u{b7} {count}"))
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace))
             .width(Length::Fill),
@@ -543,7 +540,7 @@ fn voice_cell<'a>(voice: &'a EngineVoiceRow, palette: &'a ForgePalette) -> Eleme
     container(
         column![
             text(&voice.display_name)
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(palette.text_primary),
             text(meta)
                 .size(9.0)

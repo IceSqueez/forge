@@ -1,7 +1,6 @@
 use forge_widgets::ForgePalette;
 use forge_widgets::tokens::{
-    BORDER_THIN, Density, FONT_BODY, FONT_BODY_SM, FONT_CAPS_SM, FontRole, Radius, Spacing, font,
-    radius, spacing,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spacing,
 };
 use iced::widget::{column, container, row, text};
 use iced::{Alignment, Background, Border, Element, Length, Task};
@@ -75,11 +74,11 @@ pub fn tts_triggers_view<'a>(
 
     let header_group = column![
         text("WHAT GETS SPOKEN")
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace)),
         text("Enable sources and set who can trigger them")
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_muted),
     ]
     .spacing(4);
@@ -198,7 +197,7 @@ fn trigger_card_command<'a>(
     };
 
     let header = row![
-        container(text("!").size(FONT_BODY).color(palette.brand))
+        container(text("!").size(FONT_SM).color(palette.brand))
             .style(move |_| container::Style {
                 background: Some(Background::Color(palette.surface_overlay)),
                 border: Border {
@@ -213,7 +212,7 @@ fn trigger_card_command<'a>(
             .align_y(iced::alignment::Vertical::Center),
         column![
             text("Chat command")
-                .size(FONT_BODY)
+                .size(FONT_SM)
                 .color(palette.text_primary),
             text("!tts <message>")
                 .size(10.5)
@@ -282,7 +281,7 @@ fn trigger_card_channel_points<'a>(
             .align_y(iced::alignment::Vertical::Center),
         column![
             text("Channel point reward")
-                .size(FONT_BODY)
+                .size(FONT_SM)
                 .color(palette.text_primary),
             text("\"Speak my message\" \u{b7} 500 pts")
                 .size(10.5)
@@ -346,7 +345,7 @@ fn trigger_card_bits<'a>(
             .align_y(iced::alignment::Vertical::Center),
         column![
             text("Bits / cheers")
-                .size(FONT_BODY)
+                .size(FONT_SM)
                 .color(palette.text_primary),
             text("Speak cheer message")
                 .size(10.5)
@@ -369,7 +368,7 @@ fn trigger_card_bits<'a>(
         text("Minimum").size(10.5).color(palette.text_muted),
         container(
             text("100 bits")
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(palette.warning)
                 .font(font(FontRole::Monospace)),
         )
@@ -428,7 +427,7 @@ fn trigger_card_subs<'a>(
             .align_y(iced::alignment::Vertical::Center),
         column![
             text("Sub messages")
-                .size(FONT_BODY)
+                .size(FONT_SM)
                 .color(palette.text_primary),
             text("Speak resub / gift messages")
                 .size(10.5)
@@ -491,7 +490,7 @@ fn format_row_toggle<'a>(
     container(
         row![
             text(label)
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(palette.text_primary)
                 .width(Length::Fill),
             toggle_switch(on, msg, palette),
@@ -509,7 +508,7 @@ fn format_card<'a>(
     gap_sm: f32,
 ) -> Element<'a, Message> {
     let header = text("MESSAGE FORMAT")
-        .size(FONT_CAPS_SM)
+        .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
@@ -529,7 +528,7 @@ fn format_card<'a>(
             .font(font(FontRole::Monospace)),
         container(
             text("{user} says: {message}")
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(palette.text_primary)
                 .font(font(FontRole::Monospace))
                 .width(Length::Fill),
@@ -591,12 +590,12 @@ fn queue_value_row<'a>(
     container(
         row![
             text(label)
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(palette.text_primary)
                 .width(Length::Fill),
             container(
                 text(value)
-                    .size(FONT_BODY_SM)
+                    .size(FONT_SM)
                     .color(palette.text_primary)
                     .font(font(FontRole::Monospace)),
             )
@@ -624,14 +623,14 @@ fn queue_behavior_card<'a>(
     gap_sm: f32,
 ) -> Element<'a, Message> {
     let header = text("QUEUE BEHAVIOR")
-        .size(FONT_CAPS_SM)
+        .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
     let skip_row = container(
         row![
             text("Bits & points skip the line")
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(palette.text_primary)
                 .width(Length::Fill),
             toggle_switch(

@@ -1,6 +1,6 @@
 use forge_widgets::ForgePalette;
 use forge_widgets::tokens::{
-    BORDER_THIN, Density, FONT_BODY, FONT_BODY_SM, FontRole, Radius, Spacing, font, radius, spacing,
+    BORDER_THIN, Density, FONT_SM, FontRole, Radius, Spacing, font, radius, spacing,
 };
 use iced::widget::{button, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Background, Border, Element, Length, Task};
@@ -174,7 +174,7 @@ fn strategy_banner_view<'a>(
     let inner = container(
         row![
             text("Default assignment strategy")
-                .size(FONT_BODY)
+                .size(FONT_SM)
                 .color(palette.text_primary)
                 .width(Length::Fill),
             segmented,
@@ -207,7 +207,7 @@ fn toolbar_view<'a>(
 ) -> Element<'a, Message> {
     let search = text_input("Search viewers...", &state.search)
         .on_input(|s| Message::Tts(TtsMsg::Aliases(VoiceAliasesMsg::SearchChanged(s))))
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .width(240)
         .style(move |_, _| text_input::Style {
             background: Background::Color(palette.elevated),
@@ -223,10 +223,10 @@ fn toolbar_view<'a>(
         });
 
     let count_text = text(format!("{} manual aliases", state.total_count))
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .color(palette.text_muted);
 
-    let assign_btn = button(text("Assign voice").size(FONT_BODY_SM))
+    let assign_btn = button(text("Assign voice").size(FONT_SM))
         .on_press(Message::Noop)
         .style(move |_, _| button::Style {
             background: Some(Background::Color(palette.brand)),
@@ -324,7 +324,7 @@ fn aliases_table_view<'a>(
     let rows: Element<'a, Message> = if visible.is_empty() {
         container(
             text("No voice aliases configured")
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(palette.text_muted),
         )
         .padding([20, 12])
@@ -425,9 +425,7 @@ fn alias_row<'a>(
 
     let viewer_col = row![
         avatar,
-        text(&alias.viewer_name)
-            .size(FONT_BODY_SM)
-            .color(text_color),
+        text(&alias.viewer_name).size(FONT_SM).color(text_color),
         role_badge,
     ]
     .align_y(Alignment::Center)
@@ -436,14 +434,14 @@ fn alias_row<'a>(
 
     let voice_col: Element<'a, Message> = if muted {
         text("Never speak")
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.random)
             .font(mono)
             .width(Length::FillPortion(16))
             .into()
     } else {
         text(format!("{} · {}", alias.engine_label, alias.voice_label))
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_primary)
             .font(mono)
             .width(Length::FillPortion(16))
@@ -477,13 +475,13 @@ fn alias_row<'a>(
     let faint = palette.surface_overlay;
 
     let pitch_col = text(pitch_str)
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .color(if muted { faint } else { palette.text_muted })
         .font(mono)
         .width(Length::FillPortion(8));
 
     let speed_col = text(speed_str)
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .color(if muted { faint } else { palette.text_muted })
         .font(mono)
         .width(Length::FillPortion(8));
@@ -494,15 +492,15 @@ fn alias_row<'a>(
         palette.success
     };
     let actions = row![
-        button(text("▶").size(FONT_BODY_SM).color(play_color))
+        button(text("▶").size(FONT_SM).color(play_color))
             .on_press(Message::Noop)
             .style(|_, _| button::Style::default())
             .padding(0),
-        button(text("✎").size(FONT_BODY_SM).color(palette.text_muted))
+        button(text("✎").size(FONT_SM).color(palette.text_muted))
             .on_press(Message::Noop)
             .style(|_, _| button::Style::default())
             .padding(0),
-        button(text("✕").size(FONT_BODY_SM).color(palette.text_muted))
+        button(text("✕").size(FONT_SM).color(palette.text_muted))
             .on_press(Message::Noop)
             .style(|_, _| button::Style::default())
             .padding(0),

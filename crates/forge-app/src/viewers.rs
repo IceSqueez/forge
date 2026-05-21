@@ -6,7 +6,7 @@ use forge_widgets::{
     ForgePalette, Radius,
     icons::{BOOTSTRAP_FONT, ICON_PEOPLE},
     radius,
-    tokens::{FONT_BODY, FONT_BODY_SM, FONT_CAPS_SM, FontRole, font},
+    tokens::{FONT_SM, FONT_XS, FontRole, font},
 };
 use iced::{
     Background, Border, Color, Element, Length, Task,
@@ -121,7 +121,7 @@ fn platform_chip<'a>(
     iced::widget::button(
         text(label.to_owned())
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(fg),
     )
     .padding([4u16, 10u16])
@@ -151,7 +151,7 @@ fn viewer_row<'a>(v: &'a Viewer, palette: &'a ForgePalette) -> Element<'a, Messa
     let avatar = container(
         text(avatar_letter)
             .font(font(FontRole::Monospace))
-            .size(FONT_BODY)
+            .size(FONT_SM)
             .color(palette.shell),
     )
     .width(Length::Fixed(28.0))
@@ -170,14 +170,14 @@ fn viewer_row<'a>(v: &'a Viewer, palette: &'a ForgePalette) -> Element<'a, Messa
 
     let name = text(v.username.clone())
         .font(font(FontRole::Body))
-        .size(FONT_BODY)
+        .size(FONT_SM)
         .color(palette.text_primary);
 
     let platform_label = v.platform.as_str().to_ascii_uppercase();
     let platform_pill = container(
         text(platform_label)
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(palette.text_muted),
     )
     .padding([2u16, 8u16])
@@ -193,18 +193,18 @@ fn viewer_row<'a>(v: &'a Viewer, palette: &'a ForgePalette) -> Element<'a, Messa
 
     let msg_count = text(format!("{} msgs", v.message_count))
         .font(font(FontRole::Monospace))
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .color(palette.text_muted);
 
     let last_seen = text(last_seen_label(v.last_seen_at))
         .font(font(FontRole::Monospace))
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .color(palette.text_muted);
 
     let greeting_badge: Element<'_, Message> = if v.custom_greeting {
         text("greeting")
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(palette.success)
             .into()
     } else {
@@ -256,7 +256,7 @@ pub fn viewers_view<'a>(
 
     let search_input = text_input("Search by username…", &state.search)
         .on_input(|q| Message::Viewers(ViewersMsg::SearchChanged(q)))
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .padding(6);
 
     let chips = row![
@@ -317,7 +317,7 @@ pub fn viewers_view<'a>(
         state.viewers.len()
     ))
     .font(font(FontRole::Monospace))
-    .size(FONT_CAPS_SM)
+    .size(FONT_XS)
     .color(palette.text_muted);
 
     let rows: Vec<Element<'_, Message>> = filtered.iter().map(|v| viewer_row(v, palette)).collect();
@@ -325,19 +325,19 @@ pub fn viewers_view<'a>(
     let list_body: Element<'_, Message> = if state.loading {
         text("Loading…")
             .font(font(FontRole::Monospace))
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_muted)
             .into()
     } else if let Some(err) = state.error.as_deref() {
         text(format!("Error: {err}"))
             .font(font(FontRole::Monospace))
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.random)
             .into()
     } else if rows.is_empty() {
         text("No viewers tracked yet — they appear on the first chat message.")
             .font(font(FontRole::Monospace))
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_muted)
             .into()
     } else {

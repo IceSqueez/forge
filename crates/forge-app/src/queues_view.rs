@@ -16,7 +16,7 @@ use forge_widgets::{
         ICON_GEAR, ICON_LOADER, ICON_PAUSE, ICON_PLAY, ICON_PLUS,
     },
     radius,
-    tokens::{BORDER_THIN, FONT_BODY_SM, FONT_CAPS_SM, FontRole, font},
+    tokens::{BORDER_THIN, FONT_SM, FONT_XS, FontRole, font},
 };
 
 use crate::Message;
@@ -125,25 +125,19 @@ pub fn queues_view<'a>(state: &'a QueuesState, palette: &'a ForgePalette) -> Ele
 
     let stat_strip = row![
         text(total.to_string())
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_primary),
-        text(" queues")
-            .size(FONT_BODY_SM)
-            .color(palette.text_secondary),
-        text("  ·  ").size(FONT_BODY_SM).color(palette.text_faint),
+        text(" queues").size(FONT_SM).color(palette.text_secondary),
+        text("  ·  ").size(FONT_SM).color(palette.text_faint),
         text(running.to_string())
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.success),
-        text(" running")
-            .size(FONT_BODY_SM)
-            .color(palette.text_secondary),
-        text("  ·  ").size(FONT_BODY_SM).color(palette.text_faint),
+        text(" running").size(FONT_SM).color(palette.text_secondary),
+        text("  ·  ").size(FONT_SM).color(palette.text_faint),
         text(paused_count.to_string())
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.warning),
-        text(" paused")
-            .size(FONT_BODY_SM)
-            .color(palette.text_secondary),
+        text(" paused").size(FONT_SM).color(palette.text_secondary),
     ]
     .align_y(iced::Alignment::Center);
 
@@ -174,7 +168,7 @@ pub fn queues_view<'a>(state: &'a QueuesState, palette: &'a ForgePalette) -> Ele
     let toolbar = container(
         row![
             text("Manage action queues, their concurrency, and pause state")
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(desc_color),
             Space::new().width(Length::Fill),
             pause_all_button(border_col, warning),
@@ -220,7 +214,7 @@ fn pause_all_button<'a>(border_col: Color, warning: Color) -> Element<'a, Messag
         .size(13.0)
         .color(warning);
 
-    let label = text("Pause all").size(FONT_BODY_SM).color(warning);
+    let label = text("Pause all").size(FONT_SM).color(warning);
 
     button(
         row![icon, label]
@@ -253,7 +247,7 @@ fn new_queue_button<'a>(brand: Color, dark: Color) -> Element<'a, Message> {
         .size(13.0)
         .color(dark);
 
-    let label = text("New queue").size(FONT_BODY_SM).color(dark);
+    let label = text("New queue").size(FONT_SM).color(dark);
 
     button(
         row![icon, label]
@@ -278,7 +272,7 @@ fn build_grid<'a>(state: &'a QueuesState, palette: &'a ForgePalette) -> Element<
     if state.queues.is_empty() {
         return column![
             text("No queues configured.")
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(palette.text_secondary)
         ]
         .into();
@@ -452,7 +446,7 @@ fn queue_card_metrics<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
 
     let concurrency_col = column![
         text("CONCURRENCY")
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .font(font(FontRole::Monospace))
             .color(label_color),
         text(q.concurrency.to_string())
@@ -460,7 +454,7 @@ fn queue_card_metrics<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
             .font(font(FontRole::Monospace))
             .color(value_color),
         text(concurrency_label_str)
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .font(font(FontRole::Monospace))
             .color(sub_color),
     ]
@@ -469,7 +463,7 @@ fn queue_card_metrics<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
 
     let pending_col = column![
         text("PENDING")
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .font(font(FontRole::Monospace))
             .color(label_color),
         text(q.pending.to_string())
@@ -477,7 +471,7 @@ fn queue_card_metrics<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
             .font(font(FontRole::Monospace))
             .color(pending_value_color),
         text(pending_sub_str)
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .font(font(FontRole::Monospace))
             .color(pending_sub_color),
     ]
@@ -486,7 +480,7 @@ fn queue_card_metrics<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
 
     let actions_col = column![
         text("ACTIONS")
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .font(font(FontRole::Monospace))
             .color(label_color),
         text(q.assigned_actions.to_string())
@@ -494,7 +488,7 @@ fn queue_card_metrics<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
             .font(font(FontRole::Monospace))
             .color(value_color),
         text("assigned")
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .font(font(FontRole::Monospace))
             .color(sub_color),
     ]
@@ -653,7 +647,7 @@ fn concurrent_running_panel<'a>(
     let text_col = palette.text_primary;
 
     let header = text("RUNNING NOW")
-        .size(FONT_CAPS_SM)
+        .size(FONT_XS)
         .font(font(FontRole::Monospace))
         .color(muted);
 
@@ -734,7 +728,7 @@ fn queue_card_buttons<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
             .font(BOOTSTRAP_FONT)
             .size(12.0)
             .color(dark);
-        let label = text("Resume").size(FONT_BODY_SM).color(dark);
+        let label = text("Resume").size(FONT_SM).color(dark);
         button(
             row![icon, label]
                 .spacing(5)
@@ -758,7 +752,7 @@ fn queue_card_buttons<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
             .font(BOOTSTRAP_FONT)
             .size(12.0)
             .color(warning);
-        let label = text("Pause").size(FONT_BODY_SM).color(warning);
+        let label = text("Pause").size(FONT_SM).color(warning);
         button(
             row![icon, label]
                 .spacing(5)
@@ -787,7 +781,7 @@ fn queue_card_buttons<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
         .font(BOOTSTRAP_FONT)
         .size(12.0)
         .color(muted);
-    let drain_label = text("Drain").size(FONT_BODY_SM).color(muted);
+    let drain_label = text("Drain").size(FONT_SM).color(muted);
     let drain_btn: Element<'a, Message> = button(
         row![drain_icon, drain_label]
             .spacing(5)
@@ -815,7 +809,7 @@ fn queue_card_buttons<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
         .font(BOOTSTRAP_FONT)
         .size(12.0)
         .color(muted);
-    let cfg_label = text("Configure").size(FONT_BODY_SM).color(muted);
+    let cfg_label = text("Configure").size(FONT_SM).color(muted);
     let cfg_btn: Element<'a, Message> = button(
         row![cfg_icon, cfg_label]
             .spacing(5)

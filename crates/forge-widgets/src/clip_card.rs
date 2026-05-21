@@ -6,8 +6,8 @@ use iced::{
 use crate::icons::{BOOTSTRAP_FONT, ICON_PLAY, ICON_X};
 use crate::palette::ForgePalette;
 use crate::tokens::{
-    BORDER_THIN, Density, FONT_BODY_LG, FONT_BODY_SM, FONT_CAPS_SM, FontRole, Radius, Spacing,
-    font, radius, spacing,
+    BORDER_THIN, Density, FONT_BODY, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius,
+    spacing,
 };
 
 pub struct ClipCardData {
@@ -72,13 +72,13 @@ pub fn clip_card<'a, Msg: 'a + Clone>(
 ) -> Element<'a, Msg> {
     let p = *palette;
     let name_row = text(data.name.as_str())
-        .size(FONT_BODY_LG)
+        .size(FONT_BODY)
         .color(palette.text_primary)
         .font(font(FontRole::Body));
 
     let duration_chip = container(
         text(data.duration_label.as_str())
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace)),
     )
@@ -88,7 +88,7 @@ pub fn clip_card<'a, Msg: 'a + Clone>(
     let chips_row: Element<'a, Msg> = if let Some(hk) = &data.hotkey_label {
         let hk_chip = container(
             text(hk.as_str())
-                .size(FONT_CAPS_SM)
+                .size(FONT_XS)
                 .color(palette.warning)
                 .font(font(FontRole::Monospace)),
         )
@@ -104,12 +104,12 @@ pub fn clip_card<'a, Msg: 'a + Clone>(
 
     let device_row = row![
         text(data.device_label.as_str())
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace))
             .width(Length::Fill),
         text(format!("{}%", data.volume_pct))
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(if data.volume_pct > 100 {
                 palette.warning
             } else {

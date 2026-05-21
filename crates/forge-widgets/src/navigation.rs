@@ -7,7 +7,7 @@ use iced::{
 
 use crate::icons::{BOOTSTRAP_FONT, ICON_CHEVRON_DOWN, ICON_CHEVRON_UP};
 use crate::palette::ForgePalette;
-use crate::tokens::{BORDER_THIN, FONT_BODY, FONT_BODY_MD, FontRole, Radius, font, radius};
+use crate::tokens::{BORDER_THIN, FONT_BODY, FONT_SM, FontRole, Radius, font, radius};
 
 pub const SIDEBAR_WIDTH: u16 = 200;
 
@@ -268,7 +268,7 @@ fn nav_leaf<'a, Msg: 'a + Clone>(
             .size(15.0)
             .font(BOOTSTRAP_FONT)
             .color(icon_color),
-        text(label).size(FONT_BODY_MD),
+        text(label).size(FONT_BODY),
     ]
     .spacing(10)
     .align_y(iced::Alignment::Center);
@@ -342,7 +342,7 @@ fn nav_group_header<'a, Msg: 'a + Clone>(
             .size(15.0)
             .font(BOOTSTRAP_FONT)
             .color(icon_color),
-        text(label).size(FONT_BODY_MD),
+        text(label).size(FONT_BODY),
         Space::new().width(iced::Length::Fill),
         text(chevron.to_string())
             .size(13.0)
@@ -413,7 +413,7 @@ fn nav_child_row<'a, Msg: 'a + Clone>(
             ..Default::default()
         });
 
-    let content = row![dot, text(child.label).size(FONT_BODY)]
+    let content = row![dot, text(child.label).size(FONT_SM)]
         .spacing(10)
         .align_y(iced::Alignment::Center);
 

@@ -5,7 +5,7 @@ use iced::{
 
 use crate::{
     ForgePalette,
-    tokens::{FONT_BODY, FONT_CAPS_SM, FontRole, font},
+    tokens::{FONT_BODY, FONT_XS, FontRole, font},
 };
 
 pub struct CodeEditorState {
@@ -68,7 +68,7 @@ pub fn code_editor<'a, Msg: Clone + 'a>(
             container(
                 text(n.to_string())
                     .font(mono)
-                    .size(FONT_CAPS_SM)
+                    .size(FONT_XS)
                     .color(number_fg),
             )
             .width(38.0_f32)

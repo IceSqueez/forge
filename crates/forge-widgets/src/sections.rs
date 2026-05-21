@@ -6,7 +6,7 @@ use iced::{
 };
 
 use crate::palette::ForgePalette;
-use crate::tokens::{FONT_CAPS, FontRole, Radius, font, radius};
+use crate::tokens::{FONT_XS, FontRole, Radius, font, radius};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ToastVariant {
@@ -30,7 +30,7 @@ pub fn section_header<'a, Msg: 'a>(
     container(
         text(display)
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS)
+            .size(FONT_XS)
             .color(palette.text_muted),
     )
     .padding([6, 14])
@@ -52,11 +52,11 @@ pub fn section_header_expandable<'a, Msg: 'a + Clone>(
     let inner = row![
         text(chevron_char)
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS)
+            .size(FONT_XS)
             .color(palette.text_muted),
         text(label_str.to_uppercase())
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS)
+            .size(FONT_XS)
             .color(palette.text_muted),
         counter_badge_inline(count, palette),
         Space::new().width(Length::Fill),
@@ -101,7 +101,7 @@ fn counter_badge_inline<'a, Msg: 'a>(count: u32, palette: &ForgePalette) -> Elem
     };
     text(label)
         .font(font(FontRole::Monospace))
-        .size(FONT_CAPS)
+        .size(FONT_XS)
         .color(palette.text_faint)
         .into()
 }

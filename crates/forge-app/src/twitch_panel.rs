@@ -14,9 +14,7 @@ use forge_widgets::icons::{
     BOOTSTRAP_FONT, ICON_CHECK_CIRCLE, ICON_CLOCK, ICON_COPY, ICON_EXTERNAL_LINK, ICON_LOCK,
     ICON_REFRESH,
 };
-use forge_widgets::tokens::{
-    FONT_BODY_LG, FONT_BODY_MD, FONT_BODY_SM, FONT_CAPS, FONT_CAPS_SM, FontRole, font,
-};
+use forge_widgets::tokens::{FONT_BODY, FONT_SM, FONT_XS, FontRole, font};
 use tokio::sync::Mutex as TokioMutex;
 
 use crate::Message;
@@ -128,17 +126,17 @@ pub fn twitch_reauth_banner<'a>(palette: &'a ForgePalette) -> Element<'a, Messag
         .font(BOOTSTRAP_FONT)
         .color(palette.warning);
     let title = text("Twitch token is missing required scopes")
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .color(palette.text_primary);
     let detail = text(
         "EventSub rejected the chat subscription. Re-authorize to refresh the token with all current scopes.",
     )
-    .size(FONT_CAPS_SM)
+    .size(FONT_XS)
     .color(palette.text_muted)
     .wrapping(iced::widget::text::Wrapping::Word);
     let text_col = column![title, detail].spacing(2.0);
 
-    let cta = button(text("Re-authorize").size(FONT_CAPS_SM).color(palette.shell))
+    let cta = button(text("Re-authorize").size(FONT_XS).color(palette.shell))
         .on_press(Message::TwitchReauthRequested)
         .padding(Padding::from([6_u16, 12_u16]))
         .style(move |_theme: &Theme, _status| button::Style {
@@ -223,11 +221,9 @@ fn twitch_header_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     });
 
     let title_col = column![
-        text("Twitch")
-            .size(FONT_BODY_LG)
-            .color(palette.text_primary),
+        text("Twitch").size(FONT_BODY).color(palette.text_primary),
         text("Connect to enable chat, subs, bits, raids, channel points, and EventSub")
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_muted),
     ]
     .spacing(2.0);
@@ -250,7 +246,7 @@ fn flow_intro<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
             .font(BOOTSTRAP_FONT)
             .color(palette.brand),
         text("Authorize Forge on Twitch")
-            .size(FONT_BODY_MD)
+            .size(FONT_BODY)
             .color(palette.text_primary),
     ]
     .spacing(8.0)
@@ -260,7 +256,7 @@ fn flow_intro<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
         "Twitch uses device code authorization. You'll see a code here, enter it on Twitch's site, \
          and we'll auto-detect when you're done. We never see your password.",
     )
-    .size(FONT_CAPS)
+    .size(FONT_XS)
     .color(palette.text_muted)
     .wrapping(iced::widget::text::Wrapping::Word);
 
@@ -300,7 +296,7 @@ fn requesting_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     let intro = flow_intro(palette);
     let body = container(
         text("Requesting authorization code from Twitch…")
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_muted),
     )
     .width(Length::Fill)
@@ -338,11 +334,11 @@ fn awaiting_card<'a>(
 fn step_open_url<'a>(uri: &'a str, palette: &'a ForgePalette) -> Element<'a, Message> {
     let circle = step_circle(1, false, palette);
     let title = text("Open this URL in any browser")
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .color(palette.text_primary);
     let url_box = container(
         text(uri)
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.info)
             .font(font(FontRole::Monospace)),
     )
@@ -363,7 +359,7 @@ fn step_open_url<'a>(uri: &'a str, palette: &'a ForgePalette) -> Element<'a, Mes
             .size(13.0)
             .font(BOOTSTRAP_FONT)
             .color(palette.brand),
-        text("Open").size(FONT_BODY_SM).color(palette.brand),
+        text("Open").size(FONT_SM).color(palette.brand),
     ]
     .spacing(5.0)
     .align_y(Alignment::Center);
@@ -401,7 +397,7 @@ fn step_enter_code<'a>(
 ) -> Element<'a, Message> {
     let circle = step_circle(2, true, palette);
     let title = text("Enter this code on the page")
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .color(palette.text_primary);
 
     let code_display = container(
@@ -428,9 +424,7 @@ fn step_enter_code<'a>(
             .size(18.0)
             .font(BOOTSTRAP_FONT)
             .color(palette.text_secondary),
-        text("Copy")
-            .size(FONT_CAPS_SM)
-            .color(palette.text_secondary),
+        text("Copy").size(FONT_XS).color(palette.text_secondary),
     ]
     .spacing(3.0)
     .align_x(Alignment::Center);
@@ -462,21 +456,19 @@ fn step_enter_code<'a>(
             .size(13.0)
             .font(BOOTSTRAP_FONT)
             .color(palette.text_muted),
-        text("Expires in ")
-            .size(FONT_CAPS_SM)
-            .color(palette.text_muted),
+        text("Expires in ").size(FONT_XS).color(palette.text_muted),
         text(timer_label)
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(palette.text_primary)
             .font(font(FontRole::Monospace)),
-        text("·").size(FONT_CAPS_SM).color(palette.text_faint),
+        text("·").size(FONT_XS).color(palette.text_faint),
         button(
             row![
                 text(ICON_REFRESH.to_string())
                     .size(12.0)
                     .font(BOOTSTRAP_FONT)
                     .color(palette.brand),
-                text("Get new code").size(FONT_CAPS_SM).color(palette.brand),
+                text("Get new code").size(FONT_XS).color(palette.brand),
             ]
             .spacing(4.0)
             .align_y(Alignment::Center),
@@ -551,33 +543,29 @@ fn polling_banner<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
         });
 
     let primary = text("Waiting for you to authorize on Twitch…")
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .color(palette.text_primary);
     let secondary = text("polling every 5s")
-        .size(FONT_CAPS_SM)
+        .size(FONT_XS)
         .color(palette.text_faint)
         .font(font(FontRole::Monospace));
 
     let text_col = column![primary, secondary].spacing(1.0);
 
-    let cancel = button(
-        text("Cancel")
-            .size(FONT_CAPS_SM)
-            .color(palette.text_secondary),
-    )
-    .on_press(Message::TwitchPanel(TwitchPanelMsg::Cancel))
-    .padding(Padding::from([5_u16, 10_u16]))
-    .style(move |_theme: &Theme, _status| button::Style {
-        background: Some(Background::Color(Color::TRANSPARENT)),
-        text_color: palette.text_secondary,
-        border: Border {
-            color: palette.border_regular,
-            width: 0.5,
-            radius: 6.0.into(),
-        },
-        shadow: Shadow::default(),
-        snap: false,
-    });
+    let cancel = button(text("Cancel").size(FONT_XS).color(palette.text_secondary))
+        .on_press(Message::TwitchPanel(TwitchPanelMsg::Cancel))
+        .padding(Padding::from([5_u16, 10_u16]))
+        .style(move |_theme: &Theme, _status| button::Style {
+            background: Some(Background::Color(Color::TRANSPARENT)),
+            text_color: palette.text_secondary,
+            border: Border {
+                color: palette.border_regular,
+                width: 0.5,
+                radius: 6.0.into(),
+            },
+            shadow: Shadow::default(),
+            snap: false,
+        });
 
     let inner = row![
         dot,
@@ -607,7 +595,7 @@ fn authorizing_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     let intro = flow_intro(palette);
     let body = container(
         text("Code accepted. Finalising authorization…")
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_muted),
     )
     .width(Length::Fill)
@@ -623,7 +611,7 @@ fn authorizing_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
 fn error_card<'a>(msg: &'a str, palette: &'a ForgePalette) -> Element<'a, Message> {
     let intro = flow_intro(palette);
     let detail = text(msg)
-        .size(FONT_CAPS)
+        .size(FONT_XS)
         .color(palette.random)
         .wrapping(iced::widget::text::Wrapping::Word);
     let retry = primary_button(
@@ -651,7 +639,7 @@ fn missing_client_id_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message>
         "Twitch integration is not configured. Set FORGE_TWITCH_CLIENT_ID with your own \
          registered application's client_id and restart the app.",
     )
-    .size(FONT_CAPS)
+    .size(FONT_XS)
     .color(palette.text_muted)
     .wrapping(iced::widget::text::Wrapping::Word);
     let body = container(detail).width(Length::Fill).padding(18.0);
@@ -669,13 +657,13 @@ fn scopes_preview_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
             .font(BOOTSTRAP_FONT)
             .color(palette.success),
         text("Permissions Forge will request")
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_primary),
     ]
     .spacing(7.0)
     .align_y(Alignment::Center);
     let header_right = text(format!("{} scopes", TWITCH_BROADCASTER_SCOPES.len()))
-        .size(FONT_CAPS_SM)
+        .size(FONT_XS)
         .color(palette.text_faint);
     let header = row![
         header_left,
@@ -746,7 +734,7 @@ fn primary_button<'a>(
     msg: Message,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    button(text(label).size(FONT_BODY_SM).color(palette.shell))
+    button(text(label).size(FONT_SM).color(palette.shell))
         .on_press(msg)
         .padding(Padding::from([8_u16, 16_u16]))
         .style(move |_theme: &Theme, _status| button::Style {

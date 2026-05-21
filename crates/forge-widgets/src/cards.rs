@@ -3,9 +3,7 @@ use std::borrow::Cow;
 use iced::{Border, Element, widget::container};
 
 use crate::palette::ForgePalette;
-use crate::tokens::{
-    BORDER_THIN, Density, FONT_CAPS_SM, FONT_HERO, Radius, Spacing, radius, spacing,
-};
+use crate::tokens::{BORDER_THIN, Density, FONT_LG, FONT_XS, Radius, Spacing, radius, spacing};
 
 fn card_style(
     bg: iced::Color,
@@ -64,10 +62,10 @@ pub fn metric_card<'a, Msg: 'a>(
 
     let mut col = iced::widget::column![
         iced::widget::text(label_str)
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(label_color),
         iced::widget::text(value_str)
-            .size(FONT_HERO)
+            .size(FONT_LG)
             .color(value_color),
     ]
     .spacing(4);
@@ -119,7 +117,7 @@ pub fn hero_card<'a, Msg: 'a>(
 
     let header = iced::widget::column![
         iced::widget::text(title_str)
-            .size(FONT_HERO)
+            .size(FONT_LG)
             .color(title_color),
         iced::widget::text(subtitle_str)
             .size(13)

@@ -14,9 +14,7 @@ use forge_widgets::icons::{
     BOOTSTRAP_FONT, ICON_ALERT_TRIANGLE, ICON_BROADCAST, ICON_CHECK_CIRCLE, ICON_EYE,
     ICON_EYE_SLASH, ICON_INFO_CIRCLE, ICON_LIGHTNING, ICON_REFRESH,
 };
-use forge_widgets::tokens::{
-    FONT_BODY_LG, FONT_BODY_MD, FONT_BODY_SM, FONT_CAPS, FONT_CAPS_SM, FontRole, font,
-};
+use forge_widgets::tokens::{FONT_BODY, FONT_SM, FONT_XS, FontRole, font};
 
 use crate::Message;
 
@@ -187,10 +185,10 @@ fn obs_header_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
 
     let title_col = column![
         text("OBS Studio")
-            .size(FONT_BODY_LG)
+            .size(FONT_BODY)
             .color(palette.text_primary),
         text("Connect to control scenes, sources, audio, filters, and recording")
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_muted),
     ]
     .spacing(2.0);
@@ -213,7 +211,7 @@ fn obs_instructions_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> 
             .font(BOOTSTRAP_FONT)
             .color(palette.info),
         text("Before you start")
-            .size(FONT_BODY_MD)
+            .size(FONT_BODY)
             .color(palette.text_primary),
     ]
     .spacing(7.0)
@@ -233,7 +231,7 @@ fn obs_instructions_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> 
 
     let lead =
         text("In OBS Studio, enable the built-in WebSocket server, then copy the settings here.")
-            .size(FONT_CAPS)
+            .size(FONT_XS)
             .color(palette.text_muted)
             .wrapping(iced::widget::text::Wrapping::Word);
 
@@ -258,7 +256,7 @@ fn obs_instructions_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> 
     let requirements = container(
         column![
             text("REQUIREMENTS")
-                .size(FONT_CAPS_SM)
+                .size(FONT_XS)
                 .color(palette.text_muted)
                 .font(font(FontRole::Monospace)),
             check_row("OBS Studio 28+ (WebSocket v5 built-in)", palette),
@@ -296,11 +294,11 @@ fn instruction_step<'a>(
 ) -> Element<'a, Message> {
     let inner = row![
         text(format!("{n}."))
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(palette.brand)
             .font(font(FontRole::Monospace)),
         text(body)
-            .size(FONT_CAPS)
+            .size(FONT_XS)
             .color(palette.text_primary)
             .wrapping(iced::widget::text::Wrapping::Word),
     ]
@@ -330,7 +328,7 @@ fn check_row<'a>(label: &'a str, palette: &'a ForgePalette) -> Element<'a, Messa
             .font(BOOTSTRAP_FONT)
             .color(palette.success),
         text(label)
-            .size(FONT_CAPS)
+            .size(FONT_XS)
             .color(palette.text_secondary)
             .wrapping(iced::widget::text::Wrapping::Word),
     ]
@@ -346,7 +344,7 @@ fn obs_form_card<'a>(state: &'a ObsPanelState, palette: &'a ForgePalette) -> Ele
             .font(BOOTSTRAP_FONT)
             .color(palette.success),
         text("Connection settings")
-            .size(FONT_BODY_MD)
+            .size(FONT_BODY)
             .color(palette.text_primary),
     ]
     .spacing(7.0)
@@ -366,13 +364,13 @@ fn obs_form_card<'a>(state: &'a ObsPanelState, palette: &'a ForgePalette) -> Ele
 
     let host_input = text_input("localhost", &state.form.host)
         .on_input(|s| Message::ObsPanel(ObsPanelMsg::HostChanged(s)))
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .padding(Padding::from([7_u16, 11_u16]));
     let host_field = labeled_field("HOST", host_input.into(), palette);
 
     let port_input = text_input("4455", &state.form.port_text)
         .on_input(|s| Message::ObsPanel(ObsPanelMsg::PortChanged(s)))
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .padding(Padding::from([7_u16, 11_u16]));
     let port_field = labeled_field("PORT", port_input.into(), palette);
 
@@ -445,7 +443,7 @@ fn labeled_field<'a>(
 ) -> Element<'a, Message> {
     column![
         text(label)
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace)),
         field,
@@ -457,19 +455,19 @@ fn labeled_field<'a>(
 fn password_row<'a>(state: &'a ObsPanelState, palette: &'a ForgePalette) -> Element<'a, Message> {
     let label = row![
         text("PASSWORD")
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace)),
         iced::widget::Space::new().width(Length::Fill),
         text("stored in OS keychain")
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(palette.text_faint),
     ]
     .align_y(Alignment::Center);
 
     let mut input = text_input("••••••••", &state.form.password)
         .on_input(|s| Message::ObsPanel(ObsPanelMsg::PasswordChanged(s)))
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .padding(Padding::from([7_u16, 11_u16]));
     if !state.form.password_revealed {
         input = input.secure(true);
@@ -523,8 +521,8 @@ fn toggle_row<'a>(
         .font(BOOTSTRAP_FONT)
         .color(icon_color);
     let text_col = column![
-        text(title).size(FONT_BODY_SM).color(palette.text_primary),
-        text(subtitle).size(FONT_CAPS_SM).color(palette.text_faint),
+        text(title).size(FONT_SM).color(palette.text_primary),
+        text(subtitle).size(FONT_XS).color(palette.text_faint),
     ]
     .spacing(1.0);
     let left = row![icon_el, text_col]
@@ -630,11 +628,11 @@ fn banner_card<'a>(
         .size(13.0)
         .font(BOOTSTRAP_FONT)
         .color(accent);
-    let mut text_col = column![text(title).size(FONT_BODY_SM).color(palette.text_primary)];
+    let mut text_col = column![text(title).size(FONT_SM).color(palette.text_primary)];
     if let Some(d) = detail {
         text_col = text_col.push(
             text(d)
-                .size(FONT_CAPS_SM)
+                .size(FONT_XS)
                 .color(palette.text_muted)
                 .font(font(FontRole::Monospace))
                 .wrapping(iced::widget::text::Wrapping::Word),
@@ -668,7 +666,7 @@ fn obs_tip_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
         "Running OBS on a different PC? Set host to that machine's IP. Make sure OBS WebSocket is \
          configured to bind to 0.0.0.0 instead of localhost, and the port is open in firewall.",
     )
-    .size(FONT_CAPS)
+    .size(FONT_XS)
     .color(palette.text_muted)
     .wrapping(iced::widget::text::Wrapping::Word);
 
@@ -687,7 +685,7 @@ fn primary_button<'a>(
 ) -> Element<'a, Message> {
     let mut b = button(
         text(label)
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.shell)
             .align_x(Alignment::Center),
     )
@@ -718,7 +716,7 @@ fn secondary_button<'a>(
 ) -> Element<'a, Message> {
     let mut b = button(
         text(label)
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_secondary)
             .align_x(Alignment::Center),
     )

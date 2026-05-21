@@ -4,8 +4,7 @@ use forge_audio::{list_output_devices, refresh_output_devices};
 use forge_storage_sqlite::SqliteBackend;
 use forge_widgets::icons::{BOOTSTRAP_FONT, ICON_SPEAKER};
 use forge_widgets::tokens::{
-    Density, FONT_BODY_LG, FONT_BODY_SM, FONT_CAPS_SM, FontRole, Radius, Spacing, font, radius,
-    spacing,
+    Density, FONT_BODY, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spacing,
 };
 use forge_widgets::{DeviceLabel, ForgePalette, output_device_picker, section_header};
 use iced::widget::{button, column, container, row, text};
@@ -167,14 +166,11 @@ pub fn settings_audio_view<'a>(
 
     let device_section: Element<'a, Message> = if state.devices_loading {
         text("Scanning devices\u{2026}")
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_muted)
             .into()
     } else if let Some(ref e) = state.devices_error {
-        text(e.as_str())
-            .size(FONT_BODY_SM)
-            .color(palette.random)
-            .into()
+        text(e.as_str()).size(FONT_SM).color(palette.random).into()
     } else {
         output_device_picker(
             &state.devices,
@@ -188,7 +184,7 @@ pub fn settings_audio_view<'a>(
 
     let test_error_el: Option<Element<'a, Message>> = state.test_tone_error.as_ref().map(|e| {
         text(format!("Test tone error: {e}"))
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.random)
             .font(font(FontRole::Body))
             .into()
@@ -208,7 +204,7 @@ pub fn settings_audio_view<'a>(
                 .size(12.0)
                 .color(p.info),
             text(test_btn_label)
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(p.info)
                 .font(font(FontRole::Body)),
         ]
@@ -244,7 +240,7 @@ pub fn settings_audio_view<'a>(
         header,
         device_section,
         text("TEST")
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace)),
         test_standalone_btn,
@@ -279,7 +275,7 @@ pub fn settings_audio_view<'a>(
     let screen_header = row![
         icon_el,
         text("Audio")
-            .size(FONT_BODY_LG)
+            .size(FONT_BODY)
             .color(palette.text_primary)
             .font(font(FontRole::Body)),
     ]

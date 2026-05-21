@@ -4,7 +4,7 @@ use iced::{
 };
 
 use crate::palette::ForgePalette;
-use crate::tokens::{Density, FONT_BODY_SM, FontRole, Spacing, font, spacing};
+use crate::tokens::{Density, FONT_SM, FontRole, Spacing, font, spacing};
 
 pub fn volume_slider<'a, Msg: 'a + Clone>(
     value: f32,
@@ -23,13 +23,13 @@ pub fn volume_slider<'a, Msg: 'a + Clone>(
 
     row![
         text("VOL")
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace))
             .width(label_w),
         slider(0.0..=1.5, value, on_change).width(Length::Fill),
         text(pct_label)
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(pct_color)
             .font(font(FontRole::Monospace))
             .width(label_w),

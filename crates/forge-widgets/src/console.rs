@@ -5,7 +5,7 @@ use iced::{
 
 use crate::{
     ForgePalette,
-    tokens::{FONT_CAPS_SM, FontRole, font},
+    tokens::{FONT_XS, FontRole, font},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,7 +60,7 @@ pub fn console<'a, Msg: 'a>(
         container(
             text("No output yet")
                 .font(mono)
-                .size(FONT_CAPS_SM)
+                .size(FONT_XS)
                 .color(palette.text_faint),
         )
         .width(Length::Fill)
@@ -84,25 +84,25 @@ pub fn console<'a, Msg: 'a>(
                     items.push(
                         text(ts.clone())
                             .font(mono)
-                            .size(FONT_CAPS_SM)
+                            .size(FONT_XS)
                             .color(text_faint)
                             .into(),
                     );
-                    items.push(text("  ").font(mono).size(FONT_CAPS_SM).into());
+                    items.push(text("  ").font(mono).size(FONT_XS).into());
                 }
 
                 items.push(
                     text(bracket_label)
                         .font(mono)
-                        .size(FONT_CAPS_SM)
+                        .size(FONT_XS)
                         .color(level_color)
                         .into(),
                 );
-                items.push(text("  ").font(mono).size(FONT_CAPS_SM).into());
+                items.push(text("  ").font(mono).size(FONT_XS).into());
                 items.push(
                     text(line_text)
                         .font(mono)
-                        .size(FONT_CAPS_SM)
+                        .size(FONT_XS)
                         .color(text_muted)
                         .into(),
                 );

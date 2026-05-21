@@ -7,7 +7,7 @@ use iced::{
 use crate::{
     icons::{BOOTSTRAP_FONT, ICON_LIGHTNING, ICON_REPLAY},
     palette::ForgePalette,
-    tokens::{FONT_BODY_LG, FONT_CAPS, FONT_CAPS_SM, FONT_CAPS_XS, FontRole, Radius, font, radius},
+    tokens::{FONT_BODY, FONT_XS, FontRole, Radius, font, radius},
 };
 
 pub fn color_for_source(source: EventSource, palette: &ForgePalette) -> Color {
@@ -56,7 +56,7 @@ pub fn source_badge<'a, Msg: 'a>(source: EventSource, palette: &ForgePalette) ->
     let label = source_label(source);
 
     let txt = iced::widget::text(label)
-        .size(FONT_CAPS_XS)
+        .size(FONT_XS)
         .color(fg)
         .font(iced::Font {
             family: iced::font::Family::Name("JetBrains Mono"),
@@ -127,7 +127,7 @@ pub fn event_row_observability<'a, Msg: Clone + 'a>(
         });
 
     let ts = iced::widget::text(event.timestamp.clone())
-        .size(FONT_CAPS)
+        .size(FONT_XS)
         .color(palette.text_faint)
         .font(mono)
         .width(80);
@@ -136,7 +136,7 @@ pub fn event_row_observability<'a, Msg: Clone + 'a>(
 
     let etype = container(
         iced::widget::text(event.event_type.clone())
-            .size(FONT_CAPS)
+            .size(FONT_XS)
             .color(palette.text_primary)
             .font(mono),
     )
@@ -144,7 +144,7 @@ pub fn event_row_observability<'a, Msg: Clone + 'a>(
 
     let summary = container(
         iced::widget::text(event.summary.clone())
-            .size(FONT_CAPS)
+            .size(FONT_XS)
             .color(palette.text_secondary)
             .font(mono),
     )
@@ -168,7 +168,7 @@ pub fn event_row_observability<'a, Msg: Clone + 'a>(
     if let Some(tag) = &event.result_tag {
         content_row = content_row.push(
             iced::widget::text(tag.clone())
-                .size(FONT_CAPS_SM)
+                .size(FONT_XS)
                 .color(result_color)
                 .font(mono),
         );
@@ -237,17 +237,17 @@ pub fn causation_chip<'a, Msg: Clone + 'a>(
     };
 
     let icon = iced::widget::text(ICON_LIGHTNING.to_string())
-        .size(FONT_CAPS)
+        .size(FONT_XS)
         .color(brand)
         .font(BOOTSTRAP_FONT);
 
     let name = iced::widget::text(label)
-        .size(FONT_CAPS)
+        .size(FONT_XS)
         .color(text_primary)
         .width(Length::Fill);
 
     let badge = iced::widget::text(action_id_display)
-        .size(FONT_CAPS_XS)
+        .size(FONT_XS)
         .color(text_faint)
         .font(mono);
 
@@ -311,7 +311,7 @@ fn colored_text_span<'a, Msg: 'a>(
     mono: iced::Font,
 ) -> Element<'a, Msg> {
     iced::widget::text(content)
-        .size(FONT_CAPS_SM)
+        .size(FONT_XS)
         .color(color)
         .font(mono)
         .into()
@@ -505,12 +505,12 @@ pub fn replay_button<'a, Msg: Clone + 'a>(
     };
 
     let icon = iced::widget::text(ICON_REPLAY.to_string())
-        .size(FONT_BODY_LG)
+        .size(FONT_BODY)
         .color(brand)
         .font(BOOTSTRAP_FONT);
 
     let label = iced::widget::text("Replay this event")
-        .size(FONT_CAPS)
+        .size(FONT_XS)
         .color(brand);
 
     let content = container(
@@ -574,7 +574,7 @@ pub fn event_inspector<'a, Msg: Clone + 'a>(
     let badge = source_badge(params.source, palette);
 
     let type_label = iced::widget::text(params.event_type)
-        .size(FONT_CAPS)
+        .size(FONT_XS)
         .color(text_primary)
         .font(mono);
 
@@ -583,7 +583,7 @@ pub fn event_inspector<'a, Msg: Clone + 'a>(
         .align_y(iced::Alignment::Center);
 
     let secondary = iced::widget::text(format!("{} · #{}", params.timestamp, params.event_id))
-        .size(FONT_CAPS_SM)
+        .size(FONT_XS)
         .color(text_muted)
         .font(mono);
 
@@ -601,7 +601,7 @@ pub fn event_inspector<'a, Msg: Clone + 'a>(
         });
 
     let payload_label = iced::widget::text("PAYLOAD")
-        .size(FONT_CAPS_XS)
+        .size(FONT_XS)
         .color(text_faint)
         .font(mono);
 
@@ -611,7 +611,7 @@ pub fn event_inspector<'a, Msg: Clone + 'a>(
 
     if let Some((label, action_id_display, on_click)) = params.caused_action {
         let caused_label = iced::widget::text("CAUSED")
-            .size(FONT_CAPS_XS)
+            .size(FONT_XS)
             .color(text_faint)
             .font(mono);
         col = col

@@ -2,8 +2,7 @@ use forge_speak_queue::SpeakEvent;
 use forge_widgets::ForgePalette;
 use forge_widgets::icons::{BOOTSTRAP_FONT, ICON_PAUSE, ICON_PLAY, ICON_SPEAKER};
 use forge_widgets::tokens::{
-    BORDER_THIN, Density, FONT_BODY, FONT_BODY_SM, FONT_CAPS_SM, FontRole, Radius, Spacing, font,
-    radius, spacing,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spacing,
 };
 use iced::widget::{button, column, container, row, scrollable, slider, text, text_input};
 use iced::{Alignment, Background, Border, Color, Element, Length, Task};
@@ -181,7 +180,7 @@ fn control_strip_view<'a>(
             text(if state.paused { ICON_PLAY } else { ICON_PAUSE })
                 .font(BOOTSTRAP_FONT)
                 .size(13.0),
-            text(pause_label).size(FONT_BODY_SM),
+            text(pause_label).size(FONT_SM),
         ]
         .align_y(Alignment::Center)
         .spacing(gap_sm),
@@ -198,7 +197,7 @@ fn control_strip_view<'a>(
     })
     .padding([5, 12]);
 
-    let skip_btn = button(text("Skip").size(FONT_BODY_SM))
+    let skip_btn = button(text("Skip").size(FONT_SM))
         .on_press(Message::Tts(TtsMsg::Dashboard(TtsDashMsg::SkipCurrent)))
         .style(move |_, _| button::Style {
             background: Some(Background::Color(palette.surface_overlay)),
@@ -212,7 +211,7 @@ fn control_strip_view<'a>(
         })
         .padding([5, 11]);
 
-    let stop_btn = button(text("Stop all").size(FONT_BODY_SM))
+    let stop_btn = button(text("Stop all").size(FONT_SM))
         .on_press(Message::Tts(TtsMsg::Dashboard(TtsDashMsg::StopAll)))
         .style(move |_, _| button::Style {
             background: Some(Background::Color(palette.surface_overlay)),
@@ -228,7 +227,7 @@ fn control_strip_view<'a>(
 
     let vol_pct = (state.volume * 100.0).round() as u32;
     let vol_text = text(format!("{vol_pct}%"))
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
@@ -256,7 +255,7 @@ fn control_strip_view<'a>(
     let test_input = text_input("Type to test a voice...", &state.test_input)
         .on_input(|s| Message::Tts(TtsMsg::Dashboard(TtsDashMsg::TestInputChanged(s))))
         .on_submit(Message::Tts(TtsMsg::Dashboard(TtsDashMsg::SpeakTest)))
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .width(180)
         .style(move |_, _| text_input::Style {
             background: Background::Color(palette.shell),
@@ -271,7 +270,7 @@ fn control_strip_view<'a>(
             selection: palette.brand,
         });
 
-    let speak_btn = button(text("Speak").size(FONT_BODY_SM))
+    let speak_btn = button(text("Speak").size(FONT_SM))
         .on_press(Message::Tts(TtsMsg::Dashboard(TtsDashMsg::SpeakTest)))
         .style(move |_, _| button::Style {
             background: Some(Background::Color(palette.brand)),
@@ -314,7 +313,7 @@ fn now_speaking_view<'a>(
     gap_sm: f32,
 ) -> Element<'a, Message> {
     let header = text("NOW SPEAKING")
-        .size(FONT_CAPS_SM)
+        .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
@@ -329,31 +328,26 @@ fn now_speaking_view<'a>(
         column![
             header,
             row![
-                text(&ns.viewer_name).size(FONT_BODY).color(palette.success),
+                text(&ns.viewer_name).size(FONT_SM).color(palette.success),
                 text(&ns.engine_voice)
-                    .size(FONT_BODY_SM)
+                    .size(FONT_SM)
                     .color(palette.text_muted)
                     .font(font(FontRole::Monospace)),
             ]
             .spacing(gap_sm)
             .align_y(Alignment::Center),
-            text(&ns.text)
-                .size(FONT_BODY_SM)
-                .color(palette.text_primary),
+            text(&ns.text).size(FONT_SM).color(palette.text_primary),
             text(progress_text)
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(palette.text_muted)
                 .font(font(FontRole::Monospace)),
         ]
         .spacing(gap_sm)
         .into()
     } else {
-        column![
-            header,
-            text("—").size(FONT_BODY_SM).color(palette.text_muted),
-        ]
-        .spacing(gap_sm)
-        .into()
+        column![header, text("—").size(FONT_SM).color(palette.text_muted),]
+            .spacing(gap_sm)
+            .into()
     };
 
     container(body)
@@ -379,10 +373,10 @@ fn queue_section_view<'a>(
     let count = state.queue.len();
     let header = container(
         row![
-            text("Up next").size(FONT_BODY).color(palette.text_primary),
+            text("Up next").size(FONT_SM).color(palette.text_primary),
             container(
                 text(format!("{count}"))
-                    .size(FONT_BODY_SM)
+                    .size(FONT_SM)
                     .color(palette.text_muted),
             )
             .style(move |_| container::Style {
@@ -413,7 +407,7 @@ fn queue_section_view<'a>(
     let items: Element<'a, Message> = if state.queue.is_empty() {
         container(
             text("Queue is empty")
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(palette.text_muted),
         )
         .padding([16, 16])
@@ -441,7 +435,7 @@ fn queue_item_row<'a>(
     gap_sm: f32,
 ) -> Element<'a, Message> {
     let pos_text = text(format!("{}", index + 1))
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace))
         .width(14);
@@ -473,12 +467,10 @@ fn queue_item_row<'a>(
     };
 
     let name_row = row![
-        text(&item.viewer_name)
-            .size(FONT_BODY_SM)
-            .color(palette.success),
+        text(&item.viewer_name).size(FONT_SM).color(palette.success),
         priority_badge,
         text(&item.engine_voice)
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace)),
     ]
@@ -488,7 +480,7 @@ fn queue_item_row<'a>(
     let content = column![
         name_row,
         text(&item.text)
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_muted)
             .width(Length::Fill),
     ]
@@ -496,7 +488,7 @@ fn queue_item_row<'a>(
     .width(Length::Fill);
 
     let dur_text = text(format!("0:{:02}", item.duration_secs))
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
@@ -526,7 +518,7 @@ fn right_pane_view<'a>(
     gap_lg: f32,
 ) -> Element<'a, Message> {
     let session_header = text("SESSION")
-        .size(FONT_CAPS_SM)
+        .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
@@ -539,10 +531,10 @@ fn right_pane_view<'a>(
     ) -> Element<'b, Message> {
         let row_el = row![
             text(label)
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(palette.text_muted)
                 .width(Length::Fill),
-            text(value).size(FONT_BODY).color(value_color),
+            text(value).size(FONT_SM).color(value_color),
         ]
         .align_y(Alignment::Center)
         .padding([5, 0]);
@@ -598,7 +590,7 @@ fn right_pane_view<'a>(
     .spacing(gap_sm);
 
     let engines_header = text("ENGINES")
-        .size(FONT_CAPS_SM)
+        .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
@@ -638,7 +630,7 @@ fn engine_card<'a>(
         column![
             row![
                 text(name)
-                    .size(FONT_BODY_SM)
+                    .size(FONT_SM)
                     .color(palette.text_primary)
                     .width(Length::Fill),
                 container(text(""))

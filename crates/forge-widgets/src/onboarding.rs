@@ -7,9 +7,8 @@ use crate::{
     buttons::{ghost_button, primary_button_with_icon_right, secondary_button},
     palette::ForgePalette,
     tokens::{
-        BORDER_THIN, FONT_BODY_LG, FONT_BODY_MD, FONT_BODY_SM, FONT_CAPS, FONT_CAPS_SM,
-        FONT_DEVICE_CODE, FONT_PAGE_TITLE, FONT_PLATFORM_NAME, FontRole, Radius, Spacing, font,
-        radius, spacing,
+        BORDER_THIN, FONT_BODY, FONT_DEVICE_CODE, FONT_LG, FONT_SM, FONT_XS, FontRole, Radius,
+        Spacing, font, radius, spacing,
     },
 };
 
@@ -94,9 +93,9 @@ fn disabled_primary_button<'a, Msg: 'a>(
 
     container(
         row![
-            text(label).size(FONT_BODY_MD).color(text_color),
+            text(label).size(FONT_BODY).color(text_color),
             text(icon_char.to_string())
-                .size(FONT_BODY_MD)
+                .size(FONT_BODY)
                 .color(text_color),
         ]
         .spacing(f32::from(gap)),
@@ -179,12 +178,12 @@ pub fn onboarding_stepper<'a, Msg: 'a>(
             String::new()
         };
 
-        let dot_inner: Element<'a, Msg> = text(dot_label).size(FONT_CAPS).color(dot_fg).into();
+        let dot_inner: Element<'a, Msg> = text(dot_label).size(FONT_XS).color(dot_fg).into();
         let dot = badge_circle(dot_inner, 22.0, dot_bg);
 
         let text_col = column![
-            text(info.label).size(FONT_BODY_MD).color(label_color),
-            text(info.sublabel).size(FONT_CAPS).color(sublabel_color),
+            text(info.label).size(FONT_BODY).color(label_color),
+            text(info.sublabel).size(FONT_XS).color(sublabel_color),
         ]
         .spacing(2);
 
@@ -217,7 +216,7 @@ pub fn onboarding_step_header<'a, Msg: 'a>(
         .push(
             text(header_text)
                 .font(font(FontRole::Monospace))
-                .size(FONT_CAPS_SM)
+                .size(FONT_XS)
                 .color(palette.text_muted),
         );
 
@@ -225,7 +224,7 @@ pub fn onboarding_step_header<'a, Msg: 'a>(
         let pill = container(
             text("OPTIONAL")
                 .font(font(FontRole::Monospace))
-                .size(FONT_CAPS - 2.0)
+                .size(FONT_XS - 2.0)
                 .color(palette.warning),
         )
         .padding(Padding::from([4_u16, 10_u16]))
@@ -242,10 +241,10 @@ pub fn onboarding_step_header<'a, Msg: 'a>(
 
     if waiting {
         let pill_content = row![
-            text("↻").size(FONT_CAPS - 2.0).color(palette.brand),
+            text("↻").size(FONT_XS - 2.0).color(palette.brand),
             text("WAITING")
                 .font(font(FontRole::Monospace))
-                .size(FONT_CAPS - 2.0)
+                .size(FONT_XS - 2.0)
                 .color(palette.brand),
         ]
         .spacing(3)
@@ -266,9 +265,7 @@ pub fn onboarding_step_header<'a, Msg: 'a>(
 
     column![
         badge_row,
-        text(title)
-            .size(FONT_PAGE_TITLE)
-            .color(palette.text_primary),
+        text(title).size(FONT_LG).color(palette.text_primary),
     ]
     .spacing(f32::from(spacing(
         Spacing::Xs,
@@ -320,17 +317,15 @@ pub fn platform_picker_card<'a, Msg: Clone + 'a>(
         });
 
     let title_row = column![
-        text(name)
-            .size(FONT_PLATFORM_NAME)
-            .color(palette.text_primary),
-        text(subtitle).size(FONT_CAPS).color(palette.text_muted),
+        text(name).size(FONT_BODY).color(palette.text_primary),
+        text(subtitle).size(FONT_XS).color(palette.text_muted),
     ]
     .spacing(2);
 
     let info_col = column![
         title_row,
         text(capability_summary)
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_muted),
     ]
     .spacing(4);
@@ -384,7 +379,7 @@ pub fn locale_tip_card<'a, Msg: Clone + 'a>(
     on_link: Option<Msg>,
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
-    let mut text_block = column![text(body).size(FONT_BODY_SM).color(palette.text_secondary)];
+    let mut text_block = column![text(body).size(FONT_SM).color(palette.text_secondary)];
 
     if let (Some(label), Some(msg)) = (link_label, on_link) {
         text_block = text_block.push(ghost_button(label, msg, palette));
@@ -501,7 +496,7 @@ pub fn device_code_display<'a, Msg: Clone + 'a>(
 
     let copy_content = column![
         text("⎘").size(18.0).color(palette.text_secondary),
-        text("Copy").size(FONT_CAPS).color(palette.text_muted),
+        text("Copy").size(FONT_XS).color(palette.text_muted),
     ]
     .spacing(4)
     .align_x(Alignment::Center);
@@ -553,9 +548,9 @@ pub fn expiration_timer<'a, Msg: Clone + 'a>(
     };
 
     row![
-        text("⏱").size(FONT_BODY_MD).color(color),
-        text(timer_text).size(FONT_BODY_MD).color(color),
-        text("·").size(FONT_BODY_MD).color(palette.text_faint),
+        text("⏱").size(FONT_BODY).color(color),
+        text(timer_text).size(FONT_BODY).color(color),
+        text("·").size(FONT_BODY).color(palette.text_faint),
         ghost_button(refresh_label, on_refresh, palette),
     ]
     .spacing(f32::from(spacing(
@@ -597,7 +592,7 @@ pub fn live_status_banner<'a, Msg: 'a>(
     let mut content_col = column![
         row![
             dot,
-            text(message).size(FONT_BODY_MD).color(palette.text_primary)
+            text(message).size(FONT_BODY).color(palette.text_primary)
         ]
         .spacing(10)
         .align_y(Alignment::Center),
@@ -607,7 +602,7 @@ pub fn live_status_banner<'a, Msg: 'a>(
         content_col = content_col.push(
             text(hint_text)
                 .font(font(FontRole::Monospace))
-                .size(FONT_CAPS_SM)
+                .size(FONT_XS)
                 .color(palette.text_faint)
                 .wrapping(iced::widget::text::Wrapping::Word),
         );
@@ -642,14 +637,14 @@ pub fn numbered_box_step<'a, Msg: 'a>(
     };
 
     let badge_inner: Element<'a, Msg> = text(number.to_string())
-        .size(FONT_BODY_LG)
+        .size(FONT_BODY)
         .color(badge_fg)
         .into();
     let badge = badge_circle(badge_inner, 28.0, badge_bg);
 
     let text_col = column![
-        text(title).size(FONT_BODY_LG).color(palette.text_primary),
-        text(body).size(FONT_BODY_SM).color(palette.text_muted),
+        text(title).size(FONT_BODY).color(palette.text_primary),
+        text(body).size(FONT_SM).color(palette.text_muted),
     ]
     .spacing(4);
 

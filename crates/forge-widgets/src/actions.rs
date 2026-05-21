@@ -6,8 +6,7 @@ use iced::{
 use crate::chat::filter_chip;
 use crate::palette::ForgePalette;
 use crate::tokens::{
-    BORDER_THIN, FONT_BODY_MD, FONT_BODY_SM, FONT_CAPS_SM, FONT_VALUE, FontRole, Radius, font,
-    radius,
+    BORDER_THIN, FONT_BODY, FONT_MD, FONT_SM, FONT_XS, FontRole, Radius, font, radius,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,13 +89,13 @@ pub fn tree_node_with_status<'a, Msg: Clone + 'a>(
     };
 
     let label_el = text(props.label)
-        .size(FONT_BODY_MD)
+        .size(FONT_BODY)
         .color(label_color)
         .font(font(FontRole::Body));
 
     let count_str = format!("{} sub", props.sub_action_count);
     let count_el = text(count_str)
-        .size(FONT_CAPS_SM)
+        .size(FONT_XS)
         .color(palette.text_faint)
         .font(font(FontRole::Monospace));
 
@@ -156,7 +155,7 @@ pub fn sub_action_card<'a, Msg: 'a>(
     });
 
     let kind_el = text(props.kind_label)
-        .size(FONT_BODY_MD)
+        .size(FONT_BODY)
         .color(palette.text_primary)
         .font(font(FontRole::Body));
 
@@ -164,7 +163,7 @@ pub fn sub_action_card<'a, Msg: 'a>(
 
     if let Some(preview) = props.variable_preview {
         let preview_el = text(preview)
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace));
         label_col = label_col.push(preview_el);
@@ -178,7 +177,7 @@ pub fn sub_action_card<'a, Msg: 'a>(
     if let Some(tel) = props.telemetry {
         let tel_el = container(
             text(tel)
-                .size(FONT_CAPS_SM)
+                .size(FONT_XS)
                 .color(palette.success)
                 .font(font(FontRole::Monospace)),
         )
@@ -221,7 +220,7 @@ pub fn variable_chip<'a, Msg: 'a>(palette: &'a ForgePalette, name: &str) -> Elem
     let label = format!("%{}%", name);
     container(
         text(label)
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.warning)
             .font(font(FontRole::Monospace)),
     )
@@ -263,12 +262,12 @@ pub fn trigger_card<'a, Msg: Clone + 'a>(
     });
 
     let kind_el = text(props.kind_label)
-        .size(FONT_BODY_MD)
+        .size(FONT_BODY)
         .color(palette.text_primary)
         .font(font(FontRole::Body));
 
     let summary_el = text(props.summary)
-        .size(FONT_CAPS_SM)
+        .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
@@ -328,7 +327,7 @@ pub fn modal<'a, Msg: Clone + 'a>(
     let close_msg = props.on_close.clone();
 
     let title_el = text(props.title)
-        .size(FONT_VALUE)
+        .size(FONT_MD)
         .color(palette.text_primary)
         .font(font(FontRole::Body));
 
@@ -369,7 +368,7 @@ pub fn modal<'a, Msg: Clone + 'a>(
     let mut footer_col = column![footer].spacing(6);
     if let Some(hint) = props.kbd_hint {
         let hint_el = text(hint)
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(palette.text_faint)
             .font(font(FontRole::Monospace));
         footer_col = footer_col.push(hint_el);
@@ -478,12 +477,12 @@ pub fn toggle<'a, Msg: Clone + 'a>(
         });
 
     let label_el = text(props.label)
-        .size(FONT_BODY_MD)
+        .size(FONT_BODY)
         .color(palette.text_primary)
         .font(font(FontRole::Body));
 
     let desc_el = text(props.description)
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .color(palette.text_faint)
         .font(font(FontRole::Body));
 

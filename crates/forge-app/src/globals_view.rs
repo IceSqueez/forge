@@ -4,7 +4,7 @@ use std::sync::Arc;
 use forge_storage::{GlobalEntry, GlobalsExport, GlobalsRepo, StorageError};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::Variant;
-use forge_widgets::tokens::{FONT_BODY_MD, FONT_BODY_SM, FONT_CAPS_SM};
+use forge_widgets::tokens::{FONT_BODY, FONT_SM, FONT_XS};
 use forge_widgets::{
     BannerKind, FontRole, FooterProps, ForgePalette, ModalProps, ToggleProps, VariantKind,
     category_chip, data_screen_footer, data_table, empty_state, font, live_status_banner, modal,
@@ -618,16 +618,12 @@ fn globals_main_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a,
     let session_count = total - persisted_count;
 
     let table_content: Element<'_, Message> = if app.globals.loading {
-        container(
-            text("Loading...")
-                .size(FONT_BODY_SM)
-                .color(palette.text_muted),
-        )
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .align_x(Alignment::Center)
-        .align_y(Alignment::Center)
-        .into()
+        container(text("Loading...").size(FONT_SM).color(palette.text_muted))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center)
+            .into()
     } else {
         let visible_entries: Vec<&GlobalEntry> = app.globals.filtered_entries().collect();
 
@@ -705,33 +701,31 @@ fn globals_stats_header<'a>(
     let success = palette.success;
     let warning = palette.warning;
 
-    let label = text("Global variables").size(FONT_BODY_MD).color(primary);
+    let label = text("Global variables").size(FONT_BODY).color(primary);
 
     let total_part = row![
-        text(total.to_string()).size(FONT_BODY_MD).color(primary),
-        text(" total").size(FONT_BODY_MD).color(muted),
+        text(total.to_string()).size(FONT_BODY).color(primary),
+        text(" total").size(FONT_BODY).color(muted),
     ]
     .spacing(0);
 
     let persisted_part = row![
-        text(persisted.to_string())
-            .size(FONT_BODY_MD)
-            .color(success),
-        text(" persisted").size(FONT_BODY_MD).color(muted),
+        text(persisted.to_string()).size(FONT_BODY).color(success),
+        text(" persisted").size(FONT_BODY).color(muted),
     ]
     .spacing(0);
 
     let session_part = row![
-        text(session.to_string()).size(FONT_BODY_MD).color(warning),
-        text(" in-memory").size(FONT_BODY_MD).color(muted),
+        text(session.to_string()).size(FONT_BODY).color(warning),
+        text(" in-memory").size(FONT_BODY).color(muted),
     ]
     .spacing(0);
 
     let stats = row![
         total_part,
-        text(" · ").size(FONT_BODY_MD).color(faint),
+        text(" · ").size(FONT_BODY).color(faint),
         persisted_part,
-        text(" · ").size(FONT_BODY_MD).color(faint),
+        text(" · ").size(FONT_BODY).color(faint),
         session_part,
     ]
     .spacing(0)
@@ -840,7 +834,7 @@ fn filter_chip<'a>(
             ..container::Style::default()
         });
 
-    let inner = row![dot, text(label).size(FONT_CAPS_SM).color(text_color)]
+    let inner = row![dot, text(label).size(FONT_XS).color(text_color)]
         .spacing(5)
         .align_y(Alignment::Center);
 
@@ -890,7 +884,7 @@ fn build_entry_row<'a>(
 
     let name_cell = button(
         text(&entry.name)
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .font(mono)
             .color(palette.text_primary),
     )
@@ -911,11 +905,11 @@ fn build_entry_row<'a>(
     let value_cell = value_preview(palette, &entry.value);
 
     let modified_cell = text(format_time_ago(entry.last_modified))
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .color(muted);
 
     let rw_cell = text(format!("{} · {}", entry.reads, entry.writes))
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .font(mono)
         .color(muted);
 

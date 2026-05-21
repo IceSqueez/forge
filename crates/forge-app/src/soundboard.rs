@@ -8,8 +8,8 @@ use forge_storage_sqlite::SqliteBackend;
 use forge_types::{ClipId, OutputDevice};
 use forge_widgets::icons::{BOOTSTRAP_FONT, ICON_MUSIC_NOTE, ICON_PLUS};
 use forge_widgets::tokens::{
-    BORDER_THIN, Density, FONT_BODY, FONT_BODY_LG, FONT_BODY_SM, FONT_CAPS_SM, FontRole, Radius,
-    Spacing, font, radius, spacing,
+    BORDER_THIN, Density, FONT_BODY, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius,
+    spacing,
 };
 use forge_widgets::{ClipCardData, DeviceLabel, ForgePalette, clip_card, output_device_picker};
 use iced::widget::{button, column, container, row, scrollable, text, text_input};
@@ -413,7 +413,7 @@ fn add_clip_modal<'a>(modal: &'a AddClipModal, palette: &'a ForgePalette) -> Ele
     } else {
         "Add clip"
     })
-    .size(FONT_BODY_LG)
+    .size(FONT_BODY)
     .color(palette.text_primary)
     .font(font(FontRole::Body));
 
@@ -425,7 +425,7 @@ fn add_clip_modal<'a>(modal: &'a AddClipModal, palette: &'a ForgePalette) -> Ele
             .and_then(|n| n.to_str())
             .unwrap_or("No file selected"),
     )
-    .size(FONT_BODY_SM)
+    .size(FONT_SM)
     .color(if modal.file_path.is_some() {
         palette.text_secondary
     } else {
@@ -442,7 +442,7 @@ fn add_clip_modal<'a>(modal: &'a AddClipModal, palette: &'a ForgePalette) -> Ele
                 .size(12.0)
                 .color(p.info),
             text("Browse")
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(p.info)
                 .font(font(FontRole::Body)),
         ]
@@ -476,13 +476,13 @@ fn add_clip_modal<'a>(modal: &'a AddClipModal, palette: &'a ForgePalette) -> Ele
 
     let name_input = text_input("Clip name", &modal.name)
         .on_input(|s| Message::Soundboard(SoundboardMsg::ModalNameChanged(s)))
-        .size(FONT_BODY)
+        .size(FONT_SM)
         .font(font(FontRole::Body))
         .padding(forge_widgets::input_padding());
 
     let hotkey_input = text_input("e.g. Ctrl+1", &modal.hotkey)
         .on_input(|s| Message::Soundboard(SoundboardMsg::ModalHotkeyChanged(s)))
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .font(font(FontRole::Monospace))
         .padding(forge_widgets::input_padding());
 
@@ -494,7 +494,7 @@ fn add_clip_modal<'a>(modal: &'a AddClipModal, palette: &'a ForgePalette) -> Ele
 
     let device_section = if modal.devices_loading {
         text("Loading devices\u{2026}")
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_muted)
             .into()
     } else {
@@ -510,7 +510,7 @@ fn add_clip_modal<'a>(modal: &'a AddClipModal, palette: &'a ForgePalette) -> Ele
 
     let error_el: Option<Element<'a, Message>> = modal.error.as_ref().map(|e| {
         text(e.as_str())
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.random)
             .font(font(FontRole::Body))
             .into()
@@ -523,7 +523,7 @@ fn add_clip_modal<'a>(modal: &'a AddClipModal, palette: &'a ForgePalette) -> Ele
         } else {
             "Save"
         })
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .color(p2.shell)
         .font(font(FontRole::Body)),
     )
@@ -552,7 +552,7 @@ fn add_clip_modal<'a>(modal: &'a AddClipModal, palette: &'a ForgePalette) -> Ele
     let p3 = *palette;
     let cancel_btn = button(
         text("Cancel")
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(p3.text_secondary)
             .font(font(FontRole::Body)),
     )
@@ -584,27 +584,27 @@ fn add_clip_modal<'a>(modal: &'a AddClipModal, palette: &'a ForgePalette) -> Ele
 
     let mut form_col = column![
         text("FILE")
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace)),
         file_row,
         text("NAME")
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace)),
         name_input,
         text("HOTKEY")
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace)),
         hotkey_input,
         text("OUTPUT DEVICE")
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace)),
         device_section,
         text("VOLUME")
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace)),
         volume_row,
@@ -667,7 +667,7 @@ pub fn soundboard_view<'a>(
                 .size(12.0)
                 .color(p.brand),
             text("Add clip")
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(p.brand)
                 .font(font(FontRole::Body)),
         ]
@@ -684,7 +684,7 @@ pub fn soundboard_view<'a>(
             .size(14.0)
             .color(palette.bits),
         text("Soundboard")
-            .size(FONT_BODY_LG)
+            .size(FONT_BODY)
             .color(palette.text_primary)
             .font(font(FontRole::Body))
             .width(Length::Fill),
@@ -696,7 +696,7 @@ pub fn soundboard_view<'a>(
     let body: Element<'a, Message> = if state.loading {
         container(
             text("Loading clips\u{2026}")
-                .size(FONT_BODY)
+                .size(FONT_SM)
                 .color(palette.text_muted),
         )
         .width(Length::Fill)
@@ -705,7 +705,7 @@ pub fn soundboard_view<'a>(
         .align_y(Alignment::Center)
         .into()
     } else if let Some(ref e) = state.error {
-        container(text(e.as_str()).size(FONT_BODY_SM).color(palette.random))
+        container(text(e.as_str()).size(FONT_SM).color(palette.random))
             .width(Length::Fill)
             .height(Length::Fill)
             .align_x(Alignment::Center)
@@ -719,10 +719,10 @@ pub fn soundboard_view<'a>(
                     .size(24.0)
                     .color(palette.text_faint),
                 text("No clips yet")
-                    .size(FONT_BODY_LG)
+                    .size(FONT_BODY)
                     .color(palette.text_muted),
                 text("Click \u{201c}Add clip\u{201d} to add your first sound.")
-                    .size(FONT_BODY_SM)
+                    .size(FONT_SM)
                     .color(palette.text_faint),
             ]
             .spacing(gap_lg)
@@ -777,7 +777,7 @@ pub fn soundboard_view<'a>(
     let play_error_banner: Option<Element<'a, Message>> = state.play_error.as_ref().map(|e| {
         container(
             text(format!("Playback error: {e}"))
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(palette.random),
         )
         .width(Length::Fill)

@@ -8,9 +8,7 @@ use forge_types::Variant;
 pub use forge_types::VariantKind;
 
 use crate::palette::ForgePalette;
-use crate::tokens::{
-    FONT_BODY_SM, FONT_CAPS, FONT_CAPS_SM, FONT_CAPS_XS, FontRole, Radius, font, radius,
-};
+use crate::tokens::{FONT_SM, FONT_XS, FontRole, Radius, font, radius};
 
 pub fn variant_kind_color(kind: VariantKind, palette: &ForgePalette) -> Color {
     match kind {
@@ -43,23 +41,18 @@ pub fn type_pill<'a, Msg: 'a>(palette: &'a ForgePalette, kind: VariantKind) -> E
     };
     let r = radius(Radius::Xxl);
 
-    container(
-        text(kind.label())
-            .size(FONT_CAPS_XS)
-            .font(pill_font)
-            .color(fg),
-    )
-    .padding([2.0_f32, 7.0_f32])
-    .style(move |_: &iced::Theme| container::Style {
-        background: Some(Background::Color(bg)),
-        border: Border {
-            radius: r.into(),
-            color: Color::TRANSPARENT,
-            width: 0.0,
-        },
-        ..container::Style::default()
-    })
-    .into()
+    container(text(kind.label()).size(FONT_XS).font(pill_font).color(fg))
+        .padding([2.0_f32, 7.0_f32])
+        .style(move |_: &iced::Theme| container::Style {
+            background: Some(Background::Color(bg)),
+            border: Border {
+                radius: r.into(),
+                color: Color::TRANSPARENT,
+                width: 0.0,
+            },
+            ..container::Style::default()
+        })
+        .into()
 }
 
 pub fn data_table<'a, Msg: 'a>(
@@ -84,7 +77,7 @@ pub fn data_table<'a, Msg: 'a>(
         header_row = header_row.push(
             container(
                 text(*label)
-                    .size(FONT_CAPS_SM)
+                    .size(FONT_XS)
                     .font(font(FontRole::Monospace))
                     .color(header_fg),
             )
@@ -206,11 +199,7 @@ pub fn value_preview<'a, Msg: 'a>(
         Variant::Datetime(_) => (variant.to_string(), palette.text_primary),
     };
 
-    text(content)
-        .size(FONT_BODY_SM)
-        .font(mono)
-        .color(color)
-        .into()
+    text(content).size(FONT_SM).font(mono).color(color).into()
 }
 
 pub fn data_screen_footer<'a, Msg: 'a>(
@@ -223,14 +212,14 @@ pub fn data_screen_footer<'a, Msg: 'a>(
     let mono = font(FontRole::Monospace);
 
     let left = text(props.position_info)
-        .size(FONT_CAPS)
+        .size(FONT_XS)
         .font(mono)
         .color(faint);
 
     let mut right_row = Row::new().spacing(14).align_y(Alignment::Center);
 
     if let Some(storage) = props.storage_info {
-        right_row = right_row.push(text(storage).size(FONT_CAPS).font(mono).color(faint));
+        right_row = right_row.push(text(storage).size(FONT_XS).font(mono).color(faint));
     }
 
     if let Some(save) = props.save_info {
@@ -254,7 +243,7 @@ pub fn data_screen_footer<'a, Msg: 'a>(
             save_row = save_row.push(dot);
         }
 
-        save_row = save_row.push(text(save).size(FONT_CAPS).font(mono).color(faint));
+        save_row = save_row.push(text(save).size(FONT_XS).font(mono).color(faint));
 
         right_row = right_row.push(save_row);
     }

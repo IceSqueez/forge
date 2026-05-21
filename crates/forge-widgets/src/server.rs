@@ -16,10 +16,7 @@ use crate::{
         ICON_INFO_CIRCLE, ICON_KEYBOARD, ICON_LOCK, ICON_REFRESH, ICON_X,
     },
     palette::ForgePalette,
-    tokens::{
-        BORDER_THIN, FONT_BODY, FONT_BODY_LG, FONT_BODY_MD, FONT_BODY_SM, FONT_CAPS, FONT_CAPS_SM,
-        FONT_CAPS_XS, FontRole, Radius, font, radius,
-    },
+    tokens::{BORDER_THIN, FONT_BODY, FONT_SM, FONT_XS, FontRole, Radius, font, radius},
 };
 
 fn token_box_style(bg: Color, border_color: Color) -> impl Fn(&iced::Theme) -> container::Style {
@@ -154,7 +151,7 @@ pub fn bearer_token_display<'a, Msg: Clone + 'a>(
     let token_inner = row![
         text(display)
             .font(font(FontRole::Monospace))
-            .size(FONT_BODY_LG)
+            .size(FONT_BODY)
             .color(palette.text_primary),
         Space::new().width(Length::Fill),
         eye_btn,
@@ -173,7 +170,7 @@ pub fn bearer_token_display<'a, Msg: Clone + 'a>(
     let copy_btn = button(
         row![
             text(ICON_COPY.to_string()).font(BOOTSTRAP_FONT).size(12),
-            text("COPY").font(font(FontRole::Monospace)).size(FONT_CAPS),
+            text("COPY").font(font(FontRole::Monospace)).size(FONT_XS),
         ]
         .spacing(5)
         .align_y(Alignment::Center),
@@ -189,7 +186,7 @@ pub fn bearer_token_display<'a, Msg: Clone + 'a>(
             text(ICON_REFRESH.to_string()).font(BOOTSTRAP_FONT).size(12),
             text("REGENERATE")
                 .font(font(FontRole::Monospace))
-                .size(FONT_CAPS),
+                .size(FONT_XS),
         ]
         .spacing(5)
         .align_y(Alignment::Center),
@@ -208,7 +205,7 @@ pub fn bearer_token_display<'a, Msg: Clone + 'a>(
             .size(11)
             .color(palette.warning),
         text("Regenerating disconnects all clients")
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(palette.text_faint),
     ]
     .spacing(5)
@@ -276,7 +273,7 @@ fn chip_element<'a, Msg: 'a>(label: &'a str, fg: Color, bg: Color) -> Element<'a
     container(
         text(label)
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS_XS)
+            .size(FONT_XS)
             .color(fg),
     )
     .padding([1u16, 5u16])
@@ -291,7 +288,7 @@ fn more_badge<'a, Msg: 'a>(n: usize, palette: &ForgePalette) -> Element<'a, Msg>
     container(
         text(label)
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS_XS)
+            .size(FONT_XS)
             .color(fg),
     )
     .padding([1u16, 5u16])
@@ -312,7 +309,7 @@ fn chips_cell_row<'a, Msg: 'a>(
                 style: FontStyle::Italic,
                 ..font(FontRole::Monospace)
             })
-            .size(FONT_CAPS_XS)
+            .size(FONT_XS)
             .color(palette.text_faint);
         return row![wildcard, hint]
             .spacing(4)
@@ -356,11 +353,11 @@ pub fn client_table_row<'a, Msg: Clone + 'a>(
     let id_col = column![
         text(row.identification)
             .font(font(FontRole::Monospace))
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(palette.text_primary),
         text(row.client_type_label)
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(palette.text_faint),
     ]
     .spacing(2);
@@ -374,7 +371,7 @@ pub fn client_table_row<'a, Msg: Clone + 'a>(
     let evs_cell = container(
         text(evs_label)
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS)
+            .size(FONT_XS)
             .color(palette.text_primary),
     )
     .width(Length::Fixed(80.0));
@@ -382,7 +379,7 @@ pub fn client_table_row<'a, Msg: Clone + 'a>(
     let uptime_cell = container(
         text(row.uptime_short)
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS)
+            .size(FONT_XS)
             .color(palette.text_muted),
     )
     .width(Length::Fixed(70.0));
@@ -512,7 +509,7 @@ fn bind_badge_element<'a, Msg: 'a>(badge: BindBadge, palette: &ForgePalette) -> 
             .color(color),
         text(badge_label(badge))
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS_XS)
+            .size(FONT_XS)
             .color(color),
     ]
     .spacing(4)
@@ -576,20 +573,20 @@ pub fn bind_address_card<'a, Msg: Clone + 'a>(
 
     let title_row = row![
         text(params.title)
-            .size(FONT_BODY_MD)
+            .size(FONT_BODY)
             .color(palette.text_primary),
         bind_badge_element::<Msg>(params.badge, palette),
         Space::new().width(Length::Fill),
         text(params.tech_label)
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(palette.text_faint),
     ]
     .spacing(8)
     .align_y(Alignment::Center);
 
     let description = text(params.description)
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .color(palette.text_muted);
 
     let content = column![title_row, description].spacing(2);
@@ -742,7 +739,7 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
     .spacing(12)
     .align_y(Alignment::Center);
 
-    let explanation = text(params.explanation).size(FONT_BODY).color(p.text_muted);
+    let explanation = text(params.explanation).size(FONT_SM).color(p.text_muted);
 
     let header_section = container(column![title_row, explanation].spacing(8))
         .width(Length::Fill)
@@ -755,7 +752,7 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
 
     let section_cap = text("WHAT THIS MEANS")
         .font(font(FontRole::Monospace))
-        .size(FONT_CAPS_SM)
+        .size(FONT_XS)
         .color(p.text_muted);
 
     let mut bullets_col = column![section_cap].spacing(0);
@@ -766,7 +763,7 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
                 .font(BOOTSTRAP_FONT)
                 .size(14.0f32)
                 .color(icon_color),
-            text(item.text).size(FONT_BODY).color(p.text_primary),
+            text(item.text).size(FONT_SM).color(p.text_primary),
         ]
         .spacing(10)
         .align_y(Alignment::Start)
@@ -785,7 +782,7 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
     let phrase_chip = container(
         text(params.confirmation_phrase)
             .font(font(FontRole::Monospace))
-            .size(FONT_BODY)
+            .size(FONT_SM)
             .color(p.warning),
     )
     .padding([1u16, 6u16])
@@ -800,9 +797,9 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
     });
 
     let confirm_label_row = row![
-        text("Type ").size(FONT_BODY).color(p.text_primary),
+        text("Type ").size(FONT_SM).color(p.text_primary),
         phrase_chip,
-        text(" to confirm:").size(FONT_BODY).color(p.text_primary),
+        text(" to confirm:").size(FONT_SM).color(p.text_primary),
     ]
     .align_y(Alignment::Center);
 
@@ -848,7 +845,7 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
     .spacing(5)
     .align_y(Alignment::Center);
 
-    let cancel_btn = button(text("Cancel").size(FONT_BODY_MD).color(p.text_secondary))
+    let cancel_btn = button(text("Cancel").size(FONT_BODY).color(p.text_secondary))
         .on_press(on_cancel)
         .padding([7u16, 14u16])
         .style(outline_btn_style(
@@ -860,7 +857,7 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
     let confirm_btn: Element<'a, Msg> = if phrase_matches {
         button(
             text(params.confirm_label)
-                .size(FONT_BODY_MD)
+                .size(FONT_BODY)
                 .color(p.shell)
                 .font(iced::Font {
                     weight: iced::font::Weight::Medium,
@@ -872,14 +869,10 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
         .style(confirm_active_btn_style(p.warning, p.shell))
         .into()
     } else {
-        button(
-            text(params.confirm_label)
-                .size(FONT_BODY_MD)
-                .color(p.disabled),
-        )
-        .padding([7u16, 14u16])
-        .style(confirm_disabled_btn_style(p.surface_overlay, p.disabled))
-        .into()
+        button(text(params.confirm_label).size(FONT_BODY).color(p.disabled))
+            .padding([7u16, 14u16])
+            .style(confirm_disabled_btn_style(p.surface_overlay, p.disabled))
+            .into()
     };
 
     let btn_row = row![cancel_btn, confirm_btn].spacing(8);
@@ -1082,7 +1075,7 @@ pub fn overlay_file_list<'a, Msg: Clone + 'a>(
                 .size(14.0f32)
                 .color(p.warning),
             text("Overlay host root")
-                .size(FONT_BODY_MD)
+                .size(FONT_BODY)
                 .font(iced::Font {
                     weight: iced::font::Weight::Medium,
                     ..font(FontRole::Body)
@@ -1102,7 +1095,7 @@ pub fn overlay_file_list<'a, Msg: Clone + 'a>(
 
     let path_label = text("PATH")
         .font(font(FontRole::Monospace))
-        .size(FONT_CAPS_SM)
+        .size(FONT_XS)
         .color(p.text_muted);
 
     let path_box = container(
@@ -1146,11 +1139,11 @@ pub fn overlay_file_list<'a, Msg: Clone + 'a>(
     let files_label_row = row![
         text("FILES")
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(p.text_muted),
         text(format!(" {entry_count}"))
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(p.text_faint),
     ]
     .align_y(Alignment::Center);
@@ -1171,7 +1164,7 @@ pub fn overlay_file_list<'a, Msg: Clone + 'a>(
                 .color(icon_color),
             text(entry.name)
                 .font(font(FontRole::Monospace))
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(p.text_primary)
                 .width(Length::Fill),
             text(right)
@@ -1266,7 +1259,7 @@ pub fn overlay_file_list<'a, Msg: Clone + 'a>(
 
     let url_label = text("BROWSER SOURCE URL")
         .font(font(FontRole::Monospace))
-        .size(FONT_CAPS_SM)
+        .size(FONT_XS)
         .color(p.text_muted);
 
     let url_group: Element<'a, Msg> = column![

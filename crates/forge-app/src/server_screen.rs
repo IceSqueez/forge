@@ -8,10 +8,7 @@ use forge_widgets::{
         ICON_SERVER, ICON_X,
     },
     section_header, throughput_sparkline,
-    tokens::{
-        FONT_BODY_LG, FONT_BODY_SM, FONT_CAPS, FONT_CAPS_SM, FONT_CAPS_XS, FONT_VALUE, FontRole,
-        font, radius,
-    },
+    tokens::{FONT_BODY, FONT_MD, FONT_SM, FONT_XS, FontRole, font, radius},
 };
 use iced::{
     Alignment, Background, Border, Color, Element, Length, Task,
@@ -294,15 +291,15 @@ fn stat_card<'a>(
     let content = column![
         text(label.into())
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS)
+            .size(FONT_XS)
             .color(text_faint),
         text(value.into())
             .font(font(FontRole::Monospace))
-            .size(FONT_VALUE)
+            .size(FONT_MD)
             .color(text_primary),
         text(sublabel.into())
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(sublabel_color),
     ]
     .spacing(4);
@@ -327,7 +324,7 @@ fn chip_container<'a>(label: impl Into<String>, fg: Color, bg: Color) -> Element
     container(
         text(label.into())
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS_XS)
+            .size(FONT_XS)
             .color(fg),
     )
     .padding([1u16, 5u16])
@@ -353,7 +350,7 @@ fn chips_row<'a>(
     if chips.is_empty() {
         return text("—")
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS)
+            .size(FONT_XS)
             .color(text_faint)
             .into();
     }
@@ -412,11 +409,11 @@ fn client_row_elem<'a>(
     let id_col = column![
         text(row_data.identification.clone())
             .font(font(FontRole::Monospace))
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(text_primary),
         text(row_data.client_type_label.clone())
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(text_faint),
     ]
     .spacing(2);
@@ -428,7 +425,7 @@ fn client_row_elem<'a>(
     let evs_cell = container(
         text(format!("{:.1}", row_data.events_per_second))
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS)
+            .size(FONT_XS)
             .color(text_primary),
     )
     .width(Length::Fixed(80.0));
@@ -436,7 +433,7 @@ fn client_row_elem<'a>(
     let uptime_cell = container(
         text(row_data.uptime_short.clone())
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS)
+            .size(FONT_XS)
             .color(text_muted),
     )
     .width(Length::Fixed(70.0));
@@ -567,7 +564,7 @@ fn overlay_entry_row<'a>(
     let kind_badge = container(
         text(overlay_kind_tag(&entry.kind))
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS_XS)
+            .size(FONT_XS)
             .color(kind_color),
     )
     .padding([1u16, 4u16])
@@ -585,12 +582,12 @@ fn overlay_entry_row<'a>(
         kind_badge,
         text(entry.name.clone())
             .font(font(FontRole::Monospace))
-            .size(FONT_BODY_SM)
+            .size(FONT_SM)
             .color(text_primary),
         Space::new().width(Length::Fill),
         text(size_label)
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(text_faint),
     ]
     .spacing(6)
@@ -630,7 +627,7 @@ fn overlay_entry_row<'a>(
             row![
                 text(url)
                     .font(font(FontRole::Monospace))
-                    .size(FONT_CAPS_SM)
+                    .size(FONT_XS)
                     .color(text_muted),
                 Space::new().width(Length::Fill),
                 copy_btn,
@@ -702,7 +699,7 @@ fn header_card<'a>(
     let ws_badge = container(
         text("WS + HTTP")
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS_XS)
+            .size(FONT_XS)
             .color(info),
     )
     .padding([1u16, 6u16])
@@ -734,21 +731,21 @@ fn header_card<'a>(
 
     let title_row = row![
         text("Built-in Server")
-            .size(FONT_BODY_LG)
+            .size(FONT_BODY)
             .color(palette.text_primary),
         ws_badge,
         Space::new().width(Length::Fill),
         status_dot,
         text(s_label)
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(s_color),
     ]
     .spacing(8)
     .align_y(Alignment::Center);
 
     let description = text("Internal HTTP + WebSocket server for overlays and remote control")
-        .size(FONT_BODY_SM)
+        .size(FONT_SM)
         .color(palette.text_muted);
 
     let actions_row = row![
@@ -782,15 +779,15 @@ fn header_card<'a>(
     let bind_col = column![
         text("BIND ADDRESS")
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS)
+            .size(FONT_XS)
             .color(palette.text_faint),
         text(state.bind_address.as_str())
             .font(font(FontRole::Monospace))
-            .size(FONT_BODY_LG)
+            .size(FONT_BODY)
             .color(palette.text_primary),
         text(uptime_str)
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(palette.text_faint),
         copy_address_btn(palette),
     ]
@@ -800,7 +797,7 @@ fn header_card<'a>(
     let token_col = column![
         text("BEARER TOKEN")
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS)
+            .size(FONT_XS)
             .color(palette.text_faint),
         bearer_token_display(
             state.bearer_token.as_str(),
@@ -846,7 +843,7 @@ fn restart_btn<'a>(palette: &ForgePalette) -> Element<'a, Message> {
                 .size(12.0f32),
             text("Restart")
                 .font(font(FontRole::Monospace))
-                .size(FONT_CAPS),
+                .size(FONT_XS),
         ]
         .spacing(5)
         .align_y(Alignment::Center),
@@ -877,7 +874,7 @@ fn stop_btn<'a>(palette: &ForgePalette) -> Element<'a, Message> {
     let border = palette.random;
     let hover_bg = Color { a: 0.08, ..border };
 
-    button(text("Stop").font(font(FontRole::Monospace)).size(FONT_CAPS))
+    button(text("Stop").font(font(FontRole::Monospace)).size(FONT_XS))
         .on_press(Message::Server(ServerScreenMsg::StopServer))
         .padding([6u16, 12u16])
         .style(move |_theme: &iced::Theme, status| {
@@ -911,7 +908,7 @@ fn copy_address_btn<'a>(palette: &ForgePalette) -> Element<'a, Message> {
             text(ICON_COPY.to_string())
                 .font(BOOTSTRAP_FONT)
                 .size(12.0f32),
-            text("COPY").font(font(FontRole::Monospace)).size(FONT_CAPS),
+            text("COPY").font(font(FontRole::Monospace)).size(FONT_XS),
         ]
         .spacing(5)
         .align_y(Alignment::Center),
@@ -994,7 +991,7 @@ fn clients_panel<'a>(
     let count_badge = container(
         text(format!("{}", state.connected_clients.len()))
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(text_primary),
     )
     .padding([1u16, 6u16])
@@ -1010,7 +1007,7 @@ fn clients_panel<'a>(
 
     let kick_hint = text("press K on a row to disconnect")
         .font(font(FontRole::Monospace))
-        .size(FONT_CAPS_XS)
+        .size(FONT_XS)
         .color(text_faint);
 
     let header = row![
@@ -1020,7 +1017,7 @@ fn clients_panel<'a>(
             .color(text_faint),
         text("Connected Clients")
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS)
+            .size(FONT_XS)
             .color(text_faint),
         Space::new().width(Length::Fill),
         kick_hint,
@@ -1034,22 +1031,22 @@ fn clients_panel<'a>(
         Space::new().width(Length::Fixed(24.0)),
         text("CLIENT")
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS_XS)
+            .size(FONT_XS)
             .color(text_faint)
             .width(Length::FillPortion(14)),
         text("SUBSCRIPTIONS")
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS_XS)
+            .size(FONT_XS)
             .color(text_faint)
             .width(Length::FillPortion(16)),
         text("EV/S")
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS_XS)
+            .size(FONT_XS)
             .color(text_faint)
             .width(Length::Fixed(80.0)),
         text("UPTIME")
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS_XS)
+            .size(FONT_XS)
             .color(text_faint)
             .width(Length::Fixed(70.0)),
         Space::new().width(Length::Fixed(22.0)),
@@ -1068,7 +1065,7 @@ fn clients_panel<'a>(
         container(
             text("No clients connected")
                 .font(font(FontRole::Monospace))
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(text_faint),
         )
         .padding([24u16, 14u16])
@@ -1120,7 +1117,7 @@ fn overlay_panel<'a>(
             text(ICON_FOLDER_OPEN.to_string())
                 .font(BOOTSTRAP_FONT)
                 .size(12.0f32),
-            text("OPEN").font(font(FontRole::Monospace)).size(FONT_CAPS),
+            text("OPEN").font(font(FontRole::Monospace)).size(FONT_XS),
         ]
         .spacing(4)
         .align_y(Alignment::Center),
@@ -1150,7 +1147,7 @@ fn overlay_panel<'a>(
     let path_row = row![
         text(root_label)
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(text_muted),
         Space::new().width(Length::Fill),
         open_btn,
@@ -1171,7 +1168,7 @@ fn overlay_panel<'a>(
         container(
             text("No overlay files found")
                 .font(font(FontRole::Monospace))
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(text_faint),
         )
         .padding([24u16, 14u16])
@@ -1243,22 +1240,22 @@ fn footer_bar<'a>(state: &'a ServerScreenState, palette: &ForgePalette) -> Eleme
 
     let left = text(ws_http_info)
         .font(font(FontRole::Monospace))
-        .size(FONT_CAPS_SM)
+        .size(FONT_XS)
         .color(text_faint);
 
     let right = row![
         text(stats_info)
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(text_faint),
         text("·")
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(text_faint),
         status_dot,
         text(s_label)
             .font(font(FontRole::Monospace))
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(s_color),
     ]
     .spacing(6)

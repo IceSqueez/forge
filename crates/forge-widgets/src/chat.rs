@@ -4,9 +4,7 @@ use iced::{
 };
 
 use crate::palette::ForgePalette;
-use crate::tokens::{
-    FONT_BODY_LG, FONT_BODY_SM, FONT_CAPS, FONT_CAPS_SM, FontRole, Radius, font, radius,
-};
+use crate::tokens::{FONT_BODY, FONT_SM, FONT_XS, FontRole, Radius, font, radius};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BadgeKind {
@@ -94,7 +92,7 @@ fn badge_pill<'a, Msg: 'a>(kind: BadgeKind, palette: &ForgePalette) -> Element<'
     let label = badge_label(kind);
     container(
         text(label)
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(color)
             .font(font(FontRole::Body)),
     )
@@ -144,7 +142,7 @@ pub fn chat_row<'a, Msg: Clone + 'a>(
 ) -> Element<'a, Msg> {
     let ts = container(
         text(row_data.timestamp.as_str())
-            .size(FONT_CAPS_SM)
+            .size(FONT_XS)
             .color(palette.text_faint)
             .font(font(FontRole::Monospace)),
     )
@@ -169,17 +167,17 @@ pub fn chat_row<'a, Msg: Clone + 'a>(
 
             let username_color = row_data.username_color;
             let username_el = text(row_data.username.as_str())
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(username_color)
                 .font(font(FontRole::Body));
 
             let separator = text(": ")
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(palette.text_primary)
                 .font(font(FontRole::Body));
 
             let message_el = text(msg.as_str())
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(palette.text_primary)
                 .font(font(FontRole::Body));
 
@@ -205,12 +203,12 @@ pub fn chat_row<'a, Msg: Clone + 'a>(
             let accent = event_accent_color(kind.as_str(), palette);
 
             let kind_el = text(kind.as_str())
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(accent)
                 .font(font(FontRole::Body));
 
             let detail_el = text(detail.as_str())
-                .size(FONT_BODY_SM)
+                .size(FONT_SM)
                 .color(palette.text_secondary)
                 .font(font(FontRole::Body));
 
@@ -294,7 +292,7 @@ pub fn filter_chip<'a, Msg: Clone + 'a>(
         });
 
     let label_text = text(label.to_owned())
-        .size(FONT_CAPS)
+        .size(FONT_XS)
         .color(text_color)
         .font(font(FontRole::Body));
 
@@ -371,22 +369,22 @@ fn hint_row<'a, Msg: 'a>(palette: &ForgePalette) -> Element<'a, Msg> {
     let mono = font(FontRole::Monospace);
 
     let slash_hint = row![
-        text("/").size(FONT_CAPS_SM).color(color).font(mono),
-        text(" commands").size(FONT_CAPS_SM).color(color),
+        text("/").size(FONT_XS).color(color).font(mono),
+        text(" commands").size(FONT_XS).color(color),
     ]
     .spacing(4)
     .align_y(iced::Alignment::Center);
 
     let at_hint = row![
-        text("@").size(FONT_CAPS_SM).color(color).font(mono),
-        text(" mention").size(FONT_CAPS_SM).color(color),
+        text("@").size(FONT_XS).color(color).font(mono),
+        text(" mention").size(FONT_XS).color(color),
     ]
     .spacing(4)
     .align_y(iced::Alignment::Center);
 
     let bang_hint = row![
-        text("!").size(FONT_CAPS_SM).color(color).font(mono),
-        text(" trigger action").size(FONT_CAPS_SM).color(color),
+        text("!").size(FONT_XS).color(color).font(mono),
+        text(" trigger action").size(FONT_XS).color(color),
     ]
     .spacing(4)
     .align_y(iced::Alignment::Center);
@@ -425,7 +423,7 @@ pub fn input_bar<'a, Msg: Clone + 'a>(
         .on_input(on_input)
         .on_submit(on_submit)
         .padding([0, 0])
-        .size(FONT_BODY_LG)
+        .size(FONT_BODY)
         .width(Length::Fill)
         .style(move |_theme: &iced::Theme, _status| text_input::Style {
             background: Background::Color(Color::TRANSPARENT),

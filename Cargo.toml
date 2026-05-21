@@ -13,6 +13,11 @@ members = [
   "crates/forge-server",
   "crates/forge-audio",
   "crates/forge-soundboard",
+  "crates/forge-tts-core",
+  "crates/forge-voice",
+  "crates/forge-tts-pipeline",
+  "crates/forge-tts-piper",
+  "crates/forge-speak-queue",
   "crates/forge-widgets",
   "crates/forge-app",
 ]
@@ -98,6 +103,8 @@ open = { version = "5" }
 
 cpal = { version = "0.17" }
 rubato = { version = "0.16" }
+regex = { version = "1" }
+once_cell = { version = "1" }
 symphonia = { version = "0.5", features = ["all-codecs", "all-formats"] }
 crossbeam-channel = { version = "0.5" }
 futures = { version = "0.3" }

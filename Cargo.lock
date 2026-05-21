@@ -2393,12 +2393,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-speak-queue"
+version = "0.1.0-alpha.10"
+dependencies = [
+ "async-trait",
+ "forge-audio",
+ "forge-events",
+ "forge-tts-core",
+ "forge-tts-pipeline",
+ "forge-types",
+ "forge-voice",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "ulid",
+]
+
+[[package]]
 name = "forge-storage"
 version = "0.1.0-alpha.10"
 dependencies = [
  "async-trait",
  "forge-events",
  "forge-types",
+ "forge-voice",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -2414,7 +2434,9 @@ dependencies = [
  "forge-events",
  "forge-platform-core",
  "forge-storage",
+ "forge-tts-core",
  "forge-types",
+ "forge-voice",
  "keyring",
  "keyring-core",
  "rand 0.10.1",
@@ -2427,6 +2449,45 @@ dependencies = [
  "time",
  "tokio",
  "tracing",
+ "ulid",
+]
+
+[[package]]
+name = "forge-tts-core"
+version = "0.1.0-alpha.10"
+dependencies = [
+ "async-trait",
+ "forge-audio",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "forge-tts-pipeline"
+version = "0.1.0-alpha.10"
+dependencies = [
+ "once_cell",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "forge-tts-piper"
+version = "0.1.0-alpha.10"
+dependencies = [
+ "async-trait",
+ "forge-audio",
+ "forge-tts-core",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -2437,6 +2498,18 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "time",
+ "ulid",
+]
+
+[[package]]
+name = "forge-voice"
+version = "0.1.0-alpha.10"
+dependencies = [
+ "forge-tts-core",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
  "ulid",
 ]
 

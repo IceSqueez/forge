@@ -117,8 +117,8 @@ pub fn tts_filters_view<'a>(
     state: &'a TtsFiltersState,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    let gap_sm = f32::from(spacing(Spacing::Sm, Density::Cozy));
-    let gap_md = f32::from(spacing(Spacing::Md, Density::Cozy));
+    let gap_sm = f32::from(spacing(Spacing::Xs, Density::Cozy));
+    let gap_md = f32::from(spacing(Spacing::Sm, Density::Cozy));
 
     let pipeline_col = pipeline_column_view(state, palette, gap_sm, gap_md);
     let preview_col = preview_column_view(state, palette, gap_sm, gap_md);
@@ -204,7 +204,7 @@ fn pipeline_stage<'a>(
     palette: &'a ForgePalette,
     has_connector: bool,
 ) -> Element<'a, Message> {
-    let gap_sm = f32::from(spacing(Spacing::Sm, Density::Cozy));
+    let gap_sm = f32::from(spacing(Spacing::Xs, Density::Cozy));
     let badge = container(
         text(number)
             .size(11.0)

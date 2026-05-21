@@ -97,7 +97,7 @@ pub fn output_device_picker<'a, Msg: 'a + Clone>(
     .padding([4.0, 10.0])
     .style(move |_theme, status| icon_btn_style(&p2, status));
 
-    let gap = f32::from(spacing(Spacing::Md, Density::Cozy));
+    let gap = f32::from(spacing(Spacing::Sm, Density::Cozy));
 
     row![picker, refresh_btn, test_btn]
         .spacing(gap)

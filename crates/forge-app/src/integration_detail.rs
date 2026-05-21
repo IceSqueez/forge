@@ -315,7 +315,7 @@ pub fn view<'a>(
     state: &'a IntegrationDetailState,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    let section_gap = spacing(Spacing::Xxxl, Density::Cozy) as f32;
+    let section_gap = spacing(Spacing::Md, Density::Cozy) as f32;
 
     let params = HeaderCardParams {
         display_name: &state.display_name,
@@ -351,8 +351,8 @@ pub fn view<'a>(
         .push(quick);
 
     let padded = container(col).width(Length::Fill).padding([
-        spacing(Spacing::Xxxl, Density::Cozy),
-        spacing(Spacing::Huge, Density::Cozy),
+        spacing(Spacing::Md, Density::Cozy),
+        spacing(Spacing::Lg, Density::Cozy),
     ]);
 
     let base: Element<'_, Message> = iced::widget::scrollable(padded).into();

@@ -42,7 +42,7 @@ pub fn card_with_radius<'a, Msg: 'a>(
     let col = iced::widget::column(children).spacing(8);
 
     container(col)
-        .padding(spacing(Spacing::Xxl, Density::default()))
+        .padding(spacing(Spacing::Md, Density::default()))
         .style(card_style(bg, border_color, radius(r)))
         .into()
 }
@@ -78,7 +78,7 @@ pub fn metric_card<'a, Msg: 'a>(
     }
 
     container(col)
-        .padding(spacing(Spacing::Xxxl, Density::default()))
+        .padding(spacing(Spacing::Md, Density::default()))
         .style(card_style(bg, border_color, radius(Radius::Xxl)))
         .into()
 }
@@ -133,7 +133,7 @@ pub fn hero_card<'a, Msg: 'a>(
     }
 
     container(col)
-        .padding(spacing(Spacing::Huge, Density::default()))
+        .padding(spacing(Spacing::Lg, Density::default()))
         .style(card_style(bg, border_color, radius(Radius::Hero)))
         .into()
 }

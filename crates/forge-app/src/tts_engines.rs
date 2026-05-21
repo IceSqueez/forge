@@ -76,8 +76,8 @@ pub fn tts_engines_view<'a>(
     state: &'a TtsEnginesState,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    let gap_sm = f32::from(spacing(Spacing::Sm, Density::Cozy));
-    let gap_md = f32::from(spacing(Spacing::Md, Density::Cozy));
+    let gap_sm = f32::from(spacing(Spacing::Xs, Density::Cozy));
+    let gap_md = f32::from(spacing(Spacing::Sm, Density::Cozy));
 
     let engine_list = engine_list_view(state, palette, gap_sm);
     let detail = engine_detail_view(state, palette, gap_sm, gap_md);

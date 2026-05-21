@@ -88,9 +88,9 @@ fn disabled_primary_button<'a, Msg: 'a>(
         ..palette.shell
     };
     let r = radius(Radius::Md);
-    let vp = spacing(Spacing::Md, crate::tokens::Density::Cozy);
-    let hp = spacing(Spacing::Xxxl, crate::tokens::Density::Cozy);
-    let gap = spacing(Spacing::Sm, crate::tokens::Density::Cozy);
+    let vp = spacing(Spacing::Sm, crate::tokens::Density::Cozy);
+    let hp = spacing(Spacing::Md, crate::tokens::Density::Cozy);
+    let gap = spacing(Spacing::Xs, crate::tokens::Density::Cozy);
 
     container(
         row![
@@ -210,7 +210,7 @@ pub fn onboarding_step_header<'a, Msg: 'a>(
 
     let mut badge_row = Row::new()
         .spacing(f32::from(spacing(
-            Spacing::Md,
+            Spacing::Sm,
             crate::tokens::Density::Cozy,
         )))
         .align_y(Alignment::Center)
@@ -271,7 +271,7 @@ pub fn onboarding_step_header<'a, Msg: 'a>(
             .color(palette.text_primary),
     ]
     .spacing(f32::from(spacing(
-        Spacing::Sm,
+        Spacing::Xs,
         crate::tokens::Density::Cozy,
     )))
     .into()
@@ -392,7 +392,7 @@ pub fn locale_tip_card<'a, Msg: Clone + 'a>(
 
     let content = row![text("ⓘ").size(14.0).color(palette.info), text_block,]
         .spacing(f32::from(spacing(
-            Spacing::Md,
+            Spacing::Sm,
             crate::tokens::Density::Cozy,
         )))
         .align_y(Alignment::Start);
@@ -458,13 +458,13 @@ pub fn onboarding_footer<'a, Msg: Clone + 'a>(
             continue_element,
         ]
         .spacing(f32::from(spacing(
-            Spacing::Md,
+            Spacing::Sm,
             crate::tokens::Density::Cozy
         )))
         .align_y(Alignment::Center),
     ]
     .spacing(f32::from(spacing(
-        Spacing::Xxl,
+        Spacing::Md,
         crate::tokens::Density::Cozy,
     )))
     .into()
@@ -509,8 +509,8 @@ pub fn device_code_display<'a, Msg: Clone + 'a>(
     let copy_block = iced::widget::button(copy_content)
         .on_press(on_copy)
         .padding(Padding::from([
+            spacing(Spacing::Sm, crate::tokens::Density::Cozy),
             spacing(Spacing::Md, crate::tokens::Density::Cozy),
-            spacing(Spacing::Xl, crate::tokens::Density::Cozy),
         ]))
         .style(
             move |_theme: &iced::Theme, _status| iced::widget::button::Style {
@@ -528,7 +528,7 @@ pub fn device_code_display<'a, Msg: Clone + 'a>(
 
     row![code_block, copy_block]
         .spacing(f32::from(spacing(
-            Spacing::Xxl,
+            Spacing::Md,
             crate::tokens::Density::Cozy,
         )))
         .align_y(Alignment::Center)
@@ -559,7 +559,7 @@ pub fn expiration_timer<'a, Msg: Clone + 'a>(
         ghost_button(refresh_label, on_refresh, palette),
     ]
     .spacing(f32::from(spacing(
-        Spacing::Sm,
+        Spacing::Xs,
         crate::tokens::Density::Cozy,
     )))
     .align_y(Alignment::Center)
@@ -655,15 +655,15 @@ pub fn numbered_box_step<'a, Msg: 'a>(
 
     let inner = row![badge, text_col]
         .spacing(f32::from(spacing(
-            Spacing::Xl,
+            Spacing::Md,
             crate::tokens::Density::Cozy,
         )))
         .align_y(Alignment::Start);
 
     container(inner)
         .padding(Padding::from([
-            spacing(Spacing::Xxl, crate::tokens::Density::Cozy),
-            spacing(Spacing::Xxl, crate::tokens::Density::Cozy),
+            spacing(Spacing::Md, crate::tokens::Density::Cozy),
+            spacing(Spacing::Md, crate::tokens::Density::Cozy),
         ]))
         .width(Length::Fill)
         .style(move |_theme: &iced::Theme| container::Style {

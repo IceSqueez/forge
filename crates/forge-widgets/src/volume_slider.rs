@@ -19,7 +19,7 @@ pub fn volume_slider<'a, Msg: 'a + Clone>(
     };
     let pct_label = format!("{pct}%");
     let label_w = 36.0_f32;
-    let gap = f32::from(spacing(Spacing::Md, Density::Cozy));
+    let gap = f32::from(spacing(Spacing::Sm, Density::Cozy));
 
     row![
         text("VOL")

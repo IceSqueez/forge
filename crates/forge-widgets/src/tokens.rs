@@ -16,33 +16,22 @@ pub enum Density {
     Spacious,
 }
 
+/// Design tokens (4 levels). Matches theme.css `--sp-xs/sm/md/lg`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Spacing {
     Xs,
     Sm,
     Md,
     Lg,
-    Xl,
-    Xxl,
-    Xxxl,
-    Huge,
-    Mega,
-    Giga,
 }
 
 impl Spacing {
     fn base_px(self) -> f32 {
         match self {
-            Self::Xs => 4.0,
-            Self::Sm => 6.0,
-            Self::Md => 8.0,
-            Self::Lg => 10.0,
-            Self::Xl => 12.0,
-            Self::Xxl => 14.0,
-            Self::Xxxl => 18.0,
-            Self::Huge => 24.0,
-            Self::Mega => 32.0,
-            Self::Giga => 40.0,
+            Self::Xs => 6.0,
+            Self::Sm => 10.0,
+            Self::Md => 16.0,
+            Self::Lg => 24.0,
         }
     }
 }
@@ -146,29 +135,23 @@ mod tests {
     }
 
     #[test]
-    fn spacing_cozy_returns_html_observed_values() {
-        assert_eq!(spacing(Spacing::Xs, Density::Cozy), 4);
-        assert_eq!(spacing(Spacing::Sm, Density::Cozy), 6);
-        assert_eq!(spacing(Spacing::Md, Density::Cozy), 8);
-        assert_eq!(spacing(Spacing::Lg, Density::Cozy), 10);
-        assert_eq!(spacing(Spacing::Xl, Density::Cozy), 12);
-        assert_eq!(spacing(Spacing::Xxl, Density::Cozy), 14);
-        assert_eq!(spacing(Spacing::Xxxl, Density::Cozy), 18);
-        assert_eq!(spacing(Spacing::Huge, Density::Cozy), 24);
-        assert_eq!(spacing(Spacing::Mega, Density::Cozy), 32);
-        assert_eq!(spacing(Spacing::Giga, Density::Cozy), 40);
+    fn spacing_cozy_returns_design_token_values() {
+        assert_eq!(spacing(Spacing::Xs, Density::Cozy), 6);
+        assert_eq!(spacing(Spacing::Sm, Density::Cozy), 10);
+        assert_eq!(spacing(Spacing::Md, Density::Cozy), 16);
+        assert_eq!(spacing(Spacing::Lg, Density::Cozy), 24);
     }
 
     #[test]
     fn spacing_compact_scales_down() {
-        assert_eq!(spacing(Spacing::Md, Density::Compact), 7);
-        assert_eq!(spacing(Spacing::Xxxl, Density::Compact), 15);
+        assert_eq!(spacing(Spacing::Md, Density::Compact), 14);
+        assert_eq!(spacing(Spacing::Sm, Density::Compact), 9);
     }
 
     #[test]
     fn spacing_spacious_increases() {
-        assert_eq!(spacing(Spacing::Md, Density::Spacious), 10);
-        assert_eq!(spacing(Spacing::Xxxl, Density::Spacious), 22);
+        assert_eq!(spacing(Spacing::Md, Density::Spacious), 19);
+        assert_eq!(spacing(Spacing::Sm, Density::Spacious), 12);
     }
 
     #[test]

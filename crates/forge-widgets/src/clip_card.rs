@@ -96,7 +96,7 @@ pub fn clip_card<'a, Msg: 'a + Clone>(
         .style(chip_style(palette.surface_overlay, palette.border_regular));
 
         row![duration_chip, hk_chip]
-            .spacing(f32::from(spacing(Spacing::Sm, Density::Cozy)))
+            .spacing(f32::from(spacing(Spacing::Xs, Density::Cozy)))
             .into()
     } else {
         duration_chip.into()
@@ -117,14 +117,14 @@ pub fn clip_card<'a, Msg: 'a + Clone>(
             })
             .font(font(FontRole::Monospace)),
     ]
-    .spacing(f32::from(spacing(Spacing::Sm, Density::Cozy)));
+    .spacing(f32::from(spacing(Spacing::Xs, Density::Cozy)));
 
     let play_btn = action_btn(ICON_PLAY, palette.success, on_play, palette);
     let edit_btn = action_btn('\u{F4CA}', palette.info, on_edit, palette);
     let delete_btn = action_btn(ICON_X, palette.random, on_delete, palette);
 
     let action_row = row![play_btn, edit_btn, delete_btn]
-        .spacing(f32::from(spacing(Spacing::Sm, Density::Cozy)));
+        .spacing(f32::from(spacing(Spacing::Xs, Density::Cozy)));
 
     let separator = container(iced::widget::Space::new())
         .width(Length::Fill)
@@ -141,10 +141,10 @@ pub fn clip_card<'a, Msg: 'a + Clone>(
         separator,
         row![iced::widget::Space::new().width(Length::Fill), action_row].align_y(Alignment::Center),
     ]
-    .spacing(f32::from(spacing(Spacing::Md, Density::Cozy)));
+    .spacing(f32::from(spacing(Spacing::Sm, Density::Cozy)));
 
     container(content)
-        .padding(f32::from(spacing(Spacing::Xxl, Density::Cozy)))
+        .padding(f32::from(spacing(Spacing::Md, Density::Cozy)))
         .width(Length::Fill)
         .style(move |_| container::Style {
             background: Some(Background::Color(p.elevated)),

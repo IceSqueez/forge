@@ -159,9 +159,9 @@ pub fn settings_audio_view<'a>(
     state: &'a SettingsAudioState,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    let gap_lg = f32::from(spacing(Spacing::Lg, Density::Cozy));
-    let gap_xl = f32::from(spacing(Spacing::Xl, Density::Cozy));
-    let gap_xxl = f32::from(spacing(Spacing::Xxl, Density::Cozy));
+    let gap_lg = f32::from(spacing(Spacing::Sm, Density::Cozy));
+    let gap_xl = f32::from(spacing(Spacing::Md, Density::Cozy));
+    let gap_xxl = f32::from(spacing(Spacing::Md, Density::Cozy));
 
     let header = section_header("OUTPUT DEVICES", None, palette);
 
@@ -287,7 +287,7 @@ pub fn settings_audio_view<'a>(
     .align_y(Alignment::Center);
 
     let card = container(column![screen_header, content_col].spacing(gap_xxl))
-        .padding(f32::from(spacing(Spacing::Xxl, Density::Cozy)))
+        .padding(f32::from(spacing(Spacing::Md, Density::Cozy)))
         .style(move |_| {
             let p3 = p2;
             container::Style {
@@ -304,7 +304,7 @@ pub fn settings_audio_view<'a>(
     container(card)
         .width(Length::Fill)
         .height(Length::Fill)
-        .padding(f32::from(spacing(Spacing::Xxl, Density::Cozy)))
+        .padding(f32::from(spacing(Spacing::Md, Density::Cozy)))
         .into()
 }
 

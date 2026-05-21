@@ -60,8 +60,8 @@ pub fn primary_button<'a, Msg: 'a + Clone>(
 ) -> Element<'a, Msg> {
     let bg = palette.brand;
     let text_color = palette.shell;
-    let v = spacing(Spacing::Md, Density::Cozy);
-    let h = spacing(Spacing::Xxxl, Density::Cozy);
+    let v = spacing(Spacing::Sm, Density::Cozy);
+    let h = spacing(Spacing::Md, Density::Cozy);
 
     iced::widget::button(iced::widget::text(label.into()).color(text_color))
         .on_press(on_press)
@@ -77,8 +77,8 @@ pub fn primary_button_small<'a, Msg: 'a + Clone>(
 ) -> Element<'a, Msg> {
     let bg = palette.brand;
     let text_color = palette.shell;
-    let v = spacing(Spacing::Sm, Density::Cozy);
-    let h = spacing(Spacing::Xxl, Density::Cozy);
+    let v = spacing(Spacing::Xs, Density::Cozy);
+    let h = spacing(Spacing::Md, Density::Cozy);
 
     iced::widget::button(iced::widget::text(label.into()).color(text_color))
         .on_press(on_press)
@@ -95,9 +95,9 @@ pub fn primary_button_with_icon_right<'a, Msg: 'a + Clone>(
 ) -> Element<'a, Msg> {
     let bg = palette.brand;
     let text_color = palette.shell;
-    let v = spacing(Spacing::Md, Density::Cozy);
-    let h = spacing(Spacing::Xxxl, Density::Cozy);
-    let gap = spacing(Spacing::Sm, Density::Cozy);
+    let v = spacing(Spacing::Sm, Density::Cozy);
+    let h = spacing(Spacing::Md, Density::Cozy);
+    let gap = spacing(Spacing::Xs, Density::Cozy);
 
     let content = iced::widget::row![
         iced::widget::text(label.into()).color(text_color),
@@ -119,8 +119,8 @@ pub fn destructive_button<'a, Msg: 'a + Clone>(
 ) -> Element<'a, Msg> {
     let bg = palette.random;
     let text_color = palette.shell;
-    let v = spacing(Spacing::Md, Density::Cozy);
-    let h = spacing(Spacing::Xxxl, Density::Cozy);
+    let v = spacing(Spacing::Sm, Density::Cozy);
+    let h = spacing(Spacing::Md, Density::Cozy);
 
     iced::widget::button(iced::widget::text(label.into()).color(text_color))
         .on_press(on_press)
@@ -138,8 +138,8 @@ pub fn secondary_button<'a, Msg: 'a + Clone>(
     let text_color = palette.text_secondary;
     let text_hover = palette.text_primary;
     let r = radius(Radius::Md);
-    let v = spacing(Spacing::Md, Density::Cozy);
-    let h = spacing(Spacing::Xxl, Density::Cozy);
+    let v = spacing(Spacing::Sm, Density::Cozy);
+    let h = spacing(Spacing::Md, Density::Cozy);
 
     iced::widget::button(iced::widget::text(label.into()).color(text_color))
         .on_press(on_press)
@@ -199,8 +199,8 @@ pub fn ghost_button<'a, Msg: 'a + Clone>(
     let text_color = palette.text_muted;
     let text_hover = palette.text_secondary;
     let r = radius(Radius::Sm);
-    let v = spacing(Spacing::Md, Density::Cozy);
-    let h = spacing(Spacing::Lg, Density::Cozy);
+    let v = spacing(Spacing::Sm, Density::Cozy);
+    let h = spacing(Spacing::Sm, Density::Cozy);
 
     iced::widget::button(iced::widget::text(label.into()))
         .on_press(on_press)
@@ -357,26 +357,26 @@ mod tests {
 
     #[test]
     fn primary_padding_matches_design_tokens() {
-        assert_eq!(spacing(Spacing::Md, Density::Cozy), 8);
-        assert_eq!(spacing(Spacing::Xxxl, Density::Cozy), 18);
+        assert_eq!(spacing(Spacing::Sm, Density::Cozy), 10);
+        assert_eq!(spacing(Spacing::Md, Density::Cozy), 16);
     }
 
     #[test]
     fn primary_small_padding_matches_design_tokens() {
-        assert_eq!(spacing(Spacing::Sm, Density::Cozy), 6);
-        assert_eq!(spacing(Spacing::Xxl, Density::Cozy), 14);
+        assert_eq!(spacing(Spacing::Xs, Density::Cozy), 6);
+        assert_eq!(spacing(Spacing::Md, Density::Cozy), 16);
     }
 
     #[test]
     fn secondary_padding_matches_design_tokens() {
-        assert_eq!(spacing(Spacing::Md, Density::Cozy), 8);
-        assert_eq!(spacing(Spacing::Xxl, Density::Cozy), 14);
+        assert_eq!(spacing(Spacing::Sm, Density::Cozy), 10);
+        assert_eq!(spacing(Spacing::Md, Density::Cozy), 16);
     }
 
     #[test]
     fn ghost_padding_matches_design_tokens() {
-        assert_eq!(spacing(Spacing::Md, Density::Cozy), 8);
-        assert_eq!(spacing(Spacing::Lg, Density::Cozy), 10);
+        assert_eq!(spacing(Spacing::Sm, Density::Cozy), 10);
+        assert_eq!(spacing(Spacing::Sm, Density::Cozy), 10);
     }
 
     #[test]

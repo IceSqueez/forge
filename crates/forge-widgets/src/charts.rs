@@ -135,7 +135,7 @@ pub fn throughput_sparkline<'a, Msg: 'a>(
     ]
     .align_y(Alignment::Center);
 
-    let inner = column![header, chart_canvas].spacing(spacing(Spacing::Md, Density::Cozy) as f32);
+    let inner = column![header, chart_canvas].spacing(spacing(Spacing::Sm, Density::Cozy) as f32);
 
     container(inner)
         .style(move |_theme: &iced::Theme| container::Style {
@@ -148,8 +148,8 @@ pub fn throughput_sparkline<'a, Msg: 'a>(
             ..container::Style::default()
         })
         .padding(Padding::from([
-            spacing(Spacing::Xl, Density::Cozy),
-            spacing(Spacing::Xxl, Density::Cozy),
+            spacing(Spacing::Md, Density::Cozy),
+            spacing(Spacing::Md, Density::Cozy),
         ]))
         .into()
 }

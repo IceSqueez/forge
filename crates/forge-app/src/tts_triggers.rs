@@ -70,8 +70,8 @@ pub fn tts_triggers_view<'a>(
     state: &'a TtsTriggersState,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    let gap_sm = f32::from(spacing(Spacing::Sm, Density::Cozy));
-    let gap_md = f32::from(spacing(Spacing::Md, Density::Cozy));
+    let gap_sm = f32::from(spacing(Spacing::Xs, Density::Cozy));
+    let gap_md = f32::from(spacing(Spacing::Sm, Density::Cozy));
 
     let header_group = column![
         text("WHAT GETS SPOKEN")

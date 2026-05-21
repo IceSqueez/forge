@@ -46,15 +46,15 @@ pub fn integration_header_card<'a, Msg: Clone + 'a>(
     let bg = palette.elevated;
     let border_color = palette.border_regular;
     let r = radius(Radius::Xxxl);
-    let v_pad = spacing(Spacing::Xl, Density::Cozy);
-    let h_pad = spacing(Spacing::Xxxl, Density::Cozy);
+    let v_pad = spacing(Spacing::Md, Density::Cozy);
+    let h_pad = spacing(Spacing::Md, Density::Cozy);
 
     let inner = iced::widget::row![
         icon_elem,
         container(info_elem).width(Length::Fill),
         actions_elem,
     ]
-    .spacing(spacing(Spacing::Xxl, Density::Cozy) as f32)
+    .spacing(spacing(Spacing::Md, Density::Cozy) as f32)
     .align_y(Alignment::Center);
 
     container(inner)
@@ -117,7 +117,7 @@ fn info_column<'a, Msg: 'a>(
     let warning = palette.warning;
 
     let mut name_row: Row<'a, Msg> = Row::new()
-        .spacing(spacing(Spacing::Md, Density::Cozy) as f32)
+        .spacing(spacing(Spacing::Sm, Density::Cozy) as f32)
         .align_y(Alignment::Center)
         .push(
             iced::widget::text(params.display_name)
@@ -211,10 +211,10 @@ fn action_buttons<'a, Msg: Clone + 'a>(
     let text_secondary = palette.text_secondary;
     let text_disconnect = palette.random;
     let r = radius(Radius::Sm);
-    let v_pad = spacing(Spacing::Sm, Density::Cozy);
-    let h_pad = spacing(Spacing::Xl, Density::Cozy);
+    let v_pad = spacing(Spacing::Xs, Density::Cozy);
+    let h_pad = spacing(Spacing::Md, Density::Cozy);
 
-    let mut row: Row<'a, Msg> = Row::new().spacing(spacing(Spacing::Sm, Density::Cozy) as f32);
+    let mut row: Row<'a, Msg> = Row::new().spacing(spacing(Spacing::Xs, Density::Cozy) as f32);
 
     for action in actions {
         let label = action_label(action);
@@ -295,7 +295,7 @@ pub fn integration_health_grid<'a, Msg: 'a>(
     metrics: &[forge_platform_core::HealthMetric; 4],
     palette: &ForgePalette,
 ) -> Element<'a, Msg> {
-    let gap = spacing(Spacing::Md, Density::Cozy) as f32;
+    let gap = spacing(Spacing::Sm, Density::Cozy) as f32;
 
     iced::widget::Row::new()
         .spacing(gap)
@@ -315,8 +315,8 @@ fn health_metric_card<'a, Msg: 'a>(
     let bg = palette.elevated;
     let border_color = palette.border_regular;
     let r = radius(Radius::Xl);
-    let v_pad = spacing(Spacing::Lg, Density::Cozy);
-    let h_pad = spacing(Spacing::Xl, Density::Cozy);
+    let v_pad = spacing(Spacing::Sm, Density::Cozy);
+    let h_pad = spacing(Spacing::Md, Density::Cozy);
 
     let cap_label = iced::widget::text(metric.label.to_uppercase())
         .font(font(FontRole::Monospace))
@@ -339,7 +339,7 @@ fn health_metric_card<'a, Msg: 'a>(
                 .size(FONT_VALUE)
                 .color(color);
             let value_row: Element<'a, Msg> = iced::widget::row![dot, val_text]
-                .spacing(spacing(Spacing::Sm, Density::Cozy) as f32)
+                .spacing(spacing(Spacing::Xs, Density::Cozy) as f32)
                 .align_y(Alignment::Center)
                 .into();
             if let Some(d) = detail {
@@ -419,7 +419,7 @@ pub fn integration_content_renderer<'a, Msg: 'a>(
     sections: &'a [DetailSection],
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
-    let gap = spacing(Spacing::Huge, Density::Cozy) as f32;
+    let gap = spacing(Spacing::Lg, Density::Cozy) as f32;
     sections
         .iter()
         .fold(
@@ -479,7 +479,7 @@ pub(crate) fn render_two_column_lists<'a, Msg: 'a>(
     right: &'a ContentList,
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
-    let gap = spacing(Spacing::Xl, Density::Cozy) as f32;
+    let gap = spacing(Spacing::Md, Density::Cozy) as f32;
     Row::new()
         .spacing(gap)
         .push(container(content_list_panel(left, palette)).width(Length::FillPortion(10)))
@@ -588,15 +588,15 @@ pub(crate) fn render_warning_banner<'a, Msg: 'a>(
     }
 
     let inner = Row::new()
-        .spacing(spacing(Spacing::Xl, Density::Cozy) as f32)
+        .spacing(spacing(Spacing::Md, Density::Cozy) as f32)
         .align_y(Alignment::Start)
         .push(icon_elem)
         .push(container(text_col).width(Length::Fill));
 
     container(inner)
         .padding([
-            spacing(Spacing::Lg, Density::Cozy),
-            spacing(Spacing::Xxl, Density::Cozy),
+            spacing(Spacing::Sm, Density::Cozy),
+            spacing(Spacing::Md, Density::Cozy),
         ])
         .width(Length::Fill)
         .style(move |_: &iced::Theme| container::Style {
@@ -685,9 +685,9 @@ pub(crate) fn render_info_card<'a, Msg: 'a>(
     let fields_grid: Element<'a, Msg> = fields
         .chunks(2)
         .fold(
-            Column::new().spacing(spacing(Spacing::Xl, Density::Cozy) as f32),
+            Column::new().spacing(spacing(Spacing::Md, Density::Cozy) as f32),
             |col, chunk| {
-                let mut row = Row::new().spacing(spacing(Spacing::Xl, Density::Cozy) as f32);
+                let mut row = Row::new().spacing(spacing(Spacing::Md, Density::Cozy) as f32);
                 for field in chunk {
                     row = row.push(info_field_cell(field, palette));
                 }
@@ -697,7 +697,7 @@ pub(crate) fn render_info_card<'a, Msg: 'a>(
         .into();
 
     let mut content_col = Column::new()
-        .spacing(spacing(Spacing::Xl, Density::Cozy) as f32)
+        .spacing(spacing(Spacing::Md, Density::Cozy) as f32)
         .push(fields_grid);
 
     if let Some(bar) = health_bar {
@@ -706,8 +706,8 @@ pub(crate) fn render_info_card<'a, Msg: 'a>(
 
     let content_padded = container(content_col)
         .padding([
-            spacing(Spacing::Xl, Density::Cozy),
-            spacing(Spacing::Xxl, Density::Cozy),
+            spacing(Spacing::Md, Density::Cozy),
+            spacing(Spacing::Md, Density::Cozy),
         ])
         .width(Length::Fill);
 
@@ -834,7 +834,7 @@ fn content_list_item_row<'a, Msg: 'a>(
     };
 
     let mut trailing: Row<'a, Msg> = Row::new()
-        .spacing(spacing(Spacing::Sm, Density::Cozy) as f32)
+        .spacing(spacing(Spacing::Xs, Density::Cozy) as f32)
         .align_y(Alignment::Center);
 
     if item.active
@@ -848,7 +848,7 @@ fn content_list_item_row<'a, Msg: 'a>(
     }
 
     let content: Element<'a, Msg> = Row::new()
-        .spacing(spacing(Spacing::Lg, Density::Cozy) as f32)
+        .spacing(spacing(Spacing::Sm, Density::Cozy) as f32)
         .align_y(Alignment::Center)
         .push(icon_elem)
         .push(container(name_elem).width(Length::Fill))
@@ -877,7 +877,7 @@ fn key_value_row_elem<'a, Msg: 'a>(
         .color(palette.text_primary);
 
     let mut row = Row::new()
-        .spacing(spacing(Spacing::Lg, Density::Cozy) as f32)
+        .spacing(spacing(Spacing::Sm, Density::Cozy) as f32)
         .align_y(Alignment::Center)
         .push(icon_elem)
         .push(container(name_elem).width(Length::Fill));
@@ -921,7 +921,7 @@ fn active_item_row_elem<'a, Msg: 'a>(
         .color(text_color);
 
     let mut row = Row::new()
-        .spacing(spacing(Spacing::Lg, Density::Cozy) as f32)
+        .spacing(spacing(Spacing::Sm, Density::Cozy) as f32)
         .align_y(Alignment::Center)
         .push(container(name_elem).width(Length::Fill));
 
@@ -951,7 +951,7 @@ fn subscription_row_elem<'a, Msg: 'a>(
         .color(palette.text_primary);
 
     let mut row = Row::new()
-        .spacing(spacing(Spacing::Lg, Density::Cozy) as f32)
+        .spacing(spacing(Spacing::Sm, Density::Cozy) as f32)
         .align_y(Alignment::Center)
         .push(dot)
         .push(container(name_elem).width(Length::Fill));
@@ -994,7 +994,7 @@ fn scope_row_elem<'a, Msg: 'a>(scope: &str, palette: &'a ForgePalette) -> Elemen
 
     plain_row_wrapper(
         Row::new()
-            .spacing(spacing(Spacing::Lg, Density::Cozy) as f32)
+            .spacing(spacing(Spacing::Sm, Density::Cozy) as f32)
             .align_y(Alignment::Center)
             .push(check)
             .push(container(scope_text).width(Length::Fill))
@@ -1084,7 +1084,7 @@ fn health_bar_section<'a, Msg: 'a>(
         .color(palette.text_muted);
 
     let bar_row = Row::new()
-        .spacing(spacing(Spacing::Lg, Density::Cozy) as f32)
+        .spacing(spacing(Spacing::Sm, Density::Cozy) as f32)
         .align_y(Alignment::Center)
         .push(container(bar_track).width(Length::Fill))
         .push(
@@ -1128,8 +1128,8 @@ fn stat_column_cell<'a, Msg: 'a>(
             ),
     )
     .padding([
-        spacing(Spacing::Lg, Density::Cozy),
-        spacing(Spacing::Xxl, Density::Cozy),
+        spacing(Spacing::Sm, Density::Cozy),
+        spacing(Spacing::Md, Density::Cozy),
     ])
     .width(Length::Fill)
     .into()
@@ -1148,7 +1148,7 @@ fn panel_header_row<'a, Msg: 'a>(
         .color(palette.text_secondary);
 
     let left = Row::new()
-        .spacing(spacing(Spacing::Sm, Density::Cozy) as f32)
+        .spacing(spacing(Spacing::Xs, Density::Cozy) as f32)
         .align_y(Alignment::Center)
         .push(icon_elem)
         .push(
@@ -1172,8 +1172,8 @@ fn panel_header_row<'a, Msg: 'a>(
 
     container(outer)
         .padding([
-            spacing(Spacing::Lg, Density::Cozy),
-            spacing(Spacing::Xxl, Density::Cozy),
+            spacing(Spacing::Sm, Density::Cozy),
+            spacing(Spacing::Md, Density::Cozy),
         ])
         .width(Length::Fill)
         .into()
@@ -1203,8 +1203,8 @@ fn scopes_list_header<'a, Msg: 'a>(
             .push(count_elem),
     )
     .padding([
-        spacing(Spacing::Lg, Density::Cozy),
-        spacing(Spacing::Xxl, Density::Cozy),
+        spacing(Spacing::Sm, Density::Cozy),
+        spacing(Spacing::Md, Density::Cozy),
     ])
     .width(Length::Fill)
     .into()
@@ -1249,8 +1249,8 @@ fn info_card_header<'a, Msg: 'a>(
 
     container(row)
         .padding([
-            spacing(Spacing::Lg, Density::Cozy),
-            spacing(Spacing::Xxl, Density::Cozy),
+            spacing(Spacing::Sm, Density::Cozy),
+            spacing(Spacing::Md, Density::Cozy),
         ])
         .width(Length::Fill)
         .into()
@@ -1264,7 +1264,7 @@ fn list_footer_bar<'a, Msg: 'a>(
     let border_col = palette.border_regular;
 
     let mut row = Row::new()
-        .spacing(spacing(Spacing::Lg, Density::Cozy) as f32)
+        .spacing(spacing(Spacing::Sm, Density::Cozy) as f32)
         .align_y(Alignment::Center);
 
     if let Some(cta) = &footer.cta_label {
@@ -1286,8 +1286,8 @@ fn list_footer_bar<'a, Msg: 'a>(
 
     container(row)
         .padding([
-            spacing(Spacing::Sm, Density::Cozy),
-            spacing(Spacing::Xxl, Density::Cozy),
+            spacing(Spacing::Xs, Density::Cozy),
+            spacing(Spacing::Md, Density::Cozy),
         ])
         .width(Length::Fill)
         .style(move |_: &iced::Theme| container::Style {
@@ -1319,8 +1319,8 @@ fn active_row_wrapper<'a, Msg: 'a>(
 
     let padded = container(content)
         .padding([
-            spacing(Spacing::Sm, Density::Cozy),
-            spacing(Spacing::Xxl, Density::Cozy),
+            spacing(Spacing::Xs, Density::Cozy),
+            spacing(Spacing::Md, Density::Cozy),
         ])
         .width(Length::Fill);
 
@@ -1336,8 +1336,8 @@ fn active_row_wrapper<'a, Msg: 'a>(
 fn plain_row_wrapper<'a, Msg: 'a>(content: Element<'a, Msg>, bg: Color) -> Element<'a, Msg> {
     container(content)
         .padding([
-            spacing(Spacing::Sm, Density::Cozy),
-            spacing(Spacing::Xxl, Density::Cozy),
+            spacing(Spacing::Xs, Density::Cozy),
+            spacing(Spacing::Md, Density::Cozy),
         ])
         .width(Length::Fill)
         .style(move |_: &iced::Theme| container::Style {
@@ -1493,7 +1493,7 @@ pub fn integration_quick_actions_grid_with_hint<'a, Msg: Clone + 'a>(
         actions
     };
 
-    let gap = spacing(Spacing::Sm, Density::Cozy) as f32;
+    let gap = spacing(Spacing::Xs, Density::Cozy) as f32;
     let mut btn_row: Row<'a, Msg> = Row::new().spacing(gap);
     for (i, action) in capped.iter().enumerate() {
         let msg = if action.enabled {
@@ -1509,8 +1509,8 @@ pub fn integration_quick_actions_grid_with_hint<'a, Msg: Clone + 'a>(
 
     let grid_container = container(btn_row)
         .padding([
-            spacing(Spacing::Lg, Density::Cozy),
-            spacing(Spacing::Xxl, Density::Cozy),
+            spacing(Spacing::Sm, Density::Cozy),
+            spacing(Spacing::Md, Density::Cozy),
         ])
         .width(Length::Fill);
 
@@ -1541,7 +1541,7 @@ fn quick_actions_section_header<'a, Msg: 'a>(
         .color(palette.text_primary);
 
     let left: Element<'a, Msg> = Row::new()
-        .spacing(spacing(Spacing::Sm, Density::Cozy) as f32)
+        .spacing(spacing(Spacing::Xs, Density::Cozy) as f32)
         .align_y(Alignment::Center)
         .push(icon_elem)
         .push(title_elem)
@@ -1561,8 +1561,8 @@ fn quick_actions_section_header<'a, Msg: 'a>(
 
     container(outer)
         .padding([
-            spacing(Spacing::Lg, Density::Cozy),
-            spacing(Spacing::Xxl, Density::Cozy),
+            spacing(Spacing::Sm, Density::Cozy),
+            spacing(Spacing::Md, Density::Cozy),
         ])
         .width(Length::Fill)
         .into()
@@ -1616,7 +1616,7 @@ fn quick_action_btn<'a, Msg: Clone + 'a>(
         .into();
 
     let mut content_row: Row<'a, Msg> = Row::new()
-        .spacing(spacing(Spacing::Sm, Density::Cozy) as f32)
+        .spacing(spacing(Spacing::Xs, Density::Cozy) as f32)
         .align_y(Alignment::Center)
         .push(icon_elem)
         .push(label_elem);
@@ -1633,8 +1633,8 @@ fn quick_action_btn<'a, Msg: Clone + 'a>(
 
     let mut btn = iced::widget::button(container(content_row).width(Length::Fill))
         .padding([
+            spacing(Spacing::Xs, Density::Cozy),
             spacing(Spacing::Sm, Density::Cozy),
-            spacing(Spacing::Lg, Density::Cozy),
         ])
         .width(Length::Fill)
         .style(move |_: &iced::Theme, status| {

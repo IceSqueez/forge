@@ -66,7 +66,7 @@ pub fn title_bar_with_logo<'a, Msg: 'a>(
     let border_color = palette.border_regular;
     let text_primary = palette.text_primary;
     let text_muted = palette.text_muted;
-    let horiz = spacing(Spacing::Xxl, Density::Cozy);
+    let horiz = spacing(Spacing::Md, Density::Cozy);
 
     let logo = logo_box(logo_letter, palette);
     let title_text = text(title.to_owned()).size(14).color(text_primary);

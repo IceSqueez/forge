@@ -405,8 +405,8 @@ fn modal_card_style(palette: &ForgePalette) -> impl Fn(&iced::Theme) -> containe
 }
 
 fn add_clip_modal<'a>(modal: &'a AddClipModal, palette: &'a ForgePalette) -> Element<'a, Message> {
-    let gap_md = f32::from(spacing(Spacing::Md, Density::Cozy));
-    let gap_lg = f32::from(spacing(Spacing::Lg, Density::Cozy));
+    let gap_md = f32::from(spacing(Spacing::Sm, Density::Cozy));
+    let gap_lg = f32::from(spacing(Spacing::Sm, Density::Cozy));
 
     let title = text(if modal.editing_id.is_some() {
         "Edit clip"
@@ -620,11 +620,11 @@ fn add_clip_modal<'a>(modal: &'a AddClipModal, palette: &'a ForgePalette) -> Ele
         form_col,
         footer,
     ]
-    .spacing(f32::from(spacing(Spacing::Xxl, Density::Cozy)));
+    .spacing(f32::from(spacing(Spacing::Md, Density::Cozy)));
 
     let card = container(card_content)
         .width(480.0)
-        .padding(f32::from(spacing(Spacing::Xxl, Density::Cozy)))
+        .padding(f32::from(spacing(Spacing::Md, Density::Cozy)))
         .style(modal_card_style(palette));
 
     let backdrop = button(iced::widget::Space::new())
@@ -655,8 +655,8 @@ pub fn soundboard_view<'a>(
     state: &'a SoundboardState,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    let gap_lg = f32::from(spacing(Spacing::Lg, Density::Cozy));
-    let gap_xl = f32::from(spacing(Spacing::Xl, Density::Cozy));
+    let gap_lg = f32::from(spacing(Spacing::Sm, Density::Cozy));
+    let gap_xl = f32::from(spacing(Spacing::Md, Density::Cozy));
 
     let p = *palette;
 
@@ -766,7 +766,7 @@ pub fn soundboard_view<'a>(
 
         scrollable(
             container(grid)
-                .padding(f32::from(spacing(Spacing::Xxxl, Density::Cozy)))
+                .padding(f32::from(spacing(Spacing::Md, Density::Cozy)))
                 .width(Length::Fill),
         )
         .width(Length::Fill)
@@ -781,7 +781,7 @@ pub fn soundboard_view<'a>(
                 .color(palette.random),
         )
         .width(Length::Fill)
-        .padding([6.0, f32::from(spacing(Spacing::Xxxl, Density::Cozy))])
+        .padding([6.0, f32::from(spacing(Spacing::Md, Density::Cozy))])
         .style(move |_| container::Style {
             background: Some(Background::Color(iced::Color {
                 a: 0.08,
@@ -795,8 +795,8 @@ pub fn soundboard_view<'a>(
     let top_section = container(header)
         .width(Length::Fill)
         .padding([
-            f32::from(spacing(Spacing::Lg, Density::Cozy)),
-            f32::from(spacing(Spacing::Xxxl, Density::Cozy)),
+            f32::from(spacing(Spacing::Sm, Density::Cozy)),
+            f32::from(spacing(Spacing::Md, Density::Cozy)),
         ])
         .style(move |_| container::Style {
             background: Some(Background::Color(p.shell)),

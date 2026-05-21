@@ -2215,6 +2215,36 @@ pub(crate) fn connected_count(app: &App) -> u8 {
     }
 }
 
+pub(crate) fn subsystem_connectivity(app: &App) -> (u8, u8) {
+    let mut connected: u8 = 0;
+    let twitch_live = app
+        .twitch_chat_handle
+        .as_ref()
+        .is_some_and(|h| matches!(h.connection_state(), ChatConnectionState::Connected));
+    if twitch_live {
+        connected += 2;
+    }
+    if app.obs_client.is_some() {
+        connected += 1;
+    }
+    if matches!(
+        app.server_screen.server_status,
+        crate::server_screen::ServerStatus::Running
+    ) {
+        connected += 1;
+    }
+    if app.sound_player.is_some() {
+        connected += 2;
+    }
+    if app.speak_queue.is_some() {
+        connected += 1;
+    }
+    if !app.storage_offline {
+        connected += 1;
+    }
+    (connected, 8)
+}
+
 fn hub_inline_button<'a>(
     icon: char,
     label: &'a str,
@@ -2289,6 +2319,8 @@ fn hub_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message>
         ..iced::widget::container::Style::default()
     });
 
+    let version = env!("CARGO_PKG_VERSION");
+    let uptime_str = format_uptime(app.boot_time.elapsed().unwrap_or_default());
     let title_col = column![
         text("Forge")
             .size(FONT_PAGE_TITLE)
@@ -2296,6 +2328,10 @@ fn hub_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message>
         text("Open-source stream automation, forged for streamers")
             .size(FONT_BODY_MD)
             .color(palette.text_muted),
+        text(format!("v{version} · up {uptime_str}"))
+            .size(FONT_CAPS_SM)
+            .color(palette.text_faint)
+            .font(font(FontRole::Monospace)),
     ]
     .spacing(2.0);
 
@@ -4811,7 +4847,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         TitleBarV2 {
             breadcrumb_icon: breadcrumb_icon_for(&app.screen),
             breadcrumb_label: screen_label(&app.screen),
-            connected: (connected_count(app), 4),
+            connected: subsystem_connectivity(app),
             uptime: format_uptime(elapsed),
             _msg: std::marker::PhantomData,
         },

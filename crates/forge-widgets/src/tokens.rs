@@ -48,29 +48,19 @@ pub fn spacing(s: Spacing, d: Density) -> u16 {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Radius {
-    Xs,
     Sm,
     Md,
     Lg,
-    Xl,
-    Xxl,
-    Xxxl,
-    Hero,
     /// Returns a large sentinel so iced renders a fully rounded pill/circle.
     Pill,
 }
 
 pub fn radius(r: Radius) -> f32 {
     match r {
-        Radius::Xs => 4.0,
         Radius::Sm => 6.0,
-        Radius::Md => 7.0,
-        Radius::Lg => 8.0,
-        Radius::Xl => 9.0,
-        Radius::Xxl => 10.0,
-        Radius::Xxxl => 11.0,
-        Radius::Hero => 14.0,
-        Radius::Pill => 9999.0,
+        Radius::Md => 9.0,
+        Radius::Lg => 12.0,
+        Radius::Pill => 999.0,
     }
 }
 
@@ -150,19 +140,10 @@ mod tests {
 
     #[test]
     fn radius_returns_correct_px_per_variant() {
-        assert_eq!(radius(Radius::Xs), 4.0);
         assert_eq!(radius(Radius::Sm), 6.0);
-        assert_eq!(radius(Radius::Md), 7.0);
-        assert_eq!(radius(Radius::Lg), 8.0);
-        assert_eq!(radius(Radius::Xl), 9.0);
-        assert_eq!(radius(Radius::Xxl), 10.0);
-        assert_eq!(radius(Radius::Xxxl), 11.0);
-        assert_eq!(radius(Radius::Hero), 14.0);
-    }
-
-    #[test]
-    fn radius_pill_renders_as_circle() {
-        assert!(radius(Radius::Pill) >= 1000.0);
+        assert_eq!(radius(Radius::Md), 9.0);
+        assert_eq!(radius(Radius::Lg), 12.0);
+        assert_eq!(radius(Radius::Pill), 999.0);
     }
 
     #[test]

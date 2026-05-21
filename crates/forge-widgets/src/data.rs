@@ -39,7 +39,7 @@ pub fn type_pill<'a, Msg: 'a>(palette: &'a ForgePalette, kind: VariantKind) -> E
         stretch: iced_font::Stretch::Normal,
         style: iced_font::Style::Normal,
     };
-    let r = radius(Radius::Xxl);
+    let r = radius(Radius::Md);
 
     container(text(kind.label()).size(FONT_XS).font(pill_font).color(fg))
         .padding([2.0_f32, 7.0_f32])

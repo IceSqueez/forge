@@ -143,7 +143,7 @@ pub fn throughput_sparkline<'a, Msg: 'a>(
             border: Border {
                 color: palette.border_regular,
                 width: 0.5,
-                radius: radius(Radius::Xxl).into(),
+                radius: radius(Radius::Md).into(),
             },
             ..container::Style::default()
         })

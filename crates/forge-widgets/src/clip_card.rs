@@ -24,7 +24,7 @@ fn chip_style(bg: iced::Color, border: iced::Color) -> impl Fn(&iced::Theme) -> 
         border: Border {
             color: border,
             width: 0.5,
-            radius: radius(Radius::Xs).into(),
+            radius: radius(Radius::Sm).into(),
         },
         ..container::Style::default()
     }

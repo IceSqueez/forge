@@ -47,7 +47,7 @@ pub(crate) fn logo_box<'a, Msg: 'a>(letter: char, palette: &ForgePalette) -> Ele
         .style(move |_theme: &iced::Theme| iced::widget::container::Style {
             background: Some(iced::Background::Color(bg)),
             border: Border {
-                radius: radius(Radius::Xs).into(),
+                radius: radius(Radius::Sm).into(),
                 ..Border::default()
             },
             ..Default::default()

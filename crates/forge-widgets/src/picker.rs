@@ -152,7 +152,7 @@ pub fn picker_modal<'a, Msg: 'a + Clone>(
             border: Border {
                 color: p.border_regular,
                 width: BORDER_THIN,
-                radius: radius(Radius::Hero).into(),
+                radius: radius(Radius::Lg).into(),
             },
             ..container::Style::default()
         });
@@ -247,7 +247,7 @@ fn item_row<'a, Msg: Clone + 'a>(
                 border: Border {
                     color: Color::TRANSPARENT,
                     width: 0.0,
-                    radius: radius(Radius::Xs).into(),
+                    radius: radius(Radius::Sm).into(),
                 },
                 text_color: p.text_primary,
                 shadow: iced::Shadow::default(),

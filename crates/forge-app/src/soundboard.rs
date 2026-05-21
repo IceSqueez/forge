@@ -398,7 +398,7 @@ fn modal_card_style(palette: &ForgePalette) -> impl Fn(&iced::Theme) -> containe
         border: Border {
             color: p.border_input,
             width: BORDER_THIN,
-            radius: radius(Radius::Xxl).into(),
+            radius: radius(Radius::Md).into(),
         },
         ..container::Style::default()
     }

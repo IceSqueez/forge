@@ -25,7 +25,7 @@ pub fn card<'a, Msg: 'a>(
     children: impl IntoIterator<Item = Element<'a, Msg>>,
     palette: &ForgePalette,
 ) -> Element<'a, Msg> {
-    card_with_radius(children, palette, Radius::Xl)
+    card_with_radius(children, palette, Radius::Md)
 }
 
 /// Variant of `card` for callers that need a non-default corner radius.
@@ -77,7 +77,7 @@ pub fn metric_card<'a, Msg: 'a>(
 
     container(col)
         .padding(spacing(Spacing::Md, Density::default()))
-        .style(card_style(bg, border_color, radius(Radius::Xxl)))
+        .style(card_style(bg, border_color, radius(Radius::Md)))
         .into()
 }
 
@@ -132,7 +132,7 @@ pub fn hero_card<'a, Msg: 'a>(
 
     container(col)
         .padding(spacing(Spacing::Lg, Density::default()))
-        .style(card_style(bg, border_color, radius(Radius::Hero)))
+        .style(card_style(bg, border_color, radius(Radius::Lg)))
         .into()
 }
 
@@ -149,15 +149,15 @@ mod tests {
     }
 
     #[test]
-    fn card_with_radius_uses_hero_radius() {
+    fn card_with_radius_uses_lg_radius() {
         let _: Element<'_, ()> =
-            card_with_radius([text("content").into()], &CATPPUCCIN_MOCHA, Radius::Hero);
+            card_with_radius([text("content").into()], &CATPPUCCIN_MOCHA, Radius::Lg);
     }
 
     #[test]
-    fn card_with_radius_uses_xl_radius() {
+    fn card_with_radius_uses_md_radius() {
         let _: Element<'_, ()> =
-            card_with_radius([text("x").into()], &CATPPUCCIN_MOCHA, Radius::Xl);
+            card_with_radius([text("x").into()], &CATPPUCCIN_MOCHA, Radius::Md);
     }
 
     #[test]
@@ -217,17 +217,17 @@ mod tests {
     }
 
     #[test]
-    fn metric_card_radius_token_is_xxl() {
-        assert_eq!(radius(Radius::Xxl), 10.0);
+    fn metric_card_radius_token_is_md() {
+        assert_eq!(radius(Radius::Md), 9.0);
     }
 
     #[test]
-    fn hero_card_radius_token_is_hero() {
-        assert_eq!(radius(Radius::Hero), 14.0);
+    fn hero_card_radius_token_is_lg() {
+        assert_eq!(radius(Radius::Lg), 12.0);
     }
 
     #[test]
-    fn card_default_radius_token_is_xl() {
-        assert_eq!(radius(Radius::Xl), 9.0);
+    fn card_default_radius_token_is_md() {
+        assert_eq!(radius(Radius::Md), 9.0);
     }
 }

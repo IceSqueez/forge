@@ -70,7 +70,7 @@ pub fn source_badge<'a, Msg: 'a>(source: EventSource, palette: &ForgePalette) ->
         .style(move |_theme: &iced::Theme| container::Style {
             background: Some(iced::Background::Color(bg)),
             border: Border {
-                radius: radius(Radius::Xs).into(),
+                radius: radius(Radius::Sm).into(),
                 ..Border::default()
             },
             ..container::Style::default()

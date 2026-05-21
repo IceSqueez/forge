@@ -259,7 +259,7 @@ pub fn icon_button<'a, Msg: 'a + Clone>(
         a: 0.08,
         ..palette.brand
     };
-    let r = radius(Radius::Xs);
+    let r = radius(Radius::Sm);
 
     iced::widget::button(iced::widget::text(icon.to_string()).size(16))
         .on_press(on_press)

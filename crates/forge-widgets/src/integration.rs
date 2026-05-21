@@ -44,7 +44,7 @@ pub fn integration_header_card<'a, Msg: Clone + 'a>(
 
     let bg = palette.elevated;
     let border_color = palette.border_regular;
-    let r = radius(Radius::Xxxl);
+    let r = radius(Radius::Lg);
     let v_pad = spacing(Spacing::Md, Density::Cozy);
     let h_pad = spacing(Spacing::Md, Density::Cozy);
 
@@ -82,7 +82,7 @@ fn icon_box<'a, Msg: 'a>(
         ConnectionState::Disconnected => palette.disabled,
     };
     let box_bg = palette.surface_overlay;
-    let r = radius(Radius::Xxxl);
+    let r = radius(Radius::Lg);
 
     let glyph = crate::icons::bootstrap_icon_for(&icon_str);
     let icon_text = iced::widget::text(glyph.to_string())
@@ -162,7 +162,7 @@ fn badge_tone_color(tone: BadgeTone, palette: &ForgePalette) -> iced::Color {
 }
 
 fn version_pill<'a, Msg: 'a>(version: &'a str, bg: Color, text_color: Color) -> Element<'a, Msg> {
-    let r = radius(Radius::Xxl);
+    let r = radius(Radius::Md);
     container(
         iced::widget::text(version)
             .font(font(FontRole::Monospace))
@@ -182,7 +182,7 @@ fn version_pill<'a, Msg: 'a>(version: &'a str, bg: Color, text_color: Color) -> 
 }
 
 fn limited_badge<'a, Msg: 'a>(label: &'a str, bg: Color, text_color: Color) -> Element<'a, Msg> {
-    let r = radius(Radius::Xxl);
+    let r = radius(Radius::Md);
     container(
         iced::widget::text(label.to_uppercase())
             .font(font(FontRole::Monospace))
@@ -309,7 +309,7 @@ fn health_metric_card<'a, Msg: 'a>(
 
     let bg = palette.elevated;
     let border_color = palette.border_regular;
-    let r = radius(Radius::Xl);
+    let r = radius(Radius::Md);
     let v_pad = spacing(Spacing::Sm, Density::Cozy);
     let h_pad = spacing(Spacing::Md, Density::Cozy);
 
@@ -490,7 +490,7 @@ pub(crate) fn render_key_value_list<'a, Msg: 'a>(
 ) -> Element<'a, Msg> {
     let bg = palette.elevated;
     let border_color = palette.border_regular;
-    let r = radius(Radius::Xxl);
+    let r = radius(Radius::Md);
 
     let header = panel_header_row(icon.as_str(), title, None, palette);
     let divider = horizontal_divider(border_color);
@@ -517,7 +517,7 @@ pub(crate) fn render_active_item_list<'a, Msg: 'a>(
 ) -> Element<'a, Msg> {
     let bg = palette.elevated;
     let border_color = palette.border_regular;
-    let r = radius(Radius::Xxl);
+    let r = radius(Radius::Md);
     let count = if items.is_empty() {
         None
     } else {
@@ -550,7 +550,7 @@ pub(crate) fn render_warning_banner<'a, Msg: 'a>(
 ) -> Element<'a, Msg> {
     let level_color = banner_level_color(level, palette);
     let bg = palette.elevated;
-    let r = radius(Radius::Xxl);
+    let r = radius(Radius::Md);
 
     let icon_char = match level {
         BannerLevel::Warning => '\u{26A0}',
@@ -615,7 +615,7 @@ pub(crate) fn render_subscription_list<'a, Msg: 'a>(
 ) -> Element<'a, Msg> {
     let bg = palette.elevated;
     let border_color = palette.border_regular;
-    let r = radius(Radius::Xxl);
+    let r = radius(Radius::Md);
     let count_str = format!("{} active", items.len());
 
     let header = panel_header_row(icon.as_str(), title, Some(&count_str), palette);
@@ -643,7 +643,7 @@ pub(crate) fn render_scopes_list<'a, Msg: 'a>(
 ) -> Element<'a, Msg> {
     let bg = palette.elevated;
     let border_color = palette.border_regular;
-    let r = radius(Radius::Xxl);
+    let r = radius(Radius::Md);
     let count_str = scopes.len().to_string();
 
     let header = scopes_list_header(title, &count_str, palette);
@@ -672,7 +672,7 @@ pub(crate) fn render_info_card<'a, Msg: 'a>(
 ) -> Element<'a, Msg> {
     let bg = palette.elevated;
     let border_color = palette.border_regular;
-    let r = radius(Radius::Xxl);
+    let r = radius(Radius::Md);
 
     let header = info_card_header(title, live, palette);
     let divider = horizontal_divider(border_color);
@@ -725,7 +725,7 @@ pub(crate) fn render_stats_grid<'a, Msg: 'a>(
 ) -> Element<'a, Msg> {
     let bg = palette.elevated;
     let border_color = palette.border_regular;
-    let r = radius(Radius::Xxl);
+    let r = radius(Radius::Md);
     let sep_color = border_color;
 
     let header = panel_header_row(icon.as_str(), title, None, palette);
@@ -766,7 +766,7 @@ fn content_list_panel<'a, Msg: 'a>(
 ) -> Element<'a, Msg> {
     let bg = palette.elevated;
     let border_color = palette.border_regular;
-    let r = radius(Radius::Xxl);
+    let r = radius(Radius::Md);
 
     let header = panel_header_row(
         list.icon.as_str(),
@@ -1368,7 +1368,7 @@ fn horizontal_divider<'a, Msg: 'a>(color: Color) -> Element<'a, Msg> {
 fn active_badge<'a, Msg: 'a>(label: &str, palette: &'a ForgePalette) -> Element<'a, Msg> {
     let success = palette.success;
     let surface = palette.surface_overlay;
-    let r = radius(Radius::Xxl);
+    let r = radius(Radius::Md);
     container(text(label.to_uppercase()).size(FONT_XS).color(success))
         .padding([1, 6])
         .style(move |_: &iced::Theme| container::Style {
@@ -1391,7 +1391,7 @@ fn trailing_token_elem<'a, Msg: 'a>(
         TrailingToken::Badge(label, color) => {
             let tc = token_color_value(color, palette);
             let surface = palette.surface_overlay;
-            let r = radius(Radius::Xxl);
+            let r = radius(Radius::Md);
             container(text(label.clone()).size(FONT_XS).color(tc))
                 .padding([1, 6])
                 .style(move |_: &iced::Theme| container::Style {
@@ -1469,7 +1469,7 @@ pub fn integration_quick_actions_grid_with_hint<'a, Msg: Clone + 'a>(
 ) -> Element<'a, Msg> {
     let bg = palette.elevated;
     let border_color = palette.border_regular;
-    let r = radius(Radius::Xxl);
+    let r = radius(Radius::Md);
 
     let header = quick_actions_section_header(hint, palette);
     let divider = horizontal_divider(border_color);

@@ -320,7 +320,7 @@ fn stat_card<'a>(
 }
 
 fn chip_container<'a>(label: impl Into<String>, fg: Color, bg: Color) -> Element<'a, Message> {
-    let r = radius(Radius::Xxl);
+    let r = radius(Radius::Md);
     container(
         text(label.into())
             .font(font(FontRole::Monospace))

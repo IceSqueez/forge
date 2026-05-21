@@ -291,7 +291,7 @@ pub fn settings_audio_view<'a>(
                 border: Border {
                     color: p3.border_regular,
                     width: 0.5,
-                    radius: radius(Radius::Xxl).into(),
+                    radius: radius(Radius::Md).into(),
                 },
                 ..container::Style::default()
             }

@@ -185,7 +185,7 @@ pub fn sub_action_card<'a, Msg: 'a>(
         .style(move |_theme: &iced::Theme| container::Style {
             background: Some(Background::Color(palette.surface_overlay)),
             border: Border {
-                radius: radius(Radius::Xs).into(),
+                radius: radius(Radius::Sm).into(),
                 color: Color::TRANSPARENT,
                 width: 0.0,
             },
@@ -228,7 +228,7 @@ pub fn variable_chip<'a, Msg: 'a>(palette: &'a ForgePalette, name: &str) -> Elem
     .style(move |_theme: &iced::Theme| container::Style {
         background: Some(Background::Color(palette.surface_overlay)),
         border: Border {
-            radius: radius(Radius::Xs).into(),
+            radius: radius(Radius::Sm).into(),
             color: Color::TRANSPARENT,
             width: 0.0,
         },
@@ -396,7 +396,7 @@ pub fn modal<'a, Msg: Clone + 'a>(
             border: Border {
                 color: palette.border_regular,
                 width: BORDER_THIN,
-                radius: radius(Radius::Hero).into(),
+                radius: radius(Radius::Lg).into(),
             },
             ..container::Style::default()
         });

@@ -100,7 +100,7 @@ fn badge_pill<'a, Msg: 'a>(kind: BadgeKind, palette: &ForgePalette) -> Element<'
     .style(move |_theme: &iced::Theme| container::Style {
         background: Some(Background::Color(bg)),
         border: Border {
-            radius: radius(Radius::Xs).into(),
+            radius: radius(Radius::Sm).into(),
             color: Color::TRANSPARENT,
             width: 0.0,
         },
@@ -127,7 +127,7 @@ fn platform_dot<'a, Msg: 'a>(platform: Platform, palette: &ForgePalette) -> Elem
     .style(move |_theme: &iced::Theme| container::Style {
         background: Some(Background::Color(color)),
         border: Border {
-            radius: radius(Radius::Xs).into(),
+            radius: radius(Radius::Sm).into(),
             color: Color::TRANSPARENT,
             width: 0.0,
         },
@@ -348,7 +348,7 @@ fn platform_target_button<'a, Msg: Clone + 'a>(
     .style(move |_theme: &iced::Theme, _status| button::Style {
         background: Some(Background::Color(bg)),
         border: Border {
-            radius: radius(Radius::Xs).into(),
+            radius: radius(Radius::Sm).into(),
             color: Color::TRANSPARENT,
             width: 0.0,
         },
@@ -470,7 +470,7 @@ pub fn input_bar<'a, Msg: Clone + 'a>(
         border: Border {
             color: p.border_input,
             width: 0.5,
-            radius: radius(Radius::Xl).into(),
+            radius: radius(Radius::Md).into(),
         },
         ..container::Style::default()
     });

@@ -2080,7 +2080,7 @@ fn home_card_style(
         border: iced::Border {
             color: palette.border_regular,
             width: 0.5,
-            radius: radius(Radius::Xxl).into(),
+            radius: radius(Radius::Md).into(),
         },
         ..iced::widget::container::Style::default()
     }

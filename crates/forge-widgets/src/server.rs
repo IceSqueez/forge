@@ -256,7 +256,7 @@ fn chip_bg_style(bg: Color) -> impl Fn(&iced::Theme) -> container::Style {
         border: Border {
             color: Color::TRANSPARENT,
             width: 0.0,
-            radius: radius(Radius::Xxl).into(),
+            radius: radius(Radius::Md).into(),
         },
         ..container::Style::default()
     }
@@ -556,7 +556,7 @@ fn bind_card_style(
             border: Border {
                 color: border_color,
                 width: border_width,
-                radius: radius(Radius::Xl).into(),
+                radius: radius(Radius::Md).into(),
             },
             shadow: iced::Shadow::default(),
             snap: false,
@@ -721,7 +721,7 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
         border: Border {
             color: Color::TRANSPARENT,
             width: 0.0,
-            radius: radius(Radius::Xl).into(),
+            radius: radius(Radius::Md).into(),
         },
         ..container::Style::default()
     });
@@ -791,7 +791,7 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
         border: Border {
             color: Color::TRANSPARENT,
             width: 0.0,
-            radius: radius(Radius::Xs).into(),
+            radius: radius(Radius::Sm).into(),
         },
         ..container::Style::default()
     });
@@ -907,7 +907,7 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
             border: Border {
                 color: p.border_input,
                 width: 0.5,
-                radius: radius(Radius::Hero).into(),
+                radius: radius(Radius::Lg).into(),
             },
             ..container::Style::default()
         });
@@ -1288,7 +1288,7 @@ pub fn overlay_file_list<'a, Msg: Clone + 'a>(
             border: Border {
                 color: p.border_regular,
                 width: 0.5,
-                radius: radius(Radius::Xxl).into(),
+                radius: radius(Radius::Md).into(),
             },
             ..container::Style::default()
         })

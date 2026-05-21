@@ -364,7 +364,7 @@ pub fn platform_picker_card<'a, Msg: Clone + 'a>(
             border: Border {
                 color: border_color,
                 width: BORDER_THIN,
-                radius: radius(Radius::Xxxl).into(),
+                radius: radius(Radius::Lg).into(),
             },
             shadow: iced::Shadow::default(),
             snap: false,
@@ -400,7 +400,7 @@ pub fn locale_tip_card<'a, Msg: Clone + 'a>(
             border: Border {
                 color: palette.border_regular,
                 width: BORDER_THIN,
-                radius: radius(Radius::Xl).into(),
+                radius: radius(Radius::Md).into(),
             },
             ..container::Style::default()
         })
@@ -489,7 +489,7 @@ pub fn device_code_display<'a, Msg: Clone + 'a>(
             border: Border {
                 color: palette.brand,
                 width: BORDER_THIN,
-                radius: radius(Radius::Xl).into(),
+                radius: radius(Radius::Md).into(),
             },
             ..container::Style::default()
         });
@@ -616,7 +616,7 @@ pub fn live_status_banner<'a, Msg: 'a>(
             border: Border {
                 color: border_color,
                 width: BORDER_THIN,
-                radius: radius(Radius::Xl).into(),
+                radius: radius(Radius::Md).into(),
             },
             ..container::Style::default()
         })
@@ -666,7 +666,7 @@ pub fn numbered_box_step<'a, Msg: 'a>(
             border: Border {
                 color: palette.border_regular,
                 width: BORDER_THIN,
-                radius: radius(Radius::Xxxl).into(),
+                radius: radius(Radius::Lg).into(),
             },
             ..container::Style::default()
         })

@@ -48,7 +48,7 @@ fn obs_card<'a>(state: &'a App, palette: &'a ForgePalette) -> Element<'a, Messag
     .style(move |_theme: &iced::Theme| container::Style {
         background: Some(Background::Color(palette.surface_overlay)),
         border: Border {
-            radius: radius(Radius::Xl).into(),
+            radius: radius(Radius::Md).into(),
             color: Color::TRANSPARENT,
             width: 0.0,
         },
@@ -124,7 +124,7 @@ fn obs_card<'a>(state: &'a App, palette: &'a ForgePalette) -> Element<'a, Messag
                 border: Border {
                     color: palette.border_regular,
                     width: 0.5,
-                    radius: radius(Radius::Xxl).into(),
+                    radius: radius(Radius::Md).into(),
                 },
                 text_color: palette.text_primary,
                 shadow: Shadow::default(),

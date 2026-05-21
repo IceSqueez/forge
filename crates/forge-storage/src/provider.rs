@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use crate::{
     ActionRepo, CommandRepo, CredentialsRepo, EventLogRepo, GlobalsRepo, HistoryRepo, QueueRepo,
     ScriptRepo, SettingsRepo, SoundboardClipsRepo, StorageError, TriggerRepo, UserGlobalsRepo,
+    VoiceAliasRepo,
 };
 
 #[async_trait]
@@ -16,6 +17,7 @@ pub trait DataProvider:
     fn history_repo(&self) -> &dyn HistoryRepo;
     fn event_log_repo(&self) -> &dyn EventLogRepo;
     fn soundboard_clips_repo(&self) -> &dyn SoundboardClipsRepo;
+    fn voice_alias_repo(&self) -> &dyn VoiceAliasRepo;
 
     /// Returns the number of migrations currently applied to the database.
     async fn schema_version(&self) -> Result<u32, StorageError>;

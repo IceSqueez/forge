@@ -45,7 +45,7 @@ pub struct VoiceAlias {
 /// How a voice is chosen for viewers without a manual alias.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum AssignmentStrategy {
-    /// `hash(username) % eligible_voices.len()` — stable, deterministic.
+    /// `sha256(viewer_name) % eligible_voices.len()` — stable, deterministic per username.
     #[default]
     DeterministicByName,
     /// Random pick from eligible voices each message.
@@ -129,17 +129,94 @@ impl VoiceAliasResolver {
     /// 1. Explicit alias by viewer_id → honours AliasState::Blocked as Skip.
     /// 2. Strategy fallback using eligible voices from the provided catalog.
     /// 3. If catalog is empty → Skip("no voices available").
-    pub fn resolve(&self, _viewer_id: &str, _voice_catalog: &[TtsVoice]) -> ResolveResult {
-        ResolveResult::Skip {
-            reason: "resolver not yet wired",
+    pub fn resolve(
+        &self,
+        viewer_id: &str,
+        viewer_name: &str,
+        voice_catalog: &[TtsVoice],
+    ) -> ResolveResult {
+        if let Some(alias) = self.aliases.iter().find(|a| a.viewer_id == viewer_id) {
+            return match alias.state {
+                AliasState::Blocked => ResolveResult::Skip {
+                    reason: "blocked by alias",
+                },
+                AliasState::Active => ResolveResult::Speak {
+                    voice_id: alias.voice_id.clone(),
+                    engine_id: alias.engine_id.clone(),
+                    pitch: alias
+                        .pitch_semitones
+                        .unwrap_or(self.defaults.pitch_semitones),
+                    rate: alias
+                        .rate_multiplier
+                        .unwrap_or(self.defaults.rate_multiplier),
+                },
+            };
+        }
+
+        let mut eligible: Vec<&TtsVoice> = voice_catalog
+            .iter()
+            .filter(|v| self.profile.is_eligible(v))
+            .collect();
+
+        if eligible.is_empty() {
+            return ResolveResult::Skip {
+                reason: "no voices available",
+            };
+        }
+
+        eligible.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+
+        let idx = match &self.strategy {
+            AssignmentStrategy::DeterministicByName => {
+                use sha2::{Digest, Sha256};
+                let digest = Sha256::digest(viewer_name.as_bytes());
+                let hash_u64 = u64::from_le_bytes([
+                    digest[0], digest[1], digest[2], digest[3], digest[4], digest[5], digest[6],
+                    digest[7],
+                ]);
+                (hash_u64 as usize) % eligible.len()
+            }
+            AssignmentStrategy::Random => (rand::random::<u64>() as usize) % eligible.len(),
+            AssignmentStrategy::Single {
+                voice_id,
+                engine_id,
+            } => {
+                return ResolveResult::Speak {
+                    voice_id: voice_id.clone(),
+                    engine_id: engine_id.clone(),
+                    pitch: self.defaults.pitch_semitones,
+                    rate: self.defaults.rate_multiplier,
+                };
+            }
+        };
+
+        let voice = eligible[idx];
+        ResolveResult::Speak {
+            voice_id: voice.id.clone(),
+            engine_id: voice.engine_id.clone(),
+            pitch: self.defaults.pitch_semitones,
+            rate: self.defaults.rate_multiplier,
         }
     }
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+
+    fn make_voice(id: &str, locale: &str) -> TtsVoice {
+        use forge_tts_core::VoiceGender;
+        TtsVoice {
+            id: VoiceId(id.into()),
+            name: id.into(),
+            locale: locale.into(),
+            gender: VoiceGender::Neutral,
+            engine_id: EngineId("piper".into()),
+            is_neural: false,
+            sample_rate_hint: 22_050,
+        }
+    }
 
     #[test]
     fn voice_alias_serde_roundtrip() {
@@ -229,14 +306,179 @@ mod tests {
     }
 
     #[test]
-    fn resolver_stub_returns_skip() {
+    fn resolver_empty_catalog_returns_skip() {
         let resolver = VoiceAliasResolver::new(
             vec![],
             AssignmentStrategy::DeterministicByName,
             IgnoreProfile::default(),
             SynthesisDefaults::default(),
         );
-        let result = resolver.resolve("viewer123", &[]);
-        assert!(matches!(result, ResolveResult::Skip { .. }));
+        let result = resolver.resolve("viewer123", "testviewer", &[]);
+        assert!(matches!(
+            result,
+            ResolveResult::Skip {
+                reason: "no voices available"
+            }
+        ));
+    }
+
+    #[test]
+    fn resolver_blocked_alias_returns_skip() {
+        let alias = VoiceAlias {
+            id: AliasId::new(),
+            viewer_id: "blocked_user".into(),
+            viewer_name: "BlockedUser".into(),
+            engine_id: EngineId("piper".into()),
+            voice_id: VoiceId("uk_UA-medium".into()),
+            pitch_semitones: None,
+            rate_multiplier: None,
+            state: AliasState::Blocked,
+        };
+        let resolver = VoiceAliasResolver::new(
+            vec![alias],
+            AssignmentStrategy::DeterministicByName,
+            IgnoreProfile::default(),
+            SynthesisDefaults::default(),
+        );
+        let catalog = vec![make_voice("uk_UA-medium", "uk-UA")];
+        let result = resolver.resolve("blocked_user", "BlockedUser", &catalog);
+        assert!(matches!(
+            result,
+            ResolveResult::Skip {
+                reason: "blocked by alias"
+            }
+        ));
+    }
+
+    #[test]
+    fn resolver_active_alias_overrides_strategy() {
+        let alias = VoiceAlias {
+            id: AliasId::new(),
+            viewer_id: "pinned_user".into(),
+            viewer_name: "PinnedUser".into(),
+            engine_id: EngineId("piper".into()),
+            voice_id: VoiceId("pinned-voice".into()),
+            pitch_semitones: Some(2.0),
+            rate_multiplier: Some(1.5),
+            state: AliasState::Active,
+        };
+        let resolver = VoiceAliasResolver::new(
+            vec![alias],
+            AssignmentStrategy::Random,
+            IgnoreProfile::default(),
+            SynthesisDefaults::default(),
+        );
+        let catalog = vec![make_voice("other-voice", "en-US")];
+        let result = resolver.resolve("pinned_user", "PinnedUser", &catalog);
+        match result {
+            ResolveResult::Speak {
+                voice_id,
+                pitch,
+                rate,
+                ..
+            } => {
+                assert_eq!(voice_id.0, "pinned-voice");
+                assert!((pitch - 2.0).abs() < 0.001);
+                assert!((rate - 1.5).abs() < 0.001);
+            }
+            ResolveResult::Skip { .. } => panic!("expected Speak"),
+        }
+    }
+
+    #[test]
+    fn resolver_deterministic_same_name_same_voice() {
+        let catalog = vec![
+            make_voice("voice-a", "en-US"),
+            make_voice("voice-b", "en-US"),
+            make_voice("voice-c", "en-US"),
+        ];
+        let resolver = VoiceAliasResolver::new(
+            vec![],
+            AssignmentStrategy::DeterministicByName,
+            IgnoreProfile::default(),
+            SynthesisDefaults::default(),
+        );
+        let r1 = resolver.resolve("user1", "alice", &catalog);
+        let r2 = resolver.resolve("user1", "alice", &catalog);
+        match (r1, r2) {
+            (
+                ResolveResult::Speak { voice_id: v1, .. },
+                ResolveResult::Speak { voice_id: v2, .. },
+            ) => {
+                assert_eq!(v1, v2, "same name must always resolve to same voice");
+            }
+            _ => panic!("expected Speak for both"),
+        }
+    }
+
+    #[test]
+    fn resolver_single_strategy_always_same_voice() {
+        let catalog = vec![
+            make_voice("voice-a", "en-US"),
+            make_voice("voice-b", "en-US"),
+        ];
+        let resolver = VoiceAliasResolver::new(
+            vec![],
+            AssignmentStrategy::Single {
+                voice_id: VoiceId("fixed-voice".into()),
+                engine_id: EngineId("piper".into()),
+            },
+            IgnoreProfile::default(),
+            SynthesisDefaults::default(),
+        );
+        for viewer in ["user1", "user2", "user3"] {
+            let result = resolver.resolve(viewer, viewer, &catalog);
+            match result {
+                ResolveResult::Speak { voice_id, .. } => assert_eq!(voice_id.0, "fixed-voice"),
+                ResolveResult::Skip { .. } => panic!("expected Speak"),
+            }
+        }
+    }
+
+    #[test]
+    fn resolver_ignore_profile_excludes_from_pool() {
+        let catalog = vec![
+            make_voice("boring", "en-US"),
+            make_voice("exciting", "en-US"),
+        ];
+        let profile = IgnoreProfile {
+            excluded_voice_ids: vec![VoiceId("boring".into())],
+            excluded_locales: vec![],
+        };
+        let resolver = VoiceAliasResolver::new(
+            vec![],
+            AssignmentStrategy::DeterministicByName,
+            profile,
+            SynthesisDefaults::default(),
+        );
+        let result = resolver.resolve("any", "any", &catalog);
+        match result {
+            ResolveResult::Speak { voice_id, .. } => {
+                assert_eq!(voice_id.0, "exciting", "excluded voice must not be picked");
+            }
+            ResolveResult::Skip { .. } => panic!("expected Speak"),
+        }
+    }
+
+    #[test]
+    fn resolver_all_excluded_returns_skip() {
+        let catalog = vec![make_voice("boring", "en-US")];
+        let profile = IgnoreProfile {
+            excluded_voice_ids: vec![VoiceId("boring".into())],
+            excluded_locales: vec![],
+        };
+        let resolver = VoiceAliasResolver::new(
+            vec![],
+            AssignmentStrategy::DeterministicByName,
+            profile,
+            SynthesisDefaults::default(),
+        );
+        let result = resolver.resolve("any", "any", &catalog);
+        assert!(matches!(
+            result,
+            ResolveResult::Skip {
+                reason: "no voices available"
+            }
+        ));
     }
 }

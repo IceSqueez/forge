@@ -77,6 +77,11 @@ pub enum SubActionSpec {
         clip_id: ClipId,
         output_device_override: Option<OutputDevice>,
     },
+    Speak {
+        text: String,
+        /// Raw voice ID string used to bypass alias resolver. `None` uses resolved alias.
+        voice_id_override: Option<String>,
+    },
 }
 
 impl SubActionSpec {
@@ -99,6 +104,7 @@ impl SubActionSpec {
             Self::ObsStopStream => "ObsStopStream",
             Self::ObsRaw { .. } => "ObsRaw",
             Self::PlaySound { .. } => "PlaySound",
+            Self::Speak { .. } => "Speak",
         }
     }
 }
@@ -334,6 +340,37 @@ mod tests {
             output_device_override: None,
         };
         assert_eq!(spec.kind_label(), "PlaySound");
+    }
+
+    #[test]
+    fn speak_serde_roundtrip() {
+        let spec = SubActionSpec::Speak {
+            text: "Hello chat!".to_string(),
+            voice_id_override: Some("piper/en_US-amy-medium".to_string()),
+        };
+        let json = serde_json::to_string(&spec).unwrap();
+        let back: SubActionSpec = serde_json::from_str(&json).unwrap();
+        assert_eq!(spec, back);
+    }
+
+    #[test]
+    fn speak_no_override_serde_roundtrip() {
+        let spec = SubActionSpec::Speak {
+            text: "%user% said something!".to_string(),
+            voice_id_override: None,
+        };
+        let json = serde_json::to_string(&spec).unwrap();
+        let back: SubActionSpec = serde_json::from_str(&json).unwrap();
+        assert_eq!(spec, back);
+    }
+
+    #[test]
+    fn speak_kind_label() {
+        let spec = SubActionSpec::Speak {
+            text: String::new(),
+            voice_id_override: None,
+        };
+        assert_eq!(spec.kind_label(), "Speak");
     }
 
     #[test]

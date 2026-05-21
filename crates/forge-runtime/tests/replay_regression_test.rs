@@ -125,6 +125,7 @@ async fn spawn_pipeline() -> PipelineFixture {
         Arc::new(ScriptRegistry::new()),
         None,
         None,
+        None,
     );
     let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
     let _parser = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), scheduler);

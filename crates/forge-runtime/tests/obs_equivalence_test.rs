@@ -182,6 +182,7 @@ async fn set_scene_trigger_path_and_quick_action_path_both_call_obs_sink() {
         Arc::new(ScriptRegistry::new()),
         Some(sink as Arc<dyn ObsSink>),
         None,
+        None,
     );
 
     // Path 1 — trigger dispatch.
@@ -281,6 +282,7 @@ async fn both_paths_emit_subaction_run_with_obs_set_scene_kind() {
         Arc::new(ScriptRegistry::new()),
         Some(sink as Arc<dyn ObsSink>),
         None,
+        None,
     );
 
     engine
@@ -357,6 +359,7 @@ async fn obs_scene_changed_event_from_real_emitter_triggers_evaluator() {
         Arc::clone(&bus),
         Arc::clone(&dp),
         Arc::new(ScriptRegistry::new()),
+        None,
         None,
         None,
     );

@@ -4836,6 +4836,7 @@ mod tests {
             Arc::clone(&registry),
             None,
             None,
+            None,
         );
         let scheduler =
             forge_runtime::QueueScheduler::spawn(engine.clone(), Arc::clone(&bus), queues);

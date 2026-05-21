@@ -208,6 +208,7 @@ mod tests {
             registry,
             None,
             None,
+            None,
         ));
         let bind_addr: SocketAddr = "127.0.0.1:9515".parse().expect("addr");
         let state = AppState {

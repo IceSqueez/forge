@@ -315,6 +315,7 @@ mod tests {
             registry,
             None,
             None,
+            None,
         ));
         let state = AppState {
             auth,

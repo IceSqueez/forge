@@ -992,6 +992,7 @@ mod tests {
             registry,
             None,
             None,
+            None,
         ))
     }
 

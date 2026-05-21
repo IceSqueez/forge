@@ -118,6 +118,7 @@ async fn play_sound_none_player_action_completes_with_skipped_subaction() {
         Arc::new(ScriptRegistry::new()),
         None,
         None,
+        None,
     );
 
     engine
@@ -150,6 +151,7 @@ async fn play_sound_ok_player_action_completes_successfully() {
         Arc::new(ScriptRegistry::new()),
         None,
         Some(player),
+        None,
     );
 
     engine
@@ -182,6 +184,7 @@ async fn play_sound_err_player_action_still_completes() {
         Arc::new(ScriptRegistry::new()),
         None,
         Some(player),
+        None,
     );
 
     engine
@@ -241,6 +244,7 @@ async fn play_sound_with_log_subaction_demonstrates_mixed_outcome() {
         Arc::new(ScriptRegistry::new()),
         None,
         Some(player),
+        None,
     );
 
     engine

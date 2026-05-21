@@ -8,6 +8,7 @@ pub mod obs_trigger;
 pub mod queue_scheduler;
 pub mod script_registry;
 pub mod sound_player;
+pub mod speak_dispatcher;
 mod sub_actions;
 
 pub use action_engine::{ActionEngineHandle, DispatchError, ExecutionRequest, spawn_action_engine};
@@ -19,3 +20,4 @@ pub use obs_trigger::{ObsTriggerEvaluator, ObsTriggerHandle};
 pub use queue_scheduler::{QueueScheduler, QueueSchedulerHandle, SchedulerError, SchedulerRequest};
 pub use script_registry::{CompiledScript, ScriptRegistry, ScriptRegistryError};
 pub use sound_player::{SoundPlayer, SoundPlayerError};
+pub use speak_dispatcher::{SpeakDispatchError, SpeakDispatcher};

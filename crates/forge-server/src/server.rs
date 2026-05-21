@@ -293,6 +293,7 @@ mod tests {
             registry,
             None,
             None,
+            None,
         ));
         AppState {
             auth,

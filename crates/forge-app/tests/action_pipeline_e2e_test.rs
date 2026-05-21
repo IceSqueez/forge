@@ -68,6 +68,7 @@ async fn full_action_pipeline_emits_causation_chain() {
         Arc::new(ScriptRegistry::new()),
         None,
         None,
+        None,
     );
     let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
     let _parser = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), scheduler);
@@ -182,6 +183,7 @@ async fn unknown_command_does_not_dispatch_action() {
         Arc::clone(&bus),
         Arc::clone(&dp),
         Arc::new(ScriptRegistry::new()),
+        None,
         None,
         None,
     );

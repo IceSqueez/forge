@@ -8,6 +8,7 @@ mod play_sound;
 mod run_script;
 mod send_chat;
 mod set_global;
+mod speak;
 
 use std::sync::Arc;
 
@@ -19,6 +20,7 @@ use time::OffsetDateTime;
 use crate::EventBus;
 use crate::script_registry::ScriptRegistry;
 use crate::sound_player::SoundPlayer;
+use crate::speak_dispatcher::SpeakDispatcher;
 
 pub(crate) async fn interpolate_with_globals(
     template: &str,
@@ -75,6 +77,7 @@ pub async fn dispatch(
     registry: Option<&ScriptRegistry>,
     obs_sink: Option<Arc<dyn ObsSink>>,
     sound_player: Option<&Arc<dyn SoundPlayer>>,
+    speak_dispatcher: Option<&Arc<dyn SpeakDispatcher>>,
 ) -> (SubActionTelemetry, Option<ArgStack>) {
     match spec {
         SubActionSpec::Log { message, .. } => {
@@ -131,6 +134,7 @@ pub async fn dispatch(
         | SubActionSpec::ObsStopStream
         | SubActionSpec::ObsRaw { .. } => obs::run(spec, index, obs_sink).await,
         SubActionSpec::PlaySound { .. } => play_sound::run(spec, index, sound_player).await,
+        SubActionSpec::Speak { .. } => speak::run(spec, index, speak_dispatcher).await,
     }
 }
 
@@ -172,6 +176,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await;
         assert_eq!(telemetry.kind, "Log");
@@ -199,6 +204,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await;
         assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
@@ -222,6 +228,7 @@ mod tests {
             parent_id,
             &bus,
             Arc::clone(&dp),
+            None,
             None,
             None,
             None,
@@ -255,6 +262,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await;
         let val = GlobalsRepo::get(dp.as_ref(), "counter").await.unwrap();
@@ -277,6 +285,7 @@ mod tests {
             EventId::new(),
             &bus,
             Arc::clone(&dp),
+            None,
             None,
             None,
             None,
@@ -303,6 +312,7 @@ mod tests {
             parent_id,
             &bus,
             Arc::clone(&dp),
+            None,
             None,
             None,
             None,
@@ -341,6 +351,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await;
         let event = tokio::time::timeout(Duration::from_millis(100), sub.recv())
@@ -373,6 +384,7 @@ mod tests {
             parent_id,
             &bus,
             Arc::clone(&dp),
+            None,
             None,
             None,
             None,
@@ -411,6 +423,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await;
         let event = tokio::time::timeout(Duration::from_millis(100), sub.recv())
@@ -440,6 +453,7 @@ mod tests {
             EventId::new(),
             &bus,
             Arc::clone(&dp),
+            None,
             None,
             None,
             None,
@@ -519,6 +533,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await;
         assert!(
@@ -546,6 +561,7 @@ mod tests {
             &bus,
             Arc::clone(&dp),
             Some(&registry),
+            None,
             None,
             None,
         )
@@ -602,6 +618,7 @@ mod tests {
             &bus,
             Arc::clone(&dp),
             Some(&registry),
+            None,
             None,
             None,
         )
@@ -669,6 +686,7 @@ mod tests {
             &bus,
             Arc::clone(&dp),
             Some(&registry),
+            None,
             None,
             None,
         )
@@ -744,6 +762,7 @@ mod tests {
             &bus,
             Arc::clone(&dp),
             Some(&registry),
+            None,
             None,
             None,
         )

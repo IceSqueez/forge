@@ -389,6 +389,7 @@ mod tests {
             Arc::new(ScriptRegistry::new()),
             None,
             None,
+            None,
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let mut sub = bus.subscribe();
@@ -431,6 +432,7 @@ mod tests {
             Arc::clone(&bus),
             Arc::clone(&dp),
             Arc::new(ScriptRegistry::new()),
+            None,
             None,
             None,
         );
@@ -482,6 +484,7 @@ mod tests {
             Arc::clone(&bus),
             Arc::clone(&dp),
             Arc::new(ScriptRegistry::new()),
+            None,
             None,
             None,
         );
@@ -536,6 +539,7 @@ mod tests {
             Arc::new(ScriptRegistry::new()),
             None,
             None,
+            None,
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let mut sub = bus.subscribe();
@@ -574,6 +578,7 @@ mod tests {
             Arc::clone(&bus),
             Arc::clone(&dp),
             Arc::new(ScriptRegistry::new()),
+            None,
             None,
             None,
         );
@@ -615,6 +620,7 @@ mod tests {
             Arc::new(ScriptRegistry::new()),
             None,
             None,
+            None,
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let mut sub = bus.subscribe();
@@ -640,6 +646,7 @@ mod tests {
             Arc::clone(&bus),
             Arc::clone(&dp),
             Arc::new(ScriptRegistry::new()),
+            None,
             None,
             None,
         );
@@ -671,6 +678,7 @@ mod tests {
             Arc::clone(&bus),
             Arc::clone(&dp),
             Arc::new(ScriptRegistry::new()),
+            None,
             None,
             None,
         );

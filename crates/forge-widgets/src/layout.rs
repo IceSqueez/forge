@@ -30,11 +30,7 @@ fn logo_box<'a, Msg: 'a>(palette: &ForgePalette) -> Element<'a, Msg> {
     .into()
 }
 
-pub fn title_bar<'a, Msg: 'a>(
-    profile_name: &str,
-    version: &str,
-    palette: &'a ForgePalette,
-) -> Element<'a, Msg> {
+pub fn title_bar<'a, Msg: 'a>(profile_name: &str, palette: &'a ForgePalette) -> Element<'a, Msg> {
     let shell = palette.shell;
     let border_color = palette.border_regular;
     let text_primary = palette.text_primary;
@@ -57,16 +53,8 @@ pub fn title_bar<'a, Msg: 'a>(
         .size(FONT_BODY)
         .color(text_muted);
 
-    let left = row![logo, forge_label, sep, profile]
+    let content = row![logo, forge_label, sep, profile]
         .spacing(6)
-        .align_y(iced::Alignment::Center);
-
-    let version_label = text(version.to_owned())
-        .size(FONT_XS)
-        .color(text_faint)
-        .font(font(FontRole::Monospace));
-
-    let content = row![left, Space::new().width(Length::Fill), version_label]
         .align_y(iced::Alignment::Center)
         .padding([0, 14]);
 
@@ -219,7 +207,7 @@ mod tests {
 
     #[test]
     fn title_bar_compiles() {
-        let _: Element<'_, ()> = title_bar("main", "0.1.0-alpha.13", &CATPPUCCIN_MOCHA);
+        let _: Element<'_, ()> = title_bar("main", &CATPPUCCIN_MOCHA);
     }
 
     #[test]

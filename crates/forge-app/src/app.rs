@@ -4974,7 +4974,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let elapsed = app.boot_time.elapsed().unwrap_or_default();
     let version = env!("CARGO_PKG_VERSION");
 
-    let chrome_title = title_bar("main", version, palette);
+    let chrome_title = title_bar("main", palette);
     let (conn_n, conn_total) = subsystem_connectivity(app);
     let uptime_str = format_uptime(elapsed);
     let chrome_footer = app_footer(conn_n, conn_total, &uptime_str, version, palette);

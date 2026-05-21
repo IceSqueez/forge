@@ -40,25 +40,28 @@ Forge is an open-source desktop application that automates stream workflows acro
 
 ## Current Status
 
-**Current alpha: v0.1.0-alpha.9** — WebSocket server + HTTP overlay-host milestone.
+**Current alpha: v0.1.0-alpha.10** — Audio foundation (cpal, multi-sink fan-out) + Soundboard milestone.
 
-**What's included (alpha-1 through alpha-9):**
+**What's included (alpha-1 through alpha-10):**
 
-- **Workspace & storage layer:** 12-crate workspace; SQLite backend with AES-GCM encrypted credential storage; schema versioning with append-only migration pipeline.
+- **Workspace & storage layer:** 14-crate workspace; SQLite backend with AES-GCM encrypted credential storage; schema versioning with append-only migration pipeline.
 - **iced UI shell:** Catppuccin Mocha theme + Tokyo Night and Latte; sidebar navigation; Hub dashboard; Settings with sub-screens; cross-platform CI pipeline (Linux, Windows, macOS).
 - **Twitch platform:** Device-code OAuth flow with auto-refresh; EventSub chat ingestion; Helix send-chat; viewer tracking. Live Chat screen, Settings → Platforms screen with reconnect.
-- **Action engine:** Action editor with trigger configuration, sub-action chains, and queue scheduling. Sub-actions: `SendChat`, `Delay`, `SetGlobal`, `RunScript`. Command parser for chat-triggered actions.
+- **Action engine:** Action editor with trigger configuration, sub-action chains, and queue scheduling. Sub-actions: `SendChat`, `Delay`, `SetGlobal`, `RunScript`, `PlaySound`. Command parser for chat-triggered actions.
 - **Globals system:** Per-key read/write counters; `%variable%` interpolation in action config; Globals editor with filter, JSON export, and Variant editor modal.
 - **Rhai scripting sandbox:** `ForgeApi` god-object with op-count and time limits; `ScriptRegistry` with hot-reload; `RunScript` sub-action; 3-pane ScriptEditor screen.
 - **OBS WebSocket v5 integration:** `forge-obs` crate; challenge-response auth; exponential-backoff reconnect; sub-actions: `SetScene`, `SetSourceVisible`, `SetInputMute`, `StartRecord`, `StopRecord`, `StartStream`, `StopStream`; `ObsSceneChanged` trigger; OBS events on the bus (`scene.changed`, `recording.*`, `streaming.*`, `source.visibility.changed`); generic `IntegrationDetail` screen; `StreamApps` landing screen; Onboarding ConnectObs step.
-- **EventFeed + Replay debugging:** 2-pane Event Feed screen with filter chips (All / Chat / Subs / Bits / Timers / OBS / Errors), Pause / Resume / Clear / Export controls, and a per-event payload inspector with syntax-highlighted JSON viewer. Every event persists to SQLite (`event_log`, 7-day retention) and carries a full causation chain (`caused_by`) across all subsystems. One-click replay of any captured event re-runs the full action pipeline — useful for debugging action flows without waiting for a live trigger. Replayed events are visually distinguished in the feed.
-- **WebSocket server (alpha-9):** Full WS server at `/ws/v1/` with 14+ methods (subscribe, getInfo, getActions, doAction, getCommands, getGlobals, setGlobal, getUserGlobals, triggerCodeEvent, getEvents, replayEvent, getActiveViewers, getOverlayFiles). Bearer-token auth. Per-client subscription filtering, backpressure, and ev/s tracking. Server screen with live status, connected-clients list, bandwidth/throughput metrics, overlay file listing, and lifecycle controls.
-- **HTTP overlay-host (alpha-9):** Serves HTML overlays from user-configured sandbox directory with path-traversal protection, CORS controls, and token-optional gating. Overlays subscribe to real-time events via WebSocket and trigger actions back through the API.
-- **Settings → WebSocket (alpha-9):** Configurable bind address (127.0.0.1 vs 0.0.0.0 with LAN-bind warning), port, auth toggles, overlay-root picker, and CORS policy.
+- **EventFeed + Replay debugging:** 2-pane Event Feed screen with filter chips (All / Chat / Subs / Bits / Timers / OBS / Audio / Errors), Pause / Resume / Clear / Export controls, and a per-event payload inspector with syntax-highlighted JSON viewer. Every event persists to SQLite (`event_log`, 7-day retention) and carries a full causation chain (`caused_by`) across all subsystems. One-click replay of any captured event re-runs the full action pipeline — useful for debugging action flows without waiting for a live trigger. Replayed events are visually distinguished in the feed.
+- **WebSocket server:** Full WS server at `/ws/v1/` with 14+ methods (subscribe, getInfo, getActions, doAction, getCommands, getGlobals, setGlobal, getUserGlobals, triggerCodeEvent, getEvents, replayEvent, getActiveViewers, getOverlayFiles). Bearer-token auth. Per-client subscription filtering, backpressure, and ev/s tracking. Server screen with live status, connected-clients list, bandwidth/throughput metrics, overlay file listing, and lifecycle controls.
+- **HTTP overlay-host:** Serves HTML overlays from user-configured sandbox directory with path-traversal protection, CORS controls, and token-optional gating. Overlays subscribe to real-time events via WebSocket and trigger actions back through the API.
+- **Settings → WebSocket:** Configurable bind address (127.0.0.1 vs 0.0.0.0 with LAN-bind warning), port, auth toggles, overlay-root picker, and CORS policy.
+- **Audio engine (alpha-10):** `forge-audio` crate with `AudioSink` trait, cpal device discovery, multi-sink fan-out, symphonia decoder, rubato resampler, channel remix. `AudioEvent` and `AudioEventSink` abstraction. Audio events on the bus (`playback.started`, `playback.finished`, `playback.failed`). Settings → Audio sub-screen with device test-tone.
+- **Soundboard (alpha-10):** `forge-soundboard` crate with clip schema (file path, hotkey, output device, volume). Grid-based Soundboard screen with add-clip modal. In-app hotkey listener scoped to Soundboard. `PlaySound` sub-action picker in Action editor. `SoundboardPlayer` decodes, resamples, applies volume, and routes to selected output device.
 
 **Feature timeline (pending):**
 
-- **beta-1+:** YouTube, Trovo, Kick chat platforms; TTS engines (local and cloud); VTube Studio; Discord webhooks; MIDI controllers; audio engine.
+- **alpha-11:** TTS engines (local: Piper, eSpeak-NG; cloud: Azure, OpenAI, ElevenLabs, Google). Voice aliases & preprocessing pipeline. TTS queue with streaming synthesis. Speak-Queue screen.
+- **beta-1+:** YouTube, Trovo, Kick chat platforms; VTube Studio; Discord webhooks; MIDI controllers; system hotkeys.
 
 ## Building from Source
 
@@ -103,8 +106,8 @@ Forge is in active alpha development. Current gaps:
 
 - **`ObsRaw` sub-action is non-functional.** The variant exists in the schema for forward compatibility, but `obws` v0.15 does not expose a raw-request passthrough. Execution returns a protocol error at runtime. Resolves when `obws` 0.16+ ships a `send_raw` API.
 - **Additional chat platforms** (YouTube, Trovo, Kick) are not yet implemented; Twitch is the primary source.
-- **TTS engines and audio system** (Piper, eSpeak-NG, cloud TTS services, voice aliases, soundboard) landing in beta-1.
-- **VTube Studio integration, Discord webhooks, MIDI controllers** coming in subsequent stages.
+- **TTS engines** (Piper, eSpeak-NG, cloud services: Azure, OpenAI, ElevenLabs, Google) and **voice aliases & preprocessing pipeline** landing in alpha-11.
+- **VTube Studio integration, Discord webhooks, MIDI controllers, system hotkeys** coming in subsequent stages.
 - **TLS/WSS** for the WebSocket server is deferred to beta or rc; current use is local-network only.
 
 ## Contributing

@@ -1521,6 +1521,19 @@ fn handle_add_sub_action_msg(app: &mut App, sub: AddSubActionMsg) -> Task<Messag
             }
             Task::none()
         }
+        AddSubActionMsg::SpeakTextChanged(v) => {
+            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
+                f.config.speak_text = v;
+                f.error = None;
+            }
+            Task::none()
+        }
+        AddSubActionMsg::SpeakVoiceOverrideChanged(v) => {
+            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
+                f.config.speak_voice_override = v;
+            }
+            Task::none()
+        }
         AddSubActionMsg::ClipsLoaded(clips) => {
             if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
                 f.available_clips = clips;
@@ -1542,6 +1555,7 @@ fn handle_add_sub_action_msg(app: &mut App, sub: AddSubActionMsg) -> Task<Messag
                     SubActionKindChoice::Delay => "Milliseconds must be a non-negative integer.",
                     SubActionKindChoice::Log => "Log message is required.",
                     SubActionKindChoice::PlaySound => "Select a clip to play.",
+                    SubActionKindChoice::Speak => "Speak text is required.",
                 };
                 if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
                     f.error = Some(error_msg.to_string());
@@ -1568,6 +1582,14 @@ fn handle_add_sub_action_msg(app: &mut App, sub: AddSubActionMsg) -> Task<Messag
                 SubActionKindChoice::PlaySound => forge_types::SubActionSpec::PlaySound {
                     clip_id: form.config.play_sound_clip_id.unwrap_or_default(),
                     output_device_override: None,
+                },
+                SubActionKindChoice::Speak => forge_types::SubActionSpec::Speak {
+                    text: form.config.speak_text.clone(),
+                    voice_id_override: if form.config.speak_voice_override.trim().is_empty() {
+                        None
+                    } else {
+                        Some(form.config.speak_voice_override.trim().to_owned())
+                    },
                 },
             };
             let action_id = form.for_action_id;
@@ -3747,12 +3769,20 @@ fn add_sub_action_modal_view<'a>(
             SubActionKindChoice::PlaySound,
         )),
     );
+    let chip_speak = forge_widgets::category_chip(
+        palette,
+        "Speak",
+        palette.info,
+        form.kind == SubActionKindChoice::Speak,
+        Message::AddSubAction(AddSubActionMsg::KindSelected(SubActionKindChoice::Speak)),
+    );
     let chips_row = row![
         chip_send_chat,
         chip_set_global,
         chip_delay,
         chip_log,
-        chip_play_sound
+        chip_play_sound,
+        chip_speak
     ]
     .spacing(6);
 
@@ -3973,6 +4003,30 @@ fn add_sub_action_modal_view<'a>(
                 .spacing(6)
                 .into()
             }
+        }
+        SubActionKindChoice::Speak => {
+            use iced::widget::column;
+            let text_block = column![
+                forge_widgets::section_header("TEXT", None, palette),
+                forge_widgets::inputs::text_input_field(
+                    "Text to speak…",
+                    &form.config.speak_text,
+                    |v| Message::AddSubAction(AddSubActionMsg::SpeakTextChanged(v)),
+                    palette,
+                ),
+            ]
+            .spacing(6);
+            let voice_block = column![
+                forge_widgets::section_header("VOICE OVERRIDE (optional)", None, palette),
+                forge_widgets::inputs::text_input_field(
+                    "Leave blank to use alias resolver",
+                    &form.config.speak_voice_override,
+                    |v| Message::AddSubAction(AddSubActionMsg::SpeakVoiceOverrideChanged(v)),
+                    palette,
+                ),
+            ]
+            .spacing(6);
+            column![text_block, voice_block].spacing(12).into()
         }
     };
 

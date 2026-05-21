@@ -346,6 +346,7 @@ pub enum SubActionKindChoice {
     Delay,
     Log,
     PlaySound,
+    Speak,
 }
 
 #[derive(Debug, Clone)]
@@ -358,6 +359,8 @@ pub struct SubActionConfigForm {
     pub log_level: LogLevel,
     pub log_message: String,
     pub play_sound_clip_id: Option<ClipId>,
+    pub speak_text: String,
+    pub speak_voice_override: String,
 }
 
 impl Default for SubActionConfigForm {
@@ -371,6 +374,8 @@ impl Default for SubActionConfigForm {
             log_level: LogLevel::Info,
             log_message: String::new(),
             play_sound_clip_id: None,
+            speak_text: String::new(),
+            speak_voice_override: String::new(),
         }
     }
 }
@@ -404,6 +409,7 @@ impl AddSubActionForm {
             SubActionKindChoice::Delay => self.config.delay_ms.trim().parse::<u64>().is_ok(),
             SubActionKindChoice::Log => !self.config.log_message.trim().is_empty(),
             SubActionKindChoice::PlaySound => self.config.play_sound_clip_id.is_some(),
+            SubActionKindChoice::Speak => !self.config.speak_text.trim().is_empty(),
         }
     }
 }
@@ -420,6 +426,8 @@ pub enum AddSubActionMsg {
     LogLevelSelected(LogLevel),
     LogMessageChanged(String),
     PlaySoundClipSelected(ClipId),
+    SpeakTextChanged(String),
+    SpeakVoiceOverrideChanged(String),
     ClipsLoaded(Vec<(ClipId, String)>),
     Cancel,
     Submit,

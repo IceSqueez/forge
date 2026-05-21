@@ -1,11 +1,111 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-alpha.11] - 2026-05-21
+### Deps
+- *(libs)* Bump libraries versions
+
+### ⚙️ Miscellaneous Tasks
+- *(workspace)* Sync Cargo.lock for tts crate deps
+
+### 🐛 Bug Fixes
+- *(audio)* Adapt to rubato 3.0 and symphonia 0.6 APIs after bump
+- *(app)* Register Piper engine and wire CpalSink in speak queue boot
+- *(app)* Register Piper engine and wire CpalSink in speak queue boot
+- *(ci)* Add libasound2-dev apt dep for cpal Linux build
+
+### 🚀 Features
+- *(tts-core)* Create forge-tts-core crate with TtsEngine trait
+- *(voice)* Create forge-voice crate with VoiceAlias and resolver
+- *(tts-pipeline)* Create forge-tts-pipeline crate skeleton
+- *(tts-piper)* Create forge-tts-piper crate skeleton
+- *(speak-queue)* Create forge-speak-queue crate skeleton
+- *(storage)* Add VoiceAliasRepo trait and StoredVoiceAlias
+- *(storage-sqlite)* Add migration 0007 voice_aliases and repo impl
+- *(voice)* Implement VoiceAliasResolver with three strategies
+- *(tts-pipeline)* Implement 5-stage process and preview API
+- *(tts-piper)* Implement subprocess synthesis and voice scanner
+- *(speak-queue)* Implement tokio actor with verbs and bus events
+- *(storage)* Add TTS settings keys and pipeline config helpers
+- *(types,runtime)* Add SubActionSpec::Speak and SpeakDispatcher
+- *(speak-queue)* Expose subscribe() on SpeakQueueHandle
+- *(app)* Add TtsSection enum and parameterize Screen::Tts
+- *(tts-ui)* Add TTS message types and module declarations
+- *(tts-ui)* Add TTS dashboard, engines, filters, triggers, voice aliases screens
+- *(tts-ui)* Wire TTS state into App and add tts_section_view routing
+- *(tts-ui)* Wire speak queue, SpeakBridge, and SpeakEvent subscription
+- *(tts-ui)* Add Speak sub-action to action editor
+- *(script)* Wire forge::tts rhai module via SpeakRequester trait
+
+### 🧪 Testing
+- *(voice)* Add resolver_deterministic regression tests
+- *(voice)* Add resolver_blocked regression tests
+- *(voice)* Add resolver_ignore_profile regression tests
+- *(tts-pipeline)* Add pipeline_full_flow regression tests
+- *(tts-pipeline)* Add pipeline_preview regression tests
+- *(speak-queue)* Add queue_per_user_limit regression tests
+- *(speak-queue)* Add queue_pause_resume regression tests
+- *(speak-queue)* Add queue_priority regression tests
+- *(tts-piper)* Add voice_scan regression tests
+- *(runtime)* Add speak_dispatch regression tests
+
+## [0.1.0-alpha.10] - 2026-05-21
+### ⚙️ Miscellaneous Tasks
+- *(workspace)* Update Cargo.lock for new audio deps
+- *(workspace)* Update Cargo.lock for forge-soundboard runtime dep
+- *(workspace)* Sync Cargo.lock for forge-audio in forge-app deps
+- Release
+
+### 🎨 Styling
+- *(tests)* Apply rustfmt to alpha-10 regression tests
+
+### 🐛 Bug Fixes
+- *(soundboard)* Emit PlaybackFailed on decode and sink-factory errors
+- *(app)* Wire BusAudioEventSink so audio events reach the event bus
+
+### 📚 Documentation
+- *(readme)* Refresh current status for alpha-10 audio milestone
+
+### 🚀 Features
+- *(events)* Add Audio variant to EventSource enum
+- *(types)* Add PlaySound SubAction variant with ClipId and OutputDevice
+- *(audio)* Create forge-audio crate with AudioSink trait and cpal device discovery
+- *(soundboard)* Create forge-soundboard crate with clip schema
+- *(storage)* Add SoundboardClipsRepo trait and StoredClip
+- *(storage-sqlite)* Add migration 0006 soundboard_clips and repo impl
+- *(audio)* Add crossbeam-channel and futures to workspace deps
+- *(audio)* Add AudioEvent enum and AudioEventSink trait
+- *(audio)* Add convert module with rubato resampler and channel remix
+- *(audio)* Add fan_out helper for multi-sink concurrent playback
+- *(audio)* Add symphonia decoder for clip files
+- *(audio)* Add CpalSink with bounded ring buffer playback
+- *(soundboard)* Add AudioSinkFactory trait and CpalSinkFactory
+- *(runtime)* Add SoundPlayer trait for soundboard integration
+- *(soundboard)* Add BusAudioEventSink and SoundboardPlayer with tests
+- *(runtime)* Wire SoundPlayer into PlaySound runner and spawn_action_engine
+- *(widgets)* Add volume_slider widget
+- *(widgets)* Add output_device_picker widget
+- *(widgets)* Add clip_card widget
+- *(app)* Add Soundboard screen with grid layout and add-clip modal
+- *(app)* Add in-app hotkey subscription for Soundboard
+- *(app)* Add Settings Audio sub-screen with device test-tone
+- *(app)* Instantiate SoundboardPlayer at boot and wire to App
+- *(app)* Wire Soundboard sidebar navigation and screen routing
+- *(app)* Add PlaySound option to Add SubAction picker
+
+### 🧪 Testing
+- *(audio)* Add convert_correctness and decode_smoke integration tests
+- *(soundboard)* Add player_emits_events and player_emits_failed regression tests
+- *(runtime)* Add play_sound_dispatch integration tests via action engine
+
 ## [0.1.0-alpha.9] - 2026-05-20
 ### ⚠️ BREAKING CHANGES
 - **runtime**: EventLogRepo gains recent_since() method
 - **server**: ServerConfig::new now requires data_provider argument
 - **server**: TriggerKind gains CodeEvent variant; exhaustive matches must handle it
+
+### ⚙️ Miscellaneous Tasks
+- Release
 
 ### 🐛 Bug Fixes
 - *(app)* Hold tokio runtime guard so background spawns don't panic
@@ -28,6 +128,7 @@ All notable changes to this project will be documented in this file.
 
 ### 📚 Documentation
 - *(readme)* Refresh current status for alpha-9 server milestone
+- *(release)* Release v0.1.0-alpha.9
 
 ### 🚀 Features
 - *(server)* Add axum router skeleton with ws/api/overlays routes

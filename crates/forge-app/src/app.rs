@@ -21,8 +21,8 @@ use forge_storage_sqlite::SqliteBackend;
 use forge_types::{Action, ActionId};
 use forge_widgets::icons::{
     ICON_ACTIVITY, ICON_BROADCAST, ICON_CHAT, ICON_DOWNLOAD, ICON_GEAR, ICON_GRID, ICON_HASH,
-    ICON_HOME, ICON_LIGHTNING, ICON_MUSIC_NOTE, ICON_PEOPLE, ICON_PLUS, ICON_SPEAKER,
-    ICON_TERMINAL,
+    ICON_HOME, ICON_JOURNAL, ICON_LIGHTNING, ICON_MUSIC_NOTE, ICON_PEOPLE, ICON_PLUS, ICON_SERVER,
+    ICON_SPEAKER, ICON_TERMINAL,
 };
 use forge_widgets::tokens::{FONT_BODY, FONT_LG, FONT_MD, FONT_SM, FONT_XS};
 use forge_widgets::{
@@ -4744,10 +4744,8 @@ fn screen_label(screen: &Screen) -> &'static str {
 
 fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Vec<NavItem<'a, Message>> {
     let is_home = matches!(app.screen, Screen::Home);
-    let is_viewers = matches!(app.screen, Screen::Viewers);
     let is_actions = matches!(app.screen, Screen::Actions | Screen::ActionEditor(_));
     let is_queues = matches!(app.screen, Screen::Queues);
-    let is_actions_queues = is_actions || is_queues;
     let is_commands = matches!(app.screen, Screen::Commands);
     let is_platforms = matches!(app.screen, Screen::Platforms);
     let is_stream_apps = matches!(app.screen, Screen::StreamApps);
@@ -4756,6 +4754,7 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Vec<NavItem<'a,
     let is_globals = matches!(app.screen, Screen::Globals);
     let is_soundboard = matches!(app.screen, Screen::Soundboard);
     let is_tts = matches!(app.screen, Screen::Tts(_));
+    let is_server = matches!(app.screen, Screen::Server);
     let is_settings = matches!(app.screen, Screen::Settings(_));
 
     let twitch_target = Message::Navigate(Screen::IntegrationDetail(IntegrationId::new("twitch")));
@@ -4768,32 +4767,19 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Vec<NavItem<'a,
             active: is_home,
             on_press: Message::Navigate(Screen::Home),
         },
+        NavItem::Section("Audience"),
         NavItem::Leaf {
-            icon: ICON_PEOPLE,
-            label: "Viewers",
-            active: is_viewers,
-            on_press: Message::Navigate(Screen::Viewers),
+            icon: ICON_CHAT,
+            label: "Chat",
+            active: is_live_chat,
+            on_press: Message::Navigate(Screen::LiveChat),
         },
-        NavItem::Group {
+        NavItem::Section("Automation"),
+        NavItem::Leaf {
             icon: ICON_LIGHTNING,
-            label: "Actions & Queues",
-            active: is_actions_queues,
-            expanded: app.sidebar_state.actions_queues,
-            on_toggle: Message::Sidebar(SidebarMsg::ToggleActionsQueues),
-            children: vec![
-                NavChild {
-                    dot_color: palette.brand,
-                    label: "Actions",
-                    active: is_actions,
-                    on_press: Message::Navigate(Screen::Actions),
-                },
-                NavChild {
-                    dot_color: palette.info,
-                    label: "Queues",
-                    active: is_queues,
-                    on_press: Message::Navigate(Screen::Queues),
-                },
-            ],
+            label: "Actions",
+            active: is_actions,
+            on_press: Message::Navigate(Screen::Actions),
         },
         NavItem::Leaf {
             icon: ICON_TERMINAL,
@@ -4801,6 +4787,25 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Vec<NavItem<'a,
             active: is_commands,
             on_press: Message::Navigate(Screen::Commands),
         },
+        NavItem::Leaf {
+            icon: ICON_JOURNAL,
+            label: "Queues",
+            active: is_queues,
+            on_press: Message::Navigate(Screen::Queues),
+        },
+        NavItem::Leaf {
+            icon: ICON_ACTIVITY,
+            label: "Event feed",
+            active: is_event_feed,
+            on_press: Message::Navigate(Screen::EventFeed),
+        },
+        NavItem::Leaf {
+            icon: ICON_HASH,
+            label: "Globals",
+            active: is_globals,
+            on_press: Message::Navigate(Screen::Globals),
+        },
+        NavItem::Section("Connections"),
         NavItem::Group {
             icon: ICON_BROADCAST,
             label: "Platforms",
@@ -4823,6 +4828,12 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Vec<NavItem<'a,
                 NavChild {
                     dot_color: palette.info,
                     label: "Kick",
+                    active: false,
+                    on_press: Message::Navigate(Screen::Platforms),
+                },
+                NavChild {
+                    dot_color: palette.success,
+                    label: "Trovo",
                     active: false,
                     on_press: Message::Navigate(Screen::Platforms),
                 },
@@ -4850,24 +4861,6 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Vec<NavItem<'a,
             ],
         },
         NavItem::Leaf {
-            icon: ICON_CHAT,
-            label: "Live chat",
-            active: is_live_chat,
-            on_press: Message::Navigate(Screen::LiveChat),
-        },
-        NavItem::Leaf {
-            icon: ICON_ACTIVITY,
-            label: "Event feed",
-            active: is_event_feed,
-            on_press: Message::Navigate(Screen::EventFeed),
-        },
-        NavItem::Leaf {
-            icon: ICON_HASH,
-            label: "Globals",
-            active: is_globals,
-            on_press: Message::Navigate(Screen::Globals),
-        },
-        NavItem::Leaf {
             icon: ICON_MUSIC_NOTE,
             label: "Soundboard",
             active: is_soundboard,
@@ -4878,6 +4871,12 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Vec<NavItem<'a,
             label: "Text-to-Speech",
             active: is_tts,
             on_press: Message::Navigate(Screen::Tts(TtsSection::Dashboard)),
+        },
+        NavItem::Leaf {
+            icon: ICON_SERVER,
+            label: "WebSocket server",
+            active: is_server,
+            on_press: Message::Navigate(Screen::Server),
         },
         NavItem::Divider,
         NavItem::Leaf {

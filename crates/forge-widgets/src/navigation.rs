@@ -7,7 +7,7 @@ use iced::{
 
 use crate::icons::{BOOTSTRAP_FONT, ICON_CHEVRON_DOWN, ICON_CHEVRON_UP};
 use crate::palette::ForgePalette;
-use crate::tokens::{BORDER_THIN, FONT_BODY, FONT_SM, FontRole, Radius, font, radius};
+use crate::tokens::{BORDER_THIN, FONT_BODY, FONT_SM, FONT_XS, FontRole, Radius, font, radius};
 
 pub const SIDEBAR_WIDTH: u16 = 200;
 
@@ -138,6 +138,7 @@ pub struct SidebarV2<'a, Msg> {
 }
 
 pub enum NavItem<'a, Msg> {
+    Section(&'a str),
     Leaf {
         icon: char,
         label: &'a str,
@@ -198,6 +199,7 @@ fn render_nav_item<'a, Msg: 'a + Clone>(
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
     match item {
+        NavItem::Section(label) => nav_section_label(label, palette),
         NavItem::Leaf {
             icon,
             label,
@@ -232,6 +234,24 @@ fn render_nav_item<'a, Msg: 'a + Clone>(
         }
         NavItem::Divider => nav_divider(palette.border_regular),
     }
+}
+
+fn nav_section_label<'a, Msg: 'a>(label: &'a str, palette: &ForgePalette) -> Element<'a, Msg> {
+    let color = palette.text_faint;
+    container(
+        text(label.to_uppercase())
+            .size(FONT_XS)
+            .font(font(FontRole::Monospace))
+            .color(color),
+    )
+    .padding(iced::Padding {
+        top: 14.0,
+        bottom: 6.0,
+        left: 10.0,
+        right: 10.0,
+    })
+    .width(iced::Length::Fill)
+    .into()
 }
 
 fn nav_leaf<'a, Msg: 'a + Clone>(

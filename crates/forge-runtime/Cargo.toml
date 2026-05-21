@@ -10,20 +10,22 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
-forge-types   = { path = "../forge-types" }
-forge-events  = { path = "../forge-events" }
-forge-storage = { path = "../forge-storage" }
-forge-script  = { path = "../forge-script" }
-forge-obs     = { path = "../forge-obs" }
-tokio        = { workspace = true }
-tokio-stream = { workspace = true }
-futures-core = { workspace = true }
-futures-util = { workspace = true }
-tracing      = { workspace = true }
-thiserror    = { workspace = true }
-async-trait  = { workspace = true }
-serde_json   = { workspace = true }
-time         = { workspace = true }
+forge-types         = { path = "../forge-types" }
+forge-events        = { path = "../forge-events" }
+forge-storage       = { path = "../forge-storage" }
+forge-script        = { path = "../forge-script" }
+forge-obs           = { path = "../forge-obs" }
+forge-platform-core = { path = "../forge-platform-core" }
+rand                = { workspace = true }
+tokio               = { workspace = true }
+tokio-stream        = { workspace = true }
+futures-core        = { workspace = true }
+futures-util        = { workspace = true }
+tracing             = { workspace = true }
+thiserror           = { workspace = true }
+async-trait         = { workspace = true }
+serde_json          = { workspace = true }
+time                = { workspace = true }
 
 [dev-dependencies]
 forge-storage-sqlite = { path = "../forge-storage-sqlite" }

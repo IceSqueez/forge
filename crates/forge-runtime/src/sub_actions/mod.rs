@@ -5,6 +5,8 @@ mod increment_global;
 mod log;
 mod obs;
 mod play_sound;
+mod random_int;
+mod read_file;
 mod run_script;
 mod send_chat;
 mod set_global;
@@ -135,6 +137,15 @@ pub async fn dispatch(
         | SubActionSpec::ObsRaw { .. } => obs::run(spec, index, obs_sink).await,
         SubActionSpec::PlaySound { .. } => play_sound::run(spec, index, sound_player).await,
         SubActionSpec::Speak { .. } => speak::run(spec, index, speak_dispatcher).await,
+        SubActionSpec::ReadFile { .. } => {
+            let t = read_file::run(spec, arg_stack, index, parent_event_id, bus, dp.as_ref()).await;
+            (t, None)
+        }
+        SubActionSpec::RandomInt { .. } => {
+            let t =
+                random_int::run(spec, arg_stack, index, parent_event_id, bus, dp.as_ref()).await;
+            (t, None)
+        }
     }
 }
 

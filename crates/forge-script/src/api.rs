@@ -107,11 +107,31 @@ impl ForgeApi {
             None => Module::new(),
         };
         root.set_sub_module("tts", tts);
+        root.set_sub_module("time", build_time_module());
         root.set_sub_module("obs", Module::new());
         root.set_sub_module("http", Module::new());
 
         Arc::new(root)
     }
+}
+
+fn build_time_module() -> Module {
+    use time::format_description::well_known::Rfc3339;
+    let mut m = Module::new();
+
+    m.set_native_fn("now", || -> Result<ImmutableString, Box<EvalAltResult>> {
+        let now = time::OffsetDateTime::now_utc();
+        let s = now
+            .format(&Rfc3339)
+            .map_err(|e| -> Box<EvalAltResult> { e.to_string().into() })?;
+        Ok(s.into())
+    });
+
+    m.set_native_fn("unix", || -> Result<i64, Box<EvalAltResult>> {
+        Ok(time::OffsetDateTime::now_utc().unix_timestamp())
+    });
+
+    m
 }
 
 fn build_tts_module(requester: Arc<dyn SpeakRequester>) -> Module {

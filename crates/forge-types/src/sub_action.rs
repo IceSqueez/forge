@@ -82,6 +82,20 @@ pub enum SubActionSpec {
         /// Raw voice ID string used to bypass alias resolver. `None` uses resolved alias.
         voice_id_override: Option<String>,
     },
+    /// Reads a sandboxed file under `~/.local/share/forge/assets/` into a global as
+    /// `Variant::String`. Sandbox path is rejected on traversal attempts (`..`).
+    ReadFile {
+        /// Path relative to the assets sandbox root. Leading `/` and parent refs forbidden.
+        path: VariantTemplate,
+        /// Global variable name to assign the file contents to.
+        target_var: String,
+    },
+    /// Generates a random `i64` in `[min, max]` inclusive and stores it as a global.
+    RandomInt {
+        min: i64,
+        max: i64,
+        target_var: String,
+    },
 }
 
 impl SubActionSpec {
@@ -105,6 +119,8 @@ impl SubActionSpec {
             Self::ObsRaw { .. } => "ObsRaw",
             Self::PlaySound { .. } => "PlaySound",
             Self::Speak { .. } => "Speak",
+            Self::ReadFile { .. } => "ReadFile",
+            Self::RandomInt { .. } => "RandomInt",
         }
     }
 }

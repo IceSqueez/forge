@@ -20,6 +20,15 @@ pub mod reserved_keys {
     pub const SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_KEY: &str = "server.http_overlay_require_token";
     pub const SERVER_OVERLAY_CORS_ANY_ORIGIN_KEY: &str = "server.overlay_cors_any_origin";
     pub const SERVER_OVERLAY_ROOT_KEY: &str = "server.overlay_root";
+
+    pub const TTS_ENGINE_DEFAULT: &str = "tts.engine_default";
+    pub const TTS_MASTER_VOLUME: &str = "tts.master_volume";
+    pub const TTS_MASTER_PITCH: &str = "tts.master_pitch";
+    pub const TTS_MASTER_SPEED: &str = "tts.master_speed";
+    pub const TTS_MAX_QUEUE_LEN: &str = "tts.max_queue_len";
+    pub const TTS_MAX_PER_USER_PENDING: &str = "tts.max_per_user_pending";
+    pub const TTS_LENGTH_CAP: &str = "tts.length_cap";
+    pub const TTS_PIPELINE_CONFIG_JSON: &str = "tts.pipeline_config_json";
 }
 
 const VALID_BIND_ADDRESSES: &[&str] = &["127.0.0.1", "0.0.0.0", "::1", "::"];
@@ -123,6 +132,87 @@ pub trait SettingsRepo: Send + Sync {
         self.get_string(reserved_keys::SERVER_OVERLAY_ROOT_KEY)
             .await
     }
+
+    async fn tts_engine_default(&self) -> Result<Option<String>, StorageError> {
+        self.get_string(reserved_keys::TTS_ENGINE_DEFAULT).await
+    }
+
+    async fn set_tts_engine_default(&self, engine_id: &str) -> Result<(), StorageError> {
+        self.set_string(reserved_keys::TTS_ENGINE_DEFAULT, engine_id)
+            .await
+    }
+
+    async fn tts_master_volume(&self) -> Result<f32, StorageError> {
+        let raw = self.get_string(reserved_keys::TTS_MASTER_VOLUME).await?;
+        Ok(raw.as_deref().and_then(|s| s.parse().ok()).unwrap_or(1.0))
+    }
+
+    async fn set_tts_master_volume(&self, volume: f32) -> Result<(), StorageError> {
+        self.set_string(reserved_keys::TTS_MASTER_VOLUME, &volume.to_string())
+            .await
+    }
+
+    async fn tts_master_pitch(&self) -> Result<f32, StorageError> {
+        let raw = self.get_string(reserved_keys::TTS_MASTER_PITCH).await?;
+        Ok(raw.as_deref().and_then(|s| s.parse().ok()).unwrap_or(0.0))
+    }
+
+    async fn set_tts_master_pitch(&self, semitones: f32) -> Result<(), StorageError> {
+        self.set_string(reserved_keys::TTS_MASTER_PITCH, &semitones.to_string())
+            .await
+    }
+
+    async fn tts_master_speed(&self) -> Result<f32, StorageError> {
+        let raw = self.get_string(reserved_keys::TTS_MASTER_SPEED).await?;
+        Ok(raw.as_deref().and_then(|s| s.parse().ok()).unwrap_or(1.0))
+    }
+
+    async fn set_tts_master_speed(&self, multiplier: f32) -> Result<(), StorageError> {
+        self.set_string(reserved_keys::TTS_MASTER_SPEED, &multiplier.to_string())
+            .await
+    }
+
+    async fn tts_max_queue_len(&self) -> Result<u32, StorageError> {
+        let raw = self.get_string(reserved_keys::TTS_MAX_QUEUE_LEN).await?;
+        Ok(raw.as_deref().and_then(|s| s.parse().ok()).unwrap_or(100))
+    }
+
+    async fn set_tts_max_queue_len(&self, len: u32) -> Result<(), StorageError> {
+        self.set_string(reserved_keys::TTS_MAX_QUEUE_LEN, &len.to_string())
+            .await
+    }
+
+    async fn tts_max_per_user_pending(&self) -> Result<u32, StorageError> {
+        let raw = self
+            .get_string(reserved_keys::TTS_MAX_PER_USER_PENDING)
+            .await?;
+        Ok(raw.as_deref().and_then(|s| s.parse().ok()).unwrap_or(5))
+    }
+
+    async fn set_tts_max_per_user_pending(&self, limit: u32) -> Result<(), StorageError> {
+        self.set_string(reserved_keys::TTS_MAX_PER_USER_PENDING, &limit.to_string())
+            .await
+    }
+
+    async fn tts_length_cap(&self) -> Result<u32, StorageError> {
+        let raw = self.get_string(reserved_keys::TTS_LENGTH_CAP).await?;
+        Ok(raw.as_deref().and_then(|s| s.parse().ok()).unwrap_or(500))
+    }
+
+    async fn set_tts_length_cap(&self, cap: u32) -> Result<(), StorageError> {
+        self.set_string(reserved_keys::TTS_LENGTH_CAP, &cap.to_string())
+            .await
+    }
+
+    async fn tts_pipeline_config_json(&self) -> Result<Option<String>, StorageError> {
+        self.get_string(reserved_keys::TTS_PIPELINE_CONFIG_JSON)
+            .await
+    }
+
+    async fn set_tts_pipeline_config_json(&self, json: &str) -> Result<(), StorageError> {
+        self.set_string(reserved_keys::TTS_PIPELINE_CONFIG_JSON, json)
+            .await
+    }
 }
 
 #[cfg(test)]
@@ -149,6 +239,14 @@ mod tests {
         assert!(!SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_KEY.is_empty());
         assert!(!SERVER_OVERLAY_CORS_ANY_ORIGIN_KEY.is_empty());
         assert!(!SERVER_OVERLAY_ROOT_KEY.is_empty());
+        assert!(!TTS_ENGINE_DEFAULT.is_empty());
+        assert!(!TTS_MASTER_VOLUME.is_empty());
+        assert!(!TTS_MASTER_PITCH.is_empty());
+        assert!(!TTS_MASTER_SPEED.is_empty());
+        assert!(!TTS_MAX_QUEUE_LEN.is_empty());
+        assert!(!TTS_MAX_PER_USER_PENDING.is_empty());
+        assert!(!TTS_LENGTH_CAP.is_empty());
+        assert!(!TTS_PIPELINE_CONFIG_JSON.is_empty());
     }
 
     #[test]
@@ -169,6 +267,14 @@ mod tests {
             SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_KEY,
             SERVER_OVERLAY_CORS_ANY_ORIGIN_KEY,
             SERVER_OVERLAY_ROOT_KEY,
+            TTS_ENGINE_DEFAULT,
+            TTS_MASTER_VOLUME,
+            TTS_MASTER_PITCH,
+            TTS_MASTER_SPEED,
+            TTS_MAX_QUEUE_LEN,
+            TTS_MAX_PER_USER_PENDING,
+            TTS_LENGTH_CAP,
+            TTS_PIPELINE_CONFIG_JSON,
         ];
         let unique: std::collections::HashSet<&str> = keys.iter().copied().collect();
         assert_eq!(unique.len(), keys.len());

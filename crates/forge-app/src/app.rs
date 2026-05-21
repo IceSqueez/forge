@@ -4767,14 +4767,14 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> SidebarV2<'a, M
             active: is_home,
             on_press: Message::Navigate(Screen::Home),
         },
-        NavItem::Section("Audience"),
+        NavItem::Section("AUDIENCE"),
         NavItem::Leaf {
             icon: ICON_CHAT,
             label: "Chat",
             active: is_live_chat,
             on_press: Message::Navigate(Screen::LiveChat),
         },
-        NavItem::Section("Automation"),
+        NavItem::Section("AUTOMATION"),
         NavItem::Leaf {
             icon: ICON_LIGHTNING,
             label: "Actions",
@@ -4805,7 +4805,7 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> SidebarV2<'a, M
             active: is_globals,
             on_press: Message::Navigate(Screen::Globals),
         },
-        NavItem::Section("Connections"),
+        NavItem::Section("CONNECTIONS"),
         NavItem::Group {
             icon: ICON_BROADCAST,
             label: "Platforms",

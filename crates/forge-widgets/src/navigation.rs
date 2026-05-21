@@ -248,7 +248,7 @@ fn render_nav_item<'a, Msg: 'a + Clone>(
 fn nav_section_label<'a, Msg: 'a>(label: &'a str, palette: &ForgePalette) -> Element<'a, Msg> {
     let color = palette.text_faint;
     container(
-        text(label.to_uppercase())
+        text(label)
             .size(FONT_XS)
             .font(font(FontRole::Monospace))
             .color(color),

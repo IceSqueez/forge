@@ -39,6 +39,7 @@ pub enum EventFeedMsg {
     PauseToggled,
     Cleared,
     ExportRequested,
+    ExportResult(Result<std::path::PathBuf, String>),
     AutoScrollToggled,
     ReplayRequested(EventId),
     ReplayResult(Result<(), String>),
@@ -352,7 +353,36 @@ pub fn handle_event_feed_msg(
             state.ev_rate.clear();
             iced::Task::none()
         }
-        EventFeedMsg::ExportRequested => iced::Task::none(),
+        EventFeedMsg::ExportRequested => {
+            let events: Vec<Event> = state.events.iter().cloned().collect();
+            iced::Task::perform(
+                async move {
+                    let Some(handle) = rfd::AsyncFileDialog::new()
+                        .add_filter("JSON", &["json"])
+                        .set_file_name("forge-events.json")
+                        .save_file()
+                        .await
+                    else {
+                        return Err("export cancelled".to_string());
+                    };
+                    let path = handle.path().to_path_buf();
+                    let json = serde_json::to_string_pretty(&events).map_err(|e| e.to_string())?;
+                    tokio::fs::write(&path, json)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    Ok(path)
+                },
+                |r| Message::EventFeed(EventFeedMsg::ExportResult(r)),
+            )
+        }
+        EventFeedMsg::ExportResult(Ok(path)) => {
+            tracing::info!(path = %path.display(), "event feed exported");
+            iced::Task::none()
+        }
+        EventFeedMsg::ExportResult(Err(e)) => {
+            tracing::warn!(error = %e, "event feed export failed");
+            iced::Task::none()
+        }
         EventFeedMsg::AutoScrollToggled => {
             state.auto_scroll = !state.auto_scroll;
             iced::Task::none()

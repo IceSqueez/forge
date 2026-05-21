@@ -1237,6 +1237,36 @@ fn handle_actions_msg(app: &mut App, sub: ActionsMsg) -> Task<Message> {
             tracing::warn!(error = %e, "delete action failed");
             Task::none()
         }
+        ActionsMsg::DuplicateAction(id) => {
+            let dp = Arc::clone(&app.backend);
+            Task::perform(
+                async move {
+                    let original = dp
+                        .action_repo()
+                        .get(id)
+                        .await
+                        .map_err(|e| e.to_string())?
+                        .ok_or_else(|| "source action not found".to_string())?;
+                    let mut copy = original.clone();
+                    copy.id = forge_types::ActionId::new();
+                    copy.name = format!("{} (copy)", original.name);
+                    dp.action_repo()
+                        .save(&copy)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    Ok(copy.id)
+                },
+                |r| Message::Actions(ActionsMsg::ActionDuplicated(r)),
+            )
+        }
+        ActionsMsg::ActionDuplicated(Ok(new_id)) => {
+            tracing::info!(action_id = %new_id, "action duplicated");
+            Task::done(Message::Actions(ActionsMsg::LoadRequested))
+        }
+        ActionsMsg::ActionDuplicated(Err(e)) => {
+            tracing::warn!(error = %e, "duplicate action failed");
+            Task::none()
+        }
         ActionsMsg::OpenAddActionModal => {
             Task::done(Message::AddAction(AddActionMsg::OpenRequested))
         }

@@ -258,8 +258,11 @@ fn detail_pane<'a>(
         Message::Actions(ActionsMsg::TestTrigger(action_id)),
         palette,
     );
-    // TODO: open duplicate flow when implemented
-    let dup_btn = forge_widgets::secondary_button("Duplicate", Message::Noop, palette);
+    let dup_btn = forge_widgets::secondary_button(
+        "Duplicate",
+        Message::Actions(ActionsMsg::DuplicateAction(action_id)),
+        palette,
+    );
 
     let btn_row = row![test_run_btn, dup_btn].spacing(6);
 

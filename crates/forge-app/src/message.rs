@@ -102,6 +102,8 @@ pub enum ActionsMsg {
     TestTrigger(ActionId),
     DeleteAction(ActionId),
     ActionDeleted(Result<(), String>),
+    DuplicateAction(ActionId),
+    ActionDuplicated(Result<ActionId, String>),
     OpenAddActionModal,
     OpenAddTriggerModal(ActionId),
     SearchChanged(String),

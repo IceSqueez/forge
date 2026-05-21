@@ -43,6 +43,8 @@ pub const ICON_ERASER: char = '\u{F331}';
 pub const ICON_DOTS_VERTICAL: char = '\u{F5D3}';
 pub const ICON_CIRCLE_DASHED: char = '\u{F2E6}';
 pub const ICON_LOADER: char = '\u{F116}';
+pub const ICON_X_CIRCLE: char = '\u{F62A}';
+pub const ICON_ROTATE_CCW: char = '\u{F131}';
 
 /// Maps an icon name (Tabler-style kebab-case) to its bundled Bootstrap-font
 /// codepoint. Returns `ICON_INFO_CIRCLE` for unknown names so missing icons
@@ -92,6 +94,8 @@ pub fn bootstrap_icon_for(name: &str) -> char {
         "eraser" => ICON_ERASER,
         "dots-vertical" => ICON_DOTS_VERTICAL,
         "circle-dashed" => ICON_CIRCLE_DASHED,
+        "x-circle" => ICON_X_CIRCLE,
+        "rotate-ccw" | "undo" | "arrow-counterclockwise" => ICON_ROTATE_CCW,
         "device-desktop" | "layout" | "stack-2" | "record" => ICON_BROADCAST,
         "brand-twitch" | "twitch" | "brand-obs" | "obs" => ICON_BROADCAST,
         "rss" => ICON_ACTIVITY,

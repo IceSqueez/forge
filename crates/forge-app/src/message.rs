@@ -1,12 +1,13 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 
 use forge_speak_queue::SpeakEvent;
 use forge_types::ClipId;
 
 use forge_events::Event;
 use forge_obs::ObsClient;
-use forge_widgets::{DeviceLabel, PickerItem};
+use forge_widgets::{DeviceLabel, PickerItem, ToastKind};
 
 use forge_platform_core::{HeaderAction, HealthDelta};
 use forge_storage::GlobalEntry;
@@ -265,6 +266,17 @@ pub enum TtsFiltersMsg {
 }
 
 #[derive(Debug, Clone)]
+pub enum ToastMsg {
+    Fired {
+        kind: ToastKind,
+        message: String,
+        duration_ms: u64,
+    },
+    Dismissed(u64),
+    Tick(Instant),
+}
+
+#[derive(Debug, Clone)]
 pub enum TtsTriggersMsg {
     CommandEnabledToggled(bool),
     ChannelPointsEnabledToggled(bool),
@@ -287,6 +299,7 @@ pub enum TtsMsg {
 #[derive(Debug, Clone)]
 pub enum Message {
     Navigate(Screen),
+    Toast(ToastMsg),
     Sidebar(SidebarMsg),
     Settings(SettingsMsg),
     Home(HomeMsg),

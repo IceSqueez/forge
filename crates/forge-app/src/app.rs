@@ -26,8 +26,8 @@ use forge_widgets::icons::{
 };
 use forge_widgets::tokens::{FONT_BODY, FONT_LG, FONT_MD, FONT_SM, FONT_XS};
 use forge_widgets::{
-    FontRole, ForgePalette, NavChild, NavItem, Radius, SidebarV2, ThemeId, TitleBarV2, font,
-    page_shell, radius, sidebar_v2, title_bar_v2,
+    FontRole, ForgePalette, NavChild, NavItem, Radius, SidebarV2, ThemeId, TitleBarV2, ToastQueue,
+    font, page_shell, radius, sidebar_v2, title_bar_v2, toast_viewport,
 };
 use iced::{Element, Length, Subscription, Task, Theme};
 
@@ -49,7 +49,7 @@ use crate::integration_detail::{
 use crate::live_chat::{CHAT_LOG_MAX, LiveChatState, chat_row_from_event, live_chat_view};
 use crate::message::{
     ActionsMsg, GlobalsMsg, HomeMsg, HomeStatsData, ObsClientRef, PlatformId, QueuesMsg,
-    SettingsMsg, SidebarMsg,
+    SettingsMsg, SidebarMsg, ToastMsg,
 };
 use crate::queues_view::{QueuesState, load_queues, queues_view};
 use crate::script_editor::{
@@ -113,6 +113,7 @@ pub struct App {
     pub screen: Screen,
     pub theme: Theme,
     pub palette: ForgePalette,
+    pub toast_queue: ToastQueue<Message>,
     pub backend: Arc<SqliteBackend>,
     pub bus: Arc<EventBus>,
     pub storage_offline: bool,
@@ -174,6 +175,7 @@ impl App {
             screen: initial,
             theme,
             palette,
+            toast_queue: ToastQueue::new(),
             backend,
             bus: EventBus::new(Arc::new(NullEventLogRepo)),
             storage_offline,
@@ -237,6 +239,7 @@ impl Default for App {
             screen: Screen::Home,
             theme,
             palette,
+            toast_queue: ToastQueue::new(),
             backend,
             bus: EventBus::new(Arc::new(NullEventLogRepo)),
             storage_offline: false,
@@ -749,6 +752,25 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             handle_settings_audio_msg(&mut app.settings_audio, backend, sub)
         }
         Message::Tts(sub) => handle_tts_msg(app, sub),
+        Message::Toast(sub) => match sub {
+            ToastMsg::Fired {
+                kind,
+                message,
+                duration_ms,
+            } => {
+                let duration = std::time::Duration::from_millis(duration_ms);
+                app.toast_queue.push(kind, message, None, duration);
+                Task::none()
+            }
+            ToastMsg::Dismissed(id) => {
+                app.toast_queue.dismiss(id);
+                Task::none()
+            }
+            ToastMsg::Tick(now) => {
+                app.toast_queue.prune_expired(now);
+                Task::none()
+            }
+        },
         Message::Noop => Task::none(),
     }
 }
@@ -5029,7 +5051,13 @@ pub fn view(app: &App) -> Element<'_, Message> {
         other => coming_soon_view(format!("{other:?}"), palette),
     };
 
-    page_shell(title_bar, None, sidebar, content)
+    let main_view = page_shell(title_bar, None, sidebar, content);
+    let toast_layer = toast_viewport(
+        &app.toast_queue,
+        |id| Message::Toast(ToastMsg::Dismissed(id)),
+        palette,
+    );
+    iced::widget::stack![main_view, toast_layer].into()
 }
 
 fn format_short_duration(d: time::Duration) -> String {
@@ -5315,6 +5343,9 @@ pub fn subscription(app: &App) -> Subscription<Message> {
         Subscription::none()
     };
 
+    let toast_tick = iced::time::every(std::time::Duration::from_millis(200))
+        .map(|instant| Message::Toast(crate::message::ToastMsg::Tick(instant)));
+
     if let Some(state) = app.integration_detail.as_ref() {
         Subscription::batch([
             bus,
@@ -5322,9 +5353,10 @@ pub fn subscription(app: &App) -> Subscription<Message> {
             server_tick,
             soundboard_keys,
             tts_events,
+            toast_tick,
         ])
     } else {
-        Subscription::batch([bus, server_tick, soundboard_keys, tts_events])
+        Subscription::batch([bus, server_tick, soundboard_keys, tts_events, toast_tick])
     }
 }
 
@@ -5574,6 +5606,7 @@ mod tests {
             screen: Screen::Home,
             theme,
             palette,
+            toast_queue: ToastQueue::new(),
             backend: sqlite,
             bus,
             storage_offline: false,
@@ -5872,6 +5905,7 @@ mod tests {
             screen: Screen::Actions,
             theme,
             palette,
+            toast_queue: ToastQueue::new(),
             backend: Arc::clone(&dp),
             bus: EventBus::new(Arc::new(NullEventLogRepo)),
             storage_offline: false,

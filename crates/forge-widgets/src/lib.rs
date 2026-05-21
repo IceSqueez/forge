@@ -23,6 +23,7 @@ pub mod sections;
 pub mod server;
 pub mod status;
 pub mod theme;
+pub mod toast;
 pub mod tokens;
 pub mod volume_slider;
 
@@ -56,8 +57,8 @@ pub use icons::{
     ICON_CLOCK, ICON_COPY, ICON_DOWNLOAD, ICON_EXTERNAL_LINK, ICON_EYE, ICON_EYE_SLASH,
     ICON_FILE_CODE, ICON_FILE_IMAGE, ICON_FOLDER, ICON_FOLDER_OPEN, ICON_GEAR, ICON_GLOBE,
     ICON_GRID, ICON_HASH, ICON_HOME, ICON_INFO_CIRCLE, ICON_JOURNAL, ICON_KEYBOARD, ICON_LIGHTNING,
-    ICON_LOCK, ICON_MUSIC_NOTE, ICON_PEOPLE, ICON_PLUS, ICON_REFRESH, ICON_REPLAY, ICON_SERVER,
-    ICON_SPEAKER, ICON_TERMINAL, ICON_X,
+    ICON_LOCK, ICON_MUSIC_NOTE, ICON_PEOPLE, ICON_PLUS, ICON_REFRESH, ICON_REPLAY, ICON_ROTATE_CCW,
+    ICON_SERVER, ICON_SPEAKER, ICON_TERMINAL, ICON_X, ICON_X_CIRCLE,
 };
 pub use inputs::{input_padding, search_input, select, text_input_field};
 pub use integration::{
@@ -92,5 +93,6 @@ pub use server::{
 };
 pub use status::{StatusVariant, platform_badge, role_badge, status_dot, status_pill};
 pub use theme::{catppuccin_mocha, latte, palette_for_theme, tokyo_night_storm};
+pub use toast::{Toast, ToastAction, ToastKind, ToastQueue, toast_viewport};
 pub use tokens::{Density, FontRole, Radius, Spacing, ThemeId, font, load_fonts, radius, spacing};
 pub use volume_slider::volume_slider;

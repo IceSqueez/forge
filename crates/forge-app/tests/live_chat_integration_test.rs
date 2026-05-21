@@ -27,6 +27,7 @@ fn test_app() -> App {
         screen: Screen::Home,
         theme,
         palette,
+        toast_queue: forge_widgets::ToastQueue::new(),
         backend,
         bus: EventBus::new(Arc::new(NullEventLogRepo)),
         storage_offline: false,

@@ -26,8 +26,9 @@ use forge_widgets::icons::{
 };
 use forge_widgets::tokens::{FONT_BODY, FONT_LG, FONT_MD, FONT_SM, FONT_XS};
 use forge_widgets::{
-    FontRole, ForgePalette, NavChild, NavItem, Radius, SidebarV2, ThemeId, TitleBarV2, ToastQueue,
-    font, page_shell, radius, sidebar_v2, title_bar_v2, toast_viewport,
+    BreadcrumbCrumb, FontRole, ForgePalette, NavChild, NavItem, Radius, SidebarV2, ThemeId,
+    ToastQueue, app_footer, breadcrumb, font, page_shell, radius, sidebar_v2, title_bar,
+    toast_viewport,
 };
 use iced::{Element, Length, Subscription, Task, Theme};
 
@@ -4972,16 +4973,20 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let palette = &app.palette;
 
     let elapsed = app.boot_time.elapsed().unwrap_or_default();
+    let version = env!("CARGO_PKG_VERSION");
 
-    let title_bar = title_bar_v2(
+    let chrome_title = title_bar("main", version, palette);
+    let (conn_n, conn_total) = subsystem_connectivity(app);
+    let uptime_str = format_uptime(elapsed);
+    let chrome_footer = app_footer(conn_n, conn_total, &uptime_str, version, palette);
+
+    let crumb_bar = breadcrumb(
+        vec![BreadcrumbCrumb {
+            icon: Some(breadcrumb_icon_for(&app.screen)),
+            label: screen_label(&app.screen),
+            on_press: None::<Message>,
+        }],
         palette,
-        TitleBarV2 {
-            breadcrumb_icon: breadcrumb_icon_for(&app.screen),
-            breadcrumb_label: screen_label(&app.screen),
-            connected: subsystem_connectivity(app),
-            uptime: format_uptime(elapsed),
-            _msg: std::marker::PhantomData,
-        },
     );
 
     let sidebar = sidebar_v2(
@@ -4991,7 +4996,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         },
     );
 
-    let content: Element<'_, Message> = match &app.screen {
+    let screen_content: Element<'_, Message> = match &app.screen {
         Screen::Home => home_view(app, palette),
         Screen::LiveChat => live_chat_view(&app.live_chat, palette),
         Screen::Globals => globals_view(app, palette),
@@ -5051,7 +5056,12 @@ pub fn view(app: &App) -> Element<'_, Message> {
         other => coming_soon_view(format!("{other:?}"), palette),
     };
 
-    let main_view = page_shell(title_bar, None, sidebar, content);
+    let content: Element<'_, Message> = iced::widget::column![crumb_bar, screen_content]
+        .height(Length::Fill)
+        .width(Length::Fill)
+        .into();
+
+    let main_view = page_shell(chrome_title, None, sidebar, content, Some(chrome_footer));
     let toast_layer = toast_viewport(
         &app.toast_queue,
         |id| Message::Toast(ToastMsg::Dismissed(id)),

@@ -1,6 +1,7 @@
 #![doc = "Pure design-system kit: Tier 1 widget builders + ForgePalette theme tokens."]
 
 pub mod actions;
+pub mod breadcrumb;
 pub mod buttons;
 pub mod cards;
 pub mod charts;
@@ -32,6 +33,7 @@ pub use actions::{
     ModalProps, NodeProps, NodeStatus, SubActionProps, ToggleProps, TriggerCardProps,
     category_chip, modal, sub_action_card, toggle, tree_node_with_status, variable_chip,
 };
+pub use breadcrumb::{BreadcrumbCrumb, breadcrumb};
 pub use buttons::{
     destructive_button, ghost_button, icon_button, primary_button, primary_button_small,
     primary_button_with_icon_right, secondary_button,
@@ -67,9 +69,7 @@ pub use integration::{
     integration_health_grid, integration_quick_actions_grid,
     integration_quick_actions_grid_with_hint,
 };
-pub use layout::{
-    TitleBarV2, breadcrumb, page_shell, title_bar, title_bar_v2, title_bar_with_logo, toolbar,
-};
+pub use layout::{app_footer, page_shell, title_bar, toolbar};
 pub use navigation::{
     NavChild, NavItem, SIDEBAR_WIDTH, SidebarV2, sidebar, sidebar_section, sidebar_v2, tree_node,
 };

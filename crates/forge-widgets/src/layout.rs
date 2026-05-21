@@ -5,88 +5,74 @@ use iced::{
 
 use crate::icons::{BOOTSTRAP_FONT, ICON_CLOCK};
 use crate::palette::ForgePalette;
-use crate::tokens::{BORDER_THIN, Density, Radius, Spacing, radius, spacing};
+use crate::status::status_dot;
+use crate::tokens::{BORDER_THIN, FONT_BODY, FONT_XS, FontRole, Radius, font, radius};
 
-pub fn title_bar<'a, Msg: 'a>(
-    title: &str,
-    actions: Vec<Element<'a, Msg>>,
-    palette: &ForgePalette,
-) -> Element<'a, Msg> {
-    let shell = palette.shell;
-    let text_primary = palette.text_primary;
-
-    let title_text = text(title.to_owned()).size(14).color(text_primary);
-
-    let mut action_row: Row<'a, Msg> = row([]).spacing(4);
-    for action in actions {
-        action_row = action_row.push(action);
-    }
-
-    let content = row![title_text, Space::new().width(Length::Fill), action_row,]
-        .align_y(iced::Alignment::Center)
-        .padding([0, 12]);
-
-    container(content)
-        .width(Length::Fill)
-        .height(48)
-        .style(move |_theme: &iced::Theme| iced::widget::container::Style {
-            background: Some(iced::Background::Color(shell)),
-            ..Default::default()
-        })
-        .into()
-}
-
-pub(crate) fn logo_box<'a, Msg: 'a>(letter: char, palette: &ForgePalette) -> Element<'a, Msg> {
+fn logo_box<'a, Msg: 'a>(palette: &ForgePalette) -> Element<'a, Msg> {
     let bg = palette.brand;
     let fg = palette.shell;
-    container(text(letter.to_string()).size(11).color(fg))
-        .width(18)
-        .height(18)
-        .align_x(iced::Alignment::Center)
-        .align_y(iced::Alignment::Center)
-        .style(move |_theme: &iced::Theme| iced::widget::container::Style {
-            background: Some(iced::Background::Color(bg)),
-            border: Border {
-                radius: radius(Radius::Sm).into(),
-                ..Border::default()
-            },
-            ..Default::default()
-        })
-        .into()
+    container(text("F").size(10).color(fg).font(iced::Font {
+        weight: iced::font::Weight::Bold,
+        ..iced::Font::DEFAULT
+    }))
+    .width(16)
+    .height(16)
+    .align_x(iced::Alignment::Center)
+    .align_y(iced::Alignment::Center)
+    .style(move |_theme: &iced::Theme| iced::widget::container::Style {
+        background: Some(iced::Background::Color(bg)),
+        border: Border {
+            radius: radius(Radius::Sm).into(),
+            ..Border::default()
+        },
+        ..Default::default()
+    })
+    .into()
 }
 
-pub fn title_bar_with_logo<'a, Msg: 'a>(
-    title: &str,
-    subtitle: &str,
-    logo_letter: char,
-    actions: Vec<Element<'a, Msg>>,
-    palette: &ForgePalette,
+pub fn title_bar<'a, Msg: 'a>(
+    profile_name: &str,
+    version: &str,
+    palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
     let shell = palette.shell;
     let border_color = palette.border_regular;
     let text_primary = palette.text_primary;
     let text_muted = palette.text_muted;
-    let horiz = spacing(Spacing::Md, Density::Cozy);
+    let text_faint = palette.text_faint;
 
-    let logo = logo_box(logo_letter, palette);
-    let title_text = text(title.to_owned()).size(14).color(text_primary);
-    let subtitle_text = text(format!("— {subtitle}")).size(12).color(text_muted);
+    let logo = logo_box(palette);
+    let forge_label = text("Forge")
+        .size(FONT_BODY)
+        .color(text_primary)
+        .font(iced::Font {
+            weight: iced::font::Weight::Medium,
+            ..iced::Font::DEFAULT
+        });
+    let sep = text(" · ")
+        .size(FONT_BODY)
+        .color(text_faint)
+        .font(font(FontRole::Monospace));
+    let profile = text(profile_name.to_owned())
+        .size(FONT_BODY)
+        .color(text_muted);
 
-    let mut action_row: Row<'a, Msg> = row([]).spacing(4);
-    for action in actions {
-        action_row = action_row.push(action);
-    }
-
-    let left = row![logo, title_text, subtitle_text]
+    let left = row![logo, forge_label, sep, profile]
         .spacing(6)
         .align_y(iced::Alignment::Center);
 
-    let content = row![left, Space::new().width(Length::Fill), action_row]
+    let version_label = text(version.to_owned())
+        .size(FONT_XS)
+        .color(text_faint)
+        .font(font(FontRole::Monospace));
+
+    let content = row![left, Space::new().width(Length::Fill), version_label]
         .align_y(iced::Alignment::Center)
-        .padding([10, horiz]);
+        .padding([0, 14]);
 
     container(content)
         .width(Length::Fill)
+        .height(32)
         .style(move |_theme: &iced::Theme| iced::widget::container::Style {
             background: Some(iced::Background::Color(shell)),
             border: Border {
@@ -99,69 +85,66 @@ pub fn title_bar_with_logo<'a, Msg: 'a>(
         .into()
 }
 
-pub struct TitleBarV2<'a, Msg> {
-    pub breadcrumb_icon: char,
-    pub breadcrumb_label: &'a str,
-    pub connected: (u8, u8),
-    pub uptime: String,
-    pub _msg: std::marker::PhantomData<Msg>,
-}
-
-pub fn title_bar_v2<'a, Msg: 'a>(
+pub fn app_footer<'a, Msg: 'a>(
+    connected: u8,
+    total: u8,
+    uptime: &str,
+    version: &str,
     palette: &'a ForgePalette,
-    props: TitleBarV2<'a, Msg>,
 ) -> Element<'a, Msg> {
     let shell = palette.shell;
     let border_color = palette.border_regular;
-    let text_primary = palette.text_primary;
-    let text_secondary = palette.text_secondary;
     let text_muted = palette.text_muted;
     let text_faint = palette.text_faint;
+    let text_secondary = palette.text_secondary;
     let success = palette.success;
+    let mono = font(FontRole::Monospace);
 
-    let icon_el = text(props.breadcrumb_icon)
-        .font(BOOTSTRAP_FONT)
-        .size(13)
-        .color(text_primary);
-    let label_el = text(props.breadcrumb_label).size(12).color(text_primary);
-    let left = row![icon_el, label_el]
+    let forge_label = text("forge").size(FONT_XS).color(text_muted).font(mono);
+    let dot_sep = text("·").size(FONT_XS).color(text_faint).font(mono);
+    let version_label = text(format!("v{version}"))
+        .size(FONT_XS)
+        .color(text_faint)
+        .font(mono);
+    let left = row![forge_label, dot_sep, version_label]
         .spacing(8)
         .align_y(iced::Alignment::Center);
 
-    let is_empty = props.connected.0 == 0;
-    let dot_color = if is_empty { text_muted } else { success };
-    let connected_text = if is_empty {
-        "No connections".to_owned()
-    } else {
-        format_connected(props.connected)
-    };
-    let dot = crate::status::status_dot(dot_color, 7.0);
-    let connected_label = text(connected_text).size(11).color(text_secondary);
-    let connected_pill = row![dot, connected_label]
+    let dot_color = if connected == 0 { text_faint } else { success };
+    let dot_el = status_dot(dot_color, 6.0);
+    let conn_label = text(format!("{connected}/{total} connected"))
+        .size(FONT_XS)
+        .color(text_secondary)
+        .font(mono);
+    let conn_row = row![dot_el, conn_label]
         .spacing(6)
         .align_y(iced::Alignment::Center);
 
-    let sep = text("·").size(11).color(text_faint);
+    let sep2 = text("·").size(FONT_XS).color(text_faint).font(mono);
 
     let clock_icon = text(ICON_CLOCK)
         .font(BOOTSTRAP_FONT)
-        .size(12)
-        .color(text_muted);
-    let uptime_label = text(props.uptime).size(11).color(text_muted);
+        .size(10)
+        .color(text_faint);
+    let uptime_label = text(format!("{uptime} uptime"))
+        .size(FONT_XS)
+        .color(text_secondary)
+        .font(mono);
     let uptime_row = row![clock_icon, uptime_label]
         .spacing(5)
         .align_y(iced::Alignment::Center);
 
-    let right = row![connected_pill, sep, uptime_row]
-        .spacing(14)
+    let right = row![conn_row, sep2, uptime_row]
+        .spacing(12)
         .align_y(iced::Alignment::Center);
 
     let content = row![left, Space::new().width(Length::Fill), right]
         .align_y(iced::Alignment::Center)
-        .padding([10, 16]);
+        .padding([0, 14]);
 
     container(content)
         .width(Length::Fill)
+        .height(24)
         .style(move |_theme: &iced::Theme| iced::widget::container::Style {
             background: Some(iced::Background::Color(shell)),
             border: Border {
@@ -172,10 +155,6 @@ pub fn title_bar_v2<'a, Msg: 'a>(
             ..Default::default()
         })
         .into()
-}
-
-fn format_connected(connected: (u8, u8)) -> String {
-    format!("Connected ({}/{})", connected.0, connected.1)
 }
 
 pub fn toolbar<'a, Msg: 'a>(
@@ -214,99 +193,43 @@ pub fn toolbar<'a, Msg: 'a>(
         .into()
 }
 
-pub fn breadcrumb<'a, Msg: 'a + Clone>(
-    segments: Vec<(String, Option<Msg>)>,
-    palette: &ForgePalette,
-) -> Element<'a, Msg> {
-    let text_muted = palette.text_muted;
-    let text_secondary = palette.text_secondary;
-    let sep_color = palette.text_faint;
-
-    let mut content: Row<'a, Msg> = row([]).spacing(4).align_y(iced::Alignment::Center);
-    let last_idx = segments.len().saturating_sub(1);
-
-    for (i, (label, on_press)) in segments.into_iter().enumerate() {
-        let segment_element: Element<'a, Msg> = match on_press {
-            Some(msg) => {
-                let fg = text_muted;
-                let fg_hover = text_secondary;
-                iced::widget::button(text(label).size(12).color(fg))
-                    .on_press(msg)
-                    .padding(0)
-                    .style(move |_theme: &iced::Theme, status| {
-                        let fg_actual = match status {
-                            iced::widget::button::Status::Hovered => fg_hover,
-                            _ => fg,
-                        };
-                        iced::widget::button::Style {
-                            background: None,
-                            text_color: fg_actual,
-                            border: iced::Border::default(),
-                            shadow: iced::Shadow::default(),
-                            snap: false,
-                        }
-                    })
-                    .into()
-            }
-            None => text(label).size(12).color(text_secondary).into(),
-        };
-
-        content = content.push(segment_element);
-
-        if i < last_idx {
-            // Tabler ti-chevron-right deferred until icon font wiring
-            content = content.push(text(" / ").size(12).color(sep_color));
-        }
-    }
-
-    content.into()
-}
-
 pub fn page_shell<'a, Msg: 'a>(
     title_bar_el: Element<'a, Msg>,
     toolbar_el: Option<Element<'a, Msg>>,
     sidebar_el: Element<'a, Msg>,
     content_el: Element<'a, Msg>,
+    footer_el: Option<Element<'a, Msg>>,
 ) -> Element<'a, Msg> {
     let body = row![sidebar_el, content_el].height(Length::Fill);
-
     let mut shell_col = column![title_bar_el];
     if let Some(tb) = toolbar_el {
         shell_col = shell_col.push(tb);
     }
     shell_col = shell_col.push(body);
-
+    if let Some(footer) = footer_el {
+        shell_col = shell_col.push(footer);
+    }
     shell_col.into()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::icons::ICON_HOME;
     use crate::palette::CATPPUCCIN_MOCHA;
 
     #[test]
-    fn title_bar_compiles_with_no_actions() {
-        let _: Element<'_, ()> = title_bar("Dashboard", vec![], &CATPPUCCIN_MOCHA);
+    fn title_bar_compiles() {
+        let _: Element<'_, ()> = title_bar("main", "0.1.0-alpha.13", &CATPPUCCIN_MOCHA);
     }
 
     #[test]
-    fn title_bar_compiles_with_actions() {
-        let action: Element<'_, ()> = iced::widget::button("X").on_press(()).into();
-        let _: Element<'_, ()> = title_bar("Settings", vec![action], &CATPPUCCIN_MOCHA);
+    fn app_footer_connected_compiles() {
+        let _: Element<'_, ()> = app_footer(3, 8, "2h 14m", "0.1.0-alpha.13", &CATPPUCCIN_MOCHA);
     }
 
     #[test]
-    fn title_bar_with_logo_compiles() {
-        let _: Element<'_, ()> =
-            title_bar_with_logo("forge", "Home", 'S', vec![], &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn title_bar_with_logo_compiles_with_actions() {
-        let action: Element<'_, ()> = iced::widget::button("X").on_press(()).into();
-        let _: Element<'_, ()> =
-            title_bar_with_logo("forge", "Settings", 'S', vec![action], &CATPPUCCIN_MOCHA);
+    fn app_footer_disconnected_compiles() {
+        let _: Element<'_, ()> = app_footer(0, 8, "0s", "0.1.0-alpha.13", &CATPPUCCIN_MOCHA);
     }
 
     #[test]
@@ -322,86 +245,20 @@ mod tests {
     }
 
     #[test]
-    fn breadcrumb_compiles_with_static_terminal() {
-        let segments = vec![
-            ("Home".to_string(), Some(())),
-            ("Actions".to_string(), None),
-        ];
-        let _: Element<'_, ()> = breadcrumb(segments, &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn breadcrumb_compiles_with_all_clickable() {
-        let segments = vec![
-            ("Home".to_string(), Some(())),
-            ("Platforms".to_string(), Some(())),
-            ("Twitch".to_string(), Some(())),
-        ];
-        let _: Element<'_, ()> = breadcrumb(segments, &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn breadcrumb_compiles_with_empty_segments() {
-        let _: Element<'_, ()> = breadcrumb(vec![], &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn page_shell_without_toolbar_compiles() {
+    fn page_shell_without_toolbar_or_footer_compiles() {
         let tb: Element<'_, ()> = iced::widget::text("title").into();
         let sidebar: Element<'_, ()> = iced::widget::text("sidebar").into();
         let content: Element<'_, ()> = iced::widget::text("content").into();
-        let _: Element<'_, ()> = page_shell(tb, None, sidebar, content);
+        let _: Element<'_, ()> = page_shell(tb, None, sidebar, content, None);
     }
 
     #[test]
-    fn page_shell_with_toolbar_compiles() {
+    fn page_shell_with_toolbar_and_footer_compiles() {
         let tb: Element<'_, ()> = iced::widget::text("title").into();
         let bar: Element<'_, ()> = iced::widget::text("toolbar").into();
         let sidebar: Element<'_, ()> = iced::widget::text("sidebar").into();
         let content: Element<'_, ()> = iced::widget::text("content").into();
-        let _: Element<'_, ()> = page_shell(tb, Some(bar), sidebar, content);
-    }
-
-    #[test]
-    fn format_connected_all_connected() {
-        assert_eq!(format_connected((8, 8)), "Connected (8/8)");
-    }
-
-    #[test]
-    fn format_connected_partial() {
-        assert_eq!(format_connected((2, 5)), "Connected (2/5)");
-    }
-
-    #[test]
-    fn format_connected_none() {
-        assert_eq!(format_connected((0, 3)), "Connected (0/3)");
-    }
-
-    #[test]
-    fn title_bar_v2_compiles() {
-        let _: Element<'_, ()> = title_bar_v2(
-            &CATPPUCCIN_MOCHA,
-            TitleBarV2 {
-                breadcrumb_icon: ICON_HOME,
-                breadcrumb_label: "Home",
-                connected: (8, 8),
-                uptime: "2h 14m".to_string(),
-                _msg: std::marker::PhantomData,
-            },
-        );
-    }
-
-    #[test]
-    fn title_bar_v2_partial_connected_compiles() {
-        let _: Element<'_, ()> = title_bar_v2(
-            &CATPPUCCIN_MOCHA,
-            TitleBarV2 {
-                breadcrumb_icon: ICON_HOME,
-                breadcrumb_label: "Settings",
-                connected: (3, 5),
-                uptime: "0h 4m".to_string(),
-                _msg: std::marker::PhantomData,
-            },
-        );
+        let footer: Element<'_, ()> = iced::widget::text("footer").into();
+        let _: Element<'_, ()> = page_shell(tb, Some(bar), sidebar, content, Some(footer));
     }
 }

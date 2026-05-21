@@ -1,8 +1,15 @@
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
 use serde::{Deserialize, Serialize};
 
 use crate::error::AudioError;
 
 pub use forge_types::OutputDevice;
+
+const DEVICE_CACHE_TTL: Duration = Duration::from_secs(5);
+
+static DEVICE_CACHE: Mutex<Option<(Instant, Vec<DeviceInfo>)>> = Mutex::new(None);
 
 /// Opaque stable handle for an output device. Backend-defined string under the hood —
 /// callers must not parse it.
@@ -27,8 +34,34 @@ pub struct DeviceInfo {
 }
 
 /// Enumerate output devices via the default cpal host. Returns an empty Vec on hosts
-/// with no audio support (CI builds without an audio runtime).
+/// with no audio support. Results cached for 5s — cpal enumeration is expensive
+/// on Linux (PipeWire round-trip) and gets called repeatedly by the audio device
+/// picker subscription.
 pub fn list_output_devices() -> Result<Vec<DeviceInfo>, AudioError> {
+    if let Ok(guard) = DEVICE_CACHE.lock()
+        && let Some((stamp, ref devices)) = *guard
+        && stamp.elapsed() < DEVICE_CACHE_TTL
+    {
+        return Ok(devices.clone());
+    }
+    let fresh = enumerate_uncached()?;
+    if let Ok(mut guard) = DEVICE_CACHE.lock() {
+        *guard = Some((Instant::now(), fresh.clone()));
+    }
+    Ok(fresh)
+}
+
+/// Bypass the 5s cache. Used by the "Refresh devices" button so the user always
+/// sees the live device list after plugging/unplugging hardware.
+pub fn refresh_output_devices() -> Result<Vec<DeviceInfo>, AudioError> {
+    let fresh = enumerate_uncached()?;
+    if let Ok(mut guard) = DEVICE_CACHE.lock() {
+        *guard = Some((Instant::now(), fresh.clone()));
+    }
+    Ok(fresh)
+}
+
+fn enumerate_uncached() -> Result<Vec<DeviceInfo>, AudioError> {
     use cpal::traits::{DeviceTrait, HostTrait};
 
     let host = cpal::default_host();

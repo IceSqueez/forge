@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use forge_audio::list_output_devices;
+use forge_audio::{list_output_devices, refresh_output_devices};
 use forge_storage_sqlite::SqliteBackend;
 use forge_widgets::icons::{BOOTSTRAP_FONT, ICON_SPEAKER};
 use forge_widgets::tokens::{
@@ -53,6 +53,16 @@ fn forge_audio_to_widget_label(d: forge_audio::DeviceInfo) -> DeviceLabel {
 async fn enumerate_devices() -> Result<Vec<DeviceLabel>, String> {
     tokio::task::spawn_blocking(|| {
         list_output_devices()
+            .map(|devs| devs.into_iter().map(forge_audio_to_widget_label).collect())
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+async fn enumerate_devices_uncached() -> Result<Vec<DeviceLabel>, String> {
+    tokio::task::spawn_blocking(|| {
+        refresh_output_devices()
             .map(|devs| devs.into_iter().map(forge_audio_to_widget_label).collect())
             .map_err(|e| e.to_string())
     })
@@ -114,7 +124,7 @@ pub fn handle_settings_audio_msg(
         SettingsAudioMsg::RefreshDevices => {
             state.devices_loading = true;
             state.devices_error = None;
-            Task::perform(enumerate_devices(), |r| {
+            Task::perform(enumerate_devices_uncached(), |r| {
                 Message::SettingsAudio(SettingsAudioMsg::DevicesLoaded(r))
             })
         }

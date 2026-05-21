@@ -64,6 +64,22 @@ pub fn radius(r: Radius) -> f32 {
     }
 }
 
+/// Design tokens for modal viewport width. Matches theme.css `--modal-sm/md/lg`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModalSize {
+    Sm,
+    Md,
+    Lg,
+}
+
+pub fn modal_width(s: ModalSize) -> f32 {
+    match s {
+        ModalSize::Sm => 440.0,
+        ModalSize::Md => 540.0,
+        ModalSize::Lg => 640.0,
+    }
+}
+
 pub const BORDER_THIN: f32 = 1.0;
 pub const BORDER_ACCENT: f32 = 1.0;
 
@@ -136,6 +152,13 @@ mod tests {
     fn spacing_spacious_increases() {
         assert_eq!(spacing(Spacing::Md, Density::Spacious), 19);
         assert_eq!(spacing(Spacing::Sm, Density::Spacious), 12);
+    }
+
+    #[test]
+    fn modal_width_matches_design_tokens() {
+        assert_eq!(modal_width(ModalSize::Sm), 440.0);
+        assert_eq!(modal_width(ModalSize::Md), 540.0);
+        assert_eq!(modal_width(ModalSize::Lg), 640.0);
     }
 
     #[test]

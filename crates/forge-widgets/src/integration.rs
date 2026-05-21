@@ -12,7 +12,7 @@ use iced::{
 };
 
 use crate::{
-    BOOTSTRAP_FONT,
+    icons::{Icon, tabler_icon},
     palette::ForgePalette,
     tokens::{
         BORDER_THIN, Density, FONT_BODY, FONT_LG, FONT_MD, FONT_SM, FONT_XS, FontRole, Radius,
@@ -84,13 +84,9 @@ fn icon_box<'a, Msg: 'a>(
     let box_bg = palette.surface_overlay;
     let r = radius(Radius::Lg);
 
-    let glyph = crate::icons::bootstrap_icon_for(&icon_str);
-    let icon_text = iced::widget::text(glyph.to_string())
-        .font(BOOTSTRAP_FONT)
-        .size(24.0)
-        .color(icon_color);
+    let icon_el = tabler_icon(Icon::from_name(&icon_str), 24.0, icon_color);
 
-    container(icon_text)
+    container(icon_el)
         .width(48.0)
         .height(48.0)
         .align_x(Alignment::Center)
@@ -810,10 +806,7 @@ fn content_list_item_row<'a, Msg: 'a>(
         palette.text_faint
     };
 
-    let icon_elem = text(crate::icons::bootstrap_icon_for(item.icon.as_str()).to_string())
-        .font(BOOTSTRAP_FONT)
-        .size(FONT_BODY)
-        .color(icon_color);
+    let icon_elem = tabler_icon(Icon::from_name(item.icon.as_str()), FONT_BODY, icon_color);
 
     let name_elem: Element<'a, Msg> = if item.monospace_name {
         text(item.name.clone())
@@ -861,10 +854,11 @@ fn key_value_row_elem<'a, Msg: 'a>(
     item: &'a KeyValueRow,
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
-    let icon_elem = text(crate::icons::bootstrap_icon_for(item.icon.as_str()).to_string())
-        .font(BOOTSTRAP_FONT)
-        .size(FONT_BODY)
-        .color(palette.text_secondary);
+    let icon_elem = tabler_icon(
+        Icon::from_name(item.icon.as_str()),
+        FONT_BODY,
+        palette.text_secondary,
+    );
 
     let name_elem = text(item.name.clone())
         .font(font(FontRole::Monospace))
@@ -887,10 +881,10 @@ fn key_value_row_elem<'a, Msg: 'a>(
     }
 
     if let Some(action) = &item.action {
-        let ch = match action {
-            RowAction::Play => '\u{25B6}',
+        let icon = match action {
+            RowAction::Play => Icon::PlayerPlay,
         };
-        row = row.push(text(ch.to_string()).size(FONT_SM).color(palette.success));
+        row = row.push(tabler_icon(icon, FONT_SM, palette.success));
     }
 
     plain_row_wrapper(row.into(), palette.elevated)
@@ -1129,11 +1123,7 @@ fn panel_header_row<'a, Msg: 'a>(
     count: Option<&str>,
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
-    let glyph = crate::icons::bootstrap_icon_for(icon_str);
-    let icon_elem = text(glyph.to_string())
-        .font(BOOTSTRAP_FONT)
-        .size(FONT_BODY)
-        .color(palette.text_secondary);
+    let icon_elem = tabler_icon(Icon::from_name(icon_str), FONT_BODY, palette.text_secondary);
 
     let left = Row::new()
         .spacing(spacing(Spacing::Xs, Density::Cozy) as f32)
@@ -1405,11 +1395,7 @@ fn trailing_token_elem<'a, Msg: 'a>(
                 .into()
         }
         TrailingToken::Icon(icon) => {
-            text(crate::icons::bootstrap_icon_for(icon.as_str()).to_string())
-                .font(BOOTSTRAP_FONT)
-                .size(FONT_SM)
-                .color(icon_color)
-                .into()
+            tabler_icon(Icon::from_name(icon.as_str()), FONT_SM, icon_color)
         }
         TrailingToken::Label(label) => text(label.clone())
             .font(font(FontRole::Monospace))
@@ -1516,12 +1502,7 @@ fn quick_actions_section_header<'a, Msg: 'a>(
     hint: Option<&'a str>,
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
-    use crate::icons::ICON_LIGHTNING;
-
-    let icon_elem = text(ICON_LIGHTNING.to_string())
-        .font(BOOTSTRAP_FONT)
-        .size(FONT_BODY)
-        .color(palette.warning);
+    let icon_elem = tabler_icon(Icon::Bolt, FONT_BODY, palette.warning);
 
     let title_elem = text("Quick actions")
         .size(FONT_BODY)
@@ -1587,11 +1568,7 @@ fn quick_action_btn<'a, Msg: Clone + 'a>(
     };
 
     let icon_elem: Element<'a, Msg> =
-        text(crate::icons::bootstrap_icon_for(action.icon.as_str()).to_string())
-            .font(BOOTSTRAP_FONT)
-            .size(FONT_SM)
-            .color(icon_color)
-            .into();
+        tabler_icon(Icon::from_name(action.icon.as_str()), FONT_SM, icon_color);
 
     let label_elem: Element<'a, Msg> = text(action.label.clone())
         .size(FONT_SM)

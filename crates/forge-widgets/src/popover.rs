@@ -3,7 +3,7 @@ use iced::{
     widget::{button, column, container, row, text},
 };
 
-use crate::icons::{BOOTSTRAP_FONT, bootstrap_icon_for};
+use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
 use crate::tokens::{Density, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spacing};
 
@@ -11,7 +11,7 @@ pub enum MenuItem<Msg> {
     Item {
         label: String,
         on_press: Msg,
-        icon: Option<&'static str>,
+        icon: Option<Icon>,
         shortcut: Option<String>,
         color: Option<Color>,
         disabled: bool,
@@ -29,7 +29,7 @@ pub enum MenuPlacement {
 }
 
 pub struct RowAction<Msg> {
-    pub icon: &'static str,
+    pub icon: Icon,
     pub label: String,
     pub on_press: Msg,
     pub color: Option<Color>,
@@ -92,7 +92,7 @@ fn header_el<'a, Msg: 'a>(label: String, palette: &'a ForgePalette) -> Element<'
 fn item_el<'a, Msg: Clone + 'a>(
     label: String,
     on_press: Msg,
-    icon: Option<&'static str>,
+    icon: Option<Icon>,
     shortcut: Option<String>,
     item_color: Option<Color>,
     disabled: bool,
@@ -116,15 +116,8 @@ fn item_el<'a, Msg: Clone + 'a>(
 
     let mut children: Vec<Element<'a, Msg>> = Vec::new();
 
-    if let Some(icon_name) = icon {
-        let icon_char = bootstrap_icon_for(icon_name);
-        children.push(
-            text(icon_char.to_string())
-                .font(BOOTSTRAP_FONT)
-                .size(FONT_SM)
-                .color(icon_color)
-                .into(),
-        );
+    if let Some(ic) = icon {
+        children.push(tabler_icon(ic, FONT_SM, icon_color));
     }
 
     children.push(
@@ -233,7 +226,7 @@ fn panel_el<'a, Msg: Clone + 'a>(
 }
 
 pub fn menu_button<'a, Msg: Clone + 'a>(
-    trigger_icon: &'static str,
+    trigger_icon: Icon,
     open: bool,
     on_toggle: Msg,
     _on_dismiss: Msg,
@@ -243,19 +236,13 @@ pub fn menu_button<'a, Msg: Clone + 'a>(
 ) -> Element<'a, Msg> {
     let surface_overlay = palette.surface_overlay;
     let faint = palette.text_faint;
-    let icon_char = bootstrap_icon_for(trigger_icon);
 
     let trigger_btn: Element<'a, Msg> = button(
-        container(
-            text(icon_char.to_string())
-                .font(BOOTSTRAP_FONT)
-                .size(FONT_SM)
-                .color(faint),
-        )
-        .width(Length::Fixed(28.0))
-        .height(Length::Fixed(28.0))
-        .align_x(Alignment::Center)
-        .align_y(Alignment::Center),
+        container(tabler_icon(trigger_icon, FONT_SM, faint))
+            .width(Length::Fixed(28.0))
+            .height(Length::Fixed(28.0))
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center),
     )
     .on_press(on_toggle)
     .padding(0)
@@ -309,7 +296,6 @@ pub fn row_actions<'a, Msg: Clone + 'a>(
     let btns: Vec<Element<'a, Msg>> = actions
         .into_iter()
         .map(|action| {
-            let icon_char = bootstrap_icon_for(action.icon);
             let default_color = if hovered {
                 action.color.unwrap_or(palette.text_secondary)
             } else {
@@ -318,13 +304,7 @@ pub fn row_actions<'a, Msg: Clone + 'a>(
             let hover_color = action.color.unwrap_or(primary);
 
             button(
-                container(
-                    text(icon_char.to_string())
-                        .font(BOOTSTRAP_FONT)
-                        .size(FONT_SM)
-                        .color(default_color),
-                )
-                .padding(Padding {
+                container(tabler_icon(action.icon, FONT_SM, default_color)).padding(Padding {
                     top: xs,
                     right: xs,
                     bottom: xs,
@@ -362,6 +342,7 @@ pub fn row_actions<'a, Msg: Clone + 'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::icons::Icon;
 
     #[test]
     fn menu_item_divider_is_constructable() {
@@ -379,7 +360,7 @@ mod tests {
         let i: MenuItem<u32> = MenuItem::Item {
             label: "Rename".to_string(),
             on_press: 1,
-            icon: Some("edit"),
+            icon: Some(Icon::InfoCircle),
             shortcut: None,
             color: None,
             disabled: false,

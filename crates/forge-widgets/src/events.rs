@@ -5,7 +5,7 @@ use iced::{
 };
 
 use crate::{
-    icons::{BOOTSTRAP_FONT, ICON_LIGHTNING, ICON_REPLAY},
+    icons::{Icon, tabler_icon},
     palette::ForgePalette,
     tokens::{FONT_BODY, FONT_XS, FontRole, Radius, font, radius},
 };
@@ -236,10 +236,7 @@ pub fn causation_chip<'a, Msg: Clone + 'a>(
         a: 0.10,
     };
 
-    let icon = iced::widget::text(ICON_LIGHTNING.to_string())
-        .size(FONT_XS)
-        .color(brand)
-        .font(BOOTSTRAP_FONT);
+    let icon = tabler_icon(Icon::Bolt, FONT_XS, brand);
 
     let name = iced::widget::text(label)
         .size(FONT_XS)
@@ -504,10 +501,7 @@ pub fn replay_button<'a, Msg: Clone + 'a>(
         a: 0.08,
     };
 
-    let icon = iced::widget::text(ICON_REPLAY.to_string())
-        .size(FONT_BODY)
-        .color(brand)
-        .font(BOOTSTRAP_FONT);
+    let icon = tabler_icon(Icon::Repeat, FONT_BODY, brand);
 
     let label = iced::widget::text("Replay this event")
         .size(FONT_XS)

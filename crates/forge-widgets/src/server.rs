@@ -10,11 +10,7 @@ use iced::{
 
 use crate::{
     events::color_for_source,
-    icons::{
-        BOOTSTRAP_FONT, ICON_ALERT_TRIANGLE, ICON_CHECK_CIRCLE, ICON_COPY, ICON_EXTERNAL_LINK,
-        ICON_EYE, ICON_EYE_SLASH, ICON_FILE_CODE, ICON_FILE_IMAGE, ICON_FOLDER, ICON_FOLDER_OPEN,
-        ICON_INFO_CIRCLE, ICON_KEYBOARD, ICON_LOCK, ICON_REFRESH, ICON_X,
-    },
+    icons::{Icon, tabler_icon},
     palette::ForgePalette,
     tokens::{BORDER_THIN, FONT_BODY, FONT_SM, FONT_XS, FontRole, Radius, font, radius},
 };
@@ -138,12 +134,12 @@ pub fn bearer_token_display<'a, Msg: Clone + 'a>(
         mask_token(token)
     };
 
-    let eye_char = if revealed { ICON_EYE_SLASH } else { ICON_EYE };
+    let eye_icon = if revealed { Icon::EyeOff } else { Icon::Eye };
 
     let icon_normal = palette.text_faint;
     let icon_hover = palette.text_secondary;
 
-    let eye_btn = button(text(eye_char.to_string()).font(BOOTSTRAP_FONT).size(13))
+    let eye_btn = button(tabler_icon(eye_icon, 13.0, icon_normal))
         .on_press(on_toggle_reveal)
         .padding([2, 4])
         .style(ghost_icon_style(icon_normal, icon_hover));
@@ -169,7 +165,7 @@ pub fn bearer_token_display<'a, Msg: Clone + 'a>(
 
     let copy_btn = button(
         row![
-            text(ICON_COPY.to_string()).font(BOOTSTRAP_FONT).size(12),
+            tabler_icon(Icon::Copy, 12.0, copy_normal),
             text("COPY").font(font(FontRole::Monospace)).size(FONT_XS),
         ]
         .spacing(5)
@@ -183,7 +179,7 @@ pub fn bearer_token_display<'a, Msg: Clone + 'a>(
 
     let regen_btn = button(
         row![
-            text(ICON_REFRESH.to_string()).font(BOOTSTRAP_FONT).size(12),
+            tabler_icon(Icon::Refresh, 12.0, warn_color),
             text("REGENERATE")
                 .font(font(FontRole::Monospace))
                 .size(FONT_XS),
@@ -200,10 +196,7 @@ pub fn bearer_token_display<'a, Msg: Clone + 'a>(
         .align_y(Alignment::Center);
 
     let warning_row = row![
-        text(ICON_ALERT_TRIANGLE.to_string())
-            .font(BOOTSTRAP_FONT)
-            .size(11)
-            .color(palette.warning),
+        tabler_icon(Icon::AlertTriangle, 11.0, palette.warning),
         text("Regenerating disconnects all clients")
             .size(FONT_XS)
             .color(palette.text_faint),
@@ -384,7 +377,7 @@ pub fn client_table_row<'a, Msg: Clone + 'a>(
     )
     .width(Length::Fixed(70.0));
 
-    let x_btn = button(text(ICON_X.to_string()).font(BOOTSTRAP_FONT).size(13))
+    let x_btn = button(tabler_icon(Icon::X, 13.0, palette.text_faint))
         .on_press(on_disconnect)
         .padding([2u16, 3u16])
         .style(ghost_icon_style(palette.text_faint, palette.text_secondary));
@@ -436,10 +429,10 @@ fn badge_color(badge: BindBadge, palette: &ForgePalette) -> Color {
     }
 }
 
-fn badge_icon(badge: BindBadge) -> char {
+fn badge_icon(badge: BindBadge) -> Icon {
     match badge {
-        BindBadge::Recommended => ICON_LOCK,
-        BindBadge::RequiresConfirmation => ICON_ALERT_TRIANGLE,
+        BindBadge::Recommended => Icon::Lock,
+        BindBadge::RequiresConfirmation => Icon::AlertTriangle,
     }
 }
 
@@ -503,10 +496,7 @@ fn bind_badge_element<'a, Msg: 'a>(badge: BindBadge, palette: &ForgePalette) -> 
     let surface = palette.surface_overlay;
 
     let badge_row = row![
-        text(badge_icon(badge).to_string())
-            .font(BOOTSTRAP_FONT)
-            .size(10.0f32)
-            .color(color),
+        tabler_icon(badge_icon(badge), 10.0, color),
         text(badge_label(badge))
             .font(font(FontRole::Monospace))
             .size(FONT_XS)
@@ -647,11 +637,11 @@ fn section_divider<'a, Msg: 'a>(border_color: Color) -> Element<'a, Msg> {
         .into()
 }
 
-fn bullet_icon_and_color(kind: BulletKind, p: ForgePalette) -> (char, Color) {
+fn bullet_icon_and_color(kind: BulletKind, p: ForgePalette) -> (Icon, Color) {
     match kind {
-        BulletKind::Check => (ICON_CHECK_CIRCLE, p.success),
-        BulletKind::Warning => (ICON_ALERT_TRIANGLE, p.warning),
-        BulletKind::Info => (ICON_INFO_CIRCLE, p.info),
+        BulletKind::Check => (Icon::CircleCheck, p.success),
+        BulletKind::Warning => (Icon::AlertTriangle, p.warning),
+        BulletKind::Info => (Icon::InfoCircle, p.info),
     }
 }
 
@@ -706,25 +696,20 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
         a: 0.12,
         ..p.warning
     };
-    let icon_box = container(
-        text(ICON_ALERT_TRIANGLE.to_string())
-            .font(BOOTSTRAP_FONT)
-            .size(20.0f32)
-            .color(p.warning),
-    )
-    .width(Length::Fixed(36.0))
-    .height(Length::Fixed(36.0))
-    .align_x(Alignment::Center)
-    .align_y(Alignment::Center)
-    .style(move |_| container::Style {
-        background: Some(iced::Background::Color(icon_bg)),
-        border: Border {
-            color: Color::TRANSPARENT,
-            width: 0.0,
-            radius: radius(Radius::Md).into(),
-        },
-        ..container::Style::default()
-    });
+    let icon_box = container(tabler_icon(Icon::AlertTriangle, 20.0, p.warning))
+        .width(Length::Fixed(36.0))
+        .height(Length::Fixed(36.0))
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center)
+        .style(move |_| container::Style {
+            background: Some(iced::Background::Color(icon_bg)),
+            border: Border {
+                color: Color::TRANSPARENT,
+                width: 0.0,
+                radius: radius(Radius::Md).into(),
+            },
+            ..container::Style::default()
+        });
 
     let title_row = row![
         icon_box,
@@ -757,12 +742,9 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
 
     let mut bullets_col = column![section_cap].spacing(0);
     for item in params.bullets {
-        let (icon_char, icon_color) = bullet_icon_and_color(item.kind, p);
+        let (icon, icon_color) = bullet_icon_and_color(item.kind, p);
         let bullet_row = row![
-            text(icon_char.to_string())
-                .font(BOOTSTRAP_FONT)
-                .size(14.0f32)
-                .color(icon_color),
+            tabler_icon(icon, 14.0, icon_color),
             text(item.text).size(FONT_SM).color(p.text_primary),
         ]
         .spacing(10)
@@ -832,10 +814,7 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
         .padding([14u16, 20u16]);
 
     let esc_hint = row![
-        text(ICON_KEYBOARD.to_string())
-            .font(BOOTSTRAP_FONT)
-            .size(12.0f32)
-            .color(p.text_faint),
+        tabler_icon(Icon::Keyboard, 12.0, p.text_faint),
         text("Esc")
             .font(font(FontRole::Monospace))
             .size(11.0f32)
@@ -989,28 +968,28 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
-fn entry_icon_and_color(kind: OverlayKind, p: ForgePalette) -> (char, Color) {
+fn entry_icon_and_color(kind: OverlayKind, p: ForgePalette) -> (Icon, Color) {
     match kind {
         OverlayKind::File {
             mime: FileMime::Html,
-        } => (ICON_FILE_CODE, p.bits),
+        } => (Icon::FileCode, p.bits),
         OverlayKind::File {
             mime: FileMime::Css,
-        } => (ICON_FILE_CODE, p.brand),
-        OverlayKind::File { mime: FileMime::Js } => (ICON_FILE_CODE, p.brand),
+        } => (Icon::FileCode, p.brand),
+        OverlayKind::File { mime: FileMime::Js } => (Icon::FileCode, p.brand),
         OverlayKind::File {
             mime: FileMime::Json,
-        } => (ICON_FILE_CODE, p.success),
+        } => (Icon::FileCode, p.success),
         OverlayKind::File {
             mime: FileMime::Image,
-        } => (ICON_FILE_IMAGE, p.info),
+        } => (Icon::Photo, p.info),
         OverlayKind::File {
             mime: FileMime::Wasm,
-        } => (ICON_FILE_CODE, p.text_muted),
+        } => (Icon::FileCode, p.text_muted),
         OverlayKind::File {
             mime: FileMime::Other,
-        } => (ICON_FILE_CODE, p.text_muted),
-        OverlayKind::Dir => (ICON_FOLDER, p.warning),
+        } => (Icon::FileCode, p.text_muted),
+        OverlayKind::Dir => (Icon::Folder, p.warning),
     }
 }
 
@@ -1070,10 +1049,7 @@ pub fn overlay_file_list<'a, Msg: Clone + 'a>(
 
     let header_row = row![
         row![
-            text(ICON_FOLDER.to_string())
-                .font(BOOTSTRAP_FONT)
-                .size(14.0f32)
-                .color(p.warning),
+            tabler_icon(Icon::Folder, 14.0, p.warning),
             text("Overlay host root")
                 .size(FONT_BODY)
                 .font(iced::Font {
@@ -1085,10 +1061,7 @@ pub fn overlay_file_list<'a, Msg: Clone + 'a>(
         .spacing(7)
         .align_y(Alignment::Center),
         Space::new().width(Length::Fill),
-        text(ICON_EXTERNAL_LINK.to_string())
-            .font(BOOTSTRAP_FONT)
-            .size(13.0f32)
-            .color(p.text_faint),
+        tabler_icon(Icon::ExternalLink, 13.0, p.text_faint),
     ]
     .align_y(Alignment::Center)
     .padding([10u16, 14u16]);
@@ -1116,18 +1089,14 @@ pub fn overlay_file_list<'a, Msg: Clone + 'a>(
         ..container::Style::default()
     });
 
-    let folder_open_btn = button(
-        text(ICON_FOLDER_OPEN.to_string())
-            .font(BOOTSTRAP_FONT)
-            .size(13.0f32),
-    )
-    .on_press(on_open_folder)
-    .padding([6u16, 8u16])
-    .style(outline_btn_style(
-        p.border_regular,
-        p.text_secondary,
-        p.text_primary,
-    ));
+    let folder_open_btn = button(tabler_icon(Icon::FolderOpen, 13.0, p.text_secondary))
+        .on_press(on_open_folder)
+        .padding([6u16, 8u16])
+        .style(outline_btn_style(
+            p.border_regular,
+            p.text_secondary,
+            p.text_primary,
+        ));
 
     let path_row = row![path_box, folder_open_btn]
         .spacing(6)
@@ -1152,16 +1121,13 @@ pub fn overlay_file_list<'a, Msg: Clone + 'a>(
     let mut file_row_els: Vec<Element<'a, Msg>> = Vec::with_capacity(params.entries.len());
 
     for (i, entry) in params.entries.iter().enumerate() {
-        let (icon_char, icon_color) = entry_icon_and_color(entry.kind, p);
+        let (entry_icon, icon_color) = entry_icon_and_color(entry.kind, p);
         let is_selected = effective_selected == Some(entry.name);
         let is_last = i == last_idx;
         let right = right_label_for_entry(entry);
 
         let row_content = row![
-            text(icon_char.to_string())
-                .font(BOOTSTRAP_FONT)
-                .size(12.0f32)
-                .color(icon_color),
+            tabler_icon(entry_icon, 12.0, icon_color),
             text(entry.name)
                 .font(font(FontRole::Monospace))
                 .size(FONT_SM)
@@ -1218,10 +1184,7 @@ pub fn overlay_file_list<'a, Msg: Clone + 'a>(
         .map(|name| browser_url(params.bind_address, name))
         .unwrap_or_else(|| format!("http://{}/", params.bind_address));
 
-    let copy_icon_el = text(ICON_COPY.to_string())
-        .font(BOOTSTRAP_FONT)
-        .size(12.0f32)
-        .color(p.text_faint);
+    let copy_icon_el = tabler_icon(Icon::Copy, 12.0, p.text_faint);
 
     let copy_btn: Element<'a, Msg> = if let Some(name) = effective_selected {
         button(copy_icon_el)

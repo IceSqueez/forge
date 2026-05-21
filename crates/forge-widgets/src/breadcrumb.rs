@@ -3,12 +3,12 @@ use iced::{
     widget::{container, row, text},
 };
 
-use crate::icons::BOOTSTRAP_FONT;
+use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
 use crate::tokens::{BORDER_THIN, FONT_SM};
 
 pub struct BreadcrumbCrumb<'a, Msg> {
-    pub icon: Option<char>,
+    pub icon: Option<Icon>,
     pub label: &'a str,
     pub on_press: Option<Msg>,
 }
@@ -30,13 +30,8 @@ pub fn breadcrumb<'a, Msg: 'a + Clone>(
         let is_last = i == last_idx;
         let label_color = if is_last { text_primary } else { text_muted };
 
-        if let Some(icon_char) = crumb.icon {
-            content = content.push(
-                text(icon_char.to_string())
-                    .font(BOOTSTRAP_FONT)
-                    .size(13)
-                    .color(text_faint),
-            );
+        if let Some(icon) = crumb.icon {
+            content = content.push(tabler_icon(icon, 13.0, text_faint));
         }
 
         let label_el: Element<'a, Msg> = match crumb.on_press {
@@ -88,13 +83,13 @@ pub fn breadcrumb<'a, Msg: 'a + Clone>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::icons::ICON_HOME;
+    use crate::icons::Icon;
     use crate::palette::CATPPUCCIN_MOCHA;
 
     #[test]
     fn breadcrumb_compiles_single_terminal() {
         let crumbs: Vec<BreadcrumbCrumb<'_, ()>> = vec![BreadcrumbCrumb {
-            icon: Some(ICON_HOME),
+            icon: Some(Icon::Home),
             label: "Home",
             on_press: None,
         }];
@@ -105,7 +100,7 @@ mod tests {
     fn breadcrumb_compiles_with_clickable_parent() {
         let crumbs: Vec<BreadcrumbCrumb<'_, ()>> = vec![
             BreadcrumbCrumb {
-                icon: Some(ICON_HOME),
+                icon: Some(Icon::Home),
                 label: "Actions",
                 on_press: Some(()),
             },

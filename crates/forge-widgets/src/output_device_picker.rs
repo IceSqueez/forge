@@ -3,7 +3,7 @@ use iced::{
     widget::{button, pick_list, row, text},
 };
 
-use crate::icons::{BOOTSTRAP_FONT, ICON_PLAY, ICON_REFRESH};
+use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
 use crate::tokens::{Density, FONT_SM, FontRole, Spacing, font, spacing};
 
@@ -68,23 +68,15 @@ pub fn output_device_picker<'a, Msg: 'a + Clone>(
     .width(Length::Fill);
 
     let p = *palette;
-    let refresh_btn = button(
-        text(ICON_REFRESH.to_string())
-            .font(BOOTSTRAP_FONT)
-            .size(12.0)
-            .color(p.text_secondary),
-    )
-    .on_press(on_refresh)
-    .padding([4.0, 8.0])
-    .style(move |_theme, status| icon_btn_style(&p, status));
+    let refresh_btn = button(tabler_icon(Icon::Refresh, 12.0, p.text_secondary))
+        .on_press(on_refresh)
+        .padding([4.0, 8.0])
+        .style(move |_theme, status| icon_btn_style(&p, status));
 
     let p2 = *palette;
     let test_btn = button(
         row![
-            text(ICON_PLAY.to_string())
-                .font(BOOTSTRAP_FONT)
-                .size(11.0)
-                .color(p2.text_secondary),
+            tabler_icon(Icon::PlayerPlay, 11.0, p2.text_secondary),
             text("Test")
                 .size(FONT_SM)
                 .color(p2.text_secondary)

@@ -19,11 +19,7 @@ use forge_runtime::{
 use forge_storage::{CredentialId, CredentialsRepo, DataProvider};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{Action, ActionId};
-use forge_widgets::icons::{
-    ICON_ACTIVITY, ICON_BROADCAST, ICON_CHAT, ICON_DOWNLOAD, ICON_GEAR, ICON_GRID, ICON_HASH,
-    ICON_HOME, ICON_JOURNAL, ICON_LIGHTNING, ICON_MUSIC_NOTE, ICON_PEOPLE, ICON_PLUS, ICON_SERVER,
-    ICON_SPEAKER, ICON_TERMINAL,
-};
+use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::tokens::{FONT_BODY, FONT_LG, FONT_MD, FONT_SM, FONT_XS};
 use forge_widgets::{
     BreadcrumbCrumb, FontRole, ForgePalette, NavChild, NavItem, Radius, Sidebar, ThemeId,
@@ -2122,7 +2118,7 @@ fn home_card_style(
 }
 
 fn home_nav_card<'a>(
-    icon: char,
+    icon: Icon,
     icon_color: iced::Color,
     title: &'a str,
     leading: impl Into<String>,
@@ -2130,31 +2126,25 @@ fn home_nav_card<'a>(
     on_press: Message,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    use forge_widgets::BOOTSTRAP_FONT;
     use iced::widget::{button, column, container, row, text};
     use iced::{Alignment, Background, Border, Color, Shadow};
 
     let leading: String = leading.into();
 
-    let icon_box = container(
-        text(icon.to_string())
-            .size(16.0)
-            .font(BOOTSTRAP_FONT)
-            .color(icon_color),
-    )
-    .width(30.0)
-    .height(30.0)
-    .align_x(Alignment::Center)
-    .align_y(Alignment::Center)
-    .style(move |_theme: &Theme| iced::widget::container::Style {
-        background: Some(Background::Color(palette.surface_overlay)),
-        border: Border {
-            radius: radius(Radius::Lg).into(),
-            color: iced::Color::TRANSPARENT,
-            width: 0.0,
-        },
-        ..iced::widget::container::Style::default()
-    });
+    let icon_box = container(tabler_icon(icon, 16.0, icon_color))
+        .width(30.0)
+        .height(30.0)
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center)
+        .style(move |_theme: &Theme| iced::widget::container::Style {
+            background: Some(Background::Color(palette.surface_overlay)),
+            border: Border {
+                radius: radius(Radius::Lg).into(),
+                color: iced::Color::TRANSPARENT,
+                width: 0.0,
+            },
+            ..iced::widget::container::Style::default()
+        });
 
     let description_row: Element<'a, Message> = if let Some(cta_text) = cta {
         row![
@@ -2348,12 +2338,11 @@ pub(crate) fn subsystem_connectivity(app: &App) -> (u8, u8) {
 }
 
 fn home_inline_button<'a>(
-    icon: char,
+    icon: Icon,
     label: &'a str,
     on_press: Message,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    use forge_widgets::BOOTSTRAP_FONT;
     use iced::widget::{button, row, text};
     use iced::{Alignment, Background, Border, Shadow};
 
@@ -2363,10 +2352,7 @@ fn home_inline_button<'a>(
     let r = radius(Radius::Md);
 
     let content = row![
-        text(icon.to_string())
-            .size(12.0)
-            .font(BOOTSTRAP_FONT)
-            .color(icon_color),
+        tabler_icon(icon, 12.0, icon_color),
         text(label).size(FONT_SM).color(text_color),
     ]
     .spacing(5.0)
@@ -2435,9 +2421,9 @@ fn home_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message
     ]
     .spacing(2.0);
 
-    let import_btn = home_inline_button(ICON_DOWNLOAD, "Import", Message::Noop, palette);
+    let import_btn = home_inline_button(Icon::Download, "Import", Message::Noop, palette);
     let new_action_btn = home_inline_button(
-        ICON_PLUS,
+        Icon::Plus,
         "New action",
         Message::Navigate(Screen::Actions),
         palette,
@@ -2508,7 +2494,7 @@ fn home_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message
     };
 
     let actions_card = home_nav_card(
-        ICON_LIGHTNING,
+        Icon::Bolt,
         palette.brand,
         "Actions",
         actions_leading,
@@ -2517,7 +2503,7 @@ fn home_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message
         palette,
     );
     let commands_card = home_nav_card(
-        ICON_TERMINAL,
+        Icon::Terminal,
         palette.info,
         "Commands",
         commands_leading,
@@ -2526,7 +2512,7 @@ fn home_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message
         palette,
     );
     let platforms_card = home_nav_card(
-        ICON_BROADCAST,
+        Icon::Broadcast,
         palette.random,
         "Platforms",
         platforms_leading,
@@ -2535,7 +2521,7 @@ fn home_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message
         palette,
     );
     let stream_apps_card = home_nav_card(
-        ICON_GRID,
+        Icon::LayoutGrid,
         palette.success,
         "Stream apps",
         stream_apps_leading,
@@ -2592,10 +2578,7 @@ fn home_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message
         .align_y(Alignment::Center);
 
         let body: Element<'a, Message> = if is_empty {
-            let icon = text(ICON_ACTIVITY.to_string())
-                .size(28.0)
-                .font(forge_widgets::BOOTSTRAP_FONT)
-                .color(palette.border_regular);
+            let icon = tabler_icon(Icon::Activity, 28.0, palette.border_regular);
             let primary = text("No events yet")
                 .size(FONT_BODY)
                 .color(palette.text_secondary);
@@ -3416,15 +3399,12 @@ fn actions_group_header<'a>(
     use iced::widget::{button, container, row, text};
 
     let p = *palette;
-    let chevron = if collapsed {
-        forge_widgets::ICON_CHEVRON_RIGHT
+    let chevron_icon = if collapsed {
+        Icon::ChevronRight
     } else {
-        forge_widgets::ICON_CHEVRON_DOWN
+        Icon::ChevronDown
     };
-    let chevron_el = text(chevron.to_string())
-        .size(11.0)
-        .color(p.text_faint)
-        .font(forge_widgets::BOOTSTRAP_FONT);
+    let chevron_el = tabler_icon(chevron_icon, 11.0, p.text_faint);
 
     let cat_el = text(group.category.display_name())
         .size(10.5)
@@ -4711,22 +4691,24 @@ fn coming_soon_view(screen_label: String, palette: &ForgePalette) -> Element<'st
     .into()
 }
 
-fn breadcrumb_icon_for(screen: &Screen) -> char {
+fn breadcrumb_icon_for(screen: &Screen) -> Icon {
     match screen {
-        Screen::Home => ICON_HOME,
-        Screen::Actions | Screen::ActionEditor(_) | Screen::Queues => ICON_LIGHTNING,
-        Screen::Commands => ICON_TERMINAL,
-        Screen::Platforms => ICON_BROADCAST,
-        Screen::StreamApps | Screen::Integrations | Screen::IntegrationDetail(_) => ICON_GRID,
-        Screen::LiveChat => ICON_CHAT,
-        Screen::EventFeed => ICON_ACTIVITY,
-        Screen::Globals => ICON_HASH,
-        Screen::Viewers => ICON_PEOPLE,
-        Screen::Settings(_) => ICON_GEAR,
-        Screen::Tts(_) => ICON_SPEAKER,
-        Screen::Soundboard => ICON_MUSIC_NOTE,
-        Screen::ScriptEditor => ICON_TERMINAL,
-        Screen::Server | Screen::Logs => ICON_GEAR,
+        Screen::Home => Icon::Home,
+        Screen::Actions | Screen::ActionEditor(_) | Screen::Queues => Icon::Bolt,
+        Screen::Commands => Icon::Terminal,
+        Screen::Platforms => Icon::Broadcast,
+        Screen::StreamApps | Screen::Integrations | Screen::IntegrationDetail(_) => {
+            Icon::LayoutGrid
+        }
+        Screen::LiveChat => Icon::MessageCircle,
+        Screen::EventFeed => Icon::Activity,
+        Screen::Globals => Icon::Variable,
+        Screen::Viewers => Icon::Users,
+        Screen::Settings(_) => Icon::Settings,
+        Screen::Tts(_) => Icon::Volume,
+        Screen::Soundboard => Icon::Music,
+        Screen::ScriptEditor => Icon::Terminal,
+        Screen::Server | Screen::Logs => Icon::Settings,
     }
 }
 
@@ -4774,52 +4756,52 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Sidebar<'a, Mes
 
     let items = vec![
         NavItem::Leaf {
-            icon: ICON_HOME,
+            icon: Icon::Home,
             label: "Home",
             active: is_home,
             on_press: Message::Navigate(Screen::Home),
         },
         NavItem::Section("AUDIENCE"),
         NavItem::Leaf {
-            icon: ICON_CHAT,
+            icon: Icon::MessageCircle,
             label: "Chat",
             active: is_live_chat,
             on_press: Message::Navigate(Screen::LiveChat),
         },
         NavItem::Section("AUTOMATION"),
         NavItem::Leaf {
-            icon: ICON_LIGHTNING,
+            icon: Icon::Bolt,
             label: "Actions",
             active: is_actions,
             on_press: Message::Navigate(Screen::Actions),
         },
         NavItem::Leaf {
-            icon: ICON_TERMINAL,
+            icon: Icon::Terminal,
             label: "Commands",
             active: is_commands,
             on_press: Message::Navigate(Screen::Commands),
         },
         NavItem::Leaf {
-            icon: ICON_JOURNAL,
+            icon: Icon::Notebook,
             label: "Queues",
             active: is_queues,
             on_press: Message::Navigate(Screen::Queues),
         },
         NavItem::Leaf {
-            icon: ICON_ACTIVITY,
+            icon: Icon::Activity,
             label: "Event feed",
             active: is_event_feed,
             on_press: Message::Navigate(Screen::EventFeed),
         },
         NavItem::Leaf {
-            icon: ICON_HASH,
+            icon: Icon::Variable,
             label: "Globals",
             active: is_globals,
             on_press: Message::Navigate(Screen::Globals),
         },
         NavItem::Section("CONNECTIONS"),
         NavItem::Group {
-            icon: ICON_BROADCAST,
+            icon: Icon::Broadcast,
             label: "Platforms",
             active: is_platforms,
             expanded: app.sidebar_state.platforms,
@@ -4852,7 +4834,7 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Sidebar<'a, Mes
             ],
         },
         NavItem::Group {
-            icon: ICON_GRID,
+            icon: Icon::LayoutGrid,
             label: "Stream apps",
             active: is_stream_apps,
             expanded: app.sidebar_state.stream_apps,
@@ -4873,19 +4855,19 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Sidebar<'a, Mes
             ],
         },
         NavItem::Leaf {
-            icon: ICON_MUSIC_NOTE,
+            icon: Icon::Music,
             label: "Soundboard",
             active: is_soundboard,
             on_press: Message::Navigate(Screen::Soundboard),
         },
         NavItem::Leaf {
-            icon: ICON_SPEAKER,
+            icon: Icon::Volume,
             label: "Text-to-Speech",
             active: is_tts,
             on_press: Message::Navigate(Screen::Tts(TtsSection::Dashboard)),
         },
         NavItem::Leaf {
-            icon: ICON_SERVER,
+            icon: Icon::Server,
             label: "WebSocket server",
             active: is_server,
             on_press: Message::Navigate(Screen::Server),
@@ -4895,7 +4877,7 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Sidebar<'a, Mes
     let bottom_items = vec![
         NavItem::Divider,
         NavItem::Leaf {
-            icon: ICON_GEAR,
+            icon: Icon::Settings,
             label: "Settings",
             active: is_settings,
             on_press: Message::Navigate(Screen::Settings(SettingsSection::Appearance)),
@@ -6317,19 +6299,19 @@ mod tests {
 
     #[test]
     fn breadcrumb_icon_for_home_returns_home_icon() {
-        assert_eq!(breadcrumb_icon_for(&Screen::Home), ICON_HOME);
+        assert_eq!(breadcrumb_icon_for(&Screen::Home), Icon::Home);
     }
 
     #[test]
     fn breadcrumb_icon_for_actions_returns_lightning() {
-        assert_eq!(breadcrumb_icon_for(&Screen::Actions), ICON_LIGHTNING);
+        assert_eq!(breadcrumb_icon_for(&Screen::Actions), Icon::Bolt);
     }
 
     #[test]
     fn breadcrumb_icon_for_settings_returns_gear() {
         assert_eq!(
             breadcrumb_icon_for(&Screen::Settings(SettingsSection::Appearance)),
-            ICON_GEAR
+            Icon::Settings
         );
     }
 

@@ -10,10 +10,7 @@ use forge_platform_twitch::{
 use forge_storage::{CredentialId, CredentialsRepo};
 use forge_types::OAuthToken;
 use forge_widgets::ForgePalette;
-use forge_widgets::icons::{
-    BOOTSTRAP_FONT, ICON_CHECK_CIRCLE, ICON_CLOCK, ICON_COPY, ICON_EXTERNAL_LINK, ICON_LOCK,
-    ICON_REFRESH,
-};
+use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::tokens::{FONT_BODY, FONT_SM, FONT_XS, FontRole, font};
 use tokio::sync::Mutex as TokioMutex;
 
@@ -120,11 +117,7 @@ pub enum TwitchPanelMsg {
 }
 
 pub fn twitch_reauth_banner<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
-    use forge_widgets::icons::ICON_ALERT_TRIANGLE;
-    let icon = text(ICON_ALERT_TRIANGLE.to_string())
-        .size(14.0)
-        .font(BOOTSTRAP_FONT)
-        .color(palette.warning);
+    let icon = tabler_icon(Icon::AlertTriangle, 14.0, palette.warning);
     let title = text("Twitch token is missing required scopes")
         .size(FONT_SM)
         .color(palette.text_primary);
@@ -241,10 +234,7 @@ fn twitch_header_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
 
 fn flow_intro<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     let title_row = row![
-        text(ICON_LOCK.to_string())
-            .size(14.0)
-            .font(BOOTSTRAP_FONT)
-            .color(palette.brand),
+        tabler_icon(Icon::Lock, 14.0, palette.brand),
         text("Authorize Forge on Twitch")
             .size(FONT_BODY)
             .color(palette.text_primary),
@@ -355,10 +345,7 @@ fn step_open_url<'a>(uri: &'a str, palette: &'a ForgePalette) -> Element<'a, Mes
     });
 
     let open_btn_content = row![
-        text(ICON_EXTERNAL_LINK.to_string())
-            .size(13.0)
-            .font(BOOTSTRAP_FONT)
-            .color(palette.brand),
+        tabler_icon(Icon::ExternalLink, 13.0, palette.brand),
         text("Open").size(FONT_SM).color(palette.brand),
     ]
     .spacing(5.0)
@@ -420,10 +407,7 @@ fn step_enter_code<'a>(
     });
 
     let copy_btn_content = column![
-        text(ICON_COPY.to_string())
-            .size(18.0)
-            .font(BOOTSTRAP_FONT)
-            .color(palette.text_secondary),
+        tabler_icon(Icon::Copy, 18.0, palette.text_secondary),
         text("Copy").size(FONT_XS).color(palette.text_secondary),
     ]
     .spacing(3.0)
@@ -452,10 +436,7 @@ fn step_enter_code<'a>(
         .unwrap_or_default();
     let timer_label = format_mm_ss(remaining);
     let timer_row = row![
-        text(ICON_CLOCK.to_string())
-            .size(13.0)
-            .font(BOOTSTRAP_FONT)
-            .color(palette.text_muted),
+        tabler_icon(Icon::Clock, 13.0, palette.text_muted),
         text("Expires in ").size(FONT_XS).color(palette.text_muted),
         text(timer_label)
             .size(FONT_XS)
@@ -464,10 +445,7 @@ fn step_enter_code<'a>(
         text("·").size(FONT_XS).color(palette.text_faint),
         button(
             row![
-                text(ICON_REFRESH.to_string())
-                    .size(12.0)
-                    .font(BOOTSTRAP_FONT)
-                    .color(palette.brand),
+                tabler_icon(Icon::Refresh, 12.0, palette.brand),
                 text("Get new code").size(FONT_XS).color(palette.brand),
             ]
             .spacing(4.0)
@@ -652,10 +630,7 @@ fn missing_client_id_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message>
 
 fn scopes_preview_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     let header_left = row![
-        text(ICON_CHECK_CIRCLE.to_string())
-            .size(13.0)
-            .font(BOOTSTRAP_FONT)
-            .color(palette.success),
+        tabler_icon(Icon::CircleCheck, 13.0, palette.success),
         text("Permissions Forge will request")
             .size(FONT_SM)
             .color(palette.text_primary),

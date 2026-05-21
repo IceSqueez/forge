@@ -3,10 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use forge_events::EventSource;
 use forge_widgets::{
     ForgePalette, Radius, bearer_token_display, color_for_source,
-    icons::{
-        BOOTSTRAP_FONT, ICON_COPY, ICON_EXTERNAL_LINK, ICON_FOLDER_OPEN, ICON_PEOPLE, ICON_REFRESH,
-        ICON_SERVER, ICON_X,
-    },
+    icons::{Icon, tabler_icon},
     section_header, throughput_sparkline,
     tokens::{FONT_BODY, FONT_MD, FONT_SM, FONT_XS, FontRole, font, radius},
 };
@@ -438,7 +435,7 @@ fn client_row_elem<'a>(
     )
     .width(Length::Fixed(70.0));
 
-    let x_btn = button(text(ICON_X.to_string()).font(BOOTSTRAP_FONT).size(13.0f32))
+    let x_btn = button(tabler_icon(Icon::X, 13.0, text_faint))
         .on_press(Message::Server(ServerScreenMsg::DisconnectClient(idx)))
         .padding([2u16, 3u16])
         .style(move |_theme: &iced::Theme, status| {
@@ -599,12 +596,8 @@ fn overlay_entry_row<'a>(
     let url_row: Option<Element<'a, Message>> = if selected {
         let copy_btn = button(
             row![
-                text(ICON_COPY.to_string())
-                    .font(BOOTSTRAP_FONT)
-                    .size(11.0f32),
-                text(ICON_EXTERNAL_LINK.to_string())
-                    .font(BOOTSTRAP_FONT)
-                    .size(11.0f32),
+                tabler_icon(Icon::Copy, 11.0, palette.text_secondary),
+                tabler_icon(Icon::ExternalLink, 11.0, palette.text_secondary),
             ]
             .spacing(3)
             .align_y(Alignment::Center),
@@ -676,25 +669,20 @@ fn header_card<'a>(
     let info = palette.info;
     let info_bg = Color { a: 0.12, ..info };
 
-    let icon_box = container(
-        text(ICON_SERVER.to_string())
-            .font(BOOTSTRAP_FONT)
-            .size(20.0f32)
-            .color(brand),
-    )
-    .width(Length::Fixed(48.0))
-    .height(Length::Fixed(48.0))
-    .align_x(Alignment::Center)
-    .align_y(Alignment::Center)
-    .style(move |_: &iced::Theme| container::Style {
-        background: Some(Background::Color(brand_bg)),
-        border: Border {
-            color: brand_border,
-            width: 1.0,
-            radius: radius(Radius::Lg).into(),
-        },
-        ..container::Style::default()
-    });
+    let icon_box = container(tabler_icon(Icon::Server, 20.0, brand))
+        .width(Length::Fixed(48.0))
+        .height(Length::Fixed(48.0))
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center)
+        .style(move |_: &iced::Theme| container::Style {
+            background: Some(Background::Color(brand_bg)),
+            border: Border {
+                color: brand_border,
+                width: 1.0,
+                radius: radius(Radius::Lg).into(),
+            },
+            ..container::Style::default()
+        });
 
     let ws_badge = container(
         text("WS + HTTP")
@@ -838,9 +826,7 @@ fn restart_btn<'a>(palette: &ForgePalette) -> Element<'a, Message> {
 
     button(
         row![
-            text(ICON_REFRESH.to_string())
-                .font(BOOTSTRAP_FONT)
-                .size(12.0f32),
+            tabler_icon(Icon::Refresh, 12.0, palette.success),
             text("Restart")
                 .font(font(FontRole::Monospace))
                 .size(FONT_XS),
@@ -905,9 +891,7 @@ fn copy_address_btn<'a>(palette: &ForgePalette) -> Element<'a, Message> {
 
     button(
         row![
-            text(ICON_COPY.to_string())
-                .font(BOOTSTRAP_FONT)
-                .size(12.0f32),
+            tabler_icon(Icon::Copy, 12.0, normal),
             text("COPY").font(font(FontRole::Monospace)).size(FONT_XS),
         ]
         .spacing(5)
@@ -1011,10 +995,7 @@ fn clients_panel<'a>(
         .color(text_faint);
 
     let header = row![
-        text(ICON_PEOPLE.to_string())
-            .font(BOOTSTRAP_FONT)
-            .size(14.0f32)
-            .color(text_faint),
+        tabler_icon(Icon::Users, 14.0, text_faint),
         text("Connected Clients")
             .font(font(FontRole::Monospace))
             .size(FONT_XS)
@@ -1114,9 +1095,7 @@ fn overlay_panel<'a>(
 
     let open_btn = button(
         row![
-            text(ICON_FOLDER_OPEN.to_string())
-                .font(BOOTSTRAP_FONT)
-                .size(12.0f32),
+            tabler_icon(Icon::FolderOpen, 12.0, text_muted),
             text("OPEN").font(font(FontRole::Monospace)).size(FONT_XS),
         ]
         .spacing(4)

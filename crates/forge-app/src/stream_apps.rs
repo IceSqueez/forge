@@ -1,6 +1,6 @@
 use forge_platform_core::{ConnectionState, IntegrationId};
 use forge_widgets::{
-    BOOTSTRAP_FONT, ForgePalette, ICON_BROADCAST, StatusVariant, section_header, status_pill,
+    ForgePalette, Icon, StatusVariant, section_header, status_pill, tabler_icon,
     tokens::{FONT_BODY, Radius, radius},
 };
 use iced::{
@@ -35,25 +35,20 @@ fn obs_card<'a>(state: &'a App, palette: &'a ForgePalette) -> Element<'a, Messag
 
     let icon_color = palette.success;
 
-    let icon_box = container(
-        text(ICON_BROADCAST.to_string())
-            .size(20.0)
-            .font(BOOTSTRAP_FONT)
-            .color(icon_color),
-    )
-    .width(44.0)
-    .height(44.0)
-    .align_x(Alignment::Center)
-    .align_y(Alignment::Center)
-    .style(move |_theme: &iced::Theme| container::Style {
-        background: Some(Background::Color(palette.surface_overlay)),
-        border: Border {
-            radius: radius(Radius::Md).into(),
-            color: Color::TRANSPARENT,
-            width: 0.0,
-        },
-        ..container::Style::default()
-    });
+    let icon_box = container(tabler_icon(Icon::Broadcast, 20.0, icon_color))
+        .width(44.0)
+        .height(44.0)
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center)
+        .style(move |_theme: &iced::Theme| container::Style {
+            background: Some(Background::Color(palette.surface_overlay)),
+            border: Border {
+                radius: radius(Radius::Md).into(),
+                color: Color::TRANSPARENT,
+                width: 0.0,
+            },
+            ..container::Style::default()
+        });
 
     let conn_state = state.obs_client.as_ref().map(|c| c.connection_state());
     let (pill_label, pill_variant) = match conn_state {

@@ -5,7 +5,7 @@ use iced::{
     widget::{Space, button, column, container, row, scrollable, text},
 };
 
-use crate::icons::{BOOTSTRAP_FONT, ICON_CHEVRON_DOWN, ICON_CHEVRON_UP};
+use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
 use crate::tokens::{BORDER_THIN, FONT_BODY, FONT_SM, FONT_XS, FontRole, Radius, font, radius};
 
@@ -19,13 +19,13 @@ pub struct Sidebar<'a, Msg> {
 pub enum NavItem<'a, Msg> {
     Section(&'a str),
     Leaf {
-        icon: char,
+        icon: Icon,
         label: &'a str,
         active: bool,
         on_press: Msg,
     },
     Group {
-        icon: char,
+        icon: Icon,
         label: &'a str,
         active: bool,
         expanded: bool,
@@ -142,7 +142,7 @@ fn nav_section_label<'a, Msg: 'a>(label: &'a str, palette: &ForgePalette) -> Ele
 }
 
 fn nav_leaf<'a, Msg: 'a + Clone>(
-    icon: char,
+    icon: Icon,
     label: &'a str,
     active: bool,
     on_press: Msg,
@@ -171,10 +171,7 @@ fn nav_leaf<'a, Msg: 'a + Clone>(
     let btn_radius = radius(Radius::Sm);
 
     let content = row![
-        text(icon.to_string())
-            .size(15.0)
-            .font(BOOTSTRAP_FONT)
-            .color(icon_color),
+        tabler_icon(icon, 15.0, icon_color),
         text(label).size(FONT_BODY),
     ]
     .spacing(10)
@@ -214,7 +211,7 @@ fn nav_leaf<'a, Msg: 'a + Clone>(
 }
 
 fn nav_group_header<'a, Msg: 'a + Clone>(
-    icon: char,
+    icon: Icon,
     label: &'a str,
     highlighted: bool,
     expanded: bool,
@@ -233,9 +230,9 @@ fn nav_group_header<'a, Msg: 'a + Clone>(
     };
     let chevron_color = palette.text_secondary;
     let chevron = if expanded {
-        ICON_CHEVRON_UP
+        Icon::ChevronUp
     } else {
-        ICON_CHEVRON_DOWN
+        Icon::ChevronDown
     };
     let hover_bg = Color {
         a: 0.5,
@@ -245,16 +242,10 @@ fn nav_group_header<'a, Msg: 'a + Clone>(
     let btn_radius = radius(Radius::Sm);
 
     let content = row![
-        text(icon.to_string())
-            .size(15.0)
-            .font(BOOTSTRAP_FONT)
-            .color(icon_color),
+        tabler_icon(icon, 15.0, icon_color),
         text(label).size(FONT_BODY),
         Space::new().width(iced::Length::Fill),
-        text(chevron.to_string())
-            .size(13.0)
-            .font(BOOTSTRAP_FONT)
-            .color(chevron_color),
+        tabler_icon(chevron, 13.0, chevron_color),
     ]
     .spacing(10)
     .align_y(iced::Alignment::Center);
@@ -414,7 +405,7 @@ mod tests {
             &CATPPUCCIN_MOCHA,
             Sidebar {
                 items: vec![NavItem::Leaf {
-                    icon: crate::icons::ICON_HOME,
+                    icon: crate::icons::Icon::Home,
                     label: "Home",
                     active: false,
                     on_press: (),
@@ -430,7 +421,7 @@ mod tests {
             &CATPPUCCIN_MOCHA,
             Sidebar {
                 items: vec![NavItem::Leaf {
-                    icon: crate::icons::ICON_HOME,
+                    icon: crate::icons::Icon::Home,
                     label: "Home",
                     active: true,
                     on_press: (),
@@ -446,7 +437,7 @@ mod tests {
             &CATPPUCCIN_MOCHA,
             Sidebar {
                 items: vec![NavItem::Group {
-                    icon: crate::icons::ICON_BROADCAST,
+                    icon: crate::icons::Icon::Broadcast,
                     label: "Platforms",
                     active: false,
                     expanded: false,
@@ -464,7 +455,7 @@ mod tests {
             &CATPPUCCIN_MOCHA,
             Sidebar {
                 items: vec![NavItem::Group {
-                    icon: crate::icons::ICON_BROADCAST,
+                    icon: crate::icons::Icon::Broadcast,
                     label: "Platforms",
                     active: false,
                     expanded: true,
@@ -496,14 +487,14 @@ mod tests {
             Sidebar {
                 items: vec![
                     NavItem::Leaf {
-                        icon: crate::icons::ICON_PEOPLE,
+                        icon: crate::icons::Icon::Users,
                         label: "Viewers",
                         active: false,
                         on_press: (),
                     },
                     NavItem::Divider,
                     NavItem::Leaf {
-                        icon: crate::icons::ICON_GEAR,
+                        icon: crate::icons::Icon::Settings,
                         label: "Settings",
                         active: false,
                         on_press: (),
@@ -520,7 +511,7 @@ mod tests {
             &CATPPUCCIN_MOCHA,
             Sidebar {
                 items: vec![NavItem::Group {
-                    icon: crate::icons::ICON_BROADCAST,
+                    icon: crate::icons::Icon::Broadcast,
                     label: "Platforms",
                     active: true,
                     expanded: true,

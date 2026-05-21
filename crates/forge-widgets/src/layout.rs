@@ -3,7 +3,7 @@ use iced::{
     widget::{Row, Space, column, container, row, text},
 };
 
-use crate::icons::{BOOTSTRAP_FONT, ICON_CLOCK};
+use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
 use crate::status::status_dot;
 use crate::tokens::{BORDER_THIN, FONT_BODY, FONT_XS, FontRole, Radius, font, radius};
@@ -102,10 +102,7 @@ pub fn app_footer<'a, Msg: 'a>(
 
     let sep2 = text("·").size(FONT_XS).color(text_faint).font(mono);
 
-    let clock_icon = text(ICON_CLOCK)
-        .font(BOOTSTRAP_FONT)
-        .size(10)
-        .color(text_faint);
+    let clock_icon = tabler_icon(Icon::Clock, 10.0, text_faint);
     let uptime_label = text(format!("{uptime} uptime"))
         .size(FONT_XS)
         .color(text_secondary)

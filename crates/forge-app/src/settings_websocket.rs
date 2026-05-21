@@ -6,10 +6,7 @@ use forge_storage_sqlite::SqliteBackend;
 use forge_widgets::{
     BindAddressCardParams, BindBadge, BulletItem, BulletKind, ForgePalette, Radius, ToggleProps,
     TypeToConfirmModalParams, bearer_token_display, bind_address_card,
-    icons::{
-        BOOTSTRAP_FONT, ICON_ALERT_TRIANGLE, ICON_CHECK_CIRCLE, ICON_FOLDER_OPEN, ICON_GLOBE,
-        ICON_LOCK, ICON_SERVER,
-    },
+    icons::{Icon, tabler_icon},
     toggle,
     tokens::{FONT_BODY, FONT_SM, FontRole, font, radius},
     type_to_confirm_modal,
@@ -372,7 +369,7 @@ fn auth_divider<'a>(border_color: Color) -> Element<'a, Message> {
 }
 
 fn auth_toggle_row<'a>(
-    icon: char,
+    icon: Icon,
     icon_color: Color,
     label: &'a str,
     sublabel: &'a str,
@@ -380,10 +377,7 @@ fn auth_toggle_row<'a>(
     on_toggle: Message,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    let icon_el = text(icon.to_string())
-        .font(BOOTSTRAP_FONT)
-        .size(14.0_f32)
-        .color(icon_color);
+    let icon_el = tabler_icon(icon, 14.0, icon_color);
 
     let label_el = text(label).size(FONT_BODY).color(palette.text_primary);
     let sub_el = text(sublabel)
@@ -497,10 +491,7 @@ fn overlay_path_display<'a>(root: &'a Path, palette: &'a ForgePalette) -> Elemen
     let text_sec = palette.text_secondary;
     let browse_btn = button(
         row![
-            text(ICON_FOLDER_OPEN.to_string())
-                .font(BOOTSTRAP_FONT)
-                .size(12.0_f32)
-                .color(text_sec),
+            tabler_icon(Icon::FolderOpen, 12.0, text_sec),
             text("Browse").size(FONT_SM).color(text_sec),
         ]
         .spacing(5)
@@ -554,10 +545,7 @@ pub fn settings_websocket_view<'a>(
             .into()
     } else if state.all_changes_saved {
         row![
-            text(ICON_CHECK_CIRCLE.to_string())
-                .font(BOOTSTRAP_FONT)
-                .size(13.0_f32)
-                .color(p.success),
+            tabler_icon(Icon::CircleCheck, 13.0, p.success),
             text("All changes saved").size(FONT_SM).color(p.success),
         ]
         .spacing(6)
@@ -568,10 +556,7 @@ pub fn settings_websocket_view<'a>(
     };
 
     let header_row = row![
-        text(ICON_SERVER.to_string())
-            .font(BOOTSTRAP_FONT)
-            .size(20.0_f32)
-            .color(p.brand),
+        tabler_icon(Icon::Server, 20.0, p.brand),
         text("WebSocket server")
             .size(18.0_f32)
             .color(p.text_primary)
@@ -704,7 +689,7 @@ pub fn settings_websocket_view<'a>(
             .size(FONT_SM)
             .color(p.text_muted),
         auth_toggle_row(
-            ICON_LOCK,
+            Icon::Lock,
             p.success,
             "Require token for WebSocket clients",
             "Reject WS handshake without valid bearer token",
@@ -716,7 +701,7 @@ pub fn settings_websocket_view<'a>(
         ),
         auth_divider(p.border_regular),
         auth_toggle_row(
-            ICON_GLOBE,
+            Icon::Globe,
             p.info,
             "Require token for HTTP overlay files",
             "Browser sources need ?token=… in URL",
@@ -728,7 +713,7 @@ pub fn settings_websocket_view<'a>(
         ),
         auth_divider(p.border_regular),
         auth_toggle_row(
-            ICON_ALERT_TRIANGLE,
+            Icon::AlertTriangle,
             p.warning,
             "Allow CORS from any origin",
             "Disable to restrict to overlay browser sources only",

@@ -7,7 +7,7 @@ use crate::actions::{ActionsGroup, TriggerCategory, trigger_label_of};
 use crate::app::App;
 use crate::message::{ActionsMsg, Message};
 use forge_widgets::ForgePalette;
-use forge_widgets::icons::{BOOTSTRAP_FONT, ICON_CHEVRON_DOWN, ICON_DOTS_VERTICAL, ICON_PLUS};
+use forge_widgets::icons::{Icon, tabler_icon};
 
 fn sub_action_summary(spec: &SubActionSpec) -> (&'static str, &'static str, String) {
     match spec {
@@ -87,10 +87,7 @@ fn tree_pane<'a>(
 
     for group in groups {
         let header_row = row![
-            text(ICON_CHEVRON_DOWN.to_string())
-                .size(11.0)
-                .color(p.text_muted)
-                .font(BOOTSTRAP_FONT),
+            tabler_icon(Icon::ChevronDown, 11.0, p.text_muted),
             text(group.category.display_name())
                 .size(11.0)
                 .color(p.text_muted)
@@ -279,10 +276,12 @@ fn detail_pane<'a>(
     let triggers_label = text("TRIGGERS").size(11.0).color(p.text_muted).font(mono);
 
     let add_trigger_btn = iced::widget::button(
-        text(format!("{} Add trigger", ICON_PLUS))
-            .size(11.0)
-            .color(p.brand)
-            .font(BOOTSTRAP_FONT),
+        row![
+            tabler_icon(Icon::Plus, 11.0, p.brand),
+            text("Add trigger").size(11.0).color(p.brand),
+        ]
+        .spacing(4)
+        .align_y(Alignment::Center),
     )
     .on_press(Message::Actions(ActionsMsg::OpenAddTriggerModal(action_id)))
     .padding(0)
@@ -318,25 +317,19 @@ fn detail_pane<'a>(
         for trigger in &detail.triggers {
             let cat = crate::actions::category_of(&trigger.kind);
             let icon_name = trigger_icon_name(&cat);
-            let icon_char = forge_widgets::icons::bootstrap_icon_for(icon_name);
-            let icon_box = container(
-                text(icon_char.to_string())
-                    .size(14.0)
-                    .color(p.brand)
-                    .font(BOOTSTRAP_FONT),
-            )
-            .width(26.0)
-            .height(26.0)
-            .align_x(Alignment::Center)
-            .align_y(Alignment::Center)
-            .style(move |_theme: &iced::Theme| iced::widget::container::Style {
-                background: Some(iced::Background::Color(p.surface_overlay)),
-                border: iced::Border {
-                    radius: 6.0.into(),
-                    ..iced::Border::default()
-                },
-                ..iced::widget::container::Style::default()
-            });
+            let icon_box = container(tabler_icon(Icon::from_name(icon_name), 14.0, p.brand))
+                .width(26.0)
+                .height(26.0)
+                .align_x(Alignment::Center)
+                .align_y(Alignment::Center)
+                .style(move |_theme: &iced::Theme| iced::widget::container::Style {
+                    background: Some(iced::Background::Color(p.surface_overlay)),
+                    border: iced::Border {
+                        radius: 6.0.into(),
+                        ..iced::Border::default()
+                    },
+                    ..iced::widget::container::Style::default()
+                });
 
             let label_str = trigger_label_of(&trigger.kind);
             let condition_str = kind_condition_text(&trigger.kind);
@@ -384,10 +377,7 @@ fn detail_pane<'a>(
                 snap: false,
             });
 
-            let dots = text(ICON_DOTS_VERTICAL.to_string())
-                .size(14.0)
-                .color(p.text_faint)
-                .font(BOOTSTRAP_FONT);
+            let dots = tabler_icon(Icon::DotsVertical, 14.0, p.text_faint);
 
             let trigger_row: Element<'_, Message> = row![icon_box, info_col, delete_btn, dots]
                 .spacing(10)
@@ -422,10 +412,12 @@ fn detail_pane<'a>(
         .font(mono);
 
     let add_step_btn = iced::widget::button(
-        text(format!("{} Add step", ICON_PLUS))
-            .size(11.0)
-            .color(p.brand)
-            .font(BOOTSTRAP_FONT),
+        row![
+            tabler_icon(Icon::Plus, 11.0, p.brand),
+            text("Add step").size(11.0).color(p.brand),
+        ]
+        .spacing(4)
+        .align_y(Alignment::Center),
     )
     .on_press(Message::AddSubAction(AddSubActionMsg::OpenRequested(
         action_id,
@@ -456,7 +448,7 @@ fn detail_pane<'a>(
         let step_num = i + 1;
         let is_last = step_num == total;
         let (icon_name, title, details) = sub_action_summary(spec);
-        let icon_char = forge_widgets::icons::bootstrap_icon_for(icon_name);
+        let step_icon = Icon::from_name(icon_name);
         let avg_ms_label = detail
             .sub_action_avg_ms
             .get(i)
@@ -500,10 +492,7 @@ fn detail_pane<'a>(
             .width(24.0)
             .into();
 
-        let icon_el = text(icon_char.to_string())
-            .size(13.0)
-            .color(p.text_secondary)
-            .font(BOOTSTRAP_FONT);
+        let icon_el = tabler_icon(step_icon, 13.0, p.text_secondary);
 
         let title_el = text(title).size(12.5).color(p.text_primary);
 

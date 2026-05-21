@@ -1,6 +1,6 @@
 use forge_speak_queue::SpeakEvent;
 use forge_widgets::ForgePalette;
-use forge_widgets::icons::{BOOTSTRAP_FONT, ICON_PAUSE, ICON_PLAY, ICON_SPEAKER};
+use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::tokens::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spacing,
 };
@@ -175,11 +175,14 @@ fn control_strip_view<'a>(
         palette.random
     };
 
+    let pause_icon = if state.paused {
+        Icon::PlayerPlay
+    } else {
+        Icon::PlayerPause
+    };
     let pause_btn = button(
         row![
-            text(if state.paused { ICON_PLAY } else { ICON_PAUSE })
-                .font(BOOTSTRAP_FONT)
-                .size(13.0),
+            tabler_icon(pause_icon, 13.0, palette.shell),
             text(pause_label).size(FONT_SM),
         ]
         .align_y(Alignment::Center)
@@ -238,10 +241,7 @@ fn control_strip_view<'a>(
     .step(0.01);
 
     let volume_row = row![
-        text(ICON_SPEAKER)
-            .font(BOOTSTRAP_FONT)
-            .size(14.0)
-            .color(palette.text_muted),
+        tabler_icon(Icon::Volume, 14.0, palette.text_muted),
         vol_slider,
         vol_text,
     ]

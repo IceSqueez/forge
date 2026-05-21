@@ -5,8 +5,8 @@ use iced::{
 };
 
 use crate::{
-    BOOTSTRAP_FONT,
     buttons::secondary_button,
+    icons::{Icon, tabler_icon},
     inputs::search_input,
     palette::ForgePalette,
     tokens::{BORDER_THIN, FONT_BODY, FONT_MD, FONT_SM, FontRole, Radius, font, radius},
@@ -188,13 +188,11 @@ fn item_row<'a, Msg: Clone + 'a>(
     p: ForgePalette,
     on_select: &impl Fn(usize) -> Msg,
 ) -> Element<'a, Msg> {
-    let icon_str = item.icon.as_str().to_string();
-    let icon_el = container(
-        text(icon_str)
-            .font(BOOTSTRAP_FONT)
-            .size(14.0)
-            .color(p.text_secondary),
-    )
+    let icon_el = container(tabler_icon(
+        Icon::from_name(item.icon.as_str()),
+        14.0,
+        p.text_secondary,
+    ))
     .width(28)
     .height(28)
     .align_x(Alignment::Center)

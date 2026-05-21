@@ -10,10 +10,7 @@ use forge_storage::{CredentialId, CredentialsRepo};
 use forge_storage_sqlite::SqliteBackend;
 
 use forge_widgets::ForgePalette;
-use forge_widgets::icons::{
-    BOOTSTRAP_FONT, ICON_ALERT_TRIANGLE, ICON_BROADCAST, ICON_CHECK_CIRCLE, ICON_EYE,
-    ICON_EYE_SLASH, ICON_INFO_CIRCLE, ICON_LIGHTNING, ICON_REFRESH,
-};
+use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::tokens::{FONT_BODY, FONT_SM, FONT_XS, FontRole, font};
 
 use crate::Message;
@@ -163,25 +160,20 @@ pub fn obs_disconnected_view<'a>(
 }
 
 fn obs_header_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
-    let icon = container(
-        text(ICON_BROADCAST.to_string())
-            .size(24.0)
-            .font(BOOTSTRAP_FONT)
-            .color(palette.success),
-    )
-    .width(48.0)
-    .height(48.0)
-    .align_x(Alignment::Center)
-    .align_y(Alignment::Center)
-    .style(move |_theme: &Theme| container::Style {
-        background: Some(Background::Color(palette.surface_overlay)),
-        border: Border {
-            radius: 11.0.into(),
-            color: Color::TRANSPARENT,
-            width: 0.0,
-        },
-        ..container::Style::default()
-    });
+    let icon = container(tabler_icon(Icon::Broadcast, 24.0, palette.success))
+        .width(48.0)
+        .height(48.0)
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center)
+        .style(move |_theme: &Theme| container::Style {
+            background: Some(Background::Color(palette.surface_overlay)),
+            border: Border {
+                radius: 11.0.into(),
+                color: Color::TRANSPARENT,
+                width: 0.0,
+            },
+            ..container::Style::default()
+        });
 
     let title_col = column![
         text("OBS Studio")
@@ -206,10 +198,7 @@ fn obs_header_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
 
 fn obs_instructions_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     let title = row![
-        text(ICON_INFO_CIRCLE.to_string())
-            .size(14.0)
-            .font(BOOTSTRAP_FONT)
-            .color(palette.info),
+        tabler_icon(Icon::InfoCircle, 14.0, palette.info),
         text("Before you start")
             .size(FONT_BODY)
             .color(palette.text_primary),
@@ -323,10 +312,7 @@ fn instruction_step<'a>(
 
 fn check_row<'a>(label: &'a str, palette: &'a ForgePalette) -> Element<'a, Message> {
     row![
-        text(ICON_CHECK_CIRCLE.to_string())
-            .size(11.0)
-            .font(BOOTSTRAP_FONT)
-            .color(palette.success),
+        tabler_icon(Icon::CircleCheck, 11.0, palette.success),
         text(label)
             .size(FONT_XS)
             .color(palette.text_secondary)
@@ -339,10 +325,7 @@ fn check_row<'a>(label: &'a str, palette: &'a ForgePalette) -> Element<'a, Messa
 
 fn obs_form_card<'a>(state: &'a ObsPanelState, palette: &'a ForgePalette) -> Element<'a, Message> {
     let title = row![
-        text(ICON_LIGHTNING.to_string())
-            .size(14.0)
-            .font(BOOTSTRAP_FONT)
-            .color(palette.success),
+        tabler_icon(Icon::Bolt, 14.0, palette.success),
         text("Connection settings")
             .size(FONT_BODY)
             .color(palette.text_primary),
@@ -384,7 +367,7 @@ fn obs_form_card<'a>(state: &'a ObsPanelState, palette: &'a ForgePalette) -> Ele
 
     let toggles = column![
         toggle_row(
-            ICON_REFRESH,
+            Icon::Refresh,
             palette.info,
             "Auto-reconnect on disconnect",
             "Retry with exponential backoff",
@@ -394,7 +377,7 @@ fn obs_form_card<'a>(state: &'a ObsPanelState, palette: &'a ForgePalette) -> Ele
             palette,
         ),
         toggle_row(
-            ICON_LIGHTNING,
+            Icon::Bolt,
             palette.warning,
             "Connect on app launch",
             "Start connecting when Forge opens",
@@ -474,29 +457,24 @@ fn password_row<'a>(state: &'a ObsPanelState, palette: &'a ForgePalette) -> Elem
     }
 
     let eye_icon = if state.form.password_revealed {
-        ICON_EYE_SLASH
+        Icon::EyeOff
     } else {
-        ICON_EYE
+        Icon::Eye
     };
-    let eye_btn = button(
-        text(eye_icon.to_string())
-            .size(13.0)
-            .font(BOOTSTRAP_FONT)
-            .color(palette.text_muted),
-    )
-    .on_press(Message::ObsPanel(ObsPanelMsg::TogglePasswordReveal))
-    .padding(Padding::from([7_u16, 10_u16]))
-    .style(move |_theme: &Theme, _status| button::Style {
-        background: Some(Background::Color(Color::TRANSPARENT)),
-        text_color: palette.text_muted,
-        border: Border {
-            color: palette.border_regular,
-            width: 0.5,
-            radius: 7.0.into(),
-        },
-        shadow: Shadow::default(),
-        snap: false,
-    });
+    let eye_btn = button(tabler_icon(eye_icon, 13.0, palette.text_muted))
+        .on_press(Message::ObsPanel(ObsPanelMsg::TogglePasswordReveal))
+        .padding(Padding::from([7_u16, 10_u16]))
+        .style(move |_theme: &Theme, _status| button::Style {
+            background: Some(Background::Color(Color::TRANSPARENT)),
+            text_color: palette.text_muted,
+            border: Border {
+                color: palette.border_regular,
+                width: 0.5,
+                radius: 7.0.into(),
+            },
+            shadow: Shadow::default(),
+            snap: false,
+        });
 
     let input_row = row![container(input).width(Length::Fill), eye_btn]
         .spacing(8.0)
@@ -507,7 +485,7 @@ fn password_row<'a>(state: &'a ObsPanelState, palette: &'a ForgePalette) -> Elem
 
 #[allow(clippy::too_many_arguments)]
 fn toggle_row<'a>(
-    icon: char,
+    icon: Icon,
     icon_color: Color,
     title: &'a str,
     subtitle: &'a str,
@@ -516,10 +494,7 @@ fn toggle_row<'a>(
     has_border: bool,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    let icon_el = text(icon.to_string())
-        .size(13.0)
-        .font(BOOTSTRAP_FONT)
-        .color(icon_color);
+    let icon_el = tabler_icon(icon, 13.0, icon_color);
     let text_col = column![
         text(title).size(FONT_SM).color(palette.text_primary),
         text(subtitle).size(FONT_XS).color(palette.text_faint),
@@ -591,14 +566,14 @@ fn test_status_preview<'a>(
     match &state.test_status {
         TestStatus::Idle => iced::widget::Space::new().height(0.0).into(),
         TestStatus::Running => banner_card(
-            ICON_REFRESH,
+            Icon::Refresh,
             palette.info,
             "Testing connection…",
             None,
             palette,
         ),
         TestStatus::Success(info) => banner_card(
-            ICON_CHECK_CIRCLE,
+            Icon::CircleCheck,
             palette.success,
             "Test successful",
             Some(format!(
@@ -608,7 +583,7 @@ fn test_status_preview<'a>(
             palette,
         ),
         TestStatus::Failure(msg) => banner_card(
-            ICON_ALERT_TRIANGLE,
+            Icon::AlertTriangle,
             palette.random,
             "Test failed",
             Some(msg.clone()),
@@ -618,16 +593,13 @@ fn test_status_preview<'a>(
 }
 
 fn banner_card<'a>(
-    icon: char,
+    icon: Icon,
     accent: Color,
     title: &'a str,
     detail: Option<String>,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    let icon_el = text(icon.to_string())
-        .size(13.0)
-        .font(BOOTSTRAP_FONT)
-        .color(accent);
+    let icon_el = tabler_icon(icon, 13.0, accent);
     let mut text_col = column![text(title).size(FONT_SM).color(palette.text_primary)];
     if let Some(d) = detail {
         text_col = text_col.push(
@@ -658,10 +630,7 @@ fn banner_card<'a>(
 }
 
 fn obs_tip_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
-    let icon = text(ICON_INFO_CIRCLE.to_string())
-        .size(14.0)
-        .font(BOOTSTRAP_FONT)
-        .color(palette.warning);
+    let icon = tabler_icon(Icon::InfoCircle, 14.0, palette.warning);
     let body = text(
         "Running OBS on a different PC? Set host to that machine's IP. Make sure OBS WebSocket is \
          configured to bind to 0.0.0.0 instead of localhost, and the port is open in firewall.",

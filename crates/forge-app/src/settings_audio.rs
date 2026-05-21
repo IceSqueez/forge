@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use forge_audio::{list_output_devices, refresh_output_devices};
 use forge_storage_sqlite::SqliteBackend;
-use forge_widgets::icons::{BOOTSTRAP_FONT, ICON_SPEAKER};
+use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::tokens::{
     Density, FONT_BODY, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spacing,
 };
@@ -199,10 +199,7 @@ pub fn settings_audio_view<'a>(
 
     let test_standalone_btn = button(
         row![
-            text(ICON_SPEAKER.to_string())
-                .font(BOOTSTRAP_FONT)
-                .size(12.0)
-                .color(p.info),
+            tabler_icon(Icon::Volume, 12.0, p.info),
             text(test_btn_label)
                 .size(FONT_SM)
                 .color(p.info)
@@ -252,25 +249,20 @@ pub fn settings_audio_view<'a>(
     }
 
     let p2 = *palette;
-    let icon_el = container(
-        text(ICON_SPEAKER.to_string())
-            .font(BOOTSTRAP_FONT)
-            .size(16.0)
-            .color(p2.info),
-    )
-    .width(30.0)
-    .height(30.0)
-    .align_x(Alignment::Center)
-    .align_y(Alignment::Center)
-    .style(move |_| container::Style {
-        background: Some(Background::Color(iced::Color { a: 0.12, ..p2.info })),
-        border: Border {
-            radius: radius(Radius::Lg).into(),
-            color: iced::Color::TRANSPARENT,
-            width: 0.0,
-        },
-        ..container::Style::default()
-    });
+    let icon_el = container(tabler_icon(Icon::Volume, 16.0, p2.info))
+        .width(30.0)
+        .height(30.0)
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center)
+        .style(move |_| container::Style {
+            background: Some(Background::Color(iced::Color { a: 0.12, ..p2.info })),
+            border: Border {
+                radius: radius(Radius::Lg).into(),
+                color: iced::Color::TRANSPARENT,
+                width: 0.0,
+            },
+            ..container::Style::default()
+        });
 
     let screen_header = row![
         icon_el,

@@ -3,7 +3,7 @@ use iced::{
     widget::{button, column, container, row, text},
 };
 
-use crate::icons::{BOOTSTRAP_FONT, ICON_PLAY, ICON_X};
+use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
 use crate::tokens::{
     BORDER_THIN, Density, FONT_BODY, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius,
@@ -31,36 +31,31 @@ fn chip_style(bg: iced::Color, border: iced::Color) -> impl Fn(&iced::Theme) -> 
 }
 
 fn action_btn<'a, Msg: 'a + Clone>(
-    icon: char,
+    icon: Icon,
     color: iced::Color,
     on_press: Msg,
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
     let p = *palette;
-    button(
-        text(icon.to_string())
-            .font(BOOTSTRAP_FONT)
-            .size(12.0)
-            .color(color),
-    )
-    .on_press(on_press)
-    .padding([4.0, 8.0])
-    .style(move |_theme, status| button::Style {
-        background: if matches!(status, iced::widget::button::Status::Hovered) {
-            Some(Background::Color(iced::Color { a: 0.1, ..color }))
-        } else {
-            None
-        },
-        border: Border {
-            color: p.border_regular,
-            width: 0.5,
-            radius: 5.0.into(),
-        },
-        text_color: color,
-        shadow: Shadow::default(),
-        snap: false,
-    })
-    .into()
+    button(tabler_icon(icon, 12.0, color))
+        .on_press(on_press)
+        .padding([4.0, 8.0])
+        .style(move |_theme, status| button::Style {
+            background: if matches!(status, iced::widget::button::Status::Hovered) {
+                Some(Background::Color(iced::Color { a: 0.1, ..color }))
+            } else {
+                None
+            },
+            border: Border {
+                color: p.border_regular,
+                width: 0.5,
+                radius: 5.0.into(),
+            },
+            text_color: color,
+            shadow: Shadow::default(),
+            snap: false,
+        })
+        .into()
 }
 
 pub fn clip_card<'a, Msg: 'a + Clone>(
@@ -119,9 +114,9 @@ pub fn clip_card<'a, Msg: 'a + Clone>(
     ]
     .spacing(f32::from(spacing(Spacing::Xs, Density::Cozy)));
 
-    let play_btn = action_btn(ICON_PLAY, palette.success, on_play, palette);
-    let edit_btn = action_btn('\u{F4CA}', palette.info, on_edit, palette);
-    let delete_btn = action_btn(ICON_X, palette.random, on_delete, palette);
+    let play_btn = action_btn(Icon::PlayerPlay, palette.success, on_play, palette);
+    let edit_btn = action_btn(Icon::InfoCircle, palette.info, on_edit, palette);
+    let delete_btn = action_btn(Icon::X, palette.random, on_delete, palette);
 
     let action_row = row![play_btn, edit_btn, delete_btn]
         .spacing(f32::from(spacing(Spacing::Xs, Density::Cozy)));

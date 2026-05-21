@@ -4,7 +4,7 @@ use forge_storage::{Viewer, ViewerPlatform};
 use forge_storage_sqlite::SqliteBackend;
 use forge_widgets::{
     ForgePalette, Radius,
-    icons::{BOOTSTRAP_FONT, ICON_PEOPLE},
+    icons::{Icon, tabler_icon},
     radius,
     tokens::{FONT_SM, FONT_XS, FontRole, font},
 };
@@ -243,9 +243,7 @@ pub fn viewers_view<'a>(
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let title = row![
-        text(ICON_PEOPLE.to_string())
-            .font(BOOTSTRAP_FONT)
-            .size(20.0),
+        tabler_icon(Icon::Users, 20.0, palette.text_primary),
         text("Viewers")
             .font(font(FontRole::Body))
             .size(20.0)

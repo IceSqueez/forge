@@ -11,10 +11,7 @@ use time::OffsetDateTime;
 
 use forge_widgets::{
     ForgePalette, Radius,
-    icons::{
-        BOOTSTRAP_FONT, ICON_ALERT_TRIANGLE, ICON_CIRCLE_DASHED, ICON_DOTS_VERTICAL, ICON_ERASER,
-        ICON_GEAR, ICON_LOADER, ICON_PAUSE, ICON_PLAY, ICON_PLUS,
-    },
+    icons::{Icon, tabler_icon},
     radius,
     tokens::{BORDER_THIN, FONT_SM, FONT_XS, FontRole, font},
 };
@@ -209,10 +206,7 @@ pub fn queues_view<'a>(state: &'a QueuesState, palette: &'a ForgePalette) -> Ele
 fn pause_all_button<'a>(border_col: Color, warning: Color) -> Element<'a, Message> {
     use iced::widget::button;
 
-    let icon = text(ICON_PAUSE.to_string())
-        .font(BOOTSTRAP_FONT)
-        .size(13.0)
-        .color(warning);
+    let icon = tabler_icon(Icon::PlayerPause, 13.0, warning);
 
     let label = text("Pause all").size(FONT_SM).color(warning);
 
@@ -242,10 +236,7 @@ fn pause_all_button<'a>(border_col: Color, warning: Color) -> Element<'a, Messag
 fn new_queue_button<'a>(brand: Color, dark: Color) -> Element<'a, Message> {
     use iced::widget::button;
 
-    let icon = text(ICON_PLUS.to_string())
-        .font(BOOTSTRAP_FONT)
-        .size(13.0)
-        .color(dark);
+    let icon = tabler_icon(Icon::Plus, 13.0, dark);
 
     let label = text("New queue").size(FONT_SM).color(dark);
 
@@ -344,10 +335,7 @@ fn queue_card_header<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Elem
     let badge = status_badge(q.paused, palette);
 
     let dots_color = palette.text_faint;
-    let dots = text(ICON_DOTS_VERTICAL.to_string())
-        .font(BOOTSTRAP_FONT)
-        .size(14.0)
-        .color(dots_color);
+    let dots = tabler_icon(Icon::DotsVertical, 14.0, dots_color);
 
     let desc_color = palette.text_secondary;
     let desc = if let Some(d) = &q.description {
@@ -371,10 +359,7 @@ fn status_badge<'a>(paused: bool, palette: &'a ForgePalette) -> Element<'a, Mess
     let bg = palette.border_regular;
     if paused {
         let warning = palette.warning;
-        let icon = text(ICON_PAUSE.to_string())
-            .font(BOOTSTRAP_FONT)
-            .size(9.0)
-            .color(warning);
+        let icon = tabler_icon(Icon::PlayerPause, 9.0, warning);
         let label = text("PAUSED")
             .size(9.5)
             .font(font(FontRole::Monospace))
@@ -539,10 +524,7 @@ fn queue_running_panel<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> El
             "queue is paused".to_owned()
         };
 
-        let icon = text(ICON_ALERT_TRIANGLE.to_string())
-            .font(BOOTSTRAP_FONT)
-            .size(12.0)
-            .color(warning);
+        let icon = tabler_icon(Icon::AlertTriangle, 12.0, warning);
 
         let msg = text(paused_text).size(11.0).color(palette.text_primary);
 
@@ -561,10 +543,7 @@ fn queue_running_panel<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> El
             .into()
     } else if q.running_now.is_empty() {
         let muted = palette.text_faint;
-        let icon = text(ICON_CIRCLE_DASHED.to_string())
-            .font(BOOTSTRAP_FONT)
-            .size(12.0)
-            .color(muted);
+        let icon = tabler_icon(Icon::CircleDashed, 12.0, muted);
         let label = text("No actions running").size(11.0).color(muted);
 
         container(
@@ -598,10 +577,7 @@ fn serial_running_panel<'a>(
     let brand = palette.brand;
     let muted = palette.text_faint;
 
-    let icon = text(ICON_LOADER.to_string())
-        .font(BOOTSTRAP_FONT)
-        .size(12.0)
-        .color(brand);
+    let icon = tabler_icon(Icon::Loader2, 12.0, brand);
 
     let action_name = q.running_now.first().cloned().unwrap_or_default();
     let name_label = text(action_name)
@@ -724,10 +700,7 @@ fn queue_card_buttons<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
     let dark = palette.shell;
 
     let action_btn: Element<'a, Message> = if q.paused {
-        let icon = text(ICON_PLAY.to_string())
-            .font(BOOTSTRAP_FONT)
-            .size(12.0)
-            .color(dark);
+        let icon = tabler_icon(Icon::PlayerPlay, 12.0, dark);
         let label = text("Resume").size(FONT_SM).color(dark);
         button(
             row![icon, label]
@@ -748,10 +721,7 @@ fn queue_card_buttons<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
         )
         .into()
     } else {
-        let icon = text(ICON_PAUSE.to_string())
-            .font(BOOTSTRAP_FONT)
-            .size(12.0)
-            .color(warning);
+        let icon = tabler_icon(Icon::PlayerPause, 12.0, warning);
         let label = text("Pause").size(FONT_SM).color(warning);
         button(
             row![icon, label]
@@ -777,10 +747,7 @@ fn queue_card_buttons<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
         .into()
     };
 
-    let drain_icon = text(ICON_ERASER.to_string())
-        .font(BOOTSTRAP_FONT)
-        .size(12.0)
-        .color(muted);
+    let drain_icon = tabler_icon(Icon::Eraser, 12.0, muted);
     let drain_label = text("Drain").size(FONT_SM).color(muted);
     let drain_btn: Element<'a, Message> = button(
         row![drain_icon, drain_label]
@@ -805,10 +772,7 @@ fn queue_card_buttons<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
     )
     .into();
 
-    let cfg_icon = text(ICON_GEAR.to_string())
-        .font(BOOTSTRAP_FONT)
-        .size(12.0)
-        .color(muted);
+    let cfg_icon = tabler_icon(Icon::Settings, 12.0, muted);
     let cfg_label = text("Configure").size(FONT_SM).color(muted);
     let cfg_btn: Element<'a, Message> = button(
         row![cfg_icon, cfg_label]

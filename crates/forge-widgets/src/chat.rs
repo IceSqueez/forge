@@ -3,7 +3,7 @@ use iced::{
     widget::{button, column, container, row, text, text_input},
 };
 
-use crate::icons::{ICON_FLAG, ICON_LIGHTNING, ICON_STAR};
+use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
 use crate::tokens::{FONT_BODY, FONT_SM, FONT_XS, FontRole, Radius, font, radius};
 
@@ -188,21 +188,13 @@ fn inline_badge<'a, Msg: 'a>(
     .into()
 }
 
-fn money_event_icon<'a, Msg: 'a>(icon_char: char, color: Color) -> Element<'a, Msg> {
-    container(
-        text(icon_char.to_string())
-            .size(13.0)
-            .color(color)
-            .font(iced::Font {
-                family: iced::font::Family::Name("Bootstrap Icons"),
-                ..iced::Font::default()
-            }),
-    )
-    .padding(Padding {
-        top: 2.0,
-        ..Padding::ZERO
-    })
-    .into()
+fn money_event_icon<'a, Msg: 'a>(icon: Icon, color: Color) -> Element<'a, Msg> {
+    container(tabler_icon(icon, 13.0, color))
+        .padding(Padding {
+            top: 2.0,
+            ..Padding::ZERO
+        })
+        .into()
 }
 
 fn row_chrome<'a, Msg: 'a>(
@@ -352,7 +344,7 @@ pub fn chat_row_sub<'a, Msg: Clone + 'a>(
     triggered_action: Option<&str>,
 ) -> Element<'a, Msg> {
     let ts = timestamp_cell(timestamp, palette);
-    let icon = money_event_icon(ICON_STAR, palette.brand);
+    let icon = money_event_icon(Icon::Star, palette.brand);
     let p_badge = platform_badge(platform, palette);
     let p = *palette;
 
@@ -418,7 +410,7 @@ pub fn chat_row_cheer<'a, Msg: Clone + 'a>(
     cheer_text: &str,
 ) -> Element<'a, Msg> {
     let ts = timestamp_cell(timestamp, palette);
-    let icon = money_event_icon(ICON_LIGHTNING, palette.warning);
+    let icon = money_event_icon(Icon::Bolt, palette.warning);
     let p_badge = platform_badge(platform, palette);
     let p = *palette;
 
@@ -466,7 +458,7 @@ pub fn chat_row_raid<'a, Msg: Clone + 'a>(
     triggered_action: Option<&str>,
 ) -> Element<'a, Msg> {
     let ts = timestamp_cell(timestamp, palette);
-    let icon = money_event_icon(ICON_FLAG, palette.random);
+    let icon = money_event_icon(Icon::Flag, palette.random);
     let p_badge = platform_badge(platform, palette);
     let p = *palette;
 

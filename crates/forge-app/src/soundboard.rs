@@ -6,7 +6,7 @@ use forge_soundboard::SoundboardPlayer;
 use forge_storage::StoredClip;
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{ClipId, OutputDevice};
-use forge_widgets::icons::{BOOTSTRAP_FONT, ICON_MUSIC_NOTE, ICON_PLUS};
+use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::tokens::{
     BORDER_THIN, Density, FONT_BODY, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius,
     spacing,
@@ -437,10 +437,7 @@ fn add_clip_modal<'a>(modal: &'a AddClipModal, palette: &'a ForgePalette) -> Ele
     let p = *palette;
     let pick_btn = button(
         row![
-            text(ICON_FOLDER_OPEN_CHAR.to_string())
-                .font(BOOTSTRAP_FONT)
-                .size(12.0)
-                .color(p.info),
+            tabler_icon(Icon::FolderOpen, 12.0, p.info),
             text("Browse")
                 .size(FONT_SM)
                 .color(p.info)
@@ -649,8 +646,6 @@ fn load_devices_placeholder() -> Result<Vec<DeviceLabel>, String> {
     Ok(Vec::new())
 }
 
-const ICON_FOLDER_OPEN_CHAR: char = '\u{F3D8}';
-
 pub fn soundboard_view<'a>(
     state: &'a SoundboardState,
     palette: &'a ForgePalette,
@@ -662,10 +657,7 @@ pub fn soundboard_view<'a>(
 
     let add_btn = button(
         row![
-            text(ICON_PLUS.to_string())
-                .font(BOOTSTRAP_FONT)
-                .size(12.0)
-                .color(p.brand),
+            tabler_icon(Icon::Plus, 12.0, p.brand),
             text("Add clip")
                 .size(FONT_SM)
                 .color(p.brand)
@@ -679,10 +671,7 @@ pub fn soundboard_view<'a>(
     .style(move |_theme, status| add_btn_style(&p, status));
 
     let header = row![
-        text(ICON_MUSIC_NOTE.to_string())
-            .font(BOOTSTRAP_FONT)
-            .size(14.0)
-            .color(palette.bits),
+        tabler_icon(Icon::Music, 14.0, palette.bits),
         text("Soundboard")
             .size(FONT_BODY)
             .color(palette.text_primary)
@@ -714,10 +703,7 @@ pub fn soundboard_view<'a>(
     } else if state.clips.is_empty() {
         container(
             column![
-                text(ICON_MUSIC_NOTE.to_string())
-                    .font(BOOTSTRAP_FONT)
-                    .size(24.0)
-                    .color(palette.text_faint),
+                tabler_icon(Icon::Music, 24.0, palette.text_faint),
                 text("No clips yet")
                     .size(FONT_BODY)
                     .color(palette.text_muted),

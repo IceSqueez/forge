@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use forge_events::{Event, EventSource};
 use forge_widgets::{
-    BadgeKind, ChatBody, ChatRow, ForgePalette, ICON_CLOCK, ICON_SIDEBAR, Platform, PlatformTarget,
+    BadgeKind, ChatBody, ChatRow, ForgePalette, Icon, Platform, PlatformTarget, tabler_icon,
 };
 use iced::{Color, Element, Length};
 
@@ -442,13 +442,7 @@ fn build_meta_bar<'a>(state: &'a LiveChatState, palette: &'a ForgePalette) -> El
         .color(palette.text_faint)
         .font(font(FontRole::Body));
 
-    let clock_icon = text(ICON_CLOCK.to_string())
-        .size(11.0)
-        .color(palette.text_muted)
-        .font(iced::Font {
-            family: iced::font::Family::Name("Bootstrap Icons"),
-            ..iced::Font::default()
-        });
+    let clock_icon = tabler_icon(Icon::Clock, 11.0, palette.text_muted);
 
     let duration_row = row![
         clock_icon,
@@ -470,17 +464,10 @@ fn build_meta_bar<'a>(state: &'a LiveChatState, palette: &'a ForgePalette) -> El
         "Show viewers"
     };
 
-    let drawer_icon_char = ICON_SIDEBAR;
     let drawer_bg = chip_bg(false, palette);
     let drawer_btn = button(
         row![
-            text(drawer_icon_char.to_string())
-                .size(11.0)
-                .color(palette.text_secondary)
-                .font(iced::Font {
-                    family: iced::font::Family::Name("Bootstrap Icons"),
-                    ..iced::Font::default()
-                }),
+            tabler_icon(Icon::LayoutSidebar, 11.0, palette.text_secondary),
             text(drawer_label)
                 .size(FONT_XS)
                 .color(palette.text_secondary)

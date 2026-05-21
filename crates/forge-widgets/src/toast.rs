@@ -5,10 +5,7 @@ use iced::{
     widget::{button, column, container, row, text},
 };
 
-use crate::icons::{
-    BOOTSTRAP_FONT, ICON_ALERT_TRIANGLE, ICON_CHECK_CIRCLE, ICON_INFO_CIRCLE, ICON_ROTATE_CCW,
-    ICON_X, ICON_X_CIRCLE,
-};
+use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
 use crate::tokens::{Density, FONT_SM, FontRole, Radius, Spacing, font, radius, spacing};
 
@@ -111,13 +108,13 @@ fn kind_color(kind: ToastKind, palette: &ForgePalette) -> Color {
     }
 }
 
-fn kind_icon(kind: ToastKind) -> char {
+fn kind_icon(kind: ToastKind) -> Icon {
     match kind {
-        ToastKind::Info => ICON_INFO_CIRCLE,
-        ToastKind::Success => ICON_CHECK_CIRCLE,
-        ToastKind::Warn => ICON_ALERT_TRIANGLE,
-        ToastKind::Error => ICON_X_CIRCLE,
-        ToastKind::Undo => ICON_ROTATE_CCW,
+        ToastKind::Info => Icon::InfoCircle,
+        ToastKind::Success => Icon::CircleCheck,
+        ToastKind::Warn => Icon::AlertTriangle,
+        ToastKind::Error => Icon::CircleX,
+        ToastKind::Undo => Icon::ArrowBackUp,
     }
 }
 
@@ -129,7 +126,7 @@ fn toast_row<'a, Msg: Clone + 'a>(
     let sm = spacing(Spacing::Sm, Density::Cozy);
     let md = spacing(Spacing::Md, Density::Cozy);
     let accent = kind_color(toast.kind, palette);
-    let icon_char = kind_icon(toast.kind);
+    let icon = kind_icon(toast.kind);
 
     let bar = container(iced::widget::Space::new().width(2))
         .height(Length::Fill)
@@ -138,10 +135,7 @@ fn toast_row<'a, Msg: Clone + 'a>(
             ..container::Style::default()
         });
 
-    let icon_el = text(icon_char.to_string())
-        .font(BOOTSTRAP_FONT)
-        .size(FONT_SM)
-        .color(accent);
+    let icon_el = tabler_icon(icon, FONT_SM, accent);
 
     let msg_el = text(toast.message.as_str())
         .size(FONT_SM)
@@ -152,33 +146,28 @@ fn toast_row<'a, Msg: Clone + 'a>(
     let dismiss_hover = palette.text_secondary;
     let dismiss_btn: Element<'a, Msg> = {
         let dismiss_msg = on_dismiss(toast.id);
-        button(
-            text(ICON_X.to_string())
-                .font(BOOTSTRAP_FONT)
-                .size(FONT_SM)
-                .color(dismiss_color),
-        )
-        .on_press(dismiss_msg)
-        .padding([2, 4])
-        .style(move |_theme: &iced::Theme, status| button::Style {
-            background: None,
-            text_color: match status {
-                button::Status::Hovered | button::Status::Pressed => dismiss_hover,
-                _ => dismiss_color,
-            },
-            border: Border {
-                color: Color::TRANSPARENT,
-                width: 0.0,
-                radius: radius(Radius::Sm).into(),
-            },
-            shadow: iced::Shadow::default(),
-            snap: false,
-        })
-        .into()
+        button(tabler_icon(Icon::X, FONT_SM, dismiss_color))
+            .on_press(dismiss_msg)
+            .padding([2, 4])
+            .style(move |_theme: &iced::Theme, status| button::Style {
+                background: None,
+                text_color: match status {
+                    button::Status::Hovered | button::Status::Pressed => dismiss_hover,
+                    _ => dismiss_color,
+                },
+                border: Border {
+                    color: Color::TRANSPARENT,
+                    width: 0.0,
+                    radius: radius(Radius::Sm).into(),
+                },
+                shadow: iced::Shadow::default(),
+                snap: false,
+            })
+            .into()
     };
 
     let mut content_children: Vec<Element<'a, Msg>> = vec![
-        icon_el.into(),
+        icon_el,
         msg_el.into(),
         iced::widget::Space::new().width(Length::Fill).into(),
     ];

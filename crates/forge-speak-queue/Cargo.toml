@@ -1,0 +1,25 @@
+[package]
+name                  = "forge-speak-queue"
+version.workspace     = true
+edition.workspace     = true
+license.workspace     = true
+repository.workspace  = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+forge-tts-core     = { path = "../forge-tts-core" }
+forge-voice        = { path = "../forge-voice" }
+forge-tts-pipeline = { path = "../forge-tts-pipeline" }
+forge-audio        = { path = "../forge-audio" }
+forge-events       = { path = "../forge-events" }
+forge-types        = { path = "../forge-types" }
+async-trait        = { workspace = true }
+serde              = { workspace = true }
+serde_json         = { workspace = true }
+thiserror          = { workspace = true }
+tokio              = { workspace = true }
+tracing            = { workspace = true }
+ulid               = { workspace = true }

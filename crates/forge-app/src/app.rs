@@ -69,6 +69,11 @@ use crate::settings_websocket::{
 use crate::soundboard::{SoundboardState, handle_soundboard_msg, soundboard_view};
 use crate::stream_apps::view as stream_apps_view;
 use crate::test_trigger::synthesize_test_event;
+use crate::tts_dashboard::{TtsDashState, handle_tts_dash_msg, tts_dashboard_view};
+use crate::tts_engines::{TtsEnginesState, handle_tts_engines_msg, tts_engines_view};
+use crate::tts_filters::{TtsFiltersState, handle_tts_filters_msg, tts_filters_view};
+use crate::tts_triggers::{TtsTriggersState, handle_tts_triggers_msg, tts_triggers_view};
+use crate::voice_aliases::{VoiceAliasesState, handle_voice_aliases_msg, voice_aliases_view};
 use crate::{Message, Screen, SettingsSection, TtsSection};
 
 pub struct SidebarExpandState {
@@ -142,6 +147,11 @@ pub struct App {
     pub soundboard: SoundboardState,
     pub sound_player: Option<Arc<SoundboardPlayer>>,
     pub settings_audio: SettingsAudioState,
+    pub tts_dashboard: TtsDashState,
+    pub tts_engines: TtsEnginesState,
+    pub tts_aliases: VoiceAliasesState,
+    pub tts_filters: TtsFiltersState,
+    pub tts_triggers: TtsTriggersState,
 }
 
 impl App {
@@ -195,6 +205,11 @@ impl App {
             soundboard: SoundboardState::new(),
             sound_player,
             settings_audio: SettingsAudioState::new(),
+            tts_dashboard: TtsDashState::new(),
+            tts_engines: TtsEnginesState::new(),
+            tts_aliases: VoiceAliasesState::new(),
+            tts_filters: TtsFiltersState::new(),
+            tts_triggers: TtsTriggersState::new(),
         }
     }
 }
@@ -250,6 +265,11 @@ impl Default for App {
             soundboard: SoundboardState::new(),
             sound_player: None,
             settings_audio: SettingsAudioState::new(),
+            tts_dashboard: TtsDashState::new(),
+            tts_engines: TtsEnginesState::new(),
+            tts_aliases: VoiceAliasesState::new(),
+            tts_filters: TtsFiltersState::new(),
+            tts_triggers: TtsTriggersState::new(),
         }
     }
 }
@@ -655,6 +675,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             let backend = Arc::clone(&app.backend);
             handle_settings_audio_msg(&mut app.settings_audio, backend, sub)
         }
+        Message::Tts(sub) => handle_tts_msg(app, sub),
         Message::Noop => Task::none(),
     }
 }
@@ -1714,6 +1735,17 @@ pub async fn load_obs_and_connect(
         .map_err(|e| e.to_string())?;
 
     Ok(ObsClientRef::new(Arc::new(client)))
+}
+
+fn handle_tts_msg(app: &mut App, msg: crate::message::TtsMsg) -> Task<Message> {
+    use crate::message::TtsMsg;
+    match msg {
+        TtsMsg::Dashboard(sub) => handle_tts_dash_msg(&mut app.tts_dashboard, sub),
+        TtsMsg::Engines(sub) => handle_tts_engines_msg(&mut app.tts_engines, sub),
+        TtsMsg::Aliases(sub) => handle_voice_aliases_msg(&mut app.tts_aliases, sub),
+        TtsMsg::Filters(sub) => handle_tts_filters_msg(&mut app.tts_filters, sub),
+        TtsMsg::Triggers(sub) => handle_tts_triggers_msg(&mut app.tts_triggers, sub),
+    }
 }
 
 struct NoopRateLimiter;
@@ -4283,6 +4315,86 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Vec<NavItem<'a,
     ]
 }
 
+fn tts_tab_button<'a>(
+    label: &'static str,
+    section: TtsSection,
+    active: &TtsSection,
+    palette: &'a ForgePalette,
+) -> iced::widget::Button<'a, Message> {
+    use iced::widget::{button, column, container, text};
+    let is_active = *active == section;
+    let fg = if is_active {
+        palette.text_primary
+    } else {
+        palette.text_muted
+    };
+    let indicator_color = if is_active {
+        palette.brand
+    } else {
+        iced::Color::TRANSPARENT
+    };
+    let inner = column![
+        text(label).size(FONT_BODY_SM).color(fg),
+        container(iced::widget::Space::new())
+            .width(iced::Length::Fill)
+            .height(2)
+            .style(move |_| iced::widget::container::Style {
+                background: Some(iced::Background::Color(indicator_color)),
+                ..iced::widget::container::Style::default()
+            }),
+    ]
+    .spacing(5);
+    button(inner)
+        .on_press(Message::Navigate(Screen::Tts(section)))
+        .padding([7_u16, 14_u16])
+        .style(|_, _| iced::widget::button::Style {
+            background: None,
+            ..iced::widget::button::Style::default()
+        })
+}
+
+fn tts_section_view<'a>(
+    app: &'a App,
+    section: &'a TtsSection,
+    palette: &'a ForgePalette,
+) -> iced::Element<'a, Message> {
+    use iced::widget::{column, container, row};
+    let tab_bar = container(
+        row![
+            tts_tab_button("Dashboard", TtsSection::Dashboard, section, palette),
+            tts_tab_button("Engines", TtsSection::Engines, section, palette),
+            tts_tab_button("Voice aliases", TtsSection::Aliases, section, palette),
+            tts_tab_button("Filters", TtsSection::Filters, section, palette),
+            tts_tab_button("Triggers", TtsSection::Triggers, section, palette),
+        ]
+        .spacing(2),
+    )
+    .width(iced::Length::Fill)
+    .style(move |_| iced::widget::container::Style {
+        background: Some(iced::Background::Color(palette.shell)),
+        border: iced::Border {
+            color: palette.border_regular,
+            width: 0.5,
+            radius: 0.0.into(),
+        },
+        ..iced::widget::container::Style::default()
+    });
+
+    let content: iced::Element<'a, Message> = match section {
+        TtsSection::Dashboard => tts_dashboard_view(&app.tts_dashboard, palette),
+        TtsSection::Engines => tts_engines_view(&app.tts_engines, palette),
+        TtsSection::Aliases => voice_aliases_view(&app.tts_aliases, palette),
+        TtsSection::Filters => tts_filters_view(&app.tts_filters, palette),
+        TtsSection::Triggers => tts_triggers_view(&app.tts_triggers, palette),
+    };
+
+    column![tab_bar, content]
+        .spacing(0)
+        .width(iced::Length::Fill)
+        .height(iced::Length::Fill)
+        .into()
+}
+
 pub fn view(app: &App) -> Element<'_, Message> {
     let palette = &app.palette;
 
@@ -4360,6 +4472,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
             }
         }
         Screen::Soundboard => soundboard_view(&app.soundboard, palette),
+        Screen::Tts(section) => tts_section_view(app, section, palette),
         other => coming_soon_view(format!("{other:?}"), palette),
     };
 
@@ -4893,6 +5006,11 @@ mod tests {
             soundboard: SoundboardState::new(),
             sound_player: None,
             settings_audio: SettingsAudioState::new(),
+            tts_dashboard: TtsDashState::new(),
+            tts_engines: TtsEnginesState::new(),
+            tts_aliases: VoiceAliasesState::new(),
+            tts_filters: TtsFiltersState::new(),
+            tts_triggers: TtsTriggersState::new(),
         };
 
         assert!(app.action_engine.is_some());
@@ -5179,6 +5297,11 @@ mod tests {
             soundboard: SoundboardState::new(),
             sound_player: None,
             settings_audio: SettingsAudioState::new(),
+            tts_dashboard: TtsDashState::new(),
+            tts_engines: TtsEnginesState::new(),
+            tts_aliases: VoiceAliasesState::new(),
+            tts_filters: TtsFiltersState::new(),
+            tts_triggers: TtsTriggersState::new(),
         };
 
         let mut form = crate::actions::AddActionForm::new();

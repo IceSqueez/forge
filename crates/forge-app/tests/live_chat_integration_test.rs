@@ -58,6 +58,11 @@ fn test_app() -> App {
         soundboard: forge_app::soundboard::SoundboardState::new(),
         sound_player: None,
         settings_audio: forge_app::settings_audio::SettingsAudioState::new(),
+        tts_dashboard: forge_app::tts_dashboard::TtsDashState::new(),
+        tts_engines: forge_app::tts_engines::TtsEnginesState::new(),
+        tts_aliases: forge_app::voice_aliases::VoiceAliasesState::new(),
+        tts_filters: forge_app::tts_filters::TtsFiltersState::new(),
+        tts_triggers: forge_app::tts_triggers::TtsTriggersState::new(),
     }
 }
 

@@ -115,6 +115,7 @@ pub struct App {
     pub event_feed: EventFeedState,
     pub live_chat: LiveChatState,
     pub actions: ActionsState,
+    pub commands: crate::commands_view::CommandsState,
     pub queues: QueuesState,
     pub viewers: crate::viewers::ViewersState,
     pub globals: GlobalsState,
@@ -177,6 +178,7 @@ impl App {
             event_feed: EventFeedState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
+            commands: crate::commands_view::CommandsState::new(),
             queues: QueuesState::new(),
             viewers: crate::viewers::ViewersState::default(),
             globals: GlobalsState::new(),
@@ -241,6 +243,7 @@ impl Default for App {
             event_feed: EventFeedState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
+            commands: crate::commands_view::CommandsState::new(),
             queues: QueuesState::new(),
             viewers: crate::viewers::ViewersState::default(),
             globals: GlobalsState::new(),
@@ -280,6 +283,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::Navigate(screen) => {
             let is_actions = matches!(screen, Screen::Actions);
             let is_queues = matches!(screen, Screen::Queues);
+            let is_commands = matches!(screen, Screen::Commands);
             let is_live_chat = matches!(screen, Screen::LiveChat);
             let is_hub = matches!(screen, Screen::Home);
             let is_globals = matches!(screen, Screen::Globals);
@@ -303,6 +307,10 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 Task::done(Message::Actions(ActionsMsg::LoadRequested))
             } else if is_queues {
                 Task::done(Message::Queues(QueuesMsg::LoadRequested))
+            } else if is_commands {
+                Task::done(Message::Commands(
+                    crate::commands_view::CommandsMsg::LoadRequested,
+                ))
             } else if is_live_chat {
                 Task::done(Message::Viewers(crate::viewers::ViewersMsg::LoadRequested))
             } else if is_hub {
@@ -564,6 +572,9 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::Actions(sub) => handle_actions_msg(app, sub),
         Message::Queues(sub) => handle_queues_msg(app, sub),
         Message::Viewers(sub) => crate::viewers::handle_msg(&mut app.viewers, sub, &app.backend),
+        Message::Commands(sub) => {
+            crate::commands_view::handle_msg(&mut app.commands, sub, &app.backend)
+        }
         Message::AddAction(sub) => handle_add_action_msg(app, sub),
         Message::AddTrigger(sub) => handle_add_trigger_msg(app, sub),
         Message::AddSubAction(sub) => handle_add_sub_action_msg(app, sub),
@@ -3216,6 +3227,172 @@ fn settings_queues_pane(palette: &ForgePalette) -> Element<'static, Message> {
         .into()
 }
 
+fn settings_language_pane(palette: &ForgePalette) -> Element<'static, Message> {
+    use iced::widget::{Space, column, container, row, text};
+
+    let p = *palette;
+    let mono = forge_widgets::font(forge_widgets::FontRole::Monospace);
+
+    let header = row![
+        tabler_icon(Icon::Globe, 18.0, p.brand),
+        text("Language & region")
+            .size(forge_widgets::tokens::FONT_LG)
+            .color(p.text_primary),
+    ]
+    .spacing(10)
+    .align_y(iced::Alignment::Center);
+
+    let rows: [(&str, &str); 4] = [
+        ("Interface language", "Ukrainian (uk-UA)"),
+        ("Region", "Ukraine"),
+        ("Date format", "DD.MM.YYYY"),
+        ("First day of week", "Monday"),
+    ];
+
+    let mut list = column![].spacing(0);
+    let count = rows.len();
+    for (i, (label, value)) in rows.into_iter().enumerate() {
+        let bottom = if i == count - 1 {
+            0_u16
+        } else {
+            FORGE_SETTINGS_ROW_BORDER as u16
+        };
+        let _ = bottom;
+        let row_el = container(
+            row![
+                text(label).size(FONT_SM).color(p.text_primary),
+                Space::new().width(Length::Fill),
+                container(text(value).size(FONT_SM).color(p.text_secondary).font(mono))
+                    .padding([3_u16, 8_u16])
+                    .style(move |_: &iced::Theme| container::Style {
+                        background: Some(iced::Background::Color(p.surface_overlay)),
+                        border: iced::Border {
+                            radius: forge_widgets::radius(forge_widgets::Radius::Sm).into(),
+                            ..Default::default()
+                        },
+                        ..container::Style::default()
+                    }),
+            ]
+            .align_y(iced::Alignment::Center),
+        )
+        .padding([10_u16, 0_u16])
+        .width(Length::Fill)
+        .style(move |_: &iced::Theme| {
+            let border_color = if i + 1 == count {
+                iced::Color::TRANSPARENT
+            } else {
+                p.border_regular
+            };
+            container::Style {
+                border: iced::Border {
+                    color: border_color,
+                    width: 0.5,
+                    radius: 0.0.into(),
+                },
+                ..container::Style::default()
+            }
+        });
+        list = list.push(row_el);
+    }
+
+    let body = column![header, list].spacing(18);
+
+    iced::widget::container(body)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(20)
+        .into()
+}
+
+fn settings_shortcuts_pane(palette: &ForgePalette) -> Element<'static, Message> {
+    use iced::widget::{Space, column, container, row, text};
+
+    let p = *palette;
+    let mono = forge_widgets::font(forge_widgets::FontRole::Monospace);
+
+    let header = row![
+        tabler_icon(Icon::Keyboard, 18.0, p.brand),
+        text("Shortcuts")
+            .size(forge_widgets::tokens::FONT_LG)
+            .color(p.text_primary),
+    ]
+    .spacing(10)
+    .align_y(iced::Alignment::Center);
+
+    let subtitle = text("Quick keys across Forge")
+        .size(FONT_SM)
+        .color(p.text_muted);
+
+    let rows: [(&str, &str); 6] = [
+        ("Save", "Ctrl + S"),
+        ("New action", "Ctrl + N"),
+        ("Quick switcher", "Ctrl + K"),
+        ("Toggle Live Chat", "Ctrl + Shift + C"),
+        ("Toggle Event Feed", "Ctrl + Shift + E"),
+        ("Run script", "F5"),
+    ];
+
+    let mut list = column![].spacing(0);
+    let count = rows.len();
+    for (i, (label, key)) in rows.into_iter().enumerate() {
+        let key_chip = container(text(key).size(FONT_XS).color(p.text_primary).font(mono))
+            .padding([3_u16, 8_u16])
+            .style(move |_: &iced::Theme| container::Style {
+                background: Some(iced::Background::Color(p.surface_overlay)),
+                border: iced::Border {
+                    radius: forge_widgets::radius(forge_widgets::Radius::Sm).into(),
+                    ..Default::default()
+                },
+                ..container::Style::default()
+            });
+
+        let row_el = container(
+            row![
+                text(label).size(FONT_SM).color(p.text_primary),
+                Space::new().width(Length::Fill),
+                key_chip,
+            ]
+            .align_y(iced::Alignment::Center),
+        )
+        .padding([10_u16, 0_u16])
+        .width(Length::Fill)
+        .style(move |_: &iced::Theme| {
+            let border_color = if i + 1 == count {
+                iced::Color::TRANSPARENT
+            } else {
+                p.border_regular
+            };
+            container::Style {
+                border: iced::Border {
+                    color: border_color,
+                    width: 0.5,
+                    radius: 0.0.into(),
+                },
+                ..container::Style::default()
+            }
+        });
+        list = list.push(row_el);
+    }
+
+    let note = container(
+        text("Keyboard shortcuts not yet bound — labels only for now.")
+            .size(FONT_XS)
+            .color(p.text_faint)
+            .font(mono),
+    )
+    .padding([8_u16, 0_u16]);
+
+    let body = column![header, subtitle, list, note].spacing(14);
+
+    iced::widget::container(body)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(20)
+        .into()
+}
+
+const FORGE_SETTINGS_ROW_BORDER: f32 = 0.5;
+
 fn settings_notifications_pane(palette: &ForgePalette) -> Element<'static, Message> {
     let card = forge_widgets::card(
         [
@@ -3525,6 +3702,8 @@ fn settings_view<'a>(
         SettingsSection::Storage => settings_storage_pane(palette),
         SettingsSection::Queues => settings_queues_pane(palette),
         SettingsSection::Notifications => settings_notifications_pane(palette),
+        SettingsSection::Language => settings_language_pane(palette),
+        SettingsSection::Shortcuts => settings_shortcuts_pane(palette),
         other => {
             let label = format!("Settings · {other:?}");
             iced::widget::container(forge_widgets::empty_state(
@@ -5502,6 +5681,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Screen::Actions => actions_view(app, palette),
         Screen::ActionEditor(id) => action_editor_view(app, *id, palette),
         Screen::Queues => queues_view(&app.queues, palette),
+        Screen::Commands => crate::commands_view::commands_view(&app.commands, palette),
         Screen::Settings(section) => settings_view(
             section,
             &app.settings_websocket,
@@ -6086,6 +6266,7 @@ mod tests {
             event_feed: EventFeedState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
+            commands: crate::commands_view::CommandsState::new(),
             queues: QueuesState::new(),
             viewers: crate::viewers::ViewersState::default(),
             globals: GlobalsState::new(),
@@ -6424,6 +6605,7 @@ mod tests {
             event_feed: EventFeedState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
+            commands: crate::commands_view::CommandsState::new(),
             queues: QueuesState::new(),
             viewers: crate::viewers::ViewersState::default(),
             globals: GlobalsState::new(),

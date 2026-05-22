@@ -1,6 +1,7 @@
 pub mod action_editor;
 pub mod actions;
 pub mod app;
+pub mod commands_view;
 pub mod event_feed;
 pub mod globals_view;
 pub mod integration_detail;

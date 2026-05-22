@@ -34,6 +34,7 @@ fn test_app() -> App {
         event_feed: EventFeedState::new(),
         live_chat: forge_app::LiveChatState::new(),
         actions: forge_app::ActionsState::new(),
+        commands: forge_app::commands_view::CommandsState::new(),
         queues: forge_app::queues_view::QueuesState::new(),
         viewers: forge_app::viewers::ViewersState::default(),
         globals: forge_app::GlobalsState::new(),

@@ -318,6 +318,7 @@ pub enum Message {
     Actions(ActionsMsg),
     Queues(QueuesMsg),
     Viewers(crate::viewers::ViewersMsg),
+    Commands(crate::commands_view::CommandsMsg),
     AddAction(AddActionMsg),
     AddTrigger(AddTriggerMsg),
     AddSubAction(AddSubActionMsg),

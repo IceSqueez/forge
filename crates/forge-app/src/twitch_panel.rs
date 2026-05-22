@@ -187,10 +187,17 @@ pub fn twitch_disconnected_view<'a>(
     };
     let scopes_card = scopes_preview_card(palette);
 
-    container(column![header_card, flow_card, scopes_card].spacing(14.0))
+    let page_header =
+        crate::app::simple_page_header(&[("Integrations", false), ("Twitch", true)], palette);
+
+    let body = container(column![header_card, flow_card, scopes_card].spacing(14.0))
         .width(Length::Fill)
         .height(Length::Fill)
-        .padding(Padding::from([18_u16, 22_u16]))
+        .padding(Padding::from([18_u16, 22_u16]));
+
+    column![page_header, body]
+        .width(Length::Fill)
+        .height(Length::Fill)
         .into()
 }
 

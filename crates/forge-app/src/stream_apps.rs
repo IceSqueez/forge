@@ -47,8 +47,8 @@ pub fn view<'a>(state: &'a App, palette: &'a ForgePalette) -> Element<'a, Messag
     let grid = row![obs_card, vtube_card].spacing(12).width(Length::Fill);
 
     let body = column![header, grid].spacing(18);
-
-    container(scrollable(body).height(Length::Fill))
+    let page_header = crate::app::simple_page_header(&[("Stream Apps", true)], palette);
+    let body_container = container(scrollable(body).height(Length::Fill))
         .width(Length::Fill)
         .height(Length::Fill)
         .padding(Padding {
@@ -56,7 +56,11 @@ pub fn view<'a>(state: &'a App, palette: &'a ForgePalette) -> Element<'a, Messag
             right: 28.0,
             bottom: 22.0,
             left: 28.0,
-        })
+        });
+
+    column![page_header, body_container]
+        .width(Length::Fill)
+        .height(Length::Fill)
         .into()
 }
 

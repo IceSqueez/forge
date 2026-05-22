@@ -116,75 +116,23 @@ pub async fn load_queues(
 }
 
 pub fn queues_view<'a>(state: &'a QueuesState, palette: &'a ForgePalette) -> Element<'a, Message> {
-    let total = state.queues.len();
-    let running = state.queues.iter().filter(|q| !q.paused).count();
-    let paused_count = state.queues.iter().filter(|q| q.paused).count();
-
-    let stat_strip = row![
-        text(total.to_string())
-            .size(FONT_SM)
-            .color(palette.text_primary),
-        text(" queues").size(FONT_SM).color(palette.text_secondary),
-        text("  ·  ").size(FONT_SM).color(palette.text_faint),
-        text(running.to_string())
-            .size(FONT_SM)
-            .color(palette.success),
-        text(" running").size(FONT_SM).color(palette.text_secondary),
-        text("  ·  ").size(FONT_SM).color(palette.text_faint),
-        text(paused_count.to_string())
-            .size(FONT_SM)
-            .color(palette.warning),
-        text(" paused").size(FONT_SM).color(palette.text_secondary),
-    ]
-    .align_y(iced::Alignment::Center);
-
-    let shell = palette.shell;
-    let border = palette.border_regular;
-    let top_bar = container(
-        row![Space::new().width(Length::Fill), stat_strip,].align_y(iced::Alignment::Center),
-    )
-    .width(Length::Fill)
-    .padding([8, 16])
-    .style(move |_: &iced::Theme| iced::widget::container::Style {
-        background: Some(Background::Color(shell)),
-        border: Border {
-            color: border,
-            width: BORDER_THIN,
-            radius: 0.0.into(),
-        },
-        ..Default::default()
-    });
-
-    let elevated = palette.elevated;
     let border_col = palette.border_regular;
-    let desc_color = palette.text_secondary;
     let warning = palette.warning;
     let brand = palette.brand;
     let dark = palette.shell;
 
-    let toolbar = container(
-        row![
-            text("Manage action queues, their concurrency, and pause state")
-                .size(FONT_SM)
-                .color(desc_color),
-            Space::new().width(Length::Fill),
-            pause_all_button(border_col, warning),
-            new_queue_button(brand, dark),
-        ]
-        .spacing(6)
-        .align_y(iced::Alignment::Center),
-    )
-    .width(Length::Fill)
-    .padding([8, 14])
-    .style(move |_: &iced::Theme| iced::widget::container::Style {
-        background: Some(Background::Color(elevated)),
-        border: Border {
-            color: border_col,
-            width: BORDER_THIN,
-            radius: 0.0.into(),
-        },
-        ..Default::default()
-    });
+    let right_side = row![
+        pause_all_button(border_col, warning),
+        new_queue_button(brand, dark),
+    ]
+    .spacing(8)
+    .align_y(iced::Alignment::Center);
+
+    let page_header = crate::app::page_header_with_actions(
+        &[("Automation", false), ("Queues", true)],
+        Some(right_side.into()),
+        palette,
+    );
 
     let grid = build_grid(state, palette);
 
@@ -197,7 +145,7 @@ pub fn queues_view<'a>(state: &'a QueuesState, palette: &'a ForgePalette) -> Ele
             ..Default::default()
         });
 
-    container(column![top_bar, toolbar, body].spacing(0))
+    container(column![page_header, body].spacing(0))
         .width(Length::Fill)
         .height(Length::Fill)
         .into()

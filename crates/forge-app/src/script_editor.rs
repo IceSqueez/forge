@@ -604,66 +604,6 @@ fn api_catalog() -> Vec<ApiNamespace> {
     ]
 }
 
-fn toolbar_row<'a>(
-    state: &'a ScriptEditorState,
-    palette: &'a ForgePalette,
-) -> Element<'a, Message> {
-    use iced::widget::Space;
-
-    let dirty = state.is_dirty();
-    let has_script = state.editor.is_some();
-
-    let run_btn = run_button(has_script, palette);
-    let save_btn = save_button(dirty, palette);
-    let format_btn = disabled_toolbar_button("Format", palette);
-    let separator =
-        container(Space::new())
-            .width(1.0)
-            .height(18.0)
-            .style(move |_: &iced::Theme| container::Style {
-                background: Some(Background::Color(palette.border_regular)),
-                ..container::Style::default()
-            });
-    let api_docs_btn = disabled_toolbar_button("API docs", palette);
-
-    let left = row![run_btn, save_btn, format_btn, separator, api_docs_btn]
-        .spacing(2.0)
-        .align_y(Alignment::Center);
-
-    let (line, col) = state
-        .editor
-        .as_ref()
-        .map_or((0, 0), |o| o.content.cursor_position());
-    let cfg = EngineConfig::default();
-    let sandbox_info = format!(
-        "Sandbox: enabled  ·  Timeout: {}ms  ·  Ln {}, Col {}",
-        cfg.wall_time_ms,
-        line + 1,
-        col + 1,
-    );
-    let right = text(sandbox_info)
-        .size(FONT_XS)
-        .color(palette.text_faint)
-        .font(font(FontRole::Monospace));
-
-    let row = row![left, Space::new().width(Length::Fill), right]
-        .align_y(Alignment::Center)
-        .padding([6.0, 14.0]);
-
-    container(row)
-        .width(Length::Fill)
-        .style(move |_: &iced::Theme| container::Style {
-            background: Some(Background::Color(palette.elevated)),
-            border: Border {
-                color: palette.border_regular,
-                width: 0.5,
-                radius: 0.0.into(),
-            },
-            ..container::Style::default()
-        })
-        .into()
-}
-
 fn run_button<'a>(enabled: bool, palette: &'a ForgePalette) -> Element<'a, Message> {
     use iced::widget::button;
     use iced::{Color, Shadow};
@@ -1129,7 +1069,7 @@ pub fn script_editor_view<'a>(
 ) -> Element<'a, Message> {
     let state = &app.script_editor;
 
-    let toolbar = toolbar_row(state, palette);
+    let toolbar_actions = toolbar_action_row(state, palette);
     let left = left_pane(state, palette);
     let center = center_pane(state, palette);
     let right = right_pane(palette);
@@ -1138,7 +1078,13 @@ pub fn script_editor_view<'a>(
         .width(Length::Fill)
         .height(Length::Fill);
 
-    let main_content = column![toolbar, three_pane]
+    let page_header = crate::app::page_header_with_actions(
+        &[("Script Editor", true)],
+        Some(toolbar_actions),
+        palette,
+    );
+
+    let main_content = column![page_header, three_pane]
         .width(Length::Fill)
         .height(Length::Fill);
 
@@ -1148,6 +1094,25 @@ pub fn script_editor_view<'a>(
     } else {
         main_content.into()
     }
+}
+
+fn toolbar_action_row<'a>(
+    state: &'a ScriptEditorState,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    let dirty = state.is_dirty();
+    let has_script = state.editor.is_some();
+
+    let run_btn = run_button(has_script, palette);
+    let save_btn = save_button(dirty, palette);
+    let format_btn = disabled_toolbar_button("Format", palette);
+    let api_docs_btn = disabled_toolbar_button("API docs", palette);
+    let divider = crate::app::header_divider(palette);
+
+    row![run_btn, save_btn, format_btn, divider, api_docs_btn]
+        .spacing(6)
+        .align_y(Alignment::Center)
+        .into()
 }
 
 #[derive(Debug, Clone)]

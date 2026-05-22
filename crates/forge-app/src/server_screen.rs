@@ -1274,7 +1274,10 @@ pub fn server_screen_view<'a>(
     .spacing(12)
     .padding([16u16, 20u16]);
 
+    let page_header = crate::app::simple_page_header(&[("Server", true)], palette);
+
     column![
+        page_header,
         scrollable(body).height(Length::Fill),
         footer_bar(state, palette),
     ]

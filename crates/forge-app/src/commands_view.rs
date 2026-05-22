@@ -4,10 +4,8 @@ use forge_storage::DataProvider;
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{Command, CommandPermission};
 use forge_widgets::{
-    ForgePalette, Icon, filter_chip,
-    icons::tabler_icon,
-    primary_button, search_input,
-    tokens::{FONT_LG, FONT_SM, FONT_XS, FontRole, font},
+    ForgePalette, filter_chip, primary_button, search_input,
+    tokens::{FONT_SM, FONT_XS, FontRole, font},
 };
 use iced::{
     Alignment, Background, Border, Element, Length, Task,
@@ -112,34 +110,13 @@ pub fn commands_view<'a>(
     let p = *palette;
     let mono = font(FontRole::Monospace);
 
-    let total = state.commands.len();
-    let active_count = state.commands.len();
-
-    let header = container(
-        row![
-            tabler_icon(Icon::Terminal, 18.0, p.brand),
-            text("Commands").size(FONT_LG).color(p.text_primary),
-            Space::new().width(Length::Fill),
-            text(format!("{total} commands"))
-                .size(FONT_XS)
-                .color(p.text_muted),
-            text("\u{00b7}").size(FONT_XS).color(p.text_faint),
-            text(format!("{active_count} active"))
-                .size(FONT_XS)
-                .color(p.success),
-        ]
-        .spacing(10)
-        .align_y(Alignment::Center),
-    )
-    .padding([14_u16, 20_u16])
-    .width(Length::Fill);
-
-    let search_box = search_input(
+    let search_box = container(search_input(
         "Search commands...",
         &state.search,
         |s| Message::Commands(CommandsMsg::SearchChanged(s)),
         palette,
-    );
+    ))
+    .width(Length::Fixed(180.0));
 
     let chips = row![
         filter_chip(
@@ -164,31 +141,13 @@ pub fn commands_view<'a>(
             Message::Commands(CommandsMsg::FilterChanged(CommandsFilter::Disabled)),
         ),
     ]
-    .spacing(6)
-    .align_y(Alignment::Center);
+    .spacing(4);
 
     let new_btn = primary_button("New command", Message::Navigate(Screen::Actions), palette);
-
-    let toolbar = container(
-        row![
-            row![search_box, chips]
-                .spacing(10)
-                .align_y(Alignment::Center),
-            Space::new().width(Length::Fill),
-            new_btn,
-        ]
-        .align_y(Alignment::Center),
-    )
-    .padding([8_u16, 16_u16])
-    .style(move |_: &iced::Theme| container::Style {
-        background: Some(Background::Color(p.base)),
-        border: Border {
-            color: p.border_regular,
-            width: 0.5,
-            radius: 0.0.into(),
-        },
-        ..container::Style::default()
-    });
+    let divider = crate::app::header_divider(palette);
+    let right_side = row![chips, divider, search_box, new_btn]
+        .spacing(8)
+        .align_y(Alignment::Center);
 
     let column_header = container(
         row![
@@ -267,8 +226,14 @@ pub fn commands_view<'a>(
         scrollable(col).height(Length::Fill).into()
     };
 
+    let page_header = crate::app::page_header_with_actions(
+        &[("Automation", false), ("Commands", true)],
+        Some(right_side.into()),
+        palette,
+    );
+
     container(
-        column![header, toolbar, column_header, rows_body]
+        column![page_header, column_header, rows_body]
             .spacing(0)
             .width(Length::Fill)
             .height(Length::Fill),

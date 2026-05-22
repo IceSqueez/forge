@@ -3217,8 +3217,16 @@ fn home_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message
         .into()
 }
 
-fn simple_page_header<'a>(
+pub(crate) fn simple_page_header<'a>(
     crumbs: &[(&'a str, bool)],
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    page_header_with_actions(crumbs, None, palette)
+}
+
+pub(crate) fn page_header_with_actions<'a>(
+    crumbs: &[(&'a str, bool)],
+    right: Option<Element<'a, Message>>,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     use iced::widget::{container, row, text};
@@ -3239,7 +3247,19 @@ fn simple_page_header<'a>(
         crumb_row = crumb_row.push(text(label.to_string()).size(FONT_SM).color(color));
     }
 
-    container(crumb_row)
+    let inner: Element<'a, Message> = if let Some(right_el) = right {
+        row![
+            crumb_row,
+            iced::widget::Space::new().width(Length::Fill),
+            right_el,
+        ]
+        .align_y(iced::alignment::Vertical::Center)
+        .into()
+    } else {
+        crumb_row.into()
+    };
+
+    container(inner)
         .width(Length::Fill)
         .padding([10_u16, 16_u16])
         .style(move |_: &iced::Theme| container::Style {
@@ -3250,6 +3270,18 @@ fn simple_page_header<'a>(
                 radius: 0.0.into(),
             },
             ..container::Style::default()
+        })
+        .into()
+}
+
+pub(crate) fn header_divider<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
+    let p = *palette;
+    iced::widget::container(iced::widget::Space::new().width(0.5).height(16.0))
+        .width(0.5)
+        .height(16.0)
+        .style(move |_: &iced::Theme| iced::widget::container::Style {
+            background: Some(iced::Background::Color(p.border_regular)),
+            ..iced::widget::container::Style::default()
         })
         .into()
 }
@@ -3794,8 +3826,8 @@ fn platforms_overview_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
     let grid = column![grid_row_1, grid_row_2].spacing(12);
 
     let body = column![header, grid].spacing(18);
-
-    container(scrollable(body).height(Length::Fill))
+    let page_header = simple_page_header(&[("Platforms", true)], palette);
+    let body_container = container(scrollable(body).height(Length::Fill))
         .width(Length::Fill)
         .height(Length::Fill)
         .padding(Padding {
@@ -3803,7 +3835,11 @@ fn platforms_overview_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
             right: 28.0,
             bottom: 22.0,
             left: 28.0,
-        })
+        });
+
+    column![page_header, body_container]
+        .width(Length::Fill)
+        .height(Length::Fill)
         .into()
 }
 
@@ -3883,7 +3919,13 @@ fn settings_view<'a>(
         }
     };
 
-    iced::widget::row![nav_container, pane].spacing(0).into()
+    let page_header = simple_page_header(&[("Settings", true)], palette);
+    let body = iced::widget::row![nav_container, pane].spacing(0);
+
+    iced::widget::column![page_header, body]
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
 }
 
 fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
@@ -6117,7 +6159,16 @@ fn tts_section_view<'a>(
         TtsSection::Triggers => tts_triggers_view(&app.tts_triggers, palette),
     };
 
-    column![tab_bar, content]
+    let section_label = match section {
+        TtsSection::Dashboard => "Dashboard",
+        TtsSection::Engines => "Engines",
+        TtsSection::Aliases => "Voice aliases",
+        TtsSection::Filters => "Filters",
+        TtsSection::Triggers => "Triggers",
+    };
+    let page_header = simple_page_header(&[("TTS", false), (section_label, true)], palette);
+
+    column![page_header, tab_bar, content]
         .spacing(0)
         .width(iced::Length::Fill)
         .height(iced::Length::Fill)
@@ -6209,7 +6260,22 @@ pub fn view(app: &App) -> Element<'_, Message> {
 
     let screen_uses_own_header = matches!(
         &app.screen,
-        Screen::Actions | Screen::LiveChat | Screen::Home
+        Screen::Actions
+            | Screen::ActionEditor(_)
+            | Screen::LiveChat
+            | Screen::Home
+            | Screen::Globals
+            | Screen::Queues
+            | Screen::Commands
+            | Screen::EventFeed
+            | Screen::Platforms
+            | Screen::StreamApps
+            | Screen::IntegrationDetail(_)
+            | Screen::Settings(_)
+            | Screen::Server
+            | Screen::ScriptEditor
+            | Screen::Soundboard
+            | Screen::Tts(_)
     );
     let content: Element<'_, Message> = if screen_uses_own_header {
         iced::widget::column![screen_content]

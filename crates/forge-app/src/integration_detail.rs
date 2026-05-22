@@ -355,7 +355,15 @@ pub fn view<'a>(
         spacing(Spacing::Lg, Density::Cozy),
     ]);
 
-    let base: Element<'_, Message> = iced::widget::scrollable(padded).into();
+    let scroll_body: Element<'_, Message> = iced::widget::scrollable(padded).into();
+    let page_header = crate::app::simple_page_header(
+        &[("Integrations", false), (state.display_name.as_str(), true)],
+        palette,
+    );
+    let base: Element<'_, Message> = iced::widget::column![page_header, scroll_body]
+        .width(iced::Length::Fill)
+        .height(iced::Length::Fill)
+        .into();
 
     match (&state.pending_picker, &state.quick_action_toast) {
         (Some(pending), Some(toast_msg)) => iced::widget::stack![

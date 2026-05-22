@@ -209,7 +209,10 @@ pub fn platform_generic_view<'a>(
 
     let body = column![hero_card, features_col, footer].spacing(14);
 
-    container(scrollable(body).height(Length::Fill))
+    let page_header =
+        crate::app::simple_page_header(&[("Integrations", false), (info.name, true)], palette);
+
+    let body_container = container(scrollable(body).height(Length::Fill))
         .width(Length::Fill)
         .height(Length::Fill)
         .padding(Padding {
@@ -217,6 +220,10 @@ pub fn platform_generic_view<'a>(
             right: 22.0,
             bottom: 18.0,
             left: 22.0,
-        })
+        });
+
+    column![page_header, body_container]
+        .width(Length::Fill)
+        .height(Length::Fill)
         .into()
 }

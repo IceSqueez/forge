@@ -779,11 +779,32 @@ pub fn action_editor_view<'a>(
 ) -> Element<'a, Message> {
     let left = tree_pane(&app.actions.tree, action_id, palette);
     let right = detail_pane(app, action_id, palette);
+    let action_name = app
+        .actions
+        .tree
+        .iter()
+        .flat_map(|g| g.actions.iter())
+        .find(|a| a.id == action_id)
+        .map(|a| a.name.as_str())
+        .unwrap_or("Action");
+    let page_header = crate::app::simple_page_header(
+        &[
+            ("Automation", false),
+            ("Actions", false),
+            (action_name, true),
+        ],
+        palette,
+    );
 
-    iced::widget::row![left, right]
-        .spacing(0)
-        .height(Length::Fill)
-        .into()
+    iced::widget::column![
+        page_header,
+        iced::widget::row![left, right]
+            .spacing(0)
+            .height(Length::Fill),
+    ]
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .into()
 }
 
 #[cfg(test)]

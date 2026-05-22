@@ -669,17 +669,7 @@ pub fn soundboard_view<'a>(
     .padding([5.0, 12.0])
     .style(move |_theme, status| add_btn_style(&p, status));
 
-    let header = row![
-        tabler_icon(Icon::Music, 14.0, palette.bits),
-        text("Soundboard")
-            .size(FONT_SM)
-            .color(palette.text_primary)
-            .font(font(FontRole::Body))
-            .width(Length::Fill),
-        add_btn,
-    ]
-    .spacing(gap_xl)
-    .align_y(Alignment::Center);
+    let _ = gap_xl;
 
     let body: Element<'a, Message> = if state.loading {
         container(
@@ -775,23 +765,13 @@ pub fn soundboard_view<'a>(
         .into()
     });
 
-    let top_section = container(header)
-        .width(Length::Fill)
-        .padding([
-            f32::from(spacing(Spacing::Sm, Density::Cozy)),
-            f32::from(spacing(Spacing::Md, Density::Cozy)),
-        ])
-        .style(move |_| container::Style {
-            background: Some(Background::Color(p.shell)),
-            border: Border {
-                color: p.border_regular,
-                width: 0.0,
-                radius: 0.0.into(),
-            },
-            ..container::Style::default()
-        });
+    let page_header = crate::app::page_header_with_actions(
+        &[("Soundboard", true)],
+        Some(add_btn.into()),
+        palette,
+    );
 
-    let mut main_col = column![top_section];
+    let mut main_col = column![page_header];
     if let Some(banner) = play_error_banner {
         main_col = main_col.push(banner);
     }

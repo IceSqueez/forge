@@ -453,63 +453,7 @@ pub fn event_feed_view<'a>(
     let mono = font(FontRole::Monospace);
     let filter = state.active_filter;
 
-    let live_dot = container(iced::widget::Space::new())
-        .width(5.0)
-        .height(5.0)
-        .style(move |_: &iced::Theme| container::Style {
-            background: Some(Background::Color(palette.success)),
-            border: Border {
-                radius: 2.5.into(),
-                ..Border::default()
-            },
-            ..container::Style::default()
-        });
-
-    let live_pill_content = row![
-        live_dot,
-        text("LIVE").size(FONT_XS).color(palette.success).font(mono),
-    ]
-    .spacing(5)
-    .align_y(iced::Alignment::Center);
-
-    let live_pill = container(live_pill_content)
-        .padding([1, 7])
-        .style(move |_: &iced::Theme| container::Style {
-            background: Some(Background::Color(palette.surface_overlay)),
-            border: Border {
-                radius: radius(Radius::Pill).into(),
-                ..Border::default()
-            },
-            ..container::Style::default()
-        });
-
-    let total_count = state.events.len();
-    let count_text = text(format!("{total_count} events \u{b7} in buffer"))
-        .size(FONT_XS)
-        .color(palette.text_secondary)
-        .font(mono);
-
-    let top_bar = container(
-        row![
-            text("Event feed").size(FONT_XS).color(palette.text_primary),
-            live_pill,
-            iced::widget::Space::new().width(Length::Fill),
-            count_text,
-        ]
-        .spacing(8)
-        .align_y(iced::Alignment::Center),
-    )
-    .width(Length::Fill)
-    .padding([10, 16])
-    .style(move |_: &iced::Theme| container::Style {
-        background: Some(Background::Color(palette.shell)),
-        border: Border {
-            color: palette.border_regular,
-            width: 0.5,
-            radius: 0.0.into(),
-        },
-        ..container::Style::default()
-    });
+    let _ = mono;
 
     let mut all_n = 0u32;
     let mut chat_n = 0u32;
@@ -626,25 +570,10 @@ pub fn event_feed_view<'a>(
         .spacing(6)
         .align_y(iced::Alignment::Center);
 
-    let toolbar = container(
-        row![
-            chips,
-            iced::widget::Space::new().width(Length::Fill),
-            action_row,
-        ]
-        .align_y(iced::Alignment::Center),
-    )
-    .width(Length::Fill)
-    .padding([8, 14])
-    .style(move |_: &iced::Theme| container::Style {
-        background: Some(Background::Color(palette.elevated)),
-        border: Border {
-            color: palette.border_regular,
-            width: 0.5,
-            radius: 0.0.into(),
-        },
-        ..container::Style::default()
-    });
+    let divider = crate::app::header_divider(palette);
+    let right_side = row![chips, divider, action_row]
+        .spacing(8)
+        .align_y(iced::Alignment::Center);
 
     let filtered: Vec<&Event> = state
         .events
@@ -849,7 +778,13 @@ pub fn event_feed_view<'a>(
         ..container::Style::default()
     });
 
-    column![top_bar, toolbar, body_row, footer]
+    let page_header = crate::app::page_header_with_actions(
+        &[("Event Feed", true)],
+        Some(right_side.into()),
+        palette,
+    );
+
+    column![page_header, body_row, footer]
         .height(Length::Fill)
         .into()
 }

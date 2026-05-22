@@ -676,10 +676,10 @@ fn globals_main_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a,
         },
     );
 
+    let _ = (persisted_count, session_count, total);
+
     column![
-        globals_stats_header(total, persisted_count, session_count, palette),
-        rule::horizontal(1.0).style(rule_style),
-        globals_toolbar(app, palette),
+        globals_page_header(app, palette),
         rule::horizontal(1.0).style(rule_style),
         scrollable(table_content).height(Length::Fill),
         footer,
@@ -688,61 +688,49 @@ fn globals_main_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a,
     .into()
 }
 
-fn globals_stats_header<'a>(
-    total: usize,
-    persisted: usize,
-    session: usize,
-    palette: &'a ForgePalette,
-) -> Element<'a, Message> {
-    let shell_bg = palette.shell;
-    let muted = palette.text_muted;
-    let faint = palette.text_faint;
-    let primary = palette.text_primary;
-    let success = palette.success;
-    let warning = palette.warning;
+fn globals_page_header<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
+    use forge_widgets::{Icon, tabler_icon};
 
-    let label = text("Global variables").size(FONT_SM).color(primary);
+    let p = *palette;
 
-    let total_part = row![
-        text(total.to_string()).size(FONT_SM).color(primary),
-        text(" total").size(FONT_SM).color(muted),
+    let crumbs_left = row![
+        tabler_icon::<Message>(Icon::Home, 13.0, p.text_faint),
+        tabler_icon::<Message>(Icon::ChevronRight, 11.0, p.text_faint),
+        text("Globals").size(FONT_SM).color(p.text_primary),
     ]
-    .spacing(0);
-
-    let persisted_part = row![
-        text(persisted.to_string()).size(FONT_SM).color(success),
-        text(" persisted").size(FONT_SM).color(muted),
-    ]
-    .spacing(0);
-
-    let session_part = row![
-        text(session.to_string()).size(FONT_SM).color(warning),
-        text(" in-memory").size(FONT_SM).color(muted),
-    ]
-    .spacing(0);
-
-    let stats = row![
-        total_part,
-        text(" · ").size(FONT_SM).color(faint),
-        persisted_part,
-        text(" · ").size(FONT_SM).color(faint),
-        session_part,
-    ]
-    .spacing(0)
+    .spacing(8)
     .align_y(Alignment::Center);
 
-    container(row![label, Space::new().width(Length::Fill), stats].align_y(Alignment::Center))
-        .padding([10.0_f32, 14.0_f32])
-        .width(Length::Fill)
-        .style(move |_: &iced::Theme| container::Style {
-            background: Some(Background::Color(shell_bg)),
-            ..container::Style::default()
-        })
-        .into()
-}
+    let chip_all = filter_chip(
+        "All",
+        p.brand,
+        app.globals.filter == GlobalsFilter::All,
+        Message::Globals(GlobalsMsg::FilterSelected(GlobalsFilter::All)),
+        palette,
+    );
+    let chip_persisted = filter_chip(
+        "Persisted",
+        p.success,
+        app.globals.filter == GlobalsFilter::Persisted,
+        Message::Globals(GlobalsMsg::FilterSelected(GlobalsFilter::Persisted)),
+        palette,
+    );
+    let chip_session = filter_chip(
+        "Session",
+        p.warning,
+        app.globals.filter == GlobalsFilter::Session,
+        Message::Globals(GlobalsMsg::FilterSelected(GlobalsFilter::Session)),
+        palette,
+    );
+    let chips = row![chip_all, chip_persisted, chip_session].spacing(4);
 
-fn globals_toolbar<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
-    let elevated_bg = palette.elevated;
+    let divider = container(Space::new().width(0.5).height(16.0))
+        .width(0.5)
+        .height(16.0)
+        .style(move |_: &iced::Theme| container::Style {
+            background: Some(Background::Color(p.border_regular)),
+            ..container::Style::default()
+        });
 
     let search = container(search_input(
         "Search variables...",
@@ -750,32 +738,7 @@ fn globals_toolbar<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, M
         |s| Message::Globals(GlobalsMsg::SearchChanged(s)),
         palette,
     ))
-    .width(220.0);
-
-    let chips = row![
-        filter_chip(
-            "All",
-            palette.brand,
-            app.globals.filter == GlobalsFilter::All,
-            Message::Globals(GlobalsMsg::FilterSelected(GlobalsFilter::All)),
-            palette,
-        ),
-        filter_chip(
-            "Persisted",
-            palette.success,
-            app.globals.filter == GlobalsFilter::Persisted,
-            Message::Globals(GlobalsMsg::FilterSelected(GlobalsFilter::Persisted)),
-            palette,
-        ),
-        filter_chip(
-            "Session",
-            palette.warning,
-            app.globals.filter == GlobalsFilter::Session,
-            Message::Globals(GlobalsMsg::FilterSelected(GlobalsFilter::Session)),
-            palette,
-        ),
-    ]
-    .spacing(4);
+    .width(Length::Fixed(180.0));
 
     let export_btn = secondary_button(
         "Export JSON",
@@ -788,16 +751,23 @@ fn globals_toolbar<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, M
         palette,
     );
 
-    let left = row![search, chips].spacing(10).align_y(Alignment::Center);
-    let right = row![export_btn, new_btn]
-        .spacing(6)
+    let right_side = row![chips, divider, search, export_btn, new_btn]
+        .spacing(8)
         .align_y(Alignment::Center);
 
-    container(row![left, Space::new().width(Length::Fill), right].align_y(Alignment::Center))
-        .padding([8.0_f32, 14.0_f32])
+    let inner =
+        row![crumbs_left, Space::new().width(Length::Fill), right_side].align_y(Alignment::Center);
+
+    container(inner)
         .width(Length::Fill)
+        .padding([10_u16, 16_u16])
         .style(move |_: &iced::Theme| container::Style {
-            background: Some(Background::Color(elevated_bg)),
+            background: Some(Background::Color(p.shell)),
+            border: Border {
+                color: p.border_regular,
+                width: 0.5,
+                radius: 0.0.into(),
+            },
             ..container::Style::default()
         })
         .into()

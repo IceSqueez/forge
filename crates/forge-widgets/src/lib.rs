@@ -16,7 +16,6 @@ pub mod inputs;
 pub mod integration;
 pub mod layout;
 pub mod navigation;
-pub mod onboarding;
 pub mod output_device_picker;
 pub mod palette;
 pub mod picker;
@@ -66,19 +65,13 @@ pub use integration::{
 };
 pub use layout::{app_footer, page_shell, title_bar, toolbar};
 pub use navigation::{NavChild, NavItem, SIDEBAR_WIDTH, Sidebar, sidebar};
-pub use onboarding::{
-    BannerKind, PlatformCardProps, Severity, StepEntry, StepInfo, StepStatus, device_code_display,
-    expiration_color_band, expiration_timer, live_status_banner, locale_tip_card,
-    numbered_box_step, onboarding_footer, onboarding_step_header, onboarding_stepper,
-    platform_picker_card,
-};
 pub use output_device_picker::{DeviceLabel, output_device_picker};
 pub use palette::{CATPPUCCIN_MOCHA, ForgePalette, LATTE, TOKYO_NIGHT};
 pub use picker::{PickerItem, PickerModalProps, picker_modal};
 pub use popover::{MenuItem, MenuPlacement, RowAction, actionable_count, menu_button, row_actions};
 pub use sections::{
-    ToastVariant, counter_badge, empty_state, section_header, section_header_expandable,
-    toast_banner,
+    BannerKind, ToastVariant, counter_badge, empty_state, live_status_banner, section_header,
+    section_header_expandable, toast_banner,
 };
 pub use server::{
     BindAddressCardParams, BindBadge, BulletItem, BulletKind, ClientRowData, ClientStatus,

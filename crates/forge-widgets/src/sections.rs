@@ -1,12 +1,93 @@
 use std::borrow::Cow;
 
 use iced::{
-    Alignment, Background, Border, Color, Element, Length,
+    Alignment, Background, Border, Color, Element, Length, Padding,
     widget::{Space, button, column, container, row, text},
 };
 
 use crate::palette::ForgePalette;
-use crate::tokens::{FONT_MD, FONT_SM, FONT_XS, FontRole, Radius, font, radius};
+use crate::tokens::{BORDER_THIN, FONT_MD, FONT_SM, FONT_XS, FontRole, Radius, font, radius};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BannerKind {
+    Waiting,
+    Success,
+    Error,
+}
+
+fn banner_dot<'a, Msg: 'a>(color: Color) -> Element<'a, Msg> {
+    container(Space::new())
+        .width(8.0)
+        .height(8.0)
+        .style(move |_theme: &iced::Theme| container::Style {
+            background: Some(Background::Color(color)),
+            border: Border {
+                radius: 4.0.into(),
+                ..Border::default()
+            },
+            ..container::Style::default()
+        })
+        .into()
+}
+
+pub fn live_status_banner<'a, Msg: 'a>(
+    kind: BannerKind,
+    message: &'a str,
+    hint: Option<&'a str>,
+    palette: &'a ForgePalette,
+) -> Element<'a, Msg> {
+    let (dot_color, bg_color, border_color) = match kind {
+        BannerKind::Waiting => (palette.brand, palette.surface_overlay, palette.brand),
+        BannerKind::Success => (
+            palette.success,
+            Color {
+                a: 0.18,
+                ..palette.success
+            },
+            palette.success,
+        ),
+        BannerKind::Error => (
+            palette.random,
+            Color {
+                a: 0.18,
+                ..palette.random
+            },
+            palette.random,
+        ),
+    };
+
+    let dot = banner_dot::<Msg>(dot_color);
+
+    let mut content_col = column![
+        row![dot, text(message).size(FONT_SM).color(palette.text_primary)]
+            .spacing(10)
+            .align_y(Alignment::Center),
+    ];
+
+    if let Some(hint_text) = hint {
+        content_col = content_col.push(
+            text(hint_text)
+                .font(font(FontRole::Monospace))
+                .size(FONT_XS)
+                .color(palette.text_faint)
+                .wrapping(iced::widget::text::Wrapping::Word),
+        );
+    }
+
+    container(content_col)
+        .padding(Padding::from([11_u16, 14_u16]))
+        .width(Length::Fill)
+        .style(move |_theme: &iced::Theme| container::Style {
+            background: Some(Background::Color(bg_color)),
+            border: Border {
+                color: border_color,
+                width: BORDER_THIN,
+                radius: radius(Radius::Md).into(),
+            },
+            ..container::Style::default()
+        })
+        .into()
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ToastVariant {

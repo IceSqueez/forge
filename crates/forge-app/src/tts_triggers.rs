@@ -8,6 +8,7 @@ use iced::{Alignment, Background, Border, Element, Length, Task};
 
 use crate::Message;
 use crate::message::{TtsMsg, TtsTriggersMsg};
+use crate::runtime_view::RuntimeView;
 
 pub struct TtsTriggersState {
     pub command_enabled: bool,
@@ -39,7 +40,11 @@ impl Default for TtsTriggersState {
     }
 }
 
-pub fn handle_tts_triggers_msg(state: &mut TtsTriggersState, msg: TtsTriggersMsg) -> Task<Message> {
+pub fn update(
+    state: &mut TtsTriggersState,
+    _rt: &RuntimeView,
+    msg: TtsTriggersMsg,
+) -> Task<Message> {
     match msg {
         TtsTriggersMsg::CommandEnabledToggled(v) => {
             state.command_enabled = v;

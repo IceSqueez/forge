@@ -116,7 +116,7 @@ pub fn handle_integration_detail_msg(app: &mut App, msg: IntegrationDetailMsg) -
             let integration_id = state.id.as_str().to_owned();
 
             if let Some(kind) = picker_kind {
-                let obs_client = app.obs_client.clone();
+                let obs_client = app.rt.obs_client.clone();
                 let Some(detail) = app.integration_detail.as_mut() else {
                     return Task::none();
                 };
@@ -143,7 +143,7 @@ pub fn handle_integration_detail_msg(app: &mut App, msg: IntegrationDetailMsg) -
                     ),
                 }
             } else {
-                let engine = app.action_engine.clone();
+                let engine = app.rt.action_engine.clone();
                 Task::perform(
                     async move {
                         if let Some(e) = engine {
@@ -228,7 +228,7 @@ pub fn handle_integration_detail_msg(app: &mut App, msg: IntegrationDetailMsg) -
                 PickerKind::Hotkey | PickerKind::Expression => return Task::none(),
             }
 
-            let engine = app.action_engine.clone();
+            let engine = app.rt.action_engine.clone();
             Task::perform(
                 async move {
                     if let Some(e) = engine {

@@ -187,7 +187,7 @@ pub fn handle_script_editor_msg(
     match sub {
         ScriptEditorMsg::LoadRequested => {
             app.script_editor.loading = true;
-            let dp = Arc::clone(&app.backend);
+            let dp = Arc::clone(&app.rt.backend);
             iced::Task::perform(async move { load_script_list(dp).await }, |r| {
                 Message::ScriptEditor(ScriptEditorMsg::ScriptsLoaded(r))
             })
@@ -209,7 +209,7 @@ pub fn handle_script_editor_msg(
         }
         ScriptEditorMsg::ScriptSelected(id) => {
             app.script_editor.selected = Some(id);
-            let dp = Arc::clone(&app.backend);
+            let dp = Arc::clone(&app.rt.backend);
             iced::Task::perform(
                 async move {
                     ScriptRepo::get(&*dp, id)
@@ -272,7 +272,7 @@ pub fn handle_script_editor_msg(
             record.body_hash = hash_body(&body);
             record.contract = contract;
             record.last_modified = OffsetDateTime::now_utc();
-            let dp = Arc::clone(&app.backend);
+            let dp = Arc::clone(&app.rt.backend);
             iced::Task::perform(
                 async move {
                     ScriptRepo::save(&*dp, record.clone())
@@ -294,8 +294,8 @@ pub fn handle_script_editor_msg(
                 timestamp: Some(ts),
                 text: "script saved".to_string(),
             });
-            let registry = Arc::clone(&app.script_registry);
-            let bus = Arc::clone(&app.bus);
+            let registry = Arc::clone(&app.rt.script_registry);
+            let bus = Arc::clone(&app.rt.bus);
             iced::Task::perform(
                 async move {
                     registry
@@ -334,8 +334,8 @@ pub fn handle_script_editor_msg(
             if contract.inputs.is_empty() {
                 let script_id = open.id;
                 let script_name = open.record.name.clone();
-                let dp = Arc::clone(&app.backend);
-                let bus = Arc::clone(&app.bus);
+                let dp = Arc::clone(&app.rt.backend);
+                let bus = Arc::clone(&app.rt.bus);
                 let ts = now_timestamp();
                 app.script_editor.console_lines.push(ConsoleLine {
                     level: ConsoleLevel::Run,
@@ -402,8 +402,8 @@ pub fn handle_script_editor_msg(
             let body = open.content.text();
             let script_id = form.script_id;
             let script_name = form.script_name.clone();
-            let dp = Arc::clone(&app.backend);
-            let bus = Arc::clone(&app.bus);
+            let dp = Arc::clone(&app.rt.backend);
+            let bus = Arc::clone(&app.rt.bus);
             if let Some(f) = app.script_editor.run_modal.as_mut() {
                 f.running = true;
                 f.error = None;
@@ -448,7 +448,7 @@ pub fn handle_script_editor_msg(
             iced::Task::none()
         }
         ScriptEditorMsg::NewScriptRequested => {
-            let dp = Arc::clone(&app.backend);
+            let dp = Arc::clone(&app.rt.backend);
             iced::Task::perform(
                 async move {
                     let now = OffsetDateTime::now_utc();
@@ -496,7 +496,7 @@ pub fn handle_script_editor_msg(
             iced::Task::none()
         }
         ScriptEditorMsg::DeleteRequested(id) => {
-            let dp = Arc::clone(&app.backend);
+            let dp = Arc::clone(&app.rt.backend);
             iced::Task::perform(
                 async move {
                     ScriptRepo::delete(&*dp, id)

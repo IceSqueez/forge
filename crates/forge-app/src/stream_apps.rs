@@ -21,7 +21,7 @@ pub fn view<'a>(state: &'a App, palette: &'a ForgePalette) -> Element<'a, Messag
     let header = column![title, subtitle].spacing(4);
 
     let obs_connected = matches!(
-        state.obs_client.as_ref().map(|c| c.connection_state()),
+        state.rt.obs_client.as_ref().map(|c| c.connection_state()),
         Some(ConnectionState::Connected)
     );
 

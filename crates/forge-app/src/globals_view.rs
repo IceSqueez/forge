@@ -328,7 +328,7 @@ pub fn handle_globals_msg(app: &mut App, sub: GlobalsMsg) -> iced::Task<Message>
     match sub {
         GlobalsMsg::LoadRequested => {
             app.globals.loading = true;
-            let dp = Arc::clone(&app.backend);
+            let dp = Arc::clone(&app.rt.backend);
             iced::Task::perform(
                 async move { load_globals_data(dp).await.map_err(|e| e.to_string()) },
                 |r| Message::Globals(GlobalsMsg::EntriesLoaded(r)),
@@ -370,7 +370,7 @@ pub fn handle_globals_msg(app: &mut App, sub: GlobalsMsg) -> iced::Task<Message>
                 e.persisted = new_persisted;
             }
             app.globals.refresh_displays();
-            let dp = Arc::clone(&app.backend);
+            let dp = Arc::clone(&app.rt.backend);
             iced::Task::perform(
                 async move {
                     dp.set(&name, entry.value, new_persisted)
@@ -389,7 +389,7 @@ pub fn handle_globals_msg(app: &mut App, sub: GlobalsMsg) -> iced::Task<Message>
         GlobalsMsg::PersistenceToggled(Ok(())) => iced::Task::none(),
 
         GlobalsMsg::DeleteRequested(name) => {
-            let dp = Arc::clone(&app.backend);
+            let dp = Arc::clone(&app.rt.backend);
             iced::Task::perform(
                 async move {
                     dp.delete(&name)
@@ -402,7 +402,7 @@ pub fn handle_globals_msg(app: &mut App, sub: GlobalsMsg) -> iced::Task<Message>
         }
 
         GlobalsMsg::Deleted(Ok(())) => {
-            let dp = Arc::clone(&app.backend);
+            let dp = Arc::clone(&app.rt.backend);
             iced::Task::perform(
                 async move { load_globals_data(dp).await.map_err(|e| e.to_string()) },
                 |r| Message::Globals(GlobalsMsg::EntriesLoaded(r)),
@@ -429,7 +429,7 @@ pub fn handle_globals_msg(app: &mut App, sub: GlobalsMsg) -> iced::Task<Message>
         }
 
         GlobalsMsg::ExportRequested => {
-            let dp = Arc::clone(&app.backend);
+            let dp = Arc::clone(&app.rt.backend);
             iced::Task::perform(
                 async move {
                     export_globals_to_chosen_file(dp)
@@ -562,7 +562,7 @@ pub fn handle_variant_editor_msg(app: &mut App, sub: VariantEditorMsg) -> iced::
             if let Some(f) = app.globals.editor.as_mut() {
                 f.saving = true;
             }
-            let dp = Arc::clone(&app.backend);
+            let dp = Arc::clone(&app.rt.backend);
             iced::Task::perform(
                 async move {
                     if let Some(old) = old_name {

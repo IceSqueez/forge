@@ -327,9 +327,9 @@ fn main() -> iced::Result {
             command_parser.clone(),
             sound_player.clone(),
         );
-        app.bus = Arc::clone(&bus_boot);
-        app.chat_send_bridge = chat_send_bridge.clone();
-        app.speak_queue = speak_queue.clone();
+        app.rt.bus = Arc::clone(&bus_boot);
+        app.rt.chat_send_bridge = chat_send_bridge.clone();
+        app.rt.speak_queue = speak_queue.clone();
         let obs_task = iced::Task::perform(
             load_obs_and_connect(Arc::clone(&backend_boot), Arc::clone(&bus_boot)),
             forge_app::Message::ObsBootResult,
@@ -338,7 +338,7 @@ fn main() -> iced::Result {
             load_twitch_credential(Arc::clone(&backend_boot)),
             forge_app::Message::TwitchBootResult,
         );
-        let boot_task = match app.action_engine.clone() {
+        let boot_task = match app.rt.action_engine.clone() {
             Some(engine) => {
                 let dp: std::sync::Arc<dyn forge_storage::DataProvider> =
                     Arc::clone(&backend_boot) as std::sync::Arc<dyn forge_storage::DataProvider>;
@@ -347,7 +347,7 @@ fn main() -> iced::Result {
                         dp,
                         Arc::clone(&bus_boot),
                         std::sync::Arc::new(engine),
-                        Arc::clone(&app.server_subsystem),
+                        Arc::clone(&app.rt.server_subsystem),
                     ),
                     forge_app::Message::ServerBootResult,
                 );

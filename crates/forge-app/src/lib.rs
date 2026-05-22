@@ -10,6 +10,7 @@ pub mod message;
 pub mod obs_panel;
 pub mod platform_generic;
 pub mod queues_view;
+pub mod runtime_view;
 pub mod screen;
 pub mod script_editor;
 pub mod server_screen;
@@ -52,6 +53,7 @@ pub use message::{
     SidebarMsg, SoundboardMsg, TtsDashMsg, TtsEnginesMsg, TtsFiltersMsg, TtsMsg, TtsTriggersMsg,
     VariantEditorMsg, VoiceAliasesMsg,
 };
+pub use runtime_view::RuntimeView;
 pub use screen::{Screen, SettingsSection, TtsSection};
 pub use script_editor::{
     OpenScript, RunModalForm, RunModalInputField, RunResult, ScriptEditorMsg, ScriptEditorState,

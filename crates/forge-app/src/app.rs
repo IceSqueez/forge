@@ -9,9 +9,7 @@ use forge_platform_core::{
     IntegrationContent, IntegrationHealth, IntegrationId, IntegrationStatus, QuickActions,
     SectionIcon,
 };
-use forge_platform_twitch::{
-    ChatConnectionState, ChatSendBridgeHandle, TwitchChatHandle, TwitchIntegrationBundle,
-};
+use forge_platform_twitch::{ChatConnectionState, TwitchIntegrationBundle};
 use forge_runtime::{
     ActionEngineHandle, CommandParserHandle, EventBus, NullEventLogRepo, QueueSchedulerHandle,
     ScriptRegistry,
@@ -106,12 +104,11 @@ pub struct App {
     pub theme: Theme,
     pub palette: ForgePalette,
     pub toast_queue: ToastQueue<Message>,
-    pub backend: Arc<SqliteBackend>,
-    pub bus: Arc<EventBus>,
     pub storage_offline: bool,
     pub boot_time: SystemTime,
-    pub home: HomeStats,
     pub sidebar_state: SidebarExpandState,
+    pub rt: crate::runtime_view::RuntimeView,
+    pub home: HomeStats,
     pub event_feed: EventFeedState,
     pub live_chat: LiveChatState,
     pub actions: ActionsState,
@@ -120,27 +117,13 @@ pub struct App {
     pub viewers: crate::viewers::ViewersState,
     pub globals: GlobalsState,
     pub script_editor: ScriptEditorState,
-    pub script_registry: Arc<ScriptRegistry>,
-    pub twitch_chat_handle: Option<TwitchChatHandle>,
-    pub chat_send_bridge: Option<ChatSendBridgeHandle>,
-    pub action_engine: Option<ActionEngineHandle>,
-    pub scheduler: Option<QueueSchedulerHandle>,
-    pub command_parser: Option<CommandParserHandle>,
     pub integration_detail: Option<IntegrationDetailState>,
-    pub obs_client: Option<Arc<ObsClient>>,
     pub server_screen: ServerScreenState,
-    pub server_subsystem: Arc<ServerSubsystem>,
     pub settings_websocket: SettingsWebSocketState,
     pub twitch_panel: crate::twitch_panel::TwitchPanelState,
-    pub twitch_flow: Option<crate::twitch_panel::TwitchFlowHandle>,
-    pub twitch_login: Option<String>,
-    pub twitch_token_expires: Option<std::time::SystemTime>,
-    pub twitch_reauth_required: bool,
     pub obs_panel: crate::obs_panel::ObsPanelState,
     pub soundboard: SoundboardState,
-    pub sound_player: Option<Arc<SoundboardPlayer>>,
     pub settings_audio: SettingsAudioState,
-    pub speak_queue: Option<Arc<forge_speak_queue::SpeakQueueHandle>>,
     pub tts_dashboard: TtsDashState,
     pub tts_engines: TtsEnginesState,
     pub tts_aliases: VoiceAliasesState,
@@ -169,12 +152,28 @@ impl App {
             theme,
             palette,
             toast_queue: ToastQueue::new(),
-            backend,
-            bus: EventBus::new(Arc::new(NullEventLogRepo)),
             storage_offline,
             boot_time: SystemTime::now(),
-            home: HomeStats::new(),
             sidebar_state: SidebarExpandState::new(),
+            rt: crate::runtime_view::RuntimeView {
+                backend,
+                bus: EventBus::new(Arc::new(NullEventLogRepo)),
+                script_registry,
+                server_subsystem,
+                action_engine,
+                scheduler,
+                command_parser,
+                obs_client: None,
+                speak_queue: None,
+                sound_player,
+                twitch_chat_handle: None,
+                chat_send_bridge: None,
+                twitch_flow: None,
+                twitch_login: None,
+                twitch_token_expires: None,
+                twitch_reauth_required: false,
+            },
+            home: HomeStats::new(),
             event_feed: EventFeedState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
@@ -183,27 +182,13 @@ impl App {
             viewers: crate::viewers::ViewersState::default(),
             globals: GlobalsState::new(),
             script_editor: ScriptEditorState::new(),
-            script_registry,
-            twitch_chat_handle: None,
-            chat_send_bridge: None,
-            action_engine,
-            scheduler,
-            command_parser,
             integration_detail: None,
-            obs_client: None,
             server_screen: ServerScreenState::default(),
-            server_subsystem,
             settings_websocket: SettingsWebSocketState::default(),
             twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
-            twitch_flow: None,
-            twitch_login: None,
-            twitch_token_expires: None,
-            twitch_reauth_required: false,
             obs_panel: crate::obs_panel::ObsPanelState::default(),
             soundboard: SoundboardState::new(),
-            sound_player,
             settings_audio: SettingsAudioState::new(),
-            speak_queue: None,
             tts_dashboard: TtsDashState::new(),
             tts_engines: TtsEnginesState::new(),
             tts_aliases: VoiceAliasesState::new(),
@@ -234,12 +219,28 @@ impl Default for App {
             theme,
             palette,
             toast_queue: ToastQueue::new(),
-            backend,
-            bus: EventBus::new(Arc::new(NullEventLogRepo)),
             storage_offline: false,
             boot_time: SystemTime::now(),
-            home: HomeStats::new(),
             sidebar_state: SidebarExpandState::new(),
+            rt: crate::runtime_view::RuntimeView {
+                backend,
+                bus: EventBus::new(Arc::new(NullEventLogRepo)),
+                script_registry: Arc::new(ScriptRegistry::new()),
+                server_subsystem,
+                action_engine: None,
+                scheduler: None,
+                command_parser: None,
+                obs_client: None,
+                speak_queue: None,
+                sound_player: None,
+                twitch_chat_handle: None,
+                chat_send_bridge: None,
+                twitch_flow: None,
+                twitch_login: None,
+                twitch_token_expires: None,
+                twitch_reauth_required: false,
+            },
+            home: HomeStats::new(),
             event_feed: EventFeedState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
@@ -248,27 +249,13 @@ impl Default for App {
             viewers: crate::viewers::ViewersState::default(),
             globals: GlobalsState::new(),
             script_editor: ScriptEditorState::new(),
-            script_registry: Arc::new(ScriptRegistry::new()),
-            twitch_chat_handle: None,
-            chat_send_bridge: None,
-            action_engine: None,
-            scheduler: None,
-            command_parser: None,
             integration_detail: None,
-            obs_client: None,
             server_screen: ServerScreenState::default(),
-            server_subsystem,
             settings_websocket: SettingsWebSocketState::default(),
             twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
-            twitch_flow: None,
-            twitch_login: None,
-            twitch_token_expires: None,
-            twitch_reauth_required: false,
             obs_panel: crate::obs_panel::ObsPanelState::default(),
             soundboard: SoundboardState::new(),
-            sound_player: None,
             settings_audio: SettingsAudioState::new(),
-            speak_queue: None,
             tts_dashboard: TtsDashState::new(),
             tts_engines: TtsEnginesState::new(),
             tts_aliases: VoiceAliasesState::new(),
@@ -397,7 +384,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             if event.kind == "platform.reauth_required"
                 && event.payload["platform"].as_str() == Some("twitch")
             {
-                app.twitch_reauth_required = true;
+                app.rt.twitch_reauth_required = true;
             }
             if event.kind == "action.done" {
                 app.home.triggers_fired = Some(app.home.triggers_fired.unwrap_or(0) + 1);
@@ -408,7 +395,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             auto_scroll_task.unwrap_or_else(Task::none)
         }
         Message::EventFeed(sub) => {
-            handle_event_feed_msg(&mut app.event_feed, sub, Arc::clone(&app.bus))
+            handle_event_feed_msg(&mut app.event_feed, sub, Arc::clone(&app.rt.bus))
         }
         Message::ChatInputChanged(s) => {
             app.live_chat.chat_input = s;
@@ -420,8 +407,8 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             if msg.is_empty() {
                 return Task::none();
             }
-            let backend = Arc::clone(&app.backend);
-            let bus = Arc::clone(&app.bus);
+            let backend = Arc::clone(&app.rt.backend);
+            let bus = Arc::clone(&app.rt.bus);
             Task::perform(
                 async move {
                     let json_str = backend
@@ -513,11 +500,11 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         }
         Message::Settings(sub) => match sub {
             SettingsMsg::ReconnectPlatform(PlatformId::Twitch) => {
-                if let Some(handle) = app.twitch_chat_handle.take() {
+                if let Some(handle) = app.rt.twitch_chat_handle.take() {
                     handle.shutdown();
                 }
-                let backend = Arc::clone(&app.backend);
-                let bus = Arc::clone(&app.bus);
+                let backend = Arc::clone(&app.rt.backend);
+                let bus = Arc::clone(&app.rt.bus);
                 Task::perform(
                     async move { reconnect_twitch(backend, bus).await },
                     |result| Message::Settings(SettingsMsg::PlatformReconnectResult(result)),
@@ -530,7 +517,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 Task::none()
             }
             SettingsMsg::DbVacuumRequested => {
-                let dp = Arc::clone(&app.backend) as Arc<dyn DataProvider>;
+                let dp = Arc::clone(&app.rt.backend) as Arc<dyn DataProvider>;
                 Task::perform(
                     async move {
                         let tmp_target = std::env::temp_dir().join("forge_vacuum.db");
@@ -550,7 +537,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 Task::none()
             }
             SettingsMsg::DbBackupRequested => {
-                let dp = Arc::clone(&app.backend) as Arc<dyn DataProvider>;
+                let dp = Arc::clone(&app.rt.backend) as Arc<dyn DataProvider>;
                 Task::perform(
                     async move {
                         let stamp = time::OffsetDateTime::now_utc().unix_timestamp();
@@ -597,9 +584,9 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::VariantEditor(sub) => handle_variant_editor_msg(app, sub),
         Message::Actions(sub) => handle_actions_msg(app, sub),
         Message::Queues(sub) => handle_queues_msg(app, sub),
-        Message::Viewers(sub) => crate::viewers::handle_msg(&mut app.viewers, sub, &app.backend),
+        Message::Viewers(sub) => crate::viewers::handle_msg(&mut app.viewers, sub, &app.rt.backend),
         Message::Commands(sub) => {
-            crate::commands_view::handle_msg(&mut app.commands, sub, &app.backend)
+            crate::commands_view::handle_msg(&mut app.commands, sub, &app.rt.backend)
         }
         Message::AddAction(sub) => handle_add_action_msg(app, sub),
         Message::AddTrigger(sub) => handle_add_trigger_msg(app, sub),
@@ -621,7 +608,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                     bundle.client_id,
                     bundle.user_id.clone(),
                     bundle.user_id,
-                    Arc::clone(&app.bus),
+                    Arc::clone(&app.rt.bus),
                     Arc::clone(&tracker),
                 );
                 let handle = chat.start();
@@ -642,10 +629,10 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                     content,
                     quick_actions,
                 ));
-                app.twitch_chat_handle = Some(handle);
-                app.twitch_token_expires = bundle.expires_at;
+                app.rt.twitch_chat_handle = Some(handle);
+                app.rt.twitch_token_expires = bundle.expires_at;
                 if let Some(l) = login {
-                    app.twitch_login = Some(l);
+                    app.rt.twitch_login = Some(l);
                 }
                 tracing::info!("twitch chat session restarted from stored credentials");
                 Task::none()
@@ -673,7 +660,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                     content,
                     quick_actions,
                 ));
-                app.obs_client = Some(client);
+                app.rt.obs_client = Some(client);
                 Task::none()
             }
             Err(e) => {
@@ -733,21 +720,21 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             Task::none()
         }
         Message::Server(crate::server_screen::ServerScreenMsg::RestartServer) => {
-            let subsystem = Arc::clone(&app.server_subsystem);
+            let subsystem = Arc::clone(&app.rt.server_subsystem);
             Task::perform(
                 async move { subsystem.restart().await.map_err(|e| e.to_string()) },
                 Message::ServerRestartResult,
             )
         }
         Message::Server(crate::server_screen::ServerScreenMsg::StopServer) => {
-            let subsystem = Arc::clone(&app.server_subsystem);
+            let subsystem = Arc::clone(&app.rt.server_subsystem);
             Task::perform(
                 async move { subsystem.stop().await.map_err(|e| e.to_string()) },
                 Message::ServerStopResult,
             )
         }
         Message::Server(crate::server_screen::ServerScreenMsg::RegenerateToken) => {
-            let subsystem = Arc::clone(&app.server_subsystem);
+            let subsystem = Arc::clone(&app.rt.server_subsystem);
             Task::perform(
                 async move {
                     subsystem
@@ -768,24 +755,24 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             ) {
                 return Task::none();
             }
-            let subsystem = Arc::clone(&app.server_subsystem);
+            let subsystem = Arc::clone(&app.rt.server_subsystem);
             Task::perform(
                 async move { subsystem.restart().await.map_err(|e| e.to_string()) },
                 Message::ServerRestartResult,
             )
         }
         Message::SettingsWebSocket(sub) => {
-            handle_settings_websocket_msg(&mut app.settings_websocket, sub, &app.backend)
+            handle_settings_websocket_msg(&mut app.settings_websocket, sub, &app.rt.backend)
         }
         Message::TwitchPanel(sub) => handle_twitch_panel_msg(app, sub),
         Message::TwitchReauthRequested => {
-            if let Some(handle) = app.twitch_chat_handle.take() {
+            if let Some(handle) = app.rt.twitch_chat_handle.take() {
                 handle.shutdown();
             }
             app.integration_detail = None;
-            app.twitch_login = None;
-            app.twitch_reauth_required = false;
-            let backend = Arc::clone(&app.backend);
+            app.rt.twitch_login = None;
+            app.rt.twitch_reauth_required = false;
+            let backend = Arc::clone(&app.rt.backend);
             Task::perform(
                 async move {
                     let id = CredentialId::new("twitch:broadcaster");
@@ -796,12 +783,12 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         }
         Message::ObsPanel(sub) => handle_obs_panel_msg(app, sub),
         Message::Soundboard(sub) => {
-            let backend = Arc::clone(&app.backend);
-            let player = app.sound_player.clone();
+            let backend = Arc::clone(&app.rt.backend);
+            let player = app.rt.sound_player.clone();
             handle_soundboard_msg(&mut app.soundboard, backend, player, sub)
         }
         Message::SettingsAudio(sub) => {
-            let backend = Arc::clone(&app.backend);
+            let backend = Arc::clone(&app.rt.backend);
             handle_settings_audio_msg(&mut app.settings_audio, backend, sub)
         }
         Message::Tts(sub) => handle_tts_msg(app, sub),
@@ -852,7 +839,7 @@ fn handle_twitch_panel_msg(
             let flow = Arc::new(tokio::sync::Mutex::new(
                 forge_platform_twitch::TwitchAuthFlow::new(cid),
             ));
-            app.twitch_flow = Some(Arc::clone(&flow));
+            app.rt.twitch_flow = Some(Arc::clone(&flow));
             Task::perform(crate::twitch_panel::request_code(flow), |r| {
                 Message::TwitchPanel(TwitchPanelMsg::DeviceCodeReceived(r))
             })
@@ -892,12 +879,12 @@ fn handle_twitch_panel_msg(
                 verification_uri: data.verification_uri,
                 expires_at: data.expires_at,
             };
-            let Some(flow) = app.twitch_flow.clone() else {
+            let Some(flow) = app.rt.twitch_flow.clone() else {
                 app.twitch_panel = TwitchPanelState::Error("no active flow handle".into());
                 return Task::none();
             };
             let creds: Arc<dyn CredentialsRepo> =
-                Arc::clone(&app.backend) as Arc<dyn CredentialsRepo>;
+                Arc::clone(&app.rt.backend) as Arc<dyn CredentialsRepo>;
             Task::perform(crate::twitch_panel::wait_for_auth(flow, creds), |r| {
                 Message::TwitchPanel(TwitchPanelMsg::AuthCompleted(r))
             })
@@ -914,14 +901,14 @@ fn handle_twitch_panel_msg(
                 "twitch authorization complete",
             );
             let login = Some(outcome.user_info.login.clone());
-            app.twitch_login = login.clone();
+            app.rt.twitch_login = login.clone();
             let tracker = forge_platform_twitch::SubscriptionTracker::default();
             let chat = forge_platform_twitch::TwitchChat::new(
                 outcome.token,
                 outcome.client_id,
                 outcome.user_info.id.clone(),
                 outcome.user_info.id,
-                Arc::clone(&app.bus),
+                Arc::clone(&app.rt.bus),
                 Arc::clone(&tracker),
             );
             let handle = chat.start();
@@ -942,7 +929,7 @@ fn handle_twitch_panel_msg(
                 content,
                 quick_actions,
             ));
-            app.twitch_chat_handle = Some(handle);
+            app.rt.twitch_chat_handle = Some(handle);
             app.twitch_panel = TwitchPanelState::Disconnected;
             Task::none()
         }
@@ -1023,8 +1010,8 @@ fn handle_obs_panel_msg(app: &mut App, msg: crate::obs_panel::ObsPanelMsg) -> Ta
             };
             let host = app.obs_panel.form.host.clone();
             let password = app.obs_panel.form.password.clone();
-            let backend = Arc::clone(&app.backend);
-            let bus = Arc::clone(&app.bus);
+            let backend = Arc::clone(&app.rt.backend);
+            let bus = Arc::clone(&app.rt.bus);
             app.obs_panel.connecting = true;
             app.obs_panel.connect_error = None;
             Task::perform(
@@ -1047,7 +1034,7 @@ fn handle_obs_panel_msg(app: &mut App, msg: crate::obs_panel::ObsPanelMsg) -> Ta
 fn handle_home_msg(app: &mut App, sub: HomeMsg) -> Task<Message> {
     match sub {
         HomeMsg::LoadStats => {
-            let dp = Arc::clone(&app.backend);
+            let dp = Arc::clone(&app.rt.backend);
             Task::perform(
                 async move { load_home_stats(dp).await.map_err(|e| e.to_string()) },
                 |r| Message::Home(HomeMsg::StatsLoaded(r)),
@@ -1071,8 +1058,8 @@ fn handle_queues_msg(app: &mut App, sub: QueuesMsg) -> Task<Message> {
     match sub {
         QueuesMsg::LoadRequested => {
             app.queues.loading = true;
-            let dp = Arc::clone(&app.backend);
-            let scheduler = app.scheduler.clone();
+            let dp = Arc::clone(&app.rt.backend);
+            let scheduler = app.rt.scheduler.clone();
             Task::perform(async move { load_queues(dp, scheduler).await }, |r| {
                 Message::Queues(QueuesMsg::QueuesLoaded(r))
             })
@@ -1091,7 +1078,7 @@ fn handle_queues_msg(app: &mut App, sub: QueuesMsg) -> Task<Message> {
             if let Some(q) = app.queues.queues.iter_mut().find(|q| q.id == id) {
                 q.paused = true;
             }
-            let Some(scheduler) = app.scheduler.clone() else {
+            let Some(scheduler) = app.rt.scheduler.clone() else {
                 return Task::none();
             };
             Task::perform(
@@ -1103,7 +1090,7 @@ fn handle_queues_msg(app: &mut App, sub: QueuesMsg) -> Task<Message> {
             if let Some(q) = app.queues.queues.iter_mut().find(|q| q.id == id) {
                 q.paused = false;
             }
-            let Some(scheduler) = app.scheduler.clone() else {
+            let Some(scheduler) = app.rt.scheduler.clone() else {
                 return Task::none();
             };
             Task::perform(
@@ -1121,10 +1108,10 @@ fn handle_queues_msg(app: &mut App, sub: QueuesMsg) -> Task<Message> {
                     q.paused = true;
                 }
             }
-            let Some(scheduler) = app.scheduler.clone() else {
+            let Some(scheduler) = app.rt.scheduler.clone() else {
                 return Task::none();
             };
-            let bus = Arc::clone(&app.bus);
+            let bus = Arc::clone(&app.rt.bus);
             Task::perform(
                 async move {
                     bus.publish(forge_events::Event::new(
@@ -1142,7 +1129,7 @@ fn handle_queues_msg(app: &mut App, sub: QueuesMsg) -> Task<Message> {
                 q.paused = true;
             }
             let ids: Vec<_> = app.queues.queues.iter().map(|q| q.id).collect();
-            let Some(scheduler) = app.scheduler.clone() else {
+            let Some(scheduler) = app.rt.scheduler.clone() else {
                 return Task::none();
             };
             Task::perform(
@@ -1208,7 +1195,7 @@ fn handle_actions_msg(app: &mut App, sub: ActionsMsg) -> Task<Message> {
     match sub {
         ActionsMsg::LoadRequested => {
             app.actions.loading = true;
-            let dp = Arc::clone(&app.backend);
+            let dp = Arc::clone(&app.rt.backend);
             Task::perform(
                 async move { load_actions_tree(dp).await.map_err(|e| e.to_string()) },
                 |r| Message::Actions(ActionsMsg::TreeLoaded(r)),
@@ -1239,8 +1226,8 @@ fn handle_actions_msg(app: &mut App, sub: ActionsMsg) -> Task<Message> {
             app.actions.detail = None;
             app.actions.telemetry = None;
             app.actions.telemetry_loading = true;
-            let dp1 = Arc::clone(&app.backend);
-            let dp2 = Arc::clone(&app.backend);
+            let dp1 = Arc::clone(&app.rt.backend);
+            let dp2 = Arc::clone(&app.rt.backend);
             let detail_task = Task::perform(
                 async move { load_action_detail(dp1, id).await.map_err(|e| e.to_string()) },
                 |r| Message::Actions(ActionsMsg::DetailLoaded(r)),
@@ -1272,7 +1259,7 @@ fn handle_actions_msg(app: &mut App, sub: ActionsMsg) -> Task<Message> {
                     }
                 }
             }
-            let dp = Arc::clone(&app.backend);
+            let dp = Arc::clone(&app.rt.backend);
             Task::perform(
                 async move {
                     let Some(mut action) =
@@ -1295,8 +1282,8 @@ fn handle_actions_msg(app: &mut App, sub: ActionsMsg) -> Task<Message> {
             Task::none()
         }
         ActionsMsg::TestTrigger(id) => {
-            let bus = Arc::clone(&app.bus);
-            let dp = Arc::clone(&app.backend);
+            let bus = Arc::clone(&app.rt.bus);
+            let dp = Arc::clone(&app.rt.backend);
             Task::perform(
                 async move {
                     let detail = load_action_detail(Arc::clone(&dp), id)
@@ -1325,7 +1312,7 @@ fn handle_actions_msg(app: &mut App, sub: ActionsMsg) -> Task<Message> {
             )
         }
         ActionsMsg::DeleteAction(id) => {
-            let dp = Arc::clone(&app.backend);
+            let dp = Arc::clone(&app.rt.backend);
             Task::perform(
                 async move { dp.action_repo().delete(id).await.map_err(|e| e.to_string()) },
                 |r| Message::Actions(ActionsMsg::ActionDeleted(r.map(|_| ()))),
@@ -1341,7 +1328,7 @@ fn handle_actions_msg(app: &mut App, sub: ActionsMsg) -> Task<Message> {
             Task::none()
         }
         ActionsMsg::DuplicateAction(id) => {
-            let dp = Arc::clone(&app.backend);
+            let dp = Arc::clone(&app.rt.backend);
             Task::perform(
                 async move {
                     let original = dp
@@ -1371,7 +1358,7 @@ fn handle_actions_msg(app: &mut App, sub: ActionsMsg) -> Task<Message> {
             Task::none()
         }
         ActionsMsg::DeleteTrigger(trigger_id, action_id) => {
-            let dp = Arc::clone(&app.backend);
+            let dp = Arc::clone(&app.rt.backend);
             Task::perform(
                 async move {
                     dp.trigger_repo()
@@ -1493,7 +1480,7 @@ fn handle_actions_msg(app: &mut App, sub: ActionsMsg) -> Task<Message> {
                     duration_ms: 3000,
                 }));
             }
-            let dp = Arc::clone(&app.backend);
+            let dp = Arc::clone(&app.rt.backend);
             Task::perform(
                 async move {
                     use forge_storage::DataProvider;
@@ -1545,7 +1532,7 @@ fn handle_add_action_msg(app: &mut App, sub: AddActionMsg) -> Task<Message> {
     match sub {
         AddActionMsg::OpenRequested => {
             app.actions.add_action_modal = Some(AddActionForm::new());
-            let dp = Arc::clone(&app.backend);
+            let dp = Arc::clone(&app.rt.backend);
             Task::perform(
                 async move {
                     dp.queue_repo()
@@ -1658,7 +1645,7 @@ fn handle_add_action_msg(app: &mut App, sub: AddActionMsg) -> Task<Message> {
             if let Some(f) = app.actions.add_action_modal.as_mut() {
                 f.saving = true;
             }
-            let dp = Arc::clone(&app.backend);
+            let dp = Arc::clone(&app.rt.backend);
             Task::perform(
                 async move {
                     dp.action_repo()
@@ -1774,7 +1761,7 @@ fn handle_add_trigger_msg(app: &mut App, sub: AddTriggerMsg) -> Task<Message> {
             if let Some(f) = app.actions.add_trigger_modal.as_mut() {
                 f.saving = true;
             }
-            let dp = Arc::clone(&app.backend);
+            let dp = Arc::clone(&app.rt.backend);
             Task::perform(
                 async move {
                     dp.trigger_repo()
@@ -1819,7 +1806,7 @@ fn handle_add_sub_action_msg(app: &mut App, sub: AddSubActionMsg) -> Task<Messag
     match sub {
         AddSubActionMsg::OpenRequested(action_id) => {
             app.actions.add_sub_action_modal = Some(AddSubActionForm::new(action_id));
-            let dp = Arc::clone(&app.backend);
+            let dp = Arc::clone(&app.rt.backend);
             Task::perform(load_clip_options(dp), |clips| {
                 Message::AddSubAction(AddSubActionMsg::ClipsLoaded(clips))
             })
@@ -1834,7 +1821,7 @@ fn handle_add_sub_action_msg(app: &mut App, sub: AddSubActionMsg) -> Task<Messag
                 form.populate_from_spec(spec);
             }
             app.actions.add_sub_action_modal = Some(form);
-            let dp = Arc::clone(&app.backend);
+            let dp = Arc::clone(&app.rt.backend);
             Task::perform(load_clip_options(dp), |clips| {
                 Message::AddSubAction(AddSubActionMsg::ClipsLoaded(clips))
             })
@@ -2033,7 +2020,7 @@ fn handle_add_sub_action_msg(app: &mut App, sub: AddSubActionMsg) -> Task<Messag
             if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
                 f.saving = true;
             }
-            let dp = Arc::clone(&app.backend);
+            let dp = Arc::clone(&app.rt.backend);
             Task::perform(
                 async move {
                     save_sub_action(dp, action_id, spec, editing_index)
@@ -2059,7 +2046,7 @@ fn handle_add_sub_action_msg(app: &mut App, sub: AddSubActionMsg) -> Task<Messag
             Task::none()
         }
         AddSubActionMsg::DuplicateRequested(action_id, index) => {
-            let dp = Arc::clone(&app.backend);
+            let dp = Arc::clone(&app.rt.backend);
             Task::perform(
                 async move {
                     duplicate_sub_action(dp, action_id, index)
@@ -2082,7 +2069,7 @@ fn handle_add_sub_action_msg(app: &mut App, sub: AddSubActionMsg) -> Task<Messag
 fn handle_remove_sub_action_msg(app: &mut App, sub: RemoveSubActionMsg) -> Task<Message> {
     match sub {
         RemoveSubActionMsg::Requested(action_id, index) => {
-            let dp = Arc::clone(&app.backend);
+            let dp = Arc::clone(&app.rt.backend);
             Task::perform(
                 async move {
                     remove_sub_action(dp, action_id, index)
@@ -2116,7 +2103,7 @@ fn handle_move_sub_action_msg(app: &mut App, sub: MoveSubActionMsg) -> Task<Mess
             if i == 0 {
                 return Task::none();
             }
-            let dp = Arc::clone(&app.backend);
+            let dp = Arc::clone(&app.rt.backend);
             Task::perform(
                 async move {
                     move_sub_action(dp, action_id, i, i - 1)
@@ -2130,7 +2117,7 @@ fn handle_move_sub_action_msg(app: &mut App, sub: MoveSubActionMsg) -> Task<Mess
             if total == 0 || i + 1 >= total {
                 return Task::none();
             }
-            let dp = Arc::clone(&app.backend);
+            let dp = Arc::clone(&app.rt.backend);
             Task::perform(
                 async move {
                     move_sub_action(dp, action_id, i, i + 1)
@@ -2144,7 +2131,7 @@ fn handle_move_sub_action_msg(app: &mut App, sub: MoveSubActionMsg) -> Task<Mess
             if i == 0 {
                 return Task::none();
             }
-            let dp = Arc::clone(&app.backend);
+            let dp = Arc::clone(&app.rt.backend);
             Task::perform(
                 async move {
                     move_sub_action(dp, action_id, i, 0)
@@ -2159,7 +2146,7 @@ fn handle_move_sub_action_msg(app: &mut App, sub: MoveSubActionMsg) -> Task<Mess
                 return Task::none();
             }
             let last = total - 1;
-            let dp = Arc::clone(&app.backend);
+            let dp = Arc::clone(&app.rt.backend);
             Task::perform(
                 async move {
                     move_sub_action(dp, action_id, i, last)
@@ -2416,13 +2403,14 @@ fn home_inline_button<'a>(
 pub(crate) fn subsystem_connectivity(app: &App) -> (u8, u8) {
     let mut connected: u8 = 0;
     let twitch_live = app
+        .rt
         .twitch_chat_handle
         .as_ref()
         .is_some_and(|h| matches!(h.connection_state(), ChatConnectionState::Connected));
     if twitch_live {
         connected += 2;
     }
-    if app.obs_client.is_some() {
+    if app.rt.obs_client.is_some() {
         connected += 1;
     }
     if matches!(
@@ -2431,10 +2419,10 @@ pub(crate) fn subsystem_connectivity(app: &App) -> (u8, u8) {
     ) {
         connected += 1;
     }
-    if app.sound_player.is_some() {
+    if app.rt.sound_player.is_some() {
         connected += 2;
     }
-    if app.speak_queue.is_some() {
+    if app.rt.speak_queue.is_some() {
         connected += 1;
     }
     if !app.storage_offline {
@@ -2524,8 +2512,8 @@ fn home_jump_cards<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, M
     let actions_count = app.home.actions_count.unwrap_or(0);
     let triggers_fired = app.home.triggers_fired.unwrap_or(0);
     let chat_count = app.live_chat.chat_log.len();
-    let twitch_ok = app.twitch_chat_handle.is_some();
-    let obs_ok = app.obs_client.is_some();
+    let twitch_ok = app.rt.twitch_chat_handle.is_some();
+    let obs_ok = app.rt.obs_client.is_some();
     let total_integrations: u8 = 6;
     let connected_integrations: u8 = u8::from(twitch_ok) + u8::from(obs_ok);
     let connections_warn = connected_integrations < total_integrations;
@@ -2681,7 +2669,7 @@ fn home_stream_health<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a
             .into()
         };
 
-    let (fps_val, cpu_val, dropped_val) = if let Some(client) = &app.obs_client {
+    let (fps_val, cpu_val, dropped_val) = if let Some(client) = &app.rt.obs_client {
         let snap = client.health_snapshot();
         let fps = format!("{:.1}", snap.fps);
         let cpu = format!("{:.1}", snap.cpu_percent);
@@ -2823,8 +2811,8 @@ fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
     use iced::widget::{column, container, row, text};
     use iced::{Alignment, Background, Border};
 
-    let twitch_ok = app.twitch_chat_handle.is_some();
-    let obs_ok = app.obs_client.is_some();
+    let twitch_ok = app.rt.twitch_chat_handle.is_some();
+    let obs_ok = app.rt.obs_client.is_some();
     let connected: u8 = u8::from(twitch_ok) + u8::from(obs_ok);
     let disconnected: u8 = 6u8.saturating_sub(connected);
 
@@ -3247,7 +3235,7 @@ fn home_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message
 
     let mut content = column![hero, jump_cards,].spacing(16.0).width(Length::Fill);
 
-    if app.obs_client.is_some() {
+    if app.rt.obs_client.is_some() {
         content = content.push(home_stream_health(app, palette));
     }
 
@@ -3832,7 +3820,7 @@ fn platforms_overview_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
         .color(p.text_muted);
     let header = column![title, subtitle].spacing(4);
 
-    let twitch_connected = app.twitch_chat_handle.is_some();
+    let twitch_connected = app.rt.twitch_chat_handle.is_some();
 
     let twitch_card = platform_overview_card(
         "T",
@@ -6280,15 +6268,15 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Screen::EventFeed => event_feed_view(&app.event_feed, palette),
         Screen::Server => server_screen_view(&app.server_screen, palette),
         Screen::IntegrationDetail(id) => {
-            if id.as_str() == "twitch" && app.twitch_chat_handle.is_none() {
+            if id.as_str() == "twitch" && app.rt.twitch_chat_handle.is_none() {
                 crate::twitch_panel::twitch_disconnected_view(&app.twitch_panel, palette)
-            } else if id.as_str() == "obs" && app.obs_client.is_none() {
+            } else if id.as_str() == "obs" && app.rt.obs_client.is_none() {
                 crate::obs_panel::obs_disconnected_view(&app.obs_panel, palette)
             } else if let Some((color, info)) = crate::platform_generic::registry(id, palette) {
                 crate::platform_generic::platform_generic_view(color, info, palette)
             } else if let Some(state) = app.integration_detail.as_ref() {
                 let inner = integration_detail_view(state, palette);
-                if id.as_str() == "twitch" && app.twitch_reauth_required {
+                if id.as_str() == "twitch" && app.rt.twitch_reauth_required {
                     iced::widget::container(
                         iced::widget::column![
                             crate::twitch_panel::twitch_reauth_banner(palette),
@@ -6471,7 +6459,7 @@ pub fn subscription(app: &App) -> Subscription<Message> {
         }
     }
 
-    let bus = from_recipe(BusRecipe(app.bus.clone()));
+    let bus = from_recipe(BusRecipe(app.rt.bus.clone()));
 
     struct ServerMetricsRecipe(Arc<crate::server_subsystem::ServerSubsystem>);
 
@@ -6587,7 +6575,7 @@ pub fn subscription(app: &App) -> Subscription<Message> {
     }
 
     let server_tick = if matches!(app.screen, Screen::Server) {
-        from_recipe(ServerMetricsRecipe(Arc::clone(&app.server_subsystem)))
+        from_recipe(ServerMetricsRecipe(Arc::clone(&app.rt.server_subsystem)))
     } else {
         Subscription::none()
     };
@@ -6636,7 +6624,7 @@ pub fn subscription(app: &App) -> Subscription<Message> {
     }
 
     let tts_events = if matches!(app.screen, Screen::Tts(_))
-        && let Some(handle) = app.speak_queue.as_ref()
+        && let Some(handle) = app.rt.speak_queue.as_ref()
     {
         from_recipe(SpeakEventRecipe(Arc::clone(handle)))
     } else {
@@ -6792,7 +6780,7 @@ mod tests {
             Message::Settings(SettingsMsg::ReconnectPlatform(PlatformId::Twitch)),
         );
         let _ = task;
-        assert!(app.twitch_chat_handle.is_none());
+        assert!(app.rt.twitch_chat_handle.is_none());
     }
 
     #[test]
@@ -6884,12 +6872,28 @@ mod tests {
             theme,
             palette,
             toast_queue: ToastQueue::new(),
-            backend: sqlite,
-            bus,
             storage_offline: false,
             boot_time: std::time::SystemTime::now(),
-            home: HomeStats::new(),
             sidebar_state: SidebarExpandState::new(),
+            rt: crate::runtime_view::RuntimeView {
+                backend: sqlite,
+                bus,
+                script_registry: registry,
+                server_subsystem,
+                action_engine: Some(engine),
+                scheduler: Some(scheduler),
+                command_parser: Some(parser),
+                obs_client: None,
+                speak_queue: None,
+                sound_player: None,
+                twitch_chat_handle: None,
+                chat_send_bridge: None,
+                twitch_flow: None,
+                twitch_login: None,
+                twitch_token_expires: None,
+                twitch_reauth_required: false,
+            },
+            home: HomeStats::new(),
             event_feed: EventFeedState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
@@ -6898,27 +6902,13 @@ mod tests {
             viewers: crate::viewers::ViewersState::default(),
             globals: GlobalsState::new(),
             script_editor: ScriptEditorState::new(),
-            script_registry: registry,
-            twitch_chat_handle: None,
-            chat_send_bridge: None,
-            action_engine: Some(engine),
-            scheduler: Some(scheduler),
-            command_parser: Some(parser),
             integration_detail: None,
-            obs_client: None,
             server_screen: ServerScreenState::default(),
-            server_subsystem,
             settings_websocket: SettingsWebSocketState::default(),
             twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
-            twitch_flow: None,
-            twitch_login: None,
-            twitch_token_expires: None,
-            twitch_reauth_required: false,
             obs_panel: crate::obs_panel::ObsPanelState::default(),
             soundboard: SoundboardState::new(),
-            sound_player: None,
             settings_audio: SettingsAudioState::new(),
-            speak_queue: None,
             tts_dashboard: TtsDashState::new(),
             tts_engines: TtsEnginesState::new(),
             tts_aliases: VoiceAliasesState::new(),
@@ -6926,24 +6916,21 @@ mod tests {
             tts_triggers: TtsTriggersState::new(),
         };
 
-        assert!(app.action_engine.is_some());
-        assert!(app.scheduler.is_some());
-        assert!(app.command_parser.is_some());
+        assert!(app.rt.action_engine.is_some());
+        assert!(app.rt.scheduler.is_some());
+        assert!(app.rt.command_parser.is_some());
     }
 
     #[test]
     fn runtime_handles_absent_when_storage_offline() {
         let app = App {
             storage_offline: true,
-            action_engine: None,
-            scheduler: None,
-            command_parser: None,
             ..App::default()
         };
 
-        assert!(app.action_engine.is_none());
-        assert!(app.scheduler.is_none());
-        assert!(app.command_parser.is_none());
+        assert!(app.rt.action_engine.is_none());
+        assert!(app.rt.scheduler.is_none());
+        assert!(app.rt.command_parser.is_none());
     }
 
     #[test]
@@ -7223,12 +7210,28 @@ mod tests {
             theme,
             palette,
             toast_queue: ToastQueue::new(),
-            backend: Arc::clone(&dp),
-            bus: EventBus::new(Arc::new(NullEventLogRepo)),
             storage_offline: false,
             boot_time: std::time::SystemTime::now(),
-            home: HomeStats::new(),
             sidebar_state: SidebarExpandState::new(),
+            rt: crate::runtime_view::RuntimeView {
+                backend: Arc::clone(&dp),
+                bus: EventBus::new(Arc::new(NullEventLogRepo)),
+                script_registry: Arc::new(ScriptRegistry::new()),
+                server_subsystem,
+                action_engine: None,
+                scheduler: None,
+                command_parser: None,
+                obs_client: None,
+                speak_queue: None,
+                sound_player: None,
+                twitch_chat_handle: None,
+                chat_send_bridge: None,
+                twitch_flow: None,
+                twitch_login: None,
+                twitch_token_expires: None,
+                twitch_reauth_required: false,
+            },
+            home: HomeStats::new(),
             event_feed: EventFeedState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
@@ -7237,27 +7240,13 @@ mod tests {
             viewers: crate::viewers::ViewersState::default(),
             globals: GlobalsState::new(),
             script_editor: ScriptEditorState::new(),
-            script_registry: Arc::new(ScriptRegistry::new()),
-            twitch_chat_handle: None,
-            chat_send_bridge: None,
-            action_engine: None,
-            scheduler: None,
-            command_parser: None,
             integration_detail: None,
-            obs_client: None,
             server_screen: ServerScreenState::default(),
-            server_subsystem,
             settings_websocket: SettingsWebSocketState::default(),
             twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
-            twitch_flow: None,
-            twitch_login: None,
-            twitch_token_expires: None,
-            twitch_reauth_required: false,
             obs_panel: crate::obs_panel::ObsPanelState::default(),
             soundboard: SoundboardState::new(),
-            sound_player: None,
             settings_audio: SettingsAudioState::new(),
-            speak_queue: None,
             tts_dashboard: TtsDashState::new(),
             tts_engines: TtsEnginesState::new(),
             tts_aliases: VoiceAliasesState::new(),
@@ -7674,7 +7663,7 @@ mod tests {
             &mut app,
             Message::ObsBootResult(Ok(ObsClientRef::new(Arc::new(client)))),
         );
-        assert!(app.obs_client.is_some());
+        assert!(app.rt.obs_client.is_some());
         assert!(app.integration_detail.is_some());
     }
 
@@ -7685,7 +7674,7 @@ mod tests {
             &mut app,
             Message::ObsBootResult(Err("connection refused".into())),
         );
-        assert!(app.obs_client.is_none());
+        assert!(app.rt.obs_client.is_none());
         assert!(app.integration_detail.is_none());
     }
 }

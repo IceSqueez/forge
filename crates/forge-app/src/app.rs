@@ -3933,16 +3933,19 @@ fn actions_group_header<'a>(
         .color(p.text_muted)
         .font(forge_widgets::font(forge_widgets::FontRole::Monospace));
 
-    let count_str = format!(
-        "{} actions \u{00b7} {} fired",
-        group.actions.len(),
-        group.fired_24h
-    );
-    let count_el = text(count_str).size(FONT_XS).color(p.text_faint);
+    let count_el = text(group.actions.len().to_string())
+        .size(FONT_XS)
+        .color(p.text_faint)
+        .font(forge_widgets::font(forge_widgets::FontRole::Monospace));
 
-    let inner = row![chevron_el, cat_el, count_el]
-        .spacing(8)
-        .align_y(iced::alignment::Vertical::Center);
+    let inner = row![
+        chevron_el,
+        cat_el,
+        iced::widget::Space::new().width(Length::Fill),
+        count_el,
+    ]
+    .spacing(8)
+    .align_y(iced::alignment::Vertical::Center);
 
     let cat = group.category.clone();
 

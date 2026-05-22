@@ -660,56 +660,74 @@ fn preview_stage_rows<'a>(
     palette: &'a ForgePalette,
     gap_sm: f32,
 ) -> Element<'a, Message> {
+    let _ = gap_sm;
     let stage_names = [
-        "Skip rules",
-        "URL check",
-        "Replacements",
-        "Blocklist",
-        "Length cap",
+        "1 · SKIP RULES",
+        "2 · URL CHECK",
+        "3 · REPLACEMENTS",
+        "4 · BLOCKLIST",
+        "5 · LENGTH CAP",
     ];
 
-    let rows: Vec<Element<'a, Message>> = preview
+    let cards: Vec<Element<'a, Message>> = preview
         .stages
         .iter()
         .enumerate()
         .map(|(i, outcome)| {
-            let name = stage_names.get(i).copied().unwrap_or("Stage");
-            let (badge_color, badge_label, result_label, result_color) = match &outcome.action {
-                StageAction::PassedThrough => {
-                    (palette.success, "\u{2713}", "passed", palette.success)
-                }
-                StageAction::Transformed => (palette.brand, "3", "applied", palette.brand),
-                StageAction::Skipped { .. } => {
-                    (palette.random, "\u{d7}", "skipped", palette.random)
-                }
-            };
-
-            let badge = container(text(badge_label).size(FONT_XS).color(palette.shell))
-                .style(move |_| container::Style {
-                    background: Some(Background::Color(badge_color)),
-                    border: Border {
-                        radius: radius(Radius::Pill).into(),
-                        ..Border::default()
-                    },
-                    ..container::Style::default()
-                })
-                .width(18)
-                .height(18)
-                .align_x(iced::alignment::Horizontal::Center)
-                .align_y(iced::alignment::Vertical::Center);
-
-            row![
-                badge,
-                text(format!("{name} \u{2014} "))
-                    .size(FONT_XS)
-                    .color(palette.text_muted),
-                text(result_label).size(FONT_XS).color(result_color),
-            ]
-            .align_y(Alignment::Center)
-            .spacing(gap_sm)
-            .into()
+            let label = stage_names.get(i).copied().unwrap_or("STAGE");
+            preview_stage_card(label, outcome, palette)
         })
         .collect();
 
-    column(rows).spacing(gap_sm).into()
+    column(cards).spacing(6).into()
+}
+
+fn preview_stage_card<'a>(
+    label: &'a str,
+    outcome: &'a StageOutcome,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    let p = *palette;
+
+    let label_el = text(label.to_owned())
+        .size(FONT_XS)
+        .color(p.text_faint)
+        .font(font(FontRole::Monospace));
+
+    let body_el: Element<'a, Message> = match &outcome.action {
+        StageAction::PassedThrough => row![
+            text("\u{2713}").size(FONT_SM).color(p.success),
+            text(" pass").size(FONT_SM).color(p.text_primary),
+        ]
+        .spacing(2)
+        .align_y(Alignment::Center)
+        .into(),
+        StageAction::Transformed => text(outcome.output.clone())
+            .size(FONT_SM)
+            .color(p.text_primary)
+            .into(),
+        StageAction::Skipped { reason } => row![
+            text("\u{d7}").size(FONT_SM).color(p.random),
+            text(format!(" skipped — {:?}", reason))
+                .size(FONT_SM)
+                .color(p.text_primary),
+        ]
+        .spacing(2)
+        .align_y(Alignment::Center)
+        .into(),
+    };
+
+    container(column![label_el, body_el].spacing(3))
+        .padding([8_u16, 11_u16])
+        .width(Length::Fill)
+        .style(move |_: &iced::Theme| container::Style {
+            background: Some(Background::Color(p.elevated)),
+            border: Border {
+                color: p.border_regular,
+                width: BORDER_THIN,
+                radius: radius(Radius::Sm).into(),
+            },
+            ..container::Style::default()
+        })
+        .into()
 }

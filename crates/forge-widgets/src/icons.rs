@@ -63,6 +63,8 @@ pub enum Icon {
     ArrowDown,
     ArrowBarUp,
     ArrowBarDown,
+    CircleCheckFilled,
+    Circle,
 }
 
 impl Icon {
@@ -128,6 +130,10 @@ impl Icon {
             Icon::ArrowDown => include_bytes!("../assets/icons/tabler/arrow-down.svg"),
             Icon::ArrowBarUp => include_bytes!("../assets/icons/tabler/arrow-bar-up.svg"),
             Icon::ArrowBarDown => include_bytes!("../assets/icons/tabler/arrow-bar-down.svg"),
+            Icon::CircleCheckFilled => {
+                include_bytes!("../assets/icons/tabler/circle-check-filled.svg")
+            }
+            Icon::Circle => include_bytes!("../assets/icons/tabler/circle.svg"),
         }
     }
 

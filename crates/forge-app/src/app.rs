@@ -3728,16 +3728,9 @@ fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Mess
     let actions_state = &app.actions;
 
     let total = actions_state.total_actions();
-    let enabled_count = actions_state
-        .tree
-        .iter()
-        .flat_map(|g| g.actions.iter())
-        .filter(|a| a.enabled)
-        .count();
     let visible = actions_state.visible_actions();
 
-    let stat_strip = actions_stat_strip(total, enabled_count, palette);
-    let toolbar = actions_toolbar(actions_state, palette);
+    let page_header = actions_page_header(actions_state, palette);
 
     let mut tree_col: iced::widget::Column<'_, Message> = column![].spacing(0);
 
@@ -3800,11 +3793,10 @@ fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Mess
         .spacing(0)
         .height(Length::Fill);
 
-    let main_view: Element<'_, Message> =
-        container(column![stat_strip, toolbar, body, footer].spacing(0))
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into();
+    let main_view: Element<'_, Message> = container(column![page_header, body, footer].spacing(0))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into();
 
     if let Some(form) = app.actions.add_sub_action_modal.as_ref() {
         let modal_el = add_sub_action_modal_view(form, palette);
@@ -3820,70 +3812,24 @@ fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Mess
     }
 }
 
-fn actions_stat_strip<'a>(
-    total: usize,
-    enabled: usize,
-    palette: &'a ForgePalette,
-) -> iced::widget::Container<'a, Message> {
-    use iced::widget::{container, row, text};
-
-    let p = *palette;
-    let total_el = row![
-        text(total.to_string())
-            .size(FONT_SM)
-            .color(p.text_primary)
-            .font(forge_widgets::font(forge_widgets::FontRole::Monospace)),
-        text(" total").size(FONT_SM).color(p.text_muted),
-    ]
-    .spacing(0);
-
-    let sep1 = text(" \u{00b7} ").size(FONT_SM).color(p.text_faint);
-
-    let enabled_el = row![
-        text(enabled.to_string())
-            .size(FONT_SM)
-            .color(p.success)
-            .font(forge_widgets::font(forge_widgets::FontRole::Monospace)),
-        text(" enabled").size(FONT_SM).color(p.text_muted),
-    ]
-    .spacing(0);
-
-    let sep2 = text(" \u{00b7} ").size(FONT_SM).color(p.text_faint);
-
-    let fired_el = row![
-        text("\u{2014}")
-            .size(FONT_SM)
-            .color(p.brand)
-            .font(forge_widgets::font(forge_widgets::FontRole::Monospace)),
-        text(" fired today").size(FONT_SM).color(p.text_muted),
-    ]
-    .spacing(0);
-
-    let inner = row![total_el, sep1, enabled_el, sep2, fired_el]
-        .spacing(0)
-        .align_y(iced::alignment::Vertical::Center);
-
-    container(inner)
-        .width(Length::Fill)
-        .padding([6, 16])
-        .style(move |_theme: &iced::Theme| iced::widget::container::Style {
-            background: Some(iced::Background::Color(p.shell)),
-            border: iced::Border {
-                color: p.border_regular,
-                width: 0.5,
-                radius: 0.0.into(),
-            },
-            ..iced::widget::container::Style::default()
-        })
-}
-
-fn actions_toolbar<'a>(
+fn actions_page_header<'a>(
     state: &'a crate::actions::ActionsState,
     palette: &'a ForgePalette,
-) -> iced::widget::Container<'a, Message> {
-    use iced::widget::{container, row};
-
+) -> Element<'a, Message> {
+    use iced::widget::{container, row, text};
     let p = *palette;
+
+    let crumb_chevron = tabler_icon(Icon::ChevronRight, 11.0, p.text_faint);
+    let crumb_chevron_2 = tabler_icon(Icon::ChevronRight, 11.0, p.text_faint);
+    let crumbs_left = row![
+        tabler_icon(Icon::Home, 13.0, p.text_faint),
+        crumb_chevron,
+        text("Automation").size(FONT_SM).color(p.text_muted),
+        crumb_chevron_2,
+        text("Actions").size(FONT_SM).color(p.text_primary),
+    ]
+    .spacing(8)
+    .align_y(iced::alignment::Vertical::Center);
 
     let chip_all = forge_widgets::filter_chip(
         palette,
@@ -3913,7 +3859,6 @@ fn actions_toolbar<'a>(
         state.filter == ActionsFilter::Points,
         Message::Actions(ActionsMsg::FilterChanged(ActionsFilter::Points)),
     );
-
     let chips = row![chip_all, chip_chat, chip_timers, chip_points].spacing(4);
 
     let divider = container(iced::widget::Space::new().width(0.5).height(16.0))
@@ -3937,21 +3882,27 @@ fn actions_toolbar<'a>(
         palette,
     );
 
-    let inner = row![
+    let right_side = row![
         chips,
         divider,
         container(search).width(Length::Fixed(180.0)),
-        container(iced::widget::Space::new().width(Length::Fill)),
         new_btn,
     ]
     .spacing(8)
     .align_y(iced::alignment::Vertical::Center);
 
+    let inner = row![
+        crumbs_left,
+        iced::widget::Space::new().width(Length::Fill),
+        right_side,
+    ]
+    .align_y(iced::alignment::Vertical::Center);
+
     container(inner)
         .width(Length::Fill)
-        .padding([8, 14])
+        .padding([10_u16, 16_u16])
         .style(move |_theme: &iced::Theme| iced::widget::container::Style {
-            background: Some(iced::Background::Color(p.elevated)),
+            background: Some(iced::Background::Color(p.shell)),
             border: iced::Border {
                 color: p.border_regular,
                 width: 0.5,
@@ -3959,6 +3910,7 @@ fn actions_toolbar<'a>(
             },
             ..iced::widget::container::Style::default()
         })
+        .into()
 }
 
 fn actions_group_header<'a>(
@@ -4028,24 +3980,11 @@ fn actions_tree_row<'a>(
     let p = *palette;
     let mono = forge_widgets::font(forge_widgets::FontRole::Monospace);
 
-    let dot_color = if summary.enabled {
-        p.success
+    let state_icon = if summary.enabled {
+        tabler_icon(Icon::CircleCheckFilled, 13.0, p.success)
     } else {
-        p.text_faint
+        tabler_icon(Icon::Circle, 13.0, p.text_faint)
     };
-    let dot_size = 6.0_f32;
-    let dot = container(iced::widget::Space::new().width(dot_size).height(dot_size))
-        .width(dot_size)
-        .height(dot_size)
-        .style(move |_theme: &iced::Theme| iced::widget::container::Style {
-            background: Some(iced::Background::Color(dot_color)),
-            border: iced::Border {
-                radius: (dot_size / 2.0).into(),
-                color: iced::Color::TRANSPARENT,
-                width: 0.0,
-            },
-            ..iced::widget::container::Style::default()
-        });
 
     let name_color = if !summary.enabled {
         p.text_faint
@@ -4060,8 +3999,10 @@ fn actions_tree_row<'a>(
         .color(name_color)
         .font(mono);
 
-    let count_label = format!("{} sub", summary.sub_action_count);
-    let count_el = text(count_label).size(FONT_XS).color(p.text_faint);
+    let count_el = text(summary.sub_action_count.to_string())
+        .size(FONT_XS)
+        .color(p.text_faint)
+        .font(forge_widgets::font(forge_widgets::FontRole::Monospace));
 
     let stripe_color = if selected {
         p.brand
@@ -4077,7 +4018,7 @@ fn actions_tree_row<'a>(
 
     let body = container(
         row![
-            dot,
+            state_icon,
             name_el,
             iced::widget::Space::new().width(Length::Fill),
             count_el
@@ -4241,9 +4182,18 @@ fn actions_detail_panel<'a>(
         detail_col = detail_col.push(iced::widget::Space::new().height(18.0));
     }
 
-    if !detail.triggers.is_empty() {
-        detail_col = detail_col.push(forge_widgets::section_header("TRIGGERS", None, palette));
-        detail_col = detail_col.push(iced::widget::Space::new().height(8.0));
+    let triggers_label = format!("TRIGGERS \u{00b7} {}", detail.triggers.len());
+    detail_col = detail_col.push(forge_widgets::section_header(triggers_label, None, palette));
+    detail_col = detail_col.push(iced::widget::Space::new().height(8.0));
+
+    if detail.triggers.is_empty() {
+        detail_col = detail_col.push(empty_placeholder_card(
+            Icon::Bolt,
+            p.warning,
+            "No triggers \u{2014} this action will never fire on its own",
+            palette,
+        ));
+    } else {
         for trigger in &detail.triggers {
             let kind_str = crate::actions::trigger_label_of(&trigger.kind);
             let trigger_row = container(
@@ -4267,21 +4217,25 @@ fn actions_detail_panel<'a>(
             detail_col = detail_col.push(trigger_row);
             detail_col = detail_col.push(iced::widget::Space::new().height(4.0));
         }
-        detail_col = detail_col.push(iced::widget::Space::new().height(14.0));
     }
+    detail_col = detail_col.push(iced::widget::Space::new().height(14.0));
 
-    if !action.sub_actions.is_empty() {
-        let sub_count_str = format!(
-            "SUB-ACTIONS ({} step{})",
-            action.sub_actions.len(),
-            if action.sub_actions.len() == 1 {
-                ""
-            } else {
-                "s"
-            }
-        );
-        detail_col = detail_col.push(forge_widgets::section_header(sub_count_str, None, palette));
-        detail_col = detail_col.push(iced::widget::Space::new().height(8.0));
+    let sub_count_label = format!("SUB-ACTIONS \u{00b7} {}", action.sub_actions.len());
+    detail_col = detail_col.push(forge_widgets::section_header(
+        sub_count_label,
+        None,
+        palette,
+    ));
+    detail_col = detail_col.push(iced::widget::Space::new().height(8.0));
+
+    if action.sub_actions.is_empty() {
+        detail_col = detail_col.push(empty_placeholder_card(
+            Icon::Plus,
+            p.brand,
+            "No steps yet \u{2014} add one",
+            palette,
+        ));
+    } else {
         for (i, spec) in action.sub_actions.iter().enumerate() {
             let step_label = format!("{}. {}", i + 1, spec.kind_label());
             let step_row = container(text(step_label).size(FONT_XS).color(p.text_secondary))
@@ -4305,6 +4259,38 @@ fn actions_detail_panel<'a>(
         .height(Length::Fill)
         .style(move |_theme: &iced::Theme| iced::widget::container::Style {
             background: Some(iced::Background::Color(p.elevated)),
+            ..iced::widget::container::Style::default()
+        })
+        .into()
+}
+
+fn empty_placeholder_card<'a>(
+    icon: Icon,
+    icon_color: iced::Color,
+    label: &'static str,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    use iced::widget::{column, container, text};
+    let p = *palette;
+
+    let inner = column![
+        tabler_icon(icon, 16.0, icon_color),
+        text(label).size(FONT_XS).color(p.text_muted),
+    ]
+    .spacing(6)
+    .align_x(iced::Alignment::Center);
+
+    container(inner)
+        .padding([18_u16, 12_u16])
+        .width(Length::Fill)
+        .align_x(iced::Alignment::Center)
+        .style(move |_theme: &iced::Theme| iced::widget::container::Style {
+            background: None,
+            border: iced::Border {
+                color: p.border_input,
+                width: 0.5,
+                radius: forge_widgets::radius(forge_widgets::Radius::Md).into(),
+            },
             ..iced::widget::container::Style::default()
         })
         .into()
@@ -5735,10 +5721,18 @@ pub fn view(app: &App) -> Element<'_, Message> {
         other => coming_soon_view(format!("{other:?}"), palette),
     };
 
-    let content: Element<'_, Message> = iced::widget::column![crumb_bar, screen_content]
-        .height(Length::Fill)
-        .width(Length::Fill)
-        .into();
+    let screen_uses_own_header = matches!(&app.screen, Screen::Actions);
+    let content: Element<'_, Message> = if screen_uses_own_header {
+        iced::widget::column![screen_content]
+            .height(Length::Fill)
+            .width(Length::Fill)
+            .into()
+    } else {
+        iced::widget::column![crumb_bar, screen_content]
+            .height(Length::Fill)
+            .width(Length::Fill)
+            .into()
+    };
 
     let main_view = page_shell(chrome_title, None, sidebar, content, Some(chrome_footer));
     let toast_layer = toast_viewport(

@@ -54,6 +54,10 @@ pub enum Icon {
     Search,
     MoodSmile,
     Send,
+    Plug,
+    PlugConnected,
+    ChartLine,
+    ArrowRight,
 }
 
 impl Icon {
@@ -110,6 +114,10 @@ impl Icon {
             Icon::Search => include_bytes!("../assets/icons/tabler/search.svg"),
             Icon::MoodSmile => include_bytes!("../assets/icons/tabler/mood-smile.svg"),
             Icon::Send => include_bytes!("../assets/icons/tabler/send.svg"),
+            Icon::Plug => include_bytes!("../assets/icons/tabler/plug.svg"),
+            Icon::PlugConnected => include_bytes!("../assets/icons/tabler/plug-connected.svg"),
+            Icon::ChartLine => include_bytes!("../assets/icons/tabler/chart-line.svg"),
+            Icon::ArrowRight => include_bytes!("../assets/icons/tabler/arrow-right.svg"),
         }
     }
 
@@ -172,6 +180,10 @@ impl Icon {
             | "layout-sidebar-right"
             | "layout-sidebar-right-collapse" => Icon::LayoutSidebar,
             "search" | "magnifier" | "find" => Icon::Search,
+            "plug" | "outlet" => Icon::Plug,
+            "plug-connected" => Icon::PlugConnected,
+            "chart-line" | "chart" | "graph" | "line-chart" => Icon::ChartLine,
+            "arrow-right" => Icon::ArrowRight,
             _ => Icon::InfoCircle,
         }
     }

@@ -20,7 +20,7 @@ use forge_storage::{CredentialId, CredentialsRepo, DataProvider};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{Action, ActionId};
 use forge_widgets::icons::{Icon, tabler_icon};
-use forge_widgets::tokens::{FONT_BODY, FONT_LG, FONT_MD, FONT_SM, FONT_XS};
+use forge_widgets::tokens::{FONT_BODY, FONT_SM};
 use forge_widgets::{
     BreadcrumbCrumb, FontRole, ForgePalette, NavChild, NavItem, Radius, Sidebar, ThemeId,
     ToastQueue, app_footer, breadcrumb, font, page_shell, radius, sidebar, title_bar,
@@ -2055,26 +2055,6 @@ pub(crate) fn format_uptime(elapsed: std::time::Duration) -> String {
     }
 }
 
-fn event_source_color(source: EventSource, palette: &ForgePalette) -> iced::Color {
-    match source {
-        EventSource::Twitch => palette.brand,
-        EventSource::YouTube => palette.random,
-        EventSource::Kick => palette.info,
-        EventSource::Trovo => palette.success,
-        EventSource::Core => palette.warning,
-        EventSource::Rhai => palette.warning,
-        EventSource::Http => palette.random,
-        EventSource::Obs => palette.success,
-        EventSource::VTube => palette.bits,
-        EventSource::Discord => palette.brand,
-        EventSource::Midi => palette.info,
-        EventSource::Hotkey => palette.info,
-        EventSource::Timer => palette.warning,
-        EventSource::Server => palette.info,
-        EventSource::Audio => palette.bits,
-    }
-}
-
 fn event_source_label(source: EventSource) -> &'static str {
     match source {
         EventSource::Twitch => "twitch",
@@ -2093,265 +2073,6 @@ fn event_source_label(source: EventSource) -> &'static str {
         EventSource::Server => "server",
         EventSource::Audio => "audio",
     }
-}
-
-fn event_kind_description(source: EventSource, kind: &str) -> String {
-    let src_label = match source {
-        EventSource::Twitch => "Twitch",
-        EventSource::YouTube => "YouTube",
-        EventSource::Kick => "Kick",
-        EventSource::Trovo => "Trovo",
-        EventSource::Core => "Core",
-        EventSource::Rhai => "Rhai",
-        EventSource::Http => "HTTP",
-        EventSource::Obs => "OBS",
-        EventSource::VTube => "VTube",
-        EventSource::Discord => "Discord",
-        EventSource::Midi => "MIDI",
-        EventSource::Hotkey => "Hotkey",
-        EventSource::Timer => "Timer",
-        EventSource::Server => "Server",
-        EventSource::Audio => "Audio",
-    };
-    format!("{src_label}: {kind}")
-}
-
-fn fmt_count<T: std::fmt::Display>(v: Option<T>) -> String {
-    v.map_or_else(|| "0".to_string(), |n| n.to_string())
-}
-
-fn home_card_style(
-    palette: &ForgePalette,
-) -> impl Fn(&Theme) -> iced::widget::container::Style + '_ {
-    move |_theme: &Theme| iced::widget::container::Style {
-        background: Some(iced::Background::Color(palette.elevated)),
-        border: iced::Border {
-            color: palette.border_regular,
-            width: 0.5,
-            radius: radius(Radius::Md).into(),
-        },
-        ..iced::widget::container::Style::default()
-    }
-}
-
-fn home_nav_card<'a>(
-    icon: Icon,
-    icon_color: iced::Color,
-    title: &'a str,
-    leading: impl Into<String>,
-    cta: Option<&'a str>,
-    on_press: Message,
-    palette: &'a ForgePalette,
-) -> Element<'a, Message> {
-    use iced::widget::{button, column, container, row, text};
-    use iced::{Alignment, Background, Border, Color, Shadow};
-
-    let leading: String = leading.into();
-
-    let icon_box = container(tabler_icon(icon, 16.0, icon_color))
-        .width(30.0)
-        .height(30.0)
-        .align_x(Alignment::Center)
-        .align_y(Alignment::Center)
-        .style(move |_theme: &Theme| iced::widget::container::Style {
-            background: Some(Background::Color(palette.surface_overlay)),
-            border: Border {
-                radius: radius(Radius::Lg).into(),
-                color: iced::Color::TRANSPARENT,
-                width: 0.0,
-            },
-            ..iced::widget::container::Style::default()
-        });
-
-    let description_row: Element<'a, Message> = if let Some(cta_text) = cta {
-        row![
-            text(format!("{leading} \u{b7} "))
-                .size(FONT_XS)
-                .color(palette.text_muted),
-            text(cta_text).size(FONT_XS).color(palette.brand),
-        ]
-        .into()
-    } else {
-        text(leading).size(FONT_XS).color(palette.text_muted).into()
-    };
-
-    let content = column![
-        icon_box,
-        text(title).size(FONT_BODY).color(palette.text_primary),
-        description_row,
-    ]
-    .spacing(10.0)
-    .width(Length::Fill);
-
-    button(content)
-        .on_press(on_press)
-        .padding(14.0)
-        .width(Length::Fill)
-        .style(move |_theme: &Theme, status| {
-            let bg = if matches!(status, iced::widget::button::Status::Hovered) {
-                Color {
-                    a: 1.0,
-                    ..palette.elevated
-                }
-            } else {
-                palette.elevated
-            };
-            button::Style {
-                background: Some(Background::Color(bg)),
-                border: Border {
-                    color: palette.border_regular,
-                    width: 0.5,
-                    radius: 10.0.into(),
-                },
-                text_color: palette.text_primary,
-                shadow: Shadow::default(),
-                snap: false,
-            }
-        })
-        .into()
-}
-
-fn home_event_row<'a>(
-    event: &forge_events::Event,
-    has_bottom_border: bool,
-    palette: &'a ForgePalette,
-) -> Element<'a, Message> {
-    use iced::widget::{container, row, text};
-    use iced::{Alignment, Background, Border};
-
-    let dot_color = event_source_color(event.source, palette);
-
-    let dot = container(iced::widget::Space::new())
-        .width(6.0)
-        .height(6.0)
-        .style(move |_theme: &Theme| iced::widget::container::Style {
-            background: Some(Background::Color(dot_color)),
-            border: Border {
-                radius: 3.0.into(),
-                color: iced::Color::TRANSPARENT,
-                width: 0.0,
-            },
-            ..iced::widget::container::Style::default()
-        });
-
-    let ts = event.timestamp;
-    let ts_str = format!("{:02}:{:02}:{:02}", ts.hour(), ts.minute(), ts.second());
-
-    let timestamp = container(
-        text(ts_str)
-            .size(FONT_XS)
-            .color(palette.text_muted)
-            .font(font(FontRole::Monospace)),
-    )
-    .width(48.0);
-
-    let description = text(event_kind_description(event.source, &event.kind))
-        .size(FONT_SM)
-        .color(palette.text_primary)
-        .width(Length::Fill);
-
-    let inner = row![dot, timestamp, description]
-        .spacing(10.0)
-        .align_y(Alignment::Center)
-        .padding(iced::Padding {
-            top: 6.0,
-            right: 0.0,
-            bottom: 6.0,
-            left: 0.0,
-        });
-
-    let border_width = if has_bottom_border { 0.5 } else { 0.0 };
-
-    container(inner)
-        .width(Length::Fill)
-        .style(move |_theme: &Theme| iced::widget::container::Style {
-            border: Border {
-                color: palette.border_regular,
-                width: border_width,
-                radius: 0.0.into(),
-            },
-            ..iced::widget::container::Style::default()
-        })
-        .into()
-}
-
-fn home_stat_row<'a>(
-    label: &'a str,
-    value_text: String,
-    value_color: iced::Color,
-    has_bottom_border: bool,
-    palette: &'a ForgePalette,
-) -> Element<'a, Message> {
-    use iced::widget::{container, row, text};
-    use iced::{Alignment, Border};
-
-    let inner = row![
-        text(label).size(FONT_SM).color(palette.text_muted),
-        iced::widget::Space::new().width(Length::Fill),
-        text(value_text)
-            .size(FONT_MD)
-            .color(value_color)
-            .font(font(FontRole::Monospace)),
-    ]
-    .align_y(Alignment::Center);
-
-    let border_width = if has_bottom_border { 0.5 } else { 0.0 };
-
-    container(inner)
-        .width(Length::Fill)
-        .padding(iced::Padding {
-            top: 8.0,
-            right: 10.0,
-            bottom: 8.0,
-            left: 10.0,
-        })
-        .style(move |_theme: &Theme| iced::widget::container::Style {
-            border: Border {
-                color: palette.border_regular,
-                width: border_width,
-                radius: 0.0.into(),
-            },
-            ..iced::widget::container::Style::default()
-        })
-        .into()
-}
-
-pub(crate) fn connected_count(app: &App) -> u8 {
-    if app.twitch_chat_handle.is_some() {
-        1
-    } else {
-        0
-    }
-}
-
-pub(crate) fn subsystem_connectivity(app: &App) -> (u8, u8) {
-    let mut connected: u8 = 0;
-    let twitch_live = app
-        .twitch_chat_handle
-        .as_ref()
-        .is_some_and(|h| matches!(h.connection_state(), ChatConnectionState::Connected));
-    if twitch_live {
-        connected += 2;
-    }
-    if app.obs_client.is_some() {
-        connected += 1;
-    }
-    if matches!(
-        app.server_screen.server_status,
-        crate::server_screen::ServerStatus::Running
-    ) {
-        connected += 1;
-    }
-    if app.sound_player.is_some() {
-        connected += 2;
-    }
-    if app.speak_queue.is_some() {
-        connected += 1;
-    }
-    if !app.storage_offline {
-        connected += 1;
-    }
-    (connected, 8)
 }
 
 fn home_inline_button<'a>(
@@ -2402,11 +2123,44 @@ fn home_inline_button<'a>(
         .into()
 }
 
-fn home_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
+pub(crate) fn subsystem_connectivity(app: &App) -> (u8, u8) {
+    let mut connected: u8 = 0;
+    let twitch_live = app
+        .twitch_chat_handle
+        .as_ref()
+        .is_some_and(|h| matches!(h.connection_state(), ChatConnectionState::Connected));
+    if twitch_live {
+        connected += 2;
+    }
+    if app.obs_client.is_some() {
+        connected += 1;
+    }
+    if matches!(
+        app.server_screen.server_status,
+        crate::server_screen::ServerStatus::Running
+    ) {
+        connected += 1;
+    }
+    if app.sound_player.is_some() {
+        connected += 2;
+    }
+    if app.speak_queue.is_some() {
+        connected += 1;
+    }
+    if !app.storage_offline {
+        connected += 1;
+    }
+    (connected, 8)
+}
+
+fn home_hero<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     use iced::widget::{column, container, row, text};
     use iced::{Alignment, Background, Border};
 
-    let brand_box = container(text("F").size(26.0).color(palette.shell).font(iced::Font {
+    let brand = palette.brand;
+    let shell = palette.shell;
+
+    let brand_box = container(text("F").size(26.0).color(shell).font(iced::Font {
         weight: iced::font::Weight::Semibold,
         ..iced::Font::DEFAULT
     }))
@@ -2415,7 +2169,7 @@ fn home_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message
     .align_x(Alignment::Center)
     .align_y(Alignment::Center)
     .style(move |_theme: &Theme| iced::widget::container::Style {
-        background: Some(Background::Color(palette.brand)),
+        background: Some(Background::Color(brand)),
         border: Border {
             radius: 12.0.into(),
             color: iced::Color::TRANSPARENT,
@@ -2424,17 +2178,11 @@ fn home_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message
         ..iced::widget::container::Style::default()
     });
 
-    let version = env!("CARGO_PKG_VERSION");
-    let uptime_str = format_uptime(app.boot_time.elapsed().unwrap_or_default());
     let title_col = column![
-        text("Forge").size(FONT_LG).color(palette.text_primary),
+        text("Forge").size(22.0).color(palette.text_primary),
         text("Open-source stream automation, forged for streamers")
             .size(FONT_BODY)
             .color(palette.text_muted),
-        text(format!("v{version} · up {uptime_str}"))
-            .size(FONT_XS)
-            .color(palette.text_faint)
-            .font(font(FontRole::Monospace)),
     ]
     .spacing(2.0);
 
@@ -2446,270 +2194,767 @@ fn home_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message
         palette,
     );
 
-    let hero_buttons = row![import_btn, new_action_btn].spacing(6.0);
+    let buttons_row = row![import_btn, new_action_btn].spacing(8.0);
 
-    let hero_inner = row![
+    let inner = row![
         brand_box,
         container(title_col).width(Length::Fill),
-        hero_buttons,
+        buttons_row,
     ]
     .spacing(18.0)
     .align_y(Alignment::Center);
 
-    let hero_card = container(hero_inner)
+    let elevated = palette.elevated;
+    let border_regular = palette.border_regular;
+
+    container(inner)
         .width(Length::Fill)
         .padding(iced::Padding {
-            top: 20.0,
-            right: 22.0,
-            bottom: 20.0,
-            left: 22.0,
+            top: 22.0,
+            right: 24.0,
+            bottom: 22.0,
+            left: 24.0,
         })
         .style(move |_theme: &Theme| iced::widget::container::Style {
-            background: Some(Background::Color(palette.elevated)),
+            background: Some(Background::Color(elevated)),
             border: Border {
-                color: palette.border_regular,
+                color: border_regular,
                 width: 0.5,
-                radius: 12.0.into(),
+                radius: radius(Radius::Lg).into(),
+            },
+            ..iced::widget::container::Style::default()
+        })
+        .into()
+}
+
+fn home_jump_cards<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
+    use forge_widgets::{BigJumpCardProps, big_jump_card};
+    use iced::widget::{container, row};
+
+    let actions_count = app.home.actions_count.unwrap_or(0);
+    let triggers_fired = app.home.triggers_fired.unwrap_or(0);
+    let chat_count = app.live_chat.chat_log.len();
+    let twitch_ok = app.twitch_chat_handle.is_some();
+    let obs_ok = app.obs_client.is_some();
+    let total_integrations: u8 = 6;
+    let connected_integrations: u8 = u8::from(twitch_ok) + u8::from(obs_ok);
+    let connections_warn = connected_integrations < total_integrations;
+
+    let card_chat = big_jump_card(
+        BigJumpCardProps {
+            icon: Icon::MessageCircle,
+            icon_color: palette.brand,
+            section_label: "AUDIENCE",
+            title: "Chat",
+            stat: chat_count.to_string(),
+            stat_label: "viewers tracked".to_string(),
+            hint: "Talk to your audience and see who's watching",
+            on_press: Message::Navigate(Screen::LiveChat),
+            warn: false,
+        },
+        palette,
+    );
+
+    let card_actions = big_jump_card(
+        BigJumpCardProps {
+            icon: Icon::Bolt,
+            icon_color: palette.warning,
+            section_label: "AUTOMATION",
+            title: "Actions",
+            stat: actions_count.to_string(),
+            stat_label: format!("actions · {triggers_fired} fired today"),
+            hint: "Set up triggers, commands and timers",
+            on_press: Message::Navigate(Screen::Actions),
+            warn: false,
+        },
+        palette,
+    );
+
+    let card_connections = big_jump_card(
+        BigJumpCardProps {
+            icon: Icon::Plug,
+            icon_color: palette.success,
+            section_label: "CONNECTIONS",
+            title: "Connections",
+            stat: format!("{connected_integrations}/{total_integrations}"),
+            stat_label: "connected".to_string(),
+            hint: "Manage platforms, apps and modules",
+            on_press: Message::Navigate(Screen::Platforms),
+            warn: connections_warn,
+        },
+        palette,
+    );
+
+    row![
+        container(card_chat).width(Length::FillPortion(1)),
+        container(card_actions).width(Length::FillPortion(1)),
+        container(card_connections).width(Length::FillPortion(1)),
+    ]
+    .spacing(10.0)
+    .into()
+}
+
+fn home_stream_health<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
+    use iced::widget::{column, container, row, text};
+    use iced::{Alignment, Background, Border};
+
+    let elevated = palette.elevated;
+    let border_regular = palette.border_regular;
+    let success = palette.success;
+    let text_faint = palette.text_faint;
+    let text_primary = palette.text_primary;
+    let text_muted = palette.text_muted;
+
+    let header_icon = tabler_icon(Icon::ChartLine, 14.0, success);
+    let live_dot = container(iced::widget::Space::new())
+        .width(6.0)
+        .height(6.0)
+        .style(move |_theme: &Theme| iced::widget::container::Style {
+            background: Some(Background::Color(success)),
+            border: Border {
+                radius: 3.0.into(),
+                color: iced::Color::TRANSPARENT,
+                width: 0.0,
             },
             ..iced::widget::container::Style::default()
         });
 
-    let manage_header = text("MANAGE")
-        .size(FONT_XS)
-        .color(palette.text_muted)
+    let live_badge = row![
+        live_dot,
+        text("LIVE")
+            .size(9.5)
+            .color(success)
+            .font(font(FontRole::Monospace)),
+    ]
+    .spacing(4.0)
+    .align_y(Alignment::Center);
+
+    let header_left = row![
+        header_icon,
+        text("Stream health").size(FONT_BODY).color(text_primary),
+        live_badge,
+    ]
+    .spacing(7.0)
+    .align_y(Alignment::Center);
+
+    let header_right = text("last 60s · auto-refresh")
+        .size(10.5)
+        .color(text_faint)
         .font(font(FontRole::Monospace));
 
-    let platforms_connected = connected_count(app);
-    let stream_apps_connected: u8 = app.obs_client.is_some().into();
-
-    let actions_count = app.home.actions_count.unwrap_or(0);
-    let commands_count = app.home.commands_count.unwrap_or(0);
-    let triggers_fired = app.home.triggers_fired.unwrap_or(0);
-
-    let (actions_leading, actions_cta) = if actions_count == 0 {
-        ("None yet".to_owned(), Some("create one"))
-    } else {
-        (
-            format!("{actions_count} configured \u{b7} {triggers_fired} fired"),
-            None,
-        )
-    };
-    let (commands_leading, commands_cta) = if commands_count == 0 {
-        ("None yet".to_owned(), Some("create one"))
-    } else {
-        (format!("{commands_count} commands across chat"), None)
-    };
-    let (platforms_leading, platforms_cta) = if platforms_connected == 0 {
-        ("0 connected".to_owned(), Some("connect"))
-    } else {
-        (format!("{platforms_connected} connected"), None)
-    };
-    let (stream_apps_leading, stream_apps_cta) = if stream_apps_connected == 0 {
-        ("0 connected".to_owned(), Some("connect"))
-    } else {
-        (format!("{stream_apps_connected} connected"), None)
-    };
-
-    let actions_card = home_nav_card(
-        Icon::Bolt,
-        palette.brand,
-        "Actions",
-        actions_leading,
-        actions_cta,
-        Message::Navigate(Screen::Actions),
-        palette,
-    );
-    let commands_card = home_nav_card(
-        Icon::Terminal,
-        palette.info,
-        "Commands",
-        commands_leading,
-        commands_cta,
-        Message::Navigate(Screen::Commands),
-        palette,
-    );
-    let platforms_card = home_nav_card(
-        Icon::Broadcast,
-        palette.random,
-        "Platforms",
-        platforms_leading,
-        platforms_cta,
-        Message::Navigate(Screen::Platforms),
-        palette,
-    );
-    let stream_apps_card = home_nav_card(
-        Icon::LayoutGrid,
-        palette.success,
-        "Stream apps",
-        stream_apps_leading,
-        stream_apps_cta,
-        Message::Navigate(Screen::StreamApps),
-        palette,
-    );
-
-    let cards_grid = row![
-        actions_card,
-        commands_card,
-        platforms_card,
-        stream_apps_card
+    let header = row![
+        header_left,
+        iced::widget::Space::new().width(Length::Fill),
+        header_right,
     ]
-    .spacing(8.0)
+    .align_y(Alignment::Center);
+
+    let sparkline_col = column![
+        text("THROUGHPUT · ev/s")
+            .size(10.0)
+            .color(text_faint)
+            .font(font(FontRole::Monospace)),
+        forge_widgets::throughput_sparkline(&[], "ev/s", palette),
+    ]
+    .spacing(4.0)
+    .width(Length::FillPortion(14));
+
+    let health_stat =
+        |label: &'a str, value: &'a str, unit: Option<&'a str>| -> Element<'a, Message> {
+            let val_el: Element<'a, Message> = if let Some(u) = unit {
+                row![
+                    text(value)
+                        .size(15.0)
+                        .color(text_primary)
+                        .font(font(FontRole::Monospace)),
+                    text(u).size(10.0).color(text_muted),
+                ]
+                .spacing(4.0)
+                .align_y(Alignment::Center)
+                .into()
+            } else {
+                text(value)
+                    .size(15.0)
+                    .color(text_primary)
+                    .font(font(FontRole::Monospace))
+                    .into()
+            };
+            column![
+                text(label)
+                    .size(10.0)
+                    .color(text_faint)
+                    .font(font(FontRole::Monospace)),
+                val_el,
+            ]
+            .spacing(3.0)
+            .width(Length::FillPortion(10))
+            .into()
+        };
+
+    let stats_row = row![
+        sparkline_col,
+        health_stat("BITRATE · OBS", "\u{2014}", Some("kbps")),
+        health_stat("DROPPED · OBS", "\u{2014}", None),
+        health_stat("FPS", "\u{2014}", None),
+        health_stat("CPU", "\u{2014}", Some("%")),
+    ]
+    .spacing(12.0)
+    .align_y(Alignment::End);
+
+    let card_content = column![header, stats_row].spacing(8.0);
+
+    container(card_content)
+        .width(Length::Fill)
+        .padding(14.0)
+        .style(move |_theme: &Theme| iced::widget::container::Style {
+            background: Some(Background::Color(elevated)),
+            border: Border {
+                color: border_regular,
+                width: 0.5,
+                radius: radius(Radius::Md).into(),
+            },
+            ..iced::widget::container::Style::default()
+        })
+        .into()
+}
+
+fn home_connection_cell<'a>(
+    label: &'a str,
+    dot_color: iced::Color,
+    ok: bool,
+    on_press: Message,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    use iced::widget::{button, column, container, row, text};
+    use iced::{Alignment, Background, Border, Shadow};
+
+    let text_primary = palette.text_primary;
+    let text_faint = palette.text_faint;
+    let success = palette.success;
+    let elevated = palette.elevated;
+    let shell = palette.shell;
+    let border_regular = palette.border_regular;
+
+    let platform_dot = container(iced::widget::Space::new())
+        .width(10.0)
+        .height(10.0)
+        .style(move |_theme: &Theme| iced::widget::container::Style {
+            background: Some(Background::Color(dot_color)),
+            border: Border {
+                radius: 3.0.into(),
+                color: iced::Color::TRANSPARENT,
+                width: 0.0,
+            },
+            ..iced::widget::container::Style::default()
+        });
+
+    let status_color = if ok { success } else { text_faint };
+    let status_str = if ok { "connected" } else { "offline" };
+
+    let label_col = column![
+        text(label).size(12.0).color(text_primary),
+        text(status_str)
+            .size(10.0)
+            .color(status_color)
+            .font(font(FontRole::Monospace)),
+    ]
+    .spacing(2.0)
     .width(Length::Fill);
 
-    let recent_events = {
-        let events = app.bus.recent(4);
-        let is_empty = events.is_empty();
+    let status_dot = container(iced::widget::Space::new())
+        .width(8.0)
+        .height(8.0)
+        .style(move |_theme: &Theme| iced::widget::container::Style {
+            background: Some(Background::Color(status_color)),
+            border: Border {
+                radius: 4.0.into(),
+                color: iced::Color::TRANSPARENT,
+                width: 0.0,
+            },
+            ..iced::widget::container::Style::default()
+        });
 
-        let status_dot_color = if is_empty {
-            palette.text_muted
-        } else {
-            palette.success
-        };
-        let status_dot = container(iced::widget::Space::new())
-            .width(6.0)
-            .height(6.0)
-            .style(move |_theme: &Theme| iced::widget::container::Style {
-                background: Some(Background::Color(status_dot_color)),
-                border: Border {
-                    radius: 3.0.into(),
-                    color: iced::Color::TRANSPARENT,
-                    width: 0.0,
-                },
-                ..iced::widget::container::Style::default()
-            });
-        let status_label = text(if is_empty { "IDLE" } else { "LIVE" })
-            .size(FONT_XS)
-            .color(palette.text_faint)
-            .font(font(FontRole::Monospace));
-        let status_row = row![status_dot, status_label]
-            .spacing(5.0)
-            .align_y(Alignment::Center);
-
-        let header = row![
-            text("Recent events")
-                .size(FONT_BODY)
-                .color(palette.text_primary),
-            iced::widget::Space::new().width(Length::Fill),
-            status_row,
-        ]
+    let content = row![platform_dot, label_col, status_dot]
+        .spacing(10.0)
         .align_y(Alignment::Center);
 
-        let body: Element<'a, Message> = if is_empty {
-            let icon = tabler_icon(Icon::Activity, 28.0, palette.border_regular);
-            let primary = text("No events yet")
-                .size(FONT_BODY)
-                .color(palette.text_secondary);
-            let secondary = text(
-                "Events will appear here as soon as you connect a platform and start streaming.",
-            )
-            .size(FONT_XS)
+    button(content)
+        .on_press(on_press)
+        .padding(iced::Padding {
+            top: 12.0,
+            right: 14.0,
+            bottom: 12.0,
+            left: 14.0,
+        })
+        .width(Length::Fill)
+        .style(move |_theme: &Theme, status| button::Style {
+            background: Some(Background::Color(
+                if matches!(status, iced::widget::button::Status::Hovered) {
+                    shell
+                } else {
+                    elevated
+                },
+            )),
+            border: Border {
+                color: border_regular,
+                width: 0.0,
+                radius: 0.0.into(),
+            },
+            text_color: text_primary,
+            shadow: Shadow::default(),
+            snap: false,
+        })
+        .into()
+}
+
+fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
+    use iced::widget::{column, container, row, text};
+    use iced::{Alignment, Background, Border};
+
+    let twitch_ok = app.twitch_chat_handle.is_some();
+    let obs_ok = app.obs_client.is_some();
+    let connected: u8 = u8::from(twitch_ok) + u8::from(obs_ok);
+    let disconnected: u8 = 6u8.saturating_sub(connected);
+
+    let header_icon = tabler_icon(Icon::PlugConnected, 14.0, palette.success);
+    let header_title = text("Integrations").size(12.5).color(palette.text_primary);
+    let header_sub = text(format!("{connected} active · {disconnected} disconnected"))
+        .size(11.0)
+        .color(palette.text_faint);
+
+    let header = row![
+        header_icon,
+        header_title,
+        header_sub,
+        iced::widget::Space::new().width(Length::Fill),
+    ]
+    .spacing(7.0)
+    .align_y(Alignment::Center);
+
+    let elevated = palette.elevated;
+    let border_regular = palette.border_regular;
+    let surface_overlay = palette.surface_overlay;
+
+    let header_bar = container(header)
+        .width(Length::Fill)
+        .padding(iced::Padding {
+            top: 10.0,
+            right: 14.0,
+            bottom: 10.0,
+            left: 14.0,
+        })
+        .style(move |_theme: &Theme| iced::widget::container::Style {
+            background: Some(Background::Color(elevated)),
+            border: Border {
+                color: border_regular,
+                width: 0.5,
+                radius: iced::border::Radius {
+                    top_left: radius(Radius::Md),
+                    top_right: radius(Radius::Md),
+                    bottom_left: 0.0,
+                    bottom_right: 0.0,
+                },
+            },
+            ..iced::widget::container::Style::default()
+        });
+
+    let cells = row![
+        container(home_connection_cell(
+            "Twitch",
+            palette.brand,
+            twitch_ok,
+            Message::Navigate(Screen::IntegrationDetail(
+                forge_platform_core::IntegrationId::new("twitch")
+            )),
+            palette,
+        ))
+        .width(Length::FillPortion(1)),
+        container(home_connection_cell(
+            "YouTube",
+            palette.random,
+            false,
+            Message::Navigate(Screen::IntegrationDetail(
+                forge_platform_core::IntegrationId::new("youtube")
+            )),
+            palette,
+        ))
+        .width(Length::FillPortion(1)),
+        container(home_connection_cell(
+            "Kick",
+            palette.info,
+            false,
+            Message::Navigate(Screen::IntegrationDetail(
+                forge_platform_core::IntegrationId::new("kick")
+            )),
+            palette,
+        ))
+        .width(Length::FillPortion(1)),
+        container(home_connection_cell(
+            "Trovo",
+            palette.success,
+            false,
+            Message::Navigate(Screen::IntegrationDetail(
+                forge_platform_core::IntegrationId::new("trovo")
+            )),
+            palette,
+        ))
+        .width(Length::FillPortion(1)),
+        container(home_connection_cell(
+            "OBS",
+            palette.success,
+            obs_ok,
+            Message::Navigate(Screen::IntegrationDetail(
+                forge_platform_core::IntegrationId::new("obs")
+            )),
+            palette,
+        ))
+        .width(Length::FillPortion(1)),
+        container(home_connection_cell(
+            "VTube",
+            palette.warning,
+            false,
+            Message::Navigate(Screen::IntegrationDetail(
+                forge_platform_core::IntegrationId::new("vtube")
+            )),
+            palette,
+        ))
+        .width(Length::FillPortion(1)),
+    ]
+    .spacing(1.0);
+
+    let cells_container = container(cells)
+        .width(Length::Fill)
+        .style(move |_theme: &Theme| iced::widget::container::Style {
+            background: Some(Background::Color(surface_overlay)),
+            border: Border {
+                color: border_regular,
+                width: 0.5,
+                radius: iced::border::Radius {
+                    top_left: 0.0,
+                    top_right: 0.0,
+                    bottom_left: radius(Radius::Md),
+                    bottom_right: radius(Radius::Md),
+                },
+            },
+            ..iced::widget::container::Style::default()
+        });
+
+    column![header_bar, cells_container]
+        .spacing(0.0)
+        .width(Length::Fill)
+        .into()
+}
+
+fn home_chat_event_row<'a>(
+    row: &'a forge_widgets::ChatRow,
+    has_bottom_border: bool,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    use iced::widget::{button, container, row as irow, text};
+    use iced::{Alignment, Background, Border, Shadow};
+
+    let dot_color = row.platform.color(palette);
+    let platform_name = match row.platform {
+        forge_widgets::Platform::Twitch => "Twitch",
+        forge_widgets::Platform::YouTube => "YouTube",
+        forge_widgets::Platform::Kick => "Kick",
+        forge_widgets::Platform::Trovo => "Trovo",
+    };
+    let elevated = palette.elevated;
+    let border_regular = palette.border_regular;
+    let shell = palette.shell;
+
+    let dot = container(iced::widget::Space::new())
+        .width(6.0)
+        .height(6.0)
+        .style(move |_theme: &Theme| iced::widget::container::Style {
+            background: Some(Background::Color(dot_color)),
+            border: Border {
+                radius: 3.0.into(),
+                color: iced::Color::TRANSPARENT,
+                width: 0.0,
+            },
+            ..iced::widget::container::Style::default()
+        });
+
+    let ts_col = container(
+        text(&*row.timestamp)
+            .size(11.0)
             .color(palette.text_muted)
-            .wrapping(iced::widget::text::Wrapping::Word);
+            .font(font(FontRole::Monospace)),
+    )
+    .width(60.0);
 
-            container(
-                column![icon, primary, secondary]
-                    .spacing(6.0)
-                    .align_x(Alignment::Center),
-            )
+    let body_str: String = match &row.body {
+        forge_widgets::ChatBody::Message(m) => m.clone(),
+        forge_widgets::ChatBody::Command { command, .. } => command.clone(),
+        forge_widgets::ChatBody::Subscription { tier, .. } => format!("sub tier {tier}"),
+        forge_widgets::ChatBody::Cheer { bits, .. } => format!("{bits} bits"),
+        forge_widgets::ChatBody::Raid { viewers, .. } => format!("raid · {viewers} viewers"),
+    };
+
+    let text_primary = palette.text_primary;
+
+    let description: Element<'a, Message> = {
+        use iced::widget::text;
+        let full = format!("{}: {} \u{2014} {}", platform_name, row.username, body_str);
+        text(full)
+            .size(12.0)
+            .color(text_primary)
             .width(Length::Fill)
-            .center_x(Length::Fill)
-            .padding(20.0)
             .into()
-        } else {
-            let mut events_col = column![].spacing(0.0);
-            let count = events.len();
-            for (i, event) in events.iter().enumerate() {
-                let has_border = i + 1 < count;
-                events_col = events_col.push(home_event_row(event, has_border, palette));
-            }
-            events_col.into()
-        };
-
-        let card_content = column![header, body].spacing(10.0);
-
-        container(card_content)
-            .width(Length::FillPortion(1))
-            .padding(14.0)
-            .style(home_card_style(palette))
     };
 
-    let at_a_glance = {
-        let header = text("At a glance")
-            .size(FONT_BODY)
-            .color(palette.text_primary);
-
-        let actions_color = if actions_count == 0 {
-            palette.text_muted
-        } else {
-            palette.brand
-        };
-        let commands_color = if commands_count == 0 {
-            palette.text_muted
-        } else {
-            palette.info
-        };
-        let triggers_color = if triggers_fired == 0 {
-            palette.text_muted
-        } else {
-            palette.success
-        };
-        let globals_count = app.home.globals_count.unwrap_or(0);
-        let globals_color = if globals_count == 0 {
-            palette.text_muted
-        } else {
-            palette.warning
-        };
-
-        let actions_row = home_stat_row(
-            "Actions",
-            fmt_count(app.home.actions_count),
-            actions_color,
-            true,
-            palette,
-        );
-        let commands_row = home_stat_row(
-            "Commands",
-            fmt_count(app.home.commands_count),
-            commands_color,
-            true,
-            palette,
-        );
-        let triggers_row = home_stat_row(
-            "Triggers fired",
-            fmt_count(app.home.triggers_fired),
-            triggers_color,
-            true,
-            palette,
-        );
-        let globals_row = home_stat_row(
-            "Global variables",
-            fmt_count(app.home.globals_count),
-            globals_color,
-            true,
-            palette,
-        );
-
-        let stats_col =
-            column![header, actions_row, commands_row, triggers_row, globals_row].spacing(4.0);
-
-        container(stats_col)
-            .width(Length::FillPortion(1))
-            .padding(14.0)
-            .style(home_card_style(palette))
-    };
-
-    let bottom_row = row![recent_events, at_a_glance]
+    let inner = irow![dot, ts_col, description]
         .spacing(10.0)
-        .width(Length::Fill);
+        .align_y(Alignment::Center);
 
-    let content = column![hero_card, manage_header, cards_grid, bottom_row]
-        .spacing(16.0)
-        .width(Length::Fill);
+    let border_width = if has_bottom_border { 0.5 } else { 0.0 };
+
+    let styled_row = container(inner)
+        .width(Length::Fill)
+        .padding(iced::Padding {
+            top: 7.0,
+            right: 4.0,
+            bottom: 7.0,
+            left: 4.0,
+        })
+        .style(move |_theme: &Theme| iced::widget::container::Style {
+            border: Border {
+                color: border_regular,
+                width: border_width,
+                radius: 0.0.into(),
+            },
+            ..iced::widget::container::Style::default()
+        });
+
+    button(styled_row)
+        .on_press(Message::Navigate(Screen::EventFeed))
+        .style(move |_theme: &Theme, status| button::Style {
+            background: Some(Background::Color(
+                if matches!(status, iced::widget::button::Status::Hovered) {
+                    shell
+                } else {
+                    elevated
+                },
+            )),
+            border: Border {
+                color: iced::Color::TRANSPARENT,
+                width: 0.0,
+                radius: 4.0.into(),
+            },
+            text_color: text_primary,
+            shadow: Shadow::default(),
+            snap: false,
+        })
+        .padding(0.0)
+        .width(Length::Fill)
+        .into()
+}
+
+fn home_recent_events_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
+    use iced::widget::{column, container, row, text};
+    use iced::{Alignment, Background, Border};
+
+    let elevated = palette.elevated;
+    let border_regular = palette.border_regular;
+    let success = palette.success;
+    let text_faint = palette.text_faint;
+    let text_primary = palette.text_primary;
+    let text_muted = palette.text_muted;
+
+    let live_dot = container(iced::widget::Space::new())
+        .width(6.0)
+        .height(6.0)
+        .style(move |_theme: &Theme| iced::widget::container::Style {
+            background: Some(Background::Color(success)),
+            border: Border {
+                radius: 3.0.into(),
+                color: iced::Color::TRANSPARENT,
+                width: 0.0,
+            },
+            ..iced::widget::container::Style::default()
+        });
+
+    let live_label = row![
+        live_dot,
+        text("LIVE")
+            .size(10.5)
+            .color(text_faint)
+            .font(font(FontRole::Monospace)),
+    ]
+    .spacing(5.0)
+    .align_y(Alignment::Center);
+
+    let header = row![
+        text("Recent events").size(FONT_BODY).color(text_primary),
+        iced::widget::Space::new().width(Length::Fill),
+        live_label,
+    ]
+    .align_y(Alignment::Center);
+
+    let recent: Vec<&forge_widgets::ChatRow> =
+        app.live_chat.chat_log.iter().rev().take(5).collect();
+
+    let body: Element<'a, Message> = if recent.is_empty() {
+        text("No events yet").size(12.0).color(text_muted).into()
+    } else {
+        let count = recent.len();
+        let mut col = column![].spacing(0.0);
+        for (i, row_data) in recent.into_iter().enumerate() {
+            col = col.push(home_chat_event_row(row_data, i + 1 < count, palette));
+        }
+        col.into()
+    };
+
+    container(column![header, body].spacing(10.0))
+        .width(Length::FillPortion(14))
+        .padding(14.0)
+        .style(move |_theme: &Theme| iced::widget::container::Style {
+            background: Some(Background::Color(elevated)),
+            border: Border {
+                color: border_regular,
+                width: 0.5,
+                radius: radius(Radius::Md).into(),
+            },
+            ..iced::widget::container::Style::default()
+        })
+        .into()
+}
+
+fn home_glance_row<'a>(
+    label: &'a str,
+    value: String,
+    color: iced::Color,
+    last: bool,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    use iced::widget::{container, row, text};
+    use iced::{Alignment, Border};
+
+    let border_regular = palette.border_regular;
+    let text_muted = palette.text_muted;
+
+    let inner = row![
+        text(label).size(11.0).color(text_muted).width(Length::Fill),
+        text(value)
+            .size(14.0)
+            .color(color)
+            .font(font(FontRole::Monospace)),
+    ]
+    .align_y(Alignment::Center)
+    .padding(iced::Padding {
+        top: 5.0,
+        right: 0.0,
+        bottom: 5.0,
+        left: 0.0,
+    });
+
+    let border_width = if last { 0.0 } else { 0.5 };
+
+    container(inner)
+        .width(Length::Fill)
+        .style(move |_theme: &Theme| iced::widget::container::Style {
+            border: Border {
+                color: border_regular,
+                width: border_width,
+                radius: 0.0.into(),
+            },
+            ..iced::widget::container::Style::default()
+        })
+        .into()
+}
+
+fn home_glance_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
+    use iced::widget::{column, container, text};
+    use iced::{Background, Border};
+
+    let elevated = palette.elevated;
+    let border_regular = palette.border_regular;
+    let text_primary = palette.text_primary;
+
+    let actions_val = app
+        .home
+        .actions_count
+        .map_or_else(|| "\u{2014}".to_string(), |n| n.to_string());
+    let commands_val = app
+        .home
+        .commands_count
+        .map_or_else(|| "\u{2014}".to_string(), |n| n.to_string());
+    let fired_val = app
+        .home
+        .triggers_fired
+        .map_or_else(|| "\u{2014}".to_string(), |n| n.to_string());
+    let globals_val = app
+        .home
+        .globals_count
+        .map_or_else(|| "\u{2014}".to_string(), |n| n.to_string());
+
+    let header = text("At a glance").size(FONT_BODY).color(text_primary);
+
+    let content = column![
+        header,
+        home_glance_row("Actions", actions_val, palette.brand, false, palette),
+        home_glance_row("Commands", commands_val, palette.info, false, palette),
+        home_glance_row(
+            "Fired this session",
+            fired_val,
+            palette.success,
+            false,
+            palette
+        ),
+        home_glance_row("Globals", globals_val, palette.warning, true, palette),
+    ]
+    .spacing(0.0);
+
+    container(content)
+        .width(Length::FillPortion(10))
+        .padding(14.0)
+        .style(move |_theme: &Theme| iced::widget::container::Style {
+            background: Some(Background::Color(elevated)),
+            border: Border {
+                color: border_regular,
+                width: 0.5,
+                radius: radius(Radius::Md).into(),
+            },
+            ..iced::widget::container::Style::default()
+        })
+        .into()
+}
+
+fn home_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
+    use iced::widget::{column, container};
+
+    let hero = home_hero(palette);
+    let jump_cards = home_jump_cards(app, palette);
+    let connections = home_connections_strip(app, palette);
+    let bottom = iced::widget::row![
+        home_recent_events_card(app, palette),
+        home_glance_card(app, palette),
+    ]
+    .spacing(12.0);
+
+    let mut content = column![hero, jump_cards,].spacing(16.0).width(Length::Fill);
+
+    if app.obs_client.is_some() {
+        content = content.push(home_stream_health(palette));
+    }
+
+    content = content.push(connections).push(bottom);
 
     container(content)
         .width(Length::Fill)
         .height(Length::Fill)
-        .padding(20.0)
+        .padding(iced::Padding {
+            top: 22.0,
+            right: 28.0,
+            bottom: 22.0,
+            left: 28.0,
+        })
+        .style(move |_theme: &Theme| iced::widget::container::Style {
+            background: Some(iced::Background::Color(palette.base)),
+            ..iced::widget::container::Style::default()
+        })
         .into()
 }
 
@@ -6303,12 +6548,6 @@ mod tests {
         assert!(!app.sidebar_state.actions_queues);
         assert!(app.sidebar_state.platforms);
         assert!(!app.sidebar_state.stream_apps);
-    }
-
-    #[test]
-    fn connected_count_zero_when_no_handle() {
-        let app = App::default();
-        assert_eq!(connected_count(&app), 0);
     }
 
     #[test]

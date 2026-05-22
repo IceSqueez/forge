@@ -4,7 +4,7 @@ use forge_storage::DataProvider;
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::QueueId;
 use iced::{
-    Background, Border, Color, Element, Length,
+    Background, Border, Color, Element, Length, Task,
     widget::{Space, column, container, row, text},
 };
 use time::OffsetDateTime;
@@ -18,6 +18,7 @@ use forge_widgets::{
 
 use crate::Message;
 use crate::message::QueuesMsg;
+use crate::runtime_view::RuntimeView;
 
 #[derive(Debug, Clone)]
 pub struct QueueSummary {
@@ -51,6 +52,105 @@ impl QueuesState {
 impl Default for QueuesState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+pub fn update(state: &mut QueuesState, rt: &RuntimeView, msg: QueuesMsg) -> Task<Message> {
+    match msg {
+        QueuesMsg::LoadRequested => {
+            state.loading = true;
+            let dp = Arc::clone(&rt.backend);
+            let scheduler = rt.scheduler.clone();
+            Task::perform(async move { load_queues(dp, scheduler).await }, |r| {
+                Message::Queues(QueuesMsg::QueuesLoaded(r))
+            })
+        }
+        QueuesMsg::QueuesLoaded(Ok(qs)) => {
+            state.queues = qs;
+            state.loading = false;
+            Task::none()
+        }
+        QueuesMsg::QueuesLoaded(Err(e)) => {
+            state.loading = false;
+            tracing::warn!(error = %e, "queues load failed");
+            Task::none()
+        }
+        QueuesMsg::PauseQueue(id) => {
+            if let Some(q) = state.queues.iter_mut().find(|q| q.id == id) {
+                q.paused = true;
+            }
+            let Some(scheduler) = rt.scheduler.clone() else {
+                return Task::none();
+            };
+            Task::perform(
+                async move { scheduler.pause(id).await.map_err(|e| e.to_string()) },
+                |r| Message::Queues(QueuesMsg::PauseResult(r)),
+            )
+        }
+        QueuesMsg::ResumeQueue(id) => {
+            if let Some(q) = state.queues.iter_mut().find(|q| q.id == id) {
+                q.paused = false;
+            }
+            let Some(scheduler) = rt.scheduler.clone() else {
+                return Task::none();
+            };
+            Task::perform(
+                async move { scheduler.resume(id).await.map_err(|e| e.to_string()) },
+                |r| Message::Queues(QueuesMsg::ResumeResult(r)),
+            )
+        }
+        QueuesMsg::DrainQueue(id) => {
+            for q in &mut state.queues {
+                if q.id == id {
+                    q.paused = true;
+                }
+            }
+            let Some(scheduler) = rt.scheduler.clone() else {
+                return Task::none();
+            };
+            let bus = Arc::clone(&rt.bus);
+            Task::perform(
+                async move {
+                    bus.publish(forge_events::Event::new(
+                        forge_events::EventSource::Core,
+                        "queue.drain_requested",
+                        serde_json::json!({ "queue_id": id.to_string() }),
+                    ));
+                    scheduler.pause(id).await.map_err(|e| e.to_string())
+                },
+                |r| Message::Queues(QueuesMsg::PauseResult(r)),
+            )
+        }
+        QueuesMsg::PauseAll => {
+            for q in &mut state.queues {
+                q.paused = true;
+            }
+            let ids: Vec<_> = state.queues.iter().map(|q| q.id).collect();
+            let Some(scheduler) = rt.scheduler.clone() else {
+                return Task::none();
+            };
+            Task::perform(
+                async move {
+                    for id in ids {
+                        if let Err(e) = scheduler.pause(id).await {
+                            tracing::warn!(queue_id = %id, error = %e, "pause queue failed");
+                        }
+                    }
+                },
+                |()| Message::Noop,
+            )
+        }
+        QueuesMsg::NewQueue => Task::none(),
+        QueuesMsg::PauseResult(Ok(())) => Task::none(),
+        QueuesMsg::PauseResult(Err(e)) => {
+            tracing::warn!(error = %e, "pause queue failed");
+            Task::none()
+        }
+        QueuesMsg::ResumeResult(Ok(())) => Task::none(),
+        QueuesMsg::ResumeResult(Err(e)) => {
+            tracing::warn!(error = %e, "resume queue failed");
+            Task::none()
+        }
     }
 }
 

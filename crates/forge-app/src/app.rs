@@ -43,7 +43,7 @@ use crate::message::{
     ActionsMsg, GlobalsMsg, HomeMsg, HomeStatsData, MoveSubActionMsg, ObsClientRef, PlatformId,
     QueuesMsg, SettingsMsg, SidebarMsg, ToastMsg,
 };
-use crate::queues_view::{QueuesState, load_queues, queues_view};
+use crate::queues_view::{QueuesState, queues_view};
 use crate::script_editor::{
     ScriptEditorMsg, ScriptEditorState, handle_script_editor_msg, script_editor_view,
 };
@@ -580,7 +580,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::Home(sub) => handle_home_msg(app, sub),
         Message::Globals(sub) => crate::globals_view::update(&mut app.globals, &app.rt, sub),
         Message::Actions(sub) => handle_actions_msg(app, sub),
-        Message::Queues(sub) => handle_queues_msg(app, sub),
+        Message::Queues(sub) => crate::queues_view::update(&mut app.queues, &app.rt, sub),
         Message::Viewers(sub) => crate::viewers::handle_msg(&mut app.viewers, sub, &app.rt.backend),
         Message::Commands(sub) => {
             crate::commands_view::handle_msg(&mut app.commands, sub, &app.rt.backend)
@@ -1046,112 +1046,6 @@ fn handle_home_msg(app: &mut App, sub: HomeMsg) -> Task<Message> {
         }
         HomeMsg::StatsLoaded(Err(e)) => {
             tracing::warn!(error = %e, "home stats load failed");
-            Task::none()
-        }
-    }
-}
-
-fn handle_queues_msg(app: &mut App, sub: QueuesMsg) -> Task<Message> {
-    match sub {
-        QueuesMsg::LoadRequested => {
-            app.queues.loading = true;
-            let dp = Arc::clone(&app.rt.backend);
-            let scheduler = app.rt.scheduler.clone();
-            Task::perform(async move { load_queues(dp, scheduler).await }, |r| {
-                Message::Queues(QueuesMsg::QueuesLoaded(r))
-            })
-        }
-        QueuesMsg::QueuesLoaded(Ok(qs)) => {
-            app.queues.queues = qs;
-            app.queues.loading = false;
-            Task::none()
-        }
-        QueuesMsg::QueuesLoaded(Err(e)) => {
-            app.queues.loading = false;
-            tracing::warn!(error = %e, "queues load failed");
-            Task::none()
-        }
-        QueuesMsg::PauseQueue(id) => {
-            if let Some(q) = app.queues.queues.iter_mut().find(|q| q.id == id) {
-                q.paused = true;
-            }
-            let Some(scheduler) = app.rt.scheduler.clone() else {
-                return Task::none();
-            };
-            Task::perform(
-                async move { scheduler.pause(id).await.map_err(|e| e.to_string()) },
-                |r| Message::Queues(QueuesMsg::PauseResult(r)),
-            )
-        }
-        QueuesMsg::ResumeQueue(id) => {
-            if let Some(q) = app.queues.queues.iter_mut().find(|q| q.id == id) {
-                q.paused = false;
-            }
-            let Some(scheduler) = app.rt.scheduler.clone() else {
-                return Task::none();
-            };
-            Task::perform(
-                async move { scheduler.resume(id).await.map_err(|e| e.to_string()) },
-                |r| Message::Queues(QueuesMsg::ResumeResult(r)),
-            )
-        }
-        QueuesMsg::DrainQueue(id) => {
-            // Drain is currently implemented as "pause new dispatches" plus a
-            // bus event so observers know the intent. True drain semantics
-            // (let in-flight finish, then auto-pause) require scheduler state
-            // machine support that is not yet in place.
-            for q in &mut app.queues.queues {
-                if q.id == id {
-                    q.paused = true;
-                }
-            }
-            let Some(scheduler) = app.rt.scheduler.clone() else {
-                return Task::none();
-            };
-            let bus = Arc::clone(&app.rt.bus);
-            Task::perform(
-                async move {
-                    bus.publish(forge_events::Event::new(
-                        forge_events::EventSource::Core,
-                        "queue.drain_requested",
-                        serde_json::json!({ "queue_id": id.to_string() }),
-                    ));
-                    scheduler.pause(id).await.map_err(|e| e.to_string())
-                },
-                |r| Message::Queues(QueuesMsg::PauseResult(r)),
-            )
-        }
-        QueuesMsg::PauseAll => {
-            for q in &mut app.queues.queues {
-                q.paused = true;
-            }
-            let ids: Vec<_> = app.queues.queues.iter().map(|q| q.id).collect();
-            let Some(scheduler) = app.rt.scheduler.clone() else {
-                return Task::none();
-            };
-            Task::perform(
-                async move {
-                    for id in ids {
-                        if let Err(e) = scheduler.pause(id).await {
-                            tracing::warn!(queue_id = %id, error = %e, "pause queue failed");
-                        }
-                    }
-                },
-                |()| Message::Noop,
-            )
-        }
-        QueuesMsg::NewQueue => {
-            tracing::info!("new queue modal: TODO");
-            Task::none()
-        }
-        QueuesMsg::PauseResult(Ok(())) => Task::none(),
-        QueuesMsg::PauseResult(Err(e)) => {
-            tracing::warn!(error = %e, "pause queue failed");
-            Task::none()
-        }
-        QueuesMsg::ResumeResult(Ok(())) => Task::none(),
-        QueuesMsg::ResumeResult(Err(e)) => {
-            tracing::warn!(error = %e, "resume queue failed");
             Task::none()
         }
     }

@@ -49,7 +49,7 @@ fn test_app() -> App {
             twitch_token_expires: None,
             twitch_reauth_required: false,
         },
-        home: forge_app::app::HomeStats::new(),
+        home: forge_app::home::HomeStats::new(),
         event_feed: EventFeedState::new(),
         live_chat: forge_app::LiveChatState::new(),
         actions: forge_app::ActionsState::new(),

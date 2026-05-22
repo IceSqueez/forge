@@ -35,14 +35,15 @@ use crate::actions::{
 use crate::event_feed;
 use crate::event_feed::{EventFeedState, event_feed_view};
 use crate::globals_view::{GlobalsState, globals_view};
+use crate::home::HomeStats;
 use crate::integration_detail::{
     IntegrationDetailState, handle_integration_detail_msg, health_subscription,
     view as integration_detail_view,
 };
 use crate::live_chat::{CHAT_LOG_MAX, LiveChatState, chat_row_from_event, live_chat_view};
 use crate::message::{
-    ActionsMsg, GlobalsMsg, HomeMsg, HomeStatsData, MoveSubActionMsg, ObsClientRef, PlatformId,
-    QueuesMsg, SettingsMsg, SidebarMsg, ToastMsg,
+    ActionsMsg, GlobalsMsg, HomeMsg, MoveSubActionMsg, ObsClientRef, PlatformId, QueuesMsg,
+    SettingsMsg, SidebarMsg, ToastMsg,
 };
 use crate::queues_view::{QueuesState, queues_view};
 use crate::script_editor::{
@@ -77,20 +78,6 @@ impl SidebarExpandState {
 impl Default for SidebarExpandState {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[derive(Default)]
-pub struct HomeStats {
-    pub actions_count: Option<usize>,
-    pub commands_count: Option<usize>,
-    pub triggers_fired: Option<u64>,
-    pub globals_count: Option<usize>,
-}
-
-impl HomeStats {
-    pub fn new() -> Self {
-        Self::default()
     }
 }
 
@@ -572,7 +559,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 Task::none()
             }
         },
-        Message::Home(sub) => handle_home_msg(app, sub),
+        Message::Home(sub) => crate::home::update(&mut app.home, &app.rt, sub),
         Message::Globals(sub) => crate::globals_view::update(&mut app.globals, &app.rt, sub),
         Message::Actions(sub) => handle_actions_msg(app, sub),
         Message::Queues(sub) => crate::queues_view::update(&mut app.queues, &app.rt, sub),
@@ -1014,60 +1001,6 @@ fn handle_obs_panel_msg(app: &mut App, msg: crate::obs_panel::ObsPanelMsg) -> Ta
             Task::none()
         }
     }
-}
-
-fn handle_home_msg(app: &mut App, sub: HomeMsg) -> Task<Message> {
-    match sub {
-        HomeMsg::LoadStats => {
-            let dp = Arc::clone(&app.rt.backend);
-            Task::perform(
-                async move { load_home_stats(dp).await.map_err(|e| e.to_string()) },
-                |r| Message::Home(HomeMsg::StatsLoaded(r)),
-            )
-        }
-        HomeMsg::StatsLoaded(Ok(data)) => {
-            app.home.actions_count = Some(data.actions_count);
-            app.home.commands_count = Some(data.commands_count);
-            app.home.triggers_fired = Some(data.triggers_fired);
-            app.home.globals_count = Some(data.globals_count);
-            Task::none()
-        }
-        HomeMsg::StatsLoaded(Err(e)) => {
-            tracing::warn!(error = %e, "home stats load failed");
-            Task::none()
-        }
-    }
-}
-
-async fn load_home_stats(dp: Arc<SqliteBackend>) -> Result<HomeStatsData, String> {
-    use forge_storage::GlobalsRepo;
-
-    let actions = dp
-        .action_repo()
-        .list()
-        .await
-        .map_err(|e| e.to_string())?
-        .len();
-    let commands = dp
-        .command_repo()
-        .list()
-        .await
-        .map_err(|e| e.to_string())?
-        .len();
-    let globals = dp.list().await.map_err(|e| e.to_string())?.len();
-    let since = time::OffsetDateTime::now_utc() - time::Duration::hours(24);
-    let stats = dp
-        .history_repo()
-        .stats_summary(since)
-        .await
-        .map_err(|e| e.to_string())?;
-    let triggers_fired: u64 = stats.values().map(|s| u64::from(s.runs_24h)).sum();
-    Ok(HomeStatsData {
-        actions_count: actions,
-        commands_count: commands,
-        triggers_fired,
-        globals_count: globals,
-    })
 }
 
 fn handle_actions_msg(app: &mut App, sub: ActionsMsg) -> Task<Message> {
@@ -6590,6 +6523,7 @@ fn soundboard_hotkey_filter(event: iced::keyboard::Event) -> Option<Message> {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::message::HomeStatsData;
     use forge_widgets::ThemeId;
 
     #[test]

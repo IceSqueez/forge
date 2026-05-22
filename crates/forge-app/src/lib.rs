@@ -4,6 +4,7 @@ pub mod app;
 pub mod commands_view;
 pub mod event_feed;
 pub mod globals_view;
+pub mod home;
 pub mod integration_detail;
 pub mod live_chat;
 pub mod message;
@@ -38,6 +39,7 @@ pub use actions::{
 pub use app::{App, SidebarExpandState, load_obs_and_connect};
 pub use event_feed::{EventFeedMsg, EventFeedState, EventFilter, matches_filter};
 pub use globals_view::{GlobalsState, VariantEditorFields, VariantEditorForm, load_globals_data};
+pub use home::HomeStats;
 pub use integration_detail::{
     IntegrationDetailState, handle_integration_detail_msg, health_subscription,
 };

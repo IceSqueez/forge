@@ -22,6 +22,7 @@ pub mod picker;
 pub mod popover;
 pub mod sections;
 pub mod server;
+pub mod side_sheet;
 pub mod status;
 pub mod theme;
 pub mod toast;
@@ -82,6 +83,7 @@ pub use server::{
     TypeToConfirmModalParams, bearer_token_display, bind_address_card, client_table_row,
     overlay_file_list, type_to_confirm_modal,
 };
+pub use side_sheet::{SheetEdge, side_sheet};
 pub use status::{StatusVariant, platform_badge, role_badge, status_dot, status_pill};
 pub use theme::{catppuccin_mocha, latte, palette_for_theme, tokyo_night_storm};
 pub use toast::{Toast, ToastAction, ToastKind, ToastQueue, toast_viewport};

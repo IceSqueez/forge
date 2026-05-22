@@ -4582,6 +4582,83 @@ fn action_rename_input_id() -> iced::advanced::widget::Id {
     iced::advanced::widget::Id::new("forge:action_rename")
 }
 
+fn sheet_chrome<'a>(
+    title: &'a str,
+    on_close: Message,
+    body: Element<'a, Message>,
+    footer: Element<'a, Message>,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    use iced::widget::{button, column, container, row, scrollable, text};
+    let p = *palette;
+
+    let title_el = text(title)
+        .size(forge_widgets::tokens::FONT_MD)
+        .color(p.text_primary);
+
+    let close_btn = button(tabler_icon(Icon::X, 14.0, p.text_muted))
+        .on_press(on_close)
+        .padding(6)
+        .style(move |_t: &iced::Theme, status| {
+            let bg = match status {
+                iced::widget::button::Status::Hovered => {
+                    Some(iced::Background::Color(p.surface_overlay))
+                }
+                _ => None,
+            };
+            iced::widget::button::Style {
+                background: bg,
+                border: iced::Border {
+                    radius: forge_widgets::radius(forge_widgets::Radius::Sm).into(),
+                    ..Default::default()
+                },
+                text_color: iced::Color::TRANSPARENT,
+                shadow: iced::Shadow::default(),
+                snap: false,
+            }
+        });
+
+    let header = container(
+        row![
+            title_el,
+            iced::widget::Space::new().width(Length::Fill),
+            close_btn,
+        ]
+        .align_y(iced::alignment::Vertical::Center),
+    )
+    .padding([12_u16, 16_u16])
+    .width(Length::Fill)
+    .style(move |_t: &iced::Theme| container::Style {
+        border: iced::Border {
+            color: p.border_regular,
+            width: 0.5,
+            radius: 0.0.into(),
+        },
+        ..container::Style::default()
+    });
+
+    let footer_container = container(footer)
+        .padding([12_u16, 16_u16])
+        .width(Length::Fill)
+        .style(move |_t: &iced::Theme| container::Style {
+            border: iced::Border {
+                color: p.border_regular,
+                width: 0.5,
+                radius: 0.0.into(),
+            },
+            ..container::Style::default()
+        });
+
+    let body_scroll = container(scrollable(container(body).padding(16)).height(Length::Fill))
+        .width(Length::Fill)
+        .height(Length::Fill);
+
+    column![header, body_scroll, footer_container]
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+}
+
 fn compute_action_menu_y_offset(
     state: &crate::actions::ActionsState,
     open_id: forge_types::ActionId,
@@ -4909,7 +4986,7 @@ fn add_trigger_modal_view<'a>(
     form: &'a AddTriggerForm,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    use forge_widgets::{BannerKind, ModalProps};
+    use forge_widgets::BannerKind;
     use iced::widget::{column, row, scrollable, text};
     use iced::{Alignment, Background, Length};
 
@@ -5151,15 +5228,19 @@ fn add_trigger_modal_view<'a>(
     .width(Length::Fill)
     .into();
 
-    forge_widgets::modal(
-        palette,
-        ModalProps {
-            title: "Add trigger",
-            on_close: Message::AddTrigger(AddTriggerMsg::Cancel),
-            kbd_hint: None,
-        },
+    let panel = sheet_chrome(
+        "Add trigger",
+        Message::AddTrigger(AddTriggerMsg::Cancel),
         body_col.into(),
         footer,
+        palette,
+    );
+    forge_widgets::side_sheet(
+        panel,
+        Message::AddTrigger(AddTriggerMsg::Cancel),
+        forge_widgets::SheetEdge::Right,
+        480.0,
+        palette,
     )
 }
 
@@ -5187,7 +5268,7 @@ fn add_sub_action_modal_view<'a>(
     form: &'a AddSubActionForm,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    use forge_widgets::{BannerKind, ModalProps};
+    use forge_widgets::BannerKind;
     use iced::Length;
     use iced::widget::{column, row, text};
 
@@ -5613,15 +5694,19 @@ fn add_sub_action_modal_view<'a>(
     .width(Length::Fill)
     .into();
 
-    forge_widgets::modal(
-        palette,
-        ModalProps {
-            title: "Add step",
-            on_close: Message::AddSubAction(AddSubActionMsg::Cancel),
-            kbd_hint: None,
-        },
+    let panel = sheet_chrome(
+        "Add step",
+        Message::AddSubAction(AddSubActionMsg::Cancel),
         body_col.into(),
         footer,
+        palette,
+    );
+    forge_widgets::side_sheet(
+        panel,
+        Message::AddSubAction(AddSubActionMsg::Cancel),
+        forge_widgets::SheetEdge::Right,
+        480.0,
+        palette,
     )
 }
 

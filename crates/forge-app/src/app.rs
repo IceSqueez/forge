@@ -3178,6 +3178,8 @@ fn home_glance_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, 
 fn home_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
     use iced::widget::{column, container};
 
+    let page_header = simple_page_header(&[("Home", true)], palette);
+
     let hero = home_hero(palette);
     let jump_cards = home_jump_cards(app, palette);
     let connections = home_connections_strip(app, palette);
@@ -3195,7 +3197,7 @@ fn home_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message
 
     content = content.push(connections).push(bottom);
 
-    container(content)
+    let body = container(content)
         .width(Length::Fill)
         .height(Length::Fill)
         .padding(iced::Padding {
@@ -3207,6 +3209,47 @@ fn home_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message
         .style(move |_theme: &Theme| iced::widget::container::Style {
             background: Some(iced::Background::Color(palette.base)),
             ..iced::widget::container::Style::default()
+        });
+
+    column![page_header, body]
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+}
+
+fn simple_page_header<'a>(
+    crumbs: &[(&'a str, bool)],
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    use iced::widget::{container, row, text};
+    use iced::{Background, Border};
+
+    let p = *palette;
+    let mut crumb_row = row![tabler_icon(Icon::Home, 13.0, p.text_faint)]
+        .spacing(8)
+        .align_y(iced::alignment::Vertical::Center);
+
+    for (label, is_last) in crumbs {
+        crumb_row = crumb_row.push(tabler_icon(Icon::ChevronRight, 11.0, p.text_faint));
+        let color = if *is_last {
+            p.text_primary
+        } else {
+            p.text_muted
+        };
+        crumb_row = crumb_row.push(text(label.to_string()).size(FONT_SM).color(color));
+    }
+
+    container(crumb_row)
+        .width(Length::Fill)
+        .padding([10_u16, 16_u16])
+        .style(move |_: &iced::Theme| container::Style {
+            background: Some(Background::Color(p.shell)),
+            border: Border {
+                color: p.border_regular,
+                width: 0.5,
+                radius: 0.0.into(),
+            },
+            ..container::Style::default()
         })
         .into()
 }
@@ -6164,7 +6207,10 @@ pub fn view(app: &App) -> Element<'_, Message> {
         other => coming_soon_view(format!("{other:?}"), palette),
     };
 
-    let screen_uses_own_header = matches!(&app.screen, Screen::Actions | Screen::LiveChat);
+    let screen_uses_own_header = matches!(
+        &app.screen,
+        Screen::Actions | Screen::LiveChat | Screen::Home
+    );
     let content: Element<'_, Message> = if screen_uses_own_header {
         iced::widget::column![screen_content]
             .height(Length::Fill)

@@ -1,12 +1,13 @@
 use iced::widget::button::Status;
 use iced::{
     Alignment, Background, Border, Color, Element, Font, Length, Shadow, font as iced_font,
-    widget::{Column, Row, Space, button, column, container, rule, text},
+    widget::{Column, Row, Space, button, column, container, row, rule, text},
 };
 
 use forge_types::Variant;
 pub use forge_types::VariantKind;
 
+use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
 use crate::tokens::{FONT_SM, FONT_XS, FontRole, Radius, font, radius};
 
@@ -188,6 +189,7 @@ pub fn value_preview<'a, Msg: 'a>(
     variant: &Variant,
 ) -> Element<'a, Msg> {
     let mono = font(FontRole::Monospace);
+    let is_complex = matches!(variant, Variant::Array(_) | Variant::Object(_));
     let (content, color) = match variant {
         Variant::Int(n) => (n.to_string(), palette.text_primary),
         Variant::Float(f) => (f.to_string(), palette.text_primary),
@@ -199,7 +201,18 @@ pub fn value_preview<'a, Msg: 'a>(
         Variant::Datetime(_) => (variant.to_string(), palette.text_primary),
     };
 
-    text(content).size(FONT_SM).font(mono).color(color).into()
+    let label = text(content).size(FONT_SM).font(mono).color(color);
+    if is_complex {
+        row![
+            label,
+            tabler_icon::<Msg>(Icon::ExternalLink, 11.0, palette.text_muted),
+        ]
+        .spacing(4)
+        .align_y(Alignment::Center)
+        .into()
+    } else {
+        label.into()
+    }
 }
 
 pub fn data_screen_footer<'a, Msg: 'a>(

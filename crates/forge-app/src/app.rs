@@ -56,7 +56,7 @@ use crate::settings_audio::{SettingsAudioState, handle_settings_audio_msg, setti
 use crate::settings_websocket::{
     SettingsWebSocketState, handle_settings_websocket_msg, settings_websocket_view,
 };
-use crate::soundboard::{SoundboardState, handle_soundboard_msg, soundboard_view};
+use crate::soundboard::{SoundboardState, soundboard_view};
 use crate::stream_apps::view as stream_apps_view;
 use crate::test_trigger::synthesize_test_event;
 use crate::tts_dashboard::{TtsDashState, handle_tts_dash_msg, tts_dashboard_view};
@@ -776,11 +776,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             )
         }
         Message::ObsPanel(sub) => handle_obs_panel_msg(app, sub),
-        Message::Soundboard(sub) => {
-            let backend = Arc::clone(&app.rt.backend);
-            let player = app.rt.sound_player.clone();
-            handle_soundboard_msg(&mut app.soundboard, backend, player, sub)
-        }
+        Message::Soundboard(sub) => crate::soundboard::update(&mut app.soundboard, &app.rt, sub),
         Message::SettingsAudio(sub) => {
             let backend = Arc::clone(&app.rt.backend);
             handle_settings_audio_msg(&mut app.settings_audio, backend, sub)

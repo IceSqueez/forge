@@ -16,6 +16,7 @@ use iced::{Alignment, Background, Border, Element, Length, Task};
 
 use crate::Message;
 use crate::message::SoundboardMsg;
+use crate::runtime_view::RuntimeView;
 
 pub struct SoundboardState {
     pub clips: Vec<StoredClip>,
@@ -151,17 +152,12 @@ async fn play_clip(player: Arc<SoundboardPlayer>, id: ClipId) -> Result<(), Stri
     player.play(id, None).await.map_err(|e| e.to_string())
 }
 
-pub fn handle_soundboard_msg(
-    state: &mut SoundboardState,
-    backend: Arc<SqliteBackend>,
-    player: Option<Arc<SoundboardPlayer>>,
-    msg: SoundboardMsg,
-) -> Task<Message> {
+pub fn update(state: &mut SoundboardState, rt: &RuntimeView, msg: SoundboardMsg) -> Task<Message> {
     match msg {
         SoundboardMsg::LoadRequested => {
             state.loading = true;
             state.error = None;
-            let dp = Arc::clone(&backend);
+            let dp = Arc::clone(&rt.backend);
             Task::perform(load_clips(dp), |r| {
                 Message::Soundboard(SoundboardMsg::ClipsLoaded(r))
             })
@@ -290,7 +286,7 @@ pub fn handle_soundboard_msg(
                 hotkey,
                 created_at: time::OffsetDateTime::now_utc(),
             };
-            let dp = Arc::clone(&backend);
+            let dp = Arc::clone(&rt.backend);
             Task::perform(save_clip(dp, clip), |r| {
                 Message::Soundboard(SoundboardMsg::ModalSaved(r))
             })
@@ -312,7 +308,7 @@ pub fn handle_soundboard_msg(
         }
         SoundboardMsg::PlayClip(clip_id) => {
             state.play_error = None;
-            let Some(p) = player else {
+            let Some(p) = rt.sound_player.clone() else {
                 state.play_error =
                     Some("Audio player not initialised — check Settings → Audio.".to_string());
                 return Task::none();
@@ -327,7 +323,7 @@ pub fn handle_soundboard_msg(
             Task::none()
         }
         SoundboardMsg::DeleteClip(clip_id) => {
-            let dp = Arc::clone(&backend);
+            let dp = Arc::clone(&rt.backend);
             Task::perform(delete_clip(dp, clip_id), |r| {
                 Message::Soundboard(SoundboardMsg::ClipDeleted(r))
             })

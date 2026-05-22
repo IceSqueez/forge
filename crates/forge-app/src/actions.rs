@@ -768,11 +768,11 @@ pub fn telemetry_grid<'a, Msg: 'a>(
 
     container(cells)
         .width(Length::Fill)
-        .padding([10, 12])
+        .padding([18, 12])
         .style(move |_theme: &iced::Theme| iced::widget::container::Style {
             background: Some(iced::Background::Color(p.shell)),
             border: iced::Border {
-                color: p.border_regular,
+                color: p.border_input,
                 width: 0.5,
                 radius: radius(Radius::Md).into(),
             },

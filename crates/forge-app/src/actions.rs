@@ -408,6 +408,7 @@ pub struct AddSubActionForm {
     pub available_clips: Vec<(ClipId, String)>,
     pub error: Option<String>,
     pub saving: bool,
+    pub editing_index: Option<usize>,
 }
 
 impl AddSubActionForm {
@@ -419,6 +420,59 @@ impl AddSubActionForm {
             available_clips: vec![],
             error: None,
             saving: false,
+            editing_index: None,
+        }
+    }
+
+    pub fn populate_from_spec(&mut self, spec: &SubActionSpec) {
+        match spec {
+            SubActionSpec::SendChat { target, message } => {
+                self.kind = SubActionKindChoice::SendChat;
+                self.config.send_chat_target = target.clone();
+                self.config.send_chat_message = message.clone();
+            }
+            SubActionSpec::SetGlobal { name, value } => {
+                self.kind = SubActionKindChoice::SetGlobal;
+                self.config.set_global_name = name.clone();
+                self.config.set_global_value = value.clone();
+            }
+            SubActionSpec::Delay { ms } => {
+                self.kind = SubActionKindChoice::Delay;
+                self.config.delay_ms = ms.to_string();
+            }
+            SubActionSpec::Log { level, message } => {
+                self.kind = SubActionKindChoice::Log;
+                self.config.log_level = level.clone();
+                self.config.log_message = message.clone();
+            }
+            SubActionSpec::PlaySound { clip_id, .. } => {
+                self.kind = SubActionKindChoice::PlaySound;
+                self.config.play_sound_clip_id = Some(*clip_id);
+            }
+            SubActionSpec::Speak {
+                text,
+                voice_id_override,
+            } => {
+                self.kind = SubActionKindChoice::Speak;
+                self.config.speak_text = text.clone();
+                self.config.speak_voice_override = voice_id_override.clone().unwrap_or_default();
+            }
+            SubActionSpec::ReadFile { path, target_var } => {
+                self.kind = SubActionKindChoice::ReadFile;
+                self.config.read_file_path = path.clone();
+                self.config.read_file_target_var = target_var.clone();
+            }
+            SubActionSpec::RandomInt {
+                min,
+                max,
+                target_var,
+            } => {
+                self.kind = SubActionKindChoice::RandomInt;
+                self.config.random_int_min = min.to_string();
+                self.config.random_int_max = max.to_string();
+                self.config.random_int_target_var = target_var.clone();
+            }
+            _ => {}
         }
     }
 
@@ -469,6 +523,7 @@ pub enum AddSubActionMsg {
     Saved(Result<(), String>),
     DuplicateRequested(ActionId, usize),
     Duplicated(Result<ActionId, String>),
+    EditRequested(ActionId, usize),
 }
 
 #[derive(Debug, Clone)]
@@ -494,6 +549,7 @@ pub struct ActionsState {
     pub step_menu_open: Option<usize>,
     pub action_menu_open: Option<forge_types::ActionId>,
     pub renaming_action: Option<(forge_types::ActionId, String)>,
+    pub last_selected_action: Option<(forge_types::ActionId, std::time::Instant)>,
 }
 
 impl ActionsState {
@@ -648,13 +704,22 @@ pub async fn save_sub_action(
     dp: Arc<SqliteBackend>,
     action_id: ActionId,
     spec: SubActionSpec,
+    editing_index: Option<usize>,
 ) -> Result<(), StorageError> {
     let Some(mut action) = dp.action_repo().get(action_id).await? else {
         return Err(StorageError::NotFound {
             key: action_id.to_string(),
         });
     };
-    action.sub_actions.push(spec);
+    if let Some(idx) = editing_index {
+        if idx < action.sub_actions.len() {
+            action.sub_actions[idx] = spec;
+        } else {
+            action.sub_actions.push(spec);
+        }
+    } else {
+        action.sub_actions.push(spec);
+    }
     dp.action_repo().save(&action).await
 }
 
@@ -1249,7 +1314,7 @@ mod tests {
             message: "Hello %user%!".to_string(),
             target: "twitch".to_string(),
         };
-        save_sub_action(Arc::clone(&dp), action.id, spec.clone())
+        save_sub_action(Arc::clone(&dp), action.id, spec.clone(), None)
             .await
             .unwrap();
 
@@ -1268,7 +1333,7 @@ mod tests {
             name: "counter".to_string(),
             value: "1".to_string(),
         };
-        save_sub_action(Arc::clone(&dp), action.id, spec.clone())
+        save_sub_action(Arc::clone(&dp), action.id, spec.clone(), None)
             .await
             .unwrap();
 
@@ -1283,7 +1348,7 @@ mod tests {
         dp.action_repo().save(&action).await.unwrap();
 
         let spec = SubActionSpec::Delay { ms: 500 };
-        save_sub_action(Arc::clone(&dp), action.id, spec.clone())
+        save_sub_action(Arc::clone(&dp), action.id, spec.clone(), None)
             .await
             .unwrap();
 

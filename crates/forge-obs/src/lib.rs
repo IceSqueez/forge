@@ -16,9 +16,9 @@ pub mod test_connect;
 
 pub use client::ObsClient;
 pub use error::ObsError;
+pub use health::HealthSnapshot;
 pub use sink::ObsSink;
 pub use source::{ObsSource, SourceInfo};
-pub use health::HealthSnapshot;
 pub use test_connect::{ObsServerInfo, test_connect};
 
 fn _assert_object_safe(_: &dyn ObsSink, _: &dyn ObsSource) {}

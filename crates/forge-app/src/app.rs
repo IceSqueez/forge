@@ -369,10 +369,18 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             Task::none()
         }
         Message::EventArrived(event) => {
+            let mut auto_scroll_task: Option<Task<Message>> = None;
             if let Some(row) = chat_row_from_event(&event) {
                 app.live_chat.chat_log.push_back(row);
                 if app.live_chat.chat_log.len() > CHAT_LOG_MAX {
                     app.live_chat.chat_log.pop_front();
+                }
+                if app.live_chat.auto_scroll {
+                    auto_scroll_task = Some(iced::widget::operation::snap_to_end(
+                        crate::live_chat::chat_scroll_id(),
+                    ));
+                } else {
+                    app.live_chat.unread_count = app.live_chat.unread_count.saturating_add(1);
                 }
             }
             if event.kind == "quick_action.done"
@@ -397,7 +405,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             if !app.event_feed.paused {
                 app.event_feed.push_event(event);
             }
-            Task::none()
+            auto_scroll_task.unwrap_or_else(Task::none)
         }
         Message::EventFeed(sub) => {
             handle_event_feed_msg(&mut app.event_feed, sub, Arc::clone(&app.bus))
@@ -466,6 +474,24 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         }
         Message::ChatToggleDrawer => {
             app.live_chat.drawer_open = !app.live_chat.drawer_open;
+            Task::none()
+        }
+        Message::ChatScrolled(viewport) => {
+            let rel = viewport.relative_offset();
+            let at_bottom = rel.y >= 0.98;
+            app.live_chat.auto_scroll = at_bottom;
+            if at_bottom {
+                app.live_chat.unread_count = 0;
+            }
+            Task::none()
+        }
+        Message::ChatScrollToBottom => {
+            app.live_chat.auto_scroll = true;
+            app.live_chat.unread_count = 0;
+            iced::widget::operation::snap_to_end(crate::live_chat::chat_scroll_id())
+        }
+        Message::ChatToggleEmoji => {
+            app.live_chat.emoji_picker_open = !app.live_chat.emoji_picker_open;
             Task::none()
         }
         Message::ChatDrawerSearchChanged(s) => {
@@ -1798,6 +1824,21 @@ fn handle_add_sub_action_msg(app: &mut App, sub: AddSubActionMsg) -> Task<Messag
                 Message::AddSubAction(AddSubActionMsg::ClipsLoaded(clips))
             })
         }
+        AddSubActionMsg::EditRequested(action_id, index) => {
+            let mut form = AddSubActionForm::new(action_id);
+            form.editing_index = Some(index);
+            if let Some(detail) = app.actions.detail.as_ref()
+                && detail.action.id == action_id
+                && let Some(spec) = detail.action.sub_actions.get(index)
+            {
+                form.populate_from_spec(spec);
+            }
+            app.actions.add_sub_action_modal = Some(form);
+            let dp = Arc::clone(&app.backend);
+            Task::perform(load_clip_options(dp), |clips| {
+                Message::AddSubAction(AddSubActionMsg::ClipsLoaded(clips))
+            })
+        }
         AddSubActionMsg::KindSelected(kind) => {
             if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
                 f.kind = kind;
@@ -1988,13 +2029,14 @@ fn handle_add_sub_action_msg(app: &mut App, sub: AddSubActionMsg) -> Task<Messag
                 }
             };
             let action_id = form.for_action_id;
+            let editing_index = form.editing_index;
             if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
                 f.saving = true;
             }
             let dp = Arc::clone(&app.backend);
             Task::perform(
                 async move {
-                    save_sub_action(dp, action_id, spec)
+                    save_sub_action(dp, action_id, spec, editing_index)
                         .await
                         .map_err(|e| e.to_string())
                 },
@@ -2654,7 +2696,11 @@ fn home_stream_health<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a
         };
         (fps, cpu, dropped)
     } else {
-        ("\u{2014}".to_owned(), "\u{2014}".to_owned(), "\u{2014}".to_owned())
+        (
+            "\u{2014}".to_owned(),
+            "\u{2014}".to_owned(),
+            "\u{2014}".to_owned(),
+        )
     };
 
     let stats_row = row![
@@ -2918,9 +2964,9 @@ fn home_system_event_row<'a>(
     has_bottom_border: bool,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
+    use forge_widgets::{color_for_source, source_label};
     use iced::widget::{button, container, row as irow, text};
     use iced::{Alignment, Background, Border, Shadow};
-    use forge_widgets::{color_for_source, source_label};
 
     let dot_color = color_for_source(event.source, palette);
     let elevated = palette.elevated;
@@ -3054,8 +3100,7 @@ fn home_recent_events_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
     ]
     .align_y(Alignment::Center);
 
-    let recent: Vec<&forge_events::Event> =
-        app.event_feed.events.iter().rev().take(5).collect();
+    let recent: Vec<&forge_events::Event> = app.event_feed.events.iter().rev().take(5).collect();
 
     let body: Element<'a, Message> = if recent.is_empty() {
         text("No events yet").size(FONT_XS).color(text_muted).into()
@@ -5769,6 +5814,12 @@ fn add_sub_action_modal_view<'a>(
         ));
     }
 
+    let (btn_label, title_label) = if form.editing_index.is_some() {
+        ("Save changes", "Edit step")
+    } else {
+        ("Add step", "Add step")
+    };
+
     let cancel_btn = forge_widgets::secondary_button(
         "Cancel",
         Message::AddSubAction(AddSubActionMsg::Cancel),
@@ -5777,9 +5828,9 @@ fn add_sub_action_modal_view<'a>(
 
     let add_on_press = Message::AddSubAction(AddSubActionMsg::Submit);
     let add_btn = if form.is_valid() && !form.saving {
-        forge_widgets::primary_button("Add step", add_on_press, palette)
+        forge_widgets::primary_button(btn_label, add_on_press, palette)
     } else {
-        forge_widgets::secondary_button("Add step", Message::Noop, palette)
+        forge_widgets::secondary_button(btn_label, Message::Noop, palette)
     };
 
     let footer_buttons = row![cancel_btn, add_btn].spacing(8);
@@ -5799,7 +5850,7 @@ fn add_sub_action_modal_view<'a>(
     .into();
 
     let panel = sheet_chrome(
-        "Add step",
+        title_label,
         Message::AddSubAction(AddSubActionMsg::Cancel),
         body_col.into(),
         Some(footer),

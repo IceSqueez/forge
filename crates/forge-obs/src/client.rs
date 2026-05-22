@@ -110,7 +110,10 @@ impl ObsClient {
     }
 
     pub fn health_snapshot(&self) -> HealthSnapshot {
-        self.health_state.read().map(|g| g.clone()).unwrap_or_default()
+        self.health_state
+            .read()
+            .map(|g| g.clone())
+            .unwrap_or_default()
     }
 
     pub async fn shutdown(&self) {

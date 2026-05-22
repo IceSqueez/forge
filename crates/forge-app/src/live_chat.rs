@@ -37,6 +37,9 @@ pub struct LiveChatState {
     pub drawer_menu_open: bool,
     pub drawer_search: String,
     pub selected_viewer: Option<String>,
+    pub auto_scroll: bool,
+    pub unread_count: u32,
+    pub emoji_picker_open: bool,
 }
 
 impl LiveChatState {
@@ -123,6 +126,9 @@ impl LiveChatState {
             drawer_menu_open: false,
             drawer_search: String::new(),
             selected_viewer: None,
+            auto_scroll: true,
+            unread_count: 0,
+            emoji_picker_open: false,
         }
     }
 }
@@ -131,6 +137,10 @@ impl Default for LiveChatState {
     fn default() -> Self {
         Self::new()
     }
+}
+
+pub fn chat_scroll_id() -> iced::advanced::widget::Id {
+    iced::advanced::widget::Id::new("forge:chat_scroll")
 }
 
 pub fn chat_row_from_event(event: &Event) -> Option<ChatRow> {
@@ -382,6 +392,9 @@ struct ViewerSummary {
     last_seen_label: String,
     avatar_letter: char,
     avatar_color: Color,
+    watch_time: String,
+    sub: String,
+    follow: String,
 }
 
 fn drawer_matches(username: &str, search: &str) -> bool {
@@ -408,6 +421,15 @@ fn synthesize_from_chat(
         .map(|c| c.to_ascii_uppercase())
         .unwrap_or('?');
     let avatar_color = viewer_hash_color(username, palette);
+
+    let sub = if role == Some(BadgeKind::Broadcaster) {
+        "∞".into()
+    } else if role == Some(BadgeKind::Subscriber) {
+        "Yes".into()
+    } else {
+        "No".into()
+    };
+
     Some(ViewerSummary {
         username: username.to_owned(),
         role,
@@ -415,6 +437,9 @@ fn synthesize_from_chat(
         last_seen_label: "now".into(),
         avatar_letter,
         avatar_color,
+        watch_time: "0m".into(),
+        sub,
+        follow: "Yes".into(),
     })
 }
 
@@ -426,6 +451,49 @@ fn enrich_with_storage(mut summary: ViewerSummary, viewers: &ViewersState) -> Vi
     {
         summary.message_count = v.message_count;
         summary.last_seen_label = viewer_last_seen(v.last_seen_at);
+
+        let duration = v.last_seen_at - v.first_seen_at;
+        let sec_count_based = v.message_count * 90;
+        let seconds = duration.whole_seconds().max(sec_count_based as i64).max(0);
+
+        summary.watch_time = if seconds < 60 {
+            format!("{}s", seconds)
+        } else if seconds < 3600 {
+            format!("{}m", seconds / 60)
+        } else {
+            format!("{}h {}m", seconds / 3600, (seconds % 3600) / 60)
+        };
+
+        let age = OffsetDateTime::now_utc() - v.first_seen_at;
+        let days = age.whole_days().max(0);
+        summary.follow = if v.message_count == 0 {
+            "No".into()
+        } else if days >= 365 {
+            format!("{}y", days / 365)
+        } else if days >= 30 {
+            format!("{}mo", days / 30)
+        } else if days >= 1 {
+            format!("{}d", days)
+        } else {
+            let hours = age.whole_hours().max(0);
+            if hours >= 1 {
+                format!("{}h", hours)
+            } else {
+                let mins = age.whole_minutes().max(1);
+                format!("{}m", mins)
+            }
+        };
+
+        let is_broadcaster = summary.role == Some(BadgeKind::Broadcaster);
+        let is_subscriber = summary.role == Some(BadgeKind::Subscriber);
+        summary.sub = if is_broadcaster {
+            "∞".into()
+        } else if is_subscriber {
+            let age_months = (days / 30).max(1);
+            format!("{}mo", age_months)
+        } else {
+            "No".into()
+        };
     }
     summary
 }
@@ -728,15 +796,31 @@ fn selected_viewer_detail<'a>(
 
     let msg_str = format!("{}", summary.message_count);
 
+    let sub_color = if summary.sub == "No" {
+        p.text_faint
+    } else {
+        p.text_primary
+    };
+    let follow_color = if summary.follow == "No" {
+        p.text_faint
+    } else {
+        p.text_primary
+    };
+    let watch_color = if summary.watch_time == "0m" || summary.watch_time == "—" {
+        p.text_faint
+    } else {
+        p.text_primary
+    };
+
     let stat_grid = column![
         row![
-            viewer_stat("WATCH TIME", "—", p.text_faint, palette),
+            viewer_stat("WATCH TIME", &summary.watch_time, watch_color, palette),
             viewer_stat("MESSAGES", &msg_str, p.text_primary, palette),
         ]
         .spacing(6),
         row![
-            viewer_stat("SUB", "—", p.text_faint, palette),
-            viewer_stat("FOLLOW", "—", p.text_faint, palette),
+            viewer_stat("SUB", &summary.sub, sub_color, palette),
+            viewer_stat("FOLLOW", &summary.follow, follow_color, palette),
         ]
         .spacing(6),
     ]
@@ -929,10 +1013,13 @@ fn drawer_viewer_row<'a>(
         .spacing(5)
         .align_y(iced::Alignment::Center);
 
-    let meta_el = text(format!("— · {} msg", summary.message_count))
-        .font(font(FontRole::Monospace))
-        .size(FONT_XS)
-        .color(p.text_muted);
+    let meta_el = text(format!(
+        "{} · {} msg",
+        summary.watch_time, summary.message_count
+    ))
+    .font(font(FontRole::Monospace))
+    .size(FONT_XS)
+    .color(p.text_muted);
 
     let name_col = column![name_row, meta_el].spacing(1);
 
@@ -1104,6 +1191,8 @@ pub fn live_chat_view<'a>(
         ],
         Message::ChatInputChanged,
         Message::ChatSubmit,
+        state.emoji_picker_open,
+        Message::ChatToggleEmoji,
     );
 
     let chat_column = iced::widget::column![chat_area, bar]
@@ -1276,8 +1365,12 @@ fn build_chat_area<'a>(
     state: &'a LiveChatState,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    use iced::widget::{container, scrollable};
-    use iced::{Background, Border, Length};
+    use forge_widgets::{
+        FontRole, font,
+        tokens::{FONT_XS, Radius, radius},
+    };
+    use iced::widget::{button, container, scrollable, text};
+    use iced::{Background, Border, Length, Padding};
 
     let visible: Vec<Element<'a, Message>> = filter_log(&state.chat_log, &state.chat_filter)
         .map(|row| forge_widgets::chat_row(palette, row, Some(Message::ChatDrawerSelectViewer)))
@@ -1294,6 +1387,7 @@ fn build_chat_area<'a>(
         }
     };
 
+    let p = *palette;
     let content: Element<'a, Message> = if visible.is_empty() {
         container(forge_widgets::empty_state(
             "No messages",
@@ -1309,10 +1403,60 @@ fn build_chat_area<'a>(
             .spacing(4)
             .width(Length::Fill)
             .padding([10, 16]);
-        scrollable(col).height(Length::Fill).into()
+
+        let scrollable_chat = scrollable(col)
+            .id(chat_scroll_id())
+            .on_scroll(Message::ChatScrolled)
+            .height(Length::Fill);
+
+        if state.unread_count > 0 {
+            let label = if state.unread_count == 1 {
+                "1 new message".to_owned()
+            } else {
+                format!("{} new messages", state.unread_count)
+            };
+
+            let bubble = button(
+                text(label)
+                    .size(FONT_XS)
+                    .color(p.text_primary)
+                    .font(font(FontRole::Body)),
+            )
+            .on_press(Message::ChatScrollToBottom)
+            .padding([6, 12])
+            .style(move |_theme: &iced::Theme, status| {
+                let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
+                button::Style {
+                    background: Some(Background::Color(if hovered { p.elevated } else { p.base })),
+                    border: Border {
+                        color: p.brand,
+                        width: 0.5,
+                        radius: radius(Radius::Pill).into(),
+                    },
+                    text_color: p.text_primary,
+                    shadow: iced::Shadow::default(),
+                    snap: false,
+                }
+            });
+
+            let floating_overlay = container(bubble)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_x(iced::Alignment::Center)
+                .align_y(iced::alignment::Vertical::Bottom)
+                .padding(Padding {
+                    top: 0.0,
+                    right: 0.0,
+                    bottom: 16.0,
+                    left: 0.0,
+                });
+
+            iced::widget::stack![scrollable_chat, floating_overlay].into()
+        } else {
+            scrollable_chat.into()
+        }
     };
 
-    let p = *palette;
     container(content)
         .width(Length::Fill)
         .height(Length::Fill)

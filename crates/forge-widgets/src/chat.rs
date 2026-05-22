@@ -892,13 +892,89 @@ fn hint_row<'a, Msg: 'a>(palette: &ForgePalette) -> Element<'a, Msg> {
         .into()
 }
 
+const EMOJIS: &[&str] = &[
+    "😀",
+    "😃",
+    "😄",
+    "😁",
+    "😆",
+    "😅",
+    "😂",
+    "🤣",
+    "😊",
+    "😇",
+    "🙂",
+    "🙃",
+    "😉",
+    "😌",
+    "😍",
+    "🥰",
+    "😘",
+    "😗",
+    "😙",
+    "😚",
+    "😋",
+    "😛",
+    "😝",
+    "😜",
+    "🤪",
+    "🤨",
+    "🧐",
+    "🤓",
+    "😎",
+    "🥸",
+    "🤩",
+    "🥳",
+    "😏",
+    "😒",
+    "😞",
+    "😔",
+    "😟",
+    "😕",
+    "🙁",
+    "☹️",
+    "😣",
+    "😖",
+    "😫",
+    "😩",
+    "🥺",
+    "😢",
+    "😭",
+    "😤",
+    "😠",
+    "😡",
+    "🤬",
+    "🤯",
+    "😳",
+    "🥵",
+    "🥶",
+    "😱",
+    "😨",
+    "😰",
+    "😥",
+    "😓",
+    "🤗",
+    "🤔",
+    "🫣",
+    "🤭",
+    "🤫",
+    "🤥",
+    "😶",
+    "😶‍🌫️",
+    "😐",
+    "😑",
+];
+
+#[allow(clippy::too_many_arguments)]
 pub fn input_bar<'a, Msg: Clone + 'a>(
     palette: &ForgePalette,
     value: &'a str,
     placeholder: &'a str,
     platform_targets: Vec<PlatformTarget<'a, Msg>>,
-    on_input: impl Fn(String) -> Msg + 'a,
+    on_input: impl Fn(String) -> Msg + Clone + 'a,
     on_submit: Msg,
+    emoji_picker_open: bool,
+    on_toggle_emoji: Msg,
 ) -> Element<'a, Msg> {
     let p = *palette;
 
@@ -917,7 +993,7 @@ pub fn input_bar<'a, Msg: Clone + 'a>(
 
     let send_msg = on_submit.clone();
     let input_widget = text_input(placeholder, value)
-        .on_input(on_input)
+        .on_input(on_input.clone())
         .on_submit(on_submit)
         .padding([0, 0])
         .size(FONT_SM)
@@ -935,7 +1011,16 @@ pub fn input_bar<'a, Msg: Clone + 'a>(
             selection: Color { a: 0.25, ..p.brand },
         });
 
-    let mood_icon = tabler_icon::<Msg>(Icon::MoodSmile, 15.0, p.text_faint);
+    let mood_icon = button(tabler_icon::<Msg>(Icon::MoodSmile, 15.0, p.text_faint))
+        .on_press(on_toggle_emoji)
+        .padding(0)
+        .style(|_theme: &iced::Theme, _status| button::Style {
+            background: None,
+            border: Border::default(),
+            text_color: Color::TRANSPARENT,
+            shadow: iced::Shadow::default(),
+            snap: false,
+        });
 
     let send_button = button(tabler_icon::<Msg>(Icon::Send, 15.0, p.brand))
         .on_press(send_msg)
@@ -951,7 +1036,7 @@ pub fn input_bar<'a, Msg: Clone + 'a>(
     let mut composer_children: Vec<Element<'a, Msg>> = target_buttons;
     composer_children.push(divider.into());
     composer_children.push(input_widget.into());
-    composer_children.push(mood_icon);
+    composer_children.push(mood_icon.into());
     composer_children.push(send_button.into());
 
     let composer = container(
@@ -977,6 +1062,62 @@ pub fn input_bar<'a, Msg: Clone + 'a>(
         left: 4.0,
     });
 
+    let mut body_elements = Vec::new();
+    if emoji_picker_open {
+        let emoji_buttons: Vec<Element<'a, Msg>> = EMOJIS
+            .iter()
+            .map(|&emoji| {
+                let emoji_str = emoji.to_owned();
+                let new_val = format!("{value}{emoji_str}");
+                let on_click_msg = on_input(new_val);
+                button(text(emoji).size(FONT_SM).font(font(FontRole::Body)))
+                    .on_press(on_click_msg)
+                    .padding([4, 6])
+                    .style(move |_theme: &iced::Theme, status| {
+                        let hovered =
+                            matches!(status, button::Status::Hovered | button::Status::Pressed);
+                        button::Style {
+                            background: if hovered {
+                                Some(Background::Color(p.surface_overlay))
+                            } else {
+                                None
+                            },
+                            border: Border::default(),
+                            text_color: p.text_primary,
+                            shadow: iced::Shadow::default(),
+                            snap: false,
+                        }
+                    })
+                    .into()
+            })
+            .collect();
+
+        let grid = row(emoji_buttons).spacing(4).wrap();
+
+        let picker_box = container(iced::widget::scrollable(grid).height(Length::Fixed(120.0)))
+            .padding([8, 8])
+            .style(move |_theme: &iced::Theme| container::Style {
+                background: Some(Background::Color(p.shell)),
+                border: Border {
+                    color: p.border_regular,
+                    width: 0.5,
+                    radius: radius(Radius::Md).into(),
+                },
+                ..container::Style::default()
+            });
+
+        body_elements.push(picker_box.into());
+        body_elements.push(
+            iced::widget::Space::new()
+                .width(Length::Fill)
+                .height(Length::Fixed(8.0))
+                .into(),
+        );
+    }
+
+    body_elements.push(composer.into());
+    body_elements.push(hints.into());
+
     let top_border = container(iced::widget::Space::new().width(Length::Fill).height(0.5))
         .width(Length::Fill)
         .height(0.5)
@@ -985,7 +1126,7 @@ pub fn input_bar<'a, Msg: Clone + 'a>(
             ..container::Style::default()
         });
 
-    let body = container(column![composer, hints].spacing(0))
+    let body = container(column(body_elements).spacing(0))
         .padding([10, 14])
         .style(move |_theme: &iced::Theme| container::Style {
             background: Some(Background::Color(p.shell)),
@@ -1281,6 +1422,8 @@ mod tests {
             vec![],
             |s: String| s,
             String::new(),
+            false,
+            String::new(),
         );
     }
 
@@ -1296,6 +1439,8 @@ mod tests {
                 on_press: Some(Box::new(|| ())),
             }],
             |_| (),
+            (),
+            false,
             (),
         );
     }

@@ -219,11 +219,11 @@ fn step_controls<'a>(
     let items: Vec<MenuItem<Message>> = vec![
         MenuItem::Item {
             label: "Edit step\u{2026}".to_string(),
-            on_press: Message::Noop,
+            on_press: Message::AddSubAction(AddSubActionMsg::EditRequested(action_id, i)),
             icon: Some(Icon::InfoCircle),
             shortcut: None,
             color: None,
-            disabled: true,
+            disabled: false,
         },
         MenuItem::Item {
             label: "Duplicate".to_string(),

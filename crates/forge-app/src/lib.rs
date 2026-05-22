@@ -7,6 +7,7 @@ pub mod integration_detail;
 pub mod live_chat;
 pub mod message;
 pub mod obs_panel;
+pub mod platform_generic;
 pub mod queues_view;
 pub mod screen;
 pub mod script_editor;

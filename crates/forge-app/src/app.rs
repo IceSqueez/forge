@@ -5519,6 +5519,8 @@ pub fn view(app: &App) -> Element<'_, Message> {
                 crate::twitch_panel::twitch_disconnected_view(&app.twitch_panel, palette)
             } else if id.as_str() == "obs" && app.obs_client.is_none() {
                 crate::obs_panel::obs_disconnected_view(&app.obs_panel, palette)
+            } else if let Some((color, info)) = crate::platform_generic::registry(id, palette) {
+                crate::platform_generic::platform_generic_view(color, info, palette)
             } else if let Some(state) = app.integration_detail.as_ref() {
                 let inner = integration_detail_view(state, palette);
                 if id.as_str() == "twitch" && app.twitch_reauth_required {

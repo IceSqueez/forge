@@ -10,6 +10,7 @@ use iced::{Alignment, Background, Border, Color, Element, Length, Task};
 
 use crate::Message;
 use crate::message::{TtsFiltersMsg, TtsMsg};
+use crate::runtime_view::RuntimeView;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BlocklistModeChoice {
@@ -96,7 +97,7 @@ impl Default for TtsFiltersState {
     }
 }
 
-pub fn handle_tts_filters_msg(state: &mut TtsFiltersState, msg: TtsFiltersMsg) -> Task<Message> {
+pub fn update(state: &mut TtsFiltersState, _rt: &RuntimeView, msg: TtsFiltersMsg) -> Task<Message> {
     match msg {
         TtsFiltersMsg::PreviewInputChanged(s) => {
             state.preview_input = s;

@@ -57,7 +57,7 @@ pub use script_editor::{
 pub use server_screen::{
     OwnedClientRow, OwnedFileMime, OwnedOverlayEntry, OwnedOverlayKind, OwnedSubscriptionChip,
     ServerInfoSnapshot, ServerScreenMsg, ServerScreenState, ServerStats, ServerStatus,
-    handle_server_screen_msg, server_screen_view,
+    server_screen_view,
 };
 pub use settings_websocket::{
     BindAddressChoice, SettingsWebSocketMsg, SettingsWebSocketState, handle_settings_websocket_msg,

@@ -48,9 +48,7 @@ use crate::queues_view::{QueuesState, queues_view};
 use crate::script_editor::{
     ScriptEditorMsg, ScriptEditorState, handle_script_editor_msg, script_editor_view,
 };
-use crate::server_screen::{
-    ServerScreenMsg, ServerScreenState, handle_server_screen_msg, server_screen_view,
-};
+use crate::server_screen::{ServerScreenMsg, ServerScreenState, server_screen_view};
 use crate::server_subsystem::ServerSubsystem;
 use crate::settings_audio::{SettingsAudioState, handle_settings_audio_msg, settings_audio_view};
 use crate::settings_websocket::{
@@ -739,7 +737,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 Message::ServerTokenRotated,
             )
         }
-        Message::Server(sub) => handle_server_screen_msg(&mut app.server_screen, sub),
+        Message::Server(sub) => crate::server_screen::update(&mut app.server_screen, &app.rt, sub),
         Message::SettingsWebSocket(
             crate::settings_websocket::SettingsWebSocketMsg::SaveStatus(Ok(())),
         ) => {

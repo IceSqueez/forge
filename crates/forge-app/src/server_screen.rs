@@ -13,6 +13,7 @@ use iced::{
 };
 
 use crate::Message;
+use crate::runtime_view::RuntimeView;
 
 const MAX_BANDWIDTH_SAMPLES: usize = 60;
 const MAX_VISIBLE_CHIPS: usize = 3;
@@ -165,8 +166,9 @@ pub enum ServerScreenMsg {
     BandwidthTick(f32),
 }
 
-pub fn handle_server_screen_msg(
+pub fn update(
     state: &mut ServerScreenState,
+    _rt: &RuntimeView,
     msg: ServerScreenMsg,
 ) -> Task<Message> {
     match msg {
@@ -1288,36 +1290,46 @@ pub fn server_screen_view<'a>(
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-
-    fn make_state() -> ServerScreenState {
-        ServerScreenState::default()
-    }
+    use crate::Message;
+    use crate::app::{App, update as app_update};
 
     #[test]
     fn toggle_token_reveal_flips_bool() {
-        let mut state = make_state();
-        assert!(!state.token_revealed);
-        let _ = handle_server_screen_msg(&mut state, ServerScreenMsg::ToggleTokenReveal);
-        assert!(state.token_revealed);
-        let _ = handle_server_screen_msg(&mut state, ServerScreenMsg::ToggleTokenReveal);
-        assert!(!state.token_revealed);
+        let mut app = App::default();
+        assert!(!app.server_screen.token_revealed);
+        let _ = app_update(
+            &mut app,
+            Message::Server(ServerScreenMsg::ToggleTokenReveal),
+        );
+        assert!(app.server_screen.token_revealed);
+        let _ = app_update(
+            &mut app,
+            Message::Server(ServerScreenMsg::ToggleTokenReveal),
+        );
+        assert!(!app.server_screen.token_revealed);
     }
 
     #[test]
     fn bandwidth_tick_pushes_and_trims_to_sixty() {
-        let mut state = make_state();
+        let mut app = App::default();
         for i in 0..70 {
-            let _ = handle_server_screen_msg(&mut state, ServerScreenMsg::BandwidthTick(i as f32));
+            let _ = app_update(
+                &mut app,
+                Message::Server(ServerScreenMsg::BandwidthTick(i as f32)),
+            );
         }
-        assert_eq!(state.bandwidth_samples.len(), MAX_BANDWIDTH_SAMPLES);
-        assert_eq!(state.bandwidth_samples[0], 10.0);
-        assert_eq!(state.bandwidth_samples[59], 69.0);
+        assert_eq!(
+            app.server_screen.bandwidth_samples.len(),
+            MAX_BANDWIDTH_SAMPLES
+        );
+        assert_eq!(app.server_screen.bandwidth_samples[0], 10.0);
+        assert_eq!(app.server_screen.bandwidth_samples[59], 69.0);
     }
 
     #[test]
     fn view_smoke_renders_without_panic() {
         let (_, palette) = forge_widgets::catppuccin_mocha();
-        let state = make_state();
+        let state = ServerScreenState::default();
         let _ = server_screen_view(&state, &palette);
     }
 }

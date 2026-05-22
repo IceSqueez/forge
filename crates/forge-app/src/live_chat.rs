@@ -603,11 +603,8 @@ fn section_sep<'a, Msg: 'a>(palette: &'a ForgePalette) -> Element<'a, Msg> {
 }
 
 fn drawer_header<'a>(state: &'a LiveChatState, palette: &'a ForgePalette) -> Element<'a, Message> {
-    use forge_widgets::{
-        FontRole, font,
-        tokens::{FONT_SM, FONT_XS},
-    };
-    use iced::widget::{column, container, row, text};
+    use forge_widgets::{FontRole, font, tokens::FONT_XS};
+    use iced::widget::{column, container, text};
     use iced::{Background, Border, Length};
 
     let p = *palette;
@@ -634,19 +631,10 @@ fn drawer_header<'a>(state: &'a LiveChatState, palette: &'a ForgePalette) -> Ele
 
     let count_label = format!("{total_count} active · {shown_count} shown");
 
-    let title_row = row![
-        tabler_icon(Icon::Users, 13.0, p.brand),
-        text("Viewers")
-            .font(font(FontRole::Body))
-            .size(FONT_SM)
-            .color(p.text_primary),
-        text(count_label)
-            .font(font(FontRole::Body))
-            .size(FONT_XS)
-            .color(p.text_faint),
-    ]
-    .spacing(6)
-    .align_y(iced::Alignment::Center);
+    let count_row = text(count_label)
+        .font(font(FontRole::Monospace))
+        .size(FONT_XS)
+        .color(p.text_faint);
 
     let search_box = search_input(
         "Search viewers...",
@@ -655,7 +643,7 @@ fn drawer_header<'a>(state: &'a LiveChatState, palette: &'a ForgePalette) -> Ele
         palette,
     );
 
-    let header_content = column![title_row, search_box].spacing(8);
+    let header_content = column![count_row, search_box].spacing(8);
 
     let body = container(header_content)
         .padding([10u16, 14u16])
@@ -1075,38 +1063,15 @@ fn drawer_panel<'a>(
     viewers: &'a ViewersState,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    use iced::Background;
-    use iced::widget::{Space, column, container, row};
+    use iced::widget::column;
 
-    let p = *palette;
-
-    let left_border = container(Space::new())
-        .width(0.5_f32)
-        .height(Length::Fill)
-        .style(move |_t: &iced::Theme| container::Style {
-            background: Some(Background::Color(p.border_regular)),
-            ..container::Style::default()
-        });
-
-    let panel_body = container(
-        column![
-            drawer_header(state, palette),
-            selected_viewer_detail(state, viewers, palette),
-            viewer_list(state, viewers, palette),
-        ]
-        .height(Length::Fill),
-    )
-    .width(Length::Fill)
+    column![
+        drawer_header(state, palette),
+        selected_viewer_detail(state, viewers, palette),
+        viewer_list(state, viewers, palette),
+    ]
     .height(Length::Fill)
-    .style(move |_t: &iced::Theme| container::Style {
-        background: Some(Background::Color(p.shell)),
-        ..container::Style::default()
-    });
-
-    row![left_border, panel_body]
-        .height(Length::Fill)
-        .width(Length::Fixed(360.0))
-        .into()
+    .into()
 }
 
 pub fn live_chat_view<'a>(
@@ -1114,8 +1079,7 @@ pub fn live_chat_view<'a>(
     viewers: &'a ViewersState,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    let meta_bar = build_meta_bar(state, palette);
-    let filter_bar = build_filter_bar(state, palette);
+    let page_header = live_chat_page_header(state, palette);
     let chat_area = build_chat_area(state, palette);
     let bar = forge_widgets::input_bar(
         palette,
@@ -1147,206 +1111,157 @@ pub fn live_chat_view<'a>(
         .height(Length::Fill);
 
     let body: Element<'a, Message> = if state.drawer_open {
-        iced::widget::row![chat_column, drawer_panel(state, viewers, palette)]
-            .height(Length::Fill)
-            .into()
+        let panel_content = drawer_panel(state, viewers, palette);
+        let chrome = crate::app::sheet_chrome(
+            "Viewers",
+            Message::ChatToggleDrawer,
+            panel_content,
+            None,
+            palette,
+        );
+        let sheet = forge_widgets::side_sheet(
+            chrome,
+            Message::ChatToggleDrawer,
+            forge_widgets::SheetEdge::Right,
+            480.0,
+            palette,
+        );
+        iced::widget::stack![chat_column, sheet].into()
     } else {
         chat_column.into()
     };
 
-    iced::widget::column![meta_bar, filter_bar, body]
+    iced::widget::column![page_header, body]
         .height(Length::Fill)
         .into()
 }
 
-fn build_meta_bar<'a>(state: &'a LiveChatState, palette: &'a ForgePalette) -> Element<'a, Message> {
-    use forge_widgets::chat::chip_bg;
-    use forge_widgets::tokens::{FONT_XS, Radius, radius};
-    use forge_widgets::{FontRole, font};
+fn live_chat_page_header<'a>(
+    state: &'a LiveChatState,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    use forge_widgets::tokens::{FONT_SM, FONT_XS};
     use iced::widget::{button, container, row, text};
-    use iced::{Background, Border, Color, Length};
+    use iced::{Background, Border};
 
     let p = *palette;
+    let mono = forge_widgets::font(forge_widgets::FontRole::Monospace);
 
-    let viewer_row = row![
-        container(iced::widget::Space::new().width(6.0).height(6.0))
-            .width(6.0)
-            .height(6.0)
-            .style(move |_: &iced::Theme| container::Style {
-                background: Some(Background::Color(p.success)),
-                border: Border {
-                    radius: 3.0.into(),
-                    color: Color::TRANSPARENT,
-                    width: 0.0,
-                },
-                ..container::Style::default()
-            }),
-        text("—")
+    let crumbs_left = row![
+        tabler_icon(Icon::Home, 13.0, p.text_faint),
+        tabler_icon(Icon::ChevronRight, 11.0, p.text_faint),
+        text("Audience").size(FONT_SM).color(p.text_muted),
+        tabler_icon(Icon::ChevronRight, 11.0, p.text_faint),
+        text("Chat").size(FONT_SM).color(p.text_primary),
+    ]
+    .spacing(8)
+    .align_y(iced::alignment::Vertical::Center);
+
+    let chip_all = forge_widgets::filter_chip(
+        palette,
+        "All",
+        p.brand,
+        state.chat_filter.platform == PlatformFilter::All,
+        Message::ChatPlatformFilter(PlatformFilter::All),
+    );
+    let chip_twitch = forge_widgets::filter_chip(
+        palette,
+        "Twitch",
+        p.brand,
+        state.chat_filter.platform == PlatformFilter::Twitch,
+        Message::ChatPlatformFilter(PlatformFilter::Twitch),
+    );
+    let chip_youtube = forge_widgets::filter_chip(
+        palette,
+        "YouTube",
+        p.random,
+        state.chat_filter.platform == PlatformFilter::YouTube,
+        Message::ChatPlatformFilter(PlatformFilter::YouTube),
+    );
+    let chip_kick = forge_widgets::filter_chip(
+        palette,
+        "Kick",
+        p.info,
+        state.chat_filter.platform == PlatformFilter::Kick,
+        Message::ChatPlatformFilter(PlatformFilter::Kick),
+    );
+    let chips = row![chip_all, chip_twitch, chip_youtube, chip_kick].spacing(4);
+
+    let divider = container(iced::widget::Space::new().width(0.5).height(16.0))
+        .width(0.5)
+        .height(16.0)
+        .style(move |_: &iced::Theme| container::Style {
+            background: Some(Background::Color(p.border_regular)),
+            ..container::Style::default()
+        });
+
+    let viewer_count_str = format!("{} viewers", state.chat_log.len());
+    let viewer_info = row![
+        text(viewer_count_str)
             .size(FONT_XS)
-            .color(palette.text_secondary)
-            .font(font(FontRole::Body)),
-        text(" viewers")
-            .size(FONT_XS)
-            .color(palette.text_muted)
-            .font(font(FontRole::Body)),
+            .color(p.text_secondary)
+            .font(mono),
     ]
     .spacing(6)
-    .align_y(iced::Alignment::Center);
-
-    let sep = text("·")
-        .size(FONT_XS)
-        .color(palette.text_faint)
-        .font(font(FontRole::Body));
-
-    let clock_icon = tabler_icon(Icon::Clock, 11.0, palette.text_muted);
-
-    let duration_row = row![
-        clock_icon,
-        text("—")
-            .size(FONT_XS)
-            .color(palette.text_muted)
-            .font(font(FontRole::Body)),
-    ]
-    .spacing(4)
-    .align_y(iced::Alignment::Center);
-
-    let left_group = row![viewer_row, sep, duration_row]
-        .spacing(10)
-        .align_y(iced::Alignment::Center);
+    .align_y(iced::alignment::Vertical::Center);
 
     let drawer_label = if state.drawer_open {
         "Hide viewers"
     } else {
         "Show viewers"
     };
-
-    let drawer_bg = chip_bg(false, palette);
     let drawer_btn = button(
         row![
-            tabler_icon(Icon::LayoutSidebar, 11.0, palette.text_secondary),
-            text(drawer_label)
-                .size(FONT_XS)
-                .color(palette.text_secondary)
-                .font(font(FontRole::Body)),
+            tabler_icon(Icon::Users, 11.0, p.text_secondary),
+            text(drawer_label).size(FONT_XS).color(p.text_secondary),
         ]
         .spacing(4)
-        .align_y(iced::Alignment::Center),
+        .align_y(iced::alignment::Vertical::Center),
     )
     .on_press(Message::ChatToggleDrawer)
-    .padding([4, 10])
-    .style(
-        move |_: &iced::Theme, _status| iced::widget::button::Style {
-            background: Some(Background::Color(drawer_bg)),
+    .padding([4_u16, 10_u16])
+    .style(move |_: &iced::Theme, status| {
+        let hovered = matches!(
+            status,
+            iced::widget::button::Status::Hovered | iced::widget::button::Status::Pressed
+        );
+        iced::widget::button::Style {
+            background: Some(Background::Color(iced::Color::TRANSPARENT)),
             border: Border {
-                radius: radius(Radius::Sm).into(),
-                color: p.border_regular,
+                color: if hovered {
+                    p.border_input
+                } else {
+                    p.border_regular
+                },
                 width: 0.5,
+                radius: forge_widgets::radius(forge_widgets::Radius::Sm).into(),
             },
-            text_color: p.text_secondary,
+            text_color: if hovered {
+                p.text_primary
+            } else {
+                p.text_secondary
+            },
             shadow: iced::Shadow::default(),
             snap: false,
-        },
-    );
+        }
+    });
 
-    let right_group = container(drawer_btn).align_x(iced::Alignment::End);
+    let right_side = row![chips, divider, viewer_info, drawer_btn]
+        .spacing(8)
+        .align_y(iced::alignment::Vertical::Center);
 
-    let inner = row![container(left_group).width(Length::Fill), right_group,]
-        .align_y(iced::Alignment::Center);
+    let inner = row![
+        crumbs_left,
+        iced::widget::Space::new().width(Length::Fill),
+        right_side,
+    ]
+    .align_y(iced::alignment::Vertical::Center);
 
     container(inner)
         .width(Length::Fill)
-        .padding([6, 16])
+        .padding([10_u16, 16_u16])
         .style(move |_: &iced::Theme| container::Style {
-            background: Some(Background::Color(p.elevated)),
-            border: Border {
-                color: p.border_regular,
-                width: 0.5,
-                radius: 0.0.into(),
-            },
-            ..container::Style::default()
-        })
-        .into()
-}
-
-fn build_filter_bar<'a>(
-    state: &'a LiveChatState,
-    palette: &'a ForgePalette,
-) -> Element<'a, Message> {
-    use iced::widget::{container, row};
-    use iced::{Background, Border, Length};
-
-    let f = &state.chat_filter;
-    let p = *palette;
-
-    let platform_chips = row![
-        forge_widgets::filter_chip(
-            palette,
-            "All",
-            palette.brand,
-            f.platform == PlatformFilter::All,
-            Message::ChatPlatformFilter(PlatformFilter::All),
-        ),
-        forge_widgets::filter_chip(
-            palette,
-            "Twitch",
-            palette.brand,
-            f.platform == PlatformFilter::Twitch,
-            Message::ChatPlatformFilter(PlatformFilter::Twitch),
-        ),
-        forge_widgets::filter_chip(
-            palette,
-            "YouTube",
-            palette.random,
-            f.platform == PlatformFilter::YouTube,
-            Message::ChatPlatformFilter(PlatformFilter::YouTube),
-        ),
-        forge_widgets::filter_chip(
-            palette,
-            "Kick",
-            palette.info,
-            f.platform == PlatformFilter::Kick,
-            Message::ChatPlatformFilter(PlatformFilter::Kick),
-        ),
-    ]
-    .spacing(6)
-    .align_y(iced::Alignment::Center);
-
-    let divider = container(iced::widget::Space::new().width(0.5_f32).height(14.0))
-        .width(0.5_f32)
-        .height(14.0)
-        .style(move |_: &iced::Theme| container::Style {
-            background: Some(Background::Color(p.border_regular)),
-            ..container::Style::default()
-        });
-
-    let toggle_chips = row![
-        forge_widgets::filter_chip(
-            palette,
-            "Events only",
-            palette.disabled,
-            f.events_only,
-            Message::ChatToggleEventsOnly,
-        ),
-        forge_widgets::filter_chip(
-            palette,
-            "Hide bots",
-            palette.disabled,
-            f.hide_bots,
-            Message::ChatToggleHideBots,
-        ),
-    ]
-    .spacing(6)
-    .align_y(iced::Alignment::Center);
-
-    let chips_row = row![platform_chips, divider, toggle_chips]
-        .spacing(6)
-        .align_y(iced::Alignment::Center);
-
-    container(chips_row)
-        .width(Length::Fill)
-        .padding([8, 16])
-        .style(move |_: &iced::Theme| container::Style {
-            background: Some(Background::Color(p.elevated)),
+            background: Some(Background::Color(p.shell)),
             border: Border {
                 color: p.border_regular,
                 width: 0.5,

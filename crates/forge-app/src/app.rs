@@ -3923,7 +3923,7 @@ fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Mess
         .spacing(0)
         .height(Length::Fill);
 
-    let base_view: Element<'_, Message> = container(column![page_header, body, footer].spacing(0))
+    let body_and_footer: Element<'_, Message> = container(column![body, footer].spacing(0))
         .width(Length::Fill)
         .height(Length::Fill)
         .into();
@@ -3991,26 +3991,32 @@ fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Mess
                 })
                 .align_x(iced::Alignment::Start)
                 .align_y(iced::Alignment::Start);
-            iced::widget::stack![base_view, overlay].into()
+            iced::widget::stack![body_and_footer, overlay].into()
         } else {
-            base_view
+            body_and_footer
         }
     } else {
-        base_view
+        body_and_footer
     };
 
-    if let Some(form) = app.actions.add_sub_action_modal.as_ref() {
-        let modal_el = add_sub_action_modal_view(form, palette);
-        iced::widget::stack![main_view, modal_el].into()
-    } else if let Some(form) = app.actions.add_trigger_modal.as_ref() {
-        let modal_el = add_trigger_modal_view(form, palette);
-        iced::widget::stack![main_view, modal_el].into()
-    } else if let Some(form) = app.actions.add_action_modal.as_ref() {
-        let modal_el = add_action_modal_view(form, palette);
-        iced::widget::stack![main_view, modal_el].into()
-    } else {
-        main_view
-    }
+    let main_view: Element<'_, Message> =
+        if let Some(form) = app.actions.add_sub_action_modal.as_ref() {
+            let modal_el = add_sub_action_modal_view(form, palette);
+            iced::widget::stack![main_view, modal_el].into()
+        } else if let Some(form) = app.actions.add_trigger_modal.as_ref() {
+            let modal_el = add_trigger_modal_view(form, palette);
+            iced::widget::stack![main_view, modal_el].into()
+        } else if let Some(form) = app.actions.add_action_modal.as_ref() {
+            let modal_el = add_action_modal_view(form, palette);
+            iced::widget::stack![main_view, modal_el].into()
+        } else {
+            main_view
+        };
+
+    iced::widget::column![page_header, main_view]
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
 }
 
 fn actions_page_header<'a>(
@@ -4582,14 +4588,14 @@ fn action_rename_input_id() -> iced::advanced::widget::Id {
     iced::advanced::widget::Id::new("forge:action_rename")
 }
 
-fn sheet_chrome<'a>(
+pub(crate) fn sheet_chrome<'a>(
     title: &'a str,
     on_close: Message,
     body: Element<'a, Message>,
-    footer: Element<'a, Message>,
+    footer: Option<Element<'a, Message>>,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    use iced::widget::{button, column, container, row, scrollable, text};
+    use iced::widget::{button, column, container, row, text};
     let p = *palette;
 
     let title_el = text(title)
@@ -4637,26 +4643,28 @@ fn sheet_chrome<'a>(
         ..container::Style::default()
     });
 
-    let footer_container = container(footer)
-        .padding([12_u16, 16_u16])
-        .width(Length::Fill)
-        .style(move |_t: &iced::Theme| container::Style {
-            border: iced::Border {
-                color: p.border_regular,
-                width: 0.5,
-                radius: 0.0.into(),
-            },
-            ..container::Style::default()
-        });
+    let body_wrap = container(body).width(Length::Fill).height(Length::Fill);
 
-    let body_scroll = container(scrollable(container(body).padding(16)).height(Length::Fill))
+    let mut col = column![header, body_wrap]
         .width(Length::Fill)
         .height(Length::Fill);
 
-    column![header, body_scroll, footer_container]
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+    if let Some(footer_el) = footer {
+        let footer_container = container(footer_el)
+            .padding([12_u16, 16_u16])
+            .width(Length::Fill)
+            .style(move |_t: &iced::Theme| container::Style {
+                border: iced::Border {
+                    color: p.border_regular,
+                    width: 0.5,
+                    radius: 0.0.into(),
+                },
+                ..container::Style::default()
+            });
+        col = col.push(footer_container);
+    }
+
+    col.into()
 }
 
 fn compute_action_menu_y_offset(
@@ -5232,7 +5240,7 @@ fn add_trigger_modal_view<'a>(
         "Add trigger",
         Message::AddTrigger(AddTriggerMsg::Cancel),
         body_col.into(),
-        footer,
+        Some(footer),
         palette,
     );
     forge_widgets::side_sheet(
@@ -5698,7 +5706,7 @@ fn add_sub_action_modal_view<'a>(
         "Add step",
         Message::AddSubAction(AddSubActionMsg::Cancel),
         body_col.into(),
-        footer,
+        Some(footer),
         palette,
     );
     forge_widgets::side_sheet(
@@ -6156,7 +6164,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         other => coming_soon_view(format!("{other:?}"), palette),
     };
 
-    let screen_uses_own_header = matches!(&app.screen, Screen::Actions);
+    let screen_uses_own_header = matches!(&app.screen, Screen::Actions | Screen::LiveChat);
     let content: Element<'_, Message> = if screen_uses_own_header {
         iced::widget::column![screen_content]
             .height(Length::Fill)

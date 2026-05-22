@@ -1,10 +1,10 @@
 use forge_tts_pipeline::{
     BlocklistMode, PipelineConfig, PipelineResult, StageAction, StageOutcome, UrlMode,
 };
-use forge_widgets::ForgePalette;
 use forge_widgets::tokens::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spacing,
 };
+use forge_widgets::{ForgePalette, Icon, tabler_icon};
 use iced::widget::{button, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Background, Border, Color, Element, Length, Task};
 
@@ -485,7 +485,7 @@ fn replacement_rule_row<'a>(
                 .size(FONT_XS)
                 .color(palette.text_primary)
                 .font(font(FontRole::Monospace)),
-            text("\u{2192}").size(FONT_XS).color(palette.text_muted),
+            tabler_icon(Icon::ArrowRight, FONT_XS, palette.text_muted),
             text(&rule.replacement)
                 .size(FONT_XS)
                 .color(palette.success)

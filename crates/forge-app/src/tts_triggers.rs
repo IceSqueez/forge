@@ -1,8 +1,8 @@
-use forge_widgets::ForgePalette;
 use forge_widgets::tokens::{
     BORDER_THIN, Density, FONT_MD, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius,
     spacing,
 };
+use forge_widgets::{ForgePalette, Icon, tabler_icon};
 use iced::widget::{column, container, row, text};
 use iced::{Alignment, Background, Border, Element, Length, Task};
 
@@ -267,7 +267,7 @@ fn trigger_card_channel_points<'a>(
     gap_sm: f32,
 ) -> Element<'a, Message> {
     let header = row![
-        container(text("\u{25c6}").size(FONT_MD).color(palette.brand))
+        container(tabler_icon(Icon::Diamond, FONT_MD, palette.brand))
             .style(move |_| container::Style {
                 background: Some(Background::Color(palette.surface_overlay)),
                 border: Border {
@@ -331,7 +331,7 @@ fn trigger_card_bits<'a>(
     gap_sm: f32,
 ) -> Element<'a, Message> {
     let header = row![
-        container(text("\u{25c6}").size(FONT_MD).color(palette.warning))
+        container(tabler_icon(Icon::Diamond, FONT_MD, palette.warning))
             .style(move |_| container::Style {
                 background: Some(Background::Color(palette.surface_overlay)),
                 border: Border {
@@ -413,7 +413,7 @@ fn trigger_card_subs<'a>(
     gap_sm: f32,
 ) -> Element<'a, Message> {
     let header = row![
-        container(text("\u{2605}").size(FONT_MD).color(palette.brand))
+        container(tabler_icon(Icon::Star, FONT_MD, palette.brand))
             .style(move |_| container::Style {
                 background: Some(Background::Color(palette.surface_overlay)),
                 border: Border {

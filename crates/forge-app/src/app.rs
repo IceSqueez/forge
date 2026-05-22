@@ -3842,7 +3842,7 @@ fn actions_row<'a>(
         .font(mono);
     let runs_col = container(runs_el).width(Length::Fixed(90.0));
 
-    let menu_el = container(text("\u{22ee}").size(FONT_SM).color(p.text_faint))
+    let menu_el = container(tabler_icon(Icon::DotsVertical, FONT_SM, p.text_faint))
         .width(Length::Fixed(22.0))
         .align_x(iced::alignment::Horizontal::Center);
 
@@ -4876,24 +4876,20 @@ fn trigger_picker_card<'a>(
     use iced::widget::{button, column, container, row, text};
     use iced::{Alignment, Background, Border, Length};
 
-    let icon_el = container(
-        text('\u{ea21}'.to_string())
-            .size(FONT_SM)
-            .color(palette.brand),
-    )
-    .width(24)
-    .height(24)
-    .align_x(Alignment::Center)
-    .align_y(Alignment::Center)
-    .style(move |_theme: &iced::Theme| container::Style {
-        background: Some(Background::Color(palette.surface_overlay)),
-        border: Border {
-            radius: forge_widgets::radius(forge_widgets::Radius::Sm).into(),
-            color: iced::Color::TRANSPARENT,
-            width: 0.0,
-        },
-        ..container::Style::default()
-    });
+    let icon_el = container(tabler_icon(Icon::Bolt, FONT_SM, palette.brand))
+        .width(24)
+        .height(24)
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center)
+        .style(move |_theme: &iced::Theme| container::Style {
+            background: Some(Background::Color(palette.surface_overlay)),
+            border: Border {
+                radius: forge_widgets::radius(forge_widgets::Radius::Sm).into(),
+                color: iced::Color::TRANSPARENT,
+                width: 0.0,
+            },
+            ..container::Style::default()
+        });
 
     let label_col = column![
         text(label).size(FONT_SM).color(palette.text_primary),

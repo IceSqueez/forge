@@ -51,6 +51,7 @@ pub enum Icon {
     Star,
     Flag,
     LayoutSidebar,
+    Search,
 }
 
 impl Icon {
@@ -104,6 +105,7 @@ impl Icon {
             Icon::Star => include_bytes!("../assets/icons/tabler/star.svg"),
             Icon::Flag => include_bytes!("../assets/icons/tabler/flag.svg"),
             Icon::LayoutSidebar => include_bytes!("../assets/icons/tabler/layout-sidebar.svg"),
+            Icon::Search => include_bytes!("../assets/icons/tabler/search.svg"),
         }
     }
 
@@ -163,6 +165,7 @@ impl Icon {
             | "sidebar"
             | "layout-sidebar-right"
             | "layout-sidebar-right-collapse" => Icon::LayoutSidebar,
+            "search" | "magnifier" | "find" => Icon::Search,
             _ => Icon::InfoCircle,
         }
     }

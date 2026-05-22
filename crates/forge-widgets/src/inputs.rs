@@ -2,9 +2,10 @@ use std::borrow::Cow;
 
 use iced::{
     Background, Border, Color, Element, Padding,
-    widget::{container, pick_list, row, text, text_input},
+    widget::{container, pick_list, row, text_input},
 };
 
+use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
 use crate::tokens::{BORDER_THIN, Radius, radius};
 
@@ -81,17 +82,17 @@ pub fn search_input<'a, Msg: 'a + Clone>(
 ) -> Element<'a, Msg> {
     let p = *palette;
     let ph: Cow<'a, str> = placeholder.into();
-    let icon = text("\u{2315}").color(p.text_muted).size(12.0);
+    let icon = tabler_icon(Icon::Search, 14.0, p.text_muted);
     let input = text_input(ph.as_ref(), value)
         .on_input(on_change)
-        .padding(Padding::from([6, 4]))
+        .padding(Padding::from([3, 2]))
         .width(iced::Length::Fill)
         .style(move |_theme, status| borderless_input_style(p, status));
     let inner = row![icon, input]
-        .spacing(4)
+        .spacing(6)
         .align_y(iced::Alignment::Center);
     container(inner)
-        .padding(Padding::from([2, 8]))
+        .padding(Padding::from([3, 10]))
         .style(move |_theme| container::Style {
             background: Some(Background::Color(p.elevated)),
             border: Border {

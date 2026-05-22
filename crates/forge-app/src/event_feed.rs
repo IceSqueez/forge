@@ -3,7 +3,6 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use forge_events::{Event, EventSource};
-use forge_runtime::EventBus;
 use forge_types::{ActionId, EventId};
 use forge_widgets::{
     EventInspectorParams, EventRowData, FontRole, ForgePalette, Radius, category_chip,
@@ -14,6 +13,7 @@ use iced::widget::{button, column, container, row, scrollable, text};
 use iced::{Background, Border, Color, Element, Length, Padding};
 
 use crate::message::ActionsMsg;
+use crate::runtime_view::RuntimeView;
 use crate::{Message, Screen};
 
 const RING_CAP: usize = 10_000;
@@ -318,10 +318,10 @@ fn is_error_event(event: &Event) -> bool {
     event.kind.contains("error") || event.kind.contains("fail")
 }
 
-pub fn handle_event_feed_msg(
+pub fn update(
     state: &mut EventFeedState,
+    rt: &RuntimeView,
     msg: EventFeedMsg,
-    bus: Arc<EventBus>,
 ) -> iced::Task<Message> {
     match msg {
         EventFeedMsg::EventArrived(event) => {
@@ -389,6 +389,7 @@ pub fn handle_event_feed_msg(
         }
         EventFeedMsg::ReplayRequested(event_id) => {
             state.replay_loading = true;
+            let bus = Arc::clone(&rt.bus);
             iced::Task::perform(
                 async move {
                     bus.replay_and_publish(event_id)
@@ -790,14 +791,44 @@ pub fn event_feed_view<'a>(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use forge_events::{Event, EventSource};
-    use forge_runtime::{EventBus, NullEventLogRepo};
+    use forge_runtime::{EventBus, NullEventLogRepo, ScriptRegistry};
+    use forge_storage::CredentialsRepo;
+    use forge_storage_sqlite::SqliteBackend;
 
-    fn test_bus() -> Arc<EventBus> {
-        EventBus::new(Arc::new(NullEventLogRepo))
+    use crate::runtime_view::RuntimeView;
+    use crate::server_subsystem::ServerSubsystem;
+
+    fn test_rt() -> RuntimeView {
+        let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+        let backend = Arc::new(
+            rt.block_on(SqliteBackend::open_with_key("sqlite::memory:", [0xab; 32]))
+                .expect("in-memory SQLite"),
+        );
+        let server_subsystem = Arc::new(ServerSubsystem::new(
+            Arc::clone(&backend) as Arc<dyn CredentialsRepo>
+        ));
+        RuntimeView {
+            backend,
+            bus: EventBus::new(Arc::new(NullEventLogRepo)),
+            script_registry: Arc::new(ScriptRegistry::new()),
+            server_subsystem,
+            action_engine: None,
+            scheduler: None,
+            command_parser: None,
+            obs_client: None,
+            speak_queue: None,
+            sound_player: None,
+            twitch_chat_handle: None,
+            chat_send_bridge: None,
+            twitch_flow: None,
+            twitch_login: None,
+            twitch_token_expires: None,
+            twitch_reauth_required: false,
+        }
     }
 
     fn core_event(kind: &str) -> Event {
@@ -807,10 +838,10 @@ mod tests {
     #[test]
     fn event_arrived_increments_events_and_updates_rate() {
         let mut state = EventFeedState::new();
-        let bus = test_bus();
+        let rt = test_rt();
         let event = core_event("action.start");
 
-        let _task = handle_event_feed_msg(&mut state, EventFeedMsg::EventArrived(event), bus);
+        let _task = update(&mut state, &rt, EventFeedMsg::EventArrived(event));
 
         assert_eq!(state.events.len(), 1);
         assert!(state.ev_rate() > 0.0);
@@ -819,21 +850,21 @@ mod tests {
     #[test]
     fn toggle_pause_flips_paused_flag() {
         let mut state = EventFeedState::new();
-        let bus = test_bus();
+        let rt = test_rt();
 
         assert!(!state.paused);
-        let _task = handle_event_feed_msg(&mut state, EventFeedMsg::PauseToggled, bus);
+        let _task = update(&mut state, &rt, EventFeedMsg::PauseToggled);
         assert!(state.paused);
     }
 
     #[test]
     fn event_arrived_while_paused_does_not_add_to_ring() {
         let mut state = EventFeedState::new();
-        let bus = test_bus();
+        let rt = test_rt();
 
         state.paused = true;
         let event = core_event("action.start");
-        let _task = handle_event_feed_msg(&mut state, EventFeedMsg::EventArrived(event), bus);
+        let _task = update(&mut state, &rt, EventFeedMsg::EventArrived(event));
 
         assert_eq!(state.events.len(), 0);
     }
@@ -841,13 +872,13 @@ mod tests {
     #[test]
     fn filter_changed_updates_active_filter() {
         let mut state = EventFeedState::new();
-        let bus = test_bus();
+        let rt = test_rt();
 
         assert_eq!(state.active_filter, EventFilter::All);
-        let _task = handle_event_feed_msg(
+        let _task = update(
             &mut state,
+            &rt,
             EventFeedMsg::FilterChanged(EventFilter::Errors),
-            bus,
         );
         assert_eq!(state.active_filter, EventFilter::Errors);
     }
@@ -880,13 +911,13 @@ mod tests {
     #[test]
     fn cleared_empties_ring_and_resets_selection() {
         let mut state = EventFeedState::new();
-        let bus = test_bus();
+        let rt = test_rt();
 
         state.push_event(core_event("action.start"));
         state.push_event(core_event("action.done"));
         state.selected = Some(state.events[0].id);
 
-        let _task = handle_event_feed_msg(&mut state, EventFeedMsg::Cleared, bus);
+        let _task = update(&mut state, &rt, EventFeedMsg::Cleared);
 
         assert!(state.events.is_empty());
         assert!(state.selected.is_none());

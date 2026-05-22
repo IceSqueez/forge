@@ -32,7 +32,8 @@ use crate::actions::{
     duplicate_sub_action, kind_label, kind_summary, load_action_detail, load_actions_tree,
     load_clip_options, load_telemetry, move_sub_action, remove_sub_action, save_sub_action,
 };
-use crate::event_feed::{EventFeedState, event_feed_view, handle_event_feed_msg};
+use crate::event_feed;
+use crate::event_feed::{EventFeedState, event_feed_view};
 use crate::globals_view::{GlobalsState, globals_view};
 use crate::integration_detail::{
     IntegrationDetailState, handle_integration_detail_msg, health_subscription,
@@ -392,9 +393,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             }
             auto_scroll_task.unwrap_or_else(Task::none)
         }
-        Message::EventFeed(sub) => {
-            handle_event_feed_msg(&mut app.event_feed, sub, Arc::clone(&app.rt.bus))
-        }
+        Message::EventFeed(sub) => event_feed::update(&mut app.event_feed, &app.rt, sub),
         Message::ChatInputChanged(s) => {
             app.live_chat.chat_input = s;
             Task::none()

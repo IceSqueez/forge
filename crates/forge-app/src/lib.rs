@@ -36,9 +36,7 @@ pub use actions::{
     SubActionKindChoice, TriggerCategory,
 };
 pub use app::{App, SidebarExpandState, load_obs_and_connect};
-pub use event_feed::{
-    EventFeedMsg, EventFeedState, EventFilter, handle_event_feed_msg, matches_filter,
-};
+pub use event_feed::{EventFeedMsg, EventFeedState, EventFilter, matches_filter};
 pub use globals_view::{GlobalsState, VariantEditorFields, VariantEditorForm, load_globals_data};
 pub use integration_detail::{
     IntegrationDetailState, handle_integration_detail_msg, health_subscription,

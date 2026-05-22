@@ -188,6 +188,34 @@ fn inline_badge<'a, Msg: 'a>(
     .into()
 }
 
+fn clickable_username_style(
+    overlay: Color,
+    username_color: Color,
+) -> impl Fn(&iced::Theme, button::Status) -> button::Style {
+    move |_theme, status| {
+        let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
+        button::Style {
+            background: if hovered {
+                Some(Background::Color(Color { a: 0.12, ..overlay }))
+            } else {
+                None
+            },
+            border: Border {
+                color: Color::TRANSPARENT,
+                width: 0.0,
+                radius: if hovered {
+                    radius(Radius::Sm).into()
+                } else {
+                    0.0.into()
+                },
+            },
+            text_color: username_color,
+            shadow: iced::Shadow::default(),
+            snap: false,
+        }
+    }
+}
+
 fn money_event_icon<'a, Msg: 'a>(icon: Icon, color: Color) -> Element<'a, Msg> {
     container(tabler_icon(icon, 13.0, color))
         .padding(Padding {
@@ -302,18 +330,11 @@ pub fn chat_row_msg<'a, Msg: Clone + 'a>(
                     .font(font(FontRole::Body)),
             )
             .on_press(on_click(uname))
-            .padding(0)
-            .style(move |_theme: &iced::Theme, _status| button::Style {
-                background: None,
-                border: Border {
-                    color: Color::TRANSPARENT,
-                    width: 0.0,
-                    radius: 0.0.into(),
-                },
-                text_color: username_color,
-                shadow: iced::Shadow::default(),
-                snap: false,
-            })
+            .padding([0, 2])
+            .style(clickable_username_style(
+                palette.surface_overlay,
+                username_color,
+            ))
             .into()
         }
         None => text(username.to_owned())
@@ -380,18 +401,11 @@ pub fn chat_row_sub<'a, Msg: Clone + 'a>(
                     .font(font(FontRole::Body)),
             )
             .on_press(on_click(uname))
-            .padding(0)
-            .style(move |_theme: &iced::Theme, _status| button::Style {
-                background: None,
-                border: Border {
-                    color: Color::TRANSPARENT,
-                    width: 0.0,
-                    radius: 0.0.into(),
-                },
-                text_color: username_color,
-                shadow: iced::Shadow::default(),
-                snap: false,
-            })
+            .padding([0, 2])
+            .style(clickable_username_style(
+                palette.surface_overlay,
+                username_color,
+            ))
             .into()
         }
         None => text(username.to_owned())
@@ -482,18 +496,11 @@ pub fn chat_row_cheer<'a, Msg: Clone + 'a>(
                     .font(font(FontRole::Body)),
             )
             .on_press(on_click(uname))
-            .padding(0)
-            .style(move |_theme: &iced::Theme, _status| button::Style {
-                background: None,
-                border: Border {
-                    color: Color::TRANSPARENT,
-                    width: 0.0,
-                    radius: 0.0.into(),
-                },
-                text_color: username_color,
-                shadow: iced::Shadow::default(),
-                snap: false,
-            })
+            .padding([0, 2])
+            .style(clickable_username_style(
+                palette.surface_overlay,
+                username_color,
+            ))
             .into()
         }
         None => text(username.to_owned())
@@ -631,18 +638,11 @@ pub fn chat_row_cmd<'a, Msg: Clone + 'a>(
                     .font(font(FontRole::Body)),
             )
             .on_press(on_click(uname))
-            .padding(0)
-            .style(move |_theme: &iced::Theme, _status| button::Style {
-                background: None,
-                border: Border {
-                    color: Color::TRANSPARENT,
-                    width: 0.0,
-                    radius: 0.0.into(),
-                },
-                text_color: username_color,
-                shadow: iced::Shadow::default(),
-                snap: false,
-            })
+            .padding([0, 2])
+            .style(clickable_username_style(
+                palette.surface_overlay,
+                username_color,
+            ))
             .into()
         }
         None => text(username.to_owned())

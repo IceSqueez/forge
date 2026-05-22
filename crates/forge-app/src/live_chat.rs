@@ -1,7 +1,6 @@
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 
 use forge_events::{Event, EventSource};
-use forge_storage::Viewer;
 use forge_widgets::{
     BadgeKind, ChatBody, ChatRow, ForgePalette, Icon, Platform, PlatformTarget, search_input,
     tabler_icon,
@@ -376,34 +375,73 @@ pub fn filter_log<'a>(
     })
 }
 
-fn drawer_matches(v: &Viewer, search: &str) -> bool {
+struct ViewerSummary {
+    username: String,
+    role: Option<BadgeKind>,
+    message_count: u64,
+    last_seen_label: String,
+    avatar_letter: char,
+    avatar_color: Color,
+}
+
+fn drawer_matches(username: &str, search: &str) -> bool {
     if search.is_empty() {
         return true;
     }
-    v.username.to_ascii_lowercase().contains(search)
+    username.to_ascii_lowercase().contains(search)
 }
 
-fn selected_or_first<'a>(state: &LiveChatState, viewers: &'a ViewersState) -> Option<&'a Viewer> {
-    let search = state.drawer_search.to_ascii_lowercase();
-    let filtered: Vec<&'a Viewer> = viewers
-        .viewers
-        .iter()
-        .filter(|v| drawer_matches(v, &search))
-        .collect();
-
-    if filtered.is_empty() {
+fn synthesize_from_chat(
+    username: &str,
+    chat_log: &VecDeque<ChatRow>,
+    palette: &ForgePalette,
+) -> Option<ViewerSummary> {
+    let count = chat_log.iter().filter(|r| r.username == username).count();
+    if count == 0 {
         return None;
     }
+    let last_entry = chat_log.iter().rev().find(|r| r.username == username)?;
+    let role = last_entry.badges.first().copied();
+    let avatar_letter = username
+        .chars()
+        .next()
+        .map(|c| c.to_ascii_uppercase())
+        .unwrap_or('?');
+    let avatar_color = viewer_hash_color(username, palette);
+    Some(ViewerSummary {
+        username: username.to_owned(),
+        role,
+        message_count: count as u64,
+        last_seen_label: "now".into(),
+        avatar_letter,
+        avatar_color,
+    })
+}
 
-    if let Some(ref sel) = state.selected_viewer {
-        filtered
-            .iter()
-            .copied()
-            .find(|v| v.username == *sel)
-            .or_else(|| filtered.first().copied())
-    } else {
-        filtered.first().copied()
+fn enrich_with_storage(mut summary: ViewerSummary, viewers: &ViewersState) -> ViewerSummary {
+    if let Some(v) = viewers
+        .viewers
+        .iter()
+        .find(|v| v.username == summary.username)
+    {
+        summary.message_count = v.message_count;
+        summary.last_seen_label = viewer_last_seen(v.last_seen_at);
     }
+    summary
+}
+
+fn effective_summary(
+    state: &LiveChatState,
+    viewers: &ViewersState,
+    palette: &ForgePalette,
+) -> Option<ViewerSummary> {
+    if let Some(sel) = state.selected_viewer.as_deref()
+        && let Some(s) = synthesize_from_chat(sel, &state.chat_log, palette)
+    {
+        return Some(enrich_with_storage(s, viewers));
+    }
+    let last = state.chat_log.back()?.username.as_str();
+    synthesize_from_chat(last, &state.chat_log, palette).map(|s| enrich_with_storage(s, viewers))
 }
 
 fn viewer_hash_color(username: &str, palette: &ForgePalette) -> Color {
@@ -516,14 +554,6 @@ fn viewer_stat<'a, Msg: 'a>(
         .into()
 }
 
-fn role_from_chat(username: &str, chat_log: &VecDeque<ChatRow>) -> Option<BadgeKind> {
-    chat_log
-        .iter()
-        .rev()
-        .find(|r| r.username == username)
-        .and_then(|r| r.badges.first().copied())
-}
-
 fn drawer_role_badge<'a>(kind: BadgeKind, palette: &ForgePalette) -> Element<'a, Message> {
     use forge_widgets::{FontRole, font};
     use iced::widget::{container, text};
@@ -571,11 +601,7 @@ fn section_sep<'a, Msg: 'a>(palette: &'a ForgePalette) -> Element<'a, Msg> {
         .into()
 }
 
-fn drawer_header<'a>(
-    state: &'a LiveChatState,
-    viewers: &'a ViewersState,
-    palette: &'a ForgePalette,
-) -> Element<'a, Message> {
+fn drawer_header<'a>(state: &'a LiveChatState, palette: &'a ForgePalette) -> Element<'a, Message> {
     use forge_widgets::{
         FontRole, font,
         tokens::{FONT_SM, FONT_XS},
@@ -585,12 +611,24 @@ fn drawer_header<'a>(
 
     let p = *palette;
 
-    let total_count = viewers.viewers.len();
-    let search_lower = state.drawer_search.to_ascii_lowercase();
-    let shown_count = viewers
-        .viewers
+    let mut seen = HashSet::new();
+    let unique: Vec<&str> = state
+        .chat_log
         .iter()
-        .filter(|v| drawer_matches(v, &search_lower))
+        .rev()
+        .filter_map(|r| {
+            if seen.insert(r.username.as_str()) {
+                Some(r.username.as_str())
+            } else {
+                None
+            }
+        })
+        .collect();
+    let total_count = unique.len();
+    let search_lower = state.drawer_search.to_ascii_lowercase();
+    let shown_count = unique
+        .iter()
+        .filter(|u| drawer_matches(u, &search_lower))
         .count();
 
     let count_label = format!("{total_count} active · {shown_count} shown");
@@ -654,9 +692,9 @@ fn selected_viewer_detail<'a>(
 
     let sep = section_sep::<Message>(palette);
 
-    let Some(sel) = selected_or_first(state, viewers) else {
+    let Some(summary) = effective_summary(state, viewers, palette) else {
         let placeholder = container(
-            text("No viewers yet")
+            text("Click a username in chat to see details")
                 .font(font(FontRole::Body))
                 .size(FONT_XS)
                 .color(p.text_faint),
@@ -666,29 +704,27 @@ fn selected_viewer_detail<'a>(
         return column![placeholder, sep].spacing(0).into();
     };
 
-    let letter = sel
-        .username
-        .chars()
-        .next()
-        .map(|c| c.to_ascii_uppercase())
-        .unwrap_or('?');
-    let hash_col = viewer_hash_color(&sel.username, palette);
-    let avatar_el = viewer_avatar::<Message>(letter, hash_col, 38.0, Radius::Md, palette);
+    let avatar_el = viewer_avatar::<Message>(
+        summary.avatar_letter,
+        summary.avatar_color,
+        38.0,
+        Radius::Md,
+        palette,
+    );
 
-    let name_el = text(sel.username.clone())
+    let name_el = text(summary.username.clone())
         .font(font(FontRole::Body))
         .size(FONT_BODY + 0.5)
         .color(p.text_primary);
 
-    let last_label = format!("Last seen {}", viewer_last_seen(sel.last_seen_at));
+    let last_label = format!("Last seen {}", summary.last_seen_label);
     let last_el = text(last_label)
         .font(font(FontRole::Monospace))
         .size(FONT_XS)
         .color(p.text_muted);
 
-    let role_opt = role_from_chat(&sel.username, &state.chat_log);
     let mut name_row_items: Vec<Element<'a, Message>> = vec![name_el.into()];
-    if let Some(kind) = role_opt {
+    if let Some(kind) = summary.role {
         name_row_items.push(drawer_role_badge(kind, palette));
     }
     let name_row = row(name_row_items)
@@ -701,7 +737,7 @@ fn selected_viewer_detail<'a>(
         .spacing(10)
         .align_y(iced::Alignment::Center);
 
-    let msg_str = format!("{}", sel.message_count);
+    let msg_str = format!("{}", summary.message_count);
 
     let stat_grid = column![
         row![
@@ -717,25 +753,33 @@ fn selected_viewer_detail<'a>(
     ]
     .spacing(6);
 
-    let btn_style = move |_t: &iced::Theme, _s| button::Style {
-        background: Some(Background::Color(p.surface_overlay)),
-        border: Border {
-            color: p.border_regular,
-            width: 0.5,
-            radius: radius(Radius::Sm).into(),
-        },
-        text_color: p.text_muted,
-        shadow: iced::Shadow::default(),
-        snap: false,
+    let btn_style = move |_t: &iced::Theme, s: button::Status| {
+        let hovered = matches!(s, button::Status::Hovered | button::Status::Pressed);
+        button::Style {
+            background: Some(Background::Color(p.surface_overlay)),
+            border: Border {
+                color: if hovered {
+                    p.border_input
+                } else {
+                    p.border_regular
+                },
+                width: 0.5,
+                radius: radius(Radius::Sm).into(),
+            },
+            text_color: if hovered {
+                p.text_primary
+            } else {
+                p.text_muted
+            },
+            shadow: iced::Shadow::default(),
+            snap: false,
+        }
     };
 
     let shoutout_btn = button(
         row![
             tabler_icon(Icon::Bolt, 11.0, p.text_muted),
-            text("Shoutout")
-                .font(font(FontRole::Body))
-                .size(FONT_XS)
-                .color(p.text_muted),
+            text("Shoutout").font(font(FontRole::Body)).size(FONT_XS),
         ]
         .spacing(4)
         .align_y(iced::Alignment::Center),
@@ -748,10 +792,7 @@ fn selected_viewer_detail<'a>(
     let whisper_btn = button(
         row![
             tabler_icon(Icon::MessageCircle, 11.0, p.text_muted),
-            text("Whisper")
-                .font(font(FontRole::Body))
-                .size(FONT_XS)
-                .color(p.text_muted),
+            text("Whisper").font(font(FontRole::Body)).size(FONT_XS),
         ]
         .spacing(4)
         .align_y(iced::Alignment::Center),
@@ -846,9 +887,8 @@ fn selected_viewer_detail<'a>(
 }
 
 fn drawer_viewer_row<'a>(
-    v: &'a Viewer,
+    summary: ViewerSummary,
     is_sel: bool,
-    chat_log: &'a VecDeque<ChatRow>,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     use forge_widgets::{
@@ -860,11 +900,8 @@ fn drawer_viewer_row<'a>(
 
     let p = *palette;
     let stripe_color = if is_sel { p.brand } else { Color::TRANSPARENT };
-    let body_bg = if is_sel {
-        p.elevated
-    } else {
-        Color::TRANSPARENT
-    };
+    let selected_bg = p.elevated;
+    let hover_bg = p.base;
 
     let stripe = container(Space::new().width(2).height(Length::Fill))
         .width(2)
@@ -874,37 +911,35 @@ fn drawer_viewer_row<'a>(
             ..container::Style::default()
         });
 
-    let letter = v
-        .username
-        .chars()
-        .next()
-        .map(|c| c.to_ascii_uppercase())
-        .unwrap_or('?');
-    let hash_col = viewer_hash_color(&v.username, palette);
-    let avatar_el = viewer_avatar::<Message>(letter, hash_col, 22.0, Radius::Sm, palette);
+    let avatar_el = viewer_avatar::<Message>(
+        summary.avatar_letter,
+        summary.avatar_color,
+        22.0,
+        Radius::Sm,
+        palette,
+    );
 
-    let name_el = text(v.username.clone())
+    let name_el = text(summary.username.clone())
         .font(font(FontRole::Body))
         .size(FONT_SM)
         .color(p.text_primary);
 
-    let role_opt = role_from_chat(&v.username, chat_log);
     let mut name_row_items: Vec<Element<'a, Message>> = vec![name_el.into()];
-    if let Some(kind) = role_opt {
+    if let Some(kind) = summary.role {
         name_row_items.push(drawer_role_badge(kind, palette));
     }
     let name_row = row(name_row_items)
         .spacing(5)
         .align_y(iced::Alignment::Center);
 
-    let meta_el = text(format!("— · {} msg", v.message_count))
+    let meta_el = text(format!("— · {} msg", summary.message_count))
         .font(font(FontRole::Monospace))
         .size(FONT_XS)
         .color(p.text_muted);
 
     let name_col = column![name_row, meta_el].spacing(1);
 
-    let last_el = text(viewer_last_seen(v.last_seen_at))
+    let last_el = text(summary.last_seen_label.clone())
         .font(font(FontRole::Monospace))
         .size(FONT_XS)
         .color(p.text_faint);
@@ -918,21 +953,30 @@ fn drawer_viewer_row<'a>(
     .spacing(10)
     .align_y(iced::Alignment::Center);
 
-    let username = v.username.clone();
+    let username = summary.username.clone();
     let row_btn = button(row_content)
         .on_press(Message::ChatDrawerSelectViewer(username))
         .padding([7u16, 14u16])
         .width(Length::Fill)
-        .style(move |_t: &iced::Theme, _s| button::Style {
-            background: Some(Background::Color(body_bg)),
-            border: Border {
-                color: Color::TRANSPARENT,
-                width: 0.0,
-                radius: 0.0.into(),
-            },
-            text_color: p.text_primary,
-            shadow: iced::Shadow::default(),
-            snap: false,
+        .style(move |_t: &iced::Theme, s: button::Status| {
+            let bg = if is_sel {
+                selected_bg
+            } else if matches!(s, button::Status::Hovered | button::Status::Pressed) {
+                hover_bg
+            } else {
+                Color::TRANSPARENT
+            };
+            button::Style {
+                background: Some(Background::Color(bg)),
+                border: Border {
+                    color: Color::TRANSPARENT,
+                    width: 0.0,
+                    radius: 0.0.into(),
+                },
+                text_color: p.text_primary,
+                shadow: iced::Shadow::default(),
+                snap: false,
+            }
         });
 
     row![stripe, row_btn].spacing(0).into()
@@ -950,13 +994,23 @@ fn viewer_list<'a>(
     let p = *palette;
 
     let search_lower = state.drawer_search.to_ascii_lowercase();
-    let filtered: Vec<&'a Viewer> = viewers
-        .viewers
+
+    let mut seen: HashSet<&str> = HashSet::new();
+    let unique_usernames: Vec<&str> = state
+        .chat_log
         .iter()
-        .filter(|v| drawer_matches(v, &search_lower))
+        .rev()
+        .filter_map(|r| {
+            if seen.insert(r.username.as_str()) {
+                Some(r.username.as_str())
+            } else {
+                None
+            }
+        })
+        .filter(|u| drawer_matches(u, &search_lower))
         .collect();
 
-    let section_label = format!("ACTIVE NOW · {}", filtered.len());
+    let section_label = format!("ACTIVE NOW · {}", unique_usernames.len());
 
     let section_header = container(
         text(section_label)
@@ -973,11 +1027,15 @@ fn viewer_list<'a>(
 
     let selected_name = state.selected_viewer.as_deref();
 
-    let list_items: Vec<Element<'a, Message>> = filtered
+    let list_items: Vec<Element<'a, Message>> = unique_usernames
         .iter()
-        .map(|v| {
-            let is_sel = selected_name == Some(v.username.as_str());
-            drawer_viewer_row(v, is_sel, &state.chat_log, palette)
+        .filter_map(|username| {
+            synthesize_from_chat(username, &state.chat_log, palette)
+                .map(|s| enrich_with_storage(s, viewers))
+        })
+        .map(|summary| {
+            let is_sel = selected_name == Some(summary.username.as_str());
+            drawer_viewer_row(summary, is_sel, palette)
         })
         .collect();
 
@@ -985,7 +1043,7 @@ fn viewer_list<'a>(
         column![
             Space::new().height(8.0_f32),
             container(
-                text("No viewers match the search")
+                text("No chat participants match the search")
                     .font(font(FontRole::Body))
                     .size(10.0)
                     .color(p.text_faint),
@@ -1022,7 +1080,7 @@ fn drawer_panel<'a>(
 
     let panel_body = container(
         column![
-            drawer_header(state, viewers, palette),
+            drawer_header(state, palette),
             selected_viewer_detail(state, viewers, palette),
             viewer_list(state, viewers, palette),
         ]
@@ -1346,7 +1404,7 @@ fn build_chat_area<'a>(
 mod tests {
     use super::*;
     use forge_events::{Event, EventSource};
-    use forge_storage::ViewerPlatform;
+    use forge_storage::{Viewer, ViewerPlatform};
 
     fn make_viewer(username: &str, msg_count: u64) -> Viewer {
         Viewer {
@@ -1451,7 +1509,7 @@ mod tests {
     }
 
     #[test]
-    fn role_from_chat_returns_latest_badge() {
+    fn summary_role_is_latest_badge_from_chat() {
         let mut log = VecDeque::new();
         log.push_back(ChatRow {
             timestamp: "00:00:00".into(),
@@ -1469,15 +1527,16 @@ mod tests {
             username_color: Color::WHITE,
             body: ChatBody::Message("second".into()),
         });
-        let result = role_from_chat("danylo_ua", &log);
-        assert_eq!(result, Some(BadgeKind::Vip));
+        let (_, palette) = forge_widgets::catppuccin_mocha();
+        let summary = synthesize_from_chat("danylo_ua", &log, &palette).unwrap();
+        assert_eq!(summary.role, Some(BadgeKind::Vip));
     }
 
     #[test]
-    fn role_from_chat_none_when_username_absent() {
+    fn summary_none_when_username_absent_from_chat() {
         let log = VecDeque::new();
-        let result = role_from_chat("ghost_user", &log);
-        assert!(result.is_none());
+        let (_, palette) = forge_widgets::catppuccin_mocha();
+        assert!(synthesize_from_chat("ghost_user", &log, &palette).is_none());
     }
 
     #[test]
@@ -1489,22 +1548,93 @@ mod tests {
     }
 
     #[test]
-    fn selected_or_first_falls_back_when_selected_missing() {
+    fn effective_summary_returns_selected_when_in_chat() {
         let mut state = LiveChatState::new();
-        state.selected_viewer = Some("ghost".to_owned());
-        let vs = make_viewers_state(&["alice", "bob"]);
-        let result = selected_or_first(&state, &vs);
+        state.selected_viewer = Some("haash_".to_owned());
+        let vs = make_viewers_state(&[]);
+        let (_, palette) = forge_widgets::catppuccin_mocha();
+        let result = effective_summary(&state, &vs, &palette);
         assert!(result.is_some());
-        assert_eq!(result.unwrap().username, "alice");
+        assert_eq!(result.unwrap().username, "haash_");
+    }
+
+    #[test]
+    fn effective_summary_falls_back_to_last_chat_entry_when_selected_missing() {
+        let mut state = LiveChatState::new();
+        state.selected_viewer = Some("ghost_not_in_chat".to_owned());
+        let vs = make_viewers_state(&["alice", "bob"]);
+        let (_, palette) = forge_widgets::catppuccin_mocha();
+        let result = effective_summary(&state, &vs, &palette);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().username, "factorio_streamer");
+    }
+
+    #[test]
+    fn synthesize_from_chat_counts_occurrences_and_uses_latest_badge() {
+        let mut log = VecDeque::new();
+        log.push_back(ChatRow {
+            timestamp: "00:00:00".into(),
+            platform: Platform::Twitch,
+            badges: vec![BadgeKind::Moderator],
+            username: "alice".into(),
+            username_color: Color::WHITE,
+            body: ChatBody::Message("first".into()),
+        });
+        log.push_back(ChatRow {
+            timestamp: "00:00:01".into(),
+            platform: Platform::Twitch,
+            badges: vec![BadgeKind::Vip],
+            username: "alice".into(),
+            username_color: Color::WHITE,
+            body: ChatBody::Message("second".into()),
+        });
+        log.push_back(ChatRow {
+            timestamp: "00:00:02".into(),
+            platform: Platform::Twitch,
+            badges: vec![],
+            username: "bob".into(),
+            username_color: Color::WHITE,
+            body: ChatBody::Message("hi".into()),
+        });
+        let (_, palette) = forge_widgets::catppuccin_mocha();
+        let summary = synthesize_from_chat("alice", &log, &palette).unwrap();
+        assert_eq!(summary.message_count, 2);
+        assert_eq!(summary.role, Some(BadgeKind::Vip));
+        assert_eq!(summary.username, "alice");
+    }
+
+    #[test]
+    fn synthesize_from_chat_returns_none_when_username_absent() {
+        let log = VecDeque::new();
+        let (_, palette) = forge_widgets::catppuccin_mocha();
+        assert!(synthesize_from_chat("nobody", &log, &palette).is_none());
+    }
+
+    #[test]
+    fn enrich_with_storage_overwrites_message_count_when_viewer_present() {
+        let mut log = VecDeque::new();
+        log.push_back(ChatRow {
+            timestamp: "00:00:00".into(),
+            platform: Platform::Twitch,
+            badges: vec![],
+            username: "alice".into(),
+            username_color: Color::WHITE,
+            body: ChatBody::Message("hi".into()),
+        });
+        let (_, palette) = forge_widgets::catppuccin_mocha();
+        let summary = synthesize_from_chat("alice", &log, &palette).unwrap();
+        assert_eq!(summary.message_count, 1);
+        let vs = make_viewers_state(&["alice"]);
+        let enriched = enrich_with_storage(summary, &vs);
+        assert_eq!(enriched.message_count, 0);
     }
 
     #[test]
     fn drawer_search_filter_case_insensitive() {
-        let vs = make_viewers_state(&["Alice", "Bob", "alicetv"]);
-        let matches: Vec<_> = vs
-            .viewers
+        let usernames = ["Alice", "Bob", "alicetv"];
+        let matches: Vec<&&str> = usernames
             .iter()
-            .filter(|v| drawer_matches(v, "alice"))
+            .filter(|u| drawer_matches(u, "alice"))
             .collect();
         assert_eq!(matches.len(), 2);
     }

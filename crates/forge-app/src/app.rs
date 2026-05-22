@@ -60,7 +60,7 @@ use crate::tts_dashboard::{TtsDashState, tts_dashboard_view};
 use crate::tts_engines::{TtsEnginesState, tts_engines_view};
 use crate::tts_filters::{TtsFiltersState, tts_filters_view};
 use crate::tts_triggers::{TtsTriggersState, tts_triggers_view};
-use crate::voice_aliases::{VoiceAliasesState, handle_voice_aliases_msg, voice_aliases_view};
+use crate::voice_aliases::{VoiceAliasesState, voice_aliases_view};
 use crate::{Message, Screen, SettingsSection, TtsSection};
 
 pub struct SidebarExpandState {
@@ -2107,7 +2107,7 @@ fn handle_tts_msg(app: &mut App, msg: crate::message::TtsMsg) -> Task<Message> {
             crate::tts_dashboard::update(&mut app.tts_dashboard, &app.rt, sub)
         }
         TtsMsg::Engines(sub) => crate::tts_engines::update(&mut app.tts_engines, &app.rt, sub),
-        TtsMsg::Aliases(sub) => handle_voice_aliases_msg(&mut app.tts_aliases, sub),
+        TtsMsg::Aliases(sub) => crate::voice_aliases::update(&mut app.tts_aliases, &app.rt, sub),
         TtsMsg::Filters(sub) => crate::tts_filters::update(&mut app.tts_filters, &app.rt, sub),
         TtsMsg::Triggers(sub) => crate::tts_triggers::update(&mut app.tts_triggers, &app.rt, sub),
     }

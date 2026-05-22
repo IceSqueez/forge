@@ -7,6 +7,7 @@ use iced::{Alignment, Background, Border, Element, Length, Task};
 
 use crate::Message;
 use crate::message::{TtsMsg, VoiceAliasesMsg};
+use crate::runtime_view::RuntimeView;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AssignmentStrategyChoice {
@@ -56,8 +57,9 @@ impl Default for VoiceAliasesState {
     }
 }
 
-pub fn handle_voice_aliases_msg(
+pub fn update(
     state: &mut VoiceAliasesState,
+    _rt: &RuntimeView,
     msg: VoiceAliasesMsg,
 ) -> Task<Message> {
     match msg {

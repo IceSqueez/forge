@@ -6,7 +6,7 @@ use iced::{
 };
 
 use crate::palette::ForgePalette;
-use crate::tokens::{Density, FONT_MD, Radius, Spacing, radius, spacing};
+use crate::tokens::{BORDER_THIN, Density, FONT_MD, Radius, Spacing, radius, spacing};
 
 fn primary_style(bg: Color, text_color: Color, status: Status) -> Style {
     let r = radius(Radius::Md);
@@ -150,7 +150,7 @@ pub fn secondary_button<'a, Msg: 'a + Clone>(
                 text_color,
                 border: Border {
                     color: border_color,
-                    width: 1.0,
+                    width: BORDER_THIN,
                     radius: r.into(),
                 },
                 shadow: iced::Shadow::default(),
@@ -164,7 +164,7 @@ pub fn secondary_button<'a, Msg: 'a + Clone>(
                 text_color: text_hover,
                 border: Border {
                     color: border_color,
-                    width: 1.0,
+                    width: BORDER_THIN,
                     radius: r.into(),
                 },
                 shadow: iced::Shadow::default(),
@@ -181,7 +181,7 @@ pub fn secondary_button<'a, Msg: 'a + Clone>(
                         a: 0.4,
                         ..border_color
                     },
-                    width: 1.0,
+                    width: BORDER_THIN,
                     radius: r.into(),
                 },
                 shadow: iced::Shadow::default(),

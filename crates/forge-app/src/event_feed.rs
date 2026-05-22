@@ -202,7 +202,7 @@ fn format_timestamp(ts: &time::OffsetDateTime) -> String {
     )
 }
 
-fn format_summary(event: &Event) -> String {
+pub(crate) fn format_summary(event: &Event) -> String {
     let p = &event.payload;
     match event.kind.as_str() {
         "chat.message" => {

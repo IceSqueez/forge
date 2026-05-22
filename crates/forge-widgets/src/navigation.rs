@@ -482,7 +482,7 @@ mod tests {
 
     #[test]
     fn tree_node_hover_radius_matches_design() {
-        assert_eq!(radius(Radius::Sm), 6.0);
+        assert_eq!(radius(Radius::Sm), 7.0);
     }
 
     #[test]

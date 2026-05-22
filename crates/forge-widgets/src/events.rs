@@ -30,7 +30,7 @@ pub fn color_for_source(source: EventSource, palette: &ForgePalette) -> Color {
     }
 }
 
-fn source_label(source: EventSource) -> &'static str {
+pub fn source_label(source: EventSource) -> &'static str {
     match source {
         EventSource::Twitch => "TWITCH",
         EventSource::YouTube => "YOUTUBE",

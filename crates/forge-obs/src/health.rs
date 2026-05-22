@@ -11,7 +11,7 @@ use forge_platform_core::{
 use crate::client::ObsClient;
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct HealthSnapshot {
+pub struct HealthSnapshot {
     pub stream_active: bool,
     pub record_active: bool,
     pub cpu_percent: f64,

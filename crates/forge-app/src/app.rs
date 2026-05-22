@@ -2542,7 +2542,7 @@ fn home_jump_cards<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, M
     .into()
 }
 
-fn home_stream_health<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
+fn home_stream_health<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
     use iced::widget::{column, container, row, text};
     use iced::{Alignment, Background, Border};
 
@@ -2608,7 +2608,7 @@ fn home_stream_health<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     .width(Length::FillPortion(14));
 
     let health_stat =
-        |label: &'a str, value: &'a str, unit: Option<&'a str>| -> Element<'a, Message> {
+        |label: &'a str, value: String, unit: Option<&'a str>| -> Element<'a, Message> {
             let val_el: Element<'a, Message> = if let Some(u) = unit {
                 row![
                     text(value)
@@ -2639,12 +2639,30 @@ fn home_stream_health<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
             .into()
         };
 
+    let (fps_val, cpu_val, dropped_val) = if let Some(client) = &app.obs_client {
+        let snap = client.health_snapshot();
+        let fps = format!("{:.1}", snap.fps);
+        let cpu = format!("{:.1}", snap.cpu_percent);
+        let dropped = if snap.total_frames > 0 {
+            format!(
+                "{} ({:.2}%)",
+                snap.dropped_frames,
+                (snap.dropped_frames as f64 / snap.total_frames as f64) * 100.0
+            )
+        } else {
+            snap.dropped_frames.to_string()
+        };
+        (fps, cpu, dropped)
+    } else {
+        ("\u{2014}".to_owned(), "\u{2014}".to_owned(), "\u{2014}".to_owned())
+    };
+
     let stats_row = row![
         sparkline_col,
-        health_stat("BITRATE · OBS", "\u{2014}", Some("kbps")),
-        health_stat("DROPPED · OBS", "\u{2014}", None),
-        health_stat("FPS", "\u{2014}", None),
-        health_stat("CPU", "\u{2014}", Some("%")),
+        health_stat("BITRATE · OBS", "\u{2014}".to_owned(), Some("kbps")),
+        health_stat("DROPPED · OBS", dropped_val, None),
+        health_stat("FPS", fps_val, None),
+        health_stat("CPU", cpu_val, Some("%")),
     ]
     .spacing(12.0)
     .align_y(Alignment::End);
@@ -2895,24 +2913,20 @@ fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
         .into()
 }
 
-fn home_chat_event_row<'a>(
-    row: &'a forge_widgets::ChatRow,
+fn home_system_event_row<'a>(
+    event: &'a forge_events::Event,
     has_bottom_border: bool,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     use iced::widget::{button, container, row as irow, text};
     use iced::{Alignment, Background, Border, Shadow};
+    use forge_widgets::{color_for_source, source_label};
 
-    let dot_color = row.platform.color(palette);
-    let platform_name = match row.platform {
-        forge_widgets::Platform::Twitch => "Twitch",
-        forge_widgets::Platform::YouTube => "YouTube",
-        forge_widgets::Platform::Kick => "Kick",
-        forge_widgets::Platform::Trovo => "Trovo",
-    };
+    let dot_color = color_for_source(event.source, palette);
     let elevated = palette.elevated;
     let border_regular = palette.border_regular;
     let shell = palette.shell;
+    let text_primary = palette.text_primary;
 
     let dot = container(iced::widget::Space::new())
         .width(6.0)
@@ -2927,33 +2941,30 @@ fn home_chat_event_row<'a>(
             ..iced::widget::container::Style::default()
         });
 
+    let ts_str = format!(
+        "{:02}:{:02}:{:02}",
+        event.timestamp.hour(),
+        event.timestamp.minute(),
+        event.timestamp.second()
+    );
+
     let ts_col = container(
-        text(&*row.timestamp)
+        text(ts_str)
             .size(FONT_XS)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace)),
     )
     .width(60.0);
 
-    let body_str: String = match &row.body {
-        forge_widgets::ChatBody::Message(m) => m.clone(),
-        forge_widgets::ChatBody::Command { command, .. } => command.clone(),
-        forge_widgets::ChatBody::Subscription { tier, .. } => format!("sub tier {tier}"),
-        forge_widgets::ChatBody::Cheer { bits, .. } => format!("{bits} bits"),
-        forge_widgets::ChatBody::Raid { viewers, .. } => format!("raid · {viewers} viewers"),
-    };
+    let source_str = source_label(event.source);
+    let summary_str = crate::event_feed::format_summary(event);
+    let full = format!("{}: {}", source_str, summary_str);
 
-    let text_primary = palette.text_primary;
-
-    let description: Element<'a, Message> = {
-        use iced::widget::text;
-        let full = format!("{}: {} \u{2014} {}", platform_name, row.username, body_str);
-        text(full)
-            .size(FONT_XS)
-            .color(text_primary)
-            .width(Length::Fill)
-            .into()
-    };
+    let description: Element<'a, Message> = text(full)
+        .size(FONT_XS)
+        .color(text_primary)
+        .width(Length::Fill)
+        .into();
 
     let inner = irow![dot, ts_col, description]
         .spacing(10.0)
@@ -3043,8 +3054,8 @@ fn home_recent_events_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
     ]
     .align_y(Alignment::Center);
 
-    let recent: Vec<&forge_widgets::ChatRow> =
-        app.live_chat.chat_log.iter().rev().take(5).collect();
+    let recent: Vec<&forge_events::Event> =
+        app.event_feed.events.iter().rev().take(5).collect();
 
     let body: Element<'a, Message> = if recent.is_empty() {
         text("No events yet").size(FONT_XS).color(text_muted).into()
@@ -3052,7 +3063,7 @@ fn home_recent_events_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
         let count = recent.len();
         let mut col = column![].spacing(0.0);
         for (i, row_data) in recent.into_iter().enumerate() {
-            col = col.push(home_chat_event_row(row_data, i + 1 < count, palette));
+            col = col.push(home_system_event_row(row_data, i + 1 < count, palette));
         }
         col.into()
     };
@@ -3192,7 +3203,7 @@ fn home_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message
     let mut content = column![hero, jump_cards,].spacing(16.0).width(Length::Fill);
 
     if app.obs_client.is_some() {
-        content = content.push(home_stream_health(palette));
+        content = content.push(home_stream_health(app, palette));
     }
 
     content = content.push(connections).push(bottom);

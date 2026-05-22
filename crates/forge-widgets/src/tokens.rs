@@ -55,8 +55,8 @@ pub enum Radius {
 
 pub fn radius(r: Radius) -> f32 {
     match r {
-        Radius::Sm => 6.0,
-        Radius::Md => 9.0,
+        Radius::Sm => 7.0,
+        Radius::Md => 8.0,
         Radius::Lg => 12.0,
         Radius::Pill => 999.0,
     }
@@ -77,7 +77,7 @@ pub fn modal_width(s: ModalSize) -> f32 {
     }
 }
 
-pub const BORDER_THIN: f32 = 1.0;
+pub const BORDER_THIN: f32 = 0.5;
 pub const BORDER_ACCENT: f32 = 1.0;
 
 pub const FONT_XS: f32 = 12.0;
@@ -158,8 +158,8 @@ mod tests {
 
     #[test]
     fn radius_returns_correct_px_per_variant() {
-        assert_eq!(radius(Radius::Sm), 6.0);
-        assert_eq!(radius(Radius::Md), 9.0);
+        assert_eq!(radius(Radius::Sm), 7.0);
+        assert_eq!(radius(Radius::Md), 8.0);
         assert_eq!(radius(Radius::Lg), 12.0);
         assert_eq!(radius(Radius::Pill), 999.0);
     }

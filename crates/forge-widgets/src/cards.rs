@@ -341,13 +341,13 @@ mod tests {
     }
 
     #[test]
-    fn border_thin_constant_is_one() {
-        assert_eq!(BORDER_THIN, 1.0);
+    fn border_thin_constant_is_half() {
+        assert_eq!(BORDER_THIN, 0.5);
     }
 
     #[test]
     fn metric_card_radius_token_is_md() {
-        assert_eq!(radius(Radius::Md), 9.0);
+        assert_eq!(radius(Radius::Md), 8.0);
     }
 
     #[test]
@@ -357,7 +357,7 @@ mod tests {
 
     #[test]
     fn card_default_radius_token_is_md() {
-        assert_eq!(radius(Radius::Md), 9.0);
+        assert_eq!(radius(Radius::Md), 8.0);
     }
 
     #[test]

@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use iced::{Border, Color, Element, widget::container};
 
 use crate::palette::ForgePalette;
-use crate::tokens::FONT_XS;
+use crate::tokens::{BORDER_THIN, FONT_XS};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StatusVariant {
@@ -116,7 +116,7 @@ pub fn role_badge<'a, Msg: 'a>(
         background: None,
         border: Border {
             color: border_color,
-            width: 1.0,
+            width: BORDER_THIN,
             radius: 3.0.into(),
         },
         ..container::Style::default()

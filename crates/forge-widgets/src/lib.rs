@@ -55,7 +55,7 @@ pub use data::{
 };
 pub use events::{
     EventInspectorParams, EventRowData, causation_chip, color_for_source, event_inspector,
-    event_row_observability, json_viewer, replay_button, source_badge,
+    event_row_observability, json_viewer, replay_button, source_badge, source_label,
 };
 pub use icons::{Icon, tabler_icon};
 pub use inputs::{input_padding, search_input, select, text_input_field};

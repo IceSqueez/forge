@@ -113,6 +113,7 @@ pub enum ActionsMsg {
     SearchChanged(String),
     FilterChanged(crate::actions::ActionsFilter),
     ToggleGroupCollapsed(crate::actions::TriggerCategory),
+    TelemetryLoaded(Result<forge_storage::ActionTelemetry, String>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

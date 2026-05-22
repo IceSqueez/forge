@@ -1,9 +1,10 @@
-use forge_storage::{DataProvider, StorageError};
+use forge_storage::{ActionTelemetry, DataProvider, StorageError};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
     Action, ActionId, ClipId, Command, CommandPermission, LogLevel, QueueId, SubActionSpec,
     Trigger, TriggerId, TriggerKind,
 };
+use iced::{Color, Element, Length};
 use std::sync::Arc;
 use time::OffsetDateTime;
 
@@ -137,8 +138,9 @@ pub enum TriggerCategory {
 pub enum ActionsFilter {
     #[default]
     All,
-    Enabled,
-    Disabled,
+    Chat,
+    Timers,
+    Points,
 }
 
 impl TriggerCategory {
@@ -485,6 +487,8 @@ pub struct ActionsState {
     pub add_action_modal: Option<AddActionForm>,
     pub add_trigger_modal: Option<AddTriggerForm>,
     pub add_sub_action_modal: Option<AddSubActionForm>,
+    pub telemetry: Option<ActionTelemetry>,
+    pub telemetry_loading: bool,
 }
 
 impl ActionsState {
@@ -507,8 +511,9 @@ impl ActionsState {
     pub fn action_passes_filter(&self, summary: &ActionSummary) -> bool {
         let filter_ok = match self.filter {
             ActionsFilter::All => true,
-            ActionsFilter::Enabled => summary.enabled,
-            ActionsFilter::Disabled => !summary.enabled,
+            ActionsFilter::Chat => summary.trigger_category == TriggerCategory::Chat,
+            ActionsFilter::Timers => summary.trigger_category == TriggerCategory::Timer,
+            ActionsFilter::Points => false,
         };
         let search_ok = if self.search.is_empty() {
             true
@@ -645,6 +650,132 @@ pub async fn save_sub_action(
     };
     action.sub_actions.push(spec);
     dp.action_repo().save(&action).await
+}
+
+pub async fn load_telemetry(
+    dp: Arc<SqliteBackend>,
+    id: ActionId,
+) -> Result<ActionTelemetry, String> {
+    dp.action_repo()
+        .telemetry(id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+pub fn format_relative_time(opt: Option<OffsetDateTime>) -> String {
+    let Some(dt) = opt else {
+        return "never".to_string();
+    };
+    let delta = OffsetDateTime::now_utc() - dt;
+    let secs = delta.whole_seconds().max(0) as u64;
+    if secs < 60 {
+        format!("{}s ago", secs)
+    } else if secs < 3600 {
+        format!("{} min ago", secs / 60)
+    } else if secs < 86400 {
+        format!("{}h ago", secs / 3600)
+    } else {
+        format!("{}d ago", secs / 86400)
+    }
+}
+
+pub fn action_stat<'a, Msg: 'a>(
+    label: &str,
+    value: &str,
+    value_color: Color,
+    hint: Option<&str>,
+    palette: &forge_widgets::ForgePalette,
+) -> Element<'a, Msg> {
+    use forge_widgets::FontRole;
+    use forge_widgets::tokens::{FONT_SM, FONT_XS};
+    use iced::widget::{column, text};
+
+    let p = *palette;
+    let mono = forge_widgets::font(FontRole::Monospace);
+
+    let label_el = text(label.to_owned())
+        .size(FONT_XS)
+        .color(p.text_faint)
+        .font(mono);
+
+    let value_el = text(value.to_owned())
+        .size(FONT_SM)
+        .color(value_color)
+        .font(mono);
+
+    if let Some(hint_str) = hint {
+        let hint_el = text(hint_str.to_owned())
+            .size(FONT_XS)
+            .color(p.text_muted)
+            .font(mono);
+        column![label_el, value_el, hint_el].spacing(2).into()
+    } else {
+        column![label_el, value_el].spacing(2).into()
+    }
+}
+
+pub fn telemetry_grid<'a, Msg: 'a>(
+    t: &ActionTelemetry,
+    palette: &forge_widgets::ForgePalette,
+) -> Element<'a, Msg> {
+    use forge_widgets::radius;
+    use forge_widgets::tokens::Radius;
+    use iced::widget::{container, row};
+
+    let p = *palette;
+
+    let last_fired_val = format_relative_time(t.last_fired_at);
+    let runs_val = t.runs_today.to_string();
+    let avg_val = t
+        .avg_duration_ms
+        .map(|ms| format!("{ms} ms"))
+        .unwrap_or_else(|| "\u{2014}".to_string());
+    let errors_val = t.errors_7d.to_string();
+    let errors_color = if t.errors_7d > 0 { p.random } else { p.success };
+
+    let cells = row![
+        container(action_stat(
+            "LAST FIRED",
+            &last_fired_val,
+            p.text_primary,
+            None,
+            palette
+        ))
+        .width(Length::FillPortion(1)),
+        container(action_stat(
+            "RUNS \u{00b7} TODAY",
+            &runs_val,
+            p.brand,
+            None,
+            palette
+        ))
+        .width(Length::FillPortion(1)),
+        container(action_stat("AVG TIME", &avg_val, p.success, None, palette))
+            .width(Length::FillPortion(1)),
+        container(action_stat(
+            "ERRORS \u{00b7} 7D",
+            &errors_val,
+            errors_color,
+            None,
+            palette
+        ))
+        .width(Length::FillPortion(1)),
+    ]
+    .spacing(8);
+
+    container(cells)
+        .width(Length::Fill)
+        .padding([10, 12])
+        .style(move |_theme: &iced::Theme| iced::widget::container::Style {
+            background: Some(iced::Background::Color(p.shell)),
+            border: iced::Border {
+                color: p.border_regular,
+                width: 0.5,
+                radius: radius(Radius::Md).into(),
+            },
+            ..iced::widget::container::Style::default()
+        })
+        .into()
 }
 
 pub async fn load_clip_options(dp: Arc<SqliteBackend>) -> Vec<(ClipId, String)> {

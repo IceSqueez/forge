@@ -20,7 +20,7 @@ use forge_storage::{CredentialId, CredentialsRepo, DataProvider};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{Action, ActionId};
 use forge_widgets::icons::{Icon, tabler_icon};
-use forge_widgets::tokens::{FONT_MD, FONT_SM, FONT_XS};
+use forge_widgets::tokens::{FONT_LG, FONT_MD, FONT_SM, FONT_XS};
 use forge_widgets::{
     BreadcrumbCrumb, FontRole, ForgePalette, NavChild, NavItem, Radius, Sidebar, ThemeId,
     ToastQueue, app_footer, breadcrumb, font, page_shell, radius, sidebar, title_bar,
@@ -33,7 +33,7 @@ use crate::actions::{
     ActionsFilter, ActionsState, AddActionForm, AddActionMsg, AddSubActionForm, AddSubActionMsg,
     AddTriggerForm, AddTriggerMsg, RemoveSubActionMsg, SubActionKindChoice, TriggerCategory,
     kind_label, kind_summary, load_action_detail, load_actions_tree, load_clip_options,
-    remove_sub_action, save_sub_action,
+    load_telemetry, remove_sub_action, save_sub_action,
 };
 use crate::event_feed::{EventFeedState, event_feed_view, handle_event_feed_msg};
 use crate::globals_view::{
@@ -1190,11 +1190,19 @@ fn handle_actions_msg(app: &mut App, sub: ActionsMsg) -> Task<Message> {
         }
         ActionsMsg::ActionSelected(id) => {
             app.actions.selected = Some(id);
-            let dp = Arc::clone(&app.backend);
-            Task::perform(
-                async move { load_action_detail(dp, id).await.map_err(|e| e.to_string()) },
+            app.actions.detail = None;
+            app.actions.telemetry = None;
+            app.actions.telemetry_loading = true;
+            let dp1 = Arc::clone(&app.backend);
+            let dp2 = Arc::clone(&app.backend);
+            let detail_task = Task::perform(
+                async move { load_action_detail(dp1, id).await.map_err(|e| e.to_string()) },
                 |r| Message::Actions(ActionsMsg::DetailLoaded(r)),
-            )
+            );
+            let telemetry_task = Task::perform(async move { load_telemetry(dp2, id).await }, |r| {
+                Message::Actions(ActionsMsg::TelemetryLoaded(r))
+            });
+            Task::batch([detail_task, telemetry_task])
         }
         ActionsMsg::DetailLoaded(Ok(detail)) => {
             app.actions.detail = Some(detail);
@@ -1356,6 +1364,17 @@ fn handle_actions_msg(app: &mut App, sub: ActionsMsg) -> Task<Message> {
             } else {
                 app.actions.collapsed_groups.insert(cat);
             }
+            Task::none()
+        }
+        ActionsMsg::TelemetryLoaded(Ok(t)) => {
+            app.actions.telemetry = Some(t);
+            app.actions.telemetry_loading = false;
+            Task::none()
+        }
+        ActionsMsg::TelemetryLoaded(Err(e)) => {
+            app.actions.telemetry = None;
+            app.actions.telemetry_loading = false;
+            tracing::warn!(error = %e, "action telemetry load failed");
             Task::none()
         }
     }
@@ -3350,7 +3369,7 @@ fn settings_view<'a>(
 }
 
 fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
-    use iced::widget::{column, container, scrollable, text};
+    use iced::widget::{column, container, row, scrollable, text};
 
     let p = *palette;
     let actions_state = &app.actions;
@@ -3366,26 +3385,20 @@ fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Mess
 
     let stat_strip = actions_stat_strip(total, enabled_count, palette);
     let toolbar = actions_toolbar(actions_state, palette);
-    let table_header = actions_table_header(palette);
 
-    let mut body_col: iced::widget::Column<'_, Message> = column![].spacing(0);
+    let mut tree_col: iced::widget::Column<'_, Message> = column![].spacing(0);
 
     if actions_state.loading {
-        body_col = body_col.push(
+        tree_col = tree_col.push(
             container(text("Loading...").size(FONT_XS).color(p.text_muted))
-                .padding([16, 16])
+                .padding([16, 14])
                 .width(Length::Fill),
         );
     } else if total == 0 {
-        body_col = body_col.push(
-            container(forge_widgets::empty_state(
-                "No actions yet",
-                "Use + New action to create your first action.",
-                None::<(&str, Message)>,
-                palette,
-            ))
-            .padding([24, 16])
-            .width(Length::Fill),
+        tree_col = tree_col.push(
+            container(text("No actions yet").size(FONT_XS).color(p.text_faint))
+                .padding([16, 14])
+                .width(Length::Fill),
         );
     } else {
         for group in &actions_state.tree {
@@ -3400,23 +3413,42 @@ fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Mess
             }
 
             let is_collapsed = actions_state.collapsed_groups.contains(&group.category);
-            body_col = body_col.push(actions_group_header(group, is_collapsed, palette));
+            tree_col = tree_col.push(actions_group_header(group, is_collapsed, palette));
 
             if !is_collapsed {
                 for summary in &filtered {
                     let selected = actions_state.selected == Some(summary.id);
-                    body_col = body_col.push(actions_row(summary, selected, palette));
+                    tree_col = tree_col.push(actions_tree_row(summary, selected, palette));
                 }
             }
         }
     }
 
-    let body_scrollable = scrollable(body_col).height(Length::Fill);
+    let tree_scrollable = scrollable(tree_col).height(Length::Fill);
+
+    let left_panel = container(tree_scrollable)
+        .width(Length::Fixed(290.0))
+        .height(Length::Fill)
+        .style(move |_theme: &iced::Theme| iced::widget::container::Style {
+            background: Some(iced::Background::Color(p.shell)),
+            border: iced::Border {
+                color: p.border_regular,
+                width: 0.5,
+                radius: 0.0.into(),
+            },
+            ..iced::widget::container::Style::default()
+        });
+
+    let right_panel = actions_detail_panel(actions_state, palette);
 
     let footer = actions_footer(visible, total, palette);
 
+    let body = row![left_panel, right_panel]
+        .spacing(0)
+        .height(Length::Fill);
+
     let main_view: Element<'_, Message> =
-        container(column![stat_strip, toolbar, table_header, body_scrollable, footer].spacing(0))
+        container(column![stat_strip, toolbar, body, footer].spacing(0))
             .width(Length::Fill)
             .height(Length::Fill)
             .into();
@@ -3496,9 +3528,49 @@ fn actions_toolbar<'a>(
     state: &'a crate::actions::ActionsState,
     palette: &'a ForgePalette,
 ) -> iced::widget::Container<'a, Message> {
-    use iced::widget::{container, row, text};
+    use iced::widget::{container, row};
 
     let p = *palette;
+
+    let chip_all = forge_widgets::filter_chip(
+        palette,
+        "All",
+        p.brand,
+        state.filter == ActionsFilter::All,
+        Message::Actions(ActionsMsg::FilterChanged(ActionsFilter::All)),
+    );
+    let chip_chat = forge_widgets::filter_chip(
+        palette,
+        "Chat",
+        p.info,
+        state.filter == ActionsFilter::Chat,
+        Message::Actions(ActionsMsg::FilterChanged(ActionsFilter::Chat)),
+    );
+    let chip_timers = forge_widgets::filter_chip(
+        palette,
+        "Timers",
+        p.warning,
+        state.filter == ActionsFilter::Timers,
+        Message::Actions(ActionsMsg::FilterChanged(ActionsFilter::Timers)),
+    );
+    let chip_points = forge_widgets::filter_chip(
+        palette,
+        "Points",
+        p.accent_pink_light,
+        state.filter == ActionsFilter::Points,
+        Message::Actions(ActionsMsg::FilterChanged(ActionsFilter::Points)),
+    );
+
+    let chips = row![chip_all, chip_chat, chip_timers, chip_points].spacing(4);
+
+    let divider = container(iced::widget::Space::new().width(0.5).height(16.0))
+        .width(0.5)
+        .height(16.0)
+        .style(move |_theme: &iced::Theme| iced::widget::container::Style {
+            background: Some(iced::Background::Color(p.border_regular)),
+            ..iced::widget::container::Style::default()
+        });
+
     let search = forge_widgets::search_input(
         "Search actions...",
         &state.search,
@@ -3506,154 +3578,27 @@ fn actions_toolbar<'a>(
         palette,
     );
 
-    let chip_all = actions_filter_chip(
-        "All",
-        state.filter == ActionsFilter::All,
-        palette,
-        ActionsFilter::All,
-    );
-    let chip_enabled = actions_filter_chip(
-        "Enabled",
-        state.filter == ActionsFilter::Enabled,
-        palette,
-        ActionsFilter::Enabled,
-    );
-    let chip_disabled = actions_filter_chip(
-        "Disabled",
-        state.filter == ActionsFilter::Disabled,
-        palette,
-        ActionsFilter::Disabled,
-    );
-
-    let group_label = text("Group by trigger")
-        .size(FONT_XS)
-        .color(p.text_faint)
-        .font(forge_widgets::font(forge_widgets::FontRole::Monospace));
-
-    let import_btn = forge_widgets::ghost_button("Import", Message::Noop, palette);
-
     let new_btn = forge_widgets::primary_button_small(
         "+ New action",
         Message::Actions(ActionsMsg::OpenAddActionModal),
         palette,
     );
 
-    let left = row![
-        container(search).width(Length::Fixed(220.0)),
-        row![chip_all, chip_enabled, chip_disabled].spacing(4),
-        container(group_label).padding([0, 10]),
+    let inner = row![
+        chips,
+        divider,
+        container(search).width(Length::Fixed(180.0)),
+        container(iced::widget::Space::new().width(Length::Fill)),
+        new_btn,
     ]
     .spacing(8)
     .align_y(iced::alignment::Vertical::Center);
-
-    let right = row![import_btn, new_btn]
-        .spacing(6)
-        .align_y(iced::alignment::Vertical::Center);
-
-    let inner = row![container(left).width(Length::Fill), right,]
-        .spacing(8)
-        .align_y(iced::alignment::Vertical::Center);
 
     container(inner)
         .width(Length::Fill)
         .padding([8, 14])
         .style(move |_theme: &iced::Theme| iced::widget::container::Style {
             background: Some(iced::Background::Color(p.elevated)),
-            border: iced::Border {
-                color: p.border_regular,
-                width: 0.5,
-                radius: 0.0.into(),
-            },
-            ..iced::widget::container::Style::default()
-        })
-}
-
-fn actions_filter_chip<'a>(
-    label: &'a str,
-    active: bool,
-    palette: &'a ForgePalette,
-    filter: ActionsFilter,
-) -> Element<'a, Message> {
-    use iced::widget::{button, container, text};
-
-    let p = *palette;
-    let (bg, text_color) = if active {
-        (
-            Some(iced::Background::Color(p.surface_overlay)),
-            p.text_primary,
-        )
-    } else {
-        (None, p.text_secondary)
-    };
-
-    let label_el = text(label).size(FONT_XS).color(text_color);
-
-    button(container(label_el).padding([4, 10]))
-        .on_press(Message::Actions(ActionsMsg::FilterChanged(filter)))
-        .padding(0)
-        .style(
-            move |_theme: &iced::Theme, _status| iced::widget::button::Style {
-                background: bg,
-                text_color,
-                border: iced::Border {
-                    color: iced::Color::TRANSPARENT,
-                    width: 0.0,
-                    radius: 11.0.into(),
-                },
-                shadow: iced::Shadow::default(),
-                snap: false,
-            },
-        )
-        .into()
-}
-
-fn actions_table_header<'a>(palette: &'a ForgePalette) -> iced::widget::Container<'a, Message> {
-    use iced::widget::{container, row, text};
-
-    let p = *palette;
-    let mono = forge_widgets::font(forge_widgets::FontRole::Monospace);
-
-    let name_col = row![text("NAME").size(FONT_XS).color(p.text_faint).font(mono)]
-        .width(Length::FillPortion(140));
-    let trigger_col = row![text("TRIGGER").size(FONT_XS).color(p.text_faint).font(mono)]
-        .width(Length::FillPortion(140));
-    let queue_col =
-        row![text("QUEUE").size(FONT_XS).color(p.text_faint).font(mono)].width(Length::Fixed(90.0));
-    let last_ran_col = row![
-        text("LAST RAN")
-            .size(FONT_XS)
-            .color(p.text_faint)
-            .font(mono)
-    ]
-    .width(Length::Fixed(90.0));
-    let runs_col = row![
-        text("RUNS \u{00b7} 24H")
-            .size(FONT_XS)
-            .color(p.text_faint)
-            .font(mono)
-    ]
-    .width(Length::Fixed(90.0));
-    let menu_col = row![].width(Length::Fixed(22.0));
-
-    let dot_spacer = iced::widget::Space::new().width(Length::Fixed(24.0));
-
-    let inner = row![
-        dot_spacer,
-        name_col,
-        trigger_col,
-        queue_col,
-        last_ran_col,
-        runs_col,
-        menu_col
-    ]
-    .spacing(0)
-    .align_y(iced::alignment::Vertical::Center);
-
-    container(inner)
-        .width(Length::Fill)
-        .padding([7, 16])
-        .style(move |_theme: &iced::Theme| iced::widget::container::Style {
-            background: Some(iced::Background::Color(p.shell)),
             border: iced::Border {
                 color: p.border_regular,
                 width: 0.5,
@@ -3720,12 +3665,12 @@ fn actions_group_header<'a>(
         .into()
 }
 
-fn actions_row<'a>(
+fn actions_tree_row<'a>(
     summary: &'a crate::actions::ActionSummary,
     selected: bool,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    use iced::widget::{button, column, container, row, text};
+    use iced::widget::{button, container, row, text};
 
     let p = *palette;
     let mono = forge_widgets::font(forge_widgets::FontRole::Monospace);
@@ -3749,140 +3694,265 @@ fn actions_row<'a>(
             ..iced::widget::container::Style::default()
         });
 
-    let dot_col = container(dot)
-        .width(Length::Fixed(24.0))
-        .align_x(iced::alignment::Horizontal::Center)
-        .align_y(iced::alignment::Vertical::Center);
-
-    let name_color = if summary.enabled {
+    let name_color = if !summary.enabled {
+        p.text_faint
+    } else if selected {
         p.text_primary
     } else {
         p.text_secondary
     };
-    let sub_color = if summary.enabled {
-        p.text_faint
-    } else {
-        p.text_extreme_faint
-    };
 
     let name_el = text(&summary.name)
-        .size(FONT_XS)
+        .size(FONT_SM)
         .color(name_color)
         .font(mono);
 
-    let mut subtitle_parts: Vec<String> = vec![format!(
-        "{} sub-action{}",
-        summary.sub_action_count,
-        if summary.sub_action_count == 1 {
-            ""
-        } else {
-            "s"
-        }
-    )];
-    if let Some(extra) = &summary.extra_subtitle {
-        subtitle_parts.push(extra.clone());
-    }
-    let subtitle_str = subtitle_parts.join(" \u{00b7} ");
-    let subtitle_el = text(subtitle_str).size(FONT_XS).color(sub_color);
+    let count_label = format!("{} sub", summary.sub_action_count);
+    let count_el = text(count_label).size(FONT_XS).color(p.text_faint);
 
-    let name_col = column![name_el, subtitle_el]
-        .spacing(2)
-        .width(Length::FillPortion(140));
-
-    let trigger_label_el = text(&summary.trigger_label)
-        .size(FONT_XS)
-        .color(if summary.enabled {
-            p.text_secondary
-        } else {
-            p.text_faint
-        });
-    let trigger_col = container(trigger_label_el).width(Length::FillPortion(140));
-
-    let queue_color = if summary.enabled {
-        p.text_secondary
-    } else {
-        p.text_faint
-    };
-    let queue_el = text(&summary.queue_name).size(FONT_XS).color(queue_color);
-    let queue_col = container(queue_el).width(Length::Fixed(90.0));
-
-    let last_ran_str = match &summary.last_ran {
-        None => "\u{2014}".to_string(),
-        Some(dt) => {
-            let now = time::OffsetDateTime::now_utc();
-            let secs = (now - *dt).whole_seconds().max(0) as u64;
-            if secs < 60 {
-                format!("{}s ago", secs)
-            } else if secs < 3600 {
-                format!("{}m ago", secs / 60)
-            } else {
-                format!("{}h {}m", secs / 3600, (secs % 3600) / 60)
-            }
-        }
-    };
-    let last_ran_color = if summary.enabled {
-        p.text_muted
-    } else {
-        p.text_faint
-    };
-    let last_ran_el = text(last_ran_str)
-        .size(FONT_XS)
-        .color(last_ran_color)
-        .font(mono);
-    let last_ran_col = container(last_ran_el).width(Length::Fixed(90.0));
-
-    let runs_color = if summary.enabled {
+    let stripe_color = if selected {
         p.brand
     } else {
-        p.text_faint
+        iced::Color::TRANSPARENT
     };
-    let runs_el = text(summary.runs_24h.to_string())
-        .size(FONT_XS)
-        .color(runs_color)
-        .font(mono);
-    let runs_col = container(runs_el).width(Length::Fixed(90.0));
+    let stripe = container(iced::widget::Space::new().width(2.0).height(Length::Fill))
+        .width(2.0)
+        .style(move |_theme: &iced::Theme| iced::widget::container::Style {
+            background: Some(iced::Background::Color(stripe_color)),
+            ..iced::widget::container::Style::default()
+        });
 
-    let menu_el = container(tabler_icon(Icon::DotsVertical, FONT_SM, p.text_faint))
-        .width(Length::Fixed(22.0))
-        .align_x(iced::alignment::Horizontal::Center);
+    let body = container(
+        row![
+            dot,
+            name_el,
+            iced::widget::Space::new().width(Length::Fill),
+            count_el
+        ]
+        .spacing(8)
+        .align_y(iced::alignment::Vertical::Center),
+    )
+    .padding([6, 14])
+    .width(Length::Fill);
 
-    let inner_row = row![
-        dot_col,
-        name_col,
-        trigger_col,
-        queue_col,
-        last_ran_col,
-        runs_col,
-        menu_el
-    ]
-    .spacing(0)
-    .align_y(iced::alignment::Vertical::Center);
+    let inner = row![stripe, body].spacing(0).width(Length::Fill);
 
     let action_id = summary.id;
-    button(container(inner_row).width(Length::Fill).padding([8, 16]))
-        .on_press(Message::Navigate(Screen::ActionEditor(action_id)))
+    button(inner)
+        .on_press(Message::Actions(ActionsMsg::ActionSelected(action_id)))
         .padding(0)
         .width(Length::Fill)
         .style(move |_theme: &iced::Theme, status| {
             let bg_color = match (selected, status) {
-                (true, _) => p.surface_overlay,
-                (false, iced::widget::button::Status::Hovered) => iced::Color {
-                    a: 0.5,
-                    ..p.surface_overlay
-                },
-                _ => p.base,
+                (true, _) | (false, iced::widget::button::Status::Hovered) => p.base,
+                _ => iced::Color::TRANSPARENT,
             };
             iced::widget::button::Style {
                 background: Some(iced::Background::Color(bg_color)),
-                text_color: p.text_primary,
+                text_color: name_color,
                 border: iced::Border {
-                    color: p.border_regular,
-                    width: 0.5,
+                    color: iced::Color::TRANSPARENT,
+                    width: 0.0,
                     radius: 0.0.into(),
                 },
                 shadow: iced::Shadow::default(),
                 snap: false,
             }
+        })
+        .into()
+}
+
+fn actions_detail_panel<'a>(
+    state: &'a crate::actions::ActionsState,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    use iced::widget::{column, container, row, scrollable, text};
+
+    let p = *palette;
+
+    if state.selected.is_none() {
+        return container(forge_widgets::empty_state(
+            "No action selected",
+            "Select an action from the list to view its details.",
+            None::<(&str, Message)>,
+            palette,
+        ))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding([24, 24])
+        .into();
+    }
+
+    let Some(detail) = &state.detail else {
+        return container(text("Loading...").size(FONT_XS).color(p.text_muted))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .padding([24, 24])
+            .into();
+    };
+
+    let action = &detail.action;
+
+    let enabled_dot_color = if action.enabled {
+        p.success
+    } else {
+        p.text_faint
+    };
+    let enabled_dot_size = 5.0_f32;
+    let enabled_dot = container(
+        iced::widget::Space::new()
+            .width(enabled_dot_size)
+            .height(enabled_dot_size),
+    )
+    .width(enabled_dot_size)
+    .height(enabled_dot_size)
+    .style(move |_theme: &iced::Theme| iced::widget::container::Style {
+        background: Some(iced::Background::Color(enabled_dot_color)),
+        border: iced::Border {
+            radius: (enabled_dot_size / 2.0).into(),
+            color: iced::Color::TRANSPARENT,
+            width: 0.0,
+        },
+        ..iced::widget::container::Style::default()
+    });
+
+    let status_label = if action.enabled {
+        "Enabled"
+    } else {
+        "Disabled"
+    };
+    let status_badge = container(
+        row![
+            enabled_dot,
+            text(status_label).size(FONT_XS).color(enabled_dot_color)
+        ]
+        .spacing(4)
+        .align_y(iced::alignment::Vertical::Center),
+    )
+    .padding([3, 8])
+    .style(move |_theme: &iced::Theme| iced::widget::container::Style {
+        background: Some(iced::Background::Color(p.shell)),
+        border: iced::Border {
+            color: p.border_regular,
+            width: 0.5,
+            radius: forge_widgets::radius(forge_widgets::Radius::Sm).into(),
+        },
+        ..iced::widget::container::Style::default()
+    });
+
+    let name_el = text(&action.name)
+        .size(FONT_LG)
+        .color(p.text_primary)
+        .font(iced::Font {
+            weight: iced::font::Weight::Medium,
+            ..iced::Font::DEFAULT
+        });
+
+    let name_row = row![name_el, status_badge]
+        .spacing(10)
+        .align_y(iced::alignment::Vertical::Center);
+
+    let test_btn = forge_widgets::ghost_button(
+        "Test run",
+        Message::Actions(ActionsMsg::TestTrigger(action.id)),
+        palette,
+    );
+    let dup_btn = forge_widgets::ghost_button(
+        "Duplicate",
+        Message::Actions(ActionsMsg::DuplicateAction(action.id)),
+        palette,
+    );
+    let action_btns = row![test_btn, dup_btn].spacing(6);
+
+    let header_row = row![container(name_row).width(Length::Fill), action_btns,]
+        .spacing(8)
+        .align_y(iced::alignment::Vertical::Top);
+
+    let mut detail_col = column![header_row].spacing(0);
+
+    if let Some(desc) = &action.description {
+        let desc_el = text(desc.as_str()).size(FONT_XS).color(p.text_muted);
+        detail_col = detail_col.push(container(desc_el).padding([4, 0]));
+    }
+
+    detail_col = detail_col.push(iced::widget::Space::new().height(14.0));
+
+    if state.telemetry_loading {
+        let placeholder =
+            crate::actions::telemetry_grid(&forge_storage::ActionTelemetry::default(), palette);
+        detail_col = detail_col.push(placeholder);
+        detail_col = detail_col.push(iced::widget::Space::new().height(18.0));
+    } else if let Some(tel) = &state.telemetry {
+        let grid = crate::actions::telemetry_grid(tel, palette);
+        detail_col = detail_col.push(grid);
+        detail_col = detail_col.push(iced::widget::Space::new().height(18.0));
+    }
+
+    if !detail.triggers.is_empty() {
+        detail_col = detail_col.push(forge_widgets::section_header("TRIGGERS", None, palette));
+        detail_col = detail_col.push(iced::widget::Space::new().height(8.0));
+        for trigger in &detail.triggers {
+            let kind_str = crate::actions::trigger_label_of(&trigger.kind);
+            let trigger_row = container(
+                row![
+                    tabler_icon(Icon::Bolt, FONT_XS, p.brand),
+                    text(kind_str).size(FONT_XS).color(p.text_secondary),
+                ]
+                .spacing(6)
+                .align_y(iced::alignment::Vertical::Center),
+            )
+            .padding([5, 8])
+            .style(move |_theme: &iced::Theme| iced::widget::container::Style {
+                background: Some(iced::Background::Color(p.shell)),
+                border: iced::Border {
+                    color: p.border_regular,
+                    width: 0.5,
+                    radius: forge_widgets::radius(forge_widgets::Radius::Sm).into(),
+                },
+                ..iced::widget::container::Style::default()
+            });
+            detail_col = detail_col.push(trigger_row);
+            detail_col = detail_col.push(iced::widget::Space::new().height(4.0));
+        }
+        detail_col = detail_col.push(iced::widget::Space::new().height(14.0));
+    }
+
+    if !action.sub_actions.is_empty() {
+        let sub_count_str = format!(
+            "SUB-ACTIONS ({} step{})",
+            action.sub_actions.len(),
+            if action.sub_actions.len() == 1 {
+                ""
+            } else {
+                "s"
+            }
+        );
+        detail_col = detail_col.push(forge_widgets::section_header(sub_count_str, None, palette));
+        detail_col = detail_col.push(iced::widget::Space::new().height(8.0));
+        for (i, spec) in action.sub_actions.iter().enumerate() {
+            let step_label = format!("{}. {}", i + 1, spec.kind_label());
+            let step_row = container(text(step_label).size(FONT_XS).color(p.text_secondary))
+                .padding([5, 8])
+                .style(move |_theme: &iced::Theme| iced::widget::container::Style {
+                    background: Some(iced::Background::Color(p.shell)),
+                    border: iced::Border {
+                        color: p.border_regular,
+                        width: 0.5,
+                        radius: forge_widgets::radius(forge_widgets::Radius::Sm).into(),
+                    },
+                    ..iced::widget::container::Style::default()
+                });
+            detail_col = detail_col.push(step_row);
+            detail_col = detail_col.push(iced::widget::Space::new().height(4.0));
+        }
+    }
+
+    container(scrollable(container(detail_col).padding([18, 24])).height(Length::Fill))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .style(move |_theme: &iced::Theme| iced::widget::container::Style {
+            background: Some(iced::Background::Color(p.elevated)),
+            ..iced::widget::container::Style::default()
         })
         .into()
 }
@@ -6032,6 +6102,45 @@ mod tests {
             Message::Actions(ActionsMsg::DetailLoaded(Err("not found".into()))),
         );
         assert!(app.actions.detail.is_none());
+    }
+
+    #[test]
+    fn telemetry_loaded_ok_stores_and_clears_loading() {
+        let mut app = App::default();
+        app.actions.telemetry_loading = true;
+        let t = forge_storage::ActionTelemetry {
+            runs_today: 42,
+            ..Default::default()
+        };
+        let _ = update(
+            &mut app,
+            Message::Actions(ActionsMsg::TelemetryLoaded(Ok(t.clone()))),
+        );
+        assert!(!app.actions.telemetry_loading);
+        assert_eq!(app.actions.telemetry.as_ref().unwrap().runs_today, 42);
+    }
+
+    #[test]
+    fn telemetry_loaded_err_clears_loading_and_data() {
+        let mut app = App::default();
+        app.actions.telemetry_loading = true;
+        app.actions.telemetry = Some(forge_storage::ActionTelemetry::default());
+        let _ = update(
+            &mut app,
+            Message::Actions(ActionsMsg::TelemetryLoaded(Err("timeout".into()))),
+        );
+        assert!(!app.actions.telemetry_loading);
+        assert!(app.actions.telemetry.is_none());
+    }
+
+    #[test]
+    fn action_selected_sets_telemetry_loading_true() {
+        use forge_types::ActionId;
+        let mut app = App::default();
+        let id = ActionId::new();
+        let _ = update(&mut app, Message::Actions(ActionsMsg::ActionSelected(id)));
+        assert!(app.actions.telemetry_loading);
+        assert!(app.actions.telemetry.is_none());
     }
 
     #[test]

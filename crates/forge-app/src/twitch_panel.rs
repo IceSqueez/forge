@@ -11,7 +11,7 @@ use forge_storage::{CredentialId, CredentialsRepo};
 use forge_types::OAuthToken;
 use forge_widgets::ForgePalette;
 use forge_widgets::icons::{Icon, tabler_icon};
-use forge_widgets::tokens::{FONT_BODY, FONT_SM, FONT_XS, FontRole, font};
+use forge_widgets::tokens::{FONT_SM, FONT_XS, FontRole, font};
 use tokio::sync::Mutex as TokioMutex;
 
 use crate::Message;
@@ -214,7 +214,7 @@ fn twitch_header_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     });
 
     let title_col = column![
-        text("Twitch").size(FONT_BODY).color(palette.text_primary),
+        text("Twitch").size(FONT_SM).color(palette.text_primary),
         text("Connect to enable chat, subs, bits, raids, channel points, and EventSub")
             .size(FONT_SM)
             .color(palette.text_muted),
@@ -236,7 +236,7 @@ fn flow_intro<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     let title_row = row![
         tabler_icon(Icon::Lock, 14.0, palette.brand),
         text("Authorize Forge on Twitch")
-            .size(FONT_BODY)
+            .size(FONT_SM)
             .color(palette.text_primary),
     ]
     .spacing(8.0)
@@ -482,14 +482,19 @@ fn step_circle<'a>(n: u8, active: bool, palette: &'a ForgePalette) -> Element<'a
     } else {
         (palette.surface_overlay, palette.text_primary)
     };
-    container(text(n.to_string()).size(11.0).color(fg).font(iced::Font {
-        weight: if active {
-            iced::font::Weight::Semibold
-        } else {
-            iced::font::Weight::Medium
-        },
-        ..iced::Font::DEFAULT
-    }))
+    container(
+        text(n.to_string())
+            .size(FONT_XS)
+            .color(fg)
+            .font(iced::Font {
+                weight: if active {
+                    iced::font::Weight::Semibold
+                } else {
+                    iced::font::Weight::Medium
+                },
+                ..iced::Font::DEFAULT
+            }),
+    )
     .width(24.0)
     .height(24.0)
     .align_x(Alignment::Center)
@@ -687,7 +692,7 @@ fn scopes_preview_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
 fn scope_pill<'a>(scope: &'a str, palette: &'a ForgePalette) -> Element<'a, Message> {
     container(
         text(scope)
-            .size(10.0)
+            .size(FONT_XS)
             .color(palette.success)
             .font(font(FontRole::Monospace)),
     )

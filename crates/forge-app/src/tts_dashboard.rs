@@ -448,7 +448,7 @@ fn queue_item_row<'a>(
         };
         container(
             text(bits_label)
-                .size(9.0)
+                .size(FONT_XS)
                 .color(palette.shell)
                 .font(font(FontRole::Monospace)),
         )
@@ -647,7 +647,7 @@ fn engine_card<'a>(
             ]
             .align_y(Alignment::Center),
             text(meta)
-                .size(10.0)
+                .size(FONT_XS)
                 .color(palette.text_muted)
                 .font(font(FontRole::Monospace)),
         ]

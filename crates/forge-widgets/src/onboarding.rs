@@ -7,8 +7,8 @@ use crate::{
     buttons::{ghost_button, primary_button_with_icon_right, secondary_button},
     palette::ForgePalette,
     tokens::{
-        BORDER_THIN, FONT_BODY, FONT_DEVICE_CODE, FONT_LG, FONT_SM, FONT_XS, FontRole, Radius,
-        Spacing, font, radius, spacing,
+        BORDER_THIN, FONT_DEVICE_CODE, FONT_LG, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font,
+        radius, spacing,
     },
 };
 
@@ -93,10 +93,8 @@ fn disabled_primary_button<'a, Msg: 'a>(
 
     container(
         row![
-            text(label).size(FONT_BODY).color(text_color),
-            text(icon_char.to_string())
-                .size(FONT_BODY)
-                .color(text_color),
+            text(label).size(FONT_SM).color(text_color),
+            text(icon_char.to_string()).size(FONT_SM).color(text_color),
         ]
         .spacing(f32::from(gap)),
     )
@@ -182,7 +180,7 @@ pub fn onboarding_stepper<'a, Msg: 'a>(
         let dot = badge_circle(dot_inner, 22.0, dot_bg);
 
         let text_col = column![
-            text(info.label).size(FONT_BODY).color(label_color),
+            text(info.label).size(FONT_SM).color(label_color),
             text(info.sublabel).size(FONT_XS).color(sublabel_color),
         ]
         .spacing(2);
@@ -302,7 +300,7 @@ pub fn platform_picker_card<'a, Msg: Clone + 'a>(
         palette.border_regular
     };
 
-    let icon_box = container(text(letter).size(18.0).color(palette.shell))
+    let icon_box = container(text(letter).size(FONT_LG).color(palette.shell))
         .width(34.0)
         .height(34.0)
         .align_x(Alignment::Center)
@@ -317,7 +315,7 @@ pub fn platform_picker_card<'a, Msg: Clone + 'a>(
         });
 
     let title_row = column![
-        text(name).size(FONT_BODY).color(palette.text_primary),
+        text(name).size(FONT_SM).color(palette.text_primary),
         text(subtitle).size(FONT_XS).color(palette.text_muted),
     ]
     .spacing(2);
@@ -336,7 +334,7 @@ pub fn platform_picker_card<'a, Msg: Clone + 'a>(
         .into();
 
     let check_overlay: Element<'a, Msg> = if selected {
-        let check_inner: Element<'a, Msg> = text("✓").size(11.0).color(palette.shell).into();
+        let check_inner: Element<'a, Msg> = text("✓").size(FONT_XS).color(palette.shell).into();
         let check_circle = badge_circle(check_inner, 18.0, palette.brand);
 
         container(check_circle)
@@ -385,7 +383,7 @@ pub fn locale_tip_card<'a, Msg: Clone + 'a>(
         text_block = text_block.push(ghost_button(label, msg, palette));
     }
 
-    let content = row![text("ⓘ").size(14.0).color(palette.info), text_block,]
+    let content = row![text("ⓘ").size(FONT_SM).color(palette.info), text_block,]
         .spacing(f32::from(spacing(
             Spacing::Sm,
             crate::tokens::Density::Cozy,
@@ -495,7 +493,7 @@ pub fn device_code_display<'a, Msg: Clone + 'a>(
         });
 
     let copy_content = column![
-        text("⎘").size(18.0).color(palette.text_secondary),
+        text("⎘").size(FONT_LG).color(palette.text_secondary),
         text("Copy").size(FONT_XS).color(palette.text_muted),
     ]
     .spacing(4)
@@ -548,9 +546,9 @@ pub fn expiration_timer<'a, Msg: Clone + 'a>(
     };
 
     row![
-        text("⏱").size(FONT_BODY).color(color),
-        text(timer_text).size(FONT_BODY).color(color),
-        text("·").size(FONT_BODY).color(palette.text_faint),
+        text("⏱").size(FONT_SM).color(color),
+        text(timer_text).size(FONT_SM).color(color),
+        text("·").size(FONT_SM).color(palette.text_faint),
         ghost_button(refresh_label, on_refresh, palette),
     ]
     .spacing(f32::from(spacing(
@@ -590,12 +588,9 @@ pub fn live_status_banner<'a, Msg: 'a>(
     let dot: Element<'a, Msg> = badge_circle(iced::widget::Space::new().into(), 8.0, dot_color);
 
     let mut content_col = column![
-        row![
-            dot,
-            text(message).size(FONT_BODY).color(palette.text_primary)
-        ]
-        .spacing(10)
-        .align_y(Alignment::Center),
+        row![dot, text(message).size(FONT_SM).color(palette.text_primary)]
+            .spacing(10)
+            .align_y(Alignment::Center),
     ];
 
     if let Some(hint_text) = hint {
@@ -637,13 +632,13 @@ pub fn numbered_box_step<'a, Msg: 'a>(
     };
 
     let badge_inner: Element<'a, Msg> = text(number.to_string())
-        .size(FONT_BODY)
+        .size(FONT_SM)
         .color(badge_fg)
         .into();
     let badge = badge_circle(badge_inner, 28.0, badge_bg);
 
     let text_col = column![
-        text(title).size(FONT_BODY).color(palette.text_primary),
+        text(title).size(FONT_SM).color(palette.text_primary),
         text(body).size(FONT_SM).color(palette.text_muted),
     ]
     .spacing(4);

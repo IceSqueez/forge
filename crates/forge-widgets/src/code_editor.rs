@@ -5,7 +5,7 @@ use iced::{
 
 use crate::{
     ForgePalette,
-    tokens::{FONT_BODY, FONT_XS, FontRole, font},
+    tokens::{FONT_SM, FONT_XS, FontRole, font},
 };
 
 pub struct CodeEditorState {
@@ -99,7 +99,7 @@ pub fn code_editor<'a, Msg: Clone + 'a>(
     let editor = text_editor(&state.content)
         .on_action(on_action)
         .font(mono)
-        .size(FONT_BODY)
+        .size(FONT_SM)
         .height(Length::Fill)
         .style(move |_: &iced::Theme, _status| text_editor::Style {
             background: Background::Color(base),

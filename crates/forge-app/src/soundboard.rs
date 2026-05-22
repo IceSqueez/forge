@@ -8,8 +8,7 @@ use forge_storage_sqlite::SqliteBackend;
 use forge_types::{ClipId, OutputDevice};
 use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::tokens::{
-    BORDER_THIN, Density, FONT_BODY, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius,
-    spacing,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spacing,
 };
 use forge_widgets::{ClipCardData, DeviceLabel, ForgePalette, clip_card, output_device_picker};
 use iced::widget::{button, column, container, row, scrollable, text, text_input};
@@ -413,7 +412,7 @@ fn add_clip_modal<'a>(modal: &'a AddClipModal, palette: &'a ForgePalette) -> Ele
     } else {
         "Add clip"
     })
-    .size(FONT_BODY)
+    .size(FONT_SM)
     .color(palette.text_primary)
     .font(font(FontRole::Body));
 
@@ -673,7 +672,7 @@ pub fn soundboard_view<'a>(
     let header = row![
         tabler_icon(Icon::Music, 14.0, palette.bits),
         text("Soundboard")
-            .size(FONT_BODY)
+            .size(FONT_SM)
             .color(palette.text_primary)
             .font(font(FontRole::Body))
             .width(Length::Fill),
@@ -704,9 +703,7 @@ pub fn soundboard_view<'a>(
         container(
             column![
                 tabler_icon(Icon::Music, 24.0, palette.text_faint),
-                text("No clips yet")
-                    .size(FONT_BODY)
-                    .color(palette.text_muted),
+                text("No clips yet").size(FONT_SM).color(palette.text_muted),
                 text("Click \u{201c}Add clip\u{201d} to add your first sound.")
                     .size(FONT_SM)
                     .color(palette.text_faint),

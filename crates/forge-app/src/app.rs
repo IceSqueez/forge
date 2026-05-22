@@ -2988,7 +2988,7 @@ fn settings_diagnostics_pane(palette: &ForgePalette) -> Element<'static, Message
     .spacing(12);
 
     let log_path_label = iced::widget::text(format!("Log directory: {}", log_dir.display()))
-        .size(11.5)
+        .size(FONT_SM)
         .color(palette.text_muted);
     let open_logs_btn = forge_widgets::primary_button(
         "Open log directory",
@@ -2997,13 +2997,13 @@ fn settings_diagnostics_pane(palette: &ForgePalette) -> Element<'static, Message
     );
     let level_label =
         iced::widget::text("Log level: controlled via RUST_LOG env var (e.g. info, debug, trace).")
-            .size(11.5)
+            .size(FONT_SM)
             .color(palette.text_muted);
 
     let logs_card = forge_widgets::card(
         [
             iced::widget::text("Logs & diagnostics")
-                .size(14.0)
+                .size(FONT_SM)
                 .color(palette.text_primary)
                 .into(),
             log_path_label.into(),
@@ -3023,7 +3023,7 @@ fn settings_diagnostics_pane(palette: &ForgePalette) -> Element<'static, Message
 fn settings_storage_pane(palette: &ForgePalette) -> Element<'static, Message> {
     let db_path = forge_platform_core::paths::data_dir().join("forge.db");
     let path_label = iced::widget::text(format!("Database: {}", db_path.display()))
-        .size(11.5)
+        .size(FONT_SM)
         .color(palette.text_muted);
 
     let vacuum_btn = forge_widgets::primary_button(
@@ -3034,7 +3034,7 @@ fn settings_storage_pane(palette: &ForgePalette) -> Element<'static, Message> {
     let vacuum_hint = iced::widget::text(
         "Writes a vacuumed snapshot to a temp file; useful before manual backups.",
     )
-    .size(11.0)
+    .size(FONT_XS)
     .color(palette.text_faint);
 
     let backup_btn = forge_widgets::primary_button(
@@ -3043,13 +3043,13 @@ fn settings_storage_pane(palette: &ForgePalette) -> Element<'static, Message> {
         palette,
     );
     let backup_hint = iced::widget::text("Creates a timestamped DB copy in the data directory.")
-        .size(11.0)
+        .size(FONT_XS)
         .color(palette.text_faint);
 
     let storage_card = forge_widgets::card(
         [
             iced::widget::text("Storage & backups")
-                .size(14.0)
+                .size(FONT_SM)
                 .color(palette.text_primary)
                 .into(),
             path_label.into(),
@@ -3078,17 +3078,17 @@ fn settings_queues_pane(palette: &ForgePalette) -> Element<'static, Message> {
     let card = forge_widgets::card(
         [
             iced::widget::text("Queues & threading")
-                .size(14.0)
+                .size(FONT_SM)
                 .color(palette.text_primary)
                 .into(),
             iced::widget::text(thread_hint)
-                .size(11.5)
+                .size(FONT_SM)
                 .color(palette.text_muted)
                 .into(),
             iced::widget::text(
                 "Per-queue concurrency limits and blocking flags are managed on the Queues screen.",
             )
-            .size(11.0)
+            .size(FONT_XS)
             .color(palette.text_faint)
             .into(),
         ],
@@ -3105,14 +3105,14 @@ fn settings_notifications_pane(palette: &ForgePalette) -> Element<'static, Messa
     let card = forge_widgets::card(
         [
             iced::widget::text("Notifications")
-                .size(14.0)
+                .size(FONT_SM)
                 .color(palette.text_primary)
                 .into(),
             iced::widget::text(
                 "Per-event-type toast customisation lands in beta-2. Errors and connection \
                  changes always surface in the status bar.",
             )
-            .size(11.5)
+            .size(FONT_SM)
             .color(palette.text_muted)
             .into(),
         ],
@@ -3155,11 +3155,11 @@ fn twitch_platform_card<'a>(
         ChatConnectionState::Reconnecting { .. } => "Retrying connection...",
         ChatConnectionState::Disconnected => "Not connected",
     })
-    .size(11.5)
+    .size(FONT_SM)
     .color(palette.text_muted);
 
     let expiry_text = iced::widget::text(format_token_expiry(token_expires))
-        .size(11.0)
+        .size(FONT_XS)
         .color(palette.text_faint);
 
     let reconnect_btn = forge_widgets::primary_button(
@@ -3170,7 +3170,7 @@ fn twitch_platform_card<'a>(
 
     let header_row = iced::widget::row![
         iced::widget::text("Twitch")
-            .size(14.0)
+            .size(FONT_SM)
             .color(palette.text_primary),
         iced::widget::Space::new().width(Length::Fill),
         pill,
@@ -3215,7 +3215,7 @@ fn coming_platform_card<'a>(
 ) -> Element<'a, Message> {
     let header_row = iced::widget::row![
         iced::widget::text(name)
-            .size(14.0)
+            .size(FONT_SM)
             .color(palette.text_muted),
         iced::widget::Space::new().width(Length::Fill),
         forge_widgets::status_pill(
@@ -3228,7 +3228,7 @@ fn coming_platform_card<'a>(
     .spacing(8);
 
     let note = iced::widget::text(since)
-        .size(11.5)
+        .size(FONT_SM)
         .color(palette.text_faint);
 
     forge_widgets::card([header_row.into(), note.into()], palette)
@@ -3261,7 +3261,7 @@ fn nav_group_header<'a>(label: &'a str, palette: &'a ForgePalette) -> Element<'a
         .font(forge_widgets::tokens::font(
             forge_widgets::tokens::FontRole::Monospace,
         ))
-        .size(forge_widgets::tokens::FONT_XS)
+        .size(FONT_XS)
         .color(palette.text_faint)
         .into()
 }
@@ -3372,7 +3372,7 @@ fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Mess
 
     if actions_state.loading {
         body_col = body_col.push(
-            container(text("Loading...").size(12.0).color(p.text_muted))
+            container(text("Loading...").size(FONT_XS).color(p.text_muted))
                 .padding([16, 16])
                 .width(Length::Fill),
         );
@@ -3445,32 +3445,32 @@ fn actions_stat_strip<'a>(
     let p = *palette;
     let total_el = row![
         text(total.to_string())
-            .size(11.5)
+            .size(FONT_SM)
             .color(p.text_primary)
             .font(forge_widgets::font(forge_widgets::FontRole::Monospace)),
-        text(" total").size(11.5).color(p.text_muted),
+        text(" total").size(FONT_SM).color(p.text_muted),
     ]
     .spacing(0);
 
-    let sep1 = text(" \u{00b7} ").size(11.5).color(p.text_faint);
+    let sep1 = text(" \u{00b7} ").size(FONT_SM).color(p.text_faint);
 
     let enabled_el = row![
         text(enabled.to_string())
-            .size(11.5)
+            .size(FONT_SM)
             .color(p.success)
             .font(forge_widgets::font(forge_widgets::FontRole::Monospace)),
-        text(" enabled").size(11.5).color(p.text_muted),
+        text(" enabled").size(FONT_SM).color(p.text_muted),
     ]
     .spacing(0);
 
-    let sep2 = text(" \u{00b7} ").size(11.5).color(p.text_faint);
+    let sep2 = text(" \u{00b7} ").size(FONT_SM).color(p.text_faint);
 
     let fired_el = row![
         text("\u{2014}")
-            .size(11.5)
+            .size(FONT_SM)
             .color(p.brand)
             .font(forge_widgets::font(forge_widgets::FontRole::Monospace)),
-        text(" fired today").size(11.5).color(p.text_muted),
+        text(" fired today").size(FONT_SM).color(p.text_muted),
     ]
     .spacing(0);
 
@@ -3526,7 +3526,7 @@ fn actions_toolbar<'a>(
     );
 
     let group_label = text("Group by trigger")
-        .size(10.5)
+        .size(FONT_XS)
         .color(p.text_faint)
         .font(forge_widgets::font(forge_widgets::FontRole::Monospace));
 
@@ -3586,7 +3586,7 @@ fn actions_filter_chip<'a>(
         (None, p.text_secondary)
     };
 
-    let label_el = text(label).size(11.0).color(text_color);
+    let label_el = text(label).size(FONT_XS).color(text_color);
 
     button(container(label_el).padding([4, 10]))
         .on_press(Message::Actions(ActionsMsg::FilterChanged(filter)))
@@ -3613,17 +3613,22 @@ fn actions_table_header<'a>(palette: &'a ForgePalette) -> iced::widget::Containe
     let p = *palette;
     let mono = forge_widgets::font(forge_widgets::FontRole::Monospace);
 
-    let name_col = row![text("NAME").size(10.5).color(p.text_faint).font(mono)]
+    let name_col = row![text("NAME").size(FONT_XS).color(p.text_faint).font(mono)]
         .width(Length::FillPortion(140));
-    let trigger_col = row![text("TRIGGER").size(10.5).color(p.text_faint).font(mono)]
+    let trigger_col = row![text("TRIGGER").size(FONT_XS).color(p.text_faint).font(mono)]
         .width(Length::FillPortion(140));
     let queue_col =
-        row![text("QUEUE").size(10.5).color(p.text_faint).font(mono)].width(Length::Fixed(90.0));
-    let last_ran_col =
-        row![text("LAST RAN").size(10.5).color(p.text_faint).font(mono)].width(Length::Fixed(90.0));
+        row![text("QUEUE").size(FONT_XS).color(p.text_faint).font(mono)].width(Length::Fixed(90.0));
+    let last_ran_col = row![
+        text("LAST RAN")
+            .size(FONT_XS)
+            .color(p.text_faint)
+            .font(mono)
+    ]
+    .width(Length::Fixed(90.0));
     let runs_col = row![
         text("RUNS \u{00b7} 24H")
-            .size(10.5)
+            .size(FONT_XS)
             .color(p.text_faint)
             .font(mono)
     ]
@@ -3674,7 +3679,7 @@ fn actions_group_header<'a>(
     let chevron_el = tabler_icon(chevron_icon, 11.0, p.text_faint);
 
     let cat_el = text(group.category.display_name())
-        .size(10.5)
+        .size(FONT_XS)
         .color(p.text_muted)
         .font(forge_widgets::font(forge_widgets::FontRole::Monospace));
 
@@ -3683,7 +3688,7 @@ fn actions_group_header<'a>(
         group.actions.len(),
         group.fired_24h
     );
-    let count_el = text(count_str).size(10.0).color(p.text_faint);
+    let count_el = text(count_str).size(FONT_XS).color(p.text_faint);
 
     let inner = row![chevron_el, cat_el, count_el]
         .spacing(8)
@@ -3760,7 +3765,10 @@ fn actions_row<'a>(
         p.text_extreme_faint
     };
 
-    let name_el = text(&summary.name).size(12.0).color(name_color).font(mono);
+    let name_el = text(&summary.name)
+        .size(FONT_XS)
+        .color(name_color)
+        .font(mono);
 
     let mut subtitle_parts: Vec<String> = vec![format!(
         "{} sub-action{}",
@@ -3775,14 +3783,14 @@ fn actions_row<'a>(
         subtitle_parts.push(extra.clone());
     }
     let subtitle_str = subtitle_parts.join(" \u{00b7} ");
-    let subtitle_el = text(subtitle_str).size(10.5).color(sub_color);
+    let subtitle_el = text(subtitle_str).size(FONT_XS).color(sub_color);
 
     let name_col = column![name_el, subtitle_el]
         .spacing(2)
         .width(Length::FillPortion(140));
 
     let trigger_label_el = text(&summary.trigger_label)
-        .size(11.0)
+        .size(FONT_XS)
         .color(if summary.enabled {
             p.text_secondary
         } else {
@@ -3795,7 +3803,7 @@ fn actions_row<'a>(
     } else {
         p.text_faint
     };
-    let queue_el = text(&summary.queue_name).size(11.0).color(queue_color);
+    let queue_el = text(&summary.queue_name).size(FONT_XS).color(queue_color);
     let queue_col = container(queue_el).width(Length::Fixed(90.0));
 
     let last_ran_str = match &summary.last_ran {
@@ -3818,7 +3826,7 @@ fn actions_row<'a>(
         p.text_faint
     };
     let last_ran_el = text(last_ran_str)
-        .size(11.0)
+        .size(FONT_XS)
         .color(last_ran_color)
         .font(mono);
     let last_ran_col = container(last_ran_el).width(Length::Fixed(90.0));
@@ -3829,12 +3837,12 @@ fn actions_row<'a>(
         p.text_faint
     };
     let runs_el = text(summary.runs_24h.to_string())
-        .size(11.0)
+        .size(FONT_XS)
         .color(runs_color)
         .font(mono);
     let runs_col = container(runs_el).width(Length::Fixed(90.0));
 
-    let menu_el = container(text("\u{22ee}").size(13.0).color(p.text_faint))
+    let menu_el = container(text("\u{22ee}").size(FONT_SM).color(p.text_faint))
         .width(Length::Fixed(22.0))
         .align_x(iced::alignment::Horizontal::Center);
 
@@ -3893,10 +3901,10 @@ fn actions_footer<'a>(
         "Showing {} of {} \u{00b7} grouped by trigger",
         visible, total
     );
-    let left_el = text(left_str).size(10.5).color(p.text_faint).font(mono);
+    let left_el = text(left_str).size(FONT_XS).color(p.text_faint).font(mono);
 
     let storage_el = text("Storage: \u{2014}")
-        .size(10.5)
+        .size(FONT_XS)
         .color(p.text_faint)
         .font(mono);
 
@@ -3915,7 +3923,7 @@ fn actions_footer<'a>(
         });
 
     let saved_el = text("Auto-saved just now")
-        .size(10.5)
+        .size(FONT_XS)
         .color(p.text_faint)
         .font(mono);
 
@@ -3950,7 +3958,7 @@ fn add_action_modal_view<'a>(
 
     let name_count = format!("{}/64", form.name.len().min(64));
     let name_counter = text(name_count)
-        .size(10.0)
+        .size(FONT_XS)
         .color(palette.text_faint)
         .font(forge_widgets::font(forge_widgets::FontRole::Monospace));
 
@@ -4115,7 +4123,7 @@ fn add_action_modal_view<'a>(
     let footer: Element<'_, Message> = iced::widget::container(
         row![
             text("ESC to cancel")
-                .size(11.0)
+                .size(FONT_XS)
                 .color(palette.text_faint)
                 .font(forge_widgets::font(forge_widgets::FontRole::Monospace)),
             iced::widget::Space::new().width(Length::Fill),
@@ -4223,7 +4231,7 @@ fn add_trigger_modal_view<'a>(
     if form.selected_kind.is_none() && is_empty {
         grid_col = grid_col.push(
             text("No trigger types match your filter.")
-                .size(11.5)
+                .size(FONT_SM)
                 .color(palette.text_faint),
         );
     }
@@ -4322,7 +4330,7 @@ fn add_trigger_modal_view<'a>(
             _ => {
                 config_col = config_col.push(
                     text("No configuration required for this trigger type.")
-                        .size(12.0)
+                        .size(FONT_XS)
                         .color(palette.text_muted),
                 );
             }
@@ -4373,7 +4381,7 @@ fn add_trigger_modal_view<'a>(
     let footer: Element<'_, Message> = iced::widget::container(
         row![
             text("ESC to cancel")
-                .size(11.0)
+                .size(FONT_XS)
                 .color(palette.text_faint)
                 .font(forge_widgets::font(forge_widgets::FontRole::Monospace)),
             iced::widget::Space::new().width(Length::Fill),
@@ -4507,7 +4515,7 @@ fn add_sub_action_modal_view<'a>(
                 palette,
             );
             let helper = text("Variables: %user%, %message%, %args%")
-                .size(10.5)
+                .size(FONT_XS)
                 .color(palette.warning)
                 .font(forge_widgets::font(forge_widgets::FontRole::Monospace));
             let msg_block = column![
@@ -4573,7 +4581,7 @@ fn add_sub_action_modal_view<'a>(
                 palette,
             );
             let helper = text("Supports variable interpolation")
-                .size(10.5)
+                .size(FONT_XS)
                 .color(palette.warning)
                 .font(forge_widgets::font(forge_widgets::FontRole::Monospace));
             let val_block = column![
@@ -4659,7 +4667,7 @@ fn add_sub_action_modal_view<'a>(
         SubActionKindChoice::PlaySound => {
             if form.available_clips.is_empty() {
                 let hint = text("No clips yet \u{2014} add one in the Soundboard screen first.")
-                    .size(11.5)
+                    .size(FONT_SM)
                     .color(palette.text_muted);
                 column![forge_widgets::section_header("CLIP", None, palette), hint]
                     .spacing(6)
@@ -4751,7 +4759,7 @@ fn add_sub_action_modal_view<'a>(
                     palette,
                 ),
                 text("Sandboxed under data_dir/assets/ · no ../ traversal · max 1 MiB")
-                    .size(10.5)
+                    .size(FONT_XS)
                     .color(palette.text_muted)
                     .font(forge_widgets::font(forge_widgets::FontRole::Monospace)),
             ]
@@ -4835,7 +4843,7 @@ fn add_sub_action_modal_view<'a>(
     let footer: iced::Element<'_, Message> = iced::widget::container(
         row![
             text("ESC to cancel")
-                .size(11.0)
+                .size(FONT_XS)
                 .color(palette.text_faint)
                 .font(forge_widgets::font(forge_widgets::FontRole::Monospace)),
             iced::widget::Space::new().width(Length::Fill),
@@ -4868,25 +4876,29 @@ fn trigger_picker_card<'a>(
     use iced::widget::{button, column, container, row, text};
     use iced::{Alignment, Background, Border, Length};
 
-    let icon_el = container(text('\u{ea21}'.to_string()).size(13.0).color(palette.brand))
-        .width(24)
-        .height(24)
-        .align_x(Alignment::Center)
-        .align_y(Alignment::Center)
-        .style(move |_theme: &iced::Theme| container::Style {
-            background: Some(Background::Color(palette.surface_overlay)),
-            border: Border {
-                radius: forge_widgets::radius(forge_widgets::Radius::Sm).into(),
-                color: iced::Color::TRANSPARENT,
-                width: 0.0,
-            },
-            ..container::Style::default()
-        });
+    let icon_el = container(
+        text('\u{ea21}'.to_string())
+            .size(FONT_SM)
+            .color(palette.brand),
+    )
+    .width(24)
+    .height(24)
+    .align_x(Alignment::Center)
+    .align_y(Alignment::Center)
+    .style(move |_theme: &iced::Theme| container::Style {
+        background: Some(Background::Color(palette.surface_overlay)),
+        border: Border {
+            radius: forge_widgets::radius(forge_widgets::Radius::Sm).into(),
+            color: iced::Color::TRANSPARENT,
+            width: 0.0,
+        },
+        ..container::Style::default()
+    });
 
     let label_col = column![
-        text(label).size(12.5).color(palette.text_primary),
+        text(label).size(FONT_SM).color(palette.text_primary),
         text(summary)
-            .size(11.0)
+            .size(FONT_XS)
             .color(palette.text_muted)
             .font(forge_widgets::font(forge_widgets::FontRole::Monospace)),
     ]

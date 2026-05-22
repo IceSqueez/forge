@@ -6,7 +6,7 @@ use iced::{
 };
 
 use crate::palette::ForgePalette;
-use crate::tokens::{FONT_XS, FontRole, Radius, font, radius};
+use crate::tokens::{FONT_MD, FONT_SM, FONT_XS, FontRole, Radius, font, radius};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ToastVariant {
@@ -116,8 +116,10 @@ pub fn empty_state<'a, Msg: 'a + Clone>(
     let body_str: Cow<'a, str> = body.into();
 
     let mut col = column![
-        text(headline_str).size(16).color(palette.text_secondary),
-        text(body_str).size(13).color(palette.text_muted),
+        text(headline_str)
+            .size(FONT_MD)
+            .color(palette.text_secondary),
+        text(body_str).size(FONT_SM).color(palette.text_muted),
     ]
     .spacing(6)
     .align_x(Alignment::Center);
@@ -148,7 +150,7 @@ pub fn toast_banner<'a, Msg: 'a + Clone>(
 
     let message_str: Cow<'a, str> = message.into();
 
-    let dismiss_btn = iced::widget::button(text("✕").size(12).color(palette.text_muted))
+    let dismiss_btn = iced::widget::button(text("✕").size(FONT_XS).color(palette.text_muted))
         .on_press(on_dismiss)
         .padding([2, 6])
         .style(
@@ -168,7 +170,7 @@ pub fn toast_banner<'a, Msg: 'a + Clone>(
                 background: Some(iced::Background::Color(accent)),
                 ..container::Style::default()
             }),
-        container(text(message_str).size(13).color(palette.text_primary))
+        container(text(message_str).size(FONT_SM).color(palette.text_primary))
             .padding([12, 12])
             .width(iced::Length::Fill),
         container(dismiss_btn).padding([8, 8]),
@@ -202,7 +204,7 @@ pub fn counter_badge<'a, Msg: 'a>(count: u32, palette: &ForgePalette) -> Element
     };
     let text_color = palette.brand;
 
-    container(text(label).size(11).color(text_color))
+    container(text(label).size(FONT_XS).color(text_color))
         .padding([2, 6])
         .style(move |_theme: &iced::Theme| container::Style {
             background: Some(iced::Background::Color(bg)),

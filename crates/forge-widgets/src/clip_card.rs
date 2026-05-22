@@ -6,8 +6,7 @@ use iced::{
 use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
 use crate::tokens::{
-    BORDER_THIN, Density, FONT_BODY, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius,
-    spacing,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spacing,
 };
 
 pub struct ClipCardData {
@@ -67,7 +66,7 @@ pub fn clip_card<'a, Msg: 'a + Clone>(
 ) -> Element<'a, Msg> {
     let p = *palette;
     let name_row = text(data.name.as_str())
-        .size(FONT_BODY)
+        .size(FONT_SM)
         .color(palette.text_primary)
         .font(font(FontRole::Body));
 

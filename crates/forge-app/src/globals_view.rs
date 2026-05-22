@@ -4,7 +4,7 @@ use std::sync::Arc;
 use forge_storage::{GlobalEntry, GlobalsExport, GlobalsRepo, StorageError};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::Variant;
-use forge_widgets::tokens::{FONT_BODY, FONT_SM, FONT_XS};
+use forge_widgets::tokens::{FONT_SM, FONT_XS};
 use forge_widgets::{
     BannerKind, FontRole, FooterProps, ForgePalette, ModalProps, ToggleProps, VariantKind,
     category_chip, data_screen_footer, data_table, empty_state, font, live_status_banner, modal,
@@ -701,31 +701,31 @@ fn globals_stats_header<'a>(
     let success = palette.success;
     let warning = palette.warning;
 
-    let label = text("Global variables").size(FONT_BODY).color(primary);
+    let label = text("Global variables").size(FONT_SM).color(primary);
 
     let total_part = row![
-        text(total.to_string()).size(FONT_BODY).color(primary),
-        text(" total").size(FONT_BODY).color(muted),
+        text(total.to_string()).size(FONT_SM).color(primary),
+        text(" total").size(FONT_SM).color(muted),
     ]
     .spacing(0);
 
     let persisted_part = row![
-        text(persisted.to_string()).size(FONT_BODY).color(success),
-        text(" persisted").size(FONT_BODY).color(muted),
+        text(persisted.to_string()).size(FONT_SM).color(success),
+        text(" persisted").size(FONT_SM).color(muted),
     ]
     .spacing(0);
 
     let session_part = row![
-        text(session.to_string()).size(FONT_BODY).color(warning),
-        text(" in-memory").size(FONT_BODY).color(muted),
+        text(session.to_string()).size(FONT_SM).color(warning),
+        text(" in-memory").size(FONT_SM).color(muted),
     ]
     .spacing(0);
 
     let stats = row![
         total_part,
-        text(" · ").size(FONT_BODY).color(faint),
+        text(" · ").size(FONT_SM).color(faint),
         persisted_part,
-        text(" · ").size(FONT_BODY).color(faint),
+        text(" · ").size(FONT_SM).color(faint),
         session_part,
     ]
     .spacing(0)
@@ -974,7 +974,7 @@ fn variant_editor_modal_view<'a>(
 
     let name_count = format!("{}/64", form.name.len().min(64));
     let name_counter = text(name_count)
-        .size(10.0)
+        .size(FONT_XS)
         .color(palette.text_faint)
         .font(font(FontRole::Monospace));
     let name_input = forge_widgets::text_input_field(

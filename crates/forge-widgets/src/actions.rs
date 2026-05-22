@@ -5,9 +5,7 @@ use iced::{
 
 use crate::chat::filter_chip;
 use crate::palette::ForgePalette;
-use crate::tokens::{
-    BORDER_THIN, FONT_BODY, FONT_MD, FONT_SM, FONT_XS, FontRole, Radius, font, radius,
-};
+use crate::tokens::{BORDER_THIN, FONT_MD, FONT_SM, FONT_XS, FontRole, Radius, font, radius};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NodeStatus {
@@ -89,7 +87,7 @@ pub fn tree_node_with_status<'a, Msg: Clone + 'a>(
     };
 
     let label_el = text(props.label)
-        .size(FONT_BODY)
+        .size(FONT_SM)
         .color(label_color)
         .font(font(FontRole::Body));
 
@@ -136,7 +134,7 @@ pub fn sub_action_card<'a, Msg: 'a>(
     let icon_color = palette.brand;
     let icon_el = container(
         text(props.icon_char.to_string())
-            .size(14.0)
+            .size(FONT_SM)
             .color(icon_color)
             .font(font(FontRole::Body)),
     )
@@ -155,7 +153,7 @@ pub fn sub_action_card<'a, Msg: 'a>(
     });
 
     let kind_el = text(props.kind_label)
-        .size(FONT_BODY)
+        .size(FONT_SM)
         .color(palette.text_primary)
         .font(font(FontRole::Body));
 
@@ -243,7 +241,7 @@ pub fn trigger_card<'a, Msg: Clone + 'a>(
 ) -> Element<'a, Msg> {
     let icon_el = container(
         text(props.icon_char.to_string())
-            .size(14.0)
+            .size(FONT_SM)
             .color(palette.brand)
             .font(font(FontRole::Body)),
     )
@@ -262,7 +260,7 @@ pub fn trigger_card<'a, Msg: Clone + 'a>(
     });
 
     let kind_el = text(props.kind_label)
-        .size(FONT_BODY)
+        .size(FONT_SM)
         .color(palette.text_primary)
         .font(font(FontRole::Body));
 
@@ -276,7 +274,7 @@ pub fn trigger_card<'a, Msg: Clone + 'a>(
     let remove_msg = props.on_remove.clone();
     let remove_btn = button(
         text("\u{00d7}")
-            .size(14.0)
+            .size(FONT_SM)
             .color(palette.text_faint)
             .font(font(FontRole::Body)),
     )
@@ -333,7 +331,7 @@ pub fn modal<'a, Msg: Clone + 'a>(
 
     let close_btn = button(
         text("\u{00d7}")
-            .size(16.0)
+            .size(FONT_MD)
             .color(palette.text_faint)
             .font(font(FontRole::Body)),
     )
@@ -477,7 +475,7 @@ pub fn toggle<'a, Msg: Clone + 'a>(
         });
 
     let label_el = text(props.label)
-        .size(FONT_BODY)
+        .size(FONT_SM)
         .color(palette.text_primary)
         .font(font(FontRole::Body));
 

@@ -5,7 +5,7 @@ use iced::{
 
 use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
-use crate::tokens::{FONT_BODY, FONT_SM, FONT_XS, FontRole, Radius, font, radius};
+use crate::tokens::{FONT_SM, FONT_XS, FontRole, Radius, font, radius};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BadgeKind {
@@ -830,7 +830,7 @@ fn platform_target_button<'a, Msg: Clone + 'a>(
     };
 
     let content = text(letter)
-        .size(9.0)
+        .size(FONT_XS)
         .color(text_color)
         .font(font(FontRole::Body));
 
@@ -920,7 +920,7 @@ pub fn input_bar<'a, Msg: Clone + 'a>(
         .on_input(on_input)
         .on_submit(on_submit)
         .padding([0, 0])
-        .size(FONT_BODY)
+        .size(FONT_SM)
         .width(Length::Fill)
         .style(move |_theme: &iced::Theme, _status| text_input::Style {
             background: Background::Color(Color::TRANSPARENT),

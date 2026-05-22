@@ -85,8 +85,6 @@ pub const FONT_SM: f32 = 14.0;
 pub const FONT_MD: f32 = 16.0;
 pub const FONT_LG: f32 = 18.0;
 
-pub const FONT_BODY: f32 = 13.0;
-
 pub const FONT_DEVICE_CODE: f32 = 28.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

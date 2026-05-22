@@ -206,7 +206,7 @@ fn pipeline_stage<'a>(
     let gap_sm = f32::from(spacing(Spacing::Xs, Density::Cozy));
     let badge = container(
         text(number)
-            .size(11.0)
+            .size(FONT_XS)
             .color(palette.shell)
             .font(font(FontRole::Monospace)),
     )
@@ -246,7 +246,7 @@ fn pipeline_stage<'a>(
             .color(palette.text_primary)
             .width(Length::Fill),
         text(subtitle)
-            .size(10.0)
+            .size(FONT_XS)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace)),
     ]
@@ -284,7 +284,7 @@ fn skip_rules_content<'a>(
     gap_sm: f32,
 ) -> Element<'a, Message> {
     fn chip<'b>(label: &'static str, palette: &'b ForgePalette) -> Element<'b, Message> {
-        container(text(label).size(10.5).color(palette.text_primary))
+        container(text(label).size(FONT_XS).color(palette.text_primary))
             .style(move |_| container::Style {
                 background: Some(Background::Color(palette.shell)),
                 border: Border {
@@ -299,7 +299,7 @@ fn skip_rules_content<'a>(
     }
 
     fn add_chip<'b>(palette: &'b ForgePalette) -> Element<'b, Message> {
-        button(text("+ Add rule").size(10.5).color(palette.text_muted))
+        button(text("+ Add rule").size(FONT_XS).color(palette.text_muted))
             .on_press(Message::Tts(TtsMsg::Filters(TtsFiltersMsg::AddRuleClicked)))
             .style(move |_, _| button::Style {
                 background: None,
@@ -348,7 +348,7 @@ fn blocklist_content<'a>(
         palette: &'b ForgePalette,
     ) -> Element<'b, Message> {
         let active = &choice == current;
-        button(text(label).size(10.0))
+        button(text(label).size(FONT_XS))
             .on_press(Message::Tts(TtsMsg::Filters(
                 TtsFiltersMsg::BlocklistModeChanged(choice),
             )))
@@ -482,12 +482,12 @@ fn replacement_rule_row<'a>(
         row![
             badge,
             text(&rule.pattern)
-                .size(11.0)
+                .size(FONT_XS)
                 .color(palette.text_primary)
                 .font(font(FontRole::Monospace)),
-            text("\u{2192}").size(12.0).color(palette.text_muted),
+            text("\u{2192}").size(FONT_XS).color(palette.text_muted),
             text(&rule.replacement)
-                .size(11.0)
+                .size(FONT_XS)
                 .color(palette.success)
                 .font(font(FontRole::Monospace))
                 .width(Length::Fill),
@@ -521,7 +521,7 @@ fn preview_column_view<'a>(
         .font(font(FontRole::Monospace));
 
     let input_label = text("INPUT MESSAGE")
-        .size(10.0)
+        .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
@@ -552,7 +552,7 @@ fn preview_column_view<'a>(
     };
 
     let output_label = text("FINAL OUTPUT")
-        .size(10.0)
+        .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
@@ -611,7 +611,7 @@ fn preview_column_view<'a>(
 
     let tip = container(
         text("Type any message above to see how filters transform it in real time")
-            .size(10.0)
+            .size(FONT_XS)
             .color(palette.text_muted),
     )
     .style(move |_| container::Style {
@@ -684,7 +684,7 @@ fn preview_stage_rows<'a>(
                 }
             };
 
-            let badge = container(text(badge_label).size(9.0).color(palette.shell))
+            let badge = container(text(badge_label).size(FONT_XS).color(palette.shell))
                 .style(move |_| container::Style {
                     background: Some(Background::Color(badge_color)),
                     border: Border {
@@ -701,9 +701,9 @@ fn preview_stage_rows<'a>(
             row![
                 badge,
                 text(format!("{name} \u{2014} "))
-                    .size(10.5)
+                    .size(FONT_XS)
                     .color(palette.text_muted),
-                text(result_label).size(10.5).color(result_color),
+                text(result_label).size(FONT_XS).color(result_color),
             ]
             .align_y(Alignment::Center)
             .spacing(gap_sm)

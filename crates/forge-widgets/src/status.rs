@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use iced::{Border, Color, Element, widget::container};
 
 use crate::palette::ForgePalette;
+use crate::tokens::FONT_XS;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StatusVariant {
@@ -40,7 +41,7 @@ pub fn status_pill<'a, Msg: 'a>(
     let bg = Color { a: 0.18, ..color };
     let label_str: Cow<'a, str> = label.into();
 
-    container(iced::widget::text(label_str).size(11).color(color))
+    container(iced::widget::text(label_str).size(FONT_XS).color(color))
         .padding([4, 12])
         .style(move |_theme: &iced::Theme| container::Style {
             background: Some(iced::Background::Color(bg)),
@@ -77,7 +78,9 @@ pub fn platform_badge<'a, Msg: 'a>(
 
     let row = iced::widget::row![
         dot,
-        iced::widget::text(label_str).size(11).color(text_color),
+        iced::widget::text(label_str)
+            .size(FONT_XS)
+            .color(text_color),
     ]
     .spacing(4)
     .align_y(iced::alignment::Vertical::Center);
@@ -103,18 +106,22 @@ pub fn role_badge<'a, Msg: 'a>(
     let border_color = palette.border_regular;
     let label_str: Cow<'a, str> = label.into();
 
-    container(iced::widget::text(label_str).size(11).color(text_color))
-        .padding([2, 6])
-        .style(move |_theme: &iced::Theme| container::Style {
-            background: None,
-            border: Border {
-                color: border_color,
-                width: 1.0,
-                radius: 3.0.into(),
-            },
-            ..container::Style::default()
-        })
-        .into()
+    container(
+        iced::widget::text(label_str)
+            .size(FONT_XS)
+            .color(text_color),
+    )
+    .padding([2, 6])
+    .style(move |_theme: &iced::Theme| container::Style {
+        background: None,
+        border: Border {
+            color: border_color,
+            width: 1.0,
+            radius: 3.0.into(),
+        },
+        ..container::Style::default()
+    })
+    .into()
 }
 
 #[cfg(test)]

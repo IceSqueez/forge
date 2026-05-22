@@ -6,12 +6,12 @@ use iced::{
 use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
 use crate::status::status_dot;
-use crate::tokens::{BORDER_THIN, FONT_BODY, FONT_XS, FontRole, Radius, font, radius};
+use crate::tokens::{BORDER_THIN, FONT_SM, FONT_XS, FontRole, Radius, font, radius};
 
 fn logo_box<'a, Msg: 'a>(palette: &ForgePalette) -> Element<'a, Msg> {
     let bg = palette.brand;
     let fg = palette.shell;
-    container(text("F").size(10).color(fg).font(iced::Font {
+    container(text("F").size(FONT_XS).color(fg).font(iced::Font {
         weight: iced::font::Weight::Bold,
         ..iced::Font::DEFAULT
     }))
@@ -37,7 +37,7 @@ pub fn title_bar<'a, Msg: 'a>(palette: &'a ForgePalette) -> Element<'a, Msg> {
 
     let logo = logo_box(palette);
     let forge_label = text("Forge")
-        .size(FONT_BODY)
+        .size(FONT_SM)
         .color(text_primary)
         .font(iced::Font {
             weight: iced::font::Weight::Medium,

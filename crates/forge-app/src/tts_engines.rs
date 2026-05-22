@@ -180,7 +180,7 @@ fn engine_list_card<'a>(
         "{} \u{b7} {} voices",
         engine.kind, engine.voice_count
     ))
-    .size(10.0)
+    .size(FONT_XS)
     .color(palette.text_muted)
     .font(font(FontRole::Monospace));
 
@@ -296,7 +296,7 @@ fn engine_detail_header<'a>(
     let default_badge: Element<'a, Message> = if engine.is_default {
         container(
             text("DEFAULT")
-                .size(9.0)
+                .size(FONT_XS)
                 .color(palette.brand)
                 .font(font(FontRole::Monospace)),
         )
@@ -363,7 +363,7 @@ fn credentials_section<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
                 .width(Length::Fill),
             container(
                 text("LOCAL \u{2014} no credentials")
-                    .size(10.0)
+                    .size(FONT_XS)
                     .color(palette.success)
                     .font(font(FontRole::Monospace)),
             )
@@ -480,7 +480,7 @@ fn voices_section<'a>(
         container(
             text_input("Filter voices...", search)
                 .on_input(|_| Message::Noop)
-                .size(10.5)
+                .size(FONT_XS)
                 .width(90)
                 .style(move |_, _| text_input::Style {
                     background: Background::Color(palette.shell),
@@ -543,7 +543,7 @@ fn voice_cell<'a>(voice: &'a EngineVoiceRow, palette: &'a ForgePalette) -> Eleme
                 .size(FONT_SM)
                 .color(palette.text_primary),
             text(meta)
-                .size(9.0)
+                .size(FONT_XS)
                 .color(palette.text_muted)
                 .font(font(FontRole::Monospace)),
         ]

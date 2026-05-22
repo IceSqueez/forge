@@ -7,7 +7,7 @@ use iced::{
 use crate::{
     icons::{Icon, tabler_icon},
     palette::ForgePalette,
-    tokens::{FONT_BODY, FONT_XS, FontRole, Radius, font, radius},
+    tokens::{FONT_SM, FONT_XS, FontRole, Radius, font, radius},
 };
 
 pub fn color_for_source(source: EventSource, palette: &ForgePalette) -> Color {
@@ -501,7 +501,7 @@ pub fn replay_button<'a, Msg: Clone + 'a>(
         a: 0.08,
     };
 
-    let icon = tabler_icon(Icon::Repeat, FONT_BODY, brand);
+    let icon = tabler_icon(Icon::Repeat, FONT_SM, brand);
 
     let label = iced::widget::text("Replay this event")
         .size(FONT_XS)

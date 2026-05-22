@@ -328,7 +328,7 @@ fn queue_card<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Element<'a,
 
 fn queue_card_header<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Element<'a, Message> {
     let name = text(q.name.clone())
-        .size(14.0)
+        .size(FONT_SM)
         .font(font(FontRole::Monospace))
         .color(palette.text_primary);
 
@@ -339,9 +339,9 @@ fn queue_card_header<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Elem
 
     let desc_color = palette.text_secondary;
     let desc = if let Some(d) = &q.description {
-        text(d.clone()).size(11.0).color(desc_color)
+        text(d.clone()).size(FONT_XS).color(desc_color)
     } else {
-        text("").size(11.0).color(desc_color)
+        text("").size(FONT_XS).color(desc_color)
     };
 
     let name_row = row![name, badge]
@@ -361,7 +361,7 @@ fn status_badge<'a>(paused: bool, palette: &'a ForgePalette) -> Element<'a, Mess
         let warning = palette.warning;
         let icon = tabler_icon(Icon::PlayerPause, 9.0, warning);
         let label = text("PAUSED")
-            .size(9.5)
+            .size(FONT_XS)
             .font(font(FontRole::Monospace))
             .color(warning);
         container(
@@ -392,7 +392,7 @@ fn status_badge<'a>(paused: bool, palette: &'a ForgePalette) -> Element<'a, Mess
             }
         });
         let label = text("RUNNING")
-            .size(9.5)
+            .size(FONT_XS)
             .font(font(FontRole::Monospace))
             .color(success);
         container(row![dot, label].spacing(4).align_y(iced::Alignment::Center))
@@ -435,7 +435,7 @@ fn queue_card_metrics<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
             .font(font(FontRole::Monospace))
             .color(label_color),
         text(q.concurrency.to_string())
-            .size(13.0)
+            .size(FONT_SM)
             .font(font(FontRole::Monospace))
             .color(value_color),
         text(concurrency_label_str)
@@ -452,7 +452,7 @@ fn queue_card_metrics<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
             .font(font(FontRole::Monospace))
             .color(label_color),
         text(q.pending.to_string())
-            .size(13.0)
+            .size(FONT_SM)
             .font(font(FontRole::Monospace))
             .color(pending_value_color),
         text(pending_sub_str)
@@ -469,7 +469,7 @@ fn queue_card_metrics<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
             .font(font(FontRole::Monospace))
             .color(label_color),
         text(q.assigned_actions.to_string())
-            .size(13.0)
+            .size(FONT_SM)
             .font(font(FontRole::Monospace))
             .color(value_color),
         text("assigned")
@@ -526,7 +526,7 @@ fn queue_running_panel<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> El
 
         let icon = tabler_icon(Icon::AlertTriangle, 12.0, warning);
 
-        let msg = text(paused_text).size(11.0).color(palette.text_primary);
+        let msg = text(paused_text).size(FONT_XS).color(palette.text_primary);
 
         container(row![icon, msg].spacing(8).align_y(iced::Alignment::Center))
             .width(Length::Fill)
@@ -544,7 +544,7 @@ fn queue_running_panel<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> El
     } else if q.running_now.is_empty() {
         let muted = palette.text_faint;
         let icon = tabler_icon(Icon::CircleDashed, 12.0, muted);
-        let label = text("No actions running").size(11.0).color(muted);
+        let label = text("No actions running").size(FONT_XS).color(muted);
 
         container(
             row![icon, label]
@@ -581,12 +581,12 @@ fn serial_running_panel<'a>(
 
     let action_name = q.running_now.first().cloned().unwrap_or_default();
     let name_label = text(action_name)
-        .size(11.0)
+        .size(FONT_XS)
         .font(font(FontRole::Monospace))
         .color(palette.text_primary);
 
     let running_label = text("running —")
-        .size(10.0)
+        .size(FONT_XS)
         .font(font(FontRole::Monospace))
         .color(muted);
 
@@ -637,17 +637,22 @@ fn concurrent_running_panel<'a>(
             let n = name.clone();
             let bg = pill_bg;
             let tc = text_col;
-            container(text(n).size(10.0).font(font(FontRole::Monospace)).color(tc))
-                .padding([2, 6])
-                .style(move |_: &iced::Theme| iced::widget::container::Style {
-                    background: Some(Background::Color(bg)),
-                    border: Border {
-                        radius: 5.0.into(),
-                        ..Default::default()
-                    },
+            container(
+                text(n)
+                    .size(FONT_XS)
+                    .font(font(FontRole::Monospace))
+                    .color(tc),
+            )
+            .padding([2, 6])
+            .style(move |_: &iced::Theme| iced::widget::container::Style {
+                background: Some(Background::Color(bg)),
+                border: Border {
+                    radius: 5.0.into(),
                     ..Default::default()
-                })
-                .into()
+                },
+                ..Default::default()
+            })
+            .into()
         })
         .collect();
 
@@ -656,7 +661,7 @@ fn concurrent_running_panel<'a>(
         let tc = text_col;
         let overflow_pill: Element<'a, Message> = container(
             text(format!("+{overflow} more"))
-                .size(10.0)
+                .size(FONT_XS)
                 .font(font(FontRole::Monospace))
                 .color(tc),
         )

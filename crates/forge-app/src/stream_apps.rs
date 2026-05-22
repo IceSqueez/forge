@@ -1,7 +1,7 @@
 use forge_platform_core::{ConnectionState, IntegrationId};
 use forge_widgets::{
     ForgePalette, Icon, StatusVariant, section_header, status_pill, tabler_icon,
-    tokens::{FONT_BODY, Radius, radius},
+    tokens::{FONT_SM, Radius, radius},
 };
 use iced::{
     Alignment, Background, Border, Color, Element, Length, Shadow,
@@ -61,9 +61,7 @@ fn obs_card<'a>(state: &'a App, palette: &'a ForgePalette) -> Element<'a, Messag
     let pill = status_pill(pill_label, pill_variant, palette);
 
     let name_row = row![
-        text("OBS Studio")
-            .size(FONT_BODY)
-            .color(palette.text_primary),
+        text("OBS Studio").size(FONT_SM).color(palette.text_primary),
         iced::widget::Space::new().width(Length::Fill),
         pill,
     ]
@@ -77,13 +75,13 @@ fn obs_card<'a>(state: &'a App, palette: &'a ForgePalette) -> Element<'a, Messag
         .unwrap_or_else(|| "\u{2014}".to_owned());
 
     let endpoint = text(endpoint_str)
-        .size(FONT_BODY)
+        .size(FONT_SM)
         .color(palette.text_faint)
         .font(forge_widgets::font(forge_widgets::FontRole::Monospace));
 
     let info_col = column![name_row, endpoint].spacing(3).width(Length::Fill);
 
-    let open_label = text("Open").size(FONT_BODY).color(palette.text_secondary);
+    let open_label = text("Open").size(FONT_SM).color(palette.text_secondary);
 
     let open_btn = container(open_label)
         .padding([5, 12])
@@ -135,14 +133,14 @@ fn coming_card<'a>(
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let header_row = row![
-        text(name).size(FONT_BODY).color(palette.text_muted),
+        text(name).size(FONT_SM).color(palette.text_muted),
         iced::widget::Space::new().width(Length::Fill),
         status_pill("Coming soon", StatusVariant::Neutral, palette),
     ]
     .align_y(Alignment::Center)
     .spacing(8);
 
-    let subtitle = text(note).size(FONT_BODY).color(palette.text_faint);
+    let subtitle = text(note).size(FONT_SM).color(palette.text_faint);
 
     forge_widgets::card([header_row.into(), subtitle.into()], palette)
 }

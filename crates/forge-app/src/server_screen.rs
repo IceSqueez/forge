@@ -5,7 +5,7 @@ use forge_widgets::{
     ForgePalette, Radius, bearer_token_display, color_for_source,
     icons::{Icon, tabler_icon},
     section_header, throughput_sparkline,
-    tokens::{FONT_BODY, FONT_MD, FONT_SM, FONT_XS, FontRole, font, radius},
+    tokens::{FONT_MD, FONT_SM, FONT_XS, FontRole, font, radius},
 };
 use iced::{
     Alignment, Background, Border, Color, Element, Length, Task,
@@ -719,7 +719,7 @@ fn header_card<'a>(
 
     let title_row = row![
         text("Built-in Server")
-            .size(FONT_BODY)
+            .size(FONT_SM)
             .color(palette.text_primary),
         ws_badge,
         Space::new().width(Length::Fill),
@@ -771,7 +771,7 @@ fn header_card<'a>(
             .color(palette.text_faint),
         text(state.bind_address.as_str())
             .font(font(FontRole::Monospace))
-            .size(FONT_BODY)
+            .size(FONT_SM)
             .color(palette.text_primary),
         text(uptime_str)
             .font(font(FontRole::Monospace))

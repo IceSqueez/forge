@@ -12,7 +12,7 @@ use crate::{
     events::color_for_source,
     icons::{Icon, tabler_icon},
     palette::ForgePalette,
-    tokens::{BORDER_THIN, FONT_BODY, FONT_SM, FONT_XS, FontRole, Radius, font, radius},
+    tokens::{BORDER_THIN, FONT_MD, FONT_SM, FONT_XS, FontRole, Radius, font, radius},
 };
 
 fn token_box_style(bg: Color, border_color: Color) -> impl Fn(&iced::Theme) -> container::Style {
@@ -147,7 +147,7 @@ pub fn bearer_token_display<'a, Msg: Clone + 'a>(
     let token_inner = row![
         text(display)
             .font(font(FontRole::Monospace))
-            .size(FONT_BODY)
+            .size(FONT_SM)
             .color(palette.text_primary),
         Space::new().width(Length::Fill),
         eye_btn,
@@ -562,9 +562,7 @@ pub fn bind_address_card<'a, Msg: Clone + 'a>(
     let dot = radio_dot::<Msg>(params.selected, palette);
 
     let title_row = row![
-        text(params.title)
-            .size(FONT_BODY)
-            .color(palette.text_primary),
+        text(params.title).size(FONT_SM).color(palette.text_primary),
         bind_badge_element::<Msg>(params.badge, palette),
         Space::new().width(Length::Fill),
         text(params.tech_label)
@@ -714,7 +712,7 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
     let title_row = row![
         icon_box,
         text(params.title)
-            .size(15.0f32)
+            .size(FONT_MD)
             .color(p.text_primary)
             .font(iced::Font {
                 weight: iced::font::Weight::Medium,
@@ -817,14 +815,14 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
         tabler_icon(Icon::Keyboard, 12.0, p.text_faint),
         text("Esc")
             .font(font(FontRole::Monospace))
-            .size(11.0f32)
+            .size(FONT_XS)
             .color(p.text_faint),
-        text(" to cancel").size(11.0f32).color(p.text_faint),
+        text(" to cancel").size(FONT_XS).color(p.text_faint),
     ]
     .spacing(5)
     .align_y(Alignment::Center);
 
-    let cancel_btn = button(text("Cancel").size(FONT_BODY).color(p.text_secondary))
+    let cancel_btn = button(text("Cancel").size(FONT_SM).color(p.text_secondary))
         .on_press(on_cancel)
         .padding([7u16, 14u16])
         .style(outline_btn_style(
@@ -836,7 +834,7 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
     let confirm_btn: Element<'a, Msg> = if phrase_matches {
         button(
             text(params.confirm_label)
-                .size(FONT_BODY)
+                .size(FONT_SM)
                 .color(p.shell)
                 .font(iced::Font {
                     weight: iced::font::Weight::Medium,
@@ -848,7 +846,7 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
         .style(confirm_active_btn_style(p.warning, p.shell))
         .into()
     } else {
-        button(text(params.confirm_label).size(FONT_BODY).color(p.disabled))
+        button(text(params.confirm_label).size(FONT_SM).color(p.disabled))
             .padding([7u16, 14u16])
             .style(confirm_disabled_btn_style(p.surface_overlay, p.disabled))
             .into()
@@ -1051,7 +1049,7 @@ pub fn overlay_file_list<'a, Msg: Clone + 'a>(
         row![
             tabler_icon(Icon::Folder, 14.0, p.warning),
             text("Overlay host root")
-                .size(FONT_BODY)
+                .size(FONT_SM)
                 .font(iced::Font {
                     weight: iced::font::Weight::Medium,
                     ..font(FontRole::Body)
@@ -1074,7 +1072,7 @@ pub fn overlay_file_list<'a, Msg: Clone + 'a>(
     let path_box = container(
         text(params.root_path)
             .font(font(FontRole::Monospace))
-            .size(11.0f32)
+            .size(FONT_XS)
             .color(p.text_primary),
     )
     .width(Length::Fill)
@@ -1135,7 +1133,7 @@ pub fn overlay_file_list<'a, Msg: Clone + 'a>(
                 .width(Length::Fill),
             text(right)
                 .font(font(FontRole::Monospace))
-                .size(10.0f32)
+                .size(FONT_XS)
                 .color(p.text_faint),
         ]
         .spacing(8)
@@ -1200,7 +1198,7 @@ pub fn overlay_file_list<'a, Msg: Clone + 'a>(
         row![
             text(url_display)
                 .font(font(FontRole::Monospace))
-                .size(10.5f32)
+                .size(FONT_XS)
                 .color(p.info)
                 .width(Length::Fill),
             copy_btn,

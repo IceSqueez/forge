@@ -77,7 +77,11 @@ pub fn metric_card<'a, Msg: 'a>(
 
     if let Some(sub) = sublabel {
         let sub_str: Cow<'a, str> = sub.into();
-        col = col.push(iced::widget::text(sub_str).size(10).color(sublabel_color));
+        col = col.push(
+            iced::widget::text(sub_str)
+                .size(FONT_XS)
+                .color(sublabel_color),
+        );
     }
 
     container(col)
@@ -98,9 +102,13 @@ pub fn stat_row<'a, Msg: 'a>(
     let value_str: Cow<'a, str> = value.into();
 
     iced::widget::row![
-        iced::widget::text(label_str).size(13).color(label_color),
+        iced::widget::text(label_str)
+            .size(FONT_SM)
+            .color(label_color),
         iced::widget::Space::new().width(iced::Length::Fill),
-        iced::widget::text(value_str).size(13).color(value_color),
+        iced::widget::text(value_str)
+            .size(FONT_SM)
+            .color(value_color),
     ]
     .align_y(iced::alignment::Vertical::Center)
     .into()
@@ -125,7 +133,7 @@ pub fn hero_card<'a, Msg: 'a>(
             .size(FONT_LG)
             .color(title_color),
         iced::widget::text(subtitle_str)
-            .size(13)
+            .size(FONT_SM)
             .color(subtitle_color),
     ]
     .spacing(4);
@@ -184,7 +192,7 @@ pub fn big_jump_card<'a, Msg: Clone + 'a>(
 
     let label_col = column![
         text(props.section_label)
-            .size(9.5)
+            .size(FONT_XS)
             .color(text_faint)
             .font(font(FontRole::Monospace)),
         text(props.title).size(FONT_SM).color(text_primary),
@@ -213,14 +221,14 @@ pub fn big_jump_card<'a, Msg: Clone + 'a>(
             .size(24.0)
             .color(icon_color)
             .font(mono_font),
-        text(props.stat_label).size(11.5).color(text_muted),
+        text(props.stat_label).size(FONT_SM).color(text_muted),
     ]
     .spacing(8.0)
     .align_y(Alignment::Center);
 
     let hint_row = row![
         text(props.hint)
-            .size(11.0)
+            .size(FONT_XS)
             .color(text_faint)
             .width(Length::Fill),
         tabler_icon(Icon::ArrowRight, 12.0, text_faint),

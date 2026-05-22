@@ -8,7 +8,7 @@ use forge_widgets::{
     TypeToConfirmModalParams, bearer_token_display, bind_address_card,
     icons::{Icon, tabler_icon},
     toggle,
-    tokens::{FONT_BODY, FONT_SM, FontRole, font, radius},
+    tokens::{FONT_LG, FONT_SM, FontRole, font, radius},
     type_to_confirm_modal,
 };
 use iced::{
@@ -379,7 +379,7 @@ fn auth_toggle_row<'a>(
 ) -> Element<'a, Message> {
     let icon_el = tabler_icon(icon, 14.0, icon_color);
 
-    let label_el = text(label).size(FONT_BODY).color(palette.text_primary);
+    let label_el = text(label).size(FONT_SM).color(palette.text_primary);
     let sub_el = text(sublabel)
         .size(FONT_SM)
         .color(palette.text_faint)
@@ -521,7 +521,7 @@ fn overlay_path_display<'a>(root: &'a Path, palette: &'a ForgePalette) -> Elemen
 
 fn section_label<'a>(label: &'a str, palette: &'a ForgePalette) -> Element<'a, Message> {
     text(label)
-        .size(FONT_BODY)
+        .size(FONT_SM)
         .color(palette.text_primary)
         .font(iced::Font {
             weight: iced::font::Weight::Medium,
@@ -558,7 +558,7 @@ pub fn settings_websocket_view<'a>(
     let header_row = row![
         tabler_icon(Icon::Server, 20.0, p.brand),
         text("WebSocket server")
-            .size(18.0_f32)
+            .size(FONT_LG)
             .color(p.text_primary)
             .font(iced::Font {
                 weight: iced::font::Weight::Medium,

@@ -531,7 +531,7 @@ fn viewer_stat<'a, Msg: 'a>(
 
     let label_el = text(l)
         .font(font(FontRole::Monospace))
-        .size(10.0)
+        .size(FONT_XS)
         .color(p.text_muted);
 
     let value_el = text(v)
@@ -555,6 +555,7 @@ fn viewer_stat<'a, Msg: 'a>(
 }
 
 fn drawer_role_badge<'a>(kind: BadgeKind, palette: &ForgePalette) -> Element<'a, Message> {
+    use forge_widgets::tokens::FONT_XS;
     use forge_widgets::{FontRole, font};
     use iced::widget::{container, text};
     use iced::{Background, Border};
@@ -569,7 +570,7 @@ fn drawer_role_badge<'a>(kind: BadgeKind, palette: &ForgePalette) -> Element<'a,
     let p = *palette;
     container(
         text(label)
-            .size(9.0)
+            .size(FONT_XS)
             .color(text_color)
             .font(font(FontRole::Body)),
     )
@@ -683,7 +684,7 @@ fn selected_viewer_detail<'a>(
         FontRole, MenuItem, MenuPlacement, font,
         icons::Icon,
         menu_button, tabler_icon,
-        tokens::{FONT_BODY, FONT_XS, Radius, radius},
+        tokens::{FONT_SM, FONT_XS, Radius, radius},
     };
     use iced::widget::{Space, button, column, container, row, text};
     use iced::{Background, Border};
@@ -714,7 +715,7 @@ fn selected_viewer_detail<'a>(
 
     let name_el = text(summary.username.clone())
         .font(font(FontRole::Body))
-        .size(FONT_BODY + 0.5)
+        .size(FONT_SM)
         .color(p.text_primary);
 
     let last_label = format!("Last seen {}", summary.last_seen_label);
@@ -995,6 +996,7 @@ fn viewer_list<'a>(
     viewers: &'a ViewersState,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
+    use forge_widgets::tokens::FONT_XS;
     use forge_widgets::{FontRole, font};
     use iced::Background;
     use iced::widget::{Space, column, container, scrollable, text};
@@ -1023,7 +1025,7 @@ fn viewer_list<'a>(
     let section_header = container(
         text(section_label)
             .font(font(FontRole::Monospace))
-            .size(10.0)
+            .size(FONT_XS)
             .color(p.text_faint),
     )
     .padding([8u16, 14u16])
@@ -1053,7 +1055,7 @@ fn viewer_list<'a>(
             container(
                 text("No chat participants match the search")
                     .font(font(FontRole::Body))
-                    .size(10.0)
+                    .size(FONT_XS)
                     .color(p.text_faint),
             )
             .padding([0u16, 14u16]),

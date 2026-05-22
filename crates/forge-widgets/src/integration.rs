@@ -15,8 +15,8 @@ use crate::{
     icons::{Icon, tabler_icon},
     palette::ForgePalette,
     tokens::{
-        BORDER_THIN, Density, FONT_BODY, FONT_LG, FONT_MD, FONT_SM, FONT_XS, FontRole, Radius,
-        Spacing, font, radius, spacing,
+        BORDER_THIN, Density, FONT_LG, FONT_MD, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font,
+        radius, spacing,
     },
 };
 
@@ -554,11 +554,9 @@ pub(crate) fn render_warning_banner<'a, Msg: 'a>(
         BannerLevel::Error => '\u{2715}',
     };
 
-    let icon_elem = text(icon_char.to_string())
-        .size(FONT_BODY)
-        .color(level_color);
+    let icon_elem = text(icon_char.to_string()).size(FONT_SM).color(level_color);
     let title_elem = text(title.to_owned())
-        .size(FONT_BODY)
+        .size(FONT_SM)
         .color(palette.text_primary);
     let body_elem = text(body.to_owned())
         .size(FONT_SM)
@@ -806,7 +804,7 @@ fn content_list_item_row<'a, Msg: 'a>(
         palette.text_faint
     };
 
-    let icon_elem = tabler_icon(Icon::from_name(item.icon.as_str()), FONT_BODY, icon_color);
+    let icon_elem = tabler_icon(Icon::from_name(item.icon.as_str()), FONT_SM, icon_color);
 
     let name_elem: Element<'a, Msg> = if item.monospace_name {
         text(item.name.clone())
@@ -856,7 +854,7 @@ fn key_value_row_elem<'a, Msg: 'a>(
 ) -> Element<'a, Msg> {
     let icon_elem = tabler_icon(
         Icon::from_name(item.icon.as_str()),
-        FONT_BODY,
+        FONT_SM,
         palette.text_secondary,
     );
 
@@ -1123,7 +1121,7 @@ fn panel_header_row<'a, Msg: 'a>(
     count: Option<&str>,
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
-    let icon_elem = tabler_icon(Icon::from_name(icon_str), FONT_BODY, palette.text_secondary);
+    let icon_elem = tabler_icon(Icon::from_name(icon_str), FONT_SM, palette.text_secondary);
 
     let left = Row::new()
         .spacing(spacing(Spacing::Xs, Density::Cozy) as f32)
@@ -1131,7 +1129,7 @@ fn panel_header_row<'a, Msg: 'a>(
         .push(icon_elem)
         .push(
             text(title.to_owned())
-                .size(FONT_BODY)
+                .size(FONT_SM)
                 .color(palette.text_primary),
         );
 
@@ -1173,7 +1171,7 @@ fn scopes_list_header<'a, Msg: 'a>(
             .push(
                 container(
                     text(title.to_owned())
-                        .size(FONT_BODY)
+                        .size(FONT_SM)
                         .color(palette.text_primary),
                 )
                 .width(Length::Fill),
@@ -1196,7 +1194,7 @@ fn info_card_header<'a, Msg: 'a>(
     let mut row = Row::new().align_y(Alignment::Center).push(
         container(
             text(title.to_owned())
-                .size(FONT_BODY)
+                .size(FONT_SM)
                 .color(palette.text_primary),
         )
         .width(Length::Fill),
@@ -1502,10 +1500,10 @@ fn quick_actions_section_header<'a, Msg: 'a>(
     hint: Option<&'a str>,
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
-    let icon_elem = tabler_icon(Icon::Bolt, FONT_BODY, palette.warning);
+    let icon_elem = tabler_icon(Icon::Bolt, FONT_SM, palette.warning);
 
     let title_elem = text("Quick actions")
-        .size(FONT_BODY)
+        .size(FONT_SM)
         .color(palette.text_primary);
 
     let left: Element<'a, Msg> = Row::new()

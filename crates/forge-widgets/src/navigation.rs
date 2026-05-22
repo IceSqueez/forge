@@ -7,7 +7,7 @@ use iced::{
 
 use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
-use crate::tokens::{BORDER_THIN, FONT_BODY, FONT_SM, FONT_XS, FontRole, Radius, font, radius};
+use crate::tokens::{BORDER_THIN, FONT_SM, FONT_XS, FontRole, Radius, font, radius};
 
 pub const SIDEBAR_WIDTH: u16 = 200;
 
@@ -172,7 +172,7 @@ fn nav_leaf<'a, Msg: 'a + Clone>(
 
     let content = row![
         tabler_icon(icon, 15.0, icon_color),
-        text(label).size(FONT_BODY),
+        text(label).size(FONT_SM),
     ]
     .spacing(10)
     .align_y(iced::Alignment::Center);
@@ -243,7 +243,7 @@ fn nav_group_header<'a, Msg: 'a + Clone>(
 
     let content = row![
         tabler_icon(icon, 15.0, icon_color),
-        text(label).size(FONT_BODY),
+        text(label).size(FONT_SM),
         Space::new().width(iced::Length::Fill),
         tabler_icon(chevron, 13.0, chevron_color),
     ]

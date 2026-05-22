@@ -6,7 +6,7 @@ use iced::{
 };
 
 use crate::palette::ForgePalette;
-use crate::tokens::{Density, Radius, Spacing, radius, spacing};
+use crate::tokens::{Density, FONT_MD, Radius, Spacing, radius, spacing};
 
 fn primary_style(bg: Color, text_color: Color, status: Status) -> Style {
     let r = radius(Radius::Md);
@@ -266,7 +266,7 @@ pub fn icon_button<'a, Msg: 'a + Clone>(
     };
     let r = radius(Radius::Sm);
 
-    iced::widget::button(iced::widget::text(icon.to_string()).size(16))
+    iced::widget::button(iced::widget::text(icon.to_string()).size(FONT_MD))
         .on_press(on_press)
         .padding([6, 6])
         .style(move |_theme: &iced::Theme, status| match status {

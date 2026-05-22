@@ -1,6 +1,7 @@
 use forge_widgets::ForgePalette;
 use forge_widgets::tokens::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spacing,
+    BORDER_THIN, Density, FONT_MD, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius,
+    spacing,
 };
 use iced::widget::{column, container, row, text};
 use iced::{Alignment, Background, Border, Element, Length, Task};
@@ -172,7 +173,7 @@ fn role_chip<'a>(
     color: iced::Color,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    container(text(label).size(9.5).color(color))
+    container(text(label).size(FONT_XS).color(color))
         .style(move |_| container::Style {
             background: Some(Background::Color(palette.surface_overlay)),
             border: Border {
@@ -215,7 +216,7 @@ fn trigger_card_command<'a>(
                 .size(FONT_SM)
                 .color(palette.text_primary),
             text("!tts <message>")
-                .size(10.5)
+                .size(FONT_XS)
                 .color(palette.text_muted)
                 .font(font(FontRole::Monospace)),
         ]
@@ -241,7 +242,7 @@ fn trigger_card_command<'a>(
     .wrap();
 
     let meta = text("cooldown 8s \u{b7} max 250 chars")
-        .size(10.0)
+        .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
@@ -266,7 +267,7 @@ fn trigger_card_channel_points<'a>(
     gap_sm: f32,
 ) -> Element<'a, Message> {
     let header = row![
-        container(text("\u{25c6}").size(15.0).color(palette.brand))
+        container(text("\u{25c6}").size(FONT_MD).color(palette.brand))
             .style(move |_| container::Style {
                 background: Some(Background::Color(palette.surface_overlay)),
                 border: Border {
@@ -284,7 +285,7 @@ fn trigger_card_channel_points<'a>(
                 .size(FONT_SM)
                 .color(palette.text_primary),
             text("\"Speak my message\" \u{b7} 500 pts")
-                .size(10.5)
+                .size(FONT_XS)
                 .color(palette.text_muted),
         ]
         .spacing(2)
@@ -305,7 +306,7 @@ fn trigger_card_channel_points<'a>(
         .wrap();
 
     let meta = text("no cooldown \u{b7} priority queue")
-        .size(10.0)
+        .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
@@ -330,7 +331,7 @@ fn trigger_card_bits<'a>(
     gap_sm: f32,
 ) -> Element<'a, Message> {
     let header = row![
-        container(text("\u{25c6}").size(15.0).color(palette.warning))
+        container(text("\u{25c6}").size(FONT_MD).color(palette.warning))
             .style(move |_| container::Style {
                 background: Some(Background::Color(palette.surface_overlay)),
                 border: Border {
@@ -348,7 +349,7 @@ fn trigger_card_bits<'a>(
                 .size(FONT_SM)
                 .color(palette.text_primary),
             text("Speak cheer message")
-                .size(10.5)
+                .size(FONT_XS)
                 .color(palette.text_muted),
         ]
         .spacing(2)
@@ -365,7 +366,7 @@ fn trigger_card_bits<'a>(
     .spacing(gap_sm);
 
     let min_bits = row![
-        text("Minimum").size(10.5).color(palette.text_muted),
+        text("Minimum").size(FONT_XS).color(palette.text_muted),
         container(
             text("100 bits")
                 .size(FONT_SM)
@@ -387,7 +388,7 @@ fn trigger_card_bits<'a>(
     .spacing(gap_sm);
 
     let meta = text("louder = longer message")
-        .size(10.0)
+        .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
@@ -412,7 +413,7 @@ fn trigger_card_subs<'a>(
     gap_sm: f32,
 ) -> Element<'a, Message> {
     let header = row![
-        container(text("\u{2605}").size(15.0).color(palette.brand))
+        container(text("\u{2605}").size(FONT_MD).color(palette.brand))
             .style(move |_| container::Style {
                 background: Some(Background::Color(palette.surface_overlay)),
                 border: Border {
@@ -430,7 +431,7 @@ fn trigger_card_subs<'a>(
                 .size(FONT_SM)
                 .color(palette.text_primary),
             text("Speak resub / gift messages")
-                .size(10.5)
+                .size(FONT_XS)
                 .color(palette.text_muted),
         ]
         .spacing(2)
@@ -450,7 +451,7 @@ fn trigger_card_subs<'a>(
         text("").size(0.0).into()
     } else {
         text("Disabled \u{2014} toggle to enable")
-            .size(10.5)
+            .size(FONT_XS)
             .color(palette.text_muted)
             .into()
     };
@@ -523,7 +524,7 @@ fn format_card<'a>(
 
     let template_section = column![
         text("TEMPLATE")
-            .size(10.0)
+            .size(FONT_XS)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace)),
         container(

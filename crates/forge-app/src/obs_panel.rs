@@ -11,7 +11,7 @@ use forge_storage_sqlite::SqliteBackend;
 
 use forge_widgets::ForgePalette;
 use forge_widgets::icons::{Icon, tabler_icon};
-use forge_widgets::tokens::{FONT_BODY, FONT_SM, FONT_XS, FontRole, font};
+use forge_widgets::tokens::{FONT_SM, FONT_XS, FontRole, font};
 
 use crate::Message;
 
@@ -176,9 +176,7 @@ fn obs_header_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
         });
 
     let title_col = column![
-        text("OBS Studio")
-            .size(FONT_BODY)
-            .color(palette.text_primary),
+        text("OBS Studio").size(FONT_SM).color(palette.text_primary),
         text("Connect to control scenes, sources, audio, filters, and recording")
             .size(FONT_SM)
             .color(palette.text_muted),
@@ -200,7 +198,7 @@ fn obs_instructions_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> 
     let title = row![
         tabler_icon(Icon::InfoCircle, 14.0, palette.info),
         text("Before you start")
-            .size(FONT_BODY)
+            .size(FONT_SM)
             .color(palette.text_primary),
     ]
     .spacing(7.0)
@@ -327,7 +325,7 @@ fn obs_form_card<'a>(state: &'a ObsPanelState, palette: &'a ForgePalette) -> Ele
     let title = row![
         tabler_icon(Icon::Bolt, 14.0, palette.success),
         text("Connection settings")
-            .size(FONT_BODY)
+            .size(FONT_SM)
             .color(palette.text_primary),
     ]
     .spacing(7.0)

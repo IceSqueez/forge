@@ -1,6 +1,6 @@
 use forge_widgets::ForgePalette;
 use forge_widgets::tokens::{
-    BORDER_THIN, Density, FONT_SM, FontRole, Radius, Spacing, font, radius, spacing,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spacing,
 };
 use iced::widget::{button, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Background, Border, Element, Length, Task};
@@ -108,7 +108,7 @@ fn strategy_banner_view<'a>(
         palette: &'b ForgePalette,
     ) -> Element<'b, Message> {
         let active = &choice == current;
-        button(text(label).size(11.0))
+        button(text(label).size(FONT_XS))
             .on_press(Message::Tts(TtsMsg::Aliases(
                 VoiceAliasesMsg::StrategyChanged(choice),
             )))
@@ -265,27 +265,27 @@ fn aliases_table_view<'a>(
     let header = container(
         row![
             text("VIEWER")
-                .size(10.0)
+                .size(FONT_XS)
                 .color(palette.text_muted)
                 .font(mono)
                 .width(Length::FillPortion(14)),
             text("VOICE")
-                .size(10.0)
+                .size(FONT_XS)
                 .color(palette.text_muted)
                 .font(mono)
                 .width(Length::FillPortion(16)),
             text("PITCH")
-                .size(10.0)
+                .size(FONT_XS)
                 .color(palette.text_muted)
                 .font(mono)
                 .width(Length::FillPortion(8)),
             text("SPEED")
-                .size(10.0)
+                .size(FONT_XS)
                 .color(palette.text_muted)
                 .font(mono)
                 .width(Length::FillPortion(8)),
             text("ACTIONS")
-                .size(10.0)
+                .size(FONT_XS)
                 .color(palette.text_muted)
                 .font(mono)
                 .width(90),
@@ -394,7 +394,7 @@ fn alias_row<'a>(
 
     let avatar = container(
         text(initial.to_string())
-            .size(10.0)
+            .size(FONT_XS)
             .color(if muted {
                 palette.text_muted
             } else {

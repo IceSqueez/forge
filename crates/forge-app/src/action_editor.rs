@@ -8,6 +8,7 @@ use crate::app::App;
 use crate::message::{ActionsMsg, Message};
 use forge_widgets::ForgePalette;
 use forge_widgets::icons::{Icon, tabler_icon};
+use forge_widgets::tokens::{FONT_LG, FONT_SM, FONT_XS};
 
 fn sub_action_summary(spec: &SubActionSpec) -> (&'static str, &'static str, String) {
     match spec {
@@ -89,12 +90,12 @@ fn tree_pane<'a>(
         let header_row = row![
             tabler_icon(Icon::ChevronDown, 11.0, p.text_muted),
             text(group.category.display_name())
-                .size(11.0)
+                .size(FONT_XS)
                 .color(p.text_muted)
                 .font(mono),
             iced::widget::Space::new().width(Length::Fill),
             text(group.actions.len().to_string())
-                .size(11.0)
+                .size(FONT_XS)
                 .color(p.text_faint)
                 .font(mono),
         ]
@@ -134,10 +135,10 @@ fn tree_pane<'a>(
             let sub_count = summary.sub_action_count;
             let inner = row![
                 dot,
-                text(summary.name.clone()).size(12.5).color(name_color),
+                text(summary.name.clone()).size(FONT_SM).color(name_color),
                 iced::widget::Space::new().width(Length::Fill),
                 text(format!("{sub_count} sub"))
-                    .size(10.0)
+                    .size(FONT_XS)
                     .color(p.text_faint)
                     .font(mono),
             ]
@@ -215,7 +216,7 @@ fn detail_pane<'a>(
         _ => {
             return container(
                 text("Loading action\u{2026}")
-                    .size(13.0)
+                    .size(FONT_SM)
                     .color(p.text_muted),
             )
             .padding([18_u16, 22_u16])
@@ -241,14 +242,16 @@ fn detail_pane<'a>(
     let pill = forge_widgets::status_pill(pill_label, pill_variant, palette);
 
     let title_row = row![
-        text(action.name.clone()).size(18.0).color(p.text_primary),
+        text(action.name.clone())
+            .size(FONT_LG)
+            .color(p.text_primary),
         pill,
     ]
     .spacing(10)
     .align_y(Alignment::Center);
 
     let desc_text = action.description.as_deref().unwrap_or("No description");
-    let desc = text(desc_text).size(12.0).color(p.text_muted);
+    let desc = text(desc_text).size(FONT_XS).color(p.text_muted);
 
     let test_run_btn = forge_widgets::secondary_button(
         "Test run",
@@ -273,12 +276,15 @@ fn detail_pane<'a>(
     .into();
 
     // ── Triggers ─────────────────────────────────────────────────────────
-    let triggers_label = text("TRIGGERS").size(11.0).color(p.text_muted).font(mono);
+    let triggers_label = text("TRIGGERS")
+        .size(FONT_XS)
+        .color(p.text_muted)
+        .font(mono);
 
     let add_trigger_btn = iced::widget::button(
         row![
             tabler_icon(Icon::Plus, 11.0, p.brand),
-            text("Add trigger").size(11.0).color(p.brand),
+            text("Add trigger").size(FONT_XS).color(p.brand),
         ]
         .spacing(4)
         .align_y(Alignment::Center),
@@ -308,7 +314,7 @@ fn detail_pane<'a>(
         triggers_col = triggers_col.push(
             container(
                 text("No triggers \u{00b7} click Add trigger to start")
-                    .size(12.0)
+                    .size(FONT_XS)
                     .color(p.text_faint),
             )
             .padding([8_u16, 0_u16]),
@@ -335,9 +341,9 @@ fn detail_pane<'a>(
             let condition_str = kind_condition_text(&trigger.kind);
 
             let info_col: Element<'_, Message> = column![
-                text(label_str).size(12.5).color(p.text_primary),
+                text(label_str).size(FONT_SM).color(p.text_primary),
                 text(condition_str)
-                    .size(11.0)
+                    .size(FONT_XS)
                     .color(p.text_muted)
                     .font(mono),
             ]
@@ -349,7 +355,7 @@ fn detail_pane<'a>(
             let p_btn = p;
             let delete_btn = iced::widget::button(
                 text("Delete")
-                    .size(11.0)
+                    .size(FONT_XS)
                     .color(p.random)
                     .font(forge_widgets::font(forge_widgets::FontRole::Monospace)),
             )
@@ -407,14 +413,14 @@ fn detail_pane<'a>(
     // ── Sub-actions ───────────────────────────────────────────────────────
     let sub_count = action.sub_actions.len();
     let sub_label = text(format!("SUB-ACTIONS \u{00b7} {sub_count}"))
-        .size(11.0)
+        .size(FONT_XS)
         .color(p.text_muted)
         .font(mono);
 
     let add_step_btn = iced::widget::button(
         row![
             tabler_icon(Icon::Plus, 11.0, p.brand),
-            text("Add step").size(11.0).color(p.brand),
+            text("Add step").size(FONT_XS).color(p.brand),
         ]
         .spacing(4)
         .align_y(Alignment::Center),
@@ -456,7 +462,7 @@ fn detail_pane<'a>(
             .map(|ms| format!("{ms} ms avg"));
 
         let circle_label = text(step_num.to_string())
-            .size(11.0)
+            .size(FONT_XS)
             .color(p.shell)
             .font(forge_widgets::font(forge_widgets::FontRole::Monospace));
 
@@ -494,11 +500,11 @@ fn detail_pane<'a>(
 
         let icon_el = tabler_icon(step_icon, 13.0, p.text_secondary);
 
-        let title_el = text(title).size(12.5).color(p.text_primary);
+        let title_el = text(title).size(FONT_SM).color(p.text_primary);
 
         let timing_el: Element<'_, Message> = match avg_ms_label {
             Some(label) => text(label)
-                .size(10.5)
+                .size(FONT_XS)
                 .color(p.text_faint)
                 .font(forge_widgets::font(forge_widgets::FontRole::Monospace))
                 .into(),
@@ -515,7 +521,7 @@ fn detail_pane<'a>(
         .align_y(Alignment::Center)
         .into();
 
-        let details_el = text(details).size(11.0).color(p.text_muted).font(mono);
+        let details_el = text(details).size(FONT_XS).color(p.text_muted).font(mono);
 
         let card_inner: Element<'_, Message> = column![title_row, details_el].spacing(3).into();
 

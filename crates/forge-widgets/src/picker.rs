@@ -9,7 +9,7 @@ use crate::{
     icons::{Icon, tabler_icon},
     inputs::search_input,
     palette::ForgePalette,
-    tokens::{BORDER_THIN, FONT_BODY, FONT_MD, FONT_SM, FontRole, Radius, font, radius},
+    tokens::{BORDER_THIN, FONT_MD, FONT_SM, FontRole, Radius, font, radius},
 };
 
 #[derive(Debug, Clone)]
@@ -80,7 +80,7 @@ pub fn picker_modal<'a, Msg: 'a + Clone>(
     let list_area: Element<'a, Msg> = if loading {
         container(
             text("Loading...")
-                .size(FONT_BODY)
+                .size(FONT_SM)
                 .color(p.text_muted)
                 .font(font(FontRole::Body)),
         )
@@ -108,7 +108,7 @@ pub fn picker_modal<'a, Msg: 'a + Clone>(
         if filtered.is_empty() {
             container(
                 text("No results.")
-                    .size(FONT_BODY)
+                    .size(FONT_SM)
                     .color(p.text_muted)
                     .font(font(FontRole::Body)),
             )
@@ -209,7 +209,7 @@ fn item_row<'a, Msg: Clone + 'a>(
 
     let mut label_col = column![
         text(item.label.as_str())
-            .size(FONT_BODY)
+            .size(FONT_SM)
             .color(p.text_primary)
             .font(font(FontRole::Body))
     ]

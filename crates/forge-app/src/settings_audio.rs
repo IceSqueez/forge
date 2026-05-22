@@ -4,7 +4,7 @@ use forge_audio::{list_output_devices, refresh_output_devices};
 use forge_storage_sqlite::SqliteBackend;
 use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::tokens::{
-    Density, FONT_BODY, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spacing,
+    Density, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spacing,
 };
 use forge_widgets::{DeviceLabel, ForgePalette, output_device_picker, section_header};
 use iced::widget::{button, column, container, row, text};
@@ -267,7 +267,7 @@ pub fn settings_audio_view<'a>(
     let screen_header = row![
         icon_el,
         text("Audio")
-            .size(FONT_BODY)
+            .size(FONT_SM)
             .color(palette.text_primary)
             .font(font(FontRole::Body)),
     ]

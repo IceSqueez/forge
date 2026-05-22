@@ -1430,10 +1430,6 @@ mod tests {
         use crate::viewers::ViewersState;
         ViewersState {
             viewers: usernames.iter().map(|u| make_viewer(u, 0)).collect(),
-            search: String::new(),
-            platform_filter: None,
-            loading: false,
-            error: None,
         }
     }
 

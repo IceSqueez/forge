@@ -31,7 +31,6 @@ pub enum Screen {
     Home,
     LiveChat,
     EventFeed,
-    Viewers,
     Globals,
     Actions,
     ActionEditor(ActionId),

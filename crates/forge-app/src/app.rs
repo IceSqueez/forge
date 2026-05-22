@@ -285,7 +285,6 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::Navigate(screen) => {
             let is_actions = matches!(screen, Screen::Actions);
             let is_queues = matches!(screen, Screen::Queues);
-            let is_viewers = matches!(screen, Screen::Viewers);
             let is_live_chat = matches!(screen, Screen::LiveChat);
             let is_hub = matches!(screen, Screen::Home);
             let is_globals = matches!(screen, Screen::Globals);
@@ -309,7 +308,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 Task::done(Message::Actions(ActionsMsg::LoadRequested))
             } else if is_queues {
                 Task::done(Message::Queues(QueuesMsg::LoadRequested))
-            } else if is_viewers || is_live_chat {
+            } else if is_live_chat {
                 Task::done(Message::Viewers(crate::viewers::ViewersMsg::LoadRequested))
             } else if is_hub {
                 Task::done(Message::Home(HomeMsg::LoadStats))
@@ -4721,7 +4720,6 @@ fn breadcrumb_icon_for(screen: &Screen) -> Icon {
         Screen::LiveChat => Icon::MessageCircle,
         Screen::EventFeed => Icon::Activity,
         Screen::Globals => Icon::Variable,
-        Screen::Viewers => Icon::Users,
         Screen::Settings(_) => Icon::Settings,
         Screen::Tts(_) => Icon::Volume,
         Screen::Soundboard => Icon::Music,
@@ -4744,7 +4742,6 @@ fn screen_label(screen: &Screen) -> &'static str {
         Screen::LiveChat => "Live chat",
         Screen::EventFeed => "Event feed",
         Screen::Globals => "Globals",
-        Screen::Viewers => "Viewers",
         Screen::Settings(_) => "Settings",
         Screen::Tts(_) => "TTS",
         Screen::Soundboard => "Soundboard",
@@ -5017,7 +5014,6 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Screen::Actions => actions_view(app, palette),
         Screen::ActionEditor(id) => action_editor_view(app, *id, palette),
         Screen::Queues => queues_view(&app.queues, palette),
-        Screen::Viewers => crate::viewers::viewers_view(&app.viewers, palette),
         Screen::Settings(section) => settings_view(
             section,
             app.twitch_chat_handle.as_ref(),
@@ -6366,13 +6362,6 @@ mod tests {
     fn view_live_chat_renders() {
         let mut app = App::default();
         let _ = update(&mut app, Message::Navigate(Screen::LiveChat));
-        let _ = view(&app);
-    }
-
-    #[test]
-    fn view_coming_soon_screen_renders() {
-        let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::Viewers));
         let _ = view(&app);
     }
 

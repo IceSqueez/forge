@@ -481,6 +481,14 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             app.live_chat.drawer_open = true;
             Task::none()
         }
+        Message::ChatDrawerMenuToggle => {
+            app.live_chat.drawer_menu_open = !app.live_chat.drawer_menu_open;
+            Task::none()
+        }
+        Message::ChatDrawerMenuDismiss => {
+            app.live_chat.drawer_menu_open = false;
+            Task::none()
+        }
         Message::Settings(sub) => match sub {
             SettingsMsg::ReconnectPlatform(PlatformId::Twitch) => {
                 if let Some(handle) = app.twitch_chat_handle.take() {

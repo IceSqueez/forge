@@ -35,6 +35,7 @@ pub struct LiveChatState {
     pub chat_input: String,
     pub chat_filter: ChatFilters,
     pub drawer_open: bool,
+    pub drawer_menu_open: bool,
     pub drawer_search: String,
     pub selected_viewer: Option<String>,
 }
@@ -120,6 +121,7 @@ impl LiveChatState {
             chat_input: String::new(),
             chat_filter: ChatFilters::default(),
             drawer_open: false,
+            drawer_menu_open: false,
             drawer_search: String::new(),
             selected_viewer: None,
         }
@@ -423,14 +425,16 @@ fn viewer_hash_color(username: &str, palette: &ForgePalette) -> Color {
 
 fn viewer_last_seen(dt: OffsetDateTime) -> String {
     let secs = (OffsetDateTime::now_utc() - dt).whole_seconds().max(0);
-    if secs < 60 {
-        format!("{secs}s ago")
+    if secs < 5 {
+        "now".into()
+    } else if secs < 60 {
+        format!("{secs}s")
     } else if secs < 3600 {
-        format!("{}m ago", secs / 60)
+        format!("{} min", secs / 60)
     } else if secs < 86400 {
-        format!("{}h ago", secs / 3600)
+        format!("{}h", secs / 3600)
     } else {
-        format!("{}d ago", secs / 86400)
+        format!("{}d", secs / 86400)
     }
 }
 
@@ -438,14 +442,16 @@ fn viewer_avatar<'a, Msg: 'a>(
     letter: char,
     color: Color,
     size: f32,
+    border_radius: forge_widgets::tokens::Radius,
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
     use forge_widgets::tokens::radius;
-    use forge_widgets::{FontRole, font, tokens::Radius};
+    use forge_widgets::{FontRole, font};
     use iced::widget::{container, text};
     use iced::{Background, Border};
 
     let p = *palette;
+    let r = radius(border_radius);
     container(
         text(letter.to_string())
             .font(font(FontRole::Body))
@@ -461,7 +467,7 @@ fn viewer_avatar<'a, Msg: 'a>(
         border: Border {
             color: Color::TRANSPARENT,
             width: 0.0,
-            radius: radius(Radius::Sm).into(),
+            radius: r.into(),
         },
         ..container::Style::default()
     })
@@ -508,6 +514,46 @@ fn viewer_stat<'a, Msg: 'a>(
             ..container::Style::default()
         })
         .into()
+}
+
+fn role_from_chat(username: &str, chat_log: &VecDeque<ChatRow>) -> Option<BadgeKind> {
+    chat_log
+        .iter()
+        .rev()
+        .find(|r| r.username == username)
+        .and_then(|r| r.badges.first().copied())
+}
+
+fn drawer_role_badge<'a>(kind: BadgeKind, palette: &ForgePalette) -> Element<'a, Message> {
+    use forge_widgets::{FontRole, font};
+    use iced::widget::{container, text};
+    use iced::{Background, Border};
+
+    let (label, text_color) = match kind {
+        BadgeKind::Broadcaster => ("LIVE", palette.warning),
+        BadgeKind::Moderator => ("MOD", palette.success),
+        BadgeKind::Vip => ("VIP", palette.brand),
+        BadgeKind::Subscriber => ("SUB", palette.info),
+        BadgeKind::Bot => ("BOT", palette.text_muted),
+    };
+    let p = *palette;
+    container(
+        text(label)
+            .size(9.0)
+            .color(text_color)
+            .font(font(FontRole::Body)),
+    )
+    .padding([1u16, 5u16])
+    .style(move |_t: &iced::Theme| container::Style {
+        background: Some(Background::Color(p.surface_overlay)),
+        border: Border {
+            color: p.border_regular,
+            width: 0.5,
+            radius: 3.0.into(),
+        },
+        ..container::Style::default()
+    })
+    .into()
 }
 
 fn section_sep<'a, Msg: 'a>(palette: &'a ForgePalette) -> Element<'a, Msg> {
@@ -596,7 +642,9 @@ fn selected_viewer_detail<'a>(
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     use forge_widgets::{
-        FontRole, font,
+        FontRole, MenuItem, MenuPlacement, font,
+        icons::Icon,
+        menu_button, tabler_icon,
         tokens::{FONT_BODY, FONT_XS, Radius, radius},
     };
     use iced::widget::{Space, button, column, container, row, text};
@@ -625,7 +673,7 @@ fn selected_viewer_detail<'a>(
         .map(|c| c.to_ascii_uppercase())
         .unwrap_or('?');
     let hash_col = viewer_hash_color(&sel.username, palette);
-    let avatar_el = viewer_avatar::<Message>(letter, hash_col, 38.0, palette);
+    let avatar_el = viewer_avatar::<Message>(letter, hash_col, 38.0, Radius::Md, palette);
 
     let name_el = text(sel.username.clone())
         .font(font(FontRole::Body))
@@ -638,7 +686,16 @@ fn selected_viewer_detail<'a>(
         .size(FONT_XS)
         .color(p.text_muted);
 
-    let name_col = column![name_el, last_el].spacing(2);
+    let role_opt = role_from_chat(&sel.username, &state.chat_log);
+    let mut name_row_items: Vec<Element<'a, Message>> = vec![name_el.into()];
+    if let Some(kind) = role_opt {
+        name_row_items.push(drawer_role_badge(kind, palette));
+    }
+    let name_row = row(name_row_items)
+        .spacing(6)
+        .align_y(iced::Alignment::Center);
+
+    let name_col = column![name_row, last_el].spacing(2);
 
     let info_row = row![avatar_el, name_col]
         .spacing(10)
@@ -660,31 +717,113 @@ fn selected_viewer_detail<'a>(
     ]
     .spacing(6);
 
-    let mk_btn = |label: &'static str| {
-        let p2 = p;
-        button(
-            text(label)
-                .font(font(FontRole::Body))
-                .size(FONT_XS)
-                .color(p2.text_muted),
-        )
-        .on_press(Message::Noop)
-        .padding([5u16, 0u16])
-        .width(Length::Fill)
-        .style(move |_t: &iced::Theme, _s| button::Style {
-            background: Some(Background::Color(p2.surface_overlay)),
-            border: Border {
-                color: p2.border_regular,
-                width: 0.5,
-                radius: radius(Radius::Sm).into(),
-            },
-            text_color: p2.text_muted,
-            shadow: iced::Shadow::default(),
-            snap: false,
-        })
+    let btn_style = move |_t: &iced::Theme, _s| button::Style {
+        background: Some(Background::Color(p.surface_overlay)),
+        border: Border {
+            color: p.border_regular,
+            width: 0.5,
+            radius: radius(Radius::Sm).into(),
+        },
+        text_color: p.text_muted,
+        shadow: iced::Shadow::default(),
+        snap: false,
     };
 
-    let actions_row = row![mk_btn("Shoutout"), mk_btn("Whisper"), mk_btn("…")].spacing(6);
+    let shoutout_btn = button(
+        row![
+            tabler_icon(Icon::Bolt, 11.0, p.text_muted),
+            text("Shoutout")
+                .font(font(FontRole::Body))
+                .size(FONT_XS)
+                .color(p.text_muted),
+        ]
+        .spacing(4)
+        .align_y(iced::Alignment::Center),
+    )
+    .on_press(Message::Noop)
+    .padding([5u16, 0u16])
+    .width(Length::Fill)
+    .style(btn_style);
+
+    let whisper_btn = button(
+        row![
+            tabler_icon(Icon::MessageCircle, 11.0, p.text_muted),
+            text("Whisper")
+                .font(font(FontRole::Body))
+                .size(FONT_XS)
+                .color(p.text_muted),
+        ]
+        .spacing(4)
+        .align_y(iced::Alignment::Center),
+    )
+    .on_press(Message::Noop)
+    .padding([5u16, 0u16])
+    .width(Length::Fill)
+    .style(btn_style);
+
+    let menu_items: Vec<MenuItem<Message>> = vec![
+        MenuItem::Item {
+            label: "Shoutout".into(),
+            on_press: Message::Noop,
+            icon: Some(Icon::Flag),
+            shortcut: None,
+            color: None,
+            disabled: false,
+        },
+        MenuItem::Item {
+            label: "Whisper".into(),
+            on_press: Message::Noop,
+            icon: Some(Icon::MessageCircle),
+            shortcut: None,
+            color: None,
+            disabled: false,
+        },
+        MenuItem::Item {
+            label: "Set TTS voice\u{2026}".into(),
+            on_press: Message::Noop,
+            icon: None,
+            shortcut: None,
+            color: None,
+            disabled: false,
+        },
+        MenuItem::Divider,
+        MenuItem::Item {
+            label: "Block from TTS".into(),
+            on_press: Message::Noop,
+            icon: None,
+            shortcut: None,
+            color: Some(p.warning),
+            disabled: false,
+        },
+        MenuItem::Item {
+            label: "Timeout 10 min".into(),
+            on_press: Message::Noop,
+            icon: None,
+            shortcut: None,
+            color: Some(p.warning),
+            disabled: false,
+        },
+        MenuItem::Item {
+            label: "Ban from channel".into(),
+            on_press: Message::Noop,
+            icon: None,
+            shortcut: None,
+            color: Some(p.random),
+            disabled: false,
+        },
+    ];
+
+    let more_btn = menu_button(
+        Icon::DotsVertical,
+        state.drawer_menu_open,
+        Message::ChatDrawerMenuToggle,
+        Message::ChatDrawerMenuDismiss,
+        menu_items,
+        MenuPlacement::TopRight,
+        palette,
+    );
+
+    let actions_row = row![shoutout_btn, whisper_btn, more_btn].spacing(6);
 
     let detail_content = column![info_row, stat_grid, actions_row].spacing(8);
 
@@ -709,11 +848,12 @@ fn selected_viewer_detail<'a>(
 fn drawer_viewer_row<'a>(
     v: &'a Viewer,
     is_sel: bool,
+    chat_log: &'a VecDeque<ChatRow>,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     use forge_widgets::{
         FontRole, font,
-        tokens::{FONT_SM, FONT_XS},
+        tokens::{FONT_SM, FONT_XS, Radius},
     };
     use iced::widget::{Space, button, column, container, row, text};
     use iced::{Background, Border};
@@ -741,19 +881,28 @@ fn drawer_viewer_row<'a>(
         .map(|c| c.to_ascii_uppercase())
         .unwrap_or('?');
     let hash_col = viewer_hash_color(&v.username, palette);
-    let avatar_el = viewer_avatar::<Message>(letter, hash_col, 22.0, palette);
+    let avatar_el = viewer_avatar::<Message>(letter, hash_col, 22.0, Radius::Sm, palette);
 
     let name_el = text(v.username.clone())
         .font(font(FontRole::Body))
         .size(FONT_SM)
         .color(p.text_primary);
 
+    let role_opt = role_from_chat(&v.username, chat_log);
+    let mut name_row_items: Vec<Element<'a, Message>> = vec![name_el.into()];
+    if let Some(kind) = role_opt {
+        name_row_items.push(drawer_role_badge(kind, palette));
+    }
+    let name_row = row(name_row_items)
+        .spacing(5)
+        .align_y(iced::Alignment::Center);
+
     let meta_el = text(format!("— · {} msg", v.message_count))
         .font(font(FontRole::Monospace))
         .size(FONT_XS)
         .color(p.text_muted);
 
-    let name_col = column![name_el, meta_el].spacing(1);
+    let name_col = column![name_row, meta_el].spacing(1);
 
     let last_el = text(viewer_last_seen(v.last_seen_at))
         .font(font(FontRole::Monospace))
@@ -828,7 +977,7 @@ fn viewer_list<'a>(
         .iter()
         .map(|v| {
             let is_sel = selected_name == Some(v.username.as_str());
-            drawer_viewer_row(v, is_sel, palette)
+            drawer_viewer_row(v, is_sel, &state.chat_log, palette)
         })
         .collect();
 
@@ -1148,7 +1297,7 @@ fn build_chat_area<'a>(
     use iced::{Background, Border, Length};
 
     let visible: Vec<Element<'a, Message>> = filter_log(&state.chat_log, &state.chat_filter)
-        .map(|row| forge_widgets::chat_row(palette, row, None))
+        .map(|row| forge_widgets::chat_row(palette, row, Some(Message::ChatDrawerSelectViewer)))
         .collect();
 
     let empty_msg = if state.chat_filter.events_only {
@@ -1298,6 +1447,37 @@ mod tests {
         assert!(state.drawer_search.is_empty());
         assert!(state.selected_viewer.is_none());
         assert!(!state.drawer_open);
+        assert!(!state.drawer_menu_open);
+    }
+
+    #[test]
+    fn role_from_chat_returns_latest_badge() {
+        let mut log = VecDeque::new();
+        log.push_back(ChatRow {
+            timestamp: "00:00:00".into(),
+            platform: Platform::Twitch,
+            badges: vec![BadgeKind::Moderator],
+            username: "danylo_ua".into(),
+            username_color: Color::WHITE,
+            body: ChatBody::Message("first".into()),
+        });
+        log.push_back(ChatRow {
+            timestamp: "00:00:01".into(),
+            platform: Platform::Twitch,
+            badges: vec![BadgeKind::Vip],
+            username: "danylo_ua".into(),
+            username_color: Color::WHITE,
+            body: ChatBody::Message("second".into()),
+        });
+        let result = role_from_chat("danylo_ua", &log);
+        assert_eq!(result, Some(BadgeKind::Vip));
+    }
+
+    #[test]
+    fn role_from_chat_none_when_username_absent() {
+        let log = VecDeque::new();
+        let result = role_from_chat("ghost_user", &log);
+        assert!(result.is_none());
     }
 
     #[test]

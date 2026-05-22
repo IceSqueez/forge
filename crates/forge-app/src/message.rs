@@ -330,6 +330,8 @@ pub enum Message {
     ChatToggleDrawer,
     ChatDrawerSearchChanged(String),
     ChatDrawerSelectViewer(String),
+    ChatDrawerMenuToggle,
+    ChatDrawerMenuDismiss,
     ScriptEditor(ScriptEditorMsg),
     EventFeed(EventFeedMsg),
     Server(ServerScreenMsg),

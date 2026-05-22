@@ -12,7 +12,7 @@ use iced::{
     widget::{Space, column, container, row, scrollable, text},
 };
 
-use crate::{Message, Screen};
+use crate::{Message, Screen, runtime_view::RuntimeView};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CommandsFilter {
@@ -48,15 +48,11 @@ pub async fn load_commands(dp: Arc<SqliteBackend>) -> Result<Vec<Command>, Strin
     dp.command_repo().list().await.map_err(|e| e.to_string())
 }
 
-pub fn handle_msg(
-    state: &mut CommandsState,
-    msg: CommandsMsg,
-    backend: &Arc<SqliteBackend>,
-) -> Task<Message> {
+pub fn update(state: &mut CommandsState, rt: &RuntimeView, msg: CommandsMsg) -> Task<Message> {
     match msg {
         CommandsMsg::LoadRequested => {
             state.loading = true;
-            let dp = Arc::clone(backend);
+            let dp = Arc::clone(&rt.backend);
             Task::perform(load_commands(dp), |r| {
                 Message::Commands(CommandsMsg::Loaded(r))
             })

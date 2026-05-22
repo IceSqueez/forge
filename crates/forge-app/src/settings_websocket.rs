@@ -17,6 +17,7 @@ use iced::{
 };
 
 use crate::Message;
+use crate::runtime_view::RuntimeView;
 use crate::server_screen::ServerScreenMsg;
 
 static LAN_BIND_BULLETS: [BulletItem<'static>; 4] = [
@@ -150,14 +151,14 @@ pub async fn load_settings_websocket(
     })
 }
 
-pub fn handle_settings_websocket_msg(
+pub fn update(
     state: &mut SettingsWebSocketState,
+    rt: &RuntimeView,
     msg: SettingsWebSocketMsg,
-    backend: &Arc<SqliteBackend>,
 ) -> Task<Message> {
     match msg {
         SettingsWebSocketMsg::LoadRequested => {
-            let b = Arc::clone(backend);
+            let b = Arc::clone(&rt.backend);
             Task::perform(async move { load_settings_websocket(b).await }, |r| {
                 Message::SettingsWebSocket(SettingsWebSocketMsg::LoadResult(r))
             })
@@ -190,7 +191,7 @@ pub fn handle_settings_websocket_msg(
         SettingsWebSocketMsg::ToggleEnable(val) => {
             state.enable_server = val;
             state.all_changes_saved = false;
-            let b = Arc::clone(backend);
+            let b = Arc::clone(&rt.backend);
             Task::perform(
                 async move {
                     b.set_string("server.enabled", if val { "true" } else { "false" })
@@ -204,7 +205,7 @@ pub fn handle_settings_websocket_msg(
             state.bind_address_radio = BindAddressChoice::Localhost;
             state.lan_bind_modal_visible = false;
             state.all_changes_saved = false;
-            let b = Arc::clone(backend);
+            let b = Arc::clone(&rt.backend);
             Task::perform(
                 async move {
                     b.set_server_bind_address("127.0.0.1")
@@ -230,7 +231,7 @@ pub fn handle_settings_websocket_msg(
             Ok(p) if p >= 1024 => {
                 state.port = p;
                 state.all_changes_saved = false;
-                let b = Arc::clone(backend);
+                let b = Arc::clone(&rt.backend);
                 Task::perform(
                     async move { b.set_server_port(p).await.map_err(|e| e.to_string()) },
                     |r| Message::SettingsWebSocket(SettingsWebSocketMsg::SaveStatus(r)),
@@ -244,7 +245,7 @@ pub fn handle_settings_websocket_msg(
         SettingsWebSocketMsg::RequireWsToken(val) => {
             state.require_ws_token = val;
             state.all_changes_saved = false;
-            let b = Arc::clone(backend);
+            let b = Arc::clone(&rt.backend);
             Task::perform(
                 async move {
                     b.set_server_auth_required_for_reads(val)
@@ -257,7 +258,7 @@ pub fn handle_settings_websocket_msg(
         SettingsWebSocketMsg::RequireHttpOverlayToken(val) => {
             state.require_http_overlay_token = val;
             state.all_changes_saved = false;
-            let b = Arc::clone(backend);
+            let b = Arc::clone(&rt.backend);
             Task::perform(
                 async move {
                     b.set_string(
@@ -273,7 +274,7 @@ pub fn handle_settings_websocket_msg(
         SettingsWebSocketMsg::CorsAnyOrigin(val) => {
             state.cors_any_origin = val;
             state.all_changes_saved = false;
-            let b = Arc::clone(backend);
+            let b = Arc::clone(&rt.backend);
             Task::perform(
                 async move {
                     b.set_string(
@@ -290,7 +291,7 @@ pub fn handle_settings_websocket_msg(
             let path_str = path.to_string_lossy().into_owned();
             state.overlay_root = path;
             state.all_changes_saved = false;
-            let b = Arc::clone(backend);
+            let b = Arc::clone(&rt.backend);
             Task::perform(
                 async move {
                     b.set_string(
@@ -321,7 +322,7 @@ pub fn handle_settings_websocket_msg(
             state.lan_bind_input = String::new();
             state.bind_address_radio = BindAddressChoice::Lan;
             state.all_changes_saved = false;
-            let b = Arc::clone(backend);
+            let b = Arc::clone(&rt.backend);
             Task::perform(
                 async move {
                     b.set_server_bind_address("0.0.0.0")
@@ -785,23 +786,47 @@ pub fn settings_websocket_view<'a>(
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use forge_runtime::{EventBus, NullEventLogRepo, ScriptRegistry};
+    use forge_storage::CredentialsRepo;
 
-    const TEST_KEY: [u8; 32] = [0xab; 32];
+    use crate::runtime_view::RuntimeView;
+    use crate::server_subsystem::ServerSubsystem;
 
-    fn make_backend() -> Arc<SqliteBackend> {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        Arc::new(
-            rt.block_on(SqliteBackend::open_with_key("sqlite::memory:", TEST_KEY))
+    fn test_rt() -> RuntimeView {
+        let tokio_rt = tokio::runtime::Runtime::new().unwrap();
+        let backend = Arc::new(
+            tokio_rt
+                .block_on(SqliteBackend::open_with_key("sqlite::memory:", [0xab; 32]))
                 .unwrap(),
-        )
+        );
+        let server_subsystem = Arc::new(ServerSubsystem::new(
+            Arc::clone(&backend) as Arc<dyn CredentialsRepo>
+        ));
+        RuntimeView {
+            backend,
+            bus: EventBus::new(Arc::new(NullEventLogRepo)),
+            script_registry: Arc::new(ScriptRegistry::new()),
+            server_subsystem,
+            action_engine: None,
+            scheduler: None,
+            command_parser: None,
+            obs_client: None,
+            speak_queue: None,
+            sound_player: None,
+            twitch_chat_handle: None,
+            chat_send_bridge: None,
+            twitch_flow: None,
+            twitch_login: None,
+            twitch_token_expires: None,
+            twitch_reauth_required: false,
+        }
     }
 
     #[test]
     fn select_lan_opens_modal_without_committing() {
-        let backend = make_backend();
+        let rt = test_rt();
         let mut state = SettingsWebSocketState::default();
-        let _ =
-            handle_settings_websocket_msg(&mut state, SettingsWebSocketMsg::SelectLan, &backend);
+        let _ = update(&mut state, &rt, SettingsWebSocketMsg::SelectLan);
         assert!(state.lan_bind_modal_visible);
         assert_eq!(state.bind_address_radio, BindAddressChoice::Localhost);
         assert!(state.lan_bind_input.is_empty());
@@ -809,34 +834,26 @@ mod tests {
 
     #[test]
     fn lan_bind_confirmed_with_wrong_phrase_leaves_modal_open() {
-        let backend = make_backend();
+        let rt = test_rt();
         let mut state = SettingsWebSocketState {
             lan_bind_modal_visible: true,
             lan_bind_input: "wrong".to_owned(),
             ..Default::default()
         };
-        let _ = handle_settings_websocket_msg(
-            &mut state,
-            SettingsWebSocketMsg::LanBindConfirmed,
-            &backend,
-        );
+        let _ = update(&mut state, &rt, SettingsWebSocketMsg::LanBindConfirmed);
         assert!(state.lan_bind_modal_visible);
         assert_eq!(state.bind_address_radio, BindAddressChoice::Localhost);
     }
 
     #[test]
     fn lan_bind_confirmed_with_correct_phrase_sets_lan() {
-        let backend = make_backend();
+        let rt = test_rt();
         let mut state = SettingsWebSocketState {
             lan_bind_modal_visible: true,
             lan_bind_input: "expose to LAN".to_owned(),
             ..Default::default()
         };
-        let _ = handle_settings_websocket_msg(
-            &mut state,
-            SettingsWebSocketMsg::LanBindConfirmed,
-            &backend,
-        );
+        let _ = update(&mut state, &rt, SettingsWebSocketMsg::LanBindConfirmed);
         assert!(!state.lan_bind_modal_visible);
         assert_eq!(state.bind_address_radio, BindAddressChoice::Lan);
         assert!(state.lan_bind_input.is_empty());
@@ -844,18 +861,14 @@ mod tests {
 
     #[test]
     fn lan_bind_cancelled_resets_to_localhost() {
-        let backend = make_backend();
+        let rt = test_rt();
         let mut state = SettingsWebSocketState {
             lan_bind_modal_visible: true,
             bind_address_radio: BindAddressChoice::Lan,
             lan_bind_input: "partial".to_owned(),
             ..Default::default()
         };
-        let _ = handle_settings_websocket_msg(
-            &mut state,
-            SettingsWebSocketMsg::LanBindCancelled,
-            &backend,
-        );
+        let _ = update(&mut state, &rt, SettingsWebSocketMsg::LanBindCancelled);
         assert!(!state.lan_bind_modal_visible);
         assert_eq!(state.bind_address_radio, BindAddressChoice::Localhost);
         assert!(state.lan_bind_input.is_empty());
@@ -863,77 +876,61 @@ mod tests {
 
     #[test]
     fn port_focus_lost_valid_port_updates_state() {
-        let backend = make_backend();
+        let rt = test_rt();
         let mut state = SettingsWebSocketState {
             port_input: "9000".to_owned(),
             ..Default::default()
         };
-        let _ = handle_settings_websocket_msg(
-            &mut state,
-            SettingsWebSocketMsg::PortFocusLost,
-            &backend,
-        );
+        let _ = update(&mut state, &rt, SettingsWebSocketMsg::PortFocusLost);
         assert_eq!(state.port, 9000);
         assert_eq!(state.port_input, "9000");
     }
 
     #[test]
     fn port_focus_lost_invalid_port_resets_input() {
-        let backend = make_backend();
+        let rt = test_rt();
         let mut state = SettingsWebSocketState {
             port_input: "not_a_port".to_owned(),
             ..Default::default()
         };
-        let _ = handle_settings_websocket_msg(
-            &mut state,
-            SettingsWebSocketMsg::PortFocusLost,
-            &backend,
-        );
+        let _ = update(&mut state, &rt, SettingsWebSocketMsg::PortFocusLost);
         assert_eq!(state.port, 8081);
         assert_eq!(state.port_input, "8081");
     }
 
     #[test]
     fn port_focus_lost_below_1024_resets_input() {
-        let backend = make_backend();
+        let rt = test_rt();
         let mut state = SettingsWebSocketState {
             port_input: "80".to_owned(),
             ..Default::default()
         };
-        let _ = handle_settings_websocket_msg(
-            &mut state,
-            SettingsWebSocketMsg::PortFocusLost,
-            &backend,
-        );
+        let _ = update(&mut state, &rt, SettingsWebSocketMsg::PortFocusLost);
         assert_eq!(state.port, 8081);
         assert_eq!(state.port_input, "8081");
     }
 
     #[test]
     fn save_status_ok_sets_all_changes_saved() {
-        let backend = make_backend();
+        let rt = test_rt();
         let mut state = SettingsWebSocketState {
             all_changes_saved: false,
             save_error: Some("previous error".to_owned()),
             ..Default::default()
         };
-        let _ = handle_settings_websocket_msg(
-            &mut state,
-            SettingsWebSocketMsg::SaveStatus(Ok(())),
-            &backend,
-        );
+        let _ = update(&mut state, &rt, SettingsWebSocketMsg::SaveStatus(Ok(())));
         assert!(state.all_changes_saved);
         assert!(state.save_error.is_none());
     }
 
     #[test]
     fn save_status_err_records_error() {
-        let backend = make_backend();
+        let rt = test_rt();
         let mut state = SettingsWebSocketState::default();
-        let _ = handle_settings_websocket_msg(
+        let _ = update(
             &mut state,
+            &rt,
             SettingsWebSocketMsg::SaveStatus(Err("disk full".to_owned())),
-            &backend,
         );
         assert!(!state.all_changes_saved);
         assert_eq!(state.save_error.as_deref(), Some("disk full"));

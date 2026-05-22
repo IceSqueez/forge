@@ -51,9 +51,7 @@ use crate::script_editor::{
 use crate::server_screen::{ServerScreenMsg, ServerScreenState, server_screen_view};
 use crate::server_subsystem::ServerSubsystem;
 use crate::settings_audio::{SettingsAudioState, settings_audio_view};
-use crate::settings_websocket::{
-    SettingsWebSocketState, handle_settings_websocket_msg, settings_websocket_view,
-};
+use crate::settings_websocket::{SettingsWebSocketState, settings_websocket_view};
 use crate::soundboard::{SoundboardState, soundboard_view};
 use crate::stream_apps::view as stream_apps_view;
 use crate::test_trigger::synthesize_test_event;
@@ -754,7 +752,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             )
         }
         Message::SettingsWebSocket(sub) => {
-            handle_settings_websocket_msg(&mut app.settings_websocket, sub, &app.rt.backend)
+            crate::settings_websocket::update(&mut app.settings_websocket, &app.rt, sub)
         }
         Message::TwitchPanel(sub) => handle_twitch_panel_msg(app, sub),
         Message::TwitchReauthRequested => {

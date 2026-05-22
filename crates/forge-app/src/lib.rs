@@ -60,6 +60,5 @@ pub use server_screen::{
     server_screen_view,
 };
 pub use settings_websocket::{
-    BindAddressChoice, SettingsWebSocketMsg, SettingsWebSocketState, handle_settings_websocket_msg,
-    settings_websocket_view,
+    BindAddressChoice, SettingsWebSocketMsg, SettingsWebSocketState, settings_websocket_view,
 };

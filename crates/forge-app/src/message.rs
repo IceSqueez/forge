@@ -115,6 +115,13 @@ pub enum ActionsMsg {
     ToggleGroupCollapsed(crate::actions::TriggerCategory),
     TelemetryLoaded(Result<forge_storage::ActionTelemetry, String>),
     ToggleStepMenu(usize),
+    ToggleActionMenu(forge_types::ActionId),
+    DismissActionMenu,
+    RenameStarted(forge_types::ActionId),
+    RenameBufferChanged(String),
+    RenameSubmit,
+    RenameCancel,
+    RenameSaved(Result<(forge_types::ActionId, String), String>),
     DismissStepMenu,
 }
 
@@ -354,5 +361,6 @@ pub enum Message {
     Soundboard(SoundboardMsg),
     SettingsAudio(SettingsAudioMsg),
     Tts(TtsMsg),
+    OutsideClick,
     Noop,
 }

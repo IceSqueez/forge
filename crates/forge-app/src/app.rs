@@ -798,6 +798,15 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 Task::none()
             }
         },
+        Message::OutsideClick => {
+            if app.actions.renaming_action.is_some() {
+                Task::done(Message::Actions(ActionsMsg::RenameCancel))
+            } else if app.actions.action_menu_open.is_some() {
+                Task::done(Message::Actions(ActionsMsg::DismissActionMenu))
+            } else {
+                Task::none()
+            }
+        }
         Message::Noop => Task::none(),
     }
 }
@@ -1190,6 +1199,16 @@ fn handle_actions_msg(app: &mut App, sub: ActionsMsg) -> Task<Message> {
             Task::none()
         }
         ActionsMsg::ActionSelected(id) => {
+            let already_loaded = app.actions.selected == Some(id)
+                && app
+                    .actions
+                    .detail
+                    .as_ref()
+                    .map(|d| d.action.id == id)
+                    .unwrap_or(false);
+            if already_loaded {
+                return Task::none();
+            }
             app.actions.selected = Some(id);
             app.actions.detail = None;
             app.actions.telemetry = None;
@@ -1388,6 +1407,109 @@ fn handle_actions_msg(app: &mut App, sub: ActionsMsg) -> Task<Message> {
         }
         ActionsMsg::DismissStepMenu => {
             app.actions.step_menu_open = None;
+            Task::none()
+        }
+        ActionsMsg::ToggleActionMenu(id) => {
+            app.actions.action_menu_open = if app.actions.action_menu_open == Some(id) {
+                None
+            } else {
+                Some(id)
+            };
+            Task::none()
+        }
+        ActionsMsg::DismissActionMenu => {
+            app.actions.action_menu_open = None;
+            Task::none()
+        }
+        ActionsMsg::RenameStarted(id) => {
+            let current_name = app
+                .actions
+                .tree
+                .iter()
+                .flat_map(|g| g.actions.iter())
+                .find(|a| a.id == id)
+                .map(|a| a.name.clone())
+                .unwrap_or_default();
+            app.actions.renaming_action = Some((id, current_name));
+            app.actions.action_menu_open = None;
+            iced::widget::operation::focus(action_rename_input_id())
+        }
+        ActionsMsg::RenameBufferChanged(buf) => {
+            if let Some((_, name)) = app.actions.renaming_action.as_mut() {
+                *name = buf;
+            }
+            Task::none()
+        }
+        ActionsMsg::RenameCancel => {
+            app.actions.renaming_action = None;
+            Task::none()
+        }
+        ActionsMsg::RenameSubmit => {
+            let Some((id, name)) = app.actions.renaming_action.clone() else {
+                return Task::none();
+            };
+            let trimmed = name.trim().to_owned();
+            if trimmed.is_empty() {
+                app.actions.renaming_action = None;
+                return Task::none();
+            }
+            let already_taken = app
+                .actions
+                .tree
+                .iter()
+                .flat_map(|g| g.actions.iter())
+                .any(|a| a.id != id && a.name.eq_ignore_ascii_case(&trimmed));
+            if already_taken {
+                let toast_msg = format!("Name \u{201c}{trimmed}\u{201d} is already taken");
+                return Task::done(Message::Toast(ToastMsg::Fired {
+                    kind: forge_widgets::ToastKind::Error,
+                    message: toast_msg,
+                    duration_ms: 3000,
+                }));
+            }
+            let dp = Arc::clone(&app.backend);
+            Task::perform(
+                async move {
+                    use forge_storage::DataProvider;
+                    let mut action = dp
+                        .action_repo()
+                        .get(id)
+                        .await
+                        .map_err(|e| e.to_string())?
+                        .ok_or_else(|| "action not found".to_owned())?;
+                    action.name = trimmed.clone();
+                    dp.action_repo()
+                        .save(&action)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    Ok::<_, String>((id, trimmed))
+                },
+                |r| Message::Actions(ActionsMsg::RenameSaved(r)),
+            )
+        }
+        ActionsMsg::RenameSaved(Ok((id, new_name))) => {
+            app.actions.renaming_action = None;
+            for group in &mut app.actions.tree {
+                let touched = group.actions.iter().any(|s| s.id == id);
+                for summary in &mut group.actions {
+                    if summary.id == id {
+                        summary.name = new_name.clone();
+                    }
+                }
+                if touched {
+                    group.actions.sort_by_key(|a| a.name.to_lowercase());
+                }
+            }
+            if let Some(detail) = app.actions.detail.as_mut()
+                && detail.action.id == id
+            {
+                detail.action.name = new_name;
+            }
+            Task::none()
+        }
+        ActionsMsg::RenameSaved(Err(e)) => {
+            app.actions.renaming_action = None;
+            tracing::warn!(error = %e, "action rename failed");
             Task::none()
         }
     }
@@ -3764,7 +3886,15 @@ fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Mess
             if !is_collapsed {
                 for summary in &filtered {
                     let selected = actions_state.selected == Some(summary.id);
-                    tree_col = tree_col.push(actions_tree_row(summary, selected, palette));
+                    let menu_open = actions_state.action_menu_open == Some(summary.id);
+                    let rename_buf = actions_state
+                        .renaming_action
+                        .as_ref()
+                        .filter(|(id, _)| *id == summary.id)
+                        .map(|(_, n)| n.as_str());
+                    tree_col = tree_col.push(actions_tree_row(
+                        summary, selected, menu_open, rename_buf, palette,
+                    ));
                 }
             }
         }
@@ -3793,10 +3923,81 @@ fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Mess
         .spacing(0)
         .height(Length::Fill);
 
-    let main_view: Element<'_, Message> = container(column![page_header, body, footer].spacing(0))
+    let base_view: Element<'_, Message> = container(column![page_header, body, footer].spacing(0))
         .width(Length::Fill)
         .height(Length::Fill)
         .into();
+
+    let main_view: Element<'_, Message> = if let Some(open_id) = actions_state.action_menu_open {
+        let open_summary = actions_state
+            .tree
+            .iter()
+            .flat_map(|g| g.actions.iter())
+            .find(|a| a.id == open_id);
+        let menu_top_offset = if open_summary.is_some() {
+            compute_action_menu_y_offset(actions_state, open_id)
+        } else {
+            None
+        };
+        if let (Some(summary), Some(top_y)) = (open_summary, menu_top_offset) {
+            let toggle_label = if summary.enabled { "Disable" } else { "Enable" };
+            let menu_items: Vec<forge_widgets::MenuItem<Message>> = vec![
+                forge_widgets::MenuItem::Item {
+                    label: "Rename\u{2026}".into(),
+                    icon: Some(Icon::InfoCircle),
+                    on_press: Message::Actions(ActionsMsg::RenameStarted(open_id)),
+                    shortcut: None,
+                    color: None,
+                    disabled: false,
+                },
+                forge_widgets::MenuItem::Item {
+                    label: "Duplicate".into(),
+                    icon: Some(Icon::Copy),
+                    on_press: Message::Actions(ActionsMsg::DuplicateAction(open_id)),
+                    shortcut: None,
+                    color: None,
+                    disabled: false,
+                },
+                forge_widgets::MenuItem::Item {
+                    label: toggle_label.to_owned(),
+                    icon: Some(Icon::Bolt),
+                    on_press: Message::Actions(ActionsMsg::ToggleEnabled(
+                        open_id,
+                        !summary.enabled,
+                    )),
+                    shortcut: None,
+                    color: None,
+                    disabled: false,
+                },
+                forge_widgets::MenuItem::Divider,
+                forge_widgets::MenuItem::Item {
+                    label: "Delete\u{2026}".into(),
+                    icon: Some(Icon::Eraser),
+                    on_press: Message::Actions(ActionsMsg::DeleteAction(open_id)),
+                    shortcut: None,
+                    color: Some(p.random),
+                    disabled: false,
+                },
+            ];
+            let panel = forge_widgets::menu_panel(menu_items, palette);
+            let overlay = container(panel)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .padding(iced::Padding {
+                    top: top_y,
+                    right: 0.0,
+                    bottom: 0.0,
+                    left: 90.0,
+                })
+                .align_x(iced::Alignment::Start)
+                .align_y(iced::Alignment::Start);
+            iced::widget::stack![base_view, overlay].into()
+        } else {
+            base_view
+        }
+    } else {
+        base_view
+    };
 
     if let Some(form) = app.actions.add_sub_action_modal.as_ref() {
         let modal_el = add_sub_action_modal_view(form, palette);
@@ -3976,12 +4177,16 @@ fn actions_group_header<'a>(
 fn actions_tree_row<'a>(
     summary: &'a crate::actions::ActionSummary,
     selected: bool,
+    menu_open: bool,
+    rename_buf: Option<&'a str>,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    use iced::widget::{button, container, row, text};
+    use forge_widgets::menu_button_trigger;
+    use iced::widget::{button, container, row, text, text_input};
 
     let p = *palette;
     let mono = forge_widgets::font(forge_widgets::FontRole::Monospace);
+    let action_id = summary.id;
 
     let state_icon = if summary.enabled {
         tabler_icon(Icon::CircleCheckFilled, 13.0, p.success)
@@ -3997,15 +4202,51 @@ fn actions_tree_row<'a>(
         p.text_secondary
     };
 
-    let name_el = text(&summary.name)
-        .size(FONT_SM)
-        .color(name_color)
-        .font(mono);
+    let name_el: Element<'a, Message> = if let Some(buf) = rename_buf {
+        text_input("", buf)
+            .id(action_rename_input_id())
+            .on_input(|s| Message::Actions(ActionsMsg::RenameBufferChanged(s)))
+            .on_submit(Message::Actions(ActionsMsg::RenameSubmit))
+            .size(FONT_SM)
+            .padding(iced::Padding {
+                top: 2.0,
+                bottom: 2.0,
+                left: 6.0,
+                right: 6.0,
+            })
+            .width(Length::Fill)
+            .style(
+                move |_t: &iced::Theme, _s| iced::widget::text_input::Style {
+                    background: iced::Background::Color(p.shell),
+                    border: iced::Border {
+                        color: p.brand,
+                        width: 0.5,
+                        radius: forge_widgets::radius(forge_widgets::Radius::Sm).into(),
+                    },
+                    icon: p.text_muted,
+                    placeholder: p.text_muted,
+                    value: p.text_primary,
+                    selection: iced::Color { a: 0.25, ..p.brand },
+                },
+            )
+            .into()
+    } else {
+        container(
+            text(&summary.name)
+                .size(FONT_SM)
+                .color(name_color)
+                .font(mono)
+                .wrapping(iced::widget::text::Wrapping::None),
+        )
+        .width(Length::Fill)
+        .clip(true)
+        .into()
+    };
 
     let count_el = text(summary.sub_action_count.to_string())
         .size(FONT_XS)
         .color(p.text_faint)
-        .font(forge_widgets::font(forge_widgets::FontRole::Monospace));
+        .font(mono);
 
     let stripe_color = if selected {
         p.brand
@@ -4019,43 +4260,53 @@ fn actions_tree_row<'a>(
             ..iced::widget::container::Style::default()
         });
 
-    let body = container(
-        row![
-            state_icon,
-            name_el,
-            iced::widget::Space::new().width(Length::Fill),
-            count_el
-        ]
-        .spacing(8)
-        .align_y(iced::alignment::Vertical::Center),
+    let select_btn = button(
+        row![state_icon, name_el, count_el,]
+            .spacing(8)
+            .align_y(iced::alignment::Vertical::Center),
     )
-    .padding([6, 14])
-    .width(Length::Fill);
+    .on_press(Message::Actions(ActionsMsg::ActionSelected(action_id)))
+    .padding(iced::Padding {
+        top: 6.0,
+        bottom: 6.0,
+        left: 32.0,
+        right: 8.0,
+    })
+    .width(Length::Fill)
+    .style(move |_theme: &iced::Theme, status| {
+        let bg_color = match (selected, status) {
+            (true, _) | (false, iced::widget::button::Status::Hovered) => p.base,
+            _ => iced::Color::TRANSPARENT,
+        };
+        iced::widget::button::Style {
+            background: Some(iced::Background::Color(bg_color)),
+            text_color: name_color,
+            border: iced::Border::default(),
+            shadow: iced::Shadow::default(),
+            snap: false,
+        }
+    });
 
-    let inner = row![stripe, body].spacing(0).width(Length::Fill);
+    let menu_btn = menu_button_trigger(
+        Icon::DotsVertical,
+        menu_open,
+        Message::Actions(ActionsMsg::ToggleActionMenu(action_id)),
+        palette,
+    );
 
-    let action_id = summary.id;
-    button(inner)
-        .on_press(Message::Actions(ActionsMsg::ActionSelected(action_id)))
-        .padding(0)
-        .width(Length::Fill)
-        .style(move |_theme: &iced::Theme, status| {
-            let bg_color = match (selected, status) {
-                (true, _) | (false, iced::widget::button::Status::Hovered) => p.base,
-                _ => iced::Color::TRANSPARENT,
-            };
-            iced::widget::button::Style {
-                background: Some(iced::Background::Color(bg_color)),
-                text_color: name_color,
-                border: iced::Border {
-                    color: iced::Color::TRANSPARENT,
-                    width: 0.0,
-                    radius: 0.0.into(),
-                },
-                shadow: iced::Shadow::default(),
-                snap: false,
-            }
+    let right_col = container(menu_btn)
+        .padding(iced::Padding {
+            top: 2.0,
+            bottom: 2.0,
+            left: 0.0,
+            right: 6.0,
         })
+        .align_y(iced::Alignment::Center);
+
+    row![stripe, select_btn, right_col]
+        .spacing(0)
+        .width(Length::Fill)
+        .align_y(iced::Alignment::Center)
         .into()
 }
 
@@ -4076,7 +4327,8 @@ fn actions_detail_panel<'a>(
         ))
         .width(Length::Fill)
         .height(Length::Fill)
-        .padding([24, 24])
+        .align_x(iced::Alignment::Center)
+        .align_y(iced::Alignment::Center)
         .into();
     }
 
@@ -4324,6 +4576,42 @@ fn section_header_with_add<'a>(
     .padding([6_u16, 14_u16])
     .width(Length::Fill)
     .into()
+}
+
+fn action_rename_input_id() -> iced::advanced::widget::Id {
+    iced::advanced::widget::Id::new("forge:action_rename")
+}
+
+fn compute_action_menu_y_offset(
+    state: &crate::actions::ActionsState,
+    open_id: forge_types::ActionId,
+) -> Option<f32> {
+    const PAGE_HEADER_H: f32 = 40.0;
+    const GROUP_HEADER_H: f32 = 28.0;
+    const ROW_H: f32 = 30.0;
+
+    let mut y = PAGE_HEADER_H;
+    for group in &state.tree {
+        let visible: Vec<&crate::actions::ActionSummary> = group
+            .actions
+            .iter()
+            .filter(|a| state.action_passes_filter(a))
+            .collect();
+        if visible.is_empty() {
+            continue;
+        }
+        y += GROUP_HEADER_H;
+        if state.collapsed_groups.contains(&group.category) {
+            continue;
+        }
+        for action in visible {
+            if action.id == open_id {
+                return Some(y + ROW_H);
+            }
+            y += ROW_H;
+        }
+    }
+    None
 }
 
 fn empty_placeholder_card<'a>(
@@ -6091,6 +6379,14 @@ pub fn subscription(app: &App) -> Subscription<Message> {
     let toast_tick = iced::time::every(std::time::Duration::from_millis(200))
         .map(|instant| Message::Toast(crate::message::ToastMsg::Tick(instant)));
 
+    let outside_click = iced::event::listen_with(|event, status, _window| match (event, status) {
+        (
+            iced::Event::Mouse(iced::mouse::Event::ButtonPressed(_)),
+            iced::event::Status::Ignored,
+        ) => Some(Message::OutsideClick),
+        _ => None,
+    });
+
     if let Some(state) = app.integration_detail.as_ref() {
         Subscription::batch([
             bus,
@@ -6099,9 +6395,17 @@ pub fn subscription(app: &App) -> Subscription<Message> {
             soundboard_keys,
             tts_events,
             toast_tick,
+            outside_click,
         ])
     } else {
-        Subscription::batch([bus, server_tick, soundboard_keys, tts_events, toast_tick])
+        Subscription::batch([
+            bus,
+            server_tick,
+            soundboard_keys,
+            tts_events,
+            toast_tick,
+            outside_click,
+        ])
     }
 }
 

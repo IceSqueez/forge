@@ -492,6 +492,8 @@ pub struct ActionsState {
     pub telemetry: Option<ActionTelemetry>,
     pub telemetry_loading: bool,
     pub step_menu_open: Option<usize>,
+    pub action_menu_open: Option<forge_types::ActionId>,
+    pub renaming_action: Option<(forge_types::ActionId, String)>,
 }
 
 impl ActionsState {
@@ -579,7 +581,8 @@ pub async fn load_actions_tree(dp: Arc<SqliteBackend>) -> Result<Vec<ActionsGrou
 
     let result = by_category
         .into_iter()
-        .map(|(category, actions)| {
+        .map(|(category, mut actions)| {
+            actions.sort_by_key(|a| a.name.to_lowercase());
             let fired_24h = actions.iter().map(|a| a.runs_24h).sum();
             ActionsGroup {
                 category,

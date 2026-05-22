@@ -225,6 +225,56 @@ fn panel_el<'a, Msg: Clone + 'a>(
         .into()
 }
 
+pub fn menu_panel<'a, Msg: Clone + 'a>(
+    items: Vec<MenuItem<Msg>>,
+    palette: &'a ForgePalette,
+) -> Element<'a, Msg> {
+    panel_el(items, palette)
+}
+
+pub fn menu_button_trigger<'a, Msg: Clone + 'a>(
+    trigger_icon: Icon,
+    open: bool,
+    on_toggle: Msg,
+    palette: &'a ForgePalette,
+) -> Element<'a, Msg> {
+    let surface_overlay = palette.surface_overlay;
+    let faint = palette.text_faint;
+
+    button(
+        container(tabler_icon(trigger_icon, FONT_SM, faint))
+            .width(Length::Fixed(28.0))
+            .height(Length::Fixed(28.0))
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center),
+    )
+    .on_press(on_toggle)
+    .padding(0)
+    .style(move |_theme: &iced::Theme, status| button::Style {
+        background: match status {
+            button::Status::Hovered | button::Status::Pressed => {
+                Some(Background::Color(surface_overlay))
+            }
+            _ => {
+                if open {
+                    Some(Background::Color(surface_overlay))
+                } else {
+                    None
+                }
+            }
+        },
+        text_color: faint,
+        border: Border {
+            color: Color::TRANSPARENT,
+            width: 0.0,
+            radius: radius(Radius::Sm).into(),
+        },
+        shadow: iced::Shadow::default(),
+        snap: false,
+    })
+    .into()
+}
+
 pub fn menu_button<'a, Msg: Clone + 'a>(
     trigger_icon: Icon,
     open: bool,

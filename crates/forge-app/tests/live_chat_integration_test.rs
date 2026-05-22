@@ -91,7 +91,7 @@ fn chat_message_event_appends_to_log() {
     let mut app = test_app();
     app.live_chat.chat_log.clear();
     let ev = make_twitch_chat_event("INTEGRATION_TEST_USERNAME", "INTEGRATION_TEST_MESSAGE_BODY");
-    let _ = update(&mut app, Message::EventArrived(ev));
+    let _ = update(&mut app, Message::EventArrived(Arc::new(ev)));
     assert_eq!(app.live_chat.chat_log.len(), 1);
     let row = &app.live_chat.chat_log[0];
     assert_eq!(row.username, "INTEGRATION_TEST_USERNAME");
@@ -111,7 +111,7 @@ fn chat_log_trims_at_1000_entries() {
             &format!("INTEGRATION_TEST_USERNAME_{i}"),
             "INTEGRATION_TEST_MESSAGE_BODY",
         );
-        let _ = update(&mut app, Message::EventArrived(ev));
+        let _ = update(&mut app, Message::EventArrived(Arc::new(ev)));
     }
     assert_eq!(app.live_chat.chat_log.len(), limit);
     let first = &app.live_chat.chat_log[0];
@@ -127,7 +127,7 @@ fn non_chat_events_are_ignored() {
         "platform.connected",
         serde_json::json!({ "platform": "twitch" }),
     );
-    let _ = update(&mut app, Message::EventArrived(ev));
+    let _ = update(&mut app, Message::EventArrived(Arc::new(ev)));
     assert!(app.live_chat.chat_log.is_empty());
 }
 

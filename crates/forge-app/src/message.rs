@@ -339,7 +339,7 @@ pub enum Message {
     ServerStopResult(Result<(), String>),
     ServerTokenRotated(Result<String, String>),
     ThemeChanged(ThemeId),
-    EventArrived(Event),
+    EventArrived(Arc<Event>),
     ChatInputChanged(String),
     ChatSubmit,
     ChatSent(Result<(), String>),

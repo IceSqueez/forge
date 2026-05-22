@@ -390,7 +390,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 app.home.triggers_fired = Some(app.home.triggers_fired.unwrap_or(0) + 1);
             }
             if !app.event_feed.paused {
-                app.event_feed.push_event(event);
+                app.event_feed.push_event(Arc::unwrap_or_clone(event));
             }
             auto_scroll_task.unwrap_or_else(Task::none)
         }
@@ -6450,7 +6450,7 @@ pub fn subscription(app: &App) -> Subscription<Message> {
                     let mut stream = bus.subscribe();
                     loop {
                         if let Ok(event) = stream.recv().await {
-                            let _ = tx.try_send(Message::EventArrived(event));
+                            let _ = tx.try_send(Message::EventArrived(Arc::new(event)));
                         }
                     }
                 },

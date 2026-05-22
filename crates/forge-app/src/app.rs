@@ -20,7 +20,7 @@ use forge_storage::{CredentialId, CredentialsRepo, DataProvider};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{Action, ActionId};
 use forge_widgets::icons::{Icon, tabler_icon};
-use forge_widgets::tokens::{FONT_BODY, FONT_SM};
+use forge_widgets::tokens::{FONT_MD, FONT_SM, FONT_XS};
 use forge_widgets::{
     BreadcrumbCrumb, FontRole, ForgePalette, NavChild, NavItem, Radius, Sidebar, ThemeId,
     ToastQueue, app_footer, breadcrumb, font, page_shell, radius, sidebar, title_bar,
@@ -2181,7 +2181,7 @@ fn home_hero<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     let title_col = column![
         text("Forge").size(22.0).color(palette.text_primary),
         text("Open-source stream automation, forged for streamers")
-            .size(FONT_BODY)
+            .size(FONT_SM)
             .color(palette.text_muted),
     ]
     .spacing(2.0);
@@ -2322,7 +2322,7 @@ fn home_stream_health<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     let live_badge = row![
         live_dot,
         text("LIVE")
-            .size(9.5)
+            .size(FONT_XS)
             .color(success)
             .font(font(FontRole::Monospace)),
     ]
@@ -2331,14 +2331,14 @@ fn home_stream_health<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
 
     let header_left = row![
         header_icon,
-        text("Stream health").size(FONT_BODY).color(text_primary),
+        text("Stream health").size(FONT_SM).color(text_primary),
         live_badge,
     ]
     .spacing(7.0)
     .align_y(Alignment::Center);
 
     let header_right = text("last 60s · auto-refresh")
-        .size(10.5)
+        .size(FONT_XS)
         .color(text_faint)
         .font(font(FontRole::Monospace));
 
@@ -2351,7 +2351,7 @@ fn home_stream_health<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
 
     let sparkline_col = column![
         text("THROUGHPUT · ev/s")
-            .size(10.0)
+            .size(FONT_XS)
             .color(text_faint)
             .font(font(FontRole::Monospace)),
         forge_widgets::throughput_sparkline(&[], "ev/s", palette),
@@ -2364,24 +2364,24 @@ fn home_stream_health<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
             let val_el: Element<'a, Message> = if let Some(u) = unit {
                 row![
                     text(value)
-                        .size(15.0)
+                        .size(FONT_MD)
                         .color(text_primary)
                         .font(font(FontRole::Monospace)),
-                    text(u).size(10.0).color(text_muted),
+                    text(u).size(FONT_XS).color(text_muted),
                 ]
                 .spacing(4.0)
                 .align_y(Alignment::Center)
                 .into()
             } else {
                 text(value)
-                    .size(15.0)
+                    .size(FONT_MD)
                     .color(text_primary)
                     .font(font(FontRole::Monospace))
                     .into()
             };
             column![
                 text(label)
-                    .size(10.0)
+                    .size(FONT_XS)
                     .color(text_faint)
                     .font(font(FontRole::Monospace)),
                 val_el,
@@ -2452,9 +2452,9 @@ fn home_connection_cell<'a>(
     let status_str = if ok { "connected" } else { "offline" };
 
     let label_col = column![
-        text(label).size(12.0).color(text_primary),
+        text(label).size(FONT_XS).color(text_primary),
         text(status_str)
-            .size(10.0)
+            .size(FONT_XS)
             .color(status_color)
             .font(font(FontRole::Monospace)),
     ]
@@ -2517,9 +2517,11 @@ fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
     let disconnected: u8 = 6u8.saturating_sub(connected);
 
     let header_icon = tabler_icon(Icon::PlugConnected, 14.0, palette.success);
-    let header_title = text("Integrations").size(12.5).color(palette.text_primary);
+    let header_title = text("Integrations")
+        .size(FONT_SM)
+        .color(palette.text_primary);
     let header_sub = text(format!("{connected} active · {disconnected} disconnected"))
-        .size(11.0)
+        .size(FONT_XS)
         .color(palette.text_faint);
 
     let header = row![
@@ -2679,7 +2681,7 @@ fn home_chat_event_row<'a>(
 
     let ts_col = container(
         text(&*row.timestamp)
-            .size(11.0)
+            .size(FONT_XS)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace)),
     )
@@ -2699,7 +2701,7 @@ fn home_chat_event_row<'a>(
         use iced::widget::text;
         let full = format!("{}: {} \u{2014} {}", platform_name, row.username, body_str);
         text(full)
-            .size(12.0)
+            .size(FONT_XS)
             .color(text_primary)
             .width(Length::Fill)
             .into()
@@ -2779,7 +2781,7 @@ fn home_recent_events_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
     let live_label = row![
         live_dot,
         text("LIVE")
-            .size(10.5)
+            .size(FONT_XS)
             .color(text_faint)
             .font(font(FontRole::Monospace)),
     ]
@@ -2787,7 +2789,7 @@ fn home_recent_events_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
     .align_y(Alignment::Center);
 
     let header = row![
-        text("Recent events").size(FONT_BODY).color(text_primary),
+        text("Recent events").size(FONT_SM).color(text_primary),
         iced::widget::Space::new().width(Length::Fill),
         live_label,
     ]
@@ -2797,7 +2799,7 @@ fn home_recent_events_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
         app.live_chat.chat_log.iter().rev().take(5).collect();
 
     let body: Element<'a, Message> = if recent.is_empty() {
-        text("No events yet").size(12.0).color(text_muted).into()
+        text("No events yet").size(FONT_XS).color(text_muted).into()
     } else {
         let count = recent.len();
         let mut col = column![].spacing(0.0);
@@ -2836,9 +2838,12 @@ fn home_glance_row<'a>(
     let text_muted = palette.text_muted;
 
     let inner = row![
-        text(label).size(11.0).color(text_muted).width(Length::Fill),
+        text(label)
+            .size(FONT_XS)
+            .color(text_muted)
+            .width(Length::Fill),
         text(value)
-            .size(14.0)
+            .size(FONT_SM)
             .color(color)
             .font(font(FontRole::Monospace)),
     ]
@@ -2890,7 +2895,7 @@ fn home_glance_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, 
         .globals_count
         .map_or_else(|| "\u{2014}".to_string(), |n| n.to_string());
 
-    let header = text("At a glance").size(FONT_BODY).color(text_primary);
+    let header = text("At a glance").size(FONT_SM).color(text_primary);
 
     let content = column![
         header,

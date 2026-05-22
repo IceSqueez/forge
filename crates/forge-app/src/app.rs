@@ -4201,24 +4201,25 @@ fn actions_detail_panel<'a>(
             let kind_str = crate::actions::trigger_label_of(&trigger.kind);
             let trigger_row = container(
                 row![
-                    tabler_icon(Icon::Bolt, FONT_XS, p.brand),
-                    text(kind_str).size(FONT_XS).color(p.text_secondary),
+                    tabler_icon(Icon::Bolt, FONT_SM, p.brand),
+                    text(kind_str).size(FONT_SM).color(p.text_secondary),
                 ]
-                .spacing(6)
+                .spacing(8)
                 .align_y(iced::alignment::Vertical::Center),
             )
-            .padding([5, 8])
+            .width(Length::Fill)
+            .padding([18, 12])
             .style(move |_theme: &iced::Theme| iced::widget::container::Style {
                 background: Some(iced::Background::Color(p.shell)),
                 border: iced::Border {
-                    color: p.border_regular,
+                    color: p.border_input,
                     width: 0.5,
-                    radius: forge_widgets::radius(forge_widgets::Radius::Sm).into(),
+                    radius: forge_widgets::radius(forge_widgets::Radius::Md).into(),
                 },
                 ..iced::widget::container::Style::default()
             });
             detail_col = detail_col.push(trigger_row);
-            detail_col = detail_col.push(iced::widget::Space::new().height(4.0));
+            detail_col = detail_col.push(iced::widget::Space::new().height(6.0));
         }
     }
     detail_col = detail_col.push(iced::widget::Space::new().height(14.0));
@@ -4241,19 +4242,20 @@ fn actions_detail_panel<'a>(
     } else {
         for (i, spec) in action.sub_actions.iter().enumerate() {
             let step_label = format!("{}. {}", i + 1, spec.kind_label());
-            let step_row = container(text(step_label).size(FONT_XS).color(p.text_secondary))
-                .padding([5, 8])
+            let step_row = container(text(step_label).size(FONT_SM).color(p.text_secondary))
+                .width(Length::Fill)
+                .padding([18, 12])
                 .style(move |_theme: &iced::Theme| iced::widget::container::Style {
                     background: Some(iced::Background::Color(p.shell)),
                     border: iced::Border {
-                        color: p.border_regular,
+                        color: p.border_input,
                         width: 0.5,
-                        radius: forge_widgets::radius(forge_widgets::Radius::Sm).into(),
+                        radius: forge_widgets::radius(forge_widgets::Radius::Md).into(),
                     },
                     ..iced::widget::container::Style::default()
                 });
             detail_col = detail_col.push(step_row);
-            detail_col = detail_col.push(iced::widget::Space::new().height(4.0));
+            detail_col = detail_col.push(iced::widget::Space::new().height(6.0));
         }
     }
 

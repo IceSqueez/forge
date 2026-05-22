@@ -20,6 +20,7 @@ use time::OffsetDateTime;
 use crate::Message;
 use crate::app::App;
 use crate::message::{EditorMode, GlobalsFilter, GlobalsLoadData, GlobalsMsg, VariantEditorMsg};
+use crate::runtime_view::RuntimeView;
 
 #[derive(Debug, thiserror::Error)]
 enum ExportError {
@@ -324,11 +325,11 @@ pub async fn load_globals_data(dp: Arc<SqliteBackend>) -> Result<GlobalsLoadData
     })
 }
 
-pub fn handle_globals_msg(app: &mut App, sub: GlobalsMsg) -> iced::Task<Message> {
-    match sub {
+pub fn update(state: &mut GlobalsState, rt: &RuntimeView, msg: GlobalsMsg) -> iced::Task<Message> {
+    match msg {
         GlobalsMsg::LoadRequested => {
-            app.globals.loading = true;
-            let dp = Arc::clone(&app.rt.backend);
+            state.loading = true;
+            let dp = Arc::clone(&rt.backend);
             iced::Task::perform(
                 async move { load_globals_data(dp).await.map_err(|e| e.to_string()) },
                 |r| Message::Globals(GlobalsMsg::EntriesLoaded(r)),
@@ -336,41 +337,41 @@ pub fn handle_globals_msg(app: &mut App, sub: GlobalsMsg) -> iced::Task<Message>
         }
 
         GlobalsMsg::EntriesLoaded(Ok(data)) => {
-            app.globals.entries = data.entries;
-            app.globals.storage_bytes = data.storage_bytes;
-            app.globals.last_save = data.last_save;
-            app.globals.loading = false;
-            app.globals.refresh_displays();
+            state.entries = data.entries;
+            state.storage_bytes = data.storage_bytes;
+            state.last_save = data.last_save;
+            state.loading = false;
+            state.refresh_displays();
             iced::Task::none()
         }
 
         GlobalsMsg::EntriesLoaded(Err(e)) => {
             tracing::warn!(error = %e, "globals load failed");
-            app.globals.loading = false;
+            state.loading = false;
             iced::Task::none()
         }
 
         GlobalsMsg::FilterSelected(f) => {
-            app.globals.filter = f;
-            app.globals.refresh_displays();
+            state.filter = f;
+            state.refresh_displays();
             iced::Task::none()
         }
 
         GlobalsMsg::SearchChanged(s) => {
-            app.globals.search = s;
-            app.globals.refresh_displays();
+            state.search = s;
+            state.refresh_displays();
             iced::Task::none()
         }
 
         GlobalsMsg::TogglePersistence(name, new_persisted) => {
-            let Some(entry) = app.globals.entries.iter().find(|e| e.name == name).cloned() else {
+            let Some(entry) = state.entries.iter().find(|e| e.name == name).cloned() else {
                 return iced::Task::none();
             };
-            if let Some(e) = app.globals.entries.iter_mut().find(|e| e.name == name) {
+            if let Some(e) = state.entries.iter_mut().find(|e| e.name == name) {
                 e.persisted = new_persisted;
             }
-            app.globals.refresh_displays();
-            let dp = Arc::clone(&app.rt.backend);
+            state.refresh_displays();
+            let dp = Arc::clone(&rt.backend);
             iced::Task::perform(
                 async move {
                     dp.set(&name, entry.value, new_persisted)
@@ -389,7 +390,7 @@ pub fn handle_globals_msg(app: &mut App, sub: GlobalsMsg) -> iced::Task<Message>
         GlobalsMsg::PersistenceToggled(Ok(())) => iced::Task::none(),
 
         GlobalsMsg::DeleteRequested(name) => {
-            let dp = Arc::clone(&app.rt.backend);
+            let dp = Arc::clone(&rt.backend);
             iced::Task::perform(
                 async move {
                     dp.delete(&name)
@@ -402,7 +403,7 @@ pub fn handle_globals_msg(app: &mut App, sub: GlobalsMsg) -> iced::Task<Message>
         }
 
         GlobalsMsg::Deleted(Ok(())) => {
-            let dp = Arc::clone(&app.rt.backend);
+            let dp = Arc::clone(&rt.backend);
             iced::Task::perform(
                 async move { load_globals_data(dp).await.map_err(|e| e.to_string()) },
                 |r| Message::Globals(GlobalsMsg::EntriesLoaded(r)),
@@ -414,14 +415,14 @@ pub fn handle_globals_msg(app: &mut App, sub: GlobalsMsg) -> iced::Task<Message>
             iced::Task::none()
         }
 
-        GlobalsMsg::OpenCreateModal => {
-            iced::Task::done(Message::VariantEditor(VariantEditorMsg::OpenCreate))
-        }
+        GlobalsMsg::OpenCreateModal => iced::Task::done(Message::Globals(
+            GlobalsMsg::VariantEditor(VariantEditorMsg::OpenCreate),
+        )),
 
         GlobalsMsg::OpenEditModal(name) => {
-            if let Some(entry) = app.globals.entries.iter().find(|e| e.name == name).cloned() {
-                iced::Task::done(Message::VariantEditor(VariantEditorMsg::OpenEdit(
-                    name, entry,
+            if let Some(entry) = state.entries.iter().find(|e| e.name == name).cloned() {
+                iced::Task::done(Message::Globals(GlobalsMsg::VariantEditor(
+                    VariantEditorMsg::OpenEdit(name, entry),
                 )))
             } else {
                 iced::Task::none()
@@ -429,7 +430,7 @@ pub fn handle_globals_msg(app: &mut App, sub: GlobalsMsg) -> iced::Task<Message>
         }
 
         GlobalsMsg::ExportRequested => {
-            let dp = Arc::clone(&app.rt.backend);
+            let dp = Arc::clone(&rt.backend);
             iced::Task::perform(
                 async move {
                     export_globals_to_chosen_file(dp)
@@ -449,35 +450,41 @@ pub fn handle_globals_msg(app: &mut App, sub: GlobalsMsg) -> iced::Task<Message>
             tracing::warn!(error = %reason, "globals export failed or cancelled");
             iced::Task::none()
         }
+
+        GlobalsMsg::VariantEditor(sub) => update_variant_editor(state, rt, sub),
     }
 }
 
-pub fn handle_variant_editor_msg(app: &mut App, sub: VariantEditorMsg) -> iced::Task<Message> {
+fn update_variant_editor(
+    state: &mut GlobalsState,
+    rt: &RuntimeView,
+    sub: VariantEditorMsg,
+) -> iced::Task<Message> {
     match sub {
         VariantEditorMsg::OpenCreate => {
-            app.globals.editor = Some(VariantEditorForm::for_create());
+            state.editor = Some(VariantEditorForm::for_create());
             iced::Task::none()
         }
 
         VariantEditorMsg::OpenEdit(_name, entry) => {
-            app.globals.editor = Some(VariantEditorForm::for_edit(&entry));
+            state.editor = Some(VariantEditorForm::for_edit(&entry));
             iced::Task::none()
         }
 
         VariantEditorMsg::Cancel => {
-            app.globals.editor = None;
+            state.editor = None;
             iced::Task::none()
         }
 
         VariantEditorMsg::NameChanged(v) => {
-            if let Some(f) = app.globals.editor.as_mut() {
+            if let Some(f) = state.editor.as_mut() {
                 f.name = v;
             }
             iced::Task::none()
         }
 
         VariantEditorMsg::KindSelected(kind) => {
-            if let Some(f) = app.globals.editor.as_mut() {
+            if let Some(f) = state.editor.as_mut() {
                 f.kind = kind;
                 f.error = None;
             }
@@ -485,63 +492,63 @@ pub fn handle_variant_editor_msg(app: &mut App, sub: VariantEditorMsg) -> iced::
         }
 
         VariantEditorMsg::PersistenceToggled(v) => {
-            if let Some(f) = app.globals.editor.as_mut() {
+            if let Some(f) = state.editor.as_mut() {
                 f.persisted = v;
             }
             iced::Task::none()
         }
 
         VariantEditorMsg::IntInputChanged(v) => {
-            if let Some(f) = app.globals.editor.as_mut() {
+            if let Some(f) = state.editor.as_mut() {
                 f.fields.int_input = v;
             }
             iced::Task::none()
         }
 
         VariantEditorMsg::FloatInputChanged(v) => {
-            if let Some(f) = app.globals.editor.as_mut() {
+            if let Some(f) = state.editor.as_mut() {
                 f.fields.float_input = v;
             }
             iced::Task::none()
         }
 
         VariantEditorMsg::BoolValueChanged(v) => {
-            if let Some(f) = app.globals.editor.as_mut() {
+            if let Some(f) = state.editor.as_mut() {
                 f.fields.bool_value = v;
             }
             iced::Task::none()
         }
 
         VariantEditorMsg::StringInputChanged(v) => {
-            if let Some(f) = app.globals.editor.as_mut() {
+            if let Some(f) = state.editor.as_mut() {
                 f.fields.string_input = v;
             }
             iced::Task::none()
         }
 
         VariantEditorMsg::DatetimeInputChanged(v) => {
-            if let Some(f) = app.globals.editor.as_mut() {
+            if let Some(f) = state.editor.as_mut() {
                 f.fields.datetime_input = v;
             }
             iced::Task::none()
         }
 
         VariantEditorMsg::ArrayJsonChanged(v) => {
-            if let Some(f) = app.globals.editor.as_mut() {
+            if let Some(f) = state.editor.as_mut() {
                 f.fields.array_json = v;
             }
             iced::Task::none()
         }
 
         VariantEditorMsg::ObjectJsonChanged(v) => {
-            if let Some(f) = app.globals.editor.as_mut() {
+            if let Some(f) = state.editor.as_mut() {
                 f.fields.object_json = v;
             }
             iced::Task::none()
         }
 
         VariantEditorMsg::Submit => {
-            let Some(form) = app.globals.editor.as_ref() else {
+            let Some(form) = state.editor.as_ref() else {
                 return iced::Task::none();
             };
             if form.is_valid().is_some() {
@@ -559,10 +566,10 @@ pub fn handle_variant_editor_msg(app: &mut App, sub: VariantEditorMsg) -> iced::
                 }
                 EditorMode::Edit(_) => None,
             };
-            if let Some(f) = app.globals.editor.as_mut() {
+            if let Some(f) = state.editor.as_mut() {
                 f.saving = true;
             }
-            let dp = Arc::clone(&app.rt.backend);
+            let dp = Arc::clone(&rt.backend);
             iced::Task::perform(
                 async move {
                     if let Some(old) = old_name {
@@ -575,17 +582,17 @@ pub fn handle_variant_editor_msg(app: &mut App, sub: VariantEditorMsg) -> iced::
                         .await
                         .map_err(|e| e.to_string())
                 },
-                |r| Message::VariantEditor(VariantEditorMsg::Saved(r)),
+                |r| Message::Globals(GlobalsMsg::VariantEditor(VariantEditorMsg::Saved(r))),
             )
         }
 
         VariantEditorMsg::Saved(Ok(())) => {
-            app.globals.editor = None;
+            state.editor = None;
             iced::Task::done(Message::Globals(GlobalsMsg::LoadRequested))
         }
 
         VariantEditorMsg::Saved(Err(e)) => {
-            if let Some(f) = app.globals.editor.as_mut() {
+            if let Some(f) = state.editor.as_mut() {
                 f.error = Some(e);
                 f.saving = false;
             }
@@ -950,7 +957,7 @@ fn variant_editor_modal_view<'a>(
     let name_input = forge_widgets::text_input_field(
         "my_variable",
         &form.name,
-        |v| Message::VariantEditor(VariantEditorMsg::NameChanged(v)),
+        |v| Message::Globals(GlobalsMsg::VariantEditor(VariantEditorMsg::NameChanged(v))),
         palette,
     );
     let name_row = row![name_input, name_counter]
@@ -973,7 +980,7 @@ fn variant_editor_modal_view<'a>(
             k.label(),
             variant_kind_color(k, palette),
             form.kind == k,
-            Message::VariantEditor(VariantEditorMsg::KindSelected(k)),
+            Message::Globals(GlobalsMsg::VariantEditor(VariantEditorMsg::KindSelected(k))),
         ))
     });
     let type_block = column![section_header("TYPE", None, palette), chips_row].spacing(4);
@@ -984,8 +991,8 @@ fn variant_editor_modal_view<'a>(
             label: "Save across restarts",
             description: "Persisted globals survive app close; session-only reset on launch",
             value: form.persisted,
-            on_toggle: Message::VariantEditor(VariantEditorMsg::PersistenceToggled(
-                !form.persisted,
+            on_toggle: Message::Globals(GlobalsMsg::VariantEditor(
+                VariantEditorMsg::PersistenceToggled(!form.persisted),
             )),
         },
     );
@@ -996,13 +1003,21 @@ fn variant_editor_modal_view<'a>(
         VariantKind::Int => forge_widgets::text_input_field(
             "0",
             &form.fields.int_input,
-            |v| Message::VariantEditor(VariantEditorMsg::IntInputChanged(v)),
+            |v| {
+                Message::Globals(GlobalsMsg::VariantEditor(
+                    VariantEditorMsg::IntInputChanged(v),
+                ))
+            },
             palette,
         ),
         VariantKind::Float => forge_widgets::text_input_field(
             "0.0",
             &form.fields.float_input,
-            |v| Message::VariantEditor(VariantEditorMsg::FloatInputChanged(v)),
+            |v| {
+                Message::Globals(GlobalsMsg::VariantEditor(
+                    VariantEditorMsg::FloatInputChanged(v),
+                ))
+            },
             palette,
         ),
         VariantKind::Bool => toggle(
@@ -1011,33 +1026,49 @@ fn variant_editor_modal_view<'a>(
                 label: "Value",
                 description: "",
                 value: form.fields.bool_value,
-                on_toggle: Message::VariantEditor(VariantEditorMsg::BoolValueChanged(
-                    !form.fields.bool_value,
+                on_toggle: Message::Globals(GlobalsMsg::VariantEditor(
+                    VariantEditorMsg::BoolValueChanged(!form.fields.bool_value),
                 )),
             },
         ),
         VariantKind::String => forge_widgets::text_input_field(
             "",
             &form.fields.string_input,
-            |v| Message::VariantEditor(VariantEditorMsg::StringInputChanged(v)),
+            |v| {
+                Message::Globals(GlobalsMsg::VariantEditor(
+                    VariantEditorMsg::StringInputChanged(v),
+                ))
+            },
             palette,
         ),
         VariantKind::Datetime => forge_widgets::text_input_field(
             "2026-05-18T14:23:00Z",
             &form.fields.datetime_input,
-            |v| Message::VariantEditor(VariantEditorMsg::DatetimeInputChanged(v)),
+            |v| {
+                Message::Globals(GlobalsMsg::VariantEditor(
+                    VariantEditorMsg::DatetimeInputChanged(v),
+                ))
+            },
             palette,
         ),
         VariantKind::Array => forge_widgets::text_input_field(
             "[1, 2, 3]",
             &form.fields.array_json,
-            |v| Message::VariantEditor(VariantEditorMsg::ArrayJsonChanged(v)),
+            |v| {
+                Message::Globals(GlobalsMsg::VariantEditor(
+                    VariantEditorMsg::ArrayJsonChanged(v),
+                ))
+            },
             palette,
         ),
         VariantKind::Object => forge_widgets::text_input_field(
             r#"{"key": "value"}"#,
             &form.fields.object_json,
-            |v| Message::VariantEditor(VariantEditorMsg::ObjectJsonChanged(v)),
+            |v| {
+                Message::Globals(GlobalsMsg::VariantEditor(
+                    VariantEditorMsg::ObjectJsonChanged(v),
+                ))
+            },
             palette,
         ),
     };
@@ -1051,7 +1082,7 @@ fn variant_editor_modal_view<'a>(
 
     let cancel_btn = secondary_button(
         "Cancel",
-        Message::VariantEditor(VariantEditorMsg::Cancel),
+        Message::Globals(GlobalsMsg::VariantEditor(VariantEditorMsg::Cancel)),
         palette,
     );
     let is_saveable = form.is_valid().is_none() && !form.saving;
@@ -1059,7 +1090,7 @@ fn variant_editor_modal_view<'a>(
     let save_btn: Element<'_, Message> = if is_saveable {
         primary_button_small(
             save_label,
-            Message::VariantEditor(VariantEditorMsg::Submit),
+            Message::Globals(GlobalsMsg::VariantEditor(VariantEditorMsg::Submit)),
             palette,
         )
     } else {
@@ -1074,7 +1105,7 @@ fn variant_editor_modal_view<'a>(
         palette,
         ModalProps {
             title,
-            on_close: Message::VariantEditor(VariantEditorMsg::Cancel),
+            on_close: Message::Globals(GlobalsMsg::VariantEditor(VariantEditorMsg::Cancel)),
             kbd_hint: Some("ESC to cancel"),
         },
         body,
@@ -1396,7 +1427,7 @@ mod tests {
         let _ = update(&mut app, Message::Globals(GlobalsMsg::OpenCreateModal));
         let _ = update(
             &mut app,
-            Message::VariantEditor(VariantEditorMsg::OpenCreate),
+            Message::Globals(GlobalsMsg::VariantEditor(VariantEditorMsg::OpenCreate)),
         );
         assert!(app.globals.editor.is_some());
         assert!(matches!(
@@ -1409,7 +1440,10 @@ mod tests {
     fn cancel_clears_editor() {
         let mut app = App::default();
         app.globals.editor = Some(VariantEditorForm::for_create());
-        let _ = update(&mut app, Message::VariantEditor(VariantEditorMsg::Cancel));
+        let _ = update(
+            &mut app,
+            Message::Globals(GlobalsMsg::VariantEditor(VariantEditorMsg::Cancel)),
+        );
         assert!(app.globals.editor.is_none());
     }
 
@@ -1427,7 +1461,10 @@ mod tests {
         };
         let _ = update(
             &mut app,
-            Message::VariantEditor(VariantEditorMsg::OpenEdit("myvar".to_owned(), entry)),
+            Message::Globals(GlobalsMsg::VariantEditor(VariantEditorMsg::OpenEdit(
+                "myvar".to_owned(),
+                entry,
+            ))),
         );
         let form = app.globals.editor.as_ref().unwrap();
         assert_eq!(form.name, "myvar");
@@ -1440,7 +1477,10 @@ mod tests {
     fn submit_with_invalid_form_is_noop() {
         let mut app = App::default();
         app.globals.editor = Some(int_form("", "not_a_number"));
-        let _ = update(&mut app, Message::VariantEditor(VariantEditorMsg::Submit));
+        let _ = update(
+            &mut app,
+            Message::Globals(GlobalsMsg::VariantEditor(VariantEditorMsg::Submit)),
+        );
         assert!(app.globals.editor.is_some());
         assert!(!app.globals.editor.as_ref().unwrap().saving);
     }
@@ -1449,7 +1489,10 @@ mod tests {
     fn submit_with_valid_form_sets_saving() {
         let mut app = App::default();
         app.globals.editor = Some(int_form("counter", "42"));
-        let _ = update(&mut app, Message::VariantEditor(VariantEditorMsg::Submit));
+        let _ = update(
+            &mut app,
+            Message::Globals(GlobalsMsg::VariantEditor(VariantEditorMsg::Submit)),
+        );
         assert!(app.globals.editor.as_ref().is_some_and(|f| f.saving));
     }
 
@@ -1459,7 +1502,7 @@ mod tests {
         app.globals.editor = Some(int_form("counter", "42"));
         let _ = update(
             &mut app,
-            Message::VariantEditor(VariantEditorMsg::Saved(Ok(()))),
+            Message::Globals(GlobalsMsg::VariantEditor(VariantEditorMsg::Saved(Ok(())))),
         );
         assert!(app.globals.editor.is_none());
     }
@@ -1473,7 +1516,9 @@ mod tests {
         });
         let _ = update(
             &mut app,
-            Message::VariantEditor(VariantEditorMsg::Saved(Err("db write failed".to_owned()))),
+            Message::Globals(GlobalsMsg::VariantEditor(VariantEditorMsg::Saved(Err(
+                "db write failed".to_owned(),
+            )))),
         );
         let form = app.globals.editor.as_ref().unwrap();
         assert!(!form.saving);

@@ -33,9 +33,7 @@ use crate::actions::{
     load_clip_options, load_telemetry, move_sub_action, remove_sub_action, save_sub_action,
 };
 use crate::event_feed::{EventFeedState, event_feed_view, handle_event_feed_msg};
-use crate::globals_view::{
-    GlobalsState, globals_view, handle_globals_msg, handle_variant_editor_msg,
-};
+use crate::globals_view::{GlobalsState, globals_view};
 use crate::integration_detail::{
     IntegrationDetailState, handle_integration_detail_msg, health_subscription,
     view as integration_detail_view,
@@ -580,8 +578,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             }
         },
         Message::Home(sub) => handle_home_msg(app, sub),
-        Message::Globals(sub) => handle_globals_msg(app, sub),
-        Message::VariantEditor(sub) => handle_variant_editor_msg(app, sub),
+        Message::Globals(sub) => crate::globals_view::update(&mut app.globals, &app.rt, sub),
         Message::Actions(sub) => handle_actions_msg(app, sub),
         Message::Queues(sub) => handle_queues_msg(app, sub),
         Message::Viewers(sub) => crate::viewers::handle_msg(&mut app.viewers, sub, &app.rt.backend),

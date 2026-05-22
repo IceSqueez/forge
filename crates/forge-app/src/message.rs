@@ -187,6 +187,7 @@ pub enum GlobalsMsg {
     Deleted(Result<(), String>),
     ExportRequested,
     Exported(Result<PathBuf, String>),
+    VariantEditor(VariantEditorMsg),
 }
 
 #[derive(Debug, Clone)]
@@ -321,7 +322,6 @@ pub enum Message {
     Settings(SettingsMsg),
     Home(HomeMsg),
     Globals(GlobalsMsg),
-    VariantEditor(VariantEditorMsg),
     Actions(ActionsMsg),
     Queues(QueuesMsg),
     Viewers(crate::viewers::ViewersMsg),

@@ -8,7 +8,6 @@ pub enum SettingsSection {
     Shortcuts,
     Notifications,
     Audio,
-    Platforms,
     Scripting,
     Queues,
     Storage,

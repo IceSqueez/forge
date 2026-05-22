@@ -3251,137 +3251,6 @@ fn settings_notifications_pane(palette: &ForgePalette) -> Element<'static, Messa
         .into()
 }
 
-pub(crate) fn status_pill_for(
-    state: ChatConnectionState,
-) -> (forge_widgets::StatusVariant, &'static str) {
-    match state {
-        ChatConnectionState::Connected => (forge_widgets::StatusVariant::Positive, "Connected"),
-        ChatConnectionState::Reconnecting { .. } => {
-            (forge_widgets::StatusVariant::Neutral, "Reconnecting")
-        }
-        ChatConnectionState::Connecting => (forge_widgets::StatusVariant::Neutral, "Connecting"),
-        ChatConnectionState::Disconnected => {
-            (forge_widgets::StatusVariant::Negative, "Disconnected")
-        }
-    }
-}
-
-fn twitch_platform_card<'a>(
-    handle: Option<&'a TwitchChatHandle>,
-    token_expires: Option<std::time::SystemTime>,
-    palette: &'a ForgePalette,
-) -> Element<'a, Message> {
-    let state = handle.map_or(ChatConnectionState::Disconnected, |h| h.connection_state());
-    let (variant, label) = status_pill_for(state);
-    let pill = forge_widgets::status_pill(label, variant, palette);
-
-    let state_text = iced::widget::text(match state {
-        ChatConnectionState::Connected => "EventSub · WebSocket",
-        ChatConnectionState::Connecting => "Establishing connection...",
-        ChatConnectionState::Reconnecting { .. } => "Retrying connection...",
-        ChatConnectionState::Disconnected => "Not connected",
-    })
-    .size(FONT_SM)
-    .color(palette.text_muted);
-
-    let expiry_text = iced::widget::text(format_token_expiry(token_expires))
-        .size(FONT_XS)
-        .color(palette.text_faint);
-
-    let reconnect_btn = forge_widgets::primary_button(
-        "Reconnect",
-        Message::Settings(SettingsMsg::ReconnectPlatform(PlatformId::Twitch)),
-        palette,
-    );
-
-    let header_row = iced::widget::row![
-        iced::widget::text("Twitch")
-            .size(FONT_SM)
-            .color(palette.text_primary),
-        iced::widget::Space::new().width(Length::Fill),
-        pill,
-    ]
-    .align_y(iced::alignment::Vertical::Center)
-    .spacing(8);
-
-    forge_widgets::card(
-        [
-            header_row.into(),
-            state_text.into(),
-            expiry_text.into(),
-            reconnect_btn,
-        ],
-        palette,
-    )
-}
-
-fn format_token_expiry(expires_at: Option<std::time::SystemTime>) -> String {
-    let Some(exp) = expires_at else {
-        return "Token: never expires".to_owned();
-    };
-    match exp.duration_since(std::time::SystemTime::now()) {
-        Ok(d) => {
-            let total_secs = d.as_secs();
-            let hours = total_secs / 3600;
-            let mins = (total_secs % 3600) / 60;
-            if hours > 0 {
-                format!("Token: {hours}h {mins}m")
-            } else {
-                format!("Token: {mins}m")
-            }
-        }
-        Err(_) => "Token: expired".to_owned(),
-    }
-}
-
-fn coming_platform_card<'a>(
-    name: &'a str,
-    since: &'a str,
-    palette: &'a ForgePalette,
-) -> Element<'a, Message> {
-    let header_row = iced::widget::row![
-        iced::widget::text(name)
-            .size(FONT_SM)
-            .color(palette.text_muted),
-        iced::widget::Space::new().width(Length::Fill),
-        forge_widgets::status_pill(
-            "Coming soon",
-            forge_widgets::StatusVariant::Neutral,
-            palette
-        ),
-    ]
-    .align_y(iced::alignment::Vertical::Center)
-    .spacing(8);
-
-    let note = iced::widget::text(since)
-        .size(FONT_SM)
-        .color(palette.text_faint);
-
-    forge_widgets::card([header_row.into(), note.into()], palette)
-}
-
-fn settings_platforms_pane<'a>(
-    twitch_handle: Option<&'a TwitchChatHandle>,
-    twitch_token_expires: Option<std::time::SystemTime>,
-    palette: &'a ForgePalette,
-) -> Element<'a, Message> {
-    let header = forge_widgets::section_header("PLATFORMS", None, palette);
-
-    let twitch_card = twitch_platform_card(twitch_handle, twitch_token_expires, palette);
-    let youtube_card =
-        coming_platform_card("YouTube", "Available in beta-1 — see roadmap", palette);
-    let kick_card = coming_platform_card("Kick", "Available in beta-2 — see roadmap", palette);
-    let trovo_card = coming_platform_card("Trovo", "Available in beta-3 — see roadmap", palette);
-
-    let cards = iced::widget::column![twitch_card, youtube_card, kick_card, trovo_card].spacing(10);
-
-    iced::widget::container(iced::widget::column![header, cards].spacing(12))
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .padding(16)
-        .into()
-}
-
 fn nav_group_header<'a>(label: &'a str, palette: &'a ForgePalette) -> Element<'a, Message> {
     iced::widget::text(label)
         .font(forge_widgets::tokens::font(
@@ -3394,8 +3263,6 @@ fn nav_group_header<'a>(label: &'a str, palette: &'a ForgePalette) -> Element<'a
 
 fn settings_view<'a>(
     section: &'a SettingsSection,
-    twitch_handle: Option<&'a TwitchChatHandle>,
-    twitch_token_expires: Option<std::time::SystemTime>,
     ws: &'a crate::settings_websocket::SettingsWebSocketState,
     server: &'a ServerScreenState,
     audio: &'a SettingsAudioState,
@@ -3415,7 +3282,6 @@ fn settings_view<'a>(
         iced::widget::Space::new().height(6),
         nav_group_header("ENGINE", palette),
         settings_section_button("Audio", SettingsSection::Audio, section, palette),
-        settings_section_button("Platforms", SettingsSection::Platforms, section, palette),
         settings_section_button("Scripting", SettingsSection::Scripting, section, palette),
         settings_section_button("Queues", SettingsSection::Queues, section, palette),
         settings_section_button("Storage", SettingsSection::Storage, section, palette),
@@ -3449,9 +3315,6 @@ fn settings_view<'a>(
     let pane: Element<'a, Message> = match section {
         SettingsSection::Diagnostics => settings_diagnostics_pane(palette),
         SettingsSection::Audio => settings_audio_view(audio, palette),
-        SettingsSection::Platforms => {
-            settings_platforms_pane(twitch_handle, twitch_token_expires, palette)
-        }
         SettingsSection::WebSocket => {
             settings_websocket_view(ws, &server.bearer_token, server.token_revealed, palette)
         }
@@ -5451,8 +5314,6 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Screen::Queues => queues_view(&app.queues, palette),
         Screen::Settings(section) => settings_view(
             section,
-            app.twitch_chat_handle.as_ref(),
-            app.twitch_token_expires,
             &app.settings_websocket,
             &app.server_screen,
             &app.settings_audio,
@@ -5862,7 +5723,6 @@ fn soundboard_hotkey_filter(event: iced::keyboard::Event) -> Option<Message> {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use forge_platform_twitch::ChatConnectionState;
     use forge_widgets::ThemeId;
 
     #[test]
@@ -5925,34 +5785,6 @@ mod tests {
     }
 
     #[test]
-    fn status_pill_for_connected_is_positive() {
-        let (variant, label) = status_pill_for(ChatConnectionState::Connected);
-        assert_eq!(variant, forge_widgets::StatusVariant::Positive);
-        assert_eq!(label, "Connected");
-    }
-
-    #[test]
-    fn status_pill_for_disconnected_is_negative() {
-        let (variant, label) = status_pill_for(ChatConnectionState::Disconnected);
-        assert_eq!(variant, forge_widgets::StatusVariant::Negative);
-        assert_eq!(label, "Disconnected");
-    }
-
-    #[test]
-    fn status_pill_for_reconnecting_is_neutral() {
-        let (variant, label) = status_pill_for(ChatConnectionState::Reconnecting { attempt: 2 });
-        assert_eq!(variant, forge_widgets::StatusVariant::Neutral);
-        assert_eq!(label, "Reconnecting");
-    }
-
-    #[test]
-    fn status_pill_for_connecting_is_neutral() {
-        let (variant, label) = status_pill_for(ChatConnectionState::Connecting);
-        assert_eq!(variant, forge_widgets::StatusVariant::Neutral);
-        assert_eq!(label, "Connecting");
-    }
-
-    #[test]
     fn settings_reconnect_twitch_with_no_handle_dispatches_task() {
         let mut app = App::default();
         let task = update(
@@ -5994,16 +5826,6 @@ mod tests {
             ))),
         );
         assert_eq!(app.screen, Screen::Home);
-    }
-
-    #[test]
-    fn view_compiles_settings_platforms_disconnected() {
-        let mut app = App::default();
-        let _ = update(
-            &mut app,
-            Message::Navigate(Screen::Settings(SettingsSection::Platforms)),
-        );
-        let _ = view(&app);
     }
 
     #[test]

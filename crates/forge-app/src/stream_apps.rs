@@ -1,47 +1,84 @@
 use forge_platform_core::{ConnectionState, IntegrationId};
 use forge_widgets::{
-    ForgePalette, Icon, StatusVariant, section_header, status_pill, tabler_icon,
-    tokens::{FONT_SM, Radius, radius},
+    ForgePalette, Icon, tabler_icon,
+    tokens::{FONT_MD, FONT_SM, FONT_XS, Radius, radius},
 };
 use iced::{
-    Alignment, Background, Border, Color, Element, Length, Shadow,
-    widget::{button, column, container, row, text},
+    Alignment, Background, Border, Color, Element, Length, Padding, Shadow,
+    widget::{button, column, container, row, scrollable, text},
 };
 
 use crate::{App, Message, Screen};
 
 pub fn view<'a>(state: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
-    let header = section_header("STREAM APPS", None, palette);
-    let obs_card = obs_card(state, palette);
+    let p = *palette;
 
-    let vtube_card = coming_card("VTube Studio", "Available in beta-3", palette);
+    let title = text("Stream apps").size(FONT_MD).color(p.text_primary);
+    let subtitle =
+        text("Local apps Forge talks to over WebSocket. Connect to control them from actions.")
+            .size(FONT_SM)
+            .color(p.text_muted);
+    let header = column![title, subtitle].spacing(4);
 
-    let cards = column![obs_card, vtube_card]
-        .spacing(10)
-        .width(Length::Fill);
+    let obs_connected = matches!(
+        state.obs_client.as_ref().map(|c| c.connection_state()),
+        Some(ConnectionState::Connected)
+    );
 
-    let body = column![header, cards].spacing(12).width(Length::Fill);
+    let obs_card = app_overview_card(
+        Icon::Broadcast,
+        p.success,
+        "OBS Studio",
+        "Scenes, sources, recording control, replay buffers — full obs-websocket API",
+        obs_connected,
+        IntegrationId::new("obs"),
+        palette,
+    );
+    let vtube_card = app_overview_card(
+        Icon::MoodSmile,
+        p.warning,
+        "VTube Studio",
+        "Vtuber avatar control: hotkeys, expressions, item triggers",
+        false,
+        IntegrationId::new("vtube"),
+        palette,
+    );
 
-    container(body)
+    let grid = row![obs_card, vtube_card].spacing(12).width(Length::Fill);
+
+    let body = column![header, grid].spacing(18);
+
+    container(scrollable(body).height(Length::Fill))
         .width(Length::Fill)
         .height(Length::Fill)
-        .padding(16)
+        .padding(Padding {
+            top: 22.0,
+            right: 28.0,
+            bottom: 22.0,
+            left: 28.0,
+        })
         .into()
 }
 
-fn obs_card<'a>(state: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
-    let obs_id = IntegrationId::new("obs");
-    let on_press = Message::Navigate(Screen::IntegrationDetail(obs_id));
+#[allow(clippy::too_many_arguments)]
+fn app_overview_card<'a>(
+    icon: Icon,
+    icon_color: Color,
+    name: &'a str,
+    desc: &'a str,
+    connected: bool,
+    target: IntegrationId,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    let p = *palette;
 
-    let icon_color = palette.success;
-
-    let icon_box = container(tabler_icon(Icon::Broadcast, 20.0, icon_color))
+    let icon_box = container(tabler_icon(icon, 22.0, icon_color))
         .width(44.0)
         .height(44.0)
         .align_x(Alignment::Center)
         .align_y(Alignment::Center)
-        .style(move |_theme: &iced::Theme| container::Style {
-            background: Some(Background::Color(palette.surface_overlay)),
+        .style(move |_: &iced::Theme| container::Style {
+            background: Some(Background::Color(p.surface_overlay)),
             border: Border {
                 radius: radius(Radius::Md).into(),
                 color: Color::TRANSPARENT,
@@ -50,99 +87,92 @@ fn obs_card<'a>(state: &'a App, palette: &'a ForgePalette) -> Element<'a, Messag
             ..container::Style::default()
         });
 
-    let conn_state = state.obs_client.as_ref().map(|c| c.connection_state());
-    let (pill_label, pill_variant) = match conn_state {
-        Some(ConnectionState::Connected) => ("Connected", StatusVariant::Positive),
-        Some(ConnectionState::Connecting) | Some(ConnectionState::Reconnecting) => {
-            ("Connecting", StatusVariant::Neutral)
-        }
-        _ => ("Not connected", StatusVariant::Neutral),
-    };
-    let pill = status_pill(pill_label, pill_variant, palette);
-
-    let name_row = row![
-        text("OBS Studio").size(FONT_SM).color(palette.text_primary),
-        iced::widget::Space::new().width(Length::Fill),
-        pill,
-    ]
-    .align_y(Alignment::Center)
-    .spacing(8);
-
-    let endpoint_str = state
-        .obs_client
-        .as_ref()
-        .map(|c| c.endpoint().to_owned())
-        .unwrap_or_else(|| "\u{2014}".to_owned());
-
-    let endpoint = text(endpoint_str)
-        .size(FONT_SM)
-        .color(palette.text_faint)
-        .font(forge_widgets::font(forge_widgets::FontRole::Monospace));
-
-    let info_col = column![name_row, endpoint].spacing(3).width(Length::Fill);
-
-    let open_label = text("Open").size(FONT_SM).color(palette.text_secondary);
-
-    let open_btn = container(open_label)
-        .padding([5, 12])
-        .style(move |_theme: &iced::Theme| container::Style {
-            background: Some(Background::Color(Color::TRANSPARENT)),
+    let dot_color = if connected { p.success } else { p.text_faint };
+    let dot = container(iced::widget::Space::new())
+        .width(5.0)
+        .height(5.0)
+        .style(move |_: &iced::Theme| container::Style {
+            background: Some(Background::Color(dot_color)),
             border: Border {
-                color: palette.border_regular,
-                width: 0.5,
-                radius: radius(Radius::Md).into(),
+                radius: 2.5.into(),
+                ..Border::default()
             },
             ..container::Style::default()
         });
 
-    let content = row![icon_box, info_col, open_btn]
-        .spacing(12)
-        .align_y(Alignment::Center)
-        .width(Length::Fill);
+    let badge_label = if connected {
+        "Connected"
+    } else {
+        "Not connected"
+    };
+    let badge_text_color = if connected { p.success } else { p.text_muted };
+    let badge = container(
+        row![
+            dot,
+            text(badge_label.to_owned())
+                .size(FONT_XS)
+                .color(badge_text_color),
+        ]
+        .spacing(5)
+        .align_y(Alignment::Center),
+    )
+    .padding([2_u16, 7_u16])
+    .style(move |_: &iced::Theme| container::Style {
+        background: Some(Background::Color(p.surface_overlay)),
+        border: Border {
+            radius: radius(Radius::Sm).into(),
+            ..Border::default()
+        },
+        ..container::Style::default()
+    });
 
-    button(content)
-        .on_press(on_press)
-        .padding(14)
-        .width(Length::Fill)
-        .style(move |_theme: &iced::Theme, status| {
-            let bg = match status {
-                iced::widget::button::Status::Hovered => Color {
-                    a: 1.0,
-                    ..palette.elevated
-                },
-                _ => palette.elevated,
-            };
-            button::Style {
-                background: Some(Background::Color(bg)),
-                border: Border {
-                    color: palette.border_regular,
-                    width: 0.5,
-                    radius: radius(Radius::Md).into(),
-                },
-                text_color: palette.text_primary,
-                shadow: Shadow::default(),
-                snap: false,
-            }
-        })
-        .into()
-}
-
-fn coming_card<'a>(
-    name: &'a str,
-    note: &'a str,
-    palette: &'a ForgePalette,
-) -> Element<'a, Message> {
-    let header_row = row![
-        text(name).size(FONT_SM).color(palette.text_muted),
-        iced::widget::Space::new().width(Length::Fill),
-        status_pill("Coming soon", StatusVariant::Neutral, palette),
+    let title_row = row![
+        text(name.to_owned()).size(FONT_SM).color(p.text_primary),
+        badge,
     ]
-    .align_y(Alignment::Center)
-    .spacing(8);
+    .spacing(8)
+    .align_y(Alignment::Center);
 
-    let subtitle = text(note).size(FONT_SM).color(palette.text_faint);
+    let desc_text = text(desc.to_owned()).size(FONT_SM).color(p.text_muted);
 
-    forge_widgets::card([header_row.into(), subtitle.into()], palette)
+    let info_col = column![title_row, desc_text].spacing(6);
+
+    let inner = row![
+        icon_box,
+        container(info_col).width(Length::Fill),
+        tabler_icon(Icon::ChevronRight, 16.0, p.text_faint),
+    ]
+    .spacing(14)
+    .align_y(Alignment::Start);
+
+    button(inner)
+        .padding([16_u16, 18_u16])
+        .width(Length::Fill)
+        .on_press(Message::Navigate(Screen::IntegrationDetail(target)))
+        .style(
+            move |_: &iced::Theme, status: iced::widget::button::Status| {
+                let hovered = matches!(
+                    status,
+                    iced::widget::button::Status::Hovered | iced::widget::button::Status::Pressed
+                );
+                button::Style {
+                    background: Some(Background::Color(p.elevated)),
+                    border: Border {
+                        color: if hovered {
+                            p.border_input
+                        } else {
+                            p.border_regular
+                        },
+                        width: 0.5,
+                        radius: radius(Radius::Md).into(),
+                    },
+                    text_color: p.text_primary,
+                    shadow: Shadow::default(),
+                    snap: false,
+                }
+            },
+        )
+        .into()
 }
 
 #[cfg(test)]

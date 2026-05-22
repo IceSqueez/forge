@@ -1,12 +1,16 @@
 use std::collections::VecDeque;
 
 use forge_events::{Event, EventSource};
+use forge_storage::Viewer;
 use forge_widgets::{
-    BadgeKind, ChatBody, ChatRow, ForgePalette, Icon, Platform, PlatformTarget, tabler_icon,
+    BadgeKind, ChatBody, ChatRow, ForgePalette, Icon, Platform, PlatformTarget, search_input,
+    tabler_icon,
 };
 use iced::{Color, Element, Length};
+use time::OffsetDateTime;
 
 use crate::Message;
+use crate::viewers::ViewersState;
 
 pub const CHAT_LOG_MAX: usize = 1_000;
 
@@ -31,6 +35,8 @@ pub struct LiveChatState {
     pub chat_input: String,
     pub chat_filter: ChatFilters,
     pub drawer_open: bool,
+    pub drawer_search: String,
+    pub selected_viewer: Option<String>,
 }
 
 impl LiveChatState {
@@ -114,6 +120,8 @@ impl LiveChatState {
             chat_input: String::new(),
             chat_filter: ChatFilters::default(),
             drawer_open: false,
+            drawer_search: String::new(),
+            selected_viewer: None,
         }
     }
 }
@@ -366,8 +374,527 @@ pub fn filter_log<'a>(
     })
 }
 
+fn drawer_matches(v: &Viewer, search: &str) -> bool {
+    if search.is_empty() {
+        return true;
+    }
+    v.username.to_ascii_lowercase().contains(search)
+}
+
+fn selected_or_first<'a>(state: &LiveChatState, viewers: &'a ViewersState) -> Option<&'a Viewer> {
+    let search = state.drawer_search.to_ascii_lowercase();
+    let filtered: Vec<&'a Viewer> = viewers
+        .viewers
+        .iter()
+        .filter(|v| drawer_matches(v, &search))
+        .collect();
+
+    if filtered.is_empty() {
+        return None;
+    }
+
+    if let Some(ref sel) = state.selected_viewer {
+        filtered
+            .iter()
+            .copied()
+            .find(|v| v.username == *sel)
+            .or_else(|| filtered.first().copied())
+    } else {
+        filtered.first().copied()
+    }
+}
+
+fn viewer_hash_color(username: &str, palette: &ForgePalette) -> Color {
+    let idx = username
+        .bytes()
+        .fold(0u32, |acc, b| acc.wrapping_add(u32::from(b))) as usize
+        % 8;
+    [
+        palette.brand,
+        palette.success,
+        palette.warning,
+        palette.info,
+        palette.random,
+        palette.bits,
+        palette.accent_pink_light,
+        palette.accent_teal,
+    ][idx]
+}
+
+fn viewer_last_seen(dt: OffsetDateTime) -> String {
+    let secs = (OffsetDateTime::now_utc() - dt).whole_seconds().max(0);
+    if secs < 60 {
+        format!("{secs}s ago")
+    } else if secs < 3600 {
+        format!("{}m ago", secs / 60)
+    } else if secs < 86400 {
+        format!("{}h ago", secs / 3600)
+    } else {
+        format!("{}d ago", secs / 86400)
+    }
+}
+
+fn viewer_avatar<'a, Msg: 'a>(
+    letter: char,
+    color: Color,
+    size: f32,
+    palette: &'a ForgePalette,
+) -> Element<'a, Msg> {
+    use forge_widgets::tokens::radius;
+    use forge_widgets::{FontRole, font, tokens::Radius};
+    use iced::widget::{container, text};
+    use iced::{Background, Border};
+
+    let p = *palette;
+    container(
+        text(letter.to_string())
+            .font(font(FontRole::Body))
+            .size(size * 0.45)
+            .color(p.shell),
+    )
+    .width(Length::Fixed(size))
+    .height(Length::Fixed(size))
+    .center_x(Length::Fixed(size))
+    .center_y(Length::Fixed(size))
+    .style(move |_t: &iced::Theme| container::Style {
+        background: Some(Background::Color(color)),
+        border: Border {
+            color: Color::TRANSPARENT,
+            width: 0.0,
+            radius: radius(Radius::Sm).into(),
+        },
+        ..container::Style::default()
+    })
+    .into()
+}
+
+fn viewer_stat<'a, Msg: 'a>(
+    label: &str,
+    value: &str,
+    color: Color,
+    palette: &'a ForgePalette,
+) -> Element<'a, Msg> {
+    use forge_widgets::{
+        FontRole, font,
+        tokens::{FONT_XS, Radius, radius},
+    };
+    use iced::widget::{column, container, text};
+    use iced::{Background, Border};
+
+    let l = label.to_owned();
+    let v = value.to_owned();
+    let p = *palette;
+
+    let label_el = text(l)
+        .font(font(FontRole::Monospace))
+        .size(10.0)
+        .color(p.text_muted);
+
+    let value_el = text(v)
+        .font(font(FontRole::Monospace))
+        .size(FONT_XS)
+        .color(color);
+
+    container(column![label_el, value_el].spacing(2))
+        .padding([6u16, 8u16])
+        .width(Length::Fill)
+        .style(move |_t: &iced::Theme| container::Style {
+            background: Some(Background::Color(p.base)),
+            border: Border {
+                color: Color::TRANSPARENT,
+                width: 0.0,
+                radius: radius(Radius::Sm).into(),
+            },
+            ..container::Style::default()
+        })
+        .into()
+}
+
+fn section_sep<'a, Msg: 'a>(palette: &'a ForgePalette) -> Element<'a, Msg> {
+    use iced::Background;
+    use iced::widget::{Space, container};
+
+    let p = *palette;
+    container(Space::new())
+        .height(0.5_f32)
+        .width(Length::Fill)
+        .style(move |_t: &iced::Theme| container::Style {
+            background: Some(Background::Color(p.border_regular)),
+            ..container::Style::default()
+        })
+        .into()
+}
+
+fn drawer_header<'a>(
+    state: &'a LiveChatState,
+    viewers: &'a ViewersState,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    use forge_widgets::{
+        FontRole, font,
+        tokens::{FONT_SM, FONT_XS},
+    };
+    use iced::widget::{column, container, row, text};
+    use iced::{Background, Border, Length};
+
+    let p = *palette;
+
+    let total_count = viewers.viewers.len();
+    let search_lower = state.drawer_search.to_ascii_lowercase();
+    let shown_count = viewers
+        .viewers
+        .iter()
+        .filter(|v| drawer_matches(v, &search_lower))
+        .count();
+
+    let count_label = format!("{total_count} active · {shown_count} shown");
+
+    let title_row = row![
+        tabler_icon(Icon::Users, 13.0, p.brand),
+        text("Viewers")
+            .font(font(FontRole::Body))
+            .size(FONT_SM)
+            .color(p.text_primary),
+        text(count_label)
+            .font(font(FontRole::Body))
+            .size(FONT_XS)
+            .color(p.text_faint),
+    ]
+    .spacing(6)
+    .align_y(iced::Alignment::Center);
+
+    let search_box = search_input(
+        "Search viewers...",
+        &state.drawer_search,
+        Message::ChatDrawerSearchChanged,
+        palette,
+    );
+
+    let header_content = column![title_row, search_box].spacing(8);
+
+    let body = container(header_content)
+        .padding([10u16, 14u16])
+        .width(Length::Fill)
+        .style(move |_t: &iced::Theme| container::Style {
+            background: Some(Background::Color(Color::TRANSPARENT)),
+            border: Border {
+                color: p.border_regular,
+                width: 0.5,
+                radius: 0.0.into(),
+            },
+            ..container::Style::default()
+        });
+
+    iced::widget::column![body, section_sep::<Message>(palette)]
+        .spacing(0)
+        .into()
+}
+
+fn selected_viewer_detail<'a>(
+    state: &'a LiveChatState,
+    viewers: &'a ViewersState,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    use forge_widgets::{
+        FontRole, font,
+        tokens::{FONT_BODY, FONT_XS, Radius, radius},
+    };
+    use iced::widget::{Space, button, column, container, row, text};
+    use iced::{Background, Border};
+
+    let p = *palette;
+
+    let sep = section_sep::<Message>(palette);
+
+    let Some(sel) = selected_or_first(state, viewers) else {
+        let placeholder = container(
+            text("No viewers yet")
+                .font(font(FontRole::Body))
+                .size(FONT_XS)
+                .color(p.text_faint),
+        )
+        .padding([14u16, 14u16])
+        .width(Length::Fill);
+        return column![placeholder, sep].spacing(0).into();
+    };
+
+    let letter = sel
+        .username
+        .chars()
+        .next()
+        .map(|c| c.to_ascii_uppercase())
+        .unwrap_or('?');
+    let hash_col = viewer_hash_color(&sel.username, palette);
+    let avatar_el = viewer_avatar::<Message>(letter, hash_col, 38.0, palette);
+
+    let name_el = text(sel.username.clone())
+        .font(font(FontRole::Body))
+        .size(FONT_BODY + 0.5)
+        .color(p.text_primary);
+
+    let last_label = format!("Last seen {}", viewer_last_seen(sel.last_seen_at));
+    let last_el = text(last_label)
+        .font(font(FontRole::Monospace))
+        .size(FONT_XS)
+        .color(p.text_muted);
+
+    let name_col = column![name_el, last_el].spacing(2);
+
+    let info_row = row![avatar_el, name_col]
+        .spacing(10)
+        .align_y(iced::Alignment::Center);
+
+    let msg_str = format!("{}", sel.message_count);
+
+    let stat_grid = column![
+        row![
+            viewer_stat("WATCH TIME", "—", p.text_faint, palette),
+            viewer_stat("MESSAGES", &msg_str, p.text_primary, palette),
+        ]
+        .spacing(6),
+        row![
+            viewer_stat("SUB", "—", p.text_faint, palette),
+            viewer_stat("FOLLOW", "—", p.text_faint, palette),
+        ]
+        .spacing(6),
+    ]
+    .spacing(6);
+
+    let mk_btn = |label: &'static str| {
+        let p2 = p;
+        button(
+            text(label)
+                .font(font(FontRole::Body))
+                .size(FONT_XS)
+                .color(p2.text_muted),
+        )
+        .on_press(Message::Noop)
+        .padding([5u16, 0u16])
+        .width(Length::Fill)
+        .style(move |_t: &iced::Theme, _s| button::Style {
+            background: Some(Background::Color(p2.surface_overlay)),
+            border: Border {
+                color: p2.border_regular,
+                width: 0.5,
+                radius: radius(Radius::Sm).into(),
+            },
+            text_color: p2.text_muted,
+            shadow: iced::Shadow::default(),
+            snap: false,
+        })
+    };
+
+    let actions_row = row![mk_btn("Shoutout"), mk_btn("Whisper"), mk_btn("…")].spacing(6);
+
+    let detail_content = column![info_row, stat_grid, actions_row].spacing(8);
+
+    let detail_box = container(detail_content)
+        .padding([14u16, 14u16])
+        .width(Length::Fill)
+        .style(move |_t: &iced::Theme| container::Style {
+            background: Some(Background::Color(Color::TRANSPARENT)),
+            border: Border {
+                color: Color::TRANSPARENT,
+                width: 0.0,
+                radius: 0.0.into(),
+            },
+            ..container::Style::default()
+        });
+
+    column![detail_box, Space::new().height(0.0_f32), sep,]
+        .spacing(0)
+        .into()
+}
+
+fn drawer_viewer_row<'a>(
+    v: &'a Viewer,
+    is_sel: bool,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    use forge_widgets::{
+        FontRole, font,
+        tokens::{FONT_SM, FONT_XS},
+    };
+    use iced::widget::{Space, button, column, container, row, text};
+    use iced::{Background, Border};
+
+    let p = *palette;
+    let stripe_color = if is_sel { p.brand } else { Color::TRANSPARENT };
+    let body_bg = if is_sel {
+        p.elevated
+    } else {
+        Color::TRANSPARENT
+    };
+
+    let stripe = container(Space::new().width(2).height(Length::Fill))
+        .width(2)
+        .height(Length::Fill)
+        .style(move |_t: &iced::Theme| container::Style {
+            background: Some(Background::Color(stripe_color)),
+            ..container::Style::default()
+        });
+
+    let letter = v
+        .username
+        .chars()
+        .next()
+        .map(|c| c.to_ascii_uppercase())
+        .unwrap_or('?');
+    let hash_col = viewer_hash_color(&v.username, palette);
+    let avatar_el = viewer_avatar::<Message>(letter, hash_col, 22.0, palette);
+
+    let name_el = text(v.username.clone())
+        .font(font(FontRole::Body))
+        .size(FONT_SM)
+        .color(p.text_primary);
+
+    let meta_el = text(format!("— · {} msg", v.message_count))
+        .font(font(FontRole::Monospace))
+        .size(FONT_XS)
+        .color(p.text_muted);
+
+    let name_col = column![name_el, meta_el].spacing(1);
+
+    let last_el = text(viewer_last_seen(v.last_seen_at))
+        .font(font(FontRole::Monospace))
+        .size(FONT_XS)
+        .color(p.text_faint);
+
+    let row_content = row![
+        avatar_el,
+        name_col,
+        Space::new().width(Length::Fill),
+        last_el,
+    ]
+    .spacing(10)
+    .align_y(iced::Alignment::Center);
+
+    let username = v.username.clone();
+    let row_btn = button(row_content)
+        .on_press(Message::ChatDrawerSelectViewer(username))
+        .padding([7u16, 14u16])
+        .width(Length::Fill)
+        .style(move |_t: &iced::Theme, _s| button::Style {
+            background: Some(Background::Color(body_bg)),
+            border: Border {
+                color: Color::TRANSPARENT,
+                width: 0.0,
+                radius: 0.0.into(),
+            },
+            text_color: p.text_primary,
+            shadow: iced::Shadow::default(),
+            snap: false,
+        });
+
+    row![stripe, row_btn].spacing(0).into()
+}
+
+fn viewer_list<'a>(
+    state: &'a LiveChatState,
+    viewers: &'a ViewersState,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    use forge_widgets::{FontRole, font};
+    use iced::Background;
+    use iced::widget::{Space, column, container, scrollable, text};
+
+    let p = *palette;
+
+    let search_lower = state.drawer_search.to_ascii_lowercase();
+    let filtered: Vec<&'a Viewer> = viewers
+        .viewers
+        .iter()
+        .filter(|v| drawer_matches(v, &search_lower))
+        .collect();
+
+    let section_label = format!("ACTIVE NOW · {}", filtered.len());
+
+    let section_header = container(
+        text(section_label)
+            .font(font(FontRole::Monospace))
+            .size(10.0)
+            .color(p.text_faint),
+    )
+    .padding([8u16, 14u16])
+    .width(Length::Fill)
+    .style(move |_t: &iced::Theme| container::Style {
+        background: Some(Background::Color(Color::TRANSPARENT)),
+        ..container::Style::default()
+    });
+
+    let selected_name = state.selected_viewer.as_deref();
+
+    let list_items: Vec<Element<'a, Message>> = filtered
+        .iter()
+        .map(|v| {
+            let is_sel = selected_name == Some(v.username.as_str());
+            drawer_viewer_row(v, is_sel, palette)
+        })
+        .collect();
+
+    let list_col = if list_items.is_empty() {
+        column![
+            Space::new().height(8.0_f32),
+            container(
+                text("No viewers match the search")
+                    .font(font(FontRole::Body))
+                    .size(10.0)
+                    .color(p.text_faint),
+            )
+            .padding([0u16, 14u16]),
+        ]
+        .spacing(0)
+    } else {
+        iced::widget::column(list_items).spacing(0)
+    };
+
+    column![section_header, scrollable(list_col).height(Length::Fill)]
+        .height(Length::Fill)
+        .into()
+}
+
+fn drawer_panel<'a>(
+    state: &'a LiveChatState,
+    viewers: &'a ViewersState,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    use iced::Background;
+    use iced::widget::{Space, column, container, row};
+
+    let p = *palette;
+
+    let left_border = container(Space::new())
+        .width(0.5_f32)
+        .height(Length::Fill)
+        .style(move |_t: &iced::Theme| container::Style {
+            background: Some(Background::Color(p.border_regular)),
+            ..container::Style::default()
+        });
+
+    let panel_body = container(
+        column![
+            drawer_header(state, viewers, palette),
+            selected_viewer_detail(state, viewers, palette),
+            viewer_list(state, viewers, palette),
+        ]
+        .height(Length::Fill),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .style(move |_t: &iced::Theme| container::Style {
+        background: Some(Background::Color(p.shell)),
+        ..container::Style::default()
+    });
+
+    row![left_border, panel_body]
+        .height(Length::Fill)
+        .width(Length::Fixed(320.0))
+        .into()
+}
+
 pub fn live_chat_view<'a>(
     state: &'a LiveChatState,
+    viewers: &'a ViewersState,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let meta_bar = build_meta_bar(state, palette);
@@ -398,7 +925,19 @@ pub fn live_chat_view<'a>(
         Message::ChatSubmit,
     );
 
-    iced::widget::column![meta_bar, filter_bar, chat_area, bar]
+    let chat_column = iced::widget::column![chat_area, bar]
+        .width(Length::Fill)
+        .height(Length::Fill);
+
+    let body: Element<'a, Message> = if state.drawer_open {
+        iced::widget::row![chat_column, drawer_panel(state, viewers, palette)]
+            .height(Length::Fill)
+            .into()
+    } else {
+        chat_column.into()
+    };
+
+    iced::widget::column![meta_bar, filter_bar, body]
         .height(Length::Fill)
         .into()
 }
@@ -658,6 +1197,30 @@ fn build_chat_area<'a>(
 mod tests {
     use super::*;
     use forge_events::{Event, EventSource};
+    use forge_storage::ViewerPlatform;
+
+    fn make_viewer(username: &str, msg_count: u64) -> Viewer {
+        Viewer {
+            viewer_id: username.to_owned(),
+            platform: ViewerPlatform::Twitch,
+            username: username.to_owned(),
+            first_seen_at: OffsetDateTime::now_utc(),
+            last_seen_at: OffsetDateTime::now_utc(),
+            message_count: msg_count,
+            custom_greeting: false,
+        }
+    }
+
+    fn make_viewers_state(usernames: &[&str]) -> ViewersState {
+        use crate::viewers::ViewersState;
+        ViewersState {
+            viewers: usernames.iter().map(|u| make_viewer(u, 0)).collect(),
+            search: String::new(),
+            platform_filter: None,
+            loading: false,
+            error: None,
+        }
+    }
 
     fn make_chat_event(
         username: &str,
@@ -727,6 +1290,43 @@ mod tests {
                 "viewers": viewers,
             }),
         )
+    }
+
+    #[test]
+    fn live_chat_state_new_has_empty_drawer_state() {
+        let state = LiveChatState::new();
+        assert!(state.drawer_search.is_empty());
+        assert!(state.selected_viewer.is_none());
+        assert!(!state.drawer_open);
+    }
+
+    #[test]
+    fn viewer_hash_color_is_deterministic() {
+        let (_, palette) = forge_widgets::catppuccin_mocha();
+        let c1 = viewer_hash_color("danylo_ua", &palette);
+        let c2 = viewer_hash_color("danylo_ua", &palette);
+        assert_eq!(c1, c2);
+    }
+
+    #[test]
+    fn selected_or_first_falls_back_when_selected_missing() {
+        let mut state = LiveChatState::new();
+        state.selected_viewer = Some("ghost".to_owned());
+        let vs = make_viewers_state(&["alice", "bob"]);
+        let result = selected_or_first(&state, &vs);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().username, "alice");
+    }
+
+    #[test]
+    fn drawer_search_filter_case_insensitive() {
+        let vs = make_viewers_state(&["Alice", "Bob", "alicetv"]);
+        let matches: Vec<_> = vs
+            .viewers
+            .iter()
+            .filter(|v| drawer_matches(v, "alice"))
+            .collect();
+        assert_eq!(matches.len(), 2);
     }
 
     #[test]

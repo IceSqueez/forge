@@ -286,6 +286,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             let is_actions = matches!(screen, Screen::Actions);
             let is_queues = matches!(screen, Screen::Queues);
             let is_viewers = matches!(screen, Screen::Viewers);
+            let is_live_chat = matches!(screen, Screen::LiveChat);
             let is_hub = matches!(screen, Screen::Home);
             let is_globals = matches!(screen, Screen::Globals);
             let is_script_editor = matches!(screen, Screen::ScriptEditor);
@@ -308,7 +309,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 Task::done(Message::Actions(ActionsMsg::LoadRequested))
             } else if is_queues {
                 Task::done(Message::Queues(QueuesMsg::LoadRequested))
-            } else if is_viewers {
+            } else if is_viewers || is_live_chat {
                 Task::done(Message::Viewers(crate::viewers::ViewersMsg::LoadRequested))
             } else if is_hub {
                 Task::done(Message::Home(HomeMsg::LoadStats))
@@ -469,6 +470,15 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         }
         Message::ChatToggleDrawer => {
             app.live_chat.drawer_open = !app.live_chat.drawer_open;
+            Task::none()
+        }
+        Message::ChatDrawerSearchChanged(s) => {
+            app.live_chat.drawer_search = s;
+            Task::none()
+        }
+        Message::ChatDrawerSelectViewer(name) => {
+            app.live_chat.selected_viewer = Some(name);
+            app.live_chat.drawer_open = true;
             Task::none()
         }
         Message::Settings(sub) => match sub {
@@ -4994,7 +5004,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
 
     let screen_content: Element<'_, Message> = match &app.screen {
         Screen::Home => home_view(app, palette),
-        Screen::LiveChat => live_chat_view(&app.live_chat, palette),
+        Screen::LiveChat => live_chat_view(&app.live_chat, &app.viewers, palette),
         Screen::Globals => globals_view(app, palette),
         Screen::Actions => actions_view(app, palette),
         Screen::ActionEditor(id) => action_editor_view(app, *id, palette),

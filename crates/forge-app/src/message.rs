@@ -328,6 +328,8 @@ pub enum Message {
     ChatToggleEventsOnly,
     ChatToggleHideBots,
     ChatToggleDrawer,
+    ChatDrawerSearchChanged(String),
+    ChatDrawerSelectViewer(String),
     ScriptEditor(ScriptEditorMsg),
     EventFeed(EventFeedMsg),
     Server(ServerScreenMsg),

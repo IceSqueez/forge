@@ -50,7 +50,7 @@ use crate::script_editor::{
 };
 use crate::server_screen::{ServerScreenMsg, ServerScreenState, server_screen_view};
 use crate::server_subsystem::ServerSubsystem;
-use crate::settings_audio::{SettingsAudioState, handle_settings_audio_msg, settings_audio_view};
+use crate::settings_audio::{SettingsAudioState, settings_audio_view};
 use crate::settings_websocket::{
     SettingsWebSocketState, handle_settings_websocket_msg, settings_websocket_view,
 };
@@ -776,8 +776,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::ObsPanel(sub) => handle_obs_panel_msg(app, sub),
         Message::Soundboard(sub) => crate::soundboard::update(&mut app.soundboard, &app.rt, sub),
         Message::SettingsAudio(sub) => {
-            let backend = Arc::clone(&app.rt.backend);
-            handle_settings_audio_msg(&mut app.settings_audio, backend, sub)
+            crate::settings_audio::update(&mut app.settings_audio, &app.rt, sub)
         }
         Message::Tts(sub) => handle_tts_msg(app, sub),
         Message::Toast(sub) => match sub {

@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use forge_audio::{list_output_devices, refresh_output_devices};
-use forge_storage_sqlite::SqliteBackend;
 use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::tokens::{
     Density, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spacing,
@@ -12,6 +11,7 @@ use iced::{Alignment, Background, Border, Element, Length, Shadow, Task};
 
 use crate::Message;
 use crate::message::SettingsAudioMsg;
+use crate::runtime_view::RuntimeView;
 
 pub struct SettingsAudioState {
     pub devices: Vec<DeviceLabel>,
@@ -97,9 +97,9 @@ async fn play_test_tone(device_id: Option<String>) -> Result<(), String> {
     .map_err(|e| e.to_string())?
 }
 
-pub fn handle_settings_audio_msg(
+pub fn update(
     state: &mut SettingsAudioState,
-    _backend: Arc<SqliteBackend>,
+    _rt: &RuntimeView,
     msg: SettingsAudioMsg,
 ) -> Task<Message> {
     match msg {

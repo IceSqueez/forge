@@ -56,7 +56,7 @@ use crate::settings_websocket::{SettingsWebSocketState, settings_websocket_view}
 use crate::soundboard::{SoundboardState, soundboard_view};
 use crate::stream_apps::view as stream_apps_view;
 use crate::test_trigger::synthesize_test_event;
-use crate::tts_dashboard::{TtsDashState, handle_tts_dash_msg, tts_dashboard_view};
+use crate::tts_dashboard::{TtsDashState, tts_dashboard_view};
 use crate::tts_engines::{TtsEnginesState, handle_tts_engines_msg, tts_engines_view};
 use crate::tts_filters::{TtsFiltersState, handle_tts_filters_msg, tts_filters_view};
 use crate::tts_triggers::{TtsTriggersState, handle_tts_triggers_msg, tts_triggers_view};
@@ -2103,7 +2103,9 @@ pub async fn load_obs_and_connect(
 fn handle_tts_msg(app: &mut App, msg: crate::message::TtsMsg) -> Task<Message> {
     use crate::message::TtsMsg;
     match msg {
-        TtsMsg::Dashboard(sub) => handle_tts_dash_msg(&mut app.tts_dashboard, sub),
+        TtsMsg::Dashboard(sub) => {
+            crate::tts_dashboard::update(&mut app.tts_dashboard, &app.rt, sub)
+        }
         TtsMsg::Engines(sub) => handle_tts_engines_msg(&mut app.tts_engines, sub),
         TtsMsg::Aliases(sub) => handle_voice_aliases_msg(&mut app.tts_aliases, sub),
         TtsMsg::Filters(sub) => handle_tts_filters_msg(&mut app.tts_filters, sub),

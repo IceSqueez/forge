@@ -9,6 +9,7 @@ use iced::{Alignment, Background, Border, Color, Element, Length, Task};
 
 use crate::Message;
 use crate::message::{TtsDashMsg, TtsMsg};
+use crate::runtime_view::RuntimeView;
 
 pub struct TtsDashState {
     pub paused: bool,
@@ -105,7 +106,7 @@ impl TtsDashState {
     }
 }
 
-pub fn handle_tts_dash_msg(state: &mut TtsDashState, msg: TtsDashMsg) -> Task<Message> {
+pub fn update(state: &mut TtsDashState, _rt: &RuntimeView, msg: TtsDashMsg) -> Task<Message> {
     match msg {
         TtsDashMsg::SpeakEventReceived(event) => {
             state.apply_event(event);

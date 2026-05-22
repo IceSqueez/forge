@@ -210,8 +210,6 @@ pub enum QueuesMsg {
 #[derive(Debug, Clone)]
 pub enum SidebarMsg {
     ToggleActionsQueues,
-    TogglePlatforms,
-    ToggleStreamApps,
 }
 
 #[derive(Debug, Clone)]

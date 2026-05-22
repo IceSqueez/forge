@@ -18,8 +18,15 @@ pub struct Sidebar<'a, Msg> {
 
 pub enum NavItem<'a, Msg> {
     Section(&'a str),
+    MiniLabel(&'a str),
     Leaf {
         icon: Icon,
+        label: &'a str,
+        active: bool,
+        on_press: Msg,
+    },
+    FlatLink {
+        dot_color: Color,
         label: &'a str,
         active: bool,
         on_press: Msg,
@@ -87,12 +94,19 @@ fn render_nav_item<'a, Msg: 'a + Clone>(
 ) -> Element<'a, Msg> {
     match item {
         NavItem::Section(label) => nav_section_label(label, palette),
+        NavItem::MiniLabel(label) => nav_mini_label(label, palette),
         NavItem::Leaf {
             icon,
             label,
             active,
             on_press,
         } => nav_leaf(icon, label, active, on_press, palette),
+        NavItem::FlatLink {
+            dot_color,
+            label,
+            active,
+            on_press,
+        } => nav_flat_link(dot_color, label, active, on_press, palette),
         NavItem::Group {
             icon,
             label,
@@ -139,6 +153,89 @@ fn nav_section_label<'a, Msg: 'a>(label: &'a str, palette: &ForgePalette) -> Ele
     })
     .width(iced::Length::Fill)
     .into()
+}
+
+fn nav_mini_label<'a, Msg: 'a>(label: &'a str, palette: &ForgePalette) -> Element<'a, Msg> {
+    container(
+        text(label.to_ascii_uppercase())
+            .size(FONT_XS)
+            .font(font(FontRole::Monospace))
+            .color(palette.text_faint),
+    )
+    .padding(iced::Padding {
+        top: 8.0,
+        bottom: 3.0,
+        left: 10.0,
+        right: 10.0,
+    })
+    .width(iced::Length::Fill)
+    .into()
+}
+
+fn nav_flat_link<'a, Msg: 'a + Clone>(
+    dot_color: Color,
+    label: &'a str,
+    active: bool,
+    on_press: Msg,
+    palette: &ForgePalette,
+) -> Element<'a, Msg> {
+    let text_color = if active {
+        palette.text_primary
+    } else {
+        palette.text_secondary
+    };
+    let bg = if active {
+        Some(iced::Background::Color(palette.surface_overlay))
+    } else {
+        None
+    };
+    let hover_bg = palette.base;
+    let hover_text = palette.text_primary;
+    let btn_radius = radius(Radius::Sm);
+
+    let dot = container(Space::new())
+        .width(8_u32)
+        .height(8_u32)
+        .style(move |_: &iced::Theme| iced::widget::container::Style {
+            background: Some(iced::Background::Color(dot_color)),
+            border: Border {
+                radius: 2.0.into(),
+                ..Border::default()
+            },
+            ..Default::default()
+        });
+
+    let content = row![dot, text(label).size(FONT_XS)]
+        .spacing(10)
+        .align_y(iced::Alignment::Center);
+
+    button(content)
+        .on_press(on_press)
+        .padding([6, 10])
+        .width(iced::Length::Fill)
+        .style(move |_theme: &iced::Theme, status| match status {
+            ButtonStatus::Hovered | ButtonStatus::Pressed if !active => ButtonStyle {
+                background: Some(iced::Background::Color(hover_bg)),
+                text_color: hover_text,
+                border: Border {
+                    radius: btn_radius.into(),
+                    ..Border::default()
+                },
+                shadow: iced::Shadow::default(),
+                snap: false,
+            },
+            _ => ButtonStyle {
+                background: bg,
+                text_color,
+                border: Border {
+                    radius: btn_radius.into(),
+                    ..Border::default()
+                },
+                shadow: iced::Shadow::default(),
+                snap: false,
+            },
+        })
+        .into()
 }
 
 fn nav_leaf<'a, Msg: 'a + Clone>(

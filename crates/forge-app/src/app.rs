@@ -22,9 +22,8 @@ use forge_types::{Action, ActionId};
 use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::tokens::{FONT_LG, FONT_MD, FONT_SM, FONT_XS};
 use forge_widgets::{
-    BreadcrumbCrumb, FontRole, ForgePalette, NavChild, NavItem, Radius, Sidebar, ThemeId,
-    ToastQueue, app_footer, breadcrumb, font, page_shell, radius, sidebar, title_bar,
-    toast_viewport,
+    BreadcrumbCrumb, FontRole, ForgePalette, NavItem, Radius, Sidebar, ThemeId, ToastQueue,
+    app_footer, breadcrumb, font, page_shell, radius, sidebar, title_bar, toast_viewport,
 };
 use iced::{Element, Length, Subscription, Task, Theme};
 
@@ -72,16 +71,12 @@ use crate::{Message, Screen, SettingsSection, TtsSection};
 
 pub struct SidebarExpandState {
     pub actions_queues: bool,
-    pub platforms: bool,
-    pub stream_apps: bool,
 }
 
 impl SidebarExpandState {
     pub fn new() -> Self {
         Self {
             actions_queues: false,
-            platforms: false,
-            stream_apps: false,
         }
     }
 }
@@ -351,12 +346,6 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             match sub {
                 SidebarMsg::ToggleActionsQueues => {
                     app.sidebar_state.actions_queues = !app.sidebar_state.actions_queues;
-                }
-                SidebarMsg::TogglePlatforms => {
-                    app.sidebar_state.platforms = !app.sidebar_state.platforms;
-                }
-                SidebarMsg::ToggleStreamApps => {
-                    app.sidebar_state.stream_apps = !app.sidebar_state.stream_apps;
                 }
             }
             Task::none()
@@ -5264,13 +5253,15 @@ fn screen_label(screen: &Screen) -> &'static str {
     }
 }
 
+fn integration_active(screen: &Screen, id: &str) -> bool {
+    matches!(screen, Screen::IntegrationDetail(s) if s.as_str() == id)
+}
+
 fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Sidebar<'a, Message> {
     let is_home = matches!(app.screen, Screen::Home);
     let is_actions = matches!(app.screen, Screen::Actions | Screen::ActionEditor(_));
     let is_queues = matches!(app.screen, Screen::Queues);
     let is_commands = matches!(app.screen, Screen::Commands);
-    let is_platforms = matches!(app.screen, Screen::Platforms);
-    let is_stream_apps = matches!(app.screen, Screen::StreamApps);
     let is_live_chat = matches!(app.screen, Screen::LiveChat);
     let is_event_feed = matches!(app.screen, Screen::EventFeed);
     let is_globals = matches!(app.screen, Screen::Globals);
@@ -5328,59 +5319,43 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Sidebar<'a, Mes
             on_press: Message::Navigate(Screen::Globals),
         },
         NavItem::Section("CONNECTIONS"),
-        NavItem::Group {
-            icon: Icon::Broadcast,
-            label: "Platforms",
-            active: is_platforms,
-            expanded: app.sidebar_state.platforms,
-            on_toggle: Message::Sidebar(SidebarMsg::TogglePlatforms),
-            children: vec![
-                NavChild {
-                    dot_color: palette.brand,
-                    label: "Twitch",
-                    active: false,
-                    on_press: twitch_target.clone(),
-                },
-                NavChild {
-                    dot_color: palette.random,
-                    label: "YouTube",
-                    active: false,
-                    on_press: Message::Navigate(Screen::Platforms),
-                },
-                NavChild {
-                    dot_color: palette.info,
-                    label: "Kick",
-                    active: false,
-                    on_press: Message::Navigate(Screen::Platforms),
-                },
-                NavChild {
-                    dot_color: palette.success,
-                    label: "Trovo",
-                    active: false,
-                    on_press: Message::Navigate(Screen::Platforms),
-                },
-            ],
+        NavItem::MiniLabel("Platforms"),
+        NavItem::FlatLink {
+            dot_color: palette.brand,
+            label: "Twitch",
+            active: integration_active(&app.screen, "twitch"),
+            on_press: twitch_target.clone(),
         },
-        NavItem::Group {
-            icon: Icon::LayoutGrid,
-            label: "Stream apps",
-            active: is_stream_apps,
-            expanded: app.sidebar_state.stream_apps,
-            on_toggle: Message::Sidebar(SidebarMsg::ToggleStreamApps),
-            children: vec![
-                NavChild {
-                    dot_color: palette.success,
-                    label: "OBS Studio",
-                    active: false,
-                    on_press: obs_target.clone(),
-                },
-                NavChild {
-                    dot_color: palette.warning,
-                    label: "VTube Studio",
-                    active: false,
-                    on_press: Message::Navigate(Screen::StreamApps),
-                },
-            ],
+        NavItem::FlatLink {
+            dot_color: palette.random,
+            label: "YouTube",
+            active: integration_active(&app.screen, "youtube"),
+            on_press: Message::Navigate(Screen::IntegrationDetail(IntegrationId::new("youtube"))),
+        },
+        NavItem::FlatLink {
+            dot_color: palette.info,
+            label: "Kick",
+            active: integration_active(&app.screen, "kick"),
+            on_press: Message::Navigate(Screen::IntegrationDetail(IntegrationId::new("kick"))),
+        },
+        NavItem::FlatLink {
+            dot_color: palette.success,
+            label: "Trovo",
+            active: integration_active(&app.screen, "trovo"),
+            on_press: Message::Navigate(Screen::IntegrationDetail(IntegrationId::new("trovo"))),
+        },
+        NavItem::MiniLabel("Stream apps"),
+        NavItem::FlatLink {
+            dot_color: palette.success,
+            label: "OBS Studio",
+            active: integration_active(&app.screen, "obs"),
+            on_press: obs_target.clone(),
+        },
+        NavItem::FlatLink {
+            dot_color: palette.warning,
+            label: "VTube Studio",
+            active: integration_active(&app.screen, "vtube"),
+            on_press: Message::Navigate(Screen::IntegrationDetail(IntegrationId::new("vtube"))),
         },
         NavItem::Leaf {
             icon: Icon::Music,
@@ -6774,11 +6749,9 @@ mod tests {
     }
 
     #[test]
-    fn sidebar_expand_state_initializes_all_collapsed() {
+    fn sidebar_expand_state_initializes_collapsed() {
         let app = App::default();
         assert!(!app.sidebar_state.actions_queues);
-        assert!(!app.sidebar_state.platforms);
-        assert!(!app.sidebar_state.stream_apps);
     }
 
     #[test]
@@ -6788,33 +6761,6 @@ mod tests {
         assert!(app.sidebar_state.actions_queues);
         let _ = update(&mut app, Message::Sidebar(SidebarMsg::ToggleActionsQueues));
         assert!(!app.sidebar_state.actions_queues);
-    }
-
-    #[test]
-    fn sidebar_toggle_platforms_flips_bool() {
-        let mut app = App::default();
-        let _ = update(&mut app, Message::Sidebar(SidebarMsg::TogglePlatforms));
-        assert!(app.sidebar_state.platforms);
-        let _ = update(&mut app, Message::Sidebar(SidebarMsg::TogglePlatforms));
-        assert!(!app.sidebar_state.platforms);
-    }
-
-    #[test]
-    fn sidebar_toggle_stream_apps_flips_bool() {
-        let mut app = App::default();
-        let _ = update(&mut app, Message::Sidebar(SidebarMsg::ToggleStreamApps));
-        assert!(app.sidebar_state.stream_apps);
-        let _ = update(&mut app, Message::Sidebar(SidebarMsg::ToggleStreamApps));
-        assert!(!app.sidebar_state.stream_apps);
-    }
-
-    #[test]
-    fn sidebar_toggles_are_independent() {
-        let mut app = App::default();
-        let _ = update(&mut app, Message::Sidebar(SidebarMsg::TogglePlatforms));
-        assert!(!app.sidebar_state.actions_queues);
-        assert!(app.sidebar_state.platforms);
-        assert!(!app.sidebar_state.stream_apps);
     }
 
     #[test]
@@ -6868,15 +6814,6 @@ mod tests {
     fn view_live_chat_renders() {
         let mut app = App::default();
         let _ = update(&mut app, Message::Navigate(Screen::LiveChat));
-        let _ = view(&app);
-    }
-
-    #[test]
-    fn view_platforms_expanded_sidebar_renders() {
-        let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::Home));
-        let _ = update(&mut app, Message::Sidebar(SidebarMsg::TogglePlatforms));
-        let _ = update(&mut app, Message::Sidebar(SidebarMsg::ToggleStreamApps));
         let _ = view(&app);
     }
 

@@ -1,7 +1,8 @@
 use async_trait::async_trait;
-use forge_storage::{ActionRepo, StorageError};
+use forge_storage::{ActionRepo, ActionTelemetry, StorageError};
 use forge_types::{Action, ActionId, ExecutionMode, QueueId, SubActionSpec};
 use serde_json;
+use time::OffsetDateTime;
 
 use crate::error::SqliteStorageError;
 
@@ -186,5 +187,48 @@ impl ActionRepo for SqliteActionRepo {
         rows.into_iter()
             .map(|row| decode_row(row).map_err(StorageError::from))
             .collect()
+    }
+
+    async fn telemetry(&self, id: ActionId) -> Result<ActionTelemetry, StorageError> {
+        let id_str = id.to_string();
+        let now = OffsetDateTime::now_utc();
+        let start_of_today = now.replace_time(time::Time::MIDNIGHT).unix_timestamp();
+        let start_of_7d = (now - time::Duration::days(7)).unix_timestamp();
+
+        type TelemetryRow = (Option<i64>, i64, Option<f64>, i64);
+
+        let (last_fired_raw, runs_today_raw, avg_dur_raw, errors_7d_raw): TelemetryRow =
+            sqlx::query_as(
+                "WITH \
+                   lf AS (SELECT MAX(started_at) AS v \
+                          FROM action_executions WHERE action_id = ?), \
+                   rt AS (SELECT COUNT(*) AS v \
+                          FROM action_executions \
+                          WHERE action_id = ? AND started_at >= ?), \
+                   ad AS (SELECT AVG(duration_ms) AS v \
+                          FROM (SELECT duration_ms FROM action_executions \
+                                WHERE action_id = ? ORDER BY started_at DESC LIMIT 100)), \
+                   e7 AS (SELECT COUNT(*) AS v \
+                          FROM action_executions \
+                          WHERE action_id = ? AND status = 'err' AND started_at >= ?) \
+                 SELECT lf.v, rt.v, ad.v, e7.v FROM lf, rt, ad, e7",
+            )
+            .bind(&id_str)
+            .bind(&id_str)
+            .bind(start_of_today)
+            .bind(&id_str)
+            .bind(&id_str)
+            .bind(start_of_7d)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+        Ok(ActionTelemetry {
+            last_fired_at: last_fired_raw
+                .and_then(|ts| OffsetDateTime::from_unix_timestamp(ts).ok()),
+            runs_today: runs_today_raw.max(0) as u64,
+            avg_duration_ms: avg_dur_raw.map(|v| v.round() as u64),
+            errors_7d: errors_7d_raw.max(0) as u64,
+        })
     }
 }

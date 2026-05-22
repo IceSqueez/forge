@@ -1,7 +1,16 @@
 use async_trait::async_trait;
 use forge_types::{Action, ActionId};
+use time::OffsetDateTime;
 
 use crate::StorageError;
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ActionTelemetry {
+    pub last_fired_at: Option<OffsetDateTime>,
+    pub runs_today: u64,
+    pub avg_duration_ms: Option<u64>,
+    pub errors_7d: u64,
+}
 
 #[async_trait]
 pub trait ActionRepo: Send + Sync {
@@ -11,6 +20,7 @@ pub trait ActionRepo: Send + Sync {
     /// Returns true if a row was removed.
     async fn delete(&self, id: ActionId) -> Result<bool, StorageError>;
     async fn list_by_group(&self, group: Option<&str>) -> Result<Vec<Action>, StorageError>;
+    async fn telemetry(&self, id: ActionId) -> Result<ActionTelemetry, StorageError>;
 }
 
 #[cfg(test)]

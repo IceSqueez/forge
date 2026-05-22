@@ -18,7 +18,7 @@ pub mod user_globals;
 pub mod viewer;
 pub mod voice_aliases;
 
-pub use action::ActionRepo;
+pub use action::{ActionRepo, ActionTelemetry};
 pub use command::CommandRepo;
 pub use credentials::{CredentialId, CredentialsRepo};
 pub use error::StorageError;

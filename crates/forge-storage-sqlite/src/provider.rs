@@ -130,6 +130,28 @@ impl SqliteBackend {
         }
     }
 
+    #[doc(hidden)]
+    pub async fn insert_execution_for_test(
+        &self,
+        action_id: forge_types::ActionId,
+        started_at_secs: i64,
+        duration_ms: i64,
+        status: &str,
+    ) -> Result<(), SqliteStorageError> {
+        sqlx::query(
+            "INSERT INTO action_executions (action_id, started_at, duration_ms, status)
+             VALUES (?, ?, ?, ?)",
+        )
+        .bind(action_id.to_string())
+        .bind(started_at_secs)
+        .bind(duration_ms)
+        .bind(status)
+        .execute(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+        Ok(())
+    }
+
     pub fn soundboard_clips_repo_impl(&self) -> &SqliteSoundboardClipsRepo {
         &self.soundboard
     }

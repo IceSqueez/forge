@@ -5,11 +5,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_events::Event;
 use forge_storage::{
-    ActionRepo, AliasId, AssignmentStrategy, CommandRepo, CredentialId, CredentialsRepo,
-    DataProvider, EventLogRepo, GlobalEntry, GlobalsRepo, HistoryRepo, IgnoreProfile, QueueRepo,
-    ScriptRecord, ScriptRepo, SettingsRepo, SoundboardClipsRepo, StorageError, StoredClip,
-    TriggerRepo, UserGlobalEntry, UserGlobalsRepo, Viewer, ViewerPlatform, ViewerRepo, VoiceAlias,
-    VoiceAliasRepo,
+    ActionRepo, ActionTelemetry, AliasId, AssignmentStrategy, CommandRepo, CredentialId,
+    CredentialsRepo, DataProvider, EventLogRepo, GlobalEntry, GlobalsRepo, HistoryRepo,
+    IgnoreProfile, QueueRepo, ScriptRecord, ScriptRepo, SettingsRepo, SoundboardClipsRepo,
+    StorageError, StoredClip, TriggerRepo, UserGlobalEntry, UserGlobalsRepo, Viewer, ViewerPlatform,
+    ViewerRepo, VoiceAlias, VoiceAliasRepo,
 };
 use forge_types::{
     Action, ActionId, ClipId, Command, CommandId, ExecutionContext, Queue, QueueId, ScriptId,
@@ -197,6 +197,10 @@ impl ActionRepo for NullDp {
 
     async fn list_by_group(&self, _group: Option<&str>) -> Result<Vec<Action>, StorageError> {
         Ok(vec![])
+    }
+
+    async fn telemetry(&self, _id: ActionId) -> Result<ActionTelemetry, StorageError> {
+        Ok(ActionTelemetry::default())
     }
 }
 
@@ -653,6 +657,10 @@ impl ActionRepo for VecCommandDp {
     async fn list_by_group(&self, _group: Option<&str>) -> Result<Vec<Action>, StorageError> {
         Ok(vec![])
     }
+
+    async fn telemetry(&self, _id: ActionId) -> Result<ActionTelemetry, StorageError> {
+        Ok(ActionTelemetry::default())
+    }
 }
 
 #[async_trait]
@@ -1005,6 +1013,10 @@ impl ActionRepo for VecGlobalsDp {
     async fn list_by_group(&self, _group: Option<&str>) -> Result<Vec<Action>, StorageError> {
         Ok(vec![])
     }
+
+    async fn telemetry(&self, _id: ActionId) -> Result<ActionTelemetry, StorageError> {
+        Ok(ActionTelemetry::default())
+    }
 }
 
 #[async_trait]
@@ -1352,6 +1364,10 @@ impl ActionRepo for VecActionDp {
 
     async fn list_by_group(&self, _group: Option<&str>) -> Result<Vec<Action>, StorageError> {
         Ok(vec![])
+    }
+
+    async fn telemetry(&self, _id: ActionId) -> Result<ActionTelemetry, StorageError> {
+        Ok(ActionTelemetry::default())
     }
 }
 
@@ -1714,6 +1730,10 @@ impl ActionRepo for VecUserGlobalsDp {
 
     async fn list_by_group(&self, _group: Option<&str>) -> Result<Vec<Action>, StorageError> {
         Ok(vec![])
+    }
+
+    async fn telemetry(&self, _id: ActionId) -> Result<ActionTelemetry, StorageError> {
+        Ok(ActionTelemetry::default())
     }
 }
 

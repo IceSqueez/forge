@@ -281,6 +281,7 @@ pub fn chat_row_msg<'a, Msg: Clone + 'a>(
     username: &str,
     username_color: Color,
     text_body: &str,
+    on_user_click: Option<fn(String) -> Msg>,
 ) -> Element<'a, Msg> {
     let ts_top = timestamp_top(timestamp, palette);
     let p_badge = platform_badge(platform, palette);
@@ -291,20 +292,50 @@ pub fn chat_row_msg<'a, Msg: Clone + 'a>(
     }
     let top_row = row(top_items).spacing(6).align_y(iced::Alignment::Center);
 
-    let bottom_row = row![
-        text(username.to_owned())
+    let username_el: Element<'a, Msg> = match on_user_click {
+        Some(on_click) => {
+            let uname = username.to_owned();
+            button(
+                text(uname.clone())
+                    .size(FONT_SM)
+                    .color(username_color)
+                    .font(font(FontRole::Body)),
+            )
+            .on_press(on_click(uname))
+            .padding(0)
+            .style(move |_theme: &iced::Theme, _status| button::Style {
+                background: None,
+                border: Border {
+                    color: Color::TRANSPARENT,
+                    width: 0.0,
+                    radius: 0.0.into(),
+                },
+                text_color: username_color,
+                shadow: iced::Shadow::default(),
+                snap: false,
+            })
+            .into()
+        }
+        None => text(username.to_owned())
             .size(FONT_SM)
             .color(username_color)
-            .font(font(FontRole::Body)),
+            .font(font(FontRole::Body))
+            .into(),
+    };
+
+    let bottom_row = row(vec![
+        username_el,
         text(": ")
             .size(FONT_SM)
             .color(palette.text_secondary)
-            .font(font(FontRole::Body)),
+            .font(font(FontRole::Body))
+            .into(),
         text(text_body.to_owned())
             .size(FONT_SM)
             .color(palette.text_primary)
-            .font(font(FontRole::Body)),
-    ]
+            .font(font(FontRole::Body))
+            .into(),
+    ])
     .spacing(4)
     .align_y(iced::Alignment::Center)
     .wrap();
@@ -330,6 +361,7 @@ pub fn chat_row_sub<'a, Msg: Clone + 'a>(
     months: Option<u32>,
     sub_message: Option<&str>,
     triggered_action: Option<&str>,
+    on_user_click: Option<fn(String) -> Msg>,
 ) -> Element<'a, Msg> {
     let ts_top = timestamp_top(timestamp, palette);
     let icon = money_event_icon(Icon::Star, palette.brand);
@@ -338,12 +370,39 @@ pub fn chat_row_sub<'a, Msg: Clone + 'a>(
 
     let tier_label = format!("subscribed (Tier {tier})");
 
-    let mut first_row_items: Vec<Element<'a, Msg>> = vec![
-        text(username.to_owned())
+    let username_el: Element<'a, Msg> = match on_user_click {
+        Some(on_click) => {
+            let uname = username.to_owned();
+            button(
+                text(uname.clone())
+                    .size(FONT_SM)
+                    .color(username_color)
+                    .font(font(FontRole::Body)),
+            )
+            .on_press(on_click(uname))
+            .padding(0)
+            .style(move |_theme: &iced::Theme, _status| button::Style {
+                background: None,
+                border: Border {
+                    color: Color::TRANSPARENT,
+                    width: 0.0,
+                    radius: 0.0.into(),
+                },
+                text_color: username_color,
+                shadow: iced::Shadow::default(),
+                snap: false,
+            })
+            .into()
+        }
+        None => text(username.to_owned())
             .size(FONT_SM)
             .color(username_color)
             .font(font(FontRole::Body))
             .into(),
+    };
+
+    let mut first_row_items: Vec<Element<'a, Msg>> = vec![
+        username_el,
         text(format!(" {tier_label}"))
             .size(FONT_SM)
             .color(palette.text_secondary)
@@ -391,6 +450,7 @@ pub fn chat_row_sub<'a, Msg: Clone + 'a>(
     row_chrome(inner.into(), p.brand, p.elevated, palette)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn chat_row_cheer<'a, Msg: Clone + 'a>(
     palette: &ForgePalette,
     timestamp: &str,
@@ -399,6 +459,7 @@ pub fn chat_row_cheer<'a, Msg: Clone + 'a>(
     username_color: Color,
     bits: u64,
     cheer_text: &str,
+    on_user_click: Option<fn(String) -> Msg>,
 ) -> Element<'a, Msg> {
     let ts_top = timestamp_top(timestamp, palette);
     let icon = money_event_icon(Icon::Bolt, palette.warning);
@@ -411,17 +472,46 @@ pub fn chat_row_cheer<'a, Msg: Clone + 'a>(
         ..palette.warning
     };
 
-    let first_row: Element<'a, Msg> = row![
-        text(username.to_owned())
+    let username_el: Element<'a, Msg> = match on_user_click {
+        Some(on_click) => {
+            let uname = username.to_owned();
+            button(
+                text(uname.clone())
+                    .size(FONT_SM)
+                    .color(username_color)
+                    .font(font(FontRole::Body)),
+            )
+            .on_press(on_click(uname))
+            .padding(0)
+            .style(move |_theme: &iced::Theme, _status| button::Style {
+                background: None,
+                border: Border {
+                    color: Color::TRANSPARENT,
+                    width: 0.0,
+                    radius: 0.0.into(),
+                },
+                text_color: username_color,
+                shadow: iced::Shadow::default(),
+                snap: false,
+            })
+            .into()
+        }
+        None => text(username.to_owned())
             .size(FONT_SM)
             .color(username_color)
-            .font(font(FontRole::Body)),
+            .font(font(FontRole::Body))
+            .into(),
+    };
+
+    let first_row: Element<'a, Msg> = row(vec![
+        username_el,
         text(" cheered")
             .size(FONT_SM)
             .color(palette.text_secondary)
-            .font(font(FontRole::Body)),
+            .font(font(FontRole::Body))
+            .into(),
         inline_badge(&bits_label, bits_bg, palette.warning, palette),
-    ]
+    ])
     .spacing(6)
     .align_y(iced::Alignment::Center)
     .into();
@@ -505,6 +595,7 @@ pub fn chat_row_cmd<'a, Msg: Clone + 'a>(
     command: &str,
     action_name: Option<&str>,
     action_duration_ms: Option<u64>,
+    on_user_click: Option<fn(String) -> Msg>,
 ) -> Element<'a, Msg> {
     let ts_top = timestamp_top(timestamp, palette);
     let p_badge = platform_badge(platform, palette);
@@ -530,17 +621,46 @@ pub fn chat_row_cmd<'a, Msg: Clone + 'a>(
         ..container::Style::default()
     });
 
-    let first_row = row![
-        text(username.to_owned())
+    let username_el: Element<'a, Msg> = match on_user_click {
+        Some(on_click) => {
+            let uname = username.to_owned();
+            button(
+                text(uname.clone())
+                    .size(FONT_SM)
+                    .color(username_color)
+                    .font(font(FontRole::Body)),
+            )
+            .on_press(on_click(uname))
+            .padding(0)
+            .style(move |_theme: &iced::Theme, _status| button::Style {
+                background: None,
+                border: Border {
+                    color: Color::TRANSPARENT,
+                    width: 0.0,
+                    radius: 0.0.into(),
+                },
+                text_color: username_color,
+                shadow: iced::Shadow::default(),
+                snap: false,
+            })
+            .into()
+        }
+        None => text(username.to_owned())
             .size(FONT_SM)
             .color(username_color)
-            .font(font(FontRole::Body)),
+            .font(font(FontRole::Body))
+            .into(),
+    };
+
+    let first_row = row(vec![
+        username_el,
         text(": ")
             .size(FONT_SM)
             .color(palette.text_secondary)
-            .font(font(FontRole::Body)),
-        cmd_text,
-    ]
+            .font(font(FontRole::Body))
+            .into(),
+        cmd_text.into(),
+    ])
     .spacing(4)
     .align_y(iced::Alignment::Center);
 
@@ -575,6 +695,7 @@ pub fn chat_row_cmd<'a, Msg: Clone + 'a>(
 pub fn chat_row<'a, Msg: Clone + 'a>(
     palette: &'a ForgePalette,
     row_data: &'a ChatRow,
+    on_user_click: Option<fn(String) -> Msg>,
 ) -> Element<'a, Msg> {
     match &row_data.body {
         ChatBody::Message(msg) => chat_row_msg(
@@ -585,6 +706,7 @@ pub fn chat_row<'a, Msg: Clone + 'a>(
             &row_data.username,
             row_data.username_color,
             msg,
+            on_user_click,
         ),
         ChatBody::Subscription {
             tier,
@@ -601,6 +723,7 @@ pub fn chat_row<'a, Msg: Clone + 'a>(
             *months,
             message.as_deref(),
             triggered_action.as_deref(),
+            on_user_click,
         ),
         ChatBody::Cheer { bits, text } => chat_row_cheer(
             palette,
@@ -610,6 +733,7 @@ pub fn chat_row<'a, Msg: Clone + 'a>(
             row_data.username_color,
             *bits,
             text,
+            on_user_click,
         ),
         ChatBody::Raid {
             viewers,
@@ -636,6 +760,7 @@ pub fn chat_row<'a, Msg: Clone + 'a>(
             command,
             action_name.as_deref(),
             *action_duration_ms,
+            on_user_click,
         ),
     }
 }
@@ -956,6 +1081,7 @@ mod tests {
             "testuser",
             CATPPUCCIN_MOCHA.brand,
             "hello world",
+            None,
         );
     }
 
@@ -971,6 +1097,7 @@ mod tests {
             Some(3),
             Some("Дякую за стрім!"),
             Some("Welcome new subscriber"),
+            None,
         );
     }
 
@@ -983,6 +1110,7 @@ mod tests {
             "viewer_x",
             CATPPUCCIN_MOCHA.success,
             1,
+            None,
             None,
             None,
             None,
@@ -999,6 +1127,7 @@ mod tests {
             CATPPUCCIN_MOCHA.success,
             500,
             "keep going!",
+            None,
         );
     }
 
@@ -1038,6 +1167,7 @@ mod tests {
             "!quote",
             Some("!quote"),
             Some(18),
+            None,
         );
     }
 
@@ -1053,6 +1183,7 @@ mod tests {
             "!so",
             None,
             None,
+            None,
         );
     }
 
@@ -1066,7 +1197,7 @@ mod tests {
             username_color: CATPPUCCIN_MOCHA.brand,
             body: ChatBody::Message("hello world".to_string()),
         };
-        let _: Element<'_, ()> = chat_row(&CATPPUCCIN_MOCHA, &row_data);
+        let _: Element<'_, ()> = chat_row(&CATPPUCCIN_MOCHA, &row_data, None);
     }
 
     #[test]
@@ -1084,7 +1215,7 @@ mod tests {
                 triggered_action: Some("Welcome".to_string()),
             },
         };
-        let _: Element<'_, ()> = chat_row(&CATPPUCCIN_MOCHA, &row_data);
+        let _: Element<'_, ()> = chat_row(&CATPPUCCIN_MOCHA, &row_data, None);
     }
 
     #[test]
@@ -1100,7 +1231,7 @@ mod tests {
                 text: "nice stream".to_string(),
             },
         };
-        let _: Element<'_, ()> = chat_row(&CATPPUCCIN_MOCHA, &row_data);
+        let _: Element<'_, ()> = chat_row(&CATPPUCCIN_MOCHA, &row_data, None);
     }
 
     #[test]
@@ -1116,7 +1247,7 @@ mod tests {
                 triggered_action: None,
             },
         };
-        let _: Element<'_, ()> = chat_row(&CATPPUCCIN_MOCHA, &row_data);
+        let _: Element<'_, ()> = chat_row(&CATPPUCCIN_MOCHA, &row_data, None);
     }
 
     #[test]
@@ -1133,7 +1264,7 @@ mod tests {
                 action_duration_ms: Some(18),
             },
         };
-        let _: Element<'_, ()> = chat_row(&CATPPUCCIN_MOCHA, &row_data);
+        let _: Element<'_, ()> = chat_row(&CATPPUCCIN_MOCHA, &row_data, None);
     }
 
     #[test]

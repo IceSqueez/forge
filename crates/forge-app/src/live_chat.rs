@@ -1148,7 +1148,7 @@ fn build_chat_area<'a>(
     use iced::{Background, Border, Length};
 
     let visible: Vec<Element<'a, Message>> = filter_log(&state.chat_log, &state.chat_filter)
-        .map(|row| forge_widgets::chat_row(palette, row))
+        .map(|row| forge_widgets::chat_row(palette, row, None))
         .collect();
 
     let empty_msg = if state.chat_filter.events_only {

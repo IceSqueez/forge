@@ -777,28 +777,36 @@ fn selected_viewer_detail<'a>(
     };
 
     let shoutout_btn = button(
-        row![
-            tabler_icon(Icon::Bolt, 11.0, p.text_muted),
-            text("Shoutout").font(font(FontRole::Body)).size(FONT_XS),
-        ]
-        .spacing(4)
-        .align_y(iced::Alignment::Center),
+        container(
+            row![
+                tabler_icon(Icon::Bolt, 11.0, p.text_muted),
+                text("Shoutout").font(font(FontRole::Body)).size(FONT_XS),
+            ]
+            .spacing(5)
+            .align_y(iced::Alignment::Center),
+        )
+        .width(Length::Fill)
+        .align_x(iced::Alignment::Center),
     )
     .on_press(Message::Noop)
-    .padding([5u16, 0u16])
+    .padding([5u16, 11u16])
     .width(Length::Fill)
     .style(btn_style);
 
     let whisper_btn = button(
-        row![
-            tabler_icon(Icon::MessageCircle, 11.0, p.text_muted),
-            text("Whisper").font(font(FontRole::Body)).size(FONT_XS),
-        ]
-        .spacing(4)
-        .align_y(iced::Alignment::Center),
+        container(
+            row![
+                tabler_icon(Icon::MessageCircle, 11.0, p.text_muted),
+                text("Whisper").font(font(FontRole::Body)).size(FONT_XS),
+            ]
+            .spacing(5)
+            .align_y(iced::Alignment::Center),
+        )
+        .width(Length::Fill)
+        .align_x(iced::Alignment::Center),
     )
     .on_press(Message::Noop)
-    .padding([5u16, 0u16])
+    .padding([5u16, 11u16])
     .width(Length::Fill)
     .style(btn_style);
 

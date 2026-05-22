@@ -935,25 +935,23 @@ pub fn input_bar<'a, Msg: Clone + 'a>(
             selection: Color { a: 0.25, ..p.brand },
         });
 
-    let send_button = button(
-        text("\u{ea99}")
-            .size(15.0)
-            .color(palette.brand)
-            .font(font(FontRole::Body)),
-    )
-    .on_press(send_msg)
-    .padding(0)
-    .style(|_theme: &iced::Theme, _status| button::Style {
-        background: None,
-        border: Border::default(),
-        text_color: Color::TRANSPARENT,
-        shadow: iced::Shadow::default(),
-        snap: false,
-    });
+    let mood_icon = tabler_icon::<Msg>(Icon::MoodSmile, 15.0, p.text_faint);
+
+    let send_button = button(tabler_icon::<Msg>(Icon::Send, 15.0, p.brand))
+        .on_press(send_msg)
+        .padding(0)
+        .style(|_theme: &iced::Theme, _status| button::Style {
+            background: None,
+            border: Border::default(),
+            text_color: Color::TRANSPARENT,
+            shadow: iced::Shadow::default(),
+            snap: false,
+        });
 
     let mut composer_children: Vec<Element<'a, Msg>> = target_buttons;
     composer_children.push(divider.into());
     composer_children.push(input_widget.into());
+    composer_children.push(mood_icon);
     composer_children.push(send_button.into());
 
     let composer = container(
@@ -963,7 +961,7 @@ pub fn input_bar<'a, Msg: Clone + 'a>(
     )
     .padding([6, 10])
     .style(move |_theme: &iced::Theme| container::Style {
-        background: Some(Background::Color(p.elevated)),
+        background: Some(Background::Color(p.base)),
         border: Border {
             color: p.border_input,
             width: 0.5,
@@ -979,18 +977,22 @@ pub fn input_bar<'a, Msg: Clone + 'a>(
         left: 4.0,
     });
 
-    container(column![composer, hints].spacing(0))
+    let top_border = container(iced::widget::Space::new().width(Length::Fill).height(0.5))
+        .width(Length::Fill)
+        .height(0.5)
+        .style(move |_theme: &iced::Theme| container::Style {
+            background: Some(Background::Color(p.border_regular)),
+            ..container::Style::default()
+        });
+
+    let body = container(column![composer, hints].spacing(0))
         .padding([10, 14])
         .style(move |_theme: &iced::Theme| container::Style {
             background: Some(Background::Color(p.shell)),
-            border: Border {
-                color: p.border_regular,
-                width: 0.5,
-                radius: 0.0.into(),
-            },
             ..container::Style::default()
-        })
-        .into()
+        });
+
+    column![top_border, body].spacing(0).into()
 }
 
 #[cfg(test)]

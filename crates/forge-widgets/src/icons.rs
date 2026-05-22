@@ -52,6 +52,8 @@ pub enum Icon {
     Flag,
     LayoutSidebar,
     Search,
+    MoodSmile,
+    Send,
 }
 
 impl Icon {
@@ -106,6 +108,8 @@ impl Icon {
             Icon::Flag => include_bytes!("../assets/icons/tabler/flag.svg"),
             Icon::LayoutSidebar => include_bytes!("../assets/icons/tabler/layout-sidebar.svg"),
             Icon::Search => include_bytes!("../assets/icons/tabler/search.svg"),
+            Icon::MoodSmile => include_bytes!("../assets/icons/tabler/mood-smile.svg"),
+            Icon::Send => include_bytes!("../assets/icons/tabler/send.svg"),
         }
     }
 
@@ -131,7 +135,9 @@ impl Icon {
             "variable" | "hash" => Icon::Variable,
             "chevron-down" => Icon::ChevronDown,
             "chevron-up" => Icon::ChevronUp,
-            "chevron-right" | "send" => Icon::ChevronRight,
+            "chevron-right" => Icon::ChevronRight,
+            "send" | "paper-plane" => Icon::Send,
+            "mood-smile" | "emoji" | "smile" => Icon::MoodSmile,
             "download" => Icon::Download,
             "plus" => Icon::Plus,
             "repeat" | "replay" | "arrows-shuffle" => Icon::Repeat,

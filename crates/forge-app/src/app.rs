@@ -4149,12 +4149,14 @@ fn actions_detail_panel<'a>(
         .spacing(10)
         .align_y(iced::alignment::Vertical::Center);
 
-    let test_btn = forge_widgets::ghost_button(
+    let test_btn = forge_widgets::ghost_button_with_icon(
+        Icon::PlayerPlay,
         "Test run",
         Message::Actions(ActionsMsg::TestTrigger(action.id)),
         palette,
     );
-    let dup_btn = forge_widgets::ghost_button(
+    let dup_btn = forge_widgets::ghost_button_with_icon(
+        Icon::Copy,
         "Duplicate",
         Message::Actions(ActionsMsg::DuplicateAction(action.id)),
         palette,

@@ -34,8 +34,8 @@ pub use actions::{
 };
 pub use breadcrumb::{BreadcrumbCrumb, breadcrumb};
 pub use buttons::{
-    destructive_button, ghost_button, icon_button, primary_button, primary_button_small,
-    primary_button_with_icon_right, secondary_button,
+    destructive_button, ghost_button, ghost_button_with_icon, icon_button, primary_button,
+    primary_button_small, primary_button_with_icon_right, secondary_button,
 };
 pub use cards::{
     BigJumpCardProps, big_jump_card, card, card_with_radius, hero_card, metric_card, stat_row,

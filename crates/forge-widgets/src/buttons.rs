@@ -191,6 +191,79 @@ pub fn secondary_button<'a, Msg: 'a + Clone>(
         .into()
 }
 
+pub fn ghost_button_with_icon<'a, Msg: 'a + Clone>(
+    icon: crate::icons::Icon,
+    label: impl Into<Cow<'a, str>>,
+    on_press: Msg,
+    palette: &ForgePalette,
+) -> Element<'a, Msg> {
+    use crate::icons::tabler_icon;
+    use crate::tokens::{FONT_SM, FontRole, font};
+
+    let text_color = palette.text_muted;
+    let text_hover = palette.text_primary;
+    let border_color = palette.border_regular;
+    let border_hover = palette.border_input;
+    let r = radius(Radius::Sm);
+    let v = spacing(Spacing::Xs, Density::Cozy);
+    let h = spacing(Spacing::Sm, Density::Cozy);
+
+    let content = iced::widget::row![
+        tabler_icon::<Msg>(icon, FONT_SM, text_color),
+        iced::widget::text(label.into())
+            .size(FONT_SM)
+            .font(font(FontRole::Body)),
+    ]
+    .spacing(5)
+    .align_y(iced::Alignment::Center);
+
+    iced::widget::button(content)
+        .on_press(on_press)
+        .padding([v, h])
+        .style(move |_theme: &iced::Theme, status| match status {
+            Status::Active | Status::Pressed => Style {
+                background: None,
+                text_color,
+                border: Border {
+                    color: border_color,
+                    width: 0.5,
+                    radius: r.into(),
+                },
+                shadow: iced::Shadow::default(),
+                snap: false,
+            },
+            Status::Hovered => Style {
+                background: None,
+                text_color: text_hover,
+                border: Border {
+                    color: border_hover,
+                    width: 0.5,
+                    radius: r.into(),
+                },
+                shadow: iced::Shadow::default(),
+                snap: false,
+            },
+            Status::Disabled => Style {
+                background: None,
+                text_color: Color {
+                    a: 0.4,
+                    ..text_color
+                },
+                border: Border {
+                    color: Color {
+                        a: 0.4,
+                        ..border_color
+                    },
+                    width: 0.5,
+                    radius: r.into(),
+                },
+                shadow: iced::Shadow::default(),
+                snap: false,
+            },
+        })
+        .into()
+}
+
 pub fn ghost_button<'a, Msg: 'a + Clone>(
     label: impl Into<Cow<'a, str>>,
     on_press: Msg,

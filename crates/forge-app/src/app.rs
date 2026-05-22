@@ -32,8 +32,8 @@ use crate::action_editor::action_editor_view;
 use crate::actions::{
     ActionsFilter, ActionsState, AddActionForm, AddActionMsg, AddSubActionForm, AddSubActionMsg,
     AddTriggerForm, AddTriggerMsg, RemoveSubActionMsg, SubActionKindChoice, TriggerCategory,
-    kind_label, kind_summary, load_action_detail, load_actions_tree, load_clip_options,
-    load_telemetry, remove_sub_action, save_sub_action,
+    duplicate_sub_action, kind_label, kind_summary, load_action_detail, load_actions_tree,
+    load_clip_options, load_telemetry, move_sub_action, remove_sub_action, save_sub_action,
 };
 use crate::event_feed::{EventFeedState, event_feed_view, handle_event_feed_msg};
 use crate::globals_view::{
@@ -45,8 +45,8 @@ use crate::integration_detail::{
 };
 use crate::live_chat::{CHAT_LOG_MAX, LiveChatState, chat_row_from_event, live_chat_view};
 use crate::message::{
-    ActionsMsg, GlobalsMsg, HomeMsg, HomeStatsData, ObsClientRef, PlatformId, QueuesMsg,
-    SettingsMsg, SidebarMsg, ToastMsg,
+    ActionsMsg, GlobalsMsg, HomeMsg, HomeStatsData, MoveSubActionMsg, ObsClientRef, PlatformId,
+    QueuesMsg, SettingsMsg, SidebarMsg, ToastMsg,
 };
 use crate::queues_view::{QueuesState, load_queues, queues_view};
 use crate::script_editor::{
@@ -579,6 +579,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::AddTrigger(sub) => handle_add_trigger_msg(app, sub),
         Message::AddSubAction(sub) => handle_add_sub_action_msg(app, sub),
         Message::RemoveSubAction(sub) => handle_remove_sub_action_msg(app, sub),
+        Message::MoveSubAction(sub) => handle_move_sub_action_msg(app, sub),
         Message::ScriptEditor(sub) => handle_script_editor_msg(app, sub),
         Message::IntegrationDetail(sub) => handle_integration_detail_msg(app, sub),
         Message::TwitchBootResult(result) => match result {
@@ -1377,6 +1378,18 @@ fn handle_actions_msg(app: &mut App, sub: ActionsMsg) -> Task<Message> {
             tracing::warn!(error = %e, "action telemetry load failed");
             Task::none()
         }
+        ActionsMsg::ToggleStepMenu(i) => {
+            app.actions.step_menu_open = if app.actions.step_menu_open == Some(i) {
+                None
+            } else {
+                Some(i)
+            };
+            Task::none()
+        }
+        ActionsMsg::DismissStepMenu => {
+            app.actions.step_menu_open = None;
+            Task::none()
+        }
     }
 }
 
@@ -1881,6 +1894,24 @@ fn handle_add_sub_action_msg(app: &mut App, sub: AddSubActionMsg) -> Task<Messag
             }
             Task::none()
         }
+        AddSubActionMsg::DuplicateRequested(action_id, index) => {
+            let dp = Arc::clone(&app.backend);
+            Task::perform(
+                async move {
+                    duplicate_sub_action(dp, action_id, index)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                |r| Message::AddSubAction(AddSubActionMsg::Duplicated(r)),
+            )
+        }
+        AddSubActionMsg::Duplicated(Ok(id)) => {
+            Task::done(Message::Actions(ActionsMsg::ActionSelected(id)))
+        }
+        AddSubActionMsg::Duplicated(Err(e)) => {
+            tracing::warn!(error = %e, "duplicate sub-action failed");
+            Task::none()
+        }
     }
 }
 
@@ -1903,6 +1934,82 @@ fn handle_remove_sub_action_msg(app: &mut App, sub: RemoveSubActionMsg) -> Task<
         },
         RemoveSubActionMsg::Removed(Err(e)) => {
             tracing::warn!(error = %e, "remove sub-action persist failed");
+            Task::none()
+        }
+    }
+}
+
+fn handle_move_sub_action_msg(app: &mut App, sub: MoveSubActionMsg) -> Task<Message> {
+    let total = app
+        .actions
+        .detail
+        .as_ref()
+        .map(|d| d.action.sub_actions.len())
+        .unwrap_or(0);
+
+    match sub {
+        MoveSubActionMsg::Up(action_id, i) => {
+            if i == 0 {
+                return Task::none();
+            }
+            let dp = Arc::clone(&app.backend);
+            Task::perform(
+                async move {
+                    move_sub_action(dp, action_id, i, i - 1)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                |r| Message::MoveSubAction(MoveSubActionMsg::Moved(r)),
+            )
+        }
+        MoveSubActionMsg::Down(action_id, i) => {
+            if total == 0 || i + 1 >= total {
+                return Task::none();
+            }
+            let dp = Arc::clone(&app.backend);
+            Task::perform(
+                async move {
+                    move_sub_action(dp, action_id, i, i + 1)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                |r| Message::MoveSubAction(MoveSubActionMsg::Moved(r)),
+            )
+        }
+        MoveSubActionMsg::ToTop(action_id, i) => {
+            if i == 0 {
+                return Task::none();
+            }
+            let dp = Arc::clone(&app.backend);
+            Task::perform(
+                async move {
+                    move_sub_action(dp, action_id, i, 0)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                |r| Message::MoveSubAction(MoveSubActionMsg::Moved(r)),
+            )
+        }
+        MoveSubActionMsg::ToBottom(action_id, i) => {
+            if total == 0 || i + 1 >= total {
+                return Task::none();
+            }
+            let last = total - 1;
+            let dp = Arc::clone(&app.backend);
+            Task::perform(
+                async move {
+                    move_sub_action(dp, action_id, i, last)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                |r| Message::MoveSubAction(MoveSubActionMsg::Moved(r)),
+            )
+        }
+        MoveSubActionMsg::Moved(Ok(id)) => {
+            Task::done(Message::Actions(ActionsMsg::ActionSelected(id)))
+        }
+        MoveSubActionMsg::Moved(Err(e)) => {
+            tracing::warn!(error = %e, "move sub-action failed");
             Task::none()
         }
     }

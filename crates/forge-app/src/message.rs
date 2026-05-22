@@ -114,6 +114,17 @@ pub enum ActionsMsg {
     FilterChanged(crate::actions::ActionsFilter),
     ToggleGroupCollapsed(crate::actions::TriggerCategory),
     TelemetryLoaded(Result<forge_storage::ActionTelemetry, String>),
+    ToggleStepMenu(usize),
+    DismissStepMenu,
+}
+
+#[derive(Debug, Clone)]
+pub enum MoveSubActionMsg {
+    Up(ActionId, usize),
+    Down(ActionId, usize),
+    ToTop(ActionId, usize),
+    ToBottom(ActionId, usize),
+    Moved(Result<ActionId, String>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -313,6 +324,7 @@ pub enum Message {
     AddTrigger(AddTriggerMsg),
     AddSubAction(AddSubActionMsg),
     RemoveSubAction(RemoveSubActionMsg),
+    MoveSubAction(MoveSubActionMsg),
     IntegrationDetail(IntegrationDetailMsg),
     ObsBootResult(Result<ObsClientRef, String>),
     TwitchBootResult(Result<Option<TwitchBootBundle>, String>),

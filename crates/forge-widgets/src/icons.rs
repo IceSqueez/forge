@@ -59,6 +59,10 @@ pub enum Icon {
     ChartLine,
     ArrowRight,
     Diamond,
+    ArrowUp,
+    ArrowDown,
+    ArrowBarUp,
+    ArrowBarDown,
 }
 
 impl Icon {
@@ -120,6 +124,10 @@ impl Icon {
             Icon::ChartLine => include_bytes!("../assets/icons/tabler/chart-line.svg"),
             Icon::ArrowRight => include_bytes!("../assets/icons/tabler/arrow-right.svg"),
             Icon::Diamond => include_bytes!("../assets/icons/tabler/diamond.svg"),
+            Icon::ArrowUp => include_bytes!("../assets/icons/tabler/arrow-up.svg"),
+            Icon::ArrowDown => include_bytes!("../assets/icons/tabler/arrow-down.svg"),
+            Icon::ArrowBarUp => include_bytes!("../assets/icons/tabler/arrow-bar-up.svg"),
+            Icon::ArrowBarDown => include_bytes!("../assets/icons/tabler/arrow-bar-down.svg"),
         }
     }
 
@@ -187,6 +195,10 @@ impl Icon {
             "chart-line" | "chart" | "graph" | "line-chart" => Icon::ChartLine,
             "arrow-right" => Icon::ArrowRight,
             "diamond" => Icon::Diamond,
+            "arrow-up" => Icon::ArrowUp,
+            "arrow-down" => Icon::ArrowDown,
+            "arrow-bar-up" | "arrow-to-top" => Icon::ArrowBarUp,
+            "arrow-bar-down" | "arrow-to-bottom" => Icon::ArrowBarDown,
             _ => Icon::InfoCircle,
         }
     }

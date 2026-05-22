@@ -1,13 +1,15 @@
 use forge_types::{ActionId, SubActionSpec};
-use iced::{Alignment, Element, Length, Padding};
+use iced::{Alignment, Background, Border, Element, Length, Padding};
 
 use crate::Screen;
 use crate::actions::AddSubActionMsg;
+use crate::actions::RemoveSubActionMsg;
 use crate::actions::{ActionsGroup, TriggerCategory, trigger_label_of};
 use crate::app::App;
-use crate::message::{ActionsMsg, Message};
+use crate::message::{ActionsMsg, Message, MoveSubActionMsg};
 use forge_widgets::ForgePalette;
 use forge_widgets::icons::{Icon, tabler_icon};
+use forge_widgets::popover::{MenuItem, MenuPlacement, menu_button};
 use forge_widgets::tokens::{FONT_LG, FONT_SM, FONT_XS};
 
 fn sub_action_summary(spec: &SubActionSpec) -> (&'static str, &'static str, String) {
@@ -73,6 +75,208 @@ fn kind_condition_text(kind: &forge_types::TriggerKind) -> String {
     }
 }
 
+fn parse_variable_segments(s: &str) -> Vec<(&str, bool)> {
+    let bytes = s.as_bytes();
+    let mut segs: Vec<(&str, bool)> = Vec::new();
+    let mut plain_start = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            let var_start = i + 1;
+            let mut j = var_start;
+            if j < bytes.len() && (bytes[j].is_ascii_alphabetic() || bytes[j] == b'_') {
+                j += 1;
+                while j < bytes.len()
+                    && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_' || bytes[j] == b'.')
+                {
+                    j += 1;
+                }
+                if j < bytes.len() && bytes[j] == b'%' && j > var_start {
+                    if plain_start < i {
+                        segs.push((&s[plain_start..i], false));
+                    }
+                    segs.push((&s[i..j + 1], true));
+                    i = j + 1;
+                    plain_start = i;
+                    continue;
+                }
+            }
+        }
+        i += 1;
+    }
+    if plain_start < s.len() {
+        segs.push((&s[plain_start..], false));
+    }
+    segs
+}
+
+fn variable_text<'a>(s: &str, palette: &ForgePalette, mono: iced::Font) -> Element<'a, Message> {
+    if s.is_empty() {
+        return iced::widget::text(String::new())
+            .size(FONT_XS)
+            .color(palette.text_muted)
+            .font(mono)
+            .into();
+    }
+    let p = *palette;
+    let segs = parse_variable_segments(s);
+    let els: Vec<Element<'a, Message>> = segs
+        .into_iter()
+        .map(|(chunk, is_var)| {
+            let color = if is_var { p.warning } else { p.text_muted };
+            iced::widget::text(chunk.to_owned())
+                .size(FONT_XS)
+                .color(color)
+                .font(mono)
+                .into()
+        })
+        .collect();
+    iced::widget::row(els).spacing(0).wrap().into()
+}
+
+fn step_icon_btn<'a>(
+    icon: Icon,
+    disabled: bool,
+    msg: Message,
+    palette: &ForgePalette,
+) -> Element<'a, Message> {
+    let p = *palette;
+    let icon_color = if disabled { p.disabled } else { p.text_faint };
+    let surface_overlay = p.surface_overlay;
+    let icon_el = tabler_icon(icon, 12.0, icon_color);
+
+    let content = iced::widget::container(icon_el)
+        .width(20.0)
+        .height(20.0)
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center);
+
+    let mut btn = iced::widget::button(content)
+        .padding(Padding::from([2u16, 4u16]))
+        .style(
+            move |_t: &iced::Theme, status| iced::widget::button::Style {
+                background: if disabled {
+                    None
+                } else {
+                    match status {
+                        iced::widget::button::Status::Hovered
+                        | iced::widget::button::Status::Pressed => {
+                            Some(Background::Color(surface_overlay))
+                        }
+                        _ => None,
+                    }
+                },
+                text_color: icon_color,
+                border: Border::default(),
+                shadow: iced::Shadow::default(),
+                snap: false,
+            },
+        );
+
+    if !disabled {
+        btn = btn.on_press(msg);
+    }
+
+    btn.into()
+}
+
+fn step_controls<'a>(
+    action_id: ActionId,
+    i: usize,
+    total: usize,
+    menu_open: bool,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    use iced::widget::row;
+
+    let p = *palette;
+    let border_color = p.border_regular;
+
+    let move_up = step_icon_btn(
+        Icon::ArrowUp,
+        i == 0,
+        Message::MoveSubAction(MoveSubActionMsg::Up(action_id, i)),
+        palette,
+    );
+    let move_down = step_icon_btn(
+        Icon::ArrowDown,
+        i + 1 >= total,
+        Message::MoveSubAction(MoveSubActionMsg::Down(action_id, i)),
+        palette,
+    );
+
+    let divider = iced::widget::container(
+        iced::widget::container(iced::widget::Space::new().width(0.5).height(12.0))
+            .width(0.5)
+            .height(12.0)
+            .style(move |_t: &iced::Theme| iced::widget::container::Style {
+                background: Some(Background::Color(border_color)),
+                ..iced::widget::container::Style::default()
+            }),
+    )
+    .padding(Padding::from([0u16, 4u16]));
+
+    let items: Vec<MenuItem<Message>> = vec![
+        MenuItem::Item {
+            label: "Edit step\u{2026}".to_string(),
+            on_press: Message::Noop,
+            icon: Some(Icon::InfoCircle),
+            shortcut: None,
+            color: None,
+            disabled: true,
+        },
+        MenuItem::Item {
+            label: "Duplicate".to_string(),
+            on_press: Message::AddSubAction(AddSubActionMsg::DuplicateRequested(action_id, i)),
+            icon: Some(Icon::Copy),
+            shortcut: None,
+            color: None,
+            disabled: false,
+        },
+        MenuItem::Divider,
+        MenuItem::Item {
+            label: "Move to top".to_string(),
+            on_press: Message::MoveSubAction(MoveSubActionMsg::ToTop(action_id, i)),
+            icon: Some(Icon::ArrowBarUp),
+            shortcut: None,
+            color: None,
+            disabled: i == 0,
+        },
+        MenuItem::Item {
+            label: "Move to bottom".to_string(),
+            on_press: Message::MoveSubAction(MoveSubActionMsg::ToBottom(action_id, i)),
+            icon: Some(Icon::ArrowBarDown),
+            shortcut: None,
+            color: None,
+            disabled: i + 1 >= total,
+        },
+        MenuItem::Divider,
+        MenuItem::Item {
+            label: "Delete step".to_string(),
+            on_press: Message::RemoveSubAction(RemoveSubActionMsg::Requested(action_id, i)),
+            icon: Some(Icon::Eraser),
+            shortcut: None,
+            color: Some(p.random),
+            disabled: false,
+        },
+    ];
+
+    let menu = menu_button(
+        Icon::DotsVertical,
+        menu_open,
+        Message::Actions(ActionsMsg::ToggleStepMenu(i)),
+        Message::Actions(ActionsMsg::DismissStepMenu),
+        items,
+        MenuPlacement::BottomRight,
+        palette,
+    );
+
+    row![move_up, move_down, divider, menu]
+        .spacing(2)
+        .align_y(Alignment::Center)
+        .into()
+}
+
 fn tree_pane<'a>(
     groups: &'a [ActionsGroup],
     selected_id: ActionId,
@@ -124,10 +328,10 @@ fn tree_pane<'a>(
                 .width(dot_size)
                 .height(dot_size)
                 .style(move |_theme: &iced::Theme| iced::widget::container::Style {
-                    background: Some(iced::Background::Color(dot_color)),
-                    border: iced::Border {
+                    background: Some(Background::Color(dot_color)),
+                    border: Border {
                         radius: (dot_size / 2.0).into(),
-                        ..iced::Border::default()
+                        ..Border::default()
                     },
                     ..iced::widget::container::Style::default()
                 });
@@ -168,9 +372,9 @@ fn tree_pane<'a>(
                         iced::Color::TRANSPARENT
                     };
                     iced::widget::button::Style {
-                        background: Some(iced::Background::Color(bg)),
+                        background: Some(Background::Color(bg)),
                         text_color: name_color,
-                        border: iced::Border {
+                        border: Border {
                             color: left_border_color,
                             width: 2.0,
                             radius: 0.0.into(),
@@ -190,8 +394,8 @@ fn tree_pane<'a>(
         .width(Length::Fixed(280.0))
         .height(Length::Fill)
         .style(move |_theme: &iced::Theme| iced::widget::container::Style {
-            background: Some(iced::Background::Color(p.shell)),
-            border: iced::Border {
+            background: Some(Background::Color(p.shell)),
+            border: Border {
                 color: p.border_regular,
                 width: 0.5,
                 radius: 0.0.into(),
@@ -295,7 +499,7 @@ fn detail_pane<'a>(
         |_theme: &iced::Theme, _status| iced::widget::button::Style {
             background: None,
             text_color: iced::Color::TRANSPARENT,
-            border: iced::Border::default(),
+            border: Border::default(),
             shadow: iced::Shadow::default(),
             snap: false,
         },
@@ -329,10 +533,10 @@ fn detail_pane<'a>(
                 .align_x(Alignment::Center)
                 .align_y(Alignment::Center)
                 .style(move |_theme: &iced::Theme| iced::widget::container::Style {
-                    background: Some(iced::Background::Color(p.surface_overlay)),
-                    border: iced::Border {
+                    background: Some(Background::Color(p.surface_overlay)),
+                    border: Border {
                         radius: 6.0.into(),
-                        ..iced::Border::default()
+                        ..Border::default()
                     },
                     ..iced::widget::container::Style::default()
                 });
@@ -366,7 +570,7 @@ fn detail_pane<'a>(
             )))
             .style(move |_t, status| iced::widget::button::Style {
                 background: if matches!(status, iced::widget::button::Status::Hovered) {
-                    Some(iced::Background::Color(iced::Color {
+                    Some(Background::Color(iced::Color {
                         a: 0.08,
                         ..p_btn.random
                     }))
@@ -374,7 +578,7 @@ fn detail_pane<'a>(
                     None
                 },
                 text_color: p_btn.random,
-                border: iced::Border {
+                border: Border {
                     color: iced::Color::TRANSPARENT,
                     width: 0.0,
                     radius: 4.0.into(),
@@ -394,8 +598,8 @@ fn detail_pane<'a>(
                 .width(Length::Fill)
                 .padding([10_u16, 12_u16])
                 .style(move |_theme: &iced::Theme| iced::widget::container::Style {
-                    background: Some(iced::Background::Color(p.elevated)),
-                    border: iced::Border {
+                    background: Some(Background::Color(p.elevated)),
+                    border: Border {
                         color: p.border_regular,
                         width: 0.5,
                         radius: 8.0.into(),
@@ -433,7 +637,7 @@ fn detail_pane<'a>(
         |_theme: &iced::Theme, _status| iced::widget::button::Style {
             background: None,
             text_color: iced::Color::TRANSPARENT,
-            border: iced::Border::default(),
+            border: Border::default(),
             shadow: iced::Shadow::default(),
             snap: false,
         },
@@ -472,10 +676,10 @@ fn detail_pane<'a>(
             .align_x(Alignment::Center)
             .align_y(Alignment::Center)
             .style(move |_theme: &iced::Theme| iced::widget::container::Style {
-                background: Some(iced::Background::Color(p.brand)),
-                border: iced::Border {
+                background: Some(Background::Color(p.brand)),
+                border: Border {
                     radius: 11.0.into(),
-                    ..iced::Border::default()
+                    ..Border::default()
                 },
                 ..iced::widget::container::Style::default()
             });
@@ -489,7 +693,7 @@ fn detail_pane<'a>(
         .width(2.0)
         .height(connector_height)
         .style(move |_theme: &iced::Theme| iced::widget::container::Style {
-            background: Some(iced::Background::Color(p.border_regular)),
+            background: Some(Background::Color(p.border_regular)),
             ..iced::widget::container::Style::default()
         });
 
@@ -499,7 +703,6 @@ fn detail_pane<'a>(
             .into();
 
         let icon_el = tabler_icon(step_icon, 13.0, p.text_secondary);
-
         let title_el = text(title).size(FONT_SM).color(p.text_primary);
 
         let timing_el: Element<'_, Message> = match avg_ms_label {
@@ -511,17 +714,21 @@ fn detail_pane<'a>(
             None => iced::widget::Space::new().width(Length::Shrink).into(),
         };
 
+        let menu_open = app.actions.step_menu_open == Some(i);
+        let controls = step_controls(action_id, i, total, menu_open, palette);
+
         let title_row: Element<'_, Message> = row![
             icon_el,
             title_el,
             iced::widget::Space::new().width(Length::Fill),
             timing_el,
+            controls,
         ]
         .spacing(8)
         .align_y(Alignment::Center)
         .into();
 
-        let details_el = text(details).size(FONT_XS).color(p.text_muted).font(mono);
+        let details_el = variable_text(&details, palette, mono);
 
         let card_inner: Element<'_, Message> = column![title_row, details_el].spacing(3).into();
 
@@ -529,8 +736,8 @@ fn detail_pane<'a>(
             .width(Length::Fill)
             .padding([10_u16, 12_u16])
             .style(move |_theme: &iced::Theme| iced::widget::container::Style {
-                background: Some(iced::Background::Color(p.elevated)),
-                border: iced::Border {
+                background: Some(Background::Color(p.elevated)),
+                border: Border {
                     color: p.border_regular,
                     width: 0.5,
                     radius: 8.0.into(),
@@ -577,4 +784,79 @@ pub fn action_editor_view<'a>(
         .spacing(0)
         .height(Length::Fill)
         .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_variable_segments;
+
+    #[test]
+    fn plain_text_produces_single_non_var_segment() {
+        let segs = parse_variable_segments("hello world");
+        assert_eq!(segs, vec![("hello world", false)]);
+    }
+
+    #[test]
+    fn single_variable_is_parsed() {
+        let segs = parse_variable_segments("%user%");
+        assert_eq!(segs, vec![("%user%", true)]);
+    }
+
+    #[test]
+    fn variable_at_end_of_string() {
+        let segs = parse_variable_segments("name = %counter%");
+        assert_eq!(segs.len(), 2);
+        assert_eq!(segs[0], ("name = ", false));
+        assert_eq!(segs[1], ("%counter%", true));
+    }
+
+    #[test]
+    fn variable_in_middle_produces_three_segments() {
+        let segs = parse_variable_segments("hello %user% world");
+        assert_eq!(segs.len(), 3);
+        assert_eq!(segs[0], ("hello ", false));
+        assert_eq!(segs[1], ("%user%", true));
+        assert_eq!(segs[2], (" world", false));
+    }
+
+    #[test]
+    fn dotted_variable_name_is_recognised() {
+        let segs = parse_variable_segments("%forge.counter%");
+        assert_eq!(segs, vec![("%forge.counter%", true)]);
+    }
+
+    #[test]
+    fn variable_name_starting_with_digit_is_plain() {
+        let segs = parse_variable_segments("%1bad%");
+        assert_eq!(segs, vec![("%1bad%", false)]);
+    }
+
+    #[test]
+    fn empty_percent_pair_is_plain() {
+        let segs = parse_variable_segments("%%");
+        assert_eq!(segs, vec![("%%", false)]);
+    }
+
+    #[test]
+    fn arrow_and_variable() {
+        let segs = parse_variable_segments("~/quotes.txt \u{2192} %lines%");
+        assert_eq!(segs.len(), 2);
+        assert_eq!(segs[0], ("~/quotes.txt \u{2192} ", false));
+        assert_eq!(segs[1], ("%lines%", true));
+    }
+
+    #[test]
+    fn empty_string_yields_empty_segments() {
+        let segs = parse_variable_segments("");
+        assert!(segs.is_empty());
+    }
+
+    #[test]
+    fn multiple_variables_parsed() {
+        let segs = parse_variable_segments("%a% and %b%");
+        assert_eq!(segs.len(), 3);
+        assert_eq!(segs[0], ("%a%", true));
+        assert_eq!(segs[1], (" and ", false));
+        assert_eq!(segs[2], ("%b%", true));
+    }
 }

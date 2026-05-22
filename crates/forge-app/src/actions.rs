@@ -467,6 +467,8 @@ pub enum AddSubActionMsg {
     Cancel,
     Submit,
     Saved(Result<(), String>),
+    DuplicateRequested(ActionId, usize),
+    Duplicated(Result<ActionId, String>),
 }
 
 #[derive(Debug, Clone)]
@@ -489,6 +491,7 @@ pub struct ActionsState {
     pub add_sub_action_modal: Option<AddSubActionForm>,
     pub telemetry: Option<ActionTelemetry>,
     pub telemetry_loading: bool,
+    pub step_menu_open: Option<usize>,
 }
 
 impl ActionsState {
@@ -784,6 +787,44 @@ pub async fn load_clip_options(dp: Arc<SqliteBackend>) -> Vec<(ClipId, String)> 
         .await
         .map(|clips| clips.into_iter().map(|c| (c.id, c.name)).collect())
         .unwrap_or_default()
+}
+
+pub async fn move_sub_action(
+    dp: Arc<SqliteBackend>,
+    action_id: ActionId,
+    from: usize,
+    to: usize,
+) -> Result<ActionId, StorageError> {
+    let Some(mut action) = dp.action_repo().get(action_id).await? else {
+        return Err(StorageError::NotFound {
+            key: action_id.to_string(),
+        });
+    };
+    let len = action.sub_actions.len();
+    if from < len && to < len && from != to {
+        let item = action.sub_actions.remove(from);
+        action.sub_actions.insert(to, item);
+        dp.action_repo().save(&action).await?;
+    }
+    Ok(action_id)
+}
+
+pub async fn duplicate_sub_action(
+    dp: Arc<SqliteBackend>,
+    action_id: ActionId,
+    index: usize,
+) -> Result<ActionId, StorageError> {
+    let Some(mut action) = dp.action_repo().get(action_id).await? else {
+        return Err(StorageError::NotFound {
+            key: action_id.to_string(),
+        });
+    };
+    if index < action.sub_actions.len() {
+        let copy = action.sub_actions[index].clone();
+        action.sub_actions.insert(index + 1, copy);
+        dp.action_repo().save(&action).await?;
+    }
+    Ok(action_id)
 }
 
 pub async fn remove_sub_action(

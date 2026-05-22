@@ -57,7 +57,7 @@ use crate::soundboard::{SoundboardState, soundboard_view};
 use crate::stream_apps::view as stream_apps_view;
 use crate::test_trigger::synthesize_test_event;
 use crate::tts_dashboard::{TtsDashState, tts_dashboard_view};
-use crate::tts_engines::{TtsEnginesState, handle_tts_engines_msg, tts_engines_view};
+use crate::tts_engines::{TtsEnginesState, tts_engines_view};
 use crate::tts_filters::{TtsFiltersState, handle_tts_filters_msg, tts_filters_view};
 use crate::tts_triggers::{TtsTriggersState, handle_tts_triggers_msg, tts_triggers_view};
 use crate::voice_aliases::{VoiceAliasesState, handle_voice_aliases_msg, voice_aliases_view};
@@ -2106,7 +2106,7 @@ fn handle_tts_msg(app: &mut App, msg: crate::message::TtsMsg) -> Task<Message> {
         TtsMsg::Dashboard(sub) => {
             crate::tts_dashboard::update(&mut app.tts_dashboard, &app.rt, sub)
         }
-        TtsMsg::Engines(sub) => handle_tts_engines_msg(&mut app.tts_engines, sub),
+        TtsMsg::Engines(sub) => crate::tts_engines::update(&mut app.tts_engines, &app.rt, sub),
         TtsMsg::Aliases(sub) => handle_voice_aliases_msg(&mut app.tts_aliases, sub),
         TtsMsg::Filters(sub) => handle_tts_filters_msg(&mut app.tts_filters, sub),
         TtsMsg::Triggers(sub) => handle_tts_triggers_msg(&mut app.tts_triggers, sub),

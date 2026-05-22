@@ -7,6 +7,7 @@ use iced::{Alignment, Background, Border, Color, Element, Length, Task};
 
 use crate::Message;
 use crate::message::{TtsEnginesMsg, TtsMsg};
+use crate::runtime_view::RuntimeView;
 
 pub struct EngineVoiceRow {
     pub display_name: String,
@@ -62,7 +63,7 @@ impl Default for TtsEnginesState {
     }
 }
 
-pub fn handle_tts_engines_msg(state: &mut TtsEnginesState, msg: TtsEnginesMsg) -> Task<Message> {
+pub fn update(state: &mut TtsEnginesState, _rt: &RuntimeView, msg: TtsEnginesMsg) -> Task<Message> {
     match msg {
         TtsEnginesMsg::SelectEngine(id) => {
             state.selected_engine = id;

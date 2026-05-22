@@ -189,25 +189,23 @@ fn inline_badge<'a, Msg: 'a>(
 }
 
 fn clickable_username_style(
-    overlay: Color,
     username_color: Color,
 ) -> impl Fn(&iced::Theme, button::Status) -> button::Style {
     move |_theme, status| {
         let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
         button::Style {
             background: if hovered {
-                Some(Background::Color(Color { a: 0.12, ..overlay }))
+                Some(Background::Color(Color {
+                    a: 0.10,
+                    ..username_color
+                }))
             } else {
                 None
             },
             border: Border {
                 color: Color::TRANSPARENT,
                 width: 0.0,
-                radius: if hovered {
-                    radius(Radius::Sm).into()
-                } else {
-                    0.0.into()
-                },
+                radius: radius(Radius::Sm).into(),
             },
             text_color: username_color,
             shadow: iced::Shadow::default(),
@@ -331,10 +329,7 @@ pub fn chat_row_msg<'a, Msg: Clone + 'a>(
             )
             .on_press(on_click(uname))
             .padding([0, 2])
-            .style(clickable_username_style(
-                palette.surface_overlay,
-                username_color,
-            ))
+            .style(clickable_username_style(username_color))
             .into()
         }
         None => text(username.to_owned())
@@ -402,10 +397,7 @@ pub fn chat_row_sub<'a, Msg: Clone + 'a>(
             )
             .on_press(on_click(uname))
             .padding([0, 2])
-            .style(clickable_username_style(
-                palette.surface_overlay,
-                username_color,
-            ))
+            .style(clickable_username_style(username_color))
             .into()
         }
         None => text(username.to_owned())
@@ -497,10 +489,7 @@ pub fn chat_row_cheer<'a, Msg: Clone + 'a>(
             )
             .on_press(on_click(uname))
             .padding([0, 2])
-            .style(clickable_username_style(
-                palette.surface_overlay,
-                username_color,
-            ))
+            .style(clickable_username_style(username_color))
             .into()
         }
         None => text(username.to_owned())
@@ -639,10 +628,7 @@ pub fn chat_row_cmd<'a, Msg: Clone + 'a>(
             )
             .on_press(on_click(uname))
             .padding([0, 2])
-            .style(clickable_username_style(
-                palette.surface_overlay,
-                username_color,
-            ))
+            .style(clickable_username_style(username_color))
             .into()
         }
         None => text(username.to_owned())

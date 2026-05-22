@@ -756,7 +756,7 @@ fn selected_viewer_detail<'a>(
     let btn_style = move |_t: &iced::Theme, s: button::Status| {
         let hovered = matches!(s, button::Status::Hovered | button::Status::Pressed);
         button::Style {
-            background: Some(Background::Color(p.surface_overlay)),
+            background: Some(Background::Color(Color::TRANSPARENT)),
             border: Border {
                 color: if hovered {
                     p.border_input
@@ -769,7 +769,7 @@ fn selected_viewer_detail<'a>(
             text_color: if hovered {
                 p.text_primary
             } else {
-                p.text_muted
+                p.text_secondary
             },
             shadow: iced::Shadow::default(),
             snap: false,

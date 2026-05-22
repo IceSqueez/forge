@@ -58,6 +58,7 @@ pub enum Icon {
     PlugConnected,
     ChartLine,
     ArrowRight,
+    Diamond,
 }
 
 impl Icon {
@@ -118,6 +119,7 @@ impl Icon {
             Icon::PlugConnected => include_bytes!("../assets/icons/tabler/plug-connected.svg"),
             Icon::ChartLine => include_bytes!("../assets/icons/tabler/chart-line.svg"),
             Icon::ArrowRight => include_bytes!("../assets/icons/tabler/arrow-right.svg"),
+            Icon::Diamond => include_bytes!("../assets/icons/tabler/diamond.svg"),
         }
     }
 
@@ -184,6 +186,7 @@ impl Icon {
             "plug-connected" => Icon::PlugConnected,
             "chart-line" | "chart" | "graph" | "line-chart" => Icon::ChartLine,
             "arrow-right" => Icon::ArrowRight,
+            "diamond" => Icon::Diamond,
             _ => Icon::InfoCircle,
         }
     }

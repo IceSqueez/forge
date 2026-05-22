@@ -4,6 +4,7 @@ use iced::{
 };
 
 use crate::chat::filter_chip;
+use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
 use crate::tokens::{BORDER_THIN, FONT_MD, FONT_SM, FONT_XS, FontRole, Radius, font, radius};
 
@@ -272,21 +273,16 @@ pub fn trigger_card<'a, Msg: Clone + 'a>(
     let label_col = column![kind_el, summary_el].spacing(1);
 
     let remove_msg = props.on_remove.clone();
-    let remove_btn = button(
-        text("\u{00d7}")
-            .size(FONT_SM)
-            .color(palette.text_faint)
-            .font(font(FontRole::Body)),
-    )
-    .on_press(remove_msg)
-    .padding([2, 4])
-    .style(|_theme: &iced::Theme, _status| button::Style {
-        background: None,
-        border: Border::default(),
-        text_color: Color::TRANSPARENT,
-        shadow: iced::Shadow::default(),
-        snap: false,
-    });
+    let remove_btn = button(tabler_icon(Icon::X, FONT_SM, palette.text_faint))
+        .on_press(remove_msg)
+        .padding([2, 4])
+        .style(|_theme: &iced::Theme, _status| button::Style {
+            background: None,
+            border: Border::default(),
+            text_color: Color::TRANSPARENT,
+            shadow: iced::Shadow::default(),
+            snap: false,
+        });
 
     let inner = row![
         icon_el,
@@ -329,21 +325,16 @@ pub fn modal<'a, Msg: Clone + 'a>(
         .color(palette.text_primary)
         .font(font(FontRole::Body));
 
-    let close_btn = button(
-        text("\u{00d7}")
-            .size(FONT_MD)
-            .color(palette.text_faint)
-            .font(font(FontRole::Body)),
-    )
-    .on_press(props.on_close.clone())
-    .padding([2, 6])
-    .style(|_theme: &iced::Theme, _status| button::Style {
-        background: None,
-        border: Border::default(),
-        text_color: Color::TRANSPARENT,
-        shadow: iced::Shadow::default(),
-        snap: false,
-    });
+    let close_btn = button(tabler_icon(Icon::X, FONT_MD, palette.text_faint))
+        .on_press(props.on_close.clone())
+        .padding([2, 6])
+        .style(|_theme: &iced::Theme, _status| button::Style {
+            background: None,
+            border: Border::default(),
+            text_color: Color::TRANSPARENT,
+            shadow: iced::Shadow::default(),
+            snap: false,
+        });
 
     let header_row = row![container(title_el).width(Length::Fill), close_btn,]
         .align_y(Alignment::Center)

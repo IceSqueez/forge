@@ -966,7 +966,7 @@ fn subscription_row_elem<'a, Msg: 'a>(
 }
 
 fn scope_row_elem<'a, Msg: 'a>(scope: &str, palette: &'a ForgePalette) -> Element<'a, Msg> {
-    let check = text("\u{2713}").size(FONT_SM).color(palette.success);
+    let check = tabler_icon(Icon::CircleCheck, FONT_SM, palette.success);
     let scope_text = text(scope.to_owned())
         .font(font(FontRole::Monospace))
         .size(FONT_XS)

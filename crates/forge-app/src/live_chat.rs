@@ -1037,7 +1037,7 @@ fn drawer_panel<'a>(
 
     row![left_border, panel_body]
         .height(Length::Fill)
-        .width(Length::Fixed(320.0))
+        .width(Length::Fixed(360.0))
         .into()
 }
 

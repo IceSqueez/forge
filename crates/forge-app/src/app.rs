@@ -4185,8 +4185,13 @@ fn actions_detail_panel<'a>(
         detail_col = detail_col.push(iced::widget::Space::new().height(18.0));
     }
 
-    let triggers_label = format!("TRIGGERS \u{00b7} {}", detail.triggers.len());
-    detail_col = detail_col.push(forge_widgets::section_header(triggers_label, None, palette));
+    detail_col = detail_col.push(section_header_with_add(
+        &format!("TRIGGERS \u{00b7} {}", detail.triggers.len()),
+        "Add trigger",
+        p.warning,
+        Message::Actions(ActionsMsg::OpenAddTriggerModal(action.id)),
+        palette,
+    ));
     detail_col = detail_col.push(iced::widget::Space::new().height(8.0));
 
     if detail.triggers.is_empty() {
@@ -4224,10 +4229,11 @@ fn actions_detail_panel<'a>(
     }
     detail_col = detail_col.push(iced::widget::Space::new().height(14.0));
 
-    let sub_count_label = format!("SUB-ACTIONS \u{00b7} {}", action.sub_actions.len());
-    detail_col = detail_col.push(forge_widgets::section_header(
-        sub_count_label,
-        None,
+    detail_col = detail_col.push(section_header_with_add(
+        &format!("SUB-ACTIONS \u{00b7} {}", action.sub_actions.len()),
+        "Add sub-action",
+        p.brand,
+        Message::AddSubAction(AddSubActionMsg::OpenRequested(action.id)),
         palette,
     ));
     detail_col = detail_col.push(iced::widget::Space::new().height(8.0));
@@ -4267,6 +4273,55 @@ fn actions_detail_panel<'a>(
             ..iced::widget::container::Style::default()
         })
         .into()
+}
+
+fn section_header_with_add<'a>(
+    label: &str,
+    add_label: &'static str,
+    add_color: iced::Color,
+    on_add: Message,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    use iced::widget::{button, container, row, text};
+    let p = *palette;
+    let mono = forge_widgets::font(forge_widgets::FontRole::Monospace);
+
+    let label_el = text(label.to_owned())
+        .size(FONT_XS)
+        .color(p.text_muted)
+        .font(mono);
+
+    let add_btn = button(
+        row![
+            tabler_icon(Icon::Plus, 11.0, add_color),
+            text(add_label).size(FONT_XS).color(add_color),
+        ]
+        .spacing(4)
+        .align_y(iced::alignment::Vertical::Center),
+    )
+    .on_press(on_add)
+    .padding([2_u16, 4_u16])
+    .style(
+        move |_theme: &iced::Theme, _status| iced::widget::button::Style {
+            background: None,
+            border: iced::Border::default(),
+            text_color: iced::Color::TRANSPARENT,
+            shadow: iced::Shadow::default(),
+            snap: false,
+        },
+    );
+
+    container(
+        row![
+            label_el,
+            iced::widget::Space::new().width(Length::Fill),
+            add_btn,
+        ]
+        .align_y(iced::alignment::Vertical::Center),
+    )
+    .padding([6_u16, 14_u16])
+    .width(Length::Fill)
+    .into()
 }
 
 fn empty_placeholder_card<'a>(

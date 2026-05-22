@@ -46,9 +46,7 @@ use crate::message::{
     SettingsMsg, SidebarMsg, ToastMsg,
 };
 use crate::queues_view::{QueuesState, queues_view};
-use crate::script_editor::{
-    ScriptEditorMsg, ScriptEditorState, handle_script_editor_msg, script_editor_view,
-};
+use crate::script_editor::{ScriptEditorMsg, ScriptEditorState, script_editor_view};
 use crate::server_screen::{ServerScreenMsg, ServerScreenState, server_screen_view};
 use crate::server_subsystem::ServerSubsystem;
 use crate::settings_audio::{SettingsAudioState, settings_audio_view};
@@ -570,7 +568,9 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::AddSubAction(sub) => handle_add_sub_action_msg(app, sub),
         Message::RemoveSubAction(sub) => handle_remove_sub_action_msg(app, sub),
         Message::MoveSubAction(sub) => handle_move_sub_action_msg(app, sub),
-        Message::ScriptEditor(sub) => handle_script_editor_msg(app, sub),
+        Message::ScriptEditor(sub) => {
+            crate::script_editor::update(&mut app.script_editor, &app.rt, sub)
+        }
         Message::IntegrationDetail(sub) => handle_integration_detail_msg(app, sub),
         Message::TwitchBootResult(result) => match result {
             Ok(Some(bundle)) => {

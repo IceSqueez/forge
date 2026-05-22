@@ -54,7 +54,7 @@ pub use runtime_view::RuntimeView;
 pub use screen::{Screen, SettingsSection, TtsSection};
 pub use script_editor::{
     OpenScript, RunModalForm, RunModalInputField, RunResult, ScriptEditorMsg, ScriptEditorState,
-    ScriptListEntry, handle_script_editor_msg, script_editor_view,
+    ScriptListEntry, script_editor_view,
 };
 pub use server_screen::{
     OwnedClientRow, OwnedFileMime, OwnedOverlayEntry, OwnedOverlayKind, OwnedSubscriptionChip,

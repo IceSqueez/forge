@@ -14,6 +14,7 @@ use iced::{Alignment, Background, Border, Element, Length};
 use time::OffsetDateTime;
 
 use crate::Message;
+use crate::runtime_view::RuntimeView;
 
 #[derive(Debug, Clone)]
 pub struct ScriptListEntry {
@@ -180,22 +181,23 @@ async fn run_script_inline(
     })
 }
 
-pub fn handle_script_editor_msg(
-    app: &mut crate::app::App,
-    sub: ScriptEditorMsg,
+pub fn update(
+    state: &mut ScriptEditorState,
+    rt: &RuntimeView,
+    msg: ScriptEditorMsg,
 ) -> iced::Task<Message> {
-    match sub {
+    match msg {
         ScriptEditorMsg::LoadRequested => {
-            app.script_editor.loading = true;
-            let dp = Arc::clone(&app.rt.backend);
+            state.loading = true;
+            let dp = Arc::clone(&rt.backend);
             iced::Task::perform(async move { load_script_list(dp).await }, |r| {
                 Message::ScriptEditor(ScriptEditorMsg::ScriptsLoaded(r))
             })
         }
         ScriptEditorMsg::ScriptsLoaded(Ok(entries)) => {
             let first_id = entries.first().map(|e| e.id);
-            app.script_editor.scripts = entries;
-            app.script_editor.loading = false;
+            state.scripts = entries;
+            state.loading = false;
             if let Some(id) = first_id {
                 iced::Task::done(Message::ScriptEditor(ScriptEditorMsg::ScriptSelected(id)))
             } else {
@@ -203,13 +205,13 @@ pub fn handle_script_editor_msg(
             }
         }
         ScriptEditorMsg::ScriptsLoaded(Err(e)) => {
-            app.script_editor.loading = false;
+            state.loading = false;
             tracing::warn!(error = %e, "script list load failed");
             iced::Task::none()
         }
         ScriptEditorMsg::ScriptSelected(id) => {
-            app.script_editor.selected = Some(id);
-            let dp = Arc::clone(&app.rt.backend);
+            state.selected = Some(id);
+            let dp = Arc::clone(&rt.backend);
             iced::Task::perform(
                 async move {
                     ScriptRepo::get(&*dp, id)
@@ -228,13 +230,13 @@ pub fn handle_script_editor_msg(
                 .map(|i| (i.name.clone(), i.kind))
                 .collect();
             let body = record.body.clone();
-            app.script_editor.editor = Some(OpenScript {
+            state.editor = Some(OpenScript {
                 id: record.id,
                 original_body: body.clone(),
                 content: CodeEditorState::with_text(&body),
                 record,
             });
-            app.script_editor.variables_in_scope = vars;
+            state.variables_in_scope = vars;
             iced::Task::none()
         }
         ScriptEditorMsg::ScriptOpened(Err(e)) => {
@@ -242,16 +244,16 @@ pub fn handle_script_editor_msg(
             iced::Task::none()
         }
         ScriptEditorMsg::EditorAction(action) => {
-            if let Some(open) = app.script_editor.editor.as_mut() {
+            if let Some(open) = state.editor.as_mut() {
                 open.content.content.perform(action);
             }
             iced::Task::none()
         }
         ScriptEditorMsg::SaveRequested => {
-            if !app.script_editor.is_dirty() {
+            if !state.is_dirty() {
                 return iced::Task::none();
             }
-            let Some(open) = app.script_editor.editor.as_ref() else {
+            let Some(open) = state.editor.as_ref() else {
                 return iced::Task::none();
             };
             let body = open.content.text();
@@ -259,7 +261,7 @@ pub fn handle_script_editor_msg(
                 Ok(c) => c,
                 Err(e) => {
                     let ts = now_timestamp();
-                    app.script_editor.console_lines.push(ConsoleLine {
+                    state.console_lines.push(ConsoleLine {
                         level: ConsoleLevel::Err,
                         timestamp: Some(ts),
                         text: format!("contract parse error: {e}"),
@@ -272,7 +274,7 @@ pub fn handle_script_editor_msg(
             record.body_hash = hash_body(&body);
             record.contract = contract;
             record.last_modified = OffsetDateTime::now_utc();
-            let dp = Arc::clone(&app.rt.backend);
+            let dp = Arc::clone(&rt.backend);
             iced::Task::perform(
                 async move {
                     ScriptRepo::save(&*dp, record.clone())
@@ -284,18 +286,18 @@ pub fn handle_script_editor_msg(
             )
         }
         ScriptEditorMsg::ScriptSaved(Ok(record)) => {
-            if let Some(open) = app.script_editor.editor.as_mut() {
+            if let Some(open) = state.editor.as_mut() {
                 open.original_body = record.body.clone();
                 open.record = record.clone();
             }
             let ts = now_timestamp();
-            app.script_editor.console_lines.push(ConsoleLine {
+            state.console_lines.push(ConsoleLine {
                 level: ConsoleLevel::Ok,
                 timestamp: Some(ts),
                 text: "script saved".to_string(),
             });
-            let registry = Arc::clone(&app.rt.script_registry);
-            let bus = Arc::clone(&app.rt.bus);
+            let registry = Arc::clone(&rt.script_registry);
+            let bus = Arc::clone(&rt.bus);
             iced::Task::perform(
                 async move {
                     registry
@@ -309,7 +311,7 @@ pub fn handle_script_editor_msg(
         ScriptEditorMsg::ScriptReloaded(Ok(())) => iced::Task::none(),
         ScriptEditorMsg::ScriptReloaded(Err(e)) => {
             let ts = now_timestamp();
-            app.script_editor.console_lines.push(ConsoleLine {
+            state.console_lines.push(ConsoleLine {
                 level: ConsoleLevel::Err,
                 timestamp: Some(ts),
                 text: format!("hot-reload failed: {e}"),
@@ -318,7 +320,7 @@ pub fn handle_script_editor_msg(
         }
         ScriptEditorMsg::ScriptSaved(Err(e)) => {
             let ts = now_timestamp();
-            app.script_editor.console_lines.push(ConsoleLine {
+            state.console_lines.push(ConsoleLine {
                 level: ConsoleLevel::Err,
                 timestamp: Some(ts),
                 text: format!("save failed: {e}"),
@@ -326,7 +328,7 @@ pub fn handle_script_editor_msg(
             iced::Task::none()
         }
         ScriptEditorMsg::RunRequested => {
-            let Some(open) = app.script_editor.editor.as_ref() else {
+            let Some(open) = state.editor.as_ref() else {
                 return iced::Task::none();
             };
             let body = open.content.text();
@@ -334,10 +336,10 @@ pub fn handle_script_editor_msg(
             if contract.inputs.is_empty() {
                 let script_id = open.id;
                 let script_name = open.record.name.clone();
-                let dp = Arc::clone(&app.rt.backend);
-                let bus = Arc::clone(&app.rt.bus);
+                let dp = Arc::clone(&rt.backend);
+                let bus = Arc::clone(&rt.bus);
                 let ts = now_timestamp();
-                app.script_editor.console_lines.push(ConsoleLine {
+                state.console_lines.push(ConsoleLine {
                     level: ConsoleLevel::Run,
                     timestamp: Some(ts),
                     text: format!("running {script_name}"),
@@ -363,16 +365,16 @@ pub fn handle_script_editor_msg(
                     error: None,
                     running: false,
                 };
-                app.script_editor.run_modal = Some(form);
+                state.run_modal = Some(form);
                 iced::Task::none()
             }
         }
         ScriptEditorMsg::RunModalCancel => {
-            app.script_editor.run_modal = None;
+            state.run_modal = None;
             iced::Task::none()
         }
         ScriptEditorMsg::RunModalInputChanged(idx, val) => {
-            if let Some(form) = app.script_editor.run_modal.as_mut() {
+            if let Some(form) = state.run_modal.as_mut() {
                 if let Some(field) = form.inputs.get_mut(idx) {
                     field.raw_value = val;
                 }
@@ -381,7 +383,7 @@ pub fn handle_script_editor_msg(
             iced::Task::none()
         }
         ScriptEditorMsg::RunModalSubmit => {
-            let Some(form) = app.script_editor.run_modal.as_ref() else {
+            let Some(form) = state.run_modal.as_ref() else {
                 return iced::Task::none();
             };
             let mut arg_stack = ArgStack::new();
@@ -389,27 +391,27 @@ pub fn handle_script_editor_msg(
                 match parse_input_to_variant(field) {
                     Ok(v) => arg_stack = arg_stack.set(field.name.clone(), v),
                     Err(e) => {
-                        if let Some(f) = app.script_editor.run_modal.as_mut() {
+                        if let Some(f) = state.run_modal.as_mut() {
                             f.error = Some(e);
                         }
                         return iced::Task::none();
                     }
                 }
             }
-            let Some(open) = app.script_editor.editor.as_ref() else {
+            let Some(open) = state.editor.as_ref() else {
                 return iced::Task::none();
             };
             let body = open.content.text();
             let script_id = form.script_id;
             let script_name = form.script_name.clone();
-            let dp = Arc::clone(&app.rt.backend);
-            let bus = Arc::clone(&app.rt.bus);
-            if let Some(f) = app.script_editor.run_modal.as_mut() {
+            let dp = Arc::clone(&rt.backend);
+            let bus = Arc::clone(&rt.bus);
+            if let Some(f) = state.run_modal.as_mut() {
                 f.running = true;
                 f.error = None;
             }
             let ts = now_timestamp();
-            app.script_editor.console_lines.push(ConsoleLine {
+            state.console_lines.push(ConsoleLine {
                 level: ConsoleLevel::Run,
                 timestamp: Some(ts),
                 text: format!("running {script_name} with inputs"),
@@ -420,14 +422,14 @@ pub fn handle_script_editor_msg(
             )
         }
         ScriptEditorMsg::RunFinished(Ok(result)) => {
-            app.script_editor.run_modal = None;
+            state.run_modal = None;
             let ts = now_timestamp();
-            app.script_editor.console_lines.push(ConsoleLine {
+            state.console_lines.push(ConsoleLine {
                 level: ConsoleLevel::Ok,
                 timestamp: Some(ts.clone()),
                 text: format!("returned: {}", result.output_display),
             });
-            app.script_editor.console_lines.push(ConsoleLine {
+            state.console_lines.push(ConsoleLine {
                 level: ConsoleLevel::Stats,
                 timestamp: Some(ts),
                 text: format!("executed in {}ms", result.duration_ms),
@@ -435,12 +437,12 @@ pub fn handle_script_editor_msg(
             iced::Task::none()
         }
         ScriptEditorMsg::RunFinished(Err(e)) => {
-            if let Some(f) = app.script_editor.run_modal.as_mut() {
+            if let Some(f) = state.run_modal.as_mut() {
                 f.running = false;
                 f.error = Some(e.clone());
             }
             let ts = now_timestamp();
-            app.script_editor.console_lines.push(ConsoleLine {
+            state.console_lines.push(ConsoleLine {
                 level: ConsoleLevel::Err,
                 timestamp: Some(ts),
                 text: format!("run error: {e}"),
@@ -448,7 +450,7 @@ pub fn handle_script_editor_msg(
             iced::Task::none()
         }
         ScriptEditorMsg::NewScriptRequested => {
-            let dp = Arc::clone(&app.rt.backend);
+            let dp = Arc::clone(&rt.backend);
             iced::Task::perform(
                 async move {
                     let now = OffsetDateTime::now_utc();
@@ -478,17 +480,17 @@ pub fn handle_script_editor_msg(
                 name: record.name.clone(),
                 enabled: record.enabled,
             };
-            app.script_editor.scripts.push(entry);
+            state.scripts.push(entry);
             let id = record.id;
             let body = record.body.clone();
-            app.script_editor.editor = Some(OpenScript {
+            state.editor = Some(OpenScript {
                 id: record.id,
                 original_body: body.clone(),
                 content: CodeEditorState::with_text(&body),
                 record,
             });
-            app.script_editor.selected = Some(id);
-            app.script_editor.variables_in_scope.clear();
+            state.selected = Some(id);
+            state.variables_in_scope.clear();
             iced::Task::none()
         }
         ScriptEditorMsg::NewScriptCreated(Err(e)) => {
@@ -496,7 +498,7 @@ pub fn handle_script_editor_msg(
             iced::Task::none()
         }
         ScriptEditorMsg::DeleteRequested(id) => {
-            let dp = Arc::clone(&app.rt.backend);
+            let dp = Arc::clone(&rt.backend);
             iced::Task::perform(
                 async move {
                     ScriptRepo::delete(&*dp, id)
@@ -508,13 +510,13 @@ pub fn handle_script_editor_msg(
             )
         }
         ScriptEditorMsg::Deleted(Ok(())) => {
-            let id = app.script_editor.selected;
+            let id = state.selected;
             if let Some(selected_id) = id {
-                app.script_editor.scripts.retain(|e| e.id != selected_id);
+                state.scripts.retain(|e| e.id != selected_id);
             }
-            app.script_editor.selected = None;
-            app.script_editor.editor = None;
-            app.script_editor.variables_in_scope.clear();
+            state.selected = None;
+            state.editor = None;
+            state.variables_in_scope.clear();
             iced::Task::done(Message::ScriptEditor(ScriptEditorMsg::LoadRequested))
         }
         ScriptEditorMsg::Deleted(Err(e)) => {
@@ -522,7 +524,7 @@ pub fn handle_script_editor_msg(
             iced::Task::none()
         }
         ScriptEditorMsg::ConsoleClear => {
-            app.script_editor.console_lines.clear();
+            state.console_lines.clear();
             iced::Task::none()
         }
     }

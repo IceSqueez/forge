@@ -197,7 +197,9 @@ pub fn ghost_button<'a, Msg: 'a + Clone>(
     palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let text_color = palette.text_muted;
-    let text_hover = palette.text_secondary;
+    let text_hover = palette.text_primary;
+    let border_color = palette.border_regular;
+    let border_hover = palette.border_input;
     let r = radius(Radius::Sm);
     let v = spacing(Spacing::Sm, Density::Cozy);
     let h = spacing(Spacing::Sm, Density::Cozy);
@@ -210,8 +212,8 @@ pub fn ghost_button<'a, Msg: 'a + Clone>(
                 background: None,
                 text_color,
                 border: Border {
-                    color: Color::TRANSPARENT,
-                    width: 0.0,
+                    color: border_color,
+                    width: 0.5,
                     radius: r.into(),
                 },
                 shadow: iced::Shadow::default(),
@@ -221,8 +223,8 @@ pub fn ghost_button<'a, Msg: 'a + Clone>(
                 background: None,
                 text_color: text_hover,
                 border: Border {
-                    color: Color::TRANSPARENT,
-                    width: 0.0,
+                    color: border_hover,
+                    width: 0.5,
                     radius: r.into(),
                 },
                 shadow: iced::Shadow::default(),
@@ -235,8 +237,11 @@ pub fn ghost_button<'a, Msg: 'a + Clone>(
                     ..text_color
                 },
                 border: Border {
-                    color: Color::TRANSPARENT,
-                    width: 0.0,
+                    color: Color {
+                        a: 0.4,
+                        ..border_color
+                    },
+                    width: 0.5,
                     radius: r.into(),
                 },
                 shadow: iced::Shadow::default(),

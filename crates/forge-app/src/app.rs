@@ -36,7 +36,7 @@ use crate::home::HomeStats;
 use crate::live_chat::{CHAT_LOG_MAX, LiveChatState, chat_row_from_event, live_chat_view};
 use crate::message::{
     ActionsMsg, GlobalsMsg, HomeMsg, ObsClientRef, PlatformId, QueuesMsg, SettingsMsg, SidebarMsg,
-    ToastMsg,
+    ToastMsg, TtsMsg,
 };
 use crate::queues_view::{QueuesState, queues_view};
 use crate::script_editor::{ScriptEditorMsg, ScriptEditorState, script_editor_view};
@@ -683,7 +683,21 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::SettingsAudio(sub) => {
             crate::settings_audio::update(&mut app.settings_audio, &app.rt, sub)
         }
-        Message::Tts(sub) => handle_tts_msg(app, sub),
+        Message::Tts(TtsMsg::Dashboard(sub)) => {
+            crate::tts_dashboard::update(&mut app.tts_dashboard, &app.rt, sub)
+        }
+        Message::Tts(TtsMsg::Engines(sub)) => {
+            crate::tts_engines::update(&mut app.tts_engines, &app.rt, sub)
+        }
+        Message::Tts(TtsMsg::Aliases(sub)) => {
+            crate::voice_aliases::update(&mut app.tts_aliases, &app.rt, sub)
+        }
+        Message::Tts(TtsMsg::Filters(sub)) => {
+            crate::tts_filters::update(&mut app.tts_filters, &app.rt, sub)
+        }
+        Message::Tts(TtsMsg::Triggers(sub)) => {
+            crate::tts_triggers::update(&mut app.tts_triggers, &app.rt, sub)
+        }
         Message::Toast(sub) => match sub {
             ToastMsg::Fired {
                 kind,
@@ -813,19 +827,6 @@ pub async fn load_obs_and_connect(
         .map_err(|e| e.to_string())?;
 
     Ok(ObsClientRef::new(Arc::new(client)))
-}
-
-fn handle_tts_msg(app: &mut App, msg: crate::message::TtsMsg) -> Task<Message> {
-    use crate::message::TtsMsg;
-    match msg {
-        TtsMsg::Dashboard(sub) => {
-            crate::tts_dashboard::update(&mut app.tts_dashboard, &app.rt, sub)
-        }
-        TtsMsg::Engines(sub) => crate::tts_engines::update(&mut app.tts_engines, &app.rt, sub),
-        TtsMsg::Aliases(sub) => crate::voice_aliases::update(&mut app.tts_aliases, &app.rt, sub),
-        TtsMsg::Filters(sub) => crate::tts_filters::update(&mut app.tts_filters, &app.rt, sub),
-        TtsMsg::Triggers(sub) => crate::tts_triggers::update(&mut app.tts_triggers, &app.rt, sub),
-    }
 }
 
 pub(crate) fn format_uptime(elapsed: std::time::Duration) -> String {

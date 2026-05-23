@@ -328,7 +328,6 @@ pub enum TtsMsg {
 pub enum LiveChatMsg {
     InputChanged(String),
     Submit,
-    Sent(Result<(), String>),
     PlatformFilter(PlatformFilter),
     ToggleEventsOnly,
     ToggleHideBots,

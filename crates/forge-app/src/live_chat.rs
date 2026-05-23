@@ -1,10 +1,6 @@
 use std::collections::{HashSet, VecDeque};
-use std::sync::Arc;
 
 use forge_events::{Event, EventSource};
-use forge_platform_twitch::send_chat;
-use forge_storage::CredentialId;
-use forge_types::OAuthToken;
 use forge_widgets::{
     BadgeKind, ChatBody, ChatRow, ForgePalette, Icon, Platform, PlatformTarget, search_input,
     tabler_icon,
@@ -145,24 +141,6 @@ impl Default for LiveChatState {
     }
 }
 
-struct NoopRateLimiter;
-
-#[async_trait::async_trait]
-impl forge_platform_core::RateLimiter for NoopRateLimiter {
-    async fn acquire(
-        &self,
-        _weight: u32,
-    ) -> Result<forge_platform_core::RateLimitOutcome, forge_platform_core::PlatformError> {
-        Ok(forge_platform_core::RateLimitOutcome::Granted)
-    }
-
-    fn remaining(&self) -> u32 {
-        u32::MAX
-    }
-
-    async fn observe_remote_throttle(&self, _retry_after: std::time::Duration) {}
-}
-
 pub fn update(state: &mut LiveChatState, rt: &RuntimeView, msg: LiveChatMsg) -> Task<Message> {
     match msg {
         LiveChatMsg::InputChanged(s) => {
@@ -175,42 +153,11 @@ pub fn update(state: &mut LiveChatState, rt: &RuntimeView, msg: LiveChatMsg) -> 
             if msg.is_empty() {
                 return Task::none();
             }
-            let backend = Arc::clone(&rt.backend);
-            let bus = Arc::clone(&rt.bus);
-            Task::perform(
-                async move {
-                    let json_str = backend
-                        .load(&CredentialId::new("twitch:broadcaster"))
-                        .await
-                        .map_err(|e| e.to_string())?
-                        .ok_or_else(|| "no Twitch credentials stored".to_owned())?;
-                    let bundle: serde_json::Value =
-                        serde_json::from_str(&json_str).map_err(|e| e.to_string())?;
-                    let token = bundle["access_token"]
-                        .as_str()
-                        .ok_or_else(|| "missing access_token".to_owned())?
-                        .to_owned();
-                    let client_id = forge_platform_twitch::client_id()
-                        .ok_or_else(|| "FORGE_TWITCH_CLIENT_ID not configured".to_owned())?;
-                    let user_id = bundle["user_id"]
-                        .as_str()
-                        .ok_or_else(|| {
-                            "missing user_id — re-authorize in Settings → Platforms".to_owned()
-                        })?
-                        .to_owned();
-                    let oauth = OAuthToken::new(token);
-                    let limiter = NoopRateLimiter;
-                    send_chat(&limiter, &oauth, &client_id, &user_id, &user_id, &msg, &bus)
-                        .await
-                        .map(|_| ())
-                        .map_err(|e| e.to_string())
-                },
-                |r| Message::LiveChat(LiveChatMsg::Sent(r)),
-            )
-        }
-        LiveChatMsg::Sent(Ok(())) => Task::none(),
-        LiveChatMsg::Sent(Err(e)) => {
-            tracing::warn!(error = %e, "chat send failed");
+            rt.bus.publish(Event::new(
+                EventSource::Core,
+                "chat.send.request",
+                serde_json::json!({"target": "twitch", "message": msg}),
+            ));
             Task::none()
         }
         LiveChatMsg::PlatformFilter(platform) => {

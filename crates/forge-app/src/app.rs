@@ -5508,18 +5508,6 @@ mod tests {
     }
 
     #[test]
-    fn chat_sent_err_logs_and_leaves_screen_unchanged() {
-        use crate::message::LiveChatMsg;
-        let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::LiveChat));
-        let _ = update(
-            &mut app,
-            Message::LiveChat(LiveChatMsg::Sent(Err("rate limited".into()))),
-        );
-        assert_eq!(app.screen, Screen::LiveChat);
-    }
-
-    #[test]
     fn navigate_to_actions_sets_loading_true() {
         let mut app = App::default();
         let _ = update(&mut app, Message::Navigate(Screen::Actions));

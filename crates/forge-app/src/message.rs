@@ -315,6 +315,24 @@ pub enum TtsMsg {
 }
 
 #[derive(Debug, Clone)]
+pub enum LiveChatMsg {
+    InputChanged(String),
+    Submit,
+    Sent(Result<(), String>),
+    PlatformFilter(PlatformFilter),
+    ToggleEventsOnly,
+    ToggleHideBots,
+    ToggleDrawer,
+    DrawerSearchChanged(String),
+    DrawerSelectViewer(String),
+    DrawerMenuToggle,
+    DrawerMenuDismiss,
+    Scrolled(iced::widget::scrollable::Viewport),
+    ScrollToBottom,
+    ToggleEmoji,
+}
+
+#[derive(Debug, Clone)]
 pub enum Message {
     Navigate(Screen),
     Toast(ToastMsg),
@@ -340,20 +358,7 @@ pub enum Message {
     ServerTokenRotated(Result<String, String>),
     ThemeChanged(ThemeId),
     EventArrived(Arc<Event>),
-    ChatInputChanged(String),
-    ChatSubmit,
-    ChatSent(Result<(), String>),
-    ChatPlatformFilter(PlatformFilter),
-    ChatToggleEventsOnly,
-    ChatToggleHideBots,
-    ChatToggleDrawer,
-    ChatDrawerSearchChanged(String),
-    ChatDrawerSelectViewer(String),
-    ChatDrawerMenuToggle,
-    ChatDrawerMenuDismiss,
-    ChatScrolled(iced::widget::scrollable::Viewport),
-    ChatScrollToBottom,
-    ChatToggleEmoji,
+    LiveChat(LiveChatMsg),
     ScriptEditor(ScriptEditorMsg),
     EventFeed(EventFeedMsg),
     Server(ServerScreenMsg),

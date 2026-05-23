@@ -6,8 +6,7 @@ use forge_soundboard::SoundboardPlayer;
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_obs::ObsClient;
 use forge_platform_core::{
-    BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, QuickActions,
-    SectionIcon,
+    BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, QuickActions, SectionIcon,
 };
 use forge_platform_twitch::{ChatConnectionState, TwitchIntegrationBundle};
 use forge_runtime::{
@@ -32,13 +31,11 @@ use crate::actions::{
     duplicate_sub_action, kind_label, kind_summary, load_action_detail, load_actions_tree,
     load_clip_options, load_telemetry, move_sub_action, remove_sub_action, save_sub_action,
 };
+use crate::builtin_detail::{BuiltinDetailState, health_subscription, view as builtin_detail_view};
 use crate::event_feed;
 use crate::event_feed::{EventFeedState, event_feed_view};
 use crate::globals_view::{GlobalsState, globals_view};
 use crate::home::HomeStats;
-use crate::builtin_detail::{
-    BuiltinDetailState, health_subscription, view as builtin_detail_view,
-};
 use crate::live_chat::{CHAT_LOG_MAX, LiveChatState, chat_row_from_event, live_chat_view};
 use crate::message::{
     ActionsMsg, GlobalsMsg, HomeMsg, MoveSubActionMsg, ObsClientRef, PlatformId, QueuesMsg,
@@ -374,107 +371,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             auto_scroll_task.unwrap_or_else(Task::none)
         }
         Message::EventFeed(sub) => event_feed::update(&mut app.event_feed, &app.rt, sub),
-        Message::ChatInputChanged(s) => {
-            app.live_chat.chat_input = s;
-            Task::none()
-        }
-        Message::ChatSubmit => {
-            let msg = std::mem::take(&mut app.live_chat.chat_input);
-            let msg = msg.trim().to_owned();
-            if msg.is_empty() {
-                return Task::none();
-            }
-            let backend = Arc::clone(&app.rt.backend);
-            let bus = Arc::clone(&app.rt.bus);
-            Task::perform(
-                async move {
-                    let json_str = backend
-                        .load(&CredentialId::new("twitch:broadcaster"))
-                        .await
-                        .map_err(|e| e.to_string())?
-                        .ok_or_else(|| "no Twitch credentials stored".to_owned())?;
-                    let bundle: serde_json::Value =
-                        serde_json::from_str(&json_str).map_err(|e| e.to_string())?;
-                    let token = bundle["access_token"]
-                        .as_str()
-                        .ok_or_else(|| "missing access_token".to_owned())?
-                        .to_owned();
-                    let client_id = forge_platform_twitch::client_id()
-                        .ok_or_else(|| "FORGE_TWITCH_CLIENT_ID not configured".to_owned())?;
-                    let user_id = bundle["user_id"]
-                        .as_str()
-                        .ok_or_else(|| {
-                            "missing user_id — re-authorize in Settings → Platforms".to_owned()
-                        })?
-                        .to_owned();
-                    let oauth = forge_types::OAuthToken::new(token);
-                    let limiter = NoopRateLimiter;
-                    forge_platform_twitch::send_chat(
-                        &limiter, &oauth, &client_id, &user_id, &user_id, &msg, &bus,
-                    )
-                    .await
-                    .map(|_| ())
-                    .map_err(|e| e.to_string())
-                },
-                Message::ChatSent,
-            )
-        }
-        Message::ChatSent(Ok(())) => Task::none(),
-        Message::ChatSent(Err(e)) => {
-            tracing::warn!(error = %e, "chat send failed");
-            Task::none()
-        }
-        Message::ChatPlatformFilter(platform) => {
-            app.live_chat.chat_filter.platform = platform;
-            Task::none()
-        }
-        Message::ChatToggleEventsOnly => {
-            app.live_chat.chat_filter.events_only = !app.live_chat.chat_filter.events_only;
-            Task::none()
-        }
-        Message::ChatToggleHideBots => {
-            app.live_chat.chat_filter.hide_bots = !app.live_chat.chat_filter.hide_bots;
-            Task::none()
-        }
-        Message::ChatToggleDrawer => {
-            app.live_chat.drawer_open = !app.live_chat.drawer_open;
-            Task::none()
-        }
-        Message::ChatScrolled(viewport) => {
-            let rel = viewport.relative_offset();
-            let at_bottom = rel.y >= 0.98;
-            app.live_chat.auto_scroll = at_bottom;
-            if at_bottom {
-                app.live_chat.unread_count = 0;
-            }
-            Task::none()
-        }
-        Message::ChatScrollToBottom => {
-            app.live_chat.auto_scroll = true;
-            app.live_chat.unread_count = 0;
-            iced::widget::operation::snap_to_end(crate::live_chat::chat_scroll_id())
-        }
-        Message::ChatToggleEmoji => {
-            app.live_chat.emoji_picker_open = !app.live_chat.emoji_picker_open;
-            Task::none()
-        }
-        Message::ChatDrawerSearchChanged(s) => {
-            app.live_chat.drawer_search = s;
-            Task::none()
-        }
-        Message::ChatDrawerSelectViewer(name) => {
-            app.live_chat.selected_viewer = Some(name);
-            app.live_chat.drawer_open = true;
-            Task::none()
-        }
-        Message::ChatDrawerMenuToggle => {
-            app.live_chat.drawer_menu_open = !app.live_chat.drawer_menu_open;
-            Task::none()
-        }
-        Message::ChatDrawerMenuDismiss => {
-            app.live_chat.drawer_menu_open = false;
-            Task::none()
-        }
+        Message::LiveChat(sub) => crate::live_chat::update(&mut app.live_chat, &app.rt, sub),
         Message::Settings(sub) => match sub {
             SettingsMsg::ReconnectPlatform(PlatformId::Twitch) => {
                 if let Some(handle) = app.rt.twitch_chat_handle.take() {
@@ -2114,24 +2011,6 @@ fn handle_tts_msg(app: &mut App, msg: crate::message::TtsMsg) -> Task<Message> {
     }
 }
 
-struct NoopRateLimiter;
-
-#[async_trait::async_trait]
-impl forge_platform_core::RateLimiter for NoopRateLimiter {
-    async fn acquire(
-        &self,
-        _weight: u32,
-    ) -> Result<forge_platform_core::RateLimitOutcome, forge_platform_core::PlatformError> {
-        Ok(forge_platform_core::RateLimitOutcome::Granted)
-    }
-
-    fn remaining(&self) -> u32 {
-        u32::MAX
-    }
-
-    async fn observe_remote_throttle(&self, _retry_after: std::time::Duration) {}
-}
-
 pub(crate) fn format_uptime(elapsed: std::time::Duration) -> String {
     let total_secs = elapsed.as_secs();
     if total_secs < 60 {
@@ -2632,9 +2511,7 @@ fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
     let disconnected: u8 = 6u8.saturating_sub(connected);
 
     let header_icon = tabler_icon(Icon::PlugConnected, 14.0, palette.success);
-    let header_title = text("Builtin")
-        .size(FONT_SM)
-        .color(palette.text_primary);
+    let header_title = text("Builtin").size(FONT_SM).color(palette.text_primary);
     let header_sub = text(format!("{connected} active · {disconnected} disconnected"))
         .size(FONT_XS)
         .color(palette.text_faint);
@@ -2680,9 +2557,9 @@ fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
             "Twitch",
             palette.brand,
             twitch_ok,
-            Message::Navigate(Screen::BuiltinDetail(
-                forge_platform_core::BuiltinId::new("twitch")
-            )),
+            Message::Navigate(Screen::BuiltinDetail(forge_platform_core::BuiltinId::new(
+                "twitch"
+            ))),
             palette,
         ))
         .width(Length::FillPortion(1)),
@@ -2690,9 +2567,9 @@ fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
             "YouTube",
             palette.random,
             false,
-            Message::Navigate(Screen::BuiltinDetail(
-                forge_platform_core::BuiltinId::new("youtube")
-            )),
+            Message::Navigate(Screen::BuiltinDetail(forge_platform_core::BuiltinId::new(
+                "youtube"
+            ))),
             palette,
         ))
         .width(Length::FillPortion(1)),
@@ -2700,9 +2577,9 @@ fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
             "Kick",
             palette.info,
             false,
-            Message::Navigate(Screen::BuiltinDetail(
-                forge_platform_core::BuiltinId::new("kick")
-            )),
+            Message::Navigate(Screen::BuiltinDetail(forge_platform_core::BuiltinId::new(
+                "kick"
+            ))),
             palette,
         ))
         .width(Length::FillPortion(1)),
@@ -2710,9 +2587,9 @@ fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
             "Trovo",
             palette.success,
             false,
-            Message::Navigate(Screen::BuiltinDetail(
-                forge_platform_core::BuiltinId::new("trovo")
-            )),
+            Message::Navigate(Screen::BuiltinDetail(forge_platform_core::BuiltinId::new(
+                "trovo"
+            ))),
             palette,
         ))
         .width(Length::FillPortion(1)),
@@ -2720,9 +2597,9 @@ fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
             "OBS",
             palette.success,
             obs_ok,
-            Message::Navigate(Screen::BuiltinDetail(
-                forge_platform_core::BuiltinId::new("obs")
-            )),
+            Message::Navigate(Screen::BuiltinDetail(forge_platform_core::BuiltinId::new(
+                "obs"
+            ))),
             palette,
         ))
         .width(Length::FillPortion(1)),
@@ -2730,9 +2607,9 @@ fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
             "VTube",
             palette.warning,
             false,
-            Message::Navigate(Screen::BuiltinDetail(
-                forge_platform_core::BuiltinId::new("vtube")
-            )),
+            Message::Navigate(Screen::BuiltinDetail(forge_platform_core::BuiltinId::new(
+                "vtube"
+            ))),
             palette,
         ))
         .width(Length::FillPortion(1)),
@@ -5774,9 +5651,7 @@ fn breadcrumb_icon_for(screen: &Screen) -> Icon {
         Screen::Actions | Screen::ActionEditor(_) | Screen::Queues => Icon::Bolt,
         Screen::Commands => Icon::Terminal,
         Screen::Platforms => Icon::Broadcast,
-        Screen::StreamApps | Screen::Builtin | Screen::BuiltinDetail(_) => {
-            Icon::LayoutGrid
-        }
+        Screen::StreamApps | Screen::Builtin | Screen::BuiltinDetail(_) => Icon::LayoutGrid,
         Screen::LiveChat => Icon::MessageCircle,
         Screen::EventFeed => Icon::Activity,
         Screen::Globals => Icon::Variable,
@@ -6634,17 +6509,19 @@ mod tests {
 
     #[test]
     fn chat_submit_empty_input_is_noop() {
+        use crate::message::LiveChatMsg;
         let mut app = App::default();
         app.live_chat.chat_input = String::new();
-        let _ = update(&mut app, Message::ChatSubmit);
+        let _ = update(&mut app, Message::LiveChat(LiveChatMsg::Submit));
         assert!(app.live_chat.chat_input.is_empty());
     }
 
     #[test]
     fn chat_submit_clears_input_and_dispatches_task() {
+        use crate::message::LiveChatMsg;
         let mut app = App::default();
         app.live_chat.chat_input = "hello chat".into();
-        let _ = update(&mut app, Message::ChatSubmit);
+        let _ = update(&mut app, Message::LiveChat(LiveChatMsg::Submit));
         assert!(app.live_chat.chat_input.is_empty());
     }
 
@@ -6751,9 +6628,13 @@ mod tests {
 
     #[test]
     fn chat_sent_err_logs_and_leaves_screen_unchanged() {
+        use crate::message::LiveChatMsg;
         let mut app = App::default();
         let _ = update(&mut app, Message::Navigate(Screen::LiveChat));
-        let _ = update(&mut app, Message::ChatSent(Err("rate limited".into())));
+        let _ = update(
+            &mut app,
+            Message::LiveChat(LiveChatMsg::Sent(Err("rate limited".into()))),
+        );
         assert_eq!(app.screen, Screen::LiveChat);
     }
 

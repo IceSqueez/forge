@@ -1,14 +1,20 @@
 use std::collections::{HashSet, VecDeque};
+use std::sync::Arc;
 
 use forge_events::{Event, EventSource};
+use forge_platform_twitch::send_chat;
+use forge_storage::{CredentialId, CredentialsRepo};
+use forge_types::OAuthToken;
 use forge_widgets::{
     BadgeKind, ChatBody, ChatRow, ForgePalette, Icon, Platform, PlatformTarget, search_input,
     tabler_icon,
 };
-use iced::{Color, Element, Length};
+use iced::{Color, Element, Length, Task};
 use time::OffsetDateTime;
 
 use crate::Message;
+use crate::message::LiveChatMsg;
+use crate::runtime_view::RuntimeView;
 use crate::viewers::ViewersState;
 
 pub const CHAT_LOG_MAX: usize = 1_000;
@@ -136,6 +142,128 @@ impl LiveChatState {
 impl Default for LiveChatState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+struct NoopRateLimiter;
+
+#[async_trait::async_trait]
+impl forge_platform_core::RateLimiter for NoopRateLimiter {
+    async fn acquire(
+        &self,
+        _weight: u32,
+    ) -> Result<forge_platform_core::RateLimitOutcome, forge_platform_core::PlatformError> {
+        Ok(forge_platform_core::RateLimitOutcome::Granted)
+    }
+
+    fn remaining(&self) -> u32 {
+        u32::MAX
+    }
+
+    async fn observe_remote_throttle(&self, _retry_after: std::time::Duration) {}
+}
+
+pub fn update(state: &mut LiveChatState, rt: &RuntimeView, msg: LiveChatMsg) -> Task<Message> {
+    match msg {
+        LiveChatMsg::InputChanged(s) => {
+            state.chat_input = s;
+            Task::none()
+        }
+        LiveChatMsg::Submit => {
+            let msg = std::mem::take(&mut state.chat_input);
+            let msg = msg.trim().to_owned();
+            if msg.is_empty() {
+                return Task::none();
+            }
+            let backend = Arc::clone(&rt.backend);
+            let bus = Arc::clone(&rt.bus);
+            Task::perform(
+                async move {
+                    let json_str = backend
+                        .load(&CredentialId::new("twitch:broadcaster"))
+                        .await
+                        .map_err(|e| e.to_string())?
+                        .ok_or_else(|| "no Twitch credentials stored".to_owned())?;
+                    let bundle: serde_json::Value =
+                        serde_json::from_str(&json_str).map_err(|e| e.to_string())?;
+                    let token = bundle["access_token"]
+                        .as_str()
+                        .ok_or_else(|| "missing access_token".to_owned())?
+                        .to_owned();
+                    let client_id = forge_platform_twitch::client_id()
+                        .ok_or_else(|| "FORGE_TWITCH_CLIENT_ID not configured".to_owned())?;
+                    let user_id = bundle["user_id"]
+                        .as_str()
+                        .ok_or_else(|| {
+                            "missing user_id — re-authorize in Settings → Platforms".to_owned()
+                        })?
+                        .to_owned();
+                    let oauth = OAuthToken::new(token);
+                    let limiter = NoopRateLimiter;
+                    send_chat(&limiter, &oauth, &client_id, &user_id, &user_id, &msg, &bus)
+                        .await
+                        .map(|_| ())
+                        .map_err(|e| e.to_string())
+                },
+                |r| Message::LiveChat(LiveChatMsg::Sent(r)),
+            )
+        }
+        LiveChatMsg::Sent(Ok(())) => Task::none(),
+        LiveChatMsg::Sent(Err(e)) => {
+            tracing::warn!(error = %e, "chat send failed");
+            Task::none()
+        }
+        LiveChatMsg::PlatformFilter(platform) => {
+            state.chat_filter.platform = platform;
+            Task::none()
+        }
+        LiveChatMsg::ToggleEventsOnly => {
+            state.chat_filter.events_only = !state.chat_filter.events_only;
+            Task::none()
+        }
+        LiveChatMsg::ToggleHideBots => {
+            state.chat_filter.hide_bots = !state.chat_filter.hide_bots;
+            Task::none()
+        }
+        LiveChatMsg::ToggleDrawer => {
+            state.drawer_open = !state.drawer_open;
+            Task::none()
+        }
+        LiveChatMsg::Scrolled(viewport) => {
+            let rel = viewport.relative_offset();
+            let at_bottom = rel.y >= 0.98;
+            state.auto_scroll = at_bottom;
+            if at_bottom {
+                state.unread_count = 0;
+            }
+            Task::none()
+        }
+        LiveChatMsg::ScrollToBottom => {
+            state.auto_scroll = true;
+            state.unread_count = 0;
+            iced::widget::operation::snap_to_end(chat_scroll_id())
+        }
+        LiveChatMsg::ToggleEmoji => {
+            state.emoji_picker_open = !state.emoji_picker_open;
+            Task::none()
+        }
+        LiveChatMsg::DrawerSearchChanged(s) => {
+            state.drawer_search = s;
+            Task::none()
+        }
+        LiveChatMsg::DrawerSelectViewer(name) => {
+            state.selected_viewer = Some(name);
+            state.drawer_open = true;
+            Task::none()
+        }
+        LiveChatMsg::DrawerMenuToggle => {
+            state.drawer_menu_open = !state.drawer_menu_open;
+            Task::none()
+        }
+        LiveChatMsg::DrawerMenuDismiss => {
+            state.drawer_menu_open = false;
+            Task::none()
+        }
     }
 }
 
@@ -707,7 +835,7 @@ fn drawer_header<'a>(state: &'a LiveChatState, palette: &'a ForgePalette) -> Ele
     let search_box = search_input(
         "Search viewers...",
         &state.drawer_search,
-        Message::ChatDrawerSearchChanged,
+        |s| Message::LiveChat(LiveChatMsg::DrawerSearchChanged(s)),
         palette,
     );
 
@@ -938,8 +1066,8 @@ fn selected_viewer_detail<'a>(
     let more_btn = menu_button(
         Icon::DotsVertical,
         state.drawer_menu_open,
-        Message::ChatDrawerMenuToggle,
-        Message::ChatDrawerMenuDismiss,
+        Message::LiveChat(LiveChatMsg::DrawerMenuToggle),
+        Message::LiveChat(LiveChatMsg::DrawerMenuDismiss),
         menu_items,
         MenuPlacement::TopRight,
         palette,
@@ -1039,7 +1167,7 @@ fn drawer_viewer_row<'a>(
 
     let username = summary.username.clone();
     let row_btn = button(row_content)
-        .on_press(Message::ChatDrawerSelectViewer(username))
+        .on_press(Message::LiveChat(LiveChatMsg::DrawerSelectViewer(username)))
         .padding([7u16, 14u16])
         .width(Length::Fill)
         .style(move |_t: &iced::Theme, s: button::Status| {
@@ -1176,7 +1304,7 @@ pub fn live_chat_view<'a>(
             PlatformTarget {
                 platform: Platform::Twitch,
                 active: true,
-                on_press: Some(Box::new(|| Message::ChatSubmit)),
+                on_press: Some(Box::new(|| Message::LiveChat(LiveChatMsg::Submit))),
             },
             PlatformTarget {
                 platform: Platform::YouTube,
@@ -1189,10 +1317,10 @@ pub fn live_chat_view<'a>(
                 on_press: None,
             },
         ],
-        Message::ChatInputChanged,
-        Message::ChatSubmit,
+        |s| Message::LiveChat(LiveChatMsg::InputChanged(s)),
+        Message::LiveChat(LiveChatMsg::Submit),
         state.emoji_picker_open,
-        Message::ChatToggleEmoji,
+        Message::LiveChat(LiveChatMsg::ToggleEmoji),
     );
 
     let chat_column = iced::widget::column![chat_area, bar]
@@ -1203,14 +1331,14 @@ pub fn live_chat_view<'a>(
         let panel_content = drawer_panel(state, viewers, palette);
         let chrome = crate::app::sheet_chrome(
             "Viewers",
-            Message::ChatToggleDrawer,
+            Message::LiveChat(LiveChatMsg::ToggleDrawer),
             panel_content,
             None,
             palette,
         );
         let sheet = forge_widgets::side_sheet(
             chrome,
-            Message::ChatToggleDrawer,
+            Message::LiveChat(LiveChatMsg::ToggleDrawer),
             forge_widgets::SheetEdge::Right,
             480.0,
             palette,
@@ -1251,28 +1379,28 @@ fn live_chat_page_header<'a>(
         "All",
         p.brand,
         state.chat_filter.platform == PlatformFilter::All,
-        Message::ChatPlatformFilter(PlatformFilter::All),
+        Message::LiveChat(LiveChatMsg::PlatformFilter(PlatformFilter::All)),
     );
     let chip_twitch = forge_widgets::filter_chip(
         palette,
         "Twitch",
         p.brand,
         state.chat_filter.platform == PlatformFilter::Twitch,
-        Message::ChatPlatformFilter(PlatformFilter::Twitch),
+        Message::LiveChat(LiveChatMsg::PlatformFilter(PlatformFilter::Twitch)),
     );
     let chip_youtube = forge_widgets::filter_chip(
         palette,
         "YouTube",
         p.random,
         state.chat_filter.platform == PlatformFilter::YouTube,
-        Message::ChatPlatformFilter(PlatformFilter::YouTube),
+        Message::LiveChat(LiveChatMsg::PlatformFilter(PlatformFilter::YouTube)),
     );
     let chip_kick = forge_widgets::filter_chip(
         palette,
         "Kick",
         p.info,
         state.chat_filter.platform == PlatformFilter::Kick,
-        Message::ChatPlatformFilter(PlatformFilter::Kick),
+        Message::LiveChat(LiveChatMsg::PlatformFilter(PlatformFilter::Kick)),
     );
     let chips = row![chip_all, chip_twitch, chip_youtube, chip_kick].spacing(4);
 
@@ -1307,7 +1435,7 @@ fn live_chat_page_header<'a>(
         .spacing(4)
         .align_y(iced::alignment::Vertical::Center),
     )
-    .on_press(Message::ChatToggleDrawer)
+    .on_press(Message::LiveChat(LiveChatMsg::ToggleDrawer))
     .padding([4_u16, 10_u16])
     .style(move |_: &iced::Theme, status| {
         let hovered = matches!(
@@ -1361,6 +1489,10 @@ fn live_chat_page_header<'a>(
         .into()
 }
 
+fn select_viewer_msg(name: String) -> Message {
+    Message::LiveChat(LiveChatMsg::DrawerSelectViewer(name))
+}
+
 fn build_chat_area<'a>(
     state: &'a LiveChatState,
     palette: &'a ForgePalette,
@@ -1373,7 +1505,7 @@ fn build_chat_area<'a>(
     use iced::{Background, Border, Length, Padding};
 
     let visible: Vec<Element<'a, Message>> = filter_log(&state.chat_log, &state.chat_filter)
-        .map(|row| forge_widgets::chat_row(palette, row, Some(Message::ChatDrawerSelectViewer)))
+        .map(|row| forge_widgets::chat_row(palette, row, Some(select_viewer_msg)))
         .collect();
 
     let empty_msg = if state.chat_filter.events_only {
@@ -1406,7 +1538,7 @@ fn build_chat_area<'a>(
 
         let scrollable_chat = scrollable(col)
             .id(chat_scroll_id())
-            .on_scroll(Message::ChatScrolled)
+            .on_scroll(|vp| Message::LiveChat(LiveChatMsg::Scrolled(vp)))
             .height(Length::Fill);
 
         if state.unread_count > 0 {
@@ -1422,7 +1554,7 @@ fn build_chat_area<'a>(
                     .color(p.text_primary)
                     .font(font(FontRole::Body)),
             )
-            .on_press(Message::ChatScrollToBottom)
+            .on_press(Message::LiveChat(LiveChatMsg::ScrollToBottom))
             .padding([6, 12])
             .style(move |_theme: &iced::Theme, status| {
                 let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);

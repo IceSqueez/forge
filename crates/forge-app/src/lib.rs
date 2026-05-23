@@ -1,11 +1,11 @@
 pub mod action_editor;
 pub mod actions;
 pub mod app;
+pub mod builtin_detail;
 pub mod commands_view;
 pub mod event_feed;
 pub mod globals_view;
 pub mod home;
-pub mod builtin_detail;
 pub mod live_chat;
 pub mod message;
 pub mod obs_panel;
@@ -37,14 +37,14 @@ pub use actions::{
     SubActionKindChoice, TriggerCategory,
 };
 pub use app::{App, SidebarExpandState, load_obs_and_connect};
+pub use builtin_detail::{BuiltinDetailState, health_subscription};
 pub use event_feed::{EventFeedMsg, EventFeedState, EventFilter, matches_filter};
 pub use globals_view::{GlobalsState, VariantEditorFields, VariantEditorForm, load_globals_data};
 pub use home::HomeStats;
-pub use builtin_detail::{BuiltinDetailState, health_subscription};
 pub use live_chat::{ChatFilters, LiveChatState, PlatformFilter};
 pub use message::{
-    ActionsMsg, EditorMode, GlobalsFilter, GlobalsLoadData, GlobalsMsg, HomeMsg, HomeStatsData,
-    BuiltinDetailMsg, Message, ObsClientRef, PlatformId, SettingsAudioMsg, SettingsMsg,
+    ActionsMsg, BuiltinDetailMsg, EditorMode, GlobalsFilter, GlobalsLoadData, GlobalsMsg, HomeMsg,
+    HomeStatsData, LiveChatMsg, Message, ObsClientRef, PlatformId, SettingsAudioMsg, SettingsMsg,
     SidebarMsg, SoundboardMsg, TtsDashMsg, TtsEnginesMsg, TtsFiltersMsg, TtsMsg, TtsTriggersMsg,
     VariantEditorMsg, VoiceAliasesMsg,
 };

@@ -3,8 +3,8 @@
 use std::sync::Arc;
 
 use forge_app::{
-    App, EventFeedState, Message, PlatformFilter, RuntimeView, Screen, ScriptEditorState,
-    SidebarExpandState, app::update,
+    App, EventFeedState, LiveChatMsg, Message, PlatformFilter, RuntimeView, Screen,
+    ScriptEditorState, SidebarExpandState, app::update,
 };
 use forge_events::{Event, EventSource};
 use forge_runtime::{EventBus, NullEventLogRepo, ScriptRegistry, bus_subscription};
@@ -134,9 +134,9 @@ fn non_chat_events_are_ignored() {
 #[test]
 fn filter_changed_updates_filter_state() {
     let mut app = test_app();
-    let _ = update(&mut app, Message::ChatToggleHideBots);
+    let _ = update(&mut app, Message::LiveChat(LiveChatMsg::ToggleHideBots));
     assert!(app.live_chat.chat_filter.hide_bots);
-    let _ = update(&mut app, Message::ChatToggleHideBots);
+    let _ = update(&mut app, Message::LiveChat(LiveChatMsg::ToggleHideBots));
     assert!(!app.live_chat.chat_filter.hide_bots);
 }
 
@@ -145,7 +145,7 @@ fn platform_filter_changed_updates_state() {
     let mut app = test_app();
     let _ = update(
         &mut app,
-        Message::ChatPlatformFilter(PlatformFilter::Twitch),
+        Message::LiveChat(LiveChatMsg::PlatformFilter(PlatformFilter::Twitch)),
     );
     assert_eq!(app.live_chat.chat_filter.platform, PlatformFilter::Twitch);
 }
@@ -155,7 +155,7 @@ fn chat_input_changed_updates_state() {
     let mut app = test_app();
     let _ = update(
         &mut app,
-        Message::ChatInputChanged("INTEGRATION_TEST_INPUT".into()),
+        Message::LiveChat(LiveChatMsg::InputChanged("INTEGRATION_TEST_INPUT".into())),
     );
     assert_eq!(app.live_chat.chat_input, "INTEGRATION_TEST_INPUT");
 }
@@ -164,7 +164,7 @@ fn chat_input_changed_updates_state() {
 fn chat_submit_clears_input_optimistically() {
     let mut app = test_app();
     app.live_chat.chat_input = "INTEGRATION_TEST_MESSAGE_BODY".to_owned();
-    let _ = update(&mut app, Message::ChatSubmit);
+    let _ = update(&mut app, Message::LiveChat(LiveChatMsg::Submit));
     assert!(app.live_chat.chat_input.is_empty());
 }
 

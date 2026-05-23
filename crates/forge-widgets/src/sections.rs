@@ -6,7 +6,9 @@ use iced::{
 };
 
 use crate::palette::ForgePalette;
-use crate::tokens::{BORDER_THIN, FONT_MD, FONT_SM, FONT_XS, FontRole, Radius, font, radius};
+use crate::tokens::{
+    BORDER_THIN, FONT_MD, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BannerKind {
@@ -75,7 +77,7 @@ pub fn live_status_banner<'a, Msg: 'a>(
     }
 
     container(content_col)
-        .padding(Padding::from([11_u16, 14_u16]))
+        .padding(Padding::from([sp(Spacing::Sm), sp(Spacing::Md)]))
         .width(Length::Fill)
         .style(move |_theme: &iced::Theme| container::Style {
             background: Some(Background::Color(bg_color)),
@@ -114,7 +116,7 @@ pub fn section_header<'a, Msg: 'a>(
             .size(FONT_XS)
             .color(palette.text_muted),
     )
-    .padding([6, 14])
+    .padding([sp(Spacing::Xs), sp(Spacing::Md)])
     .into()
 }
 
@@ -147,7 +149,7 @@ pub fn section_header_expandable<'a, Msg: 'a + Clone>(
 
     button(inner)
         .on_press(on_toggle)
-        .padding([6, 14])
+        .padding([sp(Spacing::Xs), sp(Spacing::Md)])
         .style(move |_theme: &iced::Theme, status| {
             let bg = match status {
                 button::Status::Hovered | button::Status::Pressed => {
@@ -210,7 +212,7 @@ pub fn empty_state<'a, Msg: 'a + Clone>(
     }
 
     container(col)
-        .padding(24)
+        .padding(sp(Spacing::Lg))
         .align_x(Alignment::Center)
         .align_y(Alignment::Center)
         .into()
@@ -233,7 +235,7 @@ pub fn toast_banner<'a, Msg: 'a + Clone>(
 
     let dismiss_btn = iced::widget::button(text("✕").size(FONT_XS).color(palette.text_muted))
         .on_press(on_dismiss)
-        .padding([2, 6])
+        .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
         .style(
             move |_theme: &iced::Theme, _status| iced::widget::button::Style {
                 background: None,
@@ -252,9 +254,9 @@ pub fn toast_banner<'a, Msg: 'a + Clone>(
                 ..container::Style::default()
             }),
         container(text(message_str).size(FONT_SM).color(palette.text_primary))
-            .padding([12, 12])
+            .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
             .width(iced::Length::Fill),
-        container(dismiss_btn).padding([8, 8]),
+        container(dismiss_btn).padding([sp(Spacing::Xs), sp(Spacing::Xs)]),
     ]
     .align_y(Alignment::Center);
 
@@ -286,7 +288,7 @@ pub fn counter_badge<'a, Msg: 'a>(count: u32, palette: &ForgePalette) -> Element
     let text_color = palette.brand;
 
     container(text(label).size(FONT_XS).color(text_color))
-        .padding([2, 6])
+        .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
         .style(move |_theme: &iced::Theme| container::Style {
             background: Some(iced::Background::Color(bg)),
             border: Border {

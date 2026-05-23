@@ -5,7 +5,7 @@ use iced::{
 
 use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
-use crate::tokens::{FONT_SM, FONT_XS, FontRole, Radius, font, radius};
+use crate::tokens::{FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BadgeKind {
@@ -125,7 +125,7 @@ fn badge_pill<Msg: 'static>(kind: BadgeKind, palette: ForgePalette) -> Element<'
             .color(color)
             .font(font(FontRole::Body)),
     )
-    .padding([1, 5])
+    .padding([0, sp(Spacing::Xxs)])
     .style(move |_theme: &iced::Theme| container::Style {
         background: Some(Background::Color(bg)),
         border: Border {
@@ -152,7 +152,7 @@ fn platform_badge<Msg: 'static>(
             .color(shell)
             .font(font(FontRole::Body)),
     )
-    .padding([1, 6])
+    .padding([0, sp(Spacing::Xs)])
     .align_y(iced::Alignment::Center)
     .style(move |_theme: &iced::Theme| container::Style {
         background: Some(Background::Color(color)),
@@ -173,7 +173,7 @@ fn inline_badge<Msg: 'static>(label: String, bg: Color, fg: Color) -> Element<'s
             .color(fg)
             .font(font(FontRole::Monospace)),
     )
-    .padding([1, 6])
+    .padding([0, sp(Spacing::Xs)])
     .style(move |_theme: &iced::Theme| container::Style {
         background: Some(Background::Color(bg)),
         border: Border {
@@ -215,7 +215,7 @@ fn clickable_username_style(
 fn money_event_icon<Msg: 'static>(icon: Icon, color: Color) -> Element<'static, Msg> {
     container(tabler_icon(icon, 13.0, color))
         .padding(Padding {
-            top: 2.0,
+            top: spf(Spacing::Xxs),
             ..Padding::ZERO
         })
         .into()
@@ -238,7 +238,7 @@ fn row_chrome<Msg: 'static>(
 
     let body = container(content)
         .width(Length::Fill)
-        .padding([6, 10])
+        .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
         .style(move |_theme: &iced::Theme| container::Style {
             background: Some(Background::Color(body_bg)),
             border: Border {
@@ -275,7 +275,7 @@ fn triggered_badge<Msg: 'static>(action: String, palette: ForgePalette) -> Eleme
             .color(palette.success)
             .font(font(FontRole::Body)),
     )
-    .padding([2, 8])
+    .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
     .style(move |_theme: &iced::Theme| container::Style {
         background: Some(Background::Color(bg)),
         border: Border {
@@ -592,7 +592,7 @@ pub fn chat_row_cmd<Msg: Clone + 'static>(
             .color(palette.brand)
             .font(font(FontRole::Monospace)),
     )
-    .padding([1, 5])
+    .padding([0, sp(Spacing::Xxs)])
     .style(move |_theme: &iced::Theme| container::Style {
         background: Some(Background::Color(cmd_bg)),
         border: Border {
@@ -782,7 +782,7 @@ pub fn filter_chip<'a, Msg: Clone + 'a>(
 
     button(content)
         .on_press(on_press)
-        .padding([4, 10])
+        .padding([sp(Spacing::Xxs), sp(Spacing::Sm)])
         .style(move |_theme: &iced::Theme, _status| button::Style {
             background: Some(Background::Color(bg)),
             border: Border {
@@ -1027,7 +1027,7 @@ pub fn input_bar<'a, Msg: Clone + 'a>(
             .spacing(8)
             .align_y(iced::Alignment::Center),
     )
-    .padding([6, 10])
+    .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
     .style(move |_theme: &iced::Theme| container::Style {
         background: Some(Background::Color(p.base)),
         border: Border {
@@ -1039,10 +1039,10 @@ pub fn input_bar<'a, Msg: Clone + 'a>(
     });
 
     let hints = container(hint_row(palette)).padding(Padding {
-        top: 6.0,
-        right: 4.0,
+        top: spf(Spacing::Xs),
+        right: spf(Spacing::Xxs),
         bottom: 0.0,
-        left: 4.0,
+        left: spf(Spacing::Xxs),
     });
 
     let mut body_elements = Vec::new();
@@ -1055,7 +1055,7 @@ pub fn input_bar<'a, Msg: Clone + 'a>(
                 let on_click_msg = on_input(new_val);
                 button(text(emoji).size(FONT_SM).font(font(FontRole::Body)))
                     .on_press(on_click_msg)
-                    .padding([4, 6])
+                    .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
                     .style(move |_theme: &iced::Theme, status| {
                         let hovered =
                             matches!(status, button::Status::Hovered | button::Status::Pressed);
@@ -1078,7 +1078,7 @@ pub fn input_bar<'a, Msg: Clone + 'a>(
         let grid = row(emoji_buttons).spacing(4).wrap();
 
         let picker_box = container(iced::widget::scrollable(grid).height(Length::Fixed(120.0)))
-            .padding([8, 8])
+            .padding([sp(Spacing::Xs), sp(Spacing::Xs)])
             .style(move |_theme: &iced::Theme| container::Style {
                 background: Some(Background::Color(p.shell)),
                 border: Border {
@@ -1110,7 +1110,7 @@ pub fn input_bar<'a, Msg: Clone + 'a>(
         });
 
     let body = container(column(body_elements).spacing(0))
-        .padding([10, 14])
+        .padding([sp(Spacing::Sm), sp(Spacing::Md)])
         .style(move |_theme: &iced::Theme| container::Style {
             background: Some(Background::Color(p.shell)),
             ..container::Style::default()

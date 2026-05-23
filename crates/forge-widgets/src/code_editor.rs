@@ -5,7 +5,7 @@ use iced::{
 
 use crate::{
     ForgePalette,
-    tokens::{FONT_SM, FONT_XS, FontRole, font},
+    tokens::{FONT_SM, FONT_XS, FontRole, Spacing, font, spf},
 };
 
 pub struct CodeEditorState {
@@ -76,7 +76,7 @@ pub fn code_editor<'a, Msg: Clone + 'a>(
                 top: 0.0,
                 bottom: 0.0,
                 left: 0.0,
-                right: 14.0,
+                right: spf(Spacing::Md),
             })
             .align_x(Alignment::End)
             .into()
@@ -85,8 +85,8 @@ pub fn code_editor<'a, Msg: Clone + 'a>(
 
     let gutter = container(column(gutter_items))
         .padding(Padding {
-            top: 10.0,
-            bottom: 10.0,
+            top: spf(Spacing::Sm),
+            bottom: spf(Spacing::Sm),
             left: 0.0,
             right: 0.0,
         })

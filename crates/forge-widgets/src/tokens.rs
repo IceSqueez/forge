@@ -18,6 +18,8 @@ pub enum Density {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Spacing {
+    None,
+    Xxs,
     Xs,
     Sm,
     Md,
@@ -27,8 +29,10 @@ pub enum Spacing {
 impl Spacing {
     fn base_px(self) -> f32 {
         match self {
-            Self::Xs => 6.0,
-            Self::Sm => 10.0,
+            Self::None => 0.0,
+            Self::Xxs => 4.0,
+            Self::Xs => 8.0,
+            Self::Sm => 12.0,
             Self::Md => 16.0,
             Self::Lg => 24.0,
         }
@@ -42,6 +46,14 @@ pub fn spacing(s: Spacing, d: Density) -> u16 {
         Density::Spacious => 1.2,
     };
     (s.base_px() * multiplier).round() as u16
+}
+
+pub fn sp(token: Spacing) -> u16 {
+    spacing(token, Density::Cozy)
+}
+
+pub fn spf(token: Spacing) -> f32 {
+    f32::from(spacing(token, Density::Cozy))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -131,8 +143,10 @@ mod tests {
 
     #[test]
     fn spacing_cozy_returns_design_token_values() {
-        assert_eq!(spacing(Spacing::Xs, Density::Cozy), 6);
-        assert_eq!(spacing(Spacing::Sm, Density::Cozy), 10);
+        assert_eq!(spacing(Spacing::None, Density::Cozy), 0);
+        assert_eq!(spacing(Spacing::Xxs, Density::Cozy), 4);
+        assert_eq!(spacing(Spacing::Xs, Density::Cozy), 8);
+        assert_eq!(spacing(Spacing::Sm, Density::Cozy), 12);
         assert_eq!(spacing(Spacing::Md, Density::Cozy), 16);
         assert_eq!(spacing(Spacing::Lg, Density::Cozy), 24);
     }
@@ -140,13 +154,31 @@ mod tests {
     #[test]
     fn spacing_compact_scales_down() {
         assert_eq!(spacing(Spacing::Md, Density::Compact), 14);
-        assert_eq!(spacing(Spacing::Sm, Density::Compact), 9);
+        assert_eq!(spacing(Spacing::Sm, Density::Compact), 10);
     }
 
     #[test]
     fn spacing_spacious_increases() {
         assert_eq!(spacing(Spacing::Md, Density::Spacious), 19);
-        assert_eq!(spacing(Spacing::Sm, Density::Spacious), 12);
+        assert_eq!(spacing(Spacing::Sm, Density::Spacious), 14);
+    }
+
+    #[test]
+    fn sp_shorthand_equals_cozy_spacing() {
+        assert_eq!(sp(Spacing::Xs), spacing(Spacing::Xs, Density::Cozy));
+        assert_eq!(sp(Spacing::Md), spacing(Spacing::Md, Density::Cozy));
+    }
+
+    #[test]
+    fn spf_returns_f32_of_cozy_spacing() {
+        assert_eq!(
+            spf(Spacing::Xs),
+            f32::from(spacing(Spacing::Xs, Density::Cozy))
+        );
+        assert_eq!(
+            spf(Spacing::Sm),
+            f32::from(spacing(Spacing::Sm, Density::Cozy))
+        );
     }
 
     #[test]

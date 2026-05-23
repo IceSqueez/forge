@@ -5,7 +5,7 @@ use iced::{
 
 use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
-use crate::tokens::{Density, FONT_SM, FontRole, Spacing, font, spacing};
+use crate::tokens::{Density, FONT_SM, FontRole, Spacing, font, spacing, spf};
 
 #[derive(Debug, Clone)]
 pub struct DeviceLabel {
@@ -70,7 +70,7 @@ pub fn output_device_picker<'a, Msg: 'a + Clone>(
     let p = *palette;
     let refresh_btn = button(tabler_icon(Icon::Refresh, 12.0, p.text_secondary))
         .on_press(on_refresh)
-        .padding([4.0, 8.0])
+        .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
         .style(move |_theme, status| icon_btn_style(&p, status));
 
     let p2 = *palette;
@@ -86,7 +86,7 @@ pub fn output_device_picker<'a, Msg: 'a + Clone>(
         .align_y(Alignment::Center),
     )
     .on_press(on_test)
-    .padding([4.0, 10.0])
+    .padding([spf(Spacing::Xxs), spf(Spacing::Sm)])
     .style(move |_theme, status| icon_btn_style(&p2, status));
 
     let gap = f32::from(spacing(Spacing::Sm, Density::Cozy));

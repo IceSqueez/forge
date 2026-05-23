@@ -9,7 +9,7 @@ use crate::{
     icons::{Icon, tabler_icon},
     inputs::search_input,
     palette::ForgePalette,
-    tokens::{BORDER_THIN, FONT_MD, FONT_SM, FontRole, Radius, font, radius},
+    tokens::{BORDER_THIN, FONT_MD, FONT_SM, FontRole, Radius, Spacing, font, radius, sp},
 };
 
 #[derive(Debug, Clone)]
@@ -49,7 +49,7 @@ pub fn picker_modal<'a, Msg: 'a + Clone>(
             .color(p.text_primary)
             .font(font(FontRole::Body)),
     )
-    .padding([14, 18])
+    .padding([sp(Spacing::Md), sp(Spacing::Md)])
     .width(Length::Fill)
     .style(move |_theme: &iced::Theme| container::Style {
         border: Border {
@@ -66,7 +66,7 @@ pub fn picker_modal<'a, Msg: 'a + Clone>(
         on_search_change,
         palette,
     ))
-    .padding([10, 18])
+    .padding([sp(Spacing::Sm), sp(Spacing::Md)])
     .width(Length::Fill)
     .style(move |_theme: &iced::Theme| container::Style {
         border: Border {
@@ -134,7 +134,7 @@ pub fn picker_modal<'a, Msg: 'a + Clone>(
         ]
         .align_y(Alignment::Center),
     )
-    .padding([12, 18])
+    .padding([sp(Spacing::Sm), sp(Spacing::Md)])
     .width(Length::Fill)
     .style(move |_theme: &iced::Theme| container::Style {
         border: Border {
@@ -231,7 +231,7 @@ fn item_row<'a, Msg: Clone + 'a>(
     let msg = on_select(idx);
     button(row_inner)
         .on_press(msg)
-        .padding([8, 18])
+        .padding([sp(Spacing::Xs), sp(Spacing::Md)])
         .width(Length::Fill)
         .style(move |_theme: &iced::Theme, status| {
             let bg = match status {

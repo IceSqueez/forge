@@ -6,7 +6,7 @@ use iced::{
 };
 
 use crate::palette::ForgePalette;
-use crate::tokens::{BORDER_THIN, Density, FONT_MD, Radius, Spacing, radius, spacing};
+use crate::tokens::{BORDER_THIN, Density, FONT_MD, Radius, Spacing, radius, sp, spacing};
 
 fn primary_style(bg: Color, text_color: Color, status: Status) -> Style {
     let r = radius(Radius::Md);
@@ -341,7 +341,7 @@ pub fn icon_button<'a, Msg: 'a + Clone>(
 
     iced::widget::button(iced::widget::text(icon.to_string()).size(FONT_MD))
         .on_press(on_press)
-        .padding([6, 6])
+        .padding([sp(Spacing::Xs), sp(Spacing::Xs)])
         .style(move |_theme: &iced::Theme, status| match status {
             Status::Active | Status::Pressed => Style {
                 background: None,
@@ -435,26 +435,26 @@ mod tests {
 
     #[test]
     fn primary_padding_matches_design_tokens() {
-        assert_eq!(spacing(Spacing::Sm, Density::Cozy), 10);
+        assert_eq!(spacing(Spacing::Sm, Density::Cozy), 12);
         assert_eq!(spacing(Spacing::Md, Density::Cozy), 16);
     }
 
     #[test]
     fn primary_small_padding_matches_design_tokens() {
-        assert_eq!(spacing(Spacing::Xs, Density::Cozy), 6);
+        assert_eq!(spacing(Spacing::Xs, Density::Cozy), 8);
         assert_eq!(spacing(Spacing::Md, Density::Cozy), 16);
     }
 
     #[test]
     fn secondary_padding_matches_design_tokens() {
-        assert_eq!(spacing(Spacing::Sm, Density::Cozy), 10);
+        assert_eq!(spacing(Spacing::Sm, Density::Cozy), 12);
         assert_eq!(spacing(Spacing::Md, Density::Cozy), 16);
     }
 
     #[test]
     fn ghost_padding_matches_design_tokens() {
-        assert_eq!(spacing(Spacing::Sm, Density::Cozy), 10);
-        assert_eq!(spacing(Spacing::Sm, Density::Cozy), 10);
+        assert_eq!(spacing(Spacing::Sm, Density::Cozy), 12);
+        assert_eq!(spacing(Spacing::Sm, Density::Cozy), 12);
     }
 
     #[test]

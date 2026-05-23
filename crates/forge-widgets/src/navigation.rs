@@ -7,7 +7,9 @@ use iced::{
 
 use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
-use crate::tokens::{BORDER_THIN, FONT_SM, FONT_XS, FontRole, Radius, font, radius};
+use crate::tokens::{
+    BORDER_THIN, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
+};
 
 pub const SIDEBAR_WIDTH: u16 = 200;
 
@@ -75,7 +77,7 @@ pub fn sidebar<'a, Msg: 'a + Clone>(
     container(body)
         .width(u32::from(SIDEBAR_WIDTH))
         .height(iced::Length::Fill)
-        .padding([12, 8])
+        .padding([sp(Spacing::Sm), sp(Spacing::Xs)])
         .style(move |_theme: &iced::Theme| iced::widget::container::Style {
             background: Some(iced::Background::Color(bg)),
             border: Border {
@@ -146,10 +148,10 @@ fn nav_section_label<'a, Msg: 'a>(label: &'a str, palette: &ForgePalette) -> Ele
             .color(color),
     )
     .padding(iced::Padding {
-        top: 14.0,
-        bottom: 6.0,
-        left: 10.0,
-        right: 10.0,
+        top: spf(Spacing::Md),
+        bottom: spf(Spacing::Xs),
+        left: spf(Spacing::Sm),
+        right: spf(Spacing::Sm),
     })
     .width(iced::Length::Fill)
     .into()
@@ -163,10 +165,10 @@ fn nav_mini_label<'a, Msg: 'a>(label: &'a str, palette: &ForgePalette) -> Elemen
             .color(palette.text_faint),
     )
     .padding(iced::Padding {
-        top: 8.0,
-        bottom: 3.0,
-        left: 10.0,
-        right: 10.0,
+        top: spf(Spacing::Xs),
+        bottom: spf(Spacing::Xxs),
+        left: spf(Spacing::Sm),
+        right: spf(Spacing::Sm),
     })
     .width(iced::Length::Fill)
     .into()
@@ -211,7 +213,7 @@ fn nav_flat_link<'a, Msg: 'a + Clone>(
 
     button(content)
         .on_press(on_press)
-        .padding([6, 10])
+        .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
         .width(iced::Length::Fill)
         .style(move |_theme: &iced::Theme, status| match status {
             ButtonStatus::Hovered | ButtonStatus::Pressed if !active => ButtonStyle {
@@ -276,7 +278,7 @@ fn nav_leaf<'a, Msg: 'a + Clone>(
 
     button(content)
         .on_press(on_press)
-        .padding([8, 10])
+        .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
         .width(iced::Length::Fill)
         .style(move |_theme: &iced::Theme, status| match status {
             ButtonStatus::Hovered | ButtonStatus::Pressed => ButtonStyle {
@@ -349,7 +351,7 @@ fn nav_group_header<'a, Msg: 'a + Clone>(
 
     button(content)
         .on_press(on_toggle)
-        .padding([8, 10])
+        .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
         .width(iced::Length::Fill)
         .style(move |_theme: &iced::Theme, status| match status {
             ButtonStatus::Hovered | ButtonStatus::Pressed => ButtonStyle {
@@ -460,10 +462,10 @@ fn nav_divider<'a, Msg: 'a>(border_color: Color) -> Element<'a, Msg> {
         }),
     )
     .padding(iced::Padding {
-        top: 10.0,
-        right: 6.0,
+        top: spf(Spacing::Sm),
+        right: spf(Spacing::Xs),
         bottom: 0.0,
-        left: 6.0,
+        left: spf(Spacing::Xs),
     })
     .width(iced::Length::Fill)
     .into()

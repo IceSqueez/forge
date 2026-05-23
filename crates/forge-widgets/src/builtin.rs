@@ -16,7 +16,7 @@ use crate::{
     palette::ForgePalette,
     tokens::{
         BORDER_THIN, Density, FONT_LG, FONT_MD, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font,
-        radius, spacing,
+        radius, sp, spacing,
     },
 };
 
@@ -165,7 +165,7 @@ fn version_pill<'a, Msg: 'a>(version: &'a str, bg: Color, text_color: Color) -> 
             .size(FONT_XS)
             .color(text_color),
     )
-    .padding([1, 7])
+    .padding([0, sp(Spacing::Xs)])
     .style(move |_theme: &iced::Theme| container::Style {
         background: Some(iced::Background::Color(bg)),
         border: Border {
@@ -185,7 +185,7 @@ fn limited_badge<'a, Msg: 'a>(label: &'a str, bg: Color, text_color: Color) -> E
             .size(FONT_XS)
             .color(text_color),
     )
-    .padding([1, 7])
+    .padding([0, sp(Spacing::Xs)])
     .style(move |_theme: &iced::Theme| container::Style {
         background: Some(iced::Background::Color(bg)),
         border: Border {
@@ -1211,7 +1211,7 @@ fn info_card_header<'a, Msg: 'a>(
                 .push(dot)
                 .push(text("LIVE").size(FONT_XS).color(success)),
         )
-        .padding([1, 7])
+        .padding([0, sp(Spacing::Xs)])
         .style(move |_: &iced::Theme| container::Style {
             background: Some(iced::Background::Color(surface)),
             border: Border {
@@ -1358,7 +1358,7 @@ fn active_badge<'a, Msg: 'a>(label: &str, palette: &'a ForgePalette) -> Element<
     let surface = palette.surface_overlay;
     let r = radius(Radius::Md);
     container(text(label.to_uppercase()).size(FONT_XS).color(success))
-        .padding([1, 6])
+        .padding([0, sp(Spacing::Xs)])
         .style(move |_: &iced::Theme| container::Style {
             background: Some(iced::Background::Color(surface)),
             border: Border {
@@ -1381,7 +1381,7 @@ fn trailing_token_elem<'a, Msg: 'a>(
             let surface = palette.surface_overlay;
             let r = radius(Radius::Md);
             container(text(label.clone()).size(FONT_XS).color(tc))
-                .padding([1, 6])
+                .padding([0, sp(Spacing::Xs)])
                 .style(move |_: &iced::Theme| container::Style {
                     background: Some(iced::Background::Color(surface)),
                     border: Border {

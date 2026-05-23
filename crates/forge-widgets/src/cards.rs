@@ -7,7 +7,7 @@ use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
 use crate::tokens::{
     BORDER_THIN, Density, FONT_LG, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius,
-    spacing,
+    spacing, spf,
 };
 
 fn card_style(
@@ -241,10 +241,10 @@ pub fn big_jump_card<'a, Msg: Clone + 'a>(
     button(content)
         .on_press(props.on_press)
         .padding(iced::Padding {
-            top: 16.0,
-            right: 18.0,
-            bottom: 16.0,
-            left: 18.0,
+            top: spf(Spacing::Md),
+            right: spf(Spacing::Md),
+            bottom: spf(Spacing::Md),
+            left: spf(Spacing::Md),
         })
         .width(Length::Fill)
         .style(move |_theme: &iced::Theme, status| button::Style {

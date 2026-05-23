@@ -7,7 +7,7 @@ use iced::{
 
 use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
-use crate::tokens::{Density, FONT_SM, FontRole, Radius, Spacing, font, radius, spacing};
+use crate::tokens::{Density, FONT_SM, FontRole, Radius, Spacing, font, radius, sp, spacing};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToastKind {
@@ -148,7 +148,7 @@ fn toast_row<'a, Msg: Clone + 'a>(
         let dismiss_msg = on_dismiss(toast.id);
         button(tabler_icon(Icon::X, FONT_SM, dismiss_color))
             .on_press(dismiss_msg)
-            .padding([2, 4])
+            .padding([sp(Spacing::Xxs), sp(Spacing::Xxs)])
             .style(move |_theme: &iced::Theme, status| button::Style {
                 background: None,
                 text_color: match status {
@@ -184,7 +184,7 @@ fn toast_row<'a, Msg: Clone + 'a>(
                 .color(action_color),
         )
         .on_press(action_msg)
-        .padding([2, 6])
+        .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
         .style(move |_theme: &iced::Theme, status| button::Style {
             background: None,
             text_color: match status {

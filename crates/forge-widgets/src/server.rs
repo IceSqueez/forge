@@ -12,7 +12,9 @@ use crate::{
     events::color_for_source,
     icons::{Icon, tabler_icon},
     palette::ForgePalette,
-    tokens::{BORDER_THIN, FONT_MD, FONT_SM, FONT_XS, FontRole, Radius, font, radius},
+    tokens::{
+        BORDER_THIN, FONT_MD, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
+    },
 };
 
 fn token_box_style(bg: Color, border_color: Color) -> impl Fn(&iced::Theme) -> container::Style {
@@ -141,7 +143,7 @@ pub fn bearer_token_display<'a, Msg: Clone + 'a>(
 
     let eye_btn = button(tabler_icon(eye_icon, 13.0, icon_normal))
         .on_press(on_toggle_reveal)
-        .padding([2, 4])
+        .padding([sp(Spacing::Xxs), sp(Spacing::Xxs)])
         .style(ghost_icon_style(icon_normal, icon_hover));
 
     let token_inner = row![
@@ -156,7 +158,7 @@ pub fn bearer_token_display<'a, Msg: Clone + 'a>(
 
     let token_box = container(token_inner)
         .width(Length::Fill)
-        .padding([6, 12])
+        .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
         .style(token_box_style(palette.shell, palette.border_regular));
 
     let border = palette.border_regular;
@@ -172,7 +174,7 @@ pub fn bearer_token_display<'a, Msg: Clone + 'a>(
         .align_y(Alignment::Center),
     )
     .on_press(on_copy)
-    .padding([7, 10])
+    .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
     .style(outline_btn_style(border, copy_normal, copy_hover));
 
     let warn_color = palette.warning;
@@ -188,7 +190,7 @@ pub fn bearer_token_display<'a, Msg: Clone + 'a>(
         .align_y(Alignment::Center),
     )
     .on_press(on_regenerate)
-    .padding([7, 10])
+    .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
     .style(outline_btn_style(border, warn_color, warn_color));
 
     let controls = row![token_box, copy_btn, regen_btn]
@@ -269,7 +271,7 @@ fn chip_element<'a, Msg: 'a>(label: &'a str, fg: Color, bg: Color) -> Element<'a
             .size(FONT_XS)
             .color(fg),
     )
-    .padding([1u16, 5u16])
+    .padding([0, sp(Spacing::Xxs)])
     .style(chip_bg_style(bg))
     .into()
 }
@@ -284,7 +286,7 @@ fn more_badge<'a, Msg: 'a>(n: usize, palette: &ForgePalette) -> Element<'a, Msg>
             .size(FONT_XS)
             .color(fg),
     )
-    .padding([1u16, 5u16])
+    .padding([0, sp(Spacing::Xxs)])
     .style(chip_bg_style(bg))
     .into()
 }
@@ -379,14 +381,14 @@ pub fn client_table_row<'a, Msg: Clone + 'a>(
 
     let x_btn = button(tabler_icon(Icon::X, 13.0, palette.text_faint))
         .on_press(on_disconnect)
-        .padding([2u16, 3u16])
+        .padding([sp(Spacing::Xxs), sp(Spacing::Xxs)])
         .style(ghost_icon_style(palette.text_faint, palette.text_secondary));
 
     let x_cell = container(x_btn).width(Length::Fixed(22.0));
 
     let content = row![dot_cell, id_cell, subs_cell, evs_cell, uptime_cell, x_cell]
         .align_y(Alignment::Center)
-        .padding([8u16, 14u16]);
+        .padding([sp(Spacing::Xs), sp(Spacing::Md)]);
 
     let highlight = row.highlight;
     let shell = palette.shell;
@@ -506,7 +508,7 @@ fn bind_badge_element<'a, Msg: 'a>(badge: BindBadge, palette: &ForgePalette) -> 
     .align_y(Alignment::Center);
 
     container(badge_row)
-        .padding([1u16, 6u16])
+        .padding([0, sp(Spacing::Xs)])
         .style(move |_| container::Style {
             background: Some(iced::Background::Color(surface)),
             border: Border {
@@ -579,17 +581,12 @@ pub fn bind_address_card<'a, Msg: Clone + 'a>(
 
     let content = column![title_row, description].spacing(2);
 
-    let dot_padded = container(dot).padding(iced::Padding {
-        top: 1.0,
-        right: 0.0,
-        bottom: 0.0,
-        left: 0.0,
-    });
+    let dot_padded = container(dot).padding(0);
 
     let card_row = row![dot_padded, content,]
         .spacing(11)
         .align_y(Alignment::Start)
-        .padding([12u16, 14u16]);
+        .padding([sp(Spacing::Sm), sp(Spacing::Md)]);
 
     button(card_row)
         .on_press(on_click)
@@ -727,10 +724,10 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
     let header_section = container(column![title_row, explanation].spacing(8))
         .width(Length::Fill)
         .padding(iced::Padding {
-            top: 18.0,
-            right: 20.0,
-            bottom: 14.0,
-            left: 20.0,
+            top: spf(Spacing::Md),
+            right: spf(Spacing::Lg),
+            bottom: spf(Spacing::Md),
+            left: spf(Spacing::Lg),
         });
 
     let section_cap = text("WHAT THIS MEANS")
@@ -747,13 +744,13 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
         ]
         .spacing(10)
         .align_y(Alignment::Start)
-        .padding([5u16, 0u16]);
+        .padding([sp(Spacing::Xxs), 0]);
         bullets_col = bullets_col.push(bullet_row);
     }
 
     let risk_section = container(bullets_col)
         .width(Length::Fill)
-        .padding([14u16, 20u16])
+        .padding([sp(Spacing::Md), sp(Spacing::Lg)])
         .style(move |_| container::Style {
             background: Some(iced::Background::Color(p.shell)),
             ..container::Style::default()
@@ -792,7 +789,7 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
 
     let confirm_input = text_input("", params.current_input)
         .on_input(on_input_change)
-        .padding(iced::Padding::from([8u16, 12u16]))
+        .padding(iced::Padding::from([sp(Spacing::Xs), sp(Spacing::Sm)]))
         .width(Length::Fill)
         .style(move |_theme, _status| text_input::Style {
             background: iced::Background::Color(p.shell),
@@ -809,7 +806,7 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
 
     let confirm_section = container(column![confirm_label_row, confirm_input].spacing(8))
         .width(Length::Fill)
-        .padding([14u16, 20u16]);
+        .padding([sp(Spacing::Md), sp(Spacing::Lg)]);
 
     let esc_hint = row![
         tabler_icon(Icon::Keyboard, 12.0, p.text_faint),
@@ -824,7 +821,7 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
 
     let cancel_btn = button(text("Cancel").size(FONT_SM).color(p.text_secondary))
         .on_press(on_cancel)
-        .padding([7u16, 14u16])
+        .padding([sp(Spacing::Xs), sp(Spacing::Md)])
         .style(outline_btn_style(
             p.border_regular,
             p.text_secondary,
@@ -842,12 +839,12 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
                 }),
         )
         .on_press(on_confirm)
-        .padding([7u16, 14u16])
+        .padding([sp(Spacing::Xs), sp(Spacing::Md)])
         .style(confirm_active_btn_style(p.warning, p.shell))
         .into()
     } else {
         button(text(params.confirm_label).size(FONT_SM).color(p.disabled))
-            .padding([7u16, 14u16])
+            .padding([sp(Spacing::Xs), sp(Spacing::Md)])
             .style(confirm_disabled_btn_style(p.surface_overlay, p.disabled))
             .into()
     };
@@ -858,7 +855,7 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
         row![esc_hint, Space::new().width(Length::Fill), btn_row,].align_y(Alignment::Center),
     )
     .width(Length::Fill)
-    .padding([12u16, 20u16])
+    .padding([sp(Spacing::Sm), sp(Spacing::Lg)])
     .style(move |_| container::Style {
         background: Some(iced::Background::Color(p.shell)),
         ..container::Style::default()
@@ -1062,7 +1059,7 @@ pub fn overlay_file_list<'a, Msg: Clone + 'a>(
         tabler_icon(Icon::ExternalLink, 13.0, p.text_faint),
     ]
     .align_y(Alignment::Center)
-    .padding([10u16, 14u16]);
+    .padding([sp(Spacing::Sm), sp(Spacing::Md)]);
 
     let path_label = text("PATH")
         .font(font(FontRole::Monospace))
@@ -1076,7 +1073,7 @@ pub fn overlay_file_list<'a, Msg: Clone + 'a>(
             .color(p.text_primary),
     )
     .width(Length::Fill)
-    .padding([6u16, 10u16])
+    .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
     .style(move |_| container::Style {
         background: Some(iced::Background::Color(p.shell)),
         border: Border {
@@ -1089,7 +1086,7 @@ pub fn overlay_file_list<'a, Msg: Clone + 'a>(
 
     let folder_open_btn = button(tabler_icon(Icon::FolderOpen, 13.0, p.text_secondary))
         .on_press(on_open_folder)
-        .padding([6u16, 8u16])
+        .padding([sp(Spacing::Xs), sp(Spacing::Xs)])
         .style(outline_btn_style(
             p.border_regular,
             p.text_secondary,
@@ -1138,7 +1135,7 @@ pub fn overlay_file_list<'a, Msg: Clone + 'a>(
         ]
         .spacing(8)
         .align_y(Alignment::Center)
-        .padding([5u16, 0u16]);
+        .padding([sp(Spacing::Xxs), 0]);
 
         let row_el: Element<'a, Msg> = if matches!(entry.kind, OverlayKind::File { .. }) {
             let btn = button(row_content)
@@ -1187,7 +1184,7 @@ pub fn overlay_file_list<'a, Msg: Clone + 'a>(
     let copy_btn: Element<'a, Msg> = if let Some(name) = effective_selected {
         button(copy_icon_el)
             .on_press(on_copy_url(name))
-            .padding([2u16, 4u16])
+            .padding([sp(Spacing::Xxs), sp(Spacing::Xxs)])
             .style(ghost_icon_style(p.text_faint, p.text_secondary))
             .into()
     } else {
@@ -1207,7 +1204,7 @@ pub fn overlay_file_list<'a, Msg: Clone + 'a>(
         .spacing(6),
     )
     .width(Length::Fill)
-    .padding([6u16, 10u16])
+    .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
     .style(move |_| container::Style {
         background: Some(iced::Background::Color(p.shell)),
         border: Border {
@@ -1235,7 +1232,7 @@ pub fn overlay_file_list<'a, Msg: Clone + 'a>(
         .into();
 
     let body = container(body_col)
-        .padding([12u16, 14u16])
+        .padding([sp(Spacing::Sm), sp(Spacing::Md)])
         .width(Length::Fill);
 
     let card_content =

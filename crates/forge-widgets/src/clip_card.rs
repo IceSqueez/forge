@@ -6,7 +6,7 @@ use iced::{
 use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
 use crate::tokens::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spacing,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spacing, spf,
 };
 
 pub struct ClipCardData {
@@ -38,7 +38,7 @@ fn action_btn<'a, Msg: 'a + Clone>(
     let p = *palette;
     button(tabler_icon(icon, 12.0, color))
         .on_press(on_press)
-        .padding([4.0, 8.0])
+        .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
         .style(move |_theme, status| button::Style {
             background: if matches!(status, iced::widget::button::Status::Hovered) {
                 Some(Background::Color(iced::Color { a: 0.1, ..color }))
@@ -76,7 +76,7 @@ pub fn clip_card<'a, Msg: 'a + Clone>(
             .color(palette.text_muted)
             .font(font(FontRole::Monospace)),
     )
-    .padding([2.0, 6.0])
+    .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
     .style(chip_style(palette.surface_overlay, palette.border_regular));
 
     let chips_row: Element<'a, Msg> = if let Some(hk) = &data.hotkey_label {
@@ -86,7 +86,7 @@ pub fn clip_card<'a, Msg: 'a + Clone>(
                 .color(palette.warning)
                 .font(font(FontRole::Monospace)),
         )
-        .padding([2.0, 6.0])
+        .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
         .style(chip_style(palette.surface_overlay, palette.border_regular));
 
         row![duration_chip, hk_chip]

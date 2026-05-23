@@ -6,7 +6,9 @@ use iced::{
 use crate::chat::filter_chip;
 use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
-use crate::tokens::{BORDER_THIN, FONT_MD, FONT_SM, FONT_XS, FontRole, Radius, font, radius};
+use crate::tokens::{
+    BORDER_THIN, FONT_MD, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NodeStatus {
@@ -112,7 +114,7 @@ pub fn tree_node_with_status<'a, Msg: Clone + 'a>(
 
     button(inner)
         .on_press(props.on_press)
-        .padding([6, 14])
+        .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
         .width(Length::Fill)
         .style(move |_theme: &iced::Theme, _status| button::Style {
             background: bg,
@@ -180,7 +182,7 @@ pub fn sub_action_card<'a, Msg: 'a>(
                 .color(palette.success)
                 .font(font(FontRole::Monospace)),
         )
-        .padding([1, 6])
+        .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
         .style(move |_theme: &iced::Theme| container::Style {
             background: Some(Background::Color(palette.surface_overlay)),
             border: Border {
@@ -198,10 +200,10 @@ pub fn sub_action_card<'a, Msg: 'a>(
     container(main_row)
         .width(Length::Fill)
         .padding(Padding {
-            top: 10.0,
-            right: 12.0,
-            bottom: 10.0,
-            left: 12.0,
+            top: spf(Spacing::Xs),
+            right: spf(Spacing::Sm),
+            bottom: spf(Spacing::Xs),
+            left: spf(Spacing::Sm),
         })
         .style(move |_theme: &iced::Theme| container::Style {
             background: Some(Background::Color(palette.elevated)),
@@ -223,7 +225,7 @@ pub fn variable_chip<'a, Msg: 'a>(palette: &'a ForgePalette, name: &str) -> Elem
             .color(palette.warning)
             .font(font(FontRole::Monospace)),
     )
-    .padding([1, 6])
+    .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
     .style(move |_theme: &iced::Theme| container::Style {
         background: Some(Background::Color(palette.surface_overlay)),
         border: Border {
@@ -275,7 +277,7 @@ pub fn trigger_card<'a, Msg: Clone + 'a>(
     let remove_msg = props.on_remove.clone();
     let remove_btn = button(tabler_icon(Icon::X, FONT_SM, palette.text_faint))
         .on_press(remove_msg)
-        .padding([2, 4])
+        .padding([sp(Spacing::Xxs), sp(Spacing::Xxs)])
         .style(|_theme: &iced::Theme, _status| button::Style {
             background: None,
             border: Border::default(),
@@ -295,10 +297,10 @@ pub fn trigger_card<'a, Msg: Clone + 'a>(
     container(inner)
         .width(Length::Fill)
         .padding(Padding {
-            top: 8.0,
-            right: 8.0,
-            bottom: 8.0,
-            left: 10.0,
+            top: spf(Spacing::Xs),
+            right: spf(Spacing::Xs),
+            bottom: spf(Spacing::Xs),
+            left: spf(Spacing::Xs),
         })
         .style(move |_theme: &iced::Theme| container::Style {
             background: Some(Background::Color(palette.elevated)),
@@ -327,7 +329,7 @@ pub fn modal<'a, Msg: Clone + 'a>(
 
     let close_btn = button(tabler_icon(Icon::X, FONT_MD, palette.text_faint))
         .on_press(props.on_close.clone())
-        .padding([2, 6])
+        .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
         .style(|_theme: &iced::Theme, _status| button::Style {
             background: None,
             border: Border::default(),
@@ -338,7 +340,7 @@ pub fn modal<'a, Msg: Clone + 'a>(
 
     let header_row = row![container(title_el).width(Length::Fill), close_btn,]
         .align_y(Alignment::Center)
-        .padding([14, 18]);
+        .padding([sp(Spacing::Sm), sp(Spacing::Md)]);
 
     let header_container =
         container(header_row)
@@ -352,7 +354,7 @@ pub fn modal<'a, Msg: Clone + 'a>(
                 ..container::Style::default()
             });
 
-    let body_container = container(body).padding([18, 18]);
+    let body_container = container(body).padding([sp(Spacing::Md), sp(Spacing::Md)]);
 
     let mut footer_col = column![footer].spacing(6);
     if let Some(hint) = props.kbd_hint {
@@ -365,7 +367,7 @@ pub fn modal<'a, Msg: Clone + 'a>(
 
     let footer_container = container(footer_col)
         .width(Length::Fill)
-        .padding([12, 18])
+        .padding([sp(Spacing::Sm), sp(Spacing::Md)])
         .style(move |_theme: &iced::Theme| container::Style {
             background: Some(Background::Color(palette.shell)),
             border: Border {
@@ -446,7 +448,7 @@ pub fn toggle<'a, Msg: Clone + 'a>(
         });
 
     let thumb_padded = container(thumb).padding(Padding {
-        top: 2.0,
+        top: spf(Spacing::Xxs),
         right: 0.0,
         bottom: 0.0,
         left: thumb_offset,
@@ -483,7 +485,7 @@ pub fn toggle<'a, Msg: Clone + 'a>(
 
     button(inner)
         .on_press(props.on_toggle)
-        .padding([8, 0])
+        .padding([sp(Spacing::Xs), 0])
         .width(Length::Fill)
         .style(|_theme: &iced::Theme, _status| button::Style {
             background: None,

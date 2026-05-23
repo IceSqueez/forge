@@ -7,10 +7,10 @@ use iced::{
 
 use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
-use crate::tokens::{BORDER_THIN, Radius, radius};
+use crate::tokens::{BORDER_THIN, Radius, Spacing, radius, sp};
 
 pub fn input_padding() -> Padding {
-    Padding::from([8, 12])
+    Padding::from([sp(Spacing::Xs), sp(Spacing::Sm)])
 }
 
 fn text_input_style(palette: ForgePalette, status: text_input::Status) -> text_input::Style {
@@ -85,14 +85,14 @@ pub fn search_input<'a, Msg: 'a + Clone>(
     let icon = tabler_icon(Icon::Search, 14.0, p.text_muted);
     let input = text_input(ph.as_ref(), value)
         .on_input(on_change)
-        .padding(Padding::from([3, 2]))
+        .padding(Padding::from([sp(Spacing::Xxs), sp(Spacing::Xxs)]))
         .width(iced::Length::Fill)
         .style(move |_theme, status| borderless_input_style(p, status));
     let inner = row![icon, input]
         .spacing(6)
         .align_y(iced::Alignment::Center);
     container(inner)
-        .padding(Padding::from([3, 10]))
+        .padding(Padding::from([sp(Spacing::Xxs), sp(Spacing::Sm)]))
         .style(move |_theme| container::Style {
             background: Some(Background::Color(p.elevated)),
             border: Border {

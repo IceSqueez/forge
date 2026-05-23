@@ -9,7 +9,7 @@ pub use forge_types::VariantKind;
 
 use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
-use crate::tokens::{FONT_SM, FONT_XS, FontRole, Radius, font, radius};
+use crate::tokens::{FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spf};
 
 pub fn variant_kind_color(kind: VariantKind, palette: &ForgePalette) -> Color {
     match kind {
@@ -43,7 +43,7 @@ pub fn type_pill<'a, Msg: 'a>(palette: &'a ForgePalette, kind: VariantKind) -> E
     let r = radius(Radius::Md);
 
     container(text(kind.label()).size(FONT_XS).font(pill_font).color(fg))
-        .padding([2.0_f32, 7.0_f32])
+        .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
         .style(move |_: &iced::Theme| container::Style {
             background: Some(Background::Color(bg)),
             border: Border {
@@ -87,7 +87,7 @@ pub fn data_table<'a, Msg: 'a>(
     }
 
     let header_container = container(header_row)
-        .padding([7.0_f32, 14.0_f32])
+        .padding([spf(Spacing::Xs), spf(Spacing::Md)])
         .width(Length::Fill)
         .style(move |_: &iced::Theme| container::Style {
             background: Some(Background::Color(shell_bg)),
@@ -104,7 +104,7 @@ pub fn data_table<'a, Msg: 'a>(
             data_row = data_row.push(container(cell).width(width));
         }
         let data_container = container(data_row)
-            .padding([8.0_f32, 14.0_f32])
+            .padding([spf(Spacing::Xs), spf(Spacing::Md)])
             .width(Length::Fill);
         col = col.push(data_container);
         col = col.push(rule::horizontal(1.0_f32).style(rule_style));
@@ -275,7 +275,7 @@ pub fn data_screen_footer<'a, Msg: 'a>(
             snap: true,
         }),
         container(content)
-            .padding([8.0_f32, 14.0_f32])
+            .padding([spf(Spacing::Xs), spf(Spacing::Md)])
             .width(Length::Fill)
             .style(move |_: &iced::Theme| container::Style {
                 background: Some(Background::Color(shell_bg)),

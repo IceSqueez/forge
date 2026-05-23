@@ -5,7 +5,7 @@ use iced::{
 
 use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
-use crate::tokens::{BORDER_THIN, FONT_SM};
+use crate::tokens::{BORDER_THIN, FONT_SM, Spacing, sp};
 
 pub struct BreadcrumbCrumb<'a, Msg> {
     pub icon: Option<Icon>,
@@ -67,7 +67,7 @@ pub fn breadcrumb<'a, Msg: 'a + Clone>(
 
     container(content)
         .width(Length::Fill)
-        .padding([10, 16])
+        .padding([sp(Spacing::Sm), sp(Spacing::Md)])
         .style(move |_theme: &iced::Theme| iced::widget::container::Style {
             background: Some(iced::Background::Color(shell)),
             border: Border {

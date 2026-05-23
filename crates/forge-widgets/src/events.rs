@@ -7,7 +7,7 @@ use iced::{
 use crate::{
     icons::{Icon, tabler_icon},
     palette::ForgePalette,
-    tokens::{FONT_SM, FONT_XS, FontRole, Radius, font, radius},
+    tokens::{FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf},
 };
 
 pub fn color_for_source(source: EventSource, palette: &ForgePalette) -> Color {
@@ -66,7 +66,7 @@ pub fn source_badge<'a, Msg: 'a>(source: EventSource, palette: &ForgePalette) ->
         });
 
     container(txt)
-        .padding([1, 5])
+        .padding([sp(Spacing::Xxs), sp(Spacing::Xxs)])
         .style(move |_theme: &iced::Theme| container::Style {
             background: Some(iced::Background::Color(bg)),
             border: Border {
@@ -176,10 +176,10 @@ pub fn event_row_observability<'a, Msg: Clone + 'a>(
 
     let content = container(content_row)
         .padding(Padding {
-            top: 5.0,
-            right: 14.0,
-            bottom: 5.0,
-            left: 10.0,
+            top: spf(Spacing::Xxs),
+            right: spf(Spacing::Md),
+            bottom: spf(Spacing::Xxs),
+            left: spf(Spacing::Sm),
         })
         .width(Length::Fill);
 
@@ -255,10 +255,10 @@ pub fn causation_chip<'a, Msg: Clone + 'a>(
     button(content)
         .on_press(on_click)
         .padding(Padding {
-            top: 7.0,
-            right: 10.0,
-            bottom: 7.0,
-            left: 10.0,
+            top: spf(Spacing::Xs),
+            right: spf(Spacing::Sm),
+            bottom: spf(Spacing::Xs),
+            left: spf(Spacing::Sm),
         })
         .width(Length::Fill)
         .style(
@@ -475,7 +475,7 @@ pub fn json_viewer<'a, Msg: 'a>(
     let border_color = palette.border_regular;
 
     container(scrollable(content).height(Length::Shrink))
-        .padding([10, 11])
+        .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
         .style(move |_: &iced::Theme| container::Style {
             background: Some(Background::Color(base)),
             border: Border {
@@ -517,10 +517,10 @@ pub fn replay_button<'a, Msg: Clone + 'a>(
     button(content)
         .on_press(on_click)
         .padding(Padding {
-            top: 6.0,
-            right: 10.0,
-            bottom: 6.0,
-            left: 10.0,
+            top: spf(Spacing::Xs),
+            right: spf(Spacing::Sm),
+            bottom: spf(Spacing::Xs),
+            left: spf(Spacing::Sm),
         })
         .width(Length::Fill)
         .style(
@@ -582,7 +582,7 @@ pub fn event_inspector<'a, Msg: Clone + 'a>(
         .font(mono);
 
     let header_card = container(column![header_top, secondary].spacing(6))
-        .padding([10, 10])
+        .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
         .width(Length::Fill)
         .style(move |_: &iced::Theme| container::Style {
             background: Some(Background::Color(elevated)),

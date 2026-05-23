@@ -6,7 +6,7 @@ use iced::{
 use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
 use crate::status::status_dot;
-use crate::tokens::{BORDER_THIN, FONT_SM, FONT_XS, FontRole, Radius, font, radius};
+use crate::tokens::{BORDER_THIN, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp};
 
 fn logo_box<'a, Msg: 'a>(palette: &ForgePalette) -> Element<'a, Msg> {
     let bg = palette.brand;
@@ -47,7 +47,7 @@ pub fn title_bar<'a, Msg: 'a>(palette: &'a ForgePalette) -> Element<'a, Msg> {
     let content = row![logo, forge_label]
         .spacing(6)
         .align_y(iced::Alignment::Center)
-        .padding([0, 14]);
+        .padding([0, sp(Spacing::Md)]);
 
     container(content)
         .width(Length::Fill)
@@ -117,7 +117,7 @@ pub fn app_footer<'a, Msg: 'a>(
 
     let content = row![left, Space::new().width(Length::Fill), right]
         .align_y(iced::Alignment::Center)
-        .padding([0, 14]);
+        .padding([0, sp(Spacing::Md)]);
 
     container(content)
         .width(Length::Fill)
@@ -155,7 +155,7 @@ pub fn toolbar<'a, Msg: 'a>(
 
     let content = row![left_row, Space::new().width(Length::Fill), right_row,]
         .align_y(iced::Alignment::Center)
-        .padding([4, 8]);
+        .padding([sp(Spacing::Xxs), sp(Spacing::Xs)]);
 
     container(content)
         .width(Length::Fill)

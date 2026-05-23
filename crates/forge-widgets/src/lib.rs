@@ -86,5 +86,7 @@ pub use side_sheet::{SheetEdge, side_sheet};
 pub use status::{StatusVariant, platform_badge, role_badge, status_dot, status_pill};
 pub use theme::{catppuccin_mocha, latte, palette_for_theme, tokyo_night_storm};
 pub use toast::{Toast, ToastAction, ToastKind, ToastQueue, toast_viewport};
-pub use tokens::{Density, FontRole, Radius, Spacing, ThemeId, font, load_fonts, radius, spacing};
+pub use tokens::{
+    Density, FontRole, Radius, Spacing, ThemeId, font, load_fonts, radius, sp, spacing, spf,
+};
 pub use volume_slider::volume_slider;

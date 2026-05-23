@@ -5,7 +5,7 @@ use iced::{
 
 use crate::{
     ForgePalette,
-    tokens::{FONT_XS, FontRole, font},
+    tokens::{FONT_XS, FontRole, Spacing, font, sp, spf},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -109,8 +109,8 @@ pub fn console<'a, Msg: 'a>(
 
                 iced::widget::row(items)
                     .padding(Padding {
-                        top: 2.0,
-                        bottom: 2.0,
+                        top: spf(Spacing::Xxs),
+                        bottom: spf(Spacing::Xxs),
                         left: 0.0,
                         right: 0.0,
                     })
@@ -123,7 +123,7 @@ pub fn console<'a, Msg: 'a>(
 
     container(inner)
         .width(Length::Fill)
-        .padding([8_u16, 14_u16])
+        .padding([sp(Spacing::Xs), sp(Spacing::Md)])
         .style(move |_: &iced::Theme| container::Style {
             background: Some(Background::Color(shell)),
             border: Border::default(),

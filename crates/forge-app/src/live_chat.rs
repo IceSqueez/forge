@@ -33,6 +33,7 @@ pub struct ChatFilters {
 
 pub struct LiveChatState {
     pub chat_log: VecDeque<ChatRow>,
+    pub next_chat_seq: u64,
     pub chat_input: String,
     pub chat_filter: ChatFilters,
     pub drawer_open: bool,
@@ -49,6 +50,7 @@ impl LiveChatState {
         let mut chat_log: VecDeque<ChatRow> = VecDeque::new();
 
         chat_log.push_back(ChatRow {
+            seq: 0,
             timestamp: "14:21:00".into(),
             platform: Platform::Twitch,
             badges: vec![BadgeKind::Moderator],
@@ -57,6 +59,7 @@ impl LiveChatState {
             body: ChatBody::Message("welcome to the stream everyone, GTNH grind continues".into()),
         });
         chat_log.push_back(ChatRow {
+            seq: 1,
             timestamp: "14:21:16".into(),
             platform: Platform::Twitch,
             badges: vec![],
@@ -70,6 +73,7 @@ impl LiveChatState {
             },
         });
         chat_log.push_back(ChatRow {
+            seq: 2,
             timestamp: "14:21:30".into(),
             platform: Platform::YouTube,
             badges: vec![],
@@ -78,6 +82,7 @@ impl LiveChatState {
             body: ChatBody::Message("aluminum bottleneck знов :(".into()),
         });
         chat_log.push_back(ChatRow {
+            seq: 3,
             timestamp: "14:21:55".into(),
             platform: Platform::Twitch,
             badges: vec![],
@@ -90,6 +95,7 @@ impl LiveChatState {
             },
         });
         chat_log.push_back(ChatRow {
+            seq: 4,
             timestamp: "14:22:12".into(),
             platform: Platform::Twitch,
             badges: vec![],
@@ -101,6 +107,7 @@ impl LiveChatState {
             },
         });
         chat_log.push_back(ChatRow {
+            seq: 5,
             timestamp: "14:22:29".into(),
             platform: Platform::Kick,
             badges: vec![],
@@ -109,6 +116,7 @@ impl LiveChatState {
             body: ChatBody::Message("ти вже відкрив stainless steel?".into()),
         });
         chat_log.push_back(ChatRow {
+            seq: 6,
             timestamp: "14:22:48".into(),
             platform: Platform::Twitch,
             badges: vec![],
@@ -122,6 +130,7 @@ impl LiveChatState {
 
         Self {
             chat_log,
+            next_chat_seq: 7,
             chat_input: String::new(),
             chat_filter: ChatFilters::default(),
             drawer_open: false,
@@ -219,7 +228,7 @@ pub fn chat_scroll_id() -> iced::advanced::widget::Id {
 }
 
 pub fn on_event(state: &mut LiveChatState, event: &Event) -> Task<Message> {
-    let Some(row) = chat_row_from_event(event) else {
+    let Some(row) = chat_row_from_event(event, &mut state.next_chat_seq) else {
         return Task::none();
     };
     state.chat_log.push_back(row);
@@ -234,17 +243,20 @@ pub fn on_event(state: &mut LiveChatState, event: &Event) -> Task<Message> {
     }
 }
 
-pub fn chat_row_from_event(event: &Event) -> Option<ChatRow> {
+pub fn chat_row_from_event(event: &Event, next_seq: &mut u64) -> Option<ChatRow> {
     if event.source != EventSource::Twitch {
         return None;
     }
-    match event.kind.as_str() {
-        "chat.message" => parse_chat_message(event),
-        "channel.subscribe" | "channel.subscription.message" => parse_subscription(event),
-        "channel.cheer" => parse_cheer(event),
-        "channel.raid" => parse_raid(event),
-        _ => None,
-    }
+    let mut row = match event.kind.as_str() {
+        "chat.message" => parse_chat_message(event)?,
+        "channel.subscribe" | "channel.subscription.message" => parse_subscription(event)?,
+        "channel.cheer" => parse_cheer(event)?,
+        "channel.raid" => parse_raid(event)?,
+        _ => return None,
+    };
+    row.seq = *next_seq;
+    *next_seq = next_seq.wrapping_add(1);
+    Some(row)
 }
 
 fn parse_chat_message(event: &Event) -> Option<ChatRow> {
@@ -274,6 +286,7 @@ fn parse_chat_message(event: &Event) -> Option<ChatRow> {
     let username_color = username_color_from_payload(payload);
 
     Some(ChatRow {
+        seq: 0,
         timestamp,
         platform: Platform::Twitch,
         badges: if is_bot { vec![BadgeKind::Bot] } else { badges },
@@ -328,6 +341,7 @@ fn parse_subscription(event: &Event) -> Option<ChatRow> {
     let username_color = username_color_from_payload(payload);
 
     Some(ChatRow {
+        seq: 0,
         timestamp: format_timestamp(event),
         platform: Platform::Twitch,
         badges: vec![],
@@ -362,6 +376,7 @@ fn parse_cheer(event: &Event) -> Option<ChatRow> {
     let username_color = username_color_from_payload(payload);
 
     Some(ChatRow {
+        seq: 0,
         timestamp: format_timestamp(event),
         platform: Platform::Twitch,
         badges: vec![],
@@ -387,6 +402,7 @@ fn parse_raid(event: &Event) -> Option<ChatRow> {
     let viewers = payload.get("viewers").and_then(|v| v.as_u64()).unwrap_or(0);
 
     Some(ChatRow {
+        seq: 0,
         timestamp: format_timestamp(event),
         platform: Platform::Twitch,
         badges: vec![],
@@ -1467,8 +1483,16 @@ fn build_chat_area<'a>(
     use iced::widget::{button, container, scrollable, text};
     use iced::{Background, Border, Length, Padding};
 
-    let visible: Vec<Element<'static, Message>> = filter_log(&state.chat_log, &state.chat_filter)
-        .map(|row| forge_widgets::chat_row(*palette, row.clone(), Some(select_viewer_msg)))
+    let palette_copy = *palette;
+    let visible: Vec<Element<'a, Message>> = filter_log(&state.chat_log, &state.chat_filter)
+        .map(|row| {
+            let row = row.clone();
+            let seq = row.seq;
+            iced::widget::lazy(seq, move |_: &u64| {
+                forge_widgets::chat_row(palette_copy, row.clone(), Some(select_viewer_msg))
+            })
+            .into()
+        })
         .collect();
 
     let empty_msg = if state.chat_filter.events_only {
@@ -1672,6 +1696,7 @@ mod tests {
     fn summary_role_is_latest_badge_from_chat() {
         let mut log = VecDeque::new();
         log.push_back(ChatRow {
+            seq: 0,
             timestamp: "00:00:00".into(),
             platform: Platform::Twitch,
             badges: vec![BadgeKind::Moderator],
@@ -1680,6 +1705,7 @@ mod tests {
             body: ChatBody::Message("first".into()),
         });
         log.push_back(ChatRow {
+            seq: 0,
             timestamp: "00:00:01".into(),
             platform: Platform::Twitch,
             badges: vec![BadgeKind::Vip],
@@ -1733,6 +1759,7 @@ mod tests {
     fn synthesize_from_chat_counts_occurrences_and_uses_latest_badge() {
         let mut log = VecDeque::new();
         log.push_back(ChatRow {
+            seq: 0,
             timestamp: "00:00:00".into(),
             platform: Platform::Twitch,
             badges: vec![BadgeKind::Moderator],
@@ -1741,6 +1768,7 @@ mod tests {
             body: ChatBody::Message("first".into()),
         });
         log.push_back(ChatRow {
+            seq: 0,
             timestamp: "00:00:01".into(),
             platform: Platform::Twitch,
             badges: vec![BadgeKind::Vip],
@@ -1749,6 +1777,7 @@ mod tests {
             body: ChatBody::Message("second".into()),
         });
         log.push_back(ChatRow {
+            seq: 0,
             timestamp: "00:00:02".into(),
             platform: Platform::Twitch,
             badges: vec![],
@@ -1774,6 +1803,7 @@ mod tests {
     fn enrich_with_storage_overwrites_message_count_when_viewer_present() {
         let mut log = VecDeque::new();
         log.push_back(ChatRow {
+            seq: 0,
             timestamp: "00:00:00".into(),
             platform: Platform::Twitch,
             badges: vec![],
@@ -1807,7 +1837,7 @@ mod tests {
             serde_json::json!([{ "set_id": "moderator" }]),
             "#89dceb",
         );
-        let row = chat_row_from_event(&ev).unwrap();
+        let row = chat_row_from_event(&ev, &mut 0u64).unwrap();
         assert_eq!(row.username, "danylo_ua");
         assert_eq!(row.body, ChatBody::Message("hello stream".to_owned()));
         assert_eq!(row.platform, Platform::Twitch);
@@ -1821,7 +1851,7 @@ mod tests {
             "chat.message",
             serde_json::json!({ "chatter_user_name": "x", "message": { "text": "y" } }),
         );
-        assert!(chat_row_from_event(&ev).is_none());
+        assert!(chat_row_from_event(&ev, &mut 0u64).is_none());
     }
 
     #[test]
@@ -1831,13 +1861,13 @@ mod tests {
             "channel.point_redemption",
             serde_json::json!({ "user_name": "x" }),
         );
-        assert!(chat_row_from_event(&ev).is_none());
+        assert!(chat_row_from_event(&ev, &mut 0u64).is_none());
     }
 
     #[test]
     fn chat_row_from_event_parses_subscription() {
         let ev = make_sub_event("danylo_ua", "1000", 3);
-        let row = chat_row_from_event(&ev).unwrap();
+        let row = chat_row_from_event(&ev, &mut 0u64).unwrap();
         assert_eq!(row.username, "danylo_ua");
         assert!(matches!(
             row.body,
@@ -1852,14 +1882,14 @@ mod tests {
     #[test]
     fn chat_row_from_event_parses_tier3_subscription() {
         let ev = make_sub_event("big_supporter", "3000", 12);
-        let row = chat_row_from_event(&ev).unwrap();
+        let row = chat_row_from_event(&ev, &mut 0u64).unwrap();
         assert!(matches!(row.body, ChatBody::Subscription { tier: 3, .. }));
     }
 
     #[test]
     fn chat_row_from_event_parses_cheer() {
         let ev = make_cheer_event("viewer_x", 500);
-        let row = chat_row_from_event(&ev).unwrap();
+        let row = chat_row_from_event(&ev, &mut 0u64).unwrap();
         assert_eq!(row.username, "viewer_x");
         assert!(matches!(row.body, ChatBody::Cheer { bits: 500, .. }));
     }
@@ -1867,7 +1897,7 @@ mod tests {
     #[test]
     fn chat_row_from_event_parses_raid() {
         let ev = make_raid_event("factorio_streamer", 42);
-        let row = chat_row_from_event(&ev).unwrap();
+        let row = chat_row_from_event(&ev, &mut 0u64).unwrap();
         assert_eq!(row.username, "factorio_streamer");
         assert!(matches!(row.body, ChatBody::Raid { viewers: 42, .. }));
     }
@@ -1876,6 +1906,7 @@ mod tests {
     fn filter_log_all_returns_all_entries() {
         let mut log = VecDeque::new();
         log.push_back(ChatRow {
+            seq: 0,
             timestamp: "00:00:00".into(),
             platform: Platform::Twitch,
             badges: vec![],
@@ -1884,6 +1915,7 @@ mod tests {
             body: ChatBody::Message("hi".into()),
         });
         log.push_back(ChatRow {
+            seq: 0,
             timestamp: "00:00:01".into(),
             platform: Platform::YouTube,
             badges: vec![],
@@ -1899,6 +1931,7 @@ mod tests {
     fn filter_log_twitch_only_keeps_twitch_rows() {
         let mut log = VecDeque::new();
         log.push_back(ChatRow {
+            seq: 0,
             timestamp: "00:00:00".into(),
             platform: Platform::Twitch,
             badges: vec![],
@@ -1907,6 +1940,7 @@ mod tests {
             body: ChatBody::Message("t".into()),
         });
         log.push_back(ChatRow {
+            seq: 0,
             timestamp: "00:00:01".into(),
             platform: Platform::YouTube,
             badges: vec![],
@@ -1927,6 +1961,7 @@ mod tests {
     fn filter_log_youtube_only_keeps_youtube_rows() {
         let mut log = VecDeque::new();
         log.push_back(ChatRow {
+            seq: 0,
             timestamp: "00:00:00".into(),
             platform: Platform::Twitch,
             badges: vec![],
@@ -1935,6 +1970,7 @@ mod tests {
             body: ChatBody::Message("t".into()),
         });
         log.push_back(ChatRow {
+            seq: 0,
             timestamp: "00:00:01".into(),
             platform: Platform::YouTube,
             badges: vec![],
@@ -1955,6 +1991,7 @@ mod tests {
     fn filter_log_kick_only_keeps_kick_rows() {
         let mut log = VecDeque::new();
         log.push_back(ChatRow {
+            seq: 0,
             timestamp: "00:00:00".into(),
             platform: Platform::Kick,
             badges: vec![],
@@ -1963,6 +2000,7 @@ mod tests {
             body: ChatBody::Message("kick chat".into()),
         });
         log.push_back(ChatRow {
+            seq: 0,
             timestamp: "00:00:01".into(),
             platform: Platform::Twitch,
             badges: vec![],
@@ -1983,6 +2021,7 @@ mod tests {
     fn filter_log_hide_bots_removes_bot_rows() {
         let mut log = VecDeque::new();
         log.push_back(ChatRow {
+            seq: 0,
             timestamp: "00:00:00".into(),
             platform: Platform::Twitch,
             badges: vec![BadgeKind::Bot],
@@ -1991,6 +2030,7 @@ mod tests {
             body: ChatBody::Message("beep".into()),
         });
         log.push_back(ChatRow {
+            seq: 0,
             timestamp: "00:00:01".into(),
             platform: Platform::Twitch,
             badges: vec![],
@@ -2011,6 +2051,7 @@ mod tests {
     fn filter_log_events_only_hides_messages() {
         let mut log = VecDeque::new();
         log.push_back(ChatRow {
+            seq: 0,
             timestamp: "00:00:00".into(),
             platform: Platform::Twitch,
             badges: vec![],
@@ -2019,6 +2060,7 @@ mod tests {
             body: ChatBody::Message("regular chat".into()),
         });
         log.push_back(ChatRow {
+            seq: 0,
             timestamp: "00:00:01".into(),
             platform: Platform::Twitch,
             badges: vec![],
@@ -2032,6 +2074,7 @@ mod tests {
             },
         });
         log.push_back(ChatRow {
+            seq: 0,
             timestamp: "00:00:02".into(),
             platform: Platform::Twitch,
             badges: vec![],
@@ -2056,6 +2099,7 @@ mod tests {
     fn filter_log_events_only_and_hide_bots_combine() {
         let mut log = VecDeque::new();
         log.push_back(ChatRow {
+            seq: 0,
             timestamp: "00:00:00".into(),
             platform: Platform::Twitch,
             badges: vec![BadgeKind::Bot],
@@ -2064,6 +2108,7 @@ mod tests {
             body: ChatBody::Message("bot msg".into()),
         });
         log.push_back(ChatRow {
+            seq: 0,
             timestamp: "00:00:01".into(),
             platform: Platform::Twitch,
             badges: vec![],
@@ -2109,6 +2154,7 @@ mod tests {
         let mut log: VecDeque<ChatRow> = VecDeque::new();
         for i in 0..=CHAT_LOG_MAX {
             log.push_back(ChatRow {
+                seq: 0,
                 timestamp: format!("{i:08}"),
                 platform: Platform::Twitch,
                 badges: vec![],
@@ -2134,14 +2180,14 @@ mod tests {
                 "badges": [],
             }),
         );
-        let row = chat_row_from_event(&ev).unwrap();
+        let row = chat_row_from_event(&ev, &mut 0u64).unwrap();
         assert_eq!(row.username, "nocoloruser");
     }
 
     #[test]
     fn chat_row_from_event_handles_invalid_hex_color_gracefully() {
         let ev = make_chat_event("badcolor", "msg", serde_json::json!([]), "#ZZZZZZ");
-        let row = chat_row_from_event(&ev).unwrap();
+        let row = chat_row_from_event(&ev, &mut 0u64).unwrap();
         assert_eq!(row.username, "badcolor");
     }
 
@@ -2153,14 +2199,14 @@ mod tests {
             serde_json::json!([{ "set_id": "moderator" }]),
             "#00ff00",
         );
-        let row = chat_row_from_event(&ev).unwrap();
+        let row = chat_row_from_event(&ev, &mut 0u64).unwrap();
         assert!(row.badges.contains(&BadgeKind::Moderator));
     }
 
     #[test]
     fn chat_row_from_event_marks_bot_badge() {
         let ev = make_bot_event("coolbot");
-        let row = chat_row_from_event(&ev).unwrap();
+        let row = chat_row_from_event(&ev, &mut 0u64).unwrap();
         assert_eq!(row.username, "coolbot");
     }
 }

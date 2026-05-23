@@ -79,6 +79,7 @@ pub enum ChatBody {
 
 #[derive(Debug, Clone)]
 pub struct ChatRow {
+    pub seq: u64,
     pub timestamp: String,
     pub platform: Platform,
     pub badges: Vec<BadgeKind>,
@@ -1301,6 +1302,7 @@ mod tests {
     #[test]
     fn chat_row_dispatcher_handles_message_body() {
         let row_data = ChatRow {
+            seq: 0,
             timestamp: "14:21".to_string(),
             platform: Platform::Twitch,
             badges: vec![BadgeKind::Moderator],
@@ -1314,6 +1316,7 @@ mod tests {
     #[test]
     fn chat_row_dispatcher_handles_subscription_body() {
         let row_data = ChatRow {
+            seq: 0,
             timestamp: "14:22".to_string(),
             platform: Platform::Twitch,
             badges: vec![],
@@ -1332,6 +1335,7 @@ mod tests {
     #[test]
     fn chat_row_dispatcher_handles_cheer_body() {
         let row_data = ChatRow {
+            seq: 0,
             timestamp: "14:23".to_string(),
             platform: Platform::Twitch,
             badges: vec![],
@@ -1348,6 +1352,7 @@ mod tests {
     #[test]
     fn chat_row_dispatcher_handles_raid_body() {
         let row_data = ChatRow {
+            seq: 0,
             timestamp: "14:24".to_string(),
             platform: Platform::Twitch,
             badges: vec![],
@@ -1364,6 +1369,7 @@ mod tests {
     #[test]
     fn chat_row_dispatcher_handles_command_body() {
         let row_data = ChatRow {
+            seq: 0,
             timestamp: "14:25".to_string(),
             platform: Platform::Twitch,
             badges: vec![],

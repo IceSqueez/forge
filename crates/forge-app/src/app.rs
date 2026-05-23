@@ -460,7 +460,11 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::AddAction(sub) => {
             crate::action_editor::add_action_update(&mut app.actions.add_action_modal, &app.rt, sub)
         }
-        Message::AddTrigger(sub) => handle_add_trigger_msg(app, sub),
+        Message::AddTrigger(sub) => crate::action_editor::add_trigger_update(
+            &mut app.actions.add_trigger_modal,
+            &app.rt,
+            sub,
+        ),
         Message::AddSubAction(sub) => handle_add_sub_action_msg(app, sub),
         Message::RemoveSubAction(sub) => handle_remove_sub_action_msg(app, sub),
         Message::MoveSubAction(sub) => handle_move_sub_action_msg(app, sub),
@@ -901,135 +905,6 @@ fn handle_obs_panel_msg(app: &mut App, msg: crate::obs_panel::ObsPanelMsg) -> Ta
     }
 }
 
-fn handle_add_trigger_msg(app: &mut App, sub: AddTriggerMsg) -> Task<Message> {
-    match sub {
-        AddTriggerMsg::OpenRequested(action_id) => {
-            app.actions.add_trigger_modal = Some(AddTriggerForm::new(action_id));
-            Task::none()
-        }
-        AddTriggerMsg::SearchChanged(v) => {
-            if let Some(f) = app.actions.add_trigger_modal.as_mut() {
-                f.search = v;
-            }
-            Task::none()
-        }
-        AddTriggerMsg::CategorySelected(cat) => {
-            if let Some(f) = app.actions.add_trigger_modal.as_mut() {
-                f.category = cat;
-            }
-            Task::none()
-        }
-        AddTriggerMsg::KindSelected(kind) => {
-            if let Some(f) = app.actions.add_trigger_modal.as_mut() {
-                f.selected_kind = Some(kind);
-                f.error = None;
-            }
-            Task::none()
-        }
-        AddTriggerMsg::CommandNameChanged(v) => {
-            if let Some(f) = app.actions.add_trigger_modal.as_mut() {
-                f.config.command_name = v;
-            }
-            Task::none()
-        }
-        AddTriggerMsg::CooldownChanged(v) => {
-            if let Some(f) = app.actions.add_trigger_modal.as_mut() {
-                f.config.cooldown_secs = v;
-            }
-            Task::none()
-        }
-        AddTriggerMsg::PermissionSelected(perm) => {
-            if let Some(f) = app.actions.add_trigger_modal.as_mut() {
-                f.config.permission = perm;
-            }
-            Task::none()
-        }
-        AddTriggerMsg::MinBitsChanged(v) => {
-            if let Some(f) = app.actions.add_trigger_modal.as_mut() {
-                f.config.min_bits = v;
-            }
-            Task::none()
-        }
-        AddTriggerMsg::Cancel => {
-            app.actions.add_trigger_modal = None;
-            Task::none()
-        }
-        AddTriggerMsg::Submit => {
-            let Some(form) = app.actions.add_trigger_modal.as_ref() else {
-                return Task::none();
-            };
-            if !form.is_valid() {
-                return Task::none();
-            }
-            let Some(kind) = form.selected_kind.clone() else {
-                return Task::none();
-            };
-            let action_id = form.for_action_id;
-            let config = build_trigger_config(&kind, &form.config);
-            let trigger = forge_types::Trigger {
-                id: forge_types::TriggerId::new(),
-                action_id,
-                kind: kind.clone(),
-                config,
-            };
-            let cmd = if matches!(kind, forge_types::TriggerKind::TwitchChatCommand) {
-                let raw = form.config.command_name.trim();
-                let normalized = format!("!{}", raw.trim_start_matches('!').to_lowercase());
-                Some(forge_types::Command {
-                    id: forge_types::CommandId::new(),
-                    action_id,
-                    name: normalized,
-                    cooldown_secs: form.config.parsed_cooldown(),
-                    permission: form.config.permission.clone(),
-                })
-            } else {
-                None
-            };
-            let trigger_id = trigger.id;
-            if let Some(f) = app.actions.add_trigger_modal.as_mut() {
-                f.saving = true;
-            }
-            let dp = Arc::clone(&app.rt.backend);
-            Task::perform(
-                async move {
-                    dp.trigger_repo()
-                        .save(&trigger)
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    if let Some(c) = cmd {
-                        dp.command_repo()
-                            .save(&c)
-                            .await
-                            .map_err(|e| e.to_string())?;
-                    }
-                    Ok(trigger_id)
-                },
-                |r| Message::AddTrigger(AddTriggerMsg::Saved(r)),
-            )
-        }
-        AddTriggerMsg::Saved(Ok(_)) => {
-            let action_id = app
-                .actions
-                .add_trigger_modal
-                .as_ref()
-                .map(|f| f.for_action_id);
-            app.actions.add_trigger_modal = None;
-            if let Some(id) = action_id {
-                Task::done(Message::Actions(ActionsMsg::ActionSelected(id)))
-            } else {
-                Task::none()
-            }
-        }
-        AddTriggerMsg::Saved(Err(e)) => {
-            if let Some(f) = app.actions.add_trigger_modal.as_mut() {
-                f.saving = false;
-                f.error = Some(e);
-            }
-            Task::none()
-        }
-    }
-}
-
 fn handle_add_sub_action_msg(app: &mut App, sub: AddSubActionMsg) -> Task<Message> {
     match sub {
         AddSubActionMsg::OpenRequested(action_id) => {
@@ -1392,29 +1267,6 @@ fn handle_move_sub_action_msg(app: &mut App, sub: MoveSubActionMsg) -> Task<Mess
             Task::none()
         }
     }
-}
-
-fn build_trigger_config(
-    kind: &forge_types::TriggerKind,
-    form: &crate::actions::TriggerConfigForm,
-) -> forge_types::TriggerConfig {
-    let mut m = std::collections::BTreeMap::new();
-    match kind {
-        forge_types::TriggerKind::TwitchChatCommand => {
-            m.insert(
-                "cooldown_secs".to_string(),
-                forge_types::Variant::Int(form.parsed_cooldown() as i64),
-            );
-        }
-        forge_types::TriggerKind::TwitchCheer => {
-            m.insert(
-                "min_bits".to_string(),
-                forge_types::Variant::Int(form.parsed_min_bits() as i64),
-            );
-        }
-        _ => {}
-    }
-    m
 }
 
 async fn reconnect_twitch(backend: Arc<SqliteBackend>, bus: Arc<EventBus>) -> Result<(), String> {

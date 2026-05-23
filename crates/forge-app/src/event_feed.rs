@@ -165,6 +165,13 @@ impl Default for EventFeedState {
     }
 }
 
+pub fn on_event(state: &mut EventFeedState, event: &Arc<Event>) -> iced::Task<Message> {
+    if !state.paused {
+        state.push_event(Arc::unwrap_or_clone(Arc::clone(event)));
+    }
+    iced::Task::none()
+}
+
 pub fn matches_filter(event: &Event, filter: EventFilter) -> bool {
     match filter {
         EventFilter::All => true,

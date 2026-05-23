@@ -271,6 +271,22 @@ pub fn chat_scroll_id() -> iced::advanced::widget::Id {
     iced::advanced::widget::Id::new("forge:chat_scroll")
 }
 
+pub fn on_event(state: &mut LiveChatState, event: &Event) -> Task<Message> {
+    let Some(row) = chat_row_from_event(event) else {
+        return Task::none();
+    };
+    state.chat_log.push_back(row);
+    if state.chat_log.len() > CHAT_LOG_MAX {
+        state.chat_log.pop_front();
+    }
+    if state.auto_scroll {
+        iced::widget::operation::snap_to_end(chat_scroll_id())
+    } else {
+        state.unread_count = state.unread_count.saturating_add(1);
+        Task::none()
+    }
+}
+
 pub fn chat_row_from_event(event: &Event) -> Option<ChatRow> {
     if event.source != EventSource::Twitch {
         return None;

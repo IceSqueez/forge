@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use forge_events::Event;
 use forge_obs::{ObsClient, ObsSource};
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, CapabilityFlags, DetailSection,
@@ -87,6 +88,23 @@ impl BuiltinDetailState {
             quick_actions,
         }
     }
+}
+
+pub fn on_event(state: Option<&mut BuiltinDetailState>, event: &Event) -> Task<Message> {
+    let Some(state) = state else {
+        return Task::none();
+    };
+    if event.kind != "quick_action.done" {
+        return Task::none();
+    }
+    let label = event.payload["label"].as_str().unwrap_or("Quick Action");
+    let outcome = event.payload["outcome"].as_str().unwrap_or("done");
+    state.quick_action_toast = Some(if outcome == "success" {
+        format!("{label} — done")
+    } else {
+        format!("{label} — {outcome}")
+    });
+    Task::none()
 }
 
 pub fn update(

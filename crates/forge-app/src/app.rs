@@ -3,7 +3,7 @@ use std::time::SystemTime;
 
 use forge_soundboard::SoundboardPlayer;
 
-use forge_events::{EventPublisher, EventSource};
+use forge_events::{Event, EventPublisher, EventSource};
 use forge_obs::ObsClient;
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, QuickActions, SectionIcon,
@@ -33,7 +33,7 @@ use crate::event_feed;
 use crate::event_feed::{EventFeedState, event_feed_view};
 use crate::globals_view::{GlobalsState, globals_view};
 use crate::home::HomeStats;
-use crate::live_chat::{CHAT_LOG_MAX, LiveChatState, chat_row_from_event, live_chat_view};
+use crate::live_chat::{LiveChatState, live_chat_view};
 use crate::message::{
     ActionsMsg, GlobalsMsg, HomeMsg, ObsClientRef, PlatformId, QueuesMsg, SettingsMsg, SidebarMsg,
     ToastMsg, TtsMsg,
@@ -237,6 +237,22 @@ impl Default for App {
     }
 }
 
+fn dispatch_event(app: &mut App, event: &Arc<Event>) -> Task<Message> {
+    let mut task = crate::live_chat::on_event(&mut app.live_chat, event);
+    task = task.chain(crate::builtin_detail::on_event(
+        app.builtin_detail.as_mut(),
+        event,
+    ));
+    task = task.chain(crate::home::on_event(&mut app.home, event));
+    task = task.chain(crate::event_feed::on_event(&mut app.event_feed, event));
+    if event.kind == "platform.reauth_required"
+        && event.payload["platform"].as_str() == Some("twitch")
+    {
+        app.rt.twitch_reauth_required = true;
+    }
+    task
+}
+
 pub fn update(app: &mut App, msg: Message) -> Task<Message> {
     match msg {
         Message::Navigate(screen) => {
@@ -327,45 +343,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             app.palette = palette;
             Task::none()
         }
-        Message::EventArrived(event) => {
-            let mut auto_scroll_task: Option<Task<Message>> = None;
-            if let Some(row) = chat_row_from_event(&event) {
-                app.live_chat.chat_log.push_back(row);
-                if app.live_chat.chat_log.len() > CHAT_LOG_MAX {
-                    app.live_chat.chat_log.pop_front();
-                }
-                if app.live_chat.auto_scroll {
-                    auto_scroll_task = Some(iced::widget::operation::snap_to_end(
-                        crate::live_chat::chat_scroll_id(),
-                    ));
-                } else {
-                    app.live_chat.unread_count = app.live_chat.unread_count.saturating_add(1);
-                }
-            }
-            if event.kind == "quick_action.done"
-                && let Some(state) = app.builtin_detail.as_mut()
-            {
-                let label = event.payload["label"].as_str().unwrap_or("Quick Action");
-                let outcome = event.payload["outcome"].as_str().unwrap_or("done");
-                state.quick_action_toast = Some(if outcome == "success" {
-                    format!("{label} — done")
-                } else {
-                    format!("{label} — {outcome}")
-                });
-            }
-            if event.kind == "platform.reauth_required"
-                && event.payload["platform"].as_str() == Some("twitch")
-            {
-                app.rt.twitch_reauth_required = true;
-            }
-            if event.kind == "action.done" {
-                app.home.triggers_fired = Some(app.home.triggers_fired.unwrap_or(0) + 1);
-            }
-            if !app.event_feed.paused {
-                app.event_feed.push_event(Arc::unwrap_or_clone(event));
-            }
-            auto_scroll_task.unwrap_or_else(Task::none)
-        }
+        Message::EventArrived(event) => dispatch_event(app, &event),
         Message::EventFeed(sub) => event_feed::update(&mut app.event_feed, &app.rt, sub),
         Message::LiveChat(sub) => crate::live_chat::update(&mut app.live_chat, &app.rt, sub),
         Message::Settings(sub) => match sub {

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use forge_events::Event;
 use forge_storage::{DataProvider, GlobalsRepo};
 use forge_storage_sqlite::SqliteBackend;
 use iced::Task;
@@ -19,6 +20,13 @@ impl HomeStats {
     pub fn new() -> Self {
         Self::default()
     }
+}
+
+pub fn on_event(state: &mut HomeStats, event: &Event) -> Task<Message> {
+    if event.kind == "action.done" {
+        state.triggers_fired = Some(state.triggers_fired.unwrap_or(0) + 1);
+    }
+    Task::none()
 }
 
 pub fn update(state: &mut HomeStats, rt: &RuntimeView, msg: HomeMsg) -> Task<Message> {

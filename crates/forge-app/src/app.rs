@@ -80,6 +80,10 @@ pub struct App {
     pub boot_time: SystemTime,
     pub sidebar_state: SidebarExpandState,
     pub rt: crate::runtime_view::RuntimeView,
+    pub ui: UiState,
+}
+
+pub struct UiState {
     pub home: HomeStats,
     pub event_feed: EventFeedState,
     pub live_chat: LiveChatState,
@@ -101,6 +105,34 @@ pub struct App {
     pub tts_aliases: VoiceAliasesState,
     pub tts_filters: TtsFiltersState,
     pub tts_triggers: TtsTriggersState,
+}
+
+impl Default for UiState {
+    fn default() -> Self {
+        Self {
+            home: HomeStats::new(),
+            event_feed: EventFeedState::new(),
+            live_chat: LiveChatState::new(),
+            actions: ActionsState::new(),
+            commands: crate::commands_view::CommandsState::new(),
+            queues: QueuesState::new(),
+            viewers: crate::viewers::ViewersState::default(),
+            globals: GlobalsState::new(),
+            script_editor: ScriptEditorState::new(),
+            builtin_detail: None,
+            server_screen: ServerScreenState::default(),
+            settings_websocket: SettingsWebSocketState::default(),
+            twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
+            obs_panel: crate::obs_panel::ObsPanelState::default(),
+            soundboard: SoundboardState::new(),
+            settings_audio: SettingsAudioState::new(),
+            tts_dashboard: TtsDashState::new(),
+            tts_engines: TtsEnginesState::new(),
+            tts_aliases: VoiceAliasesState::new(),
+            tts_filters: TtsFiltersState::new(),
+            tts_triggers: TtsTriggersState::new(),
+        }
+    }
 }
 
 impl App {
@@ -145,27 +177,7 @@ impl App {
                 twitch_token_expires: None,
                 twitch_reauth_required: false,
             },
-            home: HomeStats::new(),
-            event_feed: EventFeedState::new(),
-            live_chat: LiveChatState::new(),
-            actions: ActionsState::new(),
-            commands: crate::commands_view::CommandsState::new(),
-            queues: QueuesState::new(),
-            viewers: crate::viewers::ViewersState::default(),
-            globals: GlobalsState::new(),
-            script_editor: ScriptEditorState::new(),
-            builtin_detail: None,
-            server_screen: ServerScreenState::default(),
-            settings_websocket: SettingsWebSocketState::default(),
-            twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
-            obs_panel: crate::obs_panel::ObsPanelState::default(),
-            soundboard: SoundboardState::new(),
-            settings_audio: SettingsAudioState::new(),
-            tts_dashboard: TtsDashState::new(),
-            tts_engines: TtsEnginesState::new(),
-            tts_aliases: VoiceAliasesState::new(),
-            tts_filters: TtsFiltersState::new(),
-            tts_triggers: TtsTriggersState::new(),
+            ui: UiState::default(),
         }
     }
 }
@@ -212,39 +224,19 @@ impl Default for App {
                 twitch_token_expires: None,
                 twitch_reauth_required: false,
             },
-            home: HomeStats::new(),
-            event_feed: EventFeedState::new(),
-            live_chat: LiveChatState::new(),
-            actions: ActionsState::new(),
-            commands: crate::commands_view::CommandsState::new(),
-            queues: QueuesState::new(),
-            viewers: crate::viewers::ViewersState::default(),
-            globals: GlobalsState::new(),
-            script_editor: ScriptEditorState::new(),
-            builtin_detail: None,
-            server_screen: ServerScreenState::default(),
-            settings_websocket: SettingsWebSocketState::default(),
-            twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
-            obs_panel: crate::obs_panel::ObsPanelState::default(),
-            soundboard: SoundboardState::new(),
-            settings_audio: SettingsAudioState::new(),
-            tts_dashboard: TtsDashState::new(),
-            tts_engines: TtsEnginesState::new(),
-            tts_aliases: VoiceAliasesState::new(),
-            tts_filters: TtsFiltersState::new(),
-            tts_triggers: TtsTriggersState::new(),
+            ui: UiState::default(),
         }
     }
 }
 
 fn dispatch_event(app: &mut App, event: &Arc<Event>) -> Task<Message> {
-    let mut task = crate::live_chat::on_event(&mut app.live_chat, event);
+    let mut task = crate::live_chat::on_event(&mut app.ui.live_chat, event);
     task = task.chain(crate::builtin_detail::on_event(
-        app.builtin_detail.as_mut(),
+        app.ui.builtin_detail.as_mut(),
         event,
     ));
-    task = task.chain(crate::home::on_event(&mut app.home, event));
-    task = task.chain(crate::event_feed::on_event(&mut app.event_feed, event));
+    task = task.chain(crate::home::on_event(&mut app.ui.home, event));
+    task = task.chain(crate::event_feed::on_event(&mut app.ui.event_feed, event));
     if event.kind == "platform.reauth_required"
         && event.payload["platform"].as_str() == Some("twitch")
     {
@@ -308,6 +300,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 ))
             } else if let Some(id) = editor_id {
                 let needs_load = app
+                    .ui
                     .actions
                     .detail
                     .as_ref()
@@ -344,8 +337,8 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             Task::none()
         }
         Message::EventArrived(event) => dispatch_event(app, &event),
-        Message::EventFeed(sub) => event_feed::update(&mut app.event_feed, &app.rt, sub),
-        Message::LiveChat(sub) => crate::live_chat::update(&mut app.live_chat, &app.rt, sub),
+        Message::EventFeed(sub) => event_feed::update(&mut app.ui.event_feed, &app.rt, sub),
+        Message::LiveChat(sub) => crate::live_chat::update(&mut app.ui.live_chat, &app.rt, sub),
         Message::Settings(sub) => match sub {
             SettingsMsg::ReconnectPlatform(PlatformId::Twitch) => {
                 if let Some(handle) = app.rt.twitch_chat_handle.take() {
@@ -427,17 +420,17 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 Task::none()
             }
         },
-        Message::Home(sub) => crate::home::update(&mut app.home, &app.rt, sub),
-        Message::Globals(sub) => crate::globals_view::update(&mut app.globals, &app.rt, sub),
-        Message::Actions(sub) => crate::actions::update(&mut app.actions, &app.rt, sub),
-        Message::Queues(sub) => crate::queues_view::update(&mut app.queues, &app.rt, sub),
-        Message::Viewers(sub) => crate::viewers::update(&mut app.viewers, &app.rt, sub),
-        Message::Commands(sub) => crate::commands_view::update(&mut app.commands, &app.rt, sub),
+        Message::Home(sub) => crate::home::update(&mut app.ui.home, &app.rt, sub),
+        Message::Globals(sub) => crate::globals_view::update(&mut app.ui.globals, &app.rt, sub),
+        Message::Actions(sub) => crate::actions::update(&mut app.ui.actions, &app.rt, sub),
+        Message::Queues(sub) => crate::queues_view::update(&mut app.ui.queues, &app.rt, sub),
+        Message::Viewers(sub) => crate::viewers::update(&mut app.ui.viewers, &app.rt, sub),
+        Message::Commands(sub) => crate::commands_view::update(&mut app.ui.commands, &app.rt, sub),
         Message::ScriptEditor(sub) => {
-            crate::script_editor::update(&mut app.script_editor, &app.rt, sub)
+            crate::script_editor::update(&mut app.ui.script_editor, &app.rt, sub)
         }
         Message::BuiltinDetail(sub) => {
-            crate::builtin_detail::update(&mut app.builtin_detail, &app.rt, sub)
+            crate::builtin_detail::update(&mut app.ui.builtin_detail, &app.rt, sub)
         }
         Message::TwitchBootResult(result) => match result {
             Ok(Some(bundle)) => {
@@ -465,7 +458,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 let health: Arc<dyn BuiltinHealth> = twitch_bundle.clone();
                 let content: Arc<dyn BuiltinContent> = twitch_bundle.clone();
                 let quick_actions: Arc<dyn QuickActions> = twitch_bundle.clone();
-                app.builtin_detail = Some(BuiltinDetailState::new(
+                app.ui.builtin_detail = Some(BuiltinDetailState::new(
                     id,
                     icon,
                     status,
@@ -496,7 +489,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 let health: Arc<dyn BuiltinHealth> = client.clone();
                 let content: Arc<dyn BuiltinContent> = client.clone();
                 let quick_actions: Arc<dyn QuickActions> = client.clone();
-                app.builtin_detail = Some(BuiltinDetailState::new(
+                app.ui.builtin_detail = Some(BuiltinDetailState::new(
                     id,
                     icon,
                     status,
@@ -515,13 +508,15 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::ServerBootResult(result) => {
             match result {
                 Ok(snapshot) => {
-                    app.server_screen.bind_address = snapshot.bind_address;
-                    app.server_screen.bearer_token = snapshot.bearer_token;
-                    app.server_screen.server_status = crate::server_screen::ServerStatus::Running;
+                    app.ui.server_screen.bind_address = snapshot.bind_address;
+                    app.ui.server_screen.bearer_token = snapshot.bearer_token;
+                    app.ui.server_screen.server_status =
+                        crate::server_screen::ServerStatus::Running;
                 }
                 Err(e) => {
                     tracing::warn!(error = %e, "server boot failed");
-                    app.server_screen.server_status = crate::server_screen::ServerStatus::Error(e);
+                    app.ui.server_screen.server_status =
+                        crate::server_screen::ServerStatus::Error(e);
                 }
             }
             Task::none()
@@ -529,11 +524,13 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::ServerRestartResult(result) => {
             match result {
                 Ok(()) => {
-                    app.server_screen.server_status = crate::server_screen::ServerStatus::Running;
+                    app.ui.server_screen.server_status =
+                        crate::server_screen::ServerStatus::Running;
                 }
                 Err(e) => {
                     tracing::warn!(error = %e, "server restart failed");
-                    app.server_screen.server_status = crate::server_screen::ServerStatus::Error(e);
+                    app.ui.server_screen.server_status =
+                        crate::server_screen::ServerStatus::Error(e);
                 }
             }
             Task::none()
@@ -541,12 +538,14 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::ServerStopResult(result) => {
             match result {
                 Ok(()) => {
-                    app.server_screen.server_status = crate::server_screen::ServerStatus::Stopped;
-                    app.server_screen.connected_clients.clear();
+                    app.ui.server_screen.server_status =
+                        crate::server_screen::ServerStatus::Stopped;
+                    app.ui.server_screen.connected_clients.clear();
                 }
                 Err(e) => {
                     tracing::warn!(error = %e, "server stop failed");
-                    app.server_screen.server_status = crate::server_screen::ServerStatus::Error(e);
+                    app.ui.server_screen.server_status =
+                        crate::server_screen::ServerStatus::Error(e);
                 }
             }
             Task::none()
@@ -554,11 +553,12 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::ServerTokenRotated(result) => {
             match result {
                 Ok(token) => {
-                    app.server_screen.bearer_token = token;
+                    app.ui.server_screen.bearer_token = token;
                 }
                 Err(e) => {
                     tracing::warn!(error = %e, "token regeneration failed");
-                    app.server_screen.server_status = crate::server_screen::ServerStatus::Error(e);
+                    app.ui.server_screen.server_status =
+                        crate::server_screen::ServerStatus::Error(e);
                 }
             }
             Task::none()
@@ -589,12 +589,14 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 Message::ServerTokenRotated,
             )
         }
-        Message::Server(sub) => crate::server_screen::update(&mut app.server_screen, &app.rt, sub),
+        Message::Server(sub) => {
+            crate::server_screen::update(&mut app.ui.server_screen, &app.rt, sub)
+        }
         Message::SettingsWebSocket(
             crate::settings_websocket::SettingsWebSocketMsg::SaveStatus(Ok(())),
         ) => {
             if !matches!(
-                app.server_screen.server_status,
+                app.ui.server_screen.server_status,
                 crate::server_screen::ServerStatus::Running
             ) {
                 return Task::none();
@@ -606,11 +608,11 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             )
         }
         Message::SettingsWebSocket(sub) => {
-            crate::settings_websocket::update(&mut app.settings_websocket, &app.rt, sub)
+            crate::settings_websocket::update(&mut app.ui.settings_websocket, &app.rt, sub)
         }
         Message::TwitchPanel(sub) => crate::twitch_panel::update(
-            &mut app.twitch_panel,
-            &mut app.builtin_detail,
+            &mut app.ui.twitch_panel,
+            &mut app.ui.builtin_detail,
             &mut app.rt,
             sub,
         ),
@@ -618,7 +620,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             if let Some(handle) = app.rt.twitch_chat_handle.take() {
                 handle.shutdown();
             }
-            app.builtin_detail = None;
+            app.ui.builtin_detail = None;
             app.rt.twitch_login = None;
             app.rt.twitch_reauth_required = false;
             let backend = Arc::clone(&app.rt.backend);
@@ -630,25 +632,25 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 |()| Message::Noop,
             )
         }
-        Message::ObsPanel(sub) => crate::obs_panel::update(&mut app.obs_panel, &app.rt, sub),
-        Message::Soundboard(sub) => crate::soundboard::update(&mut app.soundboard, &app.rt, sub),
+        Message::ObsPanel(sub) => crate::obs_panel::update(&mut app.ui.obs_panel, &app.rt, sub),
+        Message::Soundboard(sub) => crate::soundboard::update(&mut app.ui.soundboard, &app.rt, sub),
         Message::SettingsAudio(sub) => {
-            crate::settings_audio::update(&mut app.settings_audio, &app.rt, sub)
+            crate::settings_audio::update(&mut app.ui.settings_audio, &app.rt, sub)
         }
         Message::Tts(TtsMsg::Dashboard(sub)) => {
-            crate::tts_dashboard::update(&mut app.tts_dashboard, &app.rt, sub)
+            crate::tts_dashboard::update(&mut app.ui.tts_dashboard, &app.rt, sub)
         }
         Message::Tts(TtsMsg::Engines(sub)) => {
-            crate::tts_engines::update(&mut app.tts_engines, &app.rt, sub)
+            crate::tts_engines::update(&mut app.ui.tts_engines, &app.rt, sub)
         }
         Message::Tts(TtsMsg::Aliases(sub)) => {
-            crate::voice_aliases::update(&mut app.tts_aliases, &app.rt, sub)
+            crate::voice_aliases::update(&mut app.ui.tts_aliases, &app.rt, sub)
         }
         Message::Tts(TtsMsg::Filters(sub)) => {
-            crate::tts_filters::update(&mut app.tts_filters, &app.rt, sub)
+            crate::tts_filters::update(&mut app.ui.tts_filters, &app.rt, sub)
         }
         Message::Tts(TtsMsg::Triggers(sub)) => {
-            crate::tts_triggers::update(&mut app.tts_triggers, &app.rt, sub)
+            crate::tts_triggers::update(&mut app.ui.tts_triggers, &app.rt, sub)
         }
         Message::Toast(sub) => match sub {
             ToastMsg::Fired {
@@ -670,9 +672,9 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             }
         },
         Message::OutsideClick => {
-            if app.actions.renaming_action.is_some() {
+            if app.ui.actions.renaming_action.is_some() {
                 Task::done(Message::Actions(ActionsMsg::RenameCancel))
-            } else if app.actions.action_menu_open.is_some() {
+            } else if app.ui.actions.action_menu_open.is_some() {
                 Task::done(Message::Actions(ActionsMsg::DismissActionMenu))
             } else {
                 Task::none()
@@ -878,7 +880,7 @@ pub(crate) fn subsystem_connectivity(app: &App) -> (u8, u8) {
         connected += 1;
     }
     if matches!(
-        app.server_screen.server_status,
+        app.ui.server_screen.server_status,
         crate::server_screen::ServerStatus::Running
     ) {
         connected += 1;
@@ -973,9 +975,9 @@ fn home_jump_cards<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, M
     use forge_widgets::{BigJumpCardProps, big_jump_card};
     use iced::widget::{container, row};
 
-    let actions_count = app.home.actions_count.unwrap_or(0);
-    let triggers_fired = app.home.triggers_fired.unwrap_or(0);
-    let chat_count = app.live_chat.chat_log.len();
+    let actions_count = app.ui.home.actions_count.unwrap_or(0);
+    let triggers_fired = app.ui.home.triggers_fired.unwrap_or(0);
+    let chat_count = app.ui.live_chat.chat_log.len();
     let twitch_ok = app.rt.twitch_chat_handle.is_some();
     let obs_ok = app.rt.obs_client.is_some();
     let total_integrations: u8 = 6;
@@ -1550,7 +1552,7 @@ fn home_recent_events_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
     ]
     .align_y(Alignment::Center);
 
-    let recent: Vec<&forge_events::Event> = app.event_feed.events.iter().rev().take(5).collect();
+    let recent: Vec<&forge_events::Event> = app.ui.event_feed.events.iter().rev().take(5).collect();
 
     let body: Element<'a, Message> = if recent.is_empty() {
         text("No events yet").size(FONT_XS).color(text_muted).into()
@@ -1633,18 +1635,22 @@ fn home_glance_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, 
     let text_primary = palette.text_primary;
 
     let actions_val = app
+        .ui
         .home
         .actions_count
         .map_or_else(|| "\u{2014}".to_string(), |n| n.to_string());
     let commands_val = app
+        .ui
         .home
         .commands_count
         .map_or_else(|| "\u{2014}".to_string(), |n| n.to_string());
     let fired_val = app
+        .ui
         .home
         .triggers_fired
         .map_or_else(|| "\u{2014}".to_string(), |n| n.to_string());
     let globals_val = app
+        .ui
         .home
         .globals_count
         .map_or_else(|| "\u{2014}".to_string(), |n| n.to_string());
@@ -2438,7 +2444,7 @@ fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Mess
     use iced::widget::{column, container, row, scrollable, text};
 
     let p = *palette;
-    let actions_state = &app.actions;
+    let actions_state = &app.ui.actions;
 
     let total = actions_state.total_actions();
     let visible = actions_state.visible_actions();
@@ -2591,13 +2597,13 @@ fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Mess
     };
 
     let main_view: Element<'_, Message> =
-        if let Some(form) = app.actions.add_sub_action_modal.as_ref() {
+        if let Some(form) = app.ui.actions.add_sub_action_modal.as_ref() {
             let modal_el = add_sub_action_modal_view(form, palette);
             iced::widget::stack![main_view, modal_el].into()
-        } else if let Some(form) = app.actions.add_trigger_modal.as_ref() {
+        } else if let Some(form) = app.ui.actions.add_trigger_modal.as_ref() {
             let modal_el = add_trigger_modal_view(form, palette);
             iced::widget::stack![main_view, modal_el].into()
-        } else if let Some(form) = app.actions.add_action_modal.as_ref() {
+        } else if let Some(form) = app.ui.actions.add_action_modal.as_ref() {
             let modal_el = add_action_modal_view(form, palette);
             iced::widget::stack![main_view, modal_el].into()
         } else {
@@ -4782,11 +4788,11 @@ fn tts_section_view<'a>(
     });
 
     let content: iced::Element<'a, Message> = match section {
-        TtsSection::Dashboard => tts_dashboard_view(&app.tts_dashboard, palette),
-        TtsSection::Engines => tts_engines_view(&app.tts_engines, palette),
-        TtsSection::Aliases => voice_aliases_view(&app.tts_aliases, palette),
-        TtsSection::Filters => tts_filters_view(&app.tts_filters, palette),
-        TtsSection::Triggers => tts_triggers_view(&app.tts_triggers, palette),
+        TtsSection::Dashboard => tts_dashboard_view(&app.ui.tts_dashboard, palette),
+        TtsSection::Engines => tts_engines_view(&app.ui.tts_engines, palette),
+        TtsSection::Aliases => voice_aliases_view(&app.ui.tts_aliases, palette),
+        TtsSection::Filters => tts_filters_view(&app.ui.tts_filters, palette),
+        TtsSection::Triggers => tts_triggers_view(&app.ui.tts_triggers, palette),
     };
 
     let section_label = match section {
@@ -4829,32 +4835,32 @@ pub fn view(app: &App) -> Element<'_, Message> {
 
     let screen_content: Element<'_, Message> = match &app.screen {
         Screen::Home => home_view(app, palette),
-        Screen::LiveChat => live_chat_view(&app.live_chat, &app.viewers, palette),
+        Screen::LiveChat => live_chat_view(&app.ui.live_chat, &app.ui.viewers, palette),
         Screen::Globals => globals_view(app, palette),
         Screen::Actions => actions_view(app, palette),
         Screen::ActionEditor(id) => action_editor_view(app, *id, palette),
-        Screen::Queues => queues_view(&app.queues, palette),
-        Screen::Commands => crate::commands_view::commands_view(&app.commands, palette),
+        Screen::Queues => queues_view(&app.ui.queues, palette),
+        Screen::Commands => crate::commands_view::commands_view(&app.ui.commands, palette),
         Screen::Settings(section) => settings_view(
             section,
-            &app.settings_websocket,
-            &app.server_screen,
-            &app.settings_audio,
+            &app.ui.settings_websocket,
+            &app.ui.server_screen,
+            &app.ui.settings_audio,
             palette,
         ),
         Screen::ScriptEditor => script_editor_view(app, palette),
         Screen::Platforms => platforms_overview_view(app, palette),
         Screen::StreamApps => stream_apps_view(app, palette),
-        Screen::EventFeed => event_feed_view(&app.event_feed, palette),
-        Screen::Server => server_screen_view(&app.server_screen, palette),
+        Screen::EventFeed => event_feed_view(&app.ui.event_feed, palette),
+        Screen::Server => server_screen_view(&app.ui.server_screen, palette),
         Screen::BuiltinDetail(id) => {
             if id.as_str() == "twitch" && app.rt.twitch_chat_handle.is_none() {
-                crate::twitch_panel::twitch_disconnected_view(&app.twitch_panel, palette)
+                crate::twitch_panel::twitch_disconnected_view(&app.ui.twitch_panel, palette)
             } else if id.as_str() == "obs" && app.rt.obs_client.is_none() {
-                crate::obs_panel::obs_disconnected_view(&app.obs_panel, palette)
+                crate::obs_panel::obs_disconnected_view(&app.ui.obs_panel, palette)
             } else if let Some((color, info)) = crate::platform_generic::registry(id, palette) {
                 crate::platform_generic::platform_generic_view(color, info, palette)
-            } else if let Some(state) = app.builtin_detail.as_ref() {
+            } else if let Some(state) = app.ui.builtin_detail.as_ref() {
                 let inner = builtin_detail_view(state, palette);
                 if id.as_str() == "twitch" && app.rt.twitch_reauth_required {
                     iced::widget::container(
@@ -4883,7 +4889,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
                 .into()
             }
         }
-        Screen::Soundboard => soundboard_view(&app.soundboard, palette),
+        Screen::Soundboard => soundboard_view(&app.ui.soundboard, palette),
         Screen::Tts(section) => tts_section_view(app, section, palette),
         other => coming_soon_view(format!("{other:?}"), palette),
     };
@@ -5222,7 +5228,7 @@ pub fn subscription(app: &App) -> Subscription<Message> {
         _ => None,
     });
 
-    if let Some(state) = app.builtin_detail.as_ref() {
+    if let Some(state) = app.ui.builtin_detail.as_ref() {
         Subscription::batch([
             bus,
             health_subscription(state),
@@ -5401,18 +5407,18 @@ mod tests {
     fn chat_submit_empty_input_is_noop() {
         use crate::message::LiveChatMsg;
         let mut app = App::default();
-        app.live_chat.chat_input = String::new();
+        app.ui.live_chat.chat_input = String::new();
         let _ = update(&mut app, Message::LiveChat(LiveChatMsg::Submit));
-        assert!(app.live_chat.chat_input.is_empty());
+        assert!(app.ui.live_chat.chat_input.is_empty());
     }
 
     #[test]
     fn chat_submit_clears_input_and_dispatches_task() {
         use crate::message::LiveChatMsg;
         let mut app = App::default();
-        app.live_chat.chat_input = "hello chat".into();
+        app.ui.live_chat.chat_input = "hello chat".into();
         let _ = update(&mut app, Message::LiveChat(LiveChatMsg::Submit));
-        assert!(app.live_chat.chat_input.is_empty());
+        assert!(app.ui.live_chat.chat_input.is_empty());
     }
 
     #[tokio::test]
@@ -5476,27 +5482,7 @@ mod tests {
                 twitch_token_expires: None,
                 twitch_reauth_required: false,
             },
-            home: HomeStats::new(),
-            event_feed: EventFeedState::new(),
-            live_chat: LiveChatState::new(),
-            actions: ActionsState::new(),
-            commands: crate::commands_view::CommandsState::new(),
-            queues: QueuesState::new(),
-            viewers: crate::viewers::ViewersState::default(),
-            globals: GlobalsState::new(),
-            script_editor: ScriptEditorState::new(),
-            builtin_detail: None,
-            server_screen: ServerScreenState::default(),
-            settings_websocket: SettingsWebSocketState::default(),
-            twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
-            obs_panel: crate::obs_panel::ObsPanelState::default(),
-            soundboard: SoundboardState::new(),
-            settings_audio: SettingsAudioState::new(),
-            tts_dashboard: TtsDashState::new(),
-            tts_engines: TtsEnginesState::new(),
-            tts_aliases: VoiceAliasesState::new(),
-            tts_filters: TtsFiltersState::new(),
-            tts_triggers: TtsTriggersState::new(),
+            ui: UiState::default(),
         };
 
         assert!(app.rt.action_engine.is_some());
@@ -5538,24 +5524,24 @@ mod tests {
     #[test]
     fn tree_loaded_ok_clears_loading_flag() {
         let mut app = App::default();
-        app.actions.loading = true;
+        app.ui.actions.loading = true;
         let _ = update(
             &mut app,
             Message::Actions(ActionsMsg::TreeLoaded(Ok(vec![]))),
         );
-        assert!(!app.actions.loading);
-        assert!(app.actions.tree.is_empty());
+        assert!(!app.ui.actions.loading);
+        assert!(app.ui.actions.tree.is_empty());
     }
 
     #[test]
     fn tree_loaded_err_clears_loading_flag() {
         let mut app = App::default();
-        app.actions.loading = true;
+        app.ui.actions.loading = true;
         let _ = update(
             &mut app,
             Message::Actions(ActionsMsg::TreeLoaded(Err("db error".into()))),
         );
-        assert!(!app.actions.loading);
+        assert!(!app.ui.actions.loading);
     }
 
     #[test]
@@ -5564,7 +5550,7 @@ mod tests {
         let mut app = App::default();
         let id = ActionId::new();
         let _ = update(&mut app, Message::Actions(ActionsMsg::ActionSelected(id)));
-        assert_eq!(app.actions.selected, Some(id));
+        assert_eq!(app.ui.actions.selected, Some(id));
     }
 
     #[test]
@@ -5594,8 +5580,11 @@ mod tests {
             &mut app,
             Message::Actions(ActionsMsg::DetailLoaded(Ok(detail))),
         );
-        assert!(app.actions.detail.is_some());
-        assert_eq!(app.actions.detail.as_ref().unwrap().action.name, "!quote");
+        assert!(app.ui.actions.detail.is_some());
+        assert_eq!(
+            app.ui.actions.detail.as_ref().unwrap().action.name,
+            "!quote"
+        );
     }
 
     #[test]
@@ -5605,13 +5594,13 @@ mod tests {
             &mut app,
             Message::Actions(ActionsMsg::DetailLoaded(Err("not found".into()))),
         );
-        assert!(app.actions.detail.is_none());
+        assert!(app.ui.actions.detail.is_none());
     }
 
     #[test]
     fn telemetry_loaded_ok_stores_and_clears_loading() {
         let mut app = App::default();
-        app.actions.telemetry_loading = true;
+        app.ui.actions.telemetry_loading = true;
         let t = forge_storage::ActionTelemetry {
             runs_today: 42,
             ..Default::default()
@@ -5620,21 +5609,21 @@ mod tests {
             &mut app,
             Message::Actions(ActionsMsg::TelemetryLoaded(Ok(t.clone()))),
         );
-        assert!(!app.actions.telemetry_loading);
-        assert_eq!(app.actions.telemetry.as_ref().unwrap().runs_today, 42);
+        assert!(!app.ui.actions.telemetry_loading);
+        assert_eq!(app.ui.actions.telemetry.as_ref().unwrap().runs_today, 42);
     }
 
     #[test]
     fn telemetry_loaded_err_clears_loading_and_data() {
         let mut app = App::default();
-        app.actions.telemetry_loading = true;
-        app.actions.telemetry = Some(forge_storage::ActionTelemetry::default());
+        app.ui.actions.telemetry_loading = true;
+        app.ui.actions.telemetry = Some(forge_storage::ActionTelemetry::default());
         let _ = update(
             &mut app,
             Message::Actions(ActionsMsg::TelemetryLoaded(Err("timeout".into()))),
         );
-        assert!(!app.actions.telemetry_loading);
-        assert!(app.actions.telemetry.is_none());
+        assert!(!app.ui.actions.telemetry_loading);
+        assert!(app.ui.actions.telemetry.is_none());
     }
 
     #[test]
@@ -5643,8 +5632,8 @@ mod tests {
         let mut app = App::default();
         let id = ActionId::new();
         let _ = update(&mut app, Message::Actions(ActionsMsg::ActionSelected(id)));
-        assert!(app.actions.telemetry_loading);
-        assert!(app.actions.telemetry.is_none());
+        assert!(app.ui.actions.telemetry_loading);
+        assert!(app.ui.actions.telemetry.is_none());
     }
 
     #[test]
@@ -5664,7 +5653,7 @@ mod tests {
             description: None,
             sub_actions: vec![],
         };
-        app.actions.detail = Some(crate::actions::ActionDetail {
+        app.ui.actions.detail = Some(crate::actions::ActionDetail {
             sub_action_avg_ms: vec![],
             action,
             triggers: vec![],
@@ -5674,7 +5663,7 @@ mod tests {
             &mut app,
             Message::Actions(ActionsMsg::ToggleEnabled(id, false)),
         );
-        assert!(!app.actions.detail.as_ref().unwrap().action.enabled);
+        assert!(!app.ui.actions.detail.as_ref().unwrap().action.enabled);
     }
 
     #[test]
@@ -5682,13 +5671,13 @@ mod tests {
         use forge_types::ActionId;
         let mut app = App::default();
         let id = ActionId::new();
-        app.actions.selected = Some(id);
+        app.ui.actions.selected = Some(id);
         let _ = update(
             &mut app,
             Message::Actions(ActionsMsg::ActionDeleted(Ok(()))),
         );
-        assert!(app.actions.selected.is_none());
-        assert!(app.actions.detail.is_none());
+        assert!(app.ui.actions.selected.is_none());
+        assert!(app.ui.actions.detail.is_none());
     }
 
     #[test]
@@ -5701,33 +5690,33 @@ mod tests {
     #[test]
     fn open_add_action_modal_creates_form() {
         let mut app = App::default();
-        assert!(app.actions.add_action_modal.is_none());
+        assert!(app.ui.actions.add_action_modal.is_none());
         let _ = update(
             &mut app,
             Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
                 AddActionMsg::OpenRequested,
             ))),
         );
-        assert!(app.actions.add_action_modal.is_some());
+        assert!(app.ui.actions.add_action_modal.is_some());
     }
 
     #[test]
     fn cancel_clears_modal() {
         let mut app = App::default();
-        app.actions.add_action_modal = Some(crate::actions::AddActionForm::new());
+        app.ui.actions.add_action_modal = Some(crate::actions::AddActionForm::new());
         let _ = update(
             &mut app,
             Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
                 AddActionMsg::Cancel,
             ))),
         );
-        assert!(app.actions.add_action_modal.is_none());
+        assert!(app.ui.actions.add_action_modal.is_none());
     }
 
     #[test]
     fn name_changed_updates_form() {
         let mut app = App::default();
-        app.actions.add_action_modal = Some(crate::actions::AddActionForm::new());
+        app.ui.actions.add_action_modal = Some(crate::actions::AddActionForm::new());
         let _ = update(
             &mut app,
             Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
@@ -5735,7 +5724,7 @@ mod tests {
             ))),
         );
         assert_eq!(
-            app.actions.add_action_modal.as_ref().unwrap().name,
+            app.ui.actions.add_action_modal.as_ref().unwrap().name,
             "Sub raid"
         );
     }
@@ -5743,21 +5732,24 @@ mod tests {
     #[test]
     fn submit_with_invalid_form_is_noop() {
         let mut app = App::default();
-        app.actions.add_action_modal = Some(crate::actions::AddActionForm::new());
+        app.ui.actions.add_action_modal = Some(crate::actions::AddActionForm::new());
         let _ = update(
             &mut app,
             Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
                 AddActionMsg::Submit,
             ))),
         );
-        assert!(app.actions.add_action_modal.is_some(), "modal remains open");
+        assert!(
+            app.ui.actions.add_action_modal.is_some(),
+            "modal remains open"
+        );
     }
 
     #[test]
     fn saved_ok_closes_modal_and_sets_selected() {
         use forge_types::ActionId;
         let mut app = App::default();
-        app.actions.add_action_modal = Some(crate::actions::AddActionForm::new());
+        app.ui.actions.add_action_modal = Some(crate::actions::AddActionForm::new());
         let new_id = ActionId::new();
         let _ = update(
             &mut app,
@@ -5765,20 +5757,20 @@ mod tests {
                 AddActionMsg::Saved(Ok(new_id)),
             ))),
         );
-        assert!(app.actions.add_action_modal.is_none());
+        assert!(app.ui.actions.add_action_modal.is_none());
     }
 
     #[test]
     fn saved_err_keeps_modal_open_with_error() {
         let mut app = App::default();
-        app.actions.add_action_modal = Some(crate::actions::AddActionForm::new());
+        app.ui.actions.add_action_modal = Some(crate::actions::AddActionForm::new());
         let _ = update(
             &mut app,
             Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
                 AddActionMsg::Saved(Err("db locked".to_string())),
             ))),
         );
-        let form = app.actions.add_action_modal.as_ref().unwrap();
+        let form = app.ui.actions.add_action_modal.as_ref().unwrap();
         assert_eq!(form.error.as_deref(), Some("db locked"));
         assert!(!form.saving);
     }
@@ -5787,7 +5779,7 @@ mod tests {
     fn view_compiles_actions_with_open_modal() {
         let mut app = App::default();
         let _ = update(&mut app, Message::Navigate(Screen::Actions));
-        app.actions.add_action_modal = Some(crate::actions::AddActionForm::new());
+        app.ui.actions.add_action_modal = Some(crate::actions::AddActionForm::new());
         let _ = view(&app);
     }
 
@@ -5839,33 +5831,13 @@ mod tests {
                 twitch_token_expires: None,
                 twitch_reauth_required: false,
             },
-            home: HomeStats::new(),
-            event_feed: EventFeedState::new(),
-            live_chat: LiveChatState::new(),
-            actions: ActionsState::new(),
-            commands: crate::commands_view::CommandsState::new(),
-            queues: QueuesState::new(),
-            viewers: crate::viewers::ViewersState::default(),
-            globals: GlobalsState::new(),
-            script_editor: ScriptEditorState::new(),
-            builtin_detail: None,
-            server_screen: ServerScreenState::default(),
-            settings_websocket: SettingsWebSocketState::default(),
-            twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
-            obs_panel: crate::obs_panel::ObsPanelState::default(),
-            soundboard: SoundboardState::new(),
-            settings_audio: SettingsAudioState::new(),
-            tts_dashboard: TtsDashState::new(),
-            tts_engines: TtsEnginesState::new(),
-            tts_aliases: VoiceAliasesState::new(),
-            tts_filters: TtsFiltersState::new(),
-            tts_triggers: TtsTriggersState::new(),
+            ui: UiState::default(),
         };
 
         let mut form = crate::actions::AddActionForm::new();
         form.name = "My test action".to_string();
         form.set_queue_options(vec![(queue.id, "default".to_string())]);
-        app.actions.add_action_modal = Some(form);
+        app.ui.actions.add_action_modal = Some(form);
 
         let _ = update(
             &mut app,
@@ -5873,7 +5845,7 @@ mod tests {
                 AddActionMsg::Submit,
             ))),
         );
-        assert!(app.actions.add_action_modal.as_ref().unwrap().saving);
+        assert!(app.ui.actions.add_action_modal.as_ref().unwrap().saving);
 
         let saved_id = forge_types::ActionId::new();
         let _ = update(
@@ -5882,7 +5854,7 @@ mod tests {
                 AddActionMsg::Saved(Ok(saved_id)),
             ))),
         );
-        assert!(app.actions.add_action_modal.is_none());
+        assert!(app.ui.actions.add_action_modal.is_none());
     }
 
     #[test]
@@ -5890,16 +5862,17 @@ mod tests {
         use forge_types::ActionId;
         let mut app = App::default();
         let id = ActionId::new();
-        assert!(app.actions.add_sub_action_modal.is_none());
+        assert!(app.ui.actions.add_sub_action_modal.is_none());
         let _ = update(
             &mut app,
             Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
                 AddSubActionMsg::OpenRequested(id),
             ))),
         );
-        assert!(app.actions.add_sub_action_modal.is_some());
+        assert!(app.ui.actions.add_sub_action_modal.is_some());
         assert_eq!(
-            app.actions
+            app.ui
+                .actions
                 .add_sub_action_modal
                 .as_ref()
                 .unwrap()
@@ -5912,7 +5885,7 @@ mod tests {
     fn cancel_sub_action_modal_clears_form() {
         use forge_types::ActionId;
         let mut app = App::default();
-        app.actions.add_sub_action_modal =
+        app.ui.actions.add_sub_action_modal =
             Some(crate::actions::AddSubActionForm::new(ActionId::new()));
         let _ = update(
             &mut app,
@@ -5920,14 +5893,14 @@ mod tests {
                 AddSubActionMsg::Cancel,
             ))),
         );
-        assert!(app.actions.add_sub_action_modal.is_none());
+        assert!(app.ui.actions.add_sub_action_modal.is_none());
     }
 
     #[test]
     fn kind_selected_updates_form() {
         use forge_types::ActionId;
         let mut app = App::default();
-        app.actions.add_sub_action_modal =
+        app.ui.actions.add_sub_action_modal =
             Some(crate::actions::AddSubActionForm::new(ActionId::new()));
         let _ = update(
             &mut app,
@@ -5936,7 +5909,7 @@ mod tests {
             ))),
         );
         assert_eq!(
-            app.actions.add_sub_action_modal.as_ref().unwrap().kind,
+            app.ui.actions.add_sub_action_modal.as_ref().unwrap().kind,
             SubActionKindChoice::Delay,
         );
     }
@@ -5945,7 +5918,7 @@ mod tests {
     fn send_chat_message_changed_updates_form() {
         use forge_types::ActionId;
         let mut app = App::default();
-        app.actions.add_sub_action_modal =
+        app.ui.actions.add_sub_action_modal =
             Some(crate::actions::AddSubActionForm::new(ActionId::new()));
         let _ = update(
             &mut app,
@@ -5954,7 +5927,8 @@ mod tests {
             ))),
         );
         assert_eq!(
-            app.actions
+            app.ui
+                .actions
                 .add_sub_action_modal
                 .as_ref()
                 .unwrap()
@@ -5971,14 +5945,14 @@ mod tests {
         let mut form = crate::actions::AddSubActionForm::new(ActionId::new());
         form.kind = SubActionKindChoice::Delay;
         form.config.delay_ms = "not_a_number".to_string();
-        app.actions.add_sub_action_modal = Some(form);
+        app.ui.actions.add_sub_action_modal = Some(form);
         let _ = update(
             &mut app,
             Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
                 AddSubActionMsg::Submit,
             ))),
         );
-        let f = app.actions.add_sub_action_modal.as_ref().unwrap();
+        let f = app.ui.actions.add_sub_action_modal.as_ref().unwrap();
         assert!(f.error.is_some());
     }
 
@@ -5987,22 +5961,22 @@ mod tests {
         use forge_types::ActionId;
         let mut app = App::default();
         let id = ActionId::new();
-        app.actions.add_sub_action_modal = Some(crate::actions::AddSubActionForm::new(id));
-        app.actions.selected = Some(id);
+        app.ui.actions.add_sub_action_modal = Some(crate::actions::AddSubActionForm::new(id));
+        app.ui.actions.selected = Some(id);
         let _ = update(
             &mut app,
             Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
                 AddSubActionMsg::Saved(Ok(())),
             ))),
         );
-        assert!(app.actions.add_sub_action_modal.is_none());
+        assert!(app.ui.actions.add_sub_action_modal.is_none());
     }
 
     #[test]
     fn add_sub_action_saved_err_keeps_modal_with_error() {
         use forge_types::ActionId;
         let mut app = App::default();
-        app.actions.add_sub_action_modal =
+        app.ui.actions.add_sub_action_modal =
             Some(crate::actions::AddSubActionForm::new(ActionId::new()));
         let _ = update(
             &mut app,
@@ -6010,7 +5984,7 @@ mod tests {
                 AddSubActionMsg::Saved(Err("db locked".to_string())),
             ))),
         );
-        let f = app.actions.add_sub_action_modal.as_ref().unwrap();
+        let f = app.ui.actions.add_sub_action_modal.as_ref().unwrap();
         assert_eq!(f.error.as_deref(), Some("db locked"));
         assert!(!f.saving);
     }
@@ -6020,7 +5994,7 @@ mod tests {
         use forge_types::ActionId;
         let mut app = App::default();
         let _ = update(&mut app, Message::Navigate(Screen::Actions));
-        app.actions.add_sub_action_modal =
+        app.ui.actions.add_sub_action_modal =
             Some(crate::actions::AddSubActionForm::new(ActionId::new()));
         let _ = view(&app);
     }
@@ -6029,7 +6003,7 @@ mod tests {
     fn clips_loaded_populates_available_clips() {
         use forge_types::{ActionId, ClipId};
         let mut app = App::default();
-        app.actions.add_sub_action_modal =
+        app.ui.actions.add_sub_action_modal =
             Some(crate::actions::AddSubActionForm::new(ActionId::new()));
         let clip_id = ClipId::new();
         let _ = update(
@@ -6039,6 +6013,7 @@ mod tests {
             ))),
         );
         let clips = &app
+            .ui
             .actions
             .add_sub_action_modal
             .as_ref()
@@ -6054,7 +6029,7 @@ mod tests {
         let mut app = App::default();
         let mut form = crate::actions::AddSubActionForm::new(ActionId::new());
         form.kind = SubActionKindChoice::PlaySound;
-        app.actions.add_sub_action_modal = Some(form);
+        app.ui.actions.add_sub_action_modal = Some(form);
         let clip_id = ClipId::new();
         let _ = update(
             &mut app,
@@ -6063,7 +6038,8 @@ mod tests {
             ))),
         );
         assert_eq!(
-            app.actions
+            app.ui
+                .actions
                 .add_sub_action_modal
                 .as_ref()
                 .unwrap()
@@ -6079,14 +6055,14 @@ mod tests {
         let mut app = App::default();
         let mut form = crate::actions::AddSubActionForm::new(ActionId::new());
         form.kind = SubActionKindChoice::PlaySound;
-        app.actions.add_sub_action_modal = Some(form);
+        app.ui.actions.add_sub_action_modal = Some(form);
         let _ = update(
             &mut app,
             Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
                 AddSubActionMsg::Submit,
             ))),
         );
-        let f = app.actions.add_sub_action_modal.as_ref().unwrap();
+        let f = app.ui.actions.add_sub_action_modal.as_ref().unwrap();
         assert!(f.error.is_some());
     }
 
@@ -6098,7 +6074,7 @@ mod tests {
         let mut form = crate::actions::AddSubActionForm::new(ActionId::new());
         form.kind = SubActionKindChoice::PlaySound;
         form.available_clips = vec![(ClipId::new(), "Airhorn".to_string())];
-        app.actions.add_sub_action_modal = Some(form);
+        app.ui.actions.add_sub_action_modal = Some(form);
         let _ = view(&app);
     }
 
@@ -6141,10 +6117,10 @@ mod tests {
     fn hub_view_compiles_with_populated_stats() {
         let mut app = App::default();
         let _ = update(&mut app, Message::Navigate(Screen::Home));
-        app.home.actions_count = Some(47);
-        app.home.commands_count = Some(23);
-        app.home.triggers_fired = Some(1284);
-        app.home.globals_count = Some(31);
+        app.ui.home.actions_count = Some(47);
+        app.ui.home.commands_count = Some(23);
+        app.ui.home.triggers_fired = Some(1284);
+        app.ui.home.globals_count = Some(31);
         let _ = view(&app);
     }
 
@@ -6167,10 +6143,10 @@ mod tests {
             globals_count: 7,
         };
         let _ = update(&mut app, Message::Home(HomeMsg::StatsLoaded(Ok(data))));
-        assert_eq!(app.home.actions_count, Some(5));
-        assert_eq!(app.home.commands_count, Some(3));
-        assert_eq!(app.home.triggers_fired, Some(42));
-        assert_eq!(app.home.globals_count, Some(7));
+        assert_eq!(app.ui.home.actions_count, Some(5));
+        assert_eq!(app.ui.home.commands_count, Some(3));
+        assert_eq!(app.ui.home.triggers_fired, Some(42));
+        assert_eq!(app.ui.home.globals_count, Some(7));
     }
 
     #[test]
@@ -6181,10 +6157,10 @@ mod tests {
             &mut app,
             Message::Home(HomeMsg::StatsLoaded(Err("db error".into()))),
         );
-        assert!(app.home.actions_count.is_none());
-        assert!(app.home.commands_count.is_none());
-        assert!(app.home.triggers_fired.is_none());
-        assert!(app.home.globals_count.is_none());
+        assert!(app.ui.home.actions_count.is_none());
+        assert!(app.ui.home.commands_count.is_none());
+        assert!(app.ui.home.triggers_fired.is_none());
+        assert!(app.ui.home.globals_count.is_none());
     }
 
     #[test]
@@ -6242,10 +6218,10 @@ mod tests {
     fn view_home_renders() {
         let mut app = App::default();
         let _ = update(&mut app, Message::Navigate(Screen::Home));
-        app.home.actions_count = Some(12);
-        app.home.commands_count = Some(5);
-        app.home.triggers_fired = Some(99);
-        app.home.globals_count = Some(3);
+        app.ui.home.actions_count = Some(12);
+        app.ui.home.commands_count = Some(5);
+        app.ui.home.triggers_fired = Some(99);
+        app.ui.home.globals_count = Some(3);
         let _ = view(&app);
     }
 
@@ -6260,8 +6236,8 @@ mod tests {
     fn hub_view_desc_shows_actions_count() {
         let mut app = App::default();
         let _ = update(&mut app, Message::Navigate(Screen::Home));
-        app.home.actions_count = Some(47);
-        app.home.triggers_fired = Some(1284);
+        app.ui.home.actions_count = Some(47);
+        app.ui.home.triggers_fired = Some(1284);
         let _ = view(&app);
     }
 
@@ -6303,7 +6279,7 @@ mod tests {
             Message::ObsBootResult(Ok(ObsClientRef::new(Arc::new(client)))),
         );
         assert!(app.rt.obs_client.is_some());
-        assert!(app.builtin_detail.is_some());
+        assert!(app.ui.builtin_detail.is_some());
     }
 
     #[test]
@@ -6314,6 +6290,6 @@ mod tests {
             Message::ObsBootResult(Err("connection refused".into())),
         );
         assert!(app.rt.obs_client.is_none());
-        assert!(app.builtin_detail.is_none());
+        assert!(app.ui.builtin_detail.is_none());
     }
 }

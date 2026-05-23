@@ -436,7 +436,7 @@ fn detail_pane<'a>(
     let p = *palette;
     let mono = forge_widgets::font(forge_widgets::FontRole::Monospace);
 
-    let detail = match app.actions.detail.as_ref() {
+    let detail = match app.ui.actions.detail.as_ref() {
         Some(d) if d.action.id == action_id => d,
         _ => {
             return container(
@@ -735,7 +735,7 @@ fn detail_pane<'a>(
             None => iced::widget::Space::new().width(Length::Shrink).into(),
         };
 
-        let menu_open = app.actions.step_menu_open == Some(i);
+        let menu_open = app.ui.actions.step_menu_open == Some(i);
         let controls = step_controls(action_id, i, total, menu_open, palette);
 
         let title_row: Element<'_, Message> = row![
@@ -798,9 +798,10 @@ pub fn action_editor_view<'a>(
     action_id: ActionId,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    let left = tree_pane(&app.actions.tree, action_id, palette);
+    let left = tree_pane(&app.ui.actions.tree, action_id, palette);
     let right = detail_pane(app, action_id, palette);
     let action_name = app
+        .ui
         .actions
         .tree
         .iter()

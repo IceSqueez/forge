@@ -3,8 +3,7 @@
 use std::sync::Arc;
 
 use forge_app::{
-    App, EventFeedState, LiveChatMsg, Message, PlatformFilter, RuntimeView, Screen,
-    ScriptEditorState, SidebarExpandState, app::update,
+    App, LiveChatMsg, Message, PlatformFilter, RuntimeView, Screen, SidebarExpandState, app::update,
 };
 use forge_events::{Event, EventSource};
 use forge_runtime::{EventBus, NullEventLogRepo, ScriptRegistry, bus_subscription};
@@ -49,27 +48,7 @@ fn test_app() -> App {
             twitch_token_expires: None,
             twitch_reauth_required: false,
         },
-        home: forge_app::home::HomeStats::new(),
-        event_feed: EventFeedState::new(),
-        live_chat: forge_app::LiveChatState::new(),
-        actions: forge_app::ActionsState::new(),
-        commands: forge_app::commands_view::CommandsState::new(),
-        queues: forge_app::queues_view::QueuesState::new(),
-        viewers: forge_app::viewers::ViewersState::default(),
-        globals: forge_app::GlobalsState::new(),
-        script_editor: ScriptEditorState::new(),
-        builtin_detail: None,
-        server_screen: forge_app::ServerScreenState::default(),
-        settings_websocket: forge_app::SettingsWebSocketState::default(),
-        twitch_panel: forge_app::twitch_panel::TwitchPanelState::default(),
-        obs_panel: forge_app::obs_panel::ObsPanelState::default(),
-        soundboard: forge_app::soundboard::SoundboardState::new(),
-        settings_audio: forge_app::settings_audio::SettingsAudioState::new(),
-        tts_dashboard: forge_app::tts_dashboard::TtsDashState::new(),
-        tts_engines: forge_app::tts_engines::TtsEnginesState::new(),
-        tts_aliases: forge_app::voice_aliases::VoiceAliasesState::new(),
-        tts_filters: forge_app::tts_filters::TtsFiltersState::new(),
-        tts_triggers: forge_app::tts_triggers::TtsTriggersState::new(),
+        ui: forge_app::UiState::default(),
     }
 }
 
@@ -89,11 +68,11 @@ fn make_twitch_chat_event(username: &str, message: &str) -> Event {
 #[test]
 fn chat_message_event_appends_to_log() {
     let mut app = test_app();
-    app.live_chat.chat_log.clear();
+    app.ui.live_chat.chat_log.clear();
     let ev = make_twitch_chat_event("INTEGRATION_TEST_USERNAME", "INTEGRATION_TEST_MESSAGE_BODY");
     let _ = update(&mut app, Message::EventArrived(Arc::new(ev)));
-    assert_eq!(app.live_chat.chat_log.len(), 1);
-    let row = &app.live_chat.chat_log[0];
+    assert_eq!(app.ui.live_chat.chat_log.len(), 1);
+    let row = &app.ui.live_chat.chat_log[0];
     assert_eq!(row.username, "INTEGRATION_TEST_USERNAME");
     assert_eq!(
         row.body,
@@ -104,7 +83,7 @@ fn chat_message_event_appends_to_log() {
 #[test]
 fn chat_log_trims_at_1000_entries() {
     let mut app = test_app();
-    app.live_chat.chat_log.clear();
+    app.ui.live_chat.chat_log.clear();
     let limit = forge_app::live_chat::CHAT_LOG_MAX;
     for i in 0..=limit {
         let ev = make_twitch_chat_event(
@@ -113,31 +92,31 @@ fn chat_log_trims_at_1000_entries() {
         );
         let _ = update(&mut app, Message::EventArrived(Arc::new(ev)));
     }
-    assert_eq!(app.live_chat.chat_log.len(), limit);
-    let first = &app.live_chat.chat_log[0];
+    assert_eq!(app.ui.live_chat.chat_log.len(), limit);
+    let first = &app.ui.live_chat.chat_log[0];
     assert_ne!(first.username, "INTEGRATION_TEST_USERNAME_0");
 }
 
 #[test]
 fn non_chat_events_are_ignored() {
     let mut app = test_app();
-    app.live_chat.chat_log.clear();
+    app.ui.live_chat.chat_log.clear();
     let ev = Event::new(
         EventSource::Twitch,
         "platform.connected",
         serde_json::json!({ "platform": "twitch" }),
     );
     let _ = update(&mut app, Message::EventArrived(Arc::new(ev)));
-    assert!(app.live_chat.chat_log.is_empty());
+    assert!(app.ui.live_chat.chat_log.is_empty());
 }
 
 #[test]
 fn filter_changed_updates_filter_state() {
     let mut app = test_app();
     let _ = update(&mut app, Message::LiveChat(LiveChatMsg::ToggleHideBots));
-    assert!(app.live_chat.chat_filter.hide_bots);
+    assert!(app.ui.live_chat.chat_filter.hide_bots);
     let _ = update(&mut app, Message::LiveChat(LiveChatMsg::ToggleHideBots));
-    assert!(!app.live_chat.chat_filter.hide_bots);
+    assert!(!app.ui.live_chat.chat_filter.hide_bots);
 }
 
 #[test]
@@ -147,7 +126,10 @@ fn platform_filter_changed_updates_state() {
         &mut app,
         Message::LiveChat(LiveChatMsg::PlatformFilter(PlatformFilter::Twitch)),
     );
-    assert_eq!(app.live_chat.chat_filter.platform, PlatformFilter::Twitch);
+    assert_eq!(
+        app.ui.live_chat.chat_filter.platform,
+        PlatformFilter::Twitch
+    );
 }
 
 #[test]
@@ -157,15 +139,15 @@ fn chat_input_changed_updates_state() {
         &mut app,
         Message::LiveChat(LiveChatMsg::InputChanged("INTEGRATION_TEST_INPUT".into())),
     );
-    assert_eq!(app.live_chat.chat_input, "INTEGRATION_TEST_INPUT");
+    assert_eq!(app.ui.live_chat.chat_input, "INTEGRATION_TEST_INPUT");
 }
 
 #[test]
 fn chat_submit_clears_input_optimistically() {
     let mut app = test_app();
-    app.live_chat.chat_input = "INTEGRATION_TEST_MESSAGE_BODY".to_owned();
+    app.ui.live_chat.chat_input = "INTEGRATION_TEST_MESSAGE_BODY".to_owned();
     let _ = update(&mut app, Message::LiveChat(LiveChatMsg::Submit));
-    assert!(app.live_chat.chat_input.is_empty());
+    assert!(app.ui.live_chat.chat_input.is_empty());
 }
 
 #[tokio::test]

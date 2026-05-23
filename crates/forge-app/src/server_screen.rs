@@ -1296,17 +1296,17 @@ mod tests {
     #[test]
     fn toggle_token_reveal_flips_bool() {
         let mut app = App::default();
-        assert!(!app.server_screen.token_revealed);
+        assert!(!app.ui.server_screen.token_revealed);
         let _ = app_update(
             &mut app,
             Message::Server(ServerScreenMsg::ToggleTokenReveal),
         );
-        assert!(app.server_screen.token_revealed);
+        assert!(app.ui.server_screen.token_revealed);
         let _ = app_update(
             &mut app,
             Message::Server(ServerScreenMsg::ToggleTokenReveal),
         );
-        assert!(!app.server_screen.token_revealed);
+        assert!(!app.ui.server_screen.token_revealed);
     }
 
     #[test]
@@ -1319,11 +1319,11 @@ mod tests {
             );
         }
         assert_eq!(
-            app.server_screen.bandwidth_samples.len(),
+            app.ui.server_screen.bandwidth_samples.len(),
             MAX_BANDWIDTH_SAMPLES
         );
-        assert_eq!(app.server_screen.bandwidth_samples[0], 10.0);
-        assert_eq!(app.server_screen.bandwidth_samples[59], 69.0);
+        assert_eq!(app.ui.server_screen.bandwidth_samples[0], 10.0);
+        assert_eq!(app.ui.server_screen.bandwidth_samples[59], 69.0);
     }
 
     #[test]

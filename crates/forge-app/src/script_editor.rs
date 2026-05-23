@@ -1069,7 +1069,7 @@ pub fn script_editor_view<'a>(
     app: &'a crate::app::App,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    let state = &app.script_editor;
+    let state = &app.ui.script_editor;
 
     let toolbar_actions = toolbar_action_row(state, palette);
     let left = left_pane(state, palette);
@@ -1244,12 +1244,12 @@ mod tests {
         use crate::app::App;
         let mut app = App::default();
         let id = ScriptId::new();
-        app.script_editor.scripts.push(ScriptListEntry {
+        app.ui.script_editor.scripts.push(ScriptListEntry {
             id,
             name: "test".to_owned(),
             enabled: true,
         });
-        app.script_editor.selected = Some(id);
+        app.ui.script_editor.selected = Some(id);
         let _: iced::Element<'_, Message> = script_editor_view(&app, &CATPPUCCIN_MOCHA);
     }
 
@@ -1260,7 +1260,7 @@ mod tests {
         let id = ScriptId::new();
         let now = OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap();
         let body = "1 + 1".to_owned();
-        app.script_editor.editor = Some(OpenScript {
+        app.ui.script_editor.editor = Some(OpenScript {
             id,
             original_body: body.clone(),
             content: CodeEditorState::with_text(&body),
@@ -1283,7 +1283,7 @@ mod tests {
         use crate::app::App;
         let mut app = App::default();
         let id = ScriptId::new();
-        app.script_editor.run_modal = Some(RunModalForm {
+        app.ui.script_editor.run_modal = Some(RunModalForm {
             script_id: id,
             script_name: "test".to_owned(),
             display_title: "Run script: test".to_owned(),

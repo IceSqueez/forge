@@ -603,7 +603,7 @@ fn update_variant_editor(
 
 pub fn globals_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
     let main = globals_main_view(app, palette);
-    if let Some(form) = app.globals.editor.as_ref() {
+    if let Some(form) = app.ui.globals.editor.as_ref() {
         let modal_el = variant_editor_modal_view(form, palette);
         iced::widget::stack![main, modal_el].into()
     } else {
@@ -620,11 +620,17 @@ fn globals_main_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a,
         snap: true,
     };
 
-    let total = app.globals.entries.len();
-    let persisted_count = app.globals.entries.iter().filter(|e| e.persisted).count();
+    let total = app.ui.globals.entries.len();
+    let persisted_count = app
+        .ui
+        .globals
+        .entries
+        .iter()
+        .filter(|e| e.persisted)
+        .count();
     let session_count = total - persisted_count;
 
-    let table_content: Element<'_, Message> = if app.globals.loading {
+    let table_content: Element<'_, Message> = if app.ui.globals.loading {
         container(text("Loading...").size(FONT_SM).color(palette.text_muted))
             .width(Length::Fill)
             .height(Length::Fill)
@@ -632,7 +638,7 @@ fn globals_main_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a,
             .align_y(Alignment::Center)
             .into()
     } else {
-        let visible_entries: Vec<&GlobalEntry> = app.globals.filtered_entries().collect();
+        let visible_entries: Vec<&GlobalEntry> = app.ui.globals.filtered_entries().collect();
 
         if visible_entries.is_empty() {
             container(empty_state(
@@ -676,9 +682,9 @@ fn globals_main_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a,
     let footer = data_screen_footer(
         palette,
         FooterProps {
-            position_info: &app.globals.position_display,
-            storage_info: Some(&app.globals.storage_display),
-            save_info: Some(&app.globals.save_display),
+            position_info: &app.ui.globals.position_display,
+            storage_info: Some(&app.ui.globals.storage_display),
+            save_info: Some(&app.ui.globals.save_display),
             live_indicator: true,
         },
     );
@@ -711,21 +717,21 @@ fn globals_page_header<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'
     let chip_all = filter_chip(
         "All",
         p.brand,
-        app.globals.filter == GlobalsFilter::All,
+        app.ui.globals.filter == GlobalsFilter::All,
         Message::Globals(GlobalsMsg::FilterSelected(GlobalsFilter::All)),
         palette,
     );
     let chip_persisted = filter_chip(
         "Persisted",
         p.success,
-        app.globals.filter == GlobalsFilter::Persisted,
+        app.ui.globals.filter == GlobalsFilter::Persisted,
         Message::Globals(GlobalsMsg::FilterSelected(GlobalsFilter::Persisted)),
         palette,
     );
     let chip_session = filter_chip(
         "Session",
         p.warning,
-        app.globals.filter == GlobalsFilter::Session,
+        app.ui.globals.filter == GlobalsFilter::Session,
         Message::Globals(GlobalsMsg::FilterSelected(GlobalsFilter::Session)),
         palette,
     );
@@ -741,7 +747,7 @@ fn globals_page_header<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'
 
     let search = container(search_input(
         "Search variables...",
-        &app.globals.search,
+        &app.ui.globals.search,
         |s| Message::Globals(GlobalsMsg::SearchChanged(s)),
         palette,
     ))
@@ -1223,7 +1229,7 @@ mod tests {
     fn load_requested_sets_loading_flag() {
         let mut app = App::default();
         let _ = update(&mut app, Message::Globals(GlobalsMsg::LoadRequested));
-        assert!(app.globals.loading);
+        assert!(app.ui.globals.loading);
     }
 
     #[test]
@@ -1238,21 +1244,21 @@ mod tests {
             &mut app,
             Message::Globals(GlobalsMsg::EntriesLoaded(Ok(data))),
         );
-        assert_eq!(app.globals.entries.len(), 2);
-        assert!(!app.globals.loading);
-        assert_eq!(app.globals.storage_bytes, 2048);
+        assert_eq!(app.ui.globals.entries.len(), 2);
+        assert!(!app.ui.globals.loading);
+        assert_eq!(app.ui.globals.storage_bytes, 2048);
     }
 
     #[test]
     fn entries_loaded_err_clears_loading() {
         let mut app = App::default();
-        app.globals.loading = true;
+        app.ui.globals.loading = true;
         let _ = update(
             &mut app,
             Message::Globals(GlobalsMsg::EntriesLoaded(Err("db error".to_owned()))),
         );
-        assert!(!app.globals.loading);
-        assert!(app.globals.entries.is_empty());
+        assert!(!app.ui.globals.loading);
+        assert!(app.ui.globals.entries.is_empty());
     }
 
     #[test]
@@ -1266,12 +1272,12 @@ mod tests {
     #[test]
     fn globals_view_smoke_with_entries() {
         let mut app = App::default();
-        app.globals.entries = vec![
+        app.ui.globals.entries = vec![
             make_entry("quoteCounter", true),
             make_entry("streamLive", false),
         ];
-        app.globals.loading = false;
-        app.globals.refresh_displays();
+        app.ui.globals.loading = false;
+        app.ui.globals.refresh_displays();
         let palette = app.palette;
         let _ = globals_view(&app, &palette);
     }
@@ -1279,15 +1285,15 @@ mod tests {
     #[test]
     fn position_display_updates_on_filter_change() {
         let mut app = App::default();
-        app.globals.entries = vec![make_entry("alpha", true), make_entry("beta", false)];
-        app.globals.refresh_displays();
-        assert!(app.globals.position_display.contains("2 of 2"));
+        app.ui.globals.entries = vec![make_entry("alpha", true), make_entry("beta", false)];
+        app.ui.globals.refresh_displays();
+        assert!(app.ui.globals.position_display.contains("2 of 2"));
 
         let _ = update(
             &mut app,
             Message::Globals(GlobalsMsg::FilterSelected(GlobalsFilter::Persisted)),
         );
-        assert!(app.globals.position_display.contains("1 of 2"));
+        assert!(app.ui.globals.position_display.contains("1 of 2"));
     }
 
     fn int_form(name: &str, value: &str) -> VariantEditorForm {
@@ -1423,15 +1429,15 @@ mod tests {
     #[test]
     fn open_create_modal_sets_editor() {
         let mut app = App::default();
-        assert!(app.globals.editor.is_none());
+        assert!(app.ui.globals.editor.is_none());
         let _ = update(&mut app, Message::Globals(GlobalsMsg::OpenCreateModal));
         let _ = update(
             &mut app,
             Message::Globals(GlobalsMsg::VariantEditor(VariantEditorMsg::OpenCreate)),
         );
-        assert!(app.globals.editor.is_some());
+        assert!(app.ui.globals.editor.is_some());
         assert!(matches!(
-            app.globals.editor.as_ref().unwrap().mode,
+            app.ui.globals.editor.as_ref().unwrap().mode,
             EditorMode::Create
         ));
     }
@@ -1439,12 +1445,12 @@ mod tests {
     #[test]
     fn cancel_clears_editor() {
         let mut app = App::default();
-        app.globals.editor = Some(VariantEditorForm::for_create());
+        app.ui.globals.editor = Some(VariantEditorForm::for_create());
         let _ = update(
             &mut app,
             Message::Globals(GlobalsMsg::VariantEditor(VariantEditorMsg::Cancel)),
         );
-        assert!(app.globals.editor.is_none());
+        assert!(app.ui.globals.editor.is_none());
     }
 
     #[test]
@@ -1466,7 +1472,7 @@ mod tests {
                 entry,
             ))),
         );
-        let form = app.globals.editor.as_ref().unwrap();
+        let form = app.ui.globals.editor.as_ref().unwrap();
         assert_eq!(form.name, "myvar");
         assert_eq!(form.kind, VariantKind::Int);
         assert!(form.persisted);
@@ -1476,41 +1482,41 @@ mod tests {
     #[test]
     fn submit_with_invalid_form_is_noop() {
         let mut app = App::default();
-        app.globals.editor = Some(int_form("", "not_a_number"));
+        app.ui.globals.editor = Some(int_form("", "not_a_number"));
         let _ = update(
             &mut app,
             Message::Globals(GlobalsMsg::VariantEditor(VariantEditorMsg::Submit)),
         );
-        assert!(app.globals.editor.is_some());
-        assert!(!app.globals.editor.as_ref().unwrap().saving);
+        assert!(app.ui.globals.editor.is_some());
+        assert!(!app.ui.globals.editor.as_ref().unwrap().saving);
     }
 
     #[test]
     fn submit_with_valid_form_sets_saving() {
         let mut app = App::default();
-        app.globals.editor = Some(int_form("counter", "42"));
+        app.ui.globals.editor = Some(int_form("counter", "42"));
         let _ = update(
             &mut app,
             Message::Globals(GlobalsMsg::VariantEditor(VariantEditorMsg::Submit)),
         );
-        assert!(app.globals.editor.as_ref().is_some_and(|f| f.saving));
+        assert!(app.ui.globals.editor.as_ref().is_some_and(|f| f.saving));
     }
 
     #[test]
     fn saved_ok_closes_modal() {
         let mut app = App::default();
-        app.globals.editor = Some(int_form("counter", "42"));
+        app.ui.globals.editor = Some(int_form("counter", "42"));
         let _ = update(
             &mut app,
             Message::Globals(GlobalsMsg::VariantEditor(VariantEditorMsg::Saved(Ok(())))),
         );
-        assert!(app.globals.editor.is_none());
+        assert!(app.ui.globals.editor.is_none());
     }
 
     #[test]
     fn saved_err_keeps_modal_with_error() {
         let mut app = App::default();
-        app.globals.editor = Some(VariantEditorForm {
+        app.ui.globals.editor = Some(VariantEditorForm {
             saving: true,
             ..int_form("counter", "42")
         });
@@ -1520,7 +1526,7 @@ mod tests {
                 "db write failed".to_owned(),
             )))),
         );
-        let form = app.globals.editor.as_ref().unwrap();
+        let form = app.ui.globals.editor.as_ref().unwrap();
         assert!(!form.saving);
         assert_eq!(form.error.as_deref(), Some("db write failed"));
     }
@@ -1528,7 +1534,7 @@ mod tests {
     #[test]
     fn globals_view_smoke_with_modal_open() {
         let mut app = App::default();
-        app.globals.editor = Some(int_form("x", "1"));
+        app.ui.globals.editor = Some(int_form("x", "1"));
         let palette = app.palette;
         let _ = globals_view(&app, &palette);
     }

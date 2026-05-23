@@ -1,6 +1,6 @@
 use forge_widgets::ForgePalette;
 use forge_widgets::tokens::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spacing,
+    BORDER_THIN, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
 };
 use iced::widget::{button, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Background, Border, Color, Element, Length, Task};
@@ -76,15 +76,15 @@ pub fn tts_engines_view<'a>(
     state: &'a TtsEnginesState,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    let gap_sm = f32::from(spacing(Spacing::Xs, Density::Cozy));
-    let gap_md = f32::from(spacing(Spacing::Sm, Density::Cozy));
+    let gap_sm = spf(Spacing::Xs);
+    let gap_md = spf(Spacing::Sm);
 
     let engine_list = engine_list_view(state, palette, gap_sm);
     let detail = engine_detail_view(state, palette, gap_sm, gap_md);
 
     row![engine_list, detail]
         .spacing(gap_md)
-        .padding([16, 18])
+        .padding([sp(Spacing::Md), sp(Spacing::Md)])
         .height(Length::Fill)
         .into()
 }
@@ -135,7 +135,7 @@ fn engine_list_view<'a>(
         },
         ..container::Style::default()
     })
-    .padding([14, 11])
+    .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
     .width(Length::Fill);
 
     container(
@@ -192,7 +192,7 @@ fn engine_list_card<'a>(
     };
     let border_width: f32 = if selected { 1.0 } else { BORDER_THIN };
 
-    button(column![name_row, meta].spacing(4))
+    button(column![name_row, meta].spacing(spf(Spacing::Xxs)))
         .on_press(Message::Tts(TtsMsg::Engines(TtsEnginesMsg::SelectEngine(
             engine.id.to_owned(),
         ))))
@@ -206,7 +206,7 @@ fn engine_list_card<'a>(
             text_color: palette.text_primary,
             ..button::Style::default()
         })
-        .padding([10, 11])
+        .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
         .width(Length::Fill)
         .into()
 }
@@ -309,7 +309,7 @@ fn engine_detail_header<'a>(
             },
             ..container::Style::default()
         })
-        .padding([2, 7])
+        .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
         .into()
     } else {
         text("").size(0.0).into()
@@ -331,7 +331,9 @@ fn engine_detail_header<'a>(
 
     container(
         row![
-            column![title_row, sub].spacing(3).width(Length::Fill),
+            column![title_row, sub]
+                .spacing(spf(Spacing::Xxs))
+                .width(Length::Fill),
             credentials_status,
         ]
         .align_y(Alignment::Center)
@@ -345,7 +347,7 @@ fn engine_detail_header<'a>(
         },
         ..container::Style::default()
     })
-    .padding([13, 16])
+    .padding([sp(Spacing::Sm), sp(Spacing::Md)])
     .width(Length::Fill)
     .into()
 }
@@ -377,7 +379,7 @@ fn credentials_section<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
                 },
                 ..container::Style::default()
             })
-            .padding([3, 8]),
+            .padding([sp(Spacing::Xxs), sp(Spacing::Xs)]),
         ]
         .align_y(Alignment::Center),
     )
@@ -390,10 +392,10 @@ fn credentials_section<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
         },
         ..container::Style::default()
     })
-    .padding([8, 11])
+    .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
     .width(Length::Fill);
 
-    container(column![header, keyring_notice].spacing(8))
+    container(column![header, keyring_notice].spacing(spf(Spacing::Xs)))
         .style(move |_| container::Style {
             border: Border {
                 color: palette.border_regular,
@@ -402,7 +404,7 @@ fn credentials_section<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
             },
             ..container::Style::default()
         })
-        .padding([13, 16])
+        .padding([sp(Spacing::Sm), sp(Spacing::Md)])
         .width(Length::Fill)
         .into()
 }
@@ -449,7 +451,7 @@ fn params_section<'a>(palette: &'a ForgePalette, gap_sm: f32) -> Element<'a, Mes
             param_slider_row("Speed", "1.0x", palette, gap_sm),
             param_slider_row("Volume", "0 dB", palette, gap_sm),
         ]
-        .spacing(10),
+        .spacing(spf(Spacing::Xs)),
     )
     .style(move |_| container::Style {
         border: Border {
@@ -459,7 +461,7 @@ fn params_section<'a>(palette: &'a ForgePalette, gap_sm: f32) -> Element<'a, Mes
         },
         ..container::Style::default()
     })
-    .padding([13, 16])
+    .padding([sp(Spacing::Sm), sp(Spacing::Md)])
     .width(Length::Fill)
     .into()
 }
@@ -496,7 +498,7 @@ fn voices_section<'a>(
                     selection: palette.brand,
                 }),
         )
-        .padding([3, 4]),
+        .padding([sp(Spacing::Xxs), sp(Spacing::Xxs)]),
     ]
     .align_y(Alignment::Center)
     .spacing(gap_sm);
@@ -518,7 +520,7 @@ fn voices_section<'a>(
 
     let grid = row(voice_cells).spacing(gap_sm).wrap();
 
-    container(column![header_row, grid].spacing(8))
+    container(column![header_row, grid].spacing(spf(Spacing::Xs)))
         .style(move |_| container::Style {
             border: Border {
                 color: palette.border_regular,
@@ -527,7 +529,7 @@ fn voices_section<'a>(
             },
             ..container::Style::default()
         })
-        .padding([13, 16])
+        .padding([sp(Spacing::Sm), sp(Spacing::Md)])
         .width(Length::Fill)
         .into()
 }
@@ -548,7 +550,7 @@ fn voice_cell<'a>(voice: &'a EngineVoiceRow, palette: &'a ForgePalette) -> Eleme
                 .color(palette.text_muted)
                 .font(font(FontRole::Monospace)),
         ]
-        .spacing(2),
+        .spacing(spf(Spacing::Xxs)),
     )
     .style(move |_| container::Style {
         background: Some(Background::Color(palette.shell)),
@@ -559,7 +561,7 @@ fn voice_cell<'a>(voice: &'a EngineVoiceRow, palette: &'a ForgePalette) -> Eleme
         },
         ..container::Style::default()
     })
-    .padding([7, 9])
+    .padding([sp(Spacing::Xs), sp(Spacing::Xs)])
     .width(Length::Fixed(140.0))
     .into()
 }

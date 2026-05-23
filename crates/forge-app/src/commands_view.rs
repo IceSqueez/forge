@@ -4,7 +4,7 @@ use forge_storage::DataProvider;
 use forge_types::{Command, CommandPermission};
 use forge_widgets::{
     ForgePalette, filter_chip, primary_button, search_input,
-    tokens::{FONT_SM, FONT_XS, FontRole, font},
+    tokens::{FONT_SM, FONT_XS, FontRole, Spacing, font, sp, spf},
 };
 use iced::{
     Alignment, Background, Border, Element, Length, Task,
@@ -136,12 +136,12 @@ pub fn commands_view<'a>(
             Message::Commands(CommandsMsg::FilterChanged(CommandsFilter::Disabled)),
         ),
     ]
-    .spacing(4);
+    .spacing(spf(Spacing::Xxs));
 
     let new_btn = primary_button("New command", Message::Navigate(Screen::Actions), palette);
     let divider = crate::app::header_divider(palette);
     let right_side = row![chips, divider, search_box, new_btn]
-        .spacing(8)
+        .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Center);
 
     let column_header = container(
@@ -172,10 +172,10 @@ pub fn commands_view<'a>(
                 .font(mono)
                 .width(Length::FillPortion(2)),
         ]
-        .spacing(12)
+        .spacing(spf(Spacing::Sm))
         .align_y(Alignment::Center),
     )
-    .padding([7_u16, 16_u16])
+    .padding([sp(Spacing::Xs), sp(Spacing::Md)])
     .style(move |_: &iced::Theme| container::Style {
         background: Some(Background::Color(p.shell)),
         border: Border {
@@ -199,7 +199,7 @@ pub fn commands_view<'a>(
                 .size(FONT_SM)
                 .color(p.text_muted),
         )
-        .padding(24)
+        .padding(sp(Spacing::Lg))
         .width(Length::Fill)
         .into()
     } else if filtered.is_empty() {
@@ -209,7 +209,7 @@ pub fn commands_view<'a>(
             Some(("Open Actions", Message::Navigate(Screen::Actions))),
             palette,
         ))
-        .padding(20)
+        .padding(sp(Spacing::Lg))
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
@@ -282,11 +282,11 @@ fn command_row<'a>(cmd: &'a Command, palette: &'a ForgePalette) -> Element<'a, M
         .width(Length::FillPortion(2));
 
     let inner = row![state_cell, name_cell, perm_cell, cooldown_cell, action_cell,]
-        .spacing(12)
+        .spacing(spf(Spacing::Sm))
         .align_y(Alignment::Center);
 
     container(inner)
-        .padding([8_u16, 16_u16])
+        .padding([sp(Spacing::Xs), sp(Spacing::Md)])
         .width(Length::Fill)
         .style(move |_: &iced::Theme| container::Style {
             border: Border {

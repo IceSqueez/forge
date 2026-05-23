@@ -7,7 +7,7 @@ use forge_storage::{DataProvider, StoredClip};
 use forge_types::{ClipId, OutputDevice};
 use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::tokens::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spacing,
+    BORDER_THIN, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spf,
 };
 use forge_widgets::{ClipCardData, DeviceLabel, ForgePalette, clip_card, output_device_picker};
 use iced::widget::{button, column, container, row, scrollable, text, text_input};
@@ -396,8 +396,8 @@ fn modal_card_style(palette: &ForgePalette) -> impl Fn(&iced::Theme) -> containe
 }
 
 fn add_clip_modal<'a>(modal: &'a AddClipModal, palette: &'a ForgePalette) -> Element<'a, Message> {
-    let gap_md = f32::from(spacing(Spacing::Sm, Density::Cozy));
-    let gap_lg = f32::from(spacing(Spacing::Sm, Density::Cozy));
+    let gap_md = spf(Spacing::Sm);
+    let gap_lg = spf(Spacing::Sm);
 
     let title = text(if modal.editing_id.is_some() {
         "Edit clip"
@@ -438,7 +438,7 @@ fn add_clip_modal<'a>(modal: &'a AddClipModal, palette: &'a ForgePalette) -> Ele
         .align_y(Alignment::Center),
     )
     .on_press(Message::Soundboard(SoundboardMsg::ModalFilePickRequested))
-    .padding([4.0, 10.0])
+    .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
     .style(move |_theme, status| {
         let bg_a = if matches!(status, iced::widget::button::Status::Hovered) {
             0.08
@@ -520,7 +520,7 @@ fn add_clip_modal<'a>(modal: &'a AddClipModal, palette: &'a ForgePalette) -> Ele
     } else {
         None
     })
-    .padding([6.0, 16.0])
+    .padding([spf(Spacing::Xs), spf(Spacing::Md)])
     .style(move |_theme, _status| button::Style {
         background: Some(Background::Color(if modal.is_valid() && !modal.saving {
             p2.brand
@@ -545,7 +545,7 @@ fn add_clip_modal<'a>(modal: &'a AddClipModal, palette: &'a ForgePalette) -> Ele
             .font(font(FontRole::Body)),
     )
     .on_press(Message::Soundboard(SoundboardMsg::ModalCancel))
-    .padding([6.0, 16.0])
+    .padding([spf(Spacing::Xs), spf(Spacing::Md)])
     .style(move |_theme, status| button::Style {
         background: if matches!(status, iced::widget::button::Status::Hovered) {
             Some(Background::Color(p3.surface_overlay))
@@ -608,11 +608,11 @@ fn add_clip_modal<'a>(modal: &'a AddClipModal, palette: &'a ForgePalette) -> Ele
         form_col,
         footer,
     ]
-    .spacing(f32::from(spacing(Spacing::Md, Density::Cozy)));
+    .spacing(spf(Spacing::Md));
 
     let card = container(card_content)
         .width(480.0)
-        .padding(f32::from(spacing(Spacing::Md, Density::Cozy)))
+        .padding(spf(Spacing::Md))
         .style(modal_card_style(palette));
 
     let backdrop = button(iced::widget::Space::new())
@@ -641,8 +641,8 @@ pub fn soundboard_view<'a>(
     state: &'a SoundboardState,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    let gap_lg = f32::from(spacing(Spacing::Sm, Density::Cozy));
-    let gap_xl = f32::from(spacing(Spacing::Md, Density::Cozy));
+    let gap_lg = spf(Spacing::Sm);
+    let gap_xl = spf(Spacing::Md);
 
     let p = *palette;
 
@@ -658,7 +658,7 @@ pub fn soundboard_view<'a>(
         .align_y(Alignment::Center),
     )
     .on_press(Message::Soundboard(SoundboardMsg::OpenAddModal))
-    .padding([5.0, 12.0])
+    .padding([spf(Spacing::Xxs), spf(Spacing::Sm)])
     .style(move |_theme, status| add_btn_style(&p, status));
 
     let _ = gap_xl;
@@ -731,7 +731,7 @@ pub fn soundboard_view<'a>(
 
         scrollable(
             container(grid)
-                .padding(f32::from(spacing(Spacing::Md, Density::Cozy)))
+                .padding(spf(Spacing::Md))
                 .width(Length::Fill),
         )
         .width(Length::Fill)
@@ -746,7 +746,7 @@ pub fn soundboard_view<'a>(
                 .color(palette.random),
         )
         .width(Length::Fill)
-        .padding([6.0, f32::from(spacing(Spacing::Md, Density::Cozy))])
+        .padding([spf(Spacing::Xs), spf(Spacing::Md)])
         .style(move |_| container::Style {
             background: Some(Background::Color(iced::Color {
                 a: 0.08,

@@ -5,8 +5,8 @@ use std::time::Instant;
 use forge_events::{Event, EventSource};
 use forge_types::{ActionId, EventId};
 use forge_widgets::{
-    EventInspectorParams, EventRowData, FontRole, ForgePalette, Radius, category_chip,
-    event_inspector, event_row_observability, font, radius,
+    EventInspectorParams, EventRowData, FontRole, ForgePalette, Radius, Spacing, category_chip,
+    event_inspector, event_row_observability, font, radius, sp, spf,
     tokens::{FONT_SM, FONT_XS},
 };
 use iced::widget::{button, column, container, row, scrollable, text};
@@ -435,7 +435,7 @@ fn toolbar_action_btn<'a>(
 
     button(text(label).size(FONT_XS).color(text_color))
         .on_press(on_press)
-        .padding([4, 8])
+        .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
         .style(move |_theme: &iced::Theme, status| button::Style {
             background: match status {
                 button::Status::Hovered | button::Status::Pressed => {
@@ -552,7 +552,7 @@ pub fn event_feed_view<'a>(
             Message::EventFeed(EventFeedMsg::FilterChanged(EventFilter::Errors)),
         ),
     ]
-    .spacing(4);
+    .spacing(spf(Spacing::Xxs));
 
     let sep = container(iced::widget::Space::new().width(0.5).height(14.0)).style(
         move |_: &iced::Theme| container::Style {
@@ -575,12 +575,12 @@ pub fn event_feed_view<'a>(
     );
 
     let action_row = row![pause_btn, sep, clear_btn, export_btn]
-        .spacing(6)
+        .spacing(spf(Spacing::Xs))
         .align_y(iced::Alignment::Center);
 
     let divider = crate::app::header_divider(palette);
     let right_side = row![chips, divider, action_row]
-        .spacing(8)
+        .spacing(spf(Spacing::Xs))
         .align_y(iced::Alignment::Center);
 
     let filtered: Vec<&Event> = state
@@ -628,7 +628,7 @@ pub fn event_feed_view<'a>(
             .size(FONT_SM)
             .color(palette.text_faint)
         ]
-        .padding([12, 14])
+        .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
     } else {
         column(row_elements)
     };
@@ -669,14 +669,14 @@ pub fn event_feed_view<'a>(
             scrollable(column![event_inspector(params, palette)].padding(Padding {
                 top: 0.0,
                 right: 0.0,
-                bottom: 14.0,
+                bottom: spf(Spacing::Sm),
                 left: 0.0,
             }))
             .height(Length::Fill),
         )
         .width(Length::Fixed(280.0))
         .height(Length::Fill)
-        .padding(14)
+        .padding(sp(Spacing::Sm))
         .style(move |_: &iced::Theme| container::Style {
             background: Some(Background::Color(palette.shell)),
             border: Border {
@@ -697,10 +697,10 @@ pub fn event_feed_view<'a>(
             .color(palette.text_faint)
             .font(mono);
 
-        container(column![inspector_header, placeholder].spacing(8))
+        container(column![inspector_header, placeholder].spacing(spf(Spacing::Xs)))
             .width(Length::Fixed(280.0))
             .height(Length::Fill)
-            .padding(14)
+            .padding(sp(Spacing::Sm))
             .style(move |_: &iced::Theme| container::Style {
                 background: Some(Background::Color(palette.shell)),
                 border: Border {
@@ -756,11 +756,11 @@ pub fn event_feed_view<'a>(
                     .color(palette.text_faint)
                     .font(mono),
             ]
-            .spacing(5)
+            .spacing(spf(Spacing::Xxs))
             .align_y(iced::Alignment::Center),
         ),
     ]
-    .spacing(14)
+    .spacing(spf(Spacing::Sm))
     .align_y(iced::Alignment::Center);
 
     let footer = container(
@@ -775,7 +775,7 @@ pub fn event_feed_view<'a>(
         .align_y(iced::Alignment::Center),
     )
     .width(Length::Fill)
-    .padding([7, 14])
+    .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
     .style(move |_: &iced::Theme| container::Style {
         background: Some(Background::Color(palette.shell)),
         border: Border {

@@ -8,9 +8,9 @@ use forge_platform_core::{
 };
 use forge_types::SubActionSpec;
 use forge_widgets::{
-    Density, ForgePalette, HeaderCardParams, PickerItem, PickerModalProps, Spacing, ToastVariant,
+    ForgePalette, HeaderCardParams, PickerItem, PickerModalProps, Spacing, ToastVariant,
     builtin_content_renderer, builtin_header_card, builtin_health_grid, builtin_quick_actions_grid,
-    picker_modal, spacing, toast_banner,
+    picker_modal, sp, spf, toast_banner,
 };
 use iced::widget::container;
 use iced::{Alignment, Element, Length, Subscription, Task};
@@ -330,7 +330,7 @@ async fn fetch_picker_items(
 }
 
 pub fn view<'a>(state: &'a BuiltinDetailState, palette: &'a ForgePalette) -> Element<'a, Message> {
-    let section_gap = spacing(Spacing::Md, Density::Cozy) as f32;
+    let section_gap = spf(Spacing::Md);
 
     let params = HeaderCardParams {
         display_name: &state.display_name,
@@ -365,10 +365,9 @@ pub fn view<'a>(state: &'a BuiltinDetailState, palette: &'a ForgePalette) -> Ele
         .push(content)
         .push(quick);
 
-    let padded = container(col).width(Length::Fill).padding([
-        spacing(Spacing::Md, Density::Cozy),
-        spacing(Spacing::Lg, Density::Cozy),
-    ]);
+    let padded = container(col)
+        .width(Length::Fill)
+        .padding([sp(Spacing::Md), sp(Spacing::Lg)]);
 
     let scroll_body: Element<'_, Message> = iced::widget::scrollable(padded).into();
     let page_header = crate::app::simple_page_header(
@@ -444,8 +443,8 @@ fn build_toast_overlay<'a>(msg: &'a str, palette: &'a ForgePalette) -> Element<'
         .align_y(Alignment::End)
         .padding(iced::Padding {
             top: 0.0,
-            right: 16.0,
-            bottom: 16.0,
+            right: spf(Spacing::Md),
+            bottom: spf(Spacing::Md),
             left: 0.0,
         })
         .into()

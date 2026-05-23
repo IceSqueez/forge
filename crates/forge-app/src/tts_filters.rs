@@ -2,7 +2,7 @@ use forge_tts_pipeline::{
     BlocklistMode, PipelineConfig, PipelineResult, StageAction, StageOutcome, UrlMode,
 };
 use forge_widgets::tokens::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spacing,
+    BORDER_THIN, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
 };
 use forge_widgets::{ForgePalette, Icon, tabler_icon};
 use iced::widget::{button, column, container, row, scrollable, text, text_input};
@@ -117,8 +117,8 @@ pub fn tts_filters_view<'a>(
     state: &'a TtsFiltersState,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    let gap_sm = f32::from(spacing(Spacing::Xs, Density::Cozy));
-    let gap_md = f32::from(spacing(Spacing::Sm, Density::Cozy));
+    let gap_sm = spf(Spacing::Xs);
+    let gap_md = spf(Spacing::Sm);
 
     let pipeline_col = pipeline_column_view(state, palette, gap_sm, gap_md);
     let preview_col = preview_column_view(state, palette, gap_sm, gap_md);
@@ -141,7 +141,7 @@ fn pipeline_column_view<'a>(
             .size(FONT_SM)
             .color(palette.text_muted),
     ]
-    .spacing(4);
+    .spacing(spf(Spacing::Xxs));
 
     let stage1 = pipeline_stage(
         "1",
@@ -187,7 +187,7 @@ fn pipeline_column_view<'a>(
 
     scrollable(
         container(column![header, stage1, stage2, stage3, stage4].spacing(0))
-            .padding([16, 18])
+            .padding([sp(Spacing::Md), sp(Spacing::Md)])
             .width(Length::Fill),
     )
     .height(Length::Fill)
@@ -204,7 +204,7 @@ fn pipeline_stage<'a>(
     palette: &'a ForgePalette,
     has_connector: bool,
 ) -> Element<'a, Message> {
-    let gap_sm = f32::from(spacing(Spacing::Xs, Density::Cozy));
+    let gap_sm = spf(Spacing::Xs);
     let badge = container(
         text(number)
             .size(FONT_XS)
@@ -265,15 +265,15 @@ fn pipeline_stage<'a>(
             },
             ..container::Style::default()
         })
-        .padding([11, 13])
+        .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
         .width(Length::Fill);
 
     row![left_col, card]
-        .spacing(10)
+        .spacing(spf(Spacing::Xs))
         .padding(iced::Padding {
             top: 0.0,
             right: 0.0,
-            bottom: 8.0,
+            bottom: spf(Spacing::Xs),
             left: 0.0,
         })
         .into()
@@ -295,7 +295,7 @@ fn skip_rules_content<'a>(
                 },
                 ..container::Style::default()
             })
-            .padding([3, 8])
+            .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
             .into()
     }
 
@@ -312,7 +312,7 @@ fn skip_rules_content<'a>(
                 text_color: palette.text_muted,
                 ..button::Style::default()
             })
-            .padding([3, 8])
+            .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
             .into()
     }
 
@@ -372,7 +372,7 @@ fn blocklist_content<'a>(
                     }
                 }
             })
-            .padding([4, 9])
+            .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
             .into()
     }
 
@@ -390,7 +390,7 @@ fn blocklist_content<'a>(
         },
         ..container::Style::default()
     })
-    .padding([6, 10])
+    .padding([sp(Spacing::Xs), sp(Spacing::Xs)])
     .width(Length::Fill);
 
     let mode_toggle = container(
@@ -419,7 +419,7 @@ fn blocklist_content<'a>(
         },
         ..container::Style::default()
     })
-    .padding(2);
+    .padding(sp(Spacing::Xxs));
 
     row![manage_box, mode_toggle]
         .align_y(Alignment::Center)
@@ -438,7 +438,7 @@ fn replacements_content<'a>(
                 .size(FONT_SM)
                 .color(palette.text_muted),
         )
-        .padding([4, 0])
+        .padding([sp(Spacing::Xxs), 0])
         .into();
     }
 
@@ -477,7 +477,7 @@ fn replacement_rule_row<'a>(
         },
         ..container::Style::default()
     })
-    .padding([1, 5]);
+    .padding([sp(Spacing::Xxs), sp(Spacing::Xxs)]);
 
     container(
         row![
@@ -505,7 +505,7 @@ fn replacement_rule_row<'a>(
         },
         ..container::Style::default()
     })
-    .padding([6, 9])
+    .padding([sp(Spacing::Xs), sp(Spacing::Xs)])
     .width(Length::Fill)
     .into()
 }
@@ -593,7 +593,7 @@ fn preview_column_view<'a>(
         },
         ..container::Style::default()
     })
-    .padding([9, 11])
+    .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
     .width(Length::Fill);
 
     let speak_btn = button(text("Speak preview").size(FONT_SM))
@@ -607,7 +607,7 @@ fn preview_column_view<'a>(
             text_color: palette.shell,
             ..button::Style::default()
         })
-        .padding([8, 0])
+        .padding([sp(Spacing::Xs), 0])
         .width(Length::Fill);
 
     let tip = container(
@@ -624,16 +624,16 @@ fn preview_column_view<'a>(
         },
         ..container::Style::default()
     })
-    .padding([8, 10])
+    .padding([sp(Spacing::Xs), sp(Spacing::Xs)])
     .width(Length::Fill);
 
     container(
         scrollable(
             column![
                 header,
-                column![input_label, input_box].spacing(5),
+                column![input_label, input_box].spacing(spf(Spacing::Xxs)),
                 stage_results,
-                column![output_label, output_box].spacing(5),
+                column![output_label, output_box].spacing(spf(Spacing::Xxs)),
                 speak_btn,
                 tip,
             ]
@@ -651,7 +651,7 @@ fn preview_column_view<'a>(
         },
         ..container::Style::default()
     })
-    .padding([16, 16])
+    .padding([sp(Spacing::Md), sp(Spacing::Md)])
     .width(300)
     .into()
 }
@@ -680,7 +680,7 @@ fn preview_stage_rows<'a>(
         })
         .collect();
 
-    column(cards).spacing(6).into()
+    column(cards).spacing(spf(Spacing::Xs)).into()
 }
 
 fn preview_stage_card<'a>(
@@ -700,7 +700,7 @@ fn preview_stage_card<'a>(
             text("\u{2713}").size(FONT_SM).color(p.success),
             text(" pass").size(FONT_SM).color(p.text_primary),
         ]
-        .spacing(2)
+        .spacing(spf(Spacing::Xxs))
         .align_y(Alignment::Center)
         .into(),
         StageAction::Transformed => text(outcome.output.clone())
@@ -713,13 +713,13 @@ fn preview_stage_card<'a>(
                 .size(FONT_SM)
                 .color(p.text_primary),
         ]
-        .spacing(2)
+        .spacing(spf(Spacing::Xxs))
         .align_y(Alignment::Center)
         .into(),
     };
 
-    container(column![label_el, body_el].spacing(3))
-        .padding([8_u16, 11_u16])
+    container(column![label_el, body_el].spacing(spf(Spacing::Xxs)))
+        .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
         .width(Length::Fill)
         .style(move |_: &iced::Theme| container::Style {
             background: Some(Background::Color(p.elevated)),

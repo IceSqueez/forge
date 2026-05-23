@@ -6,7 +6,7 @@ use forge_events::EventPublisher;
 use forge_script::{Engine, EngineConfig, ForgeApi, build_scope_for_contract, parse_contract};
 use forge_storage::{DataProvider, ScriptRecord, ScriptRepo};
 use forge_types::{ArgStack, EventId, ScriptContract, ScriptId, Variant, VariantKind};
-use forge_widgets::tokens::{FONT_SM, FONT_XS, FontRole, font};
+use forge_widgets::tokens::{FONT_SM, FONT_XS, FontRole, Spacing, font, spf};
 use forge_widgets::{CodeEditorState, ConsoleLevel, ConsoleLine, ForgePalette, ModalProps, modal};
 use iced::widget::{column, container, row, scrollable, text};
 use iced::{Alignment, Background, Border, Element, Length};
@@ -620,7 +620,7 @@ fn run_button<'a>(enabled: bool, palette: &'a ForgePalette) -> Element<'a, Messa
     } else {
         None
     };
-    let mut btn = button(label).padding([4.0, 11.0]);
+    let mut btn = button(label).padding([spf(Spacing::Xxs), spf(Spacing::Sm)]);
     if let Some(m) = msg {
         btn = btn.on_press(m);
     }
@@ -655,7 +655,7 @@ fn save_button<'a>(dirty: bool, palette: &'a ForgePalette) -> Element<'a, Messag
     } else {
         None
     };
-    let mut btn = button(label).padding([4.0, 10.0]);
+    let mut btn = button(label).padding([spf(Spacing::Xxs), spf(Spacing::Xs)]);
     if let Some(m) = msg {
         btn = btn.on_press(m);
     }
@@ -678,7 +678,7 @@ fn disabled_toolbar_button<'a>(label: &'a str, palette: &'a ForgePalette) -> Ele
 
     let fg = palette.text_faint;
     button(text(label).size(FONT_SM).color(fg))
-        .padding([4.0, 10.0])
+        .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
         .style(move |_: &iced::Theme, _status| button::Style {
             background: Some(Background::Color(Color::TRANSPARENT)),
             border: Border {
@@ -700,16 +700,17 @@ fn left_pane<'a>(state: &'a ScriptEditorState, palette: &'a ForgePalette) -> Ele
         .size(FONT_XS)
         .color(palette.text_faint)
         .font(font(FontRole::Monospace));
-    let scripts_header = container(scripts_label).padding([4.0, 8.0]);
+    let scripts_header = container(scripts_label).padding([spf(Spacing::Xxs), spf(Spacing::Xs)]);
 
-    let mut tree_col = column![scripts_header].spacing(0.0);
+    let mut tree_col = column![scripts_header].spacing(0);
 
     if state.scripts.is_empty() {
         let empty_label = text("No scripts yet")
             .size(FONT_XS)
             .color(palette.text_extreme_faint)
             .font(font(FontRole::Monospace));
-        tree_col = tree_col.push(container(empty_label).padding([4.0, 8.0]));
+        tree_col =
+            tree_col.push(container(empty_label).padding([spf(Spacing::Xxs), spf(Spacing::Xs)]));
     } else {
         for entry in &state.scripts {
             let selected = state.selected == Some(entry.id);
@@ -734,7 +735,7 @@ fn left_pane<'a>(state: &'a ScriptEditorState, palette: &'a ForgePalette) -> Ele
             let id = entry.id;
             let btn = button(name_text)
                 .on_press(Message::ScriptEditor(ScriptEditorMsg::ScriptSelected(id)))
-                .padding([5.0, 8.0])
+                .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
                 .width(Length::Fill)
                 .style(move |_: &iced::Theme, _status| button::Style {
                     background: Some(Background::Color(bg)),
@@ -753,7 +754,7 @@ fn left_pane<'a>(state: &'a ScriptEditorState, palette: &'a ForgePalette) -> Ele
 
     let new_script_btn = button(text("+ New").size(FONT_SM).color(palette.text_secondary))
         .on_press(Message::ScriptEditor(ScriptEditorMsg::NewScriptRequested))
-        .padding([4.0, 8.0])
+        .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
         .width(Length::Fill)
         .style(move |_: &iced::Theme, _status| button::Style {
             background: Some(Background::Color(Color::TRANSPARENT)),
@@ -770,7 +771,7 @@ fn left_pane<'a>(state: &'a ScriptEditorState, palette: &'a ForgePalette) -> Ele
             .size(FONT_XS)
             .color(palette.text_faint)
             .font(font(FontRole::Monospace));
-        let vars_header = container(vars_label).padding([4.0, 8.0]);
+        let vars_header = container(vars_label).padding([spf(Spacing::Xxs), spf(Spacing::Xs)]);
         tree_col = tree_col.push(vars_header);
 
         for (name, kind) in &state.variables_in_scope {
@@ -788,7 +789,7 @@ fn left_pane<'a>(state: &'a ScriptEditorState, palette: &'a ForgePalette) -> Ele
                 kind_text,
             ]
             .align_y(Alignment::Center)
-            .padding([4.0, 8.0]);
+            .padding([spf(Spacing::Xxs), spf(Spacing::Xs)]);
             tree_col = tree_col.push(var_row);
         }
     }
@@ -826,7 +827,7 @@ fn center_pane<'a>(
                     .size(FONT_SM)
                     .color(palette.text_extreme_faint),
             ]
-            .spacing(6.0)
+            .spacing(spf(Spacing::Xs))
             .align_x(Alignment::Center),
         )
         .width(Length::Fill)
@@ -843,7 +844,7 @@ fn center_pane<'a>(
             use iced::{Color, Shadow};
             button(text("Clear").size(FONT_XS).color(palette.text_faint))
                 .on_press(Message::ScriptEditor(ScriptEditorMsg::ConsoleClear))
-                .padding([2.0, 6.0])
+                .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
                 .style(move |_: &iced::Theme, _status| button::Style {
                     background: Some(Background::Color(Color::TRANSPARENT)),
                     border: Border::default(),
@@ -858,7 +859,7 @@ fn center_pane<'a>(
             clear_btn,
         ]
         .align_y(Alignment::Center)
-        .padding([6.0, 14.0]);
+        .padding([spf(Spacing::Xs), spf(Spacing::Sm)]);
         container(header_inner)
             .width(Length::Fill)
             .style(move |_: &iced::Theme| container::Style {
@@ -903,12 +904,12 @@ fn right_pane<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     .padding(iced::Padding {
         top: 0.0,
         right: 0.0,
-        bottom: 8.0,
+        bottom: spf(Spacing::Xs),
         left: 0.0,
     });
 
     let catalog = api_catalog();
-    let mut api_col = column![header].spacing(2.0);
+    let mut api_col = column![header].spacing(spf(Spacing::Xxs));
 
     for ns in &catalog {
         let ns_label = text(ns.name)
@@ -916,9 +917,9 @@ fn right_pane<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
             .color(palette.text_muted)
             .font(font(FontRole::Monospace));
         api_col = api_col.push(container(ns_label).padding(iced::Padding {
-            top: 8.0,
-            right: 4.0,
-            bottom: 4.0,
+            top: spf(Spacing::Xs),
+            right: spf(Spacing::Xxs),
+            bottom: spf(Spacing::Xxs),
             left: 0.0,
         }));
 
@@ -932,7 +933,7 @@ fn right_pane<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
                     .color(shell_color)
                     .font(font(FontRole::Monospace));
                 button(badge_text)
-                    .padding([1.0, 4.0])
+                    .padding([spf(Spacing::Xxs), spf(Spacing::Xxs)])
                     .style(move |_: &iced::Theme, _status| button::Style {
                         background: Some(Background::Color(palette.brand)),
                         border: Border {
@@ -949,16 +950,17 @@ fn right_pane<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
                 .color(palette.text_primary)
                 .font(font(FontRole::Monospace));
             let entry_row = row![kind_badge, sig]
-                .spacing(6.0)
+                .spacing(spf(Spacing::Xs))
                 .align_y(Alignment::Center);
-            api_col = api_col.push(container(entry_row).padding([4.0, 4.0]));
+            api_col =
+                api_col.push(container(entry_row).padding([spf(Spacing::Xxs), spf(Spacing::Xxs)]));
         }
     }
 
     container(scrollable(api_col).height(Length::Fill))
         .width(Length::Fixed(200.0))
         .height(Length::Fill)
-        .padding([10.0, 10.0])
+        .padding([spf(Spacing::Xs), spf(Spacing::Xs)])
         .style(move |_: &iced::Theme| container::Style {
             background: Some(Background::Color(palette.shell)),
             border: Border {
@@ -985,7 +987,7 @@ fn run_modal_view<'a>(
         }
     };
 
-    let mut body_col = column![].spacing(12.0);
+    let mut body_col = column![].spacing(spf(Spacing::Sm));
 
     for (idx, field) in form.inputs.iter().enumerate() {
         let label = text(format!(
@@ -1000,7 +1002,7 @@ fn run_modal_view<'a>(
             &field.raw_value,
         )
         .on_input(move |v| Message::ScriptEditor(ScriptEditorMsg::RunModalInputChanged(idx, v)))
-        .padding([6.0, 10.0])
+        .padding([spf(Spacing::Xs), spf(Spacing::Xs)])
         .size(FONT_SM)
         .style(
             move |_: &iced::Theme, _status| iced::widget::text_input::Style {
@@ -1019,7 +1021,7 @@ fn run_modal_view<'a>(
                 },
             },
         );
-        body_col = body_col.push(column![label, input].spacing(4.0));
+        body_col = body_col.push(column![label, input].spacing(spf(Spacing::Xxs)));
     }
 
     if let Some(err) = &form.error {
@@ -1111,7 +1113,7 @@ fn toolbar_action_row<'a>(
     let divider = crate::app::header_divider(palette);
 
     row![run_btn, save_btn, format_btn, divider, api_docs_btn]
-        .spacing(6)
+        .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Center)
         .into()
 }

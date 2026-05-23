@@ -2,9 +2,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use forge_events::EventSource;
 use forge_widgets::{
-    ForgePalette, Radius, bearer_token_display, color_for_source,
+    ForgePalette, Radius, Spacing, bearer_token_display, color_for_source,
     icons::{Icon, tabler_icon},
-    section_header, throughput_sparkline,
+    section_header, sp, spf, throughput_sparkline,
     tokens::{FONT_MD, FONT_SM, FONT_XS, FontRole, font, radius},
 };
 use iced::{
@@ -301,10 +301,10 @@ fn stat_card<'a>(
             .size(FONT_XS)
             .color(sublabel_color),
     ]
-    .spacing(4);
+    .spacing(spf(Spacing::Xxs));
 
     container(content)
-        .padding([10u16, 12u16])
+        .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
         .width(Length::Fill)
         .style(move |_: &iced::Theme| container::Style {
             background: Some(Background::Color(card_bg)),
@@ -326,7 +326,7 @@ fn chip_container<'a>(label: impl Into<String>, fg: Color, bg: Color) -> Element
             .size(FONT_XS)
             .color(fg),
     )
-    .padding([1u16, 5u16])
+    .padding([sp(Spacing::Xxs), sp(Spacing::Xxs)])
     .style(move |_: &iced::Theme| container::Style {
         background: Some(Background::Color(bg)),
         border: Border {
@@ -370,7 +370,7 @@ fn chips_row<'a>(
     }
 
     Row::with_children(elems)
-        .spacing(3)
+        .spacing(spf(Spacing::Xxs))
         .align_y(Alignment::Center)
         .into()
 }
@@ -415,7 +415,7 @@ fn client_row_elem<'a>(
             .size(FONT_XS)
             .color(text_faint),
     ]
-    .spacing(2);
+    .spacing(spf(Spacing::Xxs));
 
     let id_cell = container(id_col).width(Length::FillPortion(14));
     let subs_cell =
@@ -439,7 +439,7 @@ fn client_row_elem<'a>(
 
     let x_btn = button(tabler_icon(Icon::X, 13.0, text_faint))
         .on_press(Message::Server(ServerScreenMsg::DisconnectClient(idx)))
-        .padding([2u16, 3u16])
+        .padding([sp(Spacing::Xxs), sp(Spacing::Xxs)])
         .style(move |_theme: &iced::Theme, status| {
             use iced::widget::button::Status;
             iced::widget::button::Style {
@@ -471,7 +471,7 @@ fn client_row_elem<'a>(
 
     let surface_overlay = palette.surface_overlay;
     let row_button = button(content_row)
-        .padding([8u16, 14u16])
+        .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
         .width(Length::Fill)
         .on_press(Message::Noop)
         .style(move |_theme: &iced::Theme, status| {
@@ -566,7 +566,7 @@ fn overlay_entry_row<'a>(
             .size(FONT_XS)
             .color(kind_color),
     )
-    .padding([1u16, 4u16])
+    .padding([sp(Spacing::Xxs), sp(Spacing::Xxs)])
     .style(move |_: &iced::Theme| container::Style {
         background: Some(Background::Color(kind_bg)),
         border: Border {
@@ -589,7 +589,7 @@ fn overlay_entry_row<'a>(
             .size(FONT_XS)
             .color(text_faint),
     ]
-    .spacing(6)
+    .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
     let url = format!("http://127.0.0.1:{}/{}", port, entry.name);
@@ -601,13 +601,13 @@ fn overlay_entry_row<'a>(
                 tabler_icon(Icon::Copy, 11.0, palette.text_secondary),
                 tabler_icon(Icon::ExternalLink, 11.0, palette.text_secondary),
             ]
-            .spacing(3)
+            .spacing(spf(Spacing::Xxs))
             .align_y(Alignment::Center),
         )
         .on_press(Message::Server(ServerScreenMsg::CopyOverlayUrl(
             url_for_copy,
         )))
-        .padding([2u16, 5u16])
+        .padding([sp(Spacing::Xxs), sp(Spacing::Xxs)])
         .style(
             move |_theme: &iced::Theme, _status| iced::widget::button::Style {
                 background: None,
@@ -634,12 +634,12 @@ fn overlay_entry_row<'a>(
         None
     };
 
-    let mut content_col = Column::new().push(name_row).spacing(3);
+    let mut content_col = Column::new().push(name_row).spacing(spf(Spacing::Xxs));
     if let Some(url_elem) = url_row {
         content_col = content_col.push(url_elem);
     }
 
-    button(container(content_col).padding([6u16, 10u16]))
+    button(container(content_col).padding([sp(Spacing::Xs), sp(Spacing::Xs)]))
         .on_press(Message::Server(ServerScreenMsg::SelectOverlayFile(idx)))
         .style(
             move |_theme: &iced::Theme, _status| iced::widget::button::Style {
@@ -692,7 +692,7 @@ fn header_card<'a>(
             .size(FONT_XS)
             .color(info),
     )
-    .padding([1u16, 6u16])
+    .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
     .style(move |_: &iced::Theme| container::Style {
         background: Some(Background::Color(info_bg)),
         border: Border {
@@ -731,7 +731,7 @@ fn header_card<'a>(
             .size(FONT_XS)
             .color(s_color),
     ]
-    .spacing(8)
+    .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
     let description = text("Internal HTTP + WebSocket server for overlays and remote control")
@@ -743,13 +743,13 @@ fn header_card<'a>(
         restart_btn(palette),
         stop_btn(palette),
     ]
-    .spacing(8)
+    .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
-    let top_section = column![title_row, description, actions_row].spacing(8);
+    let top_section = column![title_row, description, actions_row].spacing(spf(Spacing::Xs));
 
     let header_row = row![icon_box, top_section]
-        .spacing(16)
+        .spacing(spf(Spacing::Md))
         .align_y(Alignment::Start);
 
     let separator =
@@ -781,7 +781,7 @@ fn header_card<'a>(
             .color(palette.text_faint),
         copy_address_btn(palette),
     ]
-    .spacing(6)
+    .spacing(spf(Spacing::Xs))
     .width(Length::FillPortion(1));
 
     let token_col = column![
@@ -798,17 +798,17 @@ fn header_card<'a>(
             palette,
         ),
     ]
-    .spacing(6)
+    .spacing(spf(Spacing::Xs))
     .width(Length::FillPortion(2));
 
     let credentials_row = row![bind_col, token_col]
-        .spacing(24)
+        .spacing(spf(Spacing::Lg))
         .align_y(Alignment::Start);
 
-    let card_content = column![header_row, separator, credentials_row].spacing(16);
+    let card_content = column![header_row, separator, credentials_row].spacing(spf(Spacing::Md));
 
     container(card_content)
-        .padding(20u16)
+        .padding(sp(Spacing::Lg))
         .width(Length::Fill)
         .style(move |_: &iced::Theme| container::Style {
             background: Some(Background::Color(card_bg)),
@@ -833,11 +833,11 @@ fn restart_btn<'a>(palette: &ForgePalette) -> Element<'a, Message> {
                 .font(font(FontRole::Monospace))
                 .size(FONT_XS),
         ]
-        .spacing(5)
+        .spacing(spf(Spacing::Xxs))
         .align_y(Alignment::Center),
     )
     .on_press(Message::Server(ServerScreenMsg::RestartServer))
-    .padding([6u16, 12u16])
+    .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
     .style(move |_theme: &iced::Theme, status| {
         use iced::widget::button::Status;
         iced::widget::button::Style {
@@ -864,7 +864,7 @@ fn stop_btn<'a>(palette: &ForgePalette) -> Element<'a, Message> {
 
     button(text("Stop").font(font(FontRole::Monospace)).size(FONT_XS))
         .on_press(Message::Server(ServerScreenMsg::StopServer))
-        .padding([6u16, 12u16])
+        .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
         .style(move |_theme: &iced::Theme, status| {
             use iced::widget::button::Status;
             iced::widget::button::Style {
@@ -896,11 +896,11 @@ fn copy_address_btn<'a>(palette: &ForgePalette) -> Element<'a, Message> {
             tabler_icon(Icon::Copy, 12.0, normal),
             text("COPY").font(font(FontRole::Monospace)).size(FONT_XS),
         ]
-        .spacing(5)
+        .spacing(spf(Spacing::Xxs))
         .align_y(Alignment::Center),
     )
     .on_press(Message::Server(ServerScreenMsg::CopyBindAddress))
-    .padding([6u16, 10u16])
+    .padding([sp(Spacing::Xs), sp(Spacing::Xs)])
     .style(move |_theme: &iced::Theme, status| {
         use iced::widget::button::Status;
         iced::widget::button::Style {
@@ -959,7 +959,7 @@ fn stats_grid<'a>(state: &'a ServerScreenState, palette: &ForgePalette) -> Eleme
             palette
         ),
     ]
-    .spacing(10)
+    .spacing(spf(Spacing::Xs))
     .into()
 }
 
@@ -980,7 +980,7 @@ fn clients_panel<'a>(
             .size(FONT_XS)
             .color(text_primary),
     )
-    .padding([1u16, 6u16])
+    .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
     .style(move |_: &iced::Theme| container::Style {
         background: Some(Background::Color(surface_overlay)),
         border: Border {
@@ -1006,9 +1006,9 @@ fn clients_panel<'a>(
         kick_hint,
         count_badge,
     ]
-    .spacing(8)
+    .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center)
-    .padding([10u16, 14u16]);
+    .padding([sp(Spacing::Xs), sp(Spacing::Sm)]);
 
     let col_header = row![
         Space::new().width(Length::Fixed(24.0)),
@@ -1034,7 +1034,7 @@ fn clients_panel<'a>(
             .width(Length::Fixed(70.0)),
         Space::new().width(Length::Fixed(22.0)),
     ]
-    .padding([4u16, 14u16]);
+    .padding([sp(Spacing::Xxs), sp(Spacing::Sm)]);
 
     let sep =
         container(Space::new().width(Length::Fill).height(1.0f32)).style(move |_: &iced::Theme| {
@@ -1051,7 +1051,7 @@ fn clients_panel<'a>(
                 .size(FONT_SM)
                 .color(text_faint),
         )
-        .padding([24u16, 14u16])
+        .padding([sp(Spacing::Lg), sp(Spacing::Sm)])
         .width(Length::Fill)
         .into()
     } else {
@@ -1100,11 +1100,11 @@ fn overlay_panel<'a>(
             tabler_icon(Icon::FolderOpen, 12.0, text_muted),
             text("OPEN").font(font(FontRole::Monospace)).size(FONT_XS),
         ]
-        .spacing(4)
+        .spacing(spf(Spacing::Xxs))
         .align_y(Alignment::Center),
     )
     .on_press(Message::Server(ServerScreenMsg::OpenOverlayFolder))
-    .padding([4u16, 8u16])
+    .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
     .style(
         move |_theme: &iced::Theme, _status| iced::widget::button::Style {
             background: None,
@@ -1133,9 +1133,9 @@ fn overlay_panel<'a>(
         Space::new().width(Length::Fill),
         open_btn,
     ]
-    .spacing(8)
+    .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center)
-    .padding([6u16, 14u16]);
+    .padding([sp(Spacing::Xs), sp(Spacing::Sm)]);
 
     let sep =
         container(Space::new().width(Length::Fill).height(1.0f32)).style(move |_: &iced::Theme| {
@@ -1152,7 +1152,7 @@ fn overlay_panel<'a>(
                 .size(FONT_SM)
                 .color(text_faint),
         )
-        .padding([24u16, 14u16])
+        .padding([sp(Spacing::Lg), sp(Spacing::Sm)])
         .width(Length::Fill)
         .into()
     } else {
@@ -1168,8 +1168,8 @@ fn overlay_panel<'a>(
         scrollable(
             Column::with_children(rows)
                 .width(Length::Fill)
-                .padding([4u16, 8u16])
-                .spacing(2),
+                .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
+                .spacing(spf(Spacing::Xxs)),
         )
         .height(Length::Shrink)
         .into()
@@ -1239,12 +1239,12 @@ fn footer_bar<'a>(state: &'a ServerScreenState, palette: &ForgePalette) -> Eleme
             .size(FONT_XS)
             .color(s_color),
     ]
-    .spacing(6)
+    .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
     let content = row![left, Space::new().width(Length::Fill), right]
         .align_y(Alignment::Center)
-        .padding([8u16, 16u16]);
+        .padding([sp(Spacing::Xs), sp(Spacing::Md)]);
 
     let top_border =
         container(Space::new().width(Length::Fill).height(1.0f32)).style(move |_: &iced::Theme| {
@@ -1271,10 +1271,11 @@ pub fn server_screen_view<'a>(
         header_card(state, palette),
         stats_grid(state, palette),
         throughput_sparkline(&state.bandwidth_samples, "KB/s", palette),
-        row![overlay_panel(state, palette), clients_panel(state, palette),].spacing(12),
+        row![overlay_panel(state, palette), clients_panel(state, palette),]
+            .spacing(spf(Spacing::Sm)),
     ]
-    .spacing(12)
-    .padding([16u16, 20u16]);
+    .spacing(spf(Spacing::Sm))
+    .padding([sp(Spacing::Md), sp(Spacing::Lg)]);
 
     let page_header = crate::app::simple_page_header(&[("Server", true)], palette);
 

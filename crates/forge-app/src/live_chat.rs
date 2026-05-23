@@ -4,6 +4,7 @@ use forge_events::{Event, EventSource};
 use forge_widgets::{
     BadgeKind, ChatBody, ChatRow, ForgePalette, Icon, Platform, PlatformTarget, search_input,
     tabler_icon,
+    tokens::{Spacing, sp, spf},
 };
 use iced::{Color, Element, Length, Task};
 use time::OffsetDateTime;
@@ -714,8 +715,8 @@ fn viewer_stat<'a, Msg: 'a>(
         .size(FONT_XS)
         .color(color);
 
-    container(column![label_el, value_el].spacing(2))
-        .padding([6u16, 8u16])
+    container(column![label_el, value_el].spacing(spf(Spacing::Xxs)))
+        .padding([sp(Spacing::Xs), sp(Spacing::Xs)])
         .width(Length::Fill)
         .style(move |_t: &iced::Theme| container::Style {
             background: Some(Background::Color(p.base)),
@@ -749,7 +750,7 @@ fn drawer_role_badge<'a>(kind: BadgeKind, palette: &ForgePalette) -> Element<'a,
             .color(text_color)
             .font(font(FontRole::Body)),
     )
-    .padding([1u16, 5u16])
+    .padding([sp(Spacing::Xxs), sp(Spacing::Xxs)])
     .style(move |_t: &iced::Theme| container::Style {
         background: Some(Background::Color(p.surface_overlay)),
         border: Border {
@@ -818,10 +819,10 @@ fn drawer_header<'a>(state: &'a LiveChatState, palette: &'a ForgePalette) -> Ele
         palette,
     );
 
-    let header_content = column![count_row, search_box].spacing(8);
+    let header_content = column![count_row, search_box].spacing(spf(Spacing::Xs));
 
     let body = container(header_content)
-        .padding([10u16, 14u16])
+        .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
         .width(Length::Fill)
         .style(move |_t: &iced::Theme| container::Style {
             background: Some(Background::Color(Color::TRANSPARENT)),
@@ -863,7 +864,7 @@ fn selected_viewer_detail<'a>(
                 .size(FONT_XS)
                 .color(p.text_faint),
         )
-        .padding([14u16, 14u16])
+        .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
         .width(Length::Fill);
         return column![placeholder, sep].spacing(0).into();
     };
@@ -892,13 +893,13 @@ fn selected_viewer_detail<'a>(
         name_row_items.push(drawer_role_badge(kind, palette));
     }
     let name_row = row(name_row_items)
-        .spacing(6)
+        .spacing(spf(Spacing::Xs))
         .align_y(iced::Alignment::Center);
 
-    let name_col = column![name_row, last_el].spacing(2);
+    let name_col = column![name_row, last_el].spacing(spf(Spacing::Xxs));
 
     let info_row = row![avatar_el, name_col]
-        .spacing(10)
+        .spacing(spf(Spacing::Xs))
         .align_y(iced::Alignment::Center);
 
     let msg_str = format!("{}", summary.message_count);
@@ -924,14 +925,14 @@ fn selected_viewer_detail<'a>(
             viewer_stat("WATCH TIME", &summary.watch_time, watch_color, palette),
             viewer_stat("MESSAGES", &msg_str, p.text_primary, palette),
         ]
-        .spacing(6),
+        .spacing(spf(Spacing::Xs)),
         row![
             viewer_stat("SUB", &summary.sub, sub_color, palette),
             viewer_stat("FOLLOW", &summary.follow, follow_color, palette),
         ]
-        .spacing(6),
+        .spacing(spf(Spacing::Xs)),
     ]
-    .spacing(6);
+    .spacing(spf(Spacing::Xs));
 
     let btn_style = move |_t: &iced::Theme, s: button::Status| {
         let hovered = matches!(s, button::Status::Hovered | button::Status::Pressed);
@@ -962,14 +963,14 @@ fn selected_viewer_detail<'a>(
                 tabler_icon(Icon::Bolt, 11.0, p.text_muted),
                 text("Shoutout").font(font(FontRole::Body)).size(FONT_XS),
             ]
-            .spacing(5)
+            .spacing(spf(Spacing::Xxs))
             .align_y(iced::Alignment::Center),
         )
         .width(Length::Fill)
         .align_x(iced::Alignment::Center),
     )
     .on_press(Message::Noop)
-    .padding([5u16, 11u16])
+    .padding([sp(Spacing::Xxs), sp(Spacing::Sm)])
     .width(Length::Fill)
     .style(btn_style);
 
@@ -979,14 +980,14 @@ fn selected_viewer_detail<'a>(
                 tabler_icon(Icon::MessageCircle, 11.0, p.text_muted),
                 text("Whisper").font(font(FontRole::Body)).size(FONT_XS),
             ]
-            .spacing(5)
+            .spacing(spf(Spacing::Xxs))
             .align_y(iced::Alignment::Center),
         )
         .width(Length::Fill)
         .align_x(iced::Alignment::Center),
     )
     .on_press(Message::Noop)
-    .padding([5u16, 11u16])
+    .padding([sp(Spacing::Xxs), sp(Spacing::Sm)])
     .width(Length::Fill)
     .style(btn_style);
 
@@ -1052,12 +1053,12 @@ fn selected_viewer_detail<'a>(
         palette,
     );
 
-    let actions_row = row![shoutout_btn, whisper_btn, more_btn].spacing(6);
+    let actions_row = row![shoutout_btn, whisper_btn, more_btn].spacing(spf(Spacing::Xs));
 
-    let detail_content = column![info_row, stat_grid, actions_row].spacing(8);
+    let detail_content = column![info_row, stat_grid, actions_row].spacing(spf(Spacing::Xs));
 
     let detail_box = container(detail_content)
-        .padding([14u16, 14u16])
+        .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
         .width(Length::Fill)
         .style(move |_t: &iced::Theme| container::Style {
             background: Some(Background::Color(Color::TRANSPARENT)),
@@ -1117,7 +1118,7 @@ fn drawer_viewer_row<'a>(
         name_row_items.push(drawer_role_badge(kind, palette));
     }
     let name_row = row(name_row_items)
-        .spacing(5)
+        .spacing(spf(Spacing::Xxs))
         .align_y(iced::Alignment::Center);
 
     let meta_el = text(format!(
@@ -1128,7 +1129,7 @@ fn drawer_viewer_row<'a>(
     .size(FONT_XS)
     .color(p.text_muted);
 
-    let name_col = column![name_row, meta_el].spacing(1);
+    let name_col = column![name_row, meta_el].spacing(spf(Spacing::Xxs));
 
     let last_el = text(summary.last_seen_label.clone())
         .font(font(FontRole::Monospace))
@@ -1141,13 +1142,13 @@ fn drawer_viewer_row<'a>(
         Space::new().width(Length::Fill),
         last_el,
     ]
-    .spacing(10)
+    .spacing(spf(Spacing::Xs))
     .align_y(iced::Alignment::Center);
 
     let username = summary.username.clone();
     let row_btn = button(row_content)
         .on_press(Message::LiveChat(LiveChatMsg::DrawerSelectViewer(username)))
-        .padding([7u16, 14u16])
+        .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
         .width(Length::Fill)
         .style(move |_t: &iced::Theme, s: button::Status| {
             let bg = if is_sel {
@@ -1210,7 +1211,7 @@ fn viewer_list<'a>(
             .size(FONT_XS)
             .color(p.text_faint),
     )
-    .padding([8u16, 14u16])
+    .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
     .width(Length::Fill)
     .style(move |_t: &iced::Theme| container::Style {
         background: Some(Background::Color(Color::TRANSPARENT)),
@@ -1240,7 +1241,7 @@ fn viewer_list<'a>(
                     .size(FONT_XS)
                     .color(p.text_faint),
             )
-            .padding([0u16, 14u16]),
+            .padding([0, sp(Spacing::Sm)]),
         ]
         .spacing(0)
     } else {
@@ -1350,7 +1351,7 @@ fn live_chat_page_header<'a>(
         tabler_icon(Icon::ChevronRight, 11.0, p.text_faint),
         text("Chat").size(FONT_SM).color(p.text_primary),
     ]
-    .spacing(8)
+    .spacing(spf(Spacing::Xs))
     .align_y(iced::alignment::Vertical::Center);
 
     let chip_all = forge_widgets::filter_chip(
@@ -1381,7 +1382,7 @@ fn live_chat_page_header<'a>(
         state.chat_filter.platform == PlatformFilter::Kick,
         Message::LiveChat(LiveChatMsg::PlatformFilter(PlatformFilter::Kick)),
     );
-    let chips = row![chip_all, chip_twitch, chip_youtube, chip_kick].spacing(4);
+    let chips = row![chip_all, chip_twitch, chip_youtube, chip_kick].spacing(spf(Spacing::Xxs));
 
     let divider = container(iced::widget::Space::new().width(0.5).height(16.0))
         .width(0.5)
@@ -1398,7 +1399,7 @@ fn live_chat_page_header<'a>(
             .color(p.text_secondary)
             .font(mono),
     ]
-    .spacing(6)
+    .spacing(spf(Spacing::Xs))
     .align_y(iced::alignment::Vertical::Center);
 
     let drawer_label = if state.drawer_open {
@@ -1411,11 +1412,11 @@ fn live_chat_page_header<'a>(
             tabler_icon(Icon::Users, 11.0, p.text_secondary),
             text(drawer_label).size(FONT_XS).color(p.text_secondary),
         ]
-        .spacing(4)
+        .spacing(spf(Spacing::Xxs))
         .align_y(iced::alignment::Vertical::Center),
     )
     .on_press(Message::LiveChat(LiveChatMsg::ToggleDrawer))
-    .padding([4_u16, 10_u16])
+    .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
     .style(move |_: &iced::Theme, status| {
         let hovered = matches!(
             status,
@@ -1443,7 +1444,7 @@ fn live_chat_page_header<'a>(
     });
 
     let right_side = row![chips, divider, viewer_info, drawer_btn]
-        .spacing(8)
+        .spacing(spf(Spacing::Xs))
         .align_y(iced::alignment::Vertical::Center);
 
     let inner = row![
@@ -1455,7 +1456,7 @@ fn live_chat_page_header<'a>(
 
     container(inner)
         .width(Length::Fill)
-        .padding([10_u16, 16_u16])
+        .padding([sp(Spacing::Xs), sp(Spacing::Md)])
         .style(move |_: &iced::Theme| container::Style {
             background: Some(Background::Color(p.shell)),
             border: Border {
@@ -1519,9 +1520,9 @@ fn build_chat_area<'a>(
         .into()
     } else {
         let col = iced::widget::column(visible)
-            .spacing(4)
+            .spacing(spf(Spacing::Xxs))
             .width(Length::Fill)
-            .padding([10, 16]);
+            .padding([sp(Spacing::Xs), sp(Spacing::Md)]);
 
         let scrollable_chat = scrollable(col)
             .id(chat_scroll_id())
@@ -1542,7 +1543,7 @@ fn build_chat_area<'a>(
                     .font(font(FontRole::Body)),
             )
             .on_press(Message::LiveChat(LiveChatMsg::ScrollToBottom))
-            .padding([6, 12])
+            .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
             .style(move |_theme: &iced::Theme, status| {
                 let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
                 button::Style {

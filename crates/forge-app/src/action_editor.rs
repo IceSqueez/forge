@@ -16,7 +16,7 @@ use crate::runtime_view::RuntimeView;
 use forge_widgets::ForgePalette;
 use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::popover::{MenuItem, MenuPlacement, menu_button};
-use forge_widgets::tokens::{FONT_LG, FONT_SM, FONT_XS};
+use forge_widgets::tokens::{FONT_LG, FONT_SM, FONT_XS, Spacing, sp, spf};
 
 fn sub_action_summary(spec: &SubActionSpec) -> (&'static str, &'static str, String) {
     match spec {
@@ -158,7 +158,7 @@ fn step_icon_btn<'a>(
         .align_y(Alignment::Center);
 
     let mut btn = iced::widget::button(content)
-        .padding(Padding::from([2u16, 4u16]))
+        .padding([sp(Spacing::Xxs), sp(Spacing::Xxs)])
         .style(
             move |_t: &iced::Theme, status| iced::widget::button::Style {
                 background: if disabled {
@@ -224,7 +224,7 @@ fn step_controls<'a>(
                 ..iced::widget::container::Style::default()
             }),
     )
-    .padding(Padding::from([0u16, 4u16]));
+    .padding([0, sp(Spacing::Xxs)]);
 
     let items: Vec<MenuItem<Message>> = vec![
         MenuItem::Item {
@@ -292,7 +292,7 @@ fn step_controls<'a>(
     );
 
     row![move_up, move_down, divider, menu]
-        .spacing(2)
+        .spacing(spf(Spacing::Xxs))
         .align_y(Alignment::Center)
         .into()
 }
@@ -323,9 +323,9 @@ fn tree_pane<'a>(
                 .color(p.text_faint)
                 .font(mono),
         ]
-        .spacing(8)
+        .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Center)
-        .padding([6_u16, 14_u16]);
+        .padding([sp(Spacing::Xs), sp(Spacing::Sm)]);
 
         col = col.push(container(header_row).width(Length::Fill));
 
@@ -366,7 +366,7 @@ fn tree_pane<'a>(
                     .color(p.text_faint)
                     .font(mono),
             ]
-            .spacing(10)
+            .spacing(spf(Spacing::Xs))
             .align_y(Alignment::Center);
 
             let action_id = summary.id;
@@ -443,7 +443,7 @@ fn detail_pane<'a>(
                     .size(FONT_SM)
                     .color(p.text_muted),
             )
-            .padding([18_u16, 22_u16])
+            .padding([sp(Spacing::Md), sp(Spacing::Lg)])
             .width(Length::Fill)
             .height(Length::Fill)
             .into();
@@ -471,7 +471,7 @@ fn detail_pane<'a>(
             .color(p.text_primary),
         pill,
     ]
-    .spacing(10)
+    .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
     let desc_text = action.description.as_deref().unwrap_or("No description");
@@ -488,9 +488,10 @@ fn detail_pane<'a>(
         palette,
     );
 
-    let btn_row = row![test_run_btn, dup_btn].spacing(6);
+    let btn_row = row![test_run_btn, dup_btn].spacing(spf(Spacing::Xs));
 
-    let header_left: Element<'_, Message> = column![title_row, desc].spacing(4).into();
+    let header_left: Element<'_, Message> =
+        column![title_row, desc].spacing(spf(Spacing::Xxs)).into();
     let header_row: Element<'_, Message> = row![
         header_left,
         iced::widget::Space::new().width(Length::Fill),
@@ -510,7 +511,7 @@ fn detail_pane<'a>(
             tabler_icon(Icon::Plus, 11.0, p.brand),
             text("Add trigger").size(FONT_XS).color(p.brand),
         ]
-        .spacing(4)
+        .spacing(spf(Spacing::Xxs))
         .align_y(Alignment::Center),
     )
     .on_press(Message::Actions(ActionsMsg::OpenAddTriggerModal(action_id)))
@@ -533,7 +534,7 @@ fn detail_pane<'a>(
     .align_y(Alignment::Center)
     .into();
 
-    let mut triggers_col: iced::widget::Column<'_, Message> = column![].spacing(6);
+    let mut triggers_col: iced::widget::Column<'_, Message> = column![].spacing(spf(Spacing::Xs));
     if detail.triggers.is_empty() {
         triggers_col = triggers_col.push(
             container(
@@ -541,7 +542,7 @@ fn detail_pane<'a>(
                     .size(FONT_XS)
                     .color(p.text_faint),
             )
-            .padding([8_u16, 0_u16]),
+            .padding([sp(Spacing::Xs), 0]),
         );
     } else {
         for trigger in &detail.triggers {
@@ -571,7 +572,7 @@ fn detail_pane<'a>(
                     .color(p.text_muted)
                     .font(mono),
             ]
-            .spacing(1)
+            .spacing(spf(Spacing::Xxs))
             .into();
 
             let trigger_id = trigger.id;
@@ -583,7 +584,7 @@ fn detail_pane<'a>(
                     .color(p.random)
                     .font(forge_widgets::font(forge_widgets::FontRole::Monospace)),
             )
-            .padding([2u16, 8u16])
+            .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
             .on_press(Message::Actions(ActionsMsg::DeleteTrigger(
                 trigger_id,
                 action_id_local,
@@ -610,13 +611,13 @@ fn detail_pane<'a>(
             let dots = tabler_icon(Icon::DotsVertical, 14.0, p.text_faint);
 
             let trigger_row: Element<'_, Message> = row![icon_box, info_col, delete_btn, dots]
-                .spacing(10)
+                .spacing(spf(Spacing::Xs))
                 .align_y(Alignment::Center)
                 .into();
 
             let trigger_card = container(trigger_row)
                 .width(Length::Fill)
-                .padding([10_u16, 12_u16])
+                .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
                 .style(move |_theme: &iced::Theme| iced::widget::container::Style {
                     background: Some(Background::Color(p.elevated)),
                     border: Border {
@@ -631,8 +632,9 @@ fn detail_pane<'a>(
         }
     }
 
-    let triggers_section: Element<'_, Message> =
-        column![triggers_header, triggers_col].spacing(8).into();
+    let triggers_section: Element<'_, Message> = column![triggers_header, triggers_col]
+        .spacing(spf(Spacing::Xs))
+        .into();
 
     // ── Sub-actions ───────────────────────────────────────────────────────
     let sub_count = action.sub_actions.len();
@@ -646,7 +648,7 @@ fn detail_pane<'a>(
             tabler_icon(Icon::Plus, 11.0, p.brand),
             text("Add step").size(FONT_XS).color(p.brand),
         ]
-        .spacing(4)
+        .spacing(spf(Spacing::Xxs))
         .align_y(Alignment::Center),
     )
     .on_press(Message::Actions(ActionsMsg::Editor(
@@ -744,17 +746,19 @@ fn detail_pane<'a>(
             timing_el,
             controls,
         ]
-        .spacing(8)
+        .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Center)
         .into();
 
         let details_el = variable_text(&details, palette, mono);
 
-        let card_inner: Element<'_, Message> = column![title_row, details_el].spacing(3).into();
+        let card_inner: Element<'_, Message> = column![title_row, details_el]
+            .spacing(spf(Spacing::Xxs))
+            .into();
 
         let card = container(card_inner)
             .width(Length::Fill)
-            .padding([10_u16, 12_u16])
+            .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
             .style(move |_theme: &iced::Theme| iced::widget::container::Style {
                 background: Some(Background::Color(p.elevated)),
                 border: Border {
@@ -766,7 +770,7 @@ fn detail_pane<'a>(
             });
 
         let step_row: Element<'_, Message> = row![left_col, card]
-            .spacing(10)
+            .spacing(spf(Spacing::Xs))
             .align_y(Alignment::Start)
             .into();
 
@@ -779,10 +783,12 @@ fn detail_pane<'a>(
         steps_col = steps_col.push(step_wrapper);
     }
 
-    let sub_section: Element<'_, Message> = column![sub_header, steps_col].spacing(10).into();
+    let sub_section: Element<'_, Message> = column![sub_header, steps_col]
+        .spacing(spf(Spacing::Xs))
+        .into();
 
     let body: Element<'_, Message> = column![header_row, triggers_section, sub_section]
-        .spacing(18)
+        .spacing(spf(Spacing::Md))
         .into();
 
     container(scrollable(body))

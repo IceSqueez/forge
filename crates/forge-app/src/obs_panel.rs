@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use iced::widget::{button, column, container, row, text, text_input};
-use iced::{Alignment, Background, Border, Color, Element, Length, Padding, Shadow, Task, Theme};
+use iced::{Alignment, Background, Border, Color, Element, Length, Shadow, Task, Theme};
 
 use forge_events::EventPublisher;
 use forge_obs::{ObsError, ObsServerInfo, test_connect};
@@ -10,7 +10,7 @@ use forge_storage::{CredentialId, DataProvider};
 
 use forge_widgets::ForgePalette;
 use forge_widgets::icons::{Icon, tabler_icon};
-use forge_widgets::tokens::{FONT_SM, FONT_XS, FontRole, font};
+use forge_widgets::tokens::{FONT_SM, FONT_XS, FontRole, Spacing, font, sp, spf};
 
 use crate::Message;
 use crate::runtime_view::RuntimeView;
@@ -235,17 +235,17 @@ pub fn obs_disconnected_view<'a>(
         obs_instructions_card(palette),
         obs_form_card(state, palette),
     ]
-    .spacing(12.0)
+    .spacing(spf(Spacing::Sm))
     .width(Length::Fill);
     let tip = obs_tip_card(palette);
 
     let page_header =
         crate::app::simple_page_header(&[("Builtin", false), ("OBS Studio", true)], palette);
 
-    let body = container(column![header, two_column, tip].spacing(14.0))
+    let body = container(column![header, two_column, tip].spacing(spf(Spacing::Sm)))
         .width(Length::Fill)
         .height(Length::Fill)
-        .padding(Padding::from([18_u16, 22_u16]));
+        .padding([sp(Spacing::Md), sp(Spacing::Lg)]);
 
     column![page_header, body]
         .width(Length::Fill)
@@ -275,15 +275,15 @@ fn obs_header_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
             .size(FONT_SM)
             .color(palette.text_muted),
     ]
-    .spacing(2.0);
+    .spacing(spf(Spacing::Xxs));
 
     let inner = row![icon, container(title_col).width(Length::Fill)]
-        .spacing(16.0)
+        .spacing(spf(Spacing::Md))
         .align_y(Alignment::Center);
 
     container(inner)
         .width(Length::Fill)
-        .padding(Padding::from([16_u16, 18_u16]))
+        .padding([sp(Spacing::Md), sp(Spacing::Md)])
         .style(card_style(palette))
         .into()
 }
@@ -295,12 +295,12 @@ fn obs_instructions_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> 
             .size(FONT_SM)
             .color(palette.text_primary),
     ]
-    .spacing(7.0)
+    .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
     let title_wrap = container(title)
         .width(Length::Fill)
-        .padding(Padding::from([12_u16, 14_u16]))
+        .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
         .style(move |_theme: &Theme| container::Style {
             border: Border {
                 color: palette.border_regular,
@@ -332,7 +332,7 @@ fn obs_instructions_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> 
             palette
         ),
     ]
-    .spacing(0.0);
+    .spacing(0);
 
     let requirements = container(
         column![
@@ -343,10 +343,10 @@ fn obs_instructions_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> 
             check_row("OBS Studio 28+ (WebSocket v5 built-in)", palette),
             check_row("Running on the same machine or LAN-reachable", palette),
         ]
-        .spacing(4.0),
+        .spacing(spf(Spacing::Xxs)),
     )
     .width(Length::Fill)
-    .padding(Padding::from([10_u16, 12_u16]))
+    .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
     .style(move |_theme: &Theme| container::Style {
         background: Some(Background::Color(palette.shell)),
         border: Border {
@@ -357,9 +357,9 @@ fn obs_instructions_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> 
         ..container::Style::default()
     });
 
-    let body = container(column![lead, steps, requirements].spacing(14.0))
+    let body = container(column![lead, steps, requirements].spacing(spf(Spacing::Sm)))
         .width(Length::Fill)
-        .padding(14.0);
+        .padding(sp(Spacing::Sm));
 
     container(column![title_wrap, body])
         .width(Length::FillPortion(10))
@@ -383,14 +383,14 @@ fn instruction_step<'a>(
             .color(palette.text_primary)
             .wrapping(iced::widget::text::Wrapping::Word),
     ]
-    .spacing(10.0)
+    .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Start);
 
     let border_width = if has_border { 0.5 } else { 0.0 };
 
     container(inner)
         .width(Length::Fill)
-        .padding(Padding::from([7_u16, 0_u16]))
+        .padding([sp(Spacing::Xs), 0])
         .style(move |_theme: &Theme| container::Style {
             border: Border {
                 color: palette.border_regular,
@@ -410,7 +410,7 @@ fn check_row<'a>(label: &'a str, palette: &'a ForgePalette) -> Element<'a, Messa
             .color(palette.text_secondary)
             .wrapping(iced::widget::text::Wrapping::Word),
     ]
-    .spacing(6.0)
+    .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center)
     .into()
 }
@@ -422,12 +422,12 @@ fn obs_form_card<'a>(state: &'a ObsPanelState, palette: &'a ForgePalette) -> Ele
             .size(FONT_SM)
             .color(palette.text_primary),
     ]
-    .spacing(7.0)
+    .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
     let title_wrap = container(title)
         .width(Length::Fill)
-        .padding(Padding::from([12_u16, 14_u16]))
+        .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
         .style(move |_theme: &Theme| container::Style {
             border: Border {
                 color: palette.border_regular,
@@ -440,20 +440,20 @@ fn obs_form_card<'a>(state: &'a ObsPanelState, palette: &'a ForgePalette) -> Ele
     let host_input = text_input("localhost", &state.form.host)
         .on_input(|s| Message::ObsPanel(ObsPanelMsg::HostChanged(s)))
         .size(FONT_SM)
-        .padding(Padding::from([7_u16, 11_u16]));
+        .padding([sp(Spacing::Xs), sp(Spacing::Sm)]);
     let host_field = labeled_field("HOST", host_input.into(), palette);
 
     let port_input = text_input("4455", &state.form.port_text)
         .on_input(|s| Message::ObsPanel(ObsPanelMsg::PortChanged(s)))
         .size(FONT_SM)
-        .padding(Padding::from([7_u16, 11_u16]));
+        .padding([sp(Spacing::Xs), sp(Spacing::Sm)]);
     let port_field = labeled_field("PORT", port_input.into(), palette);
 
     let host_port = row![
         container(host_field).width(Length::FillPortion(8)),
         container(port_field).width(Length::FillPortion(5)),
     ]
-    .spacing(10.0);
+    .spacing(spf(Spacing::Xs));
 
     let password_field = password_row(state, palette);
 
@@ -479,7 +479,7 @@ fn obs_form_card<'a>(state: &'a ObsPanelState, palette: &'a ForgePalette) -> Ele
             palette,
         ),
     ]
-    .spacing(0.0);
+    .spacing(0);
 
     let test_preview = test_status_preview(state, palette);
 
@@ -497,13 +497,15 @@ fn obs_form_card<'a>(state: &'a ObsPanelState, palette: &'a ForgePalette) -> Ele
             palette,
         ),
     ]
-    .spacing(8.0)
+    .spacing(spf(Spacing::Xs))
     .width(Length::Fill);
 
-    let body =
-        container(column![host_port, password_field, toggles, test_preview, buttons].spacing(12.0))
-            .width(Length::Fill)
-            .padding(14.0);
+    let body = container(
+        column![host_port, password_field, toggles, test_preview, buttons]
+            .spacing(spf(Spacing::Sm)),
+    )
+    .width(Length::Fill)
+    .padding(sp(Spacing::Sm));
 
     container(column![title_wrap, body])
         .width(Length::FillPortion(12))
@@ -523,7 +525,7 @@ fn labeled_field<'a>(
             .font(font(FontRole::Monospace)),
         field,
     ]
-    .spacing(5.0)
+    .spacing(spf(Spacing::Xxs))
     .into()
 }
 
@@ -543,7 +545,7 @@ fn password_row<'a>(state: &'a ObsPanelState, palette: &'a ForgePalette) -> Elem
     let mut input = text_input("••••••••", &state.form.password)
         .on_input(|s| Message::ObsPanel(ObsPanelMsg::PasswordChanged(s)))
         .size(FONT_SM)
-        .padding(Padding::from([7_u16, 11_u16]));
+        .padding([sp(Spacing::Xs), sp(Spacing::Sm)]);
     if !state.form.password_revealed {
         input = input.secure(true);
     }
@@ -555,7 +557,7 @@ fn password_row<'a>(state: &'a ObsPanelState, palette: &'a ForgePalette) -> Elem
     };
     let eye_btn = button(tabler_icon(eye_icon, 13.0, palette.text_muted))
         .on_press(Message::ObsPanel(ObsPanelMsg::TogglePasswordReveal))
-        .padding(Padding::from([7_u16, 10_u16]))
+        .padding([sp(Spacing::Xs), sp(Spacing::Xs)])
         .style(move |_theme: &Theme, _status| button::Style {
             background: Some(Background::Color(Color::TRANSPARENT)),
             text_color: palette.text_muted,
@@ -569,10 +571,10 @@ fn password_row<'a>(state: &'a ObsPanelState, palette: &'a ForgePalette) -> Elem
         });
 
     let input_row = row![container(input).width(Length::Fill), eye_btn]
-        .spacing(8.0)
+        .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Center);
 
-    column![label, input_row].spacing(5.0).into()
+    column![label, input_row].spacing(spf(Spacing::Xxs)).into()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -591,9 +593,9 @@ fn toggle_row<'a>(
         text(title).size(FONT_SM).color(palette.text_primary),
         text(subtitle).size(FONT_XS).color(palette.text_faint),
     ]
-    .spacing(1.0);
+    .spacing(spf(Spacing::Xxs));
     let left = row![icon_el, text_col]
-        .spacing(9.0)
+        .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Center);
 
     let knob_bg = if on {
@@ -639,7 +641,7 @@ fn toggle_row<'a>(
 
     container(inner)
         .width(Length::Fill)
-        .padding(Padding::from([7_u16, 0_u16]))
+        .padding([sp(Spacing::Xs), 0])
         .style(move |_theme: &Theme| container::Style {
             border: Border {
                 color: palette.border_regular,
@@ -703,12 +705,12 @@ fn banner_card<'a>(
         );
     }
     let inner = row![icon_el, text_col]
-        .spacing(9.0)
+        .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Start);
 
     container(inner)
         .width(Length::Fill)
-        .padding(Padding::from([8_u16, 11_u16]))
+        .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
         .style(move |_theme: &Theme| container::Style {
             background: Some(Background::Color(palette.shell)),
             border: Border {
@@ -731,11 +733,15 @@ fn obs_tip_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     .color(palette.text_muted)
     .wrapping(iced::widget::text::Wrapping::Word);
 
-    container(row![icon, body].spacing(10.0).align_y(Alignment::Start))
-        .width(Length::Fill)
-        .padding(Padding::from([10_u16, 13_u16]))
-        .style(card_style(palette))
-        .into()
+    container(
+        row![icon, body]
+            .spacing(spf(Spacing::Xs))
+            .align_y(Alignment::Start),
+    )
+    .width(Length::Fill)
+    .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
+    .style(card_style(palette))
+    .into()
 }
 
 fn primary_button<'a>(
@@ -750,7 +756,7 @@ fn primary_button<'a>(
             .color(palette.shell)
             .align_x(Alignment::Center),
     )
-    .padding(Padding::from([8_u16, 16_u16]))
+    .padding([sp(Spacing::Xs), sp(Spacing::Md)])
     .width(Length::Fill)
     .style(move |_theme: &Theme, _status| button::Style {
         background: Some(Background::Color(palette.brand)),
@@ -781,7 +787,7 @@ fn secondary_button<'a>(
             .color(palette.text_secondary)
             .align_x(Alignment::Center),
     )
-    .padding(Padding::from([8_u16, 14_u16]))
+    .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
     .width(Length::Fill)
     .style(move |_theme: &Theme, _status| button::Style {
         background: Some(Background::Color(Color::TRANSPARENT)),

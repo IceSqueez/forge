@@ -7,7 +7,7 @@ use forge_widgets::{
     TypeToConfirmModalParams, bearer_token_display, bind_address_card,
     icons::{Icon, tabler_icon},
     toggle,
-    tokens::{FONT_LG, FONT_SM, FontRole, font, radius},
+    tokens::{FONT_LG, FONT_SM, FontRole, Spacing, font, radius, spf},
     type_to_confirm_modal,
 };
 use iced::{
@@ -382,7 +382,7 @@ fn auth_toggle_row<'a>(
         .size(FONT_SM)
         .color(palette.text_faint)
         .font(font(FontRole::Body));
-    let label_col = column![label_el, sub_el].spacing(2);
+    let label_col = column![label_el, sub_el].spacing(spf(Spacing::Xxs));
 
     let track_bg = if value {
         palette.brand
@@ -426,7 +426,7 @@ fn auth_toggle_row<'a>(
         });
 
     let inner = row![icon_el, container(label_col).width(Length::Fill), track,]
-        .spacing(10)
+        .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Center);
 
     button(inner)
@@ -492,7 +492,7 @@ fn overlay_path_display<'a>(root: &'a Path, palette: &'a ForgePalette) -> Elemen
             tabler_icon(Icon::FolderOpen, 12.0, text_sec),
             text("Browse").size(FONT_SM).color(text_sec),
         ]
-        .spacing(5)
+        .spacing(spf(Spacing::Xxs))
         .align_y(Alignment::Center),
     )
     .on_press(Message::Noop)
@@ -512,7 +512,7 @@ fn overlay_path_display<'a>(root: &'a Path, palette: &'a ForgePalette) -> Elemen
     );
 
     row![path_box, browse_btn]
-        .spacing(6)
+        .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Center)
         .into()
 }
@@ -546,7 +546,7 @@ pub fn settings_websocket_view<'a>(
             tabler_icon(Icon::CircleCheck, 13.0, p.success),
             text("All changes saved").size(FONT_SM).color(p.success),
         ]
-        .spacing(6)
+        .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Center)
         .into()
     } else {
@@ -565,7 +565,7 @@ pub fn settings_websocket_view<'a>(
         Space::new().width(Length::Fill),
         save_indicator,
     ]
-    .spacing(10)
+    .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
     let subtitle = text("Configure how overlays and third-party tools connect to Forge.")
@@ -616,7 +616,7 @@ pub fn settings_websocket_view<'a>(
         localhost_card,
         lan_card
     ]
-    .spacing(8);
+    .spacing(spf(Spacing::Xs));
 
     if state.bind_address_radio == BindAddressChoice::Lan {
         bind_col = bind_col.push(
@@ -645,7 +645,7 @@ pub fn settings_websocket_view<'a>(
                 .color(p.text_muted),
             port_field,
         ]
-        .spacing(8),
+        .spacing(spf(Spacing::Xs)),
     )
     .width(Length::FillPortion(5));
 
@@ -675,11 +675,11 @@ pub fn settings_websocket_view<'a>(
             token_desc_row,
             token_widget
         ]
-        .spacing(8),
+        .spacing(spf(Spacing::Xs)),
     )
     .width(Length::FillPortion(8));
 
-    let port_token_row = row![port_col, token_col].spacing(14);
+    let port_token_row = row![port_col, token_col].spacing(spf(Spacing::Sm));
 
     let auth_section = column![
         section_label("Authentication", p),
@@ -736,7 +736,7 @@ pub fn settings_websocket_view<'a>(
         overlay_desc_row,
         overlay_path_display(state.overlay_root.as_path(), p),
     ]
-    .spacing(8);
+    .spacing(spf(Spacing::Xs));
 
     let content = scrollable(
         column![
@@ -752,7 +752,7 @@ pub fn settings_websocket_view<'a>(
             section_rule(p.border_regular),
             overlay_section,
         ]
-        .spacing(18)
+        .spacing(spf(Spacing::Md))
         .padding([20_u16, 24_u16]),
     )
     .width(Length::Fill)

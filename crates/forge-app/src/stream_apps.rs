@@ -1,10 +1,10 @@
 use forge_platform_core::{BuiltinId, ConnectionState};
 use forge_widgets::{
     ForgePalette, Icon, tabler_icon,
-    tokens::{FONT_MD, FONT_SM, FONT_XS, Radius, radius},
+    tokens::{FONT_MD, FONT_SM, FONT_XS, Radius, Spacing, radius, sp, spf},
 };
 use iced::{
-    Alignment, Background, Border, Color, Element, Length, Padding, Shadow,
+    Alignment, Background, Border, Color, Element, Length, Shadow,
     widget::{button, column, container, row, scrollable, text},
 };
 
@@ -18,7 +18,7 @@ pub fn view<'a>(state: &'a App, palette: &'a ForgePalette) -> Element<'a, Messag
         text("Local apps Forge talks to over WebSocket. Connect to control them from actions.")
             .size(FONT_SM)
             .color(p.text_muted);
-    let header = column![title, subtitle].spacing(4);
+    let header = column![title, subtitle].spacing(spf(Spacing::Xxs));
 
     let obs_connected = matches!(
         state.rt.obs_client.as_ref().map(|c| c.connection_state()),
@@ -44,19 +44,16 @@ pub fn view<'a>(state: &'a App, palette: &'a ForgePalette) -> Element<'a, Messag
         palette,
     );
 
-    let grid = row![obs_card, vtube_card].spacing(12).width(Length::Fill);
+    let grid = row![obs_card, vtube_card]
+        .spacing(spf(Spacing::Sm))
+        .width(Length::Fill);
 
-    let body = column![header, grid].spacing(18);
+    let body = column![header, grid].spacing(spf(Spacing::Md));
     let page_header = crate::app::simple_page_header(&[("Stream Apps", true)], palette);
     let body_container = container(scrollable(body).height(Length::Fill))
         .width(Length::Fill)
         .height(Length::Fill)
-        .padding(Padding {
-            top: 22.0,
-            right: 28.0,
-            bottom: 22.0,
-            left: 28.0,
-        });
+        .padding(spf(Spacing::Lg));
 
     column![page_header, body_container]
         .width(Length::Fill)
@@ -117,10 +114,10 @@ fn app_overview_card<'a>(
                 .size(FONT_XS)
                 .color(badge_text_color),
         ]
-        .spacing(5)
+        .spacing(spf(Spacing::Xxs))
         .align_y(Alignment::Center),
     )
-    .padding([2_u16, 7_u16])
+    .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
     .style(move |_: &iced::Theme| container::Style {
         background: Some(Background::Color(p.surface_overlay)),
         border: Border {
@@ -134,23 +131,23 @@ fn app_overview_card<'a>(
         text(name.to_owned()).size(FONT_SM).color(p.text_primary),
         badge,
     ]
-    .spacing(8)
+    .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
     let desc_text = text(desc.to_owned()).size(FONT_SM).color(p.text_muted);
 
-    let info_col = column![title_row, desc_text].spacing(6);
+    let info_col = column![title_row, desc_text].spacing(spf(Spacing::Xs));
 
     let inner = row![
         icon_box,
         container(info_col).width(Length::Fill),
         tabler_icon(Icon::ChevronRight, 16.0, p.text_faint),
     ]
-    .spacing(14)
+    .spacing(spf(Spacing::Sm))
     .align_y(Alignment::Start);
 
     button(inner)
-        .padding([16_u16, 18_u16])
+        .padding([sp(Spacing::Md), sp(Spacing::Md)])
         .width(Length::Fill)
         .on_press(Message::Navigate(Screen::BuiltinDetail(target)))
         .style(

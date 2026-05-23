@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use iced::widget::{button, column, container, row, text};
-use iced::{Alignment, Background, Border, Color, Element, Length, Padding, Shadow, Task, Theme};
+use iced::{Alignment, Background, Border, Color, Element, Length, Shadow, Task, Theme};
 
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, QuickActions, SectionIcon,
@@ -14,7 +14,7 @@ use forge_storage::{CredentialId, CredentialsRepo};
 use forge_types::OAuthToken;
 use forge_widgets::ForgePalette;
 use forge_widgets::icons::{Icon, tabler_icon};
-use forge_widgets::tokens::{FONT_SM, FONT_XS, FontRole, font};
+use forge_widgets::tokens::{FONT_SM, FONT_XS, FontRole, Spacing, font, sp, spf};
 use tokio::sync::Mutex as TokioMutex;
 
 use crate::Message;
@@ -248,11 +248,11 @@ pub fn twitch_reauth_banner<'a>(palette: &'a ForgePalette) -> Element<'a, Messag
     .size(FONT_XS)
     .color(palette.text_muted)
     .wrapping(iced::widget::text::Wrapping::Word);
-    let text_col = column![title, detail].spacing(2.0);
+    let text_col = column![title, detail].spacing(spf(Spacing::Xxs));
 
     let cta = button(text("Re-authorize").size(FONT_XS).color(palette.shell))
         .on_press(Message::TwitchReauthRequested)
-        .padding(Padding::from([6_u16, 12_u16]))
+        .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
         .style(move |_theme: &Theme, _status| button::Style {
             background: Some(Background::Color(palette.warning)),
             text_color: palette.shell,
@@ -271,12 +271,12 @@ pub fn twitch_reauth_banner<'a>(palette: &'a ForgePalette) -> Element<'a, Messag
         iced::widget::Space::new().width(Length::Fill),
         cta,
     ]
-    .spacing(10.0)
+    .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
     container(inner)
         .width(Length::Fill)
-        .padding(Padding::from([10_u16, 14_u16]))
+        .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
         .style(move |_theme: &Theme| container::Style {
             background: Some(Background::Color(palette.shell)),
             border: Border {
@@ -311,10 +311,10 @@ pub fn twitch_disconnected_view<'a>(
     let page_header =
         crate::app::simple_page_header(&[("Builtin", false), ("Twitch", true)], palette);
 
-    let body = container(column![header_card, flow_card, scopes_card].spacing(14.0))
+    let body = container(column![header_card, flow_card, scopes_card].spacing(spf(Spacing::Sm)))
         .width(Length::Fill)
         .height(Length::Fill)
-        .padding(Padding::from([18_u16, 22_u16]));
+        .padding([sp(Spacing::Md), sp(Spacing::Lg)]);
 
     column![page_header, body]
         .width(Length::Fill)
@@ -347,15 +347,15 @@ fn twitch_header_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
             .size(FONT_SM)
             .color(palette.text_muted),
     ]
-    .spacing(2.0);
+    .spacing(spf(Spacing::Xxs));
 
     let inner = row![brand, container(title_col).width(Length::Fill)]
-        .spacing(16.0)
+        .spacing(spf(Spacing::Md))
         .align_y(Alignment::Center);
 
     container(inner)
         .width(Length::Fill)
-        .padding(Padding::from([16_u16, 18_u16]))
+        .padding([sp(Spacing::Md), sp(Spacing::Md)])
         .style(card_style(palette))
         .into()
 }
@@ -367,7 +367,7 @@ fn flow_intro<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
             .size(FONT_SM)
             .color(palette.text_primary),
     ]
-    .spacing(8.0)
+    .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
     let subtitle = text(
@@ -378,9 +378,9 @@ fn flow_intro<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     .color(palette.text_muted)
     .wrapping(iced::widget::text::Wrapping::Word);
 
-    container(column![title_row, subtitle].spacing(3.0))
+    container(column![title_row, subtitle].spacing(spf(Spacing::Xxs)))
         .width(Length::Fill)
-        .padding(Padding::from([14_u16, 18_u16]))
+        .padding([sp(Spacing::Sm), sp(Spacing::Md)])
         .style(move |_theme: &Theme| container::Style {
             border: Border {
                 color: palette.border_regular,
@@ -401,7 +401,7 @@ fn disconnected_idle_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message>
     );
     let body = container(cta)
         .width(Length::Fill)
-        .padding(18.0)
+        .padding(spf(Spacing::Md))
         .center_x(Length::Fill);
 
     container(column![intro, body])
@@ -418,7 +418,7 @@ fn requesting_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
             .color(palette.text_muted),
     )
     .width(Length::Fill)
-    .padding(18.0)
+    .padding(spf(Spacing::Md))
     .center_x(Length::Fill);
 
     container(column![intro, body])
@@ -439,9 +439,9 @@ fn awaiting_card<'a>(
     let step2 = step_enter_code(user_code, expires_at, palette);
     let polling = polling_banner(palette);
 
-    let body = container(column![step1, step2, polling].spacing(14.0))
+    let body = container(column![step1, step2, polling].spacing(spf(Spacing::Sm)))
         .width(Length::Fill)
-        .padding(18.0);
+        .padding(spf(Spacing::Md));
 
     container(column![intro, body])
         .width(Length::Fill)
@@ -461,7 +461,7 @@ fn step_open_url<'a>(uri: &'a str, palette: &'a ForgePalette) -> Element<'a, Mes
             .font(font(FontRole::Monospace)),
     )
     .width(Length::Fill)
-    .padding(Padding::from([8_u16, 12_u16]))
+    .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
     .style(move |_theme: &Theme| container::Style {
         background: Some(Background::Color(palette.shell)),
         border: Border {
@@ -476,11 +476,11 @@ fn step_open_url<'a>(uri: &'a str, palette: &'a ForgePalette) -> Element<'a, Mes
         tabler_icon(Icon::ExternalLink, 13.0, palette.brand),
         text("Open").size(FONT_SM).color(palette.brand),
     ]
-    .spacing(5.0)
+    .spacing(spf(Spacing::Xxs))
     .align_y(Alignment::Center);
     let open_btn = button(open_btn_content)
         .on_press(Message::TwitchPanel(TwitchPanelMsg::OpenVerificationUrl))
-        .padding(Padding::from([7_u16, 11_u16]))
+        .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
         .style(move |_theme: &Theme, _status| button::Style {
             background: Some(Background::Color(Color::TRANSPARENT)),
             text_color: palette.brand,
@@ -494,13 +494,13 @@ fn step_open_url<'a>(uri: &'a str, palette: &'a ForgePalette) -> Element<'a, Mes
         });
 
     let url_row = row![url_box, open_btn]
-        .spacing(8.0)
+        .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Center);
 
-    let content = column![title, url_row].spacing(6.0);
+    let content = column![title, url_row].spacing(spf(Spacing::Xs));
 
     row![circle, content]
-        .spacing(14.0)
+        .spacing(spf(Spacing::Sm))
         .align_y(Alignment::Start)
         .into()
 }
@@ -522,7 +522,7 @@ fn step_enter_code<'a>(
             .font(font(FontRole::Monospace)),
     )
     .width(Length::Fill)
-    .padding(Padding::from([14_u16, 20_u16]))
+    .padding([sp(Spacing::Sm), sp(Spacing::Lg)])
     .center_x(Length::Fill)
     .style(move |_theme: &Theme| container::Style {
         background: Some(Background::Color(palette.shell)),
@@ -538,11 +538,11 @@ fn step_enter_code<'a>(
         tabler_icon(Icon::Copy, 18.0, palette.text_secondary),
         text("Copy").size(FONT_XS).color(palette.text_secondary),
     ]
-    .spacing(3.0)
+    .spacing(spf(Spacing::Xxs))
     .align_x(Alignment::Center);
     let copy_btn = button(copy_btn_content)
         .on_press(Message::TwitchPanel(TwitchPanelMsg::CopyCode))
-        .padding(Padding::from([14_u16, 12_u16]))
+        .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
         .style(move |_theme: &Theme, _status| button::Style {
             background: Some(Background::Color(Color::TRANSPARENT)),
             text_color: palette.text_secondary,
@@ -556,7 +556,7 @@ fn step_enter_code<'a>(
         });
 
     let code_row = row![code_display, copy_btn]
-        .spacing(10.0)
+        .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Center);
 
     let remaining = expires_at
@@ -576,11 +576,11 @@ fn step_enter_code<'a>(
                 tabler_icon(Icon::Refresh, 12.0, palette.brand),
                 text("Get new code").size(FONT_XS).color(palette.brand),
             ]
-            .spacing(4.0)
+            .spacing(spf(Spacing::Xxs))
             .align_y(Alignment::Center),
         )
         .on_press(Message::TwitchPanel(TwitchPanelMsg::StartConnect))
-        .padding(Padding::from([2_u16, 0_u16]))
+        .padding([sp(Spacing::Xxs), 0])
         .style(move |_theme: &Theme, _status| button::Style {
             background: Some(Background::Color(Color::TRANSPARENT)),
             text_color: palette.brand,
@@ -593,13 +593,13 @@ fn step_enter_code<'a>(
             snap: false,
         }),
     ]
-    .spacing(8.0)
+    .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
-    let content = column![title, code_row, timer_row].spacing(10.0);
+    let content = column![title, code_row, timer_row].spacing(spf(Spacing::Xs));
 
     row![circle, content]
-        .spacing(14.0)
+        .spacing(spf(Spacing::Sm))
         .align_y(Alignment::Start)
         .into()
 }
@@ -661,11 +661,11 @@ fn polling_banner<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
         .color(palette.text_faint)
         .font(font(FontRole::Monospace));
 
-    let text_col = column![primary, secondary].spacing(1.0);
+    let text_col = column![primary, secondary].spacing(spf(Spacing::Xxs));
 
     let cancel = button(text("Cancel").size(FONT_XS).color(palette.text_secondary))
         .on_press(Message::TwitchPanel(TwitchPanelMsg::Cancel))
-        .padding(Padding::from([5_u16, 10_u16]))
+        .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
         .style(move |_theme: &Theme, _status| button::Style {
             background: Some(Background::Color(Color::TRANSPARENT)),
             text_color: palette.text_secondary,
@@ -684,12 +684,12 @@ fn polling_banner<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
         iced::widget::Space::new().width(Length::Fill),
         cancel
     ]
-    .spacing(10.0)
+    .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
     container(inner)
         .width(Length::Fill)
-        .padding(Padding::from([11_u16, 14_u16]))
+        .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
         .style(move |_theme: &Theme| container::Style {
             background: Some(Background::Color(palette.shell)),
             border: Border {
@@ -710,7 +710,7 @@ fn authorizing_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
             .color(palette.text_muted),
     )
     .width(Length::Fill)
-    .padding(18.0)
+    .padding(spf(Spacing::Md))
     .center_x(Length::Fill);
 
     container(column![intro, body])
@@ -732,11 +732,11 @@ fn error_card<'a>(msg: &'a str, palette: &'a ForgePalette) -> Element<'a, Messag
     );
     let body = container(
         column![detail, retry]
-            .spacing(12.0)
+            .spacing(spf(Spacing::Sm))
             .align_x(Alignment::Start),
     )
     .width(Length::Fill)
-    .padding(18.0);
+    .padding(spf(Spacing::Md));
 
     container(column![intro, body])
         .width(Length::Fill)
@@ -753,7 +753,9 @@ fn missing_client_id_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message>
     .size(FONT_XS)
     .color(palette.text_muted)
     .wrapping(iced::widget::text::Wrapping::Word);
-    let body = container(detail).width(Length::Fill).padding(18.0);
+    let body = container(detail)
+        .width(Length::Fill)
+        .padding(spf(Spacing::Md));
 
     container(column![intro, body])
         .width(Length::Fill)
@@ -768,7 +770,7 @@ fn scopes_preview_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
             .size(FONT_SM)
             .color(palette.text_primary),
     ]
-    .spacing(7.0)
+    .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
     let header_right = text(format!("{} scopes", TWITCH_BROADCASTER_SCOPES.len()))
         .size(FONT_XS)
@@ -781,7 +783,7 @@ fn scopes_preview_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     .align_y(Alignment::Center);
     let header_wrap = container(header)
         .width(Length::Fill)
-        .padding(Padding::from([10_u16, 14_u16]))
+        .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
         .style(move |_theme: &Theme| container::Style {
             border: Border {
                 color: palette.border_regular,
@@ -791,8 +793,9 @@ fn scopes_preview_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
             ..container::Style::default()
         });
 
-    let mut pills_col: iced::widget::Column<'a, Message> = column![].spacing(5.0);
-    let mut current_row: iced::widget::Row<'a, Message> = iced::widget::Row::new().spacing(5.0);
+    let mut pills_col: iced::widget::Column<'a, Message> = column![].spacing(spf(Spacing::Xxs));
+    let mut current_row: iced::widget::Row<'a, Message> =
+        iced::widget::Row::new().spacing(spf(Spacing::Xxs));
     let mut row_count: usize = 0;
     const SCOPES_PER_ROW: usize = 3;
     for scope in TWITCH_BROADCASTER_SCOPES {
@@ -800,7 +803,7 @@ fn scopes_preview_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
         row_count += 1;
         if row_count == SCOPES_PER_ROW {
             pills_col = pills_col.push(current_row);
-            current_row = iced::widget::Row::new().spacing(5.0);
+            current_row = iced::widget::Row::new().spacing(spf(Spacing::Xxs));
             row_count = 0;
         }
     }
@@ -809,7 +812,7 @@ fn scopes_preview_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     }
     let pills_wrap = container(pills_col)
         .width(Length::Fill)
-        .padding(Padding::from([10_u16, 14_u16]));
+        .padding([sp(Spacing::Xs), sp(Spacing::Sm)]);
 
     container(column![header_wrap, pills_wrap])
         .width(Length::Fill)
@@ -824,7 +827,7 @@ fn scope_pill<'a>(scope: &'a str, palette: &'a ForgePalette) -> Element<'a, Mess
             .color(palette.success)
             .font(font(FontRole::Monospace)),
     )
-    .padding(Padding::from([2_u16, 7_u16]))
+    .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
     .style(move |_theme: &Theme| container::Style {
         background: Some(Background::Color(palette.surface_overlay)),
         border: Border {
@@ -844,7 +847,7 @@ fn primary_button<'a>(
 ) -> Element<'a, Message> {
     button(text(label).size(FONT_SM).color(palette.shell))
         .on_press(msg)
-        .padding(Padding::from([8_u16, 16_u16]))
+        .padding([sp(Spacing::Xs), sp(Spacing::Md)])
         .style(move |_theme: &Theme, _status| button::Style {
             background: Some(Background::Color(palette.brand)),
             text_color: palette.shell,

@@ -9,9 +9,9 @@ use iced::{
 use time::OffsetDateTime;
 
 use forge_widgets::{
-    ForgePalette, Radius,
+    ForgePalette, Radius, Spacing,
     icons::{Icon, tabler_icon},
-    radius,
+    radius, sp, spf,
     tokens::{BORDER_THIN, FONT_SM, FONT_XS, FontRole, font},
 };
 
@@ -224,7 +224,7 @@ pub fn queues_view<'a>(state: &'a QueuesState, palette: &'a ForgePalette) -> Ele
         pause_all_button(border_col, warning),
         new_queue_button(brand, dark),
     ]
-    .spacing(8)
+    .spacing(spf(Spacing::Xs))
     .align_y(iced::Alignment::Center);
 
     let page_header = crate::app::page_header_with_actions(
@@ -238,7 +238,7 @@ pub fn queues_view<'a>(state: &'a QueuesState, palette: &'a ForgePalette) -> Ele
     let base = palette.base;
     let body = container(grid)
         .width(Length::Fill)
-        .padding(18)
+        .padding(sp(Spacing::Md))
         .style(move |_: &iced::Theme| iced::widget::container::Style {
             background: Some(Background::Color(base)),
             ..Default::default()
@@ -259,11 +259,11 @@ fn pause_all_button<'a>(border_col: Color, warning: Color) -> Element<'a, Messag
 
     button(
         row![icon, label]
-            .spacing(5)
+            .spacing(spf(Spacing::Xxs))
             .align_y(iced::Alignment::Center),
     )
     .on_press(Message::Queues(QueuesMsg::PauseAll))
-    .padding([5, 11])
+    .padding([sp(Spacing::Xxs), sp(Spacing::Sm)])
     .style(
         move |_: &iced::Theme, _status| iced::widget::button::Style {
             background: Some(Background::Color(Color::TRANSPARENT)),
@@ -289,11 +289,11 @@ fn new_queue_button<'a>(brand: Color, dark: Color) -> Element<'a, Message> {
 
     button(
         row![icon, label]
-            .spacing(5)
+            .spacing(spf(Spacing::Xxs))
             .align_y(iced::Alignment::Center),
     )
     .on_press(Message::Queues(QueuesMsg::NewQueue))
-    .padding([5, 12])
+    .padding([sp(Spacing::Xxs), sp(Spacing::Sm)])
     .style(
         move |_: &iced::Theme, _status| iced::widget::button::Style {
             background: Some(Background::Color(brand)),
@@ -324,12 +324,12 @@ fn build_grid<'a>(state: &'a QueuesState, palette: &'a ForgePalette) -> Element<
         let right = iter.next().map(|q| queue_card(q, palette));
 
         let row_el: Element<'a, Message> = match (left, right) {
-            (Some(l), Some(r)) => row![l, r].spacing(10).into(),
+            (Some(l), Some(r)) => row![l, r].spacing(spf(Spacing::Xs)).into(),
             (Some(l), None) => row![
                 container(l).width(Length::FillPortion(1)),
                 Space::new().width(Length::FillPortion(1)),
             ]
-            .spacing(10)
+            .spacing(spf(Spacing::Xs))
             .into(),
             _ => unreachable!(),
         };
@@ -337,7 +337,7 @@ fn build_grid<'a>(state: &'a QueuesState, palette: &'a ForgePalette) -> Element<
         rows.push(row_el);
     }
 
-    column(rows).spacing(10).into()
+    column(rows).spacing(spf(Spacing::Xs)).into()
 }
 
 fn queue_card<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Element<'a, Message> {
@@ -356,11 +356,11 @@ fn queue_card<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Element<'a,
     let running_panel = queue_running_panel(q, palette);
     let buttons = queue_card_buttons(q, palette);
 
-    let inner = column![header, metrics, running_panel, buttons].spacing(10);
+    let inner = column![header, metrics, running_panel, buttons].spacing(spf(Spacing::Xs));
 
     container(inner)
         .width(Length::FillPortion(1))
-        .padding(14)
+        .padding(sp(Spacing::Sm))
         .style(move |_: &iced::Theme| iced::widget::container::Style {
             background: Some(Background::Color(card_bg)),
             border: Border {
@@ -392,10 +392,10 @@ fn queue_card_header<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Elem
     };
 
     let name_row = row![name, badge]
-        .spacing(8)
+        .spacing(spf(Spacing::Xs))
         .align_y(iced::Alignment::Center);
 
-    let left = column![name_row, desc].spacing(3);
+    let left = column![name_row, desc].spacing(spf(Spacing::Xxs));
 
     row![left, Space::new().width(Length::Fill), dots]
         .align_y(iced::Alignment::Start)
@@ -413,10 +413,10 @@ fn status_badge<'a>(paused: bool, palette: &'a ForgePalette) -> Element<'a, Mess
             .color(warning);
         container(
             row![icon, label]
-                .spacing(4)
+                .spacing(spf(Spacing::Xxs))
                 .align_y(iced::Alignment::Center),
         )
-        .padding([1, 6])
+        .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
         .style(move |_: &iced::Theme| iced::widget::container::Style {
             background: Some(Background::Color(bg)),
             border: Border {
@@ -442,17 +442,21 @@ fn status_badge<'a>(paused: bool, palette: &'a ForgePalette) -> Element<'a, Mess
             .size(FONT_XS)
             .font(font(FontRole::Monospace))
             .color(success);
-        container(row![dot, label].spacing(4).align_y(iced::Alignment::Center))
-            .padding([1, 6])
-            .style(move |_: &iced::Theme| iced::widget::container::Style {
-                background: Some(Background::Color(bg)),
-                border: Border {
-                    radius: 8.0.into(),
-                    ..Default::default()
-                },
+        container(
+            row![dot, label]
+                .spacing(spf(Spacing::Xxs))
+                .align_y(iced::Alignment::Center),
+        )
+        .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
+        .style(move |_: &iced::Theme| iced::widget::container::Style {
+            background: Some(Background::Color(bg)),
+            border: Border {
+                radius: 8.0.into(),
                 ..Default::default()
-            })
-            .into()
+            },
+            ..Default::default()
+        })
+        .into()
     }
 }
 
@@ -490,7 +494,7 @@ fn queue_card_metrics<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
             .font(font(FontRole::Monospace))
             .color(sub_color),
     ]
-    .spacing(3)
+    .spacing(spf(Spacing::Xxs))
     .width(Length::FillPortion(1));
 
     let pending_col = column![
@@ -507,7 +511,7 @@ fn queue_card_metrics<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
             .font(font(FontRole::Monospace))
             .color(pending_sub_color),
     ]
-    .spacing(3)
+    .spacing(spf(Spacing::Xxs))
     .width(Length::FillPortion(1));
 
     let actions_col = column![
@@ -524,7 +528,7 @@ fn queue_card_metrics<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
             .font(font(FontRole::Monospace))
             .color(sub_color),
     ]
-    .spacing(3)
+    .spacing(spf(Spacing::Xxs))
     .width(Length::FillPortion(1));
 
     let metrics_row = row![concurrency_col, pending_col, actions_col];
@@ -532,7 +536,7 @@ fn queue_card_metrics<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
     container(metrics_row)
         .width(Length::Fill)
         .padding(iced::Padding {
-            top: 10.0,
+            top: spf(Spacing::Xs),
             right: 0.0,
             bottom: 0.0,
             left: 0.0,
@@ -575,19 +579,23 @@ fn queue_running_panel<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> El
 
         let msg = text(paused_text).size(FONT_XS).color(palette.text_primary);
 
-        container(row![icon, msg].spacing(8).align_y(iced::Alignment::Center))
-            .width(Length::Fill)
-            .padding([8, 10])
-            .style(move |_: &iced::Theme| iced::widget::container::Style {
-                background: Some(Background::Color(bg_warning)),
-                border: Border {
-                    color: border_warning,
-                    width: BORDER_THIN,
-                    radius: radius(Radius::Sm).into(),
-                },
-                ..Default::default()
-            })
-            .into()
+        container(
+            row![icon, msg]
+                .spacing(spf(Spacing::Xs))
+                .align_y(iced::Alignment::Center),
+        )
+        .width(Length::Fill)
+        .padding([sp(Spacing::Xs), sp(Spacing::Xs)])
+        .style(move |_: &iced::Theme| iced::widget::container::Style {
+            background: Some(Background::Color(bg_warning)),
+            border: Border {
+                color: border_warning,
+                width: BORDER_THIN,
+                radius: radius(Radius::Sm).into(),
+            },
+            ..Default::default()
+        })
+        .into()
     } else if q.running_now.is_empty() {
         let muted = palette.text_faint;
         let icon = tabler_icon(Icon::CircleDashed, 12.0, muted);
@@ -595,11 +603,11 @@ fn queue_running_panel<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> El
 
         container(
             row![icon, label]
-                .spacing(8)
+                .spacing(spf(Spacing::Xs))
                 .align_y(iced::Alignment::Center),
         )
         .width(Length::Fill)
-        .padding([6, 10])
+        .padding([sp(Spacing::Xs), sp(Spacing::Xs)])
         .style(move |_: &iced::Theme| iced::widget::container::Style {
             background: Some(Background::Color(shell)),
             border: Border {
@@ -644,7 +652,7 @@ fn serial_running_panel<'a>(
             Space::new().width(Length::Fill),
             running_label,
         ]
-        .spacing(8)
+        .spacing(spf(Spacing::Xs))
         .align_y(iced::Alignment::Center),
     )
     .width(Length::Fill)
@@ -690,7 +698,7 @@ fn concurrent_running_panel<'a>(
                     .font(font(FontRole::Monospace))
                     .color(tc),
             )
-            .padding([2, 6])
+            .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
             .style(move |_: &iced::Theme| iced::widget::container::Style {
                 background: Some(Background::Color(bg)),
                 border: Border {
@@ -725,11 +733,11 @@ fn concurrent_running_panel<'a>(
         pills.push(overflow_pill);
     }
 
-    let pills_row = row(pills).spacing(4).wrap();
+    let pills_row = row(pills).spacing(spf(Spacing::Xxs)).wrap();
 
-    container(column![header, pills_row].spacing(4))
+    container(column![header, pills_row].spacing(spf(Spacing::Xxs)))
         .width(Length::Fill)
-        .padding([6, 10])
+        .padding([sp(Spacing::Xs), sp(Spacing::Xs)])
         .style(move |_: &iced::Theme| iced::widget::container::Style {
             background: Some(Background::Color(shell)),
             border: Border {
@@ -756,11 +764,11 @@ fn queue_card_buttons<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
         let label = text("Resume").size(FONT_SM).color(dark);
         button(
             row![icon, label]
-                .spacing(5)
+                .spacing(spf(Spacing::Xxs))
                 .align_y(iced::Alignment::Center),
         )
         .on_press(Message::Queues(QueuesMsg::ResumeQueue(id)))
-        .padding([5, 10])
+        .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
         .width(Length::FillPortion(1))
         .style(
             move |_: &iced::Theme, _status| iced::widget::button::Style {
@@ -777,11 +785,11 @@ fn queue_card_buttons<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
         let label = text("Pause").size(FONT_SM).color(warning);
         button(
             row![icon, label]
-                .spacing(5)
+                .spacing(spf(Spacing::Xxs))
                 .align_y(iced::Alignment::Center),
         )
         .on_press(Message::Queues(QueuesMsg::PauseQueue(id)))
-        .padding([5, 10])
+        .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
         .width(Length::FillPortion(1))
         .style(
             move |_: &iced::Theme, _status| iced::widget::button::Style {
@@ -803,11 +811,11 @@ fn queue_card_buttons<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
     let drain_label = text("Drain").size(FONT_SM).color(muted);
     let drain_btn: Element<'a, Message> = button(
         row![drain_icon, drain_label]
-            .spacing(5)
+            .spacing(spf(Spacing::Xxs))
             .align_y(iced::Alignment::Center),
     )
     .on_press(Message::Queues(QueuesMsg::DrainQueue(id)))
-    .padding([5, 10])
+    .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
     .width(Length::FillPortion(1))
     .style(
         move |_: &iced::Theme, _status| iced::widget::button::Style {
@@ -828,11 +836,11 @@ fn queue_card_buttons<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
     let cfg_label = text("Configure").size(FONT_SM).color(muted);
     let cfg_btn: Element<'a, Message> = button(
         row![cfg_icon, cfg_label]
-            .spacing(5)
+            .spacing(spf(Spacing::Xxs))
             .align_y(iced::Alignment::Center),
     )
     .on_press(Message::Noop)
-    .padding([5, 10])
+    .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
     .width(Length::FillPortion(1))
     .style(
         move |_: &iced::Theme, _status| iced::widget::button::Style {
@@ -850,7 +858,7 @@ fn queue_card_buttons<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
     .into();
 
     row![action_btn, drain_btn, cfg_btn]
-        .spacing(6)
+        .spacing(spf(Spacing::Xs))
         .width(Length::Fill)
         .into()
 }

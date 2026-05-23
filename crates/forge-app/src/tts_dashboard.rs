@@ -2,7 +2,7 @@ use forge_speak_queue::SpeakEvent;
 use forge_widgets::ForgePalette;
 use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::tokens::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spacing,
+    BORDER_THIN, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
 };
 use iced::widget::{button, column, container, row, scrollable, slider, text, text_input};
 use iced::{Alignment, Background, Border, Color, Element, Length, Task};
@@ -141,9 +141,9 @@ pub fn tts_dashboard_view<'a>(
     state: &'a TtsDashState,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    let gap_sm = f32::from(spacing(Spacing::Xs, Density::Cozy));
-    let gap_md = f32::from(spacing(Spacing::Sm, Density::Cozy));
-    let gap_lg = f32::from(spacing(Spacing::Sm, Density::Cozy));
+    let gap_sm = spf(Spacing::Xs);
+    let gap_md = spf(Spacing::Sm);
+    let gap_lg = spf(Spacing::Sm);
 
     let control_strip = control_strip_view(state, palette, gap_sm, gap_md);
     let now_speaking = now_speaking_view(state, palette, gap_sm);
@@ -199,7 +199,7 @@ fn control_strip_view<'a>(
         text_color: palette.shell,
         ..button::Style::default()
     })
-    .padding([5, 12]);
+    .padding([sp(Spacing::Xxs), sp(Spacing::Sm)]);
 
     let skip_btn = button(text("Skip").size(FONT_SM))
         .on_press(Message::Tts(TtsMsg::Dashboard(TtsDashMsg::SkipCurrent)))
@@ -213,7 +213,7 @@ fn control_strip_view<'a>(
             text_color: palette.text_secondary,
             ..button::Style::default()
         })
-        .padding([5, 11]);
+        .padding([sp(Spacing::Xxs), sp(Spacing::Sm)]);
 
     let stop_btn = button(text("Stop all").size(FONT_SM))
         .on_press(Message::Tts(TtsMsg::Dashboard(TtsDashMsg::StopAll)))
@@ -227,7 +227,7 @@ fn control_strip_view<'a>(
             text_color: palette.text_secondary,
             ..button::Style::default()
         })
-        .padding([5, 11]);
+        .padding([sp(Spacing::Xxs), sp(Spacing::Sm)]);
 
     let vol_pct = (state.volume * 100.0).round() as u32;
     let vol_text = text(format!("{vol_pct}%"))
@@ -282,7 +282,7 @@ fn control_strip_view<'a>(
             text_color: palette.shell,
             ..button::Style::default()
         })
-        .padding([5, 11]);
+        .padding([sp(Spacing::Xxs), sp(Spacing::Sm)]);
 
     let right = row![test_input, speak_btn]
         .align_y(Alignment::Center)
@@ -303,7 +303,7 @@ fn control_strip_view<'a>(
         },
         ..container::Style::default()
     })
-    .padding([9, 16])
+    .padding([sp(Spacing::Xs), sp(Spacing::Md)])
     .width(Length::Fill)
     .into()
 }
@@ -361,7 +361,7 @@ fn now_speaking_view<'a>(
             },
             ..container::Style::default()
         })
-        .padding([14, 16])
+        .padding([sp(Spacing::Sm), sp(Spacing::Md)])
         .width(Length::Fill)
         .into()
 }
@@ -389,7 +389,7 @@ fn queue_section_view<'a>(
                 },
                 ..container::Style::default()
             })
-            .padding([0, 6]),
+            .padding([0, sp(Spacing::Xs)]),
         ]
         .align_y(Alignment::Center)
         .spacing(gap_sm),
@@ -402,7 +402,7 @@ fn queue_section_view<'a>(
         },
         ..container::Style::default()
     })
-    .padding([9, 16])
+    .padding([sp(Spacing::Xs), sp(Spacing::Md)])
     .width(Length::Fill);
 
     let items: Element<'a, Message> = if state.queue.is_empty() {
@@ -411,7 +411,7 @@ fn queue_section_view<'a>(
                 .size(FONT_SM)
                 .color(palette.text_muted),
         )
-        .padding([16, 16])
+        .padding([sp(Spacing::Md), sp(Spacing::Md)])
         .width(Length::Fill)
         .into()
     } else {
@@ -461,7 +461,7 @@ fn queue_item_row<'a>(
             },
             ..container::Style::default()
         })
-        .padding([1, 5])
+        .padding([sp(Spacing::Xxs), sp(Spacing::Xxs)])
         .into()
     } else {
         text("").size(0.0).into()
@@ -485,7 +485,7 @@ fn queue_item_row<'a>(
             .color(palette.text_muted)
             .width(Length::Fill),
     ]
-    .spacing(2)
+    .spacing(spf(Spacing::Xxs))
     .width(Length::Fill);
 
     let dur_text = text(format!("0:{:02}", item.duration_secs))
@@ -507,7 +507,7 @@ fn queue_item_row<'a>(
         },
         ..container::Style::default()
     })
-    .padding([9, 16])
+    .padding([sp(Spacing::Xs), sp(Spacing::Md)])
     .width(Length::Fill)
     .into()
 }
@@ -538,7 +538,7 @@ fn right_pane_view<'a>(
             text(value).size(FONT_SM).color(value_color),
         ]
         .align_y(Alignment::Center)
-        .padding([5, 0]);
+        .padding([sp(Spacing::Xxs), 0]);
 
         if border_bottom {
             container(row_el)
@@ -615,7 +615,7 @@ fn right_pane_view<'a>(
         },
         ..container::Style::default()
     })
-    .padding([14, 14])
+    .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
     .width(236)
     .into()
 }
@@ -652,7 +652,7 @@ fn engine_card<'a>(
                 .color(palette.text_muted)
                 .font(font(FontRole::Monospace)),
         ]
-        .spacing(3),
+        .spacing(spf(Spacing::Xxs)),
     )
     .style(move |_| container::Style {
         background: Some(Background::Color(palette.elevated)),
@@ -663,7 +663,7 @@ fn engine_card<'a>(
         },
         ..container::Style::default()
     })
-    .padding([9, 11])
+    .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
     .width(Length::Fill)
     .into()
 }

@@ -1,6 +1,5 @@
 use forge_widgets::tokens::{
-    BORDER_THIN, Density, FONT_MD, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius,
-    spacing,
+    BORDER_THIN, FONT_MD, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
 };
 use forge_widgets::{ForgePalette, Icon, tabler_icon};
 use iced::widget::{column, container, row, text};
@@ -75,8 +74,8 @@ pub fn tts_triggers_view<'a>(
     state: &'a TtsTriggersState,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    let gap_sm = f32::from(spacing(Spacing::Xs, Density::Cozy));
-    let gap_md = f32::from(spacing(Spacing::Sm, Density::Cozy));
+    let gap_sm = spf(Spacing::Xs);
+    let gap_md = spf(Spacing::Sm);
 
     let header_group = column![
         text("WHAT GETS SPOKEN")
@@ -87,7 +86,7 @@ pub fn tts_triggers_view<'a>(
             .size(FONT_SM)
             .color(palette.text_muted),
     ]
-    .spacing(4);
+    .spacing(spf(Spacing::Xxs));
 
     let trigger_row1 = row![
         trigger_card_command(state, palette, gap_sm),
@@ -115,7 +114,7 @@ pub fn tts_triggers_view<'a>(
             .spacing(gap_md)
             .width(Length::Fill),
     )
-    .padding([16, 18])
+    .padding([sp(Spacing::Md), sp(Spacing::Md)])
     .width(Length::Fill)
     .height(Length::Fill)
     .into()
@@ -156,10 +155,10 @@ fn toggle_switch<'a>(on: bool, msg: Message, palette: &'a ForgePalette) -> Eleme
         .width(32)
         .height(18)
         .padding(iced::Padding {
-            top: 2.0,
-            bottom: 2.0,
+            top: spf(Spacing::Xxs),
+            bottom: spf(Spacing::Xxs),
             left: knob_offset,
-            right: 2.0,
+            right: spf(Spacing::Xxs),
         }),
     )
     .on_press(msg)
@@ -187,7 +186,7 @@ fn role_chip<'a>(
             },
             ..container::Style::default()
         })
-        .padding([2, 7])
+        .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
         .into()
 }
 
@@ -225,7 +224,7 @@ fn trigger_card_command<'a>(
                 .color(palette.text_muted)
                 .font(font(FontRole::Monospace)),
         ]
-        .spacing(2)
+        .spacing(spf(Spacing::Xxs))
         .width(Length::Fill),
         toggle_switch(
             state.command_enabled,
@@ -261,7 +260,7 @@ fn trigger_card_command<'a>(
             },
             ..container::Style::default()
         })
-        .padding([13, 14])
+        .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
         .width(Length::Fill)
         .into()
 }
@@ -293,7 +292,7 @@ fn trigger_card_channel_points<'a>(
                 .size(FONT_XS)
                 .color(palette.text_muted),
         ]
-        .spacing(2)
+        .spacing(spf(Spacing::Xxs))
         .width(Length::Fill),
         toggle_switch(
             state.channel_points_enabled,
@@ -325,7 +324,7 @@ fn trigger_card_channel_points<'a>(
             },
             ..container::Style::default()
         })
-        .padding([13, 14])
+        .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
         .width(Length::Fill)
         .into()
 }
@@ -357,7 +356,7 @@ fn trigger_card_bits<'a>(
                 .size(FONT_XS)
                 .color(palette.text_muted),
         ]
-        .spacing(2)
+        .spacing(spf(Spacing::Xxs))
         .width(Length::Fill),
         toggle_switch(
             state.bits_enabled,
@@ -407,7 +406,7 @@ fn trigger_card_bits<'a>(
             },
             ..container::Style::default()
         })
-        .padding([13, 14])
+        .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
         .width(Length::Fill)
         .into()
 }
@@ -439,7 +438,7 @@ fn trigger_card_subs<'a>(
                 .size(FONT_XS)
                 .color(palette.text_muted),
         ]
-        .spacing(2)
+        .spacing(spf(Spacing::Xxs))
         .width(Length::Fill),
         toggle_switch(
             state.sub_messages_enabled,
@@ -471,7 +470,7 @@ fn trigger_card_subs<'a>(
             },
             ..container::Style::default()
         })
-        .padding([13, 14])
+        .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
         .width(Length::Fill)
         .into()
 }
@@ -503,7 +502,7 @@ fn format_row_toggle<'a>(
         ]
         .align_y(Alignment::Center),
     )
-    .padding([6, 0])
+    .padding([sp(Spacing::Xs), 0])
     .width(Length::Fill)
     .into()
 }
@@ -548,10 +547,10 @@ fn format_card<'a>(
             },
             ..container::Style::default()
         })
-        .padding([6, 10])
+        .padding([sp(Spacing::Xs), sp(Spacing::Xs)])
         .width(Length::Fill),
     ]
-    .spacing(5);
+    .spacing(spf(Spacing::Xxs));
 
     let emotes_row = format_row_toggle(
         "Speak emotes as words",
@@ -614,11 +613,11 @@ fn queue_value_row<'a>(
                 },
                 ..container::Style::default()
             })
-            .padding([3, 9]),
+            .padding([sp(Spacing::Xxs), sp(Spacing::Xs)]),
         ]
         .align_y(Alignment::Center),
     )
-    .padding([6, 0])
+    .padding([sp(Spacing::Xs), 0])
     .width(Length::Fill)
     .into()
 }
@@ -649,7 +648,7 @@ fn queue_behavior_card<'a>(
         ]
         .align_y(Alignment::Center),
     )
-    .padding([6, 0])
+    .padding([sp(Spacing::Xs), 0])
     .width(Length::Fill);
 
     container(

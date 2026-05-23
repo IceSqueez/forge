@@ -1,7 +1,7 @@
 use forge_platform_core::BuiltinId;
 use forge_widgets::{
     ForgePalette, Icon, tabler_icon,
-    tokens::{FONT_MD, FONT_SM, FONT_XS, FontRole, Radius, font, radius},
+    tokens::{FONT_MD, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf},
 };
 use iced::{
     Alignment, Background, Border, Color, Element, Length, Padding,
@@ -130,7 +130,7 @@ pub fn platform_generic_view<'a>(
             .color(p.warning)
             .font(font(FontRole::Body)),
     )
-    .padding([2_u16, 7_u16])
+    .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
     .style(move |_: &iced::Theme| container::Style {
         background: Some(Background::Color(p.surface_overlay)),
         border: Border {
@@ -141,19 +141,19 @@ pub fn platform_generic_view<'a>(
     });
 
     let name_row = row![name_text, since_badge]
-        .spacing(10)
+        .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Center);
 
     let desc = text(info.description).size(FONT_SM).color(p.text_muted);
 
-    let info_col = column![name_row, desc].spacing(4);
+    let info_col = column![name_row, desc].spacing(spf(Spacing::Xxs));
 
     let hero_row = row![letter_box, container(info_col).width(Length::Fill)]
-        .spacing(16)
+        .spacing(spf(Spacing::Md))
         .align_y(Alignment::Center);
 
     let hero_card = container(hero_row)
-        .padding([16_u16, 18_u16])
+        .padding([sp(Spacing::Md), sp(Spacing::Md)])
         .width(Length::Fill)
         .style(move |_: &iced::Theme| container::Style {
             background: Some(Background::Color(p.elevated)),
@@ -170,14 +170,16 @@ pub fn platform_generic_view<'a>(
         .color(p.text_muted)
         .font(mono);
 
-    let mut features_col = column![features_label].spacing(8).padding([12_u16, 0_u16]);
+    let mut features_col = column![features_label]
+        .spacing(spf(Spacing::Xs))
+        .padding([sp(Spacing::Sm), 0]);
     for feature in info.features {
         let check_icon = tabler_icon(Icon::CircleCheck, 14.0, p.text_faint);
         let feature_row = row![
             check_icon,
             text(*feature).size(FONT_SM).color(p.text_secondary),
         ]
-        .spacing(8)
+        .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Center);
         features_col = features_col.push(feature_row);
     }
@@ -195,7 +197,7 @@ pub fn platform_generic_view<'a>(
         .color(p.text_faint)
         .font(mono),
     )
-    .padding([10_u16, 14_u16])
+    .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
     .width(Length::Fill)
     .style(move |_: &iced::Theme| container::Style {
         background: Some(Background::Color(p.shell)),
@@ -207,7 +209,7 @@ pub fn platform_generic_view<'a>(
         ..container::Style::default()
     });
 
-    let body = column![hero_card, features_col, footer].spacing(14);
+    let body = column![hero_card, features_col, footer].spacing(spf(Spacing::Sm));
 
     let page_header =
         crate::app::simple_page_header(&[("Builtin", false), (info.name, true)], palette);
@@ -216,10 +218,10 @@ pub fn platform_generic_view<'a>(
         .width(Length::Fill)
         .height(Length::Fill)
         .padding(Padding {
-            top: 18.0,
-            right: 22.0,
-            bottom: 18.0,
-            left: 22.0,
+            top: spf(Spacing::Md),
+            right: spf(Spacing::Lg),
+            bottom: spf(Spacing::Md),
+            left: spf(Spacing::Lg),
         });
 
     column![page_header, body_container]

@@ -15,7 +15,7 @@ use forge_runtime::{
 };
 use forge_storage::{CredentialId, CredentialsRepo, DataProvider};
 use forge_widgets::icons::{Icon, tabler_icon};
-use forge_widgets::tokens::{FONT_LG, FONT_MD, FONT_SM, FONT_XS};
+use forge_widgets::tokens::{FONT_LG, FONT_MD, FONT_SM, FONT_XS, Spacing, sp, spf};
 use forge_widgets::{
     BreadcrumbCrumb, FontRole, ForgePalette, NavItem, Radius, Sidebar, ThemeId, ToastQueue,
     app_footer, breadcrumb, font, page_shell, radius, sidebar, title_bar, toast_viewport,
@@ -840,7 +840,7 @@ fn home_inline_button<'a>(
         tabler_icon(icon, 12.0, icon_color),
         text(label).size(FONT_SM).color(text_color),
     ]
-    .spacing(5.0)
+    .spacing(spf(Spacing::Xxs))
     .align_y(Alignment::Center);
 
     button(content)
@@ -932,7 +932,7 @@ fn home_hero<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
             .size(FONT_SM)
             .color(palette.text_muted),
     ]
-    .spacing(2.0);
+    .spacing(spf(Spacing::Xxs));
 
     let import_btn = home_inline_button(Icon::Download, "Import", Message::Noop, palette);
     let new_action_btn = home_inline_button(
@@ -942,14 +942,14 @@ fn home_hero<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
         palette,
     );
 
-    let buttons_row = row![import_btn, new_action_btn].spacing(8.0);
+    let buttons_row = row![import_btn, new_action_btn].spacing(spf(Spacing::Xs));
 
     let inner = row![
         brand_box,
         container(title_col).width(Length::Fill),
         buttons_row,
     ]
-    .spacing(18.0)
+    .spacing(spf(Spacing::Md))
     .align_y(Alignment::Center);
 
     let elevated = palette.elevated;
@@ -1038,7 +1038,7 @@ fn home_jump_cards<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, M
         container(card_actions).width(Length::FillPortion(1)),
         container(card_connections).width(Length::FillPortion(1)),
     ]
-    .spacing(10.0)
+    .spacing(spf(Spacing::Xs))
     .into()
 }
 
@@ -1074,7 +1074,7 @@ fn home_stream_health<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a
             .color(success)
             .font(font(FontRole::Monospace)),
     ]
-    .spacing(4.0)
+    .spacing(spf(Spacing::Xxs))
     .align_y(Alignment::Center);
 
     let header_left = row![
@@ -1082,7 +1082,7 @@ fn home_stream_health<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a
         text("Stream health").size(FONT_SM).color(text_primary),
         live_badge,
     ]
-    .spacing(7.0)
+    .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
     let header_right = text("last 60s · auto-refresh")
@@ -1104,7 +1104,7 @@ fn home_stream_health<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a
             .font(font(FontRole::Monospace)),
         forge_widgets::throughput_sparkline(&[], "ev/s", palette),
     ]
-    .spacing(4.0)
+    .spacing(spf(Spacing::Xxs))
     .width(Length::FillPortion(14));
 
     let health_stat =
@@ -1117,7 +1117,7 @@ fn home_stream_health<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a
                         .font(font(FontRole::Monospace)),
                     text(u).size(FONT_XS).color(text_muted),
                 ]
-                .spacing(4.0)
+                .spacing(spf(Spacing::Xxs))
                 .align_y(Alignment::Center)
                 .into()
             } else {
@@ -1134,7 +1134,7 @@ fn home_stream_health<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a
                     .font(font(FontRole::Monospace)),
                 val_el,
             ]
-            .spacing(3.0)
+            .spacing(spf(Spacing::Xxs))
             .width(Length::FillPortion(10))
             .into()
         };
@@ -1168,14 +1168,14 @@ fn home_stream_health<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a
         health_stat("FPS", fps_val, None),
         health_stat("CPU", cpu_val, Some("%")),
     ]
-    .spacing(12.0)
+    .spacing(spf(Spacing::Sm))
     .align_y(Alignment::End);
 
-    let card_content = column![header, stats_row].spacing(8.0);
+    let card_content = column![header, stats_row].spacing(spf(Spacing::Xs));
 
     container(card_content)
         .width(Length::Fill)
-        .padding(14.0)
+        .padding(sp(Spacing::Sm))
         .style(move |_theme: &Theme| iced::widget::container::Style {
             background: Some(Background::Color(elevated)),
             border: Border {
@@ -1228,7 +1228,7 @@ fn home_connection_cell<'a>(
             .color(status_color)
             .font(font(FontRole::Monospace)),
     ]
-    .spacing(2.0)
+    .spacing(spf(Spacing::Xxs))
     .width(Length::Fill);
 
     let status_dot = container(iced::widget::Space::new())
@@ -1245,7 +1245,7 @@ fn home_connection_cell<'a>(
         });
 
     let content = row![platform_dot, label_col, status_dot]
-        .spacing(10.0)
+        .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Center);
 
     button(content)
@@ -1298,7 +1298,7 @@ fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
         header_sub,
         iced::widget::Space::new().width(Length::Fill),
     ]
-    .spacing(7.0)
+    .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
     let elevated = palette.elevated;
@@ -1390,7 +1390,7 @@ fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
         ))
         .width(Length::FillPortion(1)),
     ]
-    .spacing(1.0);
+    .spacing(spf(Spacing::Xxs));
 
     let cells_container = container(cells)
         .width(Length::Fill)
@@ -1469,7 +1469,7 @@ fn home_system_event_row<'a>(
         .into();
 
     let inner = irow![dot, ts_col, description]
-        .spacing(10.0)
+        .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Center);
 
     let border_width = if has_bottom_border { 0.5 } else { 0.0 };
@@ -1510,7 +1510,7 @@ fn home_system_event_row<'a>(
             shadow: Shadow::default(),
             snap: false,
         })
-        .padding(0.0)
+        .padding(0)
         .width(Length::Fill)
         .into()
 }
@@ -1546,7 +1546,7 @@ fn home_recent_events_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
             .color(text_faint)
             .font(font(FontRole::Monospace)),
     ]
-    .spacing(5.0)
+    .spacing(spf(Spacing::Xxs))
     .align_y(Alignment::Center);
 
     let header = row![
@@ -1569,9 +1569,9 @@ fn home_recent_events_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
         col.into()
     };
 
-    container(column![header, body].spacing(10.0))
+    container(column![header, body].spacing(spf(Spacing::Xs)))
         .width(Length::FillPortion(14))
-        .padding(14.0)
+        .padding(sp(Spacing::Sm))
         .style(move |_theme: &Theme| iced::widget::container::Style {
             background: Some(Background::Color(elevated)),
             border: Border {
@@ -1678,7 +1678,7 @@ fn home_glance_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, 
 
     container(content)
         .width(Length::FillPortion(10))
-        .padding(14.0)
+        .padding(sp(Spacing::Sm))
         .style(move |_theme: &Theme| iced::widget::container::Style {
             background: Some(Background::Color(elevated)),
             border: Border {
@@ -1703,9 +1703,11 @@ fn home_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message
         home_recent_events_card(app, palette),
         home_glance_card(app, palette),
     ]
-    .spacing(12.0);
+    .spacing(spf(Spacing::Sm));
 
-    let mut content = column![hero, jump_cards,].spacing(16.0).width(Length::Fill);
+    let mut content = column![hero, jump_cards,]
+        .spacing(spf(Spacing::Md))
+        .width(Length::Fill);
 
     if app.rt.obs_client.is_some() {
         content = content.push(home_stream_health(app, palette));
@@ -1750,7 +1752,7 @@ pub(crate) fn page_header_with_actions<'a>(
 
     let p = *palette;
     let mut crumb_row = row![tabler_icon(Icon::Home, 13.0, p.text_faint)]
-        .spacing(8)
+        .spacing(spf(Spacing::Xs))
         .align_y(iced::alignment::Vertical::Center);
 
     for (label, is_last) in crumbs {
@@ -1824,7 +1826,7 @@ fn settings_diagnostics_pane(palette: &ForgePalette) -> Element<'static, Message
         forge_widgets::metric_card("Rust", "1.95.0", None::<&str>, palette),
         forge_widgets::metric_card("OS", std::env::consts::OS, None::<&str>, palette),
     ]
-    .spacing(12);
+    .spacing(spf(Spacing::Sm));
 
     let log_path_label = iced::widget::text(format!("Log directory: {}", log_dir.display()))
         .size(FONT_SM)
@@ -1852,10 +1854,10 @@ fn settings_diagnostics_pane(palette: &ForgePalette) -> Element<'static, Message
         palette,
     );
 
-    iced::widget::container(iced::widget::column![metrics, logs_card].spacing(16))
+    iced::widget::container(iced::widget::column![metrics, logs_card].spacing(spf(Spacing::Md)))
         .width(Length::Fill)
         .height(Length::Fill)
-        .padding(16)
+        .padding(sp(Spacing::Md))
         .into()
 }
 
@@ -1903,7 +1905,7 @@ fn settings_storage_pane(palette: &ForgePalette) -> Element<'static, Message> {
     iced::widget::container(storage_card)
         .width(Length::Fill)
         .height(Length::Fill)
-        .padding(16)
+        .padding(sp(Spacing::Md))
         .into()
 }
 
@@ -1936,7 +1938,7 @@ fn settings_queues_pane(palette: &ForgePalette) -> Element<'static, Message> {
     iced::widget::container(card)
         .width(Length::Fill)
         .height(Length::Fill)
-        .padding(16)
+        .padding(sp(Spacing::Md))
         .into()
 }
 
@@ -1952,7 +1954,7 @@ fn settings_language_pane(palette: &ForgePalette) -> Element<'static, Message> {
             .size(forge_widgets::tokens::FONT_LG)
             .color(p.text_primary),
     ]
-    .spacing(10)
+    .spacing(spf(Spacing::Xs))
     .align_y(iced::Alignment::Center);
 
     let rows: [(&str, &str); 4] = [
@@ -2008,12 +2010,12 @@ fn settings_language_pane(palette: &ForgePalette) -> Element<'static, Message> {
         list = list.push(row_el);
     }
 
-    let body = column![header, list].spacing(18);
+    let body = column![header, list].spacing(spf(Spacing::Md));
 
     iced::widget::container(body)
         .width(Length::Fill)
         .height(Length::Fill)
-        .padding(20)
+        .padding(sp(Spacing::Lg))
         .into()
 }
 
@@ -2029,7 +2031,7 @@ fn settings_shortcuts_pane(palette: &ForgePalette) -> Element<'static, Message> 
             .size(forge_widgets::tokens::FONT_LG)
             .color(p.text_primary),
     ]
-    .spacing(10)
+    .spacing(spf(Spacing::Xs))
     .align_y(iced::Alignment::Center);
 
     let subtitle = text("Quick keys across Forge")
@@ -2095,12 +2097,12 @@ fn settings_shortcuts_pane(palette: &ForgePalette) -> Element<'static, Message> 
     )
     .padding([8_u16, 0_u16]);
 
-    let body = column![header, subtitle, list, note].spacing(14);
+    let body = column![header, subtitle, list, note].spacing(spf(Spacing::Sm));
 
     iced::widget::container(body)
         .width(Length::Fill)
         .height(Length::Fill)
-        .padding(20)
+        .padding(sp(Spacing::Lg))
         .into()
 }
 
@@ -2126,7 +2128,7 @@ fn settings_notifications_pane(palette: &ForgePalette) -> Element<'static, Messa
     iced::widget::container(card)
         .width(Length::Fill)
         .height(Length::Fill)
-        .padding(16)
+        .padding(sp(Spacing::Md))
         .into()
 }
 
@@ -2201,7 +2203,7 @@ fn platform_overview_card<'a>(
                 .size(FONT_XS)
                 .color(badge_text_color),
         ]
-        .spacing(5)
+        .spacing(spf(Spacing::Xxs))
         .align_y(Alignment::Center),
     )
     .padding([2_u16, 7_u16])
@@ -2218,12 +2220,12 @@ fn platform_overview_card<'a>(
         text(name.to_owned()).size(FONT_SM).color(p.text_primary),
         badge,
     ]
-    .spacing(8)
+    .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
     let desc_text = text(desc.to_owned()).size(FONT_SM).color(p.text_muted);
 
-    let mut chip_row = iced::widget::Row::new().spacing(4);
+    let mut chip_row = iced::widget::Row::new().spacing(spf(Spacing::Xxs));
     for f in features {
         let chip = container(text(*f).size(FONT_XS).color(p.text_secondary))
             .padding([2_u16, 7_u16])
@@ -2238,14 +2240,14 @@ fn platform_overview_card<'a>(
         chip_row = chip_row.push(chip);
     }
 
-    let info_col = column![title_row, desc_text, chip_row.wrap()].spacing(6);
+    let info_col = column![title_row, desc_text, chip_row.wrap()].spacing(spf(Spacing::Xs));
 
     let inner = row![
         letter_box,
         container(info_col).width(Length::Fill),
         tabler_icon(Icon::ChevronRight, 16.0, p.text_faint),
     ]
-    .spacing(14)
+    .spacing(spf(Spacing::Sm))
     .align_y(Alignment::Start);
 
     button(inner)
@@ -2290,7 +2292,7 @@ fn platforms_overview_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
     let subtitle = text("Connect once, Forge listens to all chats and events in one place.")
         .size(FONT_SM)
         .color(p.text_muted);
-    let header = column![title, subtitle].spacing(4);
+    let header = column![title, subtitle].spacing(spf(Spacing::Xxs));
 
     let twitch_connected = app.rt.twitch_chat_handle.is_some();
 
@@ -2336,12 +2338,14 @@ fn platforms_overview_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
     );
 
     let grid_row_1 = row![twitch_card, youtube_card]
-        .spacing(12)
+        .spacing(spf(Spacing::Sm))
         .width(Length::Fill);
-    let grid_row_2 = row![kick_card, trovo_card].spacing(12).width(Length::Fill);
-    let grid = column![grid_row_1, grid_row_2].spacing(12);
+    let grid_row_2 = row![kick_card, trovo_card]
+        .spacing(spf(Spacing::Sm))
+        .width(Length::Fill);
+    let grid = column![grid_row_1, grid_row_2].spacing(spf(Spacing::Sm));
 
-    let body = column![header, grid].spacing(18);
+    let body = column![header, grid].spacing(spf(Spacing::Md));
     let page_header = simple_page_header(&[("Platforms", true)], palette);
     let body_container = container(scrollable(body).height(Length::Fill))
         .width(Length::Fill)
@@ -2394,7 +2398,7 @@ fn settings_view<'a>(
             palette,
         ),
     ]
-    .spacing(2)
+    .spacing(spf(Spacing::Xxs))
     .padding([12_u16, 8_u16])
     .width(Length::Fixed(200.0));
 
@@ -2636,7 +2640,7 @@ fn actions_page_header<'a>(
         crumb_chevron_2,
         text("Actions").size(FONT_SM).color(p.text_primary),
     ]
-    .spacing(8)
+    .spacing(spf(Spacing::Xs))
     .align_y(iced::alignment::Vertical::Center);
 
     let chip_all = forge_widgets::filter_chip(
@@ -2667,7 +2671,7 @@ fn actions_page_header<'a>(
         state.filter == ActionsFilter::Points,
         Message::Actions(ActionsMsg::FilterChanged(ActionsFilter::Points)),
     );
-    let chips = row![chip_all, chip_chat, chip_timers, chip_points].spacing(4);
+    let chips = row![chip_all, chip_chat, chip_timers, chip_points].spacing(spf(Spacing::Xxs));
 
     let divider = container(iced::widget::Space::new().width(0.5).height(16.0))
         .width(0.5)
@@ -2696,7 +2700,7 @@ fn actions_page_header<'a>(
         container(search).width(Length::Fixed(180.0)),
         new_btn,
     ]
-    .spacing(8)
+    .spacing(spf(Spacing::Xs))
     .align_y(iced::alignment::Vertical::Center);
 
     let inner = row![
@@ -2752,7 +2756,7 @@ fn actions_group_header<'a>(
         iced::widget::Space::new().width(Length::Fill),
         count_el,
     ]
-    .spacing(8)
+    .spacing(spf(Spacing::Xs))
     .align_y(iced::alignment::Vertical::Center);
 
     let cat = group.category.clone();
@@ -2869,7 +2873,7 @@ fn actions_tree_row<'a>(
 
     let select_btn = button(
         row![state_icon, name_el, count_el,]
-            .spacing(8)
+            .spacing(spf(Spacing::Xs))
             .align_y(iced::alignment::Vertical::Center),
     )
     .on_press(Message::Actions(ActionsMsg::ActionSelected(action_id)))
@@ -2982,7 +2986,7 @@ fn actions_detail_panel<'a>(
             enabled_dot,
             text(status_label).size(FONT_XS).color(enabled_dot_color)
         ]
-        .spacing(4)
+        .spacing(spf(Spacing::Xxs))
         .align_y(iced::alignment::Vertical::Center),
     )
     .padding([3, 8])
@@ -3005,7 +3009,7 @@ fn actions_detail_panel<'a>(
         });
 
     let name_row = row![name_el, status_badge]
-        .spacing(10)
+        .spacing(spf(Spacing::Xs))
         .align_y(iced::alignment::Vertical::Center);
 
     let test_btn = forge_widgets::ghost_button_with_icon(
@@ -3020,10 +3024,10 @@ fn actions_detail_panel<'a>(
         Message::Actions(ActionsMsg::DuplicateAction(action.id)),
         palette,
     );
-    let action_btns = row![test_btn, dup_btn].spacing(6);
+    let action_btns = row![test_btn, dup_btn].spacing(spf(Spacing::Xs));
 
     let header_row = row![container(name_row).width(Length::Fill), action_btns,]
-        .spacing(8)
+        .spacing(spf(Spacing::Xs))
         .align_y(iced::alignment::Vertical::Top);
 
     let mut detail_col = column![header_row].spacing(0);
@@ -3070,7 +3074,7 @@ fn actions_detail_panel<'a>(
                     tabler_icon(Icon::Bolt, FONT_SM, p.brand),
                     text(kind_str).size(FONT_SM).color(p.text_secondary),
                 ]
-                .spacing(8)
+                .spacing(spf(Spacing::Xs))
                 .align_y(iced::alignment::Vertical::Center),
             )
             .width(Length::Fill)
@@ -3159,7 +3163,7 @@ fn section_header_with_add<'a>(
             tabler_icon(Icon::Plus, 11.0, add_color),
             text(add_label).size(FONT_XS).color(add_color),
         ]
-        .spacing(4)
+        .spacing(spf(Spacing::Xxs))
         .align_y(iced::alignment::Vertical::Center),
     )
     .on_press(on_add)
@@ -3203,7 +3207,7 @@ pub(crate) fn sheet_chrome<'a>(
 
     let close_btn = button(tabler_icon(Icon::X, 14.0, p.text_muted))
         .on_press(on_close)
-        .padding(6)
+        .padding(sp(Spacing::Xs))
         .style(move |_t: &iced::Theme, status| {
             let bg = match status {
                 iced::widget::button::Status::Hovered => {
@@ -3311,7 +3315,7 @@ fn empty_placeholder_card<'a>(
         tabler_icon(icon, 16.0, icon_color),
         text(label).size(FONT_XS).color(p.text_muted),
     ]
-    .spacing(6)
+    .spacing(spf(Spacing::Xs))
     .align_x(iced::Alignment::Center);
 
     container(inner)
@@ -3371,7 +3375,7 @@ fn actions_footer<'a>(
         .font(mono);
 
     let right = row![storage_el, green_dot, saved_el]
-        .spacing(8)
+        .spacing(spf(Spacing::Xs))
         .align_y(iced::alignment::Vertical::Center);
 
     let inner = row![container(left_el).width(Length::Fill), right,]
@@ -3417,14 +3421,14 @@ fn add_action_modal_view<'a>(
     );
 
     let name_row = row![name_input, name_counter]
-        .spacing(8)
+        .spacing(spf(Spacing::Xs))
         .align_y(iced::alignment::Vertical::Center);
 
     let name_block = column![
         forge_widgets::section_header("NAME", None, palette),
         name_row,
     ]
-    .spacing(6);
+    .spacing(spf(Spacing::Xs));
 
     let group_input = forge_widgets::text_input_field(
         "Examples",
@@ -3441,7 +3445,7 @@ fn add_action_modal_view<'a>(
         forge_widgets::section_header("GROUP", None, palette),
         group_input,
     ]
-    .spacing(6);
+    .spacing(spf(Spacing::Xs));
 
     let queue_names: Vec<String> = form.queue_options.iter().map(|(_, n)| n.clone()).collect();
     let p = *palette;
@@ -3480,9 +3484,9 @@ fn add_action_modal_view<'a>(
         forge_widgets::section_header("QUEUE", None, palette),
         queue_select,
     ]
-    .spacing(6);
+    .spacing(spf(Spacing::Xs));
 
-    let two_col = row![group_block, queue_block].spacing(12);
+    let two_col = row![group_block, queue_block].spacing(spf(Spacing::Sm));
 
     let desc_input = forge_widgets::text_input_field(
         "Plays a sound, shows overlay alert...",
@@ -3499,7 +3503,7 @@ fn add_action_modal_view<'a>(
         forge_widgets::section_header("DESCRIPTION", None, palette),
         desc_input,
     ]
-    .spacing(6);
+    .spacing(spf(Spacing::Xs));
 
     let enabled_toggle = forge_widgets::toggle(
         palette,
@@ -3561,7 +3565,7 @@ fn add_action_modal_view<'a>(
         bypass_toggle,
         random_pick_toggle,
     ]
-    .spacing(14);
+    .spacing(spf(Spacing::Sm));
 
     if let Some(err) = form.error.as_deref() {
         body_col = body_col.push(forge_widgets::live_status_banner(
@@ -3589,7 +3593,7 @@ fn add_action_modal_view<'a>(
         forge_widgets::secondary_button("Create action", Message::Noop, palette)
     };
 
-    let footer_buttons = row![cancel_btn, create_btn].spacing(8);
+    let footer_buttons = row![cancel_btn, create_btn].spacing(spf(Spacing::Xs));
 
     let footer: Element<'_, Message> = iced::widget::container(
         row![
@@ -3696,11 +3700,11 @@ fn add_trigger_modal_view<'a>(
     let chips_row = row![
         chip_all, chip_chat, chip_subs, chip_bits, chip_raids, chip_obs
     ]
-    .spacing(6);
+    .spacing(spf(Spacing::Xs));
 
     let visible = form.visible_kinds();
     let is_empty = visible.is_empty();
-    let mut grid_col = column![].spacing(6);
+    let mut grid_col = column![].spacing(spf(Spacing::Xs));
     for kind in visible {
         let selected = form.selected_kind.as_ref() == Some(&kind);
         let lbl = kind_label(&kind);
@@ -3725,7 +3729,7 @@ fn add_trigger_modal_view<'a>(
         );
     }
 
-    let mut config_col = column![].spacing(10);
+    let mut config_col = column![].spacing(spf(Spacing::Xs));
 
     if let Some(kind) = &form.selected_kind {
         match kind {
@@ -3744,7 +3748,7 @@ fn add_trigger_modal_view<'a>(
                     forge_widgets::section_header("COMMAND NAME", None, palette),
                     cmd_input,
                 ]
-                .spacing(6);
+                .spacing(spf(Spacing::Xs));
 
                 let cooldown_input = forge_widgets::text_input_field(
                     "0",
@@ -3760,7 +3764,7 @@ fn add_trigger_modal_view<'a>(
                     forge_widgets::section_header("COOLDOWN (SECS)", None, palette),
                     cooldown_input,
                 ]
-                .spacing(6);
+                .spacing(spf(Spacing::Xs));
 
                 let p = *palette;
                 let perm_options: Vec<String> = vec![
@@ -3803,7 +3807,7 @@ fn add_trigger_modal_view<'a>(
                     forge_widgets::section_header("PERMISSION", None, palette),
                     perm_select,
                 ]
-                .spacing(6);
+                .spacing(spf(Spacing::Xs));
 
                 config_col = config_col
                     .push(cmd_block)
@@ -3825,7 +3829,7 @@ fn add_trigger_modal_view<'a>(
                     forge_widgets::section_header("MINIMUM BITS", None, palette),
                     bits_input,
                 ]
-                .spacing(6);
+                .spacing(spf(Spacing::Xs));
                 config_col = config_col.push(bits_block);
             }
             _ => {
@@ -3838,8 +3842,8 @@ fn add_trigger_modal_view<'a>(
         }
     }
 
-    let mut body_col =
-        column![search_input, chips_row, scrollable(grid_col).height(200),].spacing(10);
+    let mut body_col = column![search_input, chips_row, scrollable(grid_col).height(200),]
+        .spacing(spf(Spacing::Xs));
 
     if form.selected_kind.is_some() {
         body_col = body_col.push(
@@ -3881,7 +3885,7 @@ fn add_trigger_modal_view<'a>(
         forge_widgets::secondary_button("Add trigger", Message::Noop, palette)
     };
 
-    let footer_buttons = row![cancel_btn, save_btn].spacing(8);
+    let footer_buttons = row![cancel_btn, save_btn].spacing(spf(Spacing::Xs));
 
     let footer: Element<'_, Message> = iced::widget::container(
         row![
@@ -4027,7 +4031,7 @@ fn add_sub_action_modal_view<'a>(
         chip_read_file,
         chip_random_int,
     ]
-    .spacing(6);
+    .spacing(spf(Spacing::Xs));
 
     let config_block: iced::Element<'_, Message> = match form.kind {
         SubActionKindChoice::SendChat => {
@@ -4050,7 +4054,7 @@ fn add_sub_action_modal_view<'a>(
                 msg_input,
                 helper,
             ]
-            .spacing(4);
+            .spacing(spf(Spacing::Xxs));
 
             let p = *palette;
             let target_options: Vec<String> = vec!["twitch".to_string()];
@@ -4086,9 +4090,11 @@ fn add_sub_action_modal_view<'a>(
                 forge_widgets::section_header("TARGET PLATFORM", None, palette),
                 target_select,
             ]
-            .spacing(6);
+            .spacing(spf(Spacing::Xs));
 
-            column![msg_block, target_block].spacing(12).into()
+            column![msg_block, target_block]
+                .spacing(spf(Spacing::Sm))
+                .into()
         }
         SubActionKindChoice::SetGlobal => {
             let name_input = forge_widgets::text_input_field(
@@ -4105,7 +4111,7 @@ fn add_sub_action_modal_view<'a>(
                 forge_widgets::section_header("VARIABLE NAME", None, palette),
                 name_input,
             ]
-            .spacing(6);
+            .spacing(spf(Spacing::Xs));
 
             let val_input = forge_widgets::text_input_field(
                 "%user% or 42",
@@ -4126,9 +4132,11 @@ fn add_sub_action_modal_view<'a>(
                 val_input,
                 helper,
             ]
-            .spacing(4);
+            .spacing(spf(Spacing::Xxs));
 
-            column![name_block, val_block].spacing(12).into()
+            column![name_block, val_block]
+                .spacing(spf(Spacing::Sm))
+                .into()
         }
         SubActionKindChoice::Delay => {
             let ms_input = forge_widgets::text_input_field(
@@ -4145,7 +4153,7 @@ fn add_sub_action_modal_view<'a>(
                 forge_widgets::section_header("MILLISECONDS", None, palette),
                 ms_input,
             ]
-            .spacing(6)
+            .spacing(spf(Spacing::Xs))
             .into()
         }
         SubActionKindChoice::Log => {
@@ -4189,7 +4197,7 @@ fn add_sub_action_modal_view<'a>(
                 forge_widgets::section_header("LEVEL", None, palette),
                 level_select,
             ]
-            .spacing(6);
+            .spacing(spf(Spacing::Xs));
 
             let msg_input = forge_widgets::text_input_field(
                 "Action started",
@@ -4205,9 +4213,11 @@ fn add_sub_action_modal_view<'a>(
                 forge_widgets::section_header("MESSAGE", None, palette),
                 msg_input,
             ]
-            .spacing(6);
+            .spacing(spf(Spacing::Xs));
 
-            column![level_block, msg_block].spacing(12).into()
+            column![level_block, msg_block]
+                .spacing(spf(Spacing::Sm))
+                .into()
         }
         SubActionKindChoice::PlaySound => {
             if form.available_clips.is_empty() {
@@ -4215,7 +4225,7 @@ fn add_sub_action_modal_view<'a>(
                     .size(FONT_SM)
                     .color(palette.text_muted);
                 column![forge_widgets::section_header("CLIP", None, palette), hint]
-                    .spacing(6)
+                    .spacing(spf(Spacing::Xs))
                     .into()
             } else {
                 let p = *palette;
@@ -4267,7 +4277,7 @@ fn add_sub_action_modal_view<'a>(
                     forge_widgets::section_header("CLIP", None, palette),
                     clip_select
                 ]
-                .spacing(6)
+                .spacing(spf(Spacing::Xs))
                 .into()
             }
         }
@@ -4284,7 +4294,7 @@ fn add_sub_action_modal_view<'a>(
                     palette,
                 ),
             ]
-            .spacing(6);
+            .spacing(spf(Spacing::Xs));
             let voice_block = column![
                 forge_widgets::section_header("VOICE OVERRIDE (optional)", None, palette),
                 forge_widgets::inputs::text_input_field(
@@ -4296,8 +4306,10 @@ fn add_sub_action_modal_view<'a>(
                     palette,
                 ),
             ]
-            .spacing(6);
-            column![text_block, voice_block].spacing(12).into()
+            .spacing(spf(Spacing::Xs));
+            column![text_block, voice_block]
+                .spacing(spf(Spacing::Sm))
+                .into()
         }
         SubActionKindChoice::ReadFile => {
             use iced::widget::column;
@@ -4316,7 +4328,7 @@ fn add_sub_action_modal_view<'a>(
                     .color(palette.text_muted)
                     .font(forge_widgets::font(forge_widgets::FontRole::Monospace)),
             ]
-            .spacing(4);
+            .spacing(spf(Spacing::Xxs));
             let target_block = column![
                 forge_widgets::section_header("TARGET VARIABLE", None, palette),
                 forge_widgets::inputs::text_input_field(
@@ -4328,8 +4340,10 @@ fn add_sub_action_modal_view<'a>(
                     palette,
                 ),
             ]
-            .spacing(6);
-            column![path_block, target_block].spacing(12).into()
+            .spacing(spf(Spacing::Xs));
+            column![path_block, target_block]
+                .spacing(spf(Spacing::Sm))
+                .into()
         }
         SubActionKindChoice::RandomInt => {
             use iced::widget::column;
@@ -4344,7 +4358,7 @@ fn add_sub_action_modal_view<'a>(
                     palette,
                 ),
             ]
-            .spacing(6);
+            .spacing(spf(Spacing::Xs));
             let max_block = column![
                 forge_widgets::section_header("MAX", None, palette),
                 forge_widgets::inputs::text_input_field(
@@ -4356,7 +4370,7 @@ fn add_sub_action_modal_view<'a>(
                     palette,
                 ),
             ]
-            .spacing(6);
+            .spacing(spf(Spacing::Xs));
             let target_block = column![
                 forge_widgets::section_header("TARGET VARIABLE", None, palette),
                 forge_widgets::inputs::text_input_field(
@@ -4368,14 +4382,17 @@ fn add_sub_action_modal_view<'a>(
                     palette,
                 ),
             ]
-            .spacing(6);
-            column![row![min_block, max_block].spacing(8), target_block]
-                .spacing(12)
-                .into()
+            .spacing(spf(Spacing::Xs));
+            column![
+                row![min_block, max_block].spacing(spf(Spacing::Xs)),
+                target_block
+            ]
+            .spacing(spf(Spacing::Sm))
+            .into()
         }
     };
 
-    let mut body_col = column![chips_row, config_block].spacing(16);
+    let mut body_col = column![chips_row, config_block].spacing(spf(Spacing::Md));
 
     if let Some(err) = form.error.as_deref() {
         body_col = body_col.push(forge_widgets::live_status_banner(
@@ -4409,7 +4426,7 @@ fn add_sub_action_modal_view<'a>(
         forge_widgets::secondary_button(btn_label, Message::Noop, palette)
     };
 
-    let footer_buttons = row![cancel_btn, add_btn].spacing(8);
+    let footer_buttons = row![cancel_btn, add_btn].spacing(spf(Spacing::Xs));
 
     let footer: iced::Element<'_, Message> = iced::widget::container(
         row![
@@ -4477,10 +4494,10 @@ fn trigger_picker_card<'a>(
             .color(palette.text_muted)
             .font(forge_widgets::font(forge_widgets::FontRole::Monospace)),
     ]
-    .spacing(1);
+    .spacing(spf(Spacing::Xxs));
 
     let inner = row![icon_el, container(label_col).width(Length::Fill),]
-        .spacing(8)
+        .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Center);
 
     let border_color = if selected {
@@ -4754,7 +4771,7 @@ fn tts_tab_button<'a>(
                 ..iced::widget::container::Style::default()
             }),
     ]
-    .spacing(5);
+    .spacing(spf(Spacing::Xxs));
     button(inner)
         .on_press(Message::Navigate(Screen::Tts(section)))
         .padding([7_u16, 14_u16])
@@ -4778,7 +4795,7 @@ fn tts_section_view<'a>(
             tts_tab_button("Filters", TtsSection::Filters, section, palette),
             tts_tab_button("Triggers", TtsSection::Triggers, section, palette),
         ]
-        .spacing(2),
+        .spacing(spf(Spacing::Xxs)),
     )
     .width(iced::Length::Fill)
     .style(move |_| iced::widget::container::Style {
@@ -4872,7 +4889,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
                             crate::twitch_panel::twitch_reauth_banner(palette),
                             inner,
                         ]
-                        .spacing(12.0),
+                        .spacing(spf(Spacing::Sm)),
                     )
                     .padding(iced::Padding::from([12_u16, 14_u16]))
                     .width(Length::Fill)

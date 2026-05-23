@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use forge_storage::{DataProvider, GlobalEntry, GlobalsExport, GlobalsRepo, StorageError};
 use forge_types::Variant;
-use forge_widgets::tokens::{FONT_SM, FONT_XS};
+use forge_widgets::tokens::{FONT_SM, FONT_XS, Spacing, sp, spf};
 use forge_widgets::{
     BannerKind, FontRole, FooterProps, ForgePalette, ModalProps, ToggleProps, VariantKind,
     category_chip, data_screen_footer, data_table, empty_state, font, live_status_banner, modal,
@@ -714,7 +714,7 @@ fn globals_page_header<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'
         tabler_icon::<Message>(Icon::ChevronRight, 11.0, p.text_faint),
         text("Globals").size(FONT_SM).color(p.text_primary),
     ]
-    .spacing(8)
+    .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
     let chip_all = filter_chip(
@@ -738,7 +738,7 @@ fn globals_page_header<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'
         Message::Globals(GlobalsMsg::FilterSelected(GlobalsFilter::Session)),
         palette,
     );
-    let chips = row![chip_all, chip_persisted, chip_session].spacing(4);
+    let chips = row![chip_all, chip_persisted, chip_session].spacing(spf(Spacing::Xxs));
 
     let divider = container(Space::new().width(0.5).height(16.0))
         .width(0.5)
@@ -768,7 +768,7 @@ fn globals_page_header<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'
     );
 
     let right_side = row![chips, divider, search, export_btn, new_btn]
-        .spacing(8)
+        .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Center);
 
     let inner =
@@ -776,7 +776,7 @@ fn globals_page_header<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'
 
     container(inner)
         .width(Length::Fill)
-        .padding([10_u16, 16_u16])
+        .padding([sp(Spacing::Xs), sp(Spacing::Md)])
         .style(move |_: &iced::Theme| container::Style {
             background: Some(Background::Color(p.shell)),
             border: Border {
@@ -821,12 +821,12 @@ fn filter_chip<'a>(
         });
 
     let inner = row![dot, text(label).size(FONT_XS).color(text_color)]
-        .spacing(5)
+        .spacing(spf(Spacing::Xxs))
         .align_y(Alignment::Center);
 
     button(inner)
         .on_press(on_press)
-        .padding([4.0_f32, 10.0_f32])
+        .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
         .style(move |_: &iced::Theme, _: button::Status| button::Style {
             background: bg,
             text_color,
@@ -970,9 +970,10 @@ fn variant_editor_modal_view<'a>(
         palette,
     );
     let name_row = row![name_input, name_counter]
-        .spacing(8)
+        .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Center);
-    let name_block = column![section_header("NAME", None, palette), name_row].spacing(4);
+    let name_block =
+        column![section_header("NAME", None, palette), name_row].spacing(spf(Spacing::Xxs));
 
     let kinds = [
         VariantKind::Int,
@@ -983,16 +984,19 @@ fn variant_editor_modal_view<'a>(
         VariantKind::Array,
         VariantKind::Object,
     ];
-    let chips_row = kinds.iter().fold(row![].spacing(4), |acc, &k| {
-        acc.push(category_chip(
-            palette,
-            k.label(),
-            variant_kind_color(k, palette),
-            form.kind == k,
-            Message::Globals(GlobalsMsg::VariantEditor(VariantEditorMsg::KindSelected(k))),
-        ))
-    });
-    let type_block = column![section_header("TYPE", None, palette), chips_row].spacing(4);
+    let chips_row = kinds
+        .iter()
+        .fold(row![].spacing(spf(Spacing::Xxs)), |acc, &k| {
+            acc.push(category_chip(
+                palette,
+                k.label(),
+                variant_kind_color(k, palette),
+                form.kind == k,
+                Message::Globals(GlobalsMsg::VariantEditor(VariantEditorMsg::KindSelected(k))),
+            ))
+        });
+    let type_block =
+        column![section_header("TYPE", None, palette), chips_row].spacing(spf(Spacing::Xxs));
 
     let persist_toggle = toggle(
         palette,
@@ -1005,8 +1009,8 @@ fn variant_editor_modal_view<'a>(
             )),
         },
     );
-    let persist_block =
-        column![section_header("PERSISTENCE", None, palette), persist_toggle].spacing(4);
+    let persist_block = column![section_header("PERSISTENCE", None, palette), persist_toggle]
+        .spacing(spf(Spacing::Xxs));
 
     let value_editor: Element<'_, Message> = match form.kind {
         VariantKind::Int => forge_widgets::text_input_field(
@@ -1081,9 +1085,11 @@ fn variant_editor_modal_view<'a>(
             palette,
         ),
     };
-    let value_block = column![section_header("VALUE", None, palette), value_editor].spacing(4);
+    let value_block =
+        column![section_header("VALUE", None, palette), value_editor].spacing(spf(Spacing::Xxs));
 
-    let mut body_col = column![name_block, type_block, persist_block, value_block].spacing(12);
+    let mut body_col =
+        column![name_block, type_block, persist_block, value_block].spacing(spf(Spacing::Sm));
     if let Some(err) = form.error.as_deref() {
         body_col = body_col.push(live_status_banner(BannerKind::Error, err, None, palette));
     }

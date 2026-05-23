@@ -2,9 +2,7 @@ use std::sync::Arc;
 
 use forge_audio::{list_output_devices, refresh_output_devices};
 use forge_widgets::icons::{Icon, tabler_icon};
-use forge_widgets::tokens::{
-    Density, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spacing,
-};
+use forge_widgets::tokens::{FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spf};
 use forge_widgets::{DeviceLabel, ForgePalette, output_device_picker, section_header};
 use iced::widget::{button, column, container, row, text};
 use iced::{Alignment, Background, Border, Element, Length, Shadow, Task};
@@ -158,9 +156,9 @@ pub fn settings_audio_view<'a>(
     state: &'a SettingsAudioState,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    let gap_lg = f32::from(spacing(Spacing::Sm, Density::Cozy));
-    let gap_xl = f32::from(spacing(Spacing::Md, Density::Cozy));
-    let gap_xxl = f32::from(spacing(Spacing::Md, Density::Cozy));
+    let gap_lg = spf(Spacing::Sm);
+    let gap_xl = spf(Spacing::Md);
+    let gap_xxl = spf(Spacing::Md);
 
     let header = section_header("OUTPUT DEVICES", None, palette);
 
@@ -213,7 +211,7 @@ pub fn settings_audio_view<'a>(
     } else {
         Some(Message::SettingsAudio(SettingsAudioMsg::TestToneRequested))
     })
-    .padding([5.0, 12.0])
+    .padding([spf(Spacing::Xxs), spf(Spacing::Sm)])
     .style(move |_theme, status| {
         let bg_a = if matches!(status, iced::widget::button::Status::Hovered) {
             0.08
@@ -275,7 +273,7 @@ pub fn settings_audio_view<'a>(
     .align_y(Alignment::Center);
 
     let card = container(column![screen_header, content_col].spacing(gap_xxl))
-        .padding(f32::from(spacing(Spacing::Md, Density::Cozy)))
+        .padding(spf(Spacing::Md))
         .style(move |_| {
             let p3 = p2;
             container::Style {
@@ -292,7 +290,7 @@ pub fn settings_audio_view<'a>(
     container(card)
         .width(Length::Fill)
         .height(Length::Fill)
-        .padding(f32::from(spacing(Spacing::Md, Density::Cozy)))
+        .padding(spf(Spacing::Md))
         .into()
 }
 

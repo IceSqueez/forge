@@ -1,6 +1,6 @@
 use forge_widgets::ForgePalette;
 use forge_widgets::tokens::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spacing,
+    BORDER_THIN, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
 };
 use iced::widget::{button, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Background, Border, Element, Length, Task};
@@ -78,9 +78,9 @@ pub fn voice_aliases_view<'a>(
     state: &'a VoiceAliasesState,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    let gap_sm = f32::from(spacing(Spacing::Xs, Density::Cozy));
-    let gap_md = f32::from(spacing(Spacing::Sm, Density::Cozy));
-    let gap_lg = f32::from(spacing(Spacing::Sm, Density::Cozy));
+    let gap_sm = spf(Spacing::Xs);
+    let gap_md = spf(Spacing::Sm);
+    let gap_lg = spf(Spacing::Sm);
 
     let strategy_banner = strategy_banner_view(state, palette, gap_sm, gap_md);
     let toolbar = toolbar_view(state, palette, gap_sm);
@@ -91,7 +91,7 @@ pub fn voice_aliases_view<'a>(
         .padding(iced::Padding {
             top: 0.0,
             right: 0.0,
-            bottom: 16.0,
+            bottom: spf(Spacing::Md),
             left: 0.0,
         })
         .into()
@@ -133,7 +133,7 @@ fn strategy_banner_view<'a>(
                     }
                 }
             })
-            .padding([5, 11])
+            .padding([sp(Spacing::Xxs), sp(Spacing::Sm)])
             .into()
     }
 
@@ -171,7 +171,7 @@ fn strategy_banner_view<'a>(
         },
         ..container::Style::default()
     })
-    .padding(2);
+    .padding(sp(Spacing::Xxs));
 
     let inner = container(
         row![
@@ -193,11 +193,11 @@ fn strategy_banner_view<'a>(
         },
         ..container::Style::default()
     })
-    .padding([12, 14])
+    .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
     .width(Length::Fill);
 
     container(inner)
-        .padding([12, 18])
+        .padding([sp(Spacing::Sm), sp(Spacing::Md)])
         .width(Length::Fill)
         .into()
 }
@@ -239,7 +239,7 @@ fn toolbar_view<'a>(
             text_color: palette.shell,
             ..button::Style::default()
         })
-        .padding([6, 12]);
+        .padding([sp(Spacing::Xs), sp(Spacing::Sm)]);
 
     container(
         row![
@@ -252,7 +252,7 @@ fn toolbar_view<'a>(
         .spacing(gap_sm)
         .width(Length::Fill),
     )
-    .padding([0, 18])
+    .padding([0, sp(Spacing::Md)])
     .width(Length::Fill)
     .into()
 }
@@ -309,7 +309,7 @@ fn aliases_table_view<'a>(
         },
         ..container::Style::default()
     })
-    .padding([7, 12])
+    .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
     .width(Length::Fill);
 
     let visible: Vec<&VoiceAliasRow> = state
@@ -329,7 +329,7 @@ fn aliases_table_view<'a>(
                 .size(FONT_SM)
                 .color(palette.text_muted),
         )
-        .padding([20, 12])
+        .padding([sp(Spacing::Lg), sp(Spacing::Sm)])
         .width(Length::Fill)
         .into()
     } else {
@@ -359,7 +359,7 @@ fn aliases_table_view<'a>(
         .width(Length::Fill);
 
     container(column![header, body].width(Length::Fill))
-        .padding([0, 18])
+        .padding([0, sp(Spacing::Md)])
         .width(Length::Fill)
         .into()
 }
@@ -533,7 +533,7 @@ fn alias_row<'a>(
         },
         ..container::Style::default()
     })
-    .padding([9, 12])
+    .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
     .width(Length::Fill)
     .into()
 }
@@ -557,7 +557,7 @@ fn role_badge_el<'a>(
         },
         ..container::Style::default()
     })
-    .padding([1, 5])
+    .padding([sp(Spacing::Xxs), sp(Spacing::Xxs)])
     .into()
 }
 

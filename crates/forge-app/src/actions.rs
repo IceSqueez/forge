@@ -4,6 +4,7 @@ use forge_types::{
     Action, ActionId, ClipId, Command, CommandPermission, LogLevel, QueueId, SubActionSpec,
     Trigger, TriggerId, TriggerKind,
 };
+use forge_widgets::tokens::{Spacing, sp, spf};
 use iced::{Color, Element, Length, Task};
 use std::sync::Arc;
 use time::OffsetDateTime;
@@ -786,9 +787,13 @@ pub fn action_stat<'a, Msg: 'a>(
             .size(FONT_XS)
             .color(p.text_muted)
             .font(mono);
-        column![label_el, value_el, hint_el].spacing(2).into()
+        column![label_el, value_el, hint_el]
+            .spacing(spf(Spacing::Xxs))
+            .into()
     } else {
-        column![label_el, value_el].spacing(2).into()
+        column![label_el, value_el]
+            .spacing(spf(Spacing::Xxs))
+            .into()
     }
 }
 
@@ -839,11 +844,11 @@ pub fn telemetry_grid<'a, Msg: 'a>(
         ))
         .width(Length::FillPortion(1)),
     ]
-    .spacing(8);
+    .spacing(spf(Spacing::Xs));
 
     container(cells)
         .width(Length::Fill)
-        .padding([18, 12])
+        .padding([sp(Spacing::Md), sp(Spacing::Sm)])
         .style(move |_theme: &iced::Theme| iced::widget::container::Style {
             background: Some(iced::Background::Color(p.shell)),
             border: iced::Border {

@@ -26,9 +26,7 @@ use iced::{Element, Length, Subscription, Task, Theme};
 use crate::action_editor::action_editor_view;
 use crate::actions::{
     ActionsFilter, ActionsState, AddActionForm, AddActionMsg, AddSubActionForm, AddSubActionMsg,
-    AddTriggerForm, AddTriggerMsg, RemoveSubActionMsg, SubActionKindChoice, TriggerCategory,
-    duplicate_sub_action, kind_label, kind_summary, load_clip_options, move_sub_action,
-    remove_sub_action, save_sub_action,
+    AddTriggerForm, AddTriggerMsg, SubActionKindChoice, TriggerCategory, kind_label, kind_summary,
 };
 use crate::builtin_detail::{BuiltinDetailState, health_subscription, view as builtin_detail_view};
 use crate::event_feed;
@@ -37,8 +35,8 @@ use crate::globals_view::{GlobalsState, globals_view};
 use crate::home::HomeStats;
 use crate::live_chat::{CHAT_LOG_MAX, LiveChatState, chat_row_from_event, live_chat_view};
 use crate::message::{
-    ActionsMsg, GlobalsMsg, HomeMsg, MoveSubActionMsg, ObsClientRef, PlatformId, QueuesMsg,
-    SettingsMsg, SidebarMsg, ToastMsg,
+    ActionsMsg, GlobalsMsg, HomeMsg, ObsClientRef, PlatformId, QueuesMsg, SettingsMsg, SidebarMsg,
+    ToastMsg,
 };
 use crate::queues_view::{QueuesState, queues_view};
 use crate::script_editor::{ScriptEditorMsg, ScriptEditorState, script_editor_view};
@@ -465,9 +463,24 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             &app.rt,
             sub,
         ),
-        Message::AddSubAction(sub) => handle_add_sub_action_msg(app, sub),
-        Message::RemoveSubAction(sub) => handle_remove_sub_action_msg(app, sub),
-        Message::MoveSubAction(sub) => handle_move_sub_action_msg(app, sub),
+        Message::AddSubAction(sub) => crate::action_editor::add_sub_action_update(
+            &mut app.actions.add_sub_action_modal,
+            &app.rt,
+            app.actions.detail.as_ref(),
+            sub,
+        ),
+        Message::RemoveSubAction(sub) => {
+            crate::action_editor::remove_sub_action_update(app.actions.selected, &app.rt, sub)
+        }
+        Message::MoveSubAction(sub) => crate::action_editor::move_sub_action_update(
+            &app.rt,
+            app.actions
+                .detail
+                .as_ref()
+                .map(|d| d.action.sub_actions.len())
+                .unwrap_or(0),
+            sub,
+        ),
         Message::ScriptEditor(sub) => {
             crate::script_editor::update(&mut app.script_editor, &app.rt, sub)
         }
@@ -900,370 +913,6 @@ fn handle_obs_panel_msg(app: &mut App, msg: crate::obs_panel::ObsPanelMsg) -> Ta
             app.obs_panel.connecting = false;
             app.obs_panel.connect_error = Some(e.clone());
             app.obs_panel.test_status = TestStatus::Failure(e);
-            Task::none()
-        }
-    }
-}
-
-fn handle_add_sub_action_msg(app: &mut App, sub: AddSubActionMsg) -> Task<Message> {
-    match sub {
-        AddSubActionMsg::OpenRequested(action_id) => {
-            app.actions.add_sub_action_modal = Some(AddSubActionForm::new(action_id));
-            let dp = Arc::clone(&app.rt.backend);
-            Task::perform(load_clip_options(dp), |clips| {
-                Message::AddSubAction(AddSubActionMsg::ClipsLoaded(clips))
-            })
-        }
-        AddSubActionMsg::EditRequested(action_id, index) => {
-            let mut form = AddSubActionForm::new(action_id);
-            form.editing_index = Some(index);
-            if let Some(detail) = app.actions.detail.as_ref()
-                && detail.action.id == action_id
-                && let Some(spec) = detail.action.sub_actions.get(index)
-            {
-                form.populate_from_spec(spec);
-            }
-            app.actions.add_sub_action_modal = Some(form);
-            let dp = Arc::clone(&app.rt.backend);
-            Task::perform(load_clip_options(dp), |clips| {
-                Message::AddSubAction(AddSubActionMsg::ClipsLoaded(clips))
-            })
-        }
-        AddSubActionMsg::KindSelected(kind) => {
-            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
-                f.kind = kind;
-                f.error = None;
-            }
-            Task::none()
-        }
-        AddSubActionMsg::SendChatMessageChanged(v) => {
-            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
-                f.config.send_chat_message = v;
-            }
-            Task::none()
-        }
-        AddSubActionMsg::SendChatTargetChanged(v) => {
-            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
-                f.config.send_chat_target = v;
-            }
-            Task::none()
-        }
-        AddSubActionMsg::SetGlobalNameChanged(v) => {
-            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
-                f.config.set_global_name = v;
-            }
-            Task::none()
-        }
-        AddSubActionMsg::SetGlobalValueChanged(v) => {
-            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
-                f.config.set_global_value = v;
-            }
-            Task::none()
-        }
-        AddSubActionMsg::DelayMsChanged(v) => {
-            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
-                f.config.delay_ms = v;
-            }
-            Task::none()
-        }
-        AddSubActionMsg::LogLevelSelected(level) => {
-            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
-                f.config.log_level = level;
-            }
-            Task::none()
-        }
-        AddSubActionMsg::LogMessageChanged(v) => {
-            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
-                f.config.log_message = v;
-            }
-            Task::none()
-        }
-        AddSubActionMsg::PlaySoundClipSelected(clip_id) => {
-            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
-                f.config.play_sound_clip_id = Some(clip_id);
-                f.error = None;
-            }
-            Task::none()
-        }
-        AddSubActionMsg::SpeakTextChanged(v) => {
-            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
-                f.config.speak_text = v;
-                f.error = None;
-            }
-            Task::none()
-        }
-        AddSubActionMsg::SpeakVoiceOverrideChanged(v) => {
-            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
-                f.config.speak_voice_override = v;
-            }
-            Task::none()
-        }
-        AddSubActionMsg::ReadFilePathChanged(v) => {
-            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
-                f.config.read_file_path = v;
-                f.error = None;
-            }
-            Task::none()
-        }
-        AddSubActionMsg::ReadFileTargetVarChanged(v) => {
-            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
-                f.config.read_file_target_var = v;
-                f.error = None;
-            }
-            Task::none()
-        }
-        AddSubActionMsg::RandomIntMinChanged(v) => {
-            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
-                f.config.random_int_min = v;
-                f.error = None;
-            }
-            Task::none()
-        }
-        AddSubActionMsg::RandomIntMaxChanged(v) => {
-            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
-                f.config.random_int_max = v;
-                f.error = None;
-            }
-            Task::none()
-        }
-        AddSubActionMsg::RandomIntTargetVarChanged(v) => {
-            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
-                f.config.random_int_target_var = v;
-                f.error = None;
-            }
-            Task::none()
-        }
-        AddSubActionMsg::ClipsLoaded(clips) => {
-            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
-                f.available_clips = clips;
-            }
-            Task::none()
-        }
-        AddSubActionMsg::Cancel => {
-            app.actions.add_sub_action_modal = None;
-            Task::none()
-        }
-        AddSubActionMsg::Submit => {
-            let Some(form) = app.actions.add_sub_action_modal.as_ref() else {
-                return Task::none();
-            };
-            if !form.is_valid() {
-                let error_msg = match form.kind {
-                    SubActionKindChoice::SendChat => "Message is required.",
-                    SubActionKindChoice::SetGlobal => "Variable name is required.",
-                    SubActionKindChoice::Delay => "Milliseconds must be a non-negative integer.",
-                    SubActionKindChoice::Log => "Log message is required.",
-                    SubActionKindChoice::PlaySound => "Select a clip to play.",
-                    SubActionKindChoice::Speak => "Speak text is required.",
-                    SubActionKindChoice::ReadFile => "Path and target variable are required.",
-                    SubActionKindChoice::RandomInt => {
-                        "min, max (min ≤ max), and target variable are required."
-                    }
-                };
-                if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
-                    f.error = Some(error_msg.to_string());
-                }
-                return Task::none();
-            }
-            let spec = match form.kind {
-                SubActionKindChoice::SendChat => forge_types::SubActionSpec::SendChat {
-                    message: form.config.send_chat_message.clone(),
-                    target: form.config.send_chat_target.clone(),
-                },
-                SubActionKindChoice::SetGlobal => forge_types::SubActionSpec::SetGlobal {
-                    name: form.config.set_global_name.clone(),
-                    value: form.config.set_global_value.clone(),
-                },
-                SubActionKindChoice::Delay => {
-                    let ms = form.config.delay_ms.trim().parse::<u64>().unwrap_or(0);
-                    forge_types::SubActionSpec::Delay { ms }
-                }
-                SubActionKindChoice::Log => forge_types::SubActionSpec::Log {
-                    level: form.config.log_level.clone(),
-                    message: form.config.log_message.clone(),
-                },
-                SubActionKindChoice::PlaySound => forge_types::SubActionSpec::PlaySound {
-                    clip_id: form.config.play_sound_clip_id.unwrap_or_default(),
-                    output_device_override: None,
-                },
-                SubActionKindChoice::Speak => forge_types::SubActionSpec::Speak {
-                    text: form.config.speak_text.clone(),
-                    voice_id_override: if form.config.speak_voice_override.trim().is_empty() {
-                        None
-                    } else {
-                        Some(form.config.speak_voice_override.trim().to_owned())
-                    },
-                },
-                SubActionKindChoice::ReadFile => forge_types::SubActionSpec::ReadFile {
-                    path: form.config.read_file_path.trim().to_owned(),
-                    target_var: form.config.read_file_target_var.trim().to_owned(),
-                },
-                SubActionKindChoice::RandomInt => {
-                    let min = form
-                        .config
-                        .random_int_min
-                        .trim()
-                        .parse::<i64>()
-                        .unwrap_or(0);
-                    let max = form
-                        .config
-                        .random_int_max
-                        .trim()
-                        .parse::<i64>()
-                        .unwrap_or(0);
-                    forge_types::SubActionSpec::RandomInt {
-                        min,
-                        max,
-                        target_var: form.config.random_int_target_var.trim().to_owned(),
-                    }
-                }
-            };
-            let action_id = form.for_action_id;
-            let editing_index = form.editing_index;
-            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
-                f.saving = true;
-            }
-            let dp = Arc::clone(&app.rt.backend);
-            Task::perform(
-                async move {
-                    save_sub_action(dp, action_id, spec, editing_index)
-                        .await
-                        .map_err(|e| e.to_string())
-                },
-                |r| Message::AddSubAction(AddSubActionMsg::Saved(r)),
-            )
-        }
-        AddSubActionMsg::Saved(Ok(())) => {
-            let selected = app.actions.selected;
-            app.actions.add_sub_action_modal = None;
-            match selected {
-                Some(id) => Task::done(Message::Actions(ActionsMsg::ActionSelected(id))),
-                None => Task::none(),
-            }
-        }
-        AddSubActionMsg::Saved(Err(e)) => {
-            if let Some(f) = app.actions.add_sub_action_modal.as_mut() {
-                f.saving = false;
-                f.error = Some(e);
-            }
-            Task::none()
-        }
-        AddSubActionMsg::DuplicateRequested(action_id, index) => {
-            let dp = Arc::clone(&app.rt.backend);
-            Task::perform(
-                async move {
-                    duplicate_sub_action(dp, action_id, index)
-                        .await
-                        .map_err(|e| e.to_string())
-                },
-                |r| Message::AddSubAction(AddSubActionMsg::Duplicated(r)),
-            )
-        }
-        AddSubActionMsg::Duplicated(Ok(id)) => {
-            Task::done(Message::Actions(ActionsMsg::ActionSelected(id)))
-        }
-        AddSubActionMsg::Duplicated(Err(e)) => {
-            tracing::warn!(error = %e, "duplicate sub-action failed");
-            Task::none()
-        }
-    }
-}
-
-fn handle_remove_sub_action_msg(app: &mut App, sub: RemoveSubActionMsg) -> Task<Message> {
-    match sub {
-        RemoveSubActionMsg::Requested(action_id, index) => {
-            let dp = Arc::clone(&app.rt.backend);
-            Task::perform(
-                async move {
-                    remove_sub_action(dp, action_id, index)
-                        .await
-                        .map_err(|e| e.to_string())
-                },
-                |r| Message::RemoveSubAction(RemoveSubActionMsg::Removed(r)),
-            )
-        }
-        RemoveSubActionMsg::Removed(Ok(())) => match app.actions.selected {
-            Some(id) => Task::done(Message::Actions(ActionsMsg::ActionSelected(id))),
-            None => Task::none(),
-        },
-        RemoveSubActionMsg::Removed(Err(e)) => {
-            tracing::warn!(error = %e, "remove sub-action persist failed");
-            Task::none()
-        }
-    }
-}
-
-fn handle_move_sub_action_msg(app: &mut App, sub: MoveSubActionMsg) -> Task<Message> {
-    let total = app
-        .actions
-        .detail
-        .as_ref()
-        .map(|d| d.action.sub_actions.len())
-        .unwrap_or(0);
-
-    match sub {
-        MoveSubActionMsg::Up(action_id, i) => {
-            if i == 0 {
-                return Task::none();
-            }
-            let dp = Arc::clone(&app.rt.backend);
-            Task::perform(
-                async move {
-                    move_sub_action(dp, action_id, i, i - 1)
-                        .await
-                        .map_err(|e| e.to_string())
-                },
-                |r| Message::MoveSubAction(MoveSubActionMsg::Moved(r)),
-            )
-        }
-        MoveSubActionMsg::Down(action_id, i) => {
-            if total == 0 || i + 1 >= total {
-                return Task::none();
-            }
-            let dp = Arc::clone(&app.rt.backend);
-            Task::perform(
-                async move {
-                    move_sub_action(dp, action_id, i, i + 1)
-                        .await
-                        .map_err(|e| e.to_string())
-                },
-                |r| Message::MoveSubAction(MoveSubActionMsg::Moved(r)),
-            )
-        }
-        MoveSubActionMsg::ToTop(action_id, i) => {
-            if i == 0 {
-                return Task::none();
-            }
-            let dp = Arc::clone(&app.rt.backend);
-            Task::perform(
-                async move {
-                    move_sub_action(dp, action_id, i, 0)
-                        .await
-                        .map_err(|e| e.to_string())
-                },
-                |r| Message::MoveSubAction(MoveSubActionMsg::Moved(r)),
-            )
-        }
-        MoveSubActionMsg::ToBottom(action_id, i) => {
-            if total == 0 || i + 1 >= total {
-                return Task::none();
-            }
-            let last = total - 1;
-            let dp = Arc::clone(&app.rt.backend);
-            Task::perform(
-                async move {
-                    move_sub_action(dp, action_id, i, last)
-                        .await
-                        .map_err(|e| e.to_string())
-                },
-                |r| Message::MoveSubAction(MoveSubActionMsg::Moved(r)),
-            )
-        }
-        MoveSubActionMsg::Moved(Ok(id)) => {
-            Task::done(Message::Actions(ActionsMsg::ActionSelected(id)))
-        }
-        MoveSubActionMsg::Moved(Err(e)) => {
-            tracing::warn!(error = %e, "move sub-action failed");
             Task::none()
         }
     }

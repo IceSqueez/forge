@@ -5,6 +5,7 @@ use forge_storage_sqlite::SqliteBackend;
 use iced::Task;
 
 use crate::Message;
+use crate::runtime_view::RuntimeView;
 
 #[derive(Debug, Clone, Default)]
 pub struct ViewersState {
@@ -22,14 +23,10 @@ pub async fn load_viewers(dp: Arc<SqliteBackend>) -> Result<Vec<Viewer>, String>
     dp.viewer_repo().list().await.map_err(|e| e.to_string())
 }
 
-pub fn handle_msg(
-    state: &mut ViewersState,
-    msg: ViewersMsg,
-    backend: &Arc<SqliteBackend>,
-) -> Task<Message> {
+pub fn update(state: &mut ViewersState, rt: &RuntimeView, msg: ViewersMsg) -> Task<Message> {
     match msg {
         ViewersMsg::LoadRequested => {
-            let dp = Arc::clone(backend);
+            let dp = Arc::clone(&rt.backend);
             Task::perform(load_viewers(dp), |r| {
                 Message::Viewers(ViewersMsg::Loaded(r))
             })

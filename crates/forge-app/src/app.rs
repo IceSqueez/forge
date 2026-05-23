@@ -561,7 +561,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::Globals(sub) => crate::globals_view::update(&mut app.globals, &app.rt, sub),
         Message::Actions(sub) => handle_actions_msg(app, sub),
         Message::Queues(sub) => crate::queues_view::update(&mut app.queues, &app.rt, sub),
-        Message::Viewers(sub) => crate::viewers::handle_msg(&mut app.viewers, sub, &app.rt.backend),
+        Message::Viewers(sub) => crate::viewers::update(&mut app.viewers, &app.rt, sub),
         Message::Commands(sub) => crate::commands_view::update(&mut app.commands, &app.rt, sub),
         Message::AddAction(sub) => handle_add_action_msg(app, sub),
         Message::AddTrigger(sub) => handle_add_trigger_msg(app, sub),

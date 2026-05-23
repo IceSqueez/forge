@@ -1467,8 +1467,8 @@ fn build_chat_area<'a>(
     use iced::widget::{button, container, scrollable, text};
     use iced::{Background, Border, Length, Padding};
 
-    let visible: Vec<Element<'a, Message>> = filter_log(&state.chat_log, &state.chat_filter)
-        .map(|row| forge_widgets::chat_row(palette, row, Some(select_viewer_msg)))
+    let visible: Vec<Element<'static, Message>> = filter_log(&state.chat_log, &state.chat_filter)
+        .map(|row| forge_widgets::chat_row(*palette, row.clone(), Some(select_viewer_msg)))
         .collect();
 
     let empty_msg = if state.chat_filter.events_only {

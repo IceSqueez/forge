@@ -103,7 +103,7 @@ fn badge_label(kind: BadgeKind) -> &'static str {
     }
 }
 
-fn badge_color(kind: BadgeKind, palette: &ForgePalette) -> Color {
+fn badge_color(kind: BadgeKind, palette: ForgePalette) -> Color {
     match kind {
         BadgeKind::Moderator => palette.success,
         BadgeKind::Vip => palette.warning,
@@ -113,7 +113,7 @@ fn badge_color(kind: BadgeKind, palette: &ForgePalette) -> Color {
     }
 }
 
-fn badge_pill<'a, Msg: 'a>(kind: BadgeKind, palette: &ForgePalette) -> Element<'a, Msg> {
+fn badge_pill<Msg: 'static>(kind: BadgeKind, palette: ForgePalette) -> Element<'static, Msg> {
     let color = badge_color(kind, palette);
     let bg = Color { a: 0.18, ..color };
     let shell = palette.shell;
@@ -138,8 +138,11 @@ fn badge_pill<'a, Msg: 'a>(kind: BadgeKind, palette: &ForgePalette) -> Element<'
     .into()
 }
 
-fn platform_badge<'a, Msg: 'a>(platform: Platform, palette: &ForgePalette) -> Element<'a, Msg> {
-    let color = platform.color(palette);
+fn platform_badge<Msg: 'static>(
+    platform: Platform,
+    palette: ForgePalette,
+) -> Element<'static, Msg> {
+    let color = platform.color(&palette);
     let name = platform.name();
     let shell = palette.shell;
     container(
@@ -162,15 +165,9 @@ fn platform_badge<'a, Msg: 'a>(platform: Platform, palette: &ForgePalette) -> El
     .into()
 }
 
-fn inline_badge<'a, Msg: 'a>(
-    label: &str,
-    bg: Color,
-    fg: Color,
-    palette: &ForgePalette,
-) -> Element<'a, Msg> {
-    let _ = palette;
+fn inline_badge<Msg: 'static>(label: String, bg: Color, fg: Color) -> Element<'static, Msg> {
     container(
-        text(label.to_owned())
+        text(label)
             .size(FONT_XS)
             .color(fg)
             .font(font(FontRole::Monospace)),
@@ -214,7 +211,7 @@ fn clickable_username_style(
     }
 }
 
-fn money_event_icon<'a, Msg: 'a>(icon: Icon, color: Color) -> Element<'a, Msg> {
+fn money_event_icon<Msg: 'static>(icon: Icon, color: Color) -> Element<'static, Msg> {
     container(tabler_icon(icon, 13.0, color))
         .padding(Padding {
             top: 2.0,
@@ -223,12 +220,12 @@ fn money_event_icon<'a, Msg: 'a>(icon: Icon, color: Color) -> Element<'a, Msg> {
         .into()
 }
 
-fn row_chrome<'a, Msg: 'a>(
-    content: Element<'a, Msg>,
+fn row_chrome<Msg: 'static>(
+    content: Element<'static, Msg>,
     stripe_color: Color,
     body_bg: Color,
-    palette: &ForgePalette,
-) -> Element<'a, Msg> {
+    palette: ForgePalette,
+) -> Element<'static, Msg> {
     let sep_color = palette.border_regular;
     let stripe = container(iced::widget::Space::new().width(2).height(Length::Fill))
         .width(2)
@@ -265,7 +262,7 @@ fn row_chrome<'a, Msg: 'a>(
     column![main, separator].spacing(0).into()
 }
 
-fn triggered_badge<'a, Msg: 'a>(action: &str, palette: &ForgePalette) -> Element<'a, Msg> {
+fn triggered_badge<Msg: 'static>(action: String, palette: ForgePalette) -> Element<'static, Msg> {
     let label = format!("Triggered: {action}");
     let bg = Color {
         a: 0.20,
@@ -290,8 +287,8 @@ fn triggered_badge<'a, Msg: 'a>(action: &str, palette: &ForgePalette) -> Element
     .into()
 }
 
-fn timestamp_top<'a, Msg: 'a>(ts: &str, palette: &ForgePalette) -> Element<'a, Msg> {
-    text(ts.to_owned())
+fn timestamp_top<Msg: 'static>(ts: String, palette: ForgePalette) -> Element<'static, Msg> {
+    text(ts)
         .size(FONT_XS)
         .color(palette.text_faint)
         .font(font(FontRole::Monospace))
@@ -299,40 +296,37 @@ fn timestamp_top<'a, Msg: 'a>(ts: &str, palette: &ForgePalette) -> Element<'a, M
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn chat_row_msg<'a, Msg: Clone + 'a>(
-    palette: &ForgePalette,
-    timestamp: &str,
+pub fn chat_row_msg<Msg: Clone + 'static>(
+    palette: ForgePalette,
+    timestamp: String,
     platform: Platform,
-    badges: &[BadgeKind],
-    username: &str,
+    badges: Vec<BadgeKind>,
+    username: String,
     username_color: Color,
-    text_body: &str,
+    text_body: String,
     on_user_click: Option<fn(String) -> Msg>,
-) -> Element<'a, Msg> {
+) -> Element<'static, Msg> {
     let ts_top = timestamp_top(timestamp, palette);
     let p_badge = platform_badge(platform, palette);
 
-    let mut top_items: Vec<Element<'a, Msg>> = vec![ts_top, p_badge];
-    for &b in badges {
+    let mut top_items: Vec<Element<'static, Msg>> = vec![ts_top, p_badge];
+    for b in badges {
         top_items.push(badge_pill::<Msg>(b, palette));
     }
     let top_row = row(top_items).spacing(6).align_y(iced::Alignment::Center);
 
-    let username_el: Element<'a, Msg> = match on_user_click {
-        Some(on_click) => {
-            let uname = username.to_owned();
-            button(
-                text(uname.clone())
-                    .size(FONT_SM)
-                    .color(username_color)
-                    .font(font(FontRole::Body)),
-            )
-            .on_press(on_click(uname))
-            .padding([0, 2])
-            .style(clickable_username_style(username_color))
-            .into()
-        }
-        None => text(username.to_owned())
+    let username_el: Element<'static, Msg> = match on_user_click {
+        Some(on_click) => button(
+            text(username.clone())
+                .size(FONT_SM)
+                .color(username_color)
+                .font(font(FontRole::Body)),
+        )
+        .on_press(on_click(username))
+        .padding([0, 2])
+        .style(clickable_username_style(username_color))
+        .into(),
+        None => text(username)
             .size(FONT_SM)
             .color(username_color)
             .font(font(FontRole::Body))
@@ -346,7 +340,7 @@ pub fn chat_row_msg<'a, Msg: Clone + 'a>(
             .color(palette.text_secondary)
             .font(font(FontRole::Body))
             .into(),
-        text(text_body.to_owned())
+        text(text_body)
             .size(FONT_SM)
             .color(palette.text_primary)
             .font(font(FontRole::Body))
@@ -367,47 +361,43 @@ pub fn chat_row_msg<'a, Msg: Clone + 'a>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn chat_row_sub<'a, Msg: Clone + 'a>(
-    palette: &ForgePalette,
-    timestamp: &str,
+pub fn chat_row_sub<Msg: Clone + 'static>(
+    palette: ForgePalette,
+    timestamp: String,
     platform: Platform,
-    username: &str,
+    username: String,
     username_color: Color,
     tier: u8,
     months: Option<u32>,
-    sub_message: Option<&str>,
-    triggered_action: Option<&str>,
+    sub_message: Option<String>,
+    triggered_action: Option<String>,
     on_user_click: Option<fn(String) -> Msg>,
-) -> Element<'a, Msg> {
+) -> Element<'static, Msg> {
     let ts_top = timestamp_top(timestamp, palette);
     let icon = money_event_icon(Icon::Star, palette.brand);
     let p_badge = platform_badge(platform, palette);
-    let p = *palette;
 
     let tier_label = format!("subscribed (Tier {tier})");
 
-    let username_el: Element<'a, Msg> = match on_user_click {
-        Some(on_click) => {
-            let uname = username.to_owned();
-            button(
-                text(uname.clone())
-                    .size(FONT_SM)
-                    .color(username_color)
-                    .font(font(FontRole::Body)),
-            )
-            .on_press(on_click(uname))
-            .padding([0, 2])
-            .style(clickable_username_style(username_color))
-            .into()
-        }
-        None => text(username.to_owned())
+    let username_el: Element<'static, Msg> = match on_user_click {
+        Some(on_click) => button(
+            text(username.clone())
+                .size(FONT_SM)
+                .color(username_color)
+                .font(font(FontRole::Body)),
+        )
+        .on_press(on_click(username))
+        .padding([0, 2])
+        .style(clickable_username_style(username_color))
+        .into(),
+        None => text(username)
             .size(FONT_SM)
             .color(username_color)
             .font(font(FontRole::Body))
             .into(),
     };
 
-    let mut first_row_items: Vec<Element<'a, Msg>> = vec![
+    let mut first_row_items: Vec<Element<'static, Msg>> = vec![
         username_el,
         text(format!(" {tier_label}"))
             .size(FONT_SM)
@@ -421,18 +411,18 @@ pub fn chat_row_sub<'a, Msg: Clone + 'a>(
             a: 0.15,
             ..palette.warning
         };
-        first_row_items.push(inline_badge(&label, bg, palette.warning, palette));
+        first_row_items.push(inline_badge(label, bg, palette.warning));
     }
 
     let first_row = row(first_row_items)
         .spacing(6)
         .align_y(iced::Alignment::Center);
 
-    let mut body_col_items: Vec<Element<'a, Msg>> = vec![first_row.into()];
+    let mut body_col_items: Vec<Element<'static, Msg>> = vec![first_row.into()];
 
     if let Some(msg_text) = sub_message {
         body_col_items.push(
-            text(msg_text.to_owned())
+            text(msg_text)
                 .size(FONT_SM)
                 .color(palette.text_muted)
                 .font(font(FontRole::Body))
@@ -442,7 +432,7 @@ pub fn chat_row_sub<'a, Msg: Clone + 'a>(
 
     let body_col = column(body_col_items).spacing(3).width(Length::Fill);
 
-    let mut top_items: Vec<Element<'a, Msg>> = vec![ts_top, p_badge];
+    let mut top_items: Vec<Element<'static, Msg>> = vec![ts_top, p_badge];
     if let Some(action) = triggered_action {
         top_items.push(iced::widget::Space::new().width(Length::Fill).into());
         top_items.push(triggered_badge(action, palette));
@@ -453,24 +443,23 @@ pub fn chat_row_sub<'a, Msg: Clone + 'a>(
         .align_y(iced::Alignment::Start);
     let inner = column![top_row, bottom_row].spacing(2);
 
-    row_chrome(inner.into(), p.brand, p.elevated, palette)
+    row_chrome(inner.into(), palette.brand, palette.elevated, palette)
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn chat_row_cheer<'a, Msg: Clone + 'a>(
-    palette: &ForgePalette,
-    timestamp: &str,
+pub fn chat_row_cheer<Msg: Clone + 'static>(
+    palette: ForgePalette,
+    timestamp: String,
     platform: Platform,
-    username: &str,
+    username: String,
     username_color: Color,
     bits: u64,
-    cheer_text: &str,
+    cheer_text: String,
     on_user_click: Option<fn(String) -> Msg>,
-) -> Element<'a, Msg> {
+) -> Element<'static, Msg> {
     let ts_top = timestamp_top(timestamp, palette);
     let icon = money_event_icon(Icon::Bolt, palette.warning);
     let p_badge = platform_badge(platform, palette);
-    let p = *palette;
 
     let bits_label = format!("{bits} bits");
     let bits_bg = Color {
@@ -478,41 +467,38 @@ pub fn chat_row_cheer<'a, Msg: Clone + 'a>(
         ..palette.warning
     };
 
-    let username_el: Element<'a, Msg> = match on_user_click {
-        Some(on_click) => {
-            let uname = username.to_owned();
-            button(
-                text(uname.clone())
-                    .size(FONT_SM)
-                    .color(username_color)
-                    .font(font(FontRole::Body)),
-            )
-            .on_press(on_click(uname))
-            .padding([0, 2])
-            .style(clickable_username_style(username_color))
-            .into()
-        }
-        None => text(username.to_owned())
+    let username_el: Element<'static, Msg> = match on_user_click {
+        Some(on_click) => button(
+            text(username.clone())
+                .size(FONT_SM)
+                .color(username_color)
+                .font(font(FontRole::Body)),
+        )
+        .on_press(on_click(username))
+        .padding([0, 2])
+        .style(clickable_username_style(username_color))
+        .into(),
+        None => text(username)
             .size(FONT_SM)
             .color(username_color)
             .font(font(FontRole::Body))
             .into(),
     };
 
-    let first_row: Element<'a, Msg> = row(vec![
+    let first_row: Element<'static, Msg> = row(vec![
         username_el,
         text(" cheered")
             .size(FONT_SM)
             .color(palette.text_secondary)
             .font(font(FontRole::Body))
             .into(),
-        inline_badge(&bits_label, bits_bg, palette.warning, palette),
+        inline_badge(bits_label, bits_bg, palette.warning),
     ])
     .spacing(6)
     .align_y(iced::Alignment::Center)
     .into();
 
-    let msg_line = text(cheer_text.to_owned())
+    let msg_line = text(cheer_text)
         .size(FONT_SM)
         .color(palette.text_primary)
         .font(font(FontRole::Body));
@@ -527,21 +513,20 @@ pub fn chat_row_cheer<'a, Msg: Clone + 'a>(
         .align_y(iced::Alignment::Start);
     let inner = column![top_row, bottom_row].spacing(2);
 
-    row_chrome(inner.into(), p.warning, p.elevated, palette)
+    row_chrome(inner.into(), palette.warning, palette.elevated, palette)
 }
 
-pub fn chat_row_raid<'a, Msg: Clone + 'a>(
-    palette: &ForgePalette,
-    timestamp: &str,
+pub fn chat_row_raid<Msg: Clone + 'static>(
+    palette: ForgePalette,
+    timestamp: String,
     platform: Platform,
-    username: &str,
+    username: String,
     viewers: u64,
-    triggered_action: Option<&str>,
-) -> Element<'a, Msg> {
+    triggered_action: Option<String>,
+) -> Element<'static, Msg> {
     let ts_top = timestamp_top(timestamp, palette);
     let icon = money_event_icon(Icon::Flag, palette.random);
     let p_badge = platform_badge(platform, palette);
-    let p = *palette;
 
     let viewers_label = format!("{viewers} viewers");
     let viewers_bg = Color {
@@ -549,8 +534,8 @@ pub fn chat_row_raid<'a, Msg: Clone + 'a>(
         ..palette.random
     };
 
-    let first_row: Element<'a, Msg> = row![
-        text(username.to_owned())
+    let first_row: Element<'static, Msg> = row![
+        text(username)
             .size(FONT_SM)
             .color(palette.random)
             .font(font(FontRole::Body)),
@@ -558,7 +543,7 @@ pub fn chat_row_raid<'a, Msg: Clone + 'a>(
             .size(FONT_SM)
             .color(palette.text_secondary)
             .font(font(FontRole::Body)),
-        inline_badge(&viewers_label, viewers_bg, palette.random, palette),
+        inline_badge(viewers_label, viewers_bg, palette.random),
     ]
     .spacing(6)
     .align_y(iced::Alignment::Center)
@@ -566,7 +551,7 @@ pub fn chat_row_raid<'a, Msg: Clone + 'a>(
 
     let body_col = column![first_row].spacing(3).width(Length::Fill);
 
-    let mut top_items: Vec<Element<'a, Msg>> = vec![ts_top, p_badge];
+    let mut top_items: Vec<Element<'static, Msg>> = vec![ts_top, p_badge];
     if let Some(action) = triggered_action {
         top_items.push(iced::widget::Space::new().width(Length::Fill).into());
         top_items.push(triggered_badge(action, palette));
@@ -577,22 +562,22 @@ pub fn chat_row_raid<'a, Msg: Clone + 'a>(
         .align_y(iced::Alignment::Start);
     let inner = column![top_row, bottom_row].spacing(2);
 
-    row_chrome(inner.into(), p.random, p.elevated, palette)
+    row_chrome(inner.into(), palette.random, palette.elevated, palette)
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn chat_row_cmd<'a, Msg: Clone + 'a>(
-    palette: &ForgePalette,
-    timestamp: &str,
+pub fn chat_row_cmd<Msg: Clone + 'static>(
+    palette: ForgePalette,
+    timestamp: String,
     platform: Platform,
-    badges: &[BadgeKind],
-    username: &str,
+    badges: Vec<BadgeKind>,
+    username: String,
     username_color: Color,
-    command: &str,
-    action_name: Option<&str>,
+    command: String,
+    action_name: Option<String>,
     action_duration_ms: Option<u64>,
     on_user_click: Option<fn(String) -> Msg>,
-) -> Element<'a, Msg> {
+) -> Element<'static, Msg> {
     let ts_top = timestamp_top(timestamp, palette);
     let p_badge = platform_badge(platform, palette);
 
@@ -601,7 +586,7 @@ pub fn chat_row_cmd<'a, Msg: Clone + 'a>(
         ..palette.surface_overlay
     };
     let cmd_text = container(
-        text(command.to_owned())
+        text(command)
             .size(FONT_XS)
             .color(palette.brand)
             .font(font(FontRole::Monospace)),
@@ -617,21 +602,18 @@ pub fn chat_row_cmd<'a, Msg: Clone + 'a>(
         ..container::Style::default()
     });
 
-    let username_el: Element<'a, Msg> = match on_user_click {
-        Some(on_click) => {
-            let uname = username.to_owned();
-            button(
-                text(uname.clone())
-                    .size(FONT_SM)
-                    .color(username_color)
-                    .font(font(FontRole::Body)),
-            )
-            .on_press(on_click(uname))
-            .padding([0, 2])
-            .style(clickable_username_style(username_color))
-            .into()
-        }
-        None => text(username.to_owned())
+    let username_el: Element<'static, Msg> = match on_user_click {
+        Some(on_click) => button(
+            text(username.clone())
+                .size(FONT_SM)
+                .color(username_color)
+                .font(font(FontRole::Body)),
+        )
+        .on_press(on_click(username))
+        .padding([0, 2])
+        .style(clickable_username_style(username_color))
+        .into(),
+        None => text(username)
             .size(FONT_SM)
             .color(username_color)
             .font(font(FontRole::Body))
@@ -650,16 +632,16 @@ pub fn chat_row_cmd<'a, Msg: Clone + 'a>(
     .spacing(4)
     .align_y(iced::Alignment::Center);
 
-    let outcome_badge: Option<Element<'a, Msg>> = match (action_name, action_duration_ms) {
-        (Some(name), Some(ms)) => Some(triggered_badge(&format!("{name} · {ms}ms"), palette)),
+    let outcome_badge: Option<Element<'static, Msg>> = match (action_name, action_duration_ms) {
+        (Some(name), Some(ms)) => Some(triggered_badge(format!("{name} · {ms}ms"), palette)),
         (Some(name), None) => Some(triggered_badge(name, palette)),
         _ => None,
     };
 
     let body_col = column![first_row].spacing(3).width(Length::Fill);
 
-    let mut top_items: Vec<Element<'a, Msg>> = vec![ts_top, p_badge];
-    for &b in badges {
+    let mut top_items: Vec<Element<'static, Msg>> = vec![ts_top, p_badge];
+    for b in badges {
         top_items.push(badge_pill::<Msg>(b, palette));
     }
     if let Some(badge) = outcome_badge {
@@ -678,18 +660,18 @@ pub fn chat_row_cmd<'a, Msg: Clone + 'a>(
     )
 }
 
-pub fn chat_row<'a, Msg: Clone + 'a>(
-    palette: &'a ForgePalette,
-    row_data: &'a ChatRow,
+pub fn chat_row<Msg: Clone + 'static>(
+    palette: ForgePalette,
+    row_data: ChatRow,
     on_user_click: Option<fn(String) -> Msg>,
-) -> Element<'a, Msg> {
-    match &row_data.body {
+) -> Element<'static, Msg> {
+    match row_data.body {
         ChatBody::Message(msg) => chat_row_msg(
             palette,
-            &row_data.timestamp,
+            row_data.timestamp,
             row_data.platform,
-            &row_data.badges,
-            &row_data.username,
+            row_data.badges,
+            row_data.username,
             row_data.username_color,
             msg,
             on_user_click,
@@ -701,23 +683,23 @@ pub fn chat_row<'a, Msg: Clone + 'a>(
             triggered_action,
         } => chat_row_sub(
             palette,
-            &row_data.timestamp,
+            row_data.timestamp,
             row_data.platform,
-            &row_data.username,
+            row_data.username,
             row_data.username_color,
-            *tier,
-            *months,
-            message.as_deref(),
-            triggered_action.as_deref(),
+            tier,
+            months,
+            message,
+            triggered_action,
             on_user_click,
         ),
         ChatBody::Cheer { bits, text } => chat_row_cheer(
             palette,
-            &row_data.timestamp,
+            row_data.timestamp,
             row_data.platform,
-            &row_data.username,
+            row_data.username,
             row_data.username_color,
-            *bits,
+            bits,
             text,
             on_user_click,
         ),
@@ -726,11 +708,11 @@ pub fn chat_row<'a, Msg: Clone + 'a>(
             triggered_action,
         } => chat_row_raid(
             palette,
-            &row_data.timestamp,
+            row_data.timestamp,
             row_data.platform,
-            &row_data.username,
-            *viewers,
-            triggered_action.as_deref(),
+            row_data.username,
+            viewers,
+            triggered_action,
         ),
         ChatBody::Command {
             command,
@@ -738,14 +720,14 @@ pub fn chat_row<'a, Msg: Clone + 'a>(
             action_duration_ms,
         } => chat_row_cmd(
             palette,
-            &row_data.timestamp,
+            row_data.timestamp,
             row_data.platform,
-            &row_data.badges,
-            &row_data.username,
+            row_data.badges,
+            row_data.username,
             row_data.username_color,
             command,
-            action_name.as_deref(),
-            *action_duration_ms,
+            action_name,
+            action_duration_ms,
             on_user_click,
         ),
     }
@@ -1202,41 +1184,41 @@ mod tests {
 
     #[test]
     fn chat_row_msg_compiles_with_sample_data() {
-        let _: Element<'_, ()> = chat_row_msg(
-            &CATPPUCCIN_MOCHA,
-            "14:21:05",
+        let _: Element<'static, ()> = chat_row_msg(
+            CATPPUCCIN_MOCHA,
+            "14:21:05".to_owned(),
             Platform::Twitch,
-            &[BadgeKind::Moderator],
-            "testuser",
+            vec![BadgeKind::Moderator],
+            "testuser".to_owned(),
             CATPPUCCIN_MOCHA.brand,
-            "hello world",
+            "hello world".to_owned(),
             None,
         );
     }
 
     #[test]
     fn chat_row_sub_compiles_with_all_fields() {
-        let _: Element<'_, ()> = chat_row_sub(
-            &CATPPUCCIN_MOCHA,
-            "14:22:10",
+        let _: Element<'static, ()> = chat_row_sub(
+            CATPPUCCIN_MOCHA,
+            "14:22:10".to_owned(),
             Platform::Twitch,
-            "danylo_ua",
+            "danylo_ua".to_owned(),
             CATPPUCCIN_MOCHA.bits,
             1,
             Some(3),
-            Some("Дякую за стрім!"),
-            Some("Welcome new subscriber"),
+            Some("Дякую за стрім!".to_owned()),
+            Some("Welcome new subscriber".to_owned()),
             None,
         );
     }
 
     #[test]
     fn chat_row_sub_compiles_minimal() {
-        let _: Element<'_, ()> = chat_row_sub(
-            &CATPPUCCIN_MOCHA,
-            "14:23:00",
+        let _: Element<'static, ()> = chat_row_sub(
+            CATPPUCCIN_MOCHA,
+            "14:23:00".to_owned(),
             Platform::Twitch,
-            "viewer_x",
+            "viewer_x".to_owned(),
             CATPPUCCIN_MOCHA.success,
             1,
             None,
@@ -1248,37 +1230,37 @@ mod tests {
 
     #[test]
     fn chat_row_cheer_compiles_with_sample_data() {
-        let _: Element<'_, ()> = chat_row_cheer(
-            &CATPPUCCIN_MOCHA,
-            "14:24:30",
+        let _: Element<'static, ()> = chat_row_cheer(
+            CATPPUCCIN_MOCHA,
+            "14:24:30".to_owned(),
             Platform::Twitch,
-            "viewer_x",
+            "viewer_x".to_owned(),
             CATPPUCCIN_MOCHA.success,
             500,
-            "keep going!",
+            "keep going!".to_owned(),
             None,
         );
     }
 
     #[test]
     fn chat_row_raid_compiles_with_triggered_action() {
-        let _: Element<'_, ()> = chat_row_raid(
-            &CATPPUCCIN_MOCHA,
-            "14:25:00",
+        let _: Element<'static, ()> = chat_row_raid(
+            CATPPUCCIN_MOCHA,
+            "14:25:00".to_owned(),
             Platform::Twitch,
-            "factorio_streamer",
+            "factorio_streamer".to_owned(),
             42,
-            Some("Raid welcome + OBS scene"),
+            Some("Raid welcome + OBS scene".to_owned()),
         );
     }
 
     #[test]
     fn chat_row_raid_compiles_without_triggered_action() {
-        let _: Element<'_, ()> = chat_row_raid(
-            &CATPPUCCIN_MOCHA,
-            "14:25:00",
+        let _: Element<'static, ()> = chat_row_raid(
+            CATPPUCCIN_MOCHA,
+            "14:25:00".to_owned(),
             Platform::Twitch,
-            "factorio_streamer",
+            "factorio_streamer".to_owned(),
             42,
             None,
         );
@@ -1286,15 +1268,15 @@ mod tests {
 
     #[test]
     fn chat_row_cmd_compiles_with_outcome() {
-        let _: Element<'_, ()> = chat_row_cmd(
-            &CATPPUCCIN_MOCHA,
-            "14:26:15",
+        let _: Element<'static, ()> = chat_row_cmd(
+            CATPPUCCIN_MOCHA,
+            "14:26:15".to_owned(),
             Platform::Twitch,
-            &[],
-            "koval_dev",
+            vec![],
+            "koval_dev".to_owned(),
             CATPPUCCIN_MOCHA.success,
-            "!quote",
-            Some("!quote"),
+            "!quote".to_owned(),
+            Some("!quote".to_owned()),
             Some(18),
             None,
         );
@@ -1302,14 +1284,14 @@ mod tests {
 
     #[test]
     fn chat_row_cmd_compiles_without_outcome() {
-        let _: Element<'_, ()> = chat_row_cmd(
-            &CATPPUCCIN_MOCHA,
-            "14:26:15",
+        let _: Element<'static, ()> = chat_row_cmd(
+            CATPPUCCIN_MOCHA,
+            "14:26:15".to_owned(),
             Platform::Twitch,
-            &[BadgeKind::Vip],
-            "koval_dev",
+            vec![BadgeKind::Vip],
+            "koval_dev".to_owned(),
             CATPPUCCIN_MOCHA.success,
-            "!so",
+            "!so".to_owned(),
             None,
             None,
             None,
@@ -1326,7 +1308,7 @@ mod tests {
             username_color: CATPPUCCIN_MOCHA.brand,
             body: ChatBody::Message("hello world".to_string()),
         };
-        let _: Element<'_, ()> = chat_row(&CATPPUCCIN_MOCHA, &row_data, None);
+        let _: Element<'static, ()> = chat_row(CATPPUCCIN_MOCHA, row_data, None);
     }
 
     #[test]
@@ -1344,7 +1326,7 @@ mod tests {
                 triggered_action: Some("Welcome".to_string()),
             },
         };
-        let _: Element<'_, ()> = chat_row(&CATPPUCCIN_MOCHA, &row_data, None);
+        let _: Element<'static, ()> = chat_row(CATPPUCCIN_MOCHA, row_data, None);
     }
 
     #[test]
@@ -1360,7 +1342,7 @@ mod tests {
                 text: "nice stream".to_string(),
             },
         };
-        let _: Element<'_, ()> = chat_row(&CATPPUCCIN_MOCHA, &row_data, None);
+        let _: Element<'static, ()> = chat_row(CATPPUCCIN_MOCHA, row_data, None);
     }
 
     #[test]
@@ -1376,7 +1358,7 @@ mod tests {
                 triggered_action: None,
             },
         };
-        let _: Element<'_, ()> = chat_row(&CATPPUCCIN_MOCHA, &row_data, None);
+        let _: Element<'static, ()> = chat_row(CATPPUCCIN_MOCHA, row_data, None);
     }
 
     #[test]
@@ -1393,7 +1375,7 @@ mod tests {
                 action_duration_ms: Some(18),
             },
         };
-        let _: Element<'_, ()> = chat_row(&CATPPUCCIN_MOCHA, &row_data, None);
+        let _: Element<'static, ()> = chat_row(CATPPUCCIN_MOCHA, row_data, None);
     }
 
     #[test]

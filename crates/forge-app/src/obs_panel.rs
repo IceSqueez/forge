@@ -153,7 +153,7 @@ pub fn obs_disconnected_view<'a>(
     let tip = obs_tip_card(palette);
 
     let page_header =
-        crate::app::simple_page_header(&[("Integrations", false), ("OBS Studio", true)], palette);
+        crate::app::simple_page_header(&[("Builtin", false), ("OBS Studio", true)], palette);
 
     let body = container(column![header, two_column, tip].spacing(14.0))
         .width(Length::Fill)

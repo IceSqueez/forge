@@ -58,7 +58,7 @@ fn test_app() -> App {
         viewers: forge_app::viewers::ViewersState::default(),
         globals: forge_app::GlobalsState::new(),
         script_editor: ScriptEditorState::new(),
-        integration_detail: None,
+        builtin_detail: None,
         server_screen: forge_app::ServerScreenState::default(),
         settings_websocket: forge_app::SettingsWebSocketState::default(),
         twitch_panel: forge_app::twitch_panel::TwitchPanelState::default(),

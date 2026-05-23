@@ -11,7 +11,7 @@ use tokio::task::JoinHandle;
 
 use forge_events::EventPublisher;
 use forge_platform_core::{
-    CapabilityFlags, ConnectionState, HeaderAction, HealthDelta, IntegrationId, IntegrationStatus,
+    CapabilityFlags, ConnectionState, HeaderAction, HealthDelta, BuiltinId, BuiltinStatus,
 };
 use forge_types::EventId;
 
@@ -34,7 +34,7 @@ pub struct ObsClient {
     shutdown: Arc<Notify>,
     supervisor: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
     connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
-    obs_id: IntegrationId,
+    obs_id: BuiltinId,
     obs_version: Arc<OnceLock<String>>,
     pub(crate) health_state: Arc<RwLock<HealthSnapshot>>,
     pub(crate) health_tx: broadcast::Sender<HealthDelta>,
@@ -82,7 +82,7 @@ impl ObsClient {
             shutdown,
             supervisor: Arc::new(std::sync::Mutex::new(Some(handle))),
             connected_at,
-            obs_id: IntegrationId::new("obs"),
+            obs_id: BuiltinId::new("obs"),
             obs_version,
             health_state,
             health_tx,
@@ -134,7 +134,7 @@ impl ObsClient {
             shutdown: Arc::new(Notify::new()),
             supervisor: Arc::new(std::sync::Mutex::new(None)),
             connected_at: Arc::new(RwLock::new(None)),
-            obs_id: IntegrationId::new("obs"),
+            obs_id: BuiltinId::new("obs"),
             obs_version: Arc::new(OnceLock::new()),
             health_state,
             health_tx,
@@ -145,8 +145,8 @@ impl ObsClient {
     }
 }
 
-impl IntegrationStatus for ObsClient {
-    fn id(&self) -> &IntegrationId {
+impl BuiltinStatus for ObsClient {
+    fn id(&self) -> &BuiltinId {
         &self.obs_id
     }
 
@@ -582,46 +582,46 @@ mod tests {
     }
 
     #[test]
-    fn integration_status_id_is_obs() {
+    fn builtin_status_id_is_obs() {
         let client = ObsClient::new_for_test("localhost:4455".to_owned());
-        let status: &dyn IntegrationStatus = &client;
+        let status: &dyn BuiltinStatus = &client;
         assert_eq!(status.id().as_str(), "obs");
     }
 
     #[test]
-    fn integration_status_display_name() {
+    fn builtin_status_display_name() {
         let client = ObsClient::new_for_test("localhost:4455".to_owned());
-        let status: &dyn IntegrationStatus = &client;
+        let status: &dyn BuiltinStatus = &client;
         assert_eq!(status.display_name(), "OBS Studio");
     }
 
     #[test]
-    fn integration_status_version_none_before_connect() {
+    fn builtin_status_version_none_before_connect() {
         let client = ObsClient::new_for_test("localhost:4455".to_owned());
-        let status: &dyn IntegrationStatus = &client;
+        let status: &dyn BuiltinStatus = &client;
         assert!(status.version().is_none());
     }
 
     #[test]
-    fn integration_status_endpoint_reflects_constructor() {
+    fn builtin_status_endpoint_reflects_constructor() {
         let client = ObsClient::new_for_test("ws://127.0.0.1:4455".to_owned());
-        let status: &dyn IntegrationStatus = &client;
+        let status: &dyn BuiltinStatus = &client;
         assert_eq!(status.endpoint(), Some("ws://127.0.0.1:4455"));
     }
 
     #[test]
-    fn integration_status_capability_flags_not_limited() {
+    fn builtin_status_capability_flags_not_limited() {
         let client = ObsClient::new_for_test("localhost:4455".to_owned());
-        let status: &dyn IntegrationStatus = &client;
+        let status: &dyn BuiltinStatus = &client;
         let flags = status.capability_flags();
         assert!(!flags.limited);
         assert!(flags.label.is_none());
     }
 
     #[test]
-    fn integration_status_header_actions_no_refresh_token() {
+    fn builtin_status_header_actions_no_refresh_token() {
         let client = ObsClient::new_for_test("localhost:4455".to_owned());
-        let status: &dyn IntegrationStatus = &client;
+        let status: &dyn BuiltinStatus = &client;
         let actions = status.header_actions();
         assert!(!actions.contains(&HeaderAction::RefreshToken));
         assert!(actions.contains(&HeaderAction::Reconnect));
@@ -630,9 +630,9 @@ mod tests {
     }
 
     #[test]
-    fn integration_status_uptime_none_before_connect() {
+    fn builtin_status_uptime_none_before_connect() {
         let client = ObsClient::new_for_test("localhost:4455".to_owned());
-        let status: &dyn IntegrationStatus = &client;
+        let status: &dyn BuiltinStatus = &client;
         assert!(status.uptime().is_none());
     }
 

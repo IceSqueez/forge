@@ -1,4 +1,4 @@
-use forge_platform_core::{ConnectionState, IntegrationId};
+use forge_platform_core::{ConnectionState, BuiltinId};
 use forge_widgets::{
     ForgePalette, Icon, tabler_icon,
     tokens::{FONT_MD, FONT_SM, FONT_XS, Radius, radius},
@@ -31,7 +31,7 @@ pub fn view<'a>(state: &'a App, palette: &'a ForgePalette) -> Element<'a, Messag
         "OBS Studio",
         "Scenes, sources, recording control, replay buffers — full obs-websocket API",
         obs_connected,
-        IntegrationId::new("obs"),
+        BuiltinId::new("obs"),
         palette,
     );
     let vtube_card = app_overview_card(
@@ -40,7 +40,7 @@ pub fn view<'a>(state: &'a App, palette: &'a ForgePalette) -> Element<'a, Messag
         "VTube Studio",
         "Vtuber avatar control: hotkeys, expressions, item triggers",
         false,
-        IntegrationId::new("vtube"),
+        BuiltinId::new("vtube"),
         palette,
     );
 
@@ -71,7 +71,7 @@ fn app_overview_card<'a>(
     name: &'a str,
     desc: &'a str,
     connected: bool,
-    target: IntegrationId,
+    target: BuiltinId,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let p = *palette;
@@ -152,7 +152,7 @@ fn app_overview_card<'a>(
     button(inner)
         .padding([16_u16, 18_u16])
         .width(Length::Fill)
-        .on_press(Message::Navigate(Screen::IntegrationDetail(target)))
+        .on_press(Message::Navigate(Screen::BuiltinDetail(target)))
         .style(
             move |_: &iced::Theme, status: iced::widget::button::Status| {
                 let hovered = matches!(
@@ -182,7 +182,7 @@ fn app_overview_card<'a>(
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use forge_platform_core::IntegrationId;
+    use forge_platform_core::BuiltinId;
 
     use super::*;
     use crate::app::update;
@@ -202,11 +202,11 @@ mod tests {
     }
 
     #[test]
-    fn obs_card_on_press_navigates_to_integration_detail() {
-        let on_press = Message::Navigate(Screen::IntegrationDetail(IntegrationId::new("obs")));
+    fn obs_card_on_press_navigates_to_builtin_detail() {
+        let on_press = Message::Navigate(Screen::BuiltinDetail(BuiltinId::new("obs")));
         assert!(matches!(
             on_press,
-            Message::Navigate(Screen::IntegrationDetail(ref id)) if id == &IntegrationId::new("obs")
+            Message::Navigate(Screen::BuiltinDetail(ref id)) if id == &BuiltinId::new("obs")
         ));
     }
 }

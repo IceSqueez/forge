@@ -32,7 +32,7 @@ pub struct HeaderCardParams<'a> {
     pub badges: &'a [(String, BadgeTone)],
 }
 
-pub fn integration_header_card<'a, Msg: Clone + 'a>(
+pub fn builtin_header_card<'a, Msg: Clone + 'a>(
     params: HeaderCardParams<'a>,
     on_action: impl Fn(HeaderAction) -> Msg + 'a,
     palette: &'a ForgePalette,
@@ -282,7 +282,7 @@ fn format_uptime(d: Duration) -> String {
     }
 }
 
-pub fn integration_health_grid<'a, Msg: 'a>(
+pub fn builtin_health_grid<'a, Msg: 'a>(
     metrics: &[forge_platform_core::HealthMetric; 4],
     palette: &ForgePalette,
 ) -> Element<'a, Msg> {
@@ -406,7 +406,7 @@ fn health_metric_card<'a, Msg: 'a>(
         .into()
 }
 
-pub fn integration_content_renderer<'a, Msg: 'a>(
+pub fn builtin_content_renderer<'a, Msg: 'a>(
     sections: &'a [DetailSection],
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
@@ -1437,15 +1437,15 @@ fn health_level_color(level: &HealthLevel, palette: &ForgePalette) -> Color {
     }
 }
 
-pub fn integration_quick_actions_grid<'a, Msg: Clone + 'a>(
+pub fn builtin_quick_actions_grid<'a, Msg: Clone + 'a>(
     actions: &'a [QuickAction],
     on_click: impl Fn(usize) -> Msg + 'a,
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
-    integration_quick_actions_grid_with_hint(actions, on_click, None, palette)
+    builtin_quick_actions_grid_with_hint(actions, on_click, None, palette)
 }
 
-pub fn integration_quick_actions_grid_with_hint<'a, Msg: Clone + 'a>(
+pub fn builtin_quick_actions_grid_with_hint<'a, Msg: Clone + 'a>(
     actions: &'a [QuickAction],
     on_click: impl Fn(usize) -> Msg + 'a,
     hint: Option<&'a str>,
@@ -1644,7 +1644,7 @@ mod tests {
     }
 
     #[test]
-    fn integration_header_card_compiles_with_unit_msg() {
+    fn builtin_header_card_compiles_with_unit_msg() {
         let flags = sample_flags();
         let actions = sample_actions();
         let params = HeaderCardParams {
@@ -1658,11 +1658,11 @@ mod tests {
             icon: SectionIcon::new("\u{F1D6}"),
             badges: &[],
         };
-        let _: Element<'_, ()> = integration_header_card(params, |_action| (), &CATPPUCCIN_MOCHA);
+        let _: Element<'_, ()> = builtin_header_card(params, |_action| (), &CATPPUCCIN_MOCHA);
     }
 
     #[test]
-    fn integration_header_card_with_limited_flag() {
+    fn builtin_header_card_with_limited_flag() {
         let flags = CapabilityFlags {
             limited: true,
             label: Some("Chat only".to_owned()),
@@ -1679,11 +1679,11 @@ mod tests {
             icon: SectionIcon::new("K"),
             badges: &[],
         };
-        let _: Element<'_, ()> = integration_header_card(params, |_action| (), &CATPPUCCIN_MOCHA);
+        let _: Element<'_, ()> = builtin_header_card(params, |_action| (), &CATPPUCCIN_MOCHA);
     }
 
     #[test]
-    fn integration_header_card_disconnected_no_optional_fields() {
+    fn builtin_header_card_disconnected_no_optional_fields() {
         let flags = sample_flags();
         let actions = vec![HeaderAction::Reconnect];
         let params = HeaderCardParams {
@@ -1697,11 +1697,11 @@ mod tests {
             icon: SectionIcon::new("\u{F1D6}"),
             badges: &[],
         };
-        let _: Element<'_, ()> = integration_header_card(params, |_action| (), &CATPPUCCIN_MOCHA);
+        let _: Element<'_, ()> = builtin_header_card(params, |_action| (), &CATPPUCCIN_MOCHA);
     }
 
     #[test]
-    fn integration_header_card_empty_actions() {
+    fn builtin_header_card_empty_actions() {
         let flags = sample_flags();
         let params = HeaderCardParams {
             display_name: "OBS Studio",
@@ -1714,7 +1714,7 @@ mod tests {
             icon: SectionIcon::new("\u{F1D6}"),
             badges: &[],
         };
-        let _: Element<'_, ()> = integration_header_card(params, |_action| (), &CATPPUCCIN_MOCHA);
+        let _: Element<'_, ()> = builtin_header_card(params, |_action| (), &CATPPUCCIN_MOCHA);
     }
 
     #[test]
@@ -1787,11 +1787,11 @@ mod tests {
             icon: SectionIcon::new("K"),
             badges: &[],
         };
-        let _: Element<'_, ()> = integration_header_card(params, |_action| (), &CATPPUCCIN_MOCHA);
+        let _: Element<'_, ()> = builtin_header_card(params, |_action| (), &CATPPUCCIN_MOCHA);
     }
 
     #[test]
-    fn integration_health_grid_renders_all_value_variants() {
+    fn builtin_health_grid_renders_all_value_variants() {
         use forge_platform_core::{HealthMetric, HealthValue};
 
         let metrics: [HealthMetric; 4] = [
@@ -1827,11 +1827,11 @@ mod tests {
             },
         ];
 
-        let _: Element<'_, ()> = integration_health_grid(&metrics, &CATPPUCCIN_MOCHA);
+        let _: Element<'_, ()> = builtin_health_grid(&metrics, &CATPPUCCIN_MOCHA);
     }
 
     #[test]
-    fn integration_health_grid_renders_inactive_status_and_bare_text() {
+    fn builtin_health_grid_renders_inactive_status_and_bare_text() {
         use forge_platform_core::{HealthMetric, HealthValue};
 
         let metrics: [HealthMetric; 4] = [
@@ -1868,7 +1868,7 @@ mod tests {
             },
         ];
 
-        let _: Element<'_, ()> = integration_health_grid(&metrics, &CATPPUCCIN_MOCHA);
+        let _: Element<'_, ()> = builtin_health_grid(&metrics, &CATPPUCCIN_MOCHA);
     }
 
     #[test]
@@ -1903,7 +1903,7 @@ mod tests {
             footer: None,
         };
         let sections = [DetailSection::TwoColumnLists { left, right }];
-        let _: Element<'_, ()> = integration_content_renderer(&sections, &CATPPUCCIN_MOCHA);
+        let _: Element<'_, ()> = builtin_content_renderer(&sections, &CATPPUCCIN_MOCHA);
     }
 
     #[test]
@@ -1928,7 +1928,7 @@ mod tests {
                 },
             ],
         }];
-        let _: Element<'_, ()> = integration_content_renderer(&sections, &CATPPUCCIN_MOCHA);
+        let _: Element<'_, ()> = builtin_content_renderer(&sections, &CATPPUCCIN_MOCHA);
     }
 
     #[test]
@@ -1951,7 +1951,7 @@ mod tests {
                 },
             ],
         }];
-        let _: Element<'_, ()> = integration_content_renderer(&sections, &CATPPUCCIN_MOCHA);
+        let _: Element<'_, ()> = builtin_content_renderer(&sections, &CATPPUCCIN_MOCHA);
     }
 
     #[test]
@@ -1964,7 +1964,7 @@ mod tests {
             body: "Kick has no public OAuth API.".to_owned(),
             cta: Some("Read more".to_owned()),
         }];
-        let _: Element<'_, ()> = integration_content_renderer(&sections, &CATPPUCCIN_MOCHA);
+        let _: Element<'_, ()> = builtin_content_renderer(&sections, &CATPPUCCIN_MOCHA);
     }
 
     #[test]
@@ -1997,7 +1997,7 @@ mod tests {
                 trailing_label: Some("3 hidden".to_owned()),
             }),
         }];
-        let _: Element<'_, ()> = integration_content_renderer(&sections, &CATPPUCCIN_MOCHA);
+        let _: Element<'_, ()> = builtin_content_renderer(&sections, &CATPPUCCIN_MOCHA);
     }
 
     #[test]
@@ -2016,7 +2016,7 @@ mod tests {
                 trailing_label: None,
             }),
         }];
-        let _: Element<'_, ()> = integration_content_renderer(&sections, &CATPPUCCIN_MOCHA);
+        let _: Element<'_, ()> = builtin_content_renderer(&sections, &CATPPUCCIN_MOCHA);
     }
 
     #[test]
@@ -2044,7 +2044,7 @@ mod tests {
                 level: HealthLevel::Good,
             }),
         }];
-        let _: Element<'_, ()> = integration_content_renderer(&sections, &CATPPUCCIN_MOCHA);
+        let _: Element<'_, ()> = builtin_content_renderer(&sections, &CATPPUCCIN_MOCHA);
     }
 
     #[test]
@@ -2072,7 +2072,7 @@ mod tests {
                 },
             ],
         }];
-        let _: Element<'_, ()> = integration_content_renderer(&sections, &CATPPUCCIN_MOCHA);
+        let _: Element<'_, ()> = builtin_content_renderer(&sections, &CATPPUCCIN_MOCHA);
     }
 
     #[test]
@@ -2091,7 +2091,7 @@ mod tests {
             .collect();
 
         let _: Element<'_, ()> =
-            integration_quick_actions_grid(&actions, |_idx| (), &CATPPUCCIN_MOCHA);
+            builtin_quick_actions_grid(&actions, |_idx| (), &CATPPUCCIN_MOCHA);
     }
 
     #[test]
@@ -2124,7 +2124,7 @@ mod tests {
         ];
 
         let _: Element<'_, ()> =
-            integration_quick_actions_grid(&actions, |_idx| (), &CATPPUCCIN_MOCHA);
+            builtin_quick_actions_grid(&actions, |_idx| (), &CATPPUCCIN_MOCHA);
     }
 
     #[test]
@@ -2142,7 +2142,7 @@ mod tests {
             })
             .collect();
 
-        let _: Element<'_, ()> = integration_quick_actions_grid_with_hint(
+        let _: Element<'_, ()> = builtin_quick_actions_grid_with_hint(
             &actions,
             |_idx| (),
             Some("Test commands without writing an action"),

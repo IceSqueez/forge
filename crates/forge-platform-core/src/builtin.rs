@@ -10,9 +10,9 @@ use crate::ConnectionState;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct IntegrationId(pub String);
+pub struct BuiltinId(pub String);
 
-impl IntegrationId {
+impl BuiltinId {
     pub fn new(s: impl Into<String>) -> Self {
         Self(s.into())
     }
@@ -22,7 +22,7 @@ impl IntegrationId {
     }
 }
 
-impl fmt::Display for IntegrationId {
+impl fmt::Display for BuiltinId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
     }
@@ -290,8 +290,8 @@ pub enum HeaderAction {
     Settings,
 }
 
-pub trait IntegrationStatus: Send + Sync {
-    fn id(&self) -> &IntegrationId;
+pub trait BuiltinStatus: Send + Sync {
+    fn id(&self) -> &BuiltinId;
     fn display_name(&self) -> &str;
     fn version(&self) -> Option<&str>;
     fn connection(&self) -> ConnectionState;
@@ -301,12 +301,12 @@ pub trait IntegrationStatus: Send + Sync {
     fn header_actions(&self) -> Vec<HeaderAction>;
 }
 
-pub trait IntegrationHealth: Send + Sync {
+pub trait BuiltinHealth: Send + Sync {
     fn metrics(&self) -> [HealthMetric; 4];
     fn stream(&self) -> HealthStream;
 }
 
-pub trait IntegrationContent: Send + Sync {
+pub trait BuiltinContent: Send + Sync {
     fn sections(&self) -> Vec<DetailSection>;
 }
 
@@ -320,23 +320,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn integration_id_new_and_as_str() {
-        let id = IntegrationId::new("twitch");
+    fn builtin_id_new_and_as_str() {
+        let id = BuiltinId::new("twitch");
         assert_eq!(id.as_str(), "twitch");
     }
 
     #[test]
-    fn integration_id_display() {
-        let id = IntegrationId::new("youtube");
+    fn builtin_id_display() {
+        let id = BuiltinId::new("youtube");
         assert_eq!(id.to_string(), "youtube");
     }
 
     #[test]
-    fn integration_id_serde_transparent() {
-        let id = IntegrationId::new("kick");
+    fn builtin_id_serde_transparent() {
+        let id = BuiltinId::new("kick");
         let json = serde_json::to_string(&id).unwrap();
         assert_eq!(json, r#""kick""#);
-        let back: IntegrationId = serde_json::from_str(&json).unwrap();
+        let back: BuiltinId = serde_json::from_str(&json).unwrap();
         assert_eq!(back, id);
     }
 
@@ -583,9 +583,9 @@ mod tests {
 
     #[allow(dead_code)]
     fn dyn_all(
-        _: &dyn IntegrationStatus,
-        _: &dyn IntegrationHealth,
-        _: &dyn IntegrationContent,
+        _: &dyn BuiltinStatus,
+        _: &dyn BuiltinHealth,
+        _: &dyn BuiltinContent,
         _: &dyn QuickActions,
     ) {
     }

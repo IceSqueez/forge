@@ -5,7 +5,7 @@ pub mod commands_view;
 pub mod event_feed;
 pub mod globals_view;
 pub mod home;
-pub mod integration_detail;
+pub mod builtin_detail;
 pub mod live_chat;
 pub mod message;
 pub mod obs_panel;
@@ -40,13 +40,13 @@ pub use app::{App, SidebarExpandState, load_obs_and_connect};
 pub use event_feed::{EventFeedMsg, EventFeedState, EventFilter, matches_filter};
 pub use globals_view::{GlobalsState, VariantEditorFields, VariantEditorForm, load_globals_data};
 pub use home::HomeStats;
-pub use integration_detail::{
-    IntegrationDetailState, handle_integration_detail_msg, health_subscription,
+pub use builtin_detail::{
+    BuiltinDetailState, handle_builtin_detail_msg, health_subscription,
 };
 pub use live_chat::{ChatFilters, LiveChatState, PlatformFilter};
 pub use message::{
     ActionsMsg, EditorMode, GlobalsFilter, GlobalsLoadData, GlobalsMsg, HomeMsg, HomeStatsData,
-    IntegrationDetailMsg, Message, ObsClientRef, PlatformId, SettingsAudioMsg, SettingsMsg,
+    BuiltinDetailMsg, Message, ObsClientRef, PlatformId, SettingsAudioMsg, SettingsMsg,
     SidebarMsg, SoundboardMsg, TtsDashMsg, TtsEnginesMsg, TtsFiltersMsg, TtsMsg, TtsTriggersMsg,
     VariantEditorMsg, VoiceAliasesMsg,
 };

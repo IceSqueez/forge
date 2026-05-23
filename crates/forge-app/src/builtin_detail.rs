@@ -2,21 +2,21 @@ use std::sync::Arc;
 
 use forge_obs::{ObsClient, ObsSource};
 use forge_platform_core::{
-    CapabilityFlags, DetailSection, HeaderAction, HealthMetric, IntegrationContent,
-    IntegrationHealth, IntegrationId, IntegrationStatus, PickerKind, QuickAction, QuickActions,
+    CapabilityFlags, DetailSection, HeaderAction, HealthMetric, BuiltinContent,
+    BuiltinHealth, BuiltinId, BuiltinStatus, PickerKind, QuickAction, QuickActions,
     SectionIcon,
 };
 use forge_types::SubActionSpec;
 use forge_widgets::{
     Density, ForgePalette, HeaderCardParams, PickerItem, PickerModalProps, Spacing, ToastVariant,
-    integration_content_renderer, integration_header_card, integration_health_grid,
-    integration_quick_actions_grid, picker_modal, spacing, toast_banner,
+    builtin_content_renderer, builtin_header_card, builtin_health_grid,
+    builtin_quick_actions_grid, picker_modal, spacing, toast_banner,
 };
 use iced::widget::container;
 use iced::{Alignment, Element, Length, Subscription, Task};
 
 use crate::app::App;
-use crate::message::{IntegrationDetailMsg, Message};
+use crate::message::{BuiltinDetailMsg, Message};
 
 pub enum PickerItemsState {
     Idle,
@@ -33,12 +33,12 @@ pub struct PendingPicker {
     pub current_scene: Option<String>,
 }
 
-pub struct IntegrationDetailState {
-    pub id: IntegrationId,
-    pub integration_status: Arc<dyn IntegrationStatus>,
-    pub integration_health: Arc<dyn IntegrationHealth>,
-    pub integration_content: Arc<dyn IntegrationContent>,
-    pub integration_quick_actions: Arc<dyn QuickActions>,
+pub struct BuiltinDetailState {
+    pub id: BuiltinId,
+    pub builtin_status: Arc<dyn BuiltinStatus>,
+    pub builtin_health: Arc<dyn BuiltinHealth>,
+    pub builtin_content: Arc<dyn BuiltinContent>,
+    pub builtin_quick_actions: Arc<dyn QuickActions>,
     pub health_metrics: [HealthMetric; 4],
     pub pending_picker: Option<PendingPicker>,
     pub quick_action_toast: Option<String>,
@@ -52,29 +52,29 @@ pub struct IntegrationDetailState {
     quick_actions: Vec<QuickAction>,
 }
 
-impl IntegrationDetailState {
+impl BuiltinDetailState {
     pub fn new(
-        id: IntegrationId,
+        id: BuiltinId,
         icon: SectionIcon,
-        integration_status: Arc<dyn IntegrationStatus>,
-        integration_health: Arc<dyn IntegrationHealth>,
-        integration_content: Arc<dyn IntegrationContent>,
-        integration_quick_actions: Arc<dyn QuickActions>,
+        builtin_status: Arc<dyn BuiltinStatus>,
+        builtin_health: Arc<dyn BuiltinHealth>,
+        builtin_content: Arc<dyn BuiltinContent>,
+        builtin_quick_actions: Arc<dyn QuickActions>,
     ) -> Self {
-        let display_name = integration_status.display_name().to_owned();
-        let version = integration_status.version().map(ToOwned::to_owned);
-        let endpoint = integration_status.endpoint().map(ToOwned::to_owned);
-        let capability_flags = integration_status.capability_flags();
-        let header_actions = integration_status.header_actions();
-        let health_metrics = integration_health.metrics();
-        let sections = integration_content.sections();
-        let quick_actions = integration_quick_actions.actions();
+        let display_name = builtin_status.display_name().to_owned();
+        let version = builtin_status.version().map(ToOwned::to_owned);
+        let endpoint = builtin_status.endpoint().map(ToOwned::to_owned);
+        let capability_flags = builtin_status.capability_flags();
+        let header_actions = builtin_status.header_actions();
+        let health_metrics = builtin_health.metrics();
+        let sections = builtin_content.sections();
+        let quick_actions = builtin_quick_actions.actions();
         Self {
             id,
-            integration_status,
-            integration_health,
-            integration_content,
-            integration_quick_actions,
+            builtin_status,
+            builtin_health,
+            builtin_content,
+            builtin_quick_actions,
             health_metrics,
             pending_picker: None,
             quick_action_toast: None,
@@ -90,20 +90,20 @@ impl IntegrationDetailState {
     }
 }
 
-pub fn handle_integration_detail_msg(app: &mut App, msg: IntegrationDetailMsg) -> Task<Message> {
-    let Some(state) = app.integration_detail.as_mut() else {
+pub fn handle_builtin_detail_msg(app: &mut App, msg: BuiltinDetailMsg) -> Task<Message> {
+    let Some(state) = app.builtin_detail.as_mut() else {
         return Task::none();
     };
     match msg {
-        IntegrationDetailMsg::HealthDelta(delta) => {
+        BuiltinDetailMsg::HealthDelta(delta) => {
             let idx = delta.index as usize;
             if idx < 4 {
                 state.health_metrics[idx].value = delta.new_value;
             }
             Task::none()
         }
-        IntegrationDetailMsg::HeaderActionClicked(_action) => Task::none(),
-        IntegrationDetailMsg::QuickActionClicked(idx) => {
+        BuiltinDetailMsg::HeaderActionClicked(_action) => Task::none(),
+        BuiltinDetailMsg::QuickActionClicked(idx) => {
             let Some(action) = state.quick_actions.get(idx) else {
                 return Task::none();
             };
@@ -113,11 +113,11 @@ pub fn handle_integration_detail_msg(app: &mut App, msg: IntegrationDetailMsg) -
             let picker_kind = action.picker;
             let spec = action.subaction_template.clone();
             let label = action.label.clone();
-            let integration_id = state.id.as_str().to_owned();
+            let builtin_id = state.id.as_str().to_owned();
 
             if let Some(kind) = picker_kind {
                 let obs_client = app.rt.obs_client.clone();
-                let Some(detail) = app.integration_detail.as_mut() else {
+                let Some(detail) = app.builtin_detail.as_mut() else {
                     return Task::none();
                 };
                 detail.pending_picker = Some(PendingPicker {
@@ -130,7 +130,7 @@ pub fn handle_integration_detail_msg(app: &mut App, msg: IntegrationDetailMsg) -
                 match obs_client {
                     Some(client) => {
                         Task::perform(async move { fetch_picker_items(client, kind).await }, |r| {
-                            Message::IntegrationDetail(IntegrationDetailMsg::PickerItemsLoaded(r))
+                            Message::BuiltinDetail(BuiltinDetailMsg::PickerItemsLoaded(r))
                         })
                     }
                     None => Task::perform(
@@ -139,7 +139,7 @@ pub fn handle_integration_detail_msg(app: &mut App, msg: IntegrationDetailMsg) -
                                 "OBS not connected".to_owned(),
                             )
                         },
-                        |r| Message::IntegrationDetail(IntegrationDetailMsg::PickerItemsLoaded(r)),
+                        |r| Message::BuiltinDetail(BuiltinDetailMsg::PickerItemsLoaded(r)),
                     ),
                 }
             } else {
@@ -147,33 +147,33 @@ pub fn handle_integration_detail_msg(app: &mut App, msg: IntegrationDetailMsg) -
                 Task::perform(
                     async move {
                         if let Some(e) = engine {
-                            let _ = e.execute_quick_action(spec, integration_id, label).await;
+                            let _ = e.execute_quick_action(spec, builtin_id, label).await;
                         }
                     },
                     |_| Message::Noop,
                 )
             }
         }
-        IntegrationDetailMsg::PickerSearchChanged(s) => {
+        BuiltinDetailMsg::PickerSearchChanged(s) => {
             if let Some(pending) = state.pending_picker.as_mut() {
                 pending.search = s;
             }
             Task::none()
         }
-        IntegrationDetailMsg::PickerItemsLoaded(Ok((items, current_scene))) => {
+        BuiltinDetailMsg::PickerItemsLoaded(Ok((items, current_scene))) => {
             if let Some(pending) = state.pending_picker.as_mut() {
                 pending.items = PickerItemsState::Loaded(items);
                 pending.current_scene = current_scene;
             }
             Task::none()
         }
-        IntegrationDetailMsg::PickerItemsLoaded(Err(e)) => {
+        BuiltinDetailMsg::PickerItemsLoaded(Err(e)) => {
             if let Some(pending) = state.pending_picker.as_mut() {
                 pending.items = PickerItemsState::Failed(e);
             }
             Task::none()
         }
-        IntegrationDetailMsg::PickerItemSelected(item_idx) => {
+        BuiltinDetailMsg::PickerItemSelected(item_idx) => {
             let (selected_id, action_index, kind, current_scene) = {
                 let Some(pending) = state.pending_picker.as_ref() else {
                     return Task::none();
@@ -199,7 +199,7 @@ pub fn handle_integration_detail_msg(app: &mut App, msg: IntegrationDetailMsg) -
             };
             let mut spec = action.subaction_template.clone();
             let label = action.label.clone();
-            let integration_id = state.id.as_str().to_owned();
+            let builtin_id = state.id.as_str().to_owned();
 
             match kind {
                 PickerKind::Scene => {
@@ -232,17 +232,17 @@ pub fn handle_integration_detail_msg(app: &mut App, msg: IntegrationDetailMsg) -
             Task::perform(
                 async move {
                     if let Some(e) = engine {
-                        let _ = e.execute_quick_action(spec, integration_id, label).await;
+                        let _ = e.execute_quick_action(spec, builtin_id, label).await;
                     }
                 },
                 |_| Message::Noop,
             )
         }
-        IntegrationDetailMsg::PickerCancelled => {
+        BuiltinDetailMsg::PickerCancelled => {
             state.pending_picker = None;
             Task::none()
         }
-        IntegrationDetailMsg::DismissToast => {
+        BuiltinDetailMsg::DismissToast => {
             state.quick_action_toast = None;
             Task::none()
         }
@@ -312,7 +312,7 @@ async fn fetch_picker_items(
 }
 
 pub fn view<'a>(
-    state: &'a IntegrationDetailState,
+    state: &'a BuiltinDetailState,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let section_gap = spacing(Spacing::Md, Density::Cozy) as f32;
@@ -321,25 +321,25 @@ pub fn view<'a>(
         display_name: &state.display_name,
         version: state.version.as_deref(),
         endpoint: state.endpoint.as_deref(),
-        uptime: state.integration_status.uptime(),
+        uptime: state.builtin_status.uptime(),
         capability_flags: &state.capability_flags,
         header_actions: &state.header_actions,
-        connection: state.integration_status.connection(),
+        connection: state.builtin_status.connection(),
         icon: state.icon.clone(),
         badges: &[],
     };
 
-    let header = integration_header_card(
+    let header = builtin_header_card(
         params,
-        |action| Message::IntegrationDetail(IntegrationDetailMsg::HeaderActionClicked(action)),
+        |action| Message::BuiltinDetail(BuiltinDetailMsg::HeaderActionClicked(action)),
         palette,
     );
 
-    let health = integration_health_grid(&state.health_metrics, palette);
-    let content = integration_content_renderer(&state.sections, palette);
-    let quick = integration_quick_actions_grid(
+    let health = builtin_health_grid(&state.health_metrics, palette);
+    let content = builtin_content_renderer(&state.sections, palette);
+    let quick = builtin_quick_actions_grid(
         &state.quick_actions,
-        |idx| Message::IntegrationDetail(IntegrationDetailMsg::QuickActionClicked(idx)),
+        |idx| Message::BuiltinDetail(BuiltinDetailMsg::QuickActionClicked(idx)),
         palette,
     );
 
@@ -357,7 +357,7 @@ pub fn view<'a>(
 
     let scroll_body: Element<'_, Message> = iced::widget::scrollable(padded).into();
     let page_header = crate::app::simple_page_header(
-        &[("Integrations", false), (state.display_name.as_str(), true)],
+        &[("Builtin", false), (state.display_name.as_str(), true)],
         palette,
     );
     let base: Element<'_, Message> = iced::widget::column![page_header, scroll_body]
@@ -407,9 +407,9 @@ fn build_picker_overlay<'a>(
             items,
             loading,
         },
-        |s| Message::IntegrationDetail(IntegrationDetailMsg::PickerSearchChanged(s)),
-        |idx| Message::IntegrationDetail(IntegrationDetailMsg::PickerItemSelected(idx)),
-        Message::IntegrationDetail(IntegrationDetailMsg::PickerCancelled),
+        |s| Message::BuiltinDetail(BuiltinDetailMsg::PickerSearchChanged(s)),
+        |idx| Message::BuiltinDetail(BuiltinDetailMsg::PickerItemSelected(idx)),
+        Message::BuiltinDetail(BuiltinDetailMsg::PickerCancelled),
         palette,
     )
 }
@@ -418,7 +418,7 @@ fn build_toast_overlay<'a>(msg: &'a str, palette: &'a ForgePalette) -> Element<'
     let toast_el = toast_banner(
         msg,
         ToastVariant::Success,
-        Message::IntegrationDetail(IntegrationDetailMsg::DismissToast),
+        Message::BuiltinDetail(BuiltinDetailMsg::DismissToast),
         palette,
     );
 
@@ -436,13 +436,13 @@ fn build_toast_overlay<'a>(msg: &'a str, palette: &'a ForgePalette) -> Element<'
         .into()
 }
 
-pub fn health_subscription(state: &IntegrationDetailState) -> Subscription<Message> {
+pub fn health_subscription(state: &BuiltinDetailState) -> Subscription<Message> {
     use iced::advanced::subscription::{EventStream, Hasher, Recipe, from_recipe};
     use iced::futures::StreamExt as _;
 
     struct HealthRecipe {
-        id: IntegrationId,
-        source: Arc<dyn IntegrationHealth>,
+        id: BuiltinId,
+        source: Arc<dyn BuiltinHealth>,
     }
 
     impl Recipe for HealthRecipe {
@@ -459,14 +459,14 @@ pub fn health_subscription(state: &IntegrationDetailState) -> Subscription<Messa
         ) -> iced::futures::stream::BoxStream<'static, Self::Output> {
             self.source
                 .stream()
-                .map(|delta| Message::IntegrationDetail(IntegrationDetailMsg::HealthDelta(delta)))
+                .map(|delta| Message::BuiltinDetail(BuiltinDetailMsg::HealthDelta(delta)))
                 .boxed()
         }
     }
 
     from_recipe(HealthRecipe {
         id: state.id.clone(),
-        source: state.integration_health.clone(),
+        source: state.builtin_health.clone(),
     })
 }
 
@@ -479,16 +479,16 @@ mod tests {
 
     use forge_platform_core::{
         CapabilityFlags, ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric,
-        HealthStream, HealthValue, IntegrationContent, IntegrationHealth, IntegrationId,
-        IntegrationStatus, PickerKind, QuickAction, QuickActions, SectionIcon,
+        HealthStream, HealthValue, BuiltinContent, BuiltinHealth, BuiltinId,
+        BuiltinStatus, PickerKind, QuickAction, QuickActions, SectionIcon,
     };
 
     struct TestStatus {
-        id: IntegrationId,
+        id: BuiltinId,
     }
 
-    impl IntegrationStatus for TestStatus {
-        fn id(&self) -> &IntegrationId {
+    impl BuiltinStatus for TestStatus {
+        fn id(&self) -> &BuiltinId {
             &self.id
         }
 
@@ -526,7 +526,7 @@ mod tests {
 
     struct TestHealth;
 
-    impl IntegrationHealth for TestHealth {
+    impl BuiltinHealth for TestHealth {
         fn metrics(&self) -> [HealthMetric; 4] {
             [
                 HealthMetric {
@@ -567,7 +567,7 @@ mod tests {
 
     struct TestContent;
 
-    impl IntegrationContent for TestContent {
+    impl BuiltinContent for TestContent {
         fn sections(&self) -> Vec<DetailSection> {
             vec![]
         }
@@ -583,12 +583,12 @@ mod tests {
         }
     }
 
-    fn make_state_with_actions(actions: Vec<QuickAction>) -> IntegrationDetailState {
-        IntegrationDetailState::new(
-            IntegrationId::new("test"),
+    fn make_state_with_actions(actions: Vec<QuickAction>) -> BuiltinDetailState {
+        BuiltinDetailState::new(
+            BuiltinId::new("test"),
             SectionIcon::new("broadcast"),
             Arc::new(TestStatus {
-                id: IntegrationId::new("test"),
+                id: BuiltinId::new("test"),
             }),
             Arc::new(TestHealth),
             Arc::new(TestContent),
@@ -596,14 +596,14 @@ mod tests {
         )
     }
 
-    fn make_state() -> IntegrationDetailState {
+    fn make_state() -> BuiltinDetailState {
         make_state_with_actions(vec![])
     }
 
     #[test]
     fn health_delta_updates_metric_value() {
         let mut app = App {
-            integration_detail: Some(make_state()),
+            builtin_detail: Some(make_state()),
             ..App::default()
         };
         let delta = HealthDelta {
@@ -613,8 +613,8 @@ mod tests {
                 secondary: None,
             },
         };
-        let _ = handle_integration_detail_msg(&mut app, IntegrationDetailMsg::HealthDelta(delta));
-        let state = app.integration_detail.as_ref().unwrap();
+        let _ = handle_builtin_detail_msg(&mut app, BuiltinDetailMsg::HealthDelta(delta));
+        let state = app.builtin_detail.as_ref().unwrap();
         assert!(matches!(
             &state.health_metrics[1].value,
             HealthValue::Text { primary, .. } if primary == "42"
@@ -624,7 +624,7 @@ mod tests {
     #[test]
     fn health_delta_out_of_bounds_is_noop() {
         let mut app = App {
-            integration_detail: Some(make_state()),
+            builtin_detail: Some(make_state()),
             ..App::default()
         };
         let delta = HealthDelta {
@@ -634,14 +634,14 @@ mod tests {
                 secondary: None,
             },
         };
-        let _ = handle_integration_detail_msg(&mut app, IntegrationDetailMsg::HealthDelta(delta));
+        let _ = handle_builtin_detail_msg(&mut app, BuiltinDetailMsg::HealthDelta(delta));
     }
 
     #[test]
     fn handle_is_noop_when_state_absent() {
         let mut app = App::default();
-        let _ = handle_integration_detail_msg(&mut app, IntegrationDetailMsg::PickerCancelled);
-        assert!(app.integration_detail.is_none());
+        let _ = handle_builtin_detail_msg(&mut app, BuiltinDetailMsg::PickerCancelled);
+        assert!(app.builtin_detail.is_none());
     }
 
     #[test]
@@ -654,13 +654,13 @@ mod tests {
             picker: None,
         };
         let mut app = App {
-            integration_detail: Some(make_state_with_actions(vec![action])),
+            builtin_detail: Some(make_state_with_actions(vec![action])),
             ..App::default()
         };
         let _ =
-            handle_integration_detail_msg(&mut app, IntegrationDetailMsg::QuickActionClicked(0));
+            handle_builtin_detail_msg(&mut app, BuiltinDetailMsg::QuickActionClicked(0));
         assert!(
-            app.integration_detail
+            app.builtin_detail
                 .as_ref()
                 .unwrap()
                 .pending_picker
@@ -681,12 +681,12 @@ mod tests {
             picker: Some(PickerKind::Scene),
         };
         let mut app = App {
-            integration_detail: Some(make_state_with_actions(vec![action])),
+            builtin_detail: Some(make_state_with_actions(vec![action])),
             ..App::default()
         };
         let _ =
-            handle_integration_detail_msg(&mut app, IntegrationDetailMsg::QuickActionClicked(0));
-        let state = app.integration_detail.as_ref().unwrap();
+            handle_builtin_detail_msg(&mut app, BuiltinDetailMsg::QuickActionClicked(0));
+        let state = app.builtin_detail.as_ref().unwrap();
         let pending = state.pending_picker.as_ref().unwrap();
         assert_eq!(pending.kind, PickerKind::Scene);
         assert!(matches!(pending.items, PickerItemsState::Loading));
@@ -734,14 +734,14 @@ mod tests {
         });
 
         let mut app = App {
-            integration_detail: Some(state),
+            builtin_detail: Some(state),
             ..App::default()
         };
 
         let _ =
-            handle_integration_detail_msg(&mut app, IntegrationDetailMsg::PickerItemSelected(2));
+            handle_builtin_detail_msg(&mut app, BuiltinDetailMsg::PickerItemSelected(2));
 
-        let detail_state = app.integration_detail.as_ref().unwrap();
+        let detail_state = app.builtin_detail.as_ref().unwrap();
         assert!(
             detail_state.pending_picker.is_none(),
             "picker must be closed after selection"
@@ -759,12 +759,12 @@ mod tests {
             current_scene: None,
         });
         let mut app = App {
-            integration_detail: Some(state),
+            builtin_detail: Some(state),
             ..App::default()
         };
-        let _ = handle_integration_detail_msg(&mut app, IntegrationDetailMsg::PickerCancelled);
+        let _ = handle_builtin_detail_msg(&mut app, BuiltinDetailMsg::PickerCancelled);
         assert!(
-            app.integration_detail
+            app.builtin_detail
                 .as_ref()
                 .unwrap()
                 .pending_picker
@@ -777,12 +777,12 @@ mod tests {
         let mut state = make_state();
         state.quick_action_toast = Some("Switch Scene — done".to_owned());
         let mut app = App {
-            integration_detail: Some(state),
+            builtin_detail: Some(state),
             ..App::default()
         };
-        let _ = handle_integration_detail_msg(&mut app, IntegrationDetailMsg::DismissToast);
+        let _ = handle_builtin_detail_msg(&mut app, BuiltinDetailMsg::DismissToast);
         assert!(
-            app.integration_detail
+            app.builtin_detail
                 .as_ref()
                 .unwrap()
                 .quick_action_toast
@@ -801,15 +801,15 @@ mod tests {
             current_scene: None,
         });
         let mut app = App {
-            integration_detail: Some(state),
+            builtin_detail: Some(state),
             ..App::default()
         };
-        let _ = handle_integration_detail_msg(
+        let _ = handle_builtin_detail_msg(
             &mut app,
-            IntegrationDetailMsg::PickerSearchChanged("game".to_owned()),
+            BuiltinDetailMsg::PickerSearchChanged("game".to_owned()),
         );
         let pending = app
-            .integration_detail
+            .builtin_detail
             .as_ref()
             .unwrap()
             .pending_picker
@@ -829,7 +829,7 @@ mod tests {
             current_scene: None,
         });
         let mut app = App {
-            integration_detail: Some(state),
+            builtin_detail: Some(state),
             ..App::default()
         };
         let items = vec![PickerItem {
@@ -838,12 +838,12 @@ mod tests {
             sublabel: None,
             icon: SectionIcon::new("layout"),
         }];
-        let _ = handle_integration_detail_msg(
+        let _ = handle_builtin_detail_msg(
             &mut app,
-            IntegrationDetailMsg::PickerItemsLoaded(Ok((items, Some("Gameplay".to_owned())))),
+            BuiltinDetailMsg::PickerItemsLoaded(Ok((items, Some("Gameplay".to_owned())))),
         );
         let pending = app
-            .integration_detail
+            .builtin_detail
             .as_ref()
             .unwrap()
             .pending_picker
@@ -864,17 +864,17 @@ mod tests {
             current_scene: None,
         });
         let mut app = App {
-            integration_detail: Some(state),
+            builtin_detail: Some(state),
             ..App::default()
         };
-        let _ = handle_integration_detail_msg(
+        let _ = handle_builtin_detail_msg(
             &mut app,
-            IntegrationDetailMsg::PickerItemsLoaded(Err(
+            BuiltinDetailMsg::PickerItemsLoaded(Err(
                 "Not supported for OBS — VTube only".to_owned()
             )),
         );
         let pending = app
-            .integration_detail
+            .builtin_detail
             .as_ref()
             .unwrap()
             .pending_picker

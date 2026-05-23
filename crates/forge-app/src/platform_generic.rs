@@ -1,4 +1,4 @@
-use forge_platform_core::IntegrationId;
+use forge_platform_core::BuiltinId;
 use forge_widgets::{
     ForgePalette, Icon, tabler_icon,
     tokens::{FONT_MD, FONT_SM, FONT_XS, FontRole, Radius, font, radius},
@@ -24,7 +24,7 @@ pub enum PlatformKind {
     StreamApp,
 }
 
-pub fn registry(id: &IntegrationId, palette: &ForgePalette) -> Option<(Color, GenericPlatform)> {
+pub fn registry(id: &BuiltinId, palette: &ForgePalette) -> Option<(Color, GenericPlatform)> {
     match id.as_str() {
         "youtube" => Some((
             palette.random,
@@ -210,7 +210,7 @@ pub fn platform_generic_view<'a>(
     let body = column![hero_card, features_col, footer].spacing(14);
 
     let page_header =
-        crate::app::simple_page_header(&[("Integrations", false), (info.name, true)], palette);
+        crate::app::simple_page_header(&[("Builtin", false), (info.name, true)], palette);
 
     let body_container = container(scrollable(body).height(Length::Fill))
         .width(Length::Fill)

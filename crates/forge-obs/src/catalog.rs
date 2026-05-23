@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use forge_platform_core::{
-    ContentList, ContentListItem, DetailSection, IntegrationContent, SectionIcon, TrailingToken,
+    ContentList, ContentListItem, DetailSection, BuiltinContent, SectionIcon, TrailingToken,
 };
 
 use crate::client::ObsClient;
@@ -62,7 +62,7 @@ fn source_to_item(info: &SourceInfo) -> ContentListItem {
     }
 }
 
-impl IntegrationContent for ObsClient {
+impl BuiltinContent for ObsClient {
     fn sections(&self) -> Vec<DetailSection> {
         let Ok(catalog) = self.catalog_state.try_read() else {
             return vec![];
@@ -106,7 +106,7 @@ impl IntegrationContent for ObsClient {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
-    use forge_platform_core::IntegrationContent;
+    use forge_platform_core::BuiltinContent;
 
     use super::*;
     use crate::client::ObsClient;

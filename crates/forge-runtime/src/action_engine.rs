@@ -23,7 +23,7 @@ use crate::sub_actions::dispatch;
 
 struct QuickActionRequest {
     spec: SubActionSpec,
-    integration_id: String,
+    builtin_id: String,
     label: String,
 }
 
@@ -57,13 +57,13 @@ impl ActionEngineHandle {
     pub async fn execute_quick_action(
         &self,
         spec: SubActionSpec,
-        integration_id: String,
+        builtin_id: String,
         label: String,
     ) -> Result<(), DispatchError> {
         self.quick_sender
             .send(QuickActionRequest {
                 spec,
-                integration_id,
+                builtin_id,
                 label,
             })
             .await
@@ -369,7 +369,7 @@ async fn run_quick_action_loop(
                 "kind": telemetry.kind,
                 "outcome": outcome,
                 "label": req.label,
-                "integration_id": req.integration_id,
+                "builtin_id": req.builtin_id,
             }),
             run_event_id,
         ));

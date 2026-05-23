@@ -13,7 +13,7 @@ pub mod data;
 pub mod events;
 pub mod icons;
 pub mod inputs;
-pub mod integration;
+pub mod builtin;
 pub mod layout;
 pub mod navigation;
 pub mod output_device_picker;
@@ -59,10 +59,10 @@ pub use events::{
 };
 pub use icons::{Icon, tabler_icon};
 pub use inputs::{input_padding, search_input, select, text_input_field};
-pub use integration::{
-    HeaderCardParams, integration_content_renderer, integration_header_card,
-    integration_health_grid, integration_quick_actions_grid,
-    integration_quick_actions_grid_with_hint,
+pub use builtin::{
+    HeaderCardParams, builtin_content_renderer, builtin_header_card,
+    builtin_health_grid, builtin_quick_actions_grid,
+    builtin_quick_actions_grid_with_hint,
 };
 pub use layout::{app_footer, page_shell, title_bar, toolbar};
 pub use navigation::{NavChild, NavItem, SIDEBAR_WIDTH, Sidebar, sidebar};

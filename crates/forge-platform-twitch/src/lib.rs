@@ -3,7 +3,7 @@
 pub mod auth;
 pub mod chat;
 pub mod chat_send_bridge;
-pub mod integration;
+pub mod builtin;
 pub mod subscriptions;
 
 pub use auth::{
@@ -14,5 +14,5 @@ pub use chat::{
     ChatConnectionState, ChatSendError, SentMessageId, TwitchChat, TwitchChatHandle, send_chat,
 };
 pub use chat_send_bridge::{ChatSendBridge, ChatSendBridgeHandle};
-pub use integration::TwitchIntegrationBundle;
+pub use builtin::TwitchIntegrationBundle;
 pub use subscriptions::{SubStatus, SubscriptionRecord, SubscriptionTracker};

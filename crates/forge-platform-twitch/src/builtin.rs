@@ -8,8 +8,8 @@ use tokio_stream::wrappers::BroadcastStream;
 
 use forge_platform_core::{
     CapabilityFlags, ConnectionState, ContentList, ContentListItem, DetailSection, HeaderAction,
-    HealthDelta, HealthMetric, HealthStream, HealthValue, IntegrationContent, IntegrationHealth,
-    IntegrationId, IntegrationStatus, ListFooter, QuickAction, QuickActions, SectionIcon,
+    HealthDelta, HealthMetric, HealthStream, HealthValue, BuiltinContent, BuiltinHealth,
+    BuiltinId, BuiltinStatus, ListFooter, QuickAction, QuickActions, SectionIcon,
     TrailingToken,
 };
 use forge_types::SubActionSpec;
@@ -19,7 +19,7 @@ use crate::chat::ChatConnectionState;
 use crate::subscriptions::{SubStatus, SubscriptionTracker};
 
 pub struct TwitchIntegrationBundle {
-    id: IntegrationId,
+    id: BuiltinId,
     login: Option<String>,
     state_rx: watch::Receiver<ChatConnectionState>,
     health_tx: broadcast::Sender<HealthDelta>,
@@ -34,7 +34,7 @@ impl TwitchIntegrationBundle {
     ) -> (Arc<Self>, broadcast::Sender<HealthDelta>) {
         let (health_tx, _) = broadcast::channel(16);
         let bundle = Arc::new(Self {
-            id: IntegrationId::new("twitch"),
+            id: BuiltinId::new("twitch"),
             login,
             state_rx,
             health_tx: health_tx.clone(),
@@ -75,8 +75,8 @@ impl TwitchIntegrationBundle {
     }
 }
 
-impl IntegrationStatus for TwitchIntegrationBundle {
-    fn id(&self) -> &IntegrationId {
+impl BuiltinStatus for TwitchIntegrationBundle {
+    fn id(&self) -> &BuiltinId {
         &self.id
     }
 
@@ -117,7 +117,7 @@ impl IntegrationStatus for TwitchIntegrationBundle {
     }
 }
 
-impl IntegrationHealth for TwitchIntegrationBundle {
+impl BuiltinHealth for TwitchIntegrationBundle {
     fn metrics(&self) -> [HealthMetric; 4] {
         let chat_active = self.is_chat_connected();
         let chat_label = self.chat_label();
@@ -162,7 +162,7 @@ impl IntegrationHealth for TwitchIntegrationBundle {
     }
 }
 
-impl IntegrationContent for TwitchIntegrationBundle {
+impl BuiltinContent for TwitchIntegrationBundle {
     fn sections(&self) -> Vec<DetailSection> {
         let scope_items: Vec<ContentListItem> = TWITCH_BROADCASTER_SCOPES
             .iter()
@@ -287,7 +287,7 @@ impl QuickActions for TwitchIntegrationBundle {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
-    use forge_platform_core::{IntegrationContent, IntegrationHealth, IntegrationStatus};
+    use forge_platform_core::{BuiltinContent, BuiltinHealth, BuiltinStatus};
     use tokio::sync::watch;
 
     use super::*;
@@ -310,21 +310,21 @@ mod tests {
     #[test]
     fn status_id_is_twitch() {
         let b = make_bundle(ChatConnectionState::Connected);
-        let status: &dyn IntegrationStatus = b.as_ref();
+        let status: &dyn BuiltinStatus = b.as_ref();
         assert_eq!(status.id().as_str(), "twitch");
     }
 
     #[test]
     fn status_display_name() {
         let b = make_bundle(ChatConnectionState::Connected);
-        let status: &dyn IntegrationStatus = b.as_ref();
+        let status: &dyn BuiltinStatus = b.as_ref();
         assert_eq!(status.display_name(), "Twitch");
     }
 
     #[test]
     fn status_version_is_none() {
         let b = make_bundle(ChatConnectionState::Connected);
-        let status: &dyn IntegrationStatus = b.as_ref();
+        let status: &dyn BuiltinStatus = b.as_ref();
         assert!(status.version().is_none());
     }
 
@@ -344,7 +344,7 @@ mod tests {
         ];
         for (chat_state, expected) in cases {
             let b = make_bundle(chat_state);
-            let status: &dyn IntegrationStatus = b.as_ref();
+            let status: &dyn BuiltinStatus = b.as_ref();
             assert_eq!(status.connection(), expected, "failed for {chat_state:?}");
         }
     }
@@ -352,7 +352,7 @@ mod tests {
     #[test]
     fn status_header_actions_contain_refresh_and_disconnect() {
         let b = make_bundle(ChatConnectionState::Connected);
-        let status: &dyn IntegrationStatus = b.as_ref();
+        let status: &dyn BuiltinStatus = b.as_ref();
         let actions = status.header_actions();
         assert!(actions.contains(&HeaderAction::RefreshToken));
         assert!(actions.contains(&HeaderAction::Disconnect));
@@ -361,7 +361,7 @@ mod tests {
     #[test]
     fn health_metrics_returns_four_with_correct_labels() {
         let b = make_bundle(ChatConnectionState::Connected);
-        let health: &dyn IntegrationHealth = b.as_ref();
+        let health: &dyn BuiltinHealth = b.as_ref();
         let metrics = health.metrics();
         assert_eq!(metrics.len(), 4);
         assert_eq!(metrics[0].label, "Chat IRC");
@@ -373,7 +373,7 @@ mod tests {
     #[test]
     fn chat_irc_metric_active_when_connected() {
         let b = make_bundle(ChatConnectionState::Connected);
-        let health: &dyn IntegrationHealth = b.as_ref();
+        let health: &dyn BuiltinHealth = b.as_ref();
         let metrics = health.metrics();
         let HealthValue::Status { active, label, .. } = &metrics[0].value else {
             panic!("expected Status variant");
@@ -385,7 +385,7 @@ mod tests {
     #[test]
     fn chat_irc_metric_inactive_when_disconnected() {
         let b = make_bundle(ChatConnectionState::Disconnected);
-        let health: &dyn IntegrationHealth = b.as_ref();
+        let health: &dyn BuiltinHealth = b.as_ref();
         let metrics = health.metrics();
         let HealthValue::Status { active, label, .. } = &metrics[0].value else {
             panic!("expected Status variant");
@@ -413,7 +413,7 @@ mod tests {
             });
         }
         let b = make_bundle_with_tracker(ChatConnectionState::Connected, tracker);
-        let health: &dyn IntegrationHealth = b.as_ref();
+        let health: &dyn BuiltinHealth = b.as_ref();
         let metrics = health.metrics();
         let HealthValue::Text { primary, .. } = &metrics[1].value else {
             panic!("expected Text variant for EventSub metric");
@@ -424,7 +424,7 @@ mod tests {
     #[tokio::test]
     async fn health_stream_is_subscribable() {
         let b = make_bundle(ChatConnectionState::Connected);
-        let health: &dyn IntegrationHealth = b.as_ref();
+        let health: &dyn BuiltinHealth = b.as_ref();
         let items: Vec<_> = health.stream().take(0).collect().await;
         assert!(items.is_empty());
     }
@@ -432,7 +432,7 @@ mod tests {
     #[test]
     fn content_sections_returns_one_two_column() {
         let b = make_bundle(ChatConnectionState::Connected);
-        let content: &dyn IntegrationContent = b.as_ref();
+        let content: &dyn BuiltinContent = b.as_ref();
         let sections = content.sections();
         assert_eq!(sections.len(), 1);
         assert!(matches!(&sections[0], DetailSection::TwoColumnLists { .. }));
@@ -441,7 +441,7 @@ mod tests {
     #[test]
     fn content_scopes_section_has_all_broadcaster_scopes() {
         let b = make_bundle(ChatConnectionState::Connected);
-        let content: &dyn IntegrationContent = b.as_ref();
+        let content: &dyn BuiltinContent = b.as_ref();
         let sections = content.sections();
         let DetailSection::TwoColumnLists { left, .. } = &sections[0] else {
             panic!("expected TwoColumnLists in first section");
@@ -456,7 +456,7 @@ mod tests {
     #[test]
     fn content_sections_two_column_scopes_and_eventsub() {
         let b = make_bundle(ChatConnectionState::Connected);
-        let content: &dyn IntegrationContent = b.as_ref();
+        let content: &dyn BuiltinContent = b.as_ref();
         let sections = content.sections();
         assert_eq!(sections.len(), 1);
         let DetailSection::TwoColumnLists { left, right } = &sections[0] else {
@@ -470,7 +470,7 @@ mod tests {
     #[test]
     fn content_eventsub_empty_tracker_shows_zero_active() {
         let b = make_bundle(ChatConnectionState::Connected);
-        let content: &dyn IntegrationContent = b.as_ref();
+        let content: &dyn BuiltinContent = b.as_ref();
         let sections = content.sections();
         let DetailSection::TwoColumnLists { right, .. } = &sections[0] else {
             panic!("expected TwoColumnLists");
@@ -504,7 +504,7 @@ mod tests {
             });
         }
         let b = make_bundle_with_tracker(ChatConnectionState::Connected, tracker);
-        let content: &dyn IntegrationContent = b.as_ref();
+        let content: &dyn BuiltinContent = b.as_ref();
         let sections = content.sections();
         let DetailSection::TwoColumnLists { right, .. } = &sections[0] else {
             panic!("expected TwoColumnLists");

@@ -5,7 +5,7 @@ use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 
 use forge_platform_core::{
-    HealthDelta, HealthMetric, HealthStream, HealthValue, IntegrationHealth,
+    HealthDelta, HealthMetric, HealthStream, HealthValue, BuiltinHealth,
 };
 
 use crate::client::ObsClient;
@@ -26,7 +26,7 @@ pub(crate) fn make_health_channel() -> (broadcast::Sender<HealthDelta>, Arc<RwLo
     (tx, Arc::new(RwLock::new(HealthSnapshot::default())))
 }
 
-impl IntegrationHealth for ObsClient {
+impl BuiltinHealth for ObsClient {
     fn metrics(&self) -> [HealthMetric; 4] {
         let snap = self
             .health_state
@@ -85,7 +85,7 @@ impl IntegrationHealth for ObsClient {
 
 #[cfg(test)]
 mod tests {
-    use forge_platform_core::IntegrationHealth;
+    use forge_platform_core::BuiltinHealth;
     use futures_util::StreamExt as _;
 
     use crate::client::ObsClient;
@@ -93,7 +93,7 @@ mod tests {
     #[test]
     fn metrics_returns_four_with_correct_labels() {
         let client = ObsClient::new_for_test("localhost:4455".to_owned());
-        let health: &dyn IntegrationHealth = &client;
+        let health: &dyn BuiltinHealth = &client;
         let metrics = health.metrics();
         assert_eq!(metrics.len(), 4);
         assert_eq!(metrics[0].label, "Stream");
@@ -105,7 +105,7 @@ mod tests {
     #[tokio::test]
     async fn health_stream_is_subscribable() {
         let client = ObsClient::new_for_test("localhost:4455".to_owned());
-        let health: &dyn IntegrationHealth = &client;
+        let health: &dyn BuiltinHealth = &client;
         let items: Vec<_> = health.stream().take(0).collect().await;
         assert!(items.is_empty());
     }

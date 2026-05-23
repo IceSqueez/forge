@@ -6,7 +6,7 @@ use forge_soundboard::SoundboardPlayer;
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_obs::ObsClient;
 use forge_platform_core::{
-    IntegrationContent, IntegrationHealth, IntegrationId, IntegrationStatus, QuickActions,
+    BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, QuickActions,
     SectionIcon,
 };
 use forge_platform_twitch::{ChatConnectionState, TwitchIntegrationBundle};
@@ -36,9 +36,9 @@ use crate::event_feed;
 use crate::event_feed::{EventFeedState, event_feed_view};
 use crate::globals_view::{GlobalsState, globals_view};
 use crate::home::HomeStats;
-use crate::integration_detail::{
-    IntegrationDetailState, handle_integration_detail_msg, health_subscription,
-    view as integration_detail_view,
+use crate::builtin_detail::{
+    BuiltinDetailState, handle_builtin_detail_msg, health_subscription,
+    view as builtin_detail_view,
 };
 use crate::live_chat::{CHAT_LOG_MAX, LiveChatState, chat_row_from_event, live_chat_view};
 use crate::message::{
@@ -97,7 +97,7 @@ pub struct App {
     pub viewers: crate::viewers::ViewersState,
     pub globals: GlobalsState,
     pub script_editor: ScriptEditorState,
-    pub integration_detail: Option<IntegrationDetailState>,
+    pub builtin_detail: Option<BuiltinDetailState>,
     pub server_screen: ServerScreenState,
     pub settings_websocket: SettingsWebSocketState,
     pub twitch_panel: crate::twitch_panel::TwitchPanelState,
@@ -162,7 +162,7 @@ impl App {
             viewers: crate::viewers::ViewersState::default(),
             globals: GlobalsState::new(),
             script_editor: ScriptEditorState::new(),
-            integration_detail: None,
+            builtin_detail: None,
             server_screen: ServerScreenState::default(),
             settings_websocket: SettingsWebSocketState::default(),
             twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
@@ -229,7 +229,7 @@ impl Default for App {
             viewers: crate::viewers::ViewersState::default(),
             globals: GlobalsState::new(),
             script_editor: ScriptEditorState::new(),
-            integration_detail: None,
+            builtin_detail: None,
             server_screen: ServerScreenState::default(),
             settings_websocket: SettingsWebSocketState::default(),
             twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
@@ -351,7 +351,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 }
             }
             if event.kind == "quick_action.done"
-                && let Some(state) = app.integration_detail.as_mut()
+                && let Some(state) = app.builtin_detail.as_mut()
             {
                 let label = event.payload["label"].as_str().unwrap_or("Quick Action");
                 let outcome = event.payload["outcome"].as_str().unwrap_or("done");
@@ -571,7 +571,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::ScriptEditor(sub) => {
             crate::script_editor::update(&mut app.script_editor, &app.rt, sub)
         }
-        Message::IntegrationDetail(sub) => handle_integration_detail_msg(app, sub),
+        Message::BuiltinDetail(sub) => handle_builtin_detail_msg(app, sub),
         Message::TwitchBootResult(result) => match result {
             Ok(Some(bundle)) => {
                 let login = if bundle.login.is_empty() {
@@ -592,13 +592,13 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 let state_rx = handle.state_receiver();
                 let (twitch_bundle, _health_tx) =
                     TwitchIntegrationBundle::new(login.clone(), state_rx, tracker);
-                let id = IntegrationId::new("twitch");
+                let id = BuiltinId::new("twitch");
                 let icon = SectionIcon::new("brand-twitch");
-                let status: Arc<dyn IntegrationStatus> = twitch_bundle.clone();
-                let health: Arc<dyn IntegrationHealth> = twitch_bundle.clone();
-                let content: Arc<dyn IntegrationContent> = twitch_bundle.clone();
+                let status: Arc<dyn BuiltinStatus> = twitch_bundle.clone();
+                let health: Arc<dyn BuiltinHealth> = twitch_bundle.clone();
+                let content: Arc<dyn BuiltinContent> = twitch_bundle.clone();
                 let quick_actions: Arc<dyn QuickActions> = twitch_bundle.clone();
-                app.integration_detail = Some(IntegrationDetailState::new(
+                app.builtin_detail = Some(BuiltinDetailState::new(
                     id,
                     icon,
                     status,
@@ -623,13 +623,13 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::ObsBootResult(result) => match result {
             Ok(handle) => {
                 let client = handle.into_arc();
-                let id = IntegrationId::new("obs");
+                let id = BuiltinId::new("obs");
                 let icon = SectionIcon::new("broadcast");
-                let status: Arc<dyn IntegrationStatus> = client.clone();
-                let health: Arc<dyn IntegrationHealth> = client.clone();
-                let content: Arc<dyn IntegrationContent> = client.clone();
+                let status: Arc<dyn BuiltinStatus> = client.clone();
+                let health: Arc<dyn BuiltinHealth> = client.clone();
+                let content: Arc<dyn BuiltinContent> = client.clone();
                 let quick_actions: Arc<dyn QuickActions> = client.clone();
-                app.integration_detail = Some(IntegrationDetailState::new(
+                app.builtin_detail = Some(BuiltinDetailState::new(
                     id,
                     icon,
                     status,
@@ -746,7 +746,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             if let Some(handle) = app.rt.twitch_chat_handle.take() {
                 handle.shutdown();
             }
-            app.integration_detail = None;
+            app.builtin_detail = None;
             app.rt.twitch_login = None;
             app.rt.twitch_reauth_required = false;
             let backend = Arc::clone(&app.rt.backend);
@@ -887,13 +887,13 @@ fn handle_twitch_panel_msg(
             let state_rx = handle.state_receiver();
             let (twitch_bundle, _health_tx) =
                 TwitchIntegrationBundle::new(login, state_rx, tracker);
-            let id = IntegrationId::new("twitch");
+            let id = BuiltinId::new("twitch");
             let icon = SectionIcon::new("brand-twitch");
-            let status: Arc<dyn IntegrationStatus> = twitch_bundle.clone();
-            let health: Arc<dyn IntegrationHealth> = twitch_bundle.clone();
-            let content: Arc<dyn IntegrationContent> = twitch_bundle.clone();
+            let status: Arc<dyn BuiltinStatus> = twitch_bundle.clone();
+            let health: Arc<dyn BuiltinHealth> = twitch_bundle.clone();
+            let content: Arc<dyn BuiltinContent> = twitch_bundle.clone();
             let quick_actions: Arc<dyn QuickActions> = twitch_bundle.clone();
-            app.integration_detail = Some(IntegrationDetailState::new(
+            app.builtin_detail = Some(BuiltinDetailState::new(
                 id,
                 icon,
                 status,
@@ -2631,7 +2631,7 @@ fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
     let disconnected: u8 = 6u8.saturating_sub(connected);
 
     let header_icon = tabler_icon(Icon::PlugConnected, 14.0, palette.success);
-    let header_title = text("Integrations")
+    let header_title = text("Builtin")
         .size(FONT_SM)
         .color(palette.text_primary);
     let header_sub = text(format!("{connected} active · {disconnected} disconnected"))
@@ -2679,8 +2679,8 @@ fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
             "Twitch",
             palette.brand,
             twitch_ok,
-            Message::Navigate(Screen::IntegrationDetail(
-                forge_platform_core::IntegrationId::new("twitch")
+            Message::Navigate(Screen::BuiltinDetail(
+                forge_platform_core::BuiltinId::new("twitch")
             )),
             palette,
         ))
@@ -2689,8 +2689,8 @@ fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
             "YouTube",
             palette.random,
             false,
-            Message::Navigate(Screen::IntegrationDetail(
-                forge_platform_core::IntegrationId::new("youtube")
+            Message::Navigate(Screen::BuiltinDetail(
+                forge_platform_core::BuiltinId::new("youtube")
             )),
             palette,
         ))
@@ -2699,8 +2699,8 @@ fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
             "Kick",
             palette.info,
             false,
-            Message::Navigate(Screen::IntegrationDetail(
-                forge_platform_core::IntegrationId::new("kick")
+            Message::Navigate(Screen::BuiltinDetail(
+                forge_platform_core::BuiltinId::new("kick")
             )),
             palette,
         ))
@@ -2709,8 +2709,8 @@ fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
             "Trovo",
             palette.success,
             false,
-            Message::Navigate(Screen::IntegrationDetail(
-                forge_platform_core::IntegrationId::new("trovo")
+            Message::Navigate(Screen::BuiltinDetail(
+                forge_platform_core::BuiltinId::new("trovo")
             )),
             palette,
         ))
@@ -2719,8 +2719,8 @@ fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
             "OBS",
             palette.success,
             obs_ok,
-            Message::Navigate(Screen::IntegrationDetail(
-                forge_platform_core::IntegrationId::new("obs")
+            Message::Navigate(Screen::BuiltinDetail(
+                forge_platform_core::BuiltinId::new("obs")
             )),
             palette,
         ))
@@ -2729,8 +2729,8 @@ fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
             "VTube",
             palette.warning,
             false,
-            Message::Navigate(Screen::IntegrationDetail(
-                forge_platform_core::IntegrationId::new("vtube")
+            Message::Navigate(Screen::BuiltinDetail(
+                forge_platform_core::BuiltinId::new("vtube")
             )),
             palette,
         ))
@@ -3490,7 +3490,7 @@ fn platform_overview_card<'a>(
     desc: &'a str,
     features: &'static [&'static str],
     connected: bool,
-    target: IntegrationId,
+    target: BuiltinId,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     use forge_widgets::tokens::{Radius, radius};
@@ -3593,7 +3593,7 @@ fn platform_overview_card<'a>(
     button(inner)
         .padding([16_u16, 18_u16])
         .width(Length::Fill)
-        .on_press(Message::Navigate(Screen::IntegrationDetail(target)))
+        .on_press(Message::Navigate(Screen::BuiltinDetail(target)))
         .style(
             move |_: &iced::Theme, status: iced::widget::button::Status| {
                 let hovered = matches!(
@@ -3643,7 +3643,7 @@ fn platforms_overview_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
         "Chat, EventSub subscriptions, channel points, bits, raids",
         &["IRC chat", "EventSub", "Channel points", "Bits & subs"],
         twitch_connected,
-        IntegrationId::new("twitch"),
+        BuiltinId::new("twitch"),
         palette,
     );
     let youtube_card = platform_overview_card(
@@ -3653,7 +3653,7 @@ fn platforms_overview_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
         "Live chat, super chats, channel memberships, subscribers",
         &["Live chat", "Super chat", "Memberships"],
         false,
-        IntegrationId::new("youtube"),
+        BuiltinId::new("youtube"),
         palette,
     );
     let kick_card = platform_overview_card(
@@ -3663,7 +3663,7 @@ fn platforms_overview_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
         "Chat, channel events, subscribers — newer streaming platform",
         &["Chat", "Subs", "Channel events"],
         false,
-        IntegrationId::new("kick"),
+        BuiltinId::new("kick"),
         palette,
     );
     let trovo_card = platform_overview_card(
@@ -3673,7 +3673,7 @@ fn platforms_overview_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
         "Chat, spells, mana, subscribers — Tencent streaming platform",
         &["Chat", "Spells", "Subs"],
         false,
-        IntegrationId::new("trovo"),
+        BuiltinId::new("trovo"),
         palette,
     );
 
@@ -5773,7 +5773,7 @@ fn breadcrumb_icon_for(screen: &Screen) -> Icon {
         Screen::Actions | Screen::ActionEditor(_) | Screen::Queues => Icon::Bolt,
         Screen::Commands => Icon::Terminal,
         Screen::Platforms => Icon::Broadcast,
-        Screen::StreamApps | Screen::Integrations | Screen::IntegrationDetail(_) => {
+        Screen::StreamApps | Screen::Builtin | Screen::BuiltinDetail(_) => {
             Icon::LayoutGrid
         }
         Screen::LiveChat => Icon::MessageCircle,
@@ -5796,8 +5796,8 @@ fn screen_label(screen: &Screen) -> &'static str {
         Screen::Commands => "Commands",
         Screen::Platforms => "Platforms",
         Screen::StreamApps => "Stream apps",
-        Screen::Integrations => "Integrations",
-        Screen::IntegrationDetail(_) => "Integration",
+        Screen::Builtin => "Builtin",
+        Screen::BuiltinDetail(_) => "Integration",
         Screen::LiveChat => "Live chat",
         Screen::EventFeed => "Event feed",
         Screen::Globals => "Globals",
@@ -5810,8 +5810,8 @@ fn screen_label(screen: &Screen) -> &'static str {
     }
 }
 
-fn integration_active(screen: &Screen, id: &str) -> bool {
-    matches!(screen, Screen::IntegrationDetail(s) if s.as_str() == id)
+fn builtin_active(screen: &Screen, id: &str) -> bool {
+    matches!(screen, Screen::BuiltinDetail(s) if s.as_str() == id)
 }
 
 fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Sidebar<'a, Message> {
@@ -5827,8 +5827,8 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Sidebar<'a, Mes
     let is_server = matches!(app.screen, Screen::Server);
     let is_settings = matches!(app.screen, Screen::Settings(_));
 
-    let twitch_target = Message::Navigate(Screen::IntegrationDetail(IntegrationId::new("twitch")));
-    let obs_target = Message::Navigate(Screen::IntegrationDetail(IntegrationId::new("obs")));
+    let twitch_target = Message::Navigate(Screen::BuiltinDetail(BuiltinId::new("twitch")));
+    let obs_target = Message::Navigate(Screen::BuiltinDetail(BuiltinId::new("obs")));
 
     let items = vec![
         NavItem::Leaf {
@@ -5880,39 +5880,39 @@ fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Sidebar<'a, Mes
         NavItem::FlatLink {
             dot_color: palette.brand,
             label: "Twitch",
-            active: integration_active(&app.screen, "twitch"),
+            active: builtin_active(&app.screen, "twitch"),
             on_press: twitch_target.clone(),
         },
         NavItem::FlatLink {
             dot_color: palette.random,
             label: "YouTube",
-            active: integration_active(&app.screen, "youtube"),
-            on_press: Message::Navigate(Screen::IntegrationDetail(IntegrationId::new("youtube"))),
+            active: builtin_active(&app.screen, "youtube"),
+            on_press: Message::Navigate(Screen::BuiltinDetail(BuiltinId::new("youtube"))),
         },
         NavItem::FlatLink {
             dot_color: palette.info,
             label: "Kick",
-            active: integration_active(&app.screen, "kick"),
-            on_press: Message::Navigate(Screen::IntegrationDetail(IntegrationId::new("kick"))),
+            active: builtin_active(&app.screen, "kick"),
+            on_press: Message::Navigate(Screen::BuiltinDetail(BuiltinId::new("kick"))),
         },
         NavItem::FlatLink {
             dot_color: palette.success,
             label: "Trovo",
-            active: integration_active(&app.screen, "trovo"),
-            on_press: Message::Navigate(Screen::IntegrationDetail(IntegrationId::new("trovo"))),
+            active: builtin_active(&app.screen, "trovo"),
+            on_press: Message::Navigate(Screen::BuiltinDetail(BuiltinId::new("trovo"))),
         },
         NavItem::MiniLabel("Stream apps"),
         NavItem::FlatLink {
             dot_color: palette.success,
             label: "OBS Studio",
-            active: integration_active(&app.screen, "obs"),
+            active: builtin_active(&app.screen, "obs"),
             on_press: obs_target.clone(),
         },
         NavItem::FlatLink {
             dot_color: palette.warning,
             label: "VTube Studio",
-            active: integration_active(&app.screen, "vtube"),
-            on_press: Message::Navigate(Screen::IntegrationDetail(IntegrationId::new("vtube"))),
+            active: builtin_active(&app.screen, "vtube"),
+            on_press: Message::Navigate(Screen::BuiltinDetail(BuiltinId::new("vtube"))),
         },
         NavItem::Leaf {
             icon: Icon::Music,
@@ -6081,15 +6081,15 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Screen::StreamApps => stream_apps_view(app, palette),
         Screen::EventFeed => event_feed_view(&app.event_feed, palette),
         Screen::Server => server_screen_view(&app.server_screen, palette),
-        Screen::IntegrationDetail(id) => {
+        Screen::BuiltinDetail(id) => {
             if id.as_str() == "twitch" && app.rt.twitch_chat_handle.is_none() {
                 crate::twitch_panel::twitch_disconnected_view(&app.twitch_panel, palette)
             } else if id.as_str() == "obs" && app.rt.obs_client.is_none() {
                 crate::obs_panel::obs_disconnected_view(&app.obs_panel, palette)
             } else if let Some((color, info)) = crate::platform_generic::registry(id, palette) {
                 crate::platform_generic::platform_generic_view(color, info, palette)
-            } else if let Some(state) = app.integration_detail.as_ref() {
-                let inner = integration_detail_view(state, palette);
+            } else if let Some(state) = app.builtin_detail.as_ref() {
+                let inner = builtin_detail_view(state, palette);
                 if id.as_str() == "twitch" && app.rt.twitch_reauth_required {
                     iced::widget::container(
                         iced::widget::column![
@@ -6134,7 +6134,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
             | Screen::EventFeed
             | Screen::Platforms
             | Screen::StreamApps
-            | Screen::IntegrationDetail(_)
+            | Screen::BuiltinDetail(_)
             | Screen::Settings(_)
             | Screen::Server
             | Screen::ScriptEditor
@@ -6456,7 +6456,7 @@ pub fn subscription(app: &App) -> Subscription<Message> {
         _ => None,
     });
 
-    if let Some(state) = app.integration_detail.as_ref() {
+    if let Some(state) = app.builtin_detail.as_ref() {
         Subscription::batch([
             bus,
             health_subscription(state),
@@ -6717,7 +6717,7 @@ mod tests {
             viewers: crate::viewers::ViewersState::default(),
             globals: GlobalsState::new(),
             script_editor: ScriptEditorState::new(),
-            integration_detail: None,
+            builtin_detail: None,
             server_screen: ServerScreenState::default(),
             settings_websocket: SettingsWebSocketState::default(),
             twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
@@ -7055,7 +7055,7 @@ mod tests {
             viewers: crate::viewers::ViewersState::default(),
             globals: GlobalsState::new(),
             script_editor: ScriptEditorState::new(),
-            integration_detail: None,
+            builtin_detail: None,
             server_screen: ServerScreenState::default(),
             settings_websocket: SettingsWebSocketState::default(),
             twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
@@ -7443,23 +7443,23 @@ mod tests {
 
     #[test]
     fn navigate_to_integration_detail_sets_screen() {
-        use forge_platform_core::IntegrationId;
+        use forge_platform_core::BuiltinId;
         let mut app = App::default();
-        let id = IntegrationId::new("obs");
+        let id = BuiltinId::new("obs");
         let _ = update(
             &mut app,
-            Message::Navigate(Screen::IntegrationDetail(id.clone())),
+            Message::Navigate(Screen::BuiltinDetail(id.clone())),
         );
-        assert_eq!(app.screen, Screen::IntegrationDetail(id));
+        assert_eq!(app.screen, Screen::BuiltinDetail(id));
     }
 
     #[test]
     fn view_compiles_integration_detail_without_state() {
-        use forge_platform_core::IntegrationId;
+        use forge_platform_core::BuiltinId;
         let mut app = App::default();
         let _ = update(
             &mut app,
-            Message::Navigate(Screen::IntegrationDetail(IntegrationId::new("obs"))),
+            Message::Navigate(Screen::BuiltinDetail(BuiltinId::new("obs"))),
         );
         let _ = view(&app);
     }
@@ -7479,7 +7479,7 @@ mod tests {
             Message::ObsBootResult(Ok(ObsClientRef::new(Arc::new(client)))),
         );
         assert!(app.rt.obs_client.is_some());
-        assert!(app.integration_detail.is_some());
+        assert!(app.builtin_detail.is_some());
     }
 
     #[test]
@@ -7490,6 +7490,6 @@ mod tests {
             Message::ObsBootResult(Err("connection refused".into())),
         );
         assert!(app.rt.obs_client.is_none());
-        assert!(app.integration_detail.is_none());
+        assert!(app.builtin_detail.is_none());
     }
 }

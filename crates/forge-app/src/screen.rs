@@ -1,4 +1,4 @@
-use forge_platform_core::IntegrationId;
+use forge_platform_core::BuiltinId;
 use forge_types::ActionId;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,8 +37,8 @@ pub enum Screen {
     Commands,
     Platforms,
     StreamApps,
-    Integrations,
-    IntegrationDetail(IntegrationId),
+    Builtin,
+    BuiltinDetail(BuiltinId),
     Tts(TtsSection),
     Soundboard,
     ScriptEditor,

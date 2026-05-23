@@ -191,7 +191,7 @@ pub enum GlobalsMsg {
 }
 
 #[derive(Debug, Clone)]
-pub enum IntegrationDetailMsg {
+pub enum BuiltinDetailMsg {
     HealthDelta(HealthDelta),
     HeaderActionClicked(HeaderAction),
     QuickActionClicked(usize),
@@ -331,7 +331,7 @@ pub enum Message {
     AddSubAction(AddSubActionMsg),
     RemoveSubAction(RemoveSubActionMsg),
     MoveSubAction(MoveSubActionMsg),
-    IntegrationDetail(IntegrationDetailMsg),
+    BuiltinDetail(BuiltinDetailMsg),
     ObsBootResult(Result<ObsClientRef, String>),
     TwitchBootResult(Result<Option<TwitchBootBundle>, String>),
     ServerBootResult(Result<crate::server_subsystem::ServerBootSnapshot, String>),

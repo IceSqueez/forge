@@ -35,7 +35,7 @@ pub enum ExecutionMetadata {
         event_id: EventId,
     },
     QuickAction {
-        integration_id: String,
+        builtin_id: String,
         label: String,
     },
 }
@@ -222,7 +222,7 @@ mod tests {
     #[test]
     fn execution_metadata_quick_action_serde_roundtrip() {
         let meta = ExecutionMetadata::QuickAction {
-            integration_id: "obs".to_string(),
+            builtin_id: "obs".to_string(),
             label: "Toggle Stream".to_string(),
         };
         let json = serde_json::to_string(&meta).unwrap();

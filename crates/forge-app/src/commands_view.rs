@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use forge_storage::DataProvider;
-use forge_storage_sqlite::SqliteBackend;
 use forge_types::{Command, CommandPermission};
 use forge_widgets::{
     ForgePalette, filter_chip, primary_button, search_input,
@@ -44,7 +43,7 @@ pub enum CommandsMsg {
     FilterChanged(CommandsFilter),
 }
 
-pub async fn load_commands(dp: Arc<SqliteBackend>) -> Result<Vec<Command>, String> {
+pub async fn load_commands(dp: Arc<dyn DataProvider>) -> Result<Vec<Command>, String> {
     dp.command_repo().list().await.map_err(|e| e.to_string())
 }
 

@@ -4,8 +4,7 @@ use std::sync::Arc;
 
 use forge_events::EventPublisher;
 use forge_script::{Engine, EngineConfig, ForgeApi, build_scope_for_contract, parse_contract};
-use forge_storage::{ScriptRecord, ScriptRepo};
-use forge_storage_sqlite::SqliteBackend;
+use forge_storage::{DataProvider, ScriptRecord, ScriptRepo};
 use forge_types::{ArgStack, EventId, ScriptContract, ScriptId, Variant, VariantKind};
 use forge_widgets::tokens::{FONT_SM, FONT_XS, FontRole, font};
 use forge_widgets::{CodeEditorState, ConsoleLevel, ConsoleLine, ForgePalette, ModalProps, modal};
@@ -128,7 +127,7 @@ fn parse_input_to_variant(field: &RunModalInputField) -> Result<Variant, String>
     }
 }
 
-async fn load_script_list(dp: Arc<SqliteBackend>) -> Result<Vec<ScriptListEntry>, String> {
+async fn load_script_list(dp: Arc<dyn DataProvider>) -> Result<Vec<ScriptListEntry>, String> {
     let records = ScriptRepo::list(&*dp).await.map_err(|e| e.to_string())?;
     Ok(records
         .into_iter()
@@ -143,7 +142,7 @@ async fn load_script_list(dp: Arc<SqliteBackend>) -> Result<Vec<ScriptListEntry>
 async fn run_script_inline(
     body: String,
     arg_stack: ArgStack,
-    dp: Arc<SqliteBackend>,
+    dp: Arc<dyn DataProvider>,
     bus: Arc<forge_runtime::EventBus>,
     script_id: ScriptId,
 ) -> Result<RunResult, String> {
@@ -1143,6 +1142,7 @@ pub enum ScriptEditorMsg {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use forge_storage_sqlite::SqliteBackend;
     use forge_widgets::palette::CATPPUCCIN_MOCHA;
 
     fn make_test_state_with_editor(body: &str, original: &str) -> ScriptEditorState {

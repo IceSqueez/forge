@@ -1,8 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use forge_storage::{GlobalEntry, GlobalsExport, GlobalsRepo, StorageError};
-use forge_storage_sqlite::SqliteBackend;
+use forge_storage::{DataProvider, GlobalEntry, GlobalsExport, GlobalsRepo, StorageError};
 use forge_types::Variant;
 use forge_widgets::tokens::{FONT_SM, FONT_XS};
 use forge_widgets::{
@@ -34,7 +33,7 @@ enum ExportError {
     Io(#[from] std::io::Error),
 }
 
-async fn export_globals_to_chosen_file(dp: Arc<SqliteBackend>) -> Result<PathBuf, ExportError> {
+async fn export_globals_to_chosen_file(dp: Arc<dyn DataProvider>) -> Result<PathBuf, ExportError> {
     let entries = dp.export_all().await?;
     let envelope = GlobalsExport::new(entries);
     let json = serde_json::to_string_pretty(&envelope)?;
@@ -313,8 +312,11 @@ impl Default for GlobalsState {
     }
 }
 
-pub async fn load_globals_data(dp: Arc<SqliteBackend>) -> Result<GlobalsLoadData, String> {
-    let mut entries = dp.list().await.map_err(|e| e.to_string())?;
+pub async fn load_globals_data(dp: Arc<dyn DataProvider>) -> Result<GlobalsLoadData, String> {
+    let mut entries = {
+        let g: &dyn GlobalsRepo = &*dp;
+        g.list().await.map_err(|e| e.to_string())?
+    };
     entries.sort_unstable_by(|a, b| a.name.cmp(&b.name));
     let storage_bytes = dp.storage_bytes().await.map_err(|e| e.to_string())?;
     let last_save = dp.last_save_at().await.map_err(|e| e.to_string())?;
@@ -374,7 +376,8 @@ pub fn update(state: &mut GlobalsState, rt: &RuntimeView, msg: GlobalsMsg) -> ic
             let dp = Arc::clone(&rt.backend);
             iced::Task::perform(
                 async move {
-                    dp.set(&name, entry.value, new_persisted)
+                    let g: &dyn GlobalsRepo = &*dp;
+                    g.set(&name, entry.value, new_persisted)
                         .await
                         .map_err(|e| e.to_string())
                 },
@@ -393,10 +396,8 @@ pub fn update(state: &mut GlobalsState, rt: &RuntimeView, msg: GlobalsMsg) -> ic
             let dp = Arc::clone(&rt.backend);
             iced::Task::perform(
                 async move {
-                    dp.delete(&name)
-                        .await
-                        .map(|_| ())
-                        .map_err(|e| e.to_string())
+                    let g: &dyn GlobalsRepo = &*dp;
+                    g.delete(&name).await.map(|_| ()).map_err(|e| e.to_string())
                 },
                 |r| Message::Globals(GlobalsMsg::Deleted(r)),
             )
@@ -573,12 +574,14 @@ fn update_variant_editor(
             iced::Task::perform(
                 async move {
                     if let Some(old) = old_name {
-                        dp.delete(&old)
+                        let g: &dyn GlobalsRepo = &*dp;
+                        g.delete(&old)
                             .await
                             .map_err(|e| e.to_string())
                             .map(|_| ())?;
                     }
-                    dp.set(&name, variant, persisted)
+                    let g: &dyn GlobalsRepo = &*dp;
+                    g.set(&name, variant, persisted)
                         .await
                         .map_err(|e| e.to_string())
                 },
@@ -1136,6 +1139,7 @@ mod tests {
     use crate::app::{App, update};
     use crate::screen::Screen;
     use forge_storage::GlobalEntry;
+    use forge_storage_sqlite::SqliteBackend;
     use forge_types::Variant;
     use time::OffsetDateTime;
 

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use forge_events::{Event, EventSource};
 use forge_platform_twitch::send_chat;
-use forge_storage::{CredentialId, CredentialsRepo};
+use forge_storage::CredentialId;
 use forge_types::OAuthToken;
 use forge_widgets::{
     BadgeKind, ChatBody, ChatRow, ForgePalette, Icon, Platform, PlatformTarget, search_input,

@@ -1,8 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use forge_storage::SettingsRepo;
-use forge_storage_sqlite::SqliteBackend;
+use forge_storage::{DataProvider, SettingsRepo};
 use forge_widgets::{
     BindAddressCardParams, BindBadge, BulletItem, BulletKind, ForgePalette, Radius, ToggleProps,
     TypeToConfirmModalParams, bearer_token_display, bind_address_card,
@@ -110,10 +109,8 @@ pub enum SettingsWebSocketMsg {
 }
 
 pub async fn load_settings_websocket(
-    backend: Arc<SqliteBackend>,
+    backend: Arc<dyn DataProvider>,
 ) -> Result<SettingsWebSocketSnapshot, String> {
-    use forge_storage::SettingsRepo;
-
     let settings: &dyn SettingsRepo = backend.as_ref();
     let bind_address = settings
         .server_bind_address()
@@ -788,6 +785,7 @@ mod tests {
     use super::*;
     use forge_runtime::{EventBus, NullEventLogRepo, ScriptRegistry};
     use forge_storage::CredentialsRepo;
+    use forge_storage_sqlite::SqliteBackend;
 
     use crate::runtime_view::RuntimeView;
     use crate::server_subsystem::ServerSubsystem;

@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use forge_events::Event;
 use forge_storage::{DataProvider, GlobalsRepo};
-use forge_storage_sqlite::SqliteBackend;
 use iced::Task;
 
 use crate::message::{HomeMsg, HomeStatsData, Message};
@@ -52,7 +51,7 @@ pub fn update(state: &mut HomeStats, rt: &RuntimeView, msg: HomeMsg) -> Task<Mes
     }
 }
 
-async fn load_home_stats(dp: Arc<SqliteBackend>) -> Result<HomeStatsData, String> {
+async fn load_home_stats(dp: Arc<dyn DataProvider>) -> Result<HomeStatsData, String> {
     let actions = dp
         .action_repo()
         .list()
@@ -65,7 +64,10 @@ async fn load_home_stats(dp: Arc<SqliteBackend>) -> Result<HomeStatsData, String
         .await
         .map_err(|e| e.to_string())?
         .len();
-    let globals = dp.list().await.map_err(|e| e.to_string())?.len();
+    let globals = {
+        let g: &dyn GlobalsRepo = &*dp;
+        g.list().await.map_err(|e| e.to_string())?.len()
+    };
     let since = time::OffsetDateTime::now_utc() - time::Duration::hours(24);
     let stats = dp
         .history_repo()

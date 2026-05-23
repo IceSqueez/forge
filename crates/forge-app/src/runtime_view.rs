@@ -8,13 +8,13 @@ use forge_runtime::{
 };
 use forge_soundboard::SoundboardPlayer;
 use forge_speak_queue::SpeakQueueHandle;
-use forge_storage_sqlite::SqliteBackend;
+use forge_storage::DataProvider;
 
 use crate::server_subsystem::ServerSubsystem;
 use crate::twitch_panel::TwitchFlowHandle;
 
 pub struct RuntimeView {
-    pub backend: Arc<SqliteBackend>,
+    pub backend: Arc<dyn DataProvider>,
     pub bus: Arc<EventBus>,
     pub script_registry: Arc<ScriptRegistry>,
     pub server_subsystem: Arc<ServerSubsystem>,

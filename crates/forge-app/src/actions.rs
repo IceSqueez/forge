@@ -1,6 +1,5 @@
 use forge_events::{Event, EventSource};
 use forge_storage::{ActionTelemetry, DataProvider, StorageError};
-use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
     Action, ActionId, ClipId, Command, CommandPermission, LogLevel, QueueId, SubActionSpec,
     Trigger, TriggerId, TriggerKind,
@@ -594,7 +593,9 @@ impl ActionsState {
     }
 }
 
-pub async fn load_actions_tree(dp: Arc<SqliteBackend>) -> Result<Vec<ActionsGroup>, StorageError> {
+pub async fn load_actions_tree(
+    dp: Arc<dyn DataProvider>,
+) -> Result<Vec<ActionsGroup>, StorageError> {
     let actions = dp.action_repo().list().await?;
     let all_queues = dp.queue_repo().list().await?;
     let since = OffsetDateTime::now_utc() - time::Duration::hours(24);
@@ -658,7 +659,7 @@ pub async fn load_actions_tree(dp: Arc<SqliteBackend>) -> Result<Vec<ActionsGrou
 }
 
 pub async fn load_action_detail(
-    dp: Arc<SqliteBackend>,
+    dp: Arc<dyn DataProvider>,
     id: ActionId,
 ) -> Result<ActionDetail, StorageError> {
     let action = dp
@@ -707,7 +708,7 @@ fn compute_sub_action_averages(
 }
 
 pub async fn save_sub_action(
-    dp: Arc<SqliteBackend>,
+    dp: Arc<dyn DataProvider>,
     action_id: ActionId,
     spec: SubActionSpec,
     editing_index: Option<usize>,
@@ -730,7 +731,7 @@ pub async fn save_sub_action(
 }
 
 pub async fn load_telemetry(
-    dp: Arc<SqliteBackend>,
+    dp: Arc<dyn DataProvider>,
     id: ActionId,
 ) -> Result<ActionTelemetry, String> {
     dp.action_repo()
@@ -855,7 +856,7 @@ pub fn telemetry_grid<'a, Msg: 'a>(
         .into()
 }
 
-pub async fn load_clip_options(dp: Arc<SqliteBackend>) -> Vec<(ClipId, String)> {
+pub async fn load_clip_options(dp: Arc<dyn DataProvider>) -> Vec<(ClipId, String)> {
     dp.soundboard_clips_repo()
         .list()
         .await
@@ -864,7 +865,7 @@ pub async fn load_clip_options(dp: Arc<SqliteBackend>) -> Vec<(ClipId, String)> 
 }
 
 pub async fn move_sub_action(
-    dp: Arc<SqliteBackend>,
+    dp: Arc<dyn DataProvider>,
     action_id: ActionId,
     from: usize,
     to: usize,
@@ -884,7 +885,7 @@ pub async fn move_sub_action(
 }
 
 pub async fn duplicate_sub_action(
-    dp: Arc<SqliteBackend>,
+    dp: Arc<dyn DataProvider>,
     action_id: ActionId,
     index: usize,
 ) -> Result<ActionId, StorageError> {
@@ -902,7 +903,7 @@ pub async fn duplicate_sub_action(
 }
 
 pub async fn remove_sub_action(
-    dp: Arc<SqliteBackend>,
+    dp: Arc<dyn DataProvider>,
     action_id: ActionId,
     index: usize,
 ) -> Result<(), StorageError> {
@@ -1287,6 +1288,7 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
 mod tests {
     use super::*;
     use forge_storage::DataProvider;
+    use forge_storage_sqlite::SqliteBackend;
     use forge_types::{Action, ActionId, CommandId, Queue, QueueId};
 
     #[test]
@@ -1437,7 +1439,7 @@ mod tests {
 
     const TEST_KEY: [u8; 32] = [0xab; 32];
 
-    async fn open_backend() -> Arc<SqliteBackend> {
+    async fn open_backend() -> Arc<dyn DataProvider> {
         Arc::new(
             SqliteBackend::open_with_key("sqlite::memory:", TEST_KEY)
                 .await
@@ -1445,7 +1447,7 @@ mod tests {
         )
     }
 
-    async fn make_action(dp: &Arc<SqliteBackend>, name: &str, group: Option<&str>) -> Action {
+    async fn make_action(dp: &Arc<dyn DataProvider>, name: &str, group: Option<&str>) -> Action {
         let queue = Queue {
             id: QueueId::new(),
             name: "Default".to_string(),

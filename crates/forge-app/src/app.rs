@@ -14,7 +14,6 @@ use forge_runtime::{
     ScriptRegistry,
 };
 use forge_storage::{CredentialId, CredentialsRepo, DataProvider};
-use forge_storage_sqlite::SqliteBackend;
 use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::tokens::{FONT_LG, FONT_MD, FONT_SM, FONT_XS};
 use forge_widgets::{
@@ -139,7 +138,7 @@ impl App {
     #[allow(clippy::too_many_arguments)]
     pub fn default_with(
         initial: Screen,
-        backend: Arc<SqliteBackend>,
+        backend: Arc<dyn DataProvider>,
         storage_offline: bool,
         script_registry: Arc<ScriptRegistry>,
         action_engine: Option<ActionEngineHandle>,
@@ -189,8 +188,9 @@ const TEST_KEY: [u8; 32] = [0xab; 32];
 impl Default for App {
     #[allow(clippy::expect_used)]
     fn default() -> Self {
+        use forge_storage_sqlite::SqliteBackend;
         let rt = tokio::runtime::Runtime::new().expect("tokio runtime for test");
-        let backend = Arc::new(
+        let backend: Arc<dyn DataProvider> = Arc::new(
             rt.block_on(SqliteBackend::open_with_key("sqlite::memory:", TEST_KEY))
                 .expect("in-memory SQLite always opens"),
         );
@@ -358,7 +358,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 Task::none()
             }
             SettingsMsg::DbVacuumRequested => {
-                let dp = Arc::clone(&app.rt.backend) as Arc<dyn DataProvider>;
+                let dp = Arc::clone(&app.rt.backend);
                 Task::perform(
                     async move {
                         let tmp_target = std::env::temp_dir().join("forge_vacuum.db");
@@ -378,7 +378,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 Task::none()
             }
             SettingsMsg::DbBackupRequested => {
-                let dp = Arc::clone(&app.rt.backend) as Arc<dyn DataProvider>;
+                let dp = Arc::clone(&app.rt.backend);
                 Task::perform(
                     async move {
                         let stamp = time::OffsetDateTime::now_utc().unix_timestamp();
@@ -627,7 +627,8 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             Task::perform(
                 async move {
                     let id = CredentialId::new("twitch:broadcaster");
-                    let _ = backend.delete(&id).await;
+                    let creds: &dyn CredentialsRepo = &*backend;
+                    let _ = creds.delete(&id).await;
                 },
                 |()| Message::Noop,
             )
@@ -684,7 +685,10 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
     }
 }
 
-async fn reconnect_twitch(backend: Arc<SqliteBackend>, bus: Arc<EventBus>) -> Result<(), String> {
+async fn reconnect_twitch(
+    backend: Arc<dyn DataProvider>,
+    bus: Arc<EventBus>,
+) -> Result<(), String> {
     use forge_platform_twitch::{TwitchChat, client_id};
 
     let cid = client_id().ok_or_else(|| "FORGE_TWITCH_CLIENT_ID not set".to_owned())?;
@@ -712,7 +716,7 @@ async fn reconnect_twitch(backend: Arc<SqliteBackend>, bus: Arc<EventBus>) -> Re
 }
 
 pub async fn load_twitch_credential(
-    backend: Arc<SqliteBackend>,
+    backend: Arc<dyn DataProvider>,
 ) -> Result<Option<crate::message::TwitchBootBundle>, String> {
     let Some(client_id) = forge_platform_twitch::client_id() else {
         return Ok(None);
@@ -751,7 +755,7 @@ pub async fn load_twitch_credential(
 }
 
 pub async fn load_obs_and_connect(
-    backend: Arc<SqliteBackend>,
+    backend: Arc<dyn DataProvider>,
     bus: Arc<EventBus>,
 ) -> Result<ObsClientRef, String> {
     let Some(json) = backend
@@ -5298,6 +5302,7 @@ fn soundboard_hotkey_filter(event: iced::keyboard::Event) -> Option<Message> {
 mod tests {
     use super::*;
     use crate::message::HomeStatsData;
+    use forge_storage_sqlite::SqliteBackend;
     use forge_widgets::ThemeId;
 
     #[test]
@@ -5454,7 +5459,7 @@ mod tests {
 
         let (theme, palette) = forge_widgets::catppuccin_mocha();
         let server_subsystem = Arc::new(ServerSubsystem::new(
-            Arc::clone(&sqlite) as Arc<dyn CredentialsRepo>
+            Arc::clone(&dp) as Arc<dyn CredentialsRepo>
         ));
         let app = App {
             screen: Screen::Home,
@@ -5465,7 +5470,7 @@ mod tests {
             boot_time: std::time::SystemTime::now(),
             sidebar_state: SidebarExpandState::new(),
             rt: crate::runtime_view::RuntimeView {
-                backend: sqlite,
+                backend: dp,
                 bus,
                 script_registry: registry,
                 server_subsystem,
@@ -5789,7 +5794,8 @@ mod tests {
         use forge_storage::DataProvider;
         use forge_types::{Queue, QueueId};
 
-        let dp = Arc::new(
+        use forge_storage_sqlite::SqliteBackend;
+        let dp: Arc<dyn DataProvider> = Arc::new(
             SqliteBackend::open_with_key("sqlite::memory:", TEST_KEY)
                 .await
                 .expect("in-memory SQLite"),

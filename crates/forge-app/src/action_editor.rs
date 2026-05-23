@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use forge_storage::DataProvider;
 use forge_types::{Action, ActionId, SubActionSpec};
 use iced::{Alignment, Background, Border, Element, Length, Padding, Task};
 

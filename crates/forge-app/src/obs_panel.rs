@@ -6,8 +6,7 @@ use iced::{Alignment, Background, Border, Color, Element, Length, Padding, Shado
 use forge_events::EventPublisher;
 use forge_obs::{ObsError, ObsServerInfo, test_connect};
 use forge_runtime::EventBus;
-use forge_storage::{CredentialId, CredentialsRepo};
-use forge_storage_sqlite::SqliteBackend;
+use forge_storage::{CredentialId, DataProvider};
 
 use forge_widgets::ForgePalette;
 use forge_widgets::icons::{Icon, tabler_icon};
@@ -101,7 +100,7 @@ pub async fn run_test_connect(
 }
 
 pub async fn save_obs_credentials(
-    backend: Arc<SqliteBackend>,
+    backend: Arc<dyn DataProvider>,
     host: String,
     port: u16,
     password: String,
@@ -117,7 +116,7 @@ pub async fn save_obs_credentials(
 }
 
 pub async fn connect_obs_from_form(
-    backend: Arc<SqliteBackend>,
+    backend: Arc<dyn DataProvider>,
     bus: Arc<EventBus>,
     host: String,
     port: u16,

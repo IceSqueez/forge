@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
-use forge_storage::Viewer;
-use forge_storage_sqlite::SqliteBackend;
+use forge_storage::{DataProvider, Viewer};
 use iced::Task;
 
 use crate::Message;
@@ -18,8 +17,7 @@ pub enum ViewersMsg {
     Loaded(Result<Vec<Viewer>, String>),
 }
 
-pub async fn load_viewers(dp: Arc<SqliteBackend>) -> Result<Vec<Viewer>, String> {
-    use forge_storage::DataProvider;
+pub async fn load_viewers(dp: Arc<dyn DataProvider>) -> Result<Vec<Viewer>, String> {
     dp.viewer_repo().list().await.map_err(|e| e.to_string())
 }
 

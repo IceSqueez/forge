@@ -3,8 +3,7 @@ use std::sync::Arc;
 
 use forge_audio::list_output_devices;
 use forge_soundboard::SoundboardPlayer;
-use forge_storage::StoredClip;
-use forge_storage_sqlite::SqliteBackend;
+use forge_storage::{DataProvider, StoredClip};
 use forge_types::{ClipId, OutputDevice};
 use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::tokens::{
@@ -110,8 +109,7 @@ fn forge_audio_to_widget_label(d: forge_audio::DeviceInfo) -> DeviceLabel {
     }
 }
 
-async fn load_clips(backend: Arc<SqliteBackend>) -> Result<Vec<StoredClip>, String> {
-    use forge_storage::DataProvider;
+async fn load_clips(backend: Arc<dyn DataProvider>) -> Result<Vec<StoredClip>, String> {
     backend
         .soundboard_clips_repo()
         .list()
@@ -129,8 +127,7 @@ async fn load_devices() -> Result<Vec<DeviceLabel>, String> {
     .map_err(|e| e.to_string())?
 }
 
-async fn save_clip(backend: Arc<SqliteBackend>, clip: StoredClip) -> Result<(), String> {
-    use forge_storage::DataProvider;
+async fn save_clip(backend: Arc<dyn DataProvider>, clip: StoredClip) -> Result<(), String> {
     backend
         .soundboard_clips_repo()
         .save(&clip)
@@ -138,8 +135,7 @@ async fn save_clip(backend: Arc<SqliteBackend>, clip: StoredClip) -> Result<(), 
         .map_err(|e| e.to_string())
 }
 
-async fn delete_clip(backend: Arc<SqliteBackend>, id: ClipId) -> Result<(), String> {
-    use forge_storage::DataProvider;
+async fn delete_clip(backend: Arc<dyn DataProvider>, id: ClipId) -> Result<(), String> {
     backend
         .soundboard_clips_repo()
         .delete(id)

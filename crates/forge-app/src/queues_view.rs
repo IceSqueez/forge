@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use forge_storage::DataProvider;
-use forge_storage_sqlite::SqliteBackend;
 use forge_types::QueueId;
 use iced::{
     Background, Border, Color, Element, Length, Task,
@@ -171,7 +170,7 @@ fn default_description(name: &str) -> Option<String> {
 }
 
 pub async fn load_queues(
-    dp: Arc<SqliteBackend>,
+    dp: Arc<dyn DataProvider>,
     scheduler: Option<forge_runtime::QueueSchedulerHandle>,
 ) -> Result<Vec<QueueSummary>, String> {
     let queues = dp.queue_repo().list().await.map_err(|e| e.to_string())?;

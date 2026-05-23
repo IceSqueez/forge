@@ -313,7 +313,7 @@ fn main() -> iced::Result {
         )))
     };
 
-    let backend_boot = Arc::clone(&backend);
+    let backend_boot: Arc<dyn DataProvider> = backend.clone();
     let boot_screen = Arc::new(initial_screen);
     let bus_boot = Arc::clone(&bus);
     let boot = move || {
@@ -340,8 +340,7 @@ fn main() -> iced::Result {
         );
         let boot_task = match app.rt.action_engine.clone() {
             Some(engine) => {
-                let dp: std::sync::Arc<dyn forge_storage::DataProvider> =
-                    Arc::clone(&backend_boot) as std::sync::Arc<dyn forge_storage::DataProvider>;
+                let dp = Arc::clone(&backend_boot);
                 let server_boot_task = iced::Task::perform(
                     forge_app::server_subsystem::load_server_settings_and_start(
                         dp,

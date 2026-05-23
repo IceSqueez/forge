@@ -2,10 +2,13 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use iced::widget::{button, column, container, row, text};
-use iced::{Alignment, Background, Border, Color, Element, Length, Padding, Shadow, Theme};
+use iced::{Alignment, Background, Border, Color, Element, Length, Padding, Shadow, Task, Theme};
 
+use forge_platform_core::{
+    BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, QuickActions, SectionIcon,
+};
 use forge_platform_twitch::{
-    TWITCH_BROADCASTER_SCOPES, TwitchAuthBundle, TwitchAuthFlow, UserInfo,
+    TWITCH_BROADCASTER_SCOPES, TwitchAuthBundle, TwitchAuthFlow, TwitchIntegrationBundle, UserInfo,
 };
 use forge_storage::{CredentialId, CredentialsRepo};
 use forge_types::OAuthToken;
@@ -15,6 +18,8 @@ use forge_widgets::tokens::{FONT_SM, FONT_XS, FontRole, font};
 use tokio::sync::Mutex as TokioMutex;
 
 use crate::Message;
+use crate::builtin_detail::BuiltinDetailState;
+use crate::runtime_view::RuntimeView;
 
 const TWITCH_CREDENTIAL_ID: &str = "twitch:broadcaster";
 
@@ -89,6 +94,122 @@ pub async fn wait_for_auth(
         user_info,
         client_id,
     })
+}
+
+pub fn update(
+    state: &mut TwitchPanelState,
+    builtin_detail: &mut Option<BuiltinDetailState>,
+    rt: &mut RuntimeView,
+    msg: TwitchPanelMsg,
+) -> Task<Message> {
+    match msg {
+        TwitchPanelMsg::StartConnect => {
+            let Some(cid) = forge_platform_twitch::client_id() else {
+                *state = TwitchPanelState::MissingClientId;
+                return Task::none();
+            };
+            *state = TwitchPanelState::Requesting;
+            let flow = Arc::new(TokioMutex::new(TwitchAuthFlow::new(cid)));
+            rt.twitch_flow = Some(Arc::clone(&flow));
+            Task::perform(request_code(flow), |r| {
+                Message::TwitchPanel(TwitchPanelMsg::DeviceCodeReceived(r))
+            })
+        }
+        TwitchPanelMsg::Cancel => {
+            *state = TwitchPanelState::Disconnected;
+            Task::none()
+        }
+        TwitchPanelMsg::CopyCode => {
+            if let TwitchPanelState::AwaitingAuthorization { user_code, .. } = &*state {
+                iced::clipboard::write::<Message>(user_code.clone())
+            } else {
+                Task::none()
+            }
+        }
+        TwitchPanelMsg::OpenVerificationUrl => {
+            if let TwitchPanelState::AwaitingAuthorization {
+                verification_uri, ..
+            } = &*state
+            {
+                let uri = verification_uri.clone();
+                Task::perform(
+                    async move {
+                        if let Err(e) = open::that(&uri) {
+                            tracing::warn!(error = %e, url = %uri, "open browser failed");
+                        }
+                    },
+                    |()| Message::Noop,
+                )
+            } else {
+                Task::none()
+            }
+        }
+        TwitchPanelMsg::DeviceCodeReceived(Ok(data)) => {
+            *state = TwitchPanelState::AwaitingAuthorization {
+                user_code: data.user_code,
+                verification_uri: data.verification_uri,
+                expires_at: data.expires_at,
+            };
+            let Some(flow) = rt.twitch_flow.clone() else {
+                *state = TwitchPanelState::Error("no active flow handle".into());
+                return Task::none();
+            };
+            let creds: Arc<dyn CredentialsRepo> =
+                Arc::clone(&rt.backend) as Arc<dyn CredentialsRepo>;
+            Task::perform(wait_for_auth(flow, creds), |r| {
+                Message::TwitchPanel(TwitchPanelMsg::AuthCompleted(r))
+            })
+        }
+        TwitchPanelMsg::DeviceCodeReceived(Err(e)) => {
+            tracing::warn!(error = %e, "twitch device code request failed");
+            *state = TwitchPanelState::Error(e);
+            Task::none()
+        }
+        TwitchPanelMsg::AuthCompleted(Ok(outcome)) => {
+            tracing::info!(
+                login = %outcome.user_info.login,
+                id = %outcome.user_info.id,
+                "twitch authorization complete",
+            );
+            let login = Some(outcome.user_info.login.clone());
+            rt.twitch_login = login.clone();
+            let tracker = forge_platform_twitch::SubscriptionTracker::default();
+            let chat = forge_platform_twitch::TwitchChat::new(
+                outcome.token,
+                outcome.client_id,
+                outcome.user_info.id.clone(),
+                outcome.user_info.id,
+                Arc::clone(&rt.bus),
+                Arc::clone(&tracker),
+            );
+            let handle = chat.start();
+            let state_rx = handle.state_receiver();
+            let (twitch_bundle, _health_tx) =
+                TwitchIntegrationBundle::new(login, state_rx, tracker);
+            let id = BuiltinId::new("twitch");
+            let icon = SectionIcon::new("brand-twitch");
+            let status: Arc<dyn BuiltinStatus> = twitch_bundle.clone();
+            let health: Arc<dyn BuiltinHealth> = twitch_bundle.clone();
+            let content: Arc<dyn BuiltinContent> = twitch_bundle.clone();
+            let quick_actions: Arc<dyn QuickActions> = twitch_bundle.clone();
+            *builtin_detail = Some(BuiltinDetailState::new(
+                id,
+                icon,
+                status,
+                health,
+                content,
+                quick_actions,
+            ));
+            rt.twitch_chat_handle = Some(handle);
+            *state = TwitchPanelState::Disconnected;
+            Task::none()
+        }
+        TwitchPanelMsg::AuthCompleted(Err(e)) => {
+            tracing::warn!(error = %e, "twitch authorization failed");
+            *state = TwitchPanelState::Error(e);
+            Task::none()
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]

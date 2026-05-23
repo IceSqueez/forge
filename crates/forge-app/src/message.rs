@@ -123,6 +123,7 @@ pub enum ActionsMsg {
     RenameCancel,
     RenameSaved(Result<(forge_types::ActionId, String), String>),
     DismissStepMenu,
+    Editor(ActionEditorMsg),
 }
 
 #[derive(Debug, Clone)]
@@ -132,6 +133,15 @@ pub enum MoveSubActionMsg {
     ToTop(ActionId, usize),
     ToBottom(ActionId, usize),
     Moved(Result<ActionId, String>),
+}
+
+#[derive(Debug, Clone)]
+pub enum ActionEditorMsg {
+    AddAction(AddActionMsg),
+    AddTrigger(AddTriggerMsg),
+    AddSubAction(AddSubActionMsg),
+    RemoveSubAction(RemoveSubActionMsg),
+    MoveSubAction(MoveSubActionMsg),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -344,11 +354,6 @@ pub enum Message {
     Queues(QueuesMsg),
     Viewers(crate::viewers::ViewersMsg),
     Commands(crate::commands_view::CommandsMsg),
-    AddAction(AddActionMsg),
-    AddTrigger(AddTriggerMsg),
-    AddSubAction(AddSubActionMsg),
-    RemoveSubAction(RemoveSubActionMsg),
-    MoveSubAction(MoveSubActionMsg),
     BuiltinDetail(BuiltinDetailMsg),
     ObsBootResult(Result<ObsClientRef, String>),
     TwitchBootResult(Result<Option<TwitchBootBundle>, String>),

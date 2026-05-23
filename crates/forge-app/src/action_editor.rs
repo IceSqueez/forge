@@ -12,7 +12,7 @@ use crate::actions::{
     save_sub_action, trigger_label_of,
 };
 use crate::app::App;
-use crate::message::{ActionsMsg, Message, MoveSubActionMsg};
+use crate::message::{ActionEditorMsg, ActionsMsg, Message, MoveSubActionMsg};
 use crate::runtime_view::RuntimeView;
 use forge_widgets::ForgePalette;
 use forge_widgets::icons::{Icon, tabler_icon};
@@ -202,13 +202,17 @@ fn step_controls<'a>(
     let move_up = step_icon_btn(
         Icon::ArrowUp,
         i == 0,
-        Message::MoveSubAction(MoveSubActionMsg::Up(action_id, i)),
+        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::MoveSubAction(
+            MoveSubActionMsg::Up(action_id, i),
+        ))),
         palette,
     );
     let move_down = step_icon_btn(
         Icon::ArrowDown,
         i + 1 >= total,
-        Message::MoveSubAction(MoveSubActionMsg::Down(action_id, i)),
+        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::MoveSubAction(
+            MoveSubActionMsg::Down(action_id, i),
+        ))),
         palette,
     );
 
@@ -226,7 +230,9 @@ fn step_controls<'a>(
     let items: Vec<MenuItem<Message>> = vec![
         MenuItem::Item {
             label: "Edit step\u{2026}".to_string(),
-            on_press: Message::AddSubAction(AddSubActionMsg::EditRequested(action_id, i)),
+            on_press: Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                AddSubActionMsg::EditRequested(action_id, i),
+            ))),
             icon: Some(Icon::InfoCircle),
             shortcut: None,
             color: None,
@@ -234,7 +240,9 @@ fn step_controls<'a>(
         },
         MenuItem::Item {
             label: "Duplicate".to_string(),
-            on_press: Message::AddSubAction(AddSubActionMsg::DuplicateRequested(action_id, i)),
+            on_press: Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                AddSubActionMsg::DuplicateRequested(action_id, i),
+            ))),
             icon: Some(Icon::Copy),
             shortcut: None,
             color: None,
@@ -243,7 +251,9 @@ fn step_controls<'a>(
         MenuItem::Divider,
         MenuItem::Item {
             label: "Move to top".to_string(),
-            on_press: Message::MoveSubAction(MoveSubActionMsg::ToTop(action_id, i)),
+            on_press: Message::Actions(ActionsMsg::Editor(ActionEditorMsg::MoveSubAction(
+                MoveSubActionMsg::ToTop(action_id, i),
+            ))),
             icon: Some(Icon::ArrowBarUp),
             shortcut: None,
             color: None,
@@ -251,7 +261,9 @@ fn step_controls<'a>(
         },
         MenuItem::Item {
             label: "Move to bottom".to_string(),
-            on_press: Message::MoveSubAction(MoveSubActionMsg::ToBottom(action_id, i)),
+            on_press: Message::Actions(ActionsMsg::Editor(ActionEditorMsg::MoveSubAction(
+                MoveSubActionMsg::ToBottom(action_id, i),
+            ))),
             icon: Some(Icon::ArrowBarDown),
             shortcut: None,
             color: None,
@@ -260,7 +272,9 @@ fn step_controls<'a>(
         MenuItem::Divider,
         MenuItem::Item {
             label: "Delete step".to_string(),
-            on_press: Message::RemoveSubAction(RemoveSubActionMsg::Requested(action_id, i)),
+            on_press: Message::Actions(ActionsMsg::Editor(ActionEditorMsg::RemoveSubAction(
+                RemoveSubActionMsg::Requested(action_id, i),
+            ))),
             icon: Some(Icon::Eraser),
             shortcut: None,
             color: Some(p.random),
@@ -636,8 +650,8 @@ fn detail_pane<'a>(
         .spacing(4)
         .align_y(Alignment::Center),
     )
-    .on_press(Message::AddSubAction(AddSubActionMsg::OpenRequested(
-        action_id,
+    .on_press(Message::Actions(ActionsMsg::Editor(
+        ActionEditorMsg::AddSubAction(AddSubActionMsg::OpenRequested(action_id)),
     )))
     .padding(0)
     .style(
@@ -831,7 +845,11 @@ pub fn add_action_update(
                         .map(|qs| qs.into_iter().map(|q| (q.id, q.name)).collect())
                         .map_err(|e| e.to_string())
                 },
-                |r| Message::AddAction(AddActionMsg::QueueOptionsLoaded(r)),
+                |r| {
+                    Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
+                        AddActionMsg::QueueOptionsLoaded(r),
+                    )))
+                },
             )
         }
         AddActionMsg::QueueOptionsLoaded(Ok(opts)) => {
@@ -944,7 +962,11 @@ pub fn add_action_update(
                         .map(|_| action.id)
                         .map_err(|e| e.to_string())
                 },
-                |r| Message::AddAction(AddActionMsg::Saved(r)),
+                |r| {
+                    Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
+                        AddActionMsg::Saved(r),
+                    )))
+                },
             )
         }
         AddActionMsg::Saved(Ok(id)) => {
@@ -1093,7 +1115,11 @@ pub fn add_trigger_update(
                     }
                     Ok(trigger_id)
                 },
-                |r| Message::AddTrigger(AddTriggerMsg::Saved(r)),
+                |r| {
+                    Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddTrigger(
+                        AddTriggerMsg::Saved(r),
+                    )))
+                },
             )
         }
         AddTriggerMsg::Saved(Ok(_)) => {
@@ -1126,7 +1152,9 @@ pub fn add_sub_action_update(
             *state = Some(AddSubActionForm::new(action_id));
             let dp = Arc::clone(&rt.backend);
             Task::perform(load_clip_options(dp), |clips| {
-                Message::AddSubAction(AddSubActionMsg::ClipsLoaded(clips))
+                Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                    AddSubActionMsg::ClipsLoaded(clips),
+                )))
             })
         }
         AddSubActionMsg::EditRequested(action_id, index) => {
@@ -1141,7 +1169,9 @@ pub fn add_sub_action_update(
             *state = Some(form);
             let dp = Arc::clone(&rt.backend);
             Task::perform(load_clip_options(dp), |clips| {
-                Message::AddSubAction(AddSubActionMsg::ClipsLoaded(clips))
+                Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                    AddSubActionMsg::ClipsLoaded(clips),
+                )))
             })
         }
         AddSubActionMsg::KindSelected(kind) => {
@@ -1345,7 +1375,11 @@ pub fn add_sub_action_update(
                         .await
                         .map_err(|e| e.to_string())
                 },
-                |r| Message::AddSubAction(AddSubActionMsg::Saved(r)),
+                |r| {
+                    Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                        AddSubActionMsg::Saved(r),
+                    )))
+                },
             )
         }
         AddSubActionMsg::Saved(Ok(())) => {
@@ -1371,7 +1405,11 @@ pub fn add_sub_action_update(
                         .await
                         .map_err(|e| e.to_string())
                 },
-                |r| Message::AddSubAction(AddSubActionMsg::Duplicated(r)),
+                |r| {
+                    Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                        AddSubActionMsg::Duplicated(r),
+                    )))
+                },
             )
         }
         AddSubActionMsg::Duplicated(Ok(id)) => {
@@ -1398,7 +1436,11 @@ pub fn remove_sub_action_update(
                         .await
                         .map_err(|e| e.to_string())
                 },
-                |r| Message::RemoveSubAction(RemoveSubActionMsg::Removed(r)),
+                |r| {
+                    Message::Actions(ActionsMsg::Editor(ActionEditorMsg::RemoveSubAction(
+                        RemoveSubActionMsg::Removed(r),
+                    )))
+                },
             )
         }
         RemoveSubActionMsg::Removed(Ok(())) => match selected {
@@ -1429,7 +1471,11 @@ pub fn move_sub_action_update(
                         .await
                         .map_err(|e| e.to_string())
                 },
-                |r| Message::MoveSubAction(MoveSubActionMsg::Moved(r)),
+                |r| {
+                    Message::Actions(ActionsMsg::Editor(ActionEditorMsg::MoveSubAction(
+                        MoveSubActionMsg::Moved(r),
+                    )))
+                },
             )
         }
         MoveSubActionMsg::Down(action_id, i) => {
@@ -1443,7 +1489,11 @@ pub fn move_sub_action_update(
                         .await
                         .map_err(|e| e.to_string())
                 },
-                |r| Message::MoveSubAction(MoveSubActionMsg::Moved(r)),
+                |r| {
+                    Message::Actions(ActionsMsg::Editor(ActionEditorMsg::MoveSubAction(
+                        MoveSubActionMsg::Moved(r),
+                    )))
+                },
             )
         }
         MoveSubActionMsg::ToTop(action_id, i) => {
@@ -1457,7 +1507,11 @@ pub fn move_sub_action_update(
                         .await
                         .map_err(|e| e.to_string())
                 },
-                |r| Message::MoveSubAction(MoveSubActionMsg::Moved(r)),
+                |r| {
+                    Message::Actions(ActionsMsg::Editor(ActionEditorMsg::MoveSubAction(
+                        MoveSubActionMsg::Moved(r),
+                    )))
+                },
             )
         }
         MoveSubActionMsg::ToBottom(action_id, i) => {
@@ -1472,7 +1526,11 @@ pub fn move_sub_action_update(
                         .await
                         .map_err(|e| e.to_string())
                 },
-                |r| Message::MoveSubAction(MoveSubActionMsg::Moved(r)),
+                |r| {
+                    Message::Actions(ActionsMsg::Editor(ActionEditorMsg::MoveSubAction(
+                        MoveSubActionMsg::Moved(r),
+                    )))
+                },
             )
         }
         MoveSubActionMsg::Moved(Ok(id)) => {

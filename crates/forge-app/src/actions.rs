@@ -10,7 +10,7 @@ use std::sync::Arc;
 use time::OffsetDateTime;
 
 use crate::Message;
-use crate::message::{ActionsMsg, ToastMsg};
+use crate::message::{ActionEditorMsg, ActionsMsg, ToastMsg};
 use crate::runtime_view::RuntimeView;
 use crate::test_trigger::synthesize_test_event;
 
@@ -1106,11 +1106,13 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
             tracing::warn!(error = %e, "delete trigger failed");
             Task::none()
         }
-        ActionsMsg::OpenAddActionModal => {
-            Task::done(Message::AddAction(AddActionMsg::OpenRequested))
-        }
+        ActionsMsg::OpenAddActionModal => Task::done(Message::Actions(ActionsMsg::Editor(
+            ActionEditorMsg::AddAction(AddActionMsg::OpenRequested),
+        ))),
         ActionsMsg::OpenAddTriggerModal(action_id) => {
-            Task::done(Message::AddTrigger(AddTriggerMsg::OpenRequested(action_id)))
+            Task::done(Message::Actions(ActionsMsg::Editor(
+                ActionEditorMsg::AddTrigger(AddTriggerMsg::OpenRequested(action_id)),
+            )))
         }
         ActionsMsg::SearchChanged(q) => {
             state.search = q;
@@ -1251,6 +1253,32 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
             tracing::warn!(error = %e, "action rename failed");
             Task::none()
         }
+        ActionsMsg::Editor(sub) => match sub {
+            ActionEditorMsg::AddAction(m) => {
+                crate::action_editor::add_action_update(&mut state.add_action_modal, rt, m)
+            }
+            ActionEditorMsg::AddTrigger(m) => {
+                crate::action_editor::add_trigger_update(&mut state.add_trigger_modal, rt, m)
+            }
+            ActionEditorMsg::AddSubAction(m) => crate::action_editor::add_sub_action_update(
+                &mut state.add_sub_action_modal,
+                rt,
+                state.detail.as_ref(),
+                m,
+            ),
+            ActionEditorMsg::RemoveSubAction(m) => {
+                crate::action_editor::remove_sub_action_update(state.selected, rt, m)
+            }
+            ActionEditorMsg::MoveSubAction(m) => crate::action_editor::move_sub_action_update(
+                rt,
+                state
+                    .detail
+                    .as_ref()
+                    .map(|d| d.action.sub_actions.len())
+                    .unwrap_or(0),
+                m,
+            ),
+        },
     }
 }
 

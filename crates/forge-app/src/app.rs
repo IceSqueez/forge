@@ -35,8 +35,8 @@ use crate::globals_view::{GlobalsState, globals_view};
 use crate::home::HomeStats;
 use crate::live_chat::{LiveChatState, live_chat_view};
 use crate::message::{
-    ActionsMsg, GlobalsMsg, HomeMsg, ObsClientRef, PlatformId, QueuesMsg, SettingsMsg, SidebarMsg,
-    ToastMsg, TtsMsg,
+    ActionEditorMsg, ActionsMsg, GlobalsMsg, HomeMsg, ObsClientRef, PlatformId, QueuesMsg,
+    SettingsMsg, SidebarMsg, ToastMsg, TtsMsg,
 };
 use crate::queues_view::{QueuesState, queues_view};
 use crate::script_editor::{ScriptEditorMsg, ScriptEditorState, script_editor_view};
@@ -433,32 +433,6 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::Queues(sub) => crate::queues_view::update(&mut app.queues, &app.rt, sub),
         Message::Viewers(sub) => crate::viewers::update(&mut app.viewers, &app.rt, sub),
         Message::Commands(sub) => crate::commands_view::update(&mut app.commands, &app.rt, sub),
-        Message::AddAction(sub) => {
-            crate::action_editor::add_action_update(&mut app.actions.add_action_modal, &app.rt, sub)
-        }
-        Message::AddTrigger(sub) => crate::action_editor::add_trigger_update(
-            &mut app.actions.add_trigger_modal,
-            &app.rt,
-            sub,
-        ),
-        Message::AddSubAction(sub) => crate::action_editor::add_sub_action_update(
-            &mut app.actions.add_sub_action_modal,
-            &app.rt,
-            app.actions.detail.as_ref(),
-            sub,
-        ),
-        Message::RemoveSubAction(sub) => {
-            crate::action_editor::remove_sub_action_update(app.actions.selected, &app.rt, sub)
-        }
-        Message::MoveSubAction(sub) => crate::action_editor::move_sub_action_update(
-            &app.rt,
-            app.actions
-                .detail
-                .as_ref()
-                .map(|d| d.action.sub_actions.len())
-                .unwrap_or(0),
-            sub,
-        ),
         Message::ScriptEditor(sub) => {
             crate::script_editor::update(&mut app.script_editor, &app.rt, sub)
         }
@@ -3110,7 +3084,9 @@ fn actions_detail_panel<'a>(
         &format!("SUB-ACTIONS \u{00b7} {}", action.sub_actions.len()),
         "Add sub-action",
         p.brand,
-        Message::AddSubAction(AddSubActionMsg::OpenRequested(action.id)),
+        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+            AddSubActionMsg::OpenRequested(action.id),
+        ))),
         palette,
     ));
     detail_col = detail_col.push(iced::widget::Space::new().height(8.0));
@@ -3422,7 +3398,11 @@ fn add_action_modal_view<'a>(
     let name_input = forge_widgets::text_input_field(
         "My automation",
         &form.name,
-        |v| Message::AddAction(AddActionMsg::NameChanged(v)),
+        |v| {
+            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
+                AddActionMsg::NameChanged(v),
+            )))
+        },
         palette,
     );
 
@@ -3439,7 +3419,11 @@ fn add_action_modal_view<'a>(
     let group_input = forge_widgets::text_input_field(
         "Examples",
         &form.group,
-        |v| Message::AddAction(AddActionMsg::GroupChanged(v)),
+        |v| {
+            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
+                AddActionMsg::GroupChanged(v),
+            )))
+        },
         palette,
     );
 
@@ -3454,7 +3438,11 @@ fn add_action_modal_view<'a>(
     let queue_select: Element<'_, Message> = iced::widget::pick_list(
         queue_names,
         form.selected_queue_name.clone(),
-        |name: String| Message::AddAction(AddActionMsg::QueueSelected(name)),
+        |name: String| {
+            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
+                AddActionMsg::QueueSelected(name),
+            )))
+        },
     )
     .padding(forge_widgets::inputs::input_padding())
     .width(Length::Fill)
@@ -3489,7 +3477,11 @@ fn add_action_modal_view<'a>(
     let desc_input = forge_widgets::text_input_field(
         "Plays a sound, shows overlay alert...",
         &form.description,
-        |v| Message::AddAction(AddActionMsg::DescriptionChanged(v)),
+        |v| {
+            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
+                AddActionMsg::DescriptionChanged(v),
+            )))
+        },
         palette,
     );
 
@@ -3505,7 +3497,9 @@ fn add_action_modal_view<'a>(
             label: "Enabled",
             description: "Action runs when a trigger fires.",
             value: form.enabled,
-            on_toggle: Message::AddAction(AddActionMsg::EnabledToggled(!form.enabled)),
+            on_toggle: Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
+                AddActionMsg::EnabledToggled(!form.enabled),
+            ))),
         },
     );
 
@@ -3515,7 +3509,9 @@ fn add_action_modal_view<'a>(
             label: "Concurrent execution",
             description: "Allow parallel runs in this queue.",
             value: form.concurrent,
-            on_toggle: Message::AddAction(AddActionMsg::ConcurrentToggled(!form.concurrent)),
+            on_toggle: Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
+                AddActionMsg::ConcurrentToggled(!form.concurrent),
+            ))),
         },
     );
 
@@ -3525,7 +3521,9 @@ fn add_action_modal_view<'a>(
             label: "Bypass queue pause",
             description: "Always run even if queue is paused.",
             value: form.bypass_pause,
-            on_toggle: Message::AddAction(AddActionMsg::BypassPauseToggled(!form.bypass_pause)),
+            on_toggle: Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
+                AddActionMsg::BypassPauseToggled(!form.bypass_pause),
+            ))),
         },
     );
 
@@ -3535,7 +3533,9 @@ fn add_action_modal_view<'a>(
             label: "Random pick",
             description: "Run ONE random sub-action per trigger instead of all.",
             value: form.random_pick,
-            on_toggle: Message::AddAction(AddActionMsg::RandomPickToggled(!form.random_pick)),
+            on_toggle: Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
+                AddActionMsg::RandomPickToggled(!form.random_pick),
+            ))),
         },
     );
 
@@ -3564,11 +3564,15 @@ fn add_action_modal_view<'a>(
 
     let cancel_btn = forge_widgets::secondary_button(
         "Cancel",
-        Message::AddAction(AddActionMsg::Cancel),
+        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
+            AddActionMsg::Cancel,
+        ))),
         palette,
     );
 
-    let create_on_press = Message::AddAction(AddActionMsg::Submit);
+    let create_on_press = Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
+        AddActionMsg::Submit,
+    )));
     let create_btn = if form.is_valid() && !form.saving {
         forge_widgets::primary_button("Create action", create_on_press, palette)
     } else {
@@ -3595,7 +3599,9 @@ fn add_action_modal_view<'a>(
         palette,
         ModalProps {
             title: "New action",
-            on_close: Message::AddAction(AddActionMsg::Cancel),
+            on_close: Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
+                AddActionMsg::Cancel,
+            ))),
             kbd_hint: None,
         },
         body_col.into(),
@@ -3614,7 +3620,11 @@ fn add_trigger_modal_view<'a>(
     let search_input = forge_widgets::search_input(
         "Filter trigger types...",
         &form.search,
-        |v| Message::AddTrigger(AddTriggerMsg::SearchChanged(v)),
+        |v| {
+            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddTrigger(
+                AddTriggerMsg::SearchChanged(v),
+            )))
+        },
         palette,
     );
 
@@ -3623,44 +3633,54 @@ fn add_trigger_modal_view<'a>(
         "All",
         palette.brand,
         form.category == TriggerCategory::All,
-        Message::AddTrigger(AddTriggerMsg::CategorySelected(TriggerCategory::All)),
+        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddTrigger(
+            AddTriggerMsg::CategorySelected(TriggerCategory::All),
+        ))),
     );
     let chip_chat = forge_widgets::category_chip(
         palette,
         "Chat",
         palette.brand,
         form.category == TriggerCategory::Chat,
-        Message::AddTrigger(AddTriggerMsg::CategorySelected(TriggerCategory::Chat)),
+        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddTrigger(
+            AddTriggerMsg::CategorySelected(TriggerCategory::Chat),
+        ))),
     );
     let chip_subs = forge_widgets::category_chip(
         palette,
         "Subscriptions",
         palette.brand,
         form.category == TriggerCategory::Subscriptions,
-        Message::AddTrigger(AddTriggerMsg::CategorySelected(
-            TriggerCategory::Subscriptions,
-        )),
+        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddTrigger(
+            AddTriggerMsg::CategorySelected(TriggerCategory::Subscriptions),
+        ))),
     );
     let chip_bits = forge_widgets::category_chip(
         palette,
         "Bits",
         palette.bits,
         form.category == TriggerCategory::Bits,
-        Message::AddTrigger(AddTriggerMsg::CategorySelected(TriggerCategory::Bits)),
+        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddTrigger(
+            AddTriggerMsg::CategorySelected(TriggerCategory::Bits),
+        ))),
     );
     let chip_raids = forge_widgets::category_chip(
         palette,
         "Raids",
         palette.random,
         form.category == TriggerCategory::Raids,
-        Message::AddTrigger(AddTriggerMsg::CategorySelected(TriggerCategory::Raids)),
+        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddTrigger(
+            AddTriggerMsg::CategorySelected(TriggerCategory::Raids),
+        ))),
     );
     let chip_obs = forge_widgets::category_chip(
         palette,
         "OBS",
         palette.brand,
         form.category == TriggerCategory::Obs,
-        Message::AddTrigger(AddTriggerMsg::CategorySelected(TriggerCategory::Obs)),
+        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddTrigger(
+            AddTriggerMsg::CategorySelected(TriggerCategory::Obs),
+        ))),
     );
 
     let chips_row = row![
@@ -3680,7 +3700,9 @@ fn add_trigger_modal_view<'a>(
             summ,
             selected,
             palette,
-            Message::AddTrigger(AddTriggerMsg::KindSelected(kind)),
+            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddTrigger(
+                AddTriggerMsg::KindSelected(kind),
+            ))),
         );
         grid_col = grid_col.push(card);
     }
@@ -3701,7 +3723,11 @@ fn add_trigger_modal_view<'a>(
                 let cmd_input = forge_widgets::text_input_field(
                     "!quote",
                     &form.config.command_name,
-                    |v| Message::AddTrigger(AddTriggerMsg::CommandNameChanged(v)),
+                    |v| {
+                        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddTrigger(
+                            AddTriggerMsg::CommandNameChanged(v),
+                        )))
+                    },
                     palette,
                 );
                 let cmd_block = column![
@@ -3713,7 +3739,11 @@ fn add_trigger_modal_view<'a>(
                 let cooldown_input = forge_widgets::text_input_field(
                     "0",
                     &form.config.cooldown_secs,
-                    |v| Message::AddTrigger(AddTriggerMsg::CooldownChanged(v)),
+                    |v| {
+                        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddTrigger(
+                            AddTriggerMsg::CooldownChanged(v),
+                        )))
+                    },
                     palette,
                 );
                 let cooldown_block = column![
@@ -3733,9 +3763,9 @@ fn add_trigger_modal_view<'a>(
                 let selected_perm = permission_label(&form.config.permission).to_string();
                 let perm_select: Element<'_, Message> =
                     iced::widget::pick_list(perm_options, Some(selected_perm), |name: String| {
-                        Message::AddTrigger(AddTriggerMsg::PermissionSelected(
-                            permission_from_label(&name),
-                        ))
+                        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddTrigger(
+                            AddTriggerMsg::PermissionSelected(permission_from_label(&name)),
+                        )))
                     })
                     .padding(forge_widgets::inputs::input_padding())
                     .width(Length::Fill)
@@ -3774,7 +3804,11 @@ fn add_trigger_modal_view<'a>(
                 let bits_input = forge_widgets::text_input_field(
                     "1",
                     &form.config.min_bits,
-                    |v| Message::AddTrigger(AddTriggerMsg::MinBitsChanged(v)),
+                    |v| {
+                        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddTrigger(
+                            AddTriggerMsg::MinBitsChanged(v),
+                        )))
+                    },
                     palette,
                 );
                 let bits_block = column![
@@ -3822,11 +3856,15 @@ fn add_trigger_modal_view<'a>(
 
     let cancel_btn = forge_widgets::secondary_button(
         "Cancel",
-        Message::AddTrigger(AddTriggerMsg::Cancel),
+        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddTrigger(
+            AddTriggerMsg::Cancel,
+        ))),
         palette,
     );
 
-    let save_on_press = Message::AddTrigger(AddTriggerMsg::Submit);
+    let save_on_press = Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddTrigger(
+        AddTriggerMsg::Submit,
+    )));
     let save_btn = if form.is_valid() && !form.saving {
         forge_widgets::primary_button("Add trigger", save_on_press, palette)
     } else {
@@ -3851,14 +3889,18 @@ fn add_trigger_modal_view<'a>(
 
     let panel = sheet_chrome(
         "Add trigger",
-        Message::AddTrigger(AddTriggerMsg::Cancel),
+        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddTrigger(
+            AddTriggerMsg::Cancel,
+        ))),
         body_col.into(),
         Some(footer),
         palette,
     );
     forge_widgets::side_sheet(
         panel,
-        Message::AddTrigger(AddTriggerMsg::Cancel),
+        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddTrigger(
+            AddTriggerMsg::Cancel,
+        ))),
         forge_widgets::SheetEdge::Right,
         480.0,
         palette,
@@ -3898,62 +3940,72 @@ fn add_sub_action_modal_view<'a>(
         "Send chat",
         palette.brand,
         form.kind == SubActionKindChoice::SendChat,
-        Message::AddSubAction(AddSubActionMsg::KindSelected(SubActionKindChoice::SendChat)),
+        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+            AddSubActionMsg::KindSelected(SubActionKindChoice::SendChat),
+        ))),
     );
     let chip_set_global = forge_widgets::category_chip(
         palette,
         "Set global",
         palette.warning,
         form.kind == SubActionKindChoice::SetGlobal,
-        Message::AddSubAction(AddSubActionMsg::KindSelected(
-            SubActionKindChoice::SetGlobal,
-        )),
+        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+            AddSubActionMsg::KindSelected(SubActionKindChoice::SetGlobal),
+        ))),
     );
     let chip_delay = forge_widgets::category_chip(
         palette,
         "Delay",
         palette.info,
         form.kind == SubActionKindChoice::Delay,
-        Message::AddSubAction(AddSubActionMsg::KindSelected(SubActionKindChoice::Delay)),
+        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+            AddSubActionMsg::KindSelected(SubActionKindChoice::Delay),
+        ))),
     );
     let chip_log = forge_widgets::category_chip(
         palette,
         "Log",
         palette.text_muted,
         form.kind == SubActionKindChoice::Log,
-        Message::AddSubAction(AddSubActionMsg::KindSelected(SubActionKindChoice::Log)),
+        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+            AddSubActionMsg::KindSelected(SubActionKindChoice::Log),
+        ))),
     );
     let chip_play_sound = forge_widgets::category_chip(
         palette,
         "Play sound",
         palette.success,
         form.kind == SubActionKindChoice::PlaySound,
-        Message::AddSubAction(AddSubActionMsg::KindSelected(
-            SubActionKindChoice::PlaySound,
-        )),
+        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+            AddSubActionMsg::KindSelected(SubActionKindChoice::PlaySound),
+        ))),
     );
     let chip_speak = forge_widgets::category_chip(
         palette,
         "Speak",
         palette.info,
         form.kind == SubActionKindChoice::Speak,
-        Message::AddSubAction(AddSubActionMsg::KindSelected(SubActionKindChoice::Speak)),
+        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+            AddSubActionMsg::KindSelected(SubActionKindChoice::Speak),
+        ))),
     );
     let chip_read_file = forge_widgets::category_chip(
         palette,
         "Read file",
         palette.random,
         form.kind == SubActionKindChoice::ReadFile,
-        Message::AddSubAction(AddSubActionMsg::KindSelected(SubActionKindChoice::ReadFile)),
+        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+            AddSubActionMsg::KindSelected(SubActionKindChoice::ReadFile),
+        ))),
     );
     let chip_random_int = forge_widgets::category_chip(
         palette,
         "Random int",
         palette.warning,
         form.kind == SubActionKindChoice::RandomInt,
-        Message::AddSubAction(AddSubActionMsg::KindSelected(
-            SubActionKindChoice::RandomInt,
-        )),
+        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+            AddSubActionMsg::KindSelected(SubActionKindChoice::RandomInt),
+        ))),
     );
     let chips_row = row![
         chip_send_chat,
@@ -3972,7 +4024,11 @@ fn add_sub_action_modal_view<'a>(
             let msg_input = forge_widgets::text_input_field(
                 "Hello %user%!",
                 &form.config.send_chat_message,
-                |v| Message::AddSubAction(AddSubActionMsg::SendChatMessageChanged(v)),
+                |v| {
+                    Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                        AddSubActionMsg::SendChatMessageChanged(v),
+                    )))
+                },
                 palette,
             );
             let helper = text("Variables: %user%, %message%, %args%")
@@ -3991,7 +4047,9 @@ fn add_sub_action_modal_view<'a>(
             let selected_target = form.config.send_chat_target.clone();
             let target_select: iced::Element<'_, Message> =
                 iced::widget::pick_list(target_options, Some(selected_target), |name: String| {
-                    Message::AddSubAction(AddSubActionMsg::SendChatTargetChanged(name))
+                    Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                        AddSubActionMsg::SendChatTargetChanged(name),
+                    )))
                 })
                 .padding(forge_widgets::inputs::input_padding())
                 .width(Length::Fill)
@@ -4026,7 +4084,11 @@ fn add_sub_action_modal_view<'a>(
             let name_input = forge_widgets::text_input_field(
                 "my_counter",
                 &form.config.set_global_name,
-                |v| Message::AddSubAction(AddSubActionMsg::SetGlobalNameChanged(v)),
+                |v| {
+                    Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                        AddSubActionMsg::SetGlobalNameChanged(v),
+                    )))
+                },
                 palette,
             );
             let name_block = column![
@@ -4038,7 +4100,11 @@ fn add_sub_action_modal_view<'a>(
             let val_input = forge_widgets::text_input_field(
                 "%user% or 42",
                 &form.config.set_global_value,
-                |v| Message::AddSubAction(AddSubActionMsg::SetGlobalValueChanged(v)),
+                |v| {
+                    Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                        AddSubActionMsg::SetGlobalValueChanged(v),
+                    )))
+                },
                 palette,
             );
             let helper = text("Supports variable interpolation")
@@ -4058,7 +4124,11 @@ fn add_sub_action_modal_view<'a>(
             let ms_input = forge_widgets::text_input_field(
                 "500",
                 &form.config.delay_ms,
-                |v| Message::AddSubAction(AddSubActionMsg::DelayMsChanged(v)),
+                |v| {
+                    Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                        AddSubActionMsg::DelayMsChanged(v),
+                    )))
+                },
                 palette,
             );
             column![
@@ -4080,8 +4150,8 @@ fn add_sub_action_modal_view<'a>(
             let selected_level = log_level_label(&form.config.log_level).to_string();
             let level_select: iced::Element<'_, Message> =
                 iced::widget::pick_list(level_options, Some(selected_level), |name: String| {
-                    Message::AddSubAction(AddSubActionMsg::LogLevelSelected(log_level_from_label(
-                        &name,
+                    Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                        AddSubActionMsg::LogLevelSelected(log_level_from_label(&name)),
                     )))
                 })
                 .padding(forge_widgets::inputs::input_padding())
@@ -4114,7 +4184,11 @@ fn add_sub_action_modal_view<'a>(
             let msg_input = forge_widgets::text_input_field(
                 "Action started",
                 &form.config.log_message,
-                |v| Message::AddSubAction(AddSubActionMsg::LogMessageChanged(v)),
+                |v| {
+                    Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                        AddSubActionMsg::LogMessageChanged(v),
+                    )))
+                },
                 palette,
             );
             let msg_block = column![
@@ -4154,7 +4228,9 @@ fn add_sub_action_modal_view<'a>(
                             .find(|(_, n)| *n == name)
                             .map(|(id, _)| *id)
                             .unwrap_or_default();
-                        Message::AddSubAction(AddSubActionMsg::PlaySoundClipSelected(clip_id))
+                        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                            AddSubActionMsg::PlaySoundClipSelected(clip_id),
+                        )))
                     })
                     .padding(forge_widgets::inputs::input_padding())
                     .width(Length::Fill)
@@ -4192,7 +4268,9 @@ fn add_sub_action_modal_view<'a>(
                 forge_widgets::inputs::text_input_field(
                     "Text to speak…",
                     &form.config.speak_text,
-                    |v| Message::AddSubAction(AddSubActionMsg::SpeakTextChanged(v)),
+                    |v| Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                        AddSubActionMsg::SpeakTextChanged(v)
+                    ))),
                     palette,
                 ),
             ]
@@ -4202,7 +4280,9 @@ fn add_sub_action_modal_view<'a>(
                 forge_widgets::inputs::text_input_field(
                     "Leave blank to use alias resolver",
                     &form.config.speak_voice_override,
-                    |v| Message::AddSubAction(AddSubActionMsg::SpeakVoiceOverrideChanged(v)),
+                    |v| Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                        AddSubActionMsg::SpeakVoiceOverrideChanged(v)
+                    ))),
                     palette,
                 ),
             ]
@@ -4216,7 +4296,9 @@ fn add_sub_action_modal_view<'a>(
                 forge_widgets::inputs::text_input_field(
                     "greetings/welcome.txt",
                     &form.config.read_file_path,
-                    |v| Message::AddSubAction(AddSubActionMsg::ReadFilePathChanged(v)),
+                    |v| Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                        AddSubActionMsg::ReadFilePathChanged(v)
+                    ))),
                     palette,
                 ),
                 text("Sandboxed under data_dir/assets/ · no ../ traversal · max 1 MiB")
@@ -4230,7 +4312,9 @@ fn add_sub_action_modal_view<'a>(
                 forge_widgets::inputs::text_input_field(
                     "welcome_text",
                     &form.config.read_file_target_var,
-                    |v| Message::AddSubAction(AddSubActionMsg::ReadFileTargetVarChanged(v)),
+                    |v| Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                        AddSubActionMsg::ReadFileTargetVarChanged(v)
+                    ))),
                     palette,
                 ),
             ]
@@ -4244,7 +4328,9 @@ fn add_sub_action_modal_view<'a>(
                 forge_widgets::inputs::text_input_field(
                     "1",
                     &form.config.random_int_min,
-                    |v| Message::AddSubAction(AddSubActionMsg::RandomIntMinChanged(v)),
+                    |v| Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                        AddSubActionMsg::RandomIntMinChanged(v)
+                    ))),
                     palette,
                 ),
             ]
@@ -4254,7 +4340,9 @@ fn add_sub_action_modal_view<'a>(
                 forge_widgets::inputs::text_input_field(
                     "100",
                     &form.config.random_int_max,
-                    |v| Message::AddSubAction(AddSubActionMsg::RandomIntMaxChanged(v)),
+                    |v| Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                        AddSubActionMsg::RandomIntMaxChanged(v)
+                    ))),
                     palette,
                 ),
             ]
@@ -4264,7 +4352,9 @@ fn add_sub_action_modal_view<'a>(
                 forge_widgets::inputs::text_input_field(
                     "dice_roll",
                     &form.config.random_int_target_var,
-                    |v| Message::AddSubAction(AddSubActionMsg::RandomIntTargetVarChanged(v)),
+                    |v| Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                        AddSubActionMsg::RandomIntTargetVarChanged(v)
+                    ))),
                     palette,
                 ),
             ]
@@ -4294,11 +4384,15 @@ fn add_sub_action_modal_view<'a>(
 
     let cancel_btn = forge_widgets::secondary_button(
         "Cancel",
-        Message::AddSubAction(AddSubActionMsg::Cancel),
+        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+            AddSubActionMsg::Cancel,
+        ))),
         palette,
     );
 
-    let add_on_press = Message::AddSubAction(AddSubActionMsg::Submit);
+    let add_on_press = Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+        AddSubActionMsg::Submit,
+    )));
     let add_btn = if form.is_valid() && !form.saving {
         forge_widgets::primary_button(btn_label, add_on_press, palette)
     } else {
@@ -4323,14 +4417,18 @@ fn add_sub_action_modal_view<'a>(
 
     let panel = sheet_chrome(
         title_label,
-        Message::AddSubAction(AddSubActionMsg::Cancel),
+        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+            AddSubActionMsg::Cancel,
+        ))),
         body_col.into(),
         Some(footer),
         palette,
     );
     forge_widgets::side_sheet(
         panel,
-        Message::AddSubAction(AddSubActionMsg::Cancel),
+        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+            AddSubActionMsg::Cancel,
+        ))),
         forge_widgets::SheetEdge::Right,
         480.0,
         palette,
@@ -5604,7 +5702,12 @@ mod tests {
     fn open_add_action_modal_creates_form() {
         let mut app = App::default();
         assert!(app.actions.add_action_modal.is_none());
-        let _ = update(&mut app, Message::AddAction(AddActionMsg::OpenRequested));
+        let _ = update(
+            &mut app,
+            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
+                AddActionMsg::OpenRequested,
+            ))),
+        );
         assert!(app.actions.add_action_modal.is_some());
     }
 
@@ -5612,7 +5715,12 @@ mod tests {
     fn cancel_clears_modal() {
         let mut app = App::default();
         app.actions.add_action_modal = Some(crate::actions::AddActionForm::new());
-        let _ = update(&mut app, Message::AddAction(AddActionMsg::Cancel));
+        let _ = update(
+            &mut app,
+            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
+                AddActionMsg::Cancel,
+            ))),
+        );
         assert!(app.actions.add_action_modal.is_none());
     }
 
@@ -5622,7 +5730,9 @@ mod tests {
         app.actions.add_action_modal = Some(crate::actions::AddActionForm::new());
         let _ = update(
             &mut app,
-            Message::AddAction(AddActionMsg::NameChanged("Sub raid".to_string())),
+            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
+                AddActionMsg::NameChanged("Sub raid".to_string()),
+            ))),
         );
         assert_eq!(
             app.actions.add_action_modal.as_ref().unwrap().name,
@@ -5634,7 +5744,12 @@ mod tests {
     fn submit_with_invalid_form_is_noop() {
         let mut app = App::default();
         app.actions.add_action_modal = Some(crate::actions::AddActionForm::new());
-        let _ = update(&mut app, Message::AddAction(AddActionMsg::Submit));
+        let _ = update(
+            &mut app,
+            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
+                AddActionMsg::Submit,
+            ))),
+        );
         assert!(app.actions.add_action_modal.is_some(), "modal remains open");
     }
 
@@ -5646,7 +5761,9 @@ mod tests {
         let new_id = ActionId::new();
         let _ = update(
             &mut app,
-            Message::AddAction(AddActionMsg::Saved(Ok(new_id))),
+            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
+                AddActionMsg::Saved(Ok(new_id)),
+            ))),
         );
         assert!(app.actions.add_action_modal.is_none());
     }
@@ -5657,7 +5774,9 @@ mod tests {
         app.actions.add_action_modal = Some(crate::actions::AddActionForm::new());
         let _ = update(
             &mut app,
-            Message::AddAction(AddActionMsg::Saved(Err("db locked".to_string()))),
+            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
+                AddActionMsg::Saved(Err("db locked".to_string())),
+            ))),
         );
         let form = app.actions.add_action_modal.as_ref().unwrap();
         assert_eq!(form.error.as_deref(), Some("db locked"));
@@ -5748,13 +5867,20 @@ mod tests {
         form.set_queue_options(vec![(queue.id, "default".to_string())]);
         app.actions.add_action_modal = Some(form);
 
-        let _ = update(&mut app, Message::AddAction(AddActionMsg::Submit));
+        let _ = update(
+            &mut app,
+            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
+                AddActionMsg::Submit,
+            ))),
+        );
         assert!(app.actions.add_action_modal.as_ref().unwrap().saving);
 
         let saved_id = forge_types::ActionId::new();
         let _ = update(
             &mut app,
-            Message::AddAction(AddActionMsg::Saved(Ok(saved_id))),
+            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
+                AddActionMsg::Saved(Ok(saved_id)),
+            ))),
         );
         assert!(app.actions.add_action_modal.is_none());
     }
@@ -5767,7 +5893,9 @@ mod tests {
         assert!(app.actions.add_sub_action_modal.is_none());
         let _ = update(
             &mut app,
-            Message::AddSubAction(AddSubActionMsg::OpenRequested(id)),
+            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                AddSubActionMsg::OpenRequested(id),
+            ))),
         );
         assert!(app.actions.add_sub_action_modal.is_some());
         assert_eq!(
@@ -5786,7 +5914,12 @@ mod tests {
         let mut app = App::default();
         app.actions.add_sub_action_modal =
             Some(crate::actions::AddSubActionForm::new(ActionId::new()));
-        let _ = update(&mut app, Message::AddSubAction(AddSubActionMsg::Cancel));
+        let _ = update(
+            &mut app,
+            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                AddSubActionMsg::Cancel,
+            ))),
+        );
         assert!(app.actions.add_sub_action_modal.is_none());
     }
 
@@ -5798,7 +5931,9 @@ mod tests {
             Some(crate::actions::AddSubActionForm::new(ActionId::new()));
         let _ = update(
             &mut app,
-            Message::AddSubAction(AddSubActionMsg::KindSelected(SubActionKindChoice::Delay)),
+            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                AddSubActionMsg::KindSelected(SubActionKindChoice::Delay),
+            ))),
         );
         assert_eq!(
             app.actions.add_sub_action_modal.as_ref().unwrap().kind,
@@ -5814,9 +5949,9 @@ mod tests {
             Some(crate::actions::AddSubActionForm::new(ActionId::new()));
         let _ = update(
             &mut app,
-            Message::AddSubAction(AddSubActionMsg::SendChatMessageChanged(
-                "Hello %user%!".to_string(),
-            )),
+            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                AddSubActionMsg::SendChatMessageChanged("Hello %user%!".to_string()),
+            ))),
         );
         assert_eq!(
             app.actions
@@ -5837,7 +5972,12 @@ mod tests {
         form.kind = SubActionKindChoice::Delay;
         form.config.delay_ms = "not_a_number".to_string();
         app.actions.add_sub_action_modal = Some(form);
-        let _ = update(&mut app, Message::AddSubAction(AddSubActionMsg::Submit));
+        let _ = update(
+            &mut app,
+            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                AddSubActionMsg::Submit,
+            ))),
+        );
         let f = app.actions.add_sub_action_modal.as_ref().unwrap();
         assert!(f.error.is_some());
     }
@@ -5851,7 +5991,9 @@ mod tests {
         app.actions.selected = Some(id);
         let _ = update(
             &mut app,
-            Message::AddSubAction(AddSubActionMsg::Saved(Ok(()))),
+            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                AddSubActionMsg::Saved(Ok(())),
+            ))),
         );
         assert!(app.actions.add_sub_action_modal.is_none());
     }
@@ -5864,7 +6006,9 @@ mod tests {
             Some(crate::actions::AddSubActionForm::new(ActionId::new()));
         let _ = update(
             &mut app,
-            Message::AddSubAction(AddSubActionMsg::Saved(Err("db locked".to_string()))),
+            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                AddSubActionMsg::Saved(Err("db locked".to_string())),
+            ))),
         );
         let f = app.actions.add_sub_action_modal.as_ref().unwrap();
         assert_eq!(f.error.as_deref(), Some("db locked"));
@@ -5890,10 +6034,9 @@ mod tests {
         let clip_id = ClipId::new();
         let _ = update(
             &mut app,
-            Message::AddSubAction(AddSubActionMsg::ClipsLoaded(vec![(
-                clip_id,
-                "Airhorn".to_string(),
-            )])),
+            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                AddSubActionMsg::ClipsLoaded(vec![(clip_id, "Airhorn".to_string())]),
+            ))),
         );
         let clips = &app
             .actions
@@ -5915,7 +6058,9 @@ mod tests {
         let clip_id = ClipId::new();
         let _ = update(
             &mut app,
-            Message::AddSubAction(AddSubActionMsg::PlaySoundClipSelected(clip_id)),
+            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                AddSubActionMsg::PlaySoundClipSelected(clip_id),
+            ))),
         );
         assert_eq!(
             app.actions
@@ -5935,7 +6080,12 @@ mod tests {
         let mut form = crate::actions::AddSubActionForm::new(ActionId::new());
         form.kind = SubActionKindChoice::PlaySound;
         app.actions.add_sub_action_modal = Some(form);
-        let _ = update(&mut app, Message::AddSubAction(AddSubActionMsg::Submit));
+        let _ = update(
+            &mut app,
+            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                AddSubActionMsg::Submit,
+            ))),
+        );
         let f = app.actions.add_sub_action_modal.as_ref().unwrap();
         assert!(f.error.is_some());
     }

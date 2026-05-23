@@ -11,7 +11,7 @@ use tokio::task::JoinHandle;
 
 use forge_events::EventPublisher;
 use forge_platform_core::{
-    CapabilityFlags, ConnectionState, HeaderAction, HealthDelta, BuiltinId, BuiltinStatus,
+    BuiltinId, BuiltinStatus, CapabilityFlags, ConnectionState, HeaderAction, HealthDelta,
 };
 use forge_types::EventId;
 

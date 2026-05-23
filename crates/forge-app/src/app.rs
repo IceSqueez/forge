@@ -15,7 +15,6 @@ use forge_runtime::{
 };
 use forge_storage::{CredentialId, CredentialsRepo, DataProvider};
 use forge_storage_sqlite::SqliteBackend;
-use forge_types::{Action, ActionId};
 use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::tokens::{FONT_LG, FONT_MD, FONT_SM, FONT_XS};
 use forge_widgets::{
@@ -458,7 +457,9 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::Queues(sub) => crate::queues_view::update(&mut app.queues, &app.rt, sub),
         Message::Viewers(sub) => crate::viewers::update(&mut app.viewers, &app.rt, sub),
         Message::Commands(sub) => crate::commands_view::update(&mut app.commands, &app.rt, sub),
-        Message::AddAction(sub) => handle_add_action_msg(app, sub),
+        Message::AddAction(sub) => {
+            crate::action_editor::add_action_update(&mut app.actions.add_action_modal, &app.rt, sub)
+        }
         Message::AddTrigger(sub) => handle_add_trigger_msg(app, sub),
         Message::AddSubAction(sub) => handle_add_sub_action_msg(app, sub),
         Message::RemoveSubAction(sub) => handle_remove_sub_action_msg(app, sub),
@@ -895,151 +896,6 @@ fn handle_obs_panel_msg(app: &mut App, msg: crate::obs_panel::ObsPanelMsg) -> Ta
             app.obs_panel.connecting = false;
             app.obs_panel.connect_error = Some(e.clone());
             app.obs_panel.test_status = TestStatus::Failure(e);
-            Task::none()
-        }
-    }
-}
-
-fn handle_add_action_msg(app: &mut App, sub: AddActionMsg) -> Task<Message> {
-    match sub {
-        AddActionMsg::OpenRequested => {
-            app.actions.add_action_modal = Some(AddActionForm::new());
-            let dp = Arc::clone(&app.rt.backend);
-            Task::perform(
-                async move {
-                    dp.queue_repo()
-                        .list()
-                        .await
-                        .map(|qs| qs.into_iter().map(|q| (q.id, q.name)).collect())
-                        .map_err(|e| e.to_string())
-                },
-                |r| Message::AddAction(AddActionMsg::QueueOptionsLoaded(r)),
-            )
-        }
-        AddActionMsg::QueueOptionsLoaded(Ok(opts)) => {
-            if let Some(form) = app.actions.add_action_modal.as_mut() {
-                form.set_queue_options(opts);
-            }
-            Task::none()
-        }
-        AddActionMsg::QueueOptionsLoaded(Err(e)) => {
-            if let Some(form) = app.actions.add_action_modal.as_mut() {
-                form.error = Some(e);
-            }
-            Task::none()
-        }
-        AddActionMsg::NameChanged(v) => {
-            if let Some(f) = app.actions.add_action_modal.as_mut() {
-                f.name = v;
-            }
-            Task::none()
-        }
-        AddActionMsg::GroupChanged(v) => {
-            if let Some(f) = app.actions.add_action_modal.as_mut() {
-                f.group = v;
-            }
-            Task::none()
-        }
-        AddActionMsg::QueueSelected(name) => {
-            if let Some(f) = app.actions.add_action_modal.as_mut() {
-                f.select_queue_by_name(name);
-            }
-            Task::none()
-        }
-        AddActionMsg::DescriptionChanged(v) => {
-            if let Some(f) = app.actions.add_action_modal.as_mut() {
-                f.description = v;
-            }
-            Task::none()
-        }
-        AddActionMsg::EnabledToggled(v) => {
-            if let Some(f) = app.actions.add_action_modal.as_mut() {
-                f.enabled = v;
-            }
-            Task::none()
-        }
-        AddActionMsg::ConcurrentToggled(v) => {
-            if let Some(f) = app.actions.add_action_modal.as_mut() {
-                f.concurrent = v;
-            }
-            Task::none()
-        }
-        AddActionMsg::BypassPauseToggled(v) => {
-            if let Some(f) = app.actions.add_action_modal.as_mut() {
-                f.bypass_pause = v;
-            }
-            Task::none()
-        }
-        AddActionMsg::RandomPickToggled(v) => {
-            if let Some(f) = app.actions.add_action_modal.as_mut() {
-                f.random_pick = v;
-            }
-            Task::none()
-        }
-        AddActionMsg::Cancel => {
-            app.actions.add_action_modal = None;
-            Task::none()
-        }
-        AddActionMsg::Submit => {
-            let Some(form) = app.actions.add_action_modal.as_ref() else {
-                return Task::none();
-            };
-            if !form.is_valid() {
-                return Task::none();
-            }
-            let Some(queue_id) = form.queue_id else {
-                return Task::none();
-            };
-            let action = Action {
-                id: ActionId::new(),
-                name: form.name.trim().to_string(),
-                group: if form.group.trim().is_empty() {
-                    None
-                } else {
-                    Some(form.group.trim().to_string())
-                },
-                queue_id,
-                enabled: form.enabled,
-                concurrent: form.concurrent,
-                bypass_pause: form.bypass_pause,
-                execution_mode: if form.random_pick {
-                    forge_types::ExecutionMode::RandomPick
-                } else {
-                    forge_types::ExecutionMode::Sequential
-                },
-                description: if form.description.trim().is_empty() {
-                    None
-                } else {
-                    Some(form.description.trim().to_string())
-                },
-                sub_actions: vec![],
-            };
-            if let Some(f) = app.actions.add_action_modal.as_mut() {
-                f.saving = true;
-            }
-            let dp = Arc::clone(&app.rt.backend);
-            Task::perform(
-                async move {
-                    dp.action_repo()
-                        .save(&action)
-                        .await
-                        .map(|_| action.id)
-                        .map_err(|e| e.to_string())
-                },
-                |r| Message::AddAction(AddActionMsg::Saved(r)),
-            )
-        }
-        AddActionMsg::Saved(Ok(id)) => {
-            app.actions.add_action_modal = None;
-            let load = Task::done(Message::Actions(ActionsMsg::LoadRequested));
-            let select = Task::done(Message::Actions(ActionsMsg::ActionSelected(id)));
-            load.chain(select)
-        }
-        AddActionMsg::Saved(Err(e)) => {
-            if let Some(f) = app.actions.add_action_modal.as_mut() {
-                f.saving = false;
-                f.error = Some(e);
-            }
             Task::none()
         }
     }

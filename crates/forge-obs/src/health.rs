@@ -4,9 +4,7 @@ use tokio::sync::broadcast;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 
-use forge_platform_core::{
-    HealthDelta, HealthMetric, HealthStream, HealthValue, BuiltinHealth,
-};
+use forge_platform_core::{BuiltinHealth, HealthDelta, HealthMetric, HealthStream, HealthValue};
 
 use crate::client::ObsClient;
 

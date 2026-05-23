@@ -7,10 +7,9 @@ use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 
 use forge_platform_core::{
-    CapabilityFlags, ConnectionState, ContentList, ContentListItem, DetailSection, HeaderAction,
-    HealthDelta, HealthMetric, HealthStream, HealthValue, BuiltinContent, BuiltinHealth,
-    BuiltinId, BuiltinStatus, ListFooter, QuickAction, QuickActions, SectionIcon,
-    TrailingToken,
+    BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, CapabilityFlags, ConnectionState,
+    ContentList, ContentListItem, DetailSection, HeaderAction, HealthDelta, HealthMetric,
+    HealthStream, HealthValue, ListFooter, QuickAction, QuickActions, SectionIcon, TrailingToken,
 };
 use forge_types::SubActionSpec;
 

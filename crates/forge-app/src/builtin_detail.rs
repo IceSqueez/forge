@@ -2,15 +2,14 @@ use std::sync::Arc;
 
 use forge_obs::{ObsClient, ObsSource};
 use forge_platform_core::{
-    CapabilityFlags, DetailSection, HeaderAction, HealthMetric, BuiltinContent,
-    BuiltinHealth, BuiltinId, BuiltinStatus, PickerKind, QuickAction, QuickActions,
-    SectionIcon,
+    BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, CapabilityFlags, DetailSection,
+    HeaderAction, HealthMetric, PickerKind, QuickAction, QuickActions, SectionIcon,
 };
 use forge_types::SubActionSpec;
 use forge_widgets::{
     Density, ForgePalette, HeaderCardParams, PickerItem, PickerModalProps, Spacing, ToastVariant,
-    builtin_content_renderer, builtin_header_card, builtin_health_grid,
-    builtin_quick_actions_grid, picker_modal, spacing, toast_banner,
+    builtin_content_renderer, builtin_header_card, builtin_health_grid, builtin_quick_actions_grid,
+    picker_modal, spacing, toast_banner,
 };
 use iced::widget::container;
 use iced::{Alignment, Element, Length, Subscription, Task};
@@ -312,10 +311,7 @@ async fn fetch_picker_items(
     }
 }
 
-pub fn view<'a>(
-    state: &'a BuiltinDetailState,
-    palette: &'a ForgePalette,
-) -> Element<'a, Message> {
+pub fn view<'a>(state: &'a BuiltinDetailState, palette: &'a ForgePalette) -> Element<'a, Message> {
     let section_gap = spacing(Spacing::Md, Density::Cozy) as f32;
 
     let params = HeaderCardParams {
@@ -480,9 +476,9 @@ mod tests {
 
     use crate::app::App;
     use forge_platform_core::{
-        CapabilityFlags, ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric,
-        HealthStream, HealthValue, BuiltinContent, BuiltinHealth, BuiltinId,
-        BuiltinStatus, PickerKind, QuickAction, QuickActions, SectionIcon,
+        BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, CapabilityFlags, ConnectionState,
+        DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthStream, HealthValue,
+        PickerKind, QuickAction, QuickActions, SectionIcon,
     };
 
     struct TestStatus {
@@ -647,11 +643,7 @@ mod tests {
     fn handle_is_noop_when_state_absent() {
         let mut state_opt: Option<BuiltinDetailState> = None;
         let app = App::default();
-        let _ = update(
-            &mut state_opt,
-            &app.rt,
-            BuiltinDetailMsg::PickerCancelled,
-        );
+        let _ = update(&mut state_opt, &app.rt, BuiltinDetailMsg::PickerCancelled);
         assert!(state_opt.is_none());
     }
 
@@ -769,11 +761,7 @@ mod tests {
         });
         let mut state_opt = Some(state);
         let app = App::default();
-        let _ = update(
-            &mut state_opt,
-            &app.rt,
-            BuiltinDetailMsg::PickerCancelled,
-        );
+        let _ = update(&mut state_opt, &app.rt, BuiltinDetailMsg::PickerCancelled);
         assert!(state_opt.as_ref().unwrap().pending_picker.is_none());
     }
 

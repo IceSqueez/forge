@@ -1,12 +1,15 @@
-use forge_types::{ActionId, SubActionSpec};
-use iced::{Alignment, Background, Border, Element, Length, Padding};
+use std::sync::Arc;
+
+use forge_storage::DataProvider;
+use forge_types::{Action, ActionId, SubActionSpec};
+use iced::{Alignment, Background, Border, Element, Length, Padding, Task};
 
 use crate::Screen;
-use crate::actions::AddSubActionMsg;
-use crate::actions::RemoveSubActionMsg;
 use crate::actions::{ActionsGroup, TriggerCategory, trigger_label_of};
+use crate::actions::{AddActionForm, AddActionMsg, AddSubActionMsg, RemoveSubActionMsg};
 use crate::app::App;
 use crate::message::{ActionsMsg, Message, MoveSubActionMsg};
+use crate::runtime_view::RuntimeView;
 use forge_widgets::ForgePalette;
 use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::popover::{MenuItem, MenuPlacement, menu_button};
@@ -805,6 +808,155 @@ pub fn action_editor_view<'a>(
     .width(Length::Fill)
     .height(Length::Fill)
     .into()
+}
+
+pub fn add_action_update(
+    state: &mut Option<AddActionForm>,
+    rt: &RuntimeView,
+    msg: AddActionMsg,
+) -> Task<Message> {
+    match msg {
+        AddActionMsg::OpenRequested => {
+            *state = Some(AddActionForm::new());
+            let dp = Arc::clone(&rt.backend);
+            Task::perform(
+                async move {
+                    dp.queue_repo()
+                        .list()
+                        .await
+                        .map(|qs| qs.into_iter().map(|q| (q.id, q.name)).collect())
+                        .map_err(|e| e.to_string())
+                },
+                |r| Message::AddAction(AddActionMsg::QueueOptionsLoaded(r)),
+            )
+        }
+        AddActionMsg::QueueOptionsLoaded(Ok(opts)) => {
+            if let Some(form) = state.as_mut() {
+                form.set_queue_options(opts);
+            }
+            Task::none()
+        }
+        AddActionMsg::QueueOptionsLoaded(Err(e)) => {
+            if let Some(form) = state.as_mut() {
+                form.error = Some(e);
+            }
+            Task::none()
+        }
+        AddActionMsg::NameChanged(v) => {
+            if let Some(f) = state.as_mut() {
+                f.name = v;
+            }
+            Task::none()
+        }
+        AddActionMsg::GroupChanged(v) => {
+            if let Some(f) = state.as_mut() {
+                f.group = v;
+            }
+            Task::none()
+        }
+        AddActionMsg::QueueSelected(name) => {
+            if let Some(f) = state.as_mut() {
+                f.select_queue_by_name(name);
+            }
+            Task::none()
+        }
+        AddActionMsg::DescriptionChanged(v) => {
+            if let Some(f) = state.as_mut() {
+                f.description = v;
+            }
+            Task::none()
+        }
+        AddActionMsg::EnabledToggled(v) => {
+            if let Some(f) = state.as_mut() {
+                f.enabled = v;
+            }
+            Task::none()
+        }
+        AddActionMsg::ConcurrentToggled(v) => {
+            if let Some(f) = state.as_mut() {
+                f.concurrent = v;
+            }
+            Task::none()
+        }
+        AddActionMsg::BypassPauseToggled(v) => {
+            if let Some(f) = state.as_mut() {
+                f.bypass_pause = v;
+            }
+            Task::none()
+        }
+        AddActionMsg::RandomPickToggled(v) => {
+            if let Some(f) = state.as_mut() {
+                f.random_pick = v;
+            }
+            Task::none()
+        }
+        AddActionMsg::Cancel => {
+            *state = None;
+            Task::none()
+        }
+        AddActionMsg::Submit => {
+            let Some(form) = state.as_ref() else {
+                return Task::none();
+            };
+            if !form.is_valid() {
+                return Task::none();
+            }
+            let Some(queue_id) = form.queue_id else {
+                return Task::none();
+            };
+            let action = Action {
+                id: ActionId::new(),
+                name: form.name.trim().to_string(),
+                group: if form.group.trim().is_empty() {
+                    None
+                } else {
+                    Some(form.group.trim().to_string())
+                },
+                queue_id,
+                enabled: form.enabled,
+                concurrent: form.concurrent,
+                bypass_pause: form.bypass_pause,
+                execution_mode: if form.random_pick {
+                    forge_types::ExecutionMode::RandomPick
+                } else {
+                    forge_types::ExecutionMode::Sequential
+                },
+                description: if form.description.trim().is_empty() {
+                    None
+                } else {
+                    Some(form.description.trim().to_string())
+                },
+                sub_actions: vec![],
+            };
+            if let Some(f) = state.as_mut() {
+                f.saving = true;
+            }
+            let dp = Arc::clone(&rt.backend);
+            Task::perform(
+                async move {
+                    dp.action_repo()
+                        .save(&action)
+                        .await
+                        .map(|_| action.id)
+                        .map_err(|e| e.to_string())
+                },
+                |r| Message::AddAction(AddActionMsg::Saved(r)),
+            )
+        }
+        AddActionMsg::Saved(Ok(id)) => {
+            *state = None;
+            let load = Task::done(Message::Actions(ActionsMsg::LoadRequested));
+            let select = Task::done(Message::Actions(ActionsMsg::ActionSelected(id)));
+            load.chain(select)
+        }
+        AddActionMsg::Saved(Err(e)) => {
+            if let Some(f) = state.as_mut() {
+                f.saving = false;
+                f.error = Some(e);
+            }
+            Task::none()
+        }
+    }
 }
 
 #[cfg(test)]

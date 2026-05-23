@@ -31,13 +31,8 @@ pub struct SubActionTelemetry {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ExecutionMetadata {
-    Trigger {
-        event_id: EventId,
-    },
-    QuickAction {
-        builtin_id: String,
-        label: String,
-    },
+    Trigger { event_id: EventId },
+    QuickAction { builtin_id: String, label: String },
 }
 
 /// Immutable after construction; built once from trigger event and globals snapshot.

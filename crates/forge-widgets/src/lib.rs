@@ -2,6 +2,7 @@
 
 pub mod actions;
 pub mod breadcrumb;
+pub mod builtin;
 pub mod buttons;
 pub mod cards;
 pub mod charts;
@@ -13,7 +14,6 @@ pub mod data;
 pub mod events;
 pub mod icons;
 pub mod inputs;
-pub mod builtin;
 pub mod layout;
 pub mod navigation;
 pub mod output_device_picker;
@@ -34,6 +34,10 @@ pub use actions::{
     category_chip, modal, sub_action_card, toggle, tree_node_with_status, variable_chip,
 };
 pub use breadcrumb::{BreadcrumbCrumb, breadcrumb};
+pub use builtin::{
+    HeaderCardParams, builtin_content_renderer, builtin_header_card, builtin_health_grid,
+    builtin_quick_actions_grid, builtin_quick_actions_grid_with_hint,
+};
 pub use buttons::{
     destructive_button, ghost_button, ghost_button_with_icon, icon_button, primary_button,
     primary_button_small, primary_button_with_icon_right, secondary_button,
@@ -59,11 +63,6 @@ pub use events::{
 };
 pub use icons::{Icon, tabler_icon};
 pub use inputs::{input_padding, search_input, select, text_input_field};
-pub use builtin::{
-    HeaderCardParams, builtin_content_renderer, builtin_header_card,
-    builtin_health_grid, builtin_quick_actions_grid,
-    builtin_quick_actions_grid_with_hint,
-};
 pub use layout::{app_footer, page_shell, title_bar, toolbar};
 pub use navigation::{NavChild, NavItem, SIDEBAR_WIDTH, Sidebar, sidebar};
 pub use output_device_picker::{DeviceLabel, output_device_picker};

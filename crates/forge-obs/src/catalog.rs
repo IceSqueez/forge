@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use forge_platform_core::{
-    ContentList, ContentListItem, DetailSection, BuiltinContent, SectionIcon, TrailingToken,
+    BuiltinContent, ContentList, ContentListItem, DetailSection, SectionIcon, TrailingToken,
 };
 
 use crate::client::ObsClient;

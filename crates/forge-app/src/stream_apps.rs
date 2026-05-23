@@ -1,4 +1,4 @@
-use forge_platform_core::{ConnectionState, BuiltinId};
+use forge_platform_core::{BuiltinId, ConnectionState};
 use forge_widgets::{
     ForgePalette, Icon, tabler_icon,
     tokens::{FONT_MD, FONT_SM, FONT_XS, Radius, radius},

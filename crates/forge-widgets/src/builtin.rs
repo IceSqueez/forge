@@ -2090,8 +2090,7 @@ mod tests {
             })
             .collect();
 
-        let _: Element<'_, ()> =
-            builtin_quick_actions_grid(&actions, |_idx| (), &CATPPUCCIN_MOCHA);
+        let _: Element<'_, ()> = builtin_quick_actions_grid(&actions, |_idx| (), &CATPPUCCIN_MOCHA);
     }
 
     #[test]
@@ -2123,8 +2122,7 @@ mod tests {
             },
         ];
 
-        let _: Element<'_, ()> =
-            builtin_quick_actions_grid(&actions, |_idx| (), &CATPPUCCIN_MOCHA);
+        let _: Element<'_, ()> = builtin_quick_actions_grid(&actions, |_idx| (), &CATPPUCCIN_MOCHA);
     }
 
     #[test]

@@ -1,12 +1,18 @@
+use forge_events::{Event, EventSource};
 use forge_storage::{ActionTelemetry, DataProvider, StorageError};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
     Action, ActionId, ClipId, Command, CommandPermission, LogLevel, QueueId, SubActionSpec,
     Trigger, TriggerId, TriggerKind,
 };
-use iced::{Color, Element, Length};
+use iced::{Color, Element, Length, Task};
 use std::sync::Arc;
 use time::OffsetDateTime;
+
+use crate::Message;
+use crate::message::{ActionsMsg, ToastMsg};
+use crate::runtime_view::RuntimeView;
+use crate::test_trigger::synthesize_test_event;
 
 #[derive(Debug, Clone)]
 pub struct ActionSummary {
@@ -909,6 +915,343 @@ pub async fn remove_sub_action(
         action.sub_actions.remove(index);
     }
     dp.action_repo().save(&action).await
+}
+
+pub fn action_rename_input_id() -> iced::advanced::widget::Id {
+    iced::advanced::widget::Id::new("forge:action_rename")
+}
+
+pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Task<Message> {
+    match msg {
+        ActionsMsg::LoadRequested => {
+            state.loading = true;
+            let dp = Arc::clone(&rt.backend);
+            Task::perform(
+                async move { load_actions_tree(dp).await.map_err(|e| e.to_string()) },
+                |r| Message::Actions(ActionsMsg::TreeLoaded(r)),
+            )
+        }
+        ActionsMsg::TreeLoaded(Ok(tree)) => {
+            state.tree = tree;
+            state.loading = false;
+            Task::none()
+        }
+        ActionsMsg::TreeLoaded(Err(e)) => {
+            state.loading = false;
+            tracing::warn!(error = %e, "actions tree load failed");
+            Task::none()
+        }
+        ActionsMsg::ActionSelected(id) => {
+            let already_loaded = state.selected == Some(id)
+                && state
+                    .detail
+                    .as_ref()
+                    .map(|d| d.action.id == id)
+                    .unwrap_or(false);
+            if already_loaded {
+                return Task::none();
+            }
+            state.selected = Some(id);
+            state.detail = None;
+            state.telemetry = None;
+            state.telemetry_loading = true;
+            let dp1 = Arc::clone(&rt.backend);
+            let dp2 = Arc::clone(&rt.backend);
+            let detail_task = Task::perform(
+                async move { load_action_detail(dp1, id).await.map_err(|e| e.to_string()) },
+                |r| Message::Actions(ActionsMsg::DetailLoaded(r)),
+            );
+            let telemetry_task = Task::perform(async move { load_telemetry(dp2, id).await }, |r| {
+                Message::Actions(ActionsMsg::TelemetryLoaded(r))
+            });
+            Task::batch([detail_task, telemetry_task])
+        }
+        ActionsMsg::DetailLoaded(Ok(detail)) => {
+            state.detail = Some(detail);
+            Task::none()
+        }
+        ActionsMsg::DetailLoaded(Err(e)) => {
+            state.detail = None;
+            tracing::warn!(error = %e, "action detail load failed");
+            Task::none()
+        }
+        ActionsMsg::ToggleEnabled(id, enabled) => {
+            if let Some(detail) = state.detail.as_mut()
+                && detail.action.id == id
+            {
+                detail.action.enabled = enabled;
+            }
+            for group in &mut state.tree {
+                for summary in &mut group.actions {
+                    if summary.id == id {
+                        summary.enabled = enabled;
+                    }
+                }
+            }
+            let dp = Arc::clone(&rt.backend);
+            Task::perform(
+                async move {
+                    let Some(mut action) =
+                        dp.action_repo().get(id).await.map_err(|e| e.to_string())?
+                    else {
+                        return Err("action not found".to_string());
+                    };
+                    action.enabled = enabled;
+                    dp.action_repo()
+                        .save(&action)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                |r| Message::Actions(ActionsMsg::EnabledToggled(r)),
+            )
+        }
+        ActionsMsg::EnabledToggled(Ok(())) => Task::none(),
+        ActionsMsg::EnabledToggled(Err(e)) => {
+            tracing::warn!(error = %e, "toggle enabled persist failed");
+            Task::none()
+        }
+        ActionsMsg::TestTrigger(id) => {
+            let bus = Arc::clone(&rt.bus);
+            let dp = Arc::clone(&rt.backend);
+            Task::perform(
+                async move {
+                    let detail = load_action_detail(Arc::clone(&dp), id)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    let event = match detail.triggers.first() {
+                        Some(trigger) => synthesize_test_event(trigger, &detail.commands),
+                        None => Event::new(
+                            EventSource::Core,
+                            "test.trigger",
+                            serde_json::json!({ "action_id": id.to_string() }),
+                        ),
+                    };
+                    let event_id = event.id;
+                    bus.publish(event);
+                    bus.replay_and_publish(event_id)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                |r| {
+                    if let Err(e) = r {
+                        tracing::warn!(error = %e, "test trigger failed");
+                    }
+                    Message::Noop
+                },
+            )
+        }
+        ActionsMsg::DeleteAction(id) => {
+            let dp = Arc::clone(&rt.backend);
+            Task::perform(
+                async move { dp.action_repo().delete(id).await.map_err(|e| e.to_string()) },
+                |r| Message::Actions(ActionsMsg::ActionDeleted(r.map(|_| ()))),
+            )
+        }
+        ActionsMsg::ActionDeleted(Ok(())) => {
+            state.selected = None;
+            state.detail = None;
+            Task::done(Message::Actions(ActionsMsg::LoadRequested))
+        }
+        ActionsMsg::ActionDeleted(Err(e)) => {
+            tracing::warn!(error = %e, "delete action failed");
+            Task::none()
+        }
+        ActionsMsg::DuplicateAction(id) => {
+            let dp = Arc::clone(&rt.backend);
+            Task::perform(
+                async move {
+                    let original = dp
+                        .action_repo()
+                        .get(id)
+                        .await
+                        .map_err(|e| e.to_string())?
+                        .ok_or_else(|| "source action not found".to_string())?;
+                    let mut copy = original.clone();
+                    copy.id = forge_types::ActionId::new();
+                    copy.name = format!("{} (copy)", original.name);
+                    dp.action_repo()
+                        .save(&copy)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    Ok(copy.id)
+                },
+                |r| Message::Actions(ActionsMsg::ActionDuplicated(r)),
+            )
+        }
+        ActionsMsg::ActionDuplicated(Ok(new_id)) => {
+            tracing::info!(action_id = %new_id, "action duplicated");
+            Task::done(Message::Actions(ActionsMsg::LoadRequested))
+        }
+        ActionsMsg::ActionDuplicated(Err(e)) => {
+            tracing::warn!(error = %e, "duplicate action failed");
+            Task::none()
+        }
+        ActionsMsg::DeleteTrigger(trigger_id, action_id) => {
+            let dp = Arc::clone(&rt.backend);
+            Task::perform(
+                async move {
+                    dp.trigger_repo()
+                        .delete(trigger_id)
+                        .await
+                        .map(|_| action_id)
+                        .map_err(|e| e.to_string())
+                },
+                |r| Message::Actions(ActionsMsg::TriggerDeleted(r)),
+            )
+        }
+        ActionsMsg::TriggerDeleted(Ok(action_id)) => {
+            Task::done(Message::Actions(ActionsMsg::ActionSelected(action_id)))
+        }
+        ActionsMsg::TriggerDeleted(Err(e)) => {
+            tracing::warn!(error = %e, "delete trigger failed");
+            Task::none()
+        }
+        ActionsMsg::OpenAddActionModal => {
+            Task::done(Message::AddAction(AddActionMsg::OpenRequested))
+        }
+        ActionsMsg::OpenAddTriggerModal(action_id) => {
+            Task::done(Message::AddTrigger(AddTriggerMsg::OpenRequested(action_id)))
+        }
+        ActionsMsg::SearchChanged(q) => {
+            state.search = q;
+            Task::none()
+        }
+        ActionsMsg::FilterChanged(f) => {
+            state.filter = f;
+            Task::none()
+        }
+        ActionsMsg::ToggleGroupCollapsed(cat) => {
+            if state.collapsed_groups.contains(&cat) {
+                state.collapsed_groups.remove(&cat);
+            } else {
+                state.collapsed_groups.insert(cat);
+            }
+            Task::none()
+        }
+        ActionsMsg::TelemetryLoaded(Ok(t)) => {
+            state.telemetry = Some(t);
+            state.telemetry_loading = false;
+            Task::none()
+        }
+        ActionsMsg::TelemetryLoaded(Err(e)) => {
+            state.telemetry = None;
+            state.telemetry_loading = false;
+            tracing::warn!(error = %e, "action telemetry load failed");
+            Task::none()
+        }
+        ActionsMsg::ToggleStepMenu(i) => {
+            state.step_menu_open = if state.step_menu_open == Some(i) {
+                None
+            } else {
+                Some(i)
+            };
+            Task::none()
+        }
+        ActionsMsg::DismissStepMenu => {
+            state.step_menu_open = None;
+            Task::none()
+        }
+        ActionsMsg::ToggleActionMenu(id) => {
+            state.action_menu_open = if state.action_menu_open == Some(id) {
+                None
+            } else {
+                Some(id)
+            };
+            Task::none()
+        }
+        ActionsMsg::DismissActionMenu => {
+            state.action_menu_open = None;
+            Task::none()
+        }
+        ActionsMsg::RenameStarted(id) => {
+            let current_name = state
+                .tree
+                .iter()
+                .flat_map(|g| g.actions.iter())
+                .find(|a| a.id == id)
+                .map(|a| a.name.clone())
+                .unwrap_or_default();
+            state.renaming_action = Some((id, current_name));
+            state.action_menu_open = None;
+            iced::widget::operation::focus(action_rename_input_id())
+        }
+        ActionsMsg::RenameBufferChanged(buf) => {
+            if let Some((_, name)) = state.renaming_action.as_mut() {
+                *name = buf;
+            }
+            Task::none()
+        }
+        ActionsMsg::RenameCancel => {
+            state.renaming_action = None;
+            Task::none()
+        }
+        ActionsMsg::RenameSubmit => {
+            let Some((id, name)) = state.renaming_action.clone() else {
+                return Task::none();
+            };
+            let trimmed = name.trim().to_owned();
+            if trimmed.is_empty() {
+                state.renaming_action = None;
+                return Task::none();
+            }
+            let already_taken = state
+                .tree
+                .iter()
+                .flat_map(|g| g.actions.iter())
+                .any(|a| a.id != id && a.name.eq_ignore_ascii_case(&trimmed));
+            if already_taken {
+                let toast_msg = format!("Name \u{201c}{trimmed}\u{201d} is already taken");
+                return Task::done(Message::Toast(ToastMsg::Fired {
+                    kind: forge_widgets::ToastKind::Error,
+                    message: toast_msg,
+                    duration_ms: 3000,
+                }));
+            }
+            let dp = Arc::clone(&rt.backend);
+            Task::perform(
+                async move {
+                    let mut action = dp
+                        .action_repo()
+                        .get(id)
+                        .await
+                        .map_err(|e| e.to_string())?
+                        .ok_or_else(|| "action not found".to_owned())?;
+                    action.name = trimmed.clone();
+                    dp.action_repo()
+                        .save(&action)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    Ok::<_, String>((id, trimmed))
+                },
+                |r| Message::Actions(ActionsMsg::RenameSaved(r)),
+            )
+        }
+        ActionsMsg::RenameSaved(Ok((id, new_name))) => {
+            state.renaming_action = None;
+            for group in &mut state.tree {
+                let touched = group.actions.iter().any(|s| s.id == id);
+                for summary in &mut group.actions {
+                    if summary.id == id {
+                        summary.name = new_name.clone();
+                    }
+                }
+                if touched {
+                    group.actions.sort_by_key(|a| a.name.to_lowercase());
+                }
+            }
+            if let Some(detail) = state.detail.as_mut()
+                && detail.action.id == id
+            {
+                detail.action.name = new_name;
+            }
+            Task::none()
+        }
+        ActionsMsg::RenameSaved(Err(e)) => {
+            state.renaming_action = None;
+            tracing::warn!(error = %e, "action rename failed");
+            Task::none()
+        }
+    }
 }
 
 #[cfg(test)]

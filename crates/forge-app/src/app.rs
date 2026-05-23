@@ -3,7 +3,7 @@ use std::time::SystemTime;
 
 use forge_soundboard::SoundboardPlayer;
 
-use forge_events::{Event, EventPublisher, EventSource};
+use forge_events::{EventPublisher, EventSource};
 use forge_obs::ObsClient;
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, QuickActions, SectionIcon,
@@ -28,8 +28,8 @@ use crate::action_editor::action_editor_view;
 use crate::actions::{
     ActionsFilter, ActionsState, AddActionForm, AddActionMsg, AddSubActionForm, AddSubActionMsg,
     AddTriggerForm, AddTriggerMsg, RemoveSubActionMsg, SubActionKindChoice, TriggerCategory,
-    duplicate_sub_action, kind_label, kind_summary, load_action_detail, load_actions_tree,
-    load_clip_options, load_telemetry, move_sub_action, remove_sub_action, save_sub_action,
+    duplicate_sub_action, kind_label, kind_summary, load_clip_options, move_sub_action,
+    remove_sub_action, save_sub_action,
 };
 use crate::builtin_detail::{BuiltinDetailState, health_subscription, view as builtin_detail_view};
 use crate::event_feed;
@@ -49,7 +49,6 @@ use crate::settings_audio::{SettingsAudioState, settings_audio_view};
 use crate::settings_websocket::{SettingsWebSocketState, settings_websocket_view};
 use crate::soundboard::{SoundboardState, soundboard_view};
 use crate::stream_apps::view as stream_apps_view;
-use crate::test_trigger::synthesize_test_event;
 use crate::tts_dashboard::{TtsDashState, tts_dashboard_view};
 use crate::tts_engines::{TtsEnginesState, tts_engines_view};
 use crate::tts_filters::{TtsFiltersState, tts_filters_view};
@@ -455,7 +454,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         },
         Message::Home(sub) => crate::home::update(&mut app.home, &app.rt, sub),
         Message::Globals(sub) => crate::globals_view::update(&mut app.globals, &app.rt, sub),
-        Message::Actions(sub) => handle_actions_msg(app, sub),
+        Message::Actions(sub) => crate::actions::update(&mut app.actions, &app.rt, sub),
         Message::Queues(sub) => crate::queues_view::update(&mut app.queues, &app.rt, sub),
         Message::Viewers(sub) => crate::viewers::update(&mut app.viewers, &app.rt, sub),
         Message::Commands(sub) => crate::commands_view::update(&mut app.commands, &app.rt, sub),
@@ -896,343 +895,6 @@ fn handle_obs_panel_msg(app: &mut App, msg: crate::obs_panel::ObsPanelMsg) -> Ta
             app.obs_panel.connecting = false;
             app.obs_panel.connect_error = Some(e.clone());
             app.obs_panel.test_status = TestStatus::Failure(e);
-            Task::none()
-        }
-    }
-}
-
-fn handle_actions_msg(app: &mut App, sub: ActionsMsg) -> Task<Message> {
-    match sub {
-        ActionsMsg::LoadRequested => {
-            app.actions.loading = true;
-            let dp = Arc::clone(&app.rt.backend);
-            Task::perform(
-                async move { load_actions_tree(dp).await.map_err(|e| e.to_string()) },
-                |r| Message::Actions(ActionsMsg::TreeLoaded(r)),
-            )
-        }
-        ActionsMsg::TreeLoaded(Ok(tree)) => {
-            app.actions.tree = tree;
-            app.actions.loading = false;
-            Task::none()
-        }
-        ActionsMsg::TreeLoaded(Err(e)) => {
-            app.actions.loading = false;
-            tracing::warn!(error = %e, "actions tree load failed");
-            Task::none()
-        }
-        ActionsMsg::ActionSelected(id) => {
-            let already_loaded = app.actions.selected == Some(id)
-                && app
-                    .actions
-                    .detail
-                    .as_ref()
-                    .map(|d| d.action.id == id)
-                    .unwrap_or(false);
-            if already_loaded {
-                return Task::none();
-            }
-            app.actions.selected = Some(id);
-            app.actions.detail = None;
-            app.actions.telemetry = None;
-            app.actions.telemetry_loading = true;
-            let dp1 = Arc::clone(&app.rt.backend);
-            let dp2 = Arc::clone(&app.rt.backend);
-            let detail_task = Task::perform(
-                async move { load_action_detail(dp1, id).await.map_err(|e| e.to_string()) },
-                |r| Message::Actions(ActionsMsg::DetailLoaded(r)),
-            );
-            let telemetry_task = Task::perform(async move { load_telemetry(dp2, id).await }, |r| {
-                Message::Actions(ActionsMsg::TelemetryLoaded(r))
-            });
-            Task::batch([detail_task, telemetry_task])
-        }
-        ActionsMsg::DetailLoaded(Ok(detail)) => {
-            app.actions.detail = Some(detail);
-            Task::none()
-        }
-        ActionsMsg::DetailLoaded(Err(e)) => {
-            app.actions.detail = None;
-            tracing::warn!(error = %e, "action detail load failed");
-            Task::none()
-        }
-        ActionsMsg::ToggleEnabled(id, enabled) => {
-            if let Some(detail) = app.actions.detail.as_mut()
-                && detail.action.id == id
-            {
-                detail.action.enabled = enabled;
-            }
-            for group in &mut app.actions.tree {
-                for summary in &mut group.actions {
-                    if summary.id == id {
-                        summary.enabled = enabled;
-                    }
-                }
-            }
-            let dp = Arc::clone(&app.rt.backend);
-            Task::perform(
-                async move {
-                    let Some(mut action) =
-                        dp.action_repo().get(id).await.map_err(|e| e.to_string())?
-                    else {
-                        return Err("action not found".to_string());
-                    };
-                    action.enabled = enabled;
-                    dp.action_repo()
-                        .save(&action)
-                        .await
-                        .map_err(|e| e.to_string())
-                },
-                |r| Message::Actions(ActionsMsg::EnabledToggled(r)),
-            )
-        }
-        ActionsMsg::EnabledToggled(Ok(())) => Task::none(),
-        ActionsMsg::EnabledToggled(Err(e)) => {
-            tracing::warn!(error = %e, "toggle enabled persist failed");
-            Task::none()
-        }
-        ActionsMsg::TestTrigger(id) => {
-            let bus = Arc::clone(&app.rt.bus);
-            let dp = Arc::clone(&app.rt.backend);
-            Task::perform(
-                async move {
-                    let detail = load_action_detail(Arc::clone(&dp), id)
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    let event = match detail.triggers.first() {
-                        Some(trigger) => synthesize_test_event(trigger, &detail.commands),
-                        None => Event::new(
-                            EventSource::Core,
-                            "test.trigger",
-                            serde_json::json!({ "action_id": id.to_string() }),
-                        ),
-                    };
-                    let event_id = event.id;
-                    bus.publish(event);
-                    bus.replay_and_publish(event_id)
-                        .await
-                        .map_err(|e| e.to_string())
-                },
-                |r| {
-                    if let Err(e) = r {
-                        tracing::warn!(error = %e, "test trigger failed");
-                    }
-                    Message::Noop
-                },
-            )
-        }
-        ActionsMsg::DeleteAction(id) => {
-            let dp = Arc::clone(&app.rt.backend);
-            Task::perform(
-                async move { dp.action_repo().delete(id).await.map_err(|e| e.to_string()) },
-                |r| Message::Actions(ActionsMsg::ActionDeleted(r.map(|_| ()))),
-            )
-        }
-        ActionsMsg::ActionDeleted(Ok(())) => {
-            app.actions.selected = None;
-            app.actions.detail = None;
-            Task::done(Message::Actions(ActionsMsg::LoadRequested))
-        }
-        ActionsMsg::ActionDeleted(Err(e)) => {
-            tracing::warn!(error = %e, "delete action failed");
-            Task::none()
-        }
-        ActionsMsg::DuplicateAction(id) => {
-            let dp = Arc::clone(&app.rt.backend);
-            Task::perform(
-                async move {
-                    let original = dp
-                        .action_repo()
-                        .get(id)
-                        .await
-                        .map_err(|e| e.to_string())?
-                        .ok_or_else(|| "source action not found".to_string())?;
-                    let mut copy = original.clone();
-                    copy.id = forge_types::ActionId::new();
-                    copy.name = format!("{} (copy)", original.name);
-                    dp.action_repo()
-                        .save(&copy)
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    Ok(copy.id)
-                },
-                |r| Message::Actions(ActionsMsg::ActionDuplicated(r)),
-            )
-        }
-        ActionsMsg::ActionDuplicated(Ok(new_id)) => {
-            tracing::info!(action_id = %new_id, "action duplicated");
-            Task::done(Message::Actions(ActionsMsg::LoadRequested))
-        }
-        ActionsMsg::ActionDuplicated(Err(e)) => {
-            tracing::warn!(error = %e, "duplicate action failed");
-            Task::none()
-        }
-        ActionsMsg::DeleteTrigger(trigger_id, action_id) => {
-            let dp = Arc::clone(&app.rt.backend);
-            Task::perform(
-                async move {
-                    dp.trigger_repo()
-                        .delete(trigger_id)
-                        .await
-                        .map(|_| action_id)
-                        .map_err(|e| e.to_string())
-                },
-                |r| Message::Actions(ActionsMsg::TriggerDeleted(r)),
-            )
-        }
-        ActionsMsg::TriggerDeleted(Ok(action_id)) => {
-            Task::done(Message::Actions(ActionsMsg::ActionSelected(action_id)))
-        }
-        ActionsMsg::TriggerDeleted(Err(e)) => {
-            tracing::warn!(error = %e, "delete trigger failed");
-            Task::none()
-        }
-        ActionsMsg::OpenAddActionModal => {
-            Task::done(Message::AddAction(AddActionMsg::OpenRequested))
-        }
-        ActionsMsg::OpenAddTriggerModal(action_id) => {
-            Task::done(Message::AddTrigger(AddTriggerMsg::OpenRequested(action_id)))
-        }
-        ActionsMsg::SearchChanged(q) => {
-            app.actions.search = q;
-            Task::none()
-        }
-        ActionsMsg::FilterChanged(f) => {
-            app.actions.filter = f;
-            Task::none()
-        }
-        ActionsMsg::ToggleGroupCollapsed(cat) => {
-            if app.actions.collapsed_groups.contains(&cat) {
-                app.actions.collapsed_groups.remove(&cat);
-            } else {
-                app.actions.collapsed_groups.insert(cat);
-            }
-            Task::none()
-        }
-        ActionsMsg::TelemetryLoaded(Ok(t)) => {
-            app.actions.telemetry = Some(t);
-            app.actions.telemetry_loading = false;
-            Task::none()
-        }
-        ActionsMsg::TelemetryLoaded(Err(e)) => {
-            app.actions.telemetry = None;
-            app.actions.telemetry_loading = false;
-            tracing::warn!(error = %e, "action telemetry load failed");
-            Task::none()
-        }
-        ActionsMsg::ToggleStepMenu(i) => {
-            app.actions.step_menu_open = if app.actions.step_menu_open == Some(i) {
-                None
-            } else {
-                Some(i)
-            };
-            Task::none()
-        }
-        ActionsMsg::DismissStepMenu => {
-            app.actions.step_menu_open = None;
-            Task::none()
-        }
-        ActionsMsg::ToggleActionMenu(id) => {
-            app.actions.action_menu_open = if app.actions.action_menu_open == Some(id) {
-                None
-            } else {
-                Some(id)
-            };
-            Task::none()
-        }
-        ActionsMsg::DismissActionMenu => {
-            app.actions.action_menu_open = None;
-            Task::none()
-        }
-        ActionsMsg::RenameStarted(id) => {
-            let current_name = app
-                .actions
-                .tree
-                .iter()
-                .flat_map(|g| g.actions.iter())
-                .find(|a| a.id == id)
-                .map(|a| a.name.clone())
-                .unwrap_or_default();
-            app.actions.renaming_action = Some((id, current_name));
-            app.actions.action_menu_open = None;
-            iced::widget::operation::focus(action_rename_input_id())
-        }
-        ActionsMsg::RenameBufferChanged(buf) => {
-            if let Some((_, name)) = app.actions.renaming_action.as_mut() {
-                *name = buf;
-            }
-            Task::none()
-        }
-        ActionsMsg::RenameCancel => {
-            app.actions.renaming_action = None;
-            Task::none()
-        }
-        ActionsMsg::RenameSubmit => {
-            let Some((id, name)) = app.actions.renaming_action.clone() else {
-                return Task::none();
-            };
-            let trimmed = name.trim().to_owned();
-            if trimmed.is_empty() {
-                app.actions.renaming_action = None;
-                return Task::none();
-            }
-            let already_taken = app
-                .actions
-                .tree
-                .iter()
-                .flat_map(|g| g.actions.iter())
-                .any(|a| a.id != id && a.name.eq_ignore_ascii_case(&trimmed));
-            if already_taken {
-                let toast_msg = format!("Name \u{201c}{trimmed}\u{201d} is already taken");
-                return Task::done(Message::Toast(ToastMsg::Fired {
-                    kind: forge_widgets::ToastKind::Error,
-                    message: toast_msg,
-                    duration_ms: 3000,
-                }));
-            }
-            let dp = Arc::clone(&app.rt.backend);
-            Task::perform(
-                async move {
-                    use forge_storage::DataProvider;
-                    let mut action = dp
-                        .action_repo()
-                        .get(id)
-                        .await
-                        .map_err(|e| e.to_string())?
-                        .ok_or_else(|| "action not found".to_owned())?;
-                    action.name = trimmed.clone();
-                    dp.action_repo()
-                        .save(&action)
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    Ok::<_, String>((id, trimmed))
-                },
-                |r| Message::Actions(ActionsMsg::RenameSaved(r)),
-            )
-        }
-        ActionsMsg::RenameSaved(Ok((id, new_name))) => {
-            app.actions.renaming_action = None;
-            for group in &mut app.actions.tree {
-                let touched = group.actions.iter().any(|s| s.id == id);
-                for summary in &mut group.actions {
-                    if summary.id == id {
-                        summary.name = new_name.clone();
-                    }
-                }
-                if touched {
-                    group.actions.sort_by_key(|a| a.name.to_lowercase());
-                }
-            }
-            if let Some(detail) = app.actions.detail.as_mut()
-                && detail.action.id == id
-            {
-                detail.action.name = new_name;
-            }
-            Task::none()
-        }
-        ActionsMsg::RenameSaved(Err(e)) => {
-            app.actions.renaming_action = None;
-            tracing::warn!(error = %e, "action rename failed");
             Task::none()
         }
     }
@@ -4031,7 +3693,7 @@ fn actions_tree_row<'a>(
 
     let name_el: Element<'a, Message> = if let Some(buf) = rename_buf {
         text_input("", buf)
-            .id(action_rename_input_id())
+            .id(crate::actions::action_rename_input_id())
             .on_input(|s| Message::Actions(ActionsMsg::RenameBufferChanged(s)))
             .on_submit(Message::Actions(ActionsMsg::RenameSubmit))
             .size(FONT_SM)
@@ -4403,10 +4065,6 @@ fn section_header_with_add<'a>(
     .padding([6_u16, 14_u16])
     .width(Length::Fill)
     .into()
-}
-
-fn action_rename_input_id() -> iced::advanced::widget::Id {
-    iced::advanced::widget::Id::new("forge:action_rename")
 }
 
 pub(crate) fn sheet_chrome<'a>(

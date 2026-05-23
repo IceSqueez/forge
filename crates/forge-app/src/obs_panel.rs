@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use iced::widget::{button, column, container, row, text, text_input};
-use iced::{Alignment, Background, Border, Color, Element, Length, Padding, Shadow, Theme};
+use iced::{Alignment, Background, Border, Color, Element, Length, Padding, Shadow, Task, Theme};
 
 use forge_events::EventPublisher;
 use forge_obs::{ObsError, ObsServerInfo, test_connect};
@@ -14,6 +14,7 @@ use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::tokens::{FONT_SM, FONT_XS, FontRole, font};
 
 use crate::Message;
+use crate::runtime_view::RuntimeView;
 
 const OBS_CREDENTIAL_ID: &str = "obs:default";
 
@@ -137,6 +138,93 @@ pub async fn connect_obs_from_form(
 
 fn format_obs_error(e: ObsError) -> String {
     e.to_string()
+}
+
+pub fn update(state: &mut ObsPanelState, rt: &RuntimeView, msg: ObsPanelMsg) -> Task<Message> {
+    match msg {
+        ObsPanelMsg::HostChanged(v) => {
+            state.form.host = v;
+            state.test_status = TestStatus::Idle;
+            Task::none()
+        }
+        ObsPanelMsg::PortChanged(v) => {
+            state.form.port_text = v;
+            state.test_status = TestStatus::Idle;
+            Task::none()
+        }
+        ObsPanelMsg::PasswordChanged(v) => {
+            state.form.password = v;
+            state.test_status = TestStatus::Idle;
+            Task::none()
+        }
+        ObsPanelMsg::TogglePasswordReveal => {
+            state.form.password_revealed = !state.form.password_revealed;
+            Task::none()
+        }
+        ObsPanelMsg::ToggleAutoReconnect => {
+            state.form.auto_reconnect = !state.form.auto_reconnect;
+            Task::none()
+        }
+        ObsPanelMsg::ToggleConnectOnLaunch => {
+            state.form.connect_on_launch = !state.form.connect_on_launch;
+            Task::none()
+        }
+        ObsPanelMsg::TestRequested => {
+            let port = match state.form.port_text.parse::<u16>() {
+                Ok(p) => p,
+                Err(_) => {
+                    state.test_status = TestStatus::Failure("port must be a number 1-65535".into());
+                    return Task::none();
+                }
+            };
+            let host = state.form.host.clone();
+            let pw = if state.form.password.is_empty() {
+                None
+            } else {
+                Some(state.form.password.clone())
+            };
+            state.test_status = TestStatus::Running;
+            Task::perform(run_test_connect(host, port, pw), |r| {
+                Message::ObsPanel(ObsPanelMsg::TestResult(r))
+            })
+        }
+        ObsPanelMsg::TestResult(Ok(info)) => {
+            state.test_status = TestStatus::Success(info);
+            Task::none()
+        }
+        ObsPanelMsg::TestResult(Err(e)) => {
+            state.test_status = TestStatus::Failure(e);
+            Task::none()
+        }
+        ObsPanelMsg::ConnectRequested => {
+            let port = match state.form.port_text.parse::<u16>() {
+                Ok(p) => p,
+                Err(_) => {
+                    state.test_status = TestStatus::Failure("port must be a number 1-65535".into());
+                    return Task::none();
+                }
+            };
+            let host = state.form.host.clone();
+            let password = state.form.password.clone();
+            let backend = Arc::clone(&rt.backend);
+            let bus = Arc::clone(&rt.bus);
+            state.connecting = true;
+            state.connect_error = None;
+            Task::perform(
+                connect_obs_from_form(backend, bus, host, port, password),
+                |r| match r {
+                    Ok(client_ref) => Message::ObsBootResult(Ok(client_ref)),
+                    Err(e) => Message::ObsPanel(ObsPanelMsg::ConnectError(e)),
+                },
+            )
+        }
+        ObsPanelMsg::ConnectError(e) => {
+            state.connecting = false;
+            state.connect_error = Some(e.clone());
+            state.test_status = TestStatus::Failure(e);
+            Task::none()
+        }
+    }
 }
 
 pub fn obs_disconnected_view<'a>(

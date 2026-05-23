@@ -673,7 +673,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 |()| Message::Noop,
             )
         }
-        Message::ObsPanel(sub) => handle_obs_panel_msg(app, sub),
+        Message::ObsPanel(sub) => crate::obs_panel::update(&mut app.obs_panel, &app.rt, sub),
         Message::Soundboard(sub) => crate::soundboard::update(&mut app.soundboard, &app.rt, sub),
         Message::SettingsAudio(sub) => {
             crate::settings_audio::update(&mut app.settings_audio, &app.rt, sub)
@@ -823,96 +823,6 @@ fn handle_twitch_panel_msg(
         TwitchPanelMsg::AuthCompleted(Err(e)) => {
             tracing::warn!(error = %e, "twitch authorization failed");
             app.twitch_panel = TwitchPanelState::Error(e);
-            Task::none()
-        }
-    }
-}
-
-fn handle_obs_panel_msg(app: &mut App, msg: crate::obs_panel::ObsPanelMsg) -> Task<Message> {
-    use crate::obs_panel::{ObsPanelMsg, TestStatus};
-    match msg {
-        ObsPanelMsg::HostChanged(v) => {
-            app.obs_panel.form.host = v;
-            app.obs_panel.test_status = TestStatus::Idle;
-            Task::none()
-        }
-        ObsPanelMsg::PortChanged(v) => {
-            app.obs_panel.form.port_text = v;
-            app.obs_panel.test_status = TestStatus::Idle;
-            Task::none()
-        }
-        ObsPanelMsg::PasswordChanged(v) => {
-            app.obs_panel.form.password = v;
-            app.obs_panel.test_status = TestStatus::Idle;
-            Task::none()
-        }
-        ObsPanelMsg::TogglePasswordReveal => {
-            app.obs_panel.form.password_revealed = !app.obs_panel.form.password_revealed;
-            Task::none()
-        }
-        ObsPanelMsg::ToggleAutoReconnect => {
-            app.obs_panel.form.auto_reconnect = !app.obs_panel.form.auto_reconnect;
-            Task::none()
-        }
-        ObsPanelMsg::ToggleConnectOnLaunch => {
-            app.obs_panel.form.connect_on_launch = !app.obs_panel.form.connect_on_launch;
-            Task::none()
-        }
-        ObsPanelMsg::TestRequested => {
-            let port = match app.obs_panel.form.port_text.parse::<u16>() {
-                Ok(p) => p,
-                Err(_) => {
-                    app.obs_panel.test_status =
-                        TestStatus::Failure("port must be a number 1-65535".into());
-                    return Task::none();
-                }
-            };
-            let host = app.obs_panel.form.host.clone();
-            let pw = if app.obs_panel.form.password.is_empty() {
-                None
-            } else {
-                Some(app.obs_panel.form.password.clone())
-            };
-            app.obs_panel.test_status = TestStatus::Running;
-            Task::perform(crate::obs_panel::run_test_connect(host, port, pw), |r| {
-                Message::ObsPanel(ObsPanelMsg::TestResult(r))
-            })
-        }
-        ObsPanelMsg::TestResult(Ok(info)) => {
-            app.obs_panel.test_status = TestStatus::Success(info);
-            Task::none()
-        }
-        ObsPanelMsg::TestResult(Err(e)) => {
-            app.obs_panel.test_status = TestStatus::Failure(e);
-            Task::none()
-        }
-        ObsPanelMsg::ConnectRequested => {
-            let port = match app.obs_panel.form.port_text.parse::<u16>() {
-                Ok(p) => p,
-                Err(_) => {
-                    app.obs_panel.test_status =
-                        TestStatus::Failure("port must be a number 1-65535".into());
-                    return Task::none();
-                }
-            };
-            let host = app.obs_panel.form.host.clone();
-            let password = app.obs_panel.form.password.clone();
-            let backend = Arc::clone(&app.rt.backend);
-            let bus = Arc::clone(&app.rt.bus);
-            app.obs_panel.connecting = true;
-            app.obs_panel.connect_error = None;
-            Task::perform(
-                crate::obs_panel::connect_obs_from_form(backend, bus, host, port, password),
-                |r| match r {
-                    Ok(client_ref) => Message::ObsBootResult(Ok(client_ref)),
-                    Err(e) => Message::ObsPanel(ObsPanelMsg::ConnectError(e)),
-                },
-            )
-        }
-        ObsPanelMsg::ConnectError(e) => {
-            app.obs_panel.connecting = false;
-            app.obs_panel.connect_error = Some(e.clone());
-            app.obs_panel.test_status = TestStatus::Failure(e);
             Task::none()
         }
     }

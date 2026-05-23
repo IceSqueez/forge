@@ -37,8 +37,7 @@ use crate::event_feed::{EventFeedState, event_feed_view};
 use crate::globals_view::{GlobalsState, globals_view};
 use crate::home::HomeStats;
 use crate::builtin_detail::{
-    BuiltinDetailState, handle_builtin_detail_msg, health_subscription,
-    view as builtin_detail_view,
+    BuiltinDetailState, health_subscription, view as builtin_detail_view,
 };
 use crate::live_chat::{CHAT_LOG_MAX, LiveChatState, chat_row_from_event, live_chat_view};
 use crate::message::{
@@ -571,7 +570,9 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::ScriptEditor(sub) => {
             crate::script_editor::update(&mut app.script_editor, &app.rt, sub)
         }
-        Message::BuiltinDetail(sub) => handle_builtin_detail_msg(app, sub),
+        Message::BuiltinDetail(sub) => {
+            crate::builtin_detail::update(&mut app.builtin_detail, &app.rt, sub)
+        }
         Message::TwitchBootResult(result) => match result {
             Ok(Some(bundle)) => {
                 let login = if bundle.login.is_empty() {

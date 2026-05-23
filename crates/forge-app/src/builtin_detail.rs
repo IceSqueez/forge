@@ -15,8 +15,8 @@ use forge_widgets::{
 use iced::widget::container;
 use iced::{Alignment, Element, Length, Subscription, Task};
 
-use crate::app::App;
 use crate::message::{BuiltinDetailMsg, Message};
+use crate::runtime_view::RuntimeView;
 
 pub enum PickerItemsState {
     Idle,
@@ -90,8 +90,12 @@ impl BuiltinDetailState {
     }
 }
 
-pub fn handle_builtin_detail_msg(app: &mut App, msg: BuiltinDetailMsg) -> Task<Message> {
-    let Some(state) = app.builtin_detail.as_mut() else {
+pub fn update(
+    state: &mut Option<BuiltinDetailState>,
+    rt: &RuntimeView,
+    msg: BuiltinDetailMsg,
+) -> Task<Message> {
+    let Some(state) = state.as_mut() else {
         return Task::none();
     };
     match msg {
@@ -116,11 +120,8 @@ pub fn handle_builtin_detail_msg(app: &mut App, msg: BuiltinDetailMsg) -> Task<M
             let builtin_id = state.id.as_str().to_owned();
 
             if let Some(kind) = picker_kind {
-                let obs_client = app.rt.obs_client.clone();
-                let Some(detail) = app.builtin_detail.as_mut() else {
-                    return Task::none();
-                };
-                detail.pending_picker = Some(PendingPicker {
+                let obs_client = rt.obs_client.clone();
+                state.pending_picker = Some(PendingPicker {
                     action_index: idx,
                     kind,
                     search: String::new(),
@@ -143,7 +144,7 @@ pub fn handle_builtin_detail_msg(app: &mut App, msg: BuiltinDetailMsg) -> Task<M
                     ),
                 }
             } else {
-                let engine = app.rt.action_engine.clone();
+                let engine = rt.action_engine.clone();
                 Task::perform(
                     async move {
                         if let Some(e) = engine {
@@ -228,7 +229,7 @@ pub fn handle_builtin_detail_msg(app: &mut App, msg: BuiltinDetailMsg) -> Task<M
                 PickerKind::Hotkey | PickerKind::Expression => return Task::none(),
             }
 
-            let engine = app.rt.action_engine.clone();
+            let engine = rt.action_engine.clone();
             Task::perform(
                 async move {
                     if let Some(e) = engine {
@@ -477,6 +478,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
+    use crate::app::App;
     use forge_platform_core::{
         CapabilityFlags, ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric,
         HealthStream, HealthValue, BuiltinContent, BuiltinHealth, BuiltinId,
@@ -602,10 +604,8 @@ mod tests {
 
     #[test]
     fn health_delta_updates_metric_value() {
-        let mut app = App {
-            builtin_detail: Some(make_state()),
-            ..App::default()
-        };
+        let mut state_opt = Some(make_state());
+        let app = App::default();
         let delta = HealthDelta {
             index: 1,
             new_value: HealthValue::Text {
@@ -613,8 +613,12 @@ mod tests {
                 secondary: None,
             },
         };
-        let _ = handle_builtin_detail_msg(&mut app, BuiltinDetailMsg::HealthDelta(delta));
-        let state = app.builtin_detail.as_ref().unwrap();
+        let _ = update(
+            &mut state_opt,
+            &app.rt,
+            BuiltinDetailMsg::HealthDelta(delta),
+        );
+        let state = state_opt.as_ref().unwrap();
         assert!(matches!(
             &state.health_metrics[1].value,
             HealthValue::Text { primary, .. } if primary == "42"
@@ -623,10 +627,8 @@ mod tests {
 
     #[test]
     fn health_delta_out_of_bounds_is_noop() {
-        let mut app = App {
-            builtin_detail: Some(make_state()),
-            ..App::default()
-        };
+        let mut state_opt = Some(make_state());
+        let app = App::default();
         let delta = HealthDelta {
             index: 5,
             new_value: HealthValue::Text {
@@ -634,14 +636,23 @@ mod tests {
                 secondary: None,
             },
         };
-        let _ = handle_builtin_detail_msg(&mut app, BuiltinDetailMsg::HealthDelta(delta));
+        let _ = update(
+            &mut state_opt,
+            &app.rt,
+            BuiltinDetailMsg::HealthDelta(delta),
+        );
     }
 
     #[test]
     fn handle_is_noop_when_state_absent() {
-        let mut app = App::default();
-        let _ = handle_builtin_detail_msg(&mut app, BuiltinDetailMsg::PickerCancelled);
-        assert!(app.builtin_detail.is_none());
+        let mut state_opt: Option<BuiltinDetailState> = None;
+        let app = App::default();
+        let _ = update(
+            &mut state_opt,
+            &app.rt,
+            BuiltinDetailMsg::PickerCancelled,
+        );
+        assert!(state_opt.is_none());
     }
 
     #[test]
@@ -653,18 +664,15 @@ mod tests {
             subaction_template: forge_types::SubActionSpec::ObsStartRecord,
             picker: None,
         };
-        let mut app = App {
-            builtin_detail: Some(make_state_with_actions(vec![action])),
-            ..App::default()
-        };
-        let _ =
-            handle_builtin_detail_msg(&mut app, BuiltinDetailMsg::QuickActionClicked(0));
+        let mut state_opt = Some(make_state_with_actions(vec![action]));
+        let app = App::default();
+        let _ = update(
+            &mut state_opt,
+            &app.rt,
+            BuiltinDetailMsg::QuickActionClicked(0),
+        );
         assert!(
-            app.builtin_detail
-                .as_ref()
-                .unwrap()
-                .pending_picker
-                .is_none(),
+            state_opt.as_ref().unwrap().pending_picker.is_none(),
             "picker must not open when action has no picker"
         );
     }
@@ -680,13 +688,14 @@ mod tests {
             },
             picker: Some(PickerKind::Scene),
         };
-        let mut app = App {
-            builtin_detail: Some(make_state_with_actions(vec![action])),
-            ..App::default()
-        };
-        let _ =
-            handle_builtin_detail_msg(&mut app, BuiltinDetailMsg::QuickActionClicked(0));
-        let state = app.builtin_detail.as_ref().unwrap();
+        let mut state_opt = Some(make_state_with_actions(vec![action]));
+        let app = App::default();
+        let _ = update(
+            &mut state_opt,
+            &app.rt,
+            BuiltinDetailMsg::QuickActionClicked(0),
+        );
+        let state = state_opt.as_ref().unwrap();
         let pending = state.pending_picker.as_ref().unwrap();
         assert_eq!(pending.kind, PickerKind::Scene);
         assert!(matches!(pending.items, PickerItemsState::Loading));
@@ -733,15 +742,15 @@ mod tests {
             current_scene: None,
         });
 
-        let mut app = App {
-            builtin_detail: Some(state),
-            ..App::default()
-        };
+        let mut state_opt = Some(state);
+        let app = App::default();
+        let _ = update(
+            &mut state_opt,
+            &app.rt,
+            BuiltinDetailMsg::PickerItemSelected(2),
+        );
 
-        let _ =
-            handle_builtin_detail_msg(&mut app, BuiltinDetailMsg::PickerItemSelected(2));
-
-        let detail_state = app.builtin_detail.as_ref().unwrap();
+        let detail_state = state_opt.as_ref().unwrap();
         assert!(
             detail_state.pending_picker.is_none(),
             "picker must be closed after selection"
@@ -758,36 +767,24 @@ mod tests {
             items: PickerItemsState::Loading,
             current_scene: None,
         });
-        let mut app = App {
-            builtin_detail: Some(state),
-            ..App::default()
-        };
-        let _ = handle_builtin_detail_msg(&mut app, BuiltinDetailMsg::PickerCancelled);
-        assert!(
-            app.builtin_detail
-                .as_ref()
-                .unwrap()
-                .pending_picker
-                .is_none()
+        let mut state_opt = Some(state);
+        let app = App::default();
+        let _ = update(
+            &mut state_opt,
+            &app.rt,
+            BuiltinDetailMsg::PickerCancelled,
         );
+        assert!(state_opt.as_ref().unwrap().pending_picker.is_none());
     }
 
     #[test]
     fn dismiss_toast_clears_toast() {
         let mut state = make_state();
         state.quick_action_toast = Some("Switch Scene — done".to_owned());
-        let mut app = App {
-            builtin_detail: Some(state),
-            ..App::default()
-        };
-        let _ = handle_builtin_detail_msg(&mut app, BuiltinDetailMsg::DismissToast);
-        assert!(
-            app.builtin_detail
-                .as_ref()
-                .unwrap()
-                .quick_action_toast
-                .is_none()
-        );
+        let mut state_opt = Some(state);
+        let app = App::default();
+        let _ = update(&mut state_opt, &app.rt, BuiltinDetailMsg::DismissToast);
+        assert!(state_opt.as_ref().unwrap().quick_action_toast.is_none());
     }
 
     #[test]
@@ -800,21 +797,14 @@ mod tests {
             items: PickerItemsState::Loading,
             current_scene: None,
         });
-        let mut app = App {
-            builtin_detail: Some(state),
-            ..App::default()
-        };
-        let _ = handle_builtin_detail_msg(
-            &mut app,
+        let mut state_opt = Some(state);
+        let app = App::default();
+        let _ = update(
+            &mut state_opt,
+            &app.rt,
             BuiltinDetailMsg::PickerSearchChanged("game".to_owned()),
         );
-        let pending = app
-            .builtin_detail
-            .as_ref()
-            .unwrap()
-            .pending_picker
-            .as_ref()
-            .unwrap();
+        let pending = state_opt.as_ref().unwrap().pending_picker.as_ref().unwrap();
         assert_eq!(pending.search, "game");
     }
 
@@ -828,27 +818,20 @@ mod tests {
             items: PickerItemsState::Loading,
             current_scene: None,
         });
-        let mut app = App {
-            builtin_detail: Some(state),
-            ..App::default()
-        };
+        let mut state_opt = Some(state);
+        let app = App::default();
         let items = vec![PickerItem {
             id: "Gameplay".to_owned(),
             label: "Gameplay".to_owned(),
             sublabel: None,
             icon: SectionIcon::new("layout"),
         }];
-        let _ = handle_builtin_detail_msg(
-            &mut app,
+        let _ = update(
+            &mut state_opt,
+            &app.rt,
             BuiltinDetailMsg::PickerItemsLoaded(Ok((items, Some("Gameplay".to_owned())))),
         );
-        let pending = app
-            .builtin_detail
-            .as_ref()
-            .unwrap()
-            .pending_picker
-            .as_ref()
-            .unwrap();
+        let pending = state_opt.as_ref().unwrap().pending_picker.as_ref().unwrap();
         assert!(matches!(pending.items, PickerItemsState::Loaded(_)));
         assert_eq!(pending.current_scene.as_deref(), Some("Gameplay"));
     }
@@ -863,23 +846,16 @@ mod tests {
             items: PickerItemsState::Loading,
             current_scene: None,
         });
-        let mut app = App {
-            builtin_detail: Some(state),
-            ..App::default()
-        };
-        let _ = handle_builtin_detail_msg(
-            &mut app,
+        let mut state_opt = Some(state);
+        let app = App::default();
+        let _ = update(
+            &mut state_opt,
+            &app.rt,
             BuiltinDetailMsg::PickerItemsLoaded(Err(
                 "Not supported for OBS — VTube only".to_owned()
             )),
         );
-        let pending = app
-            .builtin_detail
-            .as_ref()
-            .unwrap()
-            .pending_picker
-            .as_ref()
-            .unwrap();
+        let pending = state_opt.as_ref().unwrap().pending_picker.as_ref().unwrap();
         assert!(matches!(pending.items, PickerItemsState::Failed(_)));
     }
 

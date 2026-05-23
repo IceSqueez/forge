@@ -40,9 +40,7 @@ pub use app::{App, SidebarExpandState, load_obs_and_connect};
 pub use event_feed::{EventFeedMsg, EventFeedState, EventFilter, matches_filter};
 pub use globals_view::{GlobalsState, VariantEditorFields, VariantEditorForm, load_globals_data};
 pub use home::HomeStats;
-pub use builtin_detail::{
-    BuiltinDetailState, handle_builtin_detail_msg, health_subscription,
-};
+pub use builtin_detail::{BuiltinDetailState, health_subscription};
 pub use live_chat::{ChatFilters, LiveChatState, PlatformFilter};
 pub use message::{
     ActionsMsg, EditorMode, GlobalsFilter, GlobalsLoadData, GlobalsMsg, HomeMsg, HomeStatsData,

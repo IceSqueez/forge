@@ -1007,7 +1007,11 @@ where
 
         match event {
             Event::Mouse(mouse::Event::CursorMoved { position }) => {
+                let was_hovered = state.hovered;
                 state.hovered = abs_username.contains(*position);
+                if was_hovered != state.hovered {
+                    shell.request_redraw();
+                }
             }
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) if state.hovered => {
                 shell.publish(on_click(self.data.username.clone()));

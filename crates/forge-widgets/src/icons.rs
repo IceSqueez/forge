@@ -68,7 +68,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    fn bytes(self) -> &'static [u8] {
+    pub(crate) fn bytes(self) -> &'static [u8] {
         match self {
             Icon::Home => include_bytes!("../assets/icons/tabler/home.svg"),
             Icon::Clock => include_bytes!("../assets/icons/tabler/clock.svg"),

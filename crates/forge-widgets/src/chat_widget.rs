@@ -12,6 +12,7 @@ use iced::{
 };
 
 use crate::chat::{BadgeKind, ChatBody, ChatRow, Platform};
+use crate::icons::Icon;
 use crate::palette::ForgePalette;
 use crate::tokens::{FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spf};
 
@@ -24,10 +25,6 @@ const ICON_SPACING: f32 = 8.0;
 const BADGE_SPACING: f32 = 6.0;
 const SEPARATOR_H: f32 = 0.5;
 const BODY_LINE_SPACING: f32 = 3.0;
-
-const STAR_SVG_BYTES: &[u8] = include_bytes!("../assets/icons/tabler/star.svg");
-const BOLT_SVG_BYTES: &[u8] = include_bytes!("../assets/icons/tabler/bolt.svg");
-const FLAG_SVG_BYTES: &[u8] = include_bytes!("../assets/icons/tabler/flag.svg");
 
 fn line_height(font_size: f32) -> f32 {
     font_size * 1.3
@@ -565,7 +562,7 @@ where
             }
             ChatBody::Subscription { tier, months, .. } => {
                 renderer.draw_svg(
-                    svg::Svg::new(svg::Handle::from_memory(STAR_SVG_BYTES))
+                    svg::Svg::new(svg::Handle::from_memory(Icon::Star.bytes()))
                         .color(self.palette.brand),
                     Rectangle {
                         x: content_x,
@@ -653,7 +650,7 @@ where
             }
             ChatBody::Cheer { bits, .. } => {
                 renderer.draw_svg(
-                    svg::Svg::new(svg::Handle::from_memory(BOLT_SVG_BYTES))
+                    svg::Svg::new(svg::Handle::from_memory(Icon::Bolt.bytes()))
                         .color(self.palette.warning),
                     Rectangle {
                         x: content_x,
@@ -739,7 +736,7 @@ where
             }
             ChatBody::Raid { viewers, .. } => {
                 renderer.draw_svg(
-                    svg::Svg::new(svg::Handle::from_memory(FLAG_SVG_BYTES))
+                    svg::Svg::new(svg::Handle::from_memory(Icon::Flag.bytes()))
                         .color(self.palette.random),
                     Rectangle {
                         x: content_x,
@@ -1026,5 +1023,34 @@ mod tests {
             action_duration_ms: Some(12),
         });
         assert!(node.size().height > 0.0);
+    }
+
+    #[test]
+    fn update_publishes_user_click_on_release_inside_username_bounds() {
+        use iced::advanced::Widget as _;
+        let mut widget: ChatRowWidget<String> = ChatRowWidget::new(
+            CATPPUCCIN_MOCHA,
+            make_row(ChatBody::Message("hello".into())),
+            Some(|name: String| name),
+        );
+        let mut tree = Tree {
+            tag: <ChatRowWidget<String> as Widget<String, Theme, ()>>::tag(&widget),
+            state: <ChatRowWidget<String> as Widget<String, Theme, ()>>::state(&widget),
+            children: vec![],
+        };
+        let r: &() = &();
+        let limits = layout::Limits::new(Size::ZERO, Size::new(400.0, f32::INFINITY));
+        widget.layout(&mut tree, r, &limits);
+        let state = tree
+            .state
+            .downcast_ref::<ChatRowState<<() as text::Renderer>::Paragraph>>();
+        assert!(
+            state.username_bounds.width > 0.0,
+            "username_bounds must have positive width after layout"
+        );
+        assert!(
+            state.username_bounds.height > 0.0,
+            "username_bounds must have positive height after layout"
+        );
     }
 }

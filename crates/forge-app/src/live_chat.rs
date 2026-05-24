@@ -1490,7 +1490,11 @@ fn build_chat_area<'a>(
             let row = row.clone();
             let seq = row.seq;
             iced::widget::lazy(seq, move |_: &u64| {
-                forge_widgets::chat_row(palette_copy, row.clone(), Some(select_viewer_msg))
+                forge_widgets::ChatRowWidget::new(
+                    palette_copy,
+                    row.clone(),
+                    Some(select_viewer_msg),
+                )
             })
             .into()
         })

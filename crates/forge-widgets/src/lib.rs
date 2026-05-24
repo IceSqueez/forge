@@ -7,6 +7,7 @@ pub mod buttons;
 pub mod cards;
 pub mod charts;
 pub mod chat;
+pub mod chat_widget;
 pub mod clip_card;
 pub mod code_editor;
 pub mod console;
@@ -50,6 +51,7 @@ pub use chat::{
     BadgeKind, ChatBody, ChatRow, Platform, PlatformTarget, chat_row, chat_row_cheer, chat_row_cmd,
     chat_row_msg, chat_row_raid, chat_row_sub, chip_bg, filter_chip, input_bar,
 };
+pub use chat_widget::ChatRowWidget;
 pub use clip_card::{ClipCardData, clip_card};
 pub use code_editor::{CodeEditorState, code_editor};
 pub use console::{ConsoleLevel, ConsoleLine, console};

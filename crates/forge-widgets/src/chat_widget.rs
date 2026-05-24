@@ -259,7 +259,7 @@ where
         );
         let uname_w = state.paragraphs.primary_body.min_bounds().width;
 
-        let body_h = match &self.data.body {
+        let (body_h, username_x_offset) = match &self.data.body {
             ChatBody::Message(msg) => {
                 let sep_w = measure_text_width::<R::Paragraph>(": ", FONT_SM, font(FontRole::Body));
                 let wrap_w = (content_w - uname_w - sep_w).max(1.0);
@@ -272,13 +272,14 @@ where
                 ));
                 state.paragraphs.inline_descriptor = None;
                 state.paragraphs.inline_badge = None;
-                state
+                let h = state
                     .paragraphs
                     .secondary_body
                     .as_ref()
                     .map_or(line_height(FONT_SM), |p| {
                         p.min_bounds().height.max(line_height(FONT_SM))
-                    })
+                    });
+                (h, 0.0)
             }
             ChatBody::Subscription {
                 tier,
@@ -314,10 +315,11 @@ where
                         text::Wrapping::None,
                     )
                 });
-                line_height(FONT_SM)
+                let h = line_height(FONT_SM)
                     + state.paragraphs.secondary_body.as_ref().map_or(0.0, |p| {
                         BODY_LINE_SPACING + p.min_bounds().height.max(line_height(FONT_SM))
-                    })
+                    });
+                (h, icon_offset)
             }
             ChatBody::Cheer {
                 bits,
@@ -346,7 +348,7 @@ where
                     Size::INFINITE,
                     text::Wrapping::None,
                 ));
-                line_height(FONT_SM)
+                let h = line_height(FONT_SM)
                     + BODY_LINE_SPACING
                     + state
                         .paragraphs
@@ -354,7 +356,8 @@ where
                         .as_ref()
                         .map_or(line_height(FONT_SM), |p| {
                             p.min_bounds().height.max(line_height(FONT_SM))
-                        })
+                        });
+                (h, icon_offset)
             }
             ChatBody::Raid { viewers, .. } => {
                 state.paragraphs.secondary_body = None;
@@ -372,7 +375,7 @@ where
                     Size::INFINITE,
                     text::Wrapping::None,
                 ));
-                line_height(FONT_SM)
+                (line_height(FONT_SM), ICON_W + ICON_SPACING)
             }
             ChatBody::Command { command, .. } => {
                 state.paragraphs.secondary_body = Some(shape_text::<R::Paragraph>(
@@ -384,14 +387,14 @@ where
                 ));
                 state.paragraphs.inline_descriptor = None;
                 state.paragraphs.inline_badge = None;
-                line_height(FONT_SM)
+                (line_height(FONT_SM), 0.0)
             }
         };
 
         state.username_bounds = Rectangle {
-            x: STRIPE_W + PAD_H,
+            x: STRIPE_W + PAD_H + username_x_offset,
             y: PAD_V + top_row_h + SPACING_INNER,
-            width: uname_w + 4.0,
+            width: uname_w,
             height: line_height(FONT_SM),
         };
 
@@ -668,7 +671,7 @@ where
                 }
                 if let Some(ref badge_para) = state.paragraphs.inline_badge {
                     let badge_text_w = badge_para.min_bounds().width;
-                    let badge_pad = spf(Spacing::Xxs);
+                    let badge_pad = spf(Spacing::Xs);
                     let badge_bg = Color {
                         a: 0.15,
                         ..self.palette.warning
@@ -755,7 +758,7 @@ where
                 }
                 if let Some(ref badge_para) = state.paragraphs.inline_badge {
                     let badge_text_w = badge_para.min_bounds().width;
-                    let bits_pad = spf(Spacing::Xxs);
+                    let bits_pad = spf(Spacing::Xs);
                     let bits_bg = Color {
                         a: 0.20,
                         ..self.palette.warning
@@ -842,7 +845,7 @@ where
                 }
                 if let Some(ref badge_para) = state.paragraphs.inline_badge {
                     let badge_text_w = badge_para.min_bounds().width;
-                    let v_pad = spf(Spacing::Xxs);
+                    let v_pad = spf(Spacing::Xs);
                     let v_bg = Color {
                         a: 0.20,
                         ..self.palette.random
@@ -901,7 +904,7 @@ where
                 );
                 if let Some(ref cmd_para) = state.paragraphs.secondary_body {
                     let cmd_text_w = cmd_para.min_bounds().width;
-                    let cmd_pad = spf(Spacing::Xxs);
+                    let cmd_pad = spf(Spacing::Xs);
                     let cmd_bg = Color {
                         a: 0.25,
                         ..self.palette.surface_overlay
@@ -935,6 +938,36 @@ where
                         *viewport,
                     );
                 }
+            }
+        }
+
+        if state.hovered && self.on_user_click.is_some() {
+            let dot_size: f32 = 1.5;
+            let dot_pitch: f32 = 3.5;
+            let underline_x_start = origin.x + state.username_bounds.x;
+            let underline_x_end = underline_x_start + state.username_bounds.width;
+            let dot_y = origin.y + state.username_bounds.y + state.username_bounds.height + 0.5;
+            let mut dx = underline_x_start;
+            while dx + dot_size <= underline_x_end {
+                renderer.fill_quad(
+                    renderer::Quad {
+                        bounds: Rectangle {
+                            x: dx,
+                            y: dot_y,
+                            width: dot_size,
+                            height: dot_size,
+                        },
+                        border: Border {
+                            radius: (dot_size / 2.0).into(),
+                            color: Color::TRANSPARENT,
+                            width: 0.0,
+                        },
+                        shadow: Shadow::default(),
+                        snap: false,
+                    },
+                    self.data.username_color,
+                );
+                dx += dot_pitch;
             }
         }
 
@@ -1107,12 +1140,12 @@ mod tests {
             .state
             .downcast_ref::<ChatRowState<<() as text::Renderer>::Paragraph>>();
         assert!(
-            state.username_bounds.width > 0.0,
-            "username_bounds must have positive width after layout"
+            state.username_bounds.x > 0.0,
+            "username_bounds.x must be set away from default zero after layout"
         );
         assert!(
             state.username_bounds.height > 0.0,
-            "username_bounds must have positive height after layout"
+            "username_bounds.height must be positive after layout"
         );
     }
 }

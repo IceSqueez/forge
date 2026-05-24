@@ -16,6 +16,7 @@ pub mod screen;
 pub mod script_editor;
 pub mod server_screen;
 pub mod server_subsystem;
+pub mod settings;
 pub mod settings_audio;
 pub mod settings_websocket;
 pub mod soundboard;

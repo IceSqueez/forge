@@ -178,6 +178,8 @@ struct ChatRowParagraphs<P: Default> {
     primary_body: P,
     secondary_body: Option<P>,
     triggered: Option<P>,
+    inline_descriptor: Option<P>,
+    inline_badge: Option<P>,
 }
 
 impl<Msg, R> Widget<Msg, Theme, R> for ChatRowWidget<Msg>
@@ -268,6 +270,8 @@ where
                     Size::new(wrap_w, f32::INFINITY),
                     text::Wrapping::Word,
                 ));
+                state.paragraphs.inline_descriptor = None;
+                state.paragraphs.inline_badge = None;
                 state
                     .paragraphs
                     .secondary_body
@@ -276,7 +280,12 @@ where
                         p.min_bounds().height.max(line_height(FONT_SM))
                     })
             }
-            ChatBody::Subscription { message, .. } => {
+            ChatBody::Subscription {
+                tier,
+                months,
+                message,
+                ..
+            } => {
                 let icon_offset = ICON_W + ICON_SPACING;
                 let wrap_w = (content_w - icon_offset - uname_w).max(1.0);
                 state.paragraphs.secondary_body = message.as_deref().map(|m| {
@@ -288,13 +297,31 @@ where
                         text::Wrapping::Word,
                     )
                 });
+                let descriptor = format!(" subscribed (Tier {tier})");
+                state.paragraphs.inline_descriptor = Some(shape_text::<R::Paragraph>(
+                    &descriptor,
+                    FONT_SM,
+                    font(FontRole::Body),
+                    Size::INFINITE,
+                    text::Wrapping::None,
+                ));
+                state.paragraphs.inline_badge = months.map(|mo| {
+                    shape_text::<R::Paragraph>(
+                        &format!("{mo} mo"),
+                        FONT_XS,
+                        font(FontRole::Body),
+                        Size::INFINITE,
+                        text::Wrapping::None,
+                    )
+                });
                 line_height(FONT_SM)
                     + state.paragraphs.secondary_body.as_ref().map_or(0.0, |p| {
                         BODY_LINE_SPACING + p.min_bounds().height.max(line_height(FONT_SM))
                     })
             }
             ChatBody::Cheer {
-                text: cheer_text, ..
+                bits,
+                text: cheer_text,
             } => {
                 let icon_offset = ICON_W + ICON_SPACING;
                 let wrap_w = (content_w - icon_offset - uname_w).max(1.0);
@@ -304,6 +331,20 @@ where
                     font(FontRole::Body),
                     Size::new(wrap_w, f32::INFINITY),
                     text::Wrapping::Word,
+                ));
+                state.paragraphs.inline_descriptor = Some(shape_text::<R::Paragraph>(
+                    " cheered",
+                    FONT_SM,
+                    font(FontRole::Body),
+                    Size::INFINITE,
+                    text::Wrapping::None,
+                ));
+                state.paragraphs.inline_badge = Some(shape_text::<R::Paragraph>(
+                    &format!("{bits} bits"),
+                    FONT_XS,
+                    font(FontRole::Body),
+                    Size::INFINITE,
+                    text::Wrapping::None,
                 ));
                 line_height(FONT_SM)
                     + BODY_LINE_SPACING
@@ -315,8 +356,34 @@ where
                             p.min_bounds().height.max(line_height(FONT_SM))
                         })
             }
-            ChatBody::Raid { .. } | ChatBody::Command { .. } => {
+            ChatBody::Raid { viewers, .. } => {
                 state.paragraphs.secondary_body = None;
+                state.paragraphs.inline_descriptor = Some(shape_text::<R::Paragraph>(
+                    " is raiding with",
+                    FONT_SM,
+                    font(FontRole::Body),
+                    Size::INFINITE,
+                    text::Wrapping::None,
+                ));
+                state.paragraphs.inline_badge = Some(shape_text::<R::Paragraph>(
+                    &format!("{viewers} viewers"),
+                    FONT_XS,
+                    font(FontRole::Body),
+                    Size::INFINITE,
+                    text::Wrapping::None,
+                ));
+                line_height(FONT_SM)
+            }
+            ChatBody::Command { command, .. } => {
+                state.paragraphs.secondary_body = Some(shape_text::<R::Paragraph>(
+                    command,
+                    FONT_XS,
+                    font(FontRole::Monospace),
+                    Size::INFINITE,
+                    text::Wrapping::None,
+                ));
+                state.paragraphs.inline_descriptor = None;
+                state.paragraphs.inline_badge = None;
                 line_height(FONT_SM)
             }
         };
@@ -560,7 +627,7 @@ where
                     );
                 }
             }
-            ChatBody::Subscription { tier, months, .. } => {
+            ChatBody::Subscription { .. } => {
                 renderer.draw_svg(
                     svg::Svg::new(svg::Handle::from_memory(Icon::Star.bytes()))
                         .color(self.palette.brand),
@@ -583,37 +650,36 @@ where
                     *viewport,
                 );
                 let uname_w = state.paragraphs.primary_body.min_bounds().width;
-                let tier_label = format!(" subscribed (Tier {tier})");
-                let tier_w =
-                    measure_text_width::<R::Paragraph>(&tier_label, FONT_SM, font(FontRole::Body));
-                renderer.fill_text(
-                    simple_text(tier_label, FONT_SM, font(FontRole::Body)),
-                    Point {
-                        x: text_x + uname_w,
-                        y: body_y,
-                    },
-                    self.palette.text_secondary,
-                    *viewport,
-                );
-                if let Some(mo) = months {
-                    let mo_label = format!("{mo} mo");
-                    let mo_text_w = measure_text_width::<R::Paragraph>(
-                        &mo_label,
-                        FONT_XS,
-                        font(FontRole::Body),
+                let descriptor_w = state
+                    .paragraphs
+                    .inline_descriptor
+                    .as_ref()
+                    .map_or(0.0, |p| p.min_bounds().width);
+                if let Some(ref desc_para) = state.paragraphs.inline_descriptor {
+                    renderer.fill_paragraph(
+                        desc_para,
+                        Point {
+                            x: text_x + uname_w,
+                            y: body_y,
+                        },
+                        self.palette.text_secondary,
+                        *viewport,
                     );
-                    let mo_pad = spf(Spacing::Xxs);
-                    let mo_bg = Color {
+                }
+                if let Some(ref badge_para) = state.paragraphs.inline_badge {
+                    let badge_text_w = badge_para.min_bounds().width;
+                    let badge_pad = spf(Spacing::Xxs);
+                    let badge_bg = Color {
                         a: 0.15,
                         ..self.palette.warning
                     };
-                    let mo_x = text_x + uname_w + tier_w + BADGE_SPACING;
+                    let badge_x = text_x + uname_w + descriptor_w + BADGE_SPACING;
                     renderer.fill_quad(
                         renderer::Quad {
                             bounds: Rectangle {
-                                x: mo_x,
+                                x: badge_x,
                                 y: body_y,
-                                width: mo_text_w + mo_pad * 2.0,
+                                width: badge_text_w + badge_pad * 2.0,
                                 height: body_line_h,
                             },
                             border: Border {
@@ -624,12 +690,12 @@ where
                             shadow: Shadow::default(),
                             snap: false,
                         },
-                        mo_bg,
+                        badge_bg,
                     );
-                    renderer.fill_text(
-                        simple_text(mo_label, FONT_XS, font(FontRole::Body)),
+                    renderer.fill_paragraph(
+                        badge_para,
                         Point {
-                            x: mo_x + mo_pad,
+                            x: badge_x + badge_pad,
                             y: body_y,
                         },
                         self.palette.warning,
@@ -648,7 +714,7 @@ where
                     );
                 }
             }
-            ChatBody::Cheer { bits, .. } => {
+            ChatBody::Cheer { .. } => {
                 renderer.draw_svg(
                     svg::Svg::new(svg::Handle::from_memory(Icon::Bolt.bytes()))
                         .color(self.palette.warning),
@@ -671,57 +737,58 @@ where
                     *viewport,
                 );
                 let uname_w = state.paragraphs.primary_body.min_bounds().width;
-                let cheered_label = " cheered";
-                let cheered_w = measure_text_width::<R::Paragraph>(
-                    cheered_label,
-                    FONT_SM,
-                    font(FontRole::Body),
-                );
-                renderer.fill_text(
-                    simple_text(cheered_label.to_owned(), FONT_SM, font(FontRole::Body)),
-                    Point {
-                        x: text_x + uname_w,
-                        y: body_y,
-                    },
-                    self.palette.text_secondary,
-                    *viewport,
-                );
-                let bits_label = format!("{bits} bits");
-                let bits_text_w =
-                    measure_text_width::<R::Paragraph>(&bits_label, FONT_XS, font(FontRole::Body));
-                let bits_pad = spf(Spacing::Xxs);
-                let bits_bg = Color {
-                    a: 0.20,
-                    ..self.palette.warning
-                };
-                let bits_x = text_x + uname_w + cheered_w + BADGE_SPACING;
-                renderer.fill_quad(
-                    renderer::Quad {
-                        bounds: Rectangle {
-                            x: bits_x,
+                let descriptor_w = state
+                    .paragraphs
+                    .inline_descriptor
+                    .as_ref()
+                    .map_or(0.0, |p| p.min_bounds().width);
+                if let Some(ref desc_para) = state.paragraphs.inline_descriptor {
+                    renderer.fill_paragraph(
+                        desc_para,
+                        Point {
+                            x: text_x + uname_w,
                             y: body_y,
-                            width: bits_text_w + bits_pad * 2.0,
-                            height: body_line_h,
                         },
-                        border: Border {
-                            radius: radius(Radius::Sm).into(),
-                            color: Color::TRANSPARENT,
-                            width: 0.0,
+                        self.palette.text_secondary,
+                        *viewport,
+                    );
+                }
+                if let Some(ref badge_para) = state.paragraphs.inline_badge {
+                    let badge_text_w = badge_para.min_bounds().width;
+                    let bits_pad = spf(Spacing::Xxs);
+                    let bits_bg = Color {
+                        a: 0.20,
+                        ..self.palette.warning
+                    };
+                    let bits_x = text_x + uname_w + descriptor_w + BADGE_SPACING;
+                    renderer.fill_quad(
+                        renderer::Quad {
+                            bounds: Rectangle {
+                                x: bits_x,
+                                y: body_y,
+                                width: badge_text_w + bits_pad * 2.0,
+                                height: body_line_h,
+                            },
+                            border: Border {
+                                radius: radius(Radius::Sm).into(),
+                                color: Color::TRANSPARENT,
+                                width: 0.0,
+                            },
+                            shadow: Shadow::default(),
+                            snap: false,
                         },
-                        shadow: Shadow::default(),
-                        snap: false,
-                    },
-                    bits_bg,
-                );
-                renderer.fill_text(
-                    simple_text(bits_label, FONT_XS, font(FontRole::Body)),
-                    Point {
-                        x: bits_x + bits_pad,
-                        y: body_y,
-                    },
-                    self.palette.warning,
-                    *viewport,
-                );
+                        bits_bg,
+                    );
+                    renderer.fill_paragraph(
+                        badge_para,
+                        Point {
+                            x: bits_x + bits_pad,
+                            y: body_y,
+                        },
+                        self.palette.warning,
+                        *viewport,
+                    );
+                }
                 if let Some(secondary) = &state.paragraphs.secondary_body {
                     renderer.fill_paragraph(
                         secondary,
@@ -734,7 +801,7 @@ where
                     );
                 }
             }
-            ChatBody::Raid { viewers, .. } => {
+            ChatBody::Raid { .. } => {
                 renderer.draw_svg(
                     svg::Svg::new(svg::Handle::from_memory(Icon::Flag.bytes()))
                         .color(self.palette.random),
@@ -757,62 +824,60 @@ where
                     *viewport,
                 );
                 let uname_w = state.paragraphs.primary_body.min_bounds().width;
-                let raiding_label = " is raiding with";
-                let raiding_w = measure_text_width::<R::Paragraph>(
-                    raiding_label,
-                    FONT_SM,
-                    font(FontRole::Body),
-                );
-                renderer.fill_text(
-                    simple_text(raiding_label.to_owned(), FONT_SM, font(FontRole::Body)),
-                    Point {
-                        x: text_x + uname_w,
-                        y: body_y,
-                    },
-                    self.palette.text_secondary,
-                    *viewport,
-                );
-                let viewers_label = format!("{viewers} viewers");
-                let viewers_text_w = measure_text_width::<R::Paragraph>(
-                    &viewers_label,
-                    FONT_XS,
-                    font(FontRole::Body),
-                );
-                let v_pad = spf(Spacing::Xxs);
-                let v_bg = Color {
-                    a: 0.20,
-                    ..self.palette.random
-                };
-                let v_x = text_x + uname_w + raiding_w + BADGE_SPACING;
-                renderer.fill_quad(
-                    renderer::Quad {
-                        bounds: Rectangle {
-                            x: v_x,
+                let descriptor_w = state
+                    .paragraphs
+                    .inline_descriptor
+                    .as_ref()
+                    .map_or(0.0, |p| p.min_bounds().width);
+                if let Some(ref desc_para) = state.paragraphs.inline_descriptor {
+                    renderer.fill_paragraph(
+                        desc_para,
+                        Point {
+                            x: text_x + uname_w,
                             y: body_y,
-                            width: viewers_text_w + v_pad * 2.0,
-                            height: body_line_h,
                         },
-                        border: Border {
-                            radius: radius(Radius::Sm).into(),
-                            color: Color::TRANSPARENT,
-                            width: 0.0,
+                        self.palette.text_secondary,
+                        *viewport,
+                    );
+                }
+                if let Some(ref badge_para) = state.paragraphs.inline_badge {
+                    let badge_text_w = badge_para.min_bounds().width;
+                    let v_pad = spf(Spacing::Xxs);
+                    let v_bg = Color {
+                        a: 0.20,
+                        ..self.palette.random
+                    };
+                    let v_x = text_x + uname_w + descriptor_w + BADGE_SPACING;
+                    renderer.fill_quad(
+                        renderer::Quad {
+                            bounds: Rectangle {
+                                x: v_x,
+                                y: body_y,
+                                width: badge_text_w + v_pad * 2.0,
+                                height: body_line_h,
+                            },
+                            border: Border {
+                                radius: radius(Radius::Sm).into(),
+                                color: Color::TRANSPARENT,
+                                width: 0.0,
+                            },
+                            shadow: Shadow::default(),
+                            snap: false,
                         },
-                        shadow: Shadow::default(),
-                        snap: false,
-                    },
-                    v_bg,
-                );
-                renderer.fill_text(
-                    simple_text(viewers_label, FONT_XS, font(FontRole::Body)),
-                    Point {
-                        x: v_x + v_pad,
-                        y: body_y,
-                    },
-                    self.palette.random,
-                    *viewport,
-                );
+                        v_bg,
+                    );
+                    renderer.fill_paragraph(
+                        badge_para,
+                        Point {
+                            x: v_x + v_pad,
+                            y: body_y,
+                        },
+                        self.palette.random,
+                        *viewport,
+                    );
+                }
             }
-            ChatBody::Command { command, .. } => {
+            ChatBody::Command { .. } => {
                 renderer.fill_paragraph(
                     &state.paragraphs.primary_body,
                     Point {
@@ -834,45 +899,42 @@ where
                     self.palette.text_secondary,
                     *viewport,
                 );
-                let cmd_label = command.clone();
-                let cmd_text_w = measure_text_width::<R::Paragraph>(
-                    &cmd_label,
-                    FONT_XS,
-                    font(FontRole::Monospace),
-                );
-                let cmd_pad = spf(Spacing::Xxs);
-                let cmd_bg = Color {
-                    a: 0.25,
-                    ..self.palette.surface_overlay
-                };
-                let cmd_x = sep_x + sep_w;
-                renderer.fill_quad(
-                    renderer::Quad {
-                        bounds: Rectangle {
-                            x: cmd_x,
+                if let Some(ref cmd_para) = state.paragraphs.secondary_body {
+                    let cmd_text_w = cmd_para.min_bounds().width;
+                    let cmd_pad = spf(Spacing::Xxs);
+                    let cmd_bg = Color {
+                        a: 0.25,
+                        ..self.palette.surface_overlay
+                    };
+                    let cmd_x = sep_x + sep_w;
+                    renderer.fill_quad(
+                        renderer::Quad {
+                            bounds: Rectangle {
+                                x: cmd_x,
+                                y: body_y,
+                                width: cmd_text_w + cmd_pad * 2.0,
+                                height: body_line_h,
+                            },
+                            border: Border {
+                                radius: radius(Radius::Sm).into(),
+                                color: Color::TRANSPARENT,
+                                width: 0.0,
+                            },
+                            shadow: Shadow::default(),
+                            snap: false,
+                        },
+                        cmd_bg,
+                    );
+                    renderer.fill_paragraph(
+                        cmd_para,
+                        Point {
+                            x: cmd_x + cmd_pad,
                             y: body_y,
-                            width: cmd_text_w + cmd_pad * 2.0,
-                            height: body_line_h,
                         },
-                        border: Border {
-                            radius: radius(Radius::Sm).into(),
-                            color: Color::TRANSPARENT,
-                            width: 0.0,
-                        },
-                        shadow: Shadow::default(),
-                        snap: false,
-                    },
-                    cmd_bg,
-                );
-                renderer.fill_text(
-                    simple_text(cmd_label, FONT_XS, font(FontRole::Monospace)),
-                    Point {
-                        x: cmd_x + cmd_pad,
-                        y: body_y,
-                    },
-                    self.palette.brand,
-                    *viewport,
-                );
+                        self.palette.brand,
+                        *viewport,
+                    );
+                }
             }
         }
 

@@ -1,12 +1,145 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-alpha.14] - 2026-05-24
+### ⚡ Performance
+- *(chat)* Cache rendered rows with iced::widget::lazy
+
+### 🎨 Styling
+- *(widgets)* Bump inline pill padding from Xxs to Xs
+
+### 🐛 Bug Fixes
+- *(widgets)* Request redraw on chat username hover state change
+
+### 🚀 Features
+- *(widgets)* Add ChatRowWidget skeleton implementing iced Widget trait
+- *(widgets)* Implement ChatRowWidget layout, draw, and update
+- *(widgets)* Add dotted underline on chat username hover
+
+### 🚜 Refactor
+- *(app)* Introduce RuntimeView and move services to App::rt
+- *(app)* Wrap EventArrived payload in Arc
+- *(globals)* Migrate globals_view to RuntimeView contract
+- *(queues)* Migrate queues_view to RuntimeView contract
+- *(feed)* Migrate event_feed to RuntimeView contract
+- *(commands)* Migrate commands_view to RuntimeView contract
+- *(soundboard)* Migrate soundboard to RuntimeView contract
+- *(server)* Migrate server_screen to RuntimeView contract
+- *(settings)* Migrate settings_audio to RuntimeView contract
+- *(settings)* Migrate settings_websocket to RuntimeView contract
+- *(home)* Migrate home to RuntimeView contract
+- *(tts-view)* Migrate tts_dashboard to RuntimeView contract
+- *(tts-view)* Migrate tts_engines to RuntimeView contract
+- *(tts-view)* Migrate tts_filters to RuntimeView contract
+- *(tts-view)* Migrate tts_triggers to RuntimeView contract
+- *(tts-view)* Migrate voice_aliases to RuntimeView contract
+- *(editor)* Migrate script_editor to RuntimeView contract
+- *(viewers)* Migrate viewers to RuntimeView contract
+- *(workspace)* Rename Integration domain to Builtin
+- *(builtin)* Migrate builtin_detail to RuntimeView contract
+- *(chat)* Migrate live_chat to RuntimeView contract
+- *(actions)* Migrate actions list handler to RuntimeView contract
+- *(actions)* Migrate add_action handler into action_editor
+- *(actions)* Migrate add_trigger handler to action_editor
+- *(actions)* Migrate three sub-action handlers to action_editor
+- *(obs)* Move obs_panel handler into module
+- *(twitch)* Move twitch_panel handler into module
+- *(tts-view)* Inline TTS sub-router into central match
+- *(app)* Fan out EventArrived through per-screen on_event
+- *(actions)* Nest 5 editor message variants under Actions::Editor
+- *(app)* Group per-screen states under app ui struct
+- *(app)* Depend on DataProvider trait instead of SqliteBackend
+- *(chat)* Publish chat.send.request to bus instead of inline send
+- *(widgets)* Convert chat_row API to owned data
+- *(widgets)* Apply Spacing tokens to internal paddings
+- *(app)* Apply Spacing tokens across screen paddings
+- *(widgets)* Switch to ChatRowWidget, delete old chat_row API
+
+## [0.1.0-alpha.13] - 2026-05-22
+### ⚙️ Miscellaneous Tasks
+- *(widgets)* Drop _v2 naming and remove dead sidebar code
+- *(app)* Drop standalone Viewers screen now folded into chat drawer
+- *(widgets)* Drop onboarding module and move banner to sections
+- *(app)* Drop Settings::Platforms subsection (duplicates top-level)
+- Release
+
+### 🎨 Styling
+- *(chat)* Highlight usernames on mouse hover
+- *(widgets)* Input bar icons and styling
+- *(widgets)* Use 4-step font sizes
+- *(app)* Rebuild Stream apps overview
+- *(app)* Rewrite TTS preview as per-stage cards
+- *(actions)* Update actions styling
+- *(ui)* Align border/radius tokens and integrate live home screen telemetry
+
+### 🐛 Bug Fixes
+- *(widgets)* Vertically center title bar content
+- *(widgets)* Vertically center app footer content
+- *(widgets)* Anchor sidebar Settings to bottom of viewport
+- *(chat)* Use 2-row layout with row separator between messages
+- *(livechat)* Align viewer drawer with design and wire username clicks
+- *(chat)* Widen viewers drawer to 360px
+- *(chat)* Bind drawer detail to clicked viewer with chat fallback
+- *(chat)* Pad drawer action buttons so icons clear border
+- *(widgets)* Replace unicode glyphs with tabler icons
+- *(app)* Replace unicode glyphs with tabler icons
+- *(app)* Flatten Platforms and Stream apps in sidebar per design
+- *(app)* Align telemetry grid box size with empty placeholders
+- *(app)* Show only action count right-aligned in tree group header
+- *(app)* Match trigger and sub-action row size with placeholder
+- *(app)* Add inline add buttons to triggers and sub-actions headers
+- *(app)* Use icon-prefixed ghost buttons for Test run and Duplicate
+- *(chat)* Replace meta/filter bars with single page header
+- *(home)* Replace global crumb_bar with screen page header
+
+### 📚 Documentation
+- *(widgets)* Strip tautological rustdoc from token definitions
+
+### 🚀 Features
+- *(widgets)* Add ModalSize design-token enum with 3 widths
+- *(widgets)* Add semantic-color alpha helpers to palette
+- *(widgets)* Add toast queue, viewport widget, and app wiring
+- *(widgets)* Add popover MenuButton and RowActions widgets
+- *(chat)* Rebuild layout and add 5 typed chat row renderers
+- *(livechat)* Add viewers drawer panel with detail card and list
+- *(widgets)* Add username click callback to chat row builders
+- *(widgets)* Add hover affordance to chat username and ghost button
+- *(widgets)* Switch search_input to Tabler icon and tighten padding
+- *(widgets)* Add big_jump_card builder for Home dashboard
+- *(app)* Rewrite Home screen and align font sizes to token scale
+- *(storage)* Add action telemetry query and execution log
+- *(app)* Add action telemetry grid, type filter chips, tree row hover
+- *(app)* Add sub-action reorder controls and colored variable display
+- *(widgets)* Add external-link icon to complex value preview
+- *(app)* Add Platforms overview screen with 2x2 platform cards
+- *(app)* Add generic platform/app placeholder for beta-N integrations
+- *(app)* Add Commands screen and Settings Language/Shortcuts panes
+- *(app)* Inline rename and verious styling
+- *(widgets)* Add side_sheet overlay widget
+- *(app)* Unify page headers across screens and migrate to side sheets
+- *(chat)* Adds emoji and real viewer data
+
+### 🚜 Refactor
+- *(widgets)* Compress Spacing enum to 4 design-token variants
+- *(widgets)* Compress font constants to 4 design tokens
+- *(widgets)* Compress Radius enum to 3 design-token variants
+- *(widgets)* Redesign title bar with logo, profile name, version
+- *(app)* Reorganize sidebar with section labels per new design
+- *(widgets)* Remove version label from title bar
+- *(widgets)* Drop version and profile labels from title bar
+- *(app)* Uppercase sidebar section labels at source
+- *(widgets)* Migrate icons from Bootstrap font to Tabler SVG
+
 ## [0.1.0-alpha.12] - 2026-05-21
+### ⚙️ Miscellaneous Tasks
+- Release
+
 ### ⚡ Performance
 - *(audio)* Cache cpal device enumeration with 5s TTL and explicit refresh
 
 ### 📚 Documentation
 - *(readme)* Refresh current status for alpha-12 release
+- *(release)* Release v0.1.0-alpha.12
 
 ### 🚀 Features
 - *(scripts)* Add Variant::Datetime sub-actions ReadFile, RandomInt and forge::time rhai

@@ -166,13 +166,13 @@ pub(crate) fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
 
     let main_view: Element<'_, Message> =
         if let Some(form) = app.ui.actions.add_sub_action_modal.as_ref() {
-            let modal_el = crate::app::add_sub_action_modal_view(form, palette);
+            let modal_el = crate::actions_modals::add_sub_action_modal_view(form, palette);
             iced::widget::stack![main_view, modal_el].into()
         } else if let Some(form) = app.ui.actions.add_trigger_modal.as_ref() {
-            let modal_el = crate::app::add_trigger_modal_view(form, palette);
+            let modal_el = crate::actions_modals::add_trigger_modal_view(form, palette);
             iced::widget::stack![main_view, modal_el].into()
         } else if let Some(form) = app.ui.actions.add_action_modal.as_ref() {
-            let modal_el = crate::app::add_action_modal_view(form, palette);
+            let modal_el = crate::actions_modals::add_action_modal_view(form, palette);
             iced::widget::stack![main_view, modal_el].into()
         } else {
             main_view

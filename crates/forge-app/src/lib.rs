@@ -1,5 +1,6 @@
 pub mod action_editor;
 pub mod actions;
+pub mod actions_modals;
 pub mod actions_view;
 pub mod app;
 pub mod builtin_detail;

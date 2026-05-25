@@ -8,10 +8,7 @@ use forge_events::Event;
 use forge_events::EventPublisher;
 #[cfg(test)]
 use forge_obs::ObsClient;
-use forge_platform_core::{
-    BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, QuickActions, SectionIcon,
-};
-use forge_platform_twitch::{ChatConnectionState, TwitchIntegrationBundle};
+use forge_platform_twitch::ChatConnectionState;
 use forge_runtime::{
     ActionEngineHandle, CommandParserHandle, EventBus, NullEventLogRepo, QueueSchedulerHandle,
     ScriptRegistry,
@@ -431,162 +428,20 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::BuiltinDetail(sub) => {
             crate::builtin_detail::update(&mut app.ui.builtin_detail, &app.rt, sub)
         }
-        Message::TwitchBootResult(result) => match result {
-            Ok(Some(bundle)) => {
-                let login = if bundle.login.is_empty() {
-                    None
-                } else {
-                    Some(bundle.login.clone())
-                };
-                let tracker = forge_platform_twitch::SubscriptionTracker::default();
-                let chat = forge_platform_twitch::TwitchChat::new(
-                    forge_types::OAuthToken::new(bundle.access_token),
-                    bundle.client_id,
-                    bundle.user_id.clone(),
-                    bundle.user_id,
-                    Arc::clone(&app.rt.bus),
-                    Arc::clone(&tracker),
-                );
-                let handle = chat.start();
-                let state_rx = handle.state_receiver();
-                let (twitch_bundle, _health_tx) =
-                    TwitchIntegrationBundle::new(login.clone(), state_rx, tracker);
-                let id = BuiltinId::new("twitch");
-                let icon = SectionIcon::new("brand-twitch");
-                let status: Arc<dyn BuiltinStatus> = twitch_bundle.clone();
-                let health: Arc<dyn BuiltinHealth> = twitch_bundle.clone();
-                let content: Arc<dyn BuiltinContent> = twitch_bundle.clone();
-                let quick_actions: Arc<dyn QuickActions> = twitch_bundle.clone();
-                app.ui.builtin_detail = Some(BuiltinDetailState::new(
-                    id,
-                    icon,
-                    status,
-                    health,
-                    content,
-                    quick_actions,
-                ));
-                app.rt.twitch_chat_handle = Some(handle);
-                app.rt.twitch_token_expires = bundle.expires_at;
-                if let Some(l) = login {
-                    app.rt.twitch_login = Some(l);
-                }
-                tracing::info!("twitch chat session restarted from stored credentials");
-                Task::none()
-            }
-            Ok(None) => Task::none(),
-            Err(e) => {
-                tracing::warn!(error = %e, "twitch boot reconnect failed");
-                Task::none()
-            }
-        },
-        Message::ObsBootResult(result) => match result {
-            Ok(handle) => {
-                let client = handle.into_arc();
-                let id = BuiltinId::new("obs");
-                let icon = SectionIcon::new("broadcast");
-                let status: Arc<dyn BuiltinStatus> = client.clone();
-                let health: Arc<dyn BuiltinHealth> = client.clone();
-                let content: Arc<dyn BuiltinContent> = client.clone();
-                let quick_actions: Arc<dyn QuickActions> = client.clone();
-                app.ui.builtin_detail = Some(BuiltinDetailState::new(
-                    id,
-                    icon,
-                    status,
-                    health,
-                    content,
-                    quick_actions,
-                ));
-                app.rt.obs_client = Some(client);
-                Task::none()
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, "OBS boot connection failed");
-                Task::none()
-            }
-        },
-        Message::ServerBootResult(result) => {
-            match result {
-                Ok(snapshot) => {
-                    app.ui.server_screen.bind_address = snapshot.bind_address;
-                    app.ui.server_screen.bearer_token = snapshot.bearer_token;
-                    app.ui.server_screen.server_status =
-                        crate::server_screen::ServerStatus::Running;
-                }
-                Err(e) => {
-                    tracing::warn!(error = %e, "server boot failed");
-                    app.ui.server_screen.server_status =
-                        crate::server_screen::ServerStatus::Error(e);
-                }
-            }
-            Task::none()
-        }
-        Message::ServerRestartResult(result) => {
-            match result {
-                Ok(()) => {
-                    app.ui.server_screen.server_status =
-                        crate::server_screen::ServerStatus::Running;
-                }
-                Err(e) => {
-                    tracing::warn!(error = %e, "server restart failed");
-                    app.ui.server_screen.server_status =
-                        crate::server_screen::ServerStatus::Error(e);
-                }
-            }
-            Task::none()
-        }
-        Message::ServerStopResult(result) => {
-            match result {
-                Ok(()) => {
-                    app.ui.server_screen.server_status =
-                        crate::server_screen::ServerStatus::Stopped;
-                    app.ui.server_screen.connected_clients.clear();
-                }
-                Err(e) => {
-                    tracing::warn!(error = %e, "server stop failed");
-                    app.ui.server_screen.server_status =
-                        crate::server_screen::ServerStatus::Error(e);
-                }
-            }
-            Task::none()
-        }
-        Message::ServerTokenRotated(result) => {
-            match result {
-                Ok(token) => {
-                    app.ui.server_screen.bearer_token = token;
-                }
-                Err(e) => {
-                    tracing::warn!(error = %e, "token regeneration failed");
-                    app.ui.server_screen.server_status =
-                        crate::server_screen::ServerStatus::Error(e);
-                }
-            }
-            Task::none()
-        }
+        Message::TwitchBootResult(result) => boot::handle_twitch_boot_result(app, result),
+        Message::ObsBootResult(result) => boot::handle_obs_boot_result(app, result),
+        Message::ServerBootResult(result) => boot::handle_server_boot_result(app, result),
+        Message::ServerRestartResult(result) => boot::handle_server_restart_result(app, result),
+        Message::ServerStopResult(result) => boot::handle_server_stop_result(app, result),
+        Message::ServerTokenRotated(result) => boot::handle_server_token_rotated(app, result),
         Message::Server(crate::server_screen::ServerScreenMsg::RestartServer) => {
-            let subsystem = Arc::clone(&app.rt.server_subsystem);
-            Task::perform(
-                async move { subsystem.restart().await.map_err(|e| e.to_string()) },
-                Message::ServerRestartResult,
-            )
+            boot::handle_server_restart_command(app)
         }
         Message::Server(crate::server_screen::ServerScreenMsg::StopServer) => {
-            let subsystem = Arc::clone(&app.rt.server_subsystem);
-            Task::perform(
-                async move { subsystem.stop().await.map_err(|e| e.to_string()) },
-                Message::ServerStopResult,
-            )
+            boot::handle_server_stop_command(app)
         }
         Message::Server(crate::server_screen::ServerScreenMsg::RegenerateToken) => {
-            let subsystem = Arc::clone(&app.rt.server_subsystem);
-            Task::perform(
-                async move {
-                    subsystem
-                        .regenerate_token()
-                        .await
-                        .map_err(|e| e.to_string())
-                },
-                Message::ServerTokenRotated,
-            )
+            boot::handle_server_regenerate_token(app)
         }
         Message::Server(sub) => {
             crate::server_screen::update(&mut app.ui.server_screen, &app.rt, sub)

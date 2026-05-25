@@ -83,7 +83,10 @@ pub use server::{
     TypeToConfirmModalParams, bearer_token_display, bind_address_card, client_table_row,
     overlay_file_list, type_to_confirm_modal,
 };
-pub use side_sheet::{SheetEdge, side_sheet};
+pub use side_sheet::{
+    Easing, SheetAnimation, SheetEdge, SheetHeader, SheetPosition, SheetWidth, SideSheet,
+    SideSheetConfig, side_sheet,
+};
 pub use status::{StatusVariant, platform_badge, role_badge, status_dot, status_pill};
 pub use theme::{catppuccin_mocha, latte, palette_for_theme, tokyo_night_storm};
 pub use toast::{Toast, ToastAction, ToastKind, ToastQueue, toast_viewport};

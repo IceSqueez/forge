@@ -34,6 +34,8 @@ pub struct ForgePalette {
     pub code_var: Color,
     pub code_comment: Color,
     pub code_num: Color,
+
+    pub scrim: Color,
 }
 
 const fn hex(r: u8, g: u8, b: u8) -> Color {
@@ -98,6 +100,13 @@ pub const CATPPUCCIN_MOCHA: ForgePalette = ForgePalette {
     code_var: hex(0xfa, 0xb3, 0x87),
     code_comment: hex(0x6c, 0x70, 0x86),
     code_num: hex(0xfa, 0xb3, 0x87),
+
+    scrim: Color {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: 0.45,
+    },
 };
 
 pub const TOKYO_NIGHT: ForgePalette = ForgePalette {
@@ -133,6 +142,13 @@ pub const TOKYO_NIGHT: ForgePalette = ForgePalette {
     code_var: hex(0xff, 0x9e, 0x64),
     code_comment: hex(0x56, 0x5f, 0x89),
     code_num: hex(0xff, 0x9e, 0x64),
+
+    scrim: Color {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: 0.50,
+    },
 };
 
 pub const LATTE: ForgePalette = ForgePalette {
@@ -168,6 +184,13 @@ pub const LATTE: ForgePalette = ForgePalette {
     code_var: hex(0xfe, 0x64, 0x0b),
     code_comment: hex(0x9c, 0xa0, 0xb0),
     code_num: hex(0xfe, 0x64, 0x0b),
+
+    scrim: Color {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: 0.35,
+    },
 };
 
 #[cfg(test)]

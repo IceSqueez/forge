@@ -3,7 +3,10 @@ use std::time::SystemTime;
 
 use forge_soundboard::SoundboardPlayer;
 
-use forge_events::{Event, EventPublisher};
+use forge_events::Event;
+#[cfg(test)]
+use forge_events::EventPublisher;
+#[cfg(test)]
 use forge_obs::ObsClient;
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, QuickActions, SectionIcon,
@@ -24,15 +27,18 @@ use iced::{Element, Length, Task, Theme};
 
 use crate::action_editor::action_editor_view;
 use crate::actions::ActionsState;
+use crate::boot;
 use crate::builtin_detail::{BuiltinDetailState, view as builtin_detail_view};
 use crate::event_feed;
 use crate::event_feed::{EventFeedState, event_feed_view};
 use crate::globals_view::{GlobalsState, globals_view};
 use crate::home::HomeStats;
 use crate::live_chat::{LiveChatState, live_chat_view};
+#[cfg(test)]
+use crate::message::ObsClientRef;
 use crate::message::{
-    ActionsMsg, GlobalsMsg, HomeMsg, ObsClientRef, PlatformId, QueuesMsg, SettingsMsg, SidebarMsg,
-    ToastMsg, TtsMsg,
+    ActionsMsg, GlobalsMsg, HomeMsg, PlatformId, QueuesMsg, SettingsMsg, SidebarMsg, ToastMsg,
+    TtsMsg,
 };
 use crate::navigation;
 use crate::queues_view::{QueuesState, queues_view};
@@ -345,7 +351,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 let backend = Arc::clone(&app.rt.backend);
                 let bus = Arc::clone(&app.rt.bus);
                 Task::perform(
-                    async move { reconnect_twitch(backend, bus).await },
+                    async move { boot::reconnect_twitch(backend, bus).await },
                     |result| Message::Settings(SettingsMsg::PlatformReconnectResult(result)),
                 )
             }
@@ -681,108 +687,6 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         }
         Message::Noop => Task::none(),
     }
-}
-
-async fn reconnect_twitch(
-    backend: Arc<dyn DataProvider>,
-    bus: Arc<EventBus>,
-) -> Result<(), String> {
-    use forge_platform_twitch::{TwitchChat, client_id};
-
-    let cid = client_id().ok_or_else(|| "FORGE_TWITCH_CLIENT_ID not set".to_owned())?;
-    let bundle_json = backend
-        .load(&CredentialId::new("twitch:broadcaster"))
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "no Twitch credential stored".to_owned())?;
-
-    let bundle: serde_json::Value =
-        serde_json::from_str(&bundle_json).map_err(|e| e.to_string())?;
-    let access = bundle["access_token"]
-        .as_str()
-        .ok_or_else(|| "missing access_token in credential bundle".to_owned())?
-        .to_owned();
-    let user_id = bundle["user_id"]
-        .as_str()
-        .ok_or_else(|| "missing user_id — re-authorize in Settings → Platforms".to_owned())?
-        .to_owned();
-
-    let token = forge_types::OAuthToken::new(access);
-    let tracker = forge_platform_twitch::SubscriptionTracker::default();
-    TwitchChat::new(token, cid, user_id.clone(), user_id, bus, tracker).start();
-    Ok(())
-}
-
-pub async fn load_twitch_credential(
-    backend: Arc<dyn DataProvider>,
-) -> Result<Option<crate::message::TwitchBootBundle>, String> {
-    let Some(client_id) = forge_platform_twitch::client_id() else {
-        return Ok(None);
-    };
-    let Some(json) = backend
-        .load(&CredentialId::new("twitch:broadcaster"))
-        .await
-        .map_err(|e| e.to_string())?
-    else {
-        return Ok(None);
-    };
-    let bundle: serde_json::Value = serde_json::from_str(&json).map_err(|e| e.to_string())?;
-    let access_token = bundle["access_token"]
-        .as_str()
-        .ok_or_else(|| "missing access_token in twitch credential bundle".to_owned())?
-        .to_owned();
-    let user_id = bundle["user_id"]
-        .as_str()
-        .ok_or_else(|| "missing user_id in twitch credential bundle".to_owned())?
-        .to_owned();
-    let login = bundle["login"].as_str().unwrap_or_default().to_owned();
-    let expires_at = bundle["expires_at_unix"].as_i64().and_then(|secs| {
-        if secs <= 0 {
-            None
-        } else {
-            Some(std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs as u64))
-        }
-    });
-    Ok(Some(crate::message::TwitchBootBundle {
-        access_token,
-        client_id,
-        user_id,
-        login,
-        expires_at,
-    }))
-}
-
-pub async fn load_obs_and_connect(
-    backend: Arc<dyn DataProvider>,
-    bus: Arc<EventBus>,
-) -> Result<ObsClientRef, String> {
-    let Some(json) = backend
-        .load(&CredentialId::new("obs:default"))
-        .await
-        .map_err(|e| e.to_string())?
-    else {
-        return Err("obs:default credentials not stored".to_owned());
-    };
-
-    let bundle: serde_json::Value = serde_json::from_str(&json).map_err(|e| e.to_string())?;
-    let url = bundle["url"]
-        .as_str()
-        .ok_or_else(|| "missing url in OBS credential bundle".to_owned())?
-        .to_owned();
-    let password = bundle["password"].as_str().unwrap_or("").to_owned();
-
-    let publisher: Arc<dyn EventPublisher> = bus;
-    let pw: Option<&str> = if password.is_empty() {
-        None
-    } else {
-        Some(&password)
-    };
-
-    let client = ObsClient::connect(&url, pw, publisher)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    Ok(ObsClientRef::new(Arc::new(client)))
 }
 
 pub(crate) fn format_uptime(elapsed: std::time::Duration) -> String {

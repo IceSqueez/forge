@@ -3,6 +3,7 @@ pub mod actions;
 pub mod actions_modals;
 pub mod actions_view;
 pub mod app;
+pub mod boot;
 pub mod builtin_detail;
 pub mod commands_view;
 pub mod event_feed;
@@ -43,7 +44,8 @@ pub use actions::{
     AddSubActionForm, AddSubActionMsg, AddTriggerForm, AddTriggerMsg, RemoveSubActionMsg,
     SubActionKindChoice, TriggerCategory,
 };
-pub use app::{App, SidebarExpandState, UiState, load_obs_and_connect};
+pub use app::{App, SidebarExpandState, UiState};
+pub use boot::load_obs_and_connect;
 pub use builtin_detail::{BuiltinDetailState, health_subscription};
 pub use event_feed::{EventFeedMsg, EventFeedState, EventFilter, matches_filter};
 pub use globals_view::{GlobalsState, VariantEditorFields, VariantEditorForm, load_globals_data};

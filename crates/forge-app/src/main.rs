@@ -3,7 +3,8 @@ use std::sync::Arc;
 
 use forge_app::App;
 use forge_app::Screen;
-use forge_app::app::{load_obs_and_connect, load_twitch_credential, theme_callback, update, view};
+use forge_app::app::{theme_callback, update, view};
+use forge_app::boot::{load_obs_and_connect, load_twitch_credential};
 use forge_app::speak_bridge::SpeakBridge;
 use forge_app::subscriptions::subscription;
 use forge_audio::{CpalSink, DeviceId, NullSink};

@@ -26,6 +26,7 @@ pub mod settings_websocket;
 pub mod soundboard;
 pub mod speak_bridge;
 pub mod stream_apps;
+pub mod subscriptions;
 pub mod test_trigger;
 pub mod tts_dashboard;
 pub mod tts_engines;

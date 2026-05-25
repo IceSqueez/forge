@@ -10,6 +10,7 @@ pub mod event_feed;
 pub mod globals_view;
 pub mod home;
 pub mod live_chat;
+pub mod live_chat_drawer;
 pub mod message;
 pub mod navigation;
 pub mod obs_panel;

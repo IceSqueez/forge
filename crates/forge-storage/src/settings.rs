@@ -213,6 +213,26 @@ pub trait SettingsRepo: Send + Sync {
         self.set_string(reserved_keys::TTS_PIPELINE_CONFIG_JSON, json)
             .await
     }
+
+    async fn sheet_width(&self, key: &str) -> Result<Option<f32>, StorageError> {
+        let storage_key = format!("sheet_width:{key}");
+        let raw = self.get_string(&storage_key).await?;
+        match raw {
+            None => Ok(None),
+            Some(s) => match s.parse::<f32>() {
+                Ok(v) => Ok(Some(v)),
+                Err(_) => {
+                    tracing::warn!(key, raw = %s, "sheet_width: stored value is not a valid f32; falling back to None");
+                    Ok(None)
+                }
+            },
+        }
+    }
+
+    async fn set_sheet_width(&self, key: &str, width: f32) -> Result<(), StorageError> {
+        let storage_key = format!("sheet_width:{key}");
+        self.set_string(&storage_key, &width.to_string()).await
+    }
 }
 
 #[cfg(test)]

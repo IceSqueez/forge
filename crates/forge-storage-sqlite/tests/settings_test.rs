@@ -276,3 +276,66 @@ async fn server_auth_required_for_reads_roundtrip() {
             .expect("get disabled")
     );
 }
+
+#[tokio::test]
+async fn sheet_width_roundtrip() {
+    let backend = setup_backend().await;
+    backend
+        .set_sheet_width("viewers_drawer", 420.0)
+        .await
+        .expect("set sheet_width");
+    let got = backend
+        .sheet_width("viewers_drawer")
+        .await
+        .expect("get sheet_width");
+    assert_eq!(got, Some(420.0_f32));
+}
+
+#[tokio::test]
+async fn sheet_width_absent_key_returns_none() {
+    let backend = setup_backend().await;
+    let got = backend
+        .sheet_width("no_such_sheet")
+        .await
+        .expect("absent key");
+    assert!(got.is_none());
+}
+
+#[tokio::test]
+async fn sheet_width_corrupt_value_returns_none() {
+    let backend = setup_backend().await;
+    backend
+        .set_string("sheet_width:corrupt_key", "not_a_float")
+        .await
+        .expect("inject corrupt value");
+    let got = backend
+        .sheet_width("corrupt_key")
+        .await
+        .expect("corrupt value fallback");
+    assert!(got.is_none());
+}
+
+#[tokio::test]
+async fn sheet_width_keys_do_not_collide() {
+    let backend = setup_backend().await;
+    backend
+        .set_sheet_width("action_editor", 480.0)
+        .await
+        .expect("set action_editor");
+    backend
+        .set_sheet_width("trigger_editor", 360.0)
+        .await
+        .expect("set trigger_editor");
+
+    let action = backend
+        .sheet_width("action_editor")
+        .await
+        .expect("get action_editor");
+    let trigger = backend
+        .sheet_width("trigger_editor")
+        .await
+        .expect("get trigger_editor");
+
+    assert_eq!(action, Some(480.0_f32));
+    assert_eq!(trigger, Some(360.0_f32));
+}

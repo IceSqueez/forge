@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::sync::Arc;
 
 use forge_events::{Event, EventSource};
 use forge_widgets::{
@@ -36,6 +37,7 @@ pub struct LiveChatState {
     pub chat_input: String,
     pub chat_filter: ChatFilters,
     pub drawer_open: bool,
+    pub drawer_width: Option<f32>,
     pub drawer_menu_open: bool,
     pub drawer_search: String,
     pub selected_viewer: Option<String>,
@@ -133,6 +135,7 @@ impl LiveChatState {
             chat_input: String::new(),
             chat_filter: ChatFilters::default(),
             drawer_open: false,
+            drawer_width: None,
             drawer_menu_open: false,
             drawer_search: String::new(),
             selected_viewer: None,
@@ -218,6 +221,24 @@ pub fn update(state: &mut LiveChatState, rt: &RuntimeView, msg: LiveChatMsg) -> 
         LiveChatMsg::DrawerMenuDismiss => {
             state.drawer_menu_open = false;
             Task::none()
+        }
+        LiveChatMsg::LoadDrawerWidth => {
+            let dp = Arc::clone(&rt.backend);
+            Task::perform(async move { dp.sheet_width("viewers_drawer").await }, |r| {
+                Message::LiveChat(LiveChatMsg::DrawerWidthLoaded(r.ok().flatten()))
+            })
+        }
+        LiveChatMsg::DrawerWidthLoaded(width) => {
+            state.drawer_width = width;
+            Task::none()
+        }
+        LiveChatMsg::SheetResized(w) => {
+            state.drawer_width = Some(w);
+            let dp = Arc::clone(&rt.backend);
+            Task::perform(
+                async move { dp.set_sheet_width("viewers_drawer", w).await },
+                |_| Message::Noop,
+            )
         }
     }
 }
@@ -529,26 +550,26 @@ pub fn live_chat_view<'a>(
         .width(Length::Fill)
         .height(Length::Fill);
 
-    let body: Element<'a, Message> = if state.drawer_open {
-        let panel_content = crate::live_chat_drawer::drawer_panel(state, viewers, palette);
-        let chrome = crate::page_chrome::sheet_chrome(
-            "Viewers",
-            Message::LiveChat(LiveChatMsg::ToggleDrawer),
-            panel_content,
-            None,
-            palette,
-        );
-        let sheet = forge_widgets::side_sheet(
-            chrome,
-            Message::LiveChat(LiveChatMsg::ToggleDrawer),
-            forge_widgets::SheetEdge::Right,
-            480.0,
-            palette,
-        );
-        iced::widget::stack![chat_column, sheet].into()
-    } else {
-        chat_column.into()
-    };
+    let panel_content = crate::live_chat_drawer::drawer_panel(state, viewers, palette);
+    let sheet = forge_widgets::SideSheet::new(panel_content)
+        .open(state.drawer_open)
+        .palette(palette)
+        .width(forge_widgets::SheetWidth::new(
+            state.drawer_width.unwrap_or(360.0).clamp(280.0, 560.0),
+            280.0,
+            560.0,
+        ))
+        .resizable(true)
+        .sheet_key("viewers_drawer")
+        .header(forge_widgets::SheetHeader {
+            title: std::borrow::Cow::Borrowed("Viewers"),
+            subtitle: None,
+            on_close: Some(Message::LiveChat(LiveChatMsg::ToggleDrawer)),
+        })
+        .on_close(Message::LiveChat(LiveChatMsg::ToggleDrawer))
+        .on_resize(|w| Message::LiveChat(LiveChatMsg::SheetResized(w)));
+
+    let body: Element<'a, Message> = iced::widget::stack![chat_column, sheet].into();
 
     iced::widget::column![page_header, body]
         .height(Length::Fill)
@@ -897,6 +918,17 @@ mod tests {
         assert!(state.selected_viewer.is_none());
         assert!(!state.drawer_open);
         assert!(!state.drawer_menu_open);
+        assert!(state.drawer_width.is_none());
+    }
+
+    #[test]
+    fn drawer_width_field_round_trip() {
+        let mut state = LiveChatState::new();
+        assert!(state.drawer_width.is_none());
+        state.drawer_width = Some(420.0);
+        assert_eq!(state.drawer_width, Some(420.0));
+        state.drawer_width = None;
+        assert!(state.drawer_width.is_none());
     }
 
     #[test]

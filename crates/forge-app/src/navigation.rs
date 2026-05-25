@@ -5,7 +5,9 @@ use iced::{Element, Length, Task};
 
 use crate::app::App;
 use crate::commands_view::CommandsMsg;
-use crate::message::{ActionsMsg, GlobalsMsg, HomeMsg, QueuesMsg, SettingsAudioMsg, SoundboardMsg};
+use crate::message::{
+    ActionsMsg, GlobalsMsg, HomeMsg, LiveChatMsg, QueuesMsg, SettingsAudioMsg, SoundboardMsg,
+};
 use crate::script_editor::ScriptEditorMsg;
 use crate::settings_websocket::SettingsWebSocketMsg;
 use crate::viewers::ViewersMsg;
@@ -231,7 +233,10 @@ pub(crate) fn handle_navigate(app: &mut App, screen: Screen) -> Task<Message> {
     } else if is_commands {
         Task::done(Message::Commands(CommandsMsg::LoadRequested))
     } else if is_live_chat {
-        Task::done(Message::Viewers(ViewersMsg::LoadRequested))
+        Task::batch([
+            Task::done(Message::Viewers(ViewersMsg::LoadRequested)),
+            Task::done(Message::LiveChat(LiveChatMsg::LoadDrawerWidth)),
+        ])
     } else if is_hub {
         Task::done(Message::Home(HomeMsg::LoadStats))
     } else if is_globals {

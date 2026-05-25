@@ -339,6 +339,9 @@ pub enum LiveChatMsg {
     Scrolled(iced::widget::scrollable::Viewport),
     ScrollToBottom,
     ToggleEmoji,
+    LoadDrawerWidth,
+    DrawerWidthLoaded(Option<f32>),
+    SheetResized(f32),
 }
 
 #[derive(Debug, Clone)]

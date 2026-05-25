@@ -30,11 +30,11 @@ use crate::home::HomeStats;
 use crate::live_chat::LiveChatState;
 #[cfg(test)]
 use crate::message::ObsClientRef;
-use crate::message::{ActionsMsg, GlobalsMsg, HomeMsg, QueuesMsg, SidebarMsg, ToastMsg, TtsMsg};
+use crate::message::{ActionsMsg, SidebarMsg, ToastMsg, TtsMsg};
 #[cfg(test)]
 use crate::message::{PlatformId, SettingsMsg};
 use crate::queues_view::QueuesState;
-use crate::script_editor::{ScriptEditorMsg, ScriptEditorState};
+use crate::script_editor::ScriptEditorState;
 use crate::server_screen::ServerScreenState;
 use crate::server_subsystem::ServerSubsystem;
 use crate::settings_audio::SettingsAudioState;
@@ -242,77 +242,7 @@ fn dispatch_event(app: &mut App, event: &Arc<Event>) -> Task<Message> {
 
 pub fn update(app: &mut App, msg: Message) -> Task<Message> {
     match msg {
-        Message::Navigate(screen) => {
-            let is_actions = matches!(screen, Screen::Actions);
-            let is_queues = matches!(screen, Screen::Queues);
-            let is_commands = matches!(screen, Screen::Commands);
-            let is_live_chat = matches!(screen, Screen::LiveChat);
-            let is_hub = matches!(screen, Screen::Home);
-            let is_globals = matches!(screen, Screen::Globals);
-            let is_script_editor = matches!(screen, Screen::ScriptEditor);
-            let is_soundboard = matches!(screen, Screen::Soundboard);
-            let is_settings_audio = matches!(
-                screen,
-                Screen::Settings(crate::screen::SettingsSection::Audio)
-            );
-            let is_settings_ws = matches!(
-                screen,
-                Screen::Settings(crate::screen::SettingsSection::WebSocket)
-            );
-            let editor_id = if let Screen::ActionEditor(id) = &screen {
-                Some(*id)
-            } else {
-                None
-            };
-            app.screen = screen;
-            if is_actions {
-                Task::done(Message::Actions(ActionsMsg::LoadRequested))
-            } else if is_queues {
-                Task::done(Message::Queues(QueuesMsg::LoadRequested))
-            } else if is_commands {
-                Task::done(Message::Commands(
-                    crate::commands_view::CommandsMsg::LoadRequested,
-                ))
-            } else if is_live_chat {
-                Task::done(Message::Viewers(crate::viewers::ViewersMsg::LoadRequested))
-            } else if is_hub {
-                Task::done(Message::Home(HomeMsg::LoadStats))
-            } else if is_globals {
-                Task::done(Message::Globals(GlobalsMsg::LoadRequested))
-            } else if is_script_editor {
-                Task::done(Message::ScriptEditor(ScriptEditorMsg::LoadRequested))
-            } else if is_soundboard {
-                Task::done(Message::Soundboard(
-                    crate::message::SoundboardMsg::LoadRequested,
-                ))
-            } else if is_settings_audio {
-                Task::done(Message::SettingsAudio(
-                    crate::message::SettingsAudioMsg::LoadRequested,
-                ))
-            } else if is_settings_ws {
-                Task::done(Message::SettingsWebSocket(
-                    crate::settings_websocket::SettingsWebSocketMsg::LoadRequested,
-                ))
-            } else if let Some(id) = editor_id {
-                let needs_load = app
-                    .ui
-                    .actions
-                    .detail
-                    .as_ref()
-                    .map(|d| d.action.id != id)
-                    .unwrap_or(true);
-                if needs_load {
-                    Task::batch([
-                        Task::done(Message::Actions(ActionsMsg::LoadRequested)),
-                        Task::done(Message::Actions(ActionsMsg::ActionSelected(id))),
-                    ])
-                } else {
-                    Task::none()
-                }
-            } else {
-                Task::none()
-            }
-        }
+        Message::Navigate(screen) => crate::navigation::handle_navigate(app, screen),
         Message::Sidebar(sub) => {
             match sub {
                 SidebarMsg::ToggleActionsQueues => {
@@ -514,7 +444,7 @@ mod tests {
     use super::*;
     use crate::SettingsSection;
     use crate::actions::{AddActionMsg, AddSubActionMsg, SubActionKindChoice};
-    use crate::message::{ActionEditorMsg, HomeStatsData};
+    use crate::message::{ActionEditorMsg, HomeMsg, HomeStatsData};
     use crate::navigation::{breadcrumb_icon_for, screen_label};
     use crate::subscriptions::subscription;
     use crate::view_router::view;

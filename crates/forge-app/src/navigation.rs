@@ -1,9 +1,14 @@
 use forge_platform_core::BuiltinId;
 use forge_widgets::icons::Icon;
 use forge_widgets::{ForgePalette, NavItem, Sidebar};
-use iced::{Element, Length};
+use iced::{Element, Length, Task};
 
 use crate::app::App;
+use crate::commands_view::CommandsMsg;
+use crate::message::{ActionsMsg, GlobalsMsg, HomeMsg, QueuesMsg, SettingsAudioMsg, SoundboardMsg};
+use crate::script_editor::ScriptEditorMsg;
+use crate::settings_websocket::SettingsWebSocketMsg;
+use crate::viewers::ViewersMsg;
 use crate::{Message, Screen, SettingsSection, TtsSection};
 
 pub(crate) fn coming_soon_view(
@@ -199,5 +204,65 @@ pub(crate) fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Side
     Sidebar {
         items,
         bottom_items,
+    }
+}
+
+pub(crate) fn handle_navigate(app: &mut App, screen: Screen) -> Task<Message> {
+    let is_actions = matches!(screen, Screen::Actions);
+    let is_queues = matches!(screen, Screen::Queues);
+    let is_commands = matches!(screen, Screen::Commands);
+    let is_live_chat = matches!(screen, Screen::LiveChat);
+    let is_hub = matches!(screen, Screen::Home);
+    let is_globals = matches!(screen, Screen::Globals);
+    let is_script_editor = matches!(screen, Screen::ScriptEditor);
+    let is_soundboard = matches!(screen, Screen::Soundboard);
+    let is_settings_audio = matches!(screen, Screen::Settings(SettingsSection::Audio));
+    let is_settings_ws = matches!(screen, Screen::Settings(SettingsSection::WebSocket));
+    let editor_id = if let Screen::ActionEditor(id) = &screen {
+        Some(*id)
+    } else {
+        None
+    };
+    app.screen = screen;
+    if is_actions {
+        Task::done(Message::Actions(ActionsMsg::LoadRequested))
+    } else if is_queues {
+        Task::done(Message::Queues(QueuesMsg::LoadRequested))
+    } else if is_commands {
+        Task::done(Message::Commands(CommandsMsg::LoadRequested))
+    } else if is_live_chat {
+        Task::done(Message::Viewers(ViewersMsg::LoadRequested))
+    } else if is_hub {
+        Task::done(Message::Home(HomeMsg::LoadStats))
+    } else if is_globals {
+        Task::done(Message::Globals(GlobalsMsg::LoadRequested))
+    } else if is_script_editor {
+        Task::done(Message::ScriptEditor(ScriptEditorMsg::LoadRequested))
+    } else if is_soundboard {
+        Task::done(Message::Soundboard(SoundboardMsg::LoadRequested))
+    } else if is_settings_audio {
+        Task::done(Message::SettingsAudio(SettingsAudioMsg::LoadRequested))
+    } else if is_settings_ws {
+        Task::done(Message::SettingsWebSocket(
+            SettingsWebSocketMsg::LoadRequested,
+        ))
+    } else if let Some(id) = editor_id {
+        let needs_load = app
+            .ui
+            .actions
+            .detail
+            .as_ref()
+            .map(|d| d.action.id != id)
+            .unwrap_or(true);
+        if needs_load {
+            Task::batch([
+                Task::done(Message::Actions(ActionsMsg::LoadRequested)),
+                Task::done(Message::Actions(ActionsMsg::ActionSelected(id))),
+            ])
+        } else {
+            Task::none()
+        }
+    } else {
+        Task::none()
     }
 }

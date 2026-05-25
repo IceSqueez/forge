@@ -25,6 +25,8 @@ const CLOSE_HIT_W: f32 = 32.0;
 const CLOSE_HIT_H: f32 = 32.0;
 const DIVIDER_H: f32 = 1.0;
 const MAX_DT_SECS: f32 = 0.032;
+const RESIZE_VISUAL_W: f32 = 4.0;
+const RESIZE_HIT_W: f32 = 8.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SheetPosition {
@@ -118,11 +120,8 @@ struct SideSheetState {
     target: f32,
     last_tick: Option<Instant>,
     resized_width: Option<f32>,
-    #[allow(dead_code)]
     is_resizing: bool,
-    #[allow(dead_code)]
     resize_drag_origin: Option<(f32, f32)>,
-    #[allow(dead_code)]
     is_hovering_resize_handle: bool,
 }
 
@@ -243,6 +242,32 @@ where
             y: sheet_rect.y + (HEADER_H - CLOSE_HIT_H) / 2.0,
             width: CLOSE_HIT_W,
             height: CLOSE_HIT_H,
+        }
+    }
+
+    fn resize_hit_zone(&self, sheet_rect: Rectangle) -> Rectangle {
+        let center_x = match self.config.position {
+            SheetPosition::Right => sheet_rect.x + RESIZE_VISUAL_W / 2.0,
+            SheetPosition::Left => sheet_rect.x + sheet_rect.width - RESIZE_VISUAL_W / 2.0,
+        };
+        Rectangle {
+            x: center_x - RESIZE_HIT_W / 2.0,
+            y: sheet_rect.y,
+            width: RESIZE_HIT_W,
+            height: sheet_rect.height,
+        }
+    }
+
+    fn resize_visual_rect(&self, sheet_rect: Rectangle) -> Rectangle {
+        let x = match self.config.position {
+            SheetPosition::Right => sheet_rect.x,
+            SheetPosition::Left => sheet_rect.x + sheet_rect.width - RESIZE_VISUAL_W,
+        };
+        Rectangle {
+            x,
+            y: sheet_rect.y,
+            width: RESIZE_VISUAL_W,
+            height: sheet_rect.height,
         }
     }
 }
@@ -477,6 +502,30 @@ where
                 );
             });
         }
+
+        if self.config.resizable {
+            let visual_base = self.resize_visual_rect(base_sheet_rect);
+            let handle_rect = Rectangle {
+                x: visual_base.x + x_offset,
+                ..visual_base
+            };
+            let handle_color = if state.is_resizing {
+                p.brand
+            } else if state.is_hovering_resize_handle {
+                p.border_active
+            } else {
+                p.border_input
+            };
+            renderer.fill_quad(
+                renderer::Quad {
+                    bounds: handle_rect,
+                    border: Border::default(),
+                    shadow: Shadow::default(),
+                    snap: false,
+                },
+                handle_color,
+            );
+        }
     }
 
     fn update(
@@ -549,6 +598,24 @@ where
                 }
                 return;
             }
+            Event::Mouse(mouse::Event::CursorMoved { position }) => {
+                let hit_zone = self.resize_hit_zone(sheet_rect);
+                let state = tree.state.downcast_mut::<SideSheetState>();
+                state.is_hovering_resize_handle =
+                    self.config.resizable && progress > 0.95 && hit_zone.contains(*position);
+                if state.is_resizing {
+                    if let Some((origin_x, origin_width)) = state.resize_drag_origin {
+                        let new_width = match self.config.position {
+                            SheetPosition::Right => origin_width + (origin_x - position.x),
+                            SheetPosition::Left => origin_width + (position.x - origin_x),
+                        };
+                        state.resized_width =
+                            Some(new_width.clamp(self.config.width.min, self.config.width.max));
+                        shell.request_redraw();
+                    }
+                    return;
+                }
+            }
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                 if let mouse::Cursor::Available(pos) = cursor {
                     if let Some(header) = &self.config.header
@@ -558,12 +625,47 @@ where
                         shell.publish(close_msg);
                         return;
                     }
+                    if self.config.resizable && progress > 0.95 {
+                        let hit_zone = self.resize_hit_zone(sheet_rect);
+                        if hit_zone.contains(pos) {
+                            let state = tree.state.downcast_mut::<SideSheetState>();
+                            let current_w = state
+                                .resized_width
+                                .unwrap_or(self.config.width.initial)
+                                .clamp(self.config.width.min, self.config.width.max);
+                            state.is_resizing = true;
+                            state.resize_drag_origin = Some((pos.x, current_w));
+                            return;
+                        }
+                    }
                     if !sheet_rect.contains(pos)
                         && let Some(msg) = self.config.on_close.clone()
                     {
                         shell.publish(msg);
                         return;
                     }
+                }
+            }
+            Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
+                let final_width = {
+                    let state = tree.state.downcast_mut::<SideSheetState>();
+                    if state.is_resizing {
+                        let w = state
+                            .resized_width
+                            .unwrap_or(self.config.width.initial)
+                            .clamp(self.config.width.min, self.config.width.max);
+                        state.is_resizing = false;
+                        state.resize_drag_origin = None;
+                        Some(w)
+                    } else {
+                        None
+                    }
+                };
+                if let Some(w) = final_width {
+                    if let Some(cb) = &self.config.on_resize {
+                        shell.publish(cb(w));
+                    }
+                    return;
                 }
             }
             _ => {}
@@ -594,6 +696,20 @@ where
         let state = tree.state.downcast_ref::<SideSheetState>();
         if !self.config.open && state.progress < 0.001 {
             return mouse::Interaction::default();
+        }
+        if self.config.resizable && (state.is_resizing || state.progress > 0.95) {
+            if state.is_resizing {
+                return mouse::Interaction::ResizingHorizontally;
+            }
+            let bounds = layout.bounds();
+            let sheet_w = self.current_width(state);
+            let sheet_rect = self.sheet_rect(bounds, sheet_w);
+            let hit_zone = self.resize_hit_zone(sheet_rect);
+            if let mouse::Cursor::Available(pos) = cursor
+                && hit_zone.contains(pos)
+            {
+                return mouse::Interaction::ResizingHorizontally;
+            }
         }
         if let Some(child_layout) = layout.children().next() {
             return self.content.as_widget().mouse_interaction(
@@ -681,10 +797,22 @@ mod tests {
 
     use crate::palette::CATPPUCCIN_MOCHA;
 
-    #[derive(Debug, Clone, PartialEq)]
+    #[derive(Debug, Clone)]
     enum CloseMsg {
         Close,
         HeaderClose,
+        Resized(f32),
+    }
+
+    impl PartialEq for CloseMsg {
+        fn eq(&self, other: &Self) -> bool {
+            match (self, other) {
+                (Self::Close, Self::Close) => true,
+                (Self::HeaderClose, Self::HeaderClose) => true,
+                (Self::Resized(a), Self::Resized(b)) => (a - b).abs() < 0.01,
+                _ => false,
+            }
+        }
     }
 
     fn open_widget<'a>() -> SideSheet<'a, CloseMsg, Theme, ()> {
@@ -696,6 +824,13 @@ mod tests {
     fn closed_widget<'a>() -> SideSheet<'a, CloseMsg, Theme, ()> {
         SideSheet::new(Space::new())
             .open(false)
+            .palette(&CATPPUCCIN_MOCHA)
+    }
+
+    fn resizable_open_widget<'a>() -> SideSheet<'a, CloseMsg, Theme, ()> {
+        SideSheet::new(Space::new())
+            .open(true)
+            .resizable(true)
             .palette(&CATPPUCCIN_MOCHA)
     }
 
@@ -749,6 +884,15 @@ mod tests {
         tree: &mut Tree,
         event: &Event,
     ) -> (Vec<CloseMsg>, window::RedrawRequest) {
+        run_update_at(widget, tree, event, mouse::Cursor::Unavailable)
+    }
+
+    fn run_update_at(
+        widget: &mut SideSheet<'_, CloseMsg, Theme, ()>,
+        tree: &mut Tree,
+        event: &Event,
+        cursor: mouse::Cursor,
+    ) -> (Vec<CloseMsg>, window::RedrawRequest) {
         let node = widget.layout(tree, &(), &limits_1280());
         let layout = Layout::new(&node);
         let vp = viewport_rect();
@@ -758,7 +902,7 @@ mod tests {
             tree,
             event,
             layout,
-            mouse::Cursor::Unavailable,
+            cursor,
             &(),
             &mut NullClipboard,
             &mut shell,
@@ -766,6 +910,43 @@ mod tests {
         );
         let redraw = shell.redraw_request();
         (messages, redraw)
+    }
+
+    fn cursor_at(x: f32, y: f32) -> mouse::Cursor {
+        mouse::Cursor::Available(Point::new(x, y))
+    }
+
+    fn cursor_moved(x: f32, y: f32) -> Event {
+        Event::Mouse(mouse::Event::CursorMoved {
+            position: Point::new(x, y),
+        })
+    }
+
+    fn left_pressed() -> Event {
+        Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
+    }
+
+    fn left_released() -> Event {
+        Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
+    }
+
+    fn mouse_interaction_at(
+        widget: &mut SideSheet<'_, CloseMsg, Theme, ()>,
+        tree: &mut Tree,
+        pos: Point,
+    ) -> mouse::Interaction {
+        let node = widget.layout(tree, &(), &limits_1280());
+        let layout = Layout::new(&node);
+        let vp = viewport_rect();
+        widget.mouse_interaction(tree, layout, mouse::Cursor::Available(pos), &vp, &())
+    }
+
+    fn hit_zone_center() -> Point {
+        Point::new(921.0, 400.0)
+    }
+
+    fn outside_hit_zone() -> Point {
+        Point::new(900.0, 400.0)
     }
 
     #[test]
@@ -1243,6 +1424,316 @@ mod tests {
             redraw,
             window::RedrawRequest::NextFrame,
             "must request redraw while progress != target"
+        );
+    }
+
+    #[test]
+    fn hover_flag_follows_cursor_in_hit_zone() {
+        let mut widget = resizable_open_widget();
+        let mut tree = make_tree(&widget);
+        tree.state.downcast_mut::<SideSheetState>().progress = 1.0;
+
+        run_update_at(
+            &mut widget,
+            &mut tree,
+            &cursor_moved(921.0, 400.0),
+            cursor_at(921.0, 400.0),
+        );
+        assert!(
+            tree.state
+                .downcast_ref::<SideSheetState>()
+                .is_hovering_resize_handle
+        );
+
+        run_update_at(
+            &mut widget,
+            &mut tree,
+            &cursor_moved(900.0, 400.0),
+            cursor_at(900.0, 400.0),
+        );
+        assert!(
+            !tree
+                .state
+                .downcast_ref::<SideSheetState>()
+                .is_hovering_resize_handle
+        );
+    }
+
+    #[test]
+    fn mouse_interaction_resizing_when_in_hit_zone_and_open() {
+        let mut widget = resizable_open_widget();
+        let mut tree = make_tree(&widget);
+        tree.state.downcast_mut::<SideSheetState>().progress = 1.0;
+
+        let interaction = mouse_interaction_at(&mut widget, &mut tree, hit_zone_center());
+        assert_eq!(interaction, mouse::Interaction::ResizingHorizontally);
+    }
+
+    #[test]
+    fn mouse_interaction_default_when_outside_hit_zone_or_closed() {
+        let mut widget = resizable_open_widget();
+        let mut tree = make_tree(&widget);
+        tree.state.downcast_mut::<SideSheetState>().progress = 1.0;
+
+        let outside = mouse_interaction_at(&mut widget, &mut tree, outside_hit_zone());
+        assert_eq!(outside, mouse::Interaction::None);
+
+        tree.state.downcast_mut::<SideSheetState>().progress = 0.5;
+        let animating = mouse_interaction_at(&mut widget, &mut tree, hit_zone_center());
+        assert_eq!(animating, mouse::Interaction::None);
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn press_in_hit_zone_starts_resize_drag() {
+        let mut widget = resizable_open_widget();
+        let mut tree = make_tree(&widget);
+        tree.state.downcast_mut::<SideSheetState>().progress = 1.0;
+
+        run_update_at(
+            &mut widget,
+            &mut tree,
+            &left_pressed(),
+            cursor_at(921.0, 400.0),
+        );
+
+        let state = tree.state.downcast_ref::<SideSheetState>();
+        assert!(state.is_resizing);
+        assert!(state.resize_drag_origin.is_some());
+        let (origin_x, origin_w) = state.resize_drag_origin.unwrap();
+        assert!((origin_x - 921.0).abs() < 0.01);
+        assert!((origin_w - 360.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn press_outside_hit_zone_does_not_start_resize() {
+        let mut widget = resizable_open_widget().on_close(CloseMsg::Close);
+        let mut tree = make_tree(&widget);
+        tree.state.downcast_mut::<SideSheetState>().progress = 1.0;
+
+        run_update_at(
+            &mut widget,
+            &mut tree,
+            &left_pressed(),
+            cursor_at(900.0, 400.0),
+        );
+
+        assert!(!tree.state.downcast_ref::<SideSheetState>().is_resizing);
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn cursor_moved_while_resizing_updates_resized_width() {
+        let mut widget = resizable_open_widget();
+        let mut tree = make_tree(&widget);
+        tree.state.downcast_mut::<SideSheetState>().progress = 1.0;
+
+        run_update_at(
+            &mut widget,
+            &mut tree,
+            &left_pressed(),
+            cursor_at(921.0, 400.0),
+        );
+
+        run_update_at(
+            &mut widget,
+            &mut tree,
+            &cursor_moved(881.0, 400.0),
+            cursor_at(881.0, 400.0),
+        );
+
+        let w = tree.state.downcast_ref::<SideSheetState>().resized_width;
+        assert!(w.is_some());
+        assert!(
+            (w.unwrap() - 400.0).abs() < 0.01,
+            "expected 400, got {:?}",
+            w
+        );
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn drag_clamps_to_min() {
+        let mut widget = resizable_open_widget();
+        let mut tree = make_tree(&widget);
+        tree.state.downcast_mut::<SideSheetState>().progress = 1.0;
+
+        run_update_at(
+            &mut widget,
+            &mut tree,
+            &left_pressed(),
+            cursor_at(921.0, 400.0),
+        );
+        run_update_at(
+            &mut widget,
+            &mut tree,
+            &cursor_moved(1021.0, 400.0),
+            cursor_at(1021.0, 400.0),
+        );
+
+        let w = tree
+            .state
+            .downcast_ref::<SideSheetState>()
+            .resized_width
+            .unwrap();
+        assert!((w - 280.0).abs() < 0.01, "expected min=280, got {w}");
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn drag_clamps_to_max() {
+        let mut widget = resizable_open_widget();
+        let mut tree = make_tree(&widget);
+        tree.state.downcast_mut::<SideSheetState>().progress = 1.0;
+
+        run_update_at(
+            &mut widget,
+            &mut tree,
+            &left_pressed(),
+            cursor_at(921.0, 400.0),
+        );
+        run_update_at(
+            &mut widget,
+            &mut tree,
+            &cursor_moved(720.0, 400.0),
+            cursor_at(720.0, 400.0),
+        );
+
+        let w = tree
+            .state
+            .downcast_ref::<SideSheetState>()
+            .resized_width
+            .unwrap();
+        assert!((w - 560.0).abs() < 0.01, "expected max=560, got {w}");
+    }
+
+    #[test]
+    fn release_while_resizing_emits_on_resize_once() {
+        let mut widget = resizable_open_widget().on_resize(CloseMsg::Resized);
+        let mut tree = make_tree(&widget);
+        tree.state.downcast_mut::<SideSheetState>().progress = 1.0;
+
+        run_update_at(
+            &mut widget,
+            &mut tree,
+            &left_pressed(),
+            cursor_at(921.0, 400.0),
+        );
+        run_update_at(
+            &mut widget,
+            &mut tree,
+            &cursor_moved(881.0, 400.0),
+            cursor_at(881.0, 400.0),
+        );
+
+        let (msgs, _) = run_update_at(
+            &mut widget,
+            &mut tree,
+            &left_released(),
+            cursor_at(881.0, 400.0),
+        );
+
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0], CloseMsg::Resized(400.0));
+    }
+
+    #[test]
+    fn release_without_on_resize_callback_clears_state() {
+        let mut widget = resizable_open_widget();
+        let mut tree = make_tree(&widget);
+        tree.state.downcast_mut::<SideSheetState>().progress = 1.0;
+
+        run_update_at(
+            &mut widget,
+            &mut tree,
+            &left_pressed(),
+            cursor_at(921.0, 400.0),
+        );
+        run_update_at(
+            &mut widget,
+            &mut tree,
+            &cursor_moved(881.0, 400.0),
+            cursor_at(881.0, 400.0),
+        );
+
+        let (msgs, _) = run_update_at(
+            &mut widget,
+            &mut tree,
+            &left_released(),
+            cursor_at(881.0, 400.0),
+        );
+
+        assert!(msgs.is_empty());
+        let state = tree.state.downcast_ref::<SideSheetState>();
+        assert!(!state.is_resizing);
+        assert!(state.resize_drag_origin.is_none());
+    }
+
+    #[test]
+    fn release_when_not_resizing_emits_nothing() {
+        let mut widget = resizable_open_widget().on_resize(CloseMsg::Resized);
+        let mut tree = make_tree(&widget);
+        tree.state.downcast_mut::<SideSheetState>().progress = 1.0;
+
+        let (msgs, _) = run_update_at(
+            &mut widget,
+            &mut tree,
+            &left_released(),
+            cursor_at(921.0, 400.0),
+        );
+
+        assert!(msgs.is_empty());
+    }
+
+    #[test]
+    fn release_clears_resize_state() {
+        let mut widget = resizable_open_widget().on_resize(CloseMsg::Resized);
+        let mut tree = make_tree(&widget);
+        tree.state.downcast_mut::<SideSheetState>().progress = 1.0;
+
+        run_update_at(
+            &mut widget,
+            &mut tree,
+            &left_pressed(),
+            cursor_at(921.0, 400.0),
+        );
+        assert!(tree.state.downcast_ref::<SideSheetState>().is_resizing);
+
+        run_update_at(
+            &mut widget,
+            &mut tree,
+            &left_released(),
+            cursor_at(921.0, 400.0),
+        );
+
+        let state = tree.state.downcast_ref::<SideSheetState>();
+        assert!(!state.is_resizing);
+        assert!(state.resize_drag_origin.is_none());
+    }
+
+    #[test]
+    fn layout_uses_resized_width_not_initial() {
+        let initial_w = 360.0_f32;
+        let resized_w = 440.0_f32;
+
+        let mut widget: SideSheet<'_, CloseMsg, Theme, ()> = SideSheet::new(Space::new())
+            .open(true)
+            .resizable(true)
+            .width(SheetWidth::new(initial_w, 280.0, 560.0))
+            .palette(&CATPPUCCIN_MOCHA);
+        let mut tree = make_tree(&widget);
+        tree.state.downcast_mut::<SideSheetState>().resized_width = Some(resized_w);
+
+        let node = widget.layout(&mut tree, &(), &limits_1280());
+        let child_x = node.children()[0].bounds().x;
+
+        let expected_sheet_x = 1280.0 - resized_w;
+        let expected_child_x = expected_sheet_x + PAD_H;
+        let initial_child_x = 1280.0 - initial_w + PAD_H;
+
+        assert!(
+            (child_x - expected_child_x).abs() < 0.01,
+            "child x={child_x} must reflect resized_w={resized_w}, not initial_w={initial_w} (initial_x={initial_child_x})"
         );
     }
 }

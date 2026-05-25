@@ -43,12 +43,12 @@ use crate::settings_audio::SettingsAudioState;
 use crate::settings_websocket::SettingsWebSocketState;
 use crate::soundboard::{SoundboardState, soundboard_view};
 use crate::stream_apps::view as stream_apps_view;
-use crate::tts_dashboard::{TtsDashState, tts_dashboard_view};
-use crate::tts_engines::{TtsEnginesState, tts_engines_view};
-use crate::tts_filters::{TtsFiltersState, tts_filters_view};
-use crate::tts_triggers::{TtsTriggersState, tts_triggers_view};
-use crate::voice_aliases::{VoiceAliasesState, voice_aliases_view};
-use crate::{Message, Screen, TtsSection};
+use crate::tts_dashboard::TtsDashState;
+use crate::tts_engines::TtsEnginesState;
+use crate::tts_filters::TtsFiltersState;
+use crate::tts_triggers::TtsTriggersState;
+use crate::voice_aliases::VoiceAliasesState;
+use crate::{Message, Screen};
 
 pub struct SidebarExpandState {
     pub actions_queues: bool,
@@ -979,95 +979,6 @@ pub(crate) fn sheet_chrome<'a>(
     col.into()
 }
 
-fn tts_tab_button<'a>(
-    label: &'static str,
-    section: TtsSection,
-    active: &TtsSection,
-    palette: &'a ForgePalette,
-) -> iced::widget::Button<'a, Message> {
-    use iced::widget::{button, column, container, text};
-    let is_active = *active == section;
-    let fg = if is_active {
-        palette.text_primary
-    } else {
-        palette.text_muted
-    };
-    let indicator_color = if is_active {
-        palette.brand
-    } else {
-        iced::Color::TRANSPARENT
-    };
-    let inner = column![
-        text(label).size(FONT_SM).color(fg),
-        container(iced::widget::Space::new())
-            .width(iced::Length::Fill)
-            .height(2)
-            .style(move |_| iced::widget::container::Style {
-                background: Some(iced::Background::Color(indicator_color)),
-                ..iced::widget::container::Style::default()
-            }),
-    ]
-    .spacing(spf(Spacing::Xxs));
-    button(inner)
-        .on_press(Message::Navigate(Screen::Tts(section)))
-        .padding([7_u16, 14_u16])
-        .style(|_, _| iced::widget::button::Style {
-            background: None,
-            ..iced::widget::button::Style::default()
-        })
-}
-
-fn tts_section_view<'a>(
-    app: &'a App,
-    section: &'a TtsSection,
-    palette: &'a ForgePalette,
-) -> iced::Element<'a, Message> {
-    use iced::widget::{column, container, row};
-    let tab_bar = container(
-        row![
-            tts_tab_button("Dashboard", TtsSection::Dashboard, section, palette),
-            tts_tab_button("Engines", TtsSection::Engines, section, palette),
-            tts_tab_button("Voice aliases", TtsSection::Aliases, section, palette),
-            tts_tab_button("Filters", TtsSection::Filters, section, palette),
-            tts_tab_button("Triggers", TtsSection::Triggers, section, palette),
-        ]
-        .spacing(spf(Spacing::Xxs)),
-    )
-    .width(iced::Length::Fill)
-    .style(move |_| iced::widget::container::Style {
-        background: Some(iced::Background::Color(palette.shell)),
-        border: iced::Border {
-            color: palette.border_regular,
-            width: 0.5,
-            radius: 0.0.into(),
-        },
-        ..iced::widget::container::Style::default()
-    });
-
-    let content: iced::Element<'a, Message> = match section {
-        TtsSection::Dashboard => tts_dashboard_view(&app.ui.tts_dashboard, palette),
-        TtsSection::Engines => tts_engines_view(&app.ui.tts_engines, palette),
-        TtsSection::Aliases => voice_aliases_view(&app.ui.tts_aliases, palette),
-        TtsSection::Filters => tts_filters_view(&app.ui.tts_filters, palette),
-        TtsSection::Triggers => tts_triggers_view(&app.ui.tts_triggers, palette),
-    };
-
-    let section_label = match section {
-        TtsSection::Dashboard => "Dashboard",
-        TtsSection::Engines => "Engines",
-        TtsSection::Aliases => "Voice aliases",
-        TtsSection::Filters => "Filters",
-        TtsSection::Triggers => "Triggers",
-    };
-    let page_header = simple_page_header(&[("TTS", false), (section_label, true)], palette);
-
-    column![page_header, tab_bar, content]
-        .spacing(0)
-        .width(iced::Length::Fill)
-        .height(iced::Length::Fill)
-        .into()
-}
-
 pub fn view(app: &App) -> Element<'_, Message> {
     let palette = &app.palette;
 
@@ -1147,7 +1058,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
             }
         }
         Screen::Soundboard => soundboard_view(&app.ui.soundboard, palette),
-        Screen::Tts(section) => tts_section_view(app, section, palette),
+        Screen::Tts(section) => crate::tts_view::tts_section_view(app, section, palette),
         other => navigation::coming_soon_view(format!("{other:?}"), palette),
     };
 

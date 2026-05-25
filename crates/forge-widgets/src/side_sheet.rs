@@ -25,7 +25,7 @@ const CLOSE_HIT_W: f32 = 32.0;
 const CLOSE_HIT_H: f32 = 32.0;
 const DIVIDER_H: f32 = 1.0;
 const MAX_DT_SECS: f32 = 0.032;
-const RESIZE_VISUAL_W: f32 = 4.0;
+const RESIZE_VISUAL_W: f32 = 2.0;
 const RESIZE_HIT_W: f32 = 8.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -123,6 +123,7 @@ struct SideSheetState {
     is_resizing: bool,
     resize_drag_origin: Option<(f32, f32)>,
     is_hovering_resize_handle: bool,
+    needs_layout_invalidation: bool,
 }
 
 fn apply_easing(t: f32, easing: Easing) -> f32 {
@@ -276,6 +277,7 @@ fn fill_sheet_text<R>(
     renderer: &mut R,
     content: String,
     size: f32,
+    bounds: Size,
     position: Point,
     color: Color,
     viewport: Rectangle,
@@ -285,7 +287,7 @@ fn fill_sheet_text<R>(
     renderer.fill_text(
         text::Text {
             content,
-            bounds: Size::INFINITE,
+            bounds,
             size: Pixels(size),
             line_height: text::LineHeight::default(),
             font: font(FontRole::Body),
@@ -418,7 +420,7 @@ where
                     radius: 0.0.into(),
                 },
                 shadow: Shadow::default(),
-                snap: false,
+                snap: true,
             },
             p.base,
         );
@@ -431,11 +433,13 @@ where
                 title_line_h
             };
             let text_y = bounds.y + (HEADER_H - block_h) / 2.0;
+            let title_avail_w = (sheet_w - PAD_H * 3.0 - CLOSE_HIT_W).max(0.0);
 
             fill_sheet_text(
                 renderer,
                 header.title.as_ref().to_owned(),
                 FONT_MD,
+                Size::new(title_avail_w, FONT_MD * 1.4),
                 Point {
                     x: animated_sheet_rect.x + PAD_H,
                     y: text_y,
@@ -449,6 +453,7 @@ where
                     renderer,
                     sub.as_ref().to_owned(),
                     FONT_SM,
+                    Size::new(title_avail_w, FONT_SM * 1.4),
                     Point {
                         x: animated_sheet_rect.x + PAD_H,
                         y: text_y + title_line_h + 2.0,
@@ -464,6 +469,7 @@ where
                     renderer,
                     "\u{2715}".to_owned(),
                     FONT_MD,
+                    Size::INFINITE,
                     Point {
                         x: btn.x + (CLOSE_HIT_W - FONT_MD) / 2.0,
                         y: btn.y + (CLOSE_HIT_H - FONT_MD) / 2.0,
@@ -483,7 +489,7 @@ where
                     },
                     border: Border::default(),
                     shadow: Shadow::default(),
-                    snap: false,
+                    snap: true,
                 },
                 p.border_regular,
             );
@@ -521,7 +527,7 @@ where
                     bounds: handle_rect,
                     border: Border::default(),
                     shadow: Shadow::default(),
-                    snap: false,
+                    snap: true,
                 },
                 handle_color,
             );
@@ -544,6 +550,10 @@ where
             state.target = if self.config.open { 1.0 } else { 0.0 };
 
             if let Event::Window(window::Event::RedrawRequested(now)) = event {
+                if state.needs_layout_invalidation {
+                    state.needs_layout_invalidation = false;
+                    shell.invalidate_layout();
+                }
                 if state.progress != state.target {
                     let dt = state
                         .last_tick
@@ -611,6 +621,7 @@ where
                         };
                         state.resized_width =
                             Some(new_width.clamp(self.config.width.min, self.config.width.max));
+                        state.needs_layout_invalidation = true;
                         shell.request_redraw();
                     }
                     return;
@@ -683,6 +694,24 @@ where
                 viewport,
             );
         }
+    }
+
+    fn overlay<'b>(
+        &'b mut self,
+        tree: &'b mut Tree,
+        layout: Layout<'b>,
+        renderer: &Renderer,
+        viewport: &Rectangle,
+        translation: Vector,
+    ) -> Option<iced::advanced::overlay::Element<'b, Message, Theme, Renderer>> {
+        let child_layout = layout.children().next()?;
+        self.content.as_widget_mut().overlay(
+            &mut tree.children[0],
+            child_layout,
+            renderer,
+            viewport,
+            translation,
+        )
     }
 
     fn mouse_interaction(

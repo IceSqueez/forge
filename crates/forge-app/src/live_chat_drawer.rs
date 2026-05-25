@@ -777,15 +777,22 @@ pub(crate) fn drawer_panel<'a>(
     viewers: &'a ViewersState,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    use iced::widget::column;
+    use iced::widget::{column, mouse_area};
 
-    column![
+    let content = column![
         drawer_header(state, palette),
         selected_viewer_detail(state, viewers, palette),
         viewer_list(state, viewers, palette),
     ]
-    .height(Length::Fill)
-    .into()
+    .height(Length::Fill);
+
+    if state.drawer_menu_open {
+        mouse_area(content)
+            .on_press(Message::LiveChat(LiveChatMsg::DrawerMenuDismiss))
+            .into()
+    } else {
+        content.into()
+    }
 }
 
 #[cfg(test)]

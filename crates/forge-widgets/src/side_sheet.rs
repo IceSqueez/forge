@@ -7,10 +7,12 @@ use iced::advanced::text;
 use iced::advanced::widget::Widget;
 use iced::advanced::widget::tree::{self, Tree};
 use iced::advanced::{Clipboard, Layout, Shell};
+use iced::time::Instant;
 use iced::{
     Alignment, Background, Border, Color, Element, Event, Font, Length, Pixels, Point, Rectangle,
-    Shadow, Size,
+    Shadow, Size, Vector,
     widget::{Space, container, mouse_area, stack},
+    window,
 };
 
 use crate::palette::ForgePalette;
@@ -22,6 +24,7 @@ const PAD_V: f32 = 12.0;
 const CLOSE_HIT_W: f32 = 32.0;
 const CLOSE_HIT_H: f32 = 32.0;
 const DIVIDER_H: f32 = 1.0;
+const MAX_DT_SECS: f32 = 0.032;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SheetPosition {
@@ -111,6 +114,9 @@ where
 
 #[derive(Default)]
 struct SideSheetState {
+    progress: f32,
+    target: f32,
+    last_tick: Option<Instant>,
     resized_width: Option<f32>,
     #[allow(dead_code)]
     is_resizing: bool,
@@ -118,6 +124,21 @@ struct SideSheetState {
     resize_drag_origin: Option<(f32, f32)>,
     #[allow(dead_code)]
     is_hovering_resize_handle: bool,
+}
+
+fn apply_easing(t: f32, easing: Easing) -> f32 {
+    match easing {
+        Easing::Linear => t,
+        Easing::EaseInOut => {
+            if t < 0.5 {
+                4.0 * t * t * t
+            } else {
+                1.0 - (-2.0 * t + 2.0).powi(3) / 2.0
+            }
+        }
+        Easing::EaseOutCubic => 1.0 - (1.0 - t).powi(3),
+        Easing::EaseOutQuart => 1.0 - (1.0 - t).powi(4),
+    }
 }
 
 impl<'a, Message, Theme, Renderer> SideSheet<'a, Message, Theme, Renderer>
@@ -312,7 +333,7 @@ where
         };
         let child_node = child_node.move_to(Point::new(sheet_x + PAD_H, header_h + PAD_V));
 
-        if !self.config.open {
+        if !self.config.open && state.progress < 0.001 {
             return layout::Node::with_children(Size::ZERO, vec![child_node]);
         }
 
@@ -329,16 +350,30 @@ where
         cursor: mouse::Cursor,
         viewport: &Rectangle,
     ) {
-        if !self.config.open {
+        let state = tree.state.downcast_ref::<SideSheetState>();
+        let visual_progress = apply_easing(state.progress, self.config.animation.easing);
+
+        if !self.config.open && state.progress < 0.001 {
             return;
         }
 
-        let state = tree.state.downcast_ref::<SideSheetState>();
         let p = self.config.palette;
         let bounds = layout.bounds();
         let sheet_w = self.current_width(state);
-        let sheet_rect = self.sheet_rect(bounds, sheet_w);
 
+        let x_offset = match self.config.position {
+            SheetPosition::Right => (1.0 - visual_progress) * sheet_w,
+            SheetPosition::Left => -(1.0 - visual_progress) * sheet_w,
+        };
+
+        let base_sheet_rect = self.sheet_rect(bounds, sheet_w);
+        let animated_sheet_rect = Rectangle {
+            x: base_sheet_rect.x + x_offset,
+            ..base_sheet_rect
+        };
+
+        let mut scrim_color = p.scrim;
+        scrim_color.a *= visual_progress;
         renderer.fill_quad(
             renderer::Quad {
                 bounds,
@@ -346,12 +381,12 @@ where
                 shadow: Shadow::default(),
                 snap: false,
             },
-            p.scrim,
+            scrim_color,
         );
 
         renderer.fill_quad(
             renderer::Quad {
-                bounds: sheet_rect,
+                bounds: animated_sheet_rect,
                 border: Border {
                     color: p.border_regular,
                     width: BORDER_THIN,
@@ -377,7 +412,7 @@ where
                 header.title.as_ref().to_owned(),
                 FONT_MD,
                 Point {
-                    x: sheet_rect.x + PAD_H,
+                    x: animated_sheet_rect.x + PAD_H,
                     y: text_y,
                 },
                 p.text_primary,
@@ -390,7 +425,7 @@ where
                     sub.as_ref().to_owned(),
                     FONT_SM,
                     Point {
-                        x: sheet_rect.x + PAD_H,
+                        x: animated_sheet_rect.x + PAD_H,
                         y: text_y + title_line_h + 2.0,
                     },
                     p.text_secondary,
@@ -399,7 +434,7 @@ where
             }
 
             if header.on_close.is_some() {
-                let btn = self.close_btn_rect(sheet_rect);
+                let btn = self.close_btn_rect(animated_sheet_rect);
                 fill_sheet_text(
                     renderer,
                     "\u{2715}".to_owned(),
@@ -416,7 +451,7 @@ where
             renderer.fill_quad(
                 renderer::Quad {
                     bounds: Rectangle {
-                        x: sheet_rect.x,
+                        x: animated_sheet_rect.x,
                         y: bounds.y + HEADER_H - DIVIDER_H,
                         width: sheet_w,
                         height: DIVIDER_H,
@@ -430,15 +465,17 @@ where
         }
 
         if let Some(child_layout) = layout.children().next() {
-            self.content.as_widget().draw(
-                &tree.children[0],
-                renderer,
-                theme,
-                style,
-                child_layout,
-                cursor,
-                viewport,
-            );
+            renderer.with_translation(Vector::new(x_offset, 0.0), |renderer| {
+                self.content.as_widget().draw(
+                    &tree.children[0],
+                    renderer,
+                    theme,
+                    style,
+                    child_layout,
+                    cursor,
+                    viewport,
+                );
+            });
         }
     }
 
@@ -453,13 +490,53 @@ where
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
     ) {
-        if !self.config.open {
+        {
+            let state = tree.state.downcast_mut::<SideSheetState>();
+            state.target = if self.config.open { 1.0 } else { 0.0 };
+
+            if let Event::Window(window::Event::RedrawRequested(now)) = event {
+                if state.progress != state.target {
+                    let dt = state
+                        .last_tick
+                        .map(|t| (*now - t).as_secs_f32().min(MAX_DT_SECS))
+                        .unwrap_or(0.0);
+                    let duration_secs = self.config.animation.duration_ms as f32 / 1000.0;
+                    let step = if duration_secs > 0.0 {
+                        dt / duration_secs
+                    } else {
+                        1.0
+                    };
+
+                    if state.target > state.progress {
+                        state.progress = (state.progress + step).min(1.0);
+                    } else {
+                        state.progress = (state.progress - step).max(0.0);
+                    }
+
+                    if state.progress == state.target {
+                        state.last_tick = None;
+                        if state.progress < 0.001 {
+                            shell.invalidate_layout();
+                        }
+                    } else {
+                        state.last_tick = Some(*now);
+                        shell.request_redraw();
+                    }
+                }
+                return;
+            }
+        }
+
+        let (progress, sheet_w) = {
+            let state = tree.state.downcast_ref::<SideSheetState>();
+            (state.progress, self.current_width(state))
+        };
+
+        if !self.config.open && progress < 0.001 {
             return;
         }
 
-        let state = tree.state.downcast_ref::<SideSheetState>();
         let bounds = layout.bounds();
-        let sheet_w = self.current_width(state);
         let sheet_rect = self.sheet_rect(bounds, sheet_w);
 
         match event {
@@ -514,7 +591,8 @@ where
         viewport: &Rectangle,
         renderer: &Renderer,
     ) -> mouse::Interaction {
-        if !self.config.open {
+        let state = tree.state.downcast_ref::<SideSheetState>();
+        if !self.config.open && state.progress < 0.001 {
             return mouse::Interaction::default();
         }
         if let Some(child_layout) = layout.children().next() {
@@ -541,8 +619,6 @@ where
         Element::new(w)
     }
 }
-
-// ── Backward-compatible element-tree builder (pre-C5 callers) ────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SheetEdge {
@@ -600,6 +676,7 @@ pub fn side_sheet<'a, Msg: Clone + 'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use iced::time::Duration;
     use iced::{Theme, advanced::layout};
 
     use crate::palette::CATPPUCCIN_MOCHA;
@@ -659,8 +736,36 @@ mod tests {
         })
     }
 
+    fn redraw_event(now: Instant) -> Event {
+        Event::Window(window::Event::RedrawRequested(now))
+    }
+
     fn viewport_rect() -> Rectangle {
         Rectangle::new(Point::ORIGIN, Size::new(1280.0, 800.0))
+    }
+
+    fn run_update(
+        widget: &mut SideSheet<'_, CloseMsg, Theme, ()>,
+        tree: &mut Tree,
+        event: &Event,
+    ) -> (Vec<CloseMsg>, window::RedrawRequest) {
+        let node = widget.layout(tree, &(), &limits_1280());
+        let layout = Layout::new(&node);
+        let vp = viewport_rect();
+        let mut messages: Vec<CloseMsg> = Vec::new();
+        let mut shell = Shell::new(&mut messages);
+        widget.update(
+            tree,
+            event,
+            layout,
+            mouse::Cursor::Unavailable,
+            &(),
+            &mut NullClipboard,
+            &mut shell,
+            &vp,
+        );
+        let redraw = shell.redraw_request();
+        (messages, redraw)
     }
 
     #[test]
@@ -881,5 +986,263 @@ mod tests {
         );
 
         assert_eq!(messages, vec![CloseMsg::HeaderClose]);
+    }
+
+    #[test]
+    fn easing_boundary_values() {
+        for easing in [
+            Easing::Linear,
+            Easing::EaseInOut,
+            Easing::EaseOutCubic,
+            Easing::EaseOutQuart,
+        ] {
+            assert!(
+                (apply_easing(0.0, easing) - 0.0).abs() < 1e-6,
+                "{easing:?} must be 0 at t=0"
+            );
+            assert!(
+                (apply_easing(1.0, easing) - 1.0).abs() < 1e-6,
+                "{easing:?} must be 1 at t=1"
+            );
+        }
+    }
+
+    #[test]
+    fn easing_monotone() {
+        for easing in [
+            Easing::Linear,
+            Easing::EaseInOut,
+            Easing::EaseOutCubic,
+            Easing::EaseOutQuart,
+        ] {
+            let mut prev = apply_easing(0.0, easing);
+            for i in 1..=20 {
+                let t = i as f32 / 20.0;
+                let v = apply_easing(t, easing);
+                assert!(v >= prev - 1e-6, "{easing:?} must be monotone at t={t}");
+                prev = v;
+            }
+        }
+    }
+
+    #[test]
+    fn animation_advances_when_open() {
+        let mut widget = SideSheet::<CloseMsg, Theme, ()>::new(Space::new())
+            .open(true)
+            .animation(SheetAnimation {
+                duration_ms: 200,
+                easing: Easing::Linear,
+            })
+            .palette(&CATPPUCCIN_MOCHA);
+        let mut tree = make_tree(&widget);
+
+        let past = Instant::now() - Duration::from_millis(100);
+        tree.state.downcast_mut::<SideSheetState>().last_tick = Some(past);
+
+        let now = Instant::now();
+        let (_, redraw) = run_update(&mut widget, &mut tree, &redraw_event(now));
+
+        let progress = tree.state.downcast_ref::<SideSheetState>().progress;
+        assert!(progress > 0.0, "progress must have advanced: {progress}");
+        assert!(
+            progress < 1.0,
+            "progress must not be complete yet: {progress}"
+        );
+        assert_eq!(
+            redraw,
+            window::RedrawRequest::NextFrame,
+            "must request redraw while animating"
+        );
+    }
+
+    #[test]
+    fn animation_retreats_when_closed() {
+        let mut widget = SideSheet::<CloseMsg, Theme, ()>::new(Space::new())
+            .open(false)
+            .animation(SheetAnimation {
+                duration_ms: 200,
+                easing: Easing::Linear,
+            })
+            .palette(&CATPPUCCIN_MOCHA);
+        let mut tree = make_tree(&widget);
+
+        tree.state.downcast_mut::<SideSheetState>().progress = 1.0;
+        let past = Instant::now() - Duration::from_millis(100);
+        tree.state.downcast_mut::<SideSheetState>().last_tick = Some(past);
+
+        let now = Instant::now();
+        let (_, redraw) = run_update(&mut widget, &mut tree, &redraw_event(now));
+
+        let progress = tree.state.downcast_ref::<SideSheetState>().progress;
+        assert!(progress < 1.0, "progress must have retreated: {progress}");
+        assert!(
+            progress > 0.0,
+            "progress must not be complete yet: {progress}"
+        );
+        assert_eq!(redraw, window::RedrawRequest::NextFrame);
+    }
+
+    #[test]
+    fn animation_mid_flight_flip() {
+        let mut widget = SideSheet::<CloseMsg, Theme, ()>::new(Space::new())
+            .open(false)
+            .animation(SheetAnimation {
+                duration_ms: 200,
+                easing: Easing::Linear,
+            })
+            .palette(&CATPPUCCIN_MOCHA);
+        let mut tree = make_tree(&widget);
+
+        tree.state.downcast_mut::<SideSheetState>().progress = 0.5;
+        let past = Instant::now() - Duration::from_millis(50);
+        tree.state.downcast_mut::<SideSheetState>().last_tick = Some(past);
+
+        let now = Instant::now();
+        run_update(&mut widget, &mut tree, &redraw_event(now));
+
+        let progress = tree.state.downcast_ref::<SideSheetState>().progress;
+        assert!(
+            progress < 0.5,
+            "progress must decrease from 0.5 toward 0, got {progress}"
+        );
+        assert!(progress >= 0.0, "progress must not go below 0: {progress}");
+    }
+
+    #[test]
+    fn animation_snaps_instantly_when_duration_zero() {
+        let mut widget = SideSheet::<CloseMsg, Theme, ()>::new(Space::new())
+            .open(true)
+            .animation(SheetAnimation {
+                duration_ms: 0,
+                easing: Easing::Linear,
+            })
+            .palette(&CATPPUCCIN_MOCHA);
+        let mut tree = make_tree(&widget);
+
+        let now = Instant::now();
+        run_update(&mut widget, &mut tree, &redraw_event(now));
+
+        let progress = tree.state.downcast_ref::<SideSheetState>().progress;
+        assert_eq!(progress, 1.0, "zero-duration must snap to target instantly");
+    }
+
+    #[test]
+    fn progress_clamped_to_unit_interval() {
+        let mut widget = SideSheet::<CloseMsg, Theme, ()>::new(Space::new())
+            .open(true)
+            .animation(SheetAnimation {
+                duration_ms: 1,
+                easing: Easing::Linear,
+            })
+            .palette(&CATPPUCCIN_MOCHA);
+        let mut tree = make_tree(&widget);
+
+        let past = Instant::now() - Duration::from_secs(10);
+        tree.state.downcast_mut::<SideSheetState>().last_tick = Some(past);
+
+        let now = Instant::now();
+        run_update(&mut widget, &mut tree, &redraw_event(now));
+
+        let progress = tree.state.downcast_ref::<SideSheetState>().progress;
+        assert!(
+            (0.0..=1.0).contains(&progress),
+            "progress must be in [0, 1]: {progress}"
+        );
+    }
+
+    #[test]
+    fn content_width_stable_during_animation() {
+        let check_content_w = |progress: f32| {
+            let mut widget: SideSheet<'_, CloseMsg, Theme, ()> = SideSheet::new(Space::new())
+                .open(true)
+                .width(SheetWidth::new(360.0, 280.0, 560.0))
+                .palette(&CATPPUCCIN_MOCHA);
+            let mut tree = make_tree(&widget);
+            tree.state.downcast_mut::<SideSheetState>().progress = progress;
+            let node = widget.layout(&mut tree, &(), &limits_1280());
+            node.children()[0].size().width
+        };
+
+        let w_at_0_5 = check_content_w(0.5);
+        let w_at_1_0 = check_content_w(1.0);
+        let w_at_0_1 = check_content_w(0.1);
+        assert!(
+            (w_at_0_5 - w_at_1_0).abs() < 0.01,
+            "content width unstable: progress=0.5 → {w_at_0_5}, progress=1.0 → {w_at_1_0}"
+        );
+        assert!(
+            (w_at_0_1 - w_at_1_0).abs() < 0.01,
+            "content width unstable: progress=0.1 → {w_at_0_1}, progress=1.0 → {w_at_1_0}"
+        );
+    }
+
+    #[test]
+    fn no_render_when_progress_zero_and_closed() {
+        let mut widget = closed_widget();
+        let mut tree = make_tree(&widget);
+        let node = widget.layout(&mut tree, &(), &limits_1280());
+        assert_eq!(
+            node.size(),
+            Size::ZERO,
+            "must be invisible when fully closed"
+        );
+    }
+
+    #[test]
+    fn layout_full_size_when_open_with_zero_progress() {
+        let mut widget = open_widget();
+        let mut tree = make_tree(&widget);
+        let node = widget.layout(&mut tree, &(), &limits_1280());
+        assert_eq!(
+            node.size(),
+            Size::new(1280.0, 800.0),
+            "open=true must produce full layout even before first animation tick"
+        );
+    }
+
+    #[test]
+    fn no_redraw_requested_when_progress_equals_target() {
+        let mut widget = SideSheet::<CloseMsg, Theme, ()>::new(Space::new())
+            .open(true)
+            .animation(SheetAnimation {
+                duration_ms: 200,
+                easing: Easing::Linear,
+            })
+            .palette(&CATPPUCCIN_MOCHA);
+        let mut tree = make_tree(&widget);
+        tree.state.downcast_mut::<SideSheetState>().progress = 1.0;
+
+        let now = Instant::now();
+        let (_, redraw) = run_update(&mut widget, &mut tree, &redraw_event(now));
+
+        assert_ne!(
+            redraw,
+            window::RedrawRequest::NextFrame,
+            "must not request redraw when already at target"
+        );
+    }
+
+    #[test]
+    fn redraw_requested_while_animating() {
+        let mut widget = SideSheet::<CloseMsg, Theme, ()>::new(Space::new())
+            .open(true)
+            .animation(SheetAnimation {
+                duration_ms: 200,
+                easing: Easing::Linear,
+            })
+            .palette(&CATPPUCCIN_MOCHA);
+        let mut tree = make_tree(&widget);
+
+        let past = Instant::now() - Duration::from_millis(50);
+        tree.state.downcast_mut::<SideSheetState>().last_tick = Some(past);
+
+        let now = Instant::now();
+        let (_, redraw) = run_update(&mut widget, &mut tree, &redraw_event(now));
+
+        assert_eq!(
+            redraw,
+            window::RedrawRequest::NextFrame,
+            "must request redraw while progress != target"
+        );
     }
 }

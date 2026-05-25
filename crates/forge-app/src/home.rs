@@ -7,8 +7,9 @@ use forge_widgets::tokens::{FONT_MD, FONT_SM, FONT_XS, Spacing, sp, spf};
 use forge_widgets::{FontRole, ForgePalette, Radius, font, radius};
 use iced::{Element, Length, Task, Theme};
 
-use crate::app::{App, simple_page_header};
+use crate::app::App;
 use crate::message::{HomeMsg, HomeStatsData, Message};
+use crate::page_chrome::simple_page_header;
 use crate::runtime_view::RuntimeView;
 use crate::screen::Screen;
 

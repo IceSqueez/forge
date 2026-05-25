@@ -309,7 +309,7 @@ pub fn twitch_disconnected_view<'a>(
     let scopes_card = scopes_preview_card(palette);
 
     let page_header =
-        crate::app::simple_page_header(&[("Builtin", false), ("Twitch", true)], palette);
+        crate::page_chrome::simple_page_header(&[("Builtin", false), ("Twitch", true)], palette);
 
     let body = container(column![header_card, flow_card, scopes_card].spacing(spf(Spacing::Sm)))
         .width(Length::Fill)

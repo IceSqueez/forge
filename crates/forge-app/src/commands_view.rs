@@ -139,7 +139,7 @@ pub fn commands_view<'a>(
     .spacing(spf(Spacing::Xxs));
 
     let new_btn = primary_button("New command", Message::Navigate(Screen::Actions), palette);
-    let divider = crate::app::header_divider(palette);
+    let divider = crate::page_chrome::header_divider(palette);
     let right_side = row![chips, divider, search_box, new_btn]
         .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Center);
@@ -221,7 +221,7 @@ pub fn commands_view<'a>(
         scrollable(col).height(Length::Fill).into()
     };
 
-    let page_header = crate::app::page_header_with_actions(
+    let page_header = crate::page_chrome::page_header_with_actions(
         &[("Automation", false), ("Commands", true)],
         Some(right_side.into()),
         palette,

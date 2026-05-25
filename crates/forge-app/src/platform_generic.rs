@@ -212,7 +212,7 @@ pub fn platform_generic_view<'a>(
     let body = column![hero_card, features_col, footer].spacing(spf(Spacing::Sm));
 
     let page_header =
-        crate::app::simple_page_header(&[("Builtin", false), (info.name, true)], palette);
+        crate::page_chrome::simple_page_header(&[("Builtin", false), (info.name, true)], palette);
 
     let body_container = container(scrollable(body).height(Length::Fill))
         .width(Length::Fill)

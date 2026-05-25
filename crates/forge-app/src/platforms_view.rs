@@ -4,7 +4,8 @@ use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::tokens::{FONT_MD, FONT_SM, FONT_XS, Radius, Spacing, radius, spf};
 use iced::Element;
 
-use crate::app::{App, simple_page_header};
+use crate::app::App;
+use crate::page_chrome::simple_page_header;
 use crate::{Message, Screen};
 
 #[allow(clippy::too_many_arguments)]

@@ -814,7 +814,7 @@ pub fn action_editor_view<'a>(
         .find(|a| a.id == action_id)
         .map(|a| a.name.as_str())
         .unwrap_or("Action");
-    let page_header = crate::app::simple_page_header(
+    let page_header = crate::page_chrome::simple_page_header(
         &[
             ("Automation", false),
             ("Actions", false),

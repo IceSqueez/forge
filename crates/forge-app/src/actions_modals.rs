@@ -7,8 +7,8 @@ use crate::actions::{
     AddActionForm, AddActionMsg, AddSubActionForm, AddSubActionMsg, AddTriggerForm, AddTriggerMsg,
     SubActionKindChoice, TriggerCategory, kind_label, kind_summary,
 };
-use crate::app::sheet_chrome;
 use crate::message::{ActionEditorMsg, ActionsMsg, Message};
+use crate::page_chrome::sheet_chrome;
 
 pub(crate) fn add_action_modal_view<'a>(
     form: &'a AddActionForm,

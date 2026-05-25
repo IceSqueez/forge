@@ -578,7 +578,7 @@ pub fn event_feed_view<'a>(
         .spacing(spf(Spacing::Xs))
         .align_y(iced::Alignment::Center);
 
-    let divider = crate::app::header_divider(palette);
+    let divider = crate::page_chrome::header_divider(palette);
     let right_side = row![chips, divider, action_row]
         .spacing(spf(Spacing::Xs))
         .align_y(iced::Alignment::Center);
@@ -786,7 +786,7 @@ pub fn event_feed_view<'a>(
         ..container::Style::default()
     });
 
-    let page_header = crate::app::page_header_with_actions(
+    let page_header = crate::page_chrome::page_header_with_actions(
         &[("Event Feed", true)],
         Some(right_side.into()),
         palette,

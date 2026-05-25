@@ -370,7 +370,7 @@ pub fn view<'a>(state: &'a BuiltinDetailState, palette: &'a ForgePalette) -> Ele
         .padding([sp(Spacing::Md), sp(Spacing::Lg)]);
 
     let scroll_body: Element<'_, Message> = iced::widget::scrollable(padded).into();
-    let page_header = crate::app::simple_page_header(
+    let page_header = crate::page_chrome::simple_page_header(
         &[("Builtin", false), (state.display_name.as_str(), true)],
         palette,
     );

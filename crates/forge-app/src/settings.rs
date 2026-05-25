@@ -3,8 +3,8 @@ use forge_widgets::tokens::{FONT_LG, FONT_SM, FONT_XS, Spacing, sp, spf};
 use forge_widgets::{ForgePalette, Radius, radius};
 use iced::{Element, Length};
 
-use crate::app::simple_page_header;
 use crate::message::{Message, SettingsMsg};
+use crate::page_chrome::simple_page_header;
 use crate::screen::{Screen, SettingsSection};
 use crate::server_screen::ServerScreenState;
 use crate::settings_audio::{SettingsAudioState, settings_audio_view};

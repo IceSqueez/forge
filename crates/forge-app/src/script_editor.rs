@@ -1081,7 +1081,7 @@ pub fn script_editor_view<'a>(
         .width(Length::Fill)
         .height(Length::Fill);
 
-    let page_header = crate::app::page_header_with_actions(
+    let page_header = crate::page_chrome::page_header_with_actions(
         &[("Script Editor", true)],
         Some(toolbar_actions),
         palette,
@@ -1110,7 +1110,7 @@ fn toolbar_action_row<'a>(
     let save_btn = save_button(dirty, palette);
     let format_btn = disabled_toolbar_button("Format", palette);
     let api_docs_btn = disabled_toolbar_button("API docs", palette);
-    let divider = crate::app::header_divider(palette);
+    let divider = crate::page_chrome::header_divider(palette);
 
     row![run_btn, save_btn, format_btn, divider, api_docs_btn]
         .spacing(spf(Spacing::Xs))

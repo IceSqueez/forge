@@ -239,8 +239,10 @@ pub fn obs_disconnected_view<'a>(
     .width(Length::Fill);
     let tip = obs_tip_card(palette);
 
-    let page_header =
-        crate::app::simple_page_header(&[("Builtin", false), ("OBS Studio", true)], palette);
+    let page_header = crate::page_chrome::simple_page_header(
+        &[("Builtin", false), ("OBS Studio", true)],
+        palette,
+    );
 
     let body = container(column![header, two_column, tip].spacing(spf(Spacing::Sm)))
         .width(Length::Fill)

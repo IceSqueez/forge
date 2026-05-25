@@ -1309,7 +1309,7 @@ pub fn live_chat_view<'a>(
 
     let body: Element<'a, Message> = if state.drawer_open {
         let panel_content = drawer_panel(state, viewers, palette);
-        let chrome = crate::app::sheet_chrome(
+        let chrome = crate::page_chrome::sheet_chrome(
             "Viewers",
             Message::LiveChat(LiveChatMsg::ToggleDrawer),
             panel_content,

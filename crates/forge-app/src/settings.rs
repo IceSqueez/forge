@@ -1,9 +1,13 @@
+use std::sync::Arc;
+
 use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::tokens::{FONT_LG, FONT_SM, FONT_XS, Spacing, sp, spf};
 use forge_widgets::{ForgePalette, Radius, radius};
-use iced::{Element, Length};
+use iced::{Element, Length, Task};
 
-use crate::message::{Message, SettingsMsg};
+use crate::app::App;
+use crate::boot;
+use crate::message::{Message, PlatformId, SettingsMsg};
 use crate::page_chrome::simple_page_header;
 use crate::screen::{Screen, SettingsSection};
 use crate::server_screen::ServerScreenState;
@@ -429,4 +433,88 @@ pub(crate) fn settings_view<'a>(
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
+}
+
+pub(crate) fn handle_message(app: &mut App, sub: SettingsMsg) -> Task<Message> {
+    match sub {
+        SettingsMsg::ReconnectPlatform(PlatformId::Twitch) => {
+            if let Some(handle) = app.rt.twitch_chat_handle.take() {
+                handle.shutdown();
+            }
+            let backend = Arc::clone(&app.rt.backend);
+            let bus = Arc::clone(&app.rt.bus);
+            Task::perform(
+                async move { boot::reconnect_twitch(backend, bus).await },
+                |result| Message::Settings(SettingsMsg::PlatformReconnectResult(result)),
+            )
+        }
+        SettingsMsg::ReconnectPlatform(_) => Task::none(),
+        SettingsMsg::PlatformReconnectResult(Ok(())) => Task::none(),
+        SettingsMsg::PlatformReconnectResult(Err(e)) => {
+            tracing::warn!(error = %e, "platform reconnect failed");
+            Task::none()
+        }
+        SettingsMsg::DbVacuumRequested => {
+            let dp = Arc::clone(&app.rt.backend);
+            Task::perform(
+                async move {
+                    let tmp_target = std::env::temp_dir().join("forge_vacuum.db");
+                    dp.export(&tmp_target)
+                        .await
+                        .map(|()| tmp_target.metadata().map(|m| m.len()).unwrap_or(0))
+                        .map_err(|e| e.to_string())
+                },
+                |r| Message::Settings(SettingsMsg::DbVacuumDone(r)),
+            )
+        }
+        SettingsMsg::DbVacuumDone(result) => {
+            match result {
+                Ok(bytes) => tracing::info!(bytes, "DB vacuum exported snapshot"),
+                Err(e) => tracing::warn!(error = %e, "DB vacuum failed"),
+            }
+            Task::none()
+        }
+        SettingsMsg::DbBackupRequested => {
+            let dp = Arc::clone(&app.rt.backend);
+            Task::perform(
+                async move {
+                    let stamp = time::OffsetDateTime::now_utc().unix_timestamp();
+                    let path = forge_platform_core::paths::data_dir()
+                        .join(format!("forge-backup-{stamp}.db"));
+                    dp.export(&path)
+                        .await
+                        .map(|()| path.display().to_string())
+                        .map_err(|e| e.to_string())
+                },
+                |r| Message::Settings(SettingsMsg::DbBackupDone(r)),
+            )
+        }
+        SettingsMsg::DbBackupDone(result) => {
+            match result {
+                Ok(path) => tracing::info!(path = %path, "DB backup created"),
+                Err(e) => tracing::warn!(error = %e, "DB backup failed"),
+            }
+            Task::none()
+        }
+        SettingsMsg::OpenLogDirectoryRequested => {
+            let log_dir = forge_platform_core::paths::data_dir().join("logs");
+            Task::perform(
+                async move {
+                    tokio::task::spawn_blocking(move || {
+                        open::that(&log_dir).map_err(|e| e.to_string())
+                    })
+                    .await
+                    .map_err(|e| e.to_string())
+                    .and_then(|r| r)
+                },
+                |r| Message::Settings(SettingsMsg::OpenLogDirectoryResult(r)),
+            )
+        }
+        SettingsMsg::OpenLogDirectoryResult(result) => {
+            if let Err(e) = result {
+                tracing::warn!(error = %e, "failed to open log directory");
+            }
+            Task::none()
+        }
+    }
 }

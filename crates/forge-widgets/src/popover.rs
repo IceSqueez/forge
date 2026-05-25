@@ -522,6 +522,7 @@ where
         shell: &mut Shell<'_, Msg>,
     ) {
         let panel_bounds = layout.bounds();
+        let captured_before_panel = shell.is_event_captured();
         self.panel.as_widget_mut().update(
             self.panel_tree,
             event,
@@ -536,7 +537,11 @@ where
             && let mouse::Cursor::Available(pos) = cursor
             && !self.trigger_bounds.contains(pos)
         {
-            shell.publish(self.on_dismiss.clone());
+            let inside_panel = panel_bounds.contains(pos);
+            let panel_captured = !captured_before_panel && shell.is_event_captured();
+            if !inside_panel || panel_captured {
+                shell.publish(self.on_dismiss.clone());
+            }
         }
     }
 
@@ -803,6 +808,47 @@ mod tests {
         );
 
         assert_eq!(messages, vec![99u32]);
+    }
+
+    #[test]
+    fn inside_panel_click_does_not_publish_dismiss() {
+        use iced::advanced::overlay::Overlay as _;
+
+        let mut panel: Element<'static, u32, iced::Theme, ()> =
+            iced::widget::container(iced::widget::Space::new())
+                .width(Length::Fixed(200.0))
+                .height(Length::Fixed(160.0))
+                .into();
+        let mut pt = space_tree();
+        let tr = trigger_rect();
+        let mut ov = MenuOverlay {
+            panel: &mut panel,
+            panel_tree: &mut pt,
+            trigger_bounds: tr,
+            placement: MenuPlacement::BottomRight,
+            on_dismiss: 99u32,
+        };
+
+        let node = ov.layout(&(), Size::new(1280.0, 800.0));
+        let panel_b = node.bounds();
+        let layout = Layout::new(&node);
+
+        let mut messages: Vec<u32> = Vec::new();
+        let mut shell = Shell::new(&mut messages);
+
+        ov.update(
+            &click_event(),
+            layout,
+            mouse::Cursor::Available(Point::new(
+                panel_b.x + panel_b.width / 2.0,
+                panel_b.y + panel_b.height / 2.0,
+            )),
+            &(),
+            &mut NullClipboard,
+            &mut shell,
+        );
+
+        assert!(messages.is_empty(), "click inside panel must not dismiss");
     }
 
     #[test]

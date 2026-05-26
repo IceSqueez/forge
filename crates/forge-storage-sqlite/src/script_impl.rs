@@ -72,22 +72,24 @@ impl SqliteScriptRepo {
 impl ScriptRepo for SqliteScriptRepo {
     async fn get(&self, id: ScriptId) -> Result<Option<ScriptRecord>, StorageError> {
         let id_str = id.to_string();
-        let row: Option<ScriptRow> = sqlx::query_as(&format!("{SELECT_COLS} WHERE id = ?"))
-            .bind(&id_str)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(SqliteStorageError::Sqlx)?;
+        let row: Option<ScriptRow> =
+            sqlx::query_as(sqlx::AssertSqlSafe(format!("{SELECT_COLS} WHERE id = ?")))
+                .bind(&id_str)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(SqliteStorageError::Sqlx)?;
 
         row.map(|r| decode_row(r).map_err(StorageError::from))
             .transpose()
     }
 
     async fn get_by_name(&self, name: &str) -> Result<Option<ScriptRecord>, StorageError> {
-        let row: Option<ScriptRow> = sqlx::query_as(&format!("{SELECT_COLS} WHERE name = ?"))
-            .bind(name)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(SqliteStorageError::Sqlx)?;
+        let row: Option<ScriptRow> =
+            sqlx::query_as(sqlx::AssertSqlSafe(format!("{SELECT_COLS} WHERE name = ?")))
+                .bind(name)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(SqliteStorageError::Sqlx)?;
 
         row.map(|r| decode_row(r).map_err(StorageError::from))
             .transpose()
@@ -143,10 +145,11 @@ impl ScriptRepo for SqliteScriptRepo {
     }
 
     async fn list(&self) -> Result<Vec<ScriptRecord>, StorageError> {
-        let rows: Vec<ScriptRow> = sqlx::query_as(&format!("{SELECT_COLS} ORDER BY name"))
-            .fetch_all(&self.pool)
-            .await
-            .map_err(SqliteStorageError::Sqlx)?;
+        let rows: Vec<ScriptRow> =
+            sqlx::query_as(sqlx::AssertSqlSafe(format!("{SELECT_COLS} ORDER BY name")))
+                .fetch_all(&self.pool)
+                .await
+                .map_err(SqliteStorageError::Sqlx)?;
 
         rows.into_iter()
             .map(|r| decode_row(r).map_err(StorageError::from))
@@ -154,11 +157,12 @@ impl ScriptRepo for SqliteScriptRepo {
     }
 
     async fn list_enabled(&self) -> Result<Vec<ScriptRecord>, StorageError> {
-        let rows: Vec<ScriptRow> =
-            sqlx::query_as(&format!("{SELECT_COLS} WHERE enabled = 1 ORDER BY name"))
-                .fetch_all(&self.pool)
-                .await
-                .map_err(SqliteStorageError::Sqlx)?;
+        let rows: Vec<ScriptRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "{SELECT_COLS} WHERE enabled = 1 ORDER BY name"
+        )))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
 
         rows.into_iter()
             .map(|r| decode_row(r).map_err(StorageError::from))

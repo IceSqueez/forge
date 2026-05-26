@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use forge_storage::{DataProvider, Viewer};
+use forge_storage::{Viewer, ViewerRepo};
 use iced::Task;
 
 use crate::Message;
@@ -17,15 +17,15 @@ pub enum ViewersMsg {
     Loaded(Result<Vec<Viewer>, String>),
 }
 
-pub async fn load_viewers(dp: Arc<dyn DataProvider>) -> Result<Vec<Viewer>, String> {
-    dp.viewer_repo().list().await.map_err(|e| e.to_string())
+pub async fn load_viewers(repo: Arc<dyn ViewerRepo>) -> Result<Vec<Viewer>, String> {
+    repo.list().await.map_err(|e| e.to_string())
 }
 
 pub fn update(state: &mut ViewersState, rt: &RuntimeView, msg: ViewersMsg) -> Task<Message> {
     match msg {
         ViewersMsg::LoadRequested => {
-            let dp = Arc::clone(&rt.backend);
-            Task::perform(load_viewers(dp), |r| {
+            let repo = rt.backend.viewer_repo();
+            Task::perform(load_viewers(repo), |r| {
                 Message::Viewers(ViewersMsg::Loaded(r))
             })
         }

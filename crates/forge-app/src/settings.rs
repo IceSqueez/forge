@@ -441,10 +441,11 @@ pub(crate) fn handle_message(app: &mut App, sub: SettingsMsg) -> Task<Message> {
             if let Some(handle) = app.rt.twitch_chat_handle.take() {
                 handle.shutdown();
             }
-            let backend = Arc::clone(&app.rt.backend);
+            let creds: Arc<dyn forge_storage::CredentialsRepo> =
+                Arc::clone(&app.rt.backend) as Arc<dyn forge_storage::CredentialsRepo>;
             let bus = Arc::clone(&app.rt.bus);
             Task::perform(
-                async move { boot::reconnect_twitch(backend, bus).await },
+                async move { boot::reconnect_twitch(creds, bus).await },
                 |result| Message::Settings(SettingsMsg::PlatformReconnectResult(result)),
             )
         }

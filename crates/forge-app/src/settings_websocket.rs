@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use forge_storage::{DataProvider, SettingsRepo};
+use forge_storage::SettingsRepo;
 use forge_widgets::{
     BindAddressCardParams, BindBadge, BulletItem, BulletKind, ForgePalette, Radius, ToggleProps,
     TypeToConfirmModalParams, bearer_token_display, bind_address_card,
@@ -109,9 +109,8 @@ pub enum SettingsWebSocketMsg {
 }
 
 pub async fn load_settings_websocket(
-    backend: Arc<dyn DataProvider>,
+    settings: Arc<dyn SettingsRepo>,
 ) -> Result<SettingsWebSocketSnapshot, String> {
-    let settings: &dyn SettingsRepo = backend.as_ref();
     let bind_address = settings
         .server_bind_address()
         .await
@@ -155,8 +154,8 @@ pub fn update(
 ) -> Task<Message> {
     match msg {
         SettingsWebSocketMsg::LoadRequested => {
-            let b = Arc::clone(&rt.backend);
-            Task::perform(async move { load_settings_websocket(b).await }, |r| {
+            let s: Arc<dyn SettingsRepo> = Arc::clone(&rt.backend) as Arc<dyn SettingsRepo>;
+            Task::perform(async move { load_settings_websocket(s).await }, |r| {
                 Message::SettingsWebSocket(SettingsWebSocketMsg::LoadResult(r))
             })
         }
@@ -188,10 +187,10 @@ pub fn update(
         SettingsWebSocketMsg::ToggleEnable(val) => {
             state.enable_server = val;
             state.all_changes_saved = false;
-            let b = Arc::clone(&rt.backend);
+            let s: Arc<dyn SettingsRepo> = Arc::clone(&rt.backend) as Arc<dyn SettingsRepo>;
             Task::perform(
                 async move {
-                    b.set_string("server.enabled", if val { "true" } else { "false" })
+                    s.set_string("server.enabled", if val { "true" } else { "false" })
                         .await
                         .map_err(|e| e.to_string())
                 },
@@ -202,13 +201,13 @@ pub fn update(
             state.bind_address_radio = BindAddressChoice::Localhost;
             state.lan_bind_modal_visible = false;
             state.all_changes_saved = false;
-            let b = Arc::clone(&rt.backend);
+            let s: Arc<dyn SettingsRepo> = Arc::clone(&rt.backend) as Arc<dyn SettingsRepo>;
             Task::perform(
                 async move {
-                    b.set_server_bind_address("127.0.0.1")
+                    s.set_server_bind_address("127.0.0.1")
                         .await
                         .map_err(|e| e.to_string())?;
-                    b.set_server_lan_bind_enabled(false)
+                    s.set_server_lan_bind_enabled(false)
                         .await
                         .map_err(|e| e.to_string())
                 },
@@ -228,9 +227,9 @@ pub fn update(
             Ok(p) if p >= 1024 => {
                 state.port = p;
                 state.all_changes_saved = false;
-                let b = Arc::clone(&rt.backend);
+                let s: Arc<dyn SettingsRepo> = Arc::clone(&rt.backend) as Arc<dyn SettingsRepo>;
                 Task::perform(
-                    async move { b.set_server_port(p).await.map_err(|e| e.to_string()) },
+                    async move { s.set_server_port(p).await.map_err(|e| e.to_string()) },
                     |r| Message::SettingsWebSocket(SettingsWebSocketMsg::SaveStatus(r)),
                 )
             }
@@ -242,10 +241,10 @@ pub fn update(
         SettingsWebSocketMsg::RequireWsToken(val) => {
             state.require_ws_token = val;
             state.all_changes_saved = false;
-            let b = Arc::clone(&rt.backend);
+            let s: Arc<dyn SettingsRepo> = Arc::clone(&rt.backend) as Arc<dyn SettingsRepo>;
             Task::perform(
                 async move {
-                    b.set_server_auth_required_for_reads(val)
+                    s.set_server_auth_required_for_reads(val)
                         .await
                         .map_err(|e| e.to_string())
                 },
@@ -255,10 +254,10 @@ pub fn update(
         SettingsWebSocketMsg::RequireHttpOverlayToken(val) => {
             state.require_http_overlay_token = val;
             state.all_changes_saved = false;
-            let b = Arc::clone(&rt.backend);
+            let s: Arc<dyn SettingsRepo> = Arc::clone(&rt.backend) as Arc<dyn SettingsRepo>;
             Task::perform(
                 async move {
-                    b.set_string(
+                    s.set_string(
                         forge_storage::reserved_keys::SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_KEY,
                         if val { "true" } else { "false" },
                     )
@@ -271,10 +270,10 @@ pub fn update(
         SettingsWebSocketMsg::CorsAnyOrigin(val) => {
             state.cors_any_origin = val;
             state.all_changes_saved = false;
-            let b = Arc::clone(&rt.backend);
+            let s: Arc<dyn SettingsRepo> = Arc::clone(&rt.backend) as Arc<dyn SettingsRepo>;
             Task::perform(
                 async move {
-                    b.set_string(
+                    s.set_string(
                         forge_storage::reserved_keys::SERVER_OVERLAY_CORS_ANY_ORIGIN_KEY,
                         if val { "true" } else { "false" },
                     )
@@ -288,10 +287,10 @@ pub fn update(
             let path_str = path.to_string_lossy().into_owned();
             state.overlay_root = path;
             state.all_changes_saved = false;
-            let b = Arc::clone(&rt.backend);
+            let s: Arc<dyn SettingsRepo> = Arc::clone(&rt.backend) as Arc<dyn SettingsRepo>;
             Task::perform(
                 async move {
-                    b.set_string(
+                    s.set_string(
                         forge_storage::reserved_keys::SERVER_OVERLAY_ROOT_KEY,
                         &path_str,
                     )
@@ -319,13 +318,13 @@ pub fn update(
             state.lan_bind_input = String::new();
             state.bind_address_radio = BindAddressChoice::Lan;
             state.all_changes_saved = false;
-            let b = Arc::clone(&rt.backend);
+            let s: Arc<dyn SettingsRepo> = Arc::clone(&rt.backend) as Arc<dyn SettingsRepo>;
             Task::perform(
                 async move {
-                    b.set_server_bind_address("0.0.0.0")
+                    s.set_server_bind_address("0.0.0.0")
                         .await
                         .map_err(|e| e.to_string())?;
-                    b.set_server_lan_bind_enabled(true)
+                    s.set_server_lan_bind_enabled(true)
                         .await
                         .map_err(|e| e.to_string())
                 },

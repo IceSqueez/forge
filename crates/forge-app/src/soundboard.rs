@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use forge_audio::list_output_devices;
 use forge_soundboard::SoundboardPlayer;
-use forge_storage::{DataProvider, StoredClip};
+use forge_storage::{SoundboardClipsRepo, StoredClip};
 use forge_types::{ClipId, OutputDevice};
 use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::tokens::{
@@ -109,12 +109,8 @@ fn forge_audio_to_widget_label(d: forge_audio::DeviceInfo) -> DeviceLabel {
     }
 }
 
-async fn load_clips(backend: Arc<dyn DataProvider>) -> Result<Vec<StoredClip>, String> {
-    backend
-        .soundboard_clips_repo()
-        .list()
-        .await
-        .map_err(|e| e.to_string())
+async fn load_clips(repo: Arc<dyn SoundboardClipsRepo>) -> Result<Vec<StoredClip>, String> {
+    repo.list().await.map_err(|e| e.to_string())
 }
 
 async fn load_devices() -> Result<Vec<DeviceLabel>, String> {
@@ -127,21 +123,12 @@ async fn load_devices() -> Result<Vec<DeviceLabel>, String> {
     .map_err(|e| e.to_string())?
 }
 
-async fn save_clip(backend: Arc<dyn DataProvider>, clip: StoredClip) -> Result<(), String> {
-    backend
-        .soundboard_clips_repo()
-        .save(&clip)
-        .await
-        .map_err(|e| e.to_string())
+async fn save_clip(repo: Arc<dyn SoundboardClipsRepo>, clip: StoredClip) -> Result<(), String> {
+    repo.save(&clip).await.map_err(|e| e.to_string())
 }
 
-async fn delete_clip(backend: Arc<dyn DataProvider>, id: ClipId) -> Result<(), String> {
-    backend
-        .soundboard_clips_repo()
-        .delete(id)
-        .await
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+async fn delete_clip(repo: Arc<dyn SoundboardClipsRepo>, id: ClipId) -> Result<(), String> {
+    repo.delete(id).await.map(|_| ()).map_err(|e| e.to_string())
 }
 
 async fn play_clip(player: Arc<SoundboardPlayer>, id: ClipId) -> Result<(), String> {
@@ -153,8 +140,8 @@ pub fn update(state: &mut SoundboardState, rt: &RuntimeView, msg: SoundboardMsg)
         SoundboardMsg::LoadRequested => {
             state.loading = true;
             state.error = None;
-            let dp = Arc::clone(&rt.backend);
-            Task::perform(load_clips(dp), |r| {
+            let repo = rt.backend.soundboard_clips_repo();
+            Task::perform(load_clips(repo), |r| {
                 Message::Soundboard(SoundboardMsg::ClipsLoaded(r))
             })
         }
@@ -282,8 +269,8 @@ pub fn update(state: &mut SoundboardState, rt: &RuntimeView, msg: SoundboardMsg)
                 hotkey,
                 created_at: time::OffsetDateTime::now_utc(),
             };
-            let dp = Arc::clone(&rt.backend);
-            Task::perform(save_clip(dp, clip), |r| {
+            let repo = rt.backend.soundboard_clips_repo();
+            Task::perform(save_clip(repo, clip), |r| {
                 Message::Soundboard(SoundboardMsg::ModalSaved(r))
             })
         }
@@ -319,8 +306,8 @@ pub fn update(state: &mut SoundboardState, rt: &RuntimeView, msg: SoundboardMsg)
             Task::none()
         }
         SoundboardMsg::DeleteClip(clip_id) => {
-            let dp = Arc::clone(&rt.backend);
-            Task::perform(delete_clip(dp, clip_id), |r| {
+            let repo = rt.backend.soundboard_clips_repo();
+            Task::perform(delete_clip(repo, clip_id), |r| {
                 Message::Soundboard(SoundboardMsg::ClipDeleted(r))
             })
         }

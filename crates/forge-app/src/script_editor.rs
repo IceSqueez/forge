@@ -127,8 +127,8 @@ fn parse_input_to_variant(field: &RunModalInputField) -> Result<Variant, String>
     }
 }
 
-async fn load_script_list(dp: Arc<dyn DataProvider>) -> Result<Vec<ScriptListEntry>, String> {
-    let records = ScriptRepo::list(&*dp).await.map_err(|e| e.to_string())?;
+async fn load_script_list(repo: Arc<dyn ScriptRepo>) -> Result<Vec<ScriptListEntry>, String> {
+    let records = repo.list().await.map_err(|e| e.to_string())?;
     Ok(records
         .into_iter()
         .map(|r| ScriptListEntry {
@@ -188,8 +188,8 @@ pub fn update(
     match msg {
         ScriptEditorMsg::LoadRequested => {
             state.loading = true;
-            let dp = Arc::clone(&rt.backend);
-            iced::Task::perform(async move { load_script_list(dp).await }, |r| {
+            let repo: Arc<dyn ScriptRepo> = Arc::clone(&rt.backend) as Arc<dyn ScriptRepo>;
+            iced::Task::perform(async move { load_script_list(repo).await }, |r| {
                 Message::ScriptEditor(ScriptEditorMsg::ScriptsLoaded(r))
             })
         }

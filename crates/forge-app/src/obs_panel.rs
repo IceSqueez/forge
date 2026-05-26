@@ -6,7 +6,7 @@ use iced::{Alignment, Background, Border, Color, Element, Length, Shadow, Task, 
 use forge_events::EventPublisher;
 use forge_obs::{ObsError, ObsServerInfo, test_connect};
 use forge_runtime::EventBus;
-use forge_storage::{CredentialId, DataProvider};
+use forge_storage::{CredentialId, CredentialsRepo};
 
 use forge_widgets::ForgePalette;
 use forge_widgets::icons::{Icon, tabler_icon};
@@ -100,7 +100,7 @@ pub async fn run_test_connect(
 }
 
 pub async fn save_obs_credentials(
-    backend: Arc<dyn DataProvider>,
+    creds: Arc<dyn CredentialsRepo>,
     host: String,
     port: u16,
     password: String,
@@ -109,20 +109,20 @@ pub async fn save_obs_credentials(
         "url": format!("ws://{host}:{port}"),
         "password": password,
     });
-    backend
+    creds
         .store(&CredentialId::new(OBS_CREDENTIAL_ID), &bundle.to_string())
         .await
         .map_err(|e| e.to_string())
 }
 
 pub async fn connect_obs_from_form(
-    backend: Arc<dyn DataProvider>,
+    creds: Arc<dyn CredentialsRepo>,
     bus: Arc<EventBus>,
     host: String,
     port: u16,
     password: String,
 ) -> Result<crate::message::ObsClientRef, String> {
-    save_obs_credentials(Arc::clone(&backend), host.clone(), port, password.clone()).await?;
+    save_obs_credentials(Arc::clone(&creds), host.clone(), port, password.clone()).await?;
     let publisher: Arc<dyn EventPublisher> = bus;
     let pw: Option<&str> = if password.is_empty() {
         None
@@ -205,12 +205,13 @@ pub fn update(state: &mut ObsPanelState, rt: &RuntimeView, msg: ObsPanelMsg) -> 
             };
             let host = state.form.host.clone();
             let password = state.form.password.clone();
-            let backend = Arc::clone(&rt.backend);
+            let creds: Arc<dyn CredentialsRepo> =
+                Arc::clone(&rt.backend) as Arc<dyn CredentialsRepo>;
             let bus = Arc::clone(&rt.bus);
             state.connecting = true;
             state.connect_error = None;
             Task::perform(
-                connect_obs_from_form(backend, bus, host, port, password),
+                connect_obs_from_form(creds, bus, host, port, password),
                 |r| match r {
                     Ok(client_ref) => Message::ObsBootResult(Ok(client_ref)),
                     Err(e) => Message::ObsPanel(ObsPanelMsg::ConnectError(e)),

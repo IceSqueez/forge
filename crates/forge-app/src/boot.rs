@@ -7,7 +7,7 @@ use forge_platform_core::{
 };
 use forge_platform_twitch::{SubscriptionTracker, TwitchChat, TwitchIntegrationBundle, client_id};
 use forge_runtime::EventBus;
-use forge_storage::{CredentialId, DataProvider};
+use forge_storage::{CredentialId, CredentialsRepo};
 use forge_types::OAuthToken;
 use iced::Task;
 
@@ -17,11 +17,11 @@ use crate::message::{Message, ObsClientRef, TwitchBootBundle};
 use crate::server_screen::ServerStatus;
 
 pub(crate) async fn reconnect_twitch(
-    backend: Arc<dyn DataProvider>,
+    creds: Arc<dyn CredentialsRepo>,
     bus: Arc<EventBus>,
 ) -> Result<(), String> {
     let cid = client_id().ok_or_else(|| "FORGE_TWITCH_CLIENT_ID not set".to_owned())?;
-    let bundle_json = backend
+    let bundle_json = creds
         .load(&CredentialId::new("twitch:broadcaster"))
         .await
         .map_err(|e| e.to_string())?
@@ -45,12 +45,12 @@ pub(crate) async fn reconnect_twitch(
 }
 
 pub async fn load_twitch_credential(
-    backend: Arc<dyn DataProvider>,
+    creds: Arc<dyn CredentialsRepo>,
 ) -> Result<Option<TwitchBootBundle>, String> {
     let Some(client_id) = forge_platform_twitch::client_id() else {
         return Ok(None);
     };
-    let Some(json) = backend
+    let Some(json) = creds
         .load(&CredentialId::new("twitch:broadcaster"))
         .await
         .map_err(|e| e.to_string())?
@@ -84,10 +84,10 @@ pub async fn load_twitch_credential(
 }
 
 pub async fn load_obs_and_connect(
-    backend: Arc<dyn DataProvider>,
+    creds: Arc<dyn CredentialsRepo>,
     bus: Arc<EventBus>,
 ) -> Result<ObsClientRef, String> {
-    let Some(json) = backend
+    let Some(json) = creds
         .load(&CredentialId::new("obs:default"))
         .await
         .map_err(|e| e.to_string())?

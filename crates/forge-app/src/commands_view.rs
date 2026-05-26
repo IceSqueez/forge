@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use forge_storage::DataProvider;
+use forge_storage::CommandRepo;
 use forge_types::{Command, CommandPermission};
 use forge_widgets::{
     ForgePalette, filter_chip, primary_button, search_input,
@@ -43,16 +43,16 @@ pub enum CommandsMsg {
     FilterChanged(CommandsFilter),
 }
 
-pub async fn load_commands(dp: Arc<dyn DataProvider>) -> Result<Vec<Command>, String> {
-    dp.command_repo().list().await.map_err(|e| e.to_string())
+pub async fn load_commands(repo: Arc<dyn CommandRepo>) -> Result<Vec<Command>, String> {
+    repo.list().await.map_err(|e| e.to_string())
 }
 
 pub fn update(state: &mut CommandsState, rt: &RuntimeView, msg: CommandsMsg) -> Task<Message> {
     match msg {
         CommandsMsg::LoadRequested => {
             state.loading = true;
-            let dp = Arc::clone(&rt.backend);
-            Task::perform(load_commands(dp), |r| {
+            let repo = rt.backend.command_repo();
+            Task::perform(load_commands(repo), |r| {
                 Message::Commands(CommandsMsg::Loaded(r))
             })
         }

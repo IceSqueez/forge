@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use forge_storage::{DataProvider, GlobalEntry, GlobalsExport, GlobalsRepo, StorageError};
+use forge_storage::{GlobalEntry, GlobalsExport, GlobalsRepo, StorageError};
 use forge_widgets::tokens::{FONT_SM, FONT_XS, Spacing, sp, spf};
 use forge_widgets::{
     FontRole, FooterProps, ForgePalette, VariantKind, data_screen_footer, data_table, empty_state,
@@ -31,8 +31,8 @@ enum ExportError {
     Io(#[from] std::io::Error),
 }
 
-async fn export_globals_to_chosen_file(dp: Arc<dyn DataProvider>) -> Result<PathBuf, ExportError> {
-    let entries = dp.export_all().await?;
+async fn export_globals_to_chosen_file(repo: Arc<dyn GlobalsRepo>) -> Result<PathBuf, ExportError> {
+    let entries = repo.export_all().await?;
     let envelope = GlobalsExport::new(entries);
     let json = serde_json::to_string_pretty(&envelope)?;
     let default_name = format!(
@@ -127,14 +127,11 @@ impl Default for GlobalsState {
     }
 }
 
-pub async fn load_globals_data(dp: Arc<dyn DataProvider>) -> Result<GlobalsLoadData, String> {
-    let mut entries = {
-        let g: &dyn GlobalsRepo = &*dp;
-        g.list().await.map_err(|e| e.to_string())?
-    };
+pub async fn load_globals_data(repo: Arc<dyn GlobalsRepo>) -> Result<GlobalsLoadData, String> {
+    let mut entries = repo.list().await.map_err(|e| e.to_string())?;
     entries.sort_unstable_by(|a, b| a.name.cmp(&b.name));
-    let storage_bytes = dp.storage_bytes().await.map_err(|e| e.to_string())?;
-    let last_save = dp.last_save_at().await.map_err(|e| e.to_string())?;
+    let storage_bytes = repo.storage_bytes().await.map_err(|e| e.to_string())?;
+    let last_save = repo.last_save_at().await.map_err(|e| e.to_string())?;
     Ok(GlobalsLoadData {
         entries,
         storage_bytes,
@@ -146,9 +143,9 @@ pub fn update(state: &mut GlobalsState, rt: &RuntimeView, msg: GlobalsMsg) -> ic
     match msg {
         GlobalsMsg::LoadRequested => {
             state.loading = true;
-            let dp = Arc::clone(&rt.backend);
+            let repo: Arc<dyn GlobalsRepo> = Arc::clone(&rt.backend) as Arc<dyn GlobalsRepo>;
             iced::Task::perform(
-                async move { load_globals_data(dp).await.map_err(|e| e.to_string()) },
+                async move { load_globals_data(repo).await.map_err(|e| e.to_string()) },
                 |r| Message::Globals(GlobalsMsg::EntriesLoaded(r)),
             )
         }
@@ -188,11 +185,10 @@ pub fn update(state: &mut GlobalsState, rt: &RuntimeView, msg: GlobalsMsg) -> ic
                 e.persisted = new_persisted;
             }
             state.refresh_displays();
-            let dp = Arc::clone(&rt.backend);
+            let repo: Arc<dyn GlobalsRepo> = Arc::clone(&rt.backend) as Arc<dyn GlobalsRepo>;
             iced::Task::perform(
                 async move {
-                    let g: &dyn GlobalsRepo = &*dp;
-                    g.set(&name, entry.value, new_persisted)
+                    repo.set(&name, entry.value, new_persisted)
                         .await
                         .map_err(|e| e.to_string())
                 },
@@ -208,20 +204,22 @@ pub fn update(state: &mut GlobalsState, rt: &RuntimeView, msg: GlobalsMsg) -> ic
         GlobalsMsg::PersistenceToggled(Ok(())) => iced::Task::none(),
 
         GlobalsMsg::DeleteRequested(name) => {
-            let dp = Arc::clone(&rt.backend);
+            let repo: Arc<dyn GlobalsRepo> = Arc::clone(&rt.backend) as Arc<dyn GlobalsRepo>;
             iced::Task::perform(
                 async move {
-                    let g: &dyn GlobalsRepo = &*dp;
-                    g.delete(&name).await.map(|_| ()).map_err(|e| e.to_string())
+                    repo.delete(&name)
+                        .await
+                        .map(|_| ())
+                        .map_err(|e| e.to_string())
                 },
                 |r| Message::Globals(GlobalsMsg::Deleted(r)),
             )
         }
 
         GlobalsMsg::Deleted(Ok(())) => {
-            let dp = Arc::clone(&rt.backend);
+            let repo: Arc<dyn GlobalsRepo> = Arc::clone(&rt.backend) as Arc<dyn GlobalsRepo>;
             iced::Task::perform(
-                async move { load_globals_data(dp).await.map_err(|e| e.to_string()) },
+                async move { load_globals_data(repo).await.map_err(|e| e.to_string()) },
                 |r| Message::Globals(GlobalsMsg::EntriesLoaded(r)),
             )
         }
@@ -246,10 +244,10 @@ pub fn update(state: &mut GlobalsState, rt: &RuntimeView, msg: GlobalsMsg) -> ic
         }
 
         GlobalsMsg::ExportRequested => {
-            let dp = Arc::clone(&rt.backend);
+            let repo: Arc<dyn GlobalsRepo> = Arc::clone(&rt.backend) as Arc<dyn GlobalsRepo>;
             iced::Task::perform(
                 async move {
-                    export_globals_to_chosen_file(dp)
+                    export_globals_to_chosen_file(repo)
                         .await
                         .map_err(|e| e.to_string())
                 },

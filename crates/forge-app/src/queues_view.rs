@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use forge_storage::DataProvider;
+use forge_storage::{ActionRepo, QueueRepo};
 use forge_types::QueueId;
 use iced::{
     Background, Border, Color, Element, Length, Task,
@@ -58,11 +58,13 @@ pub fn update(state: &mut QueuesState, rt: &RuntimeView, msg: QueuesMsg) -> Task
     match msg {
         QueuesMsg::LoadRequested => {
             state.loading = true;
-            let dp = Arc::clone(&rt.backend);
+            let queues = rt.backend.queue_repo();
+            let actions = rt.backend.action_repo();
             let scheduler = rt.scheduler.clone();
-            Task::perform(async move { load_queues(dp, scheduler).await }, |r| {
-                Message::Queues(QueuesMsg::QueuesLoaded(r))
-            })
+            Task::perform(
+                async move { load_queues(queues, actions, scheduler).await },
+                |r| Message::Queues(QueuesMsg::QueuesLoaded(r)),
+            )
         }
         QueuesMsg::QueuesLoaded(Ok(qs)) => {
             state.queues = qs;
@@ -170,12 +172,13 @@ fn default_description(name: &str) -> Option<String> {
 }
 
 pub async fn load_queues(
-    dp: Arc<dyn DataProvider>,
+    queues_repo: Arc<dyn QueueRepo>,
+    actions_repo: Arc<dyn ActionRepo>,
     scheduler: Option<forge_runtime::QueueSchedulerHandle>,
 ) -> Result<Vec<QueueSummary>, String> {
-    let queues = dp.queue_repo().list().await.map_err(|e| e.to_string())?;
+    let queues = queues_repo.list().await.map_err(|e| e.to_string())?;
 
-    let actions = dp.action_repo().list().await.map_err(|e| e.to_string())?;
+    let actions = actions_repo.list().await.map_err(|e| e.to_string())?;
 
     let paused_ids = match scheduler {
         Some(h) => h.paused_queues().await.unwrap_or_default(),

@@ -1,4 +1,4 @@
-use forge_storage::{DataProvider, GlobalsRepo};
+use forge_storage::GlobalsRepo;
 use forge_types::{ArgStack, SubActionOutcome, SubActionSpec, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -6,7 +6,7 @@ pub(super) async fn run(
     spec: &SubActionSpec,
     arg_stack: &ArgStack,
     index: usize,
-    dp: &dyn DataProvider,
+    globals: &dyn GlobalsRepo,
 ) -> (SubActionTelemetry, Option<ArgStack>) {
     let started_at = OffsetDateTime::now_utc();
 
@@ -14,10 +14,10 @@ pub(super) async fn run(
         unreachable!()
     };
 
-    let resolved_name = super::interpolate_with_globals(name, arg_stack, dp).await;
-    let resolved_into = super::interpolate_with_globals(into_arg, arg_stack, dp).await;
+    let resolved_name = super::interpolate_with_globals(name, arg_stack, globals).await;
+    let resolved_into = super::interpolate_with_globals(into_arg, arg_stack, globals).await;
 
-    let (outcome, updated_stack) = match GlobalsRepo::get(dp, &resolved_name).await {
+    let (outcome, updated_stack) = match globals.get(&resolved_name).await {
         Ok(value) => {
             let variant = value.unwrap_or(Variant::String(String::new()));
             let new_stack = arg_stack.clone().set(resolved_into, variant);
@@ -44,7 +44,7 @@ pub(super) async fn run(
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use forge_storage::GlobalsRepo;
+    use forge_storage::{DataProvider, GlobalsRepo};
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::{ArgStack, SubActionSpec, Variant};
     use std::sync::Arc;
@@ -68,7 +68,8 @@ mod tests {
             name: "counter".to_string(),
             into_arg: "x".to_string(),
         };
-        let (telemetry, updated) = run(&spec, &ArgStack::new(), 0, dp.as_ref()).await;
+        let (telemetry, updated) =
+            run(&spec, &ArgStack::new(), 0, dp.as_ref() as &dyn GlobalsRepo).await;
 
         assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
         let new_stack = updated.unwrap();
@@ -83,7 +84,8 @@ mod tests {
             name: "nonexistent".to_string(),
             into_arg: "result".to_string(),
         };
-        let (telemetry, updated) = run(&spec, &ArgStack::new(), 0, dp.as_ref()).await;
+        let (telemetry, updated) =
+            run(&spec, &ArgStack::new(), 0, dp.as_ref() as &dyn GlobalsRepo).await;
 
         assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
         let new_stack = updated.unwrap();
@@ -105,7 +107,7 @@ mod tests {
             into_arg: "val".to_string(),
         };
         let stack = ArgStack::new().set("prefix".to_string(), Variant::String("my".to_string()));
-        let (telemetry, updated) = run(&spec, &stack, 0, dp.as_ref()).await;
+        let (telemetry, updated) = run(&spec, &stack, 0, dp.as_ref() as &dyn GlobalsRepo).await;
 
         assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
         assert_eq!(updated.unwrap().get("val"), Some(&Variant::Int(42)));
@@ -118,7 +120,7 @@ mod tests {
             name: "x".to_string(),
             into_arg: "out".to_string(),
         };
-        let (telemetry, _) = run(&spec, &ArgStack::new(), 3, dp.as_ref()).await;
+        let (telemetry, _) = run(&spec, &ArgStack::new(), 3, dp.as_ref() as &dyn GlobalsRepo).await;
         assert_eq!(telemetry.kind, "GetGlobal");
         assert_eq!(telemetry.index, 3);
     }

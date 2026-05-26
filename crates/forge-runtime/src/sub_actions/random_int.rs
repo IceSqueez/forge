@@ -1,5 +1,5 @@
 use forge_events::{Event, EventSource};
-use forge_storage::{DataProvider, GlobalsRepo};
+use forge_storage::GlobalsRepo;
 use forge_types::{
     ArgStack, EventId, SubActionOutcome, SubActionSpec, SubActionTelemetry, Variant,
 };
@@ -14,7 +14,7 @@ pub(super) async fn run(
     index: usize,
     parent_event_id: EventId,
     bus: &EventBus,
-    dp: &dyn DataProvider,
+    globals: &dyn GlobalsRepo,
 ) -> SubActionTelemetry {
     let started_at = OffsetDateTime::now_utc();
 
@@ -31,7 +31,7 @@ pub(super) async fn run(
         SubActionOutcome::Failed(format!("min ({min}) must be <= max ({max})"))
     } else {
         let value = rand::rng().random_range(*min..=*max);
-        match GlobalsRepo::set(dp, target_var, Variant::Int(value), false).await {
+        match globals.set(target_var, Variant::Int(value), false).await {
             Ok(()) => {
                 bus.publish(Event::caused_by(
                     EventSource::Core,

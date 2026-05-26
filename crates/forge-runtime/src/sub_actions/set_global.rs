@@ -1,5 +1,5 @@
 use forge_events::{Event, EventSource};
-use forge_storage::{DataProvider, GlobalsRepo};
+use forge_storage::GlobalsRepo;
 use forge_types::{
     ArgStack, EventId, SubActionOutcome, SubActionSpec, SubActionTelemetry, Variant,
 };
@@ -13,7 +13,7 @@ pub(super) async fn run(
     index: usize,
     parent_event_id: EventId,
     bus: &EventBus,
-    dp: &dyn DataProvider,
+    globals: &dyn GlobalsRepo,
 ) -> SubActionTelemetry {
     let started_at = OffsetDateTime::now_utc();
 
@@ -21,13 +21,13 @@ pub(super) async fn run(
         unreachable!()
     };
 
-    let name = super::interpolate_with_globals(name, arg_stack, dp).await;
-    let raw = super::interpolate_with_globals(value, arg_stack, dp).await;
+    let name = super::interpolate_with_globals(name, arg_stack, globals).await;
+    let raw = super::interpolate_with_globals(value, arg_stack, globals).await;
     let variant = parse_variant(&raw);
 
-    let prev_value = GlobalsRepo::get(dp, &name).await.ok().flatten();
+    let prev_value = globals.get(&name).await.ok().flatten();
 
-    let outcome = match GlobalsRepo::set(dp, &name, variant, false).await {
+    let outcome = match globals.set(&name, variant, false).await {
         Ok(()) => {
             let mut payload = serde_json::json!({
                 "key": name,

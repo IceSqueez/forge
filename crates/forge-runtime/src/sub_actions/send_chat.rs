@@ -1,5 +1,5 @@
 use forge_events::{Event, EventSource};
-use forge_storage::DataProvider;
+use forge_storage::GlobalsRepo;
 use forge_types::{ArgStack, EventId, SubActionOutcome, SubActionSpec, SubActionTelemetry};
 use time::OffsetDateTime;
 
@@ -11,7 +11,7 @@ pub(super) async fn run(
     index: usize,
     parent_event_id: EventId,
     bus: &EventBus,
-    dp: &dyn DataProvider,
+    globals: &dyn GlobalsRepo,
 ) -> SubActionTelemetry {
     let started_at = OffsetDateTime::now_utc();
 
@@ -19,8 +19,8 @@ pub(super) async fn run(
         unreachable!()
     };
 
-    let message = super::interpolate_with_globals(message, arg_stack, dp).await;
-    let target = super::interpolate_with_globals(target, arg_stack, dp).await;
+    let message = super::interpolate_with_globals(message, arg_stack, globals).await;
+    let target = super::interpolate_with_globals(target, arg_stack, globals).await;
 
     bus.publish(Event::caused_by(
         EventSource::Core,
@@ -49,6 +49,7 @@ pub(super) async fn run(
 mod tests {
     use super::*;
     use crate::{EventBus, NullEventLogRepo};
+    use forge_storage::{DataProvider, GlobalsRepo};
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::{ArgStack, EventId, SubActionSpec, Variant};
     use std::sync::Arc;
@@ -72,7 +73,15 @@ mod tests {
             message: "hello".to_string(),
             target: "twitch".to_string(),
         };
-        run(&spec, &ArgStack::new(), 0, parent_id, &bus, dp.as_ref()).await;
+        run(
+            &spec,
+            &ArgStack::new(),
+            0,
+            parent_id,
+            &bus,
+            dp.as_ref() as &dyn GlobalsRepo,
+        )
+        .await;
         let event = tokio::time::timeout(Duration::from_millis(100), sub.recv())
             .await
             .unwrap()
@@ -95,7 +104,15 @@ mod tests {
             "platform".to_string(),
             Variant::String("twitch".to_string()),
         );
-        run(&spec, &stack, 0, EventId::new(), &bus, dp.as_ref()).await;
+        run(
+            &spec,
+            &stack,
+            0,
+            EventId::new(),
+            &bus,
+            dp.as_ref() as &dyn GlobalsRepo,
+        )
+        .await;
         let event = tokio::time::timeout(Duration::from_millis(100), sub.recv())
             .await
             .unwrap()
@@ -119,7 +136,7 @@ mod tests {
             2,
             EventId::new(),
             &bus,
-            dp.as_ref(),
+            dp.as_ref() as &dyn GlobalsRepo,
         )
         .await;
         assert_eq!(telemetry.kind, "SendChat");

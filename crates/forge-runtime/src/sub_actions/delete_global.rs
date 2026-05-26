@@ -1,5 +1,5 @@
 use forge_events::{Event, EventSource};
-use forge_storage::{DataProvider, GlobalsRepo};
+use forge_storage::GlobalsRepo;
 use forge_types::{ArgStack, EventId, SubActionOutcome, SubActionSpec, SubActionTelemetry};
 use time::OffsetDateTime;
 
@@ -11,7 +11,7 @@ pub(super) async fn run(
     index: usize,
     parent_event_id: EventId,
     bus: &EventBus,
-    dp: &dyn DataProvider,
+    globals: &dyn GlobalsRepo,
 ) -> SubActionTelemetry {
     let started_at = OffsetDateTime::now_utc();
 
@@ -19,9 +19,9 @@ pub(super) async fn run(
         unreachable!()
     };
 
-    let resolved_name = super::interpolate_with_globals(name, arg_stack, dp).await;
+    let resolved_name = super::interpolate_with_globals(name, arg_stack, globals).await;
 
-    let outcome = match GlobalsRepo::delete(dp, &resolved_name).await {
+    let outcome = match globals.delete(&resolved_name).await {
         Ok(_existed) => {
             bus.publish(Event::caused_by(
                 EventSource::Core,
@@ -51,7 +51,7 @@ pub(super) async fn run(
 mod tests {
     use super::*;
     use crate::{EventBus, NullEventLogRepo};
-    use forge_storage::GlobalsRepo;
+    use forge_storage::{DataProvider, GlobalsRepo};
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::{ArgStack, EventId, SubActionSpec, Variant};
     use std::sync::Arc;
@@ -79,7 +79,15 @@ mod tests {
             name: "counter".to_string(),
         };
 
-        let telemetry = run(&spec, &ArgStack::new(), 0, parent_id, &bus, dp.as_ref()).await;
+        let telemetry = run(
+            &spec,
+            &ArgStack::new(),
+            0,
+            parent_id,
+            &bus,
+            dp.as_ref() as &dyn GlobalsRepo,
+        )
+        .await;
 
         assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
 
@@ -110,7 +118,7 @@ mod tests {
             0,
             EventId::new(),
             &bus,
-            dp.as_ref(),
+            dp.as_ref() as &dyn GlobalsRepo,
         )
         .await;
 
@@ -137,7 +145,7 @@ mod tests {
             2,
             EventId::new(),
             &bus,
-            dp.as_ref(),
+            dp.as_ref() as &dyn GlobalsRepo,
         )
         .await;
         assert_eq!(telemetry.kind, "DeleteGlobal");

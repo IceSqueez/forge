@@ -1,7 +1,7 @@
 use std::path::{Component, PathBuf};
 
 use forge_events::{Event, EventSource};
-use forge_storage::{DataProvider, GlobalsRepo};
+use forge_storage::GlobalsRepo;
 use forge_types::{
     ArgStack, EventId, SubActionOutcome, SubActionSpec, SubActionTelemetry, Variant,
 };
@@ -40,7 +40,7 @@ pub(super) async fn run(
     index: usize,
     parent_event_id: EventId,
     bus: &EventBus,
-    dp: &dyn DataProvider,
+    globals: &dyn GlobalsRepo,
 ) -> SubActionTelemetry {
     let started_at = OffsetDateTime::now_utc();
 
@@ -48,7 +48,7 @@ pub(super) async fn run(
         unreachable!()
     };
 
-    let interpolated_path = super::interpolate_with_globals(path, arg_stack, dp).await;
+    let interpolated_path = super::interpolate_with_globals(path, arg_stack, globals).await;
     let target_var = target_var.clone();
 
     let outcome = match resolve_sandboxed(&interpolated_path) {
@@ -60,7 +60,9 @@ pub(super) async fn run(
             )),
             Ok(_) => match tokio::fs::read_to_string(&abs_path).await {
                 Ok(contents) => {
-                    match GlobalsRepo::set(dp, &target_var, Variant::String(contents), false).await
+                    match globals
+                        .set(&target_var, Variant::String(contents), false)
+                        .await
                     {
                         Ok(()) => {
                             bus.publish(Event::caused_by(

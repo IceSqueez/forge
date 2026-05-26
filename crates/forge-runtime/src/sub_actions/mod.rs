@@ -27,7 +27,7 @@ use crate::speak_dispatcher::SpeakDispatcher;
 pub(crate) async fn interpolate_with_globals(
     template: &str,
     arg_stack: &ArgStack,
-    dp: &dyn DataProvider,
+    globals: &dyn GlobalsRepo,
 ) -> String {
     let after_args = arg_stack.interpolate(template);
     if !after_args.contains('%') {
@@ -54,7 +54,7 @@ pub(crate) async fn interpolate_with_globals(
         if !closed {
             continue;
         }
-        match GlobalsRepo::get(dp, &key).await {
+        match globals.get(&key).await {
             Ok(Some(value)) => {
                 result.truncate(token_start);
                 result.push_str(&value.to_string());
@@ -83,31 +83,60 @@ pub async fn dispatch(
 ) -> (SubActionTelemetry, Option<ArgStack>) {
     match spec {
         SubActionSpec::Log { message, .. } => {
-            let interpolated = interpolate_with_globals(message, arg_stack, dp.as_ref()).await;
+            let interpolated =
+                interpolate_with_globals(message, arg_stack, dp.as_ref() as &dyn GlobalsRepo).await;
             (log::run(spec, index, &interpolated), None)
         }
         SubActionSpec::SendChat { .. } => {
-            let t = send_chat::run(spec, arg_stack, index, parent_event_id, bus, dp.as_ref()).await;
+            let t = send_chat::run(
+                spec,
+                arg_stack,
+                index,
+                parent_event_id,
+                bus,
+                dp.as_ref() as &dyn GlobalsRepo,
+            )
+            .await;
             (t, None)
         }
         SubActionSpec::Delay { .. } => (delay::run(spec, index).await, None),
         SubActionSpec::SetGlobal { .. } => {
-            let t =
-                set_global::run(spec, arg_stack, index, parent_event_id, bus, dp.as_ref()).await;
+            let t = set_global::run(
+                spec,
+                arg_stack,
+                index,
+                parent_event_id,
+                bus,
+                dp.as_ref() as &dyn GlobalsRepo,
+            )
+            .await;
             (t, None)
         }
         SubActionSpec::GetGlobal { .. } => {
-            get_global::run(spec, arg_stack, index, dp.as_ref()).await
+            get_global::run(spec, arg_stack, index, dp.as_ref() as &dyn GlobalsRepo).await
         }
         SubActionSpec::IncrementGlobal { .. } => {
-            let t =
-                increment_global::run(spec, arg_stack, index, parent_event_id, bus, dp.as_ref())
-                    .await;
+            let t = increment_global::run(
+                spec,
+                arg_stack,
+                index,
+                parent_event_id,
+                bus,
+                dp.as_ref() as &dyn GlobalsRepo,
+            )
+            .await;
             (t, None)
         }
         SubActionSpec::DeleteGlobal { .. } => {
-            let t =
-                delete_global::run(spec, arg_stack, index, parent_event_id, bus, dp.as_ref()).await;
+            let t = delete_global::run(
+                spec,
+                arg_stack,
+                index,
+                parent_event_id,
+                bus,
+                dp.as_ref() as &dyn GlobalsRepo,
+            )
+            .await;
             (t, None)
         }
         SubActionSpec::RunScript { script_name } => {
@@ -138,12 +167,27 @@ pub async fn dispatch(
         SubActionSpec::PlaySound { .. } => play_sound::run(spec, index, sound_player).await,
         SubActionSpec::Speak { .. } => speak::run(spec, index, speak_dispatcher).await,
         SubActionSpec::ReadFile { .. } => {
-            let t = read_file::run(spec, arg_stack, index, parent_event_id, bus, dp.as_ref()).await;
+            let t = read_file::run(
+                spec,
+                arg_stack,
+                index,
+                parent_event_id,
+                bus,
+                dp.as_ref() as &dyn GlobalsRepo,
+            )
+            .await;
             (t, None)
         }
         SubActionSpec::RandomInt { .. } => {
-            let t =
-                random_int::run(spec, arg_stack, index, parent_event_id, bus, dp.as_ref()).await;
+            let t = random_int::run(
+                spec,
+                arg_stack,
+                index,
+                parent_event_id,
+                bus,
+                dp.as_ref() as &dyn GlobalsRepo,
+            )
+            .await;
             (t, None)
         }
     }
@@ -482,8 +526,12 @@ mod tests {
             .await
             .unwrap();
         let stack = ArgStack::new().set("user".to_string(), Variant::String("alice".to_string()));
-        let result =
-            interpolate_with_globals("Hello %user%, count is %counter%", &stack, dp.as_ref()).await;
+        let result = interpolate_with_globals(
+            "Hello %user%, count is %counter%",
+            &stack,
+            dp.as_ref() as &dyn GlobalsRepo,
+        )
+        .await;
         assert_eq!(result, "Hello alice, count is 7");
     }
 
@@ -491,7 +539,8 @@ mod tests {
     async fn interpolate_with_globals_unresolved_remains_verbatim() {
         let dp = make_dp().await;
         let stack = ArgStack::new();
-        let result = interpolate_with_globals("%ghost%", &stack, dp.as_ref()).await;
+        let result =
+            interpolate_with_globals("%ghost%", &stack, dp.as_ref() as &dyn GlobalsRepo).await;
         assert_eq!(result, "%ghost%");
     }
 
@@ -502,7 +551,7 @@ mod tests {
             .await
             .unwrap();
         let stack = ArgStack::new().set("x".to_string(), Variant::String("from_stack".to_string()));
-        let result = interpolate_with_globals("%x%", &stack, dp.as_ref()).await;
+        let result = interpolate_with_globals("%x%", &stack, dp.as_ref() as &dyn GlobalsRepo).await;
         assert_eq!(result, "from_stack");
     }
 
@@ -515,9 +564,18 @@ mod tests {
             .await
             .unwrap();
 
-        let _ =
-            interpolate_with_globals("Player score: %score%", &ArgStack::new(), dp.as_ref()).await;
-        let _ = interpolate_with_globals("%score% points", &ArgStack::new(), dp.as_ref()).await;
+        let _ = interpolate_with_globals(
+            "Player score: %score%",
+            &ArgStack::new(),
+            dp.as_ref() as &dyn GlobalsRepo,
+        )
+        .await;
+        let _ = interpolate_with_globals(
+            "%score% points",
+            &ArgStack::new(),
+            dp.as_ref() as &dyn GlobalsRepo,
+        )
+        .await;
 
         let entries = GlobalsRepo::list(dp.as_ref()).await.unwrap();
         let entry = entries.iter().find(|e| e.name == "score").unwrap();

@@ -1,5 +1,5 @@
 use forge_events::{Event, EventSource};
-use forge_storage::{DataProvider, GlobalsRepo};
+use forge_storage::GlobalsRepo;
 use forge_types::{
     ArgStack, EventId, SubActionOutcome, SubActionSpec, SubActionTelemetry, Variant,
 };
@@ -13,7 +13,7 @@ pub(super) async fn run(
     index: usize,
     parent_event_id: EventId,
     bus: &EventBus,
-    dp: &dyn DataProvider,
+    globals: &dyn GlobalsRepo,
 ) -> SubActionTelemetry {
     let started_at = OffsetDateTime::now_utc();
 
@@ -21,9 +21,9 @@ pub(super) async fn run(
         unreachable!()
     };
 
-    let resolved_name = super::interpolate_with_globals(name, arg_stack, dp).await;
+    let resolved_name = super::interpolate_with_globals(name, arg_stack, globals).await;
 
-    let outcome = match GlobalsRepo::incr(dp, &resolved_name, *amount).await {
+    let outcome = match globals.incr(&resolved_name, *amount).await {
         Ok(new_val) => {
             let new_val_json = match &new_val {
                 Variant::Int(i) => serde_json::Value::from(*i),
@@ -61,7 +61,7 @@ pub(super) async fn run(
 mod tests {
     use super::*;
     use crate::{EventBus, NullEventLogRepo};
-    use forge_storage::GlobalsRepo;
+    use forge_storage::{DataProvider, GlobalsRepo};
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::{ArgStack, EventId, SubActionSpec, Variant};
     use std::sync::Arc;
@@ -90,7 +90,15 @@ mod tests {
             amount: 3,
         };
 
-        let telemetry = run(&spec, &ArgStack::new(), 0, parent_id, &bus, dp.as_ref()).await;
+        let telemetry = run(
+            &spec,
+            &ArgStack::new(),
+            0,
+            parent_id,
+            &bus,
+            dp.as_ref() as &dyn GlobalsRepo,
+        )
+        .await;
 
         assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
 
@@ -123,7 +131,7 @@ mod tests {
             0,
             EventId::new(),
             &bus,
-            dp.as_ref(),
+            dp.as_ref() as &dyn GlobalsRepo,
         )
         .await;
         assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
@@ -146,7 +154,7 @@ mod tests {
             5,
             EventId::new(),
             &bus,
-            dp.as_ref(),
+            dp.as_ref() as &dyn GlobalsRepo,
         )
         .await;
         assert_eq!(telemetry.kind, "IncrementGlobal");

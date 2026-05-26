@@ -10,6 +10,8 @@ use axum::response::Response;
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::bus_adapter::{ClientFilterSet, WsFrame};
+use forge_storage::{GlobalsRepo, UserGlobalsRepo};
+
 use crate::protocol::{
     DispatchContext, WsEnvelope, WsRequest, WsResponse, dispatch, serialize_response_frame,
 };
@@ -59,7 +61,10 @@ async fn handle_socket(
     let ctx = DispatchContext {
         bus: Arc::clone(&state.bus),
         bus_adapter: Arc::clone(&state.bus_adapter),
-        dp: Arc::clone(&state.dp),
+        actions: state.dp.action_repo(),
+        commands: state.dp.command_repo(),
+        globals: Arc::clone(&state.dp) as Arc<dyn GlobalsRepo>,
+        user_globals: Arc::clone(&state.dp) as Arc<dyn UserGlobalsRepo>,
         auth_state: Arc::clone(&state.auth),
         client: Arc::clone(&client),
         auth_required_for_reads: state.auth.auth_required_for_reads,

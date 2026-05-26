@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use forge_runtime::{ActionEngineHandle, EventBus};
-use forge_storage::{CredentialsRepo, DataProvider};
+use forge_storage::{ActionRepo, CommandRepo, CredentialsRepo, GlobalsRepo, UserGlobalsRepo};
 
 use crate::auth::AuthState;
 use crate::bus_adapter::BusAdapter;
@@ -14,7 +14,10 @@ use super::envelope::WsResponse;
 pub struct DispatchContext {
     pub bus: Arc<EventBus>,
     pub bus_adapter: Arc<BusAdapter>,
-    pub dp: Arc<dyn DataProvider>,
+    pub actions: Arc<dyn ActionRepo>,
+    pub commands: Arc<dyn CommandRepo>,
+    pub globals: Arc<dyn GlobalsRepo>,
+    pub user_globals: Arc<dyn UserGlobalsRepo>,
     pub auth_state: Arc<AuthState>,
     pub client: Arc<WsClient>,
     pub auth_required_for_reads: bool,

@@ -43,7 +43,7 @@ pub(crate) async fn handle_get_info(ctx: &DispatchContext) -> WsResponse {
 }
 
 pub(crate) async fn handle_get_commands(ctx: &DispatchContext) -> WsResponse {
-    let commands = match ctx.dp.command_repo().list().await {
+    let commands = match ctx.commands.list().await {
         Ok(list) => list,
         Err(e) => {
             return WsResponse::Error {
@@ -69,7 +69,7 @@ pub(crate) async fn handle_get_commands(ctx: &DispatchContext) -> WsResponse {
 }
 
 pub(crate) async fn handle_get_globals(ctx: &DispatchContext) -> WsResponse {
-    let globals_repo: &dyn GlobalsRepo = ctx.dp.as_ref();
+    let globals_repo: &dyn GlobalsRepo = ctx.globals.as_ref();
     let globals = match globals_repo.list().await {
         Ok(list) => list,
         Err(e) => {
@@ -101,7 +101,7 @@ pub(crate) async fn handle_get_globals(ctx: &DispatchContext) -> WsResponse {
 }
 
 pub(crate) async fn handle_get_global(name: String, ctx: &DispatchContext) -> WsResponse {
-    let globals_repo: &dyn GlobalsRepo = ctx.dp.as_ref();
+    let globals_repo: &dyn GlobalsRepo = ctx.globals.as_ref();
     match globals_repo.get(&name).await {
         Ok(Some(value)) => WsResponse::Ok(serde_json::json!({
             "name": name,
@@ -140,7 +140,7 @@ pub(crate) async fn handle_set_global(
         "persisted": persisted,
         "via": "ws_api",
     });
-    let globals_repo: &dyn GlobalsRepo = ctx.dp.as_ref();
+    let globals_repo: &dyn GlobalsRepo = ctx.globals.as_ref();
     match globals_repo.set(&name, variant, persisted).await {
         Ok(()) => {
             ctx.bus
@@ -159,7 +159,7 @@ pub(crate) async fn handle_get_user_globals(
     user_id: Option<String>,
     ctx: &DispatchContext,
 ) -> WsResponse {
-    let user_globals_repo: &dyn UserGlobalsRepo = ctx.dp.as_ref();
+    let user_globals_repo: &dyn UserGlobalsRepo = ctx.user_globals.as_ref();
     let result = match user_id {
         Some(ref uid) => user_globals_repo.list_for_user(&broadcaster_id, uid).await,
         None => {
@@ -213,7 +213,7 @@ pub(crate) async fn handle_trigger_code_event(
 }
 
 pub(crate) async fn handle_get_actions(ctx: &DispatchContext) -> WsResponse {
-    let actions = match ctx.dp.action_repo().list().await {
+    let actions = match ctx.actions.list().await {
         Ok(list) => list,
         Err(e) => {
             return WsResponse::Error {
@@ -256,7 +256,7 @@ pub(crate) async fn handle_do_action(
         }
     };
 
-    match ctx.dp.action_repo().get(aid).await {
+    match ctx.actions.get(aid).await {
         Ok(None) => {
             return WsResponse::Error {
                 code: Some("NOT_FOUND".to_owned()),

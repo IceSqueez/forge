@@ -171,7 +171,7 @@ mod tests {
     use forge_runtime::{
         ActionEngineHandle, EventBus, NullEventLogRepo, ScriptRegistry, spawn_action_engine,
     };
-    use forge_storage::DataProvider;
+    use forge_storage::{DataProvider, GlobalsRepo, UserGlobalsRepo};
     use forge_types::{Action, ActionId, LogLevel, QueueId, SubActionSpec};
 
     use super::*;
@@ -207,6 +207,10 @@ mod tests {
             .expect_list_for_broadcaster()
             .returning(|_| Ok(vec![]));
         let dp: Arc<dyn DataProvider> = Arc::new(tdp);
+        let actions = dp.action_repo();
+        let commands = dp.command_repo();
+        let globals: Arc<dyn GlobalsRepo> = Arc::clone(&dp) as Arc<dyn GlobalsRepo>;
+        let user_globals: Arc<dyn UserGlobalsRepo> = Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>;
         let auth_state = AuthState::for_test(auth_required_for_reads, "test-token");
         let drop_counter = Arc::new(AtomicU64::new(0));
         let client = Arc::new(WsClient::new(
@@ -225,7 +229,10 @@ mod tests {
         DispatchContext {
             bus,
             bus_adapter,
-            dp,
+            actions,
+            commands,
+            globals,
+            user_globals,
             auth_state,
             client,
             auth_required_for_reads,
@@ -248,10 +255,17 @@ mod tests {
         ));
         client.authenticated.store(authenticated, Ordering::Relaxed);
         let action_engine = make_engine(&bus, &dp);
+        let actions = dp.action_repo();
+        let commands = dp.command_repo();
+        let globals: Arc<dyn GlobalsRepo> = Arc::clone(&dp) as Arc<dyn GlobalsRepo>;
+        let user_globals: Arc<dyn UserGlobalsRepo> = Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>;
         DispatchContext {
             bus,
             bus_adapter,
-            dp,
+            actions,
+            commands,
+            globals,
+            user_globals,
             auth_state,
             client,
             auth_required_for_reads: false,
@@ -269,6 +283,10 @@ mod tests {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let bus_adapter = BusAdapter::new(Arc::clone(&bus));
         let dp: Arc<dyn DataProvider> = test_dp();
+        let actions = dp.action_repo();
+        let commands = dp.command_repo();
+        let globals: Arc<dyn GlobalsRepo> = Arc::clone(&dp) as Arc<dyn GlobalsRepo>;
+        let user_globals: Arc<dyn UserGlobalsRepo> = Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>;
         let auth_state = AuthState::for_test(auth_required_for_reads, "test-token");
         let (handle, _rx) = bus_adapter
             .register_client(ClientFilterSet::new(HashSet::new()))
@@ -289,7 +307,10 @@ mod tests {
         DispatchContext {
             bus,
             bus_adapter,
-            dp,
+            actions,
+            commands,
+            globals,
+            user_globals,
             auth_state,
             client,
             auth_required_for_reads,

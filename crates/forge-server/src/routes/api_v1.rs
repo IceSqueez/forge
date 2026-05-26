@@ -9,6 +9,8 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use serde::Deserialize;
 
+use forge_storage::{GlobalsRepo, UserGlobalsRepo};
+
 use crate::bus_adapter::ClientId;
 use crate::protocol::{
     DispatchContext, WsResponse, handle_do_action, handle_get_actions, handle_get_active_viewers,
@@ -32,7 +34,10 @@ fn ephemeral_ctx(state: &AppState) -> DispatchContext {
     DispatchContext {
         bus: Arc::clone(&state.bus),
         bus_adapter: Arc::clone(&state.bus_adapter),
-        dp: Arc::clone(&state.dp),
+        actions: state.dp.action_repo(),
+        commands: state.dp.command_repo(),
+        globals: Arc::clone(&state.dp) as Arc<dyn GlobalsRepo>,
+        user_globals: Arc::clone(&state.dp) as Arc<dyn UserGlobalsRepo>,
         auth_state: Arc::clone(&state.auth),
         client,
         auth_required_for_reads: state.auth.auth_required_for_reads,

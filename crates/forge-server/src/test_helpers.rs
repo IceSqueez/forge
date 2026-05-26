@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -27,40 +29,96 @@ use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
 
 pub struct TestDataProvider {
-    pub action_repo: MockActionRepo,
-    pub trigger_repo: MockTriggerRepo,
-    pub command_repo: MockCommandRepo,
-    pub queue_repo: MockQueueRepo,
-    pub history_repo: MockHistoryRepo,
-    pub event_log_repo: MockEventLogRepo,
-    pub soundboard_clips_repo: MockSoundboardClipsRepo,
-    pub voice_alias_repo: MockVoiceAliasRepo,
-    pub viewer_repo: MockViewerRepo,
-    pub globals_repo: MockGlobalsRepo,
-    pub user_globals_repo: MockUserGlobalsRepo,
-    pub settings_repo: MockSettingsRepo,
-    pub script_repo: MockScriptRepo,
-    pub credentials_repo: MockCredentialsRepo,
+    pub action_repo: Arc<MockActionRepo>,
+    pub trigger_repo: Arc<MockTriggerRepo>,
+    pub command_repo: Arc<MockCommandRepo>,
+    pub queue_repo: Arc<MockQueueRepo>,
+    pub history_repo: Arc<MockHistoryRepo>,
+    pub event_log_repo: Arc<MockEventLogRepo>,
+    pub soundboard_clips_repo: Arc<MockSoundboardClipsRepo>,
+    pub voice_alias_repo: Arc<MockVoiceAliasRepo>,
+    pub viewer_repo: Arc<MockViewerRepo>,
+    pub globals_repo: Arc<MockGlobalsRepo>,
+    pub user_globals_repo: Arc<MockUserGlobalsRepo>,
+    pub settings_repo: Arc<MockSettingsRepo>,
+    pub script_repo: Arc<MockScriptRepo>,
+    pub credentials_repo: Arc<MockCredentialsRepo>,
 }
 
 impl TestDataProvider {
     pub fn new() -> Self {
         Self {
-            action_repo: MockActionRepo::new(),
-            trigger_repo: MockTriggerRepo::new(),
-            command_repo: MockCommandRepo::new(),
-            queue_repo: MockQueueRepo::new(),
-            history_repo: MockHistoryRepo::new(),
-            event_log_repo: MockEventLogRepo::new(),
-            soundboard_clips_repo: MockSoundboardClipsRepo::new(),
-            voice_alias_repo: MockVoiceAliasRepo::new(),
-            viewer_repo: MockViewerRepo::new(),
-            globals_repo: MockGlobalsRepo::new(),
-            user_globals_repo: MockUserGlobalsRepo::new(),
-            settings_repo: MockSettingsRepo::new(),
-            script_repo: MockScriptRepo::new(),
-            credentials_repo: MockCredentialsRepo::new(),
+            action_repo: Arc::new(MockActionRepo::new()),
+            trigger_repo: Arc::new(MockTriggerRepo::new()),
+            command_repo: Arc::new(MockCommandRepo::new()),
+            queue_repo: Arc::new(MockQueueRepo::new()),
+            history_repo: Arc::new(MockHistoryRepo::new()),
+            event_log_repo: Arc::new(MockEventLogRepo::new()),
+            soundboard_clips_repo: Arc::new(MockSoundboardClipsRepo::new()),
+            voice_alias_repo: Arc::new(MockVoiceAliasRepo::new()),
+            viewer_repo: Arc::new(MockViewerRepo::new()),
+            globals_repo: Arc::new(MockGlobalsRepo::new()),
+            user_globals_repo: Arc::new(MockUserGlobalsRepo::new()),
+            settings_repo: Arc::new(MockSettingsRepo::new()),
+            script_repo: Arc::new(MockScriptRepo::new()),
+            credentials_repo: Arc::new(MockCredentialsRepo::new()),
         }
+    }
+
+    pub fn action(&mut self) -> &mut MockActionRepo {
+        Arc::get_mut(&mut self.action_repo).expect("action_repo already shared")
+    }
+
+    pub fn trigger(&mut self) -> &mut MockTriggerRepo {
+        Arc::get_mut(&mut self.trigger_repo).expect("trigger_repo already shared")
+    }
+
+    pub fn command(&mut self) -> &mut MockCommandRepo {
+        Arc::get_mut(&mut self.command_repo).expect("command_repo already shared")
+    }
+
+    pub fn queue(&mut self) -> &mut MockQueueRepo {
+        Arc::get_mut(&mut self.queue_repo).expect("queue_repo already shared")
+    }
+
+    pub fn history(&mut self) -> &mut MockHistoryRepo {
+        Arc::get_mut(&mut self.history_repo).expect("history_repo already shared")
+    }
+
+    pub fn event_log(&mut self) -> &mut MockEventLogRepo {
+        Arc::get_mut(&mut self.event_log_repo).expect("event_log_repo already shared")
+    }
+
+    pub fn soundboard(&mut self) -> &mut MockSoundboardClipsRepo {
+        Arc::get_mut(&mut self.soundboard_clips_repo).expect("soundboard_clips_repo already shared")
+    }
+
+    pub fn voice_alias(&mut self) -> &mut MockVoiceAliasRepo {
+        Arc::get_mut(&mut self.voice_alias_repo).expect("voice_alias_repo already shared")
+    }
+
+    pub fn viewer(&mut self) -> &mut MockViewerRepo {
+        Arc::get_mut(&mut self.viewer_repo).expect("viewer_repo already shared")
+    }
+
+    pub fn globals(&mut self) -> &mut MockGlobalsRepo {
+        Arc::get_mut(&mut self.globals_repo).expect("globals_repo already shared")
+    }
+
+    pub fn user_globals(&mut self) -> &mut MockUserGlobalsRepo {
+        Arc::get_mut(&mut self.user_globals_repo).expect("user_globals_repo already shared")
+    }
+
+    pub fn settings(&mut self) -> &mut MockSettingsRepo {
+        Arc::get_mut(&mut self.settings_repo).expect("settings_repo already shared")
+    }
+
+    pub fn script(&mut self) -> &mut MockScriptRepo {
+        Arc::get_mut(&mut self.script_repo).expect("script_repo already shared")
+    }
+
+    pub fn credentials(&mut self) -> &mut MockCredentialsRepo {
+        Arc::get_mut(&mut self.credentials_repo).expect("credentials_repo already shared")
     }
 }
 
@@ -235,40 +293,40 @@ impl CredentialsRepo for TestDataProvider {
 
 #[async_trait]
 impl DataProvider for TestDataProvider {
-    fn action_repo(&self) -> &dyn ActionRepo {
-        &self.action_repo
+    fn action_repo(&self) -> Arc<dyn ActionRepo> {
+        Arc::clone(&self.action_repo) as Arc<dyn ActionRepo>
     }
 
-    fn trigger_repo(&self) -> &dyn TriggerRepo {
-        &self.trigger_repo
+    fn trigger_repo(&self) -> Arc<dyn TriggerRepo> {
+        Arc::clone(&self.trigger_repo) as Arc<dyn TriggerRepo>
     }
 
-    fn command_repo(&self) -> &dyn CommandRepo {
-        &self.command_repo
+    fn command_repo(&self) -> Arc<dyn CommandRepo> {
+        Arc::clone(&self.command_repo) as Arc<dyn CommandRepo>
     }
 
-    fn queue_repo(&self) -> &dyn QueueRepo {
-        &self.queue_repo
+    fn queue_repo(&self) -> Arc<dyn QueueRepo> {
+        Arc::clone(&self.queue_repo) as Arc<dyn QueueRepo>
     }
 
-    fn history_repo(&self) -> &dyn HistoryRepo {
-        &self.history_repo
+    fn history_repo(&self) -> Arc<dyn HistoryRepo> {
+        Arc::clone(&self.history_repo) as Arc<dyn HistoryRepo>
     }
 
-    fn event_log_repo(&self) -> &dyn EventLogRepo {
-        &self.event_log_repo
+    fn event_log_repo(&self) -> Arc<dyn EventLogRepo> {
+        Arc::clone(&self.event_log_repo) as Arc<dyn EventLogRepo>
     }
 
-    fn soundboard_clips_repo(&self) -> &dyn SoundboardClipsRepo {
-        &self.soundboard_clips_repo
+    fn soundboard_clips_repo(&self) -> Arc<dyn SoundboardClipsRepo> {
+        Arc::clone(&self.soundboard_clips_repo) as Arc<dyn SoundboardClipsRepo>
     }
 
-    fn voice_alias_repo(&self) -> &dyn VoiceAliasRepo {
-        &self.voice_alias_repo
+    fn voice_alias_repo(&self) -> Arc<dyn VoiceAliasRepo> {
+        Arc::clone(&self.voice_alias_repo) as Arc<dyn VoiceAliasRepo>
     }
 
-    fn viewer_repo(&self) -> &dyn ViewerRepo {
-        &self.viewer_repo
+    fn viewer_repo(&self) -> Arc<dyn ViewerRepo> {
+        Arc::clone(&self.viewer_repo) as Arc<dyn ViewerRepo>
     }
 
     async fn schema_version(&self) -> Result<u32, StorageError> {

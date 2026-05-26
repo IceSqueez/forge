@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 
 use crate::{
@@ -10,15 +12,15 @@ use crate::{
 pub trait DataProvider:
     GlobalsRepo + UserGlobalsRepo + SettingsRepo + ScriptRepo + CredentialsRepo + Send + Sync
 {
-    fn action_repo(&self) -> &dyn ActionRepo;
-    fn trigger_repo(&self) -> &dyn TriggerRepo;
-    fn command_repo(&self) -> &dyn CommandRepo;
-    fn queue_repo(&self) -> &dyn QueueRepo;
-    fn history_repo(&self) -> &dyn HistoryRepo;
-    fn event_log_repo(&self) -> &dyn EventLogRepo;
-    fn soundboard_clips_repo(&self) -> &dyn SoundboardClipsRepo;
-    fn voice_alias_repo(&self) -> &dyn VoiceAliasRepo;
-    fn viewer_repo(&self) -> &dyn ViewerRepo;
+    fn action_repo(&self) -> Arc<dyn ActionRepo>;
+    fn trigger_repo(&self) -> Arc<dyn TriggerRepo>;
+    fn command_repo(&self) -> Arc<dyn CommandRepo>;
+    fn queue_repo(&self) -> Arc<dyn QueueRepo>;
+    fn history_repo(&self) -> Arc<dyn HistoryRepo>;
+    fn event_log_repo(&self) -> Arc<dyn EventLogRepo>;
+    fn soundboard_clips_repo(&self) -> Arc<dyn SoundboardClipsRepo>;
+    fn voice_alias_repo(&self) -> Arc<dyn VoiceAliasRepo>;
+    fn viewer_repo(&self) -> Arc<dyn ViewerRepo>;
 
     /// Returns the number of migrations currently applied to the database.
     async fn schema_version(&self) -> Result<u32, StorageError>;

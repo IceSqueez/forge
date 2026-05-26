@@ -1000,11 +1000,11 @@ mod tests {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let bus_adapter = BusAdapter::new(Arc::clone(&bus));
         let mut tdp = TestDataProvider::new();
-        tdp.action_repo.expect_list().returning(|| Ok(vec![]));
-        tdp.action_repo.expect_get().returning(|_| Ok(None));
-        tdp.globals_repo.expect_get().returning(|_| Ok(None));
-        tdp.globals_repo.expect_set().returning(|_, _, _| Ok(()));
-        tdp.user_globals_repo
+        tdp.action().expect_list().returning(|| Ok(vec![]));
+        tdp.action().expect_get().returning(|_| Ok(None));
+        tdp.globals().expect_get().returning(|_| Ok(None));
+        tdp.globals().expect_set().returning(|_, _, _| Ok(()));
+        tdp.user_globals()
             .expect_list_for_broadcaster()
             .returning(|_| Ok(vec![]));
         let dp: Arc<dyn DataProvider> = Arc::new(tdp);
@@ -1019,7 +1019,7 @@ mod tests {
         let action_engine = make_engine(&bus, &dp);
         let mut creds_tdp = TestDataProvider::new();
         creds_tdp
-            .credentials_repo
+            .credentials()
             .expect_list_ids()
             .returning(|| Ok(vec![]));
         let credentials: Arc<dyn forge_storage::CredentialsRepo> = Arc::new(creds_tdp);
@@ -1083,7 +1083,7 @@ mod tests {
         let action_engine = make_engine(&bus, &dp);
         let mut creds_tdp = TestDataProvider::new();
         creds_tdp
-            .credentials_repo
+            .credentials()
             .expect_list_ids()
             .returning(|| Ok(vec![]));
         let credentials: Arc<dyn forge_storage::CredentialsRepo> = Arc::new(creds_tdp);
@@ -1253,7 +1253,7 @@ mod tests {
         let action_id_str = action.id.to_string();
         let actions = vec![action];
         let mut tdp = TestDataProvider::new();
-        tdp.action_repo
+        tdp.action()
             .expect_list()
             .returning(move || Ok(actions.clone()));
         let dp: Arc<dyn DataProvider> = Arc::new(tdp);
@@ -1283,10 +1283,10 @@ mod tests {
         let action_id_str = action.id.to_string();
         let action_clone = action.clone();
         let mut tdp = TestDataProvider::new();
-        tdp.action_repo
+        tdp.action()
             .expect_get()
             .returning(move |_| Ok(Some(action_clone.clone())));
-        tdp.history_repo.expect_save().returning(|_| Ok(()));
+        tdp.history().expect_save().returning(|_| Ok(()));
         let dp: Arc<dyn DataProvider> = Arc::new(tdp);
         let ctx = make_ctx_with_dp(true, dp);
         let req = WsEnvelope {
@@ -1677,7 +1677,7 @@ mod tests {
         let action_id = cmd.action_id.to_string();
         let commands = vec![cmd];
         let mut tdp = TestDataProvider::new();
-        tdp.command_repo
+        tdp.command()
             .expect_list()
             .returning(move || Ok(commands.clone()));
         let dp: Arc<dyn DataProvider> = Arc::new(tdp);
@@ -1704,7 +1704,7 @@ mod tests {
         let entry = sample_global_entry();
         let entries = vec![entry];
         let mut tdp = TestDataProvider::new();
-        tdp.globals_repo
+        tdp.globals()
             .expect_list()
             .returning(move || Ok(entries.clone()));
         let dp: Arc<dyn DataProvider> = Arc::new(tdp);
@@ -1732,7 +1732,7 @@ mod tests {
         let entry = sample_global_entry();
         let entry_clone = entry.clone();
         let mut tdp = TestDataProvider::new();
-        tdp.globals_repo
+        tdp.globals()
             .expect_get()
             .returning(move |_| Ok(Some(entry_clone.value.clone())));
         let dp: Arc<dyn DataProvider> = Arc::new(tdp);
@@ -1872,7 +1872,7 @@ mod tests {
         };
         let filtered = vec![entry];
         let mut tdp = TestDataProvider::new();
-        tdp.user_globals_repo
+        tdp.user_globals()
             .expect_list_for_user()
             .returning(move |_, _| Ok(filtered.clone()));
         let dp: Arc<dyn DataProvider> = Arc::new(tdp);
@@ -1908,7 +1908,7 @@ mod tests {
         };
         let all_entries = vec![entry1, entry2];
         let mut tdp = TestDataProvider::new();
-        tdp.user_globals_repo
+        tdp.user_globals()
             .expect_list_for_broadcaster()
             .returning(move |_| Ok(all_entries.clone()));
         let dp: Arc<dyn DataProvider> = Arc::new(tdp);

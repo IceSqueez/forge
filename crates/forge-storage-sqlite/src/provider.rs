@@ -29,17 +29,17 @@ pub struct SqliteBackend {
     globals: SqliteGlobalsRepo,
     user_globals: SqliteUserGlobalsRepo,
     settings: SqliteSettingsRepo,
-    action: SqliteActionRepo,
-    trigger: SqliteTriggerRepo,
-    command: SqliteCommandRepo,
-    queue: SqliteQueueRepo,
+    action: Arc<SqliteActionRepo>,
+    trigger: Arc<SqliteTriggerRepo>,
+    command: Arc<SqliteCommandRepo>,
+    queue: Arc<SqliteQueueRepo>,
     script: SqliteScriptRepo,
     credentials: SqliteCredentialsRepo,
-    history: SqliteHistoryRepo,
-    event_log: SqliteEventLogRepo,
-    soundboard: SqliteSoundboardClipsRepo,
-    voice_alias: SqliteVoiceAliasRepo,
-    viewer: SqliteViewerRepo,
+    history: Arc<SqliteHistoryRepo>,
+    event_log: Arc<SqliteEventLogRepo>,
+    soundboard: Arc<SqliteSoundboardClipsRepo>,
+    voice_alias: Arc<SqliteVoiceAliasRepo>,
+    viewer: Arc<SqliteViewerRepo>,
     shutdown: Arc<Notify>,
 }
 
@@ -114,16 +114,16 @@ impl SqliteBackend {
             globals: SqliteGlobalsRepo::new(pool.clone()),
             user_globals: SqliteUserGlobalsRepo::new(pool.clone()),
             settings: SqliteSettingsRepo::new(pool.clone()),
-            action: SqliteActionRepo::new(pool.clone()),
-            trigger: SqliteTriggerRepo::new(pool.clone()),
-            command: SqliteCommandRepo::new(pool.clone()),
-            queue: SqliteQueueRepo::new(pool.clone()),
+            action: Arc::new(SqliteActionRepo::new(pool.clone())),
+            trigger: Arc::new(SqliteTriggerRepo::new(pool.clone())),
+            command: Arc::new(SqliteCommandRepo::new(pool.clone())),
+            queue: Arc::new(SqliteQueueRepo::new(pool.clone())),
             script: SqliteScriptRepo::new(pool.clone()),
-            history: SqliteHistoryRepo::new(pool.clone()),
-            event_log: SqliteEventLogRepo::new(pool.clone()),
-            soundboard: SqliteSoundboardClipsRepo::new(pool.clone()),
-            voice_alias: SqliteVoiceAliasRepo::new(pool.clone()),
-            viewer: SqliteViewerRepo::new(pool.clone()),
+            history: Arc::new(SqliteHistoryRepo::new(pool.clone())),
+            event_log: Arc::new(SqliteEventLogRepo::new(pool.clone())),
+            soundboard: Arc::new(SqliteSoundboardClipsRepo::new(pool.clone())),
+            voice_alias: Arc::new(SqliteVoiceAliasRepo::new(pool.clone())),
+            viewer: Arc::new(SqliteViewerRepo::new(pool.clone())),
             credentials,
             shutdown,
             pool,
@@ -334,40 +334,40 @@ impl CredentialsRepo for SqliteBackend {
 
 #[async_trait]
 impl DataProvider for SqliteBackend {
-    fn action_repo(&self) -> &dyn ActionRepo {
-        &self.action
+    fn action_repo(&self) -> Arc<dyn ActionRepo> {
+        Arc::clone(&self.action) as Arc<dyn ActionRepo>
     }
 
-    fn trigger_repo(&self) -> &dyn TriggerRepo {
-        &self.trigger
+    fn trigger_repo(&self) -> Arc<dyn TriggerRepo> {
+        Arc::clone(&self.trigger) as Arc<dyn TriggerRepo>
     }
 
-    fn command_repo(&self) -> &dyn CommandRepo {
-        &self.command
+    fn command_repo(&self) -> Arc<dyn CommandRepo> {
+        Arc::clone(&self.command) as Arc<dyn CommandRepo>
     }
 
-    fn queue_repo(&self) -> &dyn QueueRepo {
-        &self.queue
+    fn queue_repo(&self) -> Arc<dyn QueueRepo> {
+        Arc::clone(&self.queue) as Arc<dyn QueueRepo>
     }
 
-    fn history_repo(&self) -> &dyn HistoryRepo {
-        &self.history
+    fn history_repo(&self) -> Arc<dyn HistoryRepo> {
+        Arc::clone(&self.history) as Arc<dyn HistoryRepo>
     }
 
-    fn event_log_repo(&self) -> &dyn EventLogRepo {
-        &self.event_log
+    fn event_log_repo(&self) -> Arc<dyn EventLogRepo> {
+        Arc::clone(&self.event_log) as Arc<dyn EventLogRepo>
     }
 
-    fn soundboard_clips_repo(&self) -> &dyn SoundboardClipsRepo {
-        &self.soundboard
+    fn soundboard_clips_repo(&self) -> Arc<dyn SoundboardClipsRepo> {
+        Arc::clone(&self.soundboard) as Arc<dyn SoundboardClipsRepo>
     }
 
-    fn voice_alias_repo(&self) -> &dyn VoiceAliasRepo {
-        &self.voice_alias
+    fn voice_alias_repo(&self) -> Arc<dyn VoiceAliasRepo> {
+        Arc::clone(&self.voice_alias) as Arc<dyn VoiceAliasRepo>
     }
 
-    fn viewer_repo(&self) -> &dyn ViewerRepo {
-        &self.viewer
+    fn viewer_repo(&self) -> Arc<dyn ViewerRepo> {
+        Arc::clone(&self.viewer) as Arc<dyn ViewerRepo>
     }
 
     async fn schema_version(&self) -> Result<u32, StorageError> {

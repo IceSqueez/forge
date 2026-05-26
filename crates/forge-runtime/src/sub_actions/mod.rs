@@ -15,7 +15,7 @@ mod speak;
 use std::sync::Arc;
 
 use forge_obs::ObsSink;
-use forge_storage::{DataProvider, GlobalsRepo};
+use forge_storage::GlobalsRepo;
 use forge_types::{ArgStack, EventId, SubActionOutcome, SubActionSpec, SubActionTelemetry};
 use time::OffsetDateTime;
 
@@ -75,7 +75,7 @@ pub async fn dispatch(
     index: usize,
     parent_event_id: EventId,
     bus: &Arc<EventBus>,
-    dp: Arc<dyn DataProvider>,
+    globals: Arc<dyn GlobalsRepo>,
     registry: Option<&ScriptRegistry>,
     obs_sink: Option<Arc<dyn ObsSink>>,
     sound_player: Option<&Arc<dyn SoundPlayer>>,
@@ -83,8 +83,7 @@ pub async fn dispatch(
 ) -> (SubActionTelemetry, Option<ArgStack>) {
     match spec {
         SubActionSpec::Log { message, .. } => {
-            let interpolated =
-                interpolate_with_globals(message, arg_stack, dp.as_ref() as &dyn GlobalsRepo).await;
+            let interpolated = interpolate_with_globals(message, arg_stack, globals.as_ref()).await;
             (log::run(spec, index, &interpolated), None)
         }
         SubActionSpec::SendChat { .. } => {
@@ -94,7 +93,7 @@ pub async fn dispatch(
                 index,
                 parent_event_id,
                 bus,
-                dp.as_ref() as &dyn GlobalsRepo,
+                globals.as_ref(),
             )
             .await;
             (t, None)
@@ -107,13 +106,13 @@ pub async fn dispatch(
                 index,
                 parent_event_id,
                 bus,
-                dp.as_ref() as &dyn GlobalsRepo,
+                globals.as_ref(),
             )
             .await;
             (t, None)
         }
         SubActionSpec::GetGlobal { .. } => {
-            get_global::run(spec, arg_stack, index, dp.as_ref() as &dyn GlobalsRepo).await
+            get_global::run(spec, arg_stack, index, globals.as_ref()).await
         }
         SubActionSpec::IncrementGlobal { .. } => {
             let t = increment_global::run(
@@ -122,7 +121,7 @@ pub async fn dispatch(
                 index,
                 parent_event_id,
                 bus,
-                dp.as_ref() as &dyn GlobalsRepo,
+                globals.as_ref(),
             )
             .await;
             (t, None)
@@ -134,7 +133,7 @@ pub async fn dispatch(
                 index,
                 parent_event_id,
                 bus,
-                dp.as_ref() as &dyn GlobalsRepo,
+                globals.as_ref(),
             )
             .await;
             (t, None)
@@ -154,7 +153,16 @@ pub async fn dispatch(
                     None,
                 );
             };
-            run_script::run(script_name, arg_stack, index, parent_event_id, bus, dp, reg).await
+            run_script::run(
+                script_name,
+                arg_stack,
+                index,
+                parent_event_id,
+                bus,
+                globals,
+                reg,
+            )
+            .await
         }
         SubActionSpec::ObsSetScene { .. }
         | SubActionSpec::ObsSetSourceVisible { .. }
@@ -173,7 +181,7 @@ pub async fn dispatch(
                 index,
                 parent_event_id,
                 bus,
-                dp.as_ref() as &dyn GlobalsRepo,
+                globals.as_ref(),
             )
             .await;
             (t, None)
@@ -185,7 +193,7 @@ pub async fn dispatch(
                 index,
                 parent_event_id,
                 bus,
-                dp.as_ref() as &dyn GlobalsRepo,
+                globals.as_ref(),
             )
             .await;
             (t, None)
@@ -227,7 +235,7 @@ mod tests {
             0,
             EventId::new(),
             &bus,
-            Arc::clone(&dp),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             None,
             None,
             None,
@@ -255,7 +263,7 @@ mod tests {
             0,
             EventId::new(),
             &bus,
-            Arc::clone(&dp),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             None,
             None,
             None,
@@ -282,7 +290,7 @@ mod tests {
             0,
             parent_id,
             &bus,
-            Arc::clone(&dp),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             None,
             None,
             None,
@@ -313,7 +321,7 @@ mod tests {
             0,
             EventId::new(),
             &bus,
-            Arc::clone(&dp),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             None,
             None,
             None,
@@ -339,7 +347,7 @@ mod tests {
             0,
             EventId::new(),
             &bus,
-            Arc::clone(&dp),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             None,
             None,
             None,
@@ -366,7 +374,7 @@ mod tests {
             0,
             parent_id,
             &bus,
-            Arc::clone(&dp),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             None,
             None,
             None,
@@ -402,7 +410,7 @@ mod tests {
             0,
             EventId::new(),
             &bus,
-            Arc::clone(&dp),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             None,
             None,
             None,
@@ -438,7 +446,7 @@ mod tests {
             0,
             parent_id,
             &bus,
-            Arc::clone(&dp),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             None,
             None,
             None,
@@ -474,7 +482,7 @@ mod tests {
             0,
             parent_id,
             &bus,
-            Arc::clone(&dp),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             None,
             None,
             None,
@@ -507,7 +515,7 @@ mod tests {
             0,
             EventId::new(),
             &bus,
-            Arc::clone(&dp),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             None,
             None,
             None,
@@ -598,7 +606,7 @@ mod tests {
             0,
             EventId::new(),
             &bus,
-            Arc::clone(&dp),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             None,
             None,
             None,
@@ -628,7 +636,7 @@ mod tests {
             0,
             EventId::new(),
             &bus,
-            Arc::clone(&dp),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             Some(&registry),
             None,
             None,
@@ -685,7 +693,7 @@ mod tests {
             0,
             parent_id,
             &bus,
-            Arc::clone(&dp),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             Some(&registry),
             None,
             None,
@@ -753,7 +761,7 @@ mod tests {
             0,
             EventId::new(),
             &bus,
-            Arc::clone(&dp),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             Some(&registry),
             None,
             None,
@@ -829,7 +837,7 @@ mod tests {
             0,
             EventId::new(),
             &bus,
-            Arc::clone(&dp),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             Some(&registry),
             None,
             None,

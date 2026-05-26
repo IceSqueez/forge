@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use forge_events::{Event, EventPublisher, EventSource};
-use forge_storage::{DataProvider, GlobalsRepo};
+use forge_storage::GlobalsRepo;
 use forge_types::{EventId, Variant};
 use rhai::{EvalAltResult, ImmutableString, Module};
 use tokio::runtime::Handle;
@@ -26,7 +26,7 @@ pub trait SpeakRequester: Send + Sync {
 /// time at which `forge::sleep` must stop sleeping to respect the wall-time budget.
 pub struct ForgeApi {
     publisher: Arc<dyn EventPublisher>,
-    dp: Arc<dyn DataProvider>,
+    globals: Arc<dyn GlobalsRepo>,
     caused_by: EventId,
     speak: Option<Arc<dyn SpeakRequester>>,
     pub deadline: Instant,
@@ -35,13 +35,13 @@ pub struct ForgeApi {
 impl ForgeApi {
     pub fn new(
         publisher: Arc<dyn EventPublisher>,
-        dp: Arc<dyn DataProvider>,
+        globals: Arc<dyn GlobalsRepo>,
         caused_by: EventId,
         deadline: Instant,
     ) -> Self {
         Self {
             publisher,
-            dp,
+            globals,
             caused_by,
             speak: None,
             deadline,
@@ -98,7 +98,7 @@ impl ForgeApi {
         let chat = build_chat_module(Arc::clone(&self.publisher), self.caused_by);
         root.set_sub_module("chat", chat);
 
-        let globals = build_globals_module(self.publisher, self.caused_by, self.dp);
+        let globals = build_globals_module(self.publisher, self.caused_by, self.globals);
         root.set_sub_module("globals", globals);
 
         root.set_sub_module("audio", Module::new());
@@ -228,15 +228,15 @@ fn build_chat_module(publisher: Arc<dyn EventPublisher>, caused_by: EventId) -> 
 fn build_globals_module(
     publisher: Arc<dyn EventPublisher>,
     caused_by: EventId,
-    dp: Arc<dyn DataProvider>,
+    globals: Arc<dyn GlobalsRepo>,
 ) -> Module {
     let mut m = Module::new();
 
-    let dp_get = Arc::clone(&dp);
+    let globals_get = Arc::clone(&globals);
     m.set_native_fn(
         "get",
         move |key: ImmutableString| -> Result<rhai::Dynamic, Box<EvalAltResult>> {
-            match Handle::current().block_on(GlobalsRepo::get(dp_get.as_ref(), key.as_str())) {
+            match Handle::current().block_on(globals_get.get(key.as_str())) {
                 Ok(Some(v)) => Ok(variant_to_dynamic(v)),
                 Ok(None) => Ok(rhai::Dynamic::UNIT),
                 Err(e) => Err(e.to_string().into()),
@@ -244,7 +244,7 @@ fn build_globals_module(
         },
     );
 
-    let dp_set = Arc::clone(&dp);
+    let globals_set = Arc::clone(&globals);
     let pub_set = Arc::clone(&publisher);
     m.set_native_fn(
         "set",
@@ -257,12 +257,7 @@ fn build_globals_module(
                 dynamic_to_variant(val).map_err(|e| -> Box<EvalAltResult> { e.into() })?;
             let new_value_str = variant.to_string();
             Handle::current()
-                .block_on(GlobalsRepo::set(
-                    dp_set.as_ref(),
-                    key_str,
-                    variant,
-                    persisted,
-                ))
+                .block_on(globals_set.set(key_str, variant, persisted))
                 .map_err(|e| -> Box<EvalAltResult> { e.to_string().into() })?;
             pub_set.publish(Event::caused_by(
                 EventSource::Core,
@@ -274,14 +269,14 @@ fn build_globals_module(
         },
     );
 
-    let dp_incr = Arc::clone(&dp);
+    let globals_incr = Arc::clone(&globals);
     let pub_incr = Arc::clone(&publisher);
     m.set_native_fn(
         "incr",
         move |key: ImmutableString, amount: i64| -> Result<rhai::Dynamic, Box<EvalAltResult>> {
             let key_str = key.as_str();
             let new_val = Handle::current()
-                .block_on(GlobalsRepo::incr(dp_incr.as_ref(), key_str, amount))
+                .block_on(globals_incr.incr(key_str, amount))
                 .map_err(|e| -> Box<EvalAltResult> { e.to_string().into() })?;
             let new_val_json = match &new_val {
                 Variant::Int(i) => serde_json::Value::from(*i),
@@ -297,14 +292,14 @@ fn build_globals_module(
         },
     );
 
-    let dp_del = dp;
+    let globals_del = globals;
     let pub_del = publisher;
     m.set_native_fn(
         "del",
         move |key: ImmutableString| -> Result<bool, Box<EvalAltResult>> {
             let key_str = key.as_str();
             let existed = Handle::current()
-                .block_on(GlobalsRepo::delete(dp_del.as_ref(), key_str))
+                .block_on(globals_del.delete(key_str))
                 .map_err(|e| -> Box<EvalAltResult> { e.to_string().into() })?;
             pub_del.publish(Event::caused_by(
                 EventSource::Core,
@@ -354,7 +349,7 @@ mod tests {
         let caused_by = EventId::new();
         let api = ForgeApi::new(
             Arc::new(CapturingPublisher(captured)),
-            dp,
+            dp as Arc<dyn GlobalsRepo>,
             caused_by,
             Instant::now() + std::time::Duration::from_secs(10),
         );

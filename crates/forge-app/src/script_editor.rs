@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 pub use forge_script::RunResult;
 use forge_script::{content_hash, parse_contract, run_inline};
-use forge_storage::{ScriptRecord, ScriptRepo};
+use forge_storage::{GlobalsRepo, ScriptRecord, ScriptRepo};
 use forge_types::{ArgStack, ScriptContract, ScriptId, Variant, VariantKind};
 use forge_widgets::tokens::{FONT_SM, FONT_XS, FontRole, Spacing, font, spf};
 use forge_widgets::{CodeEditorState, ConsoleLevel, ConsoleLine, ForgePalette, ModalProps, modal};
@@ -279,7 +279,7 @@ pub fn update(
             if contract.inputs.is_empty() {
                 let script_id = open.id;
                 let script_name = open.record.name.clone();
-                let dp = Arc::clone(&rt.backend);
+                let dp = Arc::clone(&rt.backend) as Arc<dyn GlobalsRepo>;
                 let bus = Arc::clone(&rt.bus);
                 let ts = now_timestamp();
                 state.console_lines.push(ConsoleLine {
@@ -352,7 +352,7 @@ pub fn update(
             let body = open.content.text();
             let script_id = form.script_id;
             let script_name = form.script_name.clone();
-            let dp = Arc::clone(&rt.backend);
+            let dp = Arc::clone(&rt.backend) as Arc<dyn GlobalsRepo>;
             let bus = Arc::clone(&rt.bus);
             if let Some(f) = state.run_modal.as_mut() {
                 f.running = true;
@@ -1327,9 +1327,15 @@ mod tests {
             forge_runtime::EventBus::new(std::sync::Arc::new(forge_runtime::NullEventLogRepo));
         let id = ScriptId::new();
         let publisher: Arc<dyn forge_events::EventPublisher> = bus;
-        let result = run_inline("1 + 2".to_owned(), ArgStack::new(), dp, publisher, id)
-            .await
-            .unwrap();
+        let result = run_inline(
+            "1 + 2".to_owned(),
+            ArgStack::new(),
+            dp as Arc<dyn forge_storage::GlobalsRepo>,
+            publisher,
+            id,
+        )
+        .await
+        .unwrap();
         assert_eq!(result.output_display, "3");
         assert_eq!(result.script_id, id);
     }
@@ -1349,7 +1355,7 @@ mod tests {
         let result = run_inline(
             "// @input x: int\nx * 2".to_owned(),
             stack,
-            dp,
+            dp as Arc<dyn forge_storage::GlobalsRepo>,
             publisher,
             id,
         )

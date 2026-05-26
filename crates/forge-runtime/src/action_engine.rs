@@ -5,7 +5,7 @@ use std::sync::{
 
 use forge_events::{Event, EventSource};
 use forge_obs::ObsSink;
-use forge_storage::DataProvider;
+use forge_storage::{DataProvider, GlobalsRepo};
 use forge_types::{
     ActionId, ArgStack, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome,
     SubActionOutcome, SubActionSpec,
@@ -242,7 +242,7 @@ impl ActionEngine {
                 index,
                 run_event_id,
                 &self.bus,
-                Arc::clone(&self.dp),
+                Arc::clone(&self.dp) as Arc<dyn GlobalsRepo>,
                 Some(self.registry.as_ref()),
                 self.obs_sink.clone(),
                 self.sound_player.as_ref(),
@@ -297,7 +297,7 @@ impl ActionEngine {
                     index,
                     run_event_id,
                     &self.bus,
-                    Arc::clone(&self.dp),
+                    Arc::clone(&self.dp) as Arc<dyn GlobalsRepo>,
                     Some(self.registry.as_ref()),
                     self.obs_sink.clone(),
                     self.sound_player.as_ref(),
@@ -348,7 +348,7 @@ async fn run_quick_action_loop(
             0,
             run_event_id,
             &bus,
-            Arc::clone(&dp),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             Some(registry.as_ref()),
             obs_sink.clone(),
             sound_player.as_ref(),

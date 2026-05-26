@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use forge_events::{Event, EventSource};
 use forge_script::{Engine, EngineConfig, ForgeApi, ScriptError, build_scope_for_contract};
-use forge_storage::DataProvider;
+use forge_storage::GlobalsRepo;
 use forge_types::{ArgStack, EventId, SubActionOutcome, SubActionTelemetry};
 use serde_json::json;
 use time::OffsetDateTime;
@@ -17,7 +17,7 @@ pub(super) async fn run(
     index: usize,
     parent_event_id: EventId,
     bus: &Arc<EventBus>,
-    dp: Arc<dyn DataProvider>,
+    globals: Arc<dyn GlobalsRepo>,
     registry: &ScriptRegistry,
 ) -> (SubActionTelemetry, Option<ArgStack>) {
     let name = arg_stack.interpolate(script_name);
@@ -44,7 +44,7 @@ pub(super) async fn run(
     let arg_stack_clone = arg_stack.clone();
     let bus_arc: Arc<EventBus> = Arc::clone(bus);
     let publisher: Arc<dyn forge_events::EventPublisher> = bus_arc;
-    let dp_for_api = Arc::clone(&dp);
+    let globals_for_api = Arc::clone(&globals);
     let speak_requester = registry.speak_requester();
 
     let exec_event = Event::caused_by(
@@ -68,7 +68,7 @@ pub(super) async fn run(
         })?;
         let cfg = EngineConfig::default();
         let deadline = Instant::now() + Duration::from_millis(cfg.wall_time_ms);
-        let mut api = ForgeApi::new(publisher, dp_for_api, parent_event_id, deadline);
+        let mut api = ForgeApi::new(publisher, globals_for_api, parent_event_id, deadline);
         if let Some(req) = speak_requester {
             api = api.with_speak_requester(req);
         }

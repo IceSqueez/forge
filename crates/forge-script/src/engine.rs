@@ -176,7 +176,7 @@ mod tests {
     fn make_api(dp: Arc<SqliteBackend>) -> ForgeApi {
         ForgeApi::new(
             Arc::new(MockPublisher),
-            dp,
+            dp as Arc<dyn GlobalsRepo>,
             EventId::new(),
             Instant::now() + std::time::Duration::from_secs(10),
         )
@@ -185,7 +185,7 @@ mod tests {
     fn make_api_with_wall_ms(dp: Arc<SqliteBackend>, wall_ms: u64) -> ForgeApi {
         ForgeApi::new(
             Arc::new(MockPublisher),
-            dp,
+            dp as Arc<dyn GlobalsRepo>,
             EventId::new(),
             Instant::now() + std::time::Duration::from_millis(wall_ms),
         )
@@ -332,7 +332,7 @@ mod tests {
         let expired_deadline = Instant::now() - Duration::from_millis(50);
         let api = ForgeApi::new(
             Arc::new(MockPublisher),
-            dp,
+            dp as Arc<dyn GlobalsRepo>,
             EventId::new(),
             expired_deadline,
         );
@@ -432,7 +432,7 @@ mod tests {
         let caused_by = EventId::new();
         let api = ForgeApi::new(
             publisher,
-            dp,
+            dp as Arc<dyn GlobalsRepo>,
             caused_by,
             Instant::now() + std::time::Duration::from_secs(10),
         );

@@ -3,7 +3,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use forge_events::EventPublisher;
-use forge_storage::DataProvider;
+use forge_storage::GlobalsRepo;
 use forge_types::{ArgStack, EventId, ScriptId};
 
 use crate::error::ScriptError;
@@ -25,7 +25,7 @@ pub fn content_hash(body: &str) -> String {
 pub async fn run_inline(
     body: String,
     arg_stack: ArgStack,
-    dp: Arc<dyn DataProvider>,
+    globals: Arc<dyn GlobalsRepo>,
     bus: Arc<dyn EventPublisher>,
     script_id: ScriptId,
 ) -> Result<RunResult, ScriptError> {
@@ -40,7 +40,7 @@ pub async fn run_inline(
         })?;
     let cfg = EngineConfig::default();
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(cfg.wall_time_ms);
-    let api = ForgeApi::new(bus, dp, EventId::new(), deadline);
+    let api = ForgeApi::new(bus, globals, EventId::new(), deadline);
     let engine = Engine::with_api(cfg, api);
     let start = std::time::Instant::now();
     let result =

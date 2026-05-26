@@ -1,11 +1,9 @@
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-use forge_events::EventPublisher;
-use forge_script::{Engine, EngineConfig, ForgeApi, build_scope_for_contract, parse_contract};
-use forge_storage::{DataProvider, ScriptRecord, ScriptRepo};
-use forge_types::{ArgStack, EventId, ScriptContract, ScriptId, Variant, VariantKind};
+pub use forge_script::RunResult;
+use forge_script::{content_hash, parse_contract, run_inline};
+use forge_storage::{ScriptRecord, ScriptRepo};
+use forge_types::{ArgStack, ScriptContract, ScriptId, Variant, VariantKind};
 use forge_widgets::tokens::{FONT_SM, FONT_XS, FontRole, Spacing, font, spf};
 use forge_widgets::{CodeEditorState, ConsoleLevel, ConsoleLine, ForgePalette, ModalProps, modal};
 use iced::widget::{column, container, row, scrollable, text};
@@ -46,13 +44,6 @@ pub struct RunModalInputField {
     pub raw_value: String,
 }
 
-#[derive(Debug, Clone)]
-pub struct RunResult {
-    pub script_id: ScriptId,
-    pub duration_ms: u64,
-    pub output_display: String,
-}
-
 pub struct ScriptEditorState {
     pub scripts: Vec<ScriptListEntry>,
     pub selected: Option<ScriptId>,
@@ -87,12 +78,6 @@ impl Default for ScriptEditorState {
     fn default() -> Self {
         Self::new()
     }
-}
-
-fn hash_body(body: &str) -> String {
-    let mut h = DefaultHasher::new();
-    body.hash(&mut h);
-    format!("{:016x}", h.finish())
 }
 
 fn now_timestamp() -> String {
@@ -137,47 +122,6 @@ async fn load_script_list(repo: Arc<dyn ScriptRepo>) -> Result<Vec<ScriptListEnt
             enabled: r.enabled,
         })
         .collect())
-}
-
-async fn run_script_inline(
-    body: String,
-    arg_stack: ArgStack,
-    dp: Arc<dyn DataProvider>,
-    bus: Arc<forge_runtime::EventBus>,
-    script_id: ScriptId,
-) -> Result<RunResult, String> {
-    let contract = parse_contract(&body).map_err(|e| e.to_string())?;
-    let mut scope = build_scope_for_contract(&contract, &arg_stack).map_err(|e| e.to_string())?;
-    let cfg = EngineConfig::default();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(cfg.wall_time_ms);
-    let api = ForgeApi::new(
-        Arc::clone(&bus) as Arc<dyn EventPublisher>,
-        dp,
-        EventId::new(),
-        deadline,
-    );
-    let engine = Engine::with_api(cfg, api);
-    let start = std::time::Instant::now();
-    let result =
-        tokio::task::spawn_blocking(move || engine.eval_script_with_scope(&body, &mut scope))
-            .await
-            .map_err(|e| e.to_string())?;
-    let duration_ms = start.elapsed().as_millis() as u64;
-    let output_display = match result {
-        Ok(dyn_val) => {
-            if dyn_val.is_unit() {
-                "(unit)".to_string()
-            } else {
-                dyn_val.to_string()
-            }
-        }
-        Err(e) => return Err(e.to_string()),
-    };
-    Ok(RunResult {
-        script_id,
-        duration_ms,
-        output_display,
-    })
 }
 
 pub fn update(
@@ -270,7 +214,7 @@ pub fn update(
             };
             let mut record = open.record.clone();
             record.body = body.clone();
-            record.body_hash = hash_body(&body);
+            record.body_hash = content_hash(&body);
             record.contract = contract;
             record.last_modified = OffsetDateTime::now_utc();
             let dp = Arc::clone(&rt.backend);
@@ -344,7 +288,12 @@ pub fn update(
                     text: format!("running {script_name}"),
                 });
                 iced::Task::perform(
-                    async move { run_script_inline(body, ArgStack::new(), dp, bus, script_id).await },
+                    async move {
+                        let publisher: Arc<dyn forge_events::EventPublisher> = bus;
+                        run_inline(body, ArgStack::new(), dp, publisher, script_id)
+                            .await
+                            .map_err(|e| e.to_string())
+                    },
                     |r| Message::ScriptEditor(ScriptEditorMsg::RunFinished(r)),
                 )
             } else {
@@ -416,7 +365,12 @@ pub fn update(
                 text: format!("running {script_name} with inputs"),
             });
             iced::Task::perform(
-                async move { run_script_inline(body, arg_stack, dp, bus, script_id).await },
+                async move {
+                    let publisher: Arc<dyn forge_events::EventPublisher> = bus;
+                    run_inline(body, arg_stack, dp, publisher, script_id)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
                 |r| Message::ScriptEditor(ScriptEditorMsg::RunFinished(r)),
             )
         }
@@ -458,7 +412,7 @@ pub fn update(
                     let record = ScriptRecord {
                         id: ScriptId::new(),
                         name,
-                        body_hash: hash_body(&body),
+                        body_hash: content_hash(&body),
                         body,
                         contract: ScriptContract::default(),
                         enabled: true,
@@ -1160,7 +1114,7 @@ mod tests {
                 name: "test_script".to_owned(),
                 body: original.to_owned(),
                 contract: ScriptContract::default(),
-                body_hash: hash_body(original),
+                body_hash: content_hash(original),
                 enabled: true,
                 created_at: now,
                 last_modified: now,
@@ -1218,7 +1172,7 @@ mod tests {
             name: "greet".to_owned(),
             body: "1 + 1".to_owned(),
             contract: ScriptContract::default(),
-            body_hash: hash_body("1 + 1"),
+            body_hash: content_hash("1 + 1"),
             enabled: true,
             created_at: now,
             last_modified: now,
@@ -1271,7 +1225,7 @@ mod tests {
                 name: "test".to_owned(),
                 body: body.clone(),
                 contract: ScriptContract::default(),
-                body_hash: hash_body(&body),
+                body_hash: content_hash(&body),
                 enabled: true,
                 created_at: now,
                 last_modified: now,
@@ -1358,8 +1312,8 @@ mod tests {
 
     #[test]
     fn hash_body_is_deterministic() {
-        assert_eq!(hash_body("hello"), hash_body("hello"));
-        assert_ne!(hash_body("hello"), hash_body("world"));
+        assert_eq!(content_hash("hello"), content_hash("hello"));
+        assert_ne!(content_hash("hello"), content_hash("world"));
     }
 
     #[tokio::test]
@@ -1372,7 +1326,8 @@ mod tests {
         let bus =
             forge_runtime::EventBus::new(std::sync::Arc::new(forge_runtime::NullEventLogRepo));
         let id = ScriptId::new();
-        let result = run_script_inline("1 + 2".to_owned(), ArgStack::new(), dp, bus, id)
+        let publisher: Arc<dyn forge_events::EventPublisher> = bus;
+        let result = run_inline("1 + 2".to_owned(), ArgStack::new(), dp, publisher, id)
             .await
             .unwrap();
         assert_eq!(result.output_display, "3");
@@ -1390,9 +1345,16 @@ mod tests {
             forge_runtime::EventBus::new(std::sync::Arc::new(forge_runtime::NullEventLogRepo));
         let id = ScriptId::new();
         let stack = ArgStack::new().set("x".to_owned(), Variant::Int(5));
-        let result = run_script_inline("// @input x: int\nx * 2".to_owned(), stack, dp, bus, id)
-            .await
-            .unwrap();
+        let publisher: Arc<dyn forge_events::EventPublisher> = bus;
+        let result = run_inline(
+            "// @input x: int\nx * 2".to_owned(),
+            stack,
+            dp,
+            publisher,
+            id,
+        )
+        .await
+        .unwrap();
         assert_eq!(result.output_display, "10");
     }
 
@@ -1422,7 +1384,7 @@ mod tests {
             name: "my_script".to_owned(),
             body: "1".to_owned(),
             contract: ScriptContract::default(),
-            body_hash: hash_body("1"),
+            body_hash: content_hash("1"),
             enabled: true,
             created_at: now,
             last_modified: now,

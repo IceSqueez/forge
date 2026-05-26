@@ -5,6 +5,7 @@ pub mod contract;
 pub mod convert;
 pub mod engine;
 pub mod error;
+pub mod runner;
 
 pub use api::{ForgeApi, SpeakRequester};
 pub use contract::{
@@ -12,3 +13,4 @@ pub use contract::{
 };
 pub use engine::{Engine, EngineConfig, validate_syntax};
 pub use error::ScriptError;
+pub use runner::{RunResult, content_hash, run_inline};

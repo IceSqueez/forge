@@ -6,7 +6,7 @@ use iced::{Alignment, Background, Border, Color, Element, Length, Shadow, Task, 
 use forge_events::EventPublisher;
 use forge_obs::{ObsError, ObsServerInfo, test_connect};
 use forge_runtime::EventBus;
-use forge_storage::{CredentialId, CredentialsRepo};
+use forge_storage::CredentialsRepo;
 
 use forge_widgets::ForgePalette;
 use forge_widgets::icons::{Icon, tabler_icon};
@@ -14,8 +14,6 @@ use forge_widgets::tokens::{FONT_SM, FONT_XS, FontRole, Spacing, font, sp, spf};
 
 use crate::Message;
 use crate::runtime_view::RuntimeView;
-
-const OBS_CREDENTIAL_ID: &str = "obs:default";
 
 #[derive(Debug, Clone)]
 pub struct ObsConnectionForm {
@@ -105,12 +103,7 @@ pub async fn save_obs_credentials(
     port: u16,
     password: String,
 ) -> Result<(), String> {
-    let bundle = serde_json::json!({
-        "url": format!("ws://{host}:{port}"),
-        "password": password,
-    });
-    creds
-        .store(&CredentialId::new(OBS_CREDENTIAL_ID), &bundle.to_string())
+    forge_obs::credentials::store(&*creds, &host, port, &password)
         .await
         .map_err(|e| e.to_string())
 }
@@ -122,7 +115,9 @@ pub async fn connect_obs_from_form(
     port: u16,
     password: String,
 ) -> Result<crate::message::ObsClientRef, String> {
-    save_obs_credentials(Arc::clone(&creds), host.clone(), port, password.clone()).await?;
+    forge_obs::credentials::store(&*creds, &host, port, &password)
+        .await
+        .map_err(|e| e.to_string())?;
     let publisher: Arc<dyn EventPublisher> = bus;
     let pw: Option<&str> = if password.is_empty() {
         None

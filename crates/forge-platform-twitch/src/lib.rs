@@ -4,6 +4,7 @@ pub mod auth;
 pub mod builtin;
 pub mod chat;
 pub mod chat_send_bridge;
+pub mod credentials;
 pub mod subscriptions;
 
 pub use auth::{

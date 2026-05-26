@@ -4,6 +4,7 @@
 
 pub mod catalog;
 pub mod client;
+pub mod credentials;
 pub mod error;
 mod events;
 pub mod health;

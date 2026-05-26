@@ -8,9 +8,9 @@ use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, QuickActions, SectionIcon,
 };
 use forge_platform_twitch::{
-    TWITCH_BROADCASTER_SCOPES, TwitchAuthBundle, TwitchAuthFlow, TwitchIntegrationBundle, UserInfo,
+    TWITCH_BROADCASTER_SCOPES, TwitchAuthFlow, TwitchIntegrationBundle, UserInfo,
 };
-use forge_storage::{CredentialId, CredentialsRepo};
+use forge_storage::CredentialsRepo;
 use forge_types::OAuthToken;
 use forge_widgets::ForgePalette;
 use forge_widgets::icons::{Icon, tabler_icon};
@@ -20,8 +20,6 @@ use tokio::sync::Mutex as TokioMutex;
 use crate::Message;
 use crate::builtin_detail::BuiltinDetailState;
 use crate::runtime_view::RuntimeView;
-
-const TWITCH_CREDENTIAL_ID: &str = "twitch:broadcaster";
 
 /// Shared handle to an in-progress device code flow. Wrapped in a tokio Mutex
 /// so `request_code` (which calls `TwitchAuthFlow::start`) and `wait_for_auth`
@@ -57,42 +55,20 @@ pub async fn wait_for_auth(
     flow: TwitchFlowHandle,
     credentials: Arc<dyn CredentialsRepo>,
 ) -> Result<TwitchAuthOutcome, String> {
-    let TwitchAuthBundle {
-        access_token,
-        user_info,
-        client_id,
-        expires_at,
-    } = {
+    let bundle = {
         let mut guard = flow.lock().await;
         guard
             .wait_for_authorization()
             .await
             .map_err(|e| e.to_string())?
     };
-
-    let expires_at_unix: Option<i64> = expires_at.and_then(|t| {
-        t.duration_since(std::time::UNIX_EPOCH)
-            .ok()
-            .map(|d| d.as_secs() as i64)
-    });
-    let bundle = serde_json::json!({
-        "access_token": access_token.expose(),
-        "user_id": user_info.id,
-        "login": user_info.login,
-        "expires_at_unix": expires_at_unix,
-    });
-    credentials
-        .store(
-            &CredentialId::new(TWITCH_CREDENTIAL_ID),
-            &bundle.to_string(),
-        )
+    forge_platform_twitch::credentials::store(&*credentials, &bundle)
         .await
         .map_err(|e| e.to_string())?;
-
     Ok(TwitchAuthOutcome {
-        token: access_token,
-        user_info,
-        client_id,
+        token: bundle.access_token,
+        user_info: bundle.user_info,
+        client_id: bundle.client_id,
     })
 }
 

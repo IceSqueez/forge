@@ -2286,6 +2286,7 @@ dependencies = [
  "async-trait",
  "forge-events",
  "forge-platform-core",
+ "forge-storage",
  "forge-types",
  "futures-core",
  "futures-util",

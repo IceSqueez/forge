@@ -12,6 +12,7 @@ workspace = true
 [dependencies]
 forge-events        = { path = "../forge-events" }
 forge-platform-core = { path = "../forge-platform-core" }
+forge-storage       = { path = "../forge-storage" }
 forge-types         = { path = "../forge-types" }
 
 obws         = { version = "0.15", features = ["events"] }

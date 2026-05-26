@@ -5,6 +5,7 @@ mod buf;
 pub mod bus;
 pub mod code_trigger;
 pub mod command_parser;
+pub mod dashboard;
 pub mod obs_trigger;
 pub mod queue_scheduler;
 pub mod script_registry;

@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
 use forge_events::Event;
-use forge_storage::{DataProvider, GlobalsRepo};
+use forge_storage::GlobalsRepo;
 use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::tokens::{FONT_MD, FONT_SM, FONT_XS, Spacing, sp, spf};
 use forge_widgets::{FontRole, ForgePalette, Radius, font, radius};
 use iced::{Element, Length, Task, Theme};
 
 use crate::app::App;
-use crate::message::{HomeMsg, HomeStatsData, Message};
+use crate::message::{HomeMsg, Message};
 use crate::page_chrome::simple_page_header;
 use crate::runtime_view::RuntimeView;
 use crate::screen::Screen;
@@ -37,9 +37,18 @@ pub fn on_event(state: &mut HomeStats, event: &Event) -> Task<Message> {
 pub fn update(state: &mut HomeStats, rt: &RuntimeView, msg: HomeMsg) -> Task<Message> {
     match msg {
         HomeMsg::LoadStats => {
-            let dp = Arc::clone(&rt.backend);
+            let actions = rt.backend.action_repo();
+            let commands = rt.backend.command_repo();
+            let globals: Arc<dyn GlobalsRepo> = Arc::clone(&rt.backend) as Arc<dyn GlobalsRepo>;
+            let history = rt.backend.history_repo();
             Task::perform(
-                async move { load_home_stats(dp).await.map_err(|e| e.to_string()) },
+                async move {
+                    forge_runtime::dashboard::compute_stats(
+                        &*actions, &*commands, &*globals, &*history,
+                    )
+                    .await
+                    .map_err(|e| e.to_string())
+                },
                 |r| Message::Home(HomeMsg::StatsLoaded(r)),
             )
         }
@@ -55,38 +64,6 @@ pub fn update(state: &mut HomeStats, rt: &RuntimeView, msg: HomeMsg) -> Task<Mes
             Task::none()
         }
     }
-}
-
-async fn load_home_stats(dp: Arc<dyn DataProvider>) -> Result<HomeStatsData, String> {
-    let actions = dp
-        .action_repo()
-        .list()
-        .await
-        .map_err(|e| e.to_string())?
-        .len();
-    let commands = dp
-        .command_repo()
-        .list()
-        .await
-        .map_err(|e| e.to_string())?
-        .len();
-    let globals = {
-        let g: &dyn GlobalsRepo = &*dp;
-        g.list().await.map_err(|e| e.to_string())?.len()
-    };
-    let since = time::OffsetDateTime::now_utc() - time::Duration::hours(24);
-    let stats = dp
-        .history_repo()
-        .stats_summary(since)
-        .await
-        .map_err(|e| e.to_string())?;
-    let triggers_fired: u64 = stats.values().map(|s| u64::from(s.runs_24h)).sum();
-    Ok(HomeStatsData {
-        actions_count: actions,
-        commands_count: commands,
-        triggers_fired,
-        globals_count: globals,
-    })
 }
 
 fn home_inline_button<'a>(

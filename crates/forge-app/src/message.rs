@@ -59,13 +59,7 @@ impl Clone for ObsClientRef {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct HomeStatsData {
-    pub actions_count: usize,
-    pub commands_count: usize,
-    pub triggers_fired: u64,
-    pub globals_count: usize,
-}
+pub use forge_runtime::dashboard::DashboardStats as HomeStatsData;
 
 #[derive(Debug, Clone)]
 pub enum HomeMsg {

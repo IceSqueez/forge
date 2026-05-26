@@ -1,28 +1,25 @@
 use forge_events::{Event, EventSource};
-use forge_storage::{ActionTelemetry, DataProvider, StorageError};
-use forge_types::{Action, ActionId, ClipId, Command, SubActionSpec, Trigger};
+use forge_storage::ActionTelemetry;
+use forge_types::ActionId;
 use iced::Task;
 use std::sync::Arc;
-use time::OffsetDateTime;
 
 use crate::Message;
 use crate::message::{ActionEditorMsg, ActionsMsg, ToastMsg};
 use crate::runtime_view::RuntimeView;
 use crate::test_trigger::synthesize_test_event;
 
-#[derive(Debug, Clone)]
-pub struct ActionSummary {
-    pub id: ActionId,
-    pub name: String,
-    pub enabled: bool,
-    pub sub_action_count: u16,
-    pub trigger_category: TriggerCategory,
-    pub trigger_label: String,
-    pub queue_name: String,
-    pub last_ran: Option<OffsetDateTime>,
-    pub runs_24h: u32,
-    pub extra_subtitle: Option<String>,
-}
+pub use forge_runtime::actions::{ActionDetail, ActionSummary};
+
+pub use crate::actions_forms::{
+    AddActionForm, AddActionMsg, AddSubActionForm, AddSubActionMsg, AddTriggerForm, AddTriggerMsg,
+    RemoveSubActionMsg, SubActionConfigForm, SubActionKindChoice, TriggerConfigForm,
+};
+pub use crate::actions_telemetry::{action_stat, format_relative_time, telemetry_grid};
+pub use crate::actions_trigger_kinds::{
+    ActionsFilter, TriggerCategory, all_trigger_kinds, category_of, kind_label, kind_search_text,
+    kind_summary, trigger_label_of,
+};
 
 #[derive(Debug, Clone)]
 pub struct ActionsGroup {
@@ -31,24 +28,30 @@ pub struct ActionsGroup {
     pub actions: Vec<ActionSummary>,
 }
 
-#[derive(Debug, Clone)]
-pub struct ActionDetail {
-    pub action: Action,
-    pub triggers: Vec<Trigger>,
-    pub commands: Vec<Command>,
-    /// Rolling average duration (ms) per sub-action index across recent executions.
-    /// `None` at an index means no telemetry yet recorded for that step.
-    pub sub_action_avg_ms: Vec<Option<u64>>,
+pub fn group_summaries(summaries: Vec<ActionSummary>) -> Vec<ActionsGroup> {
+    let mut by_category: std::collections::BTreeMap<TriggerCategory, Vec<ActionSummary>> =
+        std::collections::BTreeMap::new();
+    for summary in summaries {
+        let category = summary
+            .first_trigger_kind
+            .as_ref()
+            .map(category_of)
+            .unwrap_or(TriggerCategory::Ungrouped);
+        by_category.entry(category).or_default().push(summary);
+    }
+    by_category
+        .into_iter()
+        .map(|(category, mut actions)| {
+            actions.sort_by_key(|a| a.name.to_lowercase());
+            let fired_24h = actions.iter().map(|a| a.runs_24h).sum();
+            ActionsGroup {
+                category,
+                fired_24h,
+                actions,
+            }
+        })
+        .collect()
 }
-
-pub use crate::actions_forms::{
-    AddActionForm, AddActionMsg, AddSubActionForm, AddSubActionMsg, AddTriggerForm, AddTriggerMsg,
-    RemoveSubActionMsg, SubActionConfigForm, SubActionKindChoice, TriggerConfigForm,
-};
-pub use crate::actions_trigger_kinds::{
-    ActionsFilter, TriggerCategory, all_trigger_kinds, category_of, kind_label, kind_search_text,
-    kind_summary, trigger_label_of,
-};
 
 #[derive(Default)]
 pub struct ActionsState {
@@ -88,233 +91,32 @@ impl ActionsState {
     }
 
     pub fn action_passes_filter(&self, summary: &ActionSummary) -> bool {
+        let category = summary
+            .first_trigger_kind
+            .as_ref()
+            .map(category_of)
+            .unwrap_or(TriggerCategory::Ungrouped);
         let filter_ok = match self.filter {
             ActionsFilter::All => true,
-            ActionsFilter::Chat => summary.trigger_category == TriggerCategory::Chat,
-            ActionsFilter::Timers => summary.trigger_category == TriggerCategory::Timer,
+            ActionsFilter::Chat => category == TriggerCategory::Chat,
+            ActionsFilter::Timers => category == TriggerCategory::Timer,
             ActionsFilter::Points => false,
         };
         let search_ok = if self.search.is_empty() {
             true
         } else {
             let q = self.search.to_lowercase();
+            let label = summary
+                .first_trigger_kind
+                .as_ref()
+                .map(trigger_label_of)
+                .unwrap_or_default();
             summary.name.to_lowercase().contains(&q)
-                || summary.trigger_label.to_lowercase().contains(&q)
+                || label.to_lowercase().contains(&q)
                 || summary.queue_name.to_lowercase().contains(&q)
         };
         filter_ok && search_ok
     }
-}
-
-pub async fn load_actions_tree(
-    dp: Arc<dyn DataProvider>,
-) -> Result<Vec<ActionsGroup>, StorageError> {
-    let actions = dp.action_repo().list().await?;
-    let all_queues = dp.queue_repo().list().await?;
-    let since = OffsetDateTime::now_utc() - time::Duration::hours(24);
-    let stats = dp.history_repo().stats_summary(since).await?;
-
-    let mut by_category: std::collections::BTreeMap<TriggerCategory, Vec<ActionSummary>> =
-        std::collections::BTreeMap::new();
-
-    for action in actions {
-        let action_triggers = dp.trigger_repo().list_for_action(action.id).await?;
-
-        let (trigger_category, trigger_label) = action_triggers
-            .first()
-            .map(|t| (category_of(&t.kind), trigger_label_of(&t.kind)))
-            .unwrap_or((TriggerCategory::Ungrouped, "\u{2014}".to_string()));
-
-        let queue_name = all_queues
-            .iter()
-            .find(|q| q.id == action.queue_id)
-            .map(|q| q.name.clone())
-            .unwrap_or_else(|| "Default".to_string());
-
-        let (last_ran, runs_24h) = stats
-            .get(&action.id)
-            .map(|s| (Some(s.last_ran_at), s.runs_24h))
-            .unwrap_or((None, 0));
-
-        let summary = ActionSummary {
-            id: action.id,
-            name: action.name,
-            enabled: action.enabled,
-            sub_action_count: action.sub_actions.len() as u16,
-            trigger_category: trigger_category.clone(),
-            trigger_label,
-            queue_name,
-            last_ran,
-            runs_24h,
-            extra_subtitle: None,
-        };
-
-        by_category
-            .entry(trigger_category)
-            .or_default()
-            .push(summary);
-    }
-
-    let result = by_category
-        .into_iter()
-        .map(|(category, mut actions)| {
-            actions.sort_by_key(|a| a.name.to_lowercase());
-            let fired_24h = actions.iter().map(|a| a.runs_24h).sum();
-            ActionsGroup {
-                category,
-                fired_24h,
-                actions,
-            }
-        })
-        .collect();
-
-    Ok(result)
-}
-
-pub async fn load_action_detail(
-    dp: Arc<dyn DataProvider>,
-    id: ActionId,
-) -> Result<ActionDetail, StorageError> {
-    let action = dp
-        .action_repo()
-        .get(id)
-        .await?
-        .ok_or_else(|| StorageError::NotFound {
-            key: id.to_string(),
-        })?;
-    let triggers = dp.trigger_repo().list_for_action(id).await?;
-    let all_commands = dp.command_repo().list().await?;
-    let commands: Vec<_> = all_commands
-        .into_iter()
-        .filter(|c| c.action_id == id)
-        .collect();
-
-    let recent = dp.history_repo().recent_for_action(id, 20).await?;
-    let sub_action_avg_ms = compute_sub_action_averages(&recent, action.sub_actions.len());
-
-    Ok(ActionDetail {
-        action,
-        triggers,
-        commands,
-        sub_action_avg_ms,
-    })
-}
-
-fn compute_sub_action_averages(
-    history: &[forge_types::ExecutionContext],
-    sub_action_count: usize,
-) -> Vec<Option<u64>> {
-    let mut sums: Vec<u64> = vec![0; sub_action_count];
-    let mut counts: Vec<u64> = vec![0; sub_action_count];
-    for ctx in history {
-        for t in &ctx.telemetry {
-            if t.index < sub_action_count {
-                sums[t.index] += t.duration_ms;
-                counts[t.index] += 1;
-            }
-        }
-    }
-    sums.iter()
-        .zip(counts.iter())
-        .map(|(s, c)| if *c > 0 { Some(s / c) } else { None })
-        .collect()
-}
-
-pub async fn save_sub_action(
-    dp: Arc<dyn DataProvider>,
-    action_id: ActionId,
-    spec: SubActionSpec,
-    editing_index: Option<usize>,
-) -> Result<(), StorageError> {
-    let Some(mut action) = dp.action_repo().get(action_id).await? else {
-        return Err(StorageError::NotFound {
-            key: action_id.to_string(),
-        });
-    };
-    if let Some(idx) = editing_index {
-        if idx < action.sub_actions.len() {
-            action.sub_actions[idx] = spec;
-        } else {
-            action.sub_actions.push(spec);
-        }
-    } else {
-        action.sub_actions.push(spec);
-    }
-    dp.action_repo().save(&action).await
-}
-
-pub async fn load_telemetry(
-    dp: Arc<dyn DataProvider>,
-    id: ActionId,
-) -> Result<ActionTelemetry, String> {
-    dp.action_repo()
-        .telemetry(id)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-pub use crate::actions_telemetry::{action_stat, format_relative_time, telemetry_grid};
-
-pub async fn load_clip_options(dp: Arc<dyn DataProvider>) -> Vec<(ClipId, String)> {
-    dp.soundboard_clips_repo()
-        .list()
-        .await
-        .map(|clips| clips.into_iter().map(|c| (c.id, c.name)).collect())
-        .unwrap_or_default()
-}
-
-pub async fn move_sub_action(
-    dp: Arc<dyn DataProvider>,
-    action_id: ActionId,
-    from: usize,
-    to: usize,
-) -> Result<ActionId, StorageError> {
-    let Some(mut action) = dp.action_repo().get(action_id).await? else {
-        return Err(StorageError::NotFound {
-            key: action_id.to_string(),
-        });
-    };
-    let len = action.sub_actions.len();
-    if from < len && to < len && from != to {
-        let item = action.sub_actions.remove(from);
-        action.sub_actions.insert(to, item);
-        dp.action_repo().save(&action).await?;
-    }
-    Ok(action_id)
-}
-
-pub async fn duplicate_sub_action(
-    dp: Arc<dyn DataProvider>,
-    action_id: ActionId,
-    index: usize,
-) -> Result<ActionId, StorageError> {
-    let Some(mut action) = dp.action_repo().get(action_id).await? else {
-        return Err(StorageError::NotFound {
-            key: action_id.to_string(),
-        });
-    };
-    if index < action.sub_actions.len() {
-        let copy = action.sub_actions[index].clone();
-        action.sub_actions.insert(index + 1, copy);
-        dp.action_repo().save(&action).await?;
-    }
-    Ok(action_id)
-}
-
-pub async fn remove_sub_action(
-    dp: Arc<dyn DataProvider>,
-    action_id: ActionId,
-    index: usize,
-) -> Result<(), StorageError> {
-    let Some(mut action) = dp.action_repo().get(action_id).await? else {
-        return Err(StorageError::NotFound {
-            key: action_id.to_string(),
-        });
-    };
-    if index < action.sub_actions.len() {
-        action.sub_actions.remove(index);
-    }
-    dp.action_repo().save(&action).await
 }
 
 pub fn action_rename_input_id() -> iced::advanced::widget::Id {
@@ -325,20 +127,20 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
     match msg {
         ActionsMsg::LoadRequested => {
             state.loading = true;
-            let dp = Arc::clone(&rt.backend);
+            let service = Arc::clone(&rt.actions);
             Task::perform(
-                async move { load_actions_tree(dp).await.map_err(|e| e.to_string()) },
-                |r| Message::Actions(ActionsMsg::TreeLoaded(r)),
+                async move { service.list_summaries().await.map_err(|e| e.to_string()) },
+                |r| Message::Actions(ActionsMsg::SummariesLoaded(r)),
             )
         }
-        ActionsMsg::TreeLoaded(Ok(tree)) => {
-            state.tree = tree;
+        ActionsMsg::SummariesLoaded(Ok(summaries)) => {
+            state.tree = group_summaries(summaries);
             state.loading = false;
             Task::none()
         }
-        ActionsMsg::TreeLoaded(Err(e)) => {
+        ActionsMsg::SummariesLoaded(Err(e)) => {
             state.loading = false;
-            tracing::warn!(error = %e, "actions tree load failed");
+            tracing::warn!(error = %e, "actions summaries load failed");
             Task::none()
         }
         ActionsMsg::ActionSelected(id) => {
@@ -355,15 +157,26 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
             state.detail = None;
             state.telemetry = None;
             state.telemetry_loading = true;
-            let dp1 = Arc::clone(&rt.backend);
-            let dp2 = Arc::clone(&rt.backend);
+            let service_detail = Arc::clone(&rt.actions);
+            let service_tele = Arc::clone(&rt.actions);
             let detail_task = Task::perform(
-                async move { load_action_detail(dp1, id).await.map_err(|e| e.to_string()) },
+                async move {
+                    service_detail
+                        .load_detail(id)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
                 |r| Message::Actions(ActionsMsg::DetailLoaded(r)),
             );
-            let telemetry_task = Task::perform(async move { load_telemetry(dp2, id).await }, |r| {
-                Message::Actions(ActionsMsg::TelemetryLoaded(r))
-            });
+            let telemetry_task = Task::perform(
+                async move {
+                    service_tele
+                        .load_telemetry(id)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                |r| Message::Actions(ActionsMsg::TelemetryLoaded(r)),
+            );
             Task::batch([detail_task, telemetry_task])
         }
         ActionsMsg::DetailLoaded(Ok(detail)) => {
@@ -412,12 +225,10 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
         }
         ActionsMsg::TestTrigger(id) => {
             let bus = Arc::clone(&rt.bus);
-            let dp = Arc::clone(&rt.backend);
+            let service = Arc::clone(&rt.actions);
             Task::perform(
                 async move {
-                    let detail = load_action_detail(Arc::clone(&dp), id)
-                        .await
-                        .map_err(|e| e.to_string())?;
+                    let detail = service.load_detail(id).await.map_err(|e| e.to_string())?;
                     let event = match detail.triggers.first() {
                         Some(trigger) => synthesize_test_event(trigger, &detail.commands),
                         None => Event::new(
@@ -686,12 +497,17 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use forge_runtime::actions::ActionsService;
     use forge_storage::DataProvider;
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::{
-        Action, ActionId, CommandId, CommandPermission, LogLevel, Queue, QueueId, TriggerId,
-        TriggerKind,
+        Action, ActionId, Command, CommandId, CommandPermission, LogLevel, Queue, QueueId,
+        SubActionSpec, Trigger, TriggerId, TriggerKind,
     };
+
+    fn make_service(dp: Arc<dyn DataProvider>) -> ActionsService {
+        ActionsService::new(dp)
+    }
 
     #[test]
     fn form_invalid_when_name_is_empty() {
@@ -873,7 +689,7 @@ mod tests {
     #[tokio::test]
     async fn empty_db_yields_empty_tree() {
         let dp = open_backend().await;
-        let tree = load_actions_tree(dp).await.unwrap();
+        let tree = group_summaries(make_service(dp).list_summaries().await.unwrap());
         assert!(tree.is_empty());
     }
 
@@ -885,7 +701,7 @@ mod tests {
         dp.action_repo().save(&a1).await.unwrap();
         dp.action_repo().save(&a2).await.unwrap();
 
-        let tree = load_actions_tree(dp).await.unwrap();
+        let tree = group_summaries(make_service(dp).list_summaries().await.unwrap());
         assert_eq!(tree.len(), 1);
         assert_eq!(tree[0].category, TriggerCategory::Ungrouped);
         assert_eq!(tree[0].actions.len(), 2);
@@ -905,7 +721,7 @@ mod tests {
         };
         dp.trigger_repo().save(&t).await.unwrap();
 
-        let tree = load_actions_tree(dp).await.unwrap();
+        let tree = group_summaries(make_service(dp).list_summaries().await.unwrap());
         assert_eq!(tree.len(), 1);
         assert_eq!(tree[0].category, TriggerCategory::Chat);
     }
@@ -916,7 +732,7 @@ mod tests {
         let a = make_action(&dp, "!quote", None).await;
         dp.action_repo().save(&a).await.unwrap();
 
-        let tree = load_actions_tree(dp).await.unwrap();
+        let tree = group_summaries(make_service(dp).list_summaries().await.unwrap());
         assert_eq!(tree.len(), 1);
         assert_eq!(tree[0].category, TriggerCategory::Ungrouped);
     }
@@ -925,7 +741,7 @@ mod tests {
     async fn load_action_detail_not_found_returns_error() {
         let dp = open_backend().await;
         let missing_id = ActionId::new();
-        let result = load_action_detail(dp, missing_id).await;
+        let result = make_service(dp).load_detail(missing_id).await;
         assert!(result.is_err());
     }
 
@@ -935,7 +751,7 @@ mod tests {
         let a = make_action(&dp, "!quote", Some("Chat Commands")).await;
         dp.action_repo().save(&a).await.unwrap();
 
-        let detail = load_action_detail(dp, a.id).await.unwrap();
+        let detail = make_service(dp).load_detail(a.id).await.unwrap();
         assert_eq!(detail.action.name, "!quote");
         assert!(detail.triggers.is_empty());
         assert!(detail.commands.is_empty());
@@ -968,7 +784,7 @@ mod tests {
         dp.trigger_repo().save(&trigger).await.unwrap();
         dp.command_repo().save(&cmd).await.unwrap();
 
-        let detail = load_action_detail(dp, action.id).await.unwrap();
+        let detail = make_service(dp).load_detail(action.id).await.unwrap();
         assert_eq!(detail.triggers.len(), 1);
         assert_eq!(detail.commands.len(), 1);
         assert_eq!(detail.commands[0].name, "!quote");
@@ -988,7 +804,7 @@ mod tests {
         };
         dp.trigger_repo().save(&trigger).await.unwrap();
 
-        let detail = load_action_detail(dp, action.id).await.unwrap();
+        let detail = make_service(dp).load_detail(action.id).await.unwrap();
         assert_eq!(detail.triggers.len(), 1);
         assert!(detail.commands.is_empty());
     }
@@ -1068,14 +884,14 @@ mod tests {
     fn add_sub_action_form_play_sound_valid_with_clip() {
         let mut form = AddSubActionForm::new(ActionId::new());
         form.kind = SubActionKindChoice::PlaySound;
-        form.config.play_sound_clip_id = Some(ClipId::new());
+        form.config.play_sound_clip_id = Some(forge_types::ClipId::new());
         assert!(form.is_valid());
     }
 
     #[tokio::test]
     async fn load_clip_options_empty_db_returns_empty() {
         let dp = open_backend().await;
-        let clips = load_clip_options(dp).await;
+        let clips = make_service(dp).list_clip_options().await;
         assert!(clips.is_empty());
     }
 
@@ -1089,7 +905,8 @@ mod tests {
             message: "Hello %user%!".to_string(),
             target: "twitch".to_string(),
         };
-        save_sub_action(Arc::clone(&dp), action.id, spec.clone(), None)
+        make_service(Arc::clone(&dp))
+            .save_sub_action(action.id, spec.clone(), None)
             .await
             .unwrap();
 
@@ -1108,7 +925,8 @@ mod tests {
             name: "counter".to_string(),
             value: "1".to_string(),
         };
-        save_sub_action(Arc::clone(&dp), action.id, spec.clone(), None)
+        make_service(Arc::clone(&dp))
+            .save_sub_action(action.id, spec.clone(), None)
             .await
             .unwrap();
 
@@ -1123,7 +941,8 @@ mod tests {
         dp.action_repo().save(&action).await.unwrap();
 
         let spec = SubActionSpec::Delay { ms: 500 };
-        save_sub_action(Arc::clone(&dp), action.id, spec.clone(), None)
+        make_service(Arc::clone(&dp))
+            .save_sub_action(action.id, spec.clone(), None)
             .await
             .unwrap();
 
@@ -1144,7 +963,8 @@ mod tests {
         ];
         dp.action_repo().save(&action).await.unwrap();
 
-        remove_sub_action(Arc::clone(&dp), action.id, 0)
+        make_service(Arc::clone(&dp))
+            .remove_sub_action(action.id, 0)
             .await
             .unwrap();
 
@@ -1160,7 +980,8 @@ mod tests {
         action.sub_actions = vec![SubActionSpec::Delay { ms: 250 }];
         dp.action_repo().save(&action).await.unwrap();
 
-        remove_sub_action(Arc::clone(&dp), action.id, 99)
+        make_service(Arc::clone(&dp))
+            .remove_sub_action(action.id, 99)
             .await
             .unwrap();
 

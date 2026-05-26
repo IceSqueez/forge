@@ -5,6 +5,7 @@ use forge_obs::ObsClient;
 use forge_platform_twitch::{ChatSendBridgeHandle, TwitchChatHandle};
 use forge_runtime::{
     ActionEngineHandle, CommandParserHandle, EventBus, QueueSchedulerHandle, ScriptRegistry,
+    actions::ActionsService,
 };
 use forge_soundboard::SoundboardPlayer;
 use forge_speak_queue::SpeakQueueHandle;
@@ -15,6 +16,7 @@ use crate::twitch_panel::TwitchFlowHandle;
 
 pub struct RuntimeView {
     pub backend: Arc<dyn DataProvider>,
+    pub actions: Arc<ActionsService>,
     pub bus: Arc<EventBus>,
     pub script_registry: Arc<ScriptRegistry>,
     pub server_subsystem: Arc<ServerSubsystem>,

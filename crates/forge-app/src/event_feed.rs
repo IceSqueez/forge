@@ -818,7 +818,11 @@ mod tests {
         let server_subsystem = Arc::new(ServerSubsystem::new(
             Arc::clone(&backend) as Arc<dyn CredentialsRepo>
         ));
+        let backend: Arc<dyn forge_storage::DataProvider> = backend;
         RuntimeView {
+            actions: Arc::new(forge_runtime::actions::ActionsService::new(Arc::clone(
+                &backend,
+            ))),
             backend,
             bus: EventBus::new(Arc::new(NullEventLogRepo)),
             script_registry: Arc::new(ScriptRegistry::new()),

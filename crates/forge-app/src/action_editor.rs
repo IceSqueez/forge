@@ -6,7 +6,6 @@ use iced::Task;
 use crate::actions::{
     ActionDetail, AddActionForm, AddActionMsg, AddSubActionForm, AddSubActionMsg, AddTriggerForm,
     AddTriggerMsg, RemoveSubActionMsg, SubActionKindChoice, TriggerConfigForm,
-    duplicate_sub_action, load_clip_options, move_sub_action, remove_sub_action, save_sub_action,
 };
 use crate::message::{ActionEditorMsg, ActionsMsg, Message, MoveSubActionMsg};
 use crate::runtime_view::RuntimeView;
@@ -333,8 +332,8 @@ pub fn add_sub_action_update(
     match msg {
         AddSubActionMsg::OpenRequested(action_id) => {
             *state = Some(AddSubActionForm::new(action_id));
-            let dp = Arc::clone(&rt.backend);
-            Task::perform(load_clip_options(dp), |clips| {
+            let service = Arc::clone(&rt.actions);
+            Task::perform(async move { service.list_clip_options().await }, |clips| {
                 Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
                     AddSubActionMsg::ClipsLoaded(clips),
                 )))
@@ -350,8 +349,8 @@ pub fn add_sub_action_update(
                 form.populate_from_spec(spec);
             }
             *state = Some(form);
-            let dp = Arc::clone(&rt.backend);
-            Task::perform(load_clip_options(dp), |clips| {
+            let service = Arc::clone(&rt.actions);
+            Task::perform(async move { service.list_clip_options().await }, |clips| {
                 Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
                     AddSubActionMsg::ClipsLoaded(clips),
                 )))
@@ -551,10 +550,11 @@ pub fn add_sub_action_update(
             if let Some(f) = state.as_mut() {
                 f.saving = true;
             }
-            let dp = Arc::clone(&rt.backend);
+            let service = Arc::clone(&rt.actions);
             Task::perform(
                 async move {
-                    save_sub_action(dp, action_id, spec, editing_index)
+                    service
+                        .save_sub_action(action_id, spec, editing_index)
                         .await
                         .map_err(|e| e.to_string())
                 },
@@ -581,10 +581,11 @@ pub fn add_sub_action_update(
             Task::none()
         }
         AddSubActionMsg::DuplicateRequested(action_id, index) => {
-            let dp = Arc::clone(&rt.backend);
+            let service = Arc::clone(&rt.actions);
             Task::perform(
                 async move {
-                    duplicate_sub_action(dp, action_id, index)
+                    service
+                        .duplicate_sub_action(action_id, index)
                         .await
                         .map_err(|e| e.to_string())
                 },
@@ -612,10 +613,11 @@ pub fn remove_sub_action_update(
 ) -> Task<Message> {
     match msg {
         RemoveSubActionMsg::Requested(action_id, index) => {
-            let dp = Arc::clone(&rt.backend);
+            let service = Arc::clone(&rt.actions);
             Task::perform(
                 async move {
-                    remove_sub_action(dp, action_id, index)
+                    service
+                        .remove_sub_action(action_id, index)
                         .await
                         .map_err(|e| e.to_string())
                 },
@@ -647,10 +649,11 @@ pub fn move_sub_action_update(
             if i == 0 {
                 return Task::none();
             }
-            let dp = Arc::clone(&rt.backend);
+            let service = Arc::clone(&rt.actions);
             Task::perform(
                 async move {
-                    move_sub_action(dp, action_id, i, i - 1)
+                    service
+                        .move_sub_action(action_id, i, i - 1)
                         .await
                         .map_err(|e| e.to_string())
                 },
@@ -665,10 +668,11 @@ pub fn move_sub_action_update(
             if total == 0 || i + 1 >= total {
                 return Task::none();
             }
-            let dp = Arc::clone(&rt.backend);
+            let service = Arc::clone(&rt.actions);
             Task::perform(
                 async move {
-                    move_sub_action(dp, action_id, i, i + 1)
+                    service
+                        .move_sub_action(action_id, i, i + 1)
                         .await
                         .map_err(|e| e.to_string())
                 },
@@ -683,10 +687,11 @@ pub fn move_sub_action_update(
             if i == 0 {
                 return Task::none();
             }
-            let dp = Arc::clone(&rt.backend);
+            let service = Arc::clone(&rt.actions);
             Task::perform(
                 async move {
-                    move_sub_action(dp, action_id, i, 0)
+                    service
+                        .move_sub_action(action_id, i, 0)
                         .await
                         .map_err(|e| e.to_string())
                 },
@@ -702,10 +707,11 @@ pub fn move_sub_action_update(
                 return Task::none();
             }
             let last = total - 1;
-            let dp = Arc::clone(&rt.backend);
+            let service = Arc::clone(&rt.actions);
             Task::perform(
                 async move {
-                    move_sub_action(dp, action_id, i, last)
+                    service
+                        .move_sub_action(action_id, i, last)
                         .await
                         .map_err(|e| e.to_string())
                 },

@@ -154,6 +154,9 @@ impl App {
             boot_time: SystemTime::now(),
             sidebar_state: SidebarExpandState::new(),
             rt: crate::runtime_view::RuntimeView {
+                actions: Arc::new(forge_runtime::actions::ActionsService::new(Arc::clone(
+                    &backend,
+                ))),
                 backend,
                 bus: EventBus::new(Arc::new(NullEventLogRepo)),
                 script_registry,
@@ -202,6 +205,9 @@ impl Default for App {
             boot_time: SystemTime::now(),
             sidebar_state: SidebarExpandState::new(),
             rt: crate::runtime_view::RuntimeView {
+                actions: Arc::new(forge_runtime::actions::ActionsService::new(Arc::clone(
+                    &backend,
+                ))),
                 backend,
                 bus: EventBus::new(Arc::new(NullEventLogRepo)),
                 script_registry: Arc::new(ScriptRegistry::new()),
@@ -616,6 +622,7 @@ mod tests {
             boot_time: std::time::SystemTime::now(),
             sidebar_state: SidebarExpandState::new(),
             rt: crate::runtime_view::RuntimeView {
+                actions: Arc::new(forge_runtime::actions::ActionsService::new(Arc::clone(&dp))),
                 backend: dp,
                 bus,
                 script_registry: registry,
@@ -661,24 +668,24 @@ mod tests {
     }
 
     #[test]
-    fn tree_loaded_ok_clears_loading_flag() {
+    fn summaries_loaded_ok_clears_loading_flag() {
         let mut app = App::default();
         app.ui.actions.loading = true;
         let _ = update(
             &mut app,
-            Message::Actions(ActionsMsg::TreeLoaded(Ok(vec![]))),
+            Message::Actions(ActionsMsg::SummariesLoaded(Ok(vec![]))),
         );
         assert!(!app.ui.actions.loading);
         assert!(app.ui.actions.tree.is_empty());
     }
 
     #[test]
-    fn tree_loaded_err_clears_loading_flag() {
+    fn summaries_loaded_err_clears_loading_flag() {
         let mut app = App::default();
         app.ui.actions.loading = true;
         let _ = update(
             &mut app,
-            Message::Actions(ActionsMsg::TreeLoaded(Err("db error".into()))),
+            Message::Actions(ActionsMsg::SummariesLoaded(Err("db error".into()))),
         );
         assert!(!app.ui.actions.loading);
     }
@@ -954,6 +961,7 @@ mod tests {
             boot_time: std::time::SystemTime::now(),
             sidebar_state: SidebarExpandState::new(),
             rt: crate::runtime_view::RuntimeView {
+                actions: Arc::new(forge_runtime::actions::ActionsService::new(Arc::clone(&dp))),
                 backend: Arc::clone(&dp),
                 bus: EventBus::new(Arc::new(NullEventLogRepo)),
                 script_registry: Arc::new(ScriptRegistry::new()),

@@ -96,7 +96,7 @@ pub enum SettingsMsg {
 #[derive(Debug, Clone)]
 pub enum ActionsMsg {
     LoadRequested,
-    TreeLoaded(Result<Vec<crate::actions::ActionsGroup>, String>),
+    SummariesLoaded(Result<Vec<crate::actions::ActionSummary>, String>),
     ActionSelected(ActionId),
     DetailLoaded(Result<crate::actions::ActionDetail, String>),
     ToggleEnabled(ActionId, bool),

@@ -6,7 +6,9 @@ use forge_app::{
     App, LiveChatMsg, Message, PlatformFilter, RuntimeView, Screen, SidebarExpandState, app::update,
 };
 use forge_events::{Event, EventSource};
-use forge_runtime::{EventBus, NullEventLogRepo, ScriptRegistry, bus_subscription};
+use forge_runtime::{
+    EventBus, NullEventLogRepo, ScriptRegistry, actions::ActionsService, bus_subscription,
+};
 use forge_storage_sqlite::SqliteBackend;
 use futures_util::StreamExt as _;
 
@@ -31,6 +33,9 @@ fn test_app() -> App {
         boot_time: std::time::SystemTime::now(),
         sidebar_state: SidebarExpandState::new(),
         rt: RuntimeView {
+            actions: Arc::new(ActionsService::new(
+                Arc::clone(&backend) as Arc<dyn forge_storage::DataProvider>
+            )),
             backend,
             bus: EventBus::new(Arc::new(NullEventLogRepo)),
             script_registry: Arc::new(ScriptRegistry::new()),

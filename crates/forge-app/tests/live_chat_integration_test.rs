@@ -62,8 +62,8 @@ fn make_twitch_chat_event(username: &str, message: &str) -> Event {
         EventSource::Twitch,
         "chat.message",
         serde_json::json!({
-            "chatter_user_name": username,
-            "message": { "text": message },
+            "username": username,
+            "message": message,
             "badges": [],
             "color": "#cba6f7",
         }),

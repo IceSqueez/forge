@@ -264,175 +264,78 @@ pub fn on_event(state: &mut LiveChatState, event: &Event) -> Task<Message> {
 }
 
 pub fn chat_row_from_event(event: &Event, next_seq: &mut u64) -> Option<ChatRow> {
+    use forge_platform_twitch::chat::parsers::TwitchChatEvent;
+
     if event.source != EventSource::Twitch {
         return None;
     }
-    let mut row = match event.kind.as_str() {
-        "chat.message" => parse_chat_message(event)?,
-        "channel.subscribe" | "channel.subscription.message" => parse_subscription(event)?,
-        "channel.cheer" => parse_cheer(event)?,
-        "channel.raid" => parse_raid(event)?,
-        _ => return None,
+    let parsed = forge_platform_twitch::parse_chat_event(event)?;
+    let timestamp = format_timestamp(event);
+    let mut row = match parsed {
+        TwitchChatEvent::Message {
+            username,
+            text,
+            badges,
+            color_hex,
+        } => ChatRow {
+            seq: 0,
+            timestamp,
+            platform: Platform::Twitch,
+            badges: badges.iter().map(twitch_badge_to_kind).collect(),
+            username,
+            username_color: color_hex_to_iced(color_hex.as_deref()),
+            body: ChatBody::Message(text),
+        },
+        TwitchChatEvent::Subscription {
+            username,
+            tier,
+            months,
+            message,
+            color_hex,
+        } => ChatRow {
+            seq: 0,
+            timestamp,
+            platform: Platform::Twitch,
+            badges: vec![],
+            username,
+            username_color: color_hex_to_iced(color_hex.as_deref()),
+            body: ChatBody::Subscription {
+                tier,
+                months,
+                message,
+                triggered_action: None,
+            },
+        },
+        TwitchChatEvent::Cheer {
+            username,
+            bits,
+            text,
+            color_hex,
+        } => ChatRow {
+            seq: 0,
+            timestamp,
+            platform: Platform::Twitch,
+            badges: vec![],
+            username,
+            username_color: color_hex_to_iced(color_hex.as_deref()),
+            body: ChatBody::Cheer { bits, text },
+        },
+        TwitchChatEvent::Raid { username, viewers } => ChatRow {
+            seq: 0,
+            timestamp,
+            platform: Platform::Twitch,
+            badges: vec![],
+            username,
+            username_color: Color::from_rgb8(0xf3, 0x8b, 0xa8),
+            body: ChatBody::Raid {
+                viewers,
+                triggered_action: None,
+            },
+        },
     };
     row.seq = *next_seq;
     *next_seq = next_seq.wrapping_add(1);
     Some(row)
-}
-
-fn parse_chat_message(event: &Event) -> Option<ChatRow> {
-    let payload = event.payload.as_object()?;
-
-    let username = payload
-        .get("chatter_user_name")
-        .or_else(|| payload.get("username"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("unknown")
-        .to_owned();
-
-    let message_text = payload
-        .get("message")
-        .and_then(|m| {
-            if let Some(obj) = m.as_object() {
-                obj.get("text").and_then(|t| t.as_str()).map(str::to_owned)
-            } else {
-                m.as_str().map(str::to_owned)
-            }
-        })
-        .unwrap_or_default();
-
-    let badges = extract_badges(payload);
-    let is_bot = badges.contains(&BadgeKind::Bot);
-    let timestamp = format_timestamp(event);
-    let username_color = username_color_from_payload(payload);
-
-    Some(ChatRow {
-        seq: 0,
-        timestamp,
-        platform: Platform::Twitch,
-        badges: if is_bot { vec![BadgeKind::Bot] } else { badges },
-        username,
-        username_color,
-        body: ChatBody::Message(message_text),
-    })
-}
-
-fn parse_subscription(event: &Event) -> Option<ChatRow> {
-    let payload = event.payload.as_object()?;
-
-    let username = payload
-        .get("user_name")
-        .or_else(|| payload.get("chatter_user_name"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("unknown")
-        .to_owned();
-
-    let tier = payload
-        .get("tier")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse::<u32>().ok())
-        .map(|t| {
-            if t >= 3000 {
-                3u8
-            } else if t >= 2000 {
-                2u8
-            } else {
-                1u8
-            }
-        })
-        .unwrap_or(1);
-
-    let months = payload
-        .get("cumulative_months")
-        .or_else(|| payload.get("duration_months"))
-        .and_then(|v| v.as_u64())
-        .map(|m| m as u32);
-
-    let message = payload
-        .get("message")
-        .and_then(|m| {
-            if let Some(obj) = m.as_object() {
-                obj.get("text").and_then(|t| t.as_str()).map(str::to_owned)
-            } else {
-                m.as_str().map(str::to_owned)
-            }
-        })
-        .filter(|s| !s.is_empty());
-
-    let username_color = username_color_from_payload(payload);
-
-    Some(ChatRow {
-        seq: 0,
-        timestamp: format_timestamp(event),
-        platform: Platform::Twitch,
-        badges: vec![],
-        username,
-        username_color,
-        body: ChatBody::Subscription {
-            tier,
-            months,
-            message,
-            triggered_action: None,
-        },
-    })
-}
-
-fn parse_cheer(event: &Event) -> Option<ChatRow> {
-    let payload = event.payload.as_object()?;
-
-    let username = payload
-        .get("user_name")
-        .and_then(|v| v.as_str())
-        .unwrap_or("anonymous")
-        .to_owned();
-
-    let bits = payload.get("bits").and_then(|v| v.as_u64()).unwrap_or(0);
-
-    let cheer_text = payload
-        .get("message")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_owned();
-
-    let username_color = username_color_from_payload(payload);
-
-    Some(ChatRow {
-        seq: 0,
-        timestamp: format_timestamp(event),
-        platform: Platform::Twitch,
-        badges: vec![],
-        username,
-        username_color,
-        body: ChatBody::Cheer {
-            bits,
-            text: cheer_text,
-        },
-    })
-}
-
-fn parse_raid(event: &Event) -> Option<ChatRow> {
-    let payload = event.payload.as_object()?;
-
-    let username = payload
-        .get("from_broadcaster_user_name")
-        .or_else(|| payload.get("raider_name"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("unknown")
-        .to_owned();
-
-    let viewers = payload.get("viewers").and_then(|v| v.as_u64()).unwrap_or(0);
-
-    Some(ChatRow {
-        seq: 0,
-        timestamp: format_timestamp(event),
-        platform: Platform::Twitch,
-        badges: vec![],
-        username,
-        username_color: Color::from_rgb8(0xf3, 0x8b, 0xa8),
-        body: ChatBody::Raid {
-            viewers,
-            triggered_action: None,
-        },
-    })
 }
 
 fn format_timestamp(event: &Event) -> String {
@@ -443,45 +346,30 @@ fn format_timestamp(event: &Event) -> String {
     format!("{h:02}:{m:02}:{s:02}")
 }
 
-fn extract_badges(payload: &serde_json::Map<String, serde_json::Value>) -> Vec<BadgeKind> {
-    let Some(badges_val) = payload.get("badges") else {
-        return Vec::new();
-    };
-    let Some(arr) = badges_val.as_array() else {
-        return Vec::new();
-    };
-
-    arr.iter()
-        .filter_map(|b| {
-            let set_id = b
-                .as_object()
-                .and_then(|o| o.get("set_id"))
-                .and_then(|v| v.as_str())?;
-            match set_id {
-                "moderator" => Some(BadgeKind::Moderator),
-                "vip" => Some(BadgeKind::Vip),
-                "subscriber" => Some(BadgeKind::Subscriber),
-                "broadcaster" => Some(BadgeKind::Broadcaster),
-                _ => None,
-            }
-        })
-        .collect()
+fn twitch_badge_to_kind(badge: &forge_platform_twitch::TwitchBadge) -> BadgeKind {
+    use forge_platform_twitch::TwitchBadge;
+    match badge {
+        TwitchBadge::Moderator => BadgeKind::Moderator,
+        TwitchBadge::Vip => BadgeKind::Vip,
+        TwitchBadge::Subscriber => BadgeKind::Subscriber,
+        TwitchBadge::Broadcaster => BadgeKind::Broadcaster,
+    }
 }
 
-fn username_color_from_payload(payload: &serde_json::Map<String, serde_json::Value>) -> Color {
-    let Some(color_str) = payload.get("color").and_then(|v| v.as_str()) else {
+fn color_hex_to_iced(hex: Option<&str>) -> Color {
+    let Some(s) = hex else {
         return Color::from_rgb(0.4, 0.7, 1.0);
     };
-    if color_str.len() != 7 || !color_str.starts_with('#') {
+    if s.len() != 7 || !s.starts_with('#') {
         return Color::from_rgb(0.4, 0.7, 1.0);
     }
-    let Ok(r) = u8::from_str_radix(&color_str[1..3], 16) else {
+    let Ok(r) = u8::from_str_radix(&s[1..3], 16) else {
         return Color::from_rgb(0.4, 0.7, 1.0);
     };
-    let Ok(g) = u8::from_str_radix(&color_str[3..5], 16) else {
+    let Ok(g) = u8::from_str_radix(&s[3..5], 16) else {
         return Color::from_rgb(0.4, 0.7, 1.0);
     };
-    let Ok(b) = u8::from_str_radix(&color_str[5..7], 16) else {
+    let Ok(b) = u8::from_str_radix(&s[5..7], 16) else {
         return Color::from_rgb(0.4, 0.7, 1.0);
     };
     Color::from_rgb(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0)
@@ -851,8 +739,8 @@ mod tests {
             EventSource::Twitch,
             "chat.message",
             serde_json::json!({
-                "chatter_user_name": username,
-                "message": { "text": message },
+                "username": username,
+                "message": message,
                 "badges": badges,
                 "color": color,
             }),
@@ -864,11 +752,10 @@ mod tests {
             EventSource::Twitch,
             "chat.message",
             serde_json::json!({
-                "chatter_user_name": username,
-                "message": { "text": "beep boop" },
-                "badges": [{ "set_id": "moderator" }],
+                "username": username,
+                "message": "beep boop",
+                "badges": ["moderator"],
                 "color": "#ff0000",
-                "is_bot": true,
             }),
         )
     }
@@ -880,7 +767,7 @@ mod tests {
             serde_json::json!({
                 "user_name": username,
                 "tier": tier,
-                "cumulative_months": months,
+                "duration_months": months,
                 "message": { "text": "Thanks!" },
                 "color": "#a6e3a1",
             }),
@@ -905,7 +792,7 @@ mod tests {
             EventSource::Twitch,
             "channel.raid",
             serde_json::json!({
-                "from_broadcaster_user_name": raider,
+                "raider_name": raider,
                 "viewers": viewers,
             }),
         )
@@ -936,7 +823,7 @@ mod tests {
         let ev = make_chat_event(
             "danylo_ua",
             "hello stream",
-            serde_json::json!([{ "set_id": "moderator" }]),
+            serde_json::json!(["moderator"]),
             "#89dceb",
         );
         let row = chat_row_from_event(&ev, &mut 0u64).unwrap();
@@ -951,7 +838,7 @@ mod tests {
         let ev = Event::new(
             EventSource::Core,
             "chat.message",
-            serde_json::json!({ "chatter_user_name": "x", "message": { "text": "y" } }),
+            serde_json::json!({ "username": "x", "message": "y" }),
         );
         assert!(chat_row_from_event(&ev, &mut 0u64).is_none());
     }
@@ -1277,8 +1164,8 @@ mod tests {
             EventSource::Twitch,
             "chat.message",
             serde_json::json!({
-                "chatter_user_name": "nocoloruser",
-                "message": { "text": "hey" },
+                "username": "nocoloruser",
+                "message": "hey",
                 "badges": [],
             }),
         );
@@ -1298,7 +1185,7 @@ mod tests {
         let ev = make_chat_event(
             "mod_user",
             "modding",
-            serde_json::json!([{ "set_id": "moderator" }]),
+            serde_json::json!(["moderator"]),
             "#00ff00",
         );
         let row = chat_row_from_event(&ev, &mut 0u64).unwrap();

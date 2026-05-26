@@ -1,8 +1,10 @@
+pub mod parsers;
 mod reconnect;
 mod send;
 mod session;
 mod subscriber;
 
+pub use parsers::{TwitchBadge, TwitchChatEvent};
 pub use send::{ChatSendError, SentMessageId, send_chat};
 pub use session::ChatConnectionState;
 

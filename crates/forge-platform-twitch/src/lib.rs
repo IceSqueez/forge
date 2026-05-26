@@ -12,8 +12,10 @@ pub use auth::{
     TwitchAuthFlow, TwitchDeviceCode, UserInfo, client_id, fetch_user_info, twitch_auth_flow,
 };
 pub use builtin::TwitchIntegrationBundle;
+pub use chat::parsers::parse as parse_chat_event;
 pub use chat::{
-    ChatConnectionState, ChatSendError, SentMessageId, TwitchChat, TwitchChatHandle, send_chat,
+    ChatConnectionState, ChatSendError, SentMessageId, TwitchBadge, TwitchChat, TwitchChatEvent,
+    TwitchChatHandle, send_chat,
 };
 pub use chat_send_bridge::{ChatSendBridge, ChatSendBridgeHandle};
 pub use subscriptions::{SubStatus, SubscriptionRecord, SubscriptionTracker};

@@ -213,11 +213,13 @@ pub(crate) fn format_summary(event: &Event) -> String {
     let p = &event.payload;
     match event.kind.as_str() {
         "chat.message" => {
-            let user = p["chatter_user_name"].as_str().unwrap_or("?");
-            let msg = p["message"]["text"]
-                .as_str()
-                .or_else(|| p["text"].as_str())
-                .unwrap_or("");
+            use forge_platform_twitch::{TwitchChatEvent, parse_chat_event};
+            let (user, msg) = parse_chat_event(event)
+                .and_then(|e| match e {
+                    TwitchChatEvent::Message { username, text, .. } => Some((username, text)),
+                    _ => None,
+                })
+                .unwrap_or_else(|| ("?".to_owned(), String::new()));
             format!("{user}: {msg}")
         }
         "command.matched" => {

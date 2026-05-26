@@ -1,7 +1,7 @@
+use forge_widgets::ForgePalette;
 use forge_widgets::icons::{Icon, tabler_icon};
-use forge_widgets::tokens::{FONT_MD, FONT_SM, Spacing, sp, spf};
-use forge_widgets::{ForgePalette, Radius, radius};
-use iced::widget::{button, column, container, row, text};
+use forge_widgets::tokens::{FONT_SM, Spacing, spf};
+use iced::widget::{container, row, text};
 use iced::{Background, Border, Element, Length};
 
 use crate::message::Message;
@@ -70,80 +70,4 @@ pub(crate) fn header_divider<'a>(palette: &'a ForgePalette) -> Element<'a, Messa
             ..iced::widget::container::Style::default()
         })
         .into()
-}
-
-pub(crate) fn sheet_chrome<'a>(
-    title: &'a str,
-    on_close: Message,
-    body: Element<'a, Message>,
-    footer: Option<Element<'a, Message>>,
-    palette: &'a ForgePalette,
-) -> Element<'a, Message> {
-    let p = *palette;
-
-    let title_el = text(title).size(FONT_MD).color(p.text_primary);
-
-    let close_btn = button(tabler_icon(Icon::X, 14.0, p.text_muted))
-        .on_press(on_close)
-        .padding(sp(Spacing::Xs))
-        .style(move |_t: &iced::Theme, status| {
-            let bg = match status {
-                iced::widget::button::Status::Hovered => {
-                    Some(iced::Background::Color(p.surface_overlay))
-                }
-                _ => None,
-            };
-            iced::widget::button::Style {
-                background: bg,
-                border: iced::Border {
-                    radius: radius(Radius::Sm).into(),
-                    ..Default::default()
-                },
-                text_color: iced::Color::TRANSPARENT,
-                shadow: iced::Shadow::default(),
-                snap: false,
-            }
-        });
-
-    let header = container(
-        row![
-            title_el,
-            iced::widget::Space::new().width(Length::Fill),
-            close_btn,
-        ]
-        .align_y(iced::alignment::Vertical::Center),
-    )
-    .padding([12_u16, 16_u16])
-    .width(Length::Fill)
-    .style(move |_t: &iced::Theme| container::Style {
-        border: iced::Border {
-            color: p.border_regular,
-            width: 0.5,
-            radius: 0.0.into(),
-        },
-        ..container::Style::default()
-    });
-
-    let body_wrap = container(body).width(Length::Fill).height(Length::Fill);
-
-    let mut col = column![header, body_wrap]
-        .width(Length::Fill)
-        .height(Length::Fill);
-
-    if let Some(footer_el) = footer {
-        let footer_container = container(footer_el)
-            .padding([12_u16, 16_u16])
-            .width(Length::Fill)
-            .style(move |_t: &iced::Theme| container::Style {
-                border: iced::Border {
-                    color: p.border_regular,
-                    width: 0.5,
-                    radius: 0.0.into(),
-                },
-                ..container::Style::default()
-            });
-        col = col.push(footer_container);
-    }
-
-    col.into()
 }

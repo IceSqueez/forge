@@ -8,7 +8,6 @@ use crate::actions::{
     SubActionKindChoice, TriggerCategory, kind_label, kind_summary,
 };
 use crate::message::{ActionEditorMsg, ActionsMsg, Message};
-use crate::page_chrome::sheet_chrome;
 
 pub(crate) fn add_action_modal_view<'a>(
     form: &'a AddActionForm,
@@ -515,24 +514,41 @@ pub(crate) fn add_trigger_modal_view<'a>(
     .width(Length::Fill)
     .into();
 
-    let panel = sheet_chrome(
-        "Add trigger",
-        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddTrigger(
-            AddTriggerMsg::Cancel,
-        ))),
-        body_col.into(),
-        Some(footer),
-        palette,
-    );
-    forge_widgets::side_sheet(
-        panel,
-        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddTrigger(
-            AddTriggerMsg::Cancel,
-        ))),
-        forge_widgets::SheetEdge::Right,
-        480.0,
-        palette,
-    )
+    let on_cancel = Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddTrigger(
+        AddTriggerMsg::Cancel,
+    )));
+
+    let footer_bar = iced::widget::container(footer)
+        .width(Length::Fill)
+        .padding([12_u16, 16_u16])
+        .style(move |_t: &iced::Theme| iced::widget::container::Style {
+            border: iced::Border {
+                color: palette.border_regular,
+                width: 0.5,
+                radius: 0.0.into(),
+            },
+            ..iced::widget::container::Style::default()
+        });
+
+    let body = iced::widget::container(body_col)
+        .width(Length::Fill)
+        .height(Length::Fill);
+
+    let content = column![body, footer_bar]
+        .width(Length::Fill)
+        .height(Length::Fill);
+
+    forge_widgets::SideSheet::new(content)
+        .open(true)
+        .palette(palette)
+        .width(forge_widgets::SheetWidth::new(480.0, 360.0, 720.0))
+        .header(forge_widgets::SheetHeader {
+            title: std::borrow::Cow::Borrowed("Add trigger"),
+            subtitle: None,
+            on_close: Some(on_cancel.clone()),
+        })
+        .on_close(on_cancel)
+        .into()
 }
 
 fn log_level_label(level: &forge_types::LogLevel) -> &'static str {
@@ -1056,24 +1072,41 @@ pub(crate) fn add_sub_action_modal_view<'a>(
     .width(Length::Fill)
     .into();
 
-    let panel = sheet_chrome(
-        title_label,
-        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
-            AddSubActionMsg::Cancel,
-        ))),
-        body_col.into(),
-        Some(footer),
-        palette,
-    );
-    forge_widgets::side_sheet(
-        panel,
-        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
-            AddSubActionMsg::Cancel,
-        ))),
-        forge_widgets::SheetEdge::Right,
-        480.0,
-        palette,
-    )
+    let on_cancel = Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+        AddSubActionMsg::Cancel,
+    )));
+
+    let footer_bar = iced::widget::container(footer)
+        .width(Length::Fill)
+        .padding([12_u16, 16_u16])
+        .style(move |_t: &iced::Theme| iced::widget::container::Style {
+            border: iced::Border {
+                color: palette.border_regular,
+                width: 0.5,
+                radius: 0.0.into(),
+            },
+            ..iced::widget::container::Style::default()
+        });
+
+    let body = iced::widget::container(body_col)
+        .width(Length::Fill)
+        .height(Length::Fill);
+
+    let content = iced::widget::column![body, footer_bar]
+        .width(Length::Fill)
+        .height(Length::Fill);
+
+    forge_widgets::SideSheet::new(content)
+        .open(true)
+        .palette(palette)
+        .width(forge_widgets::SheetWidth::new(480.0, 360.0, 720.0))
+        .header(forge_widgets::SheetHeader {
+            title: std::borrow::Cow::Borrowed(title_label),
+            subtitle: None,
+            on_close: Some(on_cancel.clone()),
+        })
+        .on_close(on_cancel)
+        .into()
 }
 
 fn trigger_picker_card<'a>(

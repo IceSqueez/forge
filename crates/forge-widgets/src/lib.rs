@@ -84,8 +84,7 @@ pub use server::{
     overlay_file_list, type_to_confirm_modal,
 };
 pub use side_sheet::{
-    Easing, SheetAnimation, SheetEdge, SheetHeader, SheetPosition, SheetWidth, SideSheet,
-    SideSheetConfig, side_sheet,
+    Easing, SheetAnimation, SheetHeader, SheetPosition, SheetWidth, SideSheet, SideSheetConfig,
 };
 pub use status::{StatusVariant, platform_badge, role_badge, status_dot, status_pill};
 pub use theme::{catppuccin_mocha, latte, palette_for_theme, tokyo_night_storm};

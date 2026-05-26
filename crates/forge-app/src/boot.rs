@@ -12,7 +12,7 @@ use iced::Task;
 
 use crate::app::App;
 use crate::builtin_detail::BuiltinDetailState;
-use crate::message::{Message, ObsClientRef, TwitchBootBundle};
+use crate::message::{Message, ObsClientRef, ServerSubsystemMsg, TwitchBootBundle};
 use crate::server_screen::ServerStatus;
 
 pub(crate) async fn reconnect_twitch(
@@ -228,7 +228,7 @@ pub(crate) fn handle_server_restart_command(app: &App) -> Task<Message> {
     let subsystem = Arc::clone(&app.rt.server_subsystem);
     Task::perform(
         async move { subsystem.restart().await.map_err(|e| e.to_string()) },
-        Message::ServerRestartResult,
+        |r| Message::ServerSubsystem(ServerSubsystemMsg::RestartResult(r)),
     )
 }
 
@@ -236,7 +236,7 @@ pub(crate) fn handle_server_stop_command(app: &App) -> Task<Message> {
     let subsystem = Arc::clone(&app.rt.server_subsystem);
     Task::perform(
         async move { subsystem.stop().await.map_err(|e| e.to_string()) },
-        Message::ServerStopResult,
+        |r| Message::ServerSubsystem(ServerSubsystemMsg::StopResult(r)),
     )
 }
 
@@ -249,6 +249,6 @@ pub(crate) fn handle_server_regenerate_token(app: &App) -> Task<Message> {
                 .await
                 .map_err(|e| e.to_string())
         },
-        Message::ServerTokenRotated,
+        |r| Message::ServerSubsystem(ServerSubsystemMsg::TokenRotated(r)),
     )
 }

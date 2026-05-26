@@ -339,6 +339,20 @@ pub enum LiveChatMsg {
 }
 
 #[derive(Debug, Clone)]
+pub enum BootMsg {
+    Obs(Result<ObsClientRef, String>),
+    Twitch(Result<Option<TwitchBootBundle>, String>),
+    Server(Result<crate::server_subsystem::ServerBootSnapshot, String>),
+}
+
+#[derive(Debug, Clone)]
+pub enum ServerSubsystemMsg {
+    RestartResult(Result<(), String>),
+    StopResult(Result<(), String>),
+    TokenRotated(Result<String, String>),
+}
+
+#[derive(Debug, Clone)]
 pub enum Message {
     Navigate(Screen),
     Toast(ToastMsg),
@@ -351,12 +365,8 @@ pub enum Message {
     Viewers(crate::viewers::ViewersMsg),
     Commands(crate::commands_view::CommandsMsg),
     BuiltinDetail(BuiltinDetailMsg),
-    ObsBootResult(Result<ObsClientRef, String>),
-    TwitchBootResult(Result<Option<TwitchBootBundle>, String>),
-    ServerBootResult(Result<crate::server_subsystem::ServerBootSnapshot, String>),
-    ServerRestartResult(Result<(), String>),
-    ServerStopResult(Result<(), String>),
-    ServerTokenRotated(Result<String, String>),
+    Boot(BootMsg),
+    ServerSubsystem(ServerSubsystemMsg),
     ThemeChanged(ThemeId),
     EventArrived(Arc<Event>),
     LiveChat(LiveChatMsg),

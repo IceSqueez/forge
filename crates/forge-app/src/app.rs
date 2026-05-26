@@ -30,7 +30,7 @@ use crate::home::HomeStats;
 use crate::live_chat::LiveChatState;
 #[cfg(test)]
 use crate::message::ObsClientRef;
-use crate::message::{ActionsMsg, SidebarMsg, ToastMsg, TtsMsg};
+use crate::message::{ActionsMsg, BootMsg, ServerSubsystemMsg, SidebarMsg, ToastMsg, TtsMsg};
 #[cfg(test)]
 use crate::message::{PlatformId, SettingsMsg};
 use crate::queues_view::QueuesState;
@@ -283,12 +283,20 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::BuiltinDetail(sub) => {
             crate::builtin_detail::update(&mut app.ui.builtin_detail, &app.rt, sub)
         }
-        Message::TwitchBootResult(result) => boot::handle_twitch_boot_result(app, result),
-        Message::ObsBootResult(result) => boot::handle_obs_boot_result(app, result),
-        Message::ServerBootResult(result) => boot::handle_server_boot_result(app, result),
-        Message::ServerRestartResult(result) => boot::handle_server_restart_result(app, result),
-        Message::ServerStopResult(result) => boot::handle_server_stop_result(app, result),
-        Message::ServerTokenRotated(result) => boot::handle_server_token_rotated(app, result),
+        Message::Boot(boot_msg) => match boot_msg {
+            BootMsg::Obs(result) => boot::handle_obs_boot_result(app, result),
+            BootMsg::Twitch(result) => boot::handle_twitch_boot_result(app, result),
+            BootMsg::Server(result) => boot::handle_server_boot_result(app, result),
+        },
+        Message::ServerSubsystem(sub) => match sub {
+            ServerSubsystemMsg::RestartResult(result) => {
+                boot::handle_server_restart_result(app, result)
+            }
+            ServerSubsystemMsg::StopResult(result) => boot::handle_server_stop_result(app, result),
+            ServerSubsystemMsg::TokenRotated(result) => {
+                boot::handle_server_token_rotated(app, result)
+            }
+        },
         Message::Server(crate::server_screen::ServerScreenMsg::RestartServer) => {
             boot::handle_server_restart_command(app)
         }
@@ -313,7 +321,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             let subsystem = Arc::clone(&app.rt.server_subsystem);
             Task::perform(
                 async move { subsystem.restart().await.map_err(|e| e.to_string()) },
-                Message::ServerRestartResult,
+                |r| Message::ServerSubsystem(ServerSubsystemMsg::RestartResult(r)),
             )
         }
         Message::SettingsWebSocket(sub) => {
@@ -1424,7 +1432,7 @@ mod tests {
             .expect("ObsClient::connect always returns Ok; supervisor connects in background");
         let _ = update(
             &mut app,
-            Message::ObsBootResult(Ok(ObsClientRef::new(Arc::new(client)))),
+            Message::Boot(BootMsg::Obs(Ok(ObsClientRef::new(Arc::new(client))))),
         );
         assert!(app.rt.obs_client.is_some());
         assert!(app.ui.builtin_detail.is_some());
@@ -1435,7 +1443,7 @@ mod tests {
         let mut app = App::default();
         let _ = update(
             &mut app,
-            Message::ObsBootResult(Err("connection refused".into())),
+            Message::Boot(BootMsg::Obs(Err("connection refused".into()))),
         );
         assert!(app.rt.obs_client.is_none());
         assert!(app.ui.builtin_detail.is_none());

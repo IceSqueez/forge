@@ -60,10 +60,10 @@ pub use globals_view::{GlobalsState, VariantEditorFields, VariantEditorForm, loa
 pub use home::HomeStats;
 pub use live_chat::{ChatFilters, LiveChatState, PlatformFilter};
 pub use message::{
-    ActionsMsg, BuiltinDetailMsg, EditorMode, GlobalsFilter, GlobalsLoadData, GlobalsMsg, HomeMsg,
-    HomeStatsData, LiveChatMsg, Message, ObsClientRef, PlatformId, SettingsAudioMsg, SettingsMsg,
-    SidebarMsg, SoundboardMsg, TtsDashMsg, TtsEnginesMsg, TtsFiltersMsg, TtsMsg, TtsTriggersMsg,
-    VariantEditorMsg, VoiceAliasesMsg,
+    ActionsMsg, BootMsg, BuiltinDetailMsg, EditorMode, GlobalsFilter, GlobalsLoadData, GlobalsMsg,
+    HomeMsg, HomeStatsData, LiveChatMsg, Message, ObsClientRef, PlatformId, ServerSubsystemMsg,
+    SettingsAudioMsg, SettingsMsg, SidebarMsg, SoundboardMsg, TtsDashMsg, TtsEnginesMsg,
+    TtsFiltersMsg, TtsMsg, TtsTriggersMsg, VariantEditorMsg, VoiceAliasesMsg,
 };
 pub use runtime_view::RuntimeView;
 pub use screen::{Screen, SettingsSection, TtsSection};

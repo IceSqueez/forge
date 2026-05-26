@@ -335,14 +335,13 @@ fn main() -> iced::Result {
             Arc::clone(&backend_boot) as Arc<dyn forge_storage::CredentialsRepo>;
         let obs_task = iced::Task::perform(
             load_obs_and_connect(obs_creds, Arc::clone(&bus_boot)),
-            forge_app::Message::ObsBootResult,
+            |r| forge_app::Message::Boot(forge_app::BootMsg::Obs(r)),
         );
         let twitch_creds: Arc<dyn forge_storage::CredentialsRepo> =
             Arc::clone(&backend_boot) as Arc<dyn forge_storage::CredentialsRepo>;
-        let twitch_task = iced::Task::perform(
-            load_twitch_credential(twitch_creds),
-            forge_app::Message::TwitchBootResult,
-        );
+        let twitch_task = iced::Task::perform(load_twitch_credential(twitch_creds), |r| {
+            forge_app::Message::Boot(forge_app::BootMsg::Twitch(r))
+        });
         let boot_task = match app.rt.action_engine.clone() {
             Some(engine) => {
                 let dp = Arc::clone(&backend_boot);
@@ -353,7 +352,7 @@ fn main() -> iced::Result {
                         std::sync::Arc::new(engine),
                         Arc::clone(&app.rt.server_subsystem),
                     ),
-                    forge_app::Message::ServerBootResult,
+                    |r| forge_app::Message::Boot(forge_app::BootMsg::Server(r)),
                 );
                 iced::Task::batch([obs_task, twitch_task, server_boot_task])
             }

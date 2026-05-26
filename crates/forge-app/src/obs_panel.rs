@@ -13,6 +13,7 @@ use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::tokens::{FONT_SM, FONT_XS, FontRole, Spacing, font, sp, spf};
 
 use crate::Message;
+use crate::message::BootMsg;
 use crate::runtime_view::RuntimeView;
 
 #[derive(Debug, Clone)]
@@ -208,7 +209,7 @@ pub fn update(state: &mut ObsPanelState, rt: &RuntimeView, msg: ObsPanelMsg) -> 
             Task::perform(
                 connect_obs_from_form(creds, bus, host, port, password),
                 |r| match r {
-                    Ok(client_ref) => Message::ObsBootResult(Ok(client_ref)),
+                    Ok(client_ref) => Message::Boot(BootMsg::Obs(Ok(client_ref))),
                     Err(e) => Message::ObsPanel(ObsPanelMsg::ConnectError(e)),
                 },
             )

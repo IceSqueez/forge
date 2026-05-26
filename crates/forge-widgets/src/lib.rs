@@ -3,6 +3,9 @@
 pub mod actions;
 pub mod breadcrumb;
 pub mod builtin;
+pub mod builtin_header;
+pub mod builtin_health;
+pub mod builtin_quick_actions;
 pub mod buttons;
 pub mod cards;
 pub mod charts;
@@ -35,10 +38,10 @@ pub use actions::{
     category_chip, modal, sub_action_card, toggle, tree_node_with_status, variable_chip,
 };
 pub use breadcrumb::{BreadcrumbCrumb, breadcrumb};
-pub use builtin::{
-    HeaderCardParams, builtin_content_renderer, builtin_header_card, builtin_health_grid,
-    builtin_quick_actions_grid, builtin_quick_actions_grid_with_hint,
-};
+pub use builtin::builtin_content_renderer;
+pub use builtin_header::{HeaderCardParams, builtin_header_card};
+pub use builtin_health::builtin_health_grid;
+pub use builtin_quick_actions::{builtin_quick_actions_grid, builtin_quick_actions_grid_with_hint};
 pub use buttons::{
     destructive_button, ghost_button, ghost_button_with_icon, icon_button, primary_button,
     primary_button_small, primary_button_with_icon_right, secondary_button,

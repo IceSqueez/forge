@@ -4,7 +4,7 @@ use std::sync::{
 };
 
 use forge_events::{Event, EventSource};
-use forge_storage::DataProvider;
+use forge_storage::{ActionRepo, TriggerRepo};
 use forge_types::{ArgStack, TriggerKind, Variant};
 use tracing::warn;
 
@@ -22,7 +22,8 @@ impl CodeTriggerHandle {
 }
 
 pub struct CodeTriggerEvaluator {
-    dp: Arc<dyn DataProvider>,
+    actions: Arc<dyn ActionRepo>,
+    triggers: Arc<dyn TriggerRepo>,
     scheduler: QueueSchedulerHandle,
     subscription: EventSubscription,
 }
@@ -30,12 +31,14 @@ pub struct CodeTriggerEvaluator {
 impl CodeTriggerEvaluator {
     pub fn spawn(
         bus: Arc<EventBus>,
-        dp: Arc<dyn DataProvider>,
+        actions: Arc<dyn ActionRepo>,
+        triggers: Arc<dyn TriggerRepo>,
         scheduler: QueueSchedulerHandle,
     ) -> CodeTriggerHandle {
         let subscription = bus.subscribe();
         let evaluator = Self {
-            dp,
+            actions,
+            triggers,
             scheduler,
             subscription,
         };
@@ -63,7 +66,7 @@ impl CodeTriggerEvaluator {
         let name = &event.kind["custom.".len()..];
         let event_id = event.id;
 
-        let actions = match self.dp.action_repo().list().await {
+        let actions = match self.actions.list().await {
             Ok(a) => a,
             Err(e) => {
                 warn!("code_trigger: action_repo.list failed: {e}");
@@ -76,7 +79,7 @@ impl CodeTriggerEvaluator {
                 continue;
             }
 
-            let triggers = match self.dp.trigger_repo().list_for_action(action.id).await {
+            let triggers = match self.triggers.list_for_action(action.id).await {
                 Ok(t) => t,
                 Err(e) => {
                     warn!("code_trigger: trigger_repo.list_for_action failed: {e}");
@@ -232,7 +235,12 @@ mod tests {
             None,
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
-        let _handle = CodeTriggerEvaluator::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
+        let _handle = CodeTriggerEvaluator::spawn(
+            Arc::clone(&bus),
+            dp.action_repo(),
+            dp.trigger_repo(),
+            sched,
+        );
 
         tokio::time::sleep(Duration::from_millis(10)).await;
         bus.publish(Event::new(
@@ -276,7 +284,12 @@ mod tests {
             None,
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
-        let _handle = CodeTriggerEvaluator::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
+        let _handle = CodeTriggerEvaluator::spawn(
+            Arc::clone(&bus),
+            dp.action_repo(),
+            dp.trigger_repo(),
+            sched,
+        );
 
         tokio::time::sleep(Duration::from_millis(10)).await;
         bus.publish(Event::new(
@@ -320,7 +333,12 @@ mod tests {
             None,
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
-        let _handle = CodeTriggerEvaluator::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
+        let _handle = CodeTriggerEvaluator::spawn(
+            Arc::clone(&bus),
+            dp.action_repo(),
+            dp.trigger_repo(),
+            sched,
+        );
 
         tokio::time::sleep(Duration::from_millis(10)).await;
         bus.publish(Event::new(EventSource::Rhai, "custom.my_event", json!({})));

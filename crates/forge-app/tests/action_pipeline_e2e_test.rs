@@ -72,7 +72,12 @@ async fn full_action_pipeline_emits_causation_chain() {
         None,
     );
     let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
-    let _parser = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), scheduler);
+    let _parser = CommandParser::spawn(
+        Arc::clone(&bus),
+        dp.command_repo(),
+        dp.action_repo(),
+        scheduler,
+    );
 
     // Yield so that spawned tokio tasks can start processing their subscriptions.
     tokio::time::sleep(Duration::from_millis(10)).await;
@@ -189,7 +194,12 @@ async fn unknown_command_does_not_dispatch_action() {
         None,
     );
     let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
-    let _parser = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), scheduler);
+    let _parser = CommandParser::spawn(
+        Arc::clone(&bus),
+        dp.command_repo(),
+        dp.action_repo(),
+        scheduler,
+    );
 
     tokio::time::sleep(Duration::from_millis(10)).await;
 

@@ -236,7 +236,12 @@ fn spawn_runtime(backend: Arc<SqliteBackend>, bus: Arc<EventBus>) -> Option<Runt
         Some(speak_dispatcher),
     );
     let scheduler = QueueScheduler::spawn(engine.clone(), Arc::clone(&bus), queues);
-    let parser = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), scheduler.clone());
+    let parser = CommandParser::spawn(
+        Arc::clone(&bus),
+        dp.command_repo(),
+        dp.action_repo(),
+        scheduler.clone(),
+    );
     let chat_send_bridge = ChatSendBridge::spawn(
         Arc::clone(&bus),
         Arc::clone(&backend) as Arc<dyn CredentialsRepo>,

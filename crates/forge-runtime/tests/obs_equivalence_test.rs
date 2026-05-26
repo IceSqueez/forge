@@ -367,7 +367,8 @@ async fn obs_scene_changed_event_from_real_emitter_triggers_evaluator() {
         None,
     );
     let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
-    let _obs_trigger = ObsTriggerEvaluator::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
+    let _obs_trigger =
+        ObsTriggerEvaluator::spawn(Arc::clone(&bus), dp.action_repo(), dp.trigger_repo(), sched);
 
     tokio::time::sleep(Duration::from_millis(10)).await;
 

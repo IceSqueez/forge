@@ -4,7 +4,7 @@ use std::sync::{
 };
 
 use forge_events::{Event, EventSource};
-use forge_storage::DataProvider;
+use forge_storage::{ActionRepo, TriggerRepo};
 use forge_types::{ArgStack, TriggerKind, Variant};
 use tracing::warn;
 
@@ -22,7 +22,8 @@ impl ObsTriggerHandle {
 }
 
 pub struct ObsTriggerEvaluator {
-    dp: Arc<dyn DataProvider>,
+    actions: Arc<dyn ActionRepo>,
+    triggers: Arc<dyn TriggerRepo>,
     scheduler: QueueSchedulerHandle,
     subscription: EventSubscription,
 }
@@ -30,12 +31,14 @@ pub struct ObsTriggerEvaluator {
 impl ObsTriggerEvaluator {
     pub fn spawn(
         bus: Arc<EventBus>,
-        dp: Arc<dyn DataProvider>,
+        actions: Arc<dyn ActionRepo>,
+        triggers: Arc<dyn TriggerRepo>,
         scheduler: QueueSchedulerHandle,
     ) -> ObsTriggerHandle {
         let subscription = bus.subscribe();
         let evaluator = Self {
-            dp,
+            actions,
+            triggers,
             scheduler,
             subscription,
         };
@@ -64,7 +67,7 @@ impl ObsTriggerEvaluator {
         };
         let event_id = event.id;
 
-        let actions = match self.dp.action_repo().list().await {
+        let actions = match self.actions.list().await {
             Ok(a) => a,
             Err(e) => {
                 warn!("obs_trigger: action_repo.list failed: {e}");
@@ -77,7 +80,7 @@ impl ObsTriggerEvaluator {
                 continue;
             }
 
-            let triggers = match self.dp.trigger_repo().list_for_action(action.id).await {
+            let triggers = match self.triggers.list_for_action(action.id).await {
                 Ok(t) => t,
                 Err(e) => {
                     warn!("obs_trigger: trigger_repo.list_for_action failed: {e}");
@@ -229,7 +232,12 @@ mod tests {
             None,
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
-        let _handle = ObsTriggerEvaluator::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
+        let _handle = ObsTriggerEvaluator::spawn(
+            Arc::clone(&bus),
+            dp.action_repo(),
+            dp.trigger_repo(),
+            sched,
+        );
 
         tokio::time::sleep(Duration::from_millis(10)).await;
         bus.publish(scene_changed_event("Main"));
@@ -266,7 +274,12 @@ mod tests {
             None,
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
-        let _handle = ObsTriggerEvaluator::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
+        let _handle = ObsTriggerEvaluator::spawn(
+            Arc::clone(&bus),
+            dp.action_repo(),
+            dp.trigger_repo(),
+            sched,
+        );
 
         tokio::time::sleep(Duration::from_millis(10)).await;
         bus.publish(scene_changed_event("Gaming"));
@@ -303,7 +316,12 @@ mod tests {
             None,
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
-        let _handle = ObsTriggerEvaluator::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
+        let _handle = ObsTriggerEvaluator::spawn(
+            Arc::clone(&bus),
+            dp.action_repo(),
+            dp.trigger_repo(),
+            sched,
+        );
 
         tokio::time::sleep(Duration::from_millis(10)).await;
         bus.publish(scene_changed_event("AnyRandomScene"));
@@ -343,7 +361,12 @@ mod tests {
             None,
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
-        let _handle = ObsTriggerEvaluator::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
+        let _handle = ObsTriggerEvaluator::spawn(
+            Arc::clone(&bus),
+            dp.action_repo(),
+            dp.trigger_repo(),
+            sched,
+        );
         tokio::time::sleep(Duration::from_millis(10)).await;
 
         let original = scene_changed_event("TestScene");

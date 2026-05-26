@@ -11,7 +11,7 @@ use std::sync::{
 use std::time::{Duration, Instant};
 
 use forge_events::{Event, EventSource};
-use forge_storage::DataProvider;
+use forge_storage::{ActionRepo, CommandRepo};
 use forge_types::{ArgStack, CommandId, Variant};
 use serde_json::json;
 use tracing::warn;
@@ -31,7 +31,8 @@ impl CommandParserHandle {
 
 pub struct CommandParser {
     bus: Arc<EventBus>,
-    dp: Arc<dyn DataProvider>,
+    commands: Arc<dyn CommandRepo>,
+    actions: Arc<dyn ActionRepo>,
     scheduler: QueueSchedulerHandle,
     subscription: EventSubscription,
     cooldowns: HashMap<CommandId, Instant>,
@@ -40,13 +41,15 @@ pub struct CommandParser {
 impl CommandParser {
     pub fn spawn(
         bus: Arc<EventBus>,
-        dp: Arc<dyn DataProvider>,
+        commands: Arc<dyn CommandRepo>,
+        actions: Arc<dyn ActionRepo>,
         scheduler: QueueSchedulerHandle,
     ) -> CommandParserHandle {
         let subscription = bus.subscribe();
         let parser = Self {
             bus: Arc::clone(&bus),
-            dp,
+            commands,
+            actions,
             scheduler,
             subscription,
             cooldowns: HashMap::new(),
@@ -88,7 +91,7 @@ impl CommandParser {
 
         let normalized = first_token.to_ascii_lowercase();
 
-        let command = match self.dp.command_repo().get_by_name(&normalized).await {
+        let command = match self.commands.get_by_name(&normalized).await {
             Ok(Some(c)) => c,
             Ok(None) => return,
             Err(e) => {
@@ -146,7 +149,7 @@ impl CommandParser {
         let cmd_event_id = cmd_event.id;
         self.bus.publish(cmd_event);
 
-        let action = match self.dp.action_repo().get(command.action_id).await {
+        let action = match self.actions.get(command.action_id).await {
             Ok(Some(a)) => a,
             Ok(None) => {
                 warn!(
@@ -315,7 +318,8 @@ mod tests {
             None,
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
-        let _handle = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
+        let _handle =
+            CommandParser::spawn(Arc::clone(&bus), dp.command_repo(), dp.action_repo(), sched);
 
         tokio::time::sleep(Duration::from_millis(10)).await;
 
@@ -354,7 +358,8 @@ mod tests {
             None,
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
-        let _handle = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
+        let _handle =
+            CommandParser::spawn(Arc::clone(&bus), dp.command_repo(), dp.action_repo(), sched);
 
         bus.publish(chat_event("!quote", "viewer1"));
         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -404,7 +409,8 @@ mod tests {
             None,
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
-        let _handle = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
+        let _handle =
+            CommandParser::spawn(Arc::clone(&bus), dp.command_repo(), dp.action_repo(), sched);
 
         bus.publish(chat_event("!QUOTE", "viewer1"));
 
@@ -441,7 +447,8 @@ mod tests {
             None,
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
-        let _handle = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
+        let _handle =
+            CommandParser::spawn(Arc::clone(&bus), dp.command_repo(), dp.action_repo(), sched);
 
         bus.publish(chat_event("hello world", "viewer1"));
 
@@ -475,7 +482,8 @@ mod tests {
             None,
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
-        let _handle = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
+        let _handle =
+            CommandParser::spawn(Arc::clone(&bus), dp.command_repo(), dp.action_repo(), sched);
 
         bus.publish(chat_event("!unknown", "viewer1"));
 
@@ -509,7 +517,8 @@ mod tests {
             None,
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
-        let _handle = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
+        let _handle =
+            CommandParser::spawn(Arc::clone(&bus), dp.command_repo(), dp.action_repo(), sched);
 
         bus.publish(chat_event("!quote some args here", "viewer1"));
 
@@ -549,7 +558,8 @@ mod tests {
             None,
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
-        let _handle = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
+        let _handle =
+            CommandParser::spawn(Arc::clone(&bus), dp.command_repo(), dp.action_repo(), sched);
 
         tokio::time::sleep(Duration::from_millis(10)).await;
 
@@ -628,7 +638,8 @@ mod tests {
             None,
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
-        let _handle = CommandParser::spawn(Arc::clone(&bus), Arc::clone(&dp), sched);
+        let _handle =
+            CommandParser::spawn(Arc::clone(&bus), dp.command_repo(), dp.action_repo(), sched);
 
         tokio::time::sleep(Duration::from_millis(10)).await;
 

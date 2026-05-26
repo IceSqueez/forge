@@ -613,7 +613,8 @@ mod tests {
             forge_runtime::QueueScheduler::spawn(engine.clone(), Arc::clone(&bus), queues);
         let parser = forge_runtime::CommandParser::spawn(
             Arc::clone(&bus),
-            Arc::clone(&dp),
+            dp.command_repo(),
+            dp.action_repo(),
             scheduler.clone(),
         );
 

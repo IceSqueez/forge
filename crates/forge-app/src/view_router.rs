@@ -5,7 +5,7 @@ use forge_widgets::{
 use iced::{Element, Length};
 
 use crate::Screen;
-use crate::action_editor::action_editor_view;
+use crate::action_editor_view::action_editor_view;
 use crate::app::{App, format_uptime, subsystem_connectivity};
 use crate::builtin_detail::view as builtin_detail_view;
 use crate::event_feed::event_feed_view;

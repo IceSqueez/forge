@@ -1,4 +1,5 @@
 pub mod action_editor;
+pub mod action_editor_view;
 pub mod actions;
 pub mod actions_forms;
 pub mod actions_modals;

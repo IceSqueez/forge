@@ -42,6 +42,7 @@ pub mod tts_filters;
 pub mod tts_triggers;
 pub mod tts_view;
 pub mod twitch_panel;
+pub mod ui_settings;
 pub mod view_router;
 pub mod viewer_tracker;
 pub mod viewers;

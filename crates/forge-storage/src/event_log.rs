@@ -3,7 +3,8 @@ use forge_events::Event;
 use forge_types::EventId;
 use time::OffsetDateTime;
 
-use crate::StorageError;
+use crate::settings::reserved_keys;
+use crate::{SettingsRepo, StorageError};
 
 #[cfg_attr(feature = "test-mocks", mockall::automock)]
 #[async_trait]
@@ -29,6 +30,24 @@ pub trait EventLogRepo: Send + Sync {
     /// Deletes all events whose timestamp is strictly before `cutoff`.
     /// Returns the number of rows deleted.
     async fn prune_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError>;
+}
+
+pub async fn event_log_retention_days(repo: &dyn SettingsRepo) -> Result<u32, StorageError> {
+    let raw = repo
+        .get_string(reserved_keys::EVENT_LOG_RETENTION_DAYS_KEY)
+        .await?;
+    Ok(raw.as_deref().and_then(|s| s.parse().ok()).unwrap_or(7))
+}
+
+pub async fn set_event_log_retention_days(
+    repo: &dyn SettingsRepo,
+    days: u32,
+) -> Result<(), StorageError> {
+    repo.set_string(
+        reserved_keys::EVENT_LOG_RETENTION_DAYS_KEY,
+        &days.to_string(),
+    )
+    .await
 }
 
 #[cfg(test)]

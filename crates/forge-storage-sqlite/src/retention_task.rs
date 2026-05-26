@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_storage::{EventLogRepo, SettingsRepo};
+use forge_storage::{EventLogRepo, SettingsRepo, event_log_retention_days};
 use time::OffsetDateTime;
 use tokio::sync::Notify;
 
@@ -18,7 +18,7 @@ pub(crate) fn spawn_retention_task(
         loop {
             tokio::select! {
                 _ = ticker.tick() => {
-                    let days = settings.event_log_retention_days().await.unwrap_or(7);
+                    let days = event_log_retention_days(settings.as_ref()).await.unwrap_or(7);
                     let cutoff = OffsetDateTime::now_utc()
                         - time::Duration::days(i64::from(days));
                     match repo.prune_before(cutoff).await {

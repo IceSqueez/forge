@@ -223,10 +223,12 @@ pub fn update(state: &mut LiveChatState, rt: &RuntimeView, msg: LiveChatMsg) -> 
             Task::none()
         }
         LiveChatMsg::LoadDrawerWidth => {
-            let dp = Arc::clone(&rt.backend);
-            Task::perform(async move { dp.sheet_width("viewers_drawer").await }, |r| {
-                Message::LiveChat(LiveChatMsg::DrawerWidthLoaded(r.ok().flatten()))
-            })
+            let dp: Arc<dyn forge_storage::SettingsRepo> =
+                Arc::clone(&rt.backend) as Arc<dyn forge_storage::SettingsRepo>;
+            Task::perform(
+                async move { crate::ui_settings::sheet_width(&*dp, "viewers_drawer").await },
+                |r| Message::LiveChat(LiveChatMsg::DrawerWidthLoaded(r.ok().flatten())),
+            )
         }
         LiveChatMsg::DrawerWidthLoaded(width) => {
             state.drawer_width = width;
@@ -234,9 +236,10 @@ pub fn update(state: &mut LiveChatState, rt: &RuntimeView, msg: LiveChatMsg) -> 
         }
         LiveChatMsg::SheetResized(w) => {
             state.drawer_width = Some(w);
-            let dp = Arc::clone(&rt.backend);
+            let dp: Arc<dyn forge_storage::SettingsRepo> =
+                Arc::clone(&rt.backend) as Arc<dyn forge_storage::SettingsRepo>;
             Task::perform(
-                async move { dp.set_sheet_width("viewers_drawer", w).await },
+                async move { crate::ui_settings::set_sheet_width(&*dp, "viewers_drawer", w).await },
                 |_| Message::Noop,
             )
         }

@@ -22,7 +22,7 @@ pub use action::{ActionRepo, ActionTelemetry};
 pub use command::CommandRepo;
 pub use credentials::{CredentialId, CredentialsRepo};
 pub use error::StorageError;
-pub use event_log::EventLogRepo;
+pub use event_log::{EventLogRepo, event_log_retention_days, set_event_log_retention_days};
 pub use globals::{GlobalEntry, GlobalsRepo};
 pub use history::{ActionStats, HistoryRepo};
 pub use provider::DataProvider;

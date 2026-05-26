@@ -19,7 +19,7 @@ pub mod test_helpers;
 pub use auth::AuthState;
 pub use bandwidth::BandwidthTracker;
 pub use bus_adapter::{BusAdapter, ClientId, EventFilter};
-pub use config::ServerConfig;
+pub use config::{ServerConfig, ServerSettings};
 pub use error::ServerError;
 pub use handle::ServerHandle;
 pub use server::{AppState, Server, start_server};

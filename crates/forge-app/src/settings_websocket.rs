@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use forge_server::ServerSettings;
 use forge_storage::SettingsRepo;
 use forge_widgets::{
     BindAddressCardParams, BindBadge, BulletItem, BulletKind, ForgePalette, Radius, ToggleProps,
@@ -111,39 +112,17 @@ pub enum SettingsWebSocketMsg {
 pub async fn load_settings_websocket(
     settings: Arc<dyn SettingsRepo>,
 ) -> Result<SettingsWebSocketSnapshot, String> {
-    let bind_address = settings
-        .server_bind_address()
-        .await
-        .map_err(|e| e.to_string())?;
-    let port = settings.server_port().await.map_err(|e| e.to_string())?;
-    let require_ws_token = settings
-        .server_auth_required_for_reads()
-        .await
-        .map_err(|e| e.to_string())?;
-    let lan_bind_enabled = settings
-        .server_lan_bind_enabled()
-        .await
-        .map_err(|e| e.to_string())?;
-    let require_http_overlay_token = settings
-        .server_http_overlay_require_token()
-        .await
-        .map_err(|e| e.to_string())?;
-    let cors_any_origin = settings
-        .server_overlay_cors_any_origin()
-        .await
-        .map_err(|e| e.to_string())?;
-    let overlay_root = settings
-        .server_overlay_root()
+    let snap = ServerSettings::load(settings.as_ref())
         .await
         .map_err(|e| e.to_string())?;
     Ok(SettingsWebSocketSnapshot {
-        bind_address,
-        port,
-        require_ws_token,
-        lan_bind_enabled,
-        require_http_overlay_token,
-        cors_any_origin,
-        overlay_root,
+        bind_address: snap.bind_address,
+        port: snap.port,
+        require_ws_token: snap.auth_required_for_reads,
+        lan_bind_enabled: snap.lan_bind_enabled,
+        require_http_overlay_token: snap.http_overlay_require_token,
+        cors_any_origin: snap.overlay_cors_any_origin,
+        overlay_root: snap.overlay_root,
     })
 }
 
@@ -204,10 +183,10 @@ pub fn update(
             let s: Arc<dyn SettingsRepo> = Arc::clone(&rt.backend) as Arc<dyn SettingsRepo>;
             Task::perform(
                 async move {
-                    s.set_server_bind_address("127.0.0.1")
+                    ServerSettings::save_bind_address(s.as_ref(), "127.0.0.1")
                         .await
                         .map_err(|e| e.to_string())?;
-                    s.set_server_lan_bind_enabled(false)
+                    ServerSettings::save_lan_bind_enabled(s.as_ref(), false)
                         .await
                         .map_err(|e| e.to_string())
                 },
@@ -229,7 +208,11 @@ pub fn update(
                 state.all_changes_saved = false;
                 let s: Arc<dyn SettingsRepo> = Arc::clone(&rt.backend) as Arc<dyn SettingsRepo>;
                 Task::perform(
-                    async move { s.set_server_port(p).await.map_err(|e| e.to_string()) },
+                    async move {
+                        ServerSettings::save_port(s.as_ref(), p)
+                            .await
+                            .map_err(|e| e.to_string())
+                    },
                     |r| Message::SettingsWebSocket(SettingsWebSocketMsg::SaveStatus(r)),
                 )
             }
@@ -244,7 +227,7 @@ pub fn update(
             let s: Arc<dyn SettingsRepo> = Arc::clone(&rt.backend) as Arc<dyn SettingsRepo>;
             Task::perform(
                 async move {
-                    s.set_server_auth_required_for_reads(val)
+                    ServerSettings::save_auth_required_for_reads(s.as_ref(), val)
                         .await
                         .map_err(|e| e.to_string())
                 },
@@ -257,12 +240,9 @@ pub fn update(
             let s: Arc<dyn SettingsRepo> = Arc::clone(&rt.backend) as Arc<dyn SettingsRepo>;
             Task::perform(
                 async move {
-                    s.set_string(
-                        forge_storage::reserved_keys::SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_KEY,
-                        if val { "true" } else { "false" },
-                    )
-                    .await
-                    .map_err(|e| e.to_string())
+                    ServerSettings::save_http_overlay_require_token(s.as_ref(), val)
+                        .await
+                        .map_err(|e| e.to_string())
                 },
                 |r| Message::SettingsWebSocket(SettingsWebSocketMsg::SaveStatus(r)),
             )
@@ -273,12 +253,9 @@ pub fn update(
             let s: Arc<dyn SettingsRepo> = Arc::clone(&rt.backend) as Arc<dyn SettingsRepo>;
             Task::perform(
                 async move {
-                    s.set_string(
-                        forge_storage::reserved_keys::SERVER_OVERLAY_CORS_ANY_ORIGIN_KEY,
-                        if val { "true" } else { "false" },
-                    )
-                    .await
-                    .map_err(|e| e.to_string())
+                    ServerSettings::save_overlay_cors_any_origin(s.as_ref(), val)
+                        .await
+                        .map_err(|e| e.to_string())
                 },
                 |r| Message::SettingsWebSocket(SettingsWebSocketMsg::SaveStatus(r)),
             )
@@ -290,12 +267,9 @@ pub fn update(
             let s: Arc<dyn SettingsRepo> = Arc::clone(&rt.backend) as Arc<dyn SettingsRepo>;
             Task::perform(
                 async move {
-                    s.set_string(
-                        forge_storage::reserved_keys::SERVER_OVERLAY_ROOT_KEY,
-                        &path_str,
-                    )
-                    .await
-                    .map_err(|e| e.to_string())
+                    ServerSettings::save_overlay_root(s.as_ref(), &path_str)
+                        .await
+                        .map_err(|e| e.to_string())
                 },
                 |r| Message::SettingsWebSocket(SettingsWebSocketMsg::SaveStatus(r)),
             )
@@ -321,10 +295,10 @@ pub fn update(
             let s: Arc<dyn SettingsRepo> = Arc::clone(&rt.backend) as Arc<dyn SettingsRepo>;
             Task::perform(
                 async move {
-                    s.set_server_bind_address("0.0.0.0")
+                    ServerSettings::save_bind_address(s.as_ref(), "0.0.0.0")
                         .await
                         .map_err(|e| e.to_string())?;
-                    s.set_server_lan_bind_enabled(true)
+                    ServerSettings::save_lan_bind_enabled(s.as_ref(), true)
                         .await
                         .map_err(|e| e.to_string())
                 },

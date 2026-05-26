@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use forge_runtime::{ActionEngineHandle, EventBus};
-use forge_server::{ServerConfig, ServerError, ServerHandle, start_server};
+use forge_server::{ServerConfig, ServerError, ServerHandle, ServerSettings, start_server};
 use forge_storage::{
     CredentialId, CredentialsRepo, DataProvider, SettingsRepo, reserved_keys::SERVER_PORT_KEY,
 };
@@ -116,36 +116,15 @@ pub async fn load_server_settings_and_start(
     subsystem: Arc<ServerSubsystem>,
 ) -> Result<ServerBootSnapshot, String> {
     let settings: &dyn SettingsRepo = backend.as_ref();
-    let bind_str = settings
-        .server_bind_address()
-        .await
-        .map_err(|e| e.to_string())?;
-    let port = settings.server_port().await.map_err(|e| e.to_string())?;
-    let lan_bind_enabled = settings
-        .server_lan_bind_enabled()
-        .await
-        .map_err(|e| e.to_string())?;
-    let auth_required_for_reads = settings
-        .server_auth_required_for_reads()
-        .await
-        .map_err(|e| e.to_string())?;
-    let http_overlay_require_token = settings
-        .server_http_overlay_require_token()
-        .await
-        .map_err(|e| e.to_string())?;
-    let overlay_cors_any_origin = settings
-        .server_overlay_cors_any_origin()
-        .await
-        .map_err(|e| e.to_string())?;
-    let overlay_root_override = settings
-        .server_overlay_root()
+    let snap = ServerSettings::load(settings)
         .await
         .map_err(|e| e.to_string())?;
 
-    let ip: std::net::IpAddr = bind_str
+    let ip: std::net::IpAddr = snap
+        .bind_address
         .parse()
         .map_err(|e: std::net::AddrParseError| format!("invalid {SERVER_PORT_KEY}: {e}"))?;
-    let bind_addr = std::net::SocketAddr::new(ip, port);
+    let bind_addr = std::net::SocketAddr::new(ip, snap.port);
 
     let mut config = ServerConfig::new(
         Arc::clone(&subsystem.credentials),
@@ -154,11 +133,11 @@ pub async fn load_server_settings_and_start(
         action_engine,
     );
     config.bind_addr = bind_addr;
-    config.auth_required_for_reads = auth_required_for_reads;
-    config.lan_bind_enabled = lan_bind_enabled;
-    config.http_overlay_require_token = http_overlay_require_token;
-    config.overlay_cors_any_origin = overlay_cors_any_origin;
-    if let Some(root) = overlay_root_override
+    config.auth_required_for_reads = snap.auth_required_for_reads;
+    config.lan_bind_enabled = snap.lan_bind_enabled;
+    config.http_overlay_require_token = snap.http_overlay_require_token;
+    config.overlay_cors_any_origin = snap.overlay_cors_any_origin;
+    if let Some(root) = snap.overlay_root
         && !root.is_empty()
     {
         config.overlay_root = std::path::PathBuf::from(root);

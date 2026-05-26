@@ -15,6 +15,7 @@ pub struct UserGlobalEntry {
     pub last_modified: OffsetDateTime,
 }
 
+#[cfg_attr(feature = "test-mocks", mockall::automock)]
 #[async_trait]
 pub trait UserGlobalsRepo: Send + Sync {
     async fn get(

@@ -3,6 +3,7 @@ use forge_types::{ActionId, Trigger, TriggerId};
 
 use crate::StorageError;
 
+#[cfg_attr(feature = "test-mocks", mockall::automock)]
 #[async_trait]
 pub trait TriggerRepo: Send + Sync {
     async fn list_for_action(&self, action_id: ActionId) -> Result<Vec<Trigger>, StorageError>;

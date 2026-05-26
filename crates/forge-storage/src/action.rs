@@ -12,6 +12,7 @@ pub struct ActionTelemetry {
     pub errors_7d: u64,
 }
 
+#[cfg_attr(feature = "test-mocks", mockall::automock)]
 #[async_trait]
 pub trait ActionRepo: Send + Sync {
     async fn list(&self) -> Result<Vec<Action>, StorageError>;
@@ -19,7 +20,10 @@ pub trait ActionRepo: Send + Sync {
     async fn save(&self, action: &Action) -> Result<(), StorageError>;
     /// Returns true if a row was removed.
     async fn delete(&self, id: ActionId) -> Result<bool, StorageError>;
-    async fn list_by_group(&self, group: Option<&str>) -> Result<Vec<Action>, StorageError>;
+    async fn list_by_group<'a>(
+        &'a self,
+        group: Option<&'a str>,
+    ) -> Result<Vec<Action>, StorageError>;
     async fn telemetry(&self, id: ActionId) -> Result<ActionTelemetry, StorageError>;
 }
 

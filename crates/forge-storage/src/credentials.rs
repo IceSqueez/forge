@@ -24,6 +24,7 @@ impl std::fmt::Display for CredentialId {
     }
 }
 
+#[cfg_attr(feature = "test-mocks", mockall::automock)]
 #[async_trait]
 pub trait CredentialsRepo: Send + Sync {
     async fn store(&self, id: &CredentialId, plaintext_bundle: &str) -> Result<(), StorageError>;

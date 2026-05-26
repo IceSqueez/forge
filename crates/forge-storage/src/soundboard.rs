@@ -18,6 +18,7 @@ pub struct StoredClip {
     pub created_at: OffsetDateTime,
 }
 
+#[cfg_attr(feature = "test-mocks", mockall::automock)]
 #[async_trait]
 pub trait SoundboardClipsRepo: Send + Sync {
     async fn list(&self) -> Result<Vec<StoredClip>, StorageError>;

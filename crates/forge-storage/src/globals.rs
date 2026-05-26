@@ -20,6 +20,7 @@ pub struct GlobalEntry {
 }
 
 /// `reads` and `writes` increment transactionally with every `get`/`set` call.
+#[cfg_attr(feature = "test-mocks", mockall::automock)]
 #[async_trait]
 pub trait GlobalsRepo: Send + Sync {
     async fn get(&self, name: &str) -> Result<Option<Variant>, StorageError>;

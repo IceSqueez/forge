@@ -4,6 +4,7 @@ pub use forge_voice::{AliasId, AssignmentStrategy, IgnoreProfile, VoiceAlias};
 
 use crate::StorageError;
 
+#[cfg_attr(feature = "test-mocks", mockall::automock)]
 #[async_trait]
 pub trait VoiceAliasRepo: Send + Sync {
     async fn list(&self) -> Result<Vec<VoiceAlias>, StorageError>;

@@ -45,6 +45,7 @@ pub struct Viewer {
     pub custom_greeting: bool,
 }
 
+#[cfg_attr(feature = "test-mocks", mockall::automock)]
 #[async_trait]
 pub trait ViewerRepo: Send + Sync {
     async fn list(&self) -> Result<Vec<Viewer>, StorageError>;

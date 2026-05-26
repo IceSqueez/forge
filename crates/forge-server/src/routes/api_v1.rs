@@ -237,7 +237,7 @@ mod tests {
     use crate::bus_adapter::BusAdapter;
     use crate::server::AppState;
     use crate::server_info::ServerInfo;
-    use crate::test_dp::null_dp;
+    use crate::test_helpers::TestDataProvider;
 
     struct MemCreds(Mutex<HashMap<String, String>>);
 
@@ -307,7 +307,10 @@ mod tests {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let bus_adapter = BusAdapter::new(Arc::clone(&bus));
         bus_adapter.spawn();
-        let dp: Arc<dyn DataProvider> = null_dp();
+        let mut tdp = TestDataProvider::new();
+        tdp.globals_repo.expect_list().returning(|| Ok(vec![]));
+        tdp.globals_repo.expect_set().returning(|_, _, _| Ok(()));
+        let dp: Arc<dyn DataProvider> = Arc::new(tdp);
         let registry = Arc::new(ScriptRegistry::new());
         let action_engine = Arc::new(spawn_action_engine(
             Arc::clone(&bus),

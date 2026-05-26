@@ -981,7 +981,7 @@ mod tests {
     use forge_storage::GlobalEntry;
     use time::OffsetDateTime;
 
-    use crate::test_dp::{VecActionDp, VecCommandDp, VecGlobalsDp, null_creds, null_dp};
+    use crate::test_helpers::{TestDataProvider, test_creds, test_dp};
     use crate::ws_client::WsClient;
 
     fn make_engine(bus: &Arc<EventBus>, dp: &Arc<dyn DataProvider>) -> Arc<ActionEngineHandle> {
@@ -999,7 +999,15 @@ mod tests {
     fn make_ctx(authenticated: bool, auth_required_for_reads: bool) -> DispatchContext {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let bus_adapter = BusAdapter::new(Arc::clone(&bus));
-        let dp: Arc<dyn DataProvider> = null_dp();
+        let mut tdp = TestDataProvider::new();
+        tdp.action_repo.expect_list().returning(|| Ok(vec![]));
+        tdp.action_repo.expect_get().returning(|_| Ok(None));
+        tdp.globals_repo.expect_get().returning(|_| Ok(None));
+        tdp.globals_repo.expect_set().returning(|_, _, _| Ok(()));
+        tdp.user_globals_repo
+            .expect_list_for_broadcaster()
+            .returning(|_| Ok(vec![]));
+        let dp: Arc<dyn DataProvider> = Arc::new(tdp);
         let auth_state = AuthState::for_test(auth_required_for_reads, "test-token");
         let drop_counter = Arc::new(AtomicU64::new(0));
         let client = Arc::new(WsClient::new(
@@ -1009,6 +1017,12 @@ mod tests {
         ));
         client.authenticated.store(authenticated, Ordering::Relaxed);
         let action_engine = make_engine(&bus, &dp);
+        let mut creds_tdp = TestDataProvider::new();
+        creds_tdp
+            .credentials_repo
+            .expect_list_ids()
+            .returning(|| Ok(vec![]));
+        let credentials: Arc<dyn forge_storage::CredentialsRepo> = Arc::new(creds_tdp);
         DispatchContext {
             bus,
             bus_adapter,
@@ -1016,7 +1030,7 @@ mod tests {
             auth_state,
             client,
             auth_required_for_reads,
-            credentials: null_creds(),
+            credentials,
             server_info: ServerInfo::new(),
             action_engine,
             overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
@@ -1042,7 +1056,7 @@ mod tests {
             auth_state,
             client,
             auth_required_for_reads: false,
-            credentials: null_creds(),
+            credentials: test_creds(),
             server_info: ServerInfo::new(),
             action_engine,
             overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
@@ -1055,7 +1069,7 @@ mod tests {
     ) -> DispatchContext {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let bus_adapter = BusAdapter::new(Arc::clone(&bus));
-        let dp: Arc<dyn DataProvider> = null_dp();
+        let dp: Arc<dyn DataProvider> = test_dp();
         let auth_state = AuthState::for_test(auth_required_for_reads, "test-token");
         let (handle, _rx) = bus_adapter
             .register_client(ClientFilterSet::new(HashSet::new()))
@@ -1067,6 +1081,12 @@ mod tests {
         ));
         client.authenticated.store(authenticated, Ordering::Relaxed);
         let action_engine = make_engine(&bus, &dp);
+        let mut creds_tdp = TestDataProvider::new();
+        creds_tdp
+            .credentials_repo
+            .expect_list_ids()
+            .returning(|| Ok(vec![]));
+        let credentials: Arc<dyn forge_storage::CredentialsRepo> = Arc::new(creds_tdp);
         DispatchContext {
             bus,
             bus_adapter,
@@ -1074,7 +1094,7 @@ mod tests {
             auth_state,
             client,
             auth_required_for_reads,
-            credentials: null_creds(),
+            credentials,
             server_info: ServerInfo::new(),
             action_engine,
             overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
@@ -1231,7 +1251,12 @@ mod tests {
     async fn get_actions_returns_wire_shape_for_seeded_action() {
         let action = sample_action();
         let action_id_str = action.id.to_string();
-        let dp = VecActionDp::with_actions(vec![action]);
+        let actions = vec![action];
+        let mut tdp = TestDataProvider::new();
+        tdp.action_repo
+            .expect_list()
+            .returning(move || Ok(actions.clone()));
+        let dp: Arc<dyn DataProvider> = Arc::new(tdp);
         let ctx = make_ctx_with_dp(false, dp);
         let req = WsEnvelope {
             id: Some("5".to_owned()),
@@ -1256,7 +1281,13 @@ mod tests {
     async fn do_action_valid_id_returns_ok_with_execution_id() {
         let action = sample_action();
         let action_id_str = action.id.to_string();
-        let dp = VecActionDp::with_actions(vec![action]);
+        let action_clone = action.clone();
+        let mut tdp = TestDataProvider::new();
+        tdp.action_repo
+            .expect_get()
+            .returning(move |_| Ok(Some(action_clone.clone())));
+        tdp.history_repo.expect_save().returning(|_| Ok(()));
+        let dp: Arc<dyn DataProvider> = Arc::new(tdp);
         let ctx = make_ctx_with_dp(true, dp);
         let req = WsEnvelope {
             id: Some("6".to_owned()),
@@ -1644,7 +1675,12 @@ mod tests {
         let cmd = sample_command();
         let cmd_id = cmd.id.to_string();
         let action_id = cmd.action_id.to_string();
-        let dp = VecCommandDp::with_commands(vec![cmd]);
+        let commands = vec![cmd];
+        let mut tdp = TestDataProvider::new();
+        tdp.command_repo
+            .expect_list()
+            .returning(move || Ok(commands.clone()));
+        let dp: Arc<dyn DataProvider> = Arc::new(tdp);
         let ctx = make_ctx_with_dp(false, dp);
         let req = WsEnvelope {
             id: Some("7".to_owned()),
@@ -1666,7 +1702,12 @@ mod tests {
     #[tokio::test]
     async fn get_globals_returns_list_with_sample_global() {
         let entry = sample_global_entry();
-        let dp = VecGlobalsDp::with_globals(vec![entry]);
+        let entries = vec![entry];
+        let mut tdp = TestDataProvider::new();
+        tdp.globals_repo
+            .expect_list()
+            .returning(move || Ok(entries.clone()));
+        let dp: Arc<dyn DataProvider> = Arc::new(tdp);
         let ctx = make_ctx_with_dp(false, dp);
         let req = WsEnvelope {
             id: Some("8".to_owned()),
@@ -1689,7 +1730,12 @@ mod tests {
     #[tokio::test]
     async fn get_global_existing_returns_value() {
         let entry = sample_global_entry();
-        let dp = VecGlobalsDp::with_globals(vec![entry]);
+        let entry_clone = entry.clone();
+        let mut tdp = TestDataProvider::new();
+        tdp.globals_repo
+            .expect_get()
+            .returning(move |_| Ok(Some(entry_clone.value.clone())));
+        let dp: Arc<dyn DataProvider> = Arc::new(tdp);
         let ctx = make_ctx_with_dp(false, dp);
         let req = WsEnvelope {
             id: Some("9".to_owned()),
@@ -1816,16 +1862,20 @@ mod tests {
 
     #[tokio::test]
     async fn get_user_globals_with_user_id_returns_filtered_globals() {
-        use crate::test_dp::VecUserGlobalsDp;
         let entry = sample_user_global_entry();
-        let other_entry = forge_storage::UserGlobalEntry {
+        let _other_entry = forge_storage::UserGlobalEntry {
             broadcaster_id: "12345678".to_string(),
             user_id: "11111111".to_string(),
             name: "other".to_string(),
             value: forge_types::Variant::Int(0),
             last_modified: OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap(),
         };
-        let dp = VecUserGlobalsDp::with_entries(vec![entry, other_entry]);
+        let filtered = vec![entry];
+        let mut tdp = TestDataProvider::new();
+        tdp.user_globals_repo
+            .expect_list_for_user()
+            .returning(move |_, _| Ok(filtered.clone()));
+        let dp: Arc<dyn DataProvider> = Arc::new(tdp);
         let ctx = make_ctx_with_dp(false, dp);
         let req = WsEnvelope {
             id: Some("11".to_owned()),
@@ -1848,7 +1898,6 @@ mod tests {
 
     #[tokio::test]
     async fn get_user_globals_without_user_id_returns_all_broadcaster_globals() {
-        use crate::test_dp::VecUserGlobalsDp;
         let entry1 = sample_user_global_entry();
         let entry2 = forge_storage::UserGlobalEntry {
             broadcaster_id: "12345678".to_string(),
@@ -1857,7 +1906,12 @@ mod tests {
             value: forge_types::Variant::Int(5),
             last_modified: OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap(),
         };
-        let dp = VecUserGlobalsDp::with_entries(vec![entry1, entry2]);
+        let all_entries = vec![entry1, entry2];
+        let mut tdp = TestDataProvider::new();
+        tdp.user_globals_repo
+            .expect_list_for_broadcaster()
+            .returning(move |_| Ok(all_entries.clone()));
+        let dp: Arc<dyn DataProvider> = Arc::new(tdp);
         let ctx = make_ctx_with_dp(false, dp);
         let req = WsEnvelope {
             id: Some("11".to_owned()),

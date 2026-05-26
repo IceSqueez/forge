@@ -19,6 +19,7 @@ pub struct ScriptRecord {
     pub last_modified: OffsetDateTime,
 }
 
+#[cfg_attr(feature = "test-mocks", mockall::automock)]
 #[async_trait]
 pub trait ScriptRepo: Send + Sync {
     async fn get(&self, id: ScriptId) -> Result<Option<ScriptRecord>, StorageError>;

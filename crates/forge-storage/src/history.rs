@@ -13,6 +13,7 @@ pub struct ActionStats {
     pub runs_24h: u32,
 }
 
+#[cfg_attr(feature = "test-mocks", mockall::automock)]
 #[async_trait]
 pub trait HistoryRepo: Send + Sync {
     async fn save(&self, ctx: &ExecutionContext) -> Result<(), StorageError>;

@@ -33,6 +33,7 @@ pub mod reserved_keys {
 
 const VALID_BIND_ADDRESSES: &[&str] = &["127.0.0.1", "0.0.0.0", "::1", "::"];
 
+#[cfg_attr(feature = "test-mocks", mockall::automock)]
 #[async_trait]
 pub trait SettingsRepo: Send + Sync {
     async fn get_string(&self, key: &str) -> Result<Option<String>, StorageError>;

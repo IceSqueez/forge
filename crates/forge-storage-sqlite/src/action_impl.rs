@@ -173,7 +173,10 @@ impl ActionRepo for SqliteActionRepo {
         Ok(result.rows_affected() > 0)
     }
 
-    async fn list_by_group(&self, group: Option<&str>) -> Result<Vec<Action>, StorageError> {
+    async fn list_by_group<'a>(
+        &'a self,
+        group: Option<&'a str>,
+    ) -> Result<Vec<Action>, StorageError> {
         let group_val = group.unwrap_or("");
         let rows: Vec<ActionRow> = sqlx::query_as(
             "SELECT id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions, execution_mode

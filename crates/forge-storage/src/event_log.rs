@@ -5,6 +5,7 @@ use time::OffsetDateTime;
 
 use crate::StorageError;
 
+#[cfg_attr(feature = "test-mocks", mockall::automock)]
 #[async_trait]
 pub trait EventLogRepo: Send + Sync {
     async fn insert(&self, event: &Event) -> Result<(), StorageError>;

@@ -14,7 +14,7 @@ pub mod server_info;
 pub mod ws_client;
 
 #[cfg(test)]
-pub mod test_dp;
+pub mod test_helpers;
 
 pub use auth::AuthState;
 pub use bandwidth::BandwidthTracker;

@@ -1,6 +1,9 @@
 pub mod action_editor;
 pub mod actions;
+pub mod actions_forms;
 pub mod actions_modals;
+pub mod actions_telemetry;
+pub mod actions_trigger_kinds;
 pub mod actions_view;
 pub mod app;
 pub mod boot;

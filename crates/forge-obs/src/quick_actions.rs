@@ -1,5 +1,7 @@
+use std::collections::BTreeMap;
+
 use forge_platform_core::{ConnectionState, PickerKind, QuickAction, QuickActions, SectionIcon};
-use forge_types::SubActionSpec;
+use forge_types::{SubActionStep, Variant};
 
 use crate::client::ObsClient;
 
@@ -17,8 +19,14 @@ impl QuickActions for ObsClient {
                 label: "Switch Scene".to_owned(),
                 icon: SectionIcon::new("arrows-shuffle"),
                 enabled: connected,
-                subaction_template: SubActionSpec::ObsSetScene {
-                    scene_name: String::new(),
+                subaction_template: SubActionStep {
+                    kind_id: "obs.scenes.switch_current".to_owned(),
+                    config: BTreeMap::from([(
+                        "scene".to_owned(),
+                        Variant::String(String::new()),
+                    )]),
+                    enabled: true,
+                    label: None,
                 },
                 picker: Some(PickerKind::Scene),
             },
@@ -26,10 +34,15 @@ impl QuickActions for ObsClient {
                 label: "Toggle Source".to_owned(),
                 icon: SectionIcon::new("eye"),
                 enabled: connected,
-                subaction_template: SubActionSpec::ObsSetSourceVisible {
-                    scene_name: String::new(),
-                    source_name: String::new(),
-                    visible: true,
+                subaction_template: SubActionStep {
+                    kind_id: "obs.sources.set_visible".to_owned(),
+                    config: BTreeMap::from([
+                        ("scene".to_owned(), Variant::String(String::new())),
+                        ("source".to_owned(), Variant::String(String::new())),
+                        ("visible".to_owned(), Variant::Bool(true)),
+                    ]),
+                    enabled: true,
+                    label: None,
                 },
                 picker: Some(PickerKind::Source),
             },
@@ -37,9 +50,14 @@ impl QuickActions for ObsClient {
                 label: "Set Mute".to_owned(),
                 icon: SectionIcon::new("volume"),
                 enabled: connected,
-                subaction_template: SubActionSpec::ObsSetInputMute {
-                    input_name: String::new(),
-                    muted: true,
+                subaction_template: SubActionStep {
+                    kind_id: "obs.audio.set_mute".to_owned(),
+                    config: BTreeMap::from([
+                        ("source".to_owned(), Variant::String(String::new())),
+                        ("muted".to_owned(), Variant::Bool(true)),
+                    ]),
+                    enabled: true,
+                    label: None,
                 },
                 picker: Some(PickerKind::Input),
             },
@@ -47,7 +65,12 @@ impl QuickActions for ObsClient {
                 label: "Start Recording".to_owned(),
                 icon: SectionIcon::new("record"),
                 enabled: connected && !recording,
-                subaction_template: SubActionSpec::ObsStartRecord,
+                subaction_template: SubActionStep {
+                    kind_id: "obs.record.start".to_owned(),
+                    config: BTreeMap::new(),
+                    enabled: true,
+                    label: None,
+                },
                 picker: None,
             },
         ]
@@ -57,7 +80,6 @@ impl QuickActions for ObsClient {
 #[cfg(test)]
 mod tests {
     use forge_platform_core::QuickActions;
-    use forge_types::SubActionSpec;
 
     use crate::client::ObsClient;
 
@@ -79,26 +101,19 @@ mod tests {
     }
 
     #[test]
-    fn actions_subaction_variants_are_correct() {
+    fn actions_kind_ids_are_correct() {
         let client = ObsClient::new_for_test("localhost:4455".to_owned());
         let actions = client.actions();
-
-        assert!(matches!(
-            &actions[0].subaction_template,
-            SubActionSpec::ObsSetScene { .. }
-        ));
-        assert!(matches!(
-            &actions[1].subaction_template,
-            SubActionSpec::ObsSetSourceVisible { .. }
-        ));
-        assert!(matches!(
-            &actions[2].subaction_template,
-            SubActionSpec::ObsSetInputMute { .. }
-        ));
-        assert!(matches!(
-            &actions[3].subaction_template,
-            SubActionSpec::ObsStartRecord
-        ));
+        assert_eq!(
+            actions[0].subaction_template.kind_id,
+            "obs.scenes.switch_current"
+        );
+        assert_eq!(
+            actions[1].subaction_template.kind_id,
+            "obs.sources.set_visible"
+        );
+        assert_eq!(actions[2].subaction_template.kind_id, "obs.audio.set_mute");
+        assert_eq!(actions[3].subaction_template.kind_id, "obs.record.start");
     }
 
     #[test]

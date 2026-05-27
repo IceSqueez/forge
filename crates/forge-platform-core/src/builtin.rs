@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use forge_types::SubActionSpec;
+use forge_types::SubActionStep;
 
 use crate::ConnectionState;
 
@@ -263,7 +263,7 @@ pub struct QuickAction {
     pub label: String,
     pub icon: SectionIcon,
     pub enabled: bool,
-    pub subaction_template: SubActionSpec,
+    pub subaction_template: SubActionStep,
     pub picker: Option<PickerKind>,
 }
 
@@ -317,6 +317,10 @@ pub trait QuickActions: Send + Sync {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
+    use std::collections::BTreeMap;
+
+    use forge_types::Variant;
+
     use super::*;
 
     #[test]
@@ -554,8 +558,14 @@ mod tests {
             label: "Switch to Main".to_owned(),
             icon: SectionIcon::new("play"),
             enabled: true,
-            subaction_template: SubActionSpec::ObsSetScene {
-                scene_name: "Main Scene".to_owned(),
+            subaction_template: SubActionStep {
+                kind_id: "obs.scenes.switch_current".to_owned(),
+                config: BTreeMap::from([(
+                    "scene".to_owned(),
+                    Variant::String("Main Scene".to_owned()),
+                )]),
+                enabled: true,
+                label: None,
             },
             picker: Some(PickerKind::Scene),
         };

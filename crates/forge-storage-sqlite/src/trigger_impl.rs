@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use forge_storage::{StorageError, TriggerRepo};
-use forge_types::{ActionId, Trigger, TriggerConfig, TriggerId, TriggerKind};
-use serde_json;
+use forge_types::{ActionId, Trigger, TriggerConfig, TriggerId};
 
 use crate::error::SqliteStorageError;
 
@@ -13,26 +12,18 @@ fn parse_id<T: serde::de::DeserializeOwned>(s: &str, label: &str) -> Result<T, S
 fn decode_row(
     id_str: String,
     action_id_str: String,
-    kind_str: String,
+    kind_id: String,
     config_json: String,
 ) -> Result<Trigger, SqliteStorageError> {
     let id: TriggerId = parse_id(&id_str, "trigger")?;
     let action_id: ActionId = parse_id(&action_id_str, "action")?;
-    let raw = if kind_str.starts_with('{') || kind_str.starts_with('[') {
-        kind_str.clone()
-    } else {
-        format!("\"{kind_str}\"")
-    };
-    let kind: TriggerKind = serde_json::from_str(&raw).map_err(|e| {
-        SqliteStorageError::Decode(format!("invalid trigger kind '{kind_str}': {e}"))
-    })?;
     let config: TriggerConfig = serde_json::from_str(&config_json)
         .map_err(|e| SqliteStorageError::Decode(format!("invalid trigger config json: {e}")))?;
 
     Ok(Trigger {
         id,
         action_id,
-        kind,
+        kind_id,
         config,
     })
 }
@@ -70,10 +61,7 @@ impl TriggerRepo for SqliteTriggerRepo {
     async fn save(&self, trigger: &Trigger) -> Result<(), StorageError> {
         let id_str = trigger.id.to_string();
         let action_id_str = trigger.action_id.to_string();
-        let kind_str = serde_json::to_string(&trigger.kind)
-            .map_err(StorageError::Serialization)?
-            .trim_matches('"')
-            .to_string();
+        let kind_str = trigger.kind_id.clone();
         let config_json =
             serde_json::to_string(&trigger.config).map_err(StorageError::Serialization)?;
 

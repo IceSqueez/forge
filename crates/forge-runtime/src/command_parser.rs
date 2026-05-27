@@ -198,18 +198,18 @@ mod tests {
     use std::time::Duration;
 
     use forge_events::{Event, EventSource};
+    use forge_registry::SubActionRegistry;
     use forge_storage::{DataProvider, GlobalsRepo};
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::{
-        Action, ActionId, Command, CommandId, CommandPermission, LogLevel, Queue, QueueId,
-        SubActionSpec,
+        Action, ActionId, Command, CommandId, CommandPermission, Queue, QueueId, SubActionStep,
     };
     use serde_json::json;
 
     use super::*;
     use crate::{
         EventBus, EventSubscription, NullEventLogRepo, QueueScheduler, ScriptRegistry,
-        spawn_action_engine,
+        register_core_sub_actions, spawn_action_engine,
     };
 
     async fn make_dp() -> Arc<dyn DataProvider> {
@@ -231,9 +231,11 @@ mod tests {
             bypass_pause: false,
             execution_mode: forge_types::ExecutionMode::Sequential,
             description: None,
-            sub_actions: vec![SubActionSpec::Log {
-                level: LogLevel::Info,
-                message: "ok".to_string(),
+            sub_actions: vec![SubActionStep {
+                kind_id: "core.log.write".to_owned(),
+                config: std::collections::BTreeMap::new(),
+                enabled: true,
+                label: None,
             }],
         }
     }
@@ -313,11 +315,7 @@ mod tests {
             Arc::clone(&bus),
             dp.action_repo(),
             dp.history_repo(),
-            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            Arc::new(ScriptRegistry::new()),
-            None,
-            None,
-            None,
+            Arc::new(SubActionRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let _handle =
@@ -355,11 +353,7 @@ mod tests {
             Arc::clone(&bus),
             dp.action_repo(),
             dp.history_repo(),
-            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            Arc::new(ScriptRegistry::new()),
-            None,
-            None,
-            None,
+            Arc::new(SubActionRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let _handle =
@@ -408,11 +402,7 @@ mod tests {
             Arc::clone(&bus),
             dp.action_repo(),
             dp.history_repo(),
-            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            Arc::new(ScriptRegistry::new()),
-            None,
-            None,
-            None,
+            Arc::new(SubActionRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let _handle =
@@ -448,11 +438,7 @@ mod tests {
             Arc::clone(&bus),
             dp.action_repo(),
             dp.history_repo(),
-            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            Arc::new(ScriptRegistry::new()),
-            None,
-            None,
-            None,
+            Arc::new(SubActionRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let _handle =
@@ -485,11 +471,7 @@ mod tests {
             Arc::clone(&bus),
             dp.action_repo(),
             dp.history_repo(),
-            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            Arc::new(ScriptRegistry::new()),
-            None,
-            None,
-            None,
+            Arc::new(SubActionRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let _handle =
@@ -522,11 +504,7 @@ mod tests {
             Arc::clone(&bus),
             dp.action_repo(),
             dp.history_repo(),
-            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            Arc::new(ScriptRegistry::new()),
-            None,
-            None,
-            None,
+            Arc::new(SubActionRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let _handle =
@@ -565,11 +543,7 @@ mod tests {
             Arc::clone(&bus),
             dp.action_repo(),
             dp.history_repo(),
-            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            Arc::new(ScriptRegistry::new()),
-            None,
-            None,
-            None,
+            Arc::new(SubActionRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let _handle =
@@ -633,9 +607,11 @@ mod tests {
             bypass_pause: false,
             execution_mode: forge_types::ExecutionMode::Sequential,
             description: None,
-            sub_actions: vec![SubActionSpec::SendChat {
-                message: "hello from chain".to_string(),
-                target: "twitch".to_string(),
+            sub_actions: vec![SubActionStep {
+                kind_id: "twitch.chat.send_message".to_owned(),
+                config: std::collections::BTreeMap::new(),
+                enabled: true,
+                label: None,
             }],
         };
         let command = make_command(c_id, a_id, "!chain", 0);
@@ -643,15 +619,21 @@ mod tests {
 
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
+        let publisher: Arc<dyn forge_events::EventPublisher> =
+            Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>;
+        let mut sub_reg = SubActionRegistry::new();
+        register_core_sub_actions(
+            &mut sub_reg,
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
+            Arc::new(ScriptRegistry::new()),
+            publisher,
+        )
+        .unwrap();
         let engine = spawn_action_engine(
             Arc::clone(&bus),
             dp.action_repo(),
             dp.history_repo(),
-            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            Arc::new(ScriptRegistry::new()),
-            None,
-            None,
-            None,
+            Arc::new(sub_reg),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let _handle =

@@ -4,7 +4,7 @@ use forge_storage::{
     ActionRepo, ActionTelemetry, CommandRepo, HistoryRepo, QueueRepo, SoundboardClipsRepo,
     StorageError, TriggerRepo,
 };
-use forge_types::{ActionId, ClipId, SubActionSpec};
+use forge_types::{ActionId, ClipId, SubActionStep};
 use time::OffsetDateTime;
 
 use super::types::{ActionDetail, ActionSummary};
@@ -46,7 +46,9 @@ impl ActionsService {
         let mut summaries = Vec::with_capacity(actions.len());
         for action in actions {
             let action_triggers = self.triggers.list_for_action(action.id).await?;
-            let first_trigger_kind = action_triggers.first().map(|t| t.kind.clone());
+            let first_trigger_kind_id = action_triggers
+                .first()
+                .map(|t| t.kind_id.clone());
 
             let queue_name = all_queues
                 .iter()
@@ -64,7 +66,7 @@ impl ActionsService {
                 name: action.name,
                 enabled: action.enabled,
                 sub_action_count: action.sub_actions.len() as u16,
-                first_trigger_kind,
+                first_trigger_kind_id,
                 queue_name,
                 last_ran,
                 runs_24h,
@@ -101,7 +103,7 @@ impl ActionsService {
     pub async fn save_sub_action(
         &self,
         action_id: ActionId,
-        spec: SubActionSpec,
+        step: SubActionStep,
         editing_index: Option<usize>,
     ) -> Result<(), StorageError> {
         let Some(mut action) = self.actions.get(action_id).await? else {
@@ -111,12 +113,12 @@ impl ActionsService {
         };
         if let Some(idx) = editing_index {
             if idx < action.sub_actions.len() {
-                action.sub_actions[idx] = spec;
+                action.sub_actions[idx] = step;
             } else {
-                action.sub_actions.push(spec);
+                action.sub_actions.push(step);
             }
         } else {
-            action.sub_actions.push(spec);
+            action.sub_actions.push(step);
         }
         self.actions.save(&action).await
     }

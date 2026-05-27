@@ -302,14 +302,13 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use forge_storage::{DataProvider, GlobalsRepo};
+    use forge_registry::SubActionRegistry;
+    use forge_storage::DataProvider;
     use forge_storage_sqlite::SqliteBackend;
-    use forge_types::{Action, ActionId, EventId, LogLevel, Queue, QueueId, SubActionSpec};
+    use forge_types::{Action, ActionId, EventId, Queue, QueueId, SubActionStep};
 
     use super::*;
-    use crate::{
-        EventBus, EventSubscription, NullEventLogRepo, ScriptRegistry, spawn_action_engine,
-    };
+    use crate::{EventBus, EventSubscription, NullEventLogRepo, spawn_action_engine};
 
     async fn make_dp() -> Arc<dyn DataProvider> {
         Arc::new(
@@ -335,9 +334,11 @@ mod tests {
             bypass_pause: false,
             execution_mode: forge_types::ExecutionMode::Sequential,
             description: None,
-            sub_actions: vec![SubActionSpec::Log {
-                level: LogLevel::Info,
-                message: "ping".to_string(),
+            sub_actions: vec![SubActionStep {
+                kind_id: "core.log.write".to_owned(),
+                config: std::collections::BTreeMap::new(),
+                enabled: true,
+                label: None,
             }],
         }
     }
@@ -388,11 +389,7 @@ mod tests {
             Arc::clone(&bus),
             dp.action_repo(),
             dp.history_repo(),
-            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            Arc::new(ScriptRegistry::new()),
-            None,
-            None,
-            None,
+            Arc::new(SubActionRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let mut sub = bus.subscribe();
@@ -435,11 +432,7 @@ mod tests {
             Arc::clone(&bus),
             dp.action_repo(),
             dp.history_repo(),
-            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            Arc::new(ScriptRegistry::new()),
-            None,
-            None,
-            None,
+            Arc::new(SubActionRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let mut sub = bus.subscribe();
@@ -489,11 +482,7 @@ mod tests {
             Arc::clone(&bus),
             dp.action_repo(),
             dp.history_repo(),
-            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            Arc::new(ScriptRegistry::new()),
-            None,
-            None,
-            None,
+            Arc::new(SubActionRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let mut sub = bus.subscribe();
@@ -544,11 +533,7 @@ mod tests {
             Arc::clone(&bus),
             dp.action_repo(),
             dp.history_repo(),
-            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            Arc::new(ScriptRegistry::new()),
-            None,
-            None,
-            None,
+            Arc::new(SubActionRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let mut sub = bus.subscribe();
@@ -587,11 +572,7 @@ mod tests {
             Arc::clone(&bus),
             dp.action_repo(),
             dp.history_repo(),
-            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            Arc::new(ScriptRegistry::new()),
-            None,
-            None,
-            None,
+            Arc::new(SubActionRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let mut sub = bus.subscribe();
@@ -629,11 +610,7 @@ mod tests {
             Arc::clone(&bus),
             dp.action_repo(),
             dp.history_repo(),
-            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            Arc::new(ScriptRegistry::new()),
-            None,
-            None,
-            None,
+            Arc::new(SubActionRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let mut sub = bus.subscribe();
@@ -659,11 +636,7 @@ mod tests {
             Arc::clone(&bus),
             dp.action_repo(),
             dp.history_repo(),
-            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            Arc::new(ScriptRegistry::new()),
-            None,
-            None,
-            None,
+            Arc::new(SubActionRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let mut sub = bus.subscribe();
@@ -693,11 +666,7 @@ mod tests {
             Arc::clone(&bus),
             dp.action_repo(),
             dp.history_repo(),
-            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            Arc::new(ScriptRegistry::new()),
-            None,
-            None,
-            None,
+            Arc::new(SubActionRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let mut sub = bus.subscribe();

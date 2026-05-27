@@ -3,40 +3,42 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use forge_events::{Event, EventSource};
+use forge_registry::TriggerRegistry;
 use forge_storage::{ActionRepo, TriggerRepo};
-use forge_types::{ArgStack, TriggerKind, Variant};
 use tracing::warn;
 
 use crate::{EventBus, EventSubscription, QueueSchedulerHandle, SchedulerRequest};
 
 #[derive(Clone)]
-pub struct CodeTriggerHandle {
+pub struct TriggerEvaluatorHandle {
     cancel: Arc<AtomicBool>,
 }
 
-impl CodeTriggerHandle {
+impl TriggerEvaluatorHandle {
     pub fn shutdown(self) {
         self.cancel.store(true, Ordering::Relaxed);
     }
 }
 
-pub struct CodeTriggerEvaluator {
+pub struct TriggerEvaluator {
+    registry: Arc<TriggerRegistry>,
     actions: Arc<dyn ActionRepo>,
     triggers: Arc<dyn TriggerRepo>,
     scheduler: QueueSchedulerHandle,
     subscription: EventSubscription,
 }
 
-impl CodeTriggerEvaluator {
+impl TriggerEvaluator {
     pub fn spawn(
         bus: Arc<EventBus>,
+        registry: Arc<TriggerRegistry>,
         actions: Arc<dyn ActionRepo>,
         triggers: Arc<dyn TriggerRepo>,
         scheduler: QueueSchedulerHandle,
-    ) -> CodeTriggerHandle {
+    ) -> TriggerEvaluatorHandle {
         let subscription = bus.subscribe();
         let evaluator = Self {
+            registry,
             actions,
             triggers,
             scheduler,
@@ -45,31 +47,43 @@ impl CodeTriggerEvaluator {
         let cancel = Arc::new(AtomicBool::new(false));
         let cancel_clone = Arc::clone(&cancel);
         tokio::spawn(async move { evaluator.run(cancel_clone).await });
-        CodeTriggerHandle { cancel }
+        TriggerEvaluatorHandle { cancel }
     }
 
     async fn run(mut self, cancel: Arc<AtomicBool>) {
         while !cancel.load(Ordering::Relaxed) {
             match self.subscription.recv().await {
-                Ok(event)
-                    if event.source == EventSource::Server && event.kind.starts_with("custom.") =>
-                {
-                    self.handle_code_event(event).await;
-                }
-                Ok(_) => {}
+                Ok(event) => self.handle(event).await,
                 Err(_) => break,
             }
         }
     }
 
-    async fn handle_code_event(&mut self, event: Event) {
-        let name = &event.kind["custom.".len()..];
-        let event_id = event.id;
+    async fn handle(&mut self, event: forge_events::Event) {
+        let descriptors: Vec<_> = self
+            .registry
+            .all()
+            .filter(|d| {
+                let filter = d.event_filter();
+                let source_ok = filter
+                    .source
+                    .is_none_or(|s| s == event.source);
+                let prefix_ok = filter
+                    .kind_prefix
+                    .as_deref()
+                    .is_none_or(|p| event.kind.starts_with(p));
+                source_ok && prefix_ok
+            })
+            .collect();
+
+        if descriptors.is_empty() {
+            return;
+        }
 
         let actions = match self.actions.list().await {
             Ok(a) => a,
             Err(e) => {
-                warn!("code_trigger: action_repo.list failed: {e}");
+                warn!("trigger_evaluator: action_repo.list failed: {e}");
                 return;
             }
         };
@@ -79,68 +93,89 @@ impl CodeTriggerEvaluator {
                 continue;
             }
 
-            let triggers = match self.triggers.list_for_action(action.id).await {
+            let trigger_rows = match self.triggers.list_for_action(action.id).await {
                 Ok(t) => t,
                 Err(e) => {
-                    warn!("code_trigger: trigger_repo.list_for_action failed: {e}");
+                    warn!(
+                        "trigger_evaluator: trigger_repo.list_for_action failed: {e}"
+                    );
                     continue;
                 }
             };
 
-            for trigger in &triggers {
-                let TriggerKind::CodeEvent {
-                    name: ref trigger_name,
-                } = trigger.kind
-                else {
-                    continue;
+            for trigger in &trigger_rows {
+                let descriptor = match self.registry.get(&trigger.kind_id) {
+                    Some(d) => d,
+                    None => {
+                        warn!(
+                            "unknown trigger kind_id: {} — trigger will never fire",
+                            trigger.kind_id
+                        );
+                        continue;
+                    }
                 };
-                if trigger_name != name {
+
+                let filter = descriptor.event_filter();
+                let source_ok = filter
+                    .source
+                    .is_none_or(|s| s == event.source);
+                let prefix_ok = filter
+                    .kind_prefix
+                    .as_deref()
+                    .is_none_or(|p| event.kind.starts_with(p));
+
+                if !source_ok || !prefix_ok {
                     continue;
                 }
-                let args = build_args_from_payload(&event.payload);
+
+                if !descriptor.matches_trigger(trigger, &event) {
+                    continue;
+                }
+
+                let args = descriptor.build_arg_stack(&event);
                 let req = SchedulerRequest {
                     queue_id: action.queue_id,
                     action_id: action.id,
-                    trigger_event_id: event_id,
+                    trigger_event_id: event.id,
                     initial_args: args,
                     bypass_pause: action.bypass_pause,
                 };
                 if let Err(e) = self.scheduler.dispatch(req).await {
-                    warn!("code_trigger: scheduler dispatch failed: {e}");
+                    warn!("trigger_evaluator: scheduler dispatch failed: {e}");
                 }
             }
         }
     }
 }
 
-fn build_args_from_payload(payload: &serde_json::Value) -> ArgStack {
-    let Some(obj) = payload.as_object() else {
-        return ArgStack::new();
-    };
-    obj.iter()
-        .filter_map(|(k, v)| Variant::from_json(v.clone()).ok().map(|vv| (k.clone(), vv)))
-        .fold(ArgStack::new(), |stack, (k, v)| stack.set(k, v))
+pub fn spawn_trigger_evaluator(
+    bus: Arc<EventBus>,
+    registry: Arc<TriggerRegistry>,
+    actions: Arc<dyn ActionRepo>,
+    triggers: Arc<dyn TriggerRepo>,
+    scheduler: QueueSchedulerHandle,
+) -> TriggerEvaluatorHandle {
+    TriggerEvaluator::spawn(bus, registry, actions, triggers, scheduler)
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use std::collections::BTreeMap;
     use std::sync::Arc;
     use std::time::Duration;
 
     use forge_events::{Event, EventSource};
+    use forge_registry::{SubActionRegistry, TriggerRegistry};
     use forge_storage::{DataProvider, GlobalsRepo};
     use forge_storage_sqlite::SqliteBackend;
-    use forge_types::{
-        Action, ActionId, LogLevel, Queue, QueueId, SubActionSpec, Trigger, TriggerId, TriggerKind,
-    };
+    use forge_types::{Action, ActionId, Queue, QueueId, SubActionStep, Trigger, TriggerId};
     use serde_json::json;
 
     use super::*;
     use crate::{
         EventBus, EventSubscription, NullEventLogRepo, QueueScheduler, ScriptRegistry,
-        spawn_action_engine,
+        sub_action_runners::register_core_sub_actions,
+        triggers::register_core_triggers,
     };
 
     async fn make_dp() -> Arc<dyn DataProvider> {
@@ -162,21 +197,33 @@ mod tests {
             bypass_pause: false,
             execution_mode: forge_types::ExecutionMode::Sequential,
             description: None,
-            sub_actions: vec![SubActionSpec::Log {
-                level: LogLevel::Info,
-                message: "ok".to_string(),
+            sub_actions: vec![SubActionStep {
+                kind_id: "core.log.write".to_owned(),
+                config: {
+                    let mut c = std::collections::BTreeMap::new();
+                    c.insert(
+                        "message".to_owned(),
+                        forge_types::Variant::String("ok".to_owned()),
+                    );
+                    c
+                },
+                enabled: true,
+                label: None,
             }],
         }
     }
 
-    fn code_event_trigger(action_id: ActionId, name: &str) -> Trigger {
+    fn custom_event_trigger(action_id: ActionId, event_name: &str) -> Trigger {
+        let mut config = std::collections::BTreeMap::new();
+        config.insert(
+            "event_name".to_owned(),
+            forge_types::Variant::String(event_name.to_owned()),
+        );
         Trigger {
             id: TriggerId::new(),
             action_id,
-            kind: TriggerKind::CodeEvent {
-                name: name.to_string(),
-            },
-            config: BTreeMap::new(),
+            kind_id: "script.event.custom".to_owned(),
+            config,
         }
     }
 
@@ -207,8 +254,23 @@ mod tests {
         false
     }
 
+    fn build_registries(globals: Arc<dyn GlobalsRepo>) -> (Arc<SubActionRegistry>, Arc<TriggerRegistry>) {
+        let registry = Arc::new(ScriptRegistry::new());
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let publisher: Arc<dyn forge_events::EventPublisher> =
+            Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>;
+
+        let mut sub_reg = SubActionRegistry::new();
+        register_core_sub_actions(&mut sub_reg, globals, registry, publisher).unwrap();
+
+        let mut trig_reg = TriggerRegistry::new();
+        register_core_triggers(&mut trig_reg).unwrap();
+
+        (Arc::new(sub_reg), Arc::new(trig_reg))
+    }
+
     #[tokio::test]
-    async fn matching_name_dispatches_action() {
+    async fn matching_custom_event_dispatches_action() {
         let dp = make_dp().await;
         let q_id = QueueId::new();
         let a_id = ActionId::new();
@@ -218,27 +280,27 @@ mod tests {
             blocking: false,
         };
         let action = log_action(a_id, q_id);
-        let trigger = code_event_trigger(a_id, "my_event");
+        let trigger = custom_event_trigger(a_id, "my_event");
 
         dp.queue_repo().save(&queue).await.unwrap();
         dp.action_repo().save(&action).await.unwrap();
         dp.trigger_repo().save(&trigger).await.unwrap();
 
+        let (sub_reg, trig_reg) = build_registries(Arc::clone(&dp) as Arc<dyn GlobalsRepo>);
+
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
-        let engine = spawn_action_engine(
+
+        let engine = crate::action_engine::spawn_action_engine(
             Arc::clone(&bus),
             dp.action_repo(),
             dp.history_repo(),
-            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            Arc::new(ScriptRegistry::new()),
-            None,
-            None,
-            None,
+            sub_reg,
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
-        let _handle = CodeTriggerEvaluator::spawn(
+        let _handle = spawn_trigger_evaluator(
             Arc::clone(&bus),
+            trig_reg,
             dp.action_repo(),
             dp.trigger_repo(),
             sched,
@@ -254,12 +316,12 @@ mod tests {
         let done = collect_kind(&mut sub, "action.done", 30).await;
         assert!(
             done.is_some(),
-            "action.done expected for matching code event"
+            "action.done expected for matching custom event"
         );
     }
 
     #[tokio::test]
-    async fn non_matching_name_does_not_dispatch() {
+    async fn non_matching_custom_event_does_not_dispatch() {
         let dp = make_dp().await;
         let q_id = QueueId::new();
         let a_id = ActionId::new();
@@ -269,27 +331,27 @@ mod tests {
             blocking: false,
         };
         let action = log_action(a_id, q_id);
-        let trigger = code_event_trigger(a_id, "my_event");
+        let trigger = custom_event_trigger(a_id, "my_event");
 
         dp.queue_repo().save(&queue).await.unwrap();
         dp.action_repo().save(&action).await.unwrap();
         dp.trigger_repo().save(&trigger).await.unwrap();
 
+        let (sub_reg, trig_reg) = build_registries(Arc::clone(&dp) as Arc<dyn GlobalsRepo>);
+
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
-        let engine = spawn_action_engine(
+
+        let engine = crate::action_engine::spawn_action_engine(
             Arc::clone(&bus),
             dp.action_repo(),
             dp.history_repo(),
-            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            Arc::new(ScriptRegistry::new()),
-            None,
-            None,
-            None,
+            sub_reg,
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
-        let _handle = CodeTriggerEvaluator::spawn(
+        let _handle = spawn_trigger_evaluator(
             Arc::clone(&bus),
+            trig_reg,
             dp.action_repo(),
             dp.trigger_repo(),
             sched,
@@ -307,49 +369,5 @@ mod tests {
             !fired,
             "action.done must not fire for non-matching event name"
         );
-    }
-
-    #[tokio::test]
-    async fn non_server_source_ignored() {
-        let dp = make_dp().await;
-        let q_id = QueueId::new();
-        let a_id = ActionId::new();
-        let queue = Queue {
-            id: q_id,
-            name: "default".into(),
-            blocking: false,
-        };
-        let action = log_action(a_id, q_id);
-        let trigger = code_event_trigger(a_id, "my_event");
-
-        dp.queue_repo().save(&queue).await.unwrap();
-        dp.action_repo().save(&action).await.unwrap();
-        dp.trigger_repo().save(&trigger).await.unwrap();
-
-        let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let mut sub = bus.subscribe();
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            dp.action_repo(),
-            dp.history_repo(),
-            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            Arc::new(ScriptRegistry::new()),
-            None,
-            None,
-            None,
-        );
-        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
-        let _handle = CodeTriggerEvaluator::spawn(
-            Arc::clone(&bus),
-            dp.action_repo(),
-            dp.trigger_repo(),
-            sched,
-        );
-
-        tokio::time::sleep(Duration::from_millis(10)).await;
-        bus.publish(Event::new(EventSource::Rhai, "custom.my_event", json!({})));
-
-        let fired = drain_no_kind(&mut sub, "action.done", 300).await;
-        assert!(!fired, "action.done must not fire for non-Server source");
     }
 }

@@ -15,14 +15,15 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_events::{Event, EventSource, EventsError};
+use forge_registry::SubActionRegistry;
 use forge_runtime::{
-    CommandParser, EventBus, EventSubscription, NullEventLogRepo, QueueScheduler, ScriptRegistry,
+    CommandParser, EventBus, EventSubscription, NullEventLogRepo, QueueScheduler,
     spawn_action_engine,
 };
-use forge_storage::{DataProvider, GlobalsRepo};
+use forge_storage::DataProvider;
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
-    Action, ActionId, Command, CommandId, CommandPermission, LogLevel, SubActionSpec,
+    Action, ActionId, Command, CommandId, CommandPermission, SubActionStep,
 };
 
 const TEST_KEY: [u8; 32] = [0xab; 32];
@@ -103,9 +104,18 @@ async fn spawn_pipeline() -> PipelineFixture {
         bypass_pause: false,
         execution_mode: forge_types::ExecutionMode::Sequential,
         description: None,
-        sub_actions: vec![SubActionSpec::Log {
-            level: LogLevel::Info,
-            message: "replay test step".into(),
+        sub_actions: vec![SubActionStep {
+            kind_id: "core.log.write".to_owned(),
+            config: {
+                let mut c = std::collections::BTreeMap::new();
+                c.insert(
+                    "message".to_owned(),
+                    forge_types::Variant::String("replay test step".to_owned()),
+                );
+                c
+            },
+            enabled: true,
+            label: None,
         }],
     };
     dp.action_repo().save(&action).await.unwrap();
@@ -124,11 +134,7 @@ async fn spawn_pipeline() -> PipelineFixture {
         Arc::clone(&bus),
         dp.action_repo(),
         dp.history_repo(),
-        Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-        Arc::new(ScriptRegistry::new()),
-        None,
-        None,
-        None,
+        Arc::new(SubActionRegistry::new()),
     );
     let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
     let _parser = CommandParser::spawn(

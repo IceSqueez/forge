@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use forge_storage::{ActionRepo, ActionTelemetry, StorageError};
-use forge_types::{Action, ActionId, ExecutionMode, QueueId, SubActionSpec};
+use forge_types::{Action, ActionId, ExecutionMode, QueueId, SubActionStep};
 use serde_json;
 use time::OffsetDateTime;
 
@@ -53,7 +53,7 @@ fn decode_row(row: ActionRow) -> Result<Action, SqliteStorageError> {
     ) = row;
     let id: ActionId = parse_id(&id_str, "action")?;
     let queue_id: QueueId = parse_id(&queue_id_str, "queue")?;
-    let sub_actions: Vec<SubActionSpec> = serde_json::from_str(&sub_actions_json)
+    let sub_actions: Vec<SubActionStep> = serde_json::from_str(&sub_actions_json)
         .map_err(|e| SqliteStorageError::Decode(format!("invalid sub_actions json: {e}")))?;
 
     Ok(Action {

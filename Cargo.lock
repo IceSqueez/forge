@@ -2286,6 +2286,7 @@ dependencies = [
  "async-trait",
  "forge-events",
  "forge-platform-core",
+ "forge-registry",
  "forge-storage",
  "forge-types",
  "futures-core",
@@ -2326,6 +2327,7 @@ dependencies = [
  "async-trait",
  "forge-events",
  "forge-platform-core",
+ "forge-registry",
  "forge-runtime",
  "forge-storage",
  "forge-storage-sqlite",
@@ -2346,6 +2348,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-registry"
+version = "0.1.0-alpha.14"
+dependencies = [
+ "async-trait",
+ "forge-events",
+ "forge-types",
+ "thiserror 2.0.18",
+ "time",
+]
+
+[[package]]
 name = "forge-runtime"
 version = "0.1.0-alpha.14"
 dependencies = [
@@ -2353,6 +2366,7 @@ dependencies = [
  "forge-events",
  "forge-obs",
  "forge-platform-core",
+ "forge-registry",
  "forge-script",
  "forge-storage",
  "forge-storage-sqlite",

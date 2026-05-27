@@ -10,13 +10,14 @@ use forge_app::subscriptions::subscription;
 use forge_app::view_router::view;
 use forge_audio::{CpalSink, DeviceId, NullSink};
 use forge_events::EventPublisher;
+use forge_obs::register_obs_triggers;
 use forge_platform_core::paths;
-use forge_platform_twitch::{ChatSendBridge, ChatSendBridgeHandle};
-use forge_registry::SubActionRegistry;
+use forge_platform_twitch::{ChatSendBridge, ChatSendBridgeHandle, register_twitch_triggers};
+use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
     ActionEngineHandle, CommandParser, CommandParserHandle, EventBus, QueueScheduler,
     QueueSchedulerHandle, ScriptRegistry, register_audio_sub_actions, register_core_sub_actions,
-    spawn_action_engine,
+    register_core_triggers, spawn_action_engine,
 };
 use forge_soundboard::{BusAudioEventSink, CpalSinkFactory, SoundboardPlayer};
 use forge_speak_queue::{QueueConfig, QueueDeps, SpeakQueueHandle};
@@ -110,6 +111,7 @@ struct RuntimeHandles {
     speak_queue: Arc<SpeakQueueHandle>,
     sound_player: Arc<SoundboardPlayer>,
     sub_action_reg: Arc<SubActionRegistry>,
+    trigger_reg: Arc<TriggerRegistry>,
 }
 
 fn find_piper_binary() -> Option<PathBuf> {
@@ -255,6 +257,26 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
     }
     let sub_action_reg = Arc::new(sub_action_reg);
 
+    let mut trigger_reg = TriggerRegistry::new();
+    if let Err(e) = register_core_triggers(&mut trigger_reg) {
+        tracing::warn!("core trigger descriptor registration failed: {e}");
+    }
+    if let Err(e) = register_twitch_triggers(&mut trigger_reg) {
+        tracing::warn!("twitch trigger descriptor registration failed: {e}");
+    }
+    if let Err(e) = register_obs_triggers(&mut trigger_reg) {
+        tracing::warn!("obs trigger descriptor registration failed: {e}");
+    }
+    let trigger_reg = Arc::new(trigger_reg);
+    let trigger_instance_repo = dp.trigger_instance_repo();
+    for descriptor in trigger_reg.all() {
+        let kind_id = descriptor.id();
+        let name = descriptor.label();
+        if let Err(e) = rt.block_on(trigger_instance_repo.upsert_default(kind_id, name)) {
+            tracing::warn!("upsert_default failed for kind_id={kind_id}: {e}");
+        }
+    }
+
     let engine = spawn_action_engine(
         Arc::clone(&bus),
         dp.action_repo(),
@@ -282,6 +304,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         speak_queue,
         sound_player,
         sub_action_reg,
+        trigger_reg,
     })
 }
 
@@ -314,6 +337,7 @@ fn main() -> iced::Result {
         speak_queue,
         sound_player,
         sub_action_reg,
+        trigger_reg,
     ) = if storage_offline {
         (
             Arc::new(ScriptRegistry::new()),
@@ -324,6 +348,7 @@ fn main() -> iced::Result {
             None,
             None,
             Arc::new(SubActionRegistry::new()),
+            Arc::new(TriggerRegistry::new()),
         )
     } else {
         match spawn_runtime(Arc::clone(&backend), Arc::clone(&bus)) {
@@ -336,6 +361,7 @@ fn main() -> iced::Result {
                 Some(h.speak_queue),
                 Some(h.sound_player),
                 h.sub_action_reg,
+                h.trigger_reg,
             ),
             None => (
                 Arc::new(ScriptRegistry::new()),
@@ -346,6 +372,7 @@ fn main() -> iced::Result {
                 None,
                 None,
                 Arc::new(SubActionRegistry::new()),
+                Arc::new(TriggerRegistry::new()),
             ),
         }
     };
@@ -368,6 +395,7 @@ fn main() -> iced::Result {
         app.rt.chat_send_bridge = chat_send_bridge.clone();
         app.rt.speak_queue = speak_queue.clone();
         app.rt.sub_action_registry = Arc::clone(&sub_action_reg);
+        app.rt.trigger_registry = Arc::clone(&trigger_reg);
         let obs_creds: Arc<dyn forge_storage::CredentialsRepo> =
             Arc::clone(&backend_boot) as Arc<dyn forge_storage::CredentialsRepo>;
         let obs_task = iced::Task::perform(

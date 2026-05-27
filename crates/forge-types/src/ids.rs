@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::str::FromStr;
 use ulid::Ulid;
 
 macro_rules! define_id {
@@ -38,12 +39,21 @@ macro_rules! define_id {
 define_id!(EventId);
 define_id!(ActionId);
 define_id!(TriggerId);
+define_id!(TriggerInstanceId);
 define_id!(CommandId);
 define_id!(QueueId);
 define_id!(ScriptId);
 define_id!(GlobalId);
 define_id!(UserId);
 define_id!(ClipId);
+
+impl FromStr for TriggerInstanceId {
+    type Err = ulid::DecodeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        s.parse::<Ulid>().map(Self)
+    }
+}
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]

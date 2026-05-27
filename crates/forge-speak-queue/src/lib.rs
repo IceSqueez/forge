@@ -38,7 +38,6 @@ pub struct SpeakRequest {
     pub viewer_name: String,
     pub text: String,
     pub priority: Priority,
-    /// Override the resolved alias.
     pub alias_override: Option<AliasId>,
     pub source_event_id: forge_types::EventId,
 }
@@ -137,7 +136,6 @@ pub struct QueueDeps {
     pub event_bus: Arc<dyn forge_events::EventPublisher>,
 }
 
-/// Handle for dispatching commands to the speak queue actor.
 #[derive(Clone)]
 pub struct SpeakQueueHandle {
     tx: tokio::sync::mpsc::Sender<SpeakCommand>,
@@ -163,8 +161,6 @@ impl SpeakQueueHandle {
         self.send(SpeakCommand::VoiceGateDeactivated).await
     }
 
-    /// Create a new broadcast receiver for `SpeakEvent`s.
-    ///
     /// Each call returns an independent receiver starting from the next published
     /// event. Callers may wrap this in `tokio_stream::wrappers::BroadcastStream`
     /// to adapt it for use with `iced::Subscription`.
@@ -173,7 +169,6 @@ impl SpeakQueueHandle {
     }
 }
 
-/// Receive end for the speak queue event broadcast.
 pub struct SpeakEventStream(tokio::sync::broadcast::Receiver<SpeakEvent>);
 
 impl SpeakEventStream {
@@ -182,8 +177,6 @@ impl SpeakEventStream {
     }
 }
 
-/// Spawns the speak queue actor.
-///
 /// Returns a `SpeakQueueHandle` for command dispatch and a `SpeakEventStream`
 /// for UI subscriptions.
 pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEventStream) {

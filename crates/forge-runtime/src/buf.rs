@@ -13,7 +13,6 @@ impl<T> RingBuffer<T> {
         }
     }
 
-    /// Inserts `item`, evicting the oldest entry when at capacity.
     pub(crate) fn push(&mut self, item: T) {
         if self.inner.len() == self.cap {
             self.inner.pop_front();

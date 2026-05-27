@@ -195,7 +195,6 @@ impl BuiltinStatus for ObsClient {
     }
 }
 
-/// Returns `min(2^attempt seconds, 60 seconds) + random jitter up to 10% of the base.
 pub(crate) fn compute_backoff(attempt: u32) -> Duration {
     let base_secs = (1u64 << attempt.min(6)).min(60);
     let max_jitter_ms = base_secs * 100;

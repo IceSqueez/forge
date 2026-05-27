@@ -190,9 +190,7 @@ pub async fn load_queues(
         .map(|q| {
             let assigned_actions = actions.iter().filter(|a| a.queue_id == q.id).count() as u32;
 
-            // Queue concurrency is not yet a persisted column — derive from
-            // blocking flag. Schema bump will land with Queue::concurrency once
-            // the scheduler supports tunable parallelism.
+            // Queue concurrency is not yet a persisted column; derive from blocking flag.
             let concurrency: u32 = if q.blocking { 1 } else { 8 };
 
             let description = default_description(&q.name);

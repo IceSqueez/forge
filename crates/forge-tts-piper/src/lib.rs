@@ -52,7 +52,6 @@ impl PiperEngine {
         })
     }
 
-    /// Returns the canonical path to the voices directory under `data_dir`.
     pub fn voices_dir(data_dir: &std::path::Path) -> PathBuf {
         data_dir.join("tts").join("piper-voices")
     }
@@ -176,9 +175,9 @@ impl TtsEngine for PiperEngine {
         Ok(voices)
     }
 
-    /// Pitch adjustment via `pitch_semitones` is deferred to a `forge-audio` post-processing pass
-    /// (planned for beta-4 polish). Piper has no native pitch flag; the subprocess synthesizes at
-    /// the model's native rate and pitch. The `rate_multiplier` field is honoured via `--length_scale`.
+    /// `pitch_semitones` is deferred to a `forge-audio` post-processing pass; Piper has no native
+    /// pitch flag and synthesizes at the model's native pitch. `rate_multiplier` is honoured via
+    /// `--length_scale`.
     async fn synthesize(&self, request: SynthesisRequest) -> Result<PcmBuffer, TtsError> {
         if request.ssml {
             return Err(TtsError::SsmlUnsupported {

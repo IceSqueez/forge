@@ -2,7 +2,6 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
-/// Final outcome of running the full pipeline on one message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PipelineResult {
     Speak(String),
@@ -71,7 +70,6 @@ pub struct EmoteTokenSet {
     pub tokens: HashSet<String>,
 }
 
-/// A text or regex replacement rule.
 #[derive(Debug, Clone)]
 pub enum ReplacementRule {
     Text {
@@ -324,8 +322,6 @@ fn run_stage(stage: StageName, text: &str, config: &PipelineConfig) -> StageOut 
     }
 }
 
-/// Run the full pipeline on `text`.
-///
 /// Pure function — no I/O, no allocation beyond string manipulation.
 /// Never panics. Config must be pre-validated via `PipelineConfig::new`.
 pub fn process(text: &str, config: &PipelineConfig) -> PipelineResult {
@@ -346,8 +342,6 @@ pub fn process(text: &str, config: &PipelineConfig) -> PipelineResult {
     PipelineResult::Speak(current)
 }
 
-/// Run the pipeline and return per-stage outcomes for UI preview.
-///
 /// Returns all five `StageOutcome` entries regardless of early `Skip`.
 /// On `Skip`, subsequent stages receive the last non-empty intermediate text
 /// but record `StageAction::Skipped`.

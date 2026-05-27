@@ -69,7 +69,6 @@ impl TtsEngineFactory for FakeFactory {
     }
 }
 
-/// Notifies waiters each time a PCM buffer is played.
 struct OrderRecordingSink {
     notify: Arc<tokio::sync::Notify>,
 }

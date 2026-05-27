@@ -129,8 +129,6 @@ mod tests {
 
     use super::*;
 
-    // --- parse_contract ---
-
     #[test]
     fn empty_source_returns_empty_contract() {
         let c = parse_contract("").unwrap();
@@ -237,8 +235,6 @@ mod tests {
         assert_eq!(c.inputs[0].name, "a");
         assert_eq!(c.inputs[1].name, "b");
     }
-
-    // --- build_scope_for_contract ---
 
     #[test]
     fn empty_contract_and_empty_stack_yields_empty_scope() {

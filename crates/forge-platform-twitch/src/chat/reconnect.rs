@@ -5,8 +5,6 @@ use tokio::time::sleep;
 const BASE_MS: u64 = 250;
 const CAP_MS: u64 = 60_000;
 
-/// Computes wait duration for attempt N with ±25% full-jitter.
-/// Capped at 60s. Attempt 0 → ~250ms, attempt 1 → ~500ms, etc.
 pub(crate) fn next_backoff(attempt: u32) -> Duration {
     let shift = attempt.min(32);
     let exp = BASE_MS

@@ -12,8 +12,7 @@ pub trait AudioSink: Send + Sync {
     async fn play(&self, buffer: PcmBuffer) -> Result<(), AudioError>;
 }
 
-/// No-op sink used by the runtime when the soundboard subsystem is not yet wired
-/// (alpha-10 P2 — replaced with cpal-backed sink in P3).
+/// No-op sink used by the runtime when the soundboard subsystem is not yet wired.
 pub struct NullSink;
 
 #[async_trait]

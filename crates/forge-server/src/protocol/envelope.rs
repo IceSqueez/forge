@@ -109,8 +109,6 @@ impl<'de> Deserialize<'de> for WsEnvelope<WsRequest> {
     }
 }
 
-/// Serializes a response envelope to a JSON value.
-///
 /// The `Ok` variant's data fields are merged into the top-level object alongside
 /// `"id"` and `"status"`. The `Error` variant nests under an `"error"` key.
 pub fn serialize_response_frame(envelope: &WsEnvelope<WsResponse>) -> serde_json::Value {

@@ -12,6 +12,7 @@ workspace = true
 [dependencies]
 forge-types         = { path = "../forge-types" }
 forge-events        = { path = "../forge-events" }
+forge-registry      = { path = "../forge-registry" }
 forge-storage       = { path = "../forge-storage" }
 forge-script        = { path = "../forge-script" }
 forge-obs           = { path = "../forge-obs" }

@@ -1,5 +1,6 @@
 pub mod action_engine;
 pub mod actions;
+pub mod audio_runners;
 mod bridge;
 mod buf;
 pub mod bus;
@@ -14,6 +15,7 @@ pub mod speak_dispatcher;
 mod sub_actions;
 
 pub use action_engine::{ActionEngineHandle, DispatchError, ExecutionRequest, spawn_action_engine};
+pub use audio_runners::register_audio_sub_actions;
 pub use bridge::bus_subscription;
 pub use bus::{BusError, BusStats, EventBus, EventSubscription, NullEventLogRepo};
 pub use code_trigger::{CodeTriggerEvaluator, CodeTriggerHandle};

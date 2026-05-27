@@ -11,6 +11,7 @@ pub async fn connect(url: &str) -> Result<sqlx::SqlitePool, SqliteStorageError> 
         .journal_mode(SqliteJournalMode::Wal)
         .synchronous(SqliteSynchronous::Normal)
         .busy_timeout(Duration::from_secs(5))
+        .foreign_keys(true)
         .create_if_missing(true);
 
     SqlitePoolOptions::new()

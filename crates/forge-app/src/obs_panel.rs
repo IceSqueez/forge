@@ -116,19 +116,12 @@ pub async fn connect_obs_from_form(
     port: u16,
     password: String,
 ) -> Result<crate::message::ObsClientRef, String> {
-    forge_obs::credentials::store(&*creds, &host, port, &password)
-        .await
-        .map_err(|e| e.to_string())?;
     let publisher: Arc<dyn EventPublisher> = bus;
-    let pw: Option<&str> = if password.is_empty() {
-        None
-    } else {
-        Some(&password)
-    };
-    let client = forge_obs::ObsClient::connect(&format!("ws://{host}:{port}"), pw, publisher)
-        .await
-        .map_err(format_obs_error)?;
-    Ok(crate::message::ObsClientRef::new(Arc::new(client)))
+    let client =
+        forge_obs::credentials::store_and_connect(&*creds, publisher, &host, port, &password)
+            .await
+            .map_err(|e| e.to_string())?;
+    Ok(crate::message::ObsClientRef::new(client))
 }
 
 fn format_obs_error(e: ObsError) -> String {

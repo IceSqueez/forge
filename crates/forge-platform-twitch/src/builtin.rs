@@ -11,7 +11,9 @@ use forge_platform_core::{
     ContentList, ContentListItem, DetailSection, HeaderAction, HealthDelta, HealthMetric,
     HealthStream, HealthValue, ListFooter, QuickAction, QuickActions, SectionIcon, TrailingToken,
 };
-use forge_types::SubActionSpec;
+use std::collections::BTreeMap;
+
+use forge_types::{SubActionStep, Variant};
 
 use crate::TWITCH_BROADCASTER_SCOPES;
 use crate::chat::ChatConnectionState;
@@ -243,9 +245,14 @@ impl QuickActions for TwitchIntegrationBundle {
                 label: "Send chat message".to_owned(),
                 icon: SectionIcon::new("send"),
                 enabled: connected,
-                subaction_template: SubActionSpec::SendChat {
-                    message: String::new(),
-                    target: "twitch".to_owned(),
+                subaction_template: SubActionStep {
+                    kind_id: "twitch.chat.send_message".to_owned(),
+                    config: BTreeMap::from([
+                        ("message".to_owned(), Variant::String(String::new())),
+                        ("target".to_owned(), Variant::String("twitch".to_owned())),
+                    ]),
+                    enabled: true,
+                    label: None,
                 },
                 picker: None,
             },
@@ -253,9 +260,17 @@ impl QuickActions for TwitchIntegrationBundle {
                 label: "Run shoutout".to_owned(),
                 icon: SectionIcon::new("flag"),
                 enabled: connected,
-                subaction_template: SubActionSpec::Log {
-                    level: forge_types::LogLevel::Info,
-                    message: "twitch.shoutout_requested".to_owned(),
+                subaction_template: SubActionStep {
+                    kind_id: "core.log.write".to_owned(),
+                    config: BTreeMap::from([
+                        ("level".to_owned(), Variant::String("info".to_owned())),
+                        (
+                            "message".to_owned(),
+                            Variant::String("twitch.shoutout_requested".to_owned()),
+                        ),
+                    ]),
+                    enabled: true,
+                    label: None,
                 },
                 picker: None,
             },
@@ -263,9 +278,17 @@ impl QuickActions for TwitchIntegrationBundle {
                 label: "Run commercial".to_owned(),
                 icon: SectionIcon::new("clock"),
                 enabled: connected,
-                subaction_template: SubActionSpec::Log {
-                    level: forge_types::LogLevel::Info,
-                    message: "twitch.commercial_requested".to_owned(),
+                subaction_template: SubActionStep {
+                    kind_id: "core.log.write".to_owned(),
+                    config: BTreeMap::from([
+                        ("level".to_owned(), Variant::String("info".to_owned())),
+                        (
+                            "message".to_owned(),
+                            Variant::String("twitch.commercial_requested".to_owned()),
+                        ),
+                    ]),
+                    enabled: true,
+                    label: None,
                 },
                 picker: None,
             },
@@ -273,9 +296,17 @@ impl QuickActions for TwitchIntegrationBundle {
                 label: "Update title/game".to_owned(),
                 icon: SectionIcon::new("edit"),
                 enabled: connected,
-                subaction_template: SubActionSpec::Log {
-                    level: forge_types::LogLevel::Info,
-                    message: "twitch.update_channel_requested".to_owned(),
+                subaction_template: SubActionStep {
+                    kind_id: "core.log.write".to_owned(),
+                    config: BTreeMap::from([
+                        ("level".to_owned(), Variant::String("info".to_owned())),
+                        (
+                            "message".to_owned(),
+                            Variant::String("twitch.update_channel_requested".to_owned()),
+                        ),
+                    ]),
+                    enabled: true,
+                    label: None,
                 },
                 picker: None,
             },

@@ -27,6 +27,12 @@ pub enum StorageError {
     #[error("validation failed for '{field}': {reason}")]
     ValidationFailed { field: String, reason: String },
 
+    #[error("cannot delete trigger instance: still referenced by {used_in_count} action(s)")]
+    ReferenceBlock {
+        used_in_count: u32,
+        sample_action_names: Vec<String>,
+    },
+
     #[error("parse error: {0}")]
     Parse(String),
 

@@ -5,18 +5,19 @@ use std::time::Duration;
 
 use forge_events::{Event, EventSource};
 use forge_runtime::EventBus;
+use forge_storage::DataProvider;
 use forge_storage_sqlite::SqliteBackend;
 
 const TEST_KEY: [u8; 32] = [0xab; 32];
 
 #[tokio::test]
-async fn event_log_repo_arc_persists_published_events() {
+async fn event_log_persists_published_events() {
     let backend = SqliteBackend::open_with_key(":memory:", TEST_KEY)
         .await
         .unwrap();
-    let backend = Arc::new(backend);
+    let backend: Arc<dyn DataProvider> = Arc::new(backend);
 
-    let event_log = backend.event_log_repo_arc();
+    let event_log = backend.event_log_repo();
     let bus = EventBus::new(Arc::clone(&event_log));
     EventBus::spawn_flush_task(Arc::clone(&bus));
 

@@ -61,7 +61,7 @@ fn init_tracing() -> Option<tracing_appender::non_blocking::WorkerGuard> {
     guard
 }
 
-fn boot_storage() -> (Arc<SqliteBackend>, bool) {
+fn boot_storage() -> (Arc<dyn DataProvider>, bool) {
     let db_path = default_db_path();
 
     if let Some(parent) = db_path.parent()
@@ -81,7 +81,7 @@ fn boot_storage() -> (Arc<SqliteBackend>, bool) {
     };
 
     match rt.block_on(SqliteBackend::open(&url)) {
-        Ok(backend) => (Arc::new(backend), false),
+        Ok(backend) => (Arc::new(backend) as Arc<dyn DataProvider>, false),
         Err(e) => {
             tracing::error!("failed to open database at {}: {e}", db_path.display());
             open_memory_backend()
@@ -90,12 +90,12 @@ fn boot_storage() -> (Arc<SqliteBackend>, bool) {
 }
 
 #[allow(clippy::expect_used)]
-fn open_memory_backend() -> (Arc<SqliteBackend>, bool) {
+fn open_memory_backend() -> (Arc<dyn DataProvider>, bool) {
     let rt = tokio::runtime::Runtime::new().expect("tokio runtime required for in-memory storage");
     let backend = rt
         .block_on(SqliteBackend::open("sqlite::memory:"))
         .expect("in-memory SQLite must always open");
-    (Arc::new(backend), true)
+    (Arc::new(backend) as Arc<dyn DataProvider>, true)
 }
 
 struct RuntimeHandles {
@@ -194,7 +194,7 @@ fn spawn_speak_queue(bus: Arc<EventBus>) -> Arc<SpeakQueueHandle> {
 }
 
 #[allow(clippy::expect_used)]
-fn spawn_runtime(backend: Arc<SqliteBackend>, bus: Arc<EventBus>) -> Option<RuntimeHandles> {
+fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<RuntimeHandles> {
     let rt = match tokio::runtime::Runtime::new() {
         Ok(r) => r,
         Err(e) => {
@@ -202,8 +202,6 @@ fn spawn_runtime(backend: Arc<SqliteBackend>, bus: Arc<EventBus>) -> Option<Runt
             return None;
         }
     };
-
-    let dp: Arc<dyn DataProvider> = Arc::clone(&backend) as Arc<dyn DataProvider>;
 
     let queues = match rt.block_on(dp.queue_repo().list()) {
         Ok(q) => q,
@@ -214,8 +212,7 @@ fn spawn_runtime(backend: Arc<SqliteBackend>, bus: Arc<EventBus>) -> Option<Runt
     };
 
     let speak_queue = spawn_speak_queue(Arc::clone(&bus));
-    let _viewer_tracker =
-        forge_app::viewer_tracker::spawn(Arc::clone(&bus), backend.viewer_repo_arc());
+    let _viewer_tracker = forge_app::viewer_tracker::spawn(Arc::clone(&bus), dp.viewer_repo());
     let speak_bridge_concrete = Arc::new(SpeakBridge::new(Arc::clone(&speak_queue)));
     let speak_dispatcher: Arc<dyn forge_runtime::SpeakDispatcher> = speak_bridge_concrete.clone();
     let speak_requester: Arc<dyn forge_script::SpeakRequester> = speak_bridge_concrete;
@@ -246,7 +243,7 @@ fn spawn_runtime(backend: Arc<SqliteBackend>, bus: Arc<EventBus>) -> Option<Runt
     );
     let chat_send_bridge = ChatSendBridge::spawn(
         Arc::clone(&bus),
-        Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
+        Arc::clone(&dp) as Arc<dyn CredentialsRepo>,
     );
 
     Some(RuntimeHandles {
@@ -275,7 +272,7 @@ fn main() -> iced::Result {
     let (backend, storage_offline) = boot_storage();
     let initial_screen = Screen::Home;
 
-    let event_log = backend.event_log_repo_arc();
+    let event_log = backend.event_log_repo();
     let bus = EventBus::new(event_log);
     EventBus::spawn_flush_task(Arc::clone(&bus));
 
@@ -313,7 +310,7 @@ fn main() -> iced::Result {
     let sound_player: Option<Arc<SoundboardPlayer>> = if storage_offline {
         None
     } else {
-        let clips_repo = backend.soundboard_clips_repo_arc();
+        let clips_repo = backend.soundboard_clips_repo();
         Some(Arc::new(SoundboardPlayer::new(
             Arc::new(CpalSinkFactory),
             Arc::new(BusAudioEventSink::new(Arc::clone(&bus))),
@@ -321,7 +318,7 @@ fn main() -> iced::Result {
         )))
     };
 
-    let backend_boot: Arc<dyn DataProvider> = backend.clone();
+    let backend_boot: Arc<dyn DataProvider> = Arc::clone(&backend);
     let boot_screen = Arc::new(initial_screen);
     let bus_boot = Arc::clone(&bus);
     let boot = move || {

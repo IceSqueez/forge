@@ -87,10 +87,6 @@ impl SqliteBackend {
         self.shutdown.notify_one();
     }
 
-    pub fn event_log_repo_arc(&self) -> Arc<dyn EventLogRepo> {
-        Arc::new(SqliteEventLogRepo::new(self.pool.clone()))
-    }
-
     fn from_pool_and_credentials(
         pool: sqlx::SqlitePool,
         credentials: SqliteCredentialsRepo,
@@ -156,16 +152,8 @@ impl SqliteBackend {
         &self.soundboard
     }
 
-    pub fn soundboard_clips_repo_arc(&self) -> Arc<dyn SoundboardClipsRepo> {
-        Arc::new(SqliteSoundboardClipsRepo::new(self.pool.clone()))
-    }
-
     pub fn viewer_repo_impl(&self) -> &SqliteViewerRepo {
         &self.viewer
-    }
-
-    pub fn viewer_repo_arc(&self) -> Arc<dyn ViewerRepo> {
-        Arc::new(SqliteViewerRepo::new(self.pool.clone()))
     }
 }
 

@@ -208,14 +208,20 @@ mod tests {
     #[test]
     fn quick_actions_grid_four_enabled_compiles() {
         use forge_platform_core::{QuickAction, SectionIcon};
-        use forge_types::SubActionSpec;
+        use forge_types::SubActionStep;
+        use std::collections::BTreeMap;
 
         let actions: Vec<QuickAction> = (0..4)
             .map(|i| QuickAction {
                 label: format!("Action {i}"),
                 icon: SectionIcon::new("b"),
                 enabled: true,
-                subaction_template: SubActionSpec::Delay { ms: 0 },
+                subaction_template: SubActionStep {
+                    kind_id: "core.logic.wait".to_owned(),
+                    config: BTreeMap::new(),
+                    enabled: true,
+                    label: None,
+                },
                 picker: None,
             })
             .collect();
@@ -226,28 +232,44 @@ mod tests {
     #[test]
     fn quick_actions_grid_mixed_enabled_disabled_compiles() {
         use forge_platform_core::{QuickAction, SectionIcon};
-        use forge_types::SubActionSpec;
+        use forge_types::SubActionStep;
+        use std::collections::BTreeMap;
 
         let actions = vec![
             QuickAction {
                 label: "Resync".to_owned(),
                 icon: SectionIcon::new("r"),
                 enabled: true,
-                subaction_template: SubActionSpec::Delay { ms: 0 },
+                subaction_template: SubActionStep {
+                    kind_id: "core.logic.wait".to_owned(),
+                    config: BTreeMap::new(),
+                    enabled: true,
+                    label: None,
+                },
                 picker: None,
             },
             QuickAction {
                 label: "Send message".to_owned(),
                 icon: SectionIcon::new("s"),
                 enabled: false,
-                subaction_template: SubActionSpec::Delay { ms: 0 },
+                subaction_template: SubActionStep {
+                    kind_id: "core.logic.wait".to_owned(),
+                    config: BTreeMap::new(),
+                    enabled: true,
+                    label: None,
+                },
                 picker: None,
             },
             QuickAction {
                 label: "Scrape info".to_owned(),
                 icon: SectionIcon::new("i"),
                 enabled: true,
-                subaction_template: SubActionSpec::Delay { ms: 0 },
+                subaction_template: SubActionStep {
+                    kind_id: "core.logic.wait".to_owned(),
+                    config: BTreeMap::new(),
+                    enabled: true,
+                    label: None,
+                },
                 picker: None,
             },
         ];
@@ -258,14 +280,20 @@ mod tests {
     #[test]
     fn quick_actions_grid_with_hint_compiles() {
         use forge_platform_core::{QuickAction, SectionIcon};
-        use forge_types::SubActionSpec;
+        use forge_types::SubActionStep;
+        use std::collections::BTreeMap;
 
         let actions: Vec<QuickAction> = (0..4)
             .map(|i| QuickAction {
                 label: format!("Action {i}"),
                 icon: SectionIcon::new("b"),
                 enabled: true,
-                subaction_template: SubActionSpec::Delay { ms: 0 },
+                subaction_template: SubActionStep {
+                    kind_id: "core.logic.wait".to_owned(),
+                    config: BTreeMap::new(),
+                    enabled: true,
+                    label: None,
+                },
                 picker: None,
             })
             .collect();

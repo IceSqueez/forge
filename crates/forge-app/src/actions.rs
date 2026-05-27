@@ -506,7 +506,14 @@ mod tests {
     };
 
     fn make_service(dp: Arc<dyn DataProvider>) -> ActionsService {
-        ActionsService::new(dp)
+        ActionsService::new(
+            dp.action_repo(),
+            dp.queue_repo(),
+            dp.history_repo(),
+            dp.trigger_repo(),
+            dp.command_repo(),
+            dp.soundboard_clips_repo(),
+        )
     }
 
     #[test]

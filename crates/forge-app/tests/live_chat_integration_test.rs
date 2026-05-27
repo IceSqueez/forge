@@ -24,6 +24,7 @@ fn test_app() -> App {
     let server_subsystem = Arc::new(forge_app::server_subsystem::ServerSubsystem::new(
         Arc::clone(&backend) as Arc<dyn forge_storage::CredentialsRepo>,
     ));
+    let backend: Arc<dyn forge_storage::DataProvider> = backend;
     App {
         screen: Screen::Home,
         theme,
@@ -34,7 +35,12 @@ fn test_app() -> App {
         sidebar_state: SidebarExpandState::new(),
         rt: RuntimeView {
             actions: Arc::new(ActionsService::new(
-                Arc::clone(&backend) as Arc<dyn forge_storage::DataProvider>
+                backend.action_repo(),
+                backend.queue_repo(),
+                backend.history_repo(),
+                backend.trigger_repo(),
+                backend.command_repo(),
+                backend.soundboard_clips_repo(),
             )),
             backend,
             bus: EventBus::new(Arc::new(NullEventLogRepo)),

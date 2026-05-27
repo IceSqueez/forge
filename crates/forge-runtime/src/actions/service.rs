@@ -1,29 +1,51 @@
 use std::sync::Arc;
 
-use forge_storage::{ActionTelemetry, DataProvider, StorageError};
+use forge_storage::{
+    ActionRepo, ActionTelemetry, CommandRepo, HistoryRepo, QueueRepo, SoundboardClipsRepo,
+    StorageError, TriggerRepo,
+};
 use forge_types::{ActionId, ClipId, SubActionSpec};
 use time::OffsetDateTime;
 
 use super::types::{ActionDetail, ActionSummary};
 
 pub struct ActionsService {
-    dp: Arc<dyn DataProvider>,
+    actions: Arc<dyn ActionRepo>,
+    queues: Arc<dyn QueueRepo>,
+    history: Arc<dyn HistoryRepo>,
+    triggers: Arc<dyn TriggerRepo>,
+    commands: Arc<dyn CommandRepo>,
+    clips: Arc<dyn SoundboardClipsRepo>,
 }
 
 impl ActionsService {
-    pub fn new(dp: Arc<dyn DataProvider>) -> Self {
-        Self { dp }
+    pub fn new(
+        actions: Arc<dyn ActionRepo>,
+        queues: Arc<dyn QueueRepo>,
+        history: Arc<dyn HistoryRepo>,
+        triggers: Arc<dyn TriggerRepo>,
+        commands: Arc<dyn CommandRepo>,
+        clips: Arc<dyn SoundboardClipsRepo>,
+    ) -> Self {
+        Self {
+            actions,
+            queues,
+            history,
+            triggers,
+            commands,
+            clips,
+        }
     }
 
     pub async fn list_summaries(&self) -> Result<Vec<ActionSummary>, StorageError> {
-        let actions = self.dp.action_repo().list().await?;
-        let all_queues = self.dp.queue_repo().list().await?;
+        let actions = self.actions.list().await?;
+        let all_queues = self.queues.list().await?;
         let since = OffsetDateTime::now_utc() - time::Duration::hours(24);
-        let stats = self.dp.history_repo().stats_summary(since).await?;
+        let stats = self.history.stats_summary(since).await?;
 
         let mut summaries = Vec::with_capacity(actions.len());
         for action in actions {
-            let action_triggers = self.dp.trigger_repo().list_for_action(action.id).await?;
+            let action_triggers = self.triggers.list_for_action(action.id).await?;
             let first_trigger_kind = action_triggers.first().map(|t| t.kind.clone());
 
             let queue_name = all_queues
@@ -52,21 +74,20 @@ impl ActionsService {
     }
 
     pub async fn load_detail(&self, id: ActionId) -> Result<ActionDetail, StorageError> {
-        let action =
-            self.dp
-                .action_repo()
-                .get(id)
-                .await?
-                .ok_or_else(|| StorageError::NotFound {
-                    key: id.to_string(),
-                })?;
-        let triggers = self.dp.trigger_repo().list_for_action(id).await?;
-        let all_commands = self.dp.command_repo().list().await?;
+        let action = self
+            .actions
+            .get(id)
+            .await?
+            .ok_or_else(|| StorageError::NotFound {
+                key: id.to_string(),
+            })?;
+        let triggers = self.triggers.list_for_action(id).await?;
+        let all_commands = self.commands.list().await?;
         let commands: Vec<_> = all_commands
             .into_iter()
             .filter(|c| c.action_id == id)
             .collect();
-        let recent = self.dp.history_repo().recent_for_action(id, 20).await?;
+        let recent = self.history.recent_for_action(id, 20).await?;
         let sub_action_avg_ms = compute_sub_action_averages(&recent, action.sub_actions.len());
 
         Ok(ActionDetail {
@@ -83,7 +104,7 @@ impl ActionsService {
         spec: SubActionSpec,
         editing_index: Option<usize>,
     ) -> Result<(), StorageError> {
-        let Some(mut action) = self.dp.action_repo().get(action_id).await? else {
+        let Some(mut action) = self.actions.get(action_id).await? else {
             return Err(StorageError::NotFound {
                 key: action_id.to_string(),
             });
@@ -97,7 +118,7 @@ impl ActionsService {
         } else {
             action.sub_actions.push(spec);
         }
-        self.dp.action_repo().save(&action).await
+        self.actions.save(&action).await
     }
 
     pub async fn move_sub_action(
@@ -106,7 +127,7 @@ impl ActionsService {
         from: usize,
         to: usize,
     ) -> Result<ActionId, StorageError> {
-        let Some(mut action) = self.dp.action_repo().get(action_id).await? else {
+        let Some(mut action) = self.actions.get(action_id).await? else {
             return Err(StorageError::NotFound {
                 key: action_id.to_string(),
             });
@@ -115,7 +136,7 @@ impl ActionsService {
         if from < len && to < len && from != to {
             let item = action.sub_actions.remove(from);
             action.sub_actions.insert(to, item);
-            self.dp.action_repo().save(&action).await?;
+            self.actions.save(&action).await?;
         }
         Ok(action_id)
     }
@@ -125,7 +146,7 @@ impl ActionsService {
         action_id: ActionId,
         index: usize,
     ) -> Result<ActionId, StorageError> {
-        let Some(mut action) = self.dp.action_repo().get(action_id).await? else {
+        let Some(mut action) = self.actions.get(action_id).await? else {
             return Err(StorageError::NotFound {
                 key: action_id.to_string(),
             });
@@ -133,7 +154,7 @@ impl ActionsService {
         if index < action.sub_actions.len() {
             let copy = action.sub_actions[index].clone();
             action.sub_actions.insert(index + 1, copy);
-            self.dp.action_repo().save(&action).await?;
+            self.actions.save(&action).await?;
         }
         Ok(action_id)
     }
@@ -143,7 +164,7 @@ impl ActionsService {
         action_id: ActionId,
         index: usize,
     ) -> Result<(), StorageError> {
-        let Some(mut action) = self.dp.action_repo().get(action_id).await? else {
+        let Some(mut action) = self.actions.get(action_id).await? else {
             return Err(StorageError::NotFound {
                 key: action_id.to_string(),
             });
@@ -151,16 +172,15 @@ impl ActionsService {
         if index < action.sub_actions.len() {
             action.sub_actions.remove(index);
         }
-        self.dp.action_repo().save(&action).await
+        self.actions.save(&action).await
     }
 
     pub async fn load_telemetry(&self, id: ActionId) -> Result<ActionTelemetry, StorageError> {
-        self.dp.action_repo().telemetry(id).await
+        self.actions.telemetry(id).await
     }
 
     pub async fn list_clip_options(&self) -> Vec<(ClipId, String)> {
-        self.dp
-            .soundboard_clips_repo()
+        self.clips
             .list()
             .await
             .map(|clips| clips.into_iter().map(|c| (c.id, c.name)).collect())

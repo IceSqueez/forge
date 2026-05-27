@@ -775,9 +775,14 @@ mod tests {
         ));
         let backend: Arc<dyn forge_storage::DataProvider> = backend;
         RuntimeView {
-            actions: Arc::new(forge_runtime::actions::ActionsService::new(Arc::clone(
-                &backend,
-            ))),
+            actions: Arc::new(forge_runtime::actions::ActionsService::new(
+                backend.action_repo(),
+                backend.queue_repo(),
+                backend.history_repo(),
+                backend.trigger_repo(),
+                backend.command_repo(),
+                backend.soundboard_clips_repo(),
+            )),
             backend,
             bus: EventBus::new(Arc::new(NullEventLogRepo)),
             script_registry: Arc::new(ScriptRegistry::new()),

@@ -154,9 +154,14 @@ impl App {
             boot_time: SystemTime::now(),
             sidebar_state: SidebarExpandState::new(),
             rt: crate::runtime_view::RuntimeView {
-                actions: Arc::new(forge_runtime::actions::ActionsService::new(Arc::clone(
-                    &backend,
-                ))),
+                actions: Arc::new(forge_runtime::actions::ActionsService::new(
+                    backend.action_repo(),
+                    backend.queue_repo(),
+                    backend.history_repo(),
+                    backend.trigger_repo(),
+                    backend.command_repo(),
+                    backend.soundboard_clips_repo(),
+                )),
                 backend,
                 bus: EventBus::new(Arc::new(NullEventLogRepo)),
                 script_registry,
@@ -205,9 +210,14 @@ impl Default for App {
             boot_time: SystemTime::now(),
             sidebar_state: SidebarExpandState::new(),
             rt: crate::runtime_view::RuntimeView {
-                actions: Arc::new(forge_runtime::actions::ActionsService::new(Arc::clone(
-                    &backend,
-                ))),
+                actions: Arc::new(forge_runtime::actions::ActionsService::new(
+                    backend.action_repo(),
+                    backend.queue_repo(),
+                    backend.history_repo(),
+                    backend.trigger_repo(),
+                    backend.command_repo(),
+                    backend.soundboard_clips_repo(),
+                )),
                 backend,
                 bus: EventBus::new(Arc::new(NullEventLogRepo)),
                 script_registry: Arc::new(ScriptRegistry::new()),
@@ -633,7 +643,14 @@ mod tests {
             boot_time: std::time::SystemTime::now(),
             sidebar_state: SidebarExpandState::new(),
             rt: crate::runtime_view::RuntimeView {
-                actions: Arc::new(forge_runtime::actions::ActionsService::new(Arc::clone(&dp))),
+                actions: Arc::new(forge_runtime::actions::ActionsService::new(
+                    dp.action_repo(),
+                    dp.queue_repo(),
+                    dp.history_repo(),
+                    dp.trigger_repo(),
+                    dp.command_repo(),
+                    dp.soundboard_clips_repo(),
+                )),
                 backend: dp,
                 bus,
                 script_registry: registry,
@@ -972,7 +989,14 @@ mod tests {
             boot_time: std::time::SystemTime::now(),
             sidebar_state: SidebarExpandState::new(),
             rt: crate::runtime_view::RuntimeView {
-                actions: Arc::new(forge_runtime::actions::ActionsService::new(Arc::clone(&dp))),
+                actions: Arc::new(forge_runtime::actions::ActionsService::new(
+                    dp.action_repo(),
+                    dp.queue_repo(),
+                    dp.history_repo(),
+                    dp.trigger_repo(),
+                    dp.command_repo(),
+                    dp.soundboard_clips_repo(),
+                )),
                 backend: Arc::clone(&dp),
                 bus: EventBus::new(Arc::new(NullEventLogRepo)),
                 script_registry: Arc::new(ScriptRegistry::new()),

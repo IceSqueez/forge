@@ -2,7 +2,9 @@
 
 use forge_storage::DataProvider;
 use forge_storage_sqlite::SqliteBackend;
-use forge_types::{Action, ActionId, QueueId, SubActionSpec};
+use std::collections::BTreeMap;
+
+use forge_types::{Action, ActionId, QueueId, SubActionStep, Variant};
 
 const TEST_KEY: [u8; 32] = [0xab; 32];
 
@@ -159,9 +161,14 @@ async fn sub_actions_json_survives_roundtrip() {
     let backend = setup().await;
     let queue_id = insert_default_queue(&backend).await;
     let mut action = make_action("with_sub", queue_id);
-    action.sub_actions = vec![SubActionSpec::Log {
-        level: forge_types::LogLevel::Info,
-        message: "hello".to_owned(),
+    action.sub_actions = vec![SubActionStep {
+        kind_id: "core.log.write".to_owned(),
+        config: BTreeMap::from([
+            ("level".to_owned(), Variant::String("info".to_owned())),
+            ("message".to_owned(), Variant::String("hello".to_owned())),
+        ]),
+        enabled: true,
+        label: None,
     }];
     let id = action.id;
     backend.action_repo().save(&action).await.expect("save");
@@ -171,8 +178,7 @@ async fn sub_actions_json_survives_roundtrip() {
 
 #[tokio::test]
 async fn cascade_delete_removes_triggers_on_action_delete() {
-    use forge_types::{Trigger, TriggerId, TriggerKind};
-    use std::collections::BTreeMap;
+    use forge_types::{Trigger, TriggerId};
 
     let backend = setup().await;
     let queue_id = insert_default_queue(&backend).await;
@@ -187,7 +193,7 @@ async fn cascade_delete_removes_triggers_on_action_delete() {
     let trigger = Trigger {
         id: TriggerId::new(),
         action_id,
-        kind: TriggerKind::TwitchCheer,
+        kind_id: "twitch.support.cheer".to_owned(),
         config: BTreeMap::new(),
     };
     backend

@@ -2,7 +2,7 @@
 
 use forge_storage::DataProvider;
 use forge_storage_sqlite::SqliteBackend;
-use forge_types::{Action, ActionId, Trigger, TriggerId, TriggerKind};
+use forge_types::{Action, ActionId, Trigger, TriggerId};
 use std::collections::BTreeMap;
 
 const TEST_KEY: [u8; 32] = [0xab; 32];
@@ -42,11 +42,11 @@ async fn insert_action(backend: &SqliteBackend) -> ActionId {
     id
 }
 
-fn make_trigger(action_id: ActionId, kind: TriggerKind) -> Trigger {
+fn make_trigger(action_id: ActionId, kind_id: &str) -> Trigger {
     Trigger {
         id: TriggerId::new(),
         action_id,
-        kind,
+        kind_id: kind_id.to_owned(),
         config: BTreeMap::new(),
     }
 }
@@ -55,7 +55,7 @@ fn make_trigger(action_id: ActionId, kind: TriggerKind) -> Trigger {
 async fn save_then_list_for_action_roundtrips() {
     let backend = setup().await;
     let action_id = insert_action(&backend).await;
-    let trigger = make_trigger(action_id, TriggerKind::TwitchCheer);
+    let trigger = make_trigger(action_id, "twitch.support.cheer");
     let id = trigger.id;
     backend.trigger_repo().save(&trigger).await.expect("save");
     let triggers = backend
@@ -83,7 +83,7 @@ async fn list_for_action_returns_empty_for_missing_action() {
 async fn delete_existing_trigger_returns_true() {
     let backend = setup().await;
     let action_id = insert_action(&backend).await;
-    let trigger = make_trigger(action_id, TriggerKind::TwitchSubscribe);
+    let trigger = make_trigger(action_id, "twitch.support.subscriber");
     let id = trigger.id;
     backend.trigger_repo().save(&trigger).await.expect("save");
     assert!(backend.trigger_repo().delete(id).await.expect("delete"));
@@ -115,17 +115,17 @@ async fn list_for_action_scoped_to_action() {
 
     backend
         .trigger_repo()
-        .save(&make_trigger(action_a, TriggerKind::TwitchCheer))
+        .save(&make_trigger(action_a, "twitch.support.cheer"))
         .await
         .expect("save a1");
     backend
         .trigger_repo()
-        .save(&make_trigger(action_a, TriggerKind::TwitchRaid))
+        .save(&make_trigger(action_a, "twitch.channel.raid_received"))
         .await
         .expect("save a2");
     backend
         .trigger_repo()
-        .save(&make_trigger(action_b, TriggerKind::TwitchSubscribe))
+        .save(&make_trigger(action_b, "twitch.support.subscriber"))
         .await
         .expect("save b1");
 
@@ -156,7 +156,7 @@ async fn trigger_config_survives_roundtrip() {
     let trigger = Trigger {
         id: TriggerId::new(),
         action_id,
-        kind: TriggerKind::TwitchCheer,
+        kind_id: "twitch.support.cheer".to_owned(),
         config,
     };
     backend.trigger_repo().save(&trigger).await.expect("save");

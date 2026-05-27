@@ -16,14 +16,15 @@ use forge_storage::script::MockScriptRepo;
 use forge_storage::settings::MockSettingsRepo;
 use forge_storage::soundboard::MockSoundboardClipsRepo;
 use forge_storage::trigger::MockTriggerRepo;
+use forge_storage::trigger_instance::MockTriggerInstanceRepo;
 use forge_storage::user_globals::MockUserGlobalsRepo;
 use forge_storage::viewer::MockViewerRepo;
 use forge_storage::voice_aliases::MockVoiceAliasRepo;
 use forge_storage::{
     ActionRepo, CommandRepo, CredentialId, CredentialsRepo, DataProvider, EventLogRepo,
     GlobalEntry, GlobalsRepo, HistoryRepo, QueueRepo, ScriptRecord, ScriptRepo, SettingsRepo,
-    SoundboardClipsRepo, StorageError, TriggerRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo,
-    VoiceAliasRepo,
+    SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TriggerRepo, UserGlobalEntry,
+    UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
@@ -31,6 +32,7 @@ use time::OffsetDateTime;
 pub struct TestDataProvider {
     pub action_repo: Arc<MockActionRepo>,
     pub trigger_repo: Arc<MockTriggerRepo>,
+    pub trigger_instance_repo: Arc<MockTriggerInstanceRepo>,
     pub command_repo: Arc<MockCommandRepo>,
     pub queue_repo: Arc<MockQueueRepo>,
     pub history_repo: Arc<MockHistoryRepo>,
@@ -50,6 +52,7 @@ impl TestDataProvider {
         Self {
             action_repo: Arc::new(MockActionRepo::new()),
             trigger_repo: Arc::new(MockTriggerRepo::new()),
+            trigger_instance_repo: Arc::new(MockTriggerInstanceRepo::new()),
             command_repo: Arc::new(MockCommandRepo::new()),
             queue_repo: Arc::new(MockQueueRepo::new()),
             history_repo: Arc::new(MockHistoryRepo::new()),
@@ -299,6 +302,10 @@ impl DataProvider for TestDataProvider {
 
     fn trigger_repo(&self) -> Arc<dyn TriggerRepo> {
         Arc::clone(&self.trigger_repo) as Arc<dyn TriggerRepo>
+    }
+
+    fn trigger_instance_repo(&self) -> Arc<dyn TriggerInstanceRepo> {
+        Arc::clone(&self.trigger_instance_repo) as Arc<dyn TriggerInstanceRepo>
     }
 
     fn command_repo(&self) -> Arc<dyn CommandRepo> {

@@ -6,8 +6,8 @@ use async_trait::async_trait;
 use forge_storage::{
     ActionRepo, CommandRepo, CredentialId, CredentialsRepo, DataProvider, EventLogRepo,
     GlobalEntry, GlobalTransit, GlobalsRepo, HistoryRepo, QueueRepo, ScriptRecord, ScriptRepo,
-    SettingsRepo, SoundboardClipsRepo, StorageError, TriggerRepo, UserGlobalEntry, UserGlobalsRepo,
-    ViewerRepo, VoiceAliasRepo,
+    SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TriggerRepo,
+    UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
@@ -18,8 +18,8 @@ use crate::retention_task::spawn_retention_task;
 use crate::{
     SqliteActionRepo, SqliteCommandRepo, SqliteCredentialsRepo, SqliteEventLogRepo,
     SqliteGlobalsRepo, SqliteHistoryRepo, SqliteQueueRepo, SqliteScriptRepo, SqliteSettingsRepo,
-    SqliteSoundboardClipsRepo, SqliteTriggerRepo, SqliteUserGlobalsRepo, SqliteViewerRepo,
-    SqliteVoiceAliasRepo, apply_migrations, connect,
+    SqliteSoundboardClipsRepo, SqliteTriggerInstanceRepo, SqliteTriggerRepo, SqliteUserGlobalsRepo,
+    SqliteViewerRepo, SqliteVoiceAliasRepo, apply_migrations, connect,
 };
 
 const PRUNE_INTERVAL_PRODUCTION: Duration = Duration::from_secs(3600);
@@ -31,6 +31,7 @@ pub struct SqliteBackend {
     settings: SqliteSettingsRepo,
     action: Arc<SqliteActionRepo>,
     trigger: Arc<SqliteTriggerRepo>,
+    trigger_instance: Arc<SqliteTriggerInstanceRepo>,
     command: Arc<SqliteCommandRepo>,
     queue: Arc<SqliteQueueRepo>,
     script: SqliteScriptRepo,
@@ -115,6 +116,7 @@ impl SqliteBackend {
             settings: SqliteSettingsRepo::new(pool.clone()),
             action: Arc::new(SqliteActionRepo::new(pool.clone())),
             trigger: Arc::new(SqliteTriggerRepo::new(pool.clone())),
+            trigger_instance: Arc::new(SqliteTriggerInstanceRepo::new(pool.clone())),
             command: Arc::new(SqliteCommandRepo::new(pool.clone())),
             queue: Arc::new(SqliteQueueRepo::new(pool.clone())),
             script: SqliteScriptRepo::new(pool.clone()),
@@ -145,6 +147,26 @@ impl SqliteBackend {
         .bind(started_at_secs)
         .bind(duration_ms)
         .bind(status)
+        .execute(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+        Ok(())
+    }
+
+    #[doc(hidden)]
+    pub async fn insert_action_trigger_instance_for_test(
+        &self,
+        action_id: forge_types::ActionId,
+        trigger_instance_id: forge_types::TriggerInstanceId,
+        position: i64,
+    ) -> Result<(), SqliteStorageError> {
+        sqlx::query(
+            "INSERT INTO action_trigger_instances (action_id, trigger_instance_id, position)
+             VALUES (?, ?, ?)",
+        )
+        .bind(action_id.to_string())
+        .bind(trigger_instance_id.to_string())
+        .bind(position)
         .execute(&self.pool)
         .await
         .map_err(SqliteStorageError::Sqlx)?;
@@ -331,6 +353,10 @@ impl DataProvider for SqliteBackend {
 
     fn trigger_repo(&self) -> Arc<dyn TriggerRepo> {
         Arc::clone(&self.trigger) as Arc<dyn TriggerRepo>
+    }
+
+    fn trigger_instance_repo(&self) -> Arc<dyn TriggerInstanceRepo> {
+        Arc::clone(&self.trigger_instance) as Arc<dyn TriggerInstanceRepo>
     }
 
     fn command_repo(&self) -> Arc<dyn CommandRepo> {

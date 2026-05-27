@@ -47,6 +47,7 @@ impl SqliteBackend {
     pub async fn open(url: &str) -> Result<Self, SqliteStorageError> {
         let pool = connect(url).await?;
         apply_migrations(&pool).await?;
+        crate::registry_migration::migrate_registry_format(&pool).await?;
         let credentials = SqliteCredentialsRepo::new(pool.clone())?;
         Ok(Self::from_pool_and_credentials(
             pool,
@@ -59,6 +60,7 @@ impl SqliteBackend {
     pub async fn open_with_key(url: &str, key: [u8; 32]) -> Result<Self, SqliteStorageError> {
         let pool = connect(url).await?;
         apply_migrations(&pool).await?;
+        crate::registry_migration::migrate_registry_format(&pool).await?;
         let credentials = SqliteCredentialsRepo::new_with_key(pool.clone(), key);
         Ok(Self::from_pool_and_credentials(
             pool,
@@ -75,6 +77,7 @@ impl SqliteBackend {
     ) -> Result<Self, SqliteStorageError> {
         let pool = connect(url).await?;
         apply_migrations(&pool).await?;
+        crate::registry_migration::migrate_registry_format(&pool).await?;
         let credentials = SqliteCredentialsRepo::new_with_key(pool.clone(), key);
         Ok(Self::from_pool_and_credentials(
             pool,

@@ -1,7 +1,88 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-alpha.15] - 2026-05-27
+### ⚙️ Miscellaneous Tasks
+- *(deps)* Bump actions/download-artifact from 7 to 8 (#16)
+- *(deps)* Bump actions/upload-artifact from 6 to 7 (#17)
+- *(deps)* Bump serde_json from 1.0.149 to 1.0.150 (#18)
+- *(deps)* Bump tower-http from 0.6.10 to 0.6.11 (#19)
+- *(deps)* Bump sqlx from 0.8.6 to 0.9.0 (#20)
+- *(deps)* Bump rhai from 1.24.0 to 1.25.0 (#21)
+
+### 🐛 Bug Fixes
+- *(widgets)* Batch SideSheet layout invalidation
+- *(widgets)* Render menu_button panel as overlay, not inline column
+- *(app)* Remove redundant menu dismiss wrapper around drawer panel
+- *(storage-sqlite)* Adapt query_as calls to sqlx 0.9 SqlSafeStr
+- *(twitch)* Migrate builtin quick action templates to SubActionStep
+- *(widgets)* Migrate quick action test fixtures to SubActionStep
+- *(server)* Migrate test fixtures and spawn_action_engine to registry-based dispatch
+- *(storage)* Migrate trigger and action tests to kind_id and SubActionStep
+
+### 🚀 Features
+- *(widgets)* Add SideSheet widget skeleton with overlay layout
+- *(storage)* Add sheet_width typed accessors to SettingsRepo
+- *(widgets)* Animate SideSheet open/close with eased x-offset
+- *(widgets)* Add drag-to-resize handle to SideSheet
+- *(registry)* Scaffold forge-registry crate with descriptor and runner traits
+- *(twitch)* Implement TriggerKindDescriptor for 7 trigger kinds
+- *(audio)* Implement SubActionRunner for soundboard.sound.play and tts.speak.text
+- *(obs)* Implement TriggerKindDescriptor and 8 SubActionRunner kinds
+- *(runtime)* Migrate sub-actions and triggers to registry-based dispatch
+- *(storage)* Migrate trigger and sub-action rows from enum JSON to kind_id format
+
+### 🚜 Refactor
+- *(app)* Extract home view fns from app.rs to home.rs
+- *(app)* Extract settings view fns to settings.rs
+- *(app)* Extract platforms overview view to platforms_view.rs
+- *(app)* Extract actions view fns to actions_view.rs
+- *(app)* Extract action modal views to actions_modals.rs
+- *(app)* Extract navigation helpers to navigation.rs
+- *(app)* Extract subscription wiring to subscriptions.rs
+- *(app)* Extract tts section view fns to tts_view.rs
+- *(app)* Extract boot async helpers to boot.rs
+- *(app)* Extract view screen-dispatch router to view_router.rs
+- *(app)* Extract page-chrome helpers to page_chrome module
+- *(app)* Move boot/server result handlers to boot.rs
+- *(app)* Extract Settings message handler to settings.rs
+- *(app)* Extract navigate arm to navigation::handle_navigate
+- *(app)* Extract viewer-drawer panel to live_chat_drawer.rs
+- *(app)* Migrate viewer drawer to SideSheet widget
+- *(widgets)* Drop legacy side_sheet fn and sheet_chrome chrome
+- *(app)* Split actions.rs into trigger_kinds/forms/telemetry
+- *(app)* Split action_editor.rs into view and update layers
+- *(widgets)* Split builtin into header/health/quick_actions
+- *(app)* Extract globals_variant_editor module from globals_view
+- *(actions)* Extract ActionsService; UI dispatches via Tasks
+- *(tests)* Introduce mockall
+- *(storage)* DataProvider accessors return Arc<dyn XRepo>
+- *(app)* Narrow DataProvider args to specific repos
+- *(twitch)* Move credential format from forge-app
+- *(runtime)* Extract dashboard::compute_stats from forge-app
+- *(twitch)* Move EventSub parsers from forge-app
+- *(script)* Move script execution from forge-app to forge-script
+- *(app)* Nest boot/subsystem variants under Message envelopes
+- *(widgets)* Split server.rs into per-widget files
+- *(server)* Split protocol/mod.rs into 5 function families
+- *(storage)* Split SettingsRepo into KV + typed configs
+- *(runtime)* Narrow command-parser and trigger-evaluator services to per-repo Arcs
+- *(server)* Narrow DispatchContext to 4 repo Arcs
+- *(runtime)* Narrow 7 sub-action handlers from DataProvider to GlobalsRepo
+- *(script)* Narrow ForgeApi and run_inline to Arc<dyn GlobalsRepo>
+- *(runtime)* Narrow ActionEngine to ActionRepo+HistoryRepo+GlobalsRepo
+- *(runtime)* Narrow ActionsService to per-repo Arcs
+- *(server)* Narrow AppState and ServerConfig to 4 repo Arcs
+- *(app)* Narrow boot to Arc<dyn DataProvider>, drop SqliteBackend _arc helpers
+- *(types)* Swap TriggerKind/SubActionSpec enums for kind_id + SubActionStep
+- *(ui)* Migrate forge-app to kind_id strings and SubActionStep
+- *(obs)* Extract store_and_connect orchestration to forge-obs::credentials
+- *(app)* Extract twitch reauth handler from central update
+
 ## [0.1.0-alpha.14] - 2026-05-24
+### ⚙️ Miscellaneous Tasks
+- Release
+
 ### ⚡ Performance
 - *(chat)* Cache rendered rows with iced::widget::lazy
 
@@ -10,6 +91,9 @@ All notable changes to this project will be documented in this file.
 
 ### 🐛 Bug Fixes
 - *(widgets)* Request redraw on chat username hover state change
+
+### 📚 Documentation
+- *(release)* Release v0.1.0-alpha.14
 
 ### 🚀 Features
 - *(widgets)* Add ChatRowWidget skeleton implementing iced Widget trait

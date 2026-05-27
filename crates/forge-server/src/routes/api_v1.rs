@@ -9,8 +9,6 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use serde::Deserialize;
 
-use forge_storage::{GlobalsRepo, UserGlobalsRepo};
-
 use crate::bus_adapter::ClientId;
 use crate::protocol::{
     DispatchContext, WsResponse, handle_do_action, handle_get_actions, handle_get_active_viewers,
@@ -34,10 +32,10 @@ fn ephemeral_ctx(state: &AppState) -> DispatchContext {
     DispatchContext {
         bus: Arc::clone(&state.bus),
         bus_adapter: Arc::clone(&state.bus_adapter),
-        actions: state.dp.action_repo(),
-        commands: state.dp.command_repo(),
-        globals: Arc::clone(&state.dp) as Arc<dyn GlobalsRepo>,
-        user_globals: Arc::clone(&state.dp) as Arc<dyn UserGlobalsRepo>,
+        actions: Arc::clone(&state.actions),
+        commands: Arc::clone(&state.commands),
+        globals: Arc::clone(&state.globals),
+        user_globals: Arc::clone(&state.user_globals),
         auth_state: Arc::clone(&state.auth),
         client,
         auth_required_for_reads: state.auth.auth_required_for_reads,
@@ -233,7 +231,9 @@ mod tests {
 
     use async_trait::async_trait;
     use forge_runtime::{EventBus, NullEventLogRepo, ScriptRegistry, spawn_action_engine};
-    use forge_storage::{CredentialId, CredentialsRepo, DataProvider, GlobalsRepo, StorageError};
+    use forge_storage::{
+        CredentialId, CredentialsRepo, DataProvider, GlobalsRepo, StorageError, UserGlobalsRepo,
+    };
     use time::OffsetDateTime;
     use tokio::net::TcpListener;
 
@@ -327,11 +327,18 @@ mod tests {
             None,
             None,
         ));
+        let actions = dp.action_repo();
+        let commands = dp.command_repo();
+        let globals: Arc<dyn GlobalsRepo> = Arc::clone(&dp) as Arc<dyn GlobalsRepo>;
+        let user_globals: Arc<dyn UserGlobalsRepo> = Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>;
         let state = AppState {
             auth,
             bus,
             bus_adapter,
-            dp,
+            actions,
+            commands,
+            globals,
+            user_globals,
             credentials: creds_dyn,
             server_info: ServerInfo::new(),
             action_engine,

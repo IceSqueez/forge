@@ -10,7 +10,7 @@ use axum::{Json, Router, middleware};
 use tokio::net::TcpListener;
 
 use forge_runtime::{ActionEngineHandle, EventBus};
-use forge_storage::{CredentialsRepo, DataProvider};
+use forge_storage::{ActionRepo, CommandRepo, CredentialsRepo, GlobalsRepo, UserGlobalsRepo};
 
 use crate::auth::AuthState;
 use crate::bus_adapter::BusAdapter;
@@ -23,7 +23,10 @@ pub struct AppState {
     pub auth: Arc<AuthState>,
     pub bus: Arc<EventBus>,
     pub bus_adapter: Arc<BusAdapter>,
-    pub dp: Arc<dyn DataProvider>,
+    pub actions: Arc<dyn ActionRepo>,
+    pub commands: Arc<dyn CommandRepo>,
+    pub globals: Arc<dyn GlobalsRepo>,
+    pub user_globals: Arc<dyn UserGlobalsRepo>,
     pub credentials: Arc<dyn CredentialsRepo>,
     pub server_info: Arc<ServerInfo>,
     pub action_engine: Arc<ActionEngineHandle>,
@@ -55,7 +58,10 @@ impl Server {
             auth,
             bus,
             bus_adapter,
-            dp: self.config.data_provider,
+            actions: self.config.actions,
+            commands: self.config.commands,
+            globals: self.config.globals,
+            user_globals: self.config.user_globals,
             credentials,
             server_info: ServerInfo::new(),
             action_engine: self.config.action_engine,
@@ -212,7 +218,9 @@ mod tests {
 
     use async_trait::async_trait;
     use forge_runtime::{EventBus, NullEventLogRepo, ScriptRegistry, spawn_action_engine};
-    use forge_storage::{CredentialId, CredentialsRepo, DataProvider, GlobalsRepo, StorageError};
+    use forge_storage::{
+        CredentialId, CredentialsRepo, DataProvider, GlobalsRepo, StorageError, UserGlobalsRepo,
+    };
     use time::OffsetDateTime;
     use tokio::net::TcpListener;
 
@@ -286,6 +294,10 @@ mod tests {
         let bus_adapter = BusAdapter::new(Arc::clone(&bus));
         bus_adapter.spawn();
         let dp: Arc<dyn DataProvider> = test_dp();
+        let actions = dp.action_repo();
+        let commands = dp.command_repo();
+        let globals: Arc<dyn GlobalsRepo> = Arc::clone(&dp) as Arc<dyn GlobalsRepo>;
+        let user_globals: Arc<dyn UserGlobalsRepo> = Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>;
         let registry = Arc::new(ScriptRegistry::new());
         let action_engine = Arc::new(spawn_action_engine(
             Arc::clone(&bus),
@@ -301,7 +313,10 @@ mod tests {
             auth,
             bus,
             bus_adapter,
-            dp,
+            actions,
+            commands,
+            globals,
+            user_globals,
             credentials: creds,
             server_info: ServerInfo::new(),
             action_engine,

@@ -5,7 +5,8 @@ use tokio::sync::RwLock;
 use forge_runtime::{ActionEngineHandle, EventBus};
 use forge_server::{ServerConfig, ServerError, ServerHandle, ServerSettings, start_server};
 use forge_storage::{
-    CredentialId, CredentialsRepo, DataProvider, SettingsRepo, reserved_keys::SERVER_PORT_KEY,
+    CredentialId, CredentialsRepo, DataProvider, GlobalsRepo, SettingsRepo, UserGlobalsRepo,
+    reserved_keys::SERVER_PORT_KEY,
 };
 
 const BEARER_CREDENTIAL_ID: &str = "server:bearer";
@@ -126,10 +127,17 @@ pub async fn load_server_settings_and_start(
         .map_err(|e: std::net::AddrParseError| format!("invalid {SERVER_PORT_KEY}: {e}"))?;
     let bind_addr = std::net::SocketAddr::new(ip, snap.port);
 
+    let actions = backend.action_repo();
+    let commands = backend.command_repo();
+    let globals: Arc<dyn GlobalsRepo> = Arc::clone(&backend) as Arc<dyn GlobalsRepo>;
+    let user_globals: Arc<dyn UserGlobalsRepo> = Arc::clone(&backend) as Arc<dyn UserGlobalsRepo>;
     let mut config = ServerConfig::new(
         Arc::clone(&subsystem.credentials),
         bus,
-        backend,
+        actions,
+        commands,
+        globals,
+        user_globals,
         action_engine,
     );
     config.bind_addr = bind_addr;

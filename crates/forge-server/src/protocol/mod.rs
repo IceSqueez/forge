@@ -187,7 +187,9 @@ mod tests {
         let registry = Arc::new(ScriptRegistry::new());
         Arc::new(spawn_action_engine(
             Arc::clone(bus),
-            Arc::clone(dp),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::clone(dp) as Arc<dyn GlobalsRepo>,
             registry,
             None,
             None,

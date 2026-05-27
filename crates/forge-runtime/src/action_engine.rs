@@ -5,7 +5,7 @@ use std::sync::{
 
 use forge_events::{Event, EventSource};
 use forge_obs::ObsSink;
-use forge_storage::{DataProvider, GlobalsRepo};
+use forge_storage::{ActionRepo, GlobalsRepo, HistoryRepo};
 use forge_types::{
     ActionId, ArgStack, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome,
     SubActionOutcome, SubActionSpec,
@@ -77,7 +77,9 @@ impl ActionEngineHandle {
 
 struct ActionEngine {
     bus: Arc<EventBus>,
-    dp: Arc<dyn DataProvider>,
+    actions: Arc<dyn ActionRepo>,
+    history: Arc<dyn HistoryRepo>,
+    globals: Arc<dyn GlobalsRepo>,
     registry: Arc<ScriptRegistry>,
     obs_sink: Option<Arc<dyn ObsSink>>,
     sound_player: Option<Arc<dyn SoundPlayer>>,
@@ -86,9 +88,12 @@ struct ActionEngine {
 }
 
 impl ActionEngine {
+    #[allow(clippy::too_many_arguments)]
     pub fn spawn(
         bus: Arc<EventBus>,
-        dp: Arc<dyn DataProvider>,
+        actions: Arc<dyn ActionRepo>,
+        history: Arc<dyn HistoryRepo>,
+        globals: Arc<dyn GlobalsRepo>,
         registry: Arc<ScriptRegistry>,
         obs_sink: Option<Arc<dyn ObsSink>>,
         sound_player: Option<Arc<dyn SoundPlayer>>,
@@ -100,7 +105,9 @@ impl ActionEngine {
         let cancel_clone = Arc::clone(&cancel);
         let engine = Self {
             bus: Arc::clone(&bus),
-            dp: Arc::clone(&dp),
+            actions: Arc::clone(&actions),
+            history: Arc::clone(&history),
+            globals: Arc::clone(&globals),
             registry: Arc::clone(&registry),
             obs_sink: obs_sink.clone(),
             sound_player: sound_player.clone(),
@@ -111,7 +118,7 @@ impl ActionEngine {
         tokio::spawn(run_quick_action_loop(
             quick_rx,
             bus,
-            dp,
+            globals,
             registry,
             obs_sink,
             sound_player,
@@ -134,7 +141,7 @@ impl ActionEngine {
     }
 
     async fn handle(&self, req: ExecutionRequest) {
-        let action = match self.dp.action_repo().get(req.action_id).await {
+        let action = match self.actions.get(req.action_id).await {
             Ok(Some(a)) if a.enabled => a,
             Ok(_) => return,
             Err(e) => {
@@ -210,7 +217,7 @@ impl ActionEngine {
             start_event_id,
         ));
 
-        if let Err(e) = self.dp.history_repo().save(&ctx).await {
+        if let Err(e) = self.history.save(&ctx).await {
             warn!("history_repo.save failed: {e}");
         }
     }
@@ -242,7 +249,7 @@ impl ActionEngine {
                 index,
                 run_event_id,
                 &self.bus,
-                Arc::clone(&self.dp) as Arc<dyn GlobalsRepo>,
+                Arc::clone(&self.globals),
                 Some(self.registry.as_ref()),
                 self.obs_sink.clone(),
                 self.sound_player.as_ref(),
@@ -297,7 +304,7 @@ impl ActionEngine {
                     index,
                     run_event_id,
                     &self.bus,
-                    Arc::clone(&self.dp) as Arc<dyn GlobalsRepo>,
+                    Arc::clone(&self.globals),
                     Some(self.registry.as_ref()),
                     self.obs_sink.clone(),
                     self.sound_player.as_ref(),
@@ -327,7 +334,7 @@ impl ActionEngine {
 async fn run_quick_action_loop(
     mut rx: mpsc::Receiver<QuickActionRequest>,
     bus: Arc<EventBus>,
-    dp: Arc<dyn DataProvider>,
+    globals: Arc<dyn GlobalsRepo>,
     registry: Arc<ScriptRegistry>,
     obs_sink: Option<Arc<dyn ObsSink>>,
     sound_player: Option<Arc<dyn SoundPlayer>>,
@@ -348,7 +355,7 @@ async fn run_quick_action_loop(
             0,
             run_event_id,
             &bus,
-            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
+            Arc::clone(&globals),
             Some(registry.as_ref()),
             obs_sink.clone(),
             sound_player.as_ref(),
@@ -376,15 +383,27 @@ async fn run_quick_action_loop(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_action_engine(
     bus: Arc<EventBus>,
-    dp: Arc<dyn DataProvider>,
+    actions: Arc<dyn ActionRepo>,
+    history: Arc<dyn HistoryRepo>,
+    globals: Arc<dyn GlobalsRepo>,
     registry: Arc<ScriptRegistry>,
     obs_sink: Option<Arc<dyn ObsSink>>,
     sound_player: Option<Arc<dyn SoundPlayer>>,
     speak_dispatcher: Option<Arc<dyn SpeakDispatcher>>,
 ) -> ActionEngineHandle {
-    ActionEngine::spawn(bus, dp, registry, obs_sink, sound_player, speak_dispatcher)
+    ActionEngine::spawn(
+        bus,
+        actions,
+        history,
+        globals,
+        registry,
+        obs_sink,
+        sound_player,
+        speak_dispatcher,
+    )
 }
 
 #[cfg(test)]
@@ -446,7 +465,9 @@ mod tests {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let handle = spawn_action_engine(
             Arc::clone(&bus),
-            Arc::clone(&dp),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             Arc::new(ScriptRegistry::new()),
             None,
             None,
@@ -479,7 +500,9 @@ mod tests {
         let mut sub = bus.subscribe();
         let handle = spawn_action_engine(
             Arc::clone(&bus),
-            Arc::clone(&dp),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             Arc::new(ScriptRegistry::new()),
             None,
             None,
@@ -530,7 +553,9 @@ mod tests {
         let mut sub = bus.subscribe();
         let handle = spawn_action_engine(
             Arc::clone(&bus),
-            Arc::clone(&dp),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             Arc::new(ScriptRegistry::new()),
             None,
             None,
@@ -578,7 +603,9 @@ mod tests {
         let mut sub = bus.subscribe();
         let handle = spawn_action_engine(
             Arc::clone(&bus),
-            Arc::clone(&dp),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             Arc::new(ScriptRegistry::new()),
             None,
             None,
@@ -632,7 +659,9 @@ mod tests {
         let mut sub = bus.subscribe();
         let handle = spawn_action_engine(
             Arc::clone(&bus),
-            Arc::clone(&dp),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             Arc::new(ScriptRegistry::new()),
             None,
             None,
@@ -696,7 +725,9 @@ mod tests {
         let mut sub = bus.subscribe();
         let handle = spawn_action_engine(
             Arc::clone(&bus),
-            Arc::clone(&dp),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             Arc::new(ScriptRegistry::new()),
             None,
             None,
@@ -767,7 +798,9 @@ mod tests {
         let mut sub = bus.subscribe();
         let handle = spawn_action_engine(
             Arc::clone(&bus),
-            Arc::clone(&dp),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             Arc::new(ScriptRegistry::new()),
             None,
             None,
@@ -838,7 +871,9 @@ mod tests {
         let mut sub = bus.subscribe();
         let handle = spawn_action_engine(
             Arc::clone(&bus),
-            Arc::clone(&dp),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             Arc::new(ScriptRegistry::new()),
             None,
             None,
@@ -924,7 +959,9 @@ mod tests {
         let mut sub = bus.subscribe();
         let handle = spawn_action_engine(
             Arc::clone(&bus),
-            Arc::clone(&dp),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             Arc::clone(&registry),
             None,
             None,

@@ -198,7 +198,7 @@ mod tests {
     use std::time::Duration;
 
     use forge_events::{Event, EventSource};
-    use forge_storage::DataProvider;
+    use forge_storage::{DataProvider, GlobalsRepo};
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::{
         Action, ActionId, Command, CommandId, CommandPermission, LogLevel, Queue, QueueId,
@@ -311,7 +311,9 @@ mod tests {
         let mut sub = bus.subscribe();
         let engine = spawn_action_engine(
             Arc::clone(&bus),
-            Arc::clone(&dp),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             Arc::new(ScriptRegistry::new()),
             None,
             None,
@@ -351,7 +353,9 @@ mod tests {
         let mut sub = bus.subscribe();
         let engine = spawn_action_engine(
             Arc::clone(&bus),
-            Arc::clone(&dp),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             Arc::new(ScriptRegistry::new()),
             None,
             None,
@@ -402,7 +406,9 @@ mod tests {
         let mut sub = bus.subscribe();
         let engine = spawn_action_engine(
             Arc::clone(&bus),
-            Arc::clone(&dp),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             Arc::new(ScriptRegistry::new()),
             None,
             None,
@@ -440,7 +446,9 @@ mod tests {
         let mut sub = bus.subscribe();
         let engine = spawn_action_engine(
             Arc::clone(&bus),
-            Arc::clone(&dp),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             Arc::new(ScriptRegistry::new()),
             None,
             None,
@@ -475,7 +483,9 @@ mod tests {
         let mut sub = bus.subscribe();
         let engine = spawn_action_engine(
             Arc::clone(&bus),
-            Arc::clone(&dp),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             Arc::new(ScriptRegistry::new()),
             None,
             None,
@@ -510,7 +520,9 @@ mod tests {
         let mut sub = bus.subscribe();
         let engine = spawn_action_engine(
             Arc::clone(&bus),
-            Arc::clone(&dp),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             Arc::new(ScriptRegistry::new()),
             None,
             None,
@@ -551,7 +563,9 @@ mod tests {
         let mut sub = bus.subscribe();
         let engine = spawn_action_engine(
             Arc::clone(&bus),
-            Arc::clone(&dp),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             Arc::new(ScriptRegistry::new()),
             None,
             None,
@@ -631,7 +645,9 @@ mod tests {
         let mut sub = bus.subscribe();
         let engine = spawn_action_engine(
             Arc::clone(&bus),
-            Arc::clone(&dp),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             Arc::new(ScriptRegistry::new()),
             None,
             None,

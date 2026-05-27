@@ -18,7 +18,7 @@ use forge_runtime::{
     EventBus, ExecutionRequest, NullEventLogRepo, ScriptRegistry, SoundPlayer, SoundPlayerError,
     spawn_action_engine,
 };
-use forge_storage::DataProvider;
+use forge_storage::{DataProvider, GlobalsRepo};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
     Action, ActionId, ArgStack, ClipId, EventId, LogLevel, OutputDevice, QueueId, SubActionSpec,
@@ -115,7 +115,9 @@ async fn play_sound_none_player_action_completes_with_skipped_subaction() {
 
     let engine = spawn_action_engine(
         Arc::clone(&bus),
-        Arc::clone(&dp),
+        dp.action_repo(),
+        dp.history_repo(),
+        Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
         Arc::new(ScriptRegistry::new()),
         None,
         None,
@@ -148,7 +150,9 @@ async fn play_sound_ok_player_action_completes_successfully() {
 
     let engine = spawn_action_engine(
         Arc::clone(&bus),
-        Arc::clone(&dp),
+        dp.action_repo(),
+        dp.history_repo(),
+        Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
         Arc::new(ScriptRegistry::new()),
         None,
         Some(player),
@@ -181,7 +185,9 @@ async fn play_sound_err_player_action_still_completes() {
 
     let engine = spawn_action_engine(
         Arc::clone(&bus),
-        Arc::clone(&dp),
+        dp.action_repo(),
+        dp.history_repo(),
+        Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
         Arc::new(ScriptRegistry::new()),
         None,
         Some(player),
@@ -242,7 +248,9 @@ async fn play_sound_with_log_subaction_demonstrates_mixed_outcome() {
 
     let engine = spawn_action_engine(
         Arc::clone(&bus),
-        Arc::clone(&dp),
+        dp.action_repo(),
+        dp.history_repo(),
+        Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
         Arc::new(ScriptRegistry::new()),
         None,
         Some(player),

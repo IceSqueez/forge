@@ -589,7 +589,7 @@ mod tests {
     #[tokio::test]
     #[allow(clippy::expect_used)]
     async fn runtime_handles_present_when_storage_is_online() {
-        use forge_storage::DataProvider;
+        use forge_storage::{DataProvider, GlobalsRepo};
 
         let sqlite = Arc::new(
             SqliteBackend::open_with_key("sqlite::memory:", TEST_KEY)
@@ -603,7 +603,9 @@ mod tests {
         let registry = Arc::new(forge_runtime::ScriptRegistry::new());
         let engine = forge_runtime::spawn_action_engine(
             Arc::clone(&bus),
-            Arc::clone(&dp),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             Arc::clone(&registry),
             None,
             None,

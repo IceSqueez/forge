@@ -20,7 +20,7 @@ use forge_runtime::{
     EventBus, ExecutionRequest, NullEventLogRepo, ScriptRegistry, SpeakDispatchError,
     SpeakDispatcher, spawn_action_engine,
 };
-use forge_storage::DataProvider;
+use forge_storage::{DataProvider, GlobalsRepo};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{Action, ActionId, ArgStack, EventId, QueueId, SubActionSpec};
 
@@ -117,7 +117,9 @@ async fn none_dispatcher_action_completes_with_skipped_outcome() {
 
     let engine = spawn_action_engine(
         Arc::clone(&bus),
-        Arc::clone(&dp),
+        dp.action_repo(),
+        dp.history_repo(),
+        Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
         Arc::new(ScriptRegistry::new()),
         None,
         None,
@@ -150,7 +152,9 @@ async fn ok_dispatcher_action_completes_with_success_outcome() {
 
     let engine = spawn_action_engine(
         Arc::clone(&bus),
-        Arc::clone(&dp),
+        dp.action_repo(),
+        dp.history_repo(),
+        Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
         Arc::new(ScriptRegistry::new()),
         None,
         None,
@@ -183,7 +187,9 @@ async fn err_dispatcher_action_still_completes() {
 
     let engine = spawn_action_engine(
         Arc::clone(&bus),
-        Arc::clone(&dp),
+        dp.action_repo(),
+        dp.history_repo(),
+        Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
         Arc::new(ScriptRegistry::new()),
         None,
         None,
@@ -255,7 +261,9 @@ async fn voice_override_forwarded_to_dispatcher() {
 
     let engine = spawn_action_engine(
         Arc::clone(&bus),
-        Arc::clone(&dp),
+        dp.action_repo(),
+        dp.history_repo(),
+        Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
         Arc::new(ScriptRegistry::new()),
         None,
         None,

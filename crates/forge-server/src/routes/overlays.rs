@@ -118,7 +118,7 @@ mod tests {
 
     use async_trait::async_trait;
     use forge_runtime::{EventBus, NullEventLogRepo, ScriptRegistry, spawn_action_engine};
-    use forge_storage::{CredentialId, CredentialsRepo, DataProvider, StorageError};
+    use forge_storage::{CredentialId, CredentialsRepo, DataProvider, GlobalsRepo, StorageError};
     use time::OffsetDateTime;
     use tokio::net::TcpListener;
 
@@ -204,7 +204,9 @@ mod tests {
         let registry = Arc::new(ScriptRegistry::new());
         let action_engine = Arc::new(spawn_action_engine(
             Arc::clone(&bus),
-            Arc::clone(&dp),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             registry,
             None,
             None,

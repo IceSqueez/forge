@@ -17,7 +17,7 @@ use forge_runtime::{
 };
 use forge_soundboard::{BusAudioEventSink, CpalSinkFactory, SoundboardPlayer};
 use forge_speak_queue::{QueueConfig, QueueDeps, SpeakQueueHandle};
-use forge_storage::{CredentialsRepo, DataProvider};
+use forge_storage::{CredentialsRepo, DataProvider, GlobalsRepo};
 use forge_storage_sqlite::SqliteBackend;
 use forge_tts_core::{EngineId, TtsRegistry};
 use forge_tts_piper::{PiperEngine, PiperEngineFactory};
@@ -229,7 +229,9 @@ fn spawn_runtime(backend: Arc<SqliteBackend>, bus: Arc<EventBus>) -> Option<Runt
 
     let engine = spawn_action_engine(
         Arc::clone(&bus),
-        Arc::clone(&dp),
+        dp.action_repo(),
+        dp.history_repo(),
+        Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
         Arc::clone(&registry),
         None,
         None,

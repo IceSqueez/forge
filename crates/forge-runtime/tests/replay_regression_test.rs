@@ -19,7 +19,7 @@ use forge_runtime::{
     CommandParser, EventBus, EventSubscription, NullEventLogRepo, QueueScheduler, ScriptRegistry,
     spawn_action_engine,
 };
-use forge_storage::DataProvider;
+use forge_storage::{DataProvider, GlobalsRepo};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
     Action, ActionId, Command, CommandId, CommandPermission, LogLevel, SubActionSpec,
@@ -122,7 +122,9 @@ async fn spawn_pipeline() -> PipelineFixture {
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let engine = spawn_action_engine(
         Arc::clone(&bus),
-        Arc::clone(&dp),
+        dp.action_repo(),
+        dp.history_repo(),
+        Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
         Arc::new(ScriptRegistry::new()),
         None,
         None,

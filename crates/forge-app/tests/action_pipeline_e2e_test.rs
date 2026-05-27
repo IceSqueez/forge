@@ -7,7 +7,7 @@ use forge_events::{Event, EventSource, EventsError};
 use forge_runtime::{
     CommandParser, EventBus, NullEventLogRepo, QueueScheduler, ScriptRegistry, spawn_action_engine,
 };
-use forge_storage::DataProvider;
+use forge_storage::{DataProvider, GlobalsRepo};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{Action, ActionId, Command, CommandId, CommandPermission, SubActionSpec};
 
@@ -65,7 +65,9 @@ async fn full_action_pipeline_emits_causation_chain() {
 
     let engine = spawn_action_engine(
         Arc::clone(&bus),
-        Arc::clone(&dp),
+        dp.action_repo(),
+        dp.history_repo(),
+        Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
         Arc::new(ScriptRegistry::new()),
         None,
         None,
@@ -187,7 +189,9 @@ async fn unknown_command_does_not_dispatch_action() {
 
     let engine = spawn_action_engine(
         Arc::clone(&bus),
-        Arc::clone(&dp),
+        dp.action_repo(),
+        dp.history_repo(),
+        Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
         Arc::new(ScriptRegistry::new()),
         None,
         None,

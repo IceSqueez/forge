@@ -1,0 +1,69 @@
+mod channel_raid_received;
+mod chat_command;
+mod chat_message;
+mod support_cheer;
+mod support_gift_sub;
+mod support_resubscriber;
+mod support_subscriber;
+
+use forge_registry::{RegistryError, TriggerRegistry};
+
+use channel_raid_received::ChannelRaidReceivedDescriptor;
+use chat_command::ChatCommandDescriptor;
+use chat_message::ChatMessageDescriptor;
+use support_cheer::SupportCheerDescriptor;
+use support_gift_sub::SupportGiftSubDescriptor;
+use support_resubscriber::SupportResubscriberDescriptor;
+use support_subscriber::SupportSubscriberDescriptor;
+
+pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), RegistryError> {
+    reg.register(Box::new(ChatCommandDescriptor))?;
+    reg.register(Box::new(ChatMessageDescriptor))?;
+    reg.register(Box::new(SupportSubscriberDescriptor))?;
+    reg.register(Box::new(SupportResubscriberDescriptor))?;
+    reg.register(Box::new(SupportGiftSubDescriptor))?;
+    reg.register(Box::new(SupportCheerDescriptor))?;
+    reg.register(Box::new(ChannelRaidReceivedDescriptor))?;
+    Ok(())
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn all_seven_kinds_register_without_error() {
+        let mut reg = TriggerRegistry::new();
+        register_twitch_triggers(&mut reg).unwrap();
+        assert_eq!(reg.all().count(), 7);
+    }
+
+    #[test]
+    fn duplicate_registration_returns_error() {
+        let mut reg = TriggerRegistry::new();
+        register_twitch_triggers(&mut reg).unwrap();
+        let result = register_twitch_triggers(&mut reg);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn all_kind_ids_are_reachable() {
+        let mut reg = TriggerRegistry::new();
+        register_twitch_triggers(&mut reg).unwrap();
+
+        let ids = [
+            "twitch.chat.command",
+            "twitch.chat.message",
+            "twitch.support.subscriber",
+            "twitch.support.resubscriber",
+            "twitch.support.gift_sub",
+            "twitch.support.cheer",
+            "twitch.channel.raid_received",
+        ];
+
+        for id in ids {
+            assert!(reg.get(id).is_some(), "missing kind id: {id}");
+        }
+    }
+}

@@ -6,6 +6,7 @@ pub mod chat;
 pub mod chat_send_bridge;
 pub mod credentials;
 pub mod subscriptions;
+pub mod triggers;
 
 pub use auth::{
     TWITCH_BROADCASTER_SCOPES, TWITCH_DEVICE_ENDPOINT, TWITCH_TOKEN_ENDPOINT, TwitchAuthBundle,
@@ -19,3 +20,4 @@ pub use chat::{
 };
 pub use chat_send_bridge::{ChatSendBridge, ChatSendBridgeHandle};
 pub use subscriptions::{SubStatus, SubscriptionRecord, SubscriptionTracker};
+pub use triggers::register_twitch_triggers;

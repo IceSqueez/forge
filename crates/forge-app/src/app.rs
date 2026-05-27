@@ -13,7 +13,7 @@ use forge_runtime::{
     ActionEngineHandle, CommandParserHandle, EventBus, NullEventLogRepo, QueueSchedulerHandle,
     ScriptRegistry,
 };
-use forge_storage::{CredentialId, CredentialsRepo, DataProvider};
+use forge_storage::{CredentialsRepo, DataProvider};
 use forge_widgets::{ForgePalette, ThemeId, ToastQueue};
 use iced::{Task, Theme};
 
@@ -347,23 +347,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             &mut app.rt,
             sub,
         ),
-        Message::TwitchReauthRequested => {
-            if let Some(handle) = app.rt.twitch_chat_handle.take() {
-                handle.shutdown();
-            }
-            app.ui.builtin_detail = None;
-            app.rt.twitch_login = None;
-            app.rt.twitch_reauth_required = false;
-            let backend = Arc::clone(&app.rt.backend);
-            Task::perform(
-                async move {
-                    let id = CredentialId::new("twitch:broadcaster");
-                    let creds: &dyn CredentialsRepo = &*backend;
-                    let _ = creds.delete(&id).await;
-                },
-                |()| Message::Noop,
-            )
-        }
+        Message::TwitchReauthRequested => boot::handle_twitch_reauth_requested(app),
         Message::ObsPanel(sub) => crate::obs_panel::update(&mut app.ui.obs_panel, &app.rt, sub),
         Message::Soundboard(sub) => crate::soundboard::update(&mut app.ui.soundboard, &app.rt, sub),
         Message::SettingsAudio(sub) => {

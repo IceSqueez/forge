@@ -240,6 +240,24 @@ pub(crate) fn handle_server_stop_command(app: &App) -> Task<Message> {
     )
 }
 
+pub(crate) fn handle_twitch_reauth_requested(app: &mut App) -> Task<Message> {
+    if let Some(handle) = app.rt.twitch_chat_handle.take() {
+        handle.shutdown();
+    }
+    app.ui.builtin_detail = None;
+    app.rt.twitch_login = None;
+    app.rt.twitch_reauth_required = false;
+    let backend = Arc::clone(&app.rt.backend);
+    Task::perform(
+        async move {
+            let id = CredentialId::new("twitch:broadcaster");
+            let creds: &dyn CredentialsRepo = &*backend;
+            let _ = creds.delete(&id).await;
+        },
+        |()| Message::Noop,
+    )
+}
+
 pub(crate) fn handle_server_regenerate_token(app: &App) -> Task<Message> {
     let subsystem = Arc::clone(&app.rt.server_subsystem);
     Task::perform(

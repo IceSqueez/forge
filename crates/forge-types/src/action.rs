@@ -1,13 +1,13 @@
-use crate::ids::{ActionId, QueueId};
-use crate::sub_action::SubActionSpec;
 use serde::{Deserialize, Serialize};
+
+use crate::ids::{ActionId, QueueId};
+use crate::sub_action_step::SubActionStep;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecutionMode {
     #[default]
     Sequential,
-    /// Picks ONE sub-action at random per trigger fire instead of running all.
     RandomPick,
 }
 
@@ -23,16 +23,32 @@ pub struct Action {
     #[serde(default)]
     pub execution_mode: ExecutionMode,
     pub description: Option<String>,
-    pub sub_actions: Vec<SubActionSpec>,
+    pub sub_actions: Vec<SubActionStep>,
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
-    use crate::sub_action::{LogLevel, SubActionSpec};
+    use crate::sub_action_step::SubActionStep;
+    use crate::variant::Variant;
 
     fn sample_action() -> Action {
+        let mut send_config = BTreeMap::new();
+        send_config.insert(
+            "message".to_string(),
+            Variant::String("Hello %user%!".to_string()),
+        );
+        send_config.insert("target".to_string(), Variant::String("twitch".to_string()));
+
+        let mut log_config = BTreeMap::new();
+        log_config.insert(
+            "message".to_string(),
+            Variant::String("greeted %user%".to_string()),
+        );
+
         Action {
             id: ActionId::new(),
             name: "Greet".to_string(),
@@ -44,13 +60,17 @@ mod tests {
             execution_mode: ExecutionMode::Sequential,
             description: Some("Sends a greeting".to_string()),
             sub_actions: vec![
-                SubActionSpec::SendChat {
-                    message: "Hello %user%!".to_string(),
-                    target: "twitch".to_string(),
+                SubActionStep {
+                    kind_id: "twitch.chat.send_message".to_string(),
+                    config: send_config,
+                    enabled: true,
+                    label: None,
                 },
-                SubActionSpec::Log {
-                    level: LogLevel::Info,
-                    message: "greeted %user%".to_string(),
+                SubActionStep {
+                    kind_id: "core.log.write".to_string(),
+                    config: log_config,
+                    enabled: true,
+                    label: None,
                 },
             ],
         }

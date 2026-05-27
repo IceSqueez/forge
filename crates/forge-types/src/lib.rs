@@ -5,6 +5,7 @@ pub mod ids;
 pub mod queue;
 pub mod script;
 pub mod sub_action;
+pub mod sub_action_step;
 pub mod token;
 pub mod trigger;
 pub mod variant;
@@ -20,7 +21,8 @@ pub use ids::{
 };
 pub use queue::Queue;
 pub use script::{ScriptContract, ScriptInput};
-pub use sub_action::{LogLevel, OutputDevice, SubActionSpec, VariantTemplate};
+pub use sub_action::{LogLevel, OutputDevice, VariantTemplate};
+pub use sub_action_step::{SubActionConfig, SubActionStep};
 pub use token::{ApiKey, OAuthToken, RefreshToken};
-pub use trigger::{Trigger, TriggerConfig, TriggerKind};
+pub use trigger::{Trigger, TriggerConfig};
 pub use variant::{Variant, VariantError, VariantKind, VariantType};

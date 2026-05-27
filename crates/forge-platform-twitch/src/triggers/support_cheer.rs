@@ -47,7 +47,13 @@ impl TriggerKindDescriptor for SupportCheerDescriptor {
     fn condition_display(&self, config: &TriggerConfig) -> String {
         let min_bits = config
             .get("min_bits")
-            .and_then(|v| if let Variant::Int(n) = v { Some(*n) } else { None })
+            .and_then(|v| {
+                if let Variant::Int(n) = v {
+                    Some(*n)
+                } else {
+                    None
+                }
+            })
             .unwrap_or(0);
         format!(">= {} bits", min_bits)
     }
@@ -63,7 +69,13 @@ impl TriggerKindDescriptor for SupportCheerDescriptor {
         let min_bits = trigger
             .config
             .get("min_bits")
-            .and_then(|v| if let Variant::Int(n) = v { Some(*n) } else { None })
+            .and_then(|v| {
+                if let Variant::Int(n) = v {
+                    Some(*n)
+                } else {
+                    None
+                }
+            })
             .unwrap_or(0);
 
         let bits = event
@@ -161,7 +173,10 @@ mod tests {
     fn condition_display_shows_bits_threshold() {
         let mut cfg = TriggerConfig::new();
         cfg.insert("min_bits".to_owned(), Variant::Int(100));
-        assert_eq!(SupportCheerDescriptor.condition_display(&cfg), ">= 100 bits");
+        assert_eq!(
+            SupportCheerDescriptor.condition_display(&cfg),
+            ">= 100 bits"
+        );
     }
 
     #[test]
@@ -187,10 +202,7 @@ mod tests {
     fn build_arg_stack_extracts_cheer_fields() {
         let stack = SupportCheerDescriptor.build_arg_stack(&cheer_event(200));
         assert_eq!(stack.get("bits_amount"), Some(&Variant::Int(200)));
-        assert_eq!(
-            stack.get("cheer_is_anonymous"),
-            Some(&Variant::Bool(false))
-        );
+        assert_eq!(stack.get("cheer_is_anonymous"), Some(&Variant::Bool(false)));
         assert_eq!(
             stack.get("user_login"),
             Some(&Variant::String("cheerer".to_owned()))

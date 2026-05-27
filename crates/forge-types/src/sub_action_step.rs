@@ -22,7 +22,10 @@ mod tests {
     #[test]
     fn sub_action_step_serde_roundtrip() {
         let mut config = BTreeMap::new();
-        config.insert("message".to_string(), Variant::String("Hello %user%!".to_string()));
+        config.insert(
+            "message".to_string(),
+            Variant::String("Hello %user%!".to_string()),
+        );
         let step = SubActionStep {
             kind_id: "twitch.chat.send_message".to_string(),
             config,

@@ -3,13 +3,17 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_events::{Event, EventSource, EventsError};
+use forge_events::{Event, EventPublisher, EventSource, EventsError};
+use forge_registry::SubActionRegistry;
 use forge_runtime::{
-    CommandParser, EventBus, NullEventLogRepo, QueueScheduler, ScriptRegistry, spawn_action_engine,
+    CommandParser, EventBus, NullEventLogRepo, QueueScheduler, ScriptRegistry,
+    register_core_sub_actions, spawn_action_engine,
 };
 use forge_storage::{DataProvider, GlobalsRepo};
 use forge_storage_sqlite::SqliteBackend;
-use forge_types::{Action, ActionId, Command, CommandId, CommandPermission, SubActionSpec};
+use forge_types::{
+    Action, ActionId, Command, CommandId, CommandPermission, SubActionStep, Variant,
+};
 
 const TEST_KEY: [u8; 32] = [0xab; 32];
 
@@ -44,9 +48,17 @@ async fn full_action_pipeline_emits_causation_chain() {
         bypass_pause: false,
         execution_mode: forge_types::ExecutionMode::Sequential,
         description: None,
-        sub_actions: vec![SubActionSpec::SendChat {
-            message: "Hello %user%, you said %args%".into(),
-            target: "twitch".into(),
+        sub_actions: vec![SubActionStep {
+            kind_id: "twitch.chat.send_message".to_owned(),
+            config: std::collections::BTreeMap::from([
+                (
+                    "message".to_owned(),
+                    Variant::String("Hello %user%, you said %args%".into()),
+                ),
+                ("target".to_owned(), Variant::String("twitch".into())),
+            ]),
+            enabled: true,
+            label: None,
         }],
     };
     dp.action_repo().save(&action).await.unwrap();
@@ -63,15 +75,18 @@ async fn full_action_pipeline_emits_causation_chain() {
     // Subscribe before spawning so that no events published by the runtime are missed.
     let mut sub = bus.subscribe();
 
+    let mut sub_reg = SubActionRegistry::new();
+    let _ = register_core_sub_actions(
+        &mut sub_reg,
+        Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
+        Arc::new(ScriptRegistry::new()),
+        Arc::clone(&bus) as Arc<dyn EventPublisher>,
+    );
     let engine = spawn_action_engine(
         Arc::clone(&bus),
         dp.action_repo(),
         dp.history_repo(),
-        Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-        Arc::new(ScriptRegistry::new()),
-        None,
-        None,
-        None,
+        Arc::new(sub_reg),
     );
     let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
     let _parser = CommandParser::spawn(
@@ -191,11 +206,7 @@ async fn unknown_command_does_not_dispatch_action() {
         Arc::clone(&bus),
         dp.action_repo(),
         dp.history_repo(),
-        Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-        Arc::new(ScriptRegistry::new()),
-        None,
-        None,
-        None,
+        Arc::new(SubActionRegistry::new()),
     );
     let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
     let _parser = CommandParser::spawn(

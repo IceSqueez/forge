@@ -1,10 +1,10 @@
 use forge_events::{Event, EventSource};
-use forge_types::{Command, Trigger, TriggerKind};
+use forge_types::{Command, Trigger, Variant};
 use serde_json::json;
 
 pub fn synthesize_test_event(trigger: &Trigger, commands: &[Command]) -> Event {
-    match &trigger.kind {
-        TriggerKind::TwitchChatCommand => {
+    match trigger.kind_id.as_str() {
+        "twitch.chat.command" => {
             let cmd_name = commands
                 .iter()
                 .find(|c| c.action_id == trigger.action_id)
@@ -20,7 +20,7 @@ pub fn synthesize_test_event(trigger: &Trigger, commands: &[Command]) -> Event {
                 }),
             )
         }
-        TriggerKind::TwitchChatAnyMessage => Event::new(
+        "twitch.chat.message" => Event::new(
             EventSource::Twitch,
             "chat.message",
             json!({
@@ -29,7 +29,7 @@ pub fn synthesize_test_event(trigger: &Trigger, commands: &[Command]) -> Event {
                 "channel": "test_channel"
             }),
         ),
-        TriggerKind::TwitchSubscribe => Event::new(
+        "twitch.support.subscriber" => Event::new(
             EventSource::Twitch,
             "sub.received",
             json!({
@@ -37,7 +37,7 @@ pub fn synthesize_test_event(trigger: &Trigger, commands: &[Command]) -> Event {
                 "tier": "1000"
             }),
         ),
-        TriggerKind::TwitchResubscribe => Event::new(
+        "twitch.support.resubscriber" => Event::new(
             EventSource::Twitch,
             "resub.received",
             json!({
@@ -46,7 +46,7 @@ pub fn synthesize_test_event(trigger: &Trigger, commands: &[Command]) -> Event {
                 "months": 3
             }),
         ),
-        TriggerKind::TwitchGiftSub => Event::new(
+        "twitch.support.gift_sub" => Event::new(
             EventSource::Twitch,
             "giftsub.received",
             json!({
@@ -55,7 +55,7 @@ pub fn synthesize_test_event(trigger: &Trigger, commands: &[Command]) -> Event {
                 "tier": "1000"
             }),
         ),
-        TriggerKind::TwitchCheer => Event::new(
+        "twitch.support.cheer" => Event::new(
             EventSource::Twitch,
             "cheer.received",
             json!({
@@ -63,7 +63,7 @@ pub fn synthesize_test_event(trigger: &Trigger, commands: &[Command]) -> Event {
                 "bits": 100
             }),
         ),
-        TriggerKind::TwitchRaid => Event::new(
+        "twitch.channel.raid_received" => Event::new(
             EventSource::Twitch,
             "raid.received",
             json!({
@@ -71,19 +71,21 @@ pub fn synthesize_test_event(trigger: &Trigger, commands: &[Command]) -> Event {
                 "viewers": 10
             }),
         ),
-        TriggerKind::ObsSceneChanged { scene } => {
-            let scene_name = scene.as_deref().unwrap_or("TestScene").to_owned();
+        "obs.scenes.current_changed" => {
+            let scene_name = match trigger.config.get("scene") {
+                Some(Variant::String(s)) => s.clone(),
+                _ => "TestScene".to_owned(),
+            };
             Event::new(
                 EventSource::Obs,
                 "scene.changed",
                 json!({ "scene": scene_name }),
             )
         }
-        TriggerKind::CodeEvent { name } => {
-            let event_name = if name.is_empty() {
-                "test"
-            } else {
-                name.as_str()
+        "script.event.custom" => {
+            let event_name = match trigger.config.get("name") {
+                Some(Variant::String(s)) if !s.is_empty() => s.as_str(),
+                _ => "test",
             };
             Event::new(
                 EventSource::Server,
@@ -91,6 +93,7 @@ pub fn synthesize_test_event(trigger: &Trigger, commands: &[Command]) -> Event {
                 json!({}),
             )
         }
+        _ => Event::new(EventSource::Core, "test.trigger", json!({})),
     }
 }
 
@@ -101,11 +104,11 @@ mod tests {
     use forge_types::{ActionId, Command, CommandId, CommandPermission, TriggerId};
     use std::collections::BTreeMap;
 
-    fn make_trigger(action_id: ActionId, kind: TriggerKind) -> Trigger {
+    fn make_trigger(action_id: ActionId, kind_id: &str) -> Trigger {
         Trigger {
             id: TriggerId::new(),
             action_id,
-            kind,
+            kind_id: kind_id.to_owned(),
             config: BTreeMap::new(),
         }
     }
@@ -122,7 +125,7 @@ mod tests {
 
     #[test]
     fn chat_command_trigger_yields_twitch_chat_message() {
-        let trigger = make_trigger(ActionId::new(), TriggerKind::TwitchChatCommand);
+        let trigger = make_trigger(ActionId::new(), "twitch.chat.command");
         let event = synthesize_test_event(&trigger, &[]);
         assert_eq!(event.kind, "chat.message");
         assert_eq!(event.source, EventSource::Twitch);
@@ -131,7 +134,7 @@ mod tests {
     #[test]
     fn chat_command_uses_registered_command_name() {
         let action_id = ActionId::new();
-        let trigger = make_trigger(action_id, TriggerKind::TwitchChatCommand);
+        let trigger = make_trigger(action_id, "twitch.chat.command");
         let cmd = make_command(action_id, "!quote");
         let event = synthesize_test_event(&trigger, &[cmd]);
         assert_eq!(event.payload["message"].as_str().unwrap(), "!quote");
@@ -139,14 +142,14 @@ mod tests {
 
     #[test]
     fn chat_command_falls_back_to_test_when_no_commands() {
-        let trigger = make_trigger(ActionId::new(), TriggerKind::TwitchChatCommand);
+        let trigger = make_trigger(ActionId::new(), "twitch.chat.command");
         let event = synthesize_test_event(&trigger, &[]);
         assert_eq!(event.payload["message"].as_str().unwrap(), "!test");
     }
 
     #[test]
     fn any_message_trigger_yields_twitch_chat_message() {
-        let trigger = make_trigger(ActionId::new(), TriggerKind::TwitchChatAnyMessage);
+        let trigger = make_trigger(ActionId::new(), "twitch.chat.message");
         let event = synthesize_test_event(&trigger, &[]);
         assert_eq!(event.kind, "chat.message");
         assert_eq!(event.source, EventSource::Twitch);
@@ -154,12 +157,12 @@ mod tests {
 
     #[test]
     fn obs_scene_changed_yields_scene_changed_with_obs_source() {
-        let trigger = make_trigger(
-            ActionId::new(),
-            TriggerKind::ObsSceneChanged {
-                scene: Some("Gaming".to_string()),
-            },
-        );
+        let trigger = Trigger {
+            id: TriggerId::new(),
+            action_id: ActionId::new(),
+            kind_id: "obs.scenes.current_changed".to_owned(),
+            config: BTreeMap::from([("scene".to_owned(), Variant::String("Gaming".to_owned()))]),
+        };
         let event = synthesize_test_event(&trigger, &[]);
         assert_eq!(event.kind, "scene.changed");
         assert_eq!(event.source, EventSource::Obs);
@@ -168,17 +171,14 @@ mod tests {
 
     #[test]
     fn obs_scene_changed_none_uses_test_scene() {
-        let trigger = make_trigger(
-            ActionId::new(),
-            TriggerKind::ObsSceneChanged { scene: None },
-        );
+        let trigger = make_trigger(ActionId::new(), "obs.scenes.current_changed");
         let event = synthesize_test_event(&trigger, &[]);
         assert_eq!(event.payload["scene"].as_str().unwrap(), "TestScene");
     }
 
     #[test]
     fn subscribe_trigger_yields_sub_received() {
-        let trigger = make_trigger(ActionId::new(), TriggerKind::TwitchSubscribe);
+        let trigger = make_trigger(ActionId::new(), "twitch.support.subscriber");
         let event = synthesize_test_event(&trigger, &[]);
         assert_eq!(event.kind, "sub.received");
         assert_eq!(event.source, EventSource::Twitch);
@@ -186,7 +186,7 @@ mod tests {
 
     #[test]
     fn raid_trigger_yields_raid_received() {
-        let trigger = make_trigger(ActionId::new(), TriggerKind::TwitchRaid);
+        let trigger = make_trigger(ActionId::new(), "twitch.channel.raid_received");
         let event = synthesize_test_event(&trigger, &[]);
         assert_eq!(event.kind, "raid.received");
         assert_eq!(event.source, EventSource::Twitch);

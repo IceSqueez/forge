@@ -167,19 +167,26 @@ pub fn add_action_update(
     }
 }
 
-fn build_trigger_config(
-    kind: &forge_types::TriggerKind,
-    form: &TriggerConfigForm,
-) -> forge_types::TriggerConfig {
+fn log_level_id(level: &forge_types::LogLevel) -> &'static str {
+    match level {
+        forge_types::LogLevel::Trace => "trace",
+        forge_types::LogLevel::Debug => "debug",
+        forge_types::LogLevel::Info => "info",
+        forge_types::LogLevel::Warn => "warn",
+        forge_types::LogLevel::Error => "error",
+    }
+}
+
+fn build_trigger_config(kind_id: &str, form: &TriggerConfigForm) -> forge_types::TriggerConfig {
     let mut m = std::collections::BTreeMap::new();
-    match kind {
-        forge_types::TriggerKind::TwitchChatCommand => {
+    match kind_id {
+        "twitch.chat.command" => {
             m.insert(
                 "cooldown_secs".to_string(),
                 forge_types::Variant::Int(form.parsed_cooldown() as i64),
             );
         }
-        forge_types::TriggerKind::TwitchCheer => {
+        "twitch.support.cheer" => {
             m.insert(
                 "min_bits".to_string(),
                 forge_types::Variant::Int(form.parsed_min_bits() as i64),
@@ -254,18 +261,18 @@ pub fn add_trigger_update(
             if !form.is_valid() {
                 return Task::none();
             }
-            let Some(kind) = form.selected_kind.clone() else {
+            let Some(kind_id) = form.selected_kind.clone() else {
                 return Task::none();
             };
             let action_id = form.for_action_id;
-            let config = build_trigger_config(&kind, &form.config);
+            let config = build_trigger_config(&kind_id, &form.config);
             let trigger = forge_types::Trigger {
                 id: forge_types::TriggerId::new(),
                 action_id,
-                kind: kind.clone(),
+                kind_id: kind_id.clone(),
                 config,
             };
-            let cmd = if matches!(kind, forge_types::TriggerKind::TwitchChatCommand) {
+            let cmd = if kind_id == "twitch.chat.command" {
                 let raw = form.config.command_name.trim();
                 let normalized = format!("!{}", raw.trim_start_matches('!').to_lowercase());
                 Some(forge_types::Command {
@@ -344,9 +351,9 @@ pub fn add_sub_action_update(
             form.editing_index = Some(index);
             if let Some(d) = detail
                 && d.action.id == action_id
-                && let Some(spec) = d.action.sub_actions.get(index)
+                && let Some(step) = d.action.sub_actions.get(index)
             {
-                form.populate_from_spec(spec);
+                form.populate_from_step(step);
             }
             *state = Some(form);
             let service = Arc::clone(&rt.actions);
@@ -492,38 +499,110 @@ pub fn add_sub_action_update(
                 }
                 return Task::none();
             }
-            let spec = match form.kind {
-                SubActionKindChoice::SendChat => forge_types::SubActionSpec::SendChat {
-                    message: form.config.send_chat_message.clone(),
-                    target: form.config.send_chat_target.clone(),
+            use forge_types::{SubActionStep, Variant};
+            use std::collections::BTreeMap;
+            let step = match form.kind {
+                SubActionKindChoice::SendChat => SubActionStep {
+                    kind_id: "twitch.chat.send_message".to_owned(),
+                    config: BTreeMap::from([
+                        (
+                            "message".to_owned(),
+                            Variant::String(form.config.send_chat_message.clone()),
+                        ),
+                        (
+                            "target".to_owned(),
+                            Variant::String(form.config.send_chat_target.clone()),
+                        ),
+                    ]),
+                    enabled: true,
+                    label: None,
                 },
-                SubActionKindChoice::SetGlobal => forge_types::SubActionSpec::SetGlobal {
-                    name: form.config.set_global_name.clone(),
-                    value: form.config.set_global_value.clone(),
+                SubActionKindChoice::SetGlobal => SubActionStep {
+                    kind_id: "core.globals.set".to_owned(),
+                    config: BTreeMap::from([
+                        (
+                            "name".to_owned(),
+                            Variant::String(form.config.set_global_name.clone()),
+                        ),
+                        (
+                            "value".to_owned(),
+                            Variant::String(form.config.set_global_value.clone()),
+                        ),
+                    ]),
+                    enabled: true,
+                    label: None,
                 },
                 SubActionKindChoice::Delay => {
-                    let ms = form.config.delay_ms.trim().parse::<u64>().unwrap_or(0);
-                    forge_types::SubActionSpec::Delay { ms }
+                    let ms = form.config.delay_ms.trim().parse::<i64>().unwrap_or(0);
+                    SubActionStep {
+                        kind_id: "core.logic.wait".to_owned(),
+                        config: BTreeMap::from([("ms".to_owned(), Variant::Int(ms))]),
+                        enabled: true,
+                        label: None,
+                    }
                 }
-                SubActionKindChoice::Log => forge_types::SubActionSpec::Log {
-                    level: form.config.log_level.clone(),
-                    message: form.config.log_message.clone(),
+                SubActionKindChoice::Log => SubActionStep {
+                    kind_id: "core.log.write".to_owned(),
+                    config: BTreeMap::from([
+                        (
+                            "level".to_owned(),
+                            Variant::String(log_level_id(&form.config.log_level).to_owned()),
+                        ),
+                        (
+                            "message".to_owned(),
+                            Variant::String(form.config.log_message.clone()),
+                        ),
+                    ]),
+                    enabled: true,
+                    label: None,
                 },
-                SubActionKindChoice::PlaySound => forge_types::SubActionSpec::PlaySound {
-                    clip_id: form.config.play_sound_clip_id.unwrap_or_default(),
-                    output_device_override: None,
+                SubActionKindChoice::PlaySound => SubActionStep {
+                    kind_id: "soundboard.sound.play".to_owned(),
+                    config: BTreeMap::from([(
+                        "clip_id".to_owned(),
+                        Variant::String(
+                            form.config
+                                .play_sound_clip_id
+                                .unwrap_or_default()
+                                .to_string(),
+                        ),
+                    )]),
+                    enabled: true,
+                    label: None,
                 },
-                SubActionKindChoice::Speak => forge_types::SubActionSpec::Speak {
-                    text: form.config.speak_text.clone(),
-                    voice_id_override: if form.config.speak_voice_override.trim().is_empty() {
-                        None
-                    } else {
-                        Some(form.config.speak_voice_override.trim().to_owned())
-                    },
-                },
-                SubActionKindChoice::ReadFile => forge_types::SubActionSpec::ReadFile {
-                    path: form.config.read_file_path.trim().to_owned(),
-                    target_var: form.config.read_file_target_var.trim().to_owned(),
+                SubActionKindChoice::Speak => {
+                    let mut config = BTreeMap::new();
+                    config.insert(
+                        "text".to_owned(),
+                        Variant::String(form.config.speak_text.clone()),
+                    );
+                    if !form.config.speak_voice_override.trim().is_empty() {
+                        config.insert(
+                            "voice_id_override".to_owned(),
+                            Variant::String(form.config.speak_voice_override.trim().to_owned()),
+                        );
+                    }
+                    SubActionStep {
+                        kind_id: "tts.speak.text".to_owned(),
+                        config,
+                        enabled: true,
+                        label: None,
+                    }
+                }
+                SubActionKindChoice::ReadFile => SubActionStep {
+                    kind_id: "core.file.read".to_owned(),
+                    config: BTreeMap::from([
+                        (
+                            "path".to_owned(),
+                            Variant::String(form.config.read_file_path.trim().to_owned()),
+                        ),
+                        (
+                            "target_var".to_owned(),
+                            Variant::String(form.config.read_file_target_var.trim().to_owned()),
+                        ),
+                    ]),
+                    enabled: true,
+                    label: None,
                 },
                 SubActionKindChoice::RandomInt => {
                     let min = form
@@ -538,10 +617,20 @@ pub fn add_sub_action_update(
                         .trim()
                         .parse::<i64>()
                         .unwrap_or(0);
-                    forge_types::SubActionSpec::RandomInt {
-                        min,
-                        max,
-                        target_var: form.config.random_int_target_var.trim().to_owned(),
+                    SubActionStep {
+                        kind_id: "core.random.int".to_owned(),
+                        config: BTreeMap::from([
+                            ("min".to_owned(), Variant::Int(min)),
+                            ("max".to_owned(), Variant::Int(max)),
+                            (
+                                "target_var".to_owned(),
+                                Variant::String(
+                                    form.config.random_int_target_var.trim().to_owned(),
+                                ),
+                            ),
+                        ]),
+                        enabled: true,
+                        label: None,
                     }
                 }
             };
@@ -554,7 +643,7 @@ pub fn add_sub_action_update(
             Task::perform(
                 async move {
                     service
-                        .save_sub_action(action_id, spec, editing_index)
+                        .save_sub_action(action_id, step, editing_index)
                         .await
                         .map_err(|e| e.to_string())
                 },

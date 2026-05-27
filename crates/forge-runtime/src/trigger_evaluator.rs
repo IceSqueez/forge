@@ -65,9 +65,7 @@ impl TriggerEvaluator {
             .all()
             .filter(|d| {
                 let filter = d.event_filter();
-                let source_ok = filter
-                    .source
-                    .is_none_or(|s| s == event.source);
+                let source_ok = filter.source.is_none_or(|s| s == event.source);
                 let prefix_ok = filter
                     .kind_prefix
                     .as_deref()
@@ -96,9 +94,7 @@ impl TriggerEvaluator {
             let trigger_rows = match self.triggers.list_for_action(action.id).await {
                 Ok(t) => t,
                 Err(e) => {
-                    warn!(
-                        "trigger_evaluator: trigger_repo.list_for_action failed: {e}"
-                    );
+                    warn!("trigger_evaluator: trigger_repo.list_for_action failed: {e}");
                     continue;
                 }
             };
@@ -116,9 +112,7 @@ impl TriggerEvaluator {
                 };
 
                 let filter = descriptor.event_filter();
-                let source_ok = filter
-                    .source
-                    .is_none_or(|s| s == event.source);
+                let source_ok = filter.source.is_none_or(|s| s == event.source);
                 let prefix_ok = filter
                     .kind_prefix
                     .as_deref()
@@ -174,8 +168,7 @@ mod tests {
     use super::*;
     use crate::{
         EventBus, EventSubscription, NullEventLogRepo, QueueScheduler, ScriptRegistry,
-        sub_action_runners::register_core_sub_actions,
-        triggers::register_core_triggers,
+        sub_action_runners::register_core_sub_actions, triggers::register_core_triggers,
     };
 
     async fn make_dp() -> Arc<dyn DataProvider> {
@@ -254,7 +247,9 @@ mod tests {
         false
     }
 
-    fn build_registries(globals: Arc<dyn GlobalsRepo>) -> (Arc<SubActionRegistry>, Arc<TriggerRegistry>) {
+    fn build_registries(
+        globals: Arc<dyn GlobalsRepo>,
+    ) -> (Arc<SubActionRegistry>, Arc<TriggerRegistry>) {
         let registry = Arc::new(ScriptRegistry::new());
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let publisher: Arc<dyn forge_events::EventPublisher> =

@@ -116,7 +116,10 @@ mod tests {
 
     #[test]
     fn id_is_stable() {
-        assert_eq!(SupportSubscriberDescriptor.id(), "twitch.support.subscriber");
+        assert_eq!(
+            SupportSubscriberDescriptor.id(),
+            "twitch.support.subscriber"
+        );
     }
 
     #[test]

@@ -178,6 +178,8 @@ impl App {
                 twitch_login: None,
                 twitch_token_expires: None,
                 twitch_reauth_required: false,
+                sub_action_registry: Arc::new(forge_registry::SubActionRegistry::new()),
+                trigger_registry: Arc::new(forge_registry::TriggerRegistry::new()),
             },
             ui: UiState::default(),
         }
@@ -234,6 +236,8 @@ impl Default for App {
                 twitch_login: None,
                 twitch_token_expires: None,
                 twitch_reauth_required: false,
+                sub_action_registry: Arc::new(forge_registry::SubActionRegistry::new()),
+                trigger_registry: Arc::new(forge_registry::TriggerRegistry::new()),
             },
             ui: UiState::default(),
         }
@@ -599,7 +603,7 @@ mod tests {
     #[tokio::test]
     #[allow(clippy::expect_used)]
     async fn runtime_handles_present_when_storage_is_online() {
-        use forge_storage::{DataProvider, GlobalsRepo};
+        use forge_storage::DataProvider;
 
         let sqlite = Arc::new(
             SqliteBackend::open_with_key("sqlite::memory:", TEST_KEY)
@@ -610,16 +614,11 @@ mod tests {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let queues = dp.queue_repo().list().await.expect("list queues");
 
-        let registry = Arc::new(forge_runtime::ScriptRegistry::new());
         let engine = forge_runtime::spawn_action_engine(
             Arc::clone(&bus),
             dp.action_repo(),
             dp.history_repo(),
-            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            Arc::clone(&registry),
-            None,
-            None,
-            None,
+            Arc::new(forge_registry::SubActionRegistry::new()),
         );
         let scheduler =
             forge_runtime::QueueScheduler::spawn(engine.clone(), Arc::clone(&bus), queues);
@@ -653,7 +652,7 @@ mod tests {
                 )),
                 backend: dp,
                 bus,
-                script_registry: registry,
+                script_registry: Arc::new(forge_runtime::ScriptRegistry::new()),
                 server_subsystem,
                 action_engine: Some(engine),
                 scheduler: Some(scheduler),
@@ -667,6 +666,8 @@ mod tests {
                 twitch_login: None,
                 twitch_token_expires: None,
                 twitch_reauth_required: false,
+                sub_action_registry: Arc::new(forge_registry::SubActionRegistry::new()),
+                trigger_registry: Arc::new(forge_registry::TriggerRegistry::new()),
             },
             ui: UiState::default(),
         };
@@ -1013,6 +1014,8 @@ mod tests {
                 twitch_login: None,
                 twitch_token_expires: None,
                 twitch_reauth_required: false,
+                sub_action_registry: Arc::new(forge_registry::SubActionRegistry::new()),
+                trigger_registry: Arc::new(forge_registry::TriggerRegistry::new()),
             },
             ui: UiState::default(),
         };

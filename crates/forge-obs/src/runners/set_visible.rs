@@ -3,10 +3,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
-use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner,
-};
 use forge_registry::runner::SubActionConfig;
+use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -97,11 +95,23 @@ impl SubActionRunner for SetVisibleRunner {
 
         let raw_scene = config
             .get("scene")
-            .and_then(|v| if let Variant::String(s) = v { Some(s.as_str()) } else { None })
+            .and_then(|v| {
+                if let Variant::String(s) = v {
+                    Some(s.as_str())
+                } else {
+                    None
+                }
+            })
             .unwrap_or_default();
         let raw_source = config
             .get("source")
-            .and_then(|v| if let Variant::String(s) = v { Some(s.as_str()) } else { None })
+            .and_then(|v| {
+                if let Variant::String(s) = v {
+                    Some(s.as_str())
+                } else {
+                    None
+                }
+            })
             .unwrap_or_default();
         let visible = matches!(config.get("visible"), Some(Variant::Bool(true)));
 
@@ -176,16 +186,14 @@ mod tests {
     #[test]
     fn validate_config_rejects_missing_source() {
         let runner = SetVisibleRunner::new(Arc::new(MockSink));
-        let config =
-            BTreeMap::from([("scene".to_owned(), Variant::String("Gameplay".to_owned()))]);
+        let config = BTreeMap::from([("scene".to_owned(), Variant::String("Gameplay".to_owned()))]);
         assert!(runner.validate_config(&config).is_err());
     }
 
     #[test]
     fn validate_config_rejects_missing_scene() {
         let runner = SetVisibleRunner::new(Arc::new(MockSink));
-        let config =
-            BTreeMap::from([("source".to_owned(), Variant::String("Cam".to_owned()))]);
+        let config = BTreeMap::from([("source".to_owned(), Variant::String("Cam".to_owned()))]);
         assert!(runner.validate_config(&config).is_err());
     }
 }

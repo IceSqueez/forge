@@ -137,9 +137,7 @@ impl SubActionRunner for CoreFileReadRunner {
                                 ));
                                 SubActionOutcome::Success
                             }
-                            Err(e) => {
-                                SubActionOutcome::Failed(format!("global write failed: {e}"))
-                            }
+                            Err(e) => SubActionOutcome::Failed(format!("global write failed: {e}")),
                         }
                     }
                     Err(e) => SubActionOutcome::Failed(format!("read failed: {e}")),

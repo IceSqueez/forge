@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, ClipId, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{
+    ArgStack, ClipId, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant,
+};
 use time::OffsetDateTime;
 
 use crate::sound_player::SoundPlayer;
@@ -79,13 +81,10 @@ impl SubActionRunner for PlaySoundRunner {
             .unwrap_or_default();
         let interpolated = ctx.arg_stack.interpolate(clip_id_str);
 
-        let parse_result: Result<ClipId, _> =
-            serde_json::from_str(&format!("\"{interpolated}\""));
+        let parse_result: Result<ClipId, _> = serde_json::from_str(&format!("\"{interpolated}\""));
 
         let outcome = match parse_result {
-            Err(_) => SubActionOutcome::Failed(format!(
-                "invalid clip_id: {interpolated}"
-            )),
+            Err(_) => SubActionOutcome::Failed(format!("invalid clip_id: {interpolated}")),
             Ok(clip_id) => match self.sound_player.play(clip_id, None).await {
                 Ok(()) => SubActionOutcome::Success,
                 Err(e) => SubActionOutcome::Failed(e.to_string()),
@@ -162,10 +161,7 @@ mod tests {
 
     fn config_with_clip(id: &ClipId) -> SubActionConfig {
         let mut cfg = SubActionConfig::new();
-        cfg.insert(
-            "clip_id".to_owned(),
-            Variant::String(id.to_string()),
-        );
+        cfg.insert("clip_id".to_owned(), Variant::String(id.to_string()));
         cfg
     }
 
@@ -194,7 +190,10 @@ mod tests {
     async fn invalid_clip_id_returns_failed() {
         let runner = PlaySoundRunner::new(Arc::new(OkPlayer));
         let mut cfg = SubActionConfig::new();
-        cfg.insert("clip_id".to_owned(), Variant::String("not-a-ulid".to_owned()));
+        cfg.insert(
+            "clip_id".to_owned(),
+            Variant::String("not-a-ulid".to_owned()),
+        );
         let stack = ArgStack::new();
         let ctx = make_ctx(&stack);
         let (telemetry, _) = runner.execute(&cfg, &ctx).await;

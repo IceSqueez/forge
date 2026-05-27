@@ -154,10 +154,7 @@ mod tests {
             stack.get("user_login"),
             Some(&Variant::String("loyalfan".to_owned()))
         );
-        assert_eq!(
-            stack.get("sub_cumulative_months"),
-            Some(&Variant::Int(12))
-        );
+        assert_eq!(stack.get("sub_cumulative_months"), Some(&Variant::Int(12)));
         assert_eq!(stack.get("sub_streak_months"), Some(&Variant::Int(6)));
         assert_eq!(
             stack.get("sub_message"),

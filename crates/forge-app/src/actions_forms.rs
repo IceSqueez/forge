@@ -1,9 +1,9 @@
 use forge_types::{
-    ActionId, ClipId, CommandPermission, LogLevel, QueueId, SubActionSpec, TriggerId, TriggerKind,
+    ActionId, ClipId, CommandPermission, LogLevel, QueueId, SubActionStep, TriggerId, Variant,
 };
 
 use crate::actions_trigger_kinds::{
-    TriggerCategory, all_trigger_kinds, category_of, kind_label, kind_search_text,
+    TriggerCategory, all_trigger_kind_ids, category_of, kind_label, kind_search_text,
 };
 
 pub struct AddActionForm {
@@ -124,7 +124,7 @@ pub struct AddTriggerForm {
     pub for_action_id: ActionId,
     pub search: String,
     pub category: TriggerCategory,
-    pub selected_kind: Option<TriggerKind>,
+    pub selected_kind: Option<String>,
     pub config: TriggerConfigForm,
     pub error: Option<String>,
     pub saving: bool,
@@ -144,21 +144,21 @@ impl AddTriggerForm {
     }
 
     pub fn is_valid(&self) -> bool {
-        let Some(kind) = &self.selected_kind else {
+        let Some(kind_id) = &self.selected_kind else {
             return false;
         };
-        if matches!(kind, TriggerKind::TwitchChatCommand) {
+        if kind_id == "twitch.chat.command" {
             !self.config.command_name.trim().is_empty()
         } else {
             true
         }
     }
 
-    pub fn visible_kinds(&self) -> Vec<TriggerKind> {
+    pub fn visible_kinds(&self) -> Vec<String> {
         let query = self.search.trim().to_lowercase();
-        all_trigger_kinds()
-            .into_iter()
-            .filter(|k| {
+        all_trigger_kind_ids()
+            .iter()
+            .filter(|&&k| {
                 let cat_match =
                     self.category == TriggerCategory::All || category_of(k) == self.category;
                 let search_match = query.is_empty()
@@ -166,6 +166,7 @@ impl AddTriggerForm {
                     || kind_label(k).to_lowercase().contains(&query);
                 cat_match && search_match
             })
+            .map(|&k| k.to_owned())
             .collect()
     }
 }
@@ -175,7 +176,7 @@ pub enum AddTriggerMsg {
     OpenRequested(ActionId),
     SearchChanged(String),
     CategorySelected(TriggerCategory),
-    KindSelected(TriggerKind),
+    KindSelected(String),
     CommandNameChanged(String),
     CooldownChanged(String),
     PermissionSelected(CommandPermission),
@@ -263,53 +264,131 @@ impl AddSubActionForm {
         }
     }
 
-    pub fn populate_from_spec(&mut self, spec: &SubActionSpec) {
-        match spec {
-            SubActionSpec::SendChat { target, message } => {
+    pub fn populate_from_step(&mut self, step: &SubActionStep) {
+        fn as_str(v: &Variant) -> Option<&str> {
+            if let Variant::String(s) = v {
+                Some(s.as_str())
+            } else {
+                None
+            }
+        }
+        fn as_i64(v: &Variant) -> Option<i64> {
+            if let Variant::Int(n) = v {
+                Some(*n)
+            } else {
+                None
+            }
+        }
+        match step.kind_id.as_str() {
+            "twitch.chat.send_message" => {
                 self.kind = SubActionKindChoice::SendChat;
-                self.config.send_chat_target = target.clone();
-                self.config.send_chat_message = message.clone();
+                self.config.send_chat_target = step
+                    .config
+                    .get("target")
+                    .and_then(as_str)
+                    .unwrap_or("twitch")
+                    .to_owned();
+                self.config.send_chat_message = step
+                    .config
+                    .get("message")
+                    .and_then(as_str)
+                    .unwrap_or("")
+                    .to_owned();
             }
-            SubActionSpec::SetGlobal { name, value } => {
+            "core.globals.set" => {
                 self.kind = SubActionKindChoice::SetGlobal;
-                self.config.set_global_name = name.clone();
-                self.config.set_global_value = value.clone();
+                self.config.set_global_name = step
+                    .config
+                    .get("name")
+                    .and_then(as_str)
+                    .unwrap_or("")
+                    .to_owned();
+                self.config.set_global_value = step
+                    .config
+                    .get("value")
+                    .and_then(as_str)
+                    .unwrap_or("")
+                    .to_owned();
             }
-            SubActionSpec::Delay { ms } => {
+            "core.logic.wait" => {
                 self.kind = SubActionKindChoice::Delay;
-                self.config.delay_ms = ms.to_string();
+                self.config.delay_ms = step
+                    .config
+                    .get("ms")
+                    .and_then(as_i64)
+                    .unwrap_or(500)
+                    .to_string();
             }
-            SubActionSpec::Log { level, message } => {
+            "core.log.write" => {
                 self.kind = SubActionKindChoice::Log;
-                self.config.log_level = level.clone();
-                self.config.log_message = message.clone();
+                let level_str = step.config.get("level").and_then(as_str).unwrap_or("info");
+                self.config.log_level = log_level_from_id(level_str);
+                self.config.log_message = step
+                    .config
+                    .get("message")
+                    .and_then(as_str)
+                    .unwrap_or("")
+                    .to_owned();
             }
-            SubActionSpec::PlaySound { clip_id, .. } => {
+            "soundboard.sound.play" => {
                 self.kind = SubActionKindChoice::PlaySound;
-                self.config.play_sound_clip_id = Some(*clip_id);
+                if let Some(id_str) = step.config.get("clip_id").and_then(as_str) {
+                    let quoted = format!("\"{}\"", id_str);
+                    if let Ok(id) = serde_json::from_str::<ClipId>(&quoted) {
+                        self.config.play_sound_clip_id = Some(id);
+                    }
+                }
             }
-            SubActionSpec::Speak {
-                text,
-                voice_id_override,
-            } => {
+            "tts.speak.text" => {
                 self.kind = SubActionKindChoice::Speak;
-                self.config.speak_text = text.clone();
-                self.config.speak_voice_override = voice_id_override.clone().unwrap_or_default();
+                self.config.speak_text = step
+                    .config
+                    .get("text")
+                    .and_then(as_str)
+                    .unwrap_or("")
+                    .to_owned();
+                self.config.speak_voice_override = step
+                    .config
+                    .get("voice_id_override")
+                    .and_then(as_str)
+                    .unwrap_or("")
+                    .to_owned();
             }
-            SubActionSpec::ReadFile { path, target_var } => {
+            "core.file.read" => {
                 self.kind = SubActionKindChoice::ReadFile;
-                self.config.read_file_path = path.clone();
-                self.config.read_file_target_var = target_var.clone();
+                self.config.read_file_path = step
+                    .config
+                    .get("path")
+                    .and_then(as_str)
+                    .unwrap_or("")
+                    .to_owned();
+                self.config.read_file_target_var = step
+                    .config
+                    .get("target_var")
+                    .and_then(as_str)
+                    .unwrap_or("")
+                    .to_owned();
             }
-            SubActionSpec::RandomInt {
-                min,
-                max,
-                target_var,
-            } => {
+            "core.random.int" => {
                 self.kind = SubActionKindChoice::RandomInt;
-                self.config.random_int_min = min.to_string();
-                self.config.random_int_max = max.to_string();
-                self.config.random_int_target_var = target_var.clone();
+                self.config.random_int_min = step
+                    .config
+                    .get("min")
+                    .and_then(as_i64)
+                    .unwrap_or(1)
+                    .to_string();
+                self.config.random_int_max = step
+                    .config
+                    .get("max")
+                    .and_then(as_i64)
+                    .unwrap_or(100)
+                    .to_string();
+                self.config.random_int_target_var = step
+                    .config
+                    .get("target_var")
+                    .and_then(as_str)
+                    .unwrap_or("")
+                    .to_owned();
             }
             _ => {}
         }
@@ -334,6 +413,16 @@ impl AddSubActionForm {
                 matches!((min, max), (Some(lo), Some(hi)) if lo <= hi) && target_ok
             }
         }
+    }
+}
+
+fn log_level_from_id(id: &str) -> LogLevel {
+    match id {
+        "trace" => LogLevel::Trace,
+        "debug" => LogLevel::Debug,
+        "warn" => LogLevel::Warn,
+        "error" => LogLevel::Error,
+        _ => LogLevel::Info,
     }
 }
 

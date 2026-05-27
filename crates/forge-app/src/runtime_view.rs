@@ -3,6 +3,7 @@ use std::time::SystemTime;
 
 use forge_obs::ObsClient;
 use forge_platform_twitch::{ChatSendBridgeHandle, TwitchChatHandle};
+use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
     ActionEngineHandle, CommandParserHandle, EventBus, QueueSchedulerHandle, ScriptRegistry,
     actions::ActionsService,
@@ -32,4 +33,6 @@ pub struct RuntimeView {
     pub twitch_login: Option<String>,
     pub twitch_token_expires: Option<SystemTime>,
     pub twitch_reauth_required: bool,
+    pub sub_action_registry: Arc<SubActionRegistry>,
+    pub trigger_registry: Arc<TriggerRegistry>,
 }

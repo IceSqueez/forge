@@ -58,6 +58,8 @@ fn test_app() -> App {
             twitch_login: None,
             twitch_token_expires: None,
             twitch_reauth_required: false,
+            sub_action_registry: std::sync::Arc::new(forge_registry::SubActionRegistry::new()),
+            trigger_registry: std::sync::Arc::new(forge_registry::TriggerRegistry::new()),
         },
         ui: forge_app::UiState::default(),
     }

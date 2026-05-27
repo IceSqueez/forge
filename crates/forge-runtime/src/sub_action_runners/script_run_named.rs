@@ -141,8 +141,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
             })?;
             let cfg = EngineConfig::default();
             let deadline = Instant::now() + Duration::from_millis(cfg.wall_time_ms);
-            let mut api =
-                ForgeApi::new(publisher_arc, globals_arc, parent_event_id, deadline);
+            let mut api = ForgeApi::new(publisher_arc, globals_arc, parent_event_id, deadline);
             if let Some(req) = speak_requester {
                 api = api.with_speak_requester(req);
             }

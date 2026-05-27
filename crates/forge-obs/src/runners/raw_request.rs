@@ -3,10 +3,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
-use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner,
-};
 use forge_registry::runner::SubActionConfig;
+use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -88,13 +86,25 @@ impl SubActionRunner for RawRequestRunner {
 
         let raw_type = config
             .get("request_type")
-            .and_then(|v| if let Variant::String(s) = v { Some(s.as_str()) } else { None })
+            .and_then(|v| {
+                if let Variant::String(s) = v {
+                    Some(s.as_str())
+                } else {
+                    None
+                }
+            })
             .unwrap_or_default();
         let request_type = ctx.arg_stack.interpolate(raw_type);
 
         let raw_data = config
             .get("request_data")
-            .and_then(|v| if let Variant::String(s) = v { Some(s.as_str()) } else { None })
+            .and_then(|v| {
+                if let Variant::String(s) = v {
+                    Some(s.as_str())
+                } else {
+                    None
+                }
+            })
             .unwrap_or("{}");
         let interpolated_data = ctx.arg_stack.interpolate(raw_data);
 
@@ -194,7 +204,10 @@ mod tests {
     fn validate_config_accepts_request_type_string() {
         let runner = RawRequestRunner::new(Arc::new(MockSink));
         let config = BTreeMap::from([
-            ("request_type".to_owned(), Variant::String("GetVersion".to_owned())),
+            (
+                "request_type".to_owned(),
+                Variant::String("GetVersion".to_owned()),
+            ),
             ("request_data".to_owned(), Variant::String("{}".to_owned())),
         ]);
         assert!(runner.validate_config(&config).is_ok());

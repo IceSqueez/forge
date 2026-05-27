@@ -17,8 +17,8 @@ pub use crate::actions_forms::{
 };
 pub use crate::actions_telemetry::{action_stat, format_relative_time, telemetry_grid};
 pub use crate::actions_trigger_kinds::{
-    ActionsFilter, TriggerCategory, all_trigger_kinds, category_of, kind_label, kind_search_text,
-    kind_summary, trigger_label_of,
+    ActionsFilter, TriggerCategory, all_trigger_kind_ids, category_of, kind_label,
+    kind_search_text, kind_summary, trigger_label_of,
 };
 
 #[derive(Debug, Clone)]
@@ -33,8 +33,8 @@ pub fn group_summaries(summaries: Vec<ActionSummary>) -> Vec<ActionsGroup> {
         std::collections::BTreeMap::new();
     for summary in summaries {
         let category = summary
-            .first_trigger_kind
-            .as_ref()
+            .first_trigger_kind_id
+            .as_deref()
             .map(category_of)
             .unwrap_or(TriggerCategory::Ungrouped);
         by_category.entry(category).or_default().push(summary);
@@ -92,8 +92,8 @@ impl ActionsState {
 
     pub fn action_passes_filter(&self, summary: &ActionSummary) -> bool {
         let category = summary
-            .first_trigger_kind
-            .as_ref()
+            .first_trigger_kind_id
+            .as_deref()
             .map(category_of)
             .unwrap_or(TriggerCategory::Ungrouped);
         let filter_ok = match self.filter {
@@ -107,8 +107,8 @@ impl ActionsState {
         } else {
             let q = self.search.to_lowercase();
             let label = summary
-                .first_trigger_kind
-                .as_ref()
+                .first_trigger_kind_id
+                .as_deref()
                 .map(trigger_label_of)
                 .unwrap_or_default();
             summary.name.to_lowercase().contains(&q)
@@ -501,8 +501,8 @@ mod tests {
     use forge_storage::DataProvider;
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::{
-        Action, ActionId, Command, CommandId, CommandPermission, LogLevel, Queue, QueueId,
-        SubActionSpec, Trigger, TriggerId, TriggerKind,
+        Action, ActionId, Command, CommandId, CommandPermission, Queue, QueueId, SubActionStep,
+        Trigger, TriggerId,
     };
 
     fn make_service(dp: Arc<dyn DataProvider>) -> ActionsService {
@@ -548,62 +548,53 @@ mod tests {
 
     #[test]
     fn chat_command_category_is_chat() {
-        assert_eq!(
-            category_of(&TriggerKind::TwitchChatCommand),
-            TriggerCategory::Chat
-        );
+        assert_eq!(category_of("twitch.chat.command"), TriggerCategory::Chat);
     }
 
     #[test]
     fn any_message_category_is_chat() {
-        assert_eq!(
-            category_of(&TriggerKind::TwitchChatAnyMessage),
-            TriggerCategory::Chat
-        );
+        assert_eq!(category_of("twitch.chat.message"), TriggerCategory::Chat);
     }
 
     #[test]
     fn subscribe_category_is_subscriptions() {
         assert_eq!(
-            category_of(&TriggerKind::TwitchSubscribe),
+            category_of("twitch.support.subscriber"),
             TriggerCategory::Subscriptions
         );
         assert_eq!(
-            category_of(&TriggerKind::TwitchResubscribe),
+            category_of("twitch.support.resubscriber"),
             TriggerCategory::Subscriptions
         );
         assert_eq!(
-            category_of(&TriggerKind::TwitchGiftSub),
+            category_of("twitch.support.gift_sub"),
             TriggerCategory::Subscriptions
         );
     }
 
     #[test]
     fn cheer_category_is_bits() {
-        assert_eq!(
-            category_of(&TriggerKind::TwitchCheer),
-            TriggerCategory::Bits
-        );
+        assert_eq!(category_of("twitch.support.cheer"), TriggerCategory::Bits);
     }
 
     #[test]
     fn raid_category_is_raids() {
         assert_eq!(
-            category_of(&TriggerKind::TwitchRaid),
+            category_of("twitch.channel.raid_received"),
             TriggerCategory::Raids
         );
     }
 
     #[test]
     fn kind_search_text_contains_chat_keyword() {
-        assert!(kind_search_text(&TriggerKind::TwitchChatCommand).contains("chat"));
-        assert!(kind_search_text(&TriggerKind::TwitchChatAnyMessage).contains("chat"));
+        assert!(kind_search_text("twitch.chat.command").contains("chat"));
+        assert!(kind_search_text("twitch.chat.message").contains("chat"));
     }
 
     #[test]
     fn kind_search_text_contains_sub_keyword() {
-        assert!(kind_search_text(&TriggerKind::TwitchSubscribe).contains("sub"));
-        assert!(kind_search_text(&TriggerKind::TwitchGiftSub).contains("sub"));
+        assert!(kind_search_text("twitch.support.subscriber").contains("sub"));
+        assert!(kind_search_text("twitch.support.gift_sub").contains("sub"));
     }
 
     #[test]
@@ -615,14 +606,14 @@ mod tests {
     #[test]
     fn add_trigger_form_invalid_chat_command_without_name() {
         let mut form = AddTriggerForm::new(ActionId::new());
-        form.selected_kind = Some(TriggerKind::TwitchChatCommand);
+        form.selected_kind = Some("twitch.chat.command".to_owned());
         assert!(!form.is_valid());
     }
 
     #[test]
     fn add_trigger_form_valid_chat_command_with_name() {
         let mut form = AddTriggerForm::new(ActionId::new());
-        form.selected_kind = Some(TriggerKind::TwitchChatCommand);
+        form.selected_kind = Some("twitch.chat.command".to_owned());
         form.config.command_name = "quote".to_string();
         assert!(form.is_valid());
     }
@@ -630,7 +621,7 @@ mod tests {
     #[test]
     fn add_trigger_form_valid_non_command_kind_without_name() {
         let mut form = AddTriggerForm::new(ActionId::new());
-        form.selected_kind = Some(TriggerKind::TwitchSubscribe);
+        form.selected_kind = Some("twitch.support.subscriber".to_owned());
         assert!(form.is_valid());
     }
 
@@ -639,8 +630,8 @@ mod tests {
         let mut form = AddTriggerForm::new(ActionId::new());
         form.search = "chat".to_string();
         let visible = form.visible_kinds();
-        assert!(visible.contains(&TriggerKind::TwitchChatCommand));
-        assert!(visible.contains(&TriggerKind::TwitchChatAnyMessage));
+        assert!(visible.contains(&"twitch.chat.command".to_owned()));
+        assert!(visible.contains(&"twitch.chat.message".to_owned()));
     }
 
     #[test]
@@ -648,9 +639,9 @@ mod tests {
         let mut form = AddTriggerForm::new(ActionId::new());
         form.category = TriggerCategory::Chat;
         let visible = form.visible_kinds();
-        assert!(!visible.contains(&TriggerKind::TwitchSubscribe));
-        assert!(!visible.contains(&TriggerKind::TwitchRaid));
-        assert!(visible.contains(&TriggerKind::TwitchChatCommand));
+        assert!(!visible.contains(&"twitch.support.subscriber".to_owned()));
+        assert!(!visible.contains(&"twitch.channel.raid_received".to_owned()));
+        assert!(visible.contains(&"twitch.chat.command".to_owned()));
     }
 
     #[test]
@@ -658,8 +649,8 @@ mod tests {
         let mut form = AddTriggerForm::new(ActionId::new());
         form.search = "sub".to_string();
         let visible = form.visible_kinds();
-        assert!(visible.contains(&TriggerKind::TwitchSubscribe));
-        assert!(visible.contains(&TriggerKind::TwitchGiftSub));
+        assert!(visible.contains(&"twitch.support.subscriber".to_owned()));
+        assert!(visible.contains(&"twitch.support.gift_sub".to_owned()));
     }
 
     const TEST_KEY: [u8; 32] = [0xab; 32];
@@ -723,7 +714,7 @@ mod tests {
         let t = Trigger {
             id: TriggerId::new(),
             action_id: a.id,
-            kind: TriggerKind::TwitchChatCommand,
+            kind_id: "twitch.chat.command".to_owned(),
             config: std::collections::BTreeMap::new(),
         };
         dp.trigger_repo().save(&t).await.unwrap();
@@ -773,7 +764,7 @@ mod tests {
         let trigger = Trigger {
             id: TriggerId::new(),
             action_id: action.id,
-            kind: TriggerKind::TwitchChatCommand,
+            kind_id: "twitch.chat.command".to_owned(),
             config: {
                 let mut m = std::collections::BTreeMap::new();
                 m.insert("cooldown_secs".to_string(), forge_types::Variant::Int(30));
@@ -806,7 +797,7 @@ mod tests {
         let trigger = Trigger {
             id: TriggerId::new(),
             action_id: action.id,
-            kind: TriggerKind::TwitchSubscribe,
+            kind_id: "twitch.support.subscriber".to_owned(),
             config: std::collections::BTreeMap::new(),
         };
         dp.trigger_repo().save(&trigger).await.unwrap();
@@ -904,68 +895,101 @@ mod tests {
 
     #[tokio::test]
     async fn save_sub_action_appends_send_chat() {
+        use forge_types::Variant;
         let dp = open_backend().await;
         let action = make_action(&dp, "say hello", None).await;
         dp.action_repo().save(&action).await.unwrap();
 
-        let spec = SubActionSpec::SendChat {
-            message: "Hello %user%!".to_string(),
-            target: "twitch".to_string(),
+        let step = SubActionStep {
+            kind_id: "twitch.chat.send_message".to_owned(),
+            config: std::collections::BTreeMap::from([
+                (
+                    "message".to_owned(),
+                    Variant::String("Hello %user%!".to_owned()),
+                ),
+                ("target".to_owned(), Variant::String("twitch".to_owned())),
+            ]),
+            enabled: true,
+            label: None,
         };
         make_service(Arc::clone(&dp))
-            .save_sub_action(action.id, spec.clone(), None)
+            .save_sub_action(action.id, step, None)
             .await
             .unwrap();
 
         let loaded = dp.action_repo().get(action.id).await.unwrap().unwrap();
         assert_eq!(loaded.sub_actions.len(), 1);
-        assert_eq!(loaded.sub_actions[0], spec);
+        assert_eq!(loaded.sub_actions[0].kind_id, "twitch.chat.send_message");
     }
 
     #[tokio::test]
     async fn save_sub_action_appends_set_global() {
+        use forge_types::Variant;
         let dp = open_backend().await;
         let action = make_action(&dp, "track", None).await;
         dp.action_repo().save(&action).await.unwrap();
 
-        let spec = SubActionSpec::SetGlobal {
-            name: "counter".to_string(),
-            value: "1".to_string(),
+        let step = SubActionStep {
+            kind_id: "core.globals.set".to_owned(),
+            config: std::collections::BTreeMap::from([
+                ("name".to_owned(), Variant::String("counter".to_owned())),
+                ("value".to_owned(), Variant::String("1".to_owned())),
+            ]),
+            enabled: true,
+            label: None,
         };
         make_service(Arc::clone(&dp))
-            .save_sub_action(action.id, spec.clone(), None)
+            .save_sub_action(action.id, step, None)
             .await
             .unwrap();
 
         let loaded = dp.action_repo().get(action.id).await.unwrap().unwrap();
-        assert_eq!(loaded.sub_actions[0], spec);
+        assert_eq!(loaded.sub_actions[0].kind_id, "core.globals.set");
     }
 
     #[tokio::test]
     async fn save_sub_action_delay_stores_ms_correctly() {
+        use forge_types::Variant;
         let dp = open_backend().await;
         let action = make_action(&dp, "pause", None).await;
         dp.action_repo().save(&action).await.unwrap();
 
-        let spec = SubActionSpec::Delay { ms: 500 };
+        let step = SubActionStep {
+            kind_id: "core.logic.wait".to_owned(),
+            config: std::collections::BTreeMap::from([("ms".to_owned(), Variant::Int(500))]),
+            enabled: true,
+            label: None,
+        };
         make_service(Arc::clone(&dp))
-            .save_sub_action(action.id, spec.clone(), None)
+            .save_sub_action(action.id, step, None)
             .await
             .unwrap();
 
         let loaded = dp.action_repo().get(action.id).await.unwrap().unwrap();
-        assert_eq!(loaded.sub_actions[0], SubActionSpec::Delay { ms: 500 });
+        assert_eq!(loaded.sub_actions.len(), 1);
+        assert_eq!(loaded.sub_actions[0].kind_id, "core.logic.wait");
     }
 
     #[tokio::test]
     async fn remove_sub_action_removes_at_valid_index() {
+        use forge_types::Variant;
         let dp = open_backend().await;
         let mut action = make_action(&dp, "multi", None).await;
         action.sub_actions = vec![
-            SubActionSpec::Delay { ms: 100 },
-            SubActionSpec::Log {
-                level: LogLevel::Info,
-                message: "done".to_string(),
+            SubActionStep {
+                kind_id: "core.logic.wait".to_owned(),
+                config: std::collections::BTreeMap::from([("ms".to_owned(), Variant::Int(100))]),
+                enabled: true,
+                label: None,
+            },
+            SubActionStep {
+                kind_id: "core.log.write".to_owned(),
+                config: std::collections::BTreeMap::from([
+                    ("level".to_owned(), Variant::String("info".to_owned())),
+                    ("message".to_owned(), Variant::String("done".to_owned())),
+                ]),
+                enabled: true,
+                label: None,
             },
         ];
         dp.action_repo().save(&action).await.unwrap();
@@ -977,14 +1001,20 @@ mod tests {
 
         let loaded = dp.action_repo().get(action.id).await.unwrap().unwrap();
         assert_eq!(loaded.sub_actions.len(), 1);
-        assert!(matches!(loaded.sub_actions[0], SubActionSpec::Log { .. }));
+        assert_eq!(loaded.sub_actions[0].kind_id, "core.log.write");
     }
 
     #[tokio::test]
     async fn remove_sub_action_out_of_range_leaves_action_unchanged() {
+        use forge_types::Variant;
         let dp = open_backend().await;
         let mut action = make_action(&dp, "single", None).await;
-        action.sub_actions = vec![SubActionSpec::Delay { ms: 250 }];
+        action.sub_actions = vec![SubActionStep {
+            kind_id: "core.logic.wait".to_owned(),
+            config: std::collections::BTreeMap::from([("ms".to_owned(), Variant::Int(250))]),
+            enabled: true,
+            label: None,
+        }];
         dp.action_repo().save(&action).await.unwrap();
 
         make_service(Arc::clone(&dp))

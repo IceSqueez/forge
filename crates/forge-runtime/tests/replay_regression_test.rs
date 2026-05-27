@@ -22,9 +22,7 @@ use forge_runtime::{
 };
 use forge_storage::DataProvider;
 use forge_storage_sqlite::SqliteBackend;
-use forge_types::{
-    Action, ActionId, Command, CommandId, CommandPermission, SubActionStep,
-};
+use forge_types::{Action, ActionId, Command, CommandId, CommandPermission, SubActionStep};
 
 const TEST_KEY: [u8; 32] = [0xab; 32];
 const PIPELINE_TIMEOUT_MS: u64 = 2_000;

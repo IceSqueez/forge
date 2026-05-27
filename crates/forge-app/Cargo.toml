@@ -36,6 +36,7 @@ forge-tts-core        = { path = "../forge-tts-core" }
 forge-tts-piper       = { path = "../forge-tts-piper" }
 forge-tts-pipeline    = { path = "../forge-tts-pipeline" }
 forge-voice           = { path = "../forge-voice" }
+forge-registry       = { path = "../forge-registry" }
 forge-widgets        = { path = "../forge-widgets" }
 iced                = { workspace = true }
 rfd                 = { workspace = true }

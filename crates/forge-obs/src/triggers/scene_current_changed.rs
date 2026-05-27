@@ -1,9 +1,7 @@
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
-use forge_registry::{
-    EventFilter, FormField, TriggerCategory, TriggerKindDescriptor,
-};
+use forge_registry::{EventFilter, FormField, TriggerCategory, TriggerKindDescriptor};
 use forge_types::{ArgStack, Trigger, TriggerConfig, Variant};
 
 pub struct SceneCurrentChangedDescriptor;
@@ -69,11 +67,7 @@ impl TriggerKindDescriptor for SceneCurrentChangedDescriptor {
         }
         match trigger.config.get("scene") {
             Some(Variant::String(s)) if !s.is_empty() => {
-                event
-                    .payload
-                    .get("to_scene")
-                    .and_then(|v| v.as_str())
-                    == Some(s.as_str())
+                event.payload.get("to_scene").and_then(|v| v.as_str()) == Some(s.as_str())
             }
             _ => true,
         }
@@ -116,10 +110,7 @@ mod tests {
             id: TriggerId::new(),
             action_id: ActionId::new(),
             kind_id: "obs.scenes.current_changed".to_owned(),
-            config: BTreeMap::from([(
-                "scene".to_owned(),
-                Variant::String(scene.to_owned()),
-            )]),
+            config: BTreeMap::from([("scene".to_owned(), Variant::String(scene.to_owned()))]),
         }
     }
 
@@ -133,7 +124,10 @@ mod tests {
 
     #[test]
     fn id_is_canonical() {
-        assert_eq!(SceneCurrentChangedDescriptor.id(), "obs.scenes.current_changed");
+        assert_eq!(
+            SceneCurrentChangedDescriptor.id(),
+            "obs.scenes.current_changed"
+        );
     }
 
     #[test]
@@ -200,10 +194,7 @@ mod tests {
     #[test]
     fn condition_display_shows_scene_name() {
         let d = SceneCurrentChangedDescriptor;
-        let config = BTreeMap::from([(
-            "scene".to_owned(),
-            Variant::String("Gameplay".to_owned()),
-        )]);
+        let config = BTreeMap::from([("scene".to_owned(), Variant::String("Gameplay".to_owned()))]);
         assert_eq!(d.condition_display(&config), "scene = Gameplay");
     }
 }

@@ -46,9 +46,7 @@ impl ActionsService {
         let mut summaries = Vec::with_capacity(actions.len());
         for action in actions {
             let action_triggers = self.triggers.list_for_action(action.id).await?;
-            let first_trigger_kind_id = action_triggers
-                .first()
-                .map(|t| t.kind_id.clone());
+            let first_trigger_kind_id = action_triggers.first().map(|t| t.kind_id.clone());
 
             let queue_name = all_queues
                 .iter()

@@ -3,10 +3,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
-use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner,
-};
 use forge_registry::runner::SubActionConfig;
+use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -79,7 +77,13 @@ impl SubActionRunner for SwitchCurrentSceneRunner {
 
         let raw = config
             .get("scene")
-            .and_then(|v| if let Variant::String(s) = v { Some(s.as_str()) } else { None })
+            .and_then(|v| {
+                if let Variant::String(s) = v {
+                    Some(s.as_str())
+                } else {
+                    None
+                }
+            })
             .unwrap_or_default();
         let scene = ctx.arg_stack.interpolate(raw);
 
@@ -133,11 +137,7 @@ mod tests {
         async fn stop_stream(&self) -> Result<(), ObsError> {
             Ok(())
         }
-        async fn raw_request(
-            &self,
-            _: &str,
-            _: &Variant,
-        ) -> Result<Variant, ObsError> {
+        async fn raw_request(&self, _: &str, _: &Variant) -> Result<Variant, ObsError> {
             Ok(Variant::Object(BTreeMap::new()))
         }
     }
@@ -145,8 +145,7 @@ mod tests {
     #[test]
     fn validate_config_accepts_scene_string() {
         let runner = SwitchCurrentSceneRunner::new(Arc::new(MockSink));
-        let config =
-            BTreeMap::from([("scene".to_owned(), Variant::String("Gameplay".to_owned()))]);
+        let config = BTreeMap::from([("scene".to_owned(), Variant::String("Gameplay".to_owned()))]);
         assert!(runner.validate_config(&config).is_ok());
     }
 

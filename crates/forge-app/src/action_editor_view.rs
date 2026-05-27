@@ -1,4 +1,4 @@
-use forge_types::{ActionId, SubActionSpec};
+use forge_types::ActionId;
 use forge_widgets::ForgePalette;
 use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::popover::{MenuItem, MenuPlacement, menu_button};
@@ -13,37 +13,69 @@ use crate::actions::{
 use crate::app::App;
 use crate::message::{ActionEditorMsg, ActionsMsg, Message, MoveSubActionMsg};
 
-fn sub_action_summary(spec: &SubActionSpec) -> (&'static str, &'static str, String) {
-    match spec {
-        SubActionSpec::SendChat { target, message } => (
-            "send",
-            "Send chat message",
-            format!("\u{2192} {target}: \"{message}\""),
-        ),
-        SubActionSpec::SetGlobal { name, value } => {
-            ("variable", "Set global", format!("{name} = {value:?}"))
+fn sub_action_summary(step: &forge_types::SubActionStep) -> (&'static str, &'static str, String) {
+    fn as_str(v: &forge_types::Variant) -> &str {
+        if let forge_types::Variant::String(s) = v {
+            s.as_str()
+        } else {
+            ""
         }
-        SubActionSpec::IncrementGlobal { name, amount } => (
-            "variable",
-            "Increment global",
-            format!("{name} += {amount}"),
-        ),
-        SubActionSpec::GetGlobal { name, into_arg } => (
-            "variable",
-            "Get global",
-            format!("{name} \u{2192} %{into_arg}%"),
-        ),
-        SubActionSpec::DeleteGlobal { name } => {
-            ("variable", "Delete global", format!("delete {name}"))
+    }
+    fn as_i64(v: &forge_types::Variant) -> i64 {
+        if let forge_types::Variant::Int(n) = v {
+            *n
+        } else {
+            0
         }
-        SubActionSpec::Delay { ms } => ("clock", "Delay", format!("{ms} ms")),
-        SubActionSpec::Log { level, message } => {
-            ("info-circle", "Log", format!("[{level:?}] {message:?}"))
+    }
+    match step.kind_id.as_str() {
+        "twitch.chat.send_message" => {
+            let target = step.config.get("target").map(as_str).unwrap_or("twitch");
+            let message = step.config.get("message").map(as_str).unwrap_or("");
+            (
+                "send",
+                "Send chat message",
+                format!("\u{2192} {target}: \"{message}\""),
+            )
         }
-        SubActionSpec::RunScript { script_name } => {
-            ("file-code", "Run script", script_name.to_string())
+        "core.globals.set" => {
+            let name = step.config.get("name").map(as_str).unwrap_or("");
+            let value = step.config.get("value").map(as_str).unwrap_or("");
+            ("variable", "Set global", format!("{name} = \"{value}\""))
         }
-        other => ("bolt", other.kind_label(), format!("{other:?}")),
+        "core.logic.wait" => {
+            let ms = step.config.get("ms").map(as_i64).unwrap_or(0);
+            ("clock", "Delay", format!("{ms} ms"))
+        }
+        "core.log.write" => {
+            let level = step.config.get("level").map(as_str).unwrap_or("info");
+            let message = step.config.get("message").map(as_str).unwrap_or("");
+            ("info-circle", "Log", format!("[{level}] \"{message}\""))
+        }
+        "soundboard.sound.play" => {
+            let clip_id = step.config.get("clip_id").map(as_str).unwrap_or("");
+            ("music", "Play sound", clip_id.to_string())
+        }
+        "tts.speak.text" => {
+            let text = step.config.get("text").map(as_str).unwrap_or("");
+            ("volume", "Speak", text.to_string())
+        }
+        "core.file.read" => {
+            let path = step.config.get("path").map(as_str).unwrap_or("");
+            let var = step.config.get("target_var").map(as_str).unwrap_or("");
+            ("file", "Read file", format!("{path} \u{2192} %{var}%"))
+        }
+        "core.random.int" => {
+            let min = step.config.get("min").map(as_i64).unwrap_or(0);
+            let max = step.config.get("max").map(as_i64).unwrap_or(0);
+            let var = step.config.get("target_var").map(as_str).unwrap_or("");
+            (
+                "dice",
+                "Random int",
+                format!("[{min}..{max}] \u{2192} %{var}%"),
+            )
+        }
+        _ => ("bolt", "Sub-action", step.kind_id.clone()),
     }
 }
 
@@ -60,19 +92,30 @@ fn trigger_icon_name(category: &TriggerCategory) -> &'static str {
     }
 }
 
-fn kind_condition_text(kind: &forge_types::TriggerKind) -> String {
-    use forge_types::TriggerKind;
-    match kind {
-        TriggerKind::TwitchChatCommand => "any command match".to_string(),
-        TriggerKind::TwitchChatAnyMessage => "every chat message".to_string(),
-        TriggerKind::TwitchSubscribe => "new subscriber".to_string(),
-        TriggerKind::TwitchResubscribe => "re-subscribe".to_string(),
-        TriggerKind::TwitchGiftSub => "gift subs".to_string(),
-        TriggerKind::TwitchCheer => "bits cheered".to_string(),
-        TriggerKind::TwitchRaid => "raid received".to_string(),
-        TriggerKind::ObsSceneChanged { scene: Some(s) } => format!("scene = {s}"),
-        TriggerKind::ObsSceneChanged { scene: None } => "any scene".to_string(),
-        TriggerKind::CodeEvent { name } => format!("event = {name}"),
+fn kind_condition_text(kind_id: &str, config: &forge_types::TriggerConfig) -> String {
+    match kind_id {
+        "twitch.chat.command" => "any command match".to_string(),
+        "twitch.chat.message" => "every chat message".to_string(),
+        "twitch.support.subscriber" => "new subscriber".to_string(),
+        "twitch.support.resubscriber" => "re-subscribe".to_string(),
+        "twitch.support.gift_sub" => "gift subs".to_string(),
+        "twitch.support.cheer" => "bits cheered".to_string(),
+        "twitch.channel.raid_received" => "raid received".to_string(),
+        "obs.scenes.current_changed" => {
+            if let Some(forge_types::Variant::String(s)) = config.get("scene") {
+                format!("scene = {s}")
+            } else {
+                "any scene".to_string()
+            }
+        }
+        "script.event.custom" => {
+            if let Some(forge_types::Variant::String(s)) = config.get("name") {
+                format!("event = {s}")
+            } else {
+                "any event".to_string()
+            }
+        }
+        _ => String::new(),
     }
 }
 
@@ -539,7 +582,7 @@ fn detail_pane<'a>(
         );
     } else {
         for trigger in &detail.triggers {
-            let cat = category_of(&trigger.kind);
+            let cat = category_of(&trigger.kind_id);
             let icon_name = trigger_icon_name(&cat);
             let icon_box = container(tabler_icon(Icon::from_name(icon_name), 14.0, p.brand))
                 .width(26.0)
@@ -555,8 +598,8 @@ fn detail_pane<'a>(
                     ..iced::widget::container::Style::default()
                 });
 
-            let label_str = trigger_label_of(&trigger.kind);
-            let condition_str = kind_condition_text(&trigger.kind);
+            let label_str = trigger_label_of(&trigger.kind_id);
+            let condition_str = kind_condition_text(&trigger.kind_id, &trigger.config);
 
             let info_col: Element<'_, Message> = column![
                 text(label_str).size(FONT_SM).color(p.text_primary),
@@ -668,10 +711,10 @@ fn detail_pane<'a>(
     let total = action.sub_actions.len();
     let mut steps_col: iced::widget::Column<'_, Message> = column![].spacing(0);
 
-    for (i, spec) in action.sub_actions.iter().enumerate() {
+    for (i, step) in action.sub_actions.iter().enumerate() {
         let step_num = i + 1;
         let is_last = step_num == total;
-        let (icon_name, title, details) = sub_action_summary(spec);
+        let (icon_name, title, details) = sub_action_summary(step);
         let step_icon = Icon::from_name(icon_name);
         let avg_ms_label = detail
             .sub_action_avg_ms

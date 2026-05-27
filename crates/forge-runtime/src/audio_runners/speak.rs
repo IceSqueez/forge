@@ -178,9 +178,7 @@ mod tests {
         let runner = SpeakRunner::new(Arc::new(OkSpeaker));
         let stack = ArgStack::new();
         let ctx = make_ctx(&stack);
-        let (telemetry, updated) = runner
-            .execute(&config_with_text("Hello chat!"), &ctx)
-            .await;
+        let (telemetry, updated) = runner.execute(&config_with_text("Hello chat!"), &ctx).await;
         assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
         assert!(updated.is_none());
     }
@@ -190,9 +188,7 @@ mod tests {
         let runner = SpeakRunner::new(Arc::new(FailSpeaker));
         let stack = ArgStack::new();
         let ctx = make_ctx(&stack);
-        let (telemetry, _) = runner
-            .execute(&config_with_text("Hello!"), &ctx)
-            .await;
+        let (telemetry, _) = runner.execute(&config_with_text("Hello!"), &ctx).await;
         assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
     }
 

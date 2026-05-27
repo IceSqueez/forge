@@ -3,10 +3,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
-use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner,
-};
 use forge_registry::runner::SubActionConfig;
+use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -88,7 +86,13 @@ impl SubActionRunner for SetMuteRunner {
 
         let raw = config
             .get("source")
-            .and_then(|v| if let Variant::String(s) = v { Some(s.as_str()) } else { None })
+            .and_then(|v| {
+                if let Variant::String(s) = v {
+                    Some(s.as_str())
+                } else {
+                    None
+                }
+            })
             .unwrap_or_default();
         let source = ctx.arg_stack.interpolate(raw);
         let muted = matches!(config.get("muted"), Some(Variant::Bool(true)));
@@ -151,7 +155,10 @@ mod tests {
     fn validate_config_accepts_valid_source() {
         let runner = SetMuteRunner::new(Arc::new(MockSink));
         let config = BTreeMap::from([
-            ("source".to_owned(), Variant::String("Microphone".to_owned())),
+            (
+                "source".to_owned(),
+                Variant::String("Microphone".to_owned()),
+            ),
             ("muted".to_owned(), Variant::Bool(true)),
         ]);
         assert!(runner.validate_config(&config).is_ok());

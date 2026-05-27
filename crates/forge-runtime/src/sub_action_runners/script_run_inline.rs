@@ -113,17 +113,15 @@ impl SubActionRunner for ScriptRunInlineRunner {
 
         let exec_result = tokio::task::spawn_blocking(move || {
             let contract = forge_types::ScriptContract::default();
-            let scope =
-                build_scope_for_contract(&contract, &arg_stack_clone).map_err(
-                    |e| ScriptError::Runtime {
-                        script: body.clone(),
-                        reason: e.to_string(),
-                    },
-                )?;
+            let scope = build_scope_for_contract(&contract, &arg_stack_clone).map_err(|e| {
+                ScriptError::Runtime {
+                    script: body.clone(),
+                    reason: e.to_string(),
+                }
+            })?;
             let cfg = EngineConfig::default();
             let deadline = Instant::now() + Duration::from_millis(cfg.wall_time_ms);
-            let mut api =
-                ForgeApi::new(publisher_arc, globals_arc, parent_event_id, deadline);
+            let mut api = ForgeApi::new(publisher_arc, globals_arc, parent_event_id, deadline);
             if let Some(req) = speak_requester {
                 api = api.with_speak_requester(req);
             }

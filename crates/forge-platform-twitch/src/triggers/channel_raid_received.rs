@@ -82,10 +82,7 @@ impl TriggerKindDescriptor for ChannelRaidReceivedDescriptor {
 
         ArgStack::new()
             .set("raid_viewer_count".to_owned(), Variant::Int(viewer_count))
-            .set(
-                "raider_login".to_owned(),
-                Variant::String(from_login),
-            )
+            .set("raider_login".to_owned(), Variant::String(from_login))
             .set("raider_id".to_owned(), Variant::String(from_id))
             .set(
                 "raider_display_name".to_owned(),

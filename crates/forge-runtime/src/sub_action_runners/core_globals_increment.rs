@@ -86,10 +86,7 @@ impl SubActionRunner for CoreGlobalsIncrementRunner {
             .get("name")
             .and_then(|v| v.as_str())
             .unwrap_or_default();
-        let amount = config
-            .get("amount")
-            .and_then(|v| v.as_int())
-            .unwrap_or(1);
+        let amount = config.get("amount").and_then(|v| v.as_int()).unwrap_or(1);
 
         let resolved_name = super::interpolate::interpolate_with_globals(
             name_template,

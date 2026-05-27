@@ -3,7 +3,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
 use forge_storage::GlobalsRepo;
-use forge_types::{ArgStack, LogLevel, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{
+    ArgStack, LogLevel, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant,
+};
 use time::OffsetDateTime;
 use tracing::{debug, error, info, trace, warn};
 

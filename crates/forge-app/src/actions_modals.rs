@@ -345,8 +345,8 @@ pub(crate) fn add_trigger_modal_view<'a>(
     let mut config_col = column![].spacing(spf(Spacing::Xs));
 
     if let Some(kind) = &form.selected_kind {
-        match kind {
-            forge_types::TriggerKind::TwitchChatCommand => {
+        match kind.as_str() {
+            "twitch.chat.command" => {
                 let cmd_input = forge_widgets::text_input_field(
                     "!quote",
                     &form.config.command_name,
@@ -427,7 +427,7 @@ pub(crate) fn add_trigger_modal_view<'a>(
                     .push(cooldown_block)
                     .push(perm_block);
             }
-            forge_types::TriggerKind::TwitchCheer => {
+            "twitch.support.cheer" => {
                 let bits_input = forge_widgets::text_input_field(
                     "1",
                     &form.config.min_bits,
@@ -452,7 +452,7 @@ pub(crate) fn add_trigger_modal_view<'a>(
                         .color(palette.text_muted),
                 );
             }
-        }
+        };
     }
 
     let mut body_col = column![search_input, chips_row, scrollable(grid_col).height(200),]

@@ -6,7 +6,7 @@ use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, CapabilityFlags, DetailSection,
     HeaderAction, HealthMetric, PickerKind, QuickAction, QuickActions, SectionIcon,
 };
-use forge_types::SubActionSpec;
+use forge_types::Variant;
 use forge_widgets::{
     ForgePalette, HeaderCardParams, PickerItem, PickerModalProps, Spacing, ToastVariant,
     builtin_content_renderer, builtin_header_card, builtin_health_grid, builtin_quick_actions_grid,
@@ -221,27 +221,20 @@ pub fn update(
 
             match kind {
                 PickerKind::Scene => {
-                    if let SubActionSpec::ObsSetScene { scene_name } = &mut spec {
-                        *scene_name = selected_id;
-                    }
+                    spec.config
+                        .insert("scene".to_owned(), Variant::String(selected_id));
                 }
                 PickerKind::Source => {
-                    if let SubActionSpec::ObsSetSourceVisible {
-                        scene_name,
-                        source_name,
-                        ..
-                    } = &mut spec
-                    {
-                        if let Some(scene) = current_scene {
-                            *scene_name = scene;
-                        }
-                        *source_name = selected_id;
+                    if let Some(scene) = current_scene {
+                        spec.config
+                            .insert("scene".to_owned(), Variant::String(scene));
                     }
+                    spec.config
+                        .insert("source".to_owned(), Variant::String(selected_id));
                 }
                 PickerKind::Input => {
-                    if let SubActionSpec::ObsSetInputMute { input_name, .. } = &mut spec {
-                        *input_name = selected_id;
-                    }
+                    spec.config
+                        .insert("source".to_owned(), Variant::String(selected_id));
                 }
                 PickerKind::Hotkey | PickerKind::Expression => return Task::none(),
             }
@@ -670,7 +663,12 @@ mod tests {
             label: "Start Recording".to_owned(),
             icon: SectionIcon::new("record"),
             enabled: true,
-            subaction_template: forge_types::SubActionSpec::ObsStartRecord,
+            subaction_template: forge_types::SubActionStep {
+                kind_id: "obs.record.start".to_owned(),
+                config: std::collections::BTreeMap::new(),
+                enabled: true,
+                label: None,
+            },
             picker: None,
         };
         let mut state_opt = Some(make_state_with_actions(vec![action]));
@@ -692,8 +690,14 @@ mod tests {
             label: "Switch Scene".to_owned(),
             icon: SectionIcon::new("arrows-shuffle"),
             enabled: true,
-            subaction_template: forge_types::SubActionSpec::ObsSetScene {
-                scene_name: String::new(),
+            subaction_template: forge_types::SubActionStep {
+                kind_id: "obs.scenes.switch_current".to_owned(),
+                config: std::collections::BTreeMap::from([(
+                    "scene".to_owned(),
+                    forge_types::Variant::String(String::new()),
+                )]),
+                enabled: true,
+                label: None,
             },
             picker: Some(PickerKind::Scene),
         };
@@ -716,8 +720,14 @@ mod tests {
             label: "Switch Scene".to_owned(),
             icon: SectionIcon::new("arrows-shuffle"),
             enabled: true,
-            subaction_template: forge_types::SubActionSpec::ObsSetScene {
-                scene_name: String::new(),
+            subaction_template: forge_types::SubActionStep {
+                kind_id: "obs.scenes.switch_current".to_owned(),
+                config: std::collections::BTreeMap::from([(
+                    "scene".to_owned(),
+                    forge_types::Variant::String(String::new()),
+                )]),
+                enabled: true,
+                label: None,
             },
             picker: Some(PickerKind::Scene),
         };

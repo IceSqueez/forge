@@ -98,11 +98,7 @@ impl ActionEngine {
             input: rx,
         };
         tokio::spawn(async move { engine.run(cancel_clone).await });
-        tokio::spawn(run_quick_action_loop(
-            quick_rx,
-            bus,
-            sub_action_registry,
-        ));
+        tokio::spawn(run_quick_action_loop(quick_rx, bus, sub_action_registry));
         ActionEngineHandle {
             sender: tx,
             quick_sender: quick_tx,
@@ -235,17 +231,16 @@ impl ActionEngine {
                 publisher: publisher.as_ref(),
             };
 
-            let (telemetry, updated_stack) =
-                match self.sub_action_registry.get(&step.kind_id) {
-                    Some(runner) => runner.execute(&step.config, &run_ctx).await,
-                    None => {
-                        warn!(
-                            "unknown sub-action kind_id: {} — skipping step",
-                            step.kind_id
-                        );
-                        (skipped_telemetry(index, &step.kind_id), None)
-                    }
-                };
+            let (telemetry, updated_stack) = match self.sub_action_registry.get(&step.kind_id) {
+                Some(runner) => runner.execute(&step.config, &run_ctx).await,
+                None => {
+                    warn!(
+                        "unknown sub-action kind_id: {} — skipping step",
+                        step.kind_id
+                    );
+                    (skipped_telemetry(index, &step.kind_id), None)
+                }
+            };
 
             if let Some(new_stack) = updated_stack {
                 current_stack = new_stack;

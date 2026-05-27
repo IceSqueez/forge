@@ -627,7 +627,7 @@ fn actions_detail_panel<'a>(
         ));
     } else {
         for trigger in &detail.triggers {
-            let kind_str = crate::actions::trigger_label_of(&trigger.kind);
+            let kind_str = crate::actions::trigger_label_of(&trigger.kind_id);
             let trigger_row = container(
                 row![
                     tabler_icon(Icon::Bolt, FONT_SM, p.brand),
@@ -673,7 +673,7 @@ fn actions_detail_panel<'a>(
         ));
     } else {
         for (i, spec) in action.sub_actions.iter().enumerate() {
-            let step_label = format!("{}. {}", i + 1, spec.kind_label());
+            let step_label = format!("{}. {}", i + 1, spec.kind_id.as_str());
             let step_row = container(text(step_label).size(FONT_SM).color(p.text_secondary))
                 .width(Length::Fill)
                 .padding([18, 12])

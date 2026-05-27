@@ -846,6 +846,8 @@ mod tests {
             twitch_login: None,
             twitch_token_expires: None,
             twitch_reauth_required: false,
+            sub_action_registry: Arc::new(forge_registry::SubActionRegistry::new()),
+            trigger_registry: Arc::new(forge_registry::TriggerRegistry::new()),
         }
     }
 

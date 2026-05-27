@@ -1,5 +1,3 @@
-use forge_types::TriggerKind;
-
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TriggerCategory {
     Chat,
@@ -38,89 +36,91 @@ impl TriggerCategory {
     }
 }
 
-pub fn category_of(kind: &TriggerKind) -> TriggerCategory {
-    match kind {
-        TriggerKind::TwitchChatCommand | TriggerKind::TwitchChatAnyMessage => TriggerCategory::Chat,
-        TriggerKind::TwitchSubscribe
-        | TriggerKind::TwitchResubscribe
-        | TriggerKind::TwitchGiftSub => TriggerCategory::Subscriptions,
-        TriggerKind::TwitchCheer => TriggerCategory::Bits,
-        TriggerKind::TwitchRaid => TriggerCategory::Raids,
-        TriggerKind::ObsSceneChanged { .. } => TriggerCategory::Obs,
-        TriggerKind::CodeEvent { .. } => TriggerCategory::Server,
-    }
-}
-
-pub fn trigger_label_of(kind: &TriggerKind) -> String {
-    match kind {
-        TriggerKind::TwitchChatCommand => "Twitch \u{00b7} chat command".to_string(),
-        TriggerKind::TwitchChatAnyMessage => "Twitch \u{00b7} any chat message".to_string(),
-        TriggerKind::TwitchSubscribe => "Twitch \u{00b7} new subscriber".to_string(),
-        TriggerKind::TwitchResubscribe => "Twitch \u{00b7} re-subscribe".to_string(),
-        TriggerKind::TwitchGiftSub => "Twitch \u{00b7} gift subs".to_string(),
-        TriggerKind::TwitchCheer => "Twitch \u{00b7} bits cheered".to_string(),
-        TriggerKind::TwitchRaid => "Twitch \u{00b7} raid received".to_string(),
-        TriggerKind::ObsSceneChanged { .. } => "OBS \u{00b7} scene changed".to_string(),
-        TriggerKind::CodeEvent { .. } => "Server \u{00b7} custom event".to_string(),
-    }
-}
-
-pub fn kind_label(kind: &TriggerKind) -> &'static str {
-    match kind {
-        TriggerKind::TwitchChatCommand => "Twitch \u{00b7} Chat command",
-        TriggerKind::TwitchChatAnyMessage => "Twitch \u{00b7} Any chat message",
-        TriggerKind::TwitchSubscribe => "Twitch \u{00b7} New subscriber",
-        TriggerKind::TwitchResubscribe => "Twitch \u{00b7} Re-subscribe",
-        TriggerKind::TwitchGiftSub => "Twitch \u{00b7} Gift subs",
-        TriggerKind::TwitchCheer => "Twitch \u{00b7} Bits cheered",
-        TriggerKind::TwitchRaid => "Twitch \u{00b7} Raid received",
-        TriggerKind::ObsSceneChanged { .. } => "OBS \u{00b7} Scene changed",
-        TriggerKind::CodeEvent { .. } => "Server \u{00b7} Custom event",
-    }
-}
-
-pub fn kind_summary(kind: &TriggerKind) -> &'static str {
-    match kind {
-        TriggerKind::TwitchChatCommand => "User types !command in chat",
-        TriggerKind::TwitchChatAnyMessage => "Every chat message fires this",
-        TriggerKind::TwitchSubscribe => "Fires when someone subscribes",
-        TriggerKind::TwitchResubscribe => "Existing sub renews",
-        TriggerKind::TwitchGiftSub => "Someone gifts subs to channel",
-        TriggerKind::TwitchCheer => "Viewer sends bits",
-        TriggerKind::TwitchRaid => "Another stream raids you",
-        TriggerKind::ObsSceneChanged { .. } => "Fires when OBS switches the active scene",
-        TriggerKind::CodeEvent { .. } => {
-            "Fires when triggerCodeEvent is called via the WebSocket API"
+pub fn category_of(kind_id: &str) -> TriggerCategory {
+    match kind_id {
+        "twitch.chat.command" | "twitch.chat.message" => TriggerCategory::Chat,
+        "twitch.support.subscriber" | "twitch.support.resubscriber" | "twitch.support.gift_sub" => {
+            TriggerCategory::Subscriptions
         }
+        "twitch.support.cheer" => TriggerCategory::Bits,
+        "twitch.channel.raid_received" => TriggerCategory::Raids,
+        "obs.scenes.current_changed" => TriggerCategory::Obs,
+        "script.event.custom" => TriggerCategory::Server,
+        _ => TriggerCategory::Ungrouped,
     }
 }
 
-pub fn kind_search_text(kind: &TriggerKind) -> &'static str {
-    match kind {
-        TriggerKind::TwitchChatCommand => "twitch chat command !command",
-        TriggerKind::TwitchChatAnyMessage => "twitch chat any message all",
-        TriggerKind::TwitchSubscribe => "twitch subscribe subscriber sub new",
-        TriggerKind::TwitchResubscribe => "twitch resubscribe resub renew",
-        TriggerKind::TwitchGiftSub => "twitch gift sub giftsub gifted",
-        TriggerKind::TwitchCheer => "twitch cheer bits cheered donate",
-        TriggerKind::TwitchRaid => "twitch raid incoming raided",
-        TriggerKind::ObsSceneChanged { .. } => "obs scene changed obsscenechanged",
-        TriggerKind::CodeEvent { .. } => "server code event custom overlay api trigger",
+pub fn trigger_label_of(kind_id: &str) -> String {
+    match kind_id {
+        "twitch.chat.command" => "Twitch \u{00b7} chat command",
+        "twitch.chat.message" => "Twitch \u{00b7} any chat message",
+        "twitch.support.subscriber" => "Twitch \u{00b7} new subscriber",
+        "twitch.support.resubscriber" => "Twitch \u{00b7} re-subscribe",
+        "twitch.support.gift_sub" => "Twitch \u{00b7} gift subs",
+        "twitch.support.cheer" => "Twitch \u{00b7} bits cheered",
+        "twitch.channel.raid_received" => "Twitch \u{00b7} raid received",
+        "obs.scenes.current_changed" => "OBS \u{00b7} scene changed",
+        "script.event.custom" => "Server \u{00b7} custom event",
+        other => other,
+    }
+    .to_string()
+}
+
+pub fn kind_label(kind_id: &str) -> &'static str {
+    match kind_id {
+        "twitch.chat.command" => "Twitch \u{00b7} Chat command",
+        "twitch.chat.message" => "Twitch \u{00b7} Any chat message",
+        "twitch.support.subscriber" => "Twitch \u{00b7} New subscriber",
+        "twitch.support.resubscriber" => "Twitch \u{00b7} Re-subscribe",
+        "twitch.support.gift_sub" => "Twitch \u{00b7} Gift subs",
+        "twitch.support.cheer" => "Twitch \u{00b7} Bits cheered",
+        "twitch.channel.raid_received" => "Twitch \u{00b7} Raid received",
+        "obs.scenes.current_changed" => "OBS \u{00b7} Scene changed",
+        "script.event.custom" => "Server \u{00b7} Custom event",
+        _ => "Unknown trigger",
     }
 }
 
-pub fn all_trigger_kinds() -> [TriggerKind; 9] {
-    [
-        TriggerKind::TwitchChatCommand,
-        TriggerKind::TwitchChatAnyMessage,
-        TriggerKind::TwitchSubscribe,
-        TriggerKind::TwitchResubscribe,
-        TriggerKind::TwitchGiftSub,
-        TriggerKind::TwitchCheer,
-        TriggerKind::TwitchRaid,
-        TriggerKind::ObsSceneChanged { scene: None },
-        TriggerKind::CodeEvent {
-            name: String::new(),
-        },
+pub fn kind_summary(kind_id: &str) -> &'static str {
+    match kind_id {
+        "twitch.chat.command" => "User types !command in chat",
+        "twitch.chat.message" => "Every chat message fires this",
+        "twitch.support.subscriber" => "Fires when someone subscribes",
+        "twitch.support.resubscriber" => "Existing sub renews",
+        "twitch.support.gift_sub" => "Someone gifts subs to channel",
+        "twitch.support.cheer" => "Viewer sends bits",
+        "twitch.channel.raid_received" => "Another stream raids you",
+        "obs.scenes.current_changed" => "Fires when OBS switches the active scene",
+        "script.event.custom" => "Fires when triggerCodeEvent is called via the WebSocket API",
+        _ => "",
+    }
+}
+
+pub fn kind_search_text(kind_id: &str) -> &'static str {
+    match kind_id {
+        "twitch.chat.command" => "twitch chat command !command",
+        "twitch.chat.message" => "twitch chat any message all",
+        "twitch.support.subscriber" => "twitch subscribe subscriber sub new",
+        "twitch.support.resubscriber" => "twitch resubscribe resub renew",
+        "twitch.support.gift_sub" => "twitch gift sub giftsub gifted",
+        "twitch.support.cheer" => "twitch cheer bits cheered donate",
+        "twitch.channel.raid_received" => "twitch raid incoming raided",
+        "obs.scenes.current_changed" => "obs scene changed obsscenechanged",
+        "script.event.custom" => "server code event custom overlay api trigger",
+        _ => "",
+    }
+}
+
+pub fn all_trigger_kind_ids() -> &'static [&'static str] {
+    &[
+        "twitch.chat.command",
+        "twitch.chat.message",
+        "twitch.support.subscriber",
+        "twitch.support.resubscriber",
+        "twitch.support.gift_sub",
+        "twitch.support.cheer",
+        "twitch.channel.raid_received",
+        "obs.scenes.current_changed",
+        "script.event.custom",
     ]
 }

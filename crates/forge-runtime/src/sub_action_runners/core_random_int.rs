@@ -90,14 +90,8 @@ impl SubActionRunner for CoreRandomIntRunner {
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let started_at = OffsetDateTime::now_utc();
 
-        let min = config
-            .get("min")
-            .and_then(|v| v.as_int())
-            .unwrap_or(1);
-        let max = config
-            .get("max")
-            .and_then(|v| v.as_int())
-            .unwrap_or(100);
+        let min = config.get("min").and_then(|v| v.as_int()).unwrap_or(1);
+        let max = config.get("max").and_then(|v| v.as_int()).unwrap_or(100);
         let target_var = config
             .get("target_var")
             .and_then(|v| v.as_str())

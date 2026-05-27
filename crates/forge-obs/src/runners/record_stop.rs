@@ -3,10 +3,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
-use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner,
-};
 use forge_registry::runner::SubActionConfig;
+use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use time::OffsetDateTime;
 

@@ -92,7 +92,13 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
         let case_sensitive = trigger
             .config
             .get("case_sensitive")
-            .and_then(|v| if let Variant::Bool(b) = v { Some(*b) } else { None })
+            .and_then(|v| {
+                if let Variant::Bool(b) = v {
+                    Some(*b)
+                } else {
+                    None
+                }
+            })
             .unwrap_or(false);
 
         let message = event
@@ -104,9 +110,7 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
         if case_sensitive {
             message.starts_with(phrase)
         } else {
-            message
-                .to_lowercase()
-                .starts_with(&phrase.to_lowercase())
+            message.to_lowercase().starts_with(&phrase.to_lowercase())
         }
     }
 
@@ -187,7 +191,10 @@ mod tests {
     fn default_config_has_phrase_and_case_sensitive() {
         let cfg = ChatCommandDescriptor.default_config();
         assert!(matches!(cfg.get("phrase"), Some(Variant::String(_))));
-        assert!(matches!(cfg.get("case_sensitive"), Some(Variant::Bool(false))));
+        assert!(matches!(
+            cfg.get("case_sensitive"),
+            Some(Variant::Bool(false))
+        ));
     }
 
     #[test]

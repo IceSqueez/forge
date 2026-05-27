@@ -21,10 +21,7 @@ impl QuickActions for ObsClient {
                 enabled: connected,
                 subaction_template: SubActionStep {
                     kind_id: "obs.scenes.switch_current".to_owned(),
-                    config: BTreeMap::from([(
-                        "scene".to_owned(),
-                        Variant::String(String::new()),
-                    )]),
+                    config: BTreeMap::from([("scene".to_owned(), Variant::String(String::new()))]),
                     enabled: true,
                     label: None,
                 },

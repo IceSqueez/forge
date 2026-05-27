@@ -96,7 +96,10 @@ impl TriggerKindDescriptor for SupportGiftSubDescriptor {
         ArgStack::new()
             .set("gifter_login".to_owned(), Variant::String(gifter_login))
             .set("gifter_id".to_owned(), Variant::String(gifter_id))
-            .set("gifter_is_anonymous".to_owned(), Variant::Bool(is_anonymous))
+            .set(
+                "gifter_is_anonymous".to_owned(),
+                Variant::Bool(is_anonymous),
+            )
             .set(
                 "recipient_login".to_owned(),
                 Variant::String(recipient_login),

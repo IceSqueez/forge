@@ -9,11 +9,14 @@ use forge_app::speak_bridge::SpeakBridge;
 use forge_app::subscriptions::subscription;
 use forge_app::view_router::view;
 use forge_audio::{CpalSink, DeviceId, NullSink};
+use forge_events::EventPublisher;
 use forge_platform_core::paths;
 use forge_platform_twitch::{ChatSendBridge, ChatSendBridgeHandle};
+use forge_registry::SubActionRegistry;
 use forge_runtime::{
     ActionEngineHandle, CommandParser, CommandParserHandle, EventBus, QueueScheduler,
-    QueueSchedulerHandle, ScriptRegistry, spawn_action_engine,
+    QueueSchedulerHandle, ScriptRegistry, register_audio_sub_actions, register_core_sub_actions,
+    spawn_action_engine,
 };
 use forge_soundboard::{BusAudioEventSink, CpalSinkFactory, SoundboardPlayer};
 use forge_speak_queue::{QueueConfig, QueueDeps, SpeakQueueHandle};
@@ -105,6 +108,8 @@ struct RuntimeHandles {
     parser: CommandParserHandle,
     chat_send_bridge: ChatSendBridgeHandle,
     speak_queue: Arc<SpeakQueueHandle>,
+    sound_player: Arc<SoundboardPlayer>,
+    sub_action_reg: Arc<SubActionRegistry>,
 }
 
 fn find_piper_binary() -> Option<PathBuf> {
@@ -224,15 +229,37 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         tracing::warn!("script registry load failed at boot: {e}");
     }
 
+    let clips_repo = dp.soundboard_clips_repo();
+    let sound_player = Arc::new(SoundboardPlayer::new(
+        Arc::new(CpalSinkFactory),
+        Arc::new(BusAudioEventSink::new(Arc::clone(&bus))),
+        clips_repo,
+    ));
+
+    let mut sub_action_reg = SubActionRegistry::new();
+    let publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
+    if let Err(e) = register_core_sub_actions(
+        &mut sub_action_reg,
+        Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
+        Arc::clone(&registry),
+        publisher,
+    ) {
+        tracing::warn!("core sub-action runner registration failed: {e}");
+    }
+    if let Err(e) = register_audio_sub_actions(
+        &mut sub_action_reg,
+        Arc::clone(&sound_player) as Arc<dyn forge_runtime::SoundPlayer>,
+        speak_dispatcher,
+    ) {
+        tracing::warn!("audio sub-action runner registration failed: {e}");
+    }
+    let sub_action_reg = Arc::new(sub_action_reg);
+
     let engine = spawn_action_engine(
         Arc::clone(&bus),
         dp.action_repo(),
         dp.history_repo(),
-        Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-        Arc::clone(&registry),
-        None,
-        None,
-        Some(speak_dispatcher),
+        Arc::clone(&sub_action_reg),
     );
     let scheduler = QueueScheduler::spawn(engine.clone(), Arc::clone(&bus), queues);
     let parser = CommandParser::spawn(
@@ -253,6 +280,8 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         parser,
         chat_send_bridge,
         speak_queue,
+        sound_player,
+        sub_action_reg,
     })
 }
 
@@ -276,46 +305,49 @@ fn main() -> iced::Result {
     let bus = EventBus::new(event_log);
     EventBus::spawn_flush_task(Arc::clone(&bus));
 
-    let (script_registry, action_engine, scheduler, command_parser, chat_send_bridge, speak_queue) =
-        if storage_offline {
-            (
+    let (
+        script_registry,
+        action_engine,
+        scheduler,
+        command_parser,
+        chat_send_bridge,
+        speak_queue,
+        sound_player,
+        sub_action_reg,
+    ) = if storage_offline {
+        (
+            Arc::new(ScriptRegistry::new()),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Arc::new(SubActionRegistry::new()),
+        )
+    } else {
+        match spawn_runtime(Arc::clone(&backend), Arc::clone(&bus)) {
+            Some(h) => (
+                h.registry,
+                Some(h.engine),
+                Some(h.scheduler),
+                Some(h.parser),
+                Some(h.chat_send_bridge),
+                Some(h.speak_queue),
+                Some(h.sound_player),
+                h.sub_action_reg,
+            ),
+            None => (
                 Arc::new(ScriptRegistry::new()),
                 None,
                 None,
                 None,
                 None,
                 None,
-            )
-        } else {
-            match spawn_runtime(Arc::clone(&backend), Arc::clone(&bus)) {
-                Some(h) => (
-                    h.registry,
-                    Some(h.engine),
-                    Some(h.scheduler),
-                    Some(h.parser),
-                    Some(h.chat_send_bridge),
-                    Some(h.speak_queue),
-                ),
-                None => (
-                    Arc::new(ScriptRegistry::new()),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                ),
-            }
-        };
-
-    let sound_player: Option<Arc<SoundboardPlayer>> = if storage_offline {
-        None
-    } else {
-        let clips_repo = backend.soundboard_clips_repo();
-        Some(Arc::new(SoundboardPlayer::new(
-            Arc::new(CpalSinkFactory),
-            Arc::new(BusAudioEventSink::new(Arc::clone(&bus))),
-            clips_repo,
-        )))
+                None,
+                Arc::new(SubActionRegistry::new()),
+            ),
+        }
     };
 
     let backend_boot: Arc<dyn DataProvider> = Arc::clone(&backend);
@@ -335,6 +367,7 @@ fn main() -> iced::Result {
         app.rt.bus = Arc::clone(&bus_boot);
         app.rt.chat_send_bridge = chat_send_bridge.clone();
         app.rt.speak_queue = speak_queue.clone();
+        app.rt.sub_action_registry = Arc::clone(&sub_action_reg);
         let obs_creds: Arc<dyn forge_storage::CredentialsRepo> =
             Arc::clone(&backend_boot) as Arc<dyn forge_storage::CredentialsRepo>;
         let obs_task = iced::Task::perform(

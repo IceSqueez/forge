@@ -13,6 +13,7 @@ workspace = true
 forge-types         = { path = "../forge-types" }
 forge-events        = { path = "../forge-events" }
 forge-runtime       = { path = "../forge-runtime" }
+forge-registry      = { path = "../forge-registry" }
 forge-platform-core = { path = "../forge-platform-core" }
 forge-storage       = { path = "../forge-storage" }
 axum              = { workspace = true }

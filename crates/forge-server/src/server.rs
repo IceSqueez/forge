@@ -217,6 +217,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use async_trait::async_trait;
+    use forge_registry::SubActionRegistry;
     use forge_runtime::{EventBus, NullEventLogRepo, ScriptRegistry, spawn_action_engine};
     use forge_storage::{
         CredentialId, CredentialsRepo, DataProvider, GlobalsRepo, StorageError, UserGlobalsRepo,
@@ -298,16 +299,12 @@ mod tests {
         let commands = dp.command_repo();
         let globals: Arc<dyn GlobalsRepo> = Arc::clone(&dp) as Arc<dyn GlobalsRepo>;
         let user_globals: Arc<dyn UserGlobalsRepo> = Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>;
-        let registry = Arc::new(ScriptRegistry::new());
+        let _registry = Arc::new(ScriptRegistry::new());
         let action_engine = Arc::new(spawn_action_engine(
             Arc::clone(&bus),
             dp.action_repo(),
             dp.history_repo(),
-            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            registry,
-            None,
-            None,
-            None,
+            Arc::new(SubActionRegistry::new()),
         ));
         AppState {
             auth,

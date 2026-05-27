@@ -167,12 +167,15 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use crate::auth::AuthState;
+    use std::collections::BTreeMap;
+
     use forge_events::{Event, EventSource};
+    use forge_registry::SubActionRegistry;
     use forge_runtime::{
         ActionEngineHandle, EventBus, NullEventLogRepo, ScriptRegistry, spawn_action_engine,
     };
     use forge_storage::{DataProvider, GlobalsRepo, UserGlobalsRepo};
-    use forge_types::{Action, ActionId, LogLevel, QueueId, SubActionSpec};
+    use forge_types::{Action, ActionId, QueueId, SubActionStep, Variant};
 
     use super::*;
     use crate::bus_adapter::{BusAdapter, ClientFilterSet, ClientId, EventFilter};
@@ -184,16 +187,12 @@ mod tests {
     use crate::ws_client::WsClient;
 
     fn make_engine(bus: &Arc<EventBus>, dp: &Arc<dyn DataProvider>) -> Arc<ActionEngineHandle> {
-        let registry = Arc::new(ScriptRegistry::new());
+        let _registry = Arc::new(ScriptRegistry::new());
         Arc::new(spawn_action_engine(
             Arc::clone(bus),
             dp.action_repo(),
             dp.history_repo(),
-            Arc::clone(dp) as Arc<dyn GlobalsRepo>,
-            registry,
-            None,
-            None,
-            None,
+            Arc::new(SubActionRegistry::new()),
         ))
     }
 
@@ -334,9 +333,14 @@ mod tests {
             bypass_pause: false,
             execution_mode: forge_types::ExecutionMode::Sequential,
             description: Some("A test action".to_string()),
-            sub_actions: vec![SubActionSpec::Log {
-                level: LogLevel::Info,
-                message: "hello".to_string(),
+            sub_actions: vec![SubActionStep {
+                kind_id: "core.log.write".to_owned(),
+                config: BTreeMap::from([
+                    ("level".to_owned(), Variant::String("info".to_owned())),
+                    ("message".to_owned(), Variant::String("hello".to_owned())),
+                ]),
+                enabled: true,
+                label: None,
             }],
         }
     }

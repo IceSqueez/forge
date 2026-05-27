@@ -230,6 +230,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use async_trait::async_trait;
+    use forge_registry::SubActionRegistry;
     use forge_runtime::{EventBus, NullEventLogRepo, ScriptRegistry, spawn_action_engine};
     use forge_storage::{
         CredentialId, CredentialsRepo, DataProvider, GlobalsRepo, StorageError, UserGlobalsRepo,
@@ -316,16 +317,12 @@ mod tests {
         tdp.globals().expect_list().returning(|| Ok(vec![]));
         tdp.globals().expect_set().returning(|_, _, _| Ok(()));
         let dp: Arc<dyn DataProvider> = Arc::new(tdp);
-        let registry = Arc::new(ScriptRegistry::new());
+        let _registry = Arc::new(ScriptRegistry::new());
         let action_engine = Arc::new(spawn_action_engine(
             Arc::clone(&bus),
             dp.action_repo(),
             dp.history_repo(),
-            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            registry,
-            None,
-            None,
-            None,
+            Arc::new(SubActionRegistry::new()),
         ));
         let actions = dp.action_repo();
         let commands = dp.command_repo();

@@ -614,6 +614,7 @@ fn detail_pane<'a>(
             let instance_id = instance.id;
             let action_id_local = action_id;
             let p_btn = p;
+            let p_nav = p;
             let delete_btn = iced::widget::button(
                 text("Delete")
                     .size(FONT_XS)
@@ -644,9 +645,35 @@ fn detail_pane<'a>(
                 snap: false,
             });
 
+            let nav_btn: Element<'_, Message> = iced::widget::button(
+                row![icon_box, info_col]
+                    .spacing(spf(Spacing::Xs))
+                    .align_y(Alignment::Center),
+            )
+            .on_press(Message::Actions(ActionsMsg::TriggerChipClicked(
+                instance_id,
+            )))
+            .padding(0)
+            .style(move |_: &iced::Theme, status| iced::widget::button::Style {
+                background: if matches!(status, iced::widget::button::Status::Hovered) {
+                    Some(Background::Color(iced::Color {
+                        a: 0.06,
+                        ..p_nav.brand
+                    }))
+                } else {
+                    None
+                },
+                text_color: iced::Color::TRANSPARENT,
+                border: Border::default(),
+                shadow: iced::Shadow::default(),
+                snap: false,
+            })
+            .width(Length::Fill)
+            .into();
+
             let dots = tabler_icon(Icon::DotsVertical, 14.0, p.text_faint);
 
-            let trigger_row: Element<'_, Message> = row![icon_box, info_col, delete_btn, dots]
+            let trigger_row: Element<'_, Message> = row![nav_btn, delete_btn, dots]
                 .spacing(spf(Spacing::Xs))
                 .align_y(Alignment::Center)
                 .into();

@@ -5,9 +5,11 @@ use iced::Task;
 use std::sync::Arc;
 
 use crate::Message;
+use crate::Screen;
 use crate::message::{ActionEditorMsg, ActionsMsg, ToastMsg};
 use crate::runtime_view::RuntimeView;
 use crate::test_trigger::synthesize_test_event;
+use crate::triggers_registry::TriggersRegistryMsg;
 
 pub use forge_runtime::actions::{ActionDetail, ActionSummary};
 
@@ -380,7 +382,12 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
                 duration_ms: 3000,
             }))
         }
-        ActionsMsg::TriggerChipClicked(_) => Task::none(),
+        ActionsMsg::TriggerChipClicked(instance_id) => Task::batch([
+            Task::done(Message::Navigate(Screen::TriggersRegistry)),
+            Task::done(Message::TriggersRegistry(TriggersRegistryMsg::ScrollTo(
+                instance_id,
+            ))),
+        ]),
         ActionsMsg::SearchChanged(q) => {
             state.search = q;
             Task::none()

@@ -1438,4 +1438,68 @@ mod tests {
         assert!(app.rt.obs_client.is_none());
         assert!(app.ui.builtin_detail.is_none());
     }
+
+    #[test]
+    fn scroll_to_unknown_trigger_instance_is_noop() {
+        use crate::triggers_registry::TriggersRegistryMsg;
+        use forge_types::TriggerInstanceId;
+
+        let mut app = App::default();
+        let unknown = TriggerInstanceId::new();
+        let _ = update(
+            &mut app,
+            Message::TriggersRegistry(TriggersRegistryMsg::ScrollTo(unknown)),
+        );
+        assert_eq!(app.ui.triggers_registry.selected_id, None);
+    }
+
+    #[test]
+    fn scroll_to_known_trigger_instance_sets_selected() {
+        use crate::triggers_registry::{TriggerInstanceRow, TriggersRegistryMsg};
+        use forge_types::TriggerInstanceId;
+
+        let mut app = App::default();
+        let id = TriggerInstanceId::new();
+        app.ui.triggers_registry.instances.push(TriggerInstanceRow {
+            id,
+            name: "Test".to_owned(),
+            kind_id: "twitch.chat.command".to_owned(),
+            enabled: true,
+            used_in_count: 0,
+            overrides: Default::default(),
+        });
+        let _ = update(
+            &mut app,
+            Message::TriggersRegistry(TriggersRegistryMsg::ScrollTo(id)),
+        );
+        assert_eq!(app.ui.triggers_registry.selected_id, Some(id));
+    }
+
+    #[test]
+    fn navigate_to_action_from_triggers_registry_returns_task() {
+        use crate::triggers_registry::TriggersRegistryMsg;
+        use forge_types::ActionId;
+
+        let mut app = App::default();
+        let action_id = ActionId::new();
+        let task = update(
+            &mut app,
+            Message::TriggersRegistry(TriggersRegistryMsg::NavigateToAction(action_id)),
+        );
+        let _ = task;
+    }
+
+    #[test]
+    fn trigger_chip_clicked_returns_task() {
+        use crate::message::ActionsMsg;
+        use forge_types::TriggerInstanceId;
+
+        let mut app = App::default();
+        let instance_id = TriggerInstanceId::new();
+        let task = update(
+            &mut app,
+            Message::Actions(ActionsMsg::TriggerChipClicked(instance_id)),
+        );
+        let _ = task;
+    }
 }

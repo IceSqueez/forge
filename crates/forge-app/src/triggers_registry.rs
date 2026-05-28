@@ -19,7 +19,8 @@ use forge_widgets::{
 };
 
 use crate::Message;
-use crate::message::ToastMsg;
+use crate::Screen;
+use crate::message::{ActionsMsg, ToastMsg};
 use crate::runtime_view::RuntimeView;
 
 #[derive(Debug, Clone)]
@@ -321,8 +322,19 @@ pub fn update(
                 duration_ms: 5000,
             }))
         }
-        TriggersRegistryMsg::NavigateToAction(_) => Task::none(),
-        TriggersRegistryMsg::ScrollTo(_) => Task::none(),
+        TriggersRegistryMsg::NavigateToAction(action_id) => Task::batch([
+            Task::done(Message::Navigate(Screen::Actions)),
+            Task::done(Message::Actions(ActionsMsg::ActionSelected(action_id))),
+        ]),
+        TriggersRegistryMsg::ScrollTo(instance_id) => {
+            if state.instances.iter().all(|r| r.id != instance_id) {
+                return Task::none();
+            }
+            state.selected_id = Some(instance_id);
+            Task::done(Message::TriggersRegistry(TriggersRegistryMsg::RowSelected(
+                instance_id,
+            )))
+        }
     }
 }
 
@@ -921,13 +933,29 @@ fn sheet_body_for<'a>(
         let usage_rows: Vec<Element<'_, Message>> = used_in
             .iter()
             .map(|u| {
-                container(
+                let aid = u.action_id;
+                let p_row = p;
+                button(
                     text(u.action_name.as_str())
                         .size(FONT_SM)
-                        .color(p.text_secondary)
                         .font(font(FontRole::Body)),
                 )
+                .on_press(Message::TriggersRegistry(
+                    TriggersRegistryMsg::NavigateToAction(aid),
+                ))
                 .padding([sp(Spacing::Xxs), sp(Spacing::Md)])
+                .style(move |_: &iced::Theme, status| button::Style {
+                    background: None,
+                    text_color: if matches!(status, button::Status::Hovered) {
+                        p_row.brand
+                    } else {
+                        p_row.text_secondary
+                    },
+                    border: Border::default(),
+                    shadow: iced::Shadow::default(),
+                    snap: false,
+                })
+                .width(Length::Fill)
                 .into()
             })
             .collect();

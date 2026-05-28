@@ -383,6 +383,79 @@ async fn reference_block_sample_names_capped_at_three() {
 }
 
 #[tokio::test]
+async fn link_action_inserts_row() {
+    let backend = setup().await;
+    let repo = backend.trigger_instance_repo();
+    let action_id = insert_action(&backend, "link test action").await;
+    let inst = make_instance("twitch.chat.command", "Link Me", true);
+    repo.save(&inst).await.expect("save");
+
+    repo.link_action(action_id, inst.id, 0)
+        .await
+        .expect("link_action");
+
+    let list = repo.list_for_action(action_id).await.expect("list");
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].id, inst.id);
+}
+
+#[tokio::test]
+async fn link_action_is_idempotent_on_duplicate() {
+    let backend = setup().await;
+    let repo = backend.trigger_instance_repo();
+    let action_id = insert_action(&backend, "idempotent action").await;
+    let inst = make_instance("twitch.chat.command", "Idempotent", true);
+    repo.save(&inst).await.expect("save");
+
+    repo.link_action(action_id, inst.id, 0)
+        .await
+        .expect("first link");
+    repo.link_action(action_id, inst.id, 0)
+        .await
+        .expect("second link must succeed");
+
+    let list = repo.list_for_action(action_id).await.expect("list");
+    assert_eq!(list.len(), 1, "duplicate link must not insert a second row");
+}
+
+#[tokio::test]
+async fn unlink_action_removes_row_returns_true() {
+    let backend = setup().await;
+    let repo = backend.trigger_instance_repo();
+    let action_id = insert_action(&backend, "unlink action").await;
+    let inst = make_instance("twitch.chat.command", "Unlink Me", true);
+    repo.save(&inst).await.expect("save");
+
+    repo.link_action(action_id, inst.id, 0).await.expect("link");
+    let removed = repo
+        .unlink_action(action_id, inst.id)
+        .await
+        .expect("unlink");
+    assert!(removed);
+
+    let list = repo
+        .list_for_action(action_id)
+        .await
+        .expect("list after unlink");
+    assert!(list.is_empty());
+}
+
+#[tokio::test]
+async fn unlink_action_returns_false_when_no_row() {
+    let backend = setup().await;
+    let repo = backend.trigger_instance_repo();
+    let action_id = insert_action(&backend, "ghost action").await;
+    let inst = make_instance("twitch.chat.command", "Ghost", true);
+    repo.save(&inst).await.expect("save");
+
+    let removed = repo
+        .unlink_action(action_id, inst.id)
+        .await
+        .expect("unlink of absent row must not error");
+    assert!(!removed);
+}
+
+#[tokio::test]
 async fn list_all_empty_table_returns_empty_vec() {
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();

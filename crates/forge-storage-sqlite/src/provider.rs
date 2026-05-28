@@ -160,17 +160,10 @@ impl SqliteBackend {
         trigger_instance_id: forge_types::TriggerInstanceId,
         position: i64,
     ) -> Result<(), SqliteStorageError> {
-        sqlx::query(
-            "INSERT INTO action_trigger_instances (action_id, trigger_instance_id, position)
-             VALUES (?, ?, ?)",
-        )
-        .bind(action_id.to_string())
-        .bind(trigger_instance_id.to_string())
-        .bind(position)
-        .execute(&self.pool)
-        .await
-        .map_err(SqliteStorageError::Sqlx)?;
-        Ok(())
+        self.trigger_instance
+            .link_action(action_id, trigger_instance_id, position)
+            .await
+            .map_err(|e| SqliteStorageError::Decode(e.to_string()))
     }
 
     pub fn soundboard_clips_repo_impl(&self) -> &SqliteSoundboardClipsRepo {

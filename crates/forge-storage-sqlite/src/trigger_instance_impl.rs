@@ -107,6 +107,53 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
             .collect()
     }
 
+    async fn link_action(
+        &self,
+        action_id: ActionId,
+        instance_id: TriggerInstanceId,
+        position: i64,
+    ) -> Result<(), StorageError> {
+        let action_id_str = action_id.to_string();
+        let instance_id_str = instance_id.to_string();
+
+        let result = sqlx::query(
+            "INSERT INTO action_trigger_instances (action_id, trigger_instance_id, position)
+             VALUES (?, ?, ?)",
+        )
+        .bind(&action_id_str)
+        .bind(&instance_id_str)
+        .bind(position)
+        .execute(&self.pool)
+        .await;
+
+        match result {
+            Ok(_) => Ok(()),
+            Err(sqlx::Error::Database(db_err)) if db_err.is_unique_violation() => Ok(()),
+            Err(e) => Err(StorageError::from(SqliteStorageError::Sqlx(e))),
+        }
+    }
+
+    async fn unlink_action(
+        &self,
+        action_id: ActionId,
+        instance_id: TriggerInstanceId,
+    ) -> Result<bool, StorageError> {
+        let action_id_str = action_id.to_string();
+        let instance_id_str = instance_id.to_string();
+
+        let result = sqlx::query(
+            "DELETE FROM action_trigger_instances
+             WHERE action_id = ? AND trigger_instance_id = ?",
+        )
+        .bind(&action_id_str)
+        .bind(&instance_id_str)
+        .execute(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
     async fn get(&self, id: TriggerInstanceId) -> Result<Option<TriggerInstance>, StorageError> {
         let id_str = id.to_string();
         let row: Option<InstanceRow> = sqlx::query_as(

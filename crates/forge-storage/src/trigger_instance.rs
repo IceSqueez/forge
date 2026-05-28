@@ -16,6 +16,17 @@ pub trait TriggerInstanceRepo: Send + Sync {
         &self,
         instance_id: TriggerInstanceId,
     ) -> Result<Vec<ActionId>, StorageError>;
+    async fn link_action(
+        &self,
+        action_id: ActionId,
+        instance_id: TriggerInstanceId,
+        position: i64,
+    ) -> Result<(), StorageError>;
+    async fn unlink_action(
+        &self,
+        action_id: ActionId,
+        instance_id: TriggerInstanceId,
+    ) -> Result<bool, StorageError>;
     async fn get(&self, id: TriggerInstanceId) -> Result<Option<TriggerInstance>, StorageError>;
     async fn save(&self, instance: &TriggerInstance) -> Result<(), StorageError>;
     async fn delete(&self, id: TriggerInstanceId) -> Result<bool, StorageError>;

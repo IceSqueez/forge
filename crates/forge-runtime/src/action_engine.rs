@@ -4,7 +4,7 @@ use std::sync::{
 };
 
 use forge_events::{Event, EventSource};
-use forge_registry::{RunContext, SubActionRegistry};
+use forge_registry::{RunContext, SubActionRegistry, effective_config};
 use forge_storage::{ActionRepo, HistoryRepo};
 use forge_types::{
     ActionId, ArgStack, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome,
@@ -232,7 +232,10 @@ impl ActionEngine {
             };
 
             let (telemetry, updated_stack) = match self.sub_action_registry.get(&step.kind_id) {
-                Some(runner) => runner.execute(&step.config, &run_ctx).await,
+                Some(runner) => {
+                    let resolved = effective_config(&runner.default_config(), &step.config);
+                    runner.execute(&resolved, &run_ctx).await
+                }
                 None => {
                     warn!(
                         "unknown sub-action kind_id: {} — skipping step",
@@ -297,7 +300,10 @@ impl ActionEngine {
 
                 async move {
                     match self.sub_action_registry.get(&step.kind_id) {
-                        Some(runner) => runner.execute(&step.config, &run_ctx).await,
+                        Some(runner) => {
+                            let resolved = effective_config(&runner.default_config(), &step.config);
+                            runner.execute(&resolved, &run_ctx).await
+                        }
                         None => {
                             warn!(
                                 "unknown sub-action kind_id: {} — skipping step",
@@ -353,7 +359,10 @@ async fn run_quick_action_loop(
         };
 
         let (telemetry, _) = match sub_action_registry.get(&req.step.kind_id) {
-            Some(runner) => runner.execute(&req.step.config, &run_ctx).await,
+            Some(runner) => {
+                let resolved = effective_config(&runner.default_config(), &req.step.config);
+                runner.execute(&resolved, &run_ctx).await
+            }
             None => {
                 warn!(
                     "unknown sub-action kind_id: {} — skipping step",
@@ -400,4 +409,128 @@ pub fn spawn_action_engine(
     sub_action_registry: Arc<SubActionRegistry>,
 ) -> ActionEngineHandle {
     ActionEngine::spawn(bus, actions, history, sub_action_registry)
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use std::collections::BTreeMap;
+    use std::sync::Mutex;
+    use std::time::Duration;
+
+    use async_trait::async_trait;
+    use forge_registry::{FormField, RegistryError, SubActionCategory};
+    use forge_storage::DataProvider;
+    use forge_storage_sqlite::SqliteBackend;
+    use forge_types::Variant;
+
+    use super::*;
+    use crate::NullEventLogRepo;
+
+    struct RecordingRunner {
+        last_config: Arc<Mutex<Option<forge_registry::SubActionConfig>>>,
+    }
+
+    #[async_trait]
+    impl forge_registry::SubActionRunner for RecordingRunner {
+        fn id(&self) -> &str {
+            "test.record"
+        }
+        fn category(&self) -> SubActionCategory {
+            SubActionCategory::Util
+        }
+        fn label(&self) -> &str {
+            "Recording"
+        }
+        fn summary(&self) -> &str {
+            ""
+        }
+        fn search_text(&self) -> &str {
+            ""
+        }
+        fn icon_name(&self) -> &str {
+            ""
+        }
+        fn default_config(&self) -> forge_registry::SubActionConfig {
+            let mut c = BTreeMap::new();
+            c.insert("a".to_owned(), Variant::Int(1));
+            c.insert("b".to_owned(), Variant::Int(2));
+            c
+        }
+        fn config_fields(&self) -> Vec<FormField> {
+            Vec::new()
+        }
+        fn validate_config(
+            &self,
+            _: &forge_registry::SubActionConfig,
+        ) -> Result<(), RegistryError> {
+            Ok(())
+        }
+        async fn execute(
+            &self,
+            config: &forge_registry::SubActionConfig,
+            _ctx: &RunContext<'_>,
+        ) -> (SubActionTelemetry, Option<ArgStack>) {
+            *self.last_config.lock().unwrap() = Some(config.clone());
+            (
+                SubActionTelemetry {
+                    index: 0,
+                    kind: "test.record".to_owned(),
+                    started_at: OffsetDateTime::now_utc(),
+                    duration_ms: 0,
+                    outcome: SubActionOutcome::Success,
+                },
+                None,
+            )
+        }
+    }
+
+    #[tokio::test]
+    async fn quick_action_resolves_effective_config_before_execute() {
+        let dp: Arc<dyn DataProvider> = Arc::new(
+            SqliteBackend::open_with_key(":memory:", [0xab; 32])
+                .await
+                .unwrap(),
+        );
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+
+        let last = Arc::new(Mutex::new(None));
+        let runner = Box::new(RecordingRunner {
+            last_config: Arc::clone(&last),
+        });
+        let mut reg = SubActionRegistry::new();
+        reg.register(runner).unwrap();
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::new(reg),
+        );
+
+        let mut overrides = BTreeMap::new();
+        overrides.insert("a".to_owned(), Variant::Int(99));
+
+        let step = SubActionStep {
+            kind_id: "test.record".to_owned(),
+            config: overrides,
+            enabled: true,
+            label: None,
+        };
+
+        engine
+            .execute_quick_action(step, "test.record".to_owned(), "Test".to_owned())
+            .await
+            .unwrap();
+
+        for _ in 0..40 {
+            if last.lock().unwrap().is_some() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+
+        let captured = last.lock().unwrap().clone().expect("runner not called");
+        assert_eq!(captured.get("a"), Some(&Variant::Int(99)));
+        assert_eq!(captured.get("b"), Some(&Variant::Int(2)));
+    }
 }

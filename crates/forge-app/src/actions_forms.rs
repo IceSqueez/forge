@@ -1,8 +1,4 @@
-use forge_types::{ActionId, ClipId, CommandPermission, LogLevel, QueueId, SubActionStep, Variant};
-
-use crate::actions_trigger_kinds::{
-    TriggerCategory, all_trigger_kind_ids, category_of, kind_label, kind_search_text,
-};
+use forge_types::{ActionId, ClipId, LogLevel, QueueId, SubActionStep, Variant};
 
 pub struct AddActionForm {
     pub name: String,
@@ -83,105 +79,6 @@ pub enum AddActionMsg {
     Cancel,
     Submit,
     Saved(Result<ActionId, String>),
-}
-
-#[derive(Debug, Clone)]
-pub struct TriggerConfigForm {
-    pub command_name: String,
-    pub cooldown_secs: String,
-    pub permission: CommandPermission,
-    pub min_bits: String,
-}
-
-impl TriggerConfigForm {
-    pub fn new() -> Self {
-        Self {
-            command_name: String::new(),
-            cooldown_secs: "0".to_string(),
-            permission: CommandPermission::Everyone,
-            min_bits: "1".to_string(),
-        }
-    }
-
-    pub fn parsed_cooldown(&self) -> u64 {
-        self.cooldown_secs.trim().parse().unwrap_or(0)
-    }
-
-    pub fn parsed_min_bits(&self) -> u32 {
-        self.min_bits.trim().parse().unwrap_or(1)
-    }
-}
-
-impl Default for TriggerConfigForm {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-pub struct AddTriggerForm {
-    pub for_action_id: ActionId,
-    pub search: String,
-    pub category: TriggerCategory,
-    pub selected_kind: Option<String>,
-    pub config: TriggerConfigForm,
-    pub error: Option<String>,
-    pub saving: bool,
-}
-
-impl AddTriggerForm {
-    pub fn new(for_action_id: ActionId) -> Self {
-        Self {
-            for_action_id,
-            search: String::new(),
-            category: TriggerCategory::All,
-            selected_kind: None,
-            config: TriggerConfigForm::new(),
-            error: None,
-            saving: false,
-        }
-    }
-
-    pub fn is_valid(&self) -> bool {
-        let Some(kind_id) = &self.selected_kind else {
-            return false;
-        };
-        if kind_id == "twitch.chat.command" {
-            !self.config.command_name.trim().is_empty()
-        } else {
-            true
-        }
-    }
-
-    pub fn visible_kinds(&self) -> Vec<String> {
-        let query = self.search.trim().to_lowercase();
-        all_trigger_kind_ids()
-            .iter()
-            .filter(|&&k| {
-                let cat_match =
-                    self.category == TriggerCategory::All || category_of(k) == self.category;
-                let search_match = query.is_empty()
-                    || kind_search_text(k).contains(&query)
-                    || kind_label(k).to_lowercase().contains(&query);
-                cat_match && search_match
-            })
-            .map(|&k| k.to_owned())
-            .collect()
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum AddTriggerMsg {
-    OpenRequested(ActionId),
-    SearchChanged(String),
-    CategorySelected(TriggerCategory),
-    KindSelected(String),
-    CommandNameChanged(String),
-    CooldownChanged(String),
-    PermissionSelected(CommandPermission),
-    MinBitsChanged(String),
-    Cancel,
-    Submit,
-    Saved(Result<(), String>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

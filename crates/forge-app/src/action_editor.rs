@@ -4,8 +4,8 @@ use forge_types::{Action, ActionId};
 use iced::Task;
 
 use crate::actions::{
-    ActionDetail, AddActionForm, AddActionMsg, AddSubActionForm, AddSubActionMsg, AddTriggerForm,
-    AddTriggerMsg, RemoveSubActionMsg, SubActionKindChoice,
+    ActionDetail, AddActionForm, AddActionMsg, AddSubActionForm, AddSubActionMsg,
+    RemoveSubActionMsg, SubActionKindChoice,
 };
 use crate::message::{ActionEditorMsg, ActionsMsg, Message, MoveSubActionMsg};
 use crate::runtime_view::RuntimeView;
@@ -174,120 +174,6 @@ fn log_level_id(level: &forge_types::LogLevel) -> &'static str {
         forge_types::LogLevel::Info => "info",
         forge_types::LogLevel::Warn => "warn",
         forge_types::LogLevel::Error => "error",
-    }
-}
-
-pub fn add_trigger_update(
-    state: &mut Option<AddTriggerForm>,
-    rt: &RuntimeView,
-    msg: AddTriggerMsg,
-) -> Task<Message> {
-    match msg {
-        AddTriggerMsg::OpenRequested(action_id) => {
-            *state = Some(AddTriggerForm::new(action_id));
-            Task::none()
-        }
-        AddTriggerMsg::SearchChanged(v) => {
-            if let Some(f) = state.as_mut() {
-                f.search = v;
-            }
-            Task::none()
-        }
-        AddTriggerMsg::CategorySelected(cat) => {
-            if let Some(f) = state.as_mut() {
-                f.category = cat;
-            }
-            Task::none()
-        }
-        AddTriggerMsg::KindSelected(kind) => {
-            if let Some(f) = state.as_mut() {
-                f.selected_kind = Some(kind);
-                f.error = None;
-            }
-            Task::none()
-        }
-        AddTriggerMsg::CommandNameChanged(v) => {
-            if let Some(f) = state.as_mut() {
-                f.config.command_name = v;
-            }
-            Task::none()
-        }
-        AddTriggerMsg::CooldownChanged(v) => {
-            if let Some(f) = state.as_mut() {
-                f.config.cooldown_secs = v;
-            }
-            Task::none()
-        }
-        AddTriggerMsg::PermissionSelected(perm) => {
-            if let Some(f) = state.as_mut() {
-                f.config.permission = perm;
-            }
-            Task::none()
-        }
-        AddTriggerMsg::MinBitsChanged(v) => {
-            if let Some(f) = state.as_mut() {
-                f.config.min_bits = v;
-            }
-            Task::none()
-        }
-        AddTriggerMsg::Cancel => {
-            *state = None;
-            Task::none()
-        }
-        AddTriggerMsg::Submit => {
-            let Some(form) = state.as_ref() else {
-                return Task::none();
-            };
-            if !form.is_valid() {
-                return Task::none();
-            }
-            let Some(kind_id) = form.selected_kind.clone() else {
-                return Task::none();
-            };
-            let action_id = form.for_action_id;
-            if let Some(f) = state.as_mut() {
-                f.saving = true;
-            }
-            let dp = Arc::clone(&rt.backend);
-            Task::perform(
-                async move {
-                    let instances = dp
-                        .trigger_instance_repo()
-                        .list_all()
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    let instance = instances
-                        .into_iter()
-                        .find(|i| i.kind_id == kind_id && !i.user_defined)
-                        .ok_or_else(|| format!("No default instance for kind {kind_id}"))?;
-                    dp.trigger_instance_repo()
-                        .link_action(action_id, instance.id, 0)
-                        .await
-                        .map_err(|e| e.to_string())
-                },
-                |r| {
-                    Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddTrigger(
-                        AddTriggerMsg::Saved(r),
-                    )))
-                },
-            )
-        }
-        AddTriggerMsg::Saved(Ok(())) => {
-            let action_id = state.as_ref().map(|f| f.for_action_id);
-            *state = None;
-            if let Some(id) = action_id {
-                Task::done(Message::Actions(ActionsMsg::ActionSelected(id)))
-            } else {
-                Task::none()
-            }
-        }
-        AddTriggerMsg::Saved(Err(e)) => {
-            if let Some(f) = state.as_mut() {
-                f.saving = false;
-                f.error = Some(e);
-            }
-            Task::none()
-        }
     }
 }
 

@@ -168,9 +168,6 @@ pub(crate) fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
         if let Some(form) = app.ui.actions.add_sub_action_modal.as_ref() {
             let modal_el = crate::actions_modals::add_sub_action_modal_view(form, palette);
             iced::widget::stack![main_view, modal_el].into()
-        } else if let Some(form) = app.ui.actions.add_trigger_modal.as_ref() {
-            let modal_el = crate::actions_modals::add_trigger_modal_view(form, palette);
-            iced::widget::stack![main_view, modal_el].into()
         } else if let Some(form) = app.ui.actions.add_action_modal.as_ref() {
             let modal_el = crate::actions_modals::add_action_modal_view(form, palette);
             iced::widget::stack![main_view, modal_el].into()
@@ -613,7 +610,7 @@ fn actions_detail_panel<'a>(
         &format!("TRIGGERS \u{00b7} {}", detail.trigger_instances.len()),
         "Add trigger",
         p.warning,
-        Message::Actions(ActionsMsg::OpenAddTriggerModal(action.id)),
+        Message::Actions(ActionsMsg::OpenTriggerPicker(action.id)),
         palette,
     ));
     detail_col = detail_col.push(iced::widget::Space::new().height(8.0));

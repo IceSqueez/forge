@@ -5,6 +5,7 @@ pub mod actions_forms;
 pub mod actions_modals;
 pub mod actions_telemetry;
 pub mod actions_trigger_kinds;
+pub mod actions_trigger_picker;
 pub mod actions_view;
 pub mod app;
 pub mod boot;
@@ -50,8 +51,7 @@ pub mod voice_aliases;
 
 pub use actions::{
     ActionDetail, ActionSummary, ActionsGroup, ActionsState, AddActionForm, AddActionMsg,
-    AddSubActionForm, AddSubActionMsg, AddTriggerForm, AddTriggerMsg, RemoveSubActionMsg,
-    SubActionKindChoice, TriggerCategory,
+    AddSubActionForm, AddSubActionMsg, RemoveSubActionMsg, SubActionKindChoice, TriggerCategory,
 };
 pub use app::{App, SidebarExpandState, UiState};
 pub use boot::load_obs_and_connect;

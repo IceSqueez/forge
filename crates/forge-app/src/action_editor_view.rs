@@ -550,7 +550,7 @@ fn detail_pane<'a>(
         .spacing(spf(Spacing::Xxs))
         .align_y(Alignment::Center),
     )
-    .on_press(Message::Actions(ActionsMsg::OpenAddTriggerModal(action_id)))
+    .on_press(Message::Actions(ActionsMsg::OpenTriggerPicker(action_id)))
     .padding(0)
     .style(
         |_theme: &iced::Theme, _status| iced::widget::button::Style {
@@ -858,7 +858,7 @@ pub fn action_editor_view<'a>(
         palette,
     );
 
-    iced::widget::column![
+    let base: Element<'_, Message> = iced::widget::column![
         page_header,
         iced::widget::row![left, right]
             .spacing(0)
@@ -866,7 +866,14 @@ pub fn action_editor_view<'a>(
     ]
     .width(Length::Fill)
     .height(Length::Fill)
-    .into()
+    .into();
+
+    if let Some(picker_state) = app.ui.actions.trigger_picker.as_ref() {
+        let picker_el = crate::actions_trigger_picker::view(picker_state, &app.rt, palette);
+        iced::widget::stack![base, picker_el].into()
+    } else {
+        base
+    }
 }
 
 #[cfg(test)]

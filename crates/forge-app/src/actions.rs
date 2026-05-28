@@ -12,8 +12,8 @@ use crate::test_trigger::synthesize_test_event;
 pub use forge_runtime::actions::{ActionDetail, ActionSummary};
 
 pub use crate::actions_forms::{
-    AddActionForm, AddActionMsg, AddSubActionForm, AddSubActionMsg, AddTriggerForm, AddTriggerMsg,
-    RemoveSubActionMsg, SubActionConfigForm, SubActionKindChoice, TriggerConfigForm,
+    AddActionForm, AddActionMsg, AddSubActionForm, AddSubActionMsg, RemoveSubActionMsg,
+    SubActionConfigForm, SubActionKindChoice,
 };
 pub use crate::actions_telemetry::{action_stat, format_relative_time, telemetry_grid};
 pub use crate::actions_trigger_kinds::{
@@ -63,7 +63,7 @@ pub struct ActionsState {
     pub filter: ActionsFilter,
     pub collapsed_groups: std::collections::HashSet<TriggerCategory>,
     pub add_action_modal: Option<AddActionForm>,
-    pub add_trigger_modal: Option<AddTriggerForm>,
+    pub trigger_picker: Option<crate::actions_trigger_picker::TriggerPickerState>,
     pub add_sub_action_modal: Option<AddSubActionForm>,
     pub telemetry: Option<ActionTelemetry>,
     pub telemetry_loading: bool,
@@ -320,11 +320,67 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
         ActionsMsg::OpenAddActionModal => Task::done(Message::Actions(ActionsMsg::Editor(
             ActionEditorMsg::AddAction(AddActionMsg::OpenRequested),
         ))),
-        ActionsMsg::OpenAddTriggerModal(action_id) => {
-            Task::done(Message::Actions(ActionsMsg::Editor(
-                ActionEditorMsg::AddTrigger(AddTriggerMsg::OpenRequested(action_id)),
-            )))
+        ActionsMsg::OpenTriggerPicker(action_id) => {
+            let existing_count = state
+                .detail
+                .as_ref()
+                .filter(|d| d.action.id == action_id)
+                .map(|d| d.trigger_instances.len() as i64)
+                .unwrap_or(0);
+            state.trigger_picker = Some(crate::actions_trigger_picker::TriggerPickerState {
+                action_id,
+                next_position: existing_count,
+                level1: None,
+                level2: None,
+                available_instances: Vec::new(),
+                is_loading: true,
+            });
+            let dp = Arc::clone(&rt.backend);
+            let descriptor_infos: Vec<(String, String, String)> = rt
+                .trigger_registry
+                .all()
+                .map(|d| {
+                    let sub_label =
+                        crate::actions_trigger_picker::category_display_label(d.category())
+                            .to_owned();
+                    (d.id().to_owned(), d.label().to_owned(), sub_label)
+                })
+                .collect();
+            Task::perform(
+                async move {
+                    let all_instances = dp
+                        .trigger_instance_repo()
+                        .list_all()
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    Ok(crate::actions_trigger_picker::build_picker_entries(
+                        descriptor_infos,
+                        all_instances,
+                    ))
+                },
+                |r| {
+                    Message::Actions(ActionsMsg::TriggerPickerMsg(
+                        crate::actions_trigger_picker::TriggerPickerMsg::InstancesLoaded(r),
+                    ))
+                },
+            )
         }
+        ActionsMsg::TriggerPickerMsg(msg) => {
+            crate::actions_trigger_picker::update(&mut state.trigger_picker, rt, msg)
+        }
+        ActionsMsg::TriggerInstanceAssigned(Ok(action_id)) => {
+            state.trigger_picker = None;
+            Task::done(Message::Actions(ActionsMsg::ActionSelected(action_id)))
+        }
+        ActionsMsg::TriggerInstanceAssigned(Err(e)) => {
+            state.trigger_picker = None;
+            Task::done(Message::Toast(crate::message::ToastMsg::Fired {
+                kind: forge_widgets::ToastKind::Error,
+                message: e,
+                duration_ms: 3000,
+            }))
+        }
+        ActionsMsg::TriggerChipClicked(_) => Task::none(),
         ActionsMsg::SearchChanged(q) => {
             state.search = q;
             Task::none()
@@ -468,9 +524,6 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
             ActionEditorMsg::AddAction(m) => {
                 crate::action_editor::add_action_update(&mut state.add_action_modal, rt, m)
             }
-            ActionEditorMsg::AddTrigger(m) => {
-                crate::action_editor::add_trigger_update(&mut state.add_trigger_modal, rt, m)
-            }
             ActionEditorMsg::AddSubAction(m) => crate::action_editor::add_sub_action_update(
                 &mut state.add_sub_action_modal,
                 rt,
@@ -594,59 +647,30 @@ mod tests {
     }
 
     #[test]
-    fn add_trigger_form_invalid_without_kind() {
-        let form = AddTriggerForm::new(ActionId::new());
-        assert!(!form.is_valid());
+    fn open_trigger_picker_state_is_loading() {
+        let picker = crate::actions_trigger_picker::TriggerPickerState {
+            action_id: ActionId::new(),
+            next_position: 0,
+            level1: None,
+            level2: None,
+            available_instances: Vec::new(),
+            is_loading: true,
+        };
+        assert!(picker.is_loading);
+        assert!(picker.available_instances.is_empty());
     }
 
     #[test]
-    fn add_trigger_form_invalid_chat_command_without_name() {
-        let mut form = AddTriggerForm::new(ActionId::new());
-        form.selected_kind = Some("twitch.chat.command".to_owned());
-        assert!(!form.is_valid());
-    }
-
-    #[test]
-    fn add_trigger_form_valid_chat_command_with_name() {
-        let mut form = AddTriggerForm::new(ActionId::new());
-        form.selected_kind = Some("twitch.chat.command".to_owned());
-        form.config.command_name = "quote".to_string();
-        assert!(form.is_valid());
-    }
-
-    #[test]
-    fn add_trigger_form_valid_non_command_kind_without_name() {
-        let mut form = AddTriggerForm::new(ActionId::new());
-        form.selected_kind = Some("twitch.support.subscriber".to_owned());
-        assert!(form.is_valid());
-    }
-
-    #[test]
-    fn search_chat_shows_command_and_any_message() {
-        let mut form = AddTriggerForm::new(ActionId::new());
-        form.search = "chat".to_string();
-        let visible = form.visible_kinds();
-        assert!(visible.contains(&"twitch.chat.command".to_owned()));
-        assert!(visible.contains(&"twitch.chat.message".to_owned()));
-    }
-
-    #[test]
-    fn category_chat_filter_hides_non_chat_kinds() {
-        let mut form = AddTriggerForm::new(ActionId::new());
-        form.category = TriggerCategory::Chat;
-        let visible = form.visible_kinds();
-        assert!(!visible.contains(&"twitch.support.subscriber".to_owned()));
-        assert!(!visible.contains(&"twitch.channel.raid_received".to_owned()));
-        assert!(visible.contains(&"twitch.chat.command".to_owned()));
-    }
-
-    #[test]
-    fn search_sub_category_all_shows_subscribe_kinds() {
-        let mut form = AddTriggerForm::new(ActionId::new());
-        form.search = "sub".to_string();
-        let visible = form.visible_kinds();
-        assert!(visible.contains(&"twitch.support.subscriber".to_owned()));
-        assert!(visible.contains(&"twitch.support.gift_sub".to_owned()));
+    fn trigger_picker_next_position_uses_existing_trigger_count() {
+        let picker = crate::actions_trigger_picker::TriggerPickerState {
+            action_id: ActionId::new(),
+            next_position: 3,
+            level1: None,
+            level2: None,
+            available_instances: Vec::new(),
+            is_loading: true,
+        };
+        assert_eq!(picker.next_position, 3);
     }
 
     const TEST_KEY: [u8; 32] = [0xab; 32];

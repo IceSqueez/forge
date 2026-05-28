@@ -16,7 +16,7 @@ use forge_widgets::{ThemeId, VariantKind};
 use time::OffsetDateTime;
 
 use crate::Screen;
-use crate::actions::{AddActionMsg, AddSubActionMsg, AddTriggerMsg, RemoveSubActionMsg};
+use crate::actions::{AddActionMsg, AddSubActionMsg, RemoveSubActionMsg};
 use crate::event_feed::EventFeedMsg;
 use crate::live_chat::PlatformFilter;
 use crate::queues_view::QueueSummary;
@@ -102,8 +102,11 @@ pub enum ActionsMsg {
     ActionDuplicated(Result<ActionId, String>),
     RemoveTriggerInstance(ActionId, forge_types::TriggerInstanceId),
     TriggerInstanceRemoved(Result<ActionId, String>),
+    TriggerChipClicked(forge_types::TriggerInstanceId),
     OpenAddActionModal,
-    OpenAddTriggerModal(ActionId),
+    OpenTriggerPicker(ActionId),
+    TriggerPickerMsg(crate::actions_trigger_picker::TriggerPickerMsg),
+    TriggerInstanceAssigned(Result<ActionId, String>),
     SearchChanged(String),
     FilterChanged(crate::actions::ActionsFilter),
     ToggleGroupCollapsed(crate::actions::TriggerCategory),
@@ -132,7 +135,6 @@ pub enum MoveSubActionMsg {
 #[derive(Debug, Clone)]
 pub enum ActionEditorMsg {
     AddAction(AddActionMsg),
-    AddTrigger(AddTriggerMsg),
     AddSubAction(AddSubActionMsg),
     RemoveSubAction(RemoveSubActionMsg),
     MoveSubAction(MoveSubActionMsg),

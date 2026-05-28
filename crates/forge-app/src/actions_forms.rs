@@ -1,6 +1,4 @@
-use forge_types::{
-    ActionId, ClipId, CommandPermission, LogLevel, QueueId, SubActionStep, TriggerId, Variant,
-};
+use forge_types::{ActionId, ClipId, CommandPermission, LogLevel, QueueId, SubActionStep, Variant};
 
 use crate::actions_trigger_kinds::{
     TriggerCategory, all_trigger_kind_ids, category_of, kind_label, kind_search_text,
@@ -183,7 +181,7 @@ pub enum AddTriggerMsg {
     MinBitsChanged(String),
     Cancel,
     Submit,
-    Saved(Result<TriggerId, String>),
+    Saved(Result<(), String>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

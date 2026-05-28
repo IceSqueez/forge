@@ -5,7 +5,7 @@ use iced::Task;
 
 use crate::actions::{
     ActionDetail, AddActionForm, AddActionMsg, AddSubActionForm, AddSubActionMsg, AddTriggerForm,
-    AddTriggerMsg, RemoveSubActionMsg, SubActionKindChoice, TriggerConfigForm,
+    AddTriggerMsg, RemoveSubActionMsg, SubActionKindChoice,
 };
 use crate::message::{ActionEditorMsg, ActionsMsg, Message, MoveSubActionMsg};
 use crate::runtime_view::RuntimeView;
@@ -177,26 +177,6 @@ fn log_level_id(level: &forge_types::LogLevel) -> &'static str {
     }
 }
 
-fn build_trigger_config(kind_id: &str, form: &TriggerConfigForm) -> forge_types::TriggerConfig {
-    let mut m = std::collections::BTreeMap::new();
-    match kind_id {
-        "twitch.chat.command" => {
-            m.insert(
-                "cooldown_secs".to_string(),
-                forge_types::Variant::Int(form.parsed_cooldown() as i64),
-            );
-        }
-        "twitch.support.cheer" => {
-            m.insert(
-                "min_bits".to_string(),
-                forge_types::Variant::Int(form.parsed_min_bits() as i64),
-            );
-        }
-        _ => {}
-    }
-    m
-}
-
 pub fn add_trigger_update(
     state: &mut Option<AddTriggerForm>,
     rt: &RuntimeView,
@@ -265,44 +245,25 @@ pub fn add_trigger_update(
                 return Task::none();
             };
             let action_id = form.for_action_id;
-            let config = build_trigger_config(&kind_id, &form.config);
-            let trigger = forge_types::Trigger {
-                id: forge_types::TriggerId::new(),
-                action_id,
-                kind_id: kind_id.clone(),
-                config,
-            };
-            let cmd = if kind_id == "twitch.chat.command" {
-                let raw = form.config.command_name.trim();
-                let normalized = format!("!{}", raw.trim_start_matches('!').to_lowercase());
-                Some(forge_types::Command {
-                    id: forge_types::CommandId::new(),
-                    action_id,
-                    name: normalized,
-                    cooldown_secs: form.config.parsed_cooldown(),
-                    permission: form.config.permission.clone(),
-                })
-            } else {
-                None
-            };
-            let trigger_id = trigger.id;
             if let Some(f) = state.as_mut() {
                 f.saving = true;
             }
             let dp = Arc::clone(&rt.backend);
             Task::perform(
                 async move {
-                    dp.trigger_repo()
-                        .save(&trigger)
+                    let instances = dp
+                        .trigger_instance_repo()
+                        .list_all()
                         .await
                         .map_err(|e| e.to_string())?;
-                    if let Some(c) = cmd {
-                        dp.command_repo()
-                            .save(&c)
-                            .await
-                            .map_err(|e| e.to_string())?;
-                    }
-                    Ok(trigger_id)
+                    let instance = instances
+                        .into_iter()
+                        .find(|i| i.kind_id == kind_id && !i.user_defined)
+                        .ok_or_else(|| format!("No default instance for kind {kind_id}"))?;
+                    dp.trigger_instance_repo()
+                        .link_action(action_id, instance.id, 0)
+                        .await
+                        .map_err(|e| e.to_string())
                 },
                 |r| {
                     Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddTrigger(
@@ -311,7 +272,7 @@ pub fn add_trigger_update(
                 },
             )
         }
-        AddTriggerMsg::Saved(Ok(_)) => {
+        AddTriggerMsg::Saved(Ok(())) => {
             let action_id = state.as_ref().map(|f| f.for_action_id);
             *state = None;
             if let Some(id) = action_id {

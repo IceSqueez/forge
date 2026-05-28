@@ -571,7 +571,7 @@ fn detail_pane<'a>(
     .into();
 
     let mut triggers_col: iced::widget::Column<'_, Message> = column![].spacing(spf(Spacing::Xs));
-    if detail.triggers.is_empty() {
+    if detail.trigger_instances.is_empty() {
         triggers_col = triggers_col.push(
             container(
                 text("No triggers \u{00b7} click Add trigger to start")
@@ -581,8 +581,8 @@ fn detail_pane<'a>(
             .padding([sp(Spacing::Xs), 0]),
         );
     } else {
-        for trigger in &detail.triggers {
-            let cat = category_of(&trigger.kind_id);
+        for instance in &detail.trigger_instances {
+            let cat = category_of(&instance.kind_id);
             let icon_name = trigger_icon_name(&cat);
             let icon_box = container(tabler_icon(Icon::from_name(icon_name), 14.0, p.brand))
                 .width(26.0)
@@ -598,8 +598,8 @@ fn detail_pane<'a>(
                     ..iced::widget::container::Style::default()
                 });
 
-            let label_str = trigger_label_of(&trigger.kind_id);
-            let condition_str = kind_condition_text(&trigger.kind_id, &trigger.config);
+            let label_str = trigger_label_of(&instance.kind_id);
+            let condition_str = kind_condition_text(&instance.kind_id, &instance.overrides);
 
             let info_col: Element<'_, Message> = column![
                 text(label_str).size(FONT_SM).color(p.text_primary),
@@ -611,7 +611,7 @@ fn detail_pane<'a>(
             .spacing(spf(Spacing::Xxs))
             .into();
 
-            let trigger_id = trigger.id;
+            let instance_id = instance.id;
             let action_id_local = action_id;
             let p_btn = p;
             let delete_btn = iced::widget::button(
@@ -621,9 +621,9 @@ fn detail_pane<'a>(
                     .font(forge_widgets::font(forge_widgets::FontRole::Monospace)),
             )
             .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
-            .on_press(Message::Actions(ActionsMsg::DeleteTrigger(
-                trigger_id,
+            .on_press(Message::Actions(ActionsMsg::RemoveTriggerInstance(
                 action_id_local,
+                instance_id,
             )))
             .style(move |_t, status| iced::widget::button::Style {
                 background: if matches!(status, iced::widget::button::Status::Hovered) {

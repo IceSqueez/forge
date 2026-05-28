@@ -1,4 +1,4 @@
-use forge_types::{Action, ActionId, Command, Trigger};
+use forge_types::{Action, ActionId, TriggerInstance};
 use time::OffsetDateTime;
 
 #[derive(Debug, Clone)]
@@ -16,7 +16,6 @@ pub struct ActionSummary {
 #[derive(Debug, Clone)]
 pub struct ActionDetail {
     pub action: Action,
-    pub triggers: Vec<Trigger>,
-    pub commands: Vec<Command>,
+    pub trigger_instances: Vec<TriggerInstance>,
     pub sub_action_avg_ms: Vec<Option<u64>>,
 }

@@ -158,8 +158,7 @@ impl App {
                     backend.action_repo(),
                     backend.queue_repo(),
                     backend.history_repo(),
-                    backend.trigger_repo(),
-                    backend.command_repo(),
+                    backend.trigger_instance_repo(),
                     backend.soundboard_clips_repo(),
                 )),
                 backend,
@@ -216,8 +215,7 @@ impl Default for App {
                     backend.action_repo(),
                     backend.queue_repo(),
                     backend.history_repo(),
-                    backend.trigger_repo(),
-                    backend.command_repo(),
+                    backend.trigger_instance_repo(),
                     backend.soundboard_clips_repo(),
                 )),
                 backend,
@@ -632,8 +630,7 @@ mod tests {
                     dp.action_repo(),
                     dp.queue_repo(),
                     dp.history_repo(),
-                    dp.trigger_repo(),
-                    dp.command_repo(),
+                    dp.trigger_instance_repo(),
                     dp.soundboard_clips_repo(),
                 )),
                 backend: dp,
@@ -734,8 +731,7 @@ mod tests {
         let detail = crate::actions::ActionDetail {
             sub_action_avg_ms: vec![],
             action,
-            triggers: vec![],
-            commands: vec![],
+            trigger_instances: vec![],
         };
         let _ = update(
             &mut app,
@@ -817,8 +813,7 @@ mod tests {
         app.ui.actions.detail = Some(crate::actions::ActionDetail {
             sub_action_avg_ms: vec![],
             action,
-            triggers: vec![],
-            commands: vec![],
+            trigger_instances: vec![],
         });
         let _ = update(
             &mut app,
@@ -980,8 +975,7 @@ mod tests {
                     dp.action_repo(),
                     dp.queue_repo(),
                     dp.history_repo(),
-                    dp.trigger_repo(),
-                    dp.command_repo(),
+                    dp.trigger_instance_repo(),
                     dp.soundboard_clips_repo(),
                 )),
                 backend: Arc::clone(&dp),

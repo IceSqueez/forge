@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use forge_storage::{
-    ActionRepo, ActionTelemetry, CommandRepo, HistoryRepo, QueueRepo, SoundboardClipsRepo,
-    StorageError, TriggerRepo,
+    ActionRepo, ActionTelemetry, HistoryRepo, QueueRepo, SoundboardClipsRepo, StorageError,
+    TriggerInstanceRepo,
 };
 use forge_types::{ActionId, ClipId, SubActionStep};
 use time::OffsetDateTime;
@@ -13,8 +13,7 @@ pub struct ActionsService {
     actions: Arc<dyn ActionRepo>,
     queues: Arc<dyn QueueRepo>,
     history: Arc<dyn HistoryRepo>,
-    triggers: Arc<dyn TriggerRepo>,
-    commands: Arc<dyn CommandRepo>,
+    trigger_instances: Arc<dyn TriggerInstanceRepo>,
     clips: Arc<dyn SoundboardClipsRepo>,
 }
 
@@ -23,16 +22,14 @@ impl ActionsService {
         actions: Arc<dyn ActionRepo>,
         queues: Arc<dyn QueueRepo>,
         history: Arc<dyn HistoryRepo>,
-        triggers: Arc<dyn TriggerRepo>,
-        commands: Arc<dyn CommandRepo>,
+        trigger_instances: Arc<dyn TriggerInstanceRepo>,
         clips: Arc<dyn SoundboardClipsRepo>,
     ) -> Self {
         Self {
             actions,
             queues,
             history,
-            triggers,
-            commands,
+            trigger_instances,
             clips,
         }
     }
@@ -45,7 +42,7 @@ impl ActionsService {
 
         let mut summaries = Vec::with_capacity(actions.len());
         for action in actions {
-            let action_triggers = self.triggers.list_for_action(action.id).await?;
+            let action_triggers = self.trigger_instances.list_for_action(action.id).await?;
             let first_trigger_kind_id = action_triggers.first().map(|t| t.kind_id.clone());
 
             let queue_name = all_queues
@@ -81,19 +78,13 @@ impl ActionsService {
             .ok_or_else(|| StorageError::NotFound {
                 key: id.to_string(),
             })?;
-        let triggers = self.triggers.list_for_action(id).await?;
-        let all_commands = self.commands.list().await?;
-        let commands: Vec<_> = all_commands
-            .into_iter()
-            .filter(|c| c.action_id == id)
-            .collect();
+        let trigger_instances = self.trigger_instances.list_for_action(id).await?;
         let recent = self.history.recent_for_action(id, 20).await?;
         let sub_action_avg_ms = compute_sub_action_averages(&recent, action.sub_actions.len());
 
         Ok(ActionDetail {
             action,
-            triggers,
-            commands,
+            trigger_instances,
             sub_action_avg_ms,
         })
     }

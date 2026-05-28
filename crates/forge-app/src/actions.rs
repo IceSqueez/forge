@@ -229,8 +229,8 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
             Task::perform(
                 async move {
                     let detail = service.load_detail(id).await.map_err(|e| e.to_string())?;
-                    let event = match detail.triggers.first() {
-                        Some(trigger) => synthesize_test_event(trigger, &detail.commands),
+                    let event = match detail.trigger_instances.first() {
+                        Some(instance) => synthesize_test_event(instance),
                         None => Event::new(
                             EventSource::Core,
                             "test.trigger",
@@ -297,24 +297,24 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
             tracing::warn!(error = %e, "duplicate action failed");
             Task::none()
         }
-        ActionsMsg::DeleteTrigger(trigger_id, action_id) => {
+        ActionsMsg::RemoveTriggerInstance(action_id, instance_id) => {
             let dp = Arc::clone(&rt.backend);
             Task::perform(
                 async move {
-                    dp.trigger_repo()
-                        .delete(trigger_id)
+                    dp.trigger_instance_repo()
+                        .unlink_action(action_id, instance_id)
                         .await
                         .map(|_| action_id)
                         .map_err(|e| e.to_string())
                 },
-                |r| Message::Actions(ActionsMsg::TriggerDeleted(r)),
+                |r| Message::Actions(ActionsMsg::TriggerInstanceRemoved(r)),
             )
         }
-        ActionsMsg::TriggerDeleted(Ok(action_id)) => {
+        ActionsMsg::TriggerInstanceRemoved(Ok(action_id)) => {
             Task::done(Message::Actions(ActionsMsg::ActionSelected(action_id)))
         }
-        ActionsMsg::TriggerDeleted(Err(e)) => {
-            tracing::warn!(error = %e, "delete trigger failed");
+        ActionsMsg::TriggerInstanceRemoved(Err(e)) => {
+            tracing::warn!(error = %e, "unlink trigger instance failed");
             Task::none()
         }
         ActionsMsg::OpenAddActionModal => Task::done(Message::Actions(ActionsMsg::Editor(
@@ -500,18 +500,14 @@ mod tests {
     use forge_runtime::actions::ActionsService;
     use forge_storage::DataProvider;
     use forge_storage_sqlite::SqliteBackend;
-    use forge_types::{
-        Action, ActionId, Command, CommandId, CommandPermission, Queue, QueueId, SubActionStep,
-        Trigger, TriggerId,
-    };
+    use forge_types::{Action, ActionId, Queue, QueueId, SubActionStep};
 
     fn make_service(dp: Arc<dyn DataProvider>) -> ActionsService {
         ActionsService::new(
             dp.action_repo(),
             dp.queue_repo(),
             dp.history_repo(),
-            dp.trigger_repo(),
-            dp.command_repo(),
+            dp.trigger_instance_repo(),
             dp.soundboard_clips_repo(),
         )
     }
@@ -707,17 +703,18 @@ mod tests {
 
     #[tokio::test]
     async fn chat_trigger_produces_chat_group() {
-        use forge_types::TriggerId;
         let dp = open_backend().await;
         let a = make_action(&dp, "!quote", None).await;
         dp.action_repo().save(&a).await.unwrap();
-        let t = Trigger {
-            id: TriggerId::new(),
-            action_id: a.id,
-            kind_id: "twitch.chat.command".to_owned(),
-            config: std::collections::BTreeMap::new(),
-        };
-        dp.trigger_repo().save(&t).await.unwrap();
+        let instance_id = dp
+            .trigger_instance_repo()
+            .upsert_default("twitch.chat.command", "Twitch Chat Command")
+            .await
+            .unwrap();
+        dp.trigger_instance_repo()
+            .link_action(a.id, instance_id, 0)
+            .await
+            .unwrap();
 
         let tree = group_summaries(make_service(dp).list_summaries().await.unwrap());
         assert_eq!(tree.len(), 1);
@@ -751,60 +748,48 @@ mod tests {
 
         let detail = make_service(dp).load_detail(a.id).await.unwrap();
         assert_eq!(detail.action.name, "!quote");
-        assert!(detail.triggers.is_empty());
-        assert!(detail.commands.is_empty());
+        assert!(detail.trigger_instances.is_empty());
     }
 
     #[tokio::test]
-    async fn chat_command_submit_persists_trigger_and_command() {
+    async fn linked_trigger_instance_appears_in_detail() {
         let dp = open_backend().await;
         let action = make_action(&dp, "!quote", None).await;
         dp.action_repo().save(&action).await.unwrap();
 
-        let trigger = Trigger {
-            id: TriggerId::new(),
-            action_id: action.id,
-            kind_id: "twitch.chat.command".to_owned(),
-            config: {
-                let mut m = std::collections::BTreeMap::new();
-                m.insert("cooldown_secs".to_string(), forge_types::Variant::Int(30));
-                m
-            },
-        };
-        let cmd = Command {
-            id: CommandId::new(),
-            action_id: action.id,
-            name: "!quote".to_string(),
-            cooldown_secs: 30,
-            permission: CommandPermission::Everyone,
-        };
-
-        dp.trigger_repo().save(&trigger).await.unwrap();
-        dp.command_repo().save(&cmd).await.unwrap();
+        let instance_id = dp
+            .trigger_instance_repo()
+            .upsert_default("twitch.chat.command", "Twitch Chat Command")
+            .await
+            .unwrap();
+        dp.trigger_instance_repo()
+            .link_action(action.id, instance_id, 0)
+            .await
+            .unwrap();
 
         let detail = make_service(dp).load_detail(action.id).await.unwrap();
-        assert_eq!(detail.triggers.len(), 1);
-        assert_eq!(detail.commands.len(), 1);
-        assert_eq!(detail.commands[0].name, "!quote");
+        assert_eq!(detail.trigger_instances.len(), 1);
+        assert_eq!(detail.trigger_instances[0].kind_id, "twitch.chat.command");
     }
 
     #[tokio::test]
-    async fn non_command_trigger_persists_only_trigger_row() {
+    async fn non_command_trigger_instance_appears_in_detail() {
         let dp = open_backend().await;
         let action = make_action(&dp, "sub alert", None).await;
         dp.action_repo().save(&action).await.unwrap();
 
-        let trigger = Trigger {
-            id: TriggerId::new(),
-            action_id: action.id,
-            kind_id: "twitch.support.subscriber".to_owned(),
-            config: std::collections::BTreeMap::new(),
-        };
-        dp.trigger_repo().save(&trigger).await.unwrap();
+        let instance_id = dp
+            .trigger_instance_repo()
+            .upsert_default("twitch.support.subscriber", "Twitch Subscriber")
+            .await
+            .unwrap();
+        dp.trigger_instance_repo()
+            .link_action(action.id, instance_id, 0)
+            .await
+            .unwrap();
 
         let detail = make_service(dp).load_detail(action.id).await.unwrap();
-        assert_eq!(detail.triggers.len(), 1);
-        assert!(detail.commands.is_empty());
+        assert_eq!(detail.trigger_instances.len(), 1);
     }
 
     #[test]

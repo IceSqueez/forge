@@ -610,7 +610,7 @@ fn actions_detail_panel<'a>(
     }
 
     detail_col = detail_col.push(section_header_with_add(
-        &format!("TRIGGERS \u{00b7} {}", detail.triggers.len()),
+        &format!("TRIGGERS \u{00b7} {}", detail.trigger_instances.len()),
         "Add trigger",
         p.warning,
         Message::Actions(ActionsMsg::OpenAddTriggerModal(action.id)),
@@ -618,7 +618,7 @@ fn actions_detail_panel<'a>(
     ));
     detail_col = detail_col.push(iced::widget::Space::new().height(8.0));
 
-    if detail.triggers.is_empty() {
+    if detail.trigger_instances.is_empty() {
         detail_col = detail_col.push(empty_placeholder_card(
             Icon::Bolt,
             p.warning,
@@ -626,8 +626,8 @@ fn actions_detail_panel<'a>(
             palette,
         ));
     } else {
-        for trigger in &detail.triggers {
-            let kind_str = crate::actions::trigger_label_of(&trigger.kind_id);
+        for instance in &detail.trigger_instances {
+            let kind_str = crate::actions::trigger_label_of(&instance.kind_id);
             let trigger_row = container(
                 row![
                     tabler_icon(Icon::Bolt, FONT_SM, p.brand),

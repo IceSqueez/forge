@@ -5,8 +5,7 @@ use forge_obs::ObsClient;
 use forge_platform_twitch::{ChatSendBridgeHandle, TwitchChatHandle};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
-    ActionEngineHandle, CommandParserHandle, EventBus, QueueSchedulerHandle, ScriptRegistry,
-    actions::ActionsService,
+    ActionEngineHandle, EventBus, QueueSchedulerHandle, ScriptRegistry, actions::ActionsService,
 };
 use forge_soundboard::SoundboardPlayer;
 use forge_speak_queue::SpeakQueueHandle;
@@ -23,7 +22,6 @@ pub struct RuntimeView {
     pub server_subsystem: Arc<ServerSubsystem>,
     pub action_engine: Option<ActionEngineHandle>,
     pub scheduler: Option<QueueSchedulerHandle>,
-    pub command_parser: Option<CommandParserHandle>,
     pub obs_client: Option<Arc<ObsClient>>,
     pub speak_queue: Option<Arc<SpeakQueueHandle>>,
     pub sound_player: Option<Arc<SoundboardPlayer>>,

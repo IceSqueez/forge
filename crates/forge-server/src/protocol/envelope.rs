@@ -37,7 +37,6 @@ pub enum WsRequest {
         #[serde(default)]
         args: serde_json::Value,
     },
-    GetCommands,
     GetGlobals,
     GetGlobal {
         name: String,

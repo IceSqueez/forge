@@ -10,8 +10,7 @@ use forge_events::EventPublisher;
 use forge_obs::ObsClient;
 use forge_platform_twitch::ChatConnectionState;
 use forge_runtime::{
-    ActionEngineHandle, CommandParserHandle, EventBus, NullEventLogRepo, QueueSchedulerHandle,
-    ScriptRegistry,
+    ActionEngineHandle, EventBus, NullEventLogRepo, QueueSchedulerHandle, ScriptRegistry,
 };
 use forge_storage::{CredentialsRepo, DataProvider};
 use forge_widgets::{ForgePalette, ThemeId, ToastQueue};
@@ -130,7 +129,6 @@ impl Default for UiState {
 }
 
 impl App {
-    #[allow(clippy::too_many_arguments)]
     pub fn default_with(
         initial: Screen,
         backend: Arc<dyn DataProvider>,
@@ -138,7 +136,6 @@ impl App {
         script_registry: Arc<ScriptRegistry>,
         action_engine: Option<ActionEngineHandle>,
         scheduler: Option<QueueSchedulerHandle>,
-        command_parser: Option<CommandParserHandle>,
         sound_player: Option<Arc<SoundboardPlayer>>,
     ) -> Self {
         let (theme, palette) = forge_widgets::catppuccin_mocha();
@@ -167,7 +164,6 @@ impl App {
                 server_subsystem,
                 action_engine,
                 scheduler,
-                command_parser,
                 obs_client: None,
                 speak_queue: None,
                 sound_player,
@@ -224,7 +220,6 @@ impl Default for App {
                 server_subsystem,
                 action_engine: None,
                 scheduler: None,
-                command_parser: None,
                 obs_client: None,
                 speak_queue: None,
                 sound_player: None,
@@ -606,12 +601,6 @@ mod tests {
         );
         let scheduler =
             forge_runtime::QueueScheduler::spawn(engine.clone(), Arc::clone(&bus), queues);
-        let parser = forge_runtime::CommandParser::spawn(
-            Arc::clone(&bus),
-            dp.command_repo(),
-            dp.action_repo(),
-            scheduler.clone(),
-        );
 
         let (theme, palette) = forge_widgets::catppuccin_mocha();
         let server_subsystem = Arc::new(ServerSubsystem::new(
@@ -639,7 +628,6 @@ mod tests {
                 server_subsystem,
                 action_engine: Some(engine),
                 scheduler: Some(scheduler),
-                command_parser: Some(parser),
                 obs_client: None,
                 speak_queue: None,
                 sound_player: None,
@@ -657,7 +645,6 @@ mod tests {
 
         assert!(app.rt.action_engine.is_some());
         assert!(app.rt.scheduler.is_some());
-        assert!(app.rt.command_parser.is_some());
     }
 
     #[test]
@@ -669,7 +656,6 @@ mod tests {
 
         assert!(app.rt.action_engine.is_none());
         assert!(app.rt.scheduler.is_none());
-        assert!(app.rt.command_parser.is_none());
     }
 
     #[test]
@@ -984,7 +970,6 @@ mod tests {
                 server_subsystem,
                 action_engine: None,
                 scheduler: None,
-                command_parser: None,
                 obs_client: None,
                 speak_queue: None,
                 sound_player: None,
@@ -1284,7 +1269,6 @@ mod tests {
         let mut app = App::default();
         let _ = update(&mut app, Message::Navigate(Screen::Home));
         app.ui.home.actions_count = Some(47);
-        app.ui.home.commands_count = Some(23);
         app.ui.home.triggers_fired = Some(1284);
         app.ui.home.globals_count = Some(31);
         let _ = view(&app);
@@ -1304,13 +1288,11 @@ mod tests {
         let _ = update(&mut app, Message::Navigate(Screen::Home));
         let data = HomeStatsData {
             actions_count: 5,
-            commands_count: 3,
             triggers_fired: 42,
             globals_count: 7,
         };
         let _ = update(&mut app, Message::Home(HomeMsg::StatsLoaded(Ok(data))));
         assert_eq!(app.ui.home.actions_count, Some(5));
-        assert_eq!(app.ui.home.commands_count, Some(3));
         assert_eq!(app.ui.home.triggers_fired, Some(42));
         assert_eq!(app.ui.home.globals_count, Some(7));
     }
@@ -1324,7 +1306,6 @@ mod tests {
             Message::Home(HomeMsg::StatsLoaded(Err("db error".into()))),
         );
         assert!(app.ui.home.actions_count.is_none());
-        assert!(app.ui.home.commands_count.is_none());
         assert!(app.ui.home.triggers_fired.is_none());
         assert!(app.ui.home.globals_count.is_none());
     }
@@ -1385,7 +1366,6 @@ mod tests {
         let mut app = App::default();
         let _ = update(&mut app, Message::Navigate(Screen::Home));
         app.ui.home.actions_count = Some(12);
-        app.ui.home.commands_count = Some(5);
         app.ui.home.triggers_fired = Some(99);
         app.ui.home.globals_count = Some(3);
         let _ = view(&app);

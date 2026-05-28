@@ -16,7 +16,7 @@ async fn all_core_tables_exist_after_migration() {
         "SELECT COUNT(*) FROM sqlite_master \
          WHERE type = 'table' \
          AND name IN ('globals', 'user_globals', 'settings', 'action_history', 'credentials',
-                      'queues', 'actions', 'triggers', 'commands', 'scripts', 'event_log',
+                      'queues', 'actions', 'triggers', 'scripts', 'event_log',
                       'soundboard_clips', 'voice_aliases', 'ignore_profile',
                       'replacement_rules', 'viewers', 'action_executions',
                       'trigger_instances', 'action_trigger_instances')",
@@ -25,7 +25,7 @@ async fn all_core_tables_exist_after_migration() {
     .await
     .expect("query sqlite_master");
 
-    assert_eq!(count, 19, "expected 19 tables after all migrations");
+    assert_eq!(count, 18, "expected 18 tables after all migrations");
 }
 
 #[tokio::test]
@@ -35,8 +35,8 @@ async fn schema_version_matches_migration_count() {
         .expect("open");
     let version = backend.schema_version().await.expect("schema_version");
     assert_eq!(
-        version, 12,
-        "schema_version must be 12 after migrations 0001 through 0012"
+        version, 13,
+        "schema_version must be 13 after migrations 0001 through 0013"
     );
 }
 

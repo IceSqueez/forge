@@ -205,7 +205,6 @@ mod tests {
         bus_adapter.spawn();
         let dp: Arc<dyn DataProvider> = test_dp();
         let actions = dp.action_repo();
-        let commands = dp.command_repo();
         let globals: Arc<dyn GlobalsRepo> = Arc::clone(&dp) as Arc<dyn GlobalsRepo>;
         let user_globals: Arc<dyn UserGlobalsRepo> = Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>;
         let _registry = Arc::new(ScriptRegistry::new());
@@ -221,7 +220,6 @@ mod tests {
             bus,
             bus_adapter,
             actions,
-            commands,
             globals,
             user_globals,
             credentials: creds_dyn,

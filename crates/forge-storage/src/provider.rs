@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use crate::{
-    ActionRepo, CommandRepo, CredentialsRepo, EventLogRepo, GlobalsRepo, HistoryRepo, QueueRepo,
-    ScriptRepo, SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TriggerRepo,
+    ActionRepo, CredentialsRepo, EventLogRepo, GlobalsRepo, HistoryRepo, QueueRepo, ScriptRepo,
+    SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TriggerRepo,
     UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 
@@ -15,7 +15,6 @@ pub trait DataProvider:
     fn action_repo(&self) -> Arc<dyn ActionRepo>;
     fn trigger_repo(&self) -> Arc<dyn TriggerRepo>;
     fn trigger_instance_repo(&self) -> Arc<dyn TriggerInstanceRepo>;
-    fn command_repo(&self) -> Arc<dyn CommandRepo>;
     fn queue_repo(&self) -> Arc<dyn QueueRepo>;
     fn history_repo(&self) -> Arc<dyn HistoryRepo>;
     fn event_log_repo(&self) -> Arc<dyn EventLogRepo>;

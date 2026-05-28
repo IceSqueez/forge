@@ -5,8 +5,8 @@ use std::sync::Arc;
 use forge_platform_core::paths;
 use forge_runtime::{ActionEngineHandle, EventBus};
 use forge_storage::{
-    ActionRepo, CommandRepo, CredentialsRepo, GlobalsRepo, SettingsRepo, StorageError,
-    UserGlobalsRepo, reserved_keys,
+    ActionRepo, CredentialsRepo, GlobalsRepo, SettingsRepo, StorageError, UserGlobalsRepo,
+    reserved_keys,
 };
 
 const VALID_BIND_ADDRESSES: &[&str] = &["127.0.0.1", "0.0.0.0", "::1", "::"];
@@ -21,7 +21,6 @@ pub struct ServerConfig {
     pub credentials: Arc<dyn CredentialsRepo>,
     pub event_bus: Arc<EventBus>,
     pub actions: Arc<dyn ActionRepo>,
-    pub commands: Arc<dyn CommandRepo>,
     pub globals: Arc<dyn GlobalsRepo>,
     pub user_globals: Arc<dyn UserGlobalsRepo>,
     pub action_engine: Arc<ActionEngineHandle>,
@@ -32,7 +31,6 @@ impl ServerConfig {
         credentials: Arc<dyn CredentialsRepo>,
         event_bus: Arc<EventBus>,
         actions: Arc<dyn ActionRepo>,
-        commands: Arc<dyn CommandRepo>,
         globals: Arc<dyn GlobalsRepo>,
         user_globals: Arc<dyn UserGlobalsRepo>,
         action_engine: Arc<ActionEngineHandle>,
@@ -47,7 +45,6 @@ impl ServerConfig {
             credentials,
             event_bus,
             actions,
-            commands,
             globals,
             user_globals,
             action_engine,

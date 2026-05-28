@@ -788,7 +788,6 @@ mod tests {
             server_subsystem,
             action_engine: None,
             scheduler: None,
-            command_parser: None,
             obs_client: None,
             speak_queue: None,
             sound_player: None,

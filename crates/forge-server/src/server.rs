@@ -10,7 +10,7 @@ use axum::{Json, Router, middleware};
 use tokio::net::TcpListener;
 
 use forge_runtime::{ActionEngineHandle, EventBus};
-use forge_storage::{ActionRepo, CommandRepo, CredentialsRepo, GlobalsRepo, UserGlobalsRepo};
+use forge_storage::{ActionRepo, CredentialsRepo, GlobalsRepo, UserGlobalsRepo};
 
 use crate::auth::AuthState;
 use crate::bus_adapter::BusAdapter;
@@ -24,7 +24,6 @@ pub struct AppState {
     pub bus: Arc<EventBus>,
     pub bus_adapter: Arc<BusAdapter>,
     pub actions: Arc<dyn ActionRepo>,
-    pub commands: Arc<dyn CommandRepo>,
     pub globals: Arc<dyn GlobalsRepo>,
     pub user_globals: Arc<dyn UserGlobalsRepo>,
     pub credentials: Arc<dyn CredentialsRepo>,
@@ -59,7 +58,6 @@ impl Server {
             bus,
             bus_adapter,
             actions: self.config.actions,
-            commands: self.config.commands,
             globals: self.config.globals,
             user_globals: self.config.user_globals,
             credentials,
@@ -296,7 +294,6 @@ mod tests {
         bus_adapter.spawn();
         let dp: Arc<dyn DataProvider> = test_dp();
         let actions = dp.action_repo();
-        let commands = dp.command_repo();
         let globals: Arc<dyn GlobalsRepo> = Arc::clone(&dp) as Arc<dyn GlobalsRepo>;
         let user_globals: Arc<dyn UserGlobalsRepo> = Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>;
         let _registry = Arc::new(ScriptRegistry::new());
@@ -311,7 +308,6 @@ mod tests {
             bus,
             bus_adapter,
             actions,
-            commands,
             globals,
             user_globals,
             credentials: creds,

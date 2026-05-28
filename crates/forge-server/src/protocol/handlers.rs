@@ -5,9 +5,7 @@ use forge_types::{ActionId, EventId};
 
 use super::context::DispatchContext;
 use super::envelope::WsResponse;
-use super::helpers::{
-    build_arg_stack, permission_str, valid_code_event_name, variant_to_wire_value,
-};
+use super::helpers::{build_arg_stack, valid_code_event_name, variant_to_wire_value};
 use super::introspect::{build_connected_accounts, build_connected_clients};
 
 pub(crate) fn mime_for_extension(ext: &str) -> Option<&'static str> {
@@ -40,32 +38,6 @@ pub(crate) async fn handle_get_info(ctx: &DispatchContext) -> WsResponse {
             "peak_outbound_bytes_per_second": bw.peak(),
         },
     }))
-}
-
-pub(crate) async fn handle_get_commands(ctx: &DispatchContext) -> WsResponse {
-    let commands = match ctx.commands.list().await {
-        Ok(list) => list,
-        Err(e) => {
-            return WsResponse::Error {
-                code: Some("RUNTIME_ERROR".to_owned()),
-                message: e.to_string(),
-            };
-        }
-    };
-    let wire_commands: Vec<serde_json::Value> = commands
-        .iter()
-        .map(|c| {
-            serde_json::json!({
-                "id": c.id.to_string(),
-                "command": c.name,
-                "action_id": c.action_id.to_string(),
-                "cooldown_seconds": c.cooldown_secs,
-                "enabled": true,
-                "permission_level": permission_str(&c.permission),
-            })
-        })
-        .collect();
-    WsResponse::Ok(serde_json::json!({ "commands": wire_commands }))
 }
 
 pub(crate) async fn handle_get_globals(ctx: &DispatchContext) -> WsResponse {

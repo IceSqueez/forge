@@ -14,10 +14,10 @@ pub use envelope::{
     serialize_response_frame,
 };
 pub(crate) use handlers::{
-    handle_do_action, handle_get_actions, handle_get_active_viewers, handle_get_commands,
-    handle_get_events, handle_get_global, handle_get_globals, handle_get_info,
-    handle_get_overlay_files, handle_get_user_globals, handle_replay_event, handle_set_global,
-    handle_trigger_code_event, mime_for_extension,
+    handle_do_action, handle_get_actions, handle_get_active_viewers, handle_get_events,
+    handle_get_global, handle_get_globals, handle_get_info, handle_get_overlay_files,
+    handle_get_user_globals, handle_replay_event, handle_set_global, handle_trigger_code_event,
+    mime_for_extension,
 };
 
 use context::{handle_authenticate, is_authenticated, unauthenticated};
@@ -78,13 +78,6 @@ async fn route(req: WsRequest, ctx: &DispatchContext) -> WsResponse {
                 return unauthenticated();
             }
             handle_do_action(action_id, args, ctx).await
-        }
-
-        WsRequest::GetCommands => {
-            if ctx.auth_required_for_reads && !is_authenticated(ctx) {
-                return unauthenticated();
-            }
-            handle_get_commands(ctx).await
         }
 
         WsRequest::GetGlobals => {
@@ -209,7 +202,6 @@ mod tests {
             .returning(|_| Ok(vec![]));
         let dp: Arc<dyn DataProvider> = Arc::new(tdp);
         let actions = dp.action_repo();
-        let commands = dp.command_repo();
         let globals: Arc<dyn GlobalsRepo> = Arc::clone(&dp) as Arc<dyn GlobalsRepo>;
         let user_globals: Arc<dyn UserGlobalsRepo> = Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>;
         let auth_state = AuthState::for_test(auth_required_for_reads, "test-token");
@@ -231,7 +223,6 @@ mod tests {
             bus,
             bus_adapter,
             actions,
-            commands,
             globals,
             user_globals,
             auth_state,
@@ -257,14 +248,12 @@ mod tests {
         client.authenticated.store(authenticated, Ordering::Relaxed);
         let action_engine = make_engine(&bus, &dp);
         let actions = dp.action_repo();
-        let commands = dp.command_repo();
         let globals: Arc<dyn GlobalsRepo> = Arc::clone(&dp) as Arc<dyn GlobalsRepo>;
         let user_globals: Arc<dyn UserGlobalsRepo> = Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>;
         DispatchContext {
             bus,
             bus_adapter,
             actions,
-            commands,
             globals,
             user_globals,
             auth_state,
@@ -285,7 +274,6 @@ mod tests {
         let bus_adapter = BusAdapter::new(Arc::clone(&bus));
         let dp: Arc<dyn DataProvider> = test_dp();
         let actions = dp.action_repo();
-        let commands = dp.command_repo();
         let globals: Arc<dyn GlobalsRepo> = Arc::clone(&dp) as Arc<dyn GlobalsRepo>;
         let user_globals: Arc<dyn UserGlobalsRepo> = Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>;
         let auth_state = AuthState::for_test(auth_required_for_reads, "test-token");
@@ -309,7 +297,6 @@ mod tests {
             bus,
             bus_adapter,
             actions,
-            commands,
             globals,
             user_globals,
             auth_state,
@@ -874,16 +861,6 @@ mod tests {
         assert!(clients[0]["subscriptions"].is_array());
     }
 
-    fn sample_command() -> forge_types::Command {
-        forge_types::Command {
-            id: forge_types::CommandId::new(),
-            action_id: ActionId::new(),
-            name: "!quote".to_string(),
-            cooldown_secs: 30,
-            permission: forge_types::CommandPermission::Everyone,
-        }
-    }
-
     fn sample_global_entry() -> GlobalEntry {
         GlobalEntry {
             name: "counter".to_string(),
@@ -894,35 +871,6 @@ mod tests {
             created_at: OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap(),
             last_modified: OffsetDateTime::from_unix_timestamp(1_700_001_000).unwrap(),
         }
-    }
-
-    #[tokio::test]
-    async fn get_commands_returns_list_with_sample_command() {
-        let cmd = sample_command();
-        let cmd_id = cmd.id.to_string();
-        let action_id = cmd.action_id.to_string();
-        let commands = vec![cmd];
-        let mut tdp = TestDataProvider::new();
-        tdp.command()
-            .expect_list()
-            .returning(move || Ok(commands.clone()));
-        let dp: Arc<dyn DataProvider> = Arc::new(tdp);
-        let ctx = make_ctx_with_dp(false, dp);
-        let req = WsEnvelope {
-            id: Some("7".to_owned()),
-            inner: WsRequest::GetCommands,
-        };
-        let resp = dispatch(req, &ctx).await;
-        let json = serialize_response_frame(&resp);
-        assert_eq!(json["status"], "ok");
-        let cmds = json["commands"].as_array().unwrap();
-        assert_eq!(cmds.len(), 1);
-        assert_eq!(cmds[0]["id"].as_str().unwrap(), cmd_id);
-        assert_eq!(cmds[0]["command"], "!quote");
-        assert_eq!(cmds[0]["action_id"].as_str().unwrap(), action_id);
-        assert_eq!(cmds[0]["cooldown_seconds"], 30u64);
-        assert_eq!(cmds[0]["enabled"], true);
-        assert_eq!(cmds[0]["permission_level"], "everyone");
     }
 
     #[tokio::test]

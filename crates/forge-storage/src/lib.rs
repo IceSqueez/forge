@@ -1,7 +1,6 @@
 #![doc = "DataProvider trait + per-domain repo traits. Backend-agnostic storage contract."]
 
 pub mod action;
-pub mod command;
 pub mod credentials;
 pub mod error;
 pub mod event_log;
@@ -20,7 +19,6 @@ pub mod viewer;
 pub mod voice_aliases;
 
 pub use action::{ActionRepo, ActionTelemetry};
-pub use command::CommandRepo;
 pub use credentials::{CredentialId, CredentialsRepo};
 pub use error::StorageError;
 pub use event_log::{EventLogRepo, event_log_retention_days, set_event_log_retention_days};

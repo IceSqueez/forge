@@ -4,7 +4,6 @@ pub mod audio_runners;
 mod bridge;
 mod buf;
 pub mod bus;
-pub mod command_parser;
 pub mod dashboard;
 pub mod queue_scheduler;
 pub mod script_registry;
@@ -18,7 +17,6 @@ pub use action_engine::{ActionEngineHandle, DispatchError, ExecutionRequest, spa
 pub use audio_runners::register_audio_sub_actions;
 pub use bridge::bus_subscription;
 pub use bus::{BusError, BusStats, EventBus, EventSubscription, NullEventLogRepo};
-pub use command_parser::{CommandParser, CommandParserHandle};
 pub use queue_scheduler::{QueueScheduler, QueueSchedulerHandle, SchedulerError, SchedulerRequest};
 pub use script_registry::{CompiledScript, ScriptRegistry, ScriptRegistryError};
 pub use sound_player::{SoundPlayer, SoundPlayerError};

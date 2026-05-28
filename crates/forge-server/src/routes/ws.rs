@@ -61,7 +61,6 @@ async fn handle_socket(
         bus: Arc::clone(&state.bus),
         bus_adapter: Arc::clone(&state.bus_adapter),
         actions: Arc::clone(&state.actions),
-        commands: Arc::clone(&state.commands),
         globals: Arc::clone(&state.globals),
         user_globals: Arc::clone(&state.user_globals),
         auth_state: Arc::clone(&state.auth),

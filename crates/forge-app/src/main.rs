@@ -15,10 +15,9 @@ use forge_platform_core::paths;
 use forge_platform_twitch::{ChatSendBridge, ChatSendBridgeHandle, register_twitch_triggers};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
-    ActionEngineHandle, CommandParser, CommandParserHandle, EventBus, QueueScheduler,
-    QueueSchedulerHandle, ScriptRegistry, TriggerEvaluatorHandle, register_audio_sub_actions,
-    register_core_sub_actions, register_core_triggers, spawn_action_engine,
-    spawn_trigger_evaluator,
+    ActionEngineHandle, EventBus, QueueScheduler, QueueSchedulerHandle, ScriptRegistry,
+    TriggerEvaluatorHandle, register_audio_sub_actions, register_core_sub_actions,
+    register_core_triggers, spawn_action_engine, spawn_trigger_evaluator,
 };
 use forge_soundboard::{BusAudioEventSink, CpalSinkFactory, SoundboardPlayer};
 use forge_speak_queue::{QueueConfig, QueueDeps, SpeakQueueHandle};
@@ -107,7 +106,6 @@ struct RuntimeHandles {
     registry: Arc<ScriptRegistry>,
     engine: ActionEngineHandle,
     scheduler: QueueSchedulerHandle,
-    parser: CommandParserHandle,
     chat_send_bridge: ChatSendBridgeHandle,
     speak_queue: Arc<SpeakQueueHandle>,
     sound_player: Arc<SoundboardPlayer>,
@@ -293,12 +291,6 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         dp.trigger_instance_repo(),
         scheduler.clone(),
     );
-    let parser = CommandParser::spawn(
-        Arc::clone(&bus),
-        dp.command_repo(),
-        dp.action_repo(),
-        scheduler.clone(),
-    );
     let chat_send_bridge = ChatSendBridge::spawn(
         Arc::clone(&bus),
         Arc::clone(&dp) as Arc<dyn CredentialsRepo>,
@@ -308,7 +300,6 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         registry,
         engine,
         scheduler,
-        parser,
         chat_send_bridge,
         speak_queue,
         sound_player,
@@ -342,7 +333,6 @@ fn main() -> iced::Result {
         script_registry,
         action_engine,
         scheduler,
-        command_parser,
         chat_send_bridge,
         speak_queue,
         sound_player,
@@ -352,7 +342,6 @@ fn main() -> iced::Result {
     ) = if storage_offline {
         (
             Arc::new(ScriptRegistry::new()),
-            None,
             None,
             None,
             None,
@@ -368,7 +357,6 @@ fn main() -> iced::Result {
                 h.registry,
                 Some(h.engine),
                 Some(h.scheduler),
-                Some(h.parser),
                 Some(h.chat_send_bridge),
                 Some(h.speak_queue),
                 Some(h.sound_player),
@@ -378,7 +366,6 @@ fn main() -> iced::Result {
             ),
             None => (
                 Arc::new(ScriptRegistry::new()),
-                None,
                 None,
                 None,
                 None,
@@ -402,7 +389,6 @@ fn main() -> iced::Result {
             Arc::clone(&script_registry),
             action_engine.clone(),
             scheduler.clone(),
-            command_parser.clone(),
             sound_player.clone(),
         );
         app.rt.bus = Arc::clone(&bus_boot);

@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use forge_runtime::{ActionEngineHandle, EventBus};
-use forge_storage::{ActionRepo, CommandRepo, CredentialsRepo, GlobalsRepo, UserGlobalsRepo};
+use forge_storage::{ActionRepo, CredentialsRepo, GlobalsRepo, UserGlobalsRepo};
 
 use crate::auth::AuthState;
 use crate::bus_adapter::BusAdapter;
@@ -15,7 +15,6 @@ pub struct DispatchContext {
     pub bus: Arc<EventBus>,
     pub bus_adapter: Arc<BusAdapter>,
     pub actions: Arc<dyn ActionRepo>,
-    pub commands: Arc<dyn CommandRepo>,
     pub globals: Arc<dyn GlobalsRepo>,
     pub user_globals: Arc<dyn UserGlobalsRepo>,
     pub auth_state: Arc<AuthState>,

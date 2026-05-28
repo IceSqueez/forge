@@ -40,7 +40,6 @@ define_id!(EventId);
 define_id!(ActionId);
 define_id!(TriggerId);
 define_id!(TriggerInstanceId);
-define_id!(CommandId);
 define_id!(QueueId);
 define_id!(ScriptId);
 define_id!(GlobalId);

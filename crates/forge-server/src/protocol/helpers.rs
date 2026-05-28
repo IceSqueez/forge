@@ -1,4 +1,4 @@
-use forge_types::{ArgStack, CommandPermission, Variant};
+use forge_types::{ArgStack, Variant};
 
 use crate::bus_adapter::EventFilter;
 
@@ -34,16 +34,6 @@ pub(crate) fn variant_to_wire_value(v: &Variant) -> serde_json::Value {
                 .map(|(k, val)| (k.clone(), variant_to_wire_value(val)))
                 .collect(),
         ),
-    }
-}
-
-pub(crate) fn permission_str(p: &CommandPermission) -> &'static str {
-    match p {
-        CommandPermission::Everyone => "everyone",
-        CommandPermission::Subscriber => "subscriber",
-        CommandPermission::Vip => "vip",
-        CommandPermission::Moderator => "moderator",
-        CommandPermission::Broadcaster => "broadcaster",
     }
 }
 

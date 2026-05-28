@@ -16,7 +16,6 @@ use crate::screen::Screen;
 #[derive(Default)]
 pub struct HomeStats {
     pub actions_count: Option<usize>,
-    pub commands_count: Option<usize>,
     pub triggers_fired: Option<u64>,
     pub globals_count: Option<usize>,
 }
@@ -38,23 +37,19 @@ pub fn update(state: &mut HomeStats, rt: &RuntimeView, msg: HomeMsg) -> Task<Mes
     match msg {
         HomeMsg::LoadStats => {
             let actions = rt.backend.action_repo();
-            let commands = rt.backend.command_repo();
             let globals: Arc<dyn GlobalsRepo> = Arc::clone(&rt.backend) as Arc<dyn GlobalsRepo>;
             let history = rt.backend.history_repo();
             Task::perform(
                 async move {
-                    forge_runtime::dashboard::compute_stats(
-                        &*actions, &*commands, &*globals, &*history,
-                    )
-                    .await
-                    .map_err(|e| e.to_string())
+                    forge_runtime::dashboard::compute_stats(&*actions, &*globals, &*history)
+                        .await
+                        .map_err(|e| e.to_string())
                 },
                 |r| Message::Home(HomeMsg::StatsLoaded(r)),
             )
         }
         HomeMsg::StatsLoaded(Ok(data)) => {
             state.actions_count = Some(data.actions_count);
-            state.commands_count = Some(data.commands_count);
             state.triggers_fired = Some(data.triggers_fired);
             state.globals_count = Some(data.globals_count);
             Task::none()
@@ -856,11 +851,6 @@ fn home_glance_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, 
         .home
         .actions_count
         .map_or_else(|| "\u{2014}".to_string(), |n| n.to_string());
-    let commands_val = app
-        .ui
-        .home
-        .commands_count
-        .map_or_else(|| "\u{2014}".to_string(), |n| n.to_string());
     let fired_val = app
         .ui
         .home
@@ -877,7 +867,6 @@ fn home_glance_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, 
     let content = column![
         header,
         home_glance_row("Actions", actions_val, palette.brand, false, palette),
-        home_glance_row("Commands", commands_val, palette.info, false, palette),
         home_glance_row(
             "Fired this session",
             fired_val,

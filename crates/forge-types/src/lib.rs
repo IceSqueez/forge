@@ -1,5 +1,4 @@
 pub mod action;
-pub mod command;
 pub mod execution;
 pub mod ids;
 pub mod queue;
@@ -12,14 +11,12 @@ pub mod trigger_instance;
 pub mod variant;
 
 pub use action::{Action, ExecutionMode};
-pub use command::{Command, CommandPermission};
 pub use execution::{
     ArgStack, ExecutionContext, ExecutionMetadata, ExecutionOutcome, SubActionOutcome,
     SubActionTelemetry,
 };
 pub use ids::{
-    ActionId, ClipId, CommandId, EventId, GlobalId, QueueId, ScriptId, TriggerId,
-    TriggerInstanceId, UserId,
+    ActionId, ClipId, EventId, GlobalId, QueueId, ScriptId, TriggerId, TriggerInstanceId, UserId,
 };
 pub use queue::Queue;
 pub use script::{ScriptContract, ScriptInput};

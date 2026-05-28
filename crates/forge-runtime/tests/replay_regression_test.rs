@@ -17,12 +17,12 @@ use std::time::Duration;
 use forge_events::{Event, EventSource, EventsError};
 use forge_registry::SubActionRegistry;
 use forge_runtime::{
-    CommandParser, EventBus, EventSubscription, NullEventLogRepo, QueueScheduler,
+    EventBus, EventSubscription, NullEventLogRepo, QueueScheduler, SchedulerRequest,
     spawn_action_engine,
 };
 use forge_storage::DataProvider;
 use forge_storage_sqlite::SqliteBackend;
-use forge_types::{Action, ActionId, Command, CommandId, CommandPermission, SubActionStep};
+use forge_types::{Action, ActionId, ArgStack, SubActionStep};
 
 const TEST_KEY: [u8; 32] = [0xab; 32];
 const PIPELINE_TIMEOUT_MS: u64 = 2_000;
@@ -91,12 +91,13 @@ async fn spawn_pipeline() -> PipelineFixture {
         .unwrap()
         .expect("Default queue must be seeded by migration 0002_action_engine.sql");
 
+    let queue_id = queue.id;
     let action_id = ActionId::new();
     let action = Action {
         id: action_id,
         name: "replay-test action".into(),
         group: None,
-        queue_id: queue.id,
+        queue_id,
         enabled: true,
         concurrent: false,
         bypass_pause: false,
@@ -118,15 +119,6 @@ async fn spawn_pipeline() -> PipelineFixture {
     };
     dp.action_repo().save(&action).await.unwrap();
 
-    let command = Command {
-        id: CommandId::new(),
-        action_id,
-        name: "!replaytest".into(),
-        cooldown_secs: 0,
-        permission: CommandPermission::Everyone,
-    };
-    dp.command_repo().save(&command).await.unwrap();
-
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let engine = spawn_action_engine(
         Arc::clone(&bus),
@@ -135,24 +127,35 @@ async fn spawn_pipeline() -> PipelineFixture {
         Arc::new(SubActionRegistry::new()),
     );
     let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
-    let _parser = CommandParser::spawn(
-        Arc::clone(&bus),
-        dp.command_repo(),
-        dp.action_repo(),
-        scheduler,
-    );
+
+    let mut listener_sub = bus.subscribe();
+    let sched_clone = scheduler.clone();
+    tokio::spawn(async move {
+        while let Ok(event) = listener_sub.recv().await {
+            if event.source == EventSource::Twitch && event.kind == "chat.message" {
+                let req = SchedulerRequest {
+                    queue_id,
+                    action_id,
+                    trigger_event_id: event.id,
+                    initial_args: ArgStack::new(),
+                    bypass_pause: false,
+                };
+                let _ = sched_clone.dispatch(req).await;
+            }
+        }
+    });
 
     tokio::time::sleep(Duration::from_millis(10)).await;
 
     PipelineFixture { bus }
 }
 
-fn make_chat_event(command: &str) -> Event {
+fn make_chat_event(msg: &str) -> Event {
     Event::new(
         EventSource::Twitch,
         "chat.message",
         serde_json::json!({
-            "message": command,
+            "message": msg,
             "user_login": "tester_ua",
         }),
     )
@@ -167,7 +170,7 @@ async fn replay_sets_flag_and_produces_fresh_downstream_ids() {
     let bus = &fixture.bus;
     let mut sub = bus.subscribe();
 
-    let original_chat = make_chat_event("!replaytest arg1");
+    let original_chat = make_chat_event("trigger arg1");
     let original_chat_id = original_chat.id;
     bus.publish(original_chat);
 
@@ -221,17 +224,16 @@ async fn replay_sets_flag_and_produces_fresh_downstream_ids() {
 
 /// The causation chain of downstream replay events is coherent and transitively
 /// rooted at the replayed root event. The full chain must be:
-///   replayed_chat → command.matched → action.start → {subaction.run, action.done}
+///   replayed_chat → action.start → {subaction.run, action.done}
 ///
-/// The command.matched event must be caused_by the replayed root (not the original
-/// chat event), anchoring the entire chain to the replay.
+/// action.start must be caused_by the replayed root, anchoring the chain.
 #[tokio::test]
 async fn replay_causation_chain_is_rooted_at_replayed_event() {
     let fixture = spawn_pipeline().await;
     let bus = &fixture.bus;
     let mut sub = bus.subscribe();
 
-    let original_chat = make_chat_event("!replaytest chain");
+    let original_chat = make_chat_event("trigger chain");
     let original_chat_id = original_chat.id;
     bus.publish(original_chat);
 
@@ -253,24 +255,6 @@ async fn replay_causation_chain_is_rooted_at_replayed_event() {
         "replay run must reach action.done"
     );
 
-    // The command.matched event anchors the chain to the replayed root.
-    let replay_cmd_matched = replay_run
-        .iter()
-        .find(|e| e.kind == "command.matched")
-        .expect("command.matched must appear in replay run");
-
-    assert_eq!(
-        replay_cmd_matched.caused_by,
-        Some(replayed_root_id),
-        "command.matched must be caused_by the replayed root event — this anchors the whole chain"
-    );
-    assert_ne!(
-        replay_cmd_matched.caused_by,
-        Some(original_chat_id),
-        "command.matched must not link back to the original (non-replay) chat event id"
-    );
-
-    // action.start is triggered by the scheduler using cmd_event_id as trigger.
     let replay_action_start = replay_run
         .iter()
         .find(|e| e.kind == "action.start")
@@ -278,8 +262,13 @@ async fn replay_causation_chain_is_rooted_at_replayed_event() {
 
     assert_eq!(
         replay_action_start.caused_by,
-        Some(replay_cmd_matched.id),
-        "action.start must be caused_by the replay run's command.matched"
+        Some(replayed_root_id),
+        "action.start must be caused_by the replayed root event — this anchors the whole chain"
+    );
+    assert_ne!(
+        replay_action_start.caused_by,
+        Some(original_chat_id),
+        "action.start must not link back to the original (non-replay) chat event id"
     );
 
     let replay_subaction = replay_run
@@ -314,7 +303,7 @@ async fn replay_of_replay_still_has_replay_flag() {
     let bus = &fixture.bus;
     let mut sub = bus.subscribe();
 
-    let original_chat = make_chat_event("!replaytest nested");
+    let original_chat = make_chat_event("trigger nested");
     let original_chat_id = original_chat.id;
     bus.publish(original_chat);
 

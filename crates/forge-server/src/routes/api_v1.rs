@@ -12,7 +12,7 @@ use serde::Deserialize;
 use crate::bus_adapter::ClientId;
 use crate::protocol::{
     DispatchContext, WsResponse, handle_do_action, handle_get_actions, handle_get_active_viewers,
-    handle_get_commands, handle_get_events, handle_get_global, handle_get_globals, handle_get_info,
+    handle_get_events, handle_get_global, handle_get_globals, handle_get_info,
     handle_get_overlay_files, handle_get_user_globals, handle_replay_event, handle_set_global,
     handle_trigger_code_event,
 };
@@ -33,7 +33,6 @@ fn ephemeral_ctx(state: &AppState) -> DispatchContext {
         bus: Arc::clone(&state.bus),
         bus_adapter: Arc::clone(&state.bus_adapter),
         actions: Arc::clone(&state.actions),
-        commands: Arc::clone(&state.commands),
         globals: Arc::clone(&state.globals),
         user_globals: Arc::clone(&state.user_globals),
         auth_state: Arc::clone(&state.auth),
@@ -101,11 +100,6 @@ async fn do_action_wildcard(
     let ctx = ephemeral_ctx(&state);
     let args = body.map(|b| b.0.args).unwrap_or(serde_json::Value::Null);
     ws_response_to_http(handle_do_action(id, args, &ctx).await)
-}
-
-async fn get_commands(State(state): State<AppState>) -> Response {
-    let ctx = ephemeral_ctx(&state);
-    ws_response_to_http(handle_get_commands(&ctx).await)
 }
 
 async fn get_globals(State(state): State<AppState>) -> Response {
@@ -212,7 +206,6 @@ pub fn router() -> Router<AppState> {
         .route("/info", get(get_info))
         .route("/actions", get(get_actions))
         .route("/actions/{*id_do}", post(do_action_wildcard))
-        .route("/commands", get(get_commands))
         .route("/globals", get(get_globals))
         .route("/globals/{name}", get(get_global).post(set_global))
         .route("/user-globals", get(get_user_globals))
@@ -325,7 +318,6 @@ mod tests {
             Arc::new(SubActionRegistry::new()),
         ));
         let actions = dp.action_repo();
-        let commands = dp.command_repo();
         let globals: Arc<dyn GlobalsRepo> = Arc::clone(&dp) as Arc<dyn GlobalsRepo>;
         let user_globals: Arc<dyn UserGlobalsRepo> = Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>;
         let state = AppState {
@@ -333,7 +325,6 @@ mod tests {
             bus,
             bus_adapter,
             actions,
-            commands,
             globals,
             user_globals,
             credentials: creds_dyn,

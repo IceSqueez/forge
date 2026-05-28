@@ -128,14 +128,12 @@ pub async fn load_server_settings_and_start(
     let bind_addr = std::net::SocketAddr::new(ip, snap.port);
 
     let actions = backend.action_repo();
-    let commands = backend.command_repo();
     let globals: Arc<dyn GlobalsRepo> = Arc::clone(&backend) as Arc<dyn GlobalsRepo>;
     let user_globals: Arc<dyn UserGlobalsRepo> = Arc::clone(&backend) as Arc<dyn UserGlobalsRepo>;
     let mut config = ServerConfig::new(
         Arc::clone(&subsystem.credentials),
         bus,
         actions,
-        commands,
         globals,
         user_globals,
         action_engine,

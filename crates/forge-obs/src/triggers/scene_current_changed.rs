@@ -93,25 +93,10 @@ impl TriggerKindDescriptor for SceneCurrentChangedDescriptor {
 mod tests {
     use super::*;
     use forge_events::EventSource;
-    use forge_types::{ActionId, Trigger, TriggerId};
     use serde_json::json;
 
-    fn any_trigger() -> Trigger {
-        Trigger {
-            id: TriggerId::new(),
-            action_id: ActionId::new(),
-            kind_id: "obs.scenes.current_changed".to_owned(),
-            config: BTreeMap::new(),
-        }
-    }
-
-    fn named_trigger(scene: &str) -> Trigger {
-        Trigger {
-            id: TriggerId::new(),
-            action_id: ActionId::new(),
-            kind_id: "obs.scenes.current_changed".to_owned(),
-            config: BTreeMap::from([("scene".to_owned(), Variant::String(scene.to_owned()))]),
-        }
+    fn named_config(scene: &str) -> BTreeMap<String, Variant> {
+        BTreeMap::from([("scene".to_owned(), Variant::String(scene.to_owned()))])
     }
 
     fn scene_changed_event(from: &str, to: &str) -> Event {
@@ -133,41 +118,36 @@ mod tests {
     #[test]
     fn matches_any_scene_when_config_empty() {
         let d = SceneCurrentChangedDescriptor;
-        let trigger = any_trigger();
         let event = scene_changed_event("Menu", "Gameplay");
-        assert!(d.matches_trigger(&trigger.config, &event));
+        assert!(d.matches_trigger(&BTreeMap::new(), &event));
     }
 
     #[test]
     fn matches_exact_scene_name() {
         let d = SceneCurrentChangedDescriptor;
-        let trigger = named_trigger("Gameplay");
         let event = scene_changed_event("Menu", "Gameplay");
-        assert!(d.matches_trigger(&trigger.config, &event));
+        assert!(d.matches_trigger(&named_config("Gameplay"), &event));
     }
 
     #[test]
     fn does_not_match_different_scene_name() {
         let d = SceneCurrentChangedDescriptor;
-        let trigger = named_trigger("BRB");
         let event = scene_changed_event("Menu", "Gameplay");
-        assert!(!d.matches_trigger(&trigger.config, &event));
+        assert!(!d.matches_trigger(&named_config("BRB"), &event));
     }
 
     #[test]
     fn empty_string_scene_config_matches_any() {
         let d = SceneCurrentChangedDescriptor;
-        let trigger = named_trigger("");
         let event = scene_changed_event("Menu", "Gameplay");
-        assert!(d.matches_trigger(&trigger.config, &event));
+        assert!(d.matches_trigger(&named_config(""), &event));
     }
 
     #[test]
     fn does_not_match_non_scene_changed_event() {
         let d = SceneCurrentChangedDescriptor;
-        let trigger = any_trigger();
         let event = Event::new(EventSource::Obs, "scene.created", json!({}));
-        assert!(!d.matches_trigger(&trigger.config, &event));
+        assert!(!d.matches_trigger(&BTreeMap::new(), &event));
     }
 
     #[test]

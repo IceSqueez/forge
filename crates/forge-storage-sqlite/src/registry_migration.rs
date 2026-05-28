@@ -5,38 +5,7 @@ use forge_types::{SubActionStep, Variant};
 use crate::error::SqliteStorageError;
 
 pub async fn migrate_registry_format(pool: &sqlx::SqlitePool) -> Result<(), SqliteStorageError> {
-    migrate_triggers(pool).await?;
     migrate_actions(pool).await?;
-    Ok(())
-}
-
-async fn migrate_triggers(pool: &sqlx::SqlitePool) -> Result<(), SqliteStorageError> {
-    type Row = (String, String, String);
-
-    let rows: Vec<Row> =
-        sqlx::query_as("SELECT id, kind, config FROM triggers WHERE format_version = 0")
-            .fetch_all(pool)
-            .await
-            .map_err(SqliteStorageError::Sqlx)?;
-
-    if rows.is_empty() {
-        return Ok(());
-    }
-
-    let mut tx = pool.begin().await.map_err(SqliteStorageError::Sqlx)?;
-
-    for (id, kind, config) in rows {
-        let (new_kind, new_config) = convert_trigger_kind(&kind, &config)?;
-        sqlx::query("UPDATE triggers SET kind = ?, config = ?, format_version = 1 WHERE id = ?")
-            .bind(&new_kind)
-            .bind(&new_config)
-            .bind(&id)
-            .execute(&mut *tx)
-            .await
-            .map_err(SqliteStorageError::Sqlx)?;
-    }
-
-    tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
     Ok(())
 }
 
@@ -67,104 +36,6 @@ async fn migrate_actions(pool: &sqlx::SqlitePool) -> Result<(), SqliteStorageErr
 
     tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
     Ok(())
-}
-
-fn convert_trigger_kind(
-    kind: &str,
-    existing_config: &str,
-) -> Result<(String, String), SqliteStorageError> {
-    if !kind.starts_with('{') && !kind.starts_with('"') {
-        return Ok((kind.to_owned(), existing_config.to_owned()));
-    }
-
-    let v: serde_json::Value = serde_json::from_str(kind)
-        .map_err(|e| SqliteStorageError::Decode(format!("trigger kind parse: {e}")))?;
-
-    let (new_kind_id, new_config) = map_trigger_value(&v);
-
-    let config_json = serde_json::to_string(&new_config)
-        .map_err(|e| SqliteStorageError::Decode(format!("trigger config serialize: {e}")))?;
-
-    Ok((new_kind_id, config_json))
-}
-
-fn map_trigger_value(v: &serde_json::Value) -> (String, BTreeMap<String, Variant>) {
-    match v {
-        serde_json::Value::String(name) => map_trigger_unit_variant(name),
-        serde_json::Value::Object(map) => {
-            if let Some((name, fields)) = map.iter().next() {
-                map_trigger_struct_variant(name, fields)
-            } else {
-                unknown_trigger_kind("empty_object")
-            }
-        }
-        _ => unknown_trigger_kind("unexpected_json_shape"),
-    }
-}
-
-fn map_trigger_unit_variant(name: &str) -> (String, BTreeMap<String, Variant>) {
-    let kind_id = match name {
-        "TwitchChatAnyMessage" => "twitch.chat.message",
-        "TwitchSubscribe" => "twitch.support.subscriber",
-        "TwitchResubscribe" => "twitch.support.resubscriber",
-        "TwitchGiftSub" => "twitch.support.gift_sub",
-        "TwitchCheer" => "twitch.support.cheer",
-        "TwitchRaid" => "twitch.channel.raid_received",
-        other => {
-            tracing::warn!(
-                variant = other,
-                "unknown trigger kind variant during registry migration"
-            );
-            return (format!("unknown.{other}"), BTreeMap::new());
-        }
-    };
-    (kind_id.to_owned(), BTreeMap::new())
-}
-
-fn map_trigger_struct_variant(
-    name: &str,
-    fields: &serde_json::Value,
-) -> (String, BTreeMap<String, Variant>) {
-    match name {
-        "TwitchChatCommand" => {
-            let mut config = BTreeMap::new();
-            insert_str(&mut config, fields, "phrase");
-            insert_bool(&mut config, fields, "case_sensitive");
-            ("twitch.chat.command".to_owned(), config)
-        }
-        "TwitchChatAnyMessage" => ("twitch.chat.message".to_owned(), BTreeMap::new()),
-        "TwitchSubscribe" => ("twitch.support.subscriber".to_owned(), BTreeMap::new()),
-        "TwitchResubscribe" => ("twitch.support.resubscriber".to_owned(), BTreeMap::new()),
-        "TwitchGiftSub" => ("twitch.support.gift_sub".to_owned(), BTreeMap::new()),
-        "TwitchCheer" => ("twitch.support.cheer".to_owned(), BTreeMap::new()),
-        "TwitchRaid" => ("twitch.channel.raid_received".to_owned(), BTreeMap::new()),
-        "ObsSceneChanged" => {
-            let mut config = BTreeMap::new();
-            insert_str(&mut config, fields, "scene");
-            ("obs.scenes.current_changed".to_owned(), config)
-        }
-        "CodeEvent" => {
-            let mut config = BTreeMap::new();
-            if let Some(event_name) = fields.get("name").and_then(|v| v.as_str()) {
-                config.insert(
-                    "event_name".to_owned(),
-                    Variant::String(event_name.to_owned()),
-                );
-            }
-            ("script.event.custom".to_owned(), config)
-        }
-        other => {
-            tracing::warn!(
-                variant = other,
-                "unknown trigger kind variant during registry migration"
-            );
-            unknown_trigger_kind(other)
-        }
-    }
-}
-
-fn unknown_trigger_kind(tag: &str) -> (String, BTreeMap<String, Variant>) {
-    (format!("unknown.{tag}"), BTreeMap::new())
 }
 
 fn convert_sub_actions(sub_actions_json: &str) -> Result<String, SqliteStorageError> {

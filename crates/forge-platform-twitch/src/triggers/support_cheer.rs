@@ -131,17 +131,11 @@ impl TriggerKindDescriptor for SupportCheerDescriptor {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use forge_types::{ActionId, Trigger, TriggerId};
 
-    fn make_trigger(min_bits: i64) -> Trigger {
+    fn make_config(min_bits: i64) -> TriggerConfig {
         let mut config = TriggerConfig::new();
         config.insert("min_bits".to_owned(), Variant::Int(min_bits));
-        Trigger {
-            id: TriggerId::new(),
-            action_id: ActionId::new(),
-            kind_id: "twitch.support.cheer".to_owned(),
-            config,
-        }
+        config
     }
 
     fn cheer_event(bits: i64) -> Event {
@@ -180,21 +174,21 @@ mod tests {
 
     #[test]
     fn matches_when_bits_meet_threshold() {
-        let trigger = make_trigger(100);
-        assert!(SupportCheerDescriptor.matches_trigger(&trigger.config, &cheer_event(100)));
-        assert!(SupportCheerDescriptor.matches_trigger(&trigger.config, &cheer_event(500)));
+        let cfg = make_config(100);
+        assert!(SupportCheerDescriptor.matches_trigger(&cfg, &cheer_event(100)));
+        assert!(SupportCheerDescriptor.matches_trigger(&cfg, &cheer_event(500)));
     }
 
     #[test]
     fn does_not_match_below_threshold() {
-        let trigger = make_trigger(100);
-        assert!(!SupportCheerDescriptor.matches_trigger(&trigger.config, &cheer_event(50)));
+        let cfg = make_config(100);
+        assert!(!SupportCheerDescriptor.matches_trigger(&cfg, &cheer_event(50)));
     }
 
     #[test]
     fn min_bits_zero_always_matches() {
-        let trigger = make_trigger(0);
-        assert!(SupportCheerDescriptor.matches_trigger(&trigger.config, &cheer_event(1)));
+        let cfg = make_config(0);
+        assert!(SupportCheerDescriptor.matches_trigger(&cfg, &cheer_event(1)));
     }
 
     #[test]

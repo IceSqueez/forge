@@ -107,16 +107,6 @@ impl TriggerKindDescriptor for SupportResubscriberDescriptor {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use forge_types::{ActionId, Trigger, TriggerId};
-
-    fn make_trigger() -> Trigger {
-        Trigger {
-            id: TriggerId::new(),
-            action_id: ActionId::new(),
-            kind_id: "twitch.support.resubscriber".to_owned(),
-            config: TriggerConfig::new(),
-        }
-    }
 
     fn resub_event() -> Event {
         Event::new(
@@ -143,8 +133,9 @@ mod tests {
 
     #[test]
     fn always_matches() {
-        let trigger = make_trigger();
-        assert!(SupportResubscriberDescriptor.matches_trigger(&trigger.config, &resub_event()));
+        assert!(
+            SupportResubscriberDescriptor.matches_trigger(&TriggerConfig::new(), &resub_event())
+        );
     }
 
     #[test]

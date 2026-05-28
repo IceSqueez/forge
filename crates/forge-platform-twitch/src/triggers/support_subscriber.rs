@@ -91,16 +91,6 @@ impl TriggerKindDescriptor for SupportSubscriberDescriptor {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use forge_types::{ActionId, Trigger, TriggerId};
-
-    fn make_trigger() -> Trigger {
-        Trigger {
-            id: TriggerId::new(),
-            action_id: ActionId::new(),
-            kind_id: "twitch.support.subscriber".to_owned(),
-            config: TriggerConfig::new(),
-        }
-    }
 
     fn subscribe_event() -> Event {
         Event::new(
@@ -124,8 +114,9 @@ mod tests {
 
     #[test]
     fn always_matches() {
-        let trigger = make_trigger();
-        assert!(SupportSubscriberDescriptor.matches_trigger(&trigger.config, &subscribe_event()));
+        assert!(
+            SupportSubscriberDescriptor.matches_trigger(&TriggerConfig::new(), &subscribe_event())
+        );
     }
 
     #[test]

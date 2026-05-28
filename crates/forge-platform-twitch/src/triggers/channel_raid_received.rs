@@ -95,16 +95,6 @@ impl TriggerKindDescriptor for ChannelRaidReceivedDescriptor {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use forge_types::{ActionId, Trigger, TriggerId};
-
-    fn make_trigger() -> Trigger {
-        Trigger {
-            id: TriggerId::new(),
-            action_id: ActionId::new(),
-            kind_id: "twitch.channel.raid_received".to_owned(),
-            config: TriggerConfig::new(),
-        }
-    }
 
     fn raid_event(viewers: i64) -> Event {
         Event::new(
@@ -131,8 +121,9 @@ mod tests {
 
     #[test]
     fn always_matches() {
-        let trigger = make_trigger();
-        assert!(ChannelRaidReceivedDescriptor.matches_trigger(&trigger.config, &raid_event(100)));
+        assert!(
+            ChannelRaidReceivedDescriptor.matches_trigger(&TriggerConfig::new(), &raid_event(100))
+        );
     }
 
     #[test]

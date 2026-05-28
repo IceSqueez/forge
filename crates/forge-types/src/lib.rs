@@ -6,7 +6,7 @@ pub mod script;
 pub mod sub_action;
 pub mod sub_action_step;
 pub mod token;
-pub mod trigger;
+pub mod trigger_config;
 pub mod trigger_instance;
 pub mod variant;
 
@@ -15,14 +15,12 @@ pub use execution::{
     ArgStack, ExecutionContext, ExecutionMetadata, ExecutionOutcome, SubActionOutcome,
     SubActionTelemetry,
 };
-pub use ids::{
-    ActionId, ClipId, EventId, GlobalId, QueueId, ScriptId, TriggerId, TriggerInstanceId, UserId,
-};
+pub use ids::{ActionId, ClipId, EventId, GlobalId, QueueId, ScriptId, TriggerInstanceId, UserId};
 pub use queue::Queue;
 pub use script::{ScriptContract, ScriptInput};
 pub use sub_action::{LogLevel, OutputDevice, VariantTemplate};
 pub use sub_action_step::{SubActionConfig, SubActionStep};
 pub use token::{ApiKey, OAuthToken, RefreshToken};
-pub use trigger::{Trigger, TriggerConfig};
+pub use trigger_config::TriggerConfig;
 pub use trigger_instance::TriggerInstance;
 pub use variant::{Variant, VariantError, VariantKind, VariantType};

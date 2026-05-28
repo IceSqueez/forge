@@ -14,7 +14,6 @@ use forge_storage::queue::MockQueueRepo;
 use forge_storage::script::MockScriptRepo;
 use forge_storage::settings::MockSettingsRepo;
 use forge_storage::soundboard::MockSoundboardClipsRepo;
-use forge_storage::trigger::MockTriggerRepo;
 use forge_storage::trigger_instance::MockTriggerInstanceRepo;
 use forge_storage::user_globals::MockUserGlobalsRepo;
 use forge_storage::viewer::MockViewerRepo;
@@ -22,15 +21,14 @@ use forge_storage::voice_aliases::MockVoiceAliasRepo;
 use forge_storage::{
     ActionRepo, CredentialId, CredentialsRepo, DataProvider, EventLogRepo, GlobalEntry,
     GlobalsRepo, HistoryRepo, QueueRepo, ScriptRecord, ScriptRepo, SettingsRepo,
-    SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TriggerRepo, UserGlobalEntry,
-    UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
+    SoundboardClipsRepo, StorageError, TriggerInstanceRepo, UserGlobalEntry, UserGlobalsRepo,
+    ViewerRepo, VoiceAliasRepo,
 };
 use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
 
 pub struct TestDataProvider {
     pub action_repo: Arc<MockActionRepo>,
-    pub trigger_repo: Arc<MockTriggerRepo>,
     pub trigger_instance_repo: Arc<MockTriggerInstanceRepo>,
     pub queue_repo: Arc<MockQueueRepo>,
     pub history_repo: Arc<MockHistoryRepo>,
@@ -49,7 +47,6 @@ impl TestDataProvider {
     pub fn new() -> Self {
         Self {
             action_repo: Arc::new(MockActionRepo::new()),
-            trigger_repo: Arc::new(MockTriggerRepo::new()),
             trigger_instance_repo: Arc::new(MockTriggerInstanceRepo::new()),
             queue_repo: Arc::new(MockQueueRepo::new()),
             history_repo: Arc::new(MockHistoryRepo::new()),
@@ -67,10 +64,6 @@ impl TestDataProvider {
 
     pub fn action(&mut self) -> &mut MockActionRepo {
         Arc::get_mut(&mut self.action_repo).expect("action_repo already shared")
-    }
-
-    pub fn trigger(&mut self) -> &mut MockTriggerRepo {
-        Arc::get_mut(&mut self.trigger_repo).expect("trigger_repo already shared")
     }
 
     pub fn queue(&mut self) -> &mut MockQueueRepo {
@@ -291,10 +284,6 @@ impl CredentialsRepo for TestDataProvider {
 impl DataProvider for TestDataProvider {
     fn action_repo(&self) -> Arc<dyn ActionRepo> {
         Arc::clone(&self.action_repo) as Arc<dyn ActionRepo>
-    }
-
-    fn trigger_repo(&self) -> Arc<dyn TriggerRepo> {
-        Arc::clone(&self.trigger_repo) as Arc<dyn TriggerRepo>
     }
 
     fn trigger_instance_repo(&self) -> Arc<dyn TriggerInstanceRepo> {

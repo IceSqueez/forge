@@ -38,7 +38,6 @@ macro_rules! define_id {
 
 define_id!(EventId);
 define_id!(ActionId);
-define_id!(TriggerId);
 define_id!(TriggerInstanceId);
 define_id!(QueueId);
 define_id!(ScriptId);

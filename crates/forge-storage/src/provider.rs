@@ -4,8 +4,8 @@ use async_trait::async_trait;
 
 use crate::{
     ActionRepo, CredentialsRepo, EventLogRepo, GlobalsRepo, HistoryRepo, QueueRepo, ScriptRepo,
-    SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TriggerRepo,
-    UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
+    SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo, UserGlobalsRepo,
+    ViewerRepo, VoiceAliasRepo,
 };
 
 #[async_trait]
@@ -13,7 +13,6 @@ pub trait DataProvider:
     GlobalsRepo + UserGlobalsRepo + SettingsRepo + ScriptRepo + CredentialsRepo + Send + Sync
 {
     fn action_repo(&self) -> Arc<dyn ActionRepo>;
-    fn trigger_repo(&self) -> Arc<dyn TriggerRepo>;
     fn trigger_instance_repo(&self) -> Arc<dyn TriggerInstanceRepo>;
     fn queue_repo(&self) -> Arc<dyn QueueRepo>;
     fn history_repo(&self) -> Arc<dyn HistoryRepo>;

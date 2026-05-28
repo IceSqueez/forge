@@ -99,16 +99,6 @@ impl TriggerKindDescriptor for ChatMessageDescriptor {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use forge_types::{ActionId, Trigger, TriggerId};
-
-    fn make_trigger() -> Trigger {
-        Trigger {
-            id: TriggerId::new(),
-            action_id: ActionId::new(),
-            kind_id: "twitch.chat.message".to_owned(),
-            config: TriggerConfig::new(),
-        }
-    }
 
     fn chat_event(msg: &str) -> Event {
         Event::new(
@@ -131,9 +121,9 @@ mod tests {
 
     #[test]
     fn always_matches() {
-        let trigger = make_trigger();
-        assert!(ChatMessageDescriptor.matches_trigger(&trigger.config, &chat_event("hello")));
-        assert!(ChatMessageDescriptor.matches_trigger(&trigger.config, &chat_event("")));
+        let cfg = TriggerConfig::new();
+        assert!(ChatMessageDescriptor.matches_trigger(&cfg, &chat_event("hello")));
+        assert!(ChatMessageDescriptor.matches_trigger(&cfg, &chat_event("")));
     }
 
     #[test]

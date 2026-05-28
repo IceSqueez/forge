@@ -6,8 +6,8 @@ use async_trait::async_trait;
 use forge_storage::{
     ActionRepo, CredentialId, CredentialsRepo, DataProvider, EventLogRepo, GlobalEntry,
     GlobalTransit, GlobalsRepo, HistoryRepo, QueueRepo, ScriptRecord, ScriptRepo, SettingsRepo,
-    SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TriggerRepo, UserGlobalEntry,
-    UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
+    SoundboardClipsRepo, StorageError, TriggerInstanceRepo, UserGlobalEntry, UserGlobalsRepo,
+    ViewerRepo, VoiceAliasRepo,
 };
 use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
@@ -18,8 +18,8 @@ use crate::retention_task::spawn_retention_task;
 use crate::{
     SqliteActionRepo, SqliteCredentialsRepo, SqliteEventLogRepo, SqliteGlobalsRepo,
     SqliteHistoryRepo, SqliteQueueRepo, SqliteScriptRepo, SqliteSettingsRepo,
-    SqliteSoundboardClipsRepo, SqliteTriggerInstanceRepo, SqliteTriggerRepo, SqliteUserGlobalsRepo,
-    SqliteViewerRepo, SqliteVoiceAliasRepo, apply_migrations, connect,
+    SqliteSoundboardClipsRepo, SqliteTriggerInstanceRepo, SqliteUserGlobalsRepo, SqliteViewerRepo,
+    SqliteVoiceAliasRepo, apply_migrations, connect,
 };
 
 const PRUNE_INTERVAL_PRODUCTION: Duration = Duration::from_secs(3600);
@@ -30,7 +30,6 @@ pub struct SqliteBackend {
     user_globals: SqliteUserGlobalsRepo,
     settings: SqliteSettingsRepo,
     action: Arc<SqliteActionRepo>,
-    trigger: Arc<SqliteTriggerRepo>,
     trigger_instance: Arc<SqliteTriggerInstanceRepo>,
     queue: Arc<SqliteQueueRepo>,
     script: SqliteScriptRepo,
@@ -114,7 +113,6 @@ impl SqliteBackend {
             user_globals: SqliteUserGlobalsRepo::new(pool.clone()),
             settings: SqliteSettingsRepo::new(pool.clone()),
             action: Arc::new(SqliteActionRepo::new(pool.clone())),
-            trigger: Arc::new(SqliteTriggerRepo::new(pool.clone())),
             trigger_instance: Arc::new(SqliteTriggerInstanceRepo::new(pool.clone())),
             queue: Arc::new(SqliteQueueRepo::new(pool.clone())),
             script: SqliteScriptRepo::new(pool.clone()),
@@ -340,10 +338,6 @@ impl CredentialsRepo for SqliteBackend {
 impl DataProvider for SqliteBackend {
     fn action_repo(&self) -> Arc<dyn ActionRepo> {
         Arc::clone(&self.action) as Arc<dyn ActionRepo>
-    }
-
-    fn trigger_repo(&self) -> Arc<dyn TriggerRepo> {
-        Arc::clone(&self.trigger) as Arc<dyn TriggerRepo>
     }
 
     fn trigger_instance_repo(&self) -> Arc<dyn TriggerInstanceRepo> {

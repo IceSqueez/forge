@@ -152,18 +152,12 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use forge_types::{ActionId, Trigger, TriggerId};
 
-    fn make_trigger(phrase: &str, case_sensitive: bool) -> Trigger {
+    fn make_config(phrase: &str, case_sensitive: bool) -> TriggerConfig {
         let mut config = TriggerConfig::new();
         config.insert("phrase".to_owned(), Variant::String(phrase.to_owned()));
         config.insert("case_sensitive".to_owned(), Variant::Bool(case_sensitive));
-        Trigger {
-            id: TriggerId::new(),
-            action_id: ActionId::new(),
-            kind_id: "twitch.chat.command".to_owned(),
-            config,
-        }
+        config
     }
 
     fn chat_event(message: &str) -> Event {
@@ -211,30 +205,28 @@ mod tests {
 
     #[test]
     fn matches_case_insensitive_prefix() {
-        let trigger = make_trigger("!quote", false);
+        let cfg = make_config("!quote", false);
         let event = chat_event("!Quote something");
-        assert!(ChatCommandDescriptor.matches_trigger(&trigger.config, &event));
+        assert!(ChatCommandDescriptor.matches_trigger(&cfg, &event));
     }
 
     #[test]
     fn matches_exact_prefix_case_sensitive() {
-        let trigger = make_trigger("!quote", true);
-        assert!(ChatCommandDescriptor.matches_trigger(&trigger.config, &chat_event("!quote arg")));
-        assert!(!ChatCommandDescriptor.matches_trigger(&trigger.config, &chat_event("!Quote arg")));
+        let cfg = make_config("!quote", true);
+        assert!(ChatCommandDescriptor.matches_trigger(&cfg, &chat_event("!quote arg")));
+        assert!(!ChatCommandDescriptor.matches_trigger(&cfg, &chat_event("!Quote arg")));
     }
 
     #[test]
     fn does_not_match_non_prefix() {
-        let trigger = make_trigger("!quote", false);
-        assert!(
-            !ChatCommandDescriptor.matches_trigger(&trigger.config, &chat_event("hello !quote"))
-        );
+        let cfg = make_config("!quote", false);
+        assert!(!ChatCommandDescriptor.matches_trigger(&cfg, &chat_event("hello !quote")));
     }
 
     #[test]
     fn empty_phrase_never_matches() {
-        let trigger = make_trigger("", false);
-        assert!(!ChatCommandDescriptor.matches_trigger(&trigger.config, &chat_event("!anything")));
+        let cfg = make_config("", false);
+        assert!(!ChatCommandDescriptor.matches_trigger(&cfg, &chat_event("!anything")));
     }
 
     #[test]

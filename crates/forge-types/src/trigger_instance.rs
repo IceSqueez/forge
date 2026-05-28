@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::ids::TriggerInstanceId;
-use crate::trigger::TriggerConfig;
+use crate::trigger_config::TriggerConfig;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TriggerInstance {

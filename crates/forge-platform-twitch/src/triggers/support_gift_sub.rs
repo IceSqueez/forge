@@ -113,16 +113,6 @@ impl TriggerKindDescriptor for SupportGiftSubDescriptor {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use forge_types::{ActionId, Trigger, TriggerId};
-
-    fn make_trigger() -> Trigger {
-        Trigger {
-            id: TriggerId::new(),
-            action_id: ActionId::new(),
-            kind_id: "twitch.support.gift_sub".to_owned(),
-            config: TriggerConfig::new(),
-        }
-    }
 
     fn gift_event() -> Event {
         Event::new(
@@ -144,8 +134,7 @@ mod tests {
 
     #[test]
     fn always_matches() {
-        let trigger = make_trigger();
-        assert!(SupportGiftSubDescriptor.matches_trigger(&trigger.config, &gift_event()));
+        assert!(SupportGiftSubDescriptor.matches_trigger(&TriggerConfig::new(), &gift_event()));
     }
 
     #[test]

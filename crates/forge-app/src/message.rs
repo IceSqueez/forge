@@ -364,6 +364,7 @@ pub enum Message {
     Queues(QueuesMsg),
     Viewers(crate::viewers::ViewersMsg),
     Commands(crate::commands_view::CommandsMsg),
+    TriggersRegistry(crate::triggers_registry::TriggersRegistryMsg),
     BuiltinDetail(BuiltinDetailMsg),
     Boot(BootMsg),
     ServerSubsystem(ServerSubsystemMsg),

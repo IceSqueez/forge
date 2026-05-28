@@ -36,6 +36,7 @@ pub mod speak_bridge;
 pub mod stream_apps;
 pub mod subscriptions;
 pub mod test_trigger;
+pub mod triggers_registry;
 pub mod tts_dashboard;
 pub mod tts_engines;
 pub mod tts_filters;

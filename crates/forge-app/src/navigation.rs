@@ -31,7 +31,9 @@ pub(crate) fn coming_soon_view(
 pub(crate) fn breadcrumb_icon_for(screen: &Screen) -> Icon {
     match screen {
         Screen::Home => Icon::Home,
-        Screen::Actions | Screen::ActionEditor(_) | Screen::Queues => Icon::Bolt,
+        Screen::Actions | Screen::ActionEditor(_) | Screen::Queues | Screen::TriggersRegistry => {
+            Icon::Bolt
+        }
         Screen::Commands => Icon::Terminal,
         Screen::Platforms => Icon::Broadcast,
         Screen::StreamApps | Screen::Builtin | Screen::BuiltinDetail(_) => Icon::LayoutGrid,
@@ -52,6 +54,7 @@ pub(crate) fn screen_label(screen: &Screen) -> &'static str {
         Screen::Actions => "Actions",
         Screen::ActionEditor(_) => "Actions",
         Screen::Queues => "Queues",
+        Screen::TriggersRegistry => "Triggers",
         Screen::Commands => "Commands",
         Screen::Platforms => "Platforms",
         Screen::StreamApps => "Stream apps",
@@ -77,6 +80,7 @@ pub(crate) fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Side
     let is_home = matches!(app.screen, Screen::Home);
     let is_actions = matches!(app.screen, Screen::Actions | Screen::ActionEditor(_));
     let is_queues = matches!(app.screen, Screen::Queues);
+    let is_triggers_registry = matches!(app.screen, Screen::TriggersRegistry);
     let is_commands = matches!(app.screen, Screen::Commands);
     let is_live_chat = matches!(app.screen, Screen::LiveChat);
     let is_event_feed = matches!(app.screen, Screen::EventFeed);
@@ -109,6 +113,12 @@ pub(crate) fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Side
             label: "Actions",
             active: is_actions,
             on_press: Message::Navigate(Screen::Actions),
+        },
+        NavItem::Leaf {
+            icon: Icon::Bolt,
+            label: "Triggers",
+            active: is_triggers_registry,
+            on_press: Message::Navigate(Screen::TriggersRegistry),
         },
         NavItem::Leaf {
             icon: Icon::Terminal,
@@ -212,6 +222,7 @@ pub(crate) fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Side
 pub(crate) fn handle_navigate(app: &mut App, screen: Screen) -> Task<Message> {
     let is_actions = matches!(screen, Screen::Actions);
     let is_queues = matches!(screen, Screen::Queues);
+    let is_triggers_registry = matches!(screen, Screen::TriggersRegistry);
     let is_commands = matches!(screen, Screen::Commands);
     let is_live_chat = matches!(screen, Screen::LiveChat);
     let is_hub = matches!(screen, Screen::Home);
@@ -228,6 +239,10 @@ pub(crate) fn handle_navigate(app: &mut App, screen: Screen) -> Task<Message> {
     app.screen = screen;
     if is_actions {
         Task::done(Message::Actions(ActionsMsg::LoadRequested))
+    } else if is_triggers_registry {
+        Task::done(Message::TriggersRegistry(
+            crate::triggers_registry::TriggersRegistryMsg::LoadRequested,
+        ))
     } else if is_queues {
         Task::done(Message::Queues(QueuesMsg::LoadRequested))
     } else if is_commands {

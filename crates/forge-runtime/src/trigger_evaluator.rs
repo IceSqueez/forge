@@ -3,8 +3,8 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use forge_registry::TriggerRegistry;
-use forge_storage::{ActionRepo, TriggerRepo};
+use forge_registry::{TriggerRegistry, effective_config};
+use forge_storage::{ActionRepo, TriggerInstanceRepo};
 use tracing::warn;
 
 use crate::{EventBus, EventSubscription, QueueSchedulerHandle, SchedulerRequest};
@@ -23,7 +23,7 @@ impl TriggerEvaluatorHandle {
 pub struct TriggerEvaluator {
     registry: Arc<TriggerRegistry>,
     actions: Arc<dyn ActionRepo>,
-    triggers: Arc<dyn TriggerRepo>,
+    trigger_instances: Arc<dyn TriggerInstanceRepo>,
     scheduler: QueueSchedulerHandle,
     subscription: EventSubscription,
 }
@@ -33,14 +33,14 @@ impl TriggerEvaluator {
         bus: Arc<EventBus>,
         registry: Arc<TriggerRegistry>,
         actions: Arc<dyn ActionRepo>,
-        triggers: Arc<dyn TriggerRepo>,
+        trigger_instances: Arc<dyn TriggerInstanceRepo>,
         scheduler: QueueSchedulerHandle,
     ) -> TriggerEvaluatorHandle {
         let subscription = bus.subscribe();
         let evaluator = Self {
             registry,
             actions,
-            triggers,
+            trigger_instances,
             scheduler,
             subscription,
         };
@@ -91,21 +91,25 @@ impl TriggerEvaluator {
                 continue;
             }
 
-            let trigger_rows = match self.triggers.list_for_action(action.id).await {
+            let instances = match self.trigger_instances.list_for_action(action.id).await {
                 Ok(t) => t,
                 Err(e) => {
-                    warn!("trigger_evaluator: trigger_repo.list_for_action failed: {e}");
+                    warn!("trigger_evaluator: trigger_instance_repo.list_for_action failed: {e}");
                     continue;
                 }
             };
 
-            for trigger in &trigger_rows {
-                let descriptor = match self.registry.get(&trigger.kind_id) {
+            for instance in &instances {
+                if !instance.enabled {
+                    continue;
+                }
+
+                let descriptor = match self.registry.get(&instance.kind_id) {
                     Some(d) => d,
                     None => {
                         warn!(
                             "unknown trigger kind_id: {} — trigger will never fire",
-                            trigger.kind_id
+                            instance.kind_id
                         );
                         continue;
                     }
@@ -122,7 +126,8 @@ impl TriggerEvaluator {
                     continue;
                 }
 
-                if !descriptor.matches_trigger(trigger, &event) {
+                let effective = effective_config(&descriptor.default_config(), &instance.overrides);
+                if !descriptor.matches_trigger(&effective, &event) {
                     continue;
                 }
 
@@ -146,10 +151,10 @@ pub fn spawn_trigger_evaluator(
     bus: Arc<EventBus>,
     registry: Arc<TriggerRegistry>,
     actions: Arc<dyn ActionRepo>,
-    triggers: Arc<dyn TriggerRepo>,
+    trigger_instances: Arc<dyn TriggerInstanceRepo>,
     scheduler: QueueSchedulerHandle,
 ) -> TriggerEvaluatorHandle {
-    TriggerEvaluator::spawn(bus, registry, actions, triggers, scheduler)
+    TriggerEvaluator::spawn(bus, registry, actions, trigger_instances, scheduler)
 }
 
 #[cfg(test)]
@@ -162,7 +167,9 @@ mod tests {
     use forge_registry::{SubActionRegistry, TriggerRegistry};
     use forge_storage::{DataProvider, GlobalsRepo};
     use forge_storage_sqlite::SqliteBackend;
-    use forge_types::{Action, ActionId, Queue, QueueId, SubActionStep, Trigger, TriggerId};
+    use forge_types::{
+        Action, ActionId, Queue, QueueId, SubActionStep, TriggerInstance, TriggerInstanceId,
+    };
     use serde_json::json;
 
     use super::*;
@@ -171,7 +178,7 @@ mod tests {
         sub_action_runners::register_core_sub_actions, triggers::register_core_triggers,
     };
 
-    async fn make_dp() -> Arc<dyn DataProvider> {
+    async fn make_backend() -> Arc<SqliteBackend> {
         Arc::new(
             SqliteBackend::open_with_key(":memory:", [0xab; 32])
                 .await
@@ -206,17 +213,19 @@ mod tests {
         }
     }
 
-    fn custom_event_trigger(action_id: ActionId, event_name: &str) -> Trigger {
-        let mut config = std::collections::BTreeMap::new();
-        config.insert(
+    fn custom_event_instance(event_name: &str) -> TriggerInstance {
+        let mut overrides = std::collections::BTreeMap::new();
+        overrides.insert(
             "event_name".to_owned(),
             forge_types::Variant::String(event_name.to_owned()),
         );
-        Trigger {
-            id: TriggerId::new(),
-            action_id,
+        TriggerInstance {
+            id: TriggerInstanceId::new(),
             kind_id: "script.event.custom".to_owned(),
-            config,
+            name: "custom".to_owned(),
+            overrides,
+            enabled: true,
+            user_defined: true,
         }
     }
 
@@ -266,7 +275,9 @@ mod tests {
 
     #[tokio::test]
     async fn matching_custom_event_dispatches_action() {
-        let dp = make_dp().await;
+        let backend = make_backend().await;
+        let dp: Arc<dyn DataProvider> = Arc::clone(&backend) as Arc<dyn DataProvider>;
+
         let q_id = QueueId::new();
         let a_id = ActionId::new();
         let queue = Queue {
@@ -275,11 +286,15 @@ mod tests {
             blocking: false,
         };
         let action = log_action(a_id, q_id);
-        let trigger = custom_event_trigger(a_id, "my_event");
+        let instance = custom_event_instance("my_event");
 
         dp.queue_repo().save(&queue).await.unwrap();
         dp.action_repo().save(&action).await.unwrap();
-        dp.trigger_repo().save(&trigger).await.unwrap();
+        dp.trigger_instance_repo().save(&instance).await.unwrap();
+        backend
+            .insert_action_trigger_instance_for_test(a_id, instance.id, 0)
+            .await
+            .unwrap();
 
         let (sub_reg, trig_reg) = build_registries(Arc::clone(&dp) as Arc<dyn GlobalsRepo>);
 
@@ -297,7 +312,7 @@ mod tests {
             Arc::clone(&bus),
             trig_reg,
             dp.action_repo(),
-            dp.trigger_repo(),
+            dp.trigger_instance_repo(),
             sched,
         );
 
@@ -317,7 +332,9 @@ mod tests {
 
     #[tokio::test]
     async fn non_matching_custom_event_does_not_dispatch() {
-        let dp = make_dp().await;
+        let backend = make_backend().await;
+        let dp: Arc<dyn DataProvider> = Arc::clone(&backend) as Arc<dyn DataProvider>;
+
         let q_id = QueueId::new();
         let a_id = ActionId::new();
         let queue = Queue {
@@ -326,11 +343,15 @@ mod tests {
             blocking: false,
         };
         let action = log_action(a_id, q_id);
-        let trigger = custom_event_trigger(a_id, "my_event");
+        let instance = custom_event_instance("my_event");
 
         dp.queue_repo().save(&queue).await.unwrap();
         dp.action_repo().save(&action).await.unwrap();
-        dp.trigger_repo().save(&trigger).await.unwrap();
+        dp.trigger_instance_repo().save(&instance).await.unwrap();
+        backend
+            .insert_action_trigger_instance_for_test(a_id, instance.id, 0)
+            .await
+            .unwrap();
 
         let (sub_reg, trig_reg) = build_registries(Arc::clone(&dp) as Arc<dyn GlobalsRepo>);
 
@@ -348,7 +369,7 @@ mod tests {
             Arc::clone(&bus),
             trig_reg,
             dp.action_repo(),
-            dp.trigger_repo(),
+            dp.trigger_instance_repo(),
             sched,
         );
 

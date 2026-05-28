@@ -1,6 +1,6 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{EventFilter, FormField, TriggerCategory, TriggerKindDescriptor};
-use forge_types::{ArgStack, Trigger, TriggerConfig, Variant};
+use forge_types::{ArgStack, TriggerConfig, Variant};
 
 pub struct ScriptEventCustomDescriptor;
 
@@ -59,13 +59,12 @@ impl TriggerKindDescriptor for ScriptEventCustomDescriptor {
         }
     }
 
-    fn matches_trigger(&self, trigger: &Trigger, event: &Event) -> bool {
+    fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
         let event_name = match event.kind.strip_prefix("custom.") {
             Some(n) => n,
             None => return false,
         };
-        let configured_name = trigger
-            .config
+        let configured_name = config
             .get("event_name")
             .and_then(|v| v.as_str())
             .unwrap_or_default();

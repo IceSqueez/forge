@@ -1,6 +1,6 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{EventFilter, FormField, TriggerCategory, TriggerKindDescriptor};
-use forge_types::{ArgStack, Trigger, TriggerConfig, Variant};
+use forge_types::{ArgStack, TriggerConfig, Variant};
 
 pub(crate) struct SupportCheerDescriptor;
 
@@ -65,9 +65,8 @@ impl TriggerKindDescriptor for SupportCheerDescriptor {
         }
     }
 
-    fn matches_trigger(&self, trigger: &Trigger, event: &Event) -> bool {
-        let min_bits = trigger
-            .config
+    fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
+        let min_bits = config
             .get("min_bits")
             .and_then(|v| {
                 if let Variant::Int(n) = v {
@@ -132,7 +131,7 @@ impl TriggerKindDescriptor for SupportCheerDescriptor {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use forge_types::{ActionId, TriggerId};
+    use forge_types::{ActionId, Trigger, TriggerId};
 
     fn make_trigger(min_bits: i64) -> Trigger {
         let mut config = TriggerConfig::new();
@@ -182,20 +181,20 @@ mod tests {
     #[test]
     fn matches_when_bits_meet_threshold() {
         let trigger = make_trigger(100);
-        assert!(SupportCheerDescriptor.matches_trigger(&trigger, &cheer_event(100)));
-        assert!(SupportCheerDescriptor.matches_trigger(&trigger, &cheer_event(500)));
+        assert!(SupportCheerDescriptor.matches_trigger(&trigger.config, &cheer_event(100)));
+        assert!(SupportCheerDescriptor.matches_trigger(&trigger.config, &cheer_event(500)));
     }
 
     #[test]
     fn does_not_match_below_threshold() {
         let trigger = make_trigger(100);
-        assert!(!SupportCheerDescriptor.matches_trigger(&trigger, &cheer_event(50)));
+        assert!(!SupportCheerDescriptor.matches_trigger(&trigger.config, &cheer_event(50)));
     }
 
     #[test]
     fn min_bits_zero_always_matches() {
         let trigger = make_trigger(0);
-        assert!(SupportCheerDescriptor.matches_trigger(&trigger, &cheer_event(1)));
+        assert!(SupportCheerDescriptor.matches_trigger(&trigger.config, &cheer_event(1)));
     }
 
     #[test]

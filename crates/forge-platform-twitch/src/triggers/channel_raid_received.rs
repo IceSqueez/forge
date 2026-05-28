@@ -1,6 +1,6 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{EventFilter, FormField, TriggerCategory, TriggerKindDescriptor};
-use forge_types::{ArgStack, Trigger, TriggerConfig, Variant};
+use forge_types::{ArgStack, TriggerConfig, Variant};
 
 pub(crate) struct ChannelRaidReceivedDescriptor;
 
@@ -48,7 +48,7 @@ impl TriggerKindDescriptor for ChannelRaidReceivedDescriptor {
         }
     }
 
-    fn matches_trigger(&self, _trigger: &Trigger, _event: &Event) -> bool {
+    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
         true
     }
 
@@ -95,7 +95,7 @@ impl TriggerKindDescriptor for ChannelRaidReceivedDescriptor {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use forge_types::{ActionId, TriggerId};
+    use forge_types::{ActionId, Trigger, TriggerId};
 
     fn make_trigger() -> Trigger {
         Trigger {
@@ -132,7 +132,7 @@ mod tests {
     #[test]
     fn always_matches() {
         let trigger = make_trigger();
-        assert!(ChannelRaidReceivedDescriptor.matches_trigger(&trigger, &raid_event(100)));
+        assert!(ChannelRaidReceivedDescriptor.matches_trigger(&trigger.config, &raid_event(100)));
     }
 
     #[test]

@@ -71,7 +71,7 @@ mod tests {
     use crate::runner::SubActionConfig;
     use async_trait::async_trait;
     use forge_events::Event;
-    use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Trigger, TriggerConfig};
+    use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, TriggerConfig};
     use time::OffsetDateTime;
 
     struct StubDescriptor {
@@ -112,7 +112,7 @@ mod tests {
                 kind_prefix: None,
             }
         }
-        fn matches_trigger(&self, _trigger: &Trigger, _event: &Event) -> bool {
+        fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
             false
         }
         fn build_arg_stack(&self, _event: &Event) -> ArgStack {

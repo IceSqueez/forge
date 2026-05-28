@@ -1,5 +1,5 @@
 use forge_events::Event;
-use forge_types::{ArgStack, Trigger, TriggerConfig};
+use forge_types::{ArgStack, TriggerConfig};
 
 use crate::category::TriggerCategory;
 use crate::evaluator::EventFilter;
@@ -16,6 +16,6 @@ pub trait TriggerKindDescriptor: Send + Sync {
     fn config_fields(&self) -> Vec<FormField>;
     fn condition_display(&self, config: &TriggerConfig) -> String;
     fn event_filter(&self) -> EventFilter;
-    fn matches_trigger(&self, trigger: &Trigger, event: &Event) -> bool;
+    fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool;
     fn build_arg_stack(&self, event: &Event) -> ArgStack;
 }

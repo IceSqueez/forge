@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
 use forge_registry::{EventFilter, FormField, TriggerCategory, TriggerKindDescriptor};
-use forge_types::{ArgStack, Trigger, TriggerConfig, Variant};
+use forge_types::{ArgStack, TriggerConfig, Variant};
 
 pub struct SceneCurrentChangedDescriptor;
 
@@ -61,11 +61,11 @@ impl TriggerKindDescriptor for SceneCurrentChangedDescriptor {
         }
     }
 
-    fn matches_trigger(&self, trigger: &Trigger, event: &Event) -> bool {
+    fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
         if event.kind != "scene.changed" {
             return false;
         }
-        match trigger.config.get("scene") {
+        match config.get("scene") {
             Some(Variant::String(s)) if !s.is_empty() => {
                 event.payload.get("to_scene").and_then(|v| v.as_str()) == Some(s.as_str())
             }
@@ -93,7 +93,7 @@ impl TriggerKindDescriptor for SceneCurrentChangedDescriptor {
 mod tests {
     use super::*;
     use forge_events::EventSource;
-    use forge_types::{ActionId, TriggerId};
+    use forge_types::{ActionId, Trigger, TriggerId};
     use serde_json::json;
 
     fn any_trigger() -> Trigger {
@@ -135,7 +135,7 @@ mod tests {
         let d = SceneCurrentChangedDescriptor;
         let trigger = any_trigger();
         let event = scene_changed_event("Menu", "Gameplay");
-        assert!(d.matches_trigger(&trigger, &event));
+        assert!(d.matches_trigger(&trigger.config, &event));
     }
 
     #[test]
@@ -143,7 +143,7 @@ mod tests {
         let d = SceneCurrentChangedDescriptor;
         let trigger = named_trigger("Gameplay");
         let event = scene_changed_event("Menu", "Gameplay");
-        assert!(d.matches_trigger(&trigger, &event));
+        assert!(d.matches_trigger(&trigger.config, &event));
     }
 
     #[test]
@@ -151,7 +151,7 @@ mod tests {
         let d = SceneCurrentChangedDescriptor;
         let trigger = named_trigger("BRB");
         let event = scene_changed_event("Menu", "Gameplay");
-        assert!(!d.matches_trigger(&trigger, &event));
+        assert!(!d.matches_trigger(&trigger.config, &event));
     }
 
     #[test]
@@ -159,7 +159,7 @@ mod tests {
         let d = SceneCurrentChangedDescriptor;
         let trigger = named_trigger("");
         let event = scene_changed_event("Menu", "Gameplay");
-        assert!(d.matches_trigger(&trigger, &event));
+        assert!(d.matches_trigger(&trigger.config, &event));
     }
 
     #[test]
@@ -167,7 +167,7 @@ mod tests {
         let d = SceneCurrentChangedDescriptor;
         let trigger = any_trigger();
         let event = Event::new(EventSource::Obs, "scene.created", json!({}));
-        assert!(!d.matches_trigger(&trigger, &event));
+        assert!(!d.matches_trigger(&trigger.config, &event));
     }
 
     #[test]

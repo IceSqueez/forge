@@ -16,8 +16,9 @@ use forge_platform_twitch::{ChatSendBridge, ChatSendBridgeHandle, register_twitc
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
     ActionEngineHandle, CommandParser, CommandParserHandle, EventBus, QueueScheduler,
-    QueueSchedulerHandle, ScriptRegistry, register_audio_sub_actions, register_core_sub_actions,
-    register_core_triggers, spawn_action_engine,
+    QueueSchedulerHandle, ScriptRegistry, TriggerEvaluatorHandle, register_audio_sub_actions,
+    register_core_sub_actions, register_core_triggers, spawn_action_engine,
+    spawn_trigger_evaluator,
 };
 use forge_soundboard::{BusAudioEventSink, CpalSinkFactory, SoundboardPlayer};
 use forge_speak_queue::{QueueConfig, QueueDeps, SpeakQueueHandle};
@@ -112,6 +113,7 @@ struct RuntimeHandles {
     sound_player: Arc<SoundboardPlayer>,
     sub_action_reg: Arc<SubActionRegistry>,
     trigger_reg: Arc<TriggerRegistry>,
+    trigger_evaluator: TriggerEvaluatorHandle,
 }
 
 fn find_piper_binary() -> Option<PathBuf> {
@@ -284,6 +286,13 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         Arc::clone(&sub_action_reg),
     );
     let scheduler = QueueScheduler::spawn(engine.clone(), Arc::clone(&bus), queues);
+    let trigger_evaluator = spawn_trigger_evaluator(
+        Arc::clone(&bus),
+        Arc::clone(&trigger_reg),
+        dp.action_repo(),
+        dp.trigger_instance_repo(),
+        scheduler.clone(),
+    );
     let parser = CommandParser::spawn(
         Arc::clone(&bus),
         dp.command_repo(),
@@ -305,6 +314,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         sound_player,
         sub_action_reg,
         trigger_reg,
+        trigger_evaluator,
     })
 }
 
@@ -338,6 +348,7 @@ fn main() -> iced::Result {
         sound_player,
         sub_action_reg,
         trigger_reg,
+        _trigger_evaluator,
     ) = if storage_offline {
         (
             Arc::new(ScriptRegistry::new()),
@@ -349,6 +360,7 @@ fn main() -> iced::Result {
             None,
             Arc::new(SubActionRegistry::new()),
             Arc::new(TriggerRegistry::new()),
+            None,
         )
     } else {
         match spawn_runtime(Arc::clone(&backend), Arc::clone(&bus)) {
@@ -362,6 +374,7 @@ fn main() -> iced::Result {
                 Some(h.sound_player),
                 h.sub_action_reg,
                 h.trigger_reg,
+                Some(h.trigger_evaluator),
             ),
             None => (
                 Arc::new(ScriptRegistry::new()),
@@ -373,6 +386,7 @@ fn main() -> iced::Result {
                 None,
                 Arc::new(SubActionRegistry::new()),
                 Arc::new(TriggerRegistry::new()),
+                None,
             ),
         }
     };

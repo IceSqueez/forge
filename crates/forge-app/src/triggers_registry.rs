@@ -22,6 +22,7 @@ use crate::Message;
 use crate::Screen;
 use crate::message::{ActionsMsg, ToastMsg};
 use crate::runtime_view::RuntimeView;
+use crate::triggers_create_form::{CreateInstanceFormMsg, CreateInstanceFormState};
 
 #[derive(Debug, Clone)]
 pub struct TriggerInstanceRow {
@@ -62,6 +63,7 @@ pub struct TriggersRegistryState {
     pub usage_filter: UsageFilter,
     pub sheet_width: f32,
     pub confirm_disable: Option<ConfirmDisable>,
+    pub create_form: Option<CreateInstanceFormState>,
 }
 
 impl Default for TriggersRegistryState {
@@ -75,6 +77,7 @@ impl Default for TriggersRegistryState {
             usage_filter: UsageFilter::All,
             sheet_width: 420.0,
             confirm_disable: None,
+            create_form: None,
         }
     }
 }
@@ -99,6 +102,8 @@ pub enum TriggersRegistryMsg {
     DeleteResult(Result<(), String>),
     NavigateToAction(ActionId),
     ScrollTo(TriggerInstanceId),
+    OpenCreateForm,
+    CreateFormMsg(CreateInstanceFormMsg),
 }
 
 pub fn update(
@@ -335,6 +340,13 @@ pub fn update(
                 instance_id,
             )))
         }
+        TriggersRegistryMsg::OpenCreateForm => {
+            state.create_form = Some(CreateInstanceFormState::default());
+            Task::none()
+        }
+        TriggersRegistryMsg::CreateFormMsg(sub) => {
+            crate::triggers_create_form::update(&mut state.create_form, rt, sub)
+        }
     }
 }
 
@@ -384,7 +396,10 @@ pub fn view<'a>(
         container(empty_state(
             "No custom trigger instances yet",
             "Create a named trigger with custom settings to reuse across multiple actions.",
-            None::<(&str, Message)>,
+            Some((
+                "+ Create trigger instance",
+                Message::TriggersRegistry(TriggersRegistryMsg::OpenCreateForm),
+            )),
             palette,
         ))
         .width(Length::Fill)
@@ -453,7 +468,16 @@ pub fn view<'a>(
 
     if let Some(ref cd) = state.confirm_disable {
         let dialog = confirm_disable_dialog(cd, palette);
-        stack![main_with_sheet, dialog].into()
+        let with_dialog: Element<'_, Message> = stack![main_with_sheet, dialog].into();
+        if let Some(ref form) = state.create_form {
+            let overlay = crate::triggers_create_form::view(form, rt, palette);
+            stack![with_dialog, overlay].into()
+        } else {
+            with_dialog
+        }
+    } else if let Some(ref form) = state.create_form {
+        let overlay = crate::triggers_create_form::view(form, rt, palette);
+        stack![main_with_sheet, overlay].into()
     } else {
         main_with_sheet
     }
@@ -571,12 +595,20 @@ fn registry_header<'a>(
     .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
+    let create_btn = secondary_button(
+        "+ Create",
+        Message::TriggersRegistry(TriggersRegistryMsg::OpenCreateForm),
+        palette,
+    );
+
     let right = row![
         platform_chips,
         make_divider_v(),
         usage_chips,
         make_divider_v(),
         search,
+        make_divider_v(),
+        create_btn,
     ]
     .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);

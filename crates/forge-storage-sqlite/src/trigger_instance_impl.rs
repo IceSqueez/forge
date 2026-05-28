@@ -38,6 +38,21 @@ impl SqliteTriggerInstanceRepo {
 
 #[async_trait]
 impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
+    async fn list_all(&self) -> Result<Vec<TriggerInstance>, StorageError> {
+        let rows: Vec<InstanceRow> = sqlx::query_as(
+            "SELECT id, kind_id, name, overrides, enabled, user_defined
+             FROM trigger_instances
+             ORDER BY user_defined ASC, name ASC",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        rows.into_iter()
+            .map(|row| decode_row(row).map_err(StorageError::from))
+            .collect()
+    }
+
     async fn list_user_defined(&self) -> Result<Vec<TriggerInstance>, StorageError> {
         let rows: Vec<InstanceRow> = sqlx::query_as(
             "SELECT id, kind_id, name, overrides, enabled, user_defined

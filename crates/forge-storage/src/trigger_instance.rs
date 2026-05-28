@@ -6,6 +6,7 @@ use crate::StorageError;
 #[cfg_attr(feature = "test-mocks", mockall::automock)]
 #[async_trait]
 pub trait TriggerInstanceRepo: Send + Sync {
+    async fn list_all(&self) -> Result<Vec<TriggerInstance>, StorageError>;
     async fn list_user_defined(&self) -> Result<Vec<TriggerInstance>, StorageError>;
     async fn list_for_action(
         &self,

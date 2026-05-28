@@ -381,3 +381,33 @@ async fn reference_block_sample_names_capped_at_three() {
         other => panic!("expected ReferenceBlock, got: {other:?}"),
     }
 }
+
+#[tokio::test]
+async fn list_all_empty_table_returns_empty_vec() {
+    let backend = setup().await;
+    let repo = backend.trigger_instance_repo();
+    let all = repo.list_all().await.expect("list_all");
+    assert!(all.is_empty());
+}
+
+#[tokio::test]
+async fn list_all_returns_default_and_user_defined_ordered() {
+    let backend = setup().await;
+    let repo = backend.trigger_instance_repo();
+
+    let default_id = repo
+        .upsert_default("twitch.chat.message", "Chat Message")
+        .await
+        .expect("upsert_default");
+
+    let user_inst = make_instance("twitch.support.cheer", "Cheer Trigger", true);
+    let user_id = user_inst.id;
+    repo.save(&user_inst).await.expect("save user-defined");
+
+    let all = repo.list_all().await.expect("list_all");
+    assert_eq!(all.len(), 2);
+    assert_eq!(all[0].id, default_id, "default instance must come first");
+    assert!(!all[0].user_defined);
+    assert_eq!(all[1].id, user_id, "user-defined instance must come second");
+    assert!(all[1].user_defined);
+}

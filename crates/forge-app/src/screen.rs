@@ -35,7 +35,6 @@ pub enum Screen {
     ActionEditor(ActionId),
     Queues,
     TriggersRegistry,
-    Commands,
     Platforms,
     StreamApps,
     Builtin,

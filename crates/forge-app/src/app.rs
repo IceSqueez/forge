@@ -82,7 +82,6 @@ pub struct UiState {
     pub event_feed: EventFeedState,
     pub live_chat: LiveChatState,
     pub actions: ActionsState,
-    pub commands: crate::commands_view::CommandsState,
     pub triggers_registry: crate::triggers_registry::TriggersRegistryState,
     pub queues: QueuesState,
     pub viewers: crate::viewers::ViewersState,
@@ -109,7 +108,6 @@ impl Default for UiState {
             event_feed: EventFeedState::new(),
             live_chat: LiveChatState::new(),
             actions: ActionsState::new(),
-            commands: crate::commands_view::CommandsState::new(),
             triggers_registry: crate::triggers_registry::TriggersRegistryState::default(),
             queues: QueuesState::new(),
             viewers: crate::viewers::ViewersState::default(),
@@ -292,7 +290,6 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::Actions(sub) => crate::actions::update(&mut app.ui.actions, &app.rt, sub),
         Message::Queues(sub) => crate::queues_view::update(&mut app.ui.queues, &app.rt, sub),
         Message::Viewers(sub) => crate::viewers::update(&mut app.ui.viewers, &app.rt, sub),
-        Message::Commands(sub) => crate::commands_view::update(&mut app.ui.commands, &app.rt, sub),
         Message::TriggersRegistry(sub) => {
             crate::triggers_registry::update(&mut app.ui.triggers_registry, &app.rt, sub)
         }

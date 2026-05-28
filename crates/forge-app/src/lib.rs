@@ -9,7 +9,6 @@ pub mod actions_view;
 pub mod app;
 pub mod boot;
 pub mod builtin_detail;
-pub mod commands_view;
 pub mod event_feed;
 pub mod globals_variant_editor;
 pub mod globals_view;

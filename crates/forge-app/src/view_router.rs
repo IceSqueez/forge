@@ -48,7 +48,6 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Screen::Actions => crate::actions_view::actions_view(app, palette),
         Screen::ActionEditor(id) => action_editor_view(app, *id, palette),
         Screen::Queues => queues_view(&app.ui.queues, palette),
-        Screen::Commands => crate::commands_view::commands_view(&app.ui.commands, palette),
         Screen::TriggersRegistry => {
             crate::triggers_registry::view(&app.ui.triggers_registry, &app.rt, palette)
         }
@@ -114,7 +113,6 @@ pub fn view(app: &App) -> Element<'_, Message> {
             | Screen::Globals
             | Screen::Queues
             | Screen::TriggersRegistry
-            | Screen::Commands
             | Screen::EventFeed
             | Screen::Platforms
             | Screen::StreamApps

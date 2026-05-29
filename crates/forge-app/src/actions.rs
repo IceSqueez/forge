@@ -386,12 +386,28 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
                 duration_ms: 3000,
             }))
         }
-        ActionsMsg::TriggerChipClicked(instance_id) => Task::batch([
-            Task::done(Message::Navigate(Screen::TriggersRegistry)),
-            Task::done(Message::TriggersRegistry(TriggersRegistryMsg::ScrollTo(
-                instance_id,
-            ))),
-        ]),
+        ActionsMsg::TriggerChipClicked(instance_id) => {
+            let is_default = state
+                .detail
+                .as_ref()
+                .and_then(|d| d.trigger_instances.iter().find(|i| i.id == instance_id))
+                .map(|i| !i.user_defined)
+                .unwrap_or(false);
+            if is_default {
+                Task::done(Message::Toast(crate::message::ToastMsg::Fired {
+                    kind: forge_widgets::ToastKind::Info,
+                    message: "Default trigger \u{2014} read-only. Create a Custom instance to override values.".to_owned(),
+                    duration_ms: 4000,
+                }))
+            } else {
+                Task::batch([
+                    Task::done(Message::Navigate(Screen::TriggersRegistry)),
+                    Task::done(Message::TriggersRegistry(TriggersRegistryMsg::ScrollTo(
+                        instance_id,
+                    ))),
+                ])
+            }
+        }
         ActionsMsg::SearchChanged(q) => {
             state.search = q;
             Task::none()

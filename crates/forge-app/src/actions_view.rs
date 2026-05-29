@@ -635,33 +635,46 @@ fn actions_detail_panel<'a>(
                 ("Default", StatusVariant::Neutral)
             };
             let pill: Element<'_, Message> = status_pill(pill_label, pill_variant, palette);
-            let trigger_row = container(
-                row![
-                    tabler_icon(Icon::Bolt, FONT_SM, p.brand),
-                    text(instance.name.as_str())
-                        .size(FONT_SM)
-                        .color(p.text_primary),
-                    text(format!("\u{00b7} {kind_str}"))
-                        .size(FONT_XS)
-                        .color(p.text_muted),
-                    iced::widget::Space::new().width(Length::Fill),
-                    pill,
-                ]
-                .spacing(spf(Spacing::Xs))
-                .align_y(iced::alignment::Vertical::Center),
-            )
-            .width(Length::Fill)
-            .padding([18, 12])
-            .style(move |_theme: &iced::Theme| iced::widget::container::Style {
-                background: Some(iced::Background::Color(p.shell)),
-                border: iced::Border {
-                    color: p.border_input,
-                    width: 0.5,
-                    radius: forge_widgets::radius(forge_widgets::Radius::Md).into(),
-                },
-                ..iced::widget::container::Style::default()
-            });
-            detail_col = detail_col.push(trigger_row);
+            let p_btn = p;
+            let row_content = row![
+                tabler_icon(Icon::Bolt, FONT_SM, p.brand),
+                text(instance.name.as_str())
+                    .size(FONT_SM)
+                    .color(p.text_primary),
+                text(format!("\u{00b7} {kind_str}"))
+                    .size(FONT_XS)
+                    .color(p.text_muted),
+                iced::widget::Space::new().width(Length::Fill),
+                pill,
+            ]
+            .spacing(spf(Spacing::Xs))
+            .align_y(iced::alignment::Vertical::Center);
+            let instance_id = instance.id;
+            let trigger_btn: Element<'_, Message> = iced::widget::button(row_content)
+                .on_press(Message::Actions(ActionsMsg::TriggerChipClicked(
+                    instance_id,
+                )))
+                .padding([18, 12])
+                .width(Length::Fill)
+                .style(move |_: &iced::Theme, status| iced::widget::button::Style {
+                    background: Some(iced::Background::Color(
+                        if matches!(status, iced::widget::button::Status::Hovered) {
+                            p_btn.elevated
+                        } else {
+                            p_btn.shell
+                        },
+                    )),
+                    text_color: p_btn.text_primary,
+                    border: iced::Border {
+                        color: p_btn.border_input,
+                        width: 0.5,
+                        radius: forge_widgets::radius(forge_widgets::Radius::Md).into(),
+                    },
+                    shadow: iced::Shadow::default(),
+                    snap: false,
+                })
+                .into();
+            detail_col = detail_col.push(trigger_btn);
             detail_col = detail_col.push(iced::widget::Space::new().height(6.0));
         }
     }

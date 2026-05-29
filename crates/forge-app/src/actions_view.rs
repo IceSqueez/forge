@@ -171,6 +171,9 @@ pub(crate) fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
         } else if let Some(form) = app.ui.actions.add_action_modal.as_ref() {
             let modal_el = crate::actions_modals::add_action_modal_view(form, palette);
             iced::widget::stack![main_view, modal_el].into()
+        } else if let Some(picker_state) = app.ui.actions.trigger_picker.as_ref() {
+            let picker_el = crate::actions_trigger_picker::view(picker_state, &app.rt, palette);
+            iced::widget::stack![main_view, picker_el].into()
         } else {
             main_view
         };

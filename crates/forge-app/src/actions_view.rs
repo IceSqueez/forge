@@ -1,6 +1,7 @@
 use forge_storage::ActionTelemetry;
 use forge_widgets::ForgePalette;
 use forge_widgets::icons::{Icon, tabler_icon};
+use forge_widgets::status::{StatusVariant, status_pill};
 use forge_widgets::tokens::{FONT_LG, FONT_SM, FONT_XS, Spacing, spf};
 use iced::{Element, Length};
 
@@ -628,10 +629,23 @@ fn actions_detail_panel<'a>(
     } else {
         for instance in &detail.trigger_instances {
             let kind_str = crate::actions::trigger_label_of(&instance.kind_id);
+            let (pill_label, pill_variant) = if instance.user_defined {
+                ("Custom", StatusVariant::Positive)
+            } else {
+                ("Default", StatusVariant::Neutral)
+            };
+            let pill: Element<'_, Message> = status_pill(pill_label, pill_variant, palette);
             let trigger_row = container(
                 row![
                     tabler_icon(Icon::Bolt, FONT_SM, p.brand),
-                    text(kind_str).size(FONT_SM).color(p.text_secondary),
+                    text(instance.name.as_str())
+                        .size(FONT_SM)
+                        .color(p.text_primary),
+                    text(format!("\u{00b7} {kind_str}"))
+                        .size(FONT_XS)
+                        .color(p.text_muted),
+                    iced::widget::Space::new().width(Length::Fill),
+                    pill,
                 ]
                 .spacing(spf(Spacing::Xs))
                 .align_y(iced::alignment::Vertical::Center),

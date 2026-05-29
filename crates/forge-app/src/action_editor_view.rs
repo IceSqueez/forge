@@ -2,6 +2,7 @@ use forge_types::ActionId;
 use forge_widgets::ForgePalette;
 use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::popover::{MenuItem, MenuPlacement, menu_button};
+use forge_widgets::status::{StatusVariant, status_pill};
 use forge_widgets::tokens::{FONT_LG, FONT_SM, FONT_XS, Spacing, sp, spf};
 use iced::{Alignment, Background, Border, Element, Length, Padding};
 
@@ -598,12 +599,31 @@ fn detail_pane<'a>(
                     ..iced::widget::container::Style::default()
                 });
 
-            let label_str = trigger_label_of(&instance.kind_id);
+            let kind_label = trigger_label_of(&instance.kind_id);
             let condition_str = kind_condition_text(&instance.kind_id, &instance.overrides);
-
+            let (pill_label, pill_variant) = if instance.user_defined {
+                ("Custom", StatusVariant::Positive)
+            } else {
+                ("Default", StatusVariant::Neutral)
+            };
+            let pill: Element<'_, Message> = status_pill(pill_label, pill_variant, palette);
+            let name_row: Element<'_, Message> = row![
+                text(instance.name.as_str())
+                    .size(FONT_SM)
+                    .color(p.text_primary),
+                pill,
+            ]
+            .spacing(spf(Spacing::Xs))
+            .align_y(Alignment::Center)
+            .into();
+            let secondary_str = if condition_str.is_empty() {
+                kind_label.to_owned()
+            } else {
+                format!("{kind_label} \u{00b7} {condition_str}")
+            };
             let info_col: Element<'_, Message> = column![
-                text(label_str).size(FONT_SM).color(p.text_primary),
-                text(condition_str)
+                name_row,
+                text(secondary_str)
                     .size(FONT_XS)
                     .color(p.text_muted)
                     .font(mono),

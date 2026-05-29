@@ -57,6 +57,7 @@ pub struct ConfirmDisable {
 pub struct TriggersRegistryState {
     pub instances: Vec<TriggerInstanceRow>,
     pub selected_id: Option<TriggerInstanceId>,
+    pub pending_scroll_to: Option<TriggerInstanceId>,
     pub used_in: Vec<InstanceUsage>,
     pub search: String,
     pub platform_filter: Option<String>,
@@ -71,6 +72,7 @@ impl Default for TriggersRegistryState {
         Self {
             instances: Vec::new(),
             selected_id: None,
+            pending_scroll_to: None,
             used_in: Vec::new(),
             search: String::new(),
             platform_filter: None,
@@ -155,6 +157,14 @@ pub fn update(
         }
         TriggersRegistryMsg::Loaded(Ok(rows)) => {
             state.instances = rows;
+            if let Some(pending) = state.pending_scroll_to.take()
+                && state.instances.iter().any(|r| r.id == pending)
+            {
+                state.selected_id = Some(pending);
+                return Task::done(Message::TriggersRegistry(TriggersRegistryMsg::RowSelected(
+                    pending,
+                )));
+            }
             Task::none()
         }
         TriggersRegistryMsg::Loaded(Err(msg)) => Task::done(Message::Toast(ToastMsg::Fired {
@@ -332,13 +342,15 @@ pub fn update(
             Task::done(Message::Actions(ActionsMsg::ActionSelected(action_id))),
         ]),
         TriggersRegistryMsg::ScrollTo(instance_id) => {
-            if state.instances.iter().all(|r| r.id != instance_id) {
-                return Task::none();
+            if state.instances.iter().any(|r| r.id == instance_id) {
+                state.selected_id = Some(instance_id);
+                Task::done(Message::TriggersRegistry(TriggersRegistryMsg::RowSelected(
+                    instance_id,
+                )))
+            } else {
+                state.pending_scroll_to = Some(instance_id);
+                Task::none()
             }
-            state.selected_id = Some(instance_id);
-            Task::done(Message::TriggersRegistry(TriggersRegistryMsg::RowSelected(
-                instance_id,
-            )))
         }
         TriggersRegistryMsg::OpenCreateForm => {
             state.create_form = Some(CreateInstanceFormState::default());

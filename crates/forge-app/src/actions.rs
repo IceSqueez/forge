@@ -313,6 +313,8 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
             )
         }
         ActionsMsg::TriggerInstanceRemoved(Ok(action_id)) => {
+            state.detail = None;
+            state.selected = None;
             Task::done(Message::Actions(ActionsMsg::ActionSelected(action_id)))
         }
         ActionsMsg::TriggerInstanceRemoved(Err(e)) => {
@@ -372,6 +374,8 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
         }
         ActionsMsg::TriggerInstanceAssigned(Ok(action_id)) => {
             state.trigger_picker = None;
+            state.detail = None;
+            state.selected = None;
             Task::done(Message::Actions(ActionsMsg::ActionSelected(action_id)))
         }
         ActionsMsg::TriggerInstanceAssigned(Err(e)) => {

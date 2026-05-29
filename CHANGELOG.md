@@ -1,6 +1,46 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-alpha.16] - 2026-05-29
+### ⚠️ BREAKING CHANGES
+- **general**: DataProvider::command_repo() removed;
+Command/CommandId/CommandPermission/CommandRepo/CommandParser deleted;
+migration 0013 drops the commands table
+
+### ⚙️ Miscellaneous Tasks
+- *(workspace)* Remove tautological comments
+
+### 🐛 Bug Fixes
+- *(ci)* Install libasound2-dev on Linux for cpal/alsa-sys builds
+- *(storage)* Enable foreign_keys pragma on SqliteConnectOptions
+- *(app)* Render trigger picker overlay on Actions list page
+- *(app)* Make trigger picker assign refresh detail and surface custom vs default
+- *(ui)* Click on trigger now moves you to editor
+
+### 🚀 Features
+- *(storage)* Add migration 0012 for trigger_instances and action_trigger_instances tables
+- *(types)* Add TriggerInstance and TriggerInstanceId types
+- *(storage)* Add TriggerInstanceRepo trait and ReferenceBlock error variant
+- *(storage)* Implement SqliteTriggerInstanceRepo and wire DataProvider accessor
+- *(registry)* Add effective_config merge helper for Template/Patch model
+- *(app)* Wire TriggerRegistry into boot with default-instance upsert
+- *(runtime)* Switch TriggerEvaluator to TriggerInstance with effective_config merge
+- *(runtime)* Apply effective_config to sub-action steps before execute
+- *(app)* Scaffold Triggers Registry screen with empty state
+- *(storage)* Add list_all method to TriggerInstanceRepo
+- *(app)* Implement Triggers Registry list, filters, side-sheet, and confirm-disable dialog
+- *(app)* Remove legacy Commands UI surface
+- *(storage)* Add link_action and unlink_action to TriggerInstanceRepo
+- *(app)* Migrate ActionDetail from Trigger to TriggerInstance and rewire add-trigger flow
+- *(app)* Replace add-trigger modal with 3-Level Picker for Actions side-sheet
+- [**breaking**] Remove legacy Commands subsystem across all layers
+- *(storage)* Remove legacy Trigger struct and TriggerRepo across all layers
+- *(app)* Wire cross-navigation between Actions and Triggers Registry
+- *(app)* Add Create Trigger Instance form on Triggers Registry page
+
+### 🧪 Testing
+- *(runtime)* Add e2e smoke for Template/Patch trigger and sub-action effective_config
+
 ## [0.1.0-alpha.15] - 2026-05-27
 ### ⚙️ Miscellaneous Tasks
 - *(deps)* Bump actions/download-artifact from 7 to 8 (#16)
@@ -9,6 +49,7 @@ All notable changes to this project will be documented in this file.
 - *(deps)* Bump tower-http from 0.6.10 to 0.6.11 (#19)
 - *(deps)* Bump sqlx from 0.8.6 to 0.9.0 (#20)
 - *(deps)* Bump rhai from 1.24.0 to 1.25.0 (#21)
+- Release
 
 ### 🐛 Bug Fixes
 - *(widgets)* Batch SideSheet layout invalidation
@@ -19,6 +60,9 @@ All notable changes to this project will be documented in this file.
 - *(widgets)* Migrate quick action test fixtures to SubActionStep
 - *(server)* Migrate test fixtures and spawn_action_engine to registry-based dispatch
 - *(storage)* Migrate trigger and action tests to kind_id and SubActionStep
+
+### 📚 Documentation
+- *(release)* Release v0.1.0-alpha.15
 
 ### 🚀 Features
 - *(widgets)* Add SideSheet widget skeleton with overlay layout

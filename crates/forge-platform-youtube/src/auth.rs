@@ -42,6 +42,16 @@ pub struct YoutubeAuthBundle {
     pub expires_at: SystemTime,
 }
 
+pub fn client_credentials() -> Option<(String, String)> {
+    let id = option_env!("FORGE_YOUTUBE_CLIENT_ID")?;
+    let secret = option_env!("FORGE_YOUTUBE_CLIENT_SECRET")?;
+    if id.is_empty() || secret.is_empty() {
+        return None;
+    }
+    Some((id.to_owned(), secret.to_owned()))
+}
+
+#[derive(Clone)]
 pub struct GoogleAuthFlow {
     client: reqwest::Client,
     client_id: String,
@@ -302,6 +312,21 @@ mod tests {
             .respond_with(ResponseTemplate::new(200).set_body_json(channel_body()))
             .mount(server)
             .await;
+    }
+
+    #[test]
+    fn google_auth_flow_implements_clone() {
+        let flow = GoogleAuthFlow::new("client_id".to_owned(), "client_secret".to_owned());
+        let _cloned = flow.clone();
+    }
+
+    #[test]
+    fn client_credentials_result_is_consistent() {
+        let result = client_credentials();
+        if let Some((id, secret)) = result {
+            assert!(!id.is_empty());
+            assert!(!secret.is_empty());
+        }
     }
 
     #[test]

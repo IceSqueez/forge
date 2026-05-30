@@ -267,6 +267,9 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
     if let Err(e) = register_obs_triggers(&mut trigger_reg) {
         tracing::warn!("obs trigger descriptor registration failed: {e}");
     }
+    if let Err(e) = forge_platform_youtube::register_youtube_triggers(&mut trigger_reg) {
+        tracing::warn!("youtube trigger descriptor registration failed: {e}");
+    }
     let trigger_reg = Arc::new(trigger_reg);
     let trigger_instance_repo = dp.trigger_instance_repo();
     for descriptor in trigger_reg.all() {
@@ -295,6 +298,43 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         Arc::clone(&bus),
         Arc::clone(&dp) as Arc<dyn CredentialsRepo>,
     );
+
+    if let Some((yt_id, yt_secret)) = forge_platform_youtube::client_credentials() {
+        let google = forge_platform_youtube::GoogleAuthFlow::new(yt_id, yt_secret);
+        let yt_creds: Arc<dyn CredentialsRepo> = Arc::clone(&dp) as Arc<dyn CredentialsRepo>;
+        let manager = forge_platform_youtube::YoutubeCredentialsManager::new(yt_creds, google);
+        match rt.block_on(manager.load()) {
+            Ok(Some(creds)) => {
+                let channel_id = creds.channel_id.clone();
+                let (yt_tx, mut yt_rx) =
+                    tokio::sync::mpsc::unbounded_channel::<forge_events::Event>();
+                let bus_bridge = Arc::clone(&bus);
+                tokio::spawn(async move {
+                    while let Some(event) = yt_rx.recv().await {
+                        bus_bridge.publish(event);
+                    }
+                });
+                let cancel = tokio_util::sync::CancellationToken::new();
+                let poller = forge_platform_youtube::YoutubeChatPoller::new(
+                    Arc::new(move || {
+                        let m = manager.clone();
+                        Box::pin(async move { m.get_valid_access_token().await })
+                    }),
+                    yt_tx,
+                    channel_id,
+                );
+                tokio::spawn(async move {
+                    if let Err(err) = poller.run(cancel).await {
+                        tracing::warn!("youtube chat poller exited: {err}");
+                    }
+                });
+            }
+            Ok(None) => {}
+            Err(e) => {
+                tracing::warn!(error = %e, "failed to load youtube credentials at boot");
+            }
+        }
+    }
 
     Some(RuntimeHandles {
         registry,

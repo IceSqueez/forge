@@ -1,3 +1,6 @@
+use std::sync::Arc;
+
+use forge_storage::CredentialsRepo;
 use forge_types::PlatformId;
 use forge_widgets::ForgePalette;
 use forge_widgets::icons::{Icon, tabler_icon};
@@ -64,7 +67,7 @@ impl Default for DeviceCodeFlowState {
 
 pub fn update(
     state: &mut DeviceCodeFlowState,
-    _rt: &RuntimeView,
+    rt: &RuntimeView,
     msg: DeviceCodeFlowMsg,
 ) -> Task<Message> {
     match msg {
@@ -84,8 +87,13 @@ pub fn update(
             let device_code = data.device_code;
             let interval_secs = data.interval_secs;
             let platform = state.platform;
+            let credentials_repo: Arc<dyn CredentialsRepo> =
+                Arc::clone(&rt.backend) as Arc<dyn CredentialsRepo>;
             Task::perform(
-                async move { wait_for_authorization(platform, device_code, interval_secs).await },
+                async move {
+                    wait_for_authorization(platform, device_code, interval_secs, credentials_repo)
+                        .await
+                },
                 |r| Message::DeviceCodeFlow(DeviceCodeFlowMsg::WaitResult(r)),
             )
         }
@@ -168,6 +176,7 @@ async fn wait_for_authorization(
     platform: PlatformId,
     device_code: String,
     interval_secs: u64,
+    credentials_repo: Arc<dyn CredentialsRepo>,
 ) -> Result<(), String> {
     match platform {
         PlatformId::YouTube => {
@@ -176,9 +185,15 @@ async fn wait_for_authorization(
             let csec = std::env::var("FORGE_YOUTUBE_CLIENT_SECRET")
                 .map_err(|_| "FORGE_YOUTUBE_CLIENT_SECRET is not set".to_owned())?;
             let flow = forge_platform_youtube::GoogleAuthFlow::new(cid, csec);
-            flow.wait_for_authorization(&device_code, std::time::Duration::from_secs(interval_secs))
+            let bundle = flow
+                .wait_for_authorization(&device_code, std::time::Duration::from_secs(interval_secs))
                 .await
-                .map(|_bundle| ())
+                .map_err(|e| e.to_string())?;
+            let manager =
+                forge_platform_youtube::YoutubeCredentialsManager::new(credentials_repo, flow);
+            manager
+                .save_from_bundle(bundle)
+                .await
                 .map_err(|e| e.to_string())
         }
         PlatformId::Twitch => Err(

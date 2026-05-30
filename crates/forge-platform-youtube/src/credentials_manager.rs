@@ -11,6 +11,7 @@ use crate::credentials::{CREDENTIAL_KEY, YoutubeCredentials};
 const PLATFORM: &str = "youtube";
 const REFRESH_BUFFER: Duration = Duration::minutes(5);
 
+#[derive(Clone)]
 pub struct YoutubeCredentialsManager {
     repo: Arc<dyn CredentialsRepo>,
     google: GoogleAuthFlow,

@@ -40,13 +40,16 @@ Forge is an open-source desktop application that automates stream workflows acro
 
 ## Current Status
 
-**Current alpha: v0.1.0-alpha.12** — Final alpha stage; Hub fully functional, viewer tracking, hardening, and retro polish. Gate to beta-1.
+**Current release: v0.1.0-beta.1** — First beta; YouTube platform, VTube Studio integration, and further platform hardening.
 
-**What's included (alpha-1 through alpha-12):**
+**Chat platforms: Twitch (full), YouTube (full).**
+
+**What's included (alpha-1 through beta-1):**
 
 - **Workspace & storage layer:** 14-crate workspace; SQLite backend with AES-GCM encrypted credential storage; schema versioning with append-only migration pipeline.
 - **iced UI shell:** Catppuccin Mocha theme + Tokyo Night and Latte; sidebar navigation; Hub dashboard; Settings with sub-screens; cross-platform CI pipeline (Linux, Windows, macOS).
 - **Twitch platform:** Device-code OAuth flow with auto-refresh; EventSub chat ingestion; Helix send-chat; viewer tracking. Live Chat screen, Settings → Platforms screen with reconnect.
+- **YouTube platform:** Device-code OAuth flow with auto-refresh; live chat polling (3–60 s adaptive interval); Super Chat, Super Sticker, new member, and member milestone triggers; send-chat sub-action; daily quota tracking with automatic long-interval fallback at 9,000/10,000 units; broadcast lifecycle triggers. See [docs/platforms/youtube.md](docs/platforms/youtube.md).
 - **Action engine:** Action editor with trigger configuration, sub-action chains, and queue scheduling. Sub-actions: `SendChat`, `Delay`, `SetGlobal`, `RunScript`, `PlaySound`. Command parser for chat-triggered actions.
 - **Globals system:** Per-key read/write counters; `%variable%` interpolation in action config; Globals editor with filter, JSON export, and Variant editor modal.
 - **Rhai scripting sandbox:** `ForgeApi` god-object with op-count and time limits; `ScriptRegistry` with hot-reload; `RunScript` sub-action; 3-pane ScriptEditor screen.
@@ -67,7 +70,6 @@ Forge is an open-source desktop application that automates stream workflows acro
 
 **Feature timeline (pending):**
 
-- **beta-1:** YouTube chat platform. VTube Studio integration. OBS dB level meters for input monitoring. Twitch viewer count delta polling. Full Trigger kebab menu dropdown (Actions, Duplicate, Delete in one menu).
 - **beta-2+:** Trovo and Kick chat platforms; Discord webhooks; MIDI controllers; system hotkeys; TTS engines (Piper, eSpeak-NG, cloud services). Voice aliases & preprocessing pipeline. Full notifications customization.
 
 ## Building from Source
@@ -102,8 +104,8 @@ On first run, the app will initialize your data directory (XDG-compliant on Linu
 Binary releases for Linux, Windows, and macOS are published on [GitHub Releases](https://github.com/IceSqueez/forge/releases).
 
 - **Linux:** AppImage (universal), Flatpak, AUR (community).
-- **Windows:** Portable ZIP (no install) + MSI installer (coming beta-1).
-- **macOS:** Disk image (.dmg) with signed binary (coming beta-1).
+- **Windows:** Portable ZIP (no install) + MSI installer (coming soon).
+- **macOS:** Disk image (.dmg) with signed binary (coming soon).
 
 Per-platform installation details will be added as packaging matures.
 
@@ -112,7 +114,7 @@ Per-platform installation details will be added as packaging matures.
 Forge is completing alpha and transitioning to beta. Current gaps:
 
 - **`ObsRaw` sub-action is non-functional.** The variant exists in the schema for forward compatibility, but `obws` v0.15 does not expose a raw-request passthrough. Execution returns a protocol error at runtime. Resolves when `obws` 0.16+ ships a `send_raw` API.
-- **Additional chat platforms** (YouTube, Trovo, Kick) landing in beta-1 and beyond; Twitch is the current primary source.
+- **Additional chat platforms** (Trovo, Kick) landing in beta-2 and beyond.
 - **VTube Studio integration, Discord webhooks, MIDI controllers, system hotkeys** coming in beta and rc stages.
 - **TTS engines** (Piper, eSpeak-NG, cloud services: Azure, OpenAI, ElevenLabs, Google) and **voice aliases & preprocessing pipeline** deferred to beta-2+.
 - **TLS/WSS** for the WebSocket server is deferred to beta or rc; current use is local-network only.

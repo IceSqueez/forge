@@ -3,6 +3,44 @@ use time::OffsetDateTime;
 
 use crate::EventId;
 
+/// Wire-format envelope that platform crates attach under `Event::payload["_chat"]`
+/// whenever an event should surface in LiveChat.
+///
+/// The `_` prefix is reserved for forge-internal payload keys; ArgStack keys
+/// (top-level in `Event::payload`) never start with `_`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChatPayload {
+    pub platform_msg_id: String,
+    pub author: String,
+    pub author_color: Option<String>,
+    pub segments: Vec<ChatSegment>,
+    pub badges: Vec<UserBadge>,
+    pub is_event: bool,
+    pub event_detail: Option<ChatEventDetail>,
+    #[serde(default)]
+    pub moderation: ModerationMarks,
+}
+
+impl ChatPayload {
+    /// Reserved payload key for chat envelope. Call sites must use this constant
+    /// rather than the bare string to avoid silent drift.
+    pub const KEY: &'static str = "_chat";
+
+    /// Parses `#RRGGBB` or `RRGGBB` (case-insensitive) into a 3-byte RGB tuple.
+    /// Returns `None` for any input that is not exactly 6 hex digits (with or
+    /// without a leading `#`).
+    pub fn parse_color(s: &str) -> Option<[u8; 3]> {
+        let hex = s.strip_prefix('#').unwrap_or(s);
+        if hex.len() != 6 {
+            return None;
+        }
+        let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+        let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+        let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+        Some([r, g, b])
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum ChatSource {
@@ -101,6 +139,101 @@ mod tests {
 
     use super::*;
     use crate::EventId;
+
+    fn minimal_payload(msg_id: &str) -> ChatPayload {
+        ChatPayload {
+            platform_msg_id: msg_id.to_string(),
+            author: "user".to_string(),
+            author_color: None,
+            segments: vec![],
+            badges: vec![],
+            is_event: false,
+            event_detail: None,
+            moderation: ModerationMarks::default(),
+        }
+    }
+
+    #[test]
+    fn chat_payload_key_constant_value() {
+        assert_eq!(ChatPayload::KEY, "_chat");
+    }
+
+    #[test]
+    fn chat_payload_roundtrips_minimal() {
+        let payload = minimal_payload("abc123");
+        let json = to_string(&payload).unwrap();
+        let back: ChatPayload = from_str(&json).unwrap();
+        assert_eq!(back, payload);
+    }
+
+    #[test]
+    fn chat_payload_roundtrips_full() {
+        let payload = ChatPayload {
+            platform_msg_id: "full-msg".to_string(),
+            author: "streamer".to_string(),
+            author_color: Some("#FF0000".to_string()),
+            segments: vec![
+                ChatSegment::Text {
+                    text: "wow ".to_string(),
+                },
+                ChatSegment::Emote {
+                    id: "123".to_string(),
+                    name: "KEKW".to_string(),
+                },
+            ],
+            badges: vec![UserBadge::Moderator, UserBadge::Subscriber { months: 12 }],
+            is_event: true,
+            event_detail: Some(ChatEventDetail::SuperChat {
+                amount_micros: 5_000_000,
+                currency: "USD".to_string(),
+                message: Some("amazing!".to_string()),
+            }),
+            moderation: ModerationMarks {
+                deleted: false,
+                timed_out: false,
+                banned: false,
+            },
+        };
+        let json = to_string(&payload).unwrap();
+        let back: ChatPayload = from_str(&json).unwrap();
+        assert_eq!(back, payload);
+    }
+
+    #[test]
+    fn parse_color_accepts_hash_prefix() {
+        assert_eq!(
+            ChatPayload::parse_color("#FF00AA"),
+            Some([0xFF, 0x00, 0xAA])
+        );
+    }
+
+    #[test]
+    fn parse_color_accepts_no_prefix() {
+        assert_eq!(ChatPayload::parse_color("FF00AA"), Some([0xFF, 0x00, 0xAA]));
+    }
+
+    #[test]
+    fn parse_color_case_insensitive() {
+        assert_eq!(
+            ChatPayload::parse_color("#ff00aa"),
+            Some([0xFF, 0x00, 0xAA])
+        );
+    }
+
+    #[test]
+    fn parse_color_rejects_short_string() {
+        assert_eq!(ChatPayload::parse_color("FFF"), None);
+    }
+
+    #[test]
+    fn parse_color_rejects_invalid_hex() {
+        assert_eq!(ChatPayload::parse_color("#XXYYZZ"), None);
+    }
+
+    #[test]
+    fn parse_color_rejects_empty() {
+        assert_eq!(ChatPayload::parse_color(""), None);
+    }
 
     fn make_row(segments: Vec<ChatSegment>) -> UnifiedChatRow {
         UnifiedChatRow {

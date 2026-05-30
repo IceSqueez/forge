@@ -10,7 +10,7 @@ use crate::app::{App, format_uptime, subsystem_connectivity};
 use crate::builtin_detail::view as builtin_detail_view;
 use crate::event_feed::event_feed_view;
 use crate::globals_view::globals_view;
-use crate::live_chat::live_chat_view;
+use crate::live_chat_view::live_chat_view;
 use crate::message::{Message, ToastMsg};
 use crate::navigation;
 use crate::queues_view::queues_view;

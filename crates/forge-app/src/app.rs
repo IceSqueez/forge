@@ -29,9 +29,9 @@ use crate::home::HomeStats;
 use crate::live_chat::LiveChatState;
 #[cfg(test)]
 use crate::message::ObsClientRef;
-use crate::message::{ActionsMsg, BootMsg, ServerSubsystemMsg, SidebarMsg, ToastMsg, TtsMsg};
 #[cfg(test)]
-use crate::message::{PlatformId, SettingsMsg};
+use crate::message::SettingsMsg;
+use crate::message::{ActionsMsg, BootMsg, ServerSubsystemMsg, SidebarMsg, ToastMsg, TtsMsg};
 use crate::queues_view::QueuesState;
 use crate::script_editor::ScriptEditorState;
 use crate::server_screen::ServerScreenState;
@@ -45,6 +45,8 @@ use crate::tts_filters::TtsFiltersState;
 use crate::tts_triggers::TtsTriggersState;
 use crate::voice_aliases::VoiceAliasesState;
 use crate::{Message, Screen};
+#[cfg(test)]
+use forge_types::PlatformId;
 
 pub struct SidebarExpandState {
     pub actions_queues: bool,

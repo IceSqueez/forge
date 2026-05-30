@@ -7,7 +7,9 @@ use iced::{Element, Length, Task};
 
 use crate::app::App;
 use crate::boot;
-use crate::message::{Message, PlatformId, SettingsMsg};
+use forge_types::PlatformId;
+
+use crate::message::{Message, SettingsMsg};
 use crate::page_chrome::simple_page_header;
 use crate::screen::{Screen, SettingsSection};
 use crate::server_screen::ServerScreenState;

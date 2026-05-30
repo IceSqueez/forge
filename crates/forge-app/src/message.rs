@@ -11,7 +11,7 @@ use forge_widgets::{DeviceLabel, PickerItem, ToastKind};
 
 use forge_platform_core::{HeaderAction, HealthDelta};
 use forge_storage::GlobalEntry;
-use forge_types::ActionId;
+use forge_types::{ActionId, PlatformId};
 use forge_widgets::{ThemeId, VariantKind};
 use time::OffsetDateTime;
 
@@ -65,14 +65,6 @@ pub use forge_runtime::dashboard::DashboardStats as HomeStatsData;
 pub enum HomeMsg {
     LoadStats,
     StatsLoaded(Result<HomeStatsData, String>),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PlatformId {
-    Twitch,
-    YouTube,
-    Kick,
-    Trovo,
 }
 
 #[derive(Debug, Clone)]

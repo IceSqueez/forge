@@ -63,7 +63,7 @@ pub use home::HomeStats;
 pub use live_chat::{ChatFilters, LiveChatState, PlatformFilter};
 pub use message::{
     ActionsMsg, BootMsg, BuiltinDetailMsg, EditorMode, GlobalsFilter, GlobalsLoadData, GlobalsMsg,
-    HomeMsg, HomeStatsData, LiveChatMsg, Message, ObsClientRef, PlatformId, ServerSubsystemMsg,
+    HomeMsg, HomeStatsData, LiveChatMsg, Message, ObsClientRef, ServerSubsystemMsg,
     SettingsAudioMsg, SettingsMsg, SidebarMsg, SoundboardMsg, TtsDashMsg, TtsEnginesMsg,
     TtsFiltersMsg, TtsMsg, TtsTriggersMsg, VariantEditorMsg, VoiceAliasesMsg,
 };

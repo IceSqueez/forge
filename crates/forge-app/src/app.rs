@@ -242,11 +242,7 @@ impl Default for App {
 }
 
 fn dispatch_event(app: &mut App, event: &Arc<Event>) -> Task<Message> {
-    let mut task = crate::live_chat::on_event(&mut app.ui.live_chat, event);
-    task = task.chain(crate::builtin_detail::on_event(
-        app.ui.builtin_detail.as_mut(),
-        event,
-    ));
+    let mut task = crate::builtin_detail::on_event(app.ui.builtin_detail.as_mut(), event);
     task = task.chain(crate::home::on_event(&mut app.ui.home, event));
     task = task.chain(crate::event_feed::on_event(&mut app.ui.event_feed, event));
     if event.kind == "platform.reauth_required"
@@ -569,21 +565,21 @@ mod tests {
     }
 
     #[test]
-    fn chat_submit_empty_input_is_noop() {
+    fn chat_send_empty_input_is_noop() {
         use crate::message::LiveChatMsg;
         let mut app = App::default();
-        app.ui.live_chat.chat_input = String::new();
-        let _ = update(&mut app, Message::LiveChat(LiveChatMsg::Submit));
-        assert!(app.ui.live_chat.chat_input.is_empty());
+        app.ui.live_chat.input_buffer = String::new();
+        let _ = update(&mut app, Message::LiveChat(LiveChatMsg::SendPressed));
+        assert!(app.ui.live_chat.input_buffer.is_empty());
     }
 
     #[test]
-    fn chat_submit_clears_input_and_dispatches_task() {
+    fn chat_send_clears_input_and_dispatches_task() {
         use crate::message::LiveChatMsg;
         let mut app = App::default();
-        app.ui.live_chat.chat_input = "hello chat".into();
-        let _ = update(&mut app, Message::LiveChat(LiveChatMsg::Submit));
-        assert!(app.ui.live_chat.chat_input.is_empty());
+        app.ui.live_chat.input_buffer = "hello chat".into();
+        let _ = update(&mut app, Message::LiveChat(LiveChatMsg::SendPressed));
+        assert!(app.ui.live_chat.input_buffer.is_empty());
     }
 
     #[tokio::test]

@@ -1,147 +1,216 @@
-use std::collections::VecDeque;
+use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::sync::Arc;
 
 use forge_events::{Event, EventSource};
+use forge_types::{
+    ChatEventDetail, ChatSegment, ChatSource, EventId, ModerationMarks, PlatformId, UnifiedChatRow,
+    UserBadge,
+};
 use forge_widgets::{
     BadgeKind, ChatBody, ChatRow, ForgePalette, Icon, Platform, PlatformTarget, tabler_icon,
-    tokens::{Spacing, sp, spf},
+    tokens::{Radius, Spacing, radius, sp, spf},
 };
 use iced::{Color, Element, Length, Task};
+use time::OffsetDateTime;
 
 use crate::Message;
 use crate::message::LiveChatMsg;
 use crate::runtime_view::RuntimeView;
 use crate::viewers::ViewersState;
 
-pub const CHAT_LOG_MAX: usize = 1_000;
+pub const CHAT_LOG_MAX: usize = 2_000;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub type SendId = u64;
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum PlatformFilter {
     #[default]
     All,
-    Twitch,
-    YouTube,
-    Kick,
+    Single(PlatformId),
+    Custom(BTreeSet<PlatformId>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct ChatFilters {
-    pub platform: PlatformFilter,
-    pub events_only: bool,
-    pub hide_bots: bool,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EventsFilter {
+    #[default]
+    All,
+    OnlyMessages,
+    OnlyEvents,
+}
+
+#[derive(Debug, Clone)]
+pub struct PendingSendState {
+    pub target: PlatformId,
+    pub started_at: OffsetDateTime,
+    pub status: PendingSendStatus,
+}
+
+#[derive(Debug, Clone)]
+pub enum PendingSendStatus {
+    InFlight,
+    Ok,
+    Failed(String),
 }
 
 pub struct LiveChatState {
-    pub chat_log: VecDeque<ChatRow>,
-    pub next_chat_seq: u64,
-    pub chat_input: String,
-    pub chat_filter: ChatFilters,
+    pub rows: VecDeque<UnifiedChatRow>,
+    pub platform_filter: PlatformFilter,
+    pub events_filter: EventsFilter,
+    pub hide_bots: bool,
+    pub search_query: String,
+    pub auto_scroll: bool,
+    pub scroll_position: f32,
+    pub input_buffer: String,
+    pub cross_post: bool,
+    pub primary_send_target: Option<PlatformId>,
+    pub secondary_send_targets: Vec<PlatformId>,
+    pub pending_sends: HashMap<SendId, PendingSendState>,
+    pub connected_platforms: Vec<PlatformId>,
+    pub next_send_id: SendId,
     pub drawer_open: bool,
     pub drawer_width: Option<f32>,
     pub drawer_menu_open: bool,
     pub drawer_search: String,
     pub selected_viewer: Option<String>,
-    pub auto_scroll: bool,
     pub unread_count: u32,
     pub emoji_picker_open: bool,
+    pub next_chat_seq: u64,
 }
 
 impl LiveChatState {
     pub fn new() -> Self {
-        let mut chat_log: VecDeque<ChatRow> = VecDeque::new();
+        let mut rows: VecDeque<UnifiedChatRow> = VecDeque::new();
+        let base = OffsetDateTime::now_utc();
 
-        chat_log.push_back(ChatRow {
-            seq: 0,
-            timestamp: "14:21:00".into(),
-            platform: Platform::Twitch,
-            badges: vec![BadgeKind::Moderator],
-            username: "haash_".into(),
-            username_color: Color::from_rgb8(0xcb, 0xa6, 0xf7),
-            body: ChatBody::Message("welcome to the stream everyone, GTNH grind continues".into()),
+        rows.push_back(UnifiedChatRow {
+            id: "seed-0".to_owned(),
+            event_id: EventId::new(),
+            source: ChatSource::Twitch,
+            received_at: base,
+            author: "haash_".to_owned(),
+            author_color: Some([0xcb, 0xa6, 0xf7]),
+            body_segments: vec![ChatSegment::Text {
+                text: "welcome to the stream everyone, GTNH grind continues".to_owned(),
+            }],
+            badges: vec![UserBadge::Moderator],
+            is_event: false,
+            event_detail: None,
+            moderation: ModerationMarks::default(),
         });
-        chat_log.push_back(ChatRow {
-            seq: 1,
-            timestamp: "14:21:16".into(),
-            platform: Platform::Twitch,
+        rows.push_back(UnifiedChatRow {
+            id: "seed-1".to_owned(),
+            event_id: EventId::new(),
+            source: ChatSource::Twitch,
+            received_at: base,
+            author: "danylo_ua".to_owned(),
+            author_color: Some([0xfa, 0xb3, 0x87]),
+            body_segments: vec![],
             badges: vec![],
-            username: "danylo_ua".into(),
-            username_color: Color::from_rgb8(0xfa, 0xb3, 0x87),
-            body: ChatBody::Subscription {
+            is_event: true,
+            event_detail: Some(ChatEventDetail::Subscription {
                 tier: 1,
                 months: Some(3),
                 message: Some("Дякую за стрім, GTNH топ!".into()),
-                triggered_action: Some("Welcome new subscriber".into()),
-            },
+            }),
+            moderation: ModerationMarks::default(),
         });
-        chat_log.push_back(ChatRow {
-            seq: 2,
-            timestamp: "14:21:30".into(),
-            platform: Platform::YouTube,
+        rows.push_back(UnifiedChatRow {
+            id: "seed-2".to_owned(),
+            event_id: EventId::new(),
+            source: ChatSource::YouTube,
+            received_at: base,
+            author: "olena_lv".to_owned(),
+            author_color: Some([0xf5, 0xc2, 0xe7]),
+            body_segments: vec![ChatSegment::Text {
+                text: "aluminum bottleneck знов :(".to_owned(),
+            }],
             badges: vec![],
-            username: "olena_lv".into(),
-            username_color: Color::from_rgb8(0xf5, 0xc2, 0xe7),
-            body: ChatBody::Message("aluminum bottleneck знов :(".into()),
+            is_event: false,
+            event_detail: None,
+            moderation: ModerationMarks::default(),
         });
-        chat_log.push_back(ChatRow {
-            seq: 3,
-            timestamp: "14:21:55".into(),
-            platform: Platform::Twitch,
+        rows.push_back(UnifiedChatRow {
+            id: "seed-3".to_owned(),
+            event_id: EventId::new(),
+            source: ChatSource::Twitch,
+            received_at: base,
+            author: "koval_dev".to_owned(),
+            author_color: Some([0xa6, 0xe3, 0xa1]),
+            body_segments: vec![ChatSegment::Text {
+                text: "!quote".to_owned(),
+            }],
             badges: vec![],
-            username: "koval_dev".into(),
-            username_color: Color::from_rgb8(0xa6, 0xe3, 0xa1),
-            body: ChatBody::Command {
-                command: "!quote".into(),
-                action_name: Some("!quote".into()),
-                action_duration_ms: Some(18),
-            },
+            is_event: false,
+            event_detail: None,
+            moderation: ModerationMarks::default(),
         });
-        chat_log.push_back(ChatRow {
-            seq: 4,
-            timestamp: "14:22:12".into(),
-            platform: Platform::Twitch,
+        rows.push_back(UnifiedChatRow {
+            id: "seed-4".to_owned(),
+            event_id: EventId::new(),
+            source: ChatSource::Twitch,
+            received_at: base,
+            author: "stream_fan_kyiv".to_owned(),
+            author_color: Some([0xfa, 0xb3, 0x87]),
+            body_segments: vec![ChatSegment::Text {
+                text: "keep going! love the UA stream".to_owned(),
+            }],
             badges: vec![],
-            username: "stream_fan_kyiv".into(),
-            username_color: Color::from_rgb8(0xfa, 0xb3, 0x87),
-            body: ChatBody::Cheer {
-                bits: 500,
-                text: "keep going! love the UA stream".into(),
-            },
+            is_event: false,
+            event_detail: None,
+            moderation: ModerationMarks::default(),
         });
-        chat_log.push_back(ChatRow {
-            seq: 5,
-            timestamp: "14:22:29".into(),
-            platform: Platform::Kick,
+        rows.push_back(UnifiedChatRow {
+            id: "seed-5".to_owned(),
+            event_id: EventId::new(),
+            source: ChatSource::Kick,
+            received_at: base,
+            author: "ostap_pl".to_owned(),
+            author_color: Some([0x94, 0xe2, 0xd5]),
+            body_segments: vec![ChatSegment::Text {
+                text: "ти вже відкрив stainless steel?".to_owned(),
+            }],
             badges: vec![],
-            username: "ostap_pl".into(),
-            username_color: Color::from_rgb8(0x94, 0xe2, 0xd5),
-            body: ChatBody::Message("ти вже відкрив stainless steel?".into()),
+            is_event: false,
+            event_detail: None,
+            moderation: ModerationMarks::default(),
         });
-        chat_log.push_back(ChatRow {
-            seq: 6,
-            timestamp: "14:22:48".into(),
-            platform: Platform::Twitch,
+        rows.push_back(UnifiedChatRow {
+            id: "seed-6".to_owned(),
+            event_id: EventId::new(),
+            source: ChatSource::Twitch,
+            received_at: base,
+            author: "factorio_streamer".to_owned(),
+            author_color: Some([0xf3, 0x8b, 0xa8]),
+            body_segments: vec![],
             badges: vec![],
-            username: "factorio_streamer".into(),
-            username_color: Color::from_rgb8(0xf3, 0x8b, 0xa8),
-            body: ChatBody::Raid {
-                viewers: 42,
-                triggered_action: Some("Raid welcome + OBS scene".into()),
-            },
+            is_event: true,
+            event_detail: Some(ChatEventDetail::Raid { viewer_count: 42 }),
+            moderation: ModerationMarks::default(),
         });
 
         Self {
-            chat_log,
-            next_chat_seq: 7,
-            chat_input: String::new(),
-            chat_filter: ChatFilters::default(),
+            rows,
+            platform_filter: PlatformFilter::All,
+            events_filter: EventsFilter::All,
+            hide_bots: false,
+            search_query: String::new(),
+            auto_scroll: true,
+            scroll_position: 0.0,
+            input_buffer: String::new(),
+            cross_post: false,
+            primary_send_target: Some(PlatformId::Twitch),
+            secondary_send_targets: Vec::new(),
+            pending_sends: HashMap::new(),
+            connected_platforms: vec![PlatformId::Twitch],
+            next_send_id: 0,
             drawer_open: false,
             drawer_width: None,
             drawer_menu_open: false,
             drawer_search: String::new(),
             selected_viewer: None,
-            auto_scroll: true,
             unread_count: 0,
             emoji_picker_open: false,
+            next_chat_seq: 7,
         }
     }
 }
@@ -154,33 +223,148 @@ impl Default for LiveChatState {
 
 pub fn update(state: &mut LiveChatState, rt: &RuntimeView, msg: LiveChatMsg) -> Task<Message> {
     match msg {
-        LiveChatMsg::InputChanged(s) => {
-            state.chat_input = s;
+        LiveChatMsg::RowReceived(row) => {
+            state.rows.push_back(row);
+            if state.rows.len() > CHAT_LOG_MAX {
+                state.rows.pop_front();
+            }
+            if state.auto_scroll && state.search_query.is_empty() {
+                iced::widget::operation::snap_to_end(chat_scroll_id())
+            } else {
+                state.unread_count = state.unread_count.saturating_add(1);
+                Task::none()
+            }
+        }
+        LiveChatMsg::PlatformFilterChanged(f) => {
+            state.platform_filter = f;
             Task::none()
         }
-        LiveChatMsg::Submit => {
-            let msg = std::mem::take(&mut state.chat_input);
-            let msg = msg.trim().to_owned();
-            if msg.is_empty() {
+        LiveChatMsg::EventsFilterToggled(f) => {
+            state.events_filter = f;
+            Task::none()
+        }
+        LiveChatMsg::HideBotsToggled => {
+            state.hide_bots = !state.hide_bots;
+            Task::none()
+        }
+        LiveChatMsg::SearchChanged(q) => {
+            let was_empty = state.search_query.is_empty();
+            state.search_query = q;
+            if was_empty && !state.search_query.is_empty() {
+                state.auto_scroll = false;
+            }
+            Task::none()
+        }
+        LiveChatMsg::AutoScrollToggled => {
+            state.auto_scroll = !state.auto_scroll;
+            Task::none()
+        }
+        LiveChatMsg::InputChanged(s) => {
+            state.input_buffer = s;
+            Task::none()
+        }
+        LiveChatMsg::CrossPostToggled => {
+            state.cross_post = !state.cross_post;
+            Task::none()
+        }
+        LiveChatMsg::PrimarySendTargetChanged(p) => {
+            state.primary_send_target = Some(p);
+            let dp: Arc<dyn forge_storage::SettingsRepo> =
+                Arc::clone(&rt.backend) as Arc<dyn forge_storage::SettingsRepo>;
+            let key_str = platform_id_to_key(p).to_owned();
+            Task::perform(
+                async move {
+                    dp.set_string("live_chat:primary_send_target", &key_str)
+                        .await
+                        .ok();
+                },
+                |_| Message::Noop,
+            )
+        }
+        LiveChatMsg::SecondarySendTargetToggled(p) => {
+            if let Some(pos) = state.secondary_send_targets.iter().position(|&t| t == p) {
+                state.secondary_send_targets.remove(pos);
+            } else {
+                state.secondary_send_targets.push(p);
+            }
+            Task::none()
+        }
+        LiveChatMsg::SendPressed => {
+            let body = std::mem::take(&mut state.input_buffer);
+            let body = body.trim().to_owned();
+            if body.is_empty() {
                 return Task::none();
             }
-            rt.bus.publish(Event::new(
-                EventSource::Core,
-                "chat.send.request",
-                serde_json::json!({"target": "twitch", "message": msg}),
-            ));
+            let mut targets: Vec<PlatformId> = Vec::new();
+            if let Some(primary) = state.primary_send_target {
+                targets.push(primary);
+            }
+            if state.cross_post {
+                for &t in &state.secondary_send_targets {
+                    if !targets.contains(&t) {
+                        targets.push(t);
+                    }
+                }
+            }
+            if targets.is_empty()
+                && let Some(&first) = state.connected_platforms.first()
+            {
+                targets.push(first);
+            }
+            let mut tasks: Vec<Task<Message>> = Vec::new();
+            for target in targets {
+                let send_id = state.next_send_id;
+                state.next_send_id = state.next_send_id.wrapping_add(1);
+                state.pending_sends.insert(
+                    send_id,
+                    PendingSendState {
+                        target,
+                        started_at: OffsetDateTime::now_utc(),
+                        status: PendingSendStatus::InFlight,
+                    },
+                );
+                let body_clone = body.clone();
+                let bus = Arc::clone(&rt.bus);
+                tasks.push(Task::perform(
+                    async move {
+                        match target {
+                            PlatformId::Twitch => {
+                                bus.publish(Event::new(
+                                    EventSource::Core,
+                                    "chat.send.request",
+                                    serde_json::json!({
+                                        "target": "twitch",
+                                        "message": body_clone,
+                                    }),
+                                ));
+                                Ok::<(), String>(())
+                            }
+                            _ => Err("not yet wired".to_owned()),
+                        }
+                    },
+                    move |r| Message::LiveChat(LiveChatMsg::SendCompleted(send_id, r)),
+                ));
+            }
+            Task::batch(tasks)
+        }
+        LiveChatMsg::SendCompleted(id, result) => {
+            if let Some(ps) = state.pending_sends.get_mut(&id) {
+                ps.status = match result {
+                    Ok(()) => PendingSendStatus::Ok,
+                    Err(e) => PendingSendStatus::Failed(e),
+                };
+            }
             Task::none()
         }
-        LiveChatMsg::PlatformFilter(platform) => {
-            state.chat_filter.platform = platform;
-            Task::none()
-        }
-        LiveChatMsg::ToggleEventsOnly => {
-            state.chat_filter.events_only = !state.chat_filter.events_only;
-            Task::none()
-        }
-        LiveChatMsg::ToggleHideBots => {
-            state.chat_filter.hide_bots = !state.chat_filter.hide_bots;
+        LiveChatMsg::ConnectedPlatformsUpdated(platforms) => {
+            state.connected_platforms = platforms;
+            let current_valid = state
+                .primary_send_target
+                .map(|p| state.connected_platforms.contains(&p))
+                .unwrap_or(false);
+            if !current_valid {
+                state.primary_send_target = state.connected_platforms.first().copied();
+            }
             Task::none()
         }
         LiveChatMsg::ToggleDrawer => {
@@ -250,157 +434,149 @@ pub fn chat_scroll_id() -> iced::advanced::widget::Id {
     iced::advanced::widget::Id::new("forge:chat_scroll")
 }
 
-pub fn on_event(state: &mut LiveChatState, event: &Event) -> Task<Message> {
-    let Some(row) = chat_row_from_event(event, &mut state.next_chat_seq) else {
-        return Task::none();
-    };
-    state.chat_log.push_back(row);
-    if state.chat_log.len() > CHAT_LOG_MAX {
-        state.chat_log.pop_front();
+pub fn row_match_opacity(row: &UnifiedChatRow, query: &str) -> f32 {
+    if query.is_empty() {
+        return 1.0;
     }
-    if state.auto_scroll {
-        iced::widget::operation::snap_to_end(chat_scroll_id())
+    let lower = query.to_ascii_lowercase();
+    let body = row.body_text().to_ascii_lowercase();
+    let author = row.author.to_ascii_lowercase();
+    if body.contains(&lower) || author.contains(&lower) {
+        1.0
     } else {
-        state.unread_count = state.unread_count.saturating_add(1);
-        Task::none()
+        0.3
     }
 }
 
-pub fn chat_row_from_event(event: &Event, next_seq: &mut u64) -> Option<ChatRow> {
-    use forge_platform_twitch::chat::parsers::TwitchChatEvent;
-
-    if event.source != EventSource::Twitch {
-        return None;
+fn row_matches_platform_filter(row: &UnifiedChatRow, filter: &PlatformFilter) -> bool {
+    match filter {
+        PlatformFilter::All => true,
+        PlatformFilter::Single(id) => chat_source_to_platform_id(row.source) == *id,
+        PlatformFilter::Custom(ids) => ids.contains(&chat_source_to_platform_id(row.source)),
     }
-    let parsed = forge_platform_twitch::parse_chat_event(event)?;
-    let timestamp = format_timestamp(event);
-    let mut row = match parsed {
-        TwitchChatEvent::Message {
-            username,
-            text,
-            badges,
-            color_hex,
-        } => ChatRow {
-            seq: 0,
-            timestamp,
-            platform: Platform::Twitch,
-            badges: badges.iter().map(twitch_badge_to_kind).collect(),
-            username,
-            username_color: color_hex_to_iced(color_hex.as_deref()),
-            body: ChatBody::Message(text),
-        },
-        TwitchChatEvent::Subscription {
-            username,
-            tier,
-            months,
-            message,
-            color_hex,
-        } => ChatRow {
-            seq: 0,
-            timestamp,
-            platform: Platform::Twitch,
-            badges: vec![],
-            username,
-            username_color: color_hex_to_iced(color_hex.as_deref()),
-            body: ChatBody::Subscription {
-                tier,
-                months,
-                message,
-                triggered_action: None,
-            },
-        },
-        TwitchChatEvent::Cheer {
-            username,
-            bits,
-            text,
-            color_hex,
-        } => ChatRow {
-            seq: 0,
-            timestamp,
-            platform: Platform::Twitch,
-            badges: vec![],
-            username,
-            username_color: color_hex_to_iced(color_hex.as_deref()),
-            body: ChatBody::Cheer { bits, text },
-        },
-        TwitchChatEvent::Raid { username, viewers } => ChatRow {
-            seq: 0,
-            timestamp,
-            platform: Platform::Twitch,
-            badges: vec![],
-            username,
-            username_color: Color::from_rgb8(0xf3, 0x8b, 0xa8),
-            body: ChatBody::Raid {
-                viewers,
-                triggered_action: None,
-            },
-        },
-    };
-    row.seq = *next_seq;
-    *next_seq = next_seq.wrapping_add(1);
-    Some(row)
 }
 
-fn format_timestamp(event: &Event) -> String {
-    let secs = event.timestamp.unix_timestamp();
+fn row_matches_events_filter(row: &UnifiedChatRow, filter: EventsFilter) -> bool {
+    match filter {
+        EventsFilter::All => true,
+        EventsFilter::OnlyMessages => !row.is_event,
+        EventsFilter::OnlyEvents => row.is_event,
+    }
+}
+
+fn row_is_bot(row: &UnifiedChatRow) -> bool {
+    row.badges.iter().any(|b| matches!(b, UserBadge::Bot))
+}
+
+pub fn chat_source_to_platform_id(source: ChatSource) -> PlatformId {
+    match source {
+        ChatSource::Twitch => PlatformId::Twitch,
+        ChatSource::YouTube => PlatformId::YouTube,
+        ChatSource::Kick => PlatformId::Kick,
+        ChatSource::Trovo => PlatformId::Trovo,
+    }
+}
+
+fn platform_id_to_widget(id: PlatformId) -> Platform {
+    match id {
+        PlatformId::Twitch => Platform::Twitch,
+        PlatformId::YouTube => Platform::YouTube,
+        PlatformId::Kick => Platform::Kick,
+        PlatformId::Trovo => Platform::Trovo,
+    }
+}
+
+fn platform_id_to_key(id: PlatformId) -> &'static str {
+    match id {
+        PlatformId::Twitch => "twitch",
+        PlatformId::YouTube => "youtube",
+        PlatformId::Kick => "kick",
+        PlatformId::Trovo => "trovo",
+    }
+}
+
+fn unified_badge_to_kind(badge: &UserBadge) -> BadgeKind {
+    match badge {
+        UserBadge::Broadcaster => BadgeKind::Broadcaster,
+        UserBadge::Moderator => BadgeKind::Moderator,
+        UserBadge::Vip => BadgeKind::Vip,
+        UserBadge::Subscriber { .. } => BadgeKind::Subscriber,
+        UserBadge::Member { .. } => BadgeKind::Subscriber,
+        UserBadge::Bot => BadgeKind::Bot,
+    }
+}
+
+fn author_color_to_iced(color: Option<[u8; 3]>, fallback: Color) -> Color {
+    match color {
+        Some([r, g, b]) => Color::from_rgb8(r, g, b),
+        None => fallback,
+    }
+}
+
+fn format_row_timestamp(dt: OffsetDateTime) -> String {
+    let secs = dt.unix_timestamp();
     let h = (secs / 3600) % 24;
     let m = (secs / 60) % 60;
     let s = secs % 60;
     format!("{h:02}:{m:02}:{s:02}")
 }
 
-fn twitch_badge_to_kind(badge: &forge_platform_twitch::TwitchBadge) -> BadgeKind {
-    use forge_platform_twitch::TwitchBadge;
-    match badge {
-        TwitchBadge::Moderator => BadgeKind::Moderator,
-        TwitchBadge::Vip => BadgeKind::Vip,
-        TwitchBadge::Subscriber => BadgeKind::Subscriber,
-        TwitchBadge::Broadcaster => BadgeKind::Broadcaster,
+fn unified_to_chat_row(row: &UnifiedChatRow, seq: u64) -> ChatRow {
+    let platform = match row.source {
+        ChatSource::Twitch => Platform::Twitch,
+        ChatSource::YouTube => Platform::YouTube,
+        ChatSource::Kick => Platform::Kick,
+        ChatSource::Trovo => Platform::Trovo,
+    };
+    let badges: Vec<BadgeKind> = row.badges.iter().map(unified_badge_to_kind).collect();
+    let username_color = author_color_to_iced(row.author_color, Color::from_rgb(0.4, 0.7, 1.0));
+    let timestamp = format_row_timestamp(row.received_at);
+    let body = match &row.event_detail {
+        Some(ChatEventDetail::Subscription {
+            tier,
+            months,
+            message,
+        }) => ChatBody::Subscription {
+            tier: *tier,
+            months: *months,
+            message: message.clone(),
+            triggered_action: None,
+        },
+        Some(ChatEventDetail::Raid { viewer_count }) => ChatBody::Raid {
+            viewers: *viewer_count,
+            triggered_action: None,
+        },
+        Some(ChatEventDetail::SuperChat {
+            amount_micros,
+            message,
+            ..
+        }) => ChatBody::Cheer {
+            bits: amount_micros / 10_000,
+            text: message.clone().unwrap_or_default(),
+        },
+        Some(ChatEventDetail::NewMember { .. }) | Some(ChatEventDetail::MemberMilestone { .. }) => {
+            ChatBody::Subscription {
+                tier: 1,
+                months: None,
+                message: None,
+                triggered_action: None,
+            }
+        }
+        None => ChatBody::Message(row.body_text()),
+    };
+    ChatRow {
+        seq,
+        timestamp,
+        platform,
+        badges,
+        username: row.author.clone(),
+        username_color,
+        body,
     }
 }
 
-fn color_hex_to_iced(hex: Option<&str>) -> Color {
-    let Some(s) = hex else {
-        return Color::from_rgb(0.4, 0.7, 1.0);
-    };
-    if s.len() != 7 || !s.starts_with('#') {
-        return Color::from_rgb(0.4, 0.7, 1.0);
-    }
-    let Ok(r) = u8::from_str_radix(&s[1..3], 16) else {
-        return Color::from_rgb(0.4, 0.7, 1.0);
-    };
-    let Ok(g) = u8::from_str_radix(&s[3..5], 16) else {
-        return Color::from_rgb(0.4, 0.7, 1.0);
-    };
-    let Ok(b) = u8::from_str_radix(&s[5..7], 16) else {
-        return Color::from_rgb(0.4, 0.7, 1.0);
-    };
-    Color::from_rgb(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0)
-}
-
-pub fn filter_log<'a>(
-    entries: &'a VecDeque<ChatRow>,
-    filter: &ChatFilters,
-) -> impl Iterator<Item = &'a ChatRow> {
-    entries.iter().filter(move |row| {
-        let platform_ok = match filter.platform {
-            PlatformFilter::All => true,
-            PlatformFilter::Twitch => row.platform == Platform::Twitch,
-            PlatformFilter::YouTube => row.platform == Platform::YouTube,
-            PlatformFilter::Kick => row.platform == Platform::Kick,
-        };
-        let events_ok = if filter.events_only {
-            !matches!(row.body, ChatBody::Message(_))
-        } else {
-            true
-        };
-        let bots_ok = if filter.hide_bots {
-            !row.badges.contains(&BadgeKind::Bot)
-        } else {
-            true
-        };
-        platform_ok && events_ok && bots_ok
-    })
+fn select_viewer_msg(name: String) -> Message {
+    Message::LiveChat(LiveChatMsg::DrawerSelectViewer(name))
 }
 
 pub fn live_chat_view<'a>(
@@ -410,29 +586,35 @@ pub fn live_chat_view<'a>(
 ) -> Element<'a, Message> {
     let page_header = live_chat_page_header(state, palette);
     let chat_area = build_chat_area(state, palette);
+
+    let targets: Vec<PlatformTarget<'a, Message>> = state
+        .connected_platforms
+        .iter()
+        .map(|&p| {
+            let is_primary = state.primary_send_target == Some(p);
+            PlatformTarget {
+                platform: platform_id_to_widget(p),
+                active: is_primary,
+                on_press: Some(Box::new(move || {
+                    Message::LiveChat(LiveChatMsg::PrimarySendTargetChanged(p))
+                })),
+            }
+        })
+        .collect();
+
+    let send_placeholder = if state.connected_platforms.is_empty() {
+        "Connect a platform to send..."
+    } else {
+        "Send to chat..."
+    };
+
     let bar = forge_widgets::input_bar(
         palette,
-        &state.chat_input,
-        "Send to Twitch chat...",
-        vec![
-            PlatformTarget {
-                platform: Platform::Twitch,
-                active: true,
-                on_press: Some(Box::new(|| Message::LiveChat(LiveChatMsg::Submit))),
-            },
-            PlatformTarget {
-                platform: Platform::YouTube,
-                active: false,
-                on_press: None,
-            },
-            PlatformTarget {
-                platform: Platform::Kick,
-                active: false,
-                on_press: None,
-            },
-        ],
+        &state.input_buffer,
+        send_placeholder,
+        targets,
         |s| Message::LiveChat(LiveChatMsg::InputChanged(s)),
-        Message::LiveChat(LiveChatMsg::Submit),
+        Message::LiveChat(LiveChatMsg::SendPressed),
         state.emoji_picker_open,
         Message::LiveChat(LiveChatMsg::ToggleEmoji),
     );
@@ -467,6 +649,15 @@ pub fn live_chat_view<'a>(
         .into()
 }
 
+fn platform_filter_chip_color(id: PlatformId, palette: &ForgePalette) -> Color {
+    match id {
+        PlatformId::Twitch => palette.brand,
+        PlatformId::YouTube => palette.random,
+        PlatformId::Kick => palette.info,
+        PlatformId::Trovo => palette.success,
+    }
+}
+
 fn live_chat_page_header<'a>(
     state: &'a LiveChatState,
     palette: &'a ForgePalette,
@@ -492,31 +683,47 @@ fn live_chat_page_header<'a>(
         palette,
         "All",
         p.brand,
-        state.chat_filter.platform == PlatformFilter::All,
-        Message::LiveChat(LiveChatMsg::PlatformFilter(PlatformFilter::All)),
+        state.platform_filter == PlatformFilter::All,
+        Message::LiveChat(LiveChatMsg::PlatformFilterChanged(PlatformFilter::All)),
     );
-    let chip_twitch = forge_widgets::filter_chip(
+
+    let mut filter_chips: Vec<Element<'a, Message>> = vec![chip_all];
+    for &pid in &state.connected_platforms {
+        let color = platform_filter_chip_color(pid, palette);
+        let label = match pid {
+            PlatformId::Twitch => "Twitch",
+            PlatformId::YouTube => "YouTube",
+            PlatformId::Kick => "Kick",
+            PlatformId::Trovo => "Trovo",
+        };
+        let is_active = state.platform_filter == PlatformFilter::Single(pid);
+        filter_chips.push(forge_widgets::filter_chip(
+            palette,
+            label,
+            color,
+            is_active,
+            Message::LiveChat(LiveChatMsg::PlatformFilterChanged(PlatformFilter::Single(
+                pid,
+            ))),
+        ));
+    }
+
+    let events_chip = forge_widgets::filter_chip(
         palette,
-        "Twitch",
-        p.brand,
-        state.chat_filter.platform == PlatformFilter::Twitch,
-        Message::LiveChat(LiveChatMsg::PlatformFilter(PlatformFilter::Twitch)),
+        "Events",
+        p.warning,
+        state.events_filter == EventsFilter::OnlyEvents,
+        Message::LiveChat(LiveChatMsg::EventsFilterToggled(
+            if state.events_filter == EventsFilter::OnlyEvents {
+                EventsFilter::All
+            } else {
+                EventsFilter::OnlyEvents
+            },
+        )),
     );
-    let chip_youtube = forge_widgets::filter_chip(
-        palette,
-        "YouTube",
-        p.random,
-        state.chat_filter.platform == PlatformFilter::YouTube,
-        Message::LiveChat(LiveChatMsg::PlatformFilter(PlatformFilter::YouTube)),
-    );
-    let chip_kick = forge_widgets::filter_chip(
-        palette,
-        "Kick",
-        p.info,
-        state.chat_filter.platform == PlatformFilter::Kick,
-        Message::LiveChat(LiveChatMsg::PlatformFilter(PlatformFilter::Kick)),
-    );
-    let chips = row![chip_all, chip_twitch, chip_youtube, chip_kick].spacing(spf(Spacing::Xxs));
+    filter_chips.push(events_chip);
+
+    let chips = iced::widget::row(filter_chips).spacing(spf(Spacing::Xxs));
 
     let divider = container(iced::widget::Space::new().width(0.5).height(16.0))
         .width(0.5)
@@ -526,7 +733,22 @@ fn live_chat_page_header<'a>(
             ..container::Style::default()
         });
 
-    let viewer_count_str = format!("{} viewers", state.chat_log.len());
+    let match_count = if state.search_query.is_empty() {
+        state.rows.len()
+    } else {
+        let q = state.search_query.as_str();
+        state
+            .rows
+            .iter()
+            .filter(|r| row_match_opacity(r, q) >= 1.0)
+            .count()
+    };
+
+    let viewer_count_str = if state.search_query.is_empty() {
+        format!("{} messages", state.rows.len())
+    } else {
+        format!("{} matches", match_count)
+    };
     let viewer_info = row![
         text(viewer_count_str)
             .size(FONT_XS)
@@ -565,7 +787,7 @@ fn live_chat_page_header<'a>(
                     p.border_regular
                 },
                 width: 0.5,
-                radius: forge_widgets::radius(forge_widgets::Radius::Sm).into(),
+                radius: radius(Radius::Sm).into(),
             },
             text_color: if hovered {
                 p.text_primary
@@ -603,10 +825,6 @@ fn live_chat_page_header<'a>(
         .into()
 }
 
-fn select_viewer_msg(name: String) -> Message {
-    Message::LiveChat(LiveChatMsg::DrawerSelectViewer(name))
-}
-
 fn build_chat_area<'a>(
     state: &'a LiveChatState,
     palette: &'a ForgePalette,
@@ -616,36 +834,57 @@ fn build_chat_area<'a>(
         tokens::{FONT_XS, Radius, radius},
     };
     use iced::widget::{button, container, scrollable, text};
-    use iced::{Background, Border, Length, Padding};
+    use iced::{Background, Border, Padding};
 
     let palette_copy = *palette;
-    let visible: Vec<Element<'a, Message>> = filter_log(&state.chat_log, &state.chat_filter)
-        .map(|row| {
-            let row = row.clone();
-            let seq = row.seq;
-            iced::widget::lazy(seq, move |_: &u64| {
+    let query = state.search_query.clone();
+
+    let visible: Vec<Element<'a, Message>> = state
+        .rows
+        .iter()
+        .enumerate()
+        .filter(|(_, row)| {
+            row_matches_platform_filter(row, &state.platform_filter)
+                && row_matches_events_filter(row, state.events_filter)
+                && !(state.hide_bots && row_is_bot(row))
+        })
+        .map(|(idx, row)| {
+            let opacity = row_match_opacity(row, &query);
+            let chat_row = unified_to_chat_row(row, state.next_chat_seq.wrapping_add(idx as u64));
+            let seq = chat_row.seq;
+            let row_el: Element<'a, Message> = iced::widget::lazy(seq, move |_: &u64| {
                 forge_widgets::ChatRowWidget::new(
                     palette_copy,
-                    row.clone(),
+                    chat_row.clone(),
                     Some(select_viewer_msg),
                 )
             })
-            .into()
+            .into();
+            if opacity < 1.0 {
+                let p = palette_copy;
+                container(row_el)
+                    .style(move |_: &iced::Theme| container::Style {
+                        background: Some(Background::Color(iced::Color { a: 0.7, ..p.base })),
+                        ..container::Style::default()
+                    })
+                    .into()
+            } else {
+                row_el
+            }
         })
         .collect();
 
-    let empty_msg = if state.chat_filter.events_only {
-        "No subscription, cheer, or raid events yet."
+    let p = *palette;
+
+    let empty_msg = if !state.search_query.is_empty() {
+        "No messages match your search."
     } else {
-        match state.chat_filter.platform {
-            PlatformFilter::All => "Not connected — go to Settings → Platforms to connect Twitch.",
-            PlatformFilter::Twitch => "No Twitch messages yet.",
-            PlatformFilter::YouTube => "No YouTube messages yet.",
-            PlatformFilter::Kick => "No Kick messages yet.",
+        match state.events_filter {
+            EventsFilter::OnlyEvents => "No events yet.",
+            _ => "Not connected — go to Settings → Platforms to connect.",
         }
     };
 
-    let p = *palette;
     let content: Element<'a, Message> = if visible.is_empty() {
         container(forge_widgets::empty_state(
             "No messages",
@@ -727,406 +966,236 @@ fn build_chat_area<'a>(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
+    use std::sync::Arc;
+
+    use forge_runtime::{EventBus, NullEventLogRepo};
+    use forge_storage::{CredentialsRepo, DataProvider};
+    use forge_storage_sqlite::SqliteBackend;
+    use forge_types::{ChatSource, EventId, ModerationMarks, PlatformId, UnifiedChatRow};
+    use time::OffsetDateTime;
+
     use super::*;
-    use forge_events::{Event, EventSource};
+    use crate::message::LiveChatMsg;
+    use crate::runtime_view::RuntimeView;
+    use crate::server_subsystem::ServerSubsystem;
 
-    fn make_chat_event(
-        username: &str,
-        message: &str,
-        badges: serde_json::Value,
-        color: &str,
-    ) -> Event {
-        Event::new(
-            EventSource::Twitch,
-            "chat.message",
-            serde_json::json!({
-                "username": username,
-                "message": message,
-                "badges": badges,
-                "color": color,
-            }),
-        )
+    const TEST_KEY: [u8; 32] = [0xcd; 32];
+
+    fn make_row(id: &str, source: ChatSource, author: &str, is_event: bool) -> UnifiedChatRow {
+        UnifiedChatRow {
+            id: id.to_owned(),
+            event_id: EventId::new(),
+            source,
+            received_at: OffsetDateTime::now_utc(),
+            author: author.to_owned(),
+            author_color: None,
+            body_segments: vec![forge_types::ChatSegment::Text {
+                text: "test msg".to_owned(),
+            }],
+            badges: vec![],
+            is_event,
+            event_detail: None,
+            moderation: ModerationMarks::default(),
+        }
     }
 
-    fn make_bot_event(username: &str) -> Event {
-        Event::new(
-            EventSource::Twitch,
-            "chat.message",
-            serde_json::json!({
-                "username": username,
-                "message": "beep boop",
-                "badges": ["moderator"],
-                "color": "#ff0000",
-            }),
-        )
+    fn make_event_row(id: &str) -> UnifiedChatRow {
+        let mut row = make_row(id, ChatSource::Twitch, "raider", true);
+        row.event_detail = Some(ChatEventDetail::Raid { viewer_count: 10 });
+        row
     }
 
-    fn make_sub_event(username: &str, tier: &str, months: u64) -> Event {
-        Event::new(
-            EventSource::Twitch,
-            "channel.subscribe",
-            serde_json::json!({
-                "user_name": username,
-                "tier": tier,
-                "duration_months": months,
-                "message": { "text": "Thanks!" },
-                "color": "#a6e3a1",
-            }),
-        )
+    fn make_bot_row_for_filter(id: &str) -> UnifiedChatRow {
+        let mut row = make_row(id, ChatSource::Twitch, "nightbot", false);
+        row.badges = vec![UserBadge::Bot];
+        row
     }
 
-    fn make_cheer_event(username: &str, bits: u64) -> Event {
-        Event::new(
-            EventSource::Twitch,
-            "channel.cheer",
-            serde_json::json!({
-                "user_name": username,
-                "bits": bits,
-                "message": "go go go!",
-                "color": "#f9e2af",
-            }),
-        )
-    }
-
-    fn make_raid_event(raider: &str, viewers: u64) -> Event {
-        Event::new(
-            EventSource::Twitch,
-            "channel.raid",
-            serde_json::json!({
-                "raider_name": raider,
-                "viewers": viewers,
-            }),
-        )
-    }
-
-    #[test]
-    fn live_chat_state_new_has_empty_drawer_state() {
-        let state = LiveChatState::new();
-        assert!(state.drawer_search.is_empty());
-        assert!(state.selected_viewer.is_none());
-        assert!(!state.drawer_open);
-        assert!(!state.drawer_menu_open);
-        assert!(state.drawer_width.is_none());
+    fn test_rt() -> RuntimeView {
+        let tokio_rt = tokio::runtime::Runtime::new().unwrap();
+        let backend = Arc::new(
+            tokio_rt
+                .block_on(SqliteBackend::open_with_key("sqlite::memory:", TEST_KEY))
+                .unwrap(),
+        );
+        let server_subsystem = Arc::new(ServerSubsystem::new(
+            Arc::clone(&backend) as Arc<dyn CredentialsRepo>
+        ));
+        let backend: Arc<dyn DataProvider> = backend;
+        RuntimeView {
+            actions: Arc::new(forge_runtime::actions::ActionsService::new(
+                backend.action_repo(),
+                backend.queue_repo(),
+                backend.history_repo(),
+                backend.trigger_instance_repo(),
+                backend.soundboard_clips_repo(),
+            )),
+            backend,
+            bus: EventBus::new(Arc::new(NullEventLogRepo)),
+            script_registry: Arc::new(forge_runtime::ScriptRegistry::new()),
+            server_subsystem,
+            action_engine: None,
+            scheduler: None,
+            obs_client: None,
+            speak_queue: None,
+            sound_player: None,
+            twitch_chat_handle: None,
+            chat_send_bridge: None,
+            twitch_flow: None,
+            twitch_login: None,
+            twitch_token_expires: None,
+            twitch_reauth_required: false,
+            sub_action_registry: Arc::new(forge_registry::SubActionRegistry::new()),
+            trigger_registry: Arc::new(forge_registry::TriggerRegistry::new()),
+        }
     }
 
     #[test]
-    fn drawer_width_field_round_trip() {
+    fn row_received_appends_to_rows() {
+        let rt = test_rt();
         let mut state = LiveChatState::new();
-        assert!(state.drawer_width.is_none());
-        state.drawer_width = Some(420.0);
-        assert_eq!(state.drawer_width, Some(420.0));
-        state.drawer_width = None;
-        assert!(state.drawer_width.is_none());
+        let initial_len = state.rows.len();
+        let row = make_row("new-1", ChatSource::Twitch, "viewer1", false);
+        let _ = update(&mut state, &rt, LiveChatMsg::RowReceived(row));
+        assert_eq!(state.rows.len(), initial_len + 1);
+        assert_eq!(state.rows.back().unwrap().id, "new-1");
     }
 
     #[test]
-    fn chat_row_from_event_parses_twitch_message() {
-        let ev = make_chat_event(
-            "danylo_ua",
-            "hello stream",
-            serde_json::json!(["moderator"]),
-            "#89dceb",
+    fn row_received_evicts_oldest_when_at_cap() {
+        let rt = test_rt();
+        let mut state = LiveChatState::new();
+        state.rows.clear();
+        for i in 0..CHAT_LOG_MAX {
+            state.rows.push_back(make_row(
+                &format!("cap-{i}"),
+                ChatSource::Twitch,
+                "v",
+                false,
+            ));
+        }
+        assert_eq!(state.rows.front().unwrap().id, "cap-0");
+        let new_row = make_row("overflow", ChatSource::Twitch, "v", false);
+        let _ = update(&mut state, &rt, LiveChatMsg::RowReceived(new_row));
+        assert_eq!(state.rows.len(), CHAT_LOG_MAX);
+        assert_eq!(state.rows.front().unwrap().id, "cap-1");
+        assert_eq!(state.rows.back().unwrap().id, "overflow");
+    }
+
+    #[test]
+    fn platform_filter_single_keeps_only_matching() {
+        let mut rows: VecDeque<UnifiedChatRow> = VecDeque::new();
+        rows.push_back(make_row("t1", ChatSource::Twitch, "a", false));
+        rows.push_back(make_row("y1", ChatSource::YouTube, "b", false));
+        rows.push_back(make_row("k1", ChatSource::Kick, "c", false));
+
+        let filter = PlatformFilter::Single(PlatformId::Twitch);
+        let matching: Vec<_> = rows
+            .iter()
+            .filter(|r| row_matches_platform_filter(r, &filter))
+            .collect();
+        assert_eq!(matching.len(), 1);
+        assert_eq!(matching[0].id, "t1");
+    }
+
+    #[test]
+    fn events_filter_only_messages_skips_event_rows() {
+        let rows = [
+            make_row("msg-1", ChatSource::Twitch, "a", false),
+            make_event_row("ev-1"),
+            make_row("msg-2", ChatSource::YouTube, "b", false),
+        ];
+        let messages_only: Vec<_> = rows
+            .iter()
+            .filter(|r| row_matches_events_filter(r, EventsFilter::OnlyMessages))
+            .collect();
+        assert_eq!(messages_only.len(), 2);
+        assert!(messages_only.iter().all(|r| !r.is_event));
+    }
+
+    #[test]
+    fn search_query_dims_non_matching() {
+        let mut row = make_row("s1", ChatSource::Twitch, "alice", false);
+        row.body_segments = vec![forge_types::ChatSegment::Text {
+            text: "hello world".to_owned(),
+        }];
+        assert_eq!(row_match_opacity(&row, "hello"), 1.0);
+        assert_eq!(row_match_opacity(&row, "alice"), 1.0);
+        assert_eq!(row_match_opacity(&row, "xyz"), 0.3);
+        assert_eq!(row_match_opacity(&row, ""), 1.0);
+    }
+
+    #[test]
+    fn send_pressed_dispatches_one_task_per_target() {
+        let rt = test_rt();
+        let mut state = LiveChatState::new();
+        state.input_buffer = "hello chat".to_owned();
+        state.primary_send_target = Some(PlatformId::Twitch);
+        state.cross_post = false;
+        let _ = update(&mut state, &rt, LiveChatMsg::SendPressed);
+        assert!(state.input_buffer.is_empty());
+        assert_eq!(state.pending_sends.len(), 1);
+        assert!(
+            state
+                .pending_sends
+                .values()
+                .all(|ps| ps.target == PlatformId::Twitch)
         );
-        let row = chat_row_from_event(&ev, &mut 0u64).unwrap();
-        assert_eq!(row.username, "danylo_ua");
-        assert_eq!(row.body, ChatBody::Message("hello stream".to_owned()));
-        assert_eq!(row.platform, Platform::Twitch);
-        assert!(row.badges.contains(&BadgeKind::Moderator));
     }
 
     #[test]
-    fn chat_row_from_event_ignores_non_twitch() {
-        let ev = Event::new(
-            EventSource::Core,
-            "chat.message",
-            serde_json::json!({ "username": "x", "message": "y" }),
+    fn send_completed_updates_pending_state() {
+        let rt = test_rt();
+        let mut state = LiveChatState::new();
+        state.pending_sends.insert(
+            42,
+            PendingSendState {
+                target: PlatformId::Twitch,
+                started_at: OffsetDateTime::now_utc(),
+                status: PendingSendStatus::InFlight,
+            },
         );
-        assert!(chat_row_from_event(&ev, &mut 0u64).is_none());
-    }
-
-    #[test]
-    fn chat_row_from_event_ignores_unknown_kind() {
-        let ev = Event::new(
-            EventSource::Twitch,
-            "channel.point_redemption",
-            serde_json::json!({ "user_name": "x" }),
-        );
-        assert!(chat_row_from_event(&ev, &mut 0u64).is_none());
-    }
-
-    #[test]
-    fn chat_row_from_event_parses_subscription() {
-        let ev = make_sub_event("danylo_ua", "1000", 3);
-        let row = chat_row_from_event(&ev, &mut 0u64).unwrap();
-        assert_eq!(row.username, "danylo_ua");
+        let _ = update(&mut state, &rt, LiveChatMsg::SendCompleted(42, Ok(())));
         assert!(matches!(
-            row.body,
-            ChatBody::Subscription {
-                tier: 1,
-                months: Some(3),
-                ..
-            }
+            state.pending_sends[&42].status,
+            PendingSendStatus::Ok
+        ));
+
+        let _ = update(
+            &mut state,
+            &rt,
+            LiveChatMsg::SendCompleted(42, Err("oops".into())),
+        );
+        assert!(matches!(
+            state.pending_sends[&42].status,
+            PendingSendStatus::Failed(_)
         ));
     }
 
     #[test]
-    fn chat_row_from_event_parses_tier3_subscription() {
-        let ev = make_sub_event("big_supporter", "3000", 12);
-        let row = chat_row_from_event(&ev, &mut 0u64).unwrap();
-        assert!(matches!(row.body, ChatBody::Subscription { tier: 3, .. }));
+    fn primary_send_target_change_persists_to_settings() {
+        let rt = test_rt();
+        let mut state = LiveChatState::new();
+        state.primary_send_target = None;
+        let _ = update(
+            &mut state,
+            &rt,
+            LiveChatMsg::PrimarySendTargetChanged(PlatformId::YouTube),
+        );
+        assert_eq!(state.primary_send_target, Some(PlatformId::YouTube));
     }
 
     #[test]
-    fn chat_row_from_event_parses_cheer() {
-        let ev = make_cheer_event("viewer_x", 500);
-        let row = chat_row_from_event(&ev, &mut 0u64).unwrap();
-        assert_eq!(row.username, "viewer_x");
-        assert!(matches!(row.body, ChatBody::Cheer { bits: 500, .. }));
-    }
-
-    #[test]
-    fn chat_row_from_event_parses_raid() {
-        let ev = make_raid_event("factorio_streamer", 42);
-        let row = chat_row_from_event(&ev, &mut 0u64).unwrap();
-        assert_eq!(row.username, "factorio_streamer");
-        assert!(matches!(row.body, ChatBody::Raid { viewers: 42, .. }));
-    }
-
-    #[test]
-    fn filter_log_all_returns_all_entries() {
-        let mut log = VecDeque::new();
-        log.push_back(ChatRow {
-            seq: 0,
-            timestamp: "00:00:00".into(),
-            platform: Platform::Twitch,
-            badges: vec![],
-            username: "a".into(),
-            username_color: Color::WHITE,
-            body: ChatBody::Message("hi".into()),
-        });
-        log.push_back(ChatRow {
-            seq: 0,
-            timestamp: "00:00:01".into(),
-            platform: Platform::YouTube,
-            badges: vec![],
-            username: "b".into(),
-            username_color: Color::WHITE,
-            body: ChatBody::Message("yo".into()),
-        });
-        let f = ChatFilters::default();
-        assert_eq!(filter_log(&log, &f).count(), 2);
-    }
-
-    #[test]
-    fn filter_log_twitch_only_keeps_twitch_rows() {
-        let mut log = VecDeque::new();
-        log.push_back(ChatRow {
-            seq: 0,
-            timestamp: "00:00:00".into(),
-            platform: Platform::Twitch,
-            badges: vec![],
-            username: "a".into(),
-            username_color: Color::WHITE,
-            body: ChatBody::Message("t".into()),
-        });
-        log.push_back(ChatRow {
-            seq: 0,
-            timestamp: "00:00:01".into(),
-            platform: Platform::YouTube,
-            badges: vec![],
-            username: "b".into(),
-            username_color: Color::WHITE,
-            body: ChatBody::Message("y".into()),
-        });
-        let f = ChatFilters {
-            platform: PlatformFilter::Twitch,
-            ..ChatFilters::default()
-        };
-        let result: Vec<_> = filter_log(&log, &f).collect();
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].platform, Platform::Twitch);
-    }
-
-    #[test]
-    fn filter_log_youtube_only_keeps_youtube_rows() {
-        let mut log = VecDeque::new();
-        log.push_back(ChatRow {
-            seq: 0,
-            timestamp: "00:00:00".into(),
-            platform: Platform::Twitch,
-            badges: vec![],
-            username: "a".into(),
-            username_color: Color::WHITE,
-            body: ChatBody::Message("t".into()),
-        });
-        log.push_back(ChatRow {
-            seq: 0,
-            timestamp: "00:00:01".into(),
-            platform: Platform::YouTube,
-            badges: vec![],
-            username: "b".into(),
-            username_color: Color::WHITE,
-            body: ChatBody::Message("y".into()),
-        });
-        let f = ChatFilters {
-            platform: PlatformFilter::YouTube,
-            ..ChatFilters::default()
-        };
-        let result: Vec<_> = filter_log(&log, &f).collect();
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].platform, Platform::YouTube);
-    }
-
-    #[test]
-    fn filter_log_kick_only_keeps_kick_rows() {
-        let mut log = VecDeque::new();
-        log.push_back(ChatRow {
-            seq: 0,
-            timestamp: "00:00:00".into(),
-            platform: Platform::Kick,
-            badges: vec![],
-            username: "k".into(),
-            username_color: Color::WHITE,
-            body: ChatBody::Message("kick chat".into()),
-        });
-        log.push_back(ChatRow {
-            seq: 0,
-            timestamp: "00:00:01".into(),
-            platform: Platform::Twitch,
-            badges: vec![],
-            username: "t".into(),
-            username_color: Color::WHITE,
-            body: ChatBody::Message("twitch chat".into()),
-        });
-        let f = ChatFilters {
-            platform: PlatformFilter::Kick,
-            ..ChatFilters::default()
-        };
-        let result: Vec<_> = filter_log(&log, &f).collect();
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].platform, Platform::Kick);
-    }
-
-    #[test]
-    fn filter_log_hide_bots_removes_bot_rows() {
-        let mut log = VecDeque::new();
-        log.push_back(ChatRow {
-            seq: 0,
-            timestamp: "00:00:00".into(),
-            platform: Platform::Twitch,
-            badges: vec![BadgeKind::Bot],
-            username: "nightbot".into(),
-            username_color: Color::WHITE,
-            body: ChatBody::Message("beep".into()),
-        });
-        log.push_back(ChatRow {
-            seq: 0,
-            timestamp: "00:00:01".into(),
-            platform: Platform::Twitch,
-            badges: vec![],
-            username: "viewer".into(),
-            username_color: Color::WHITE,
-            body: ChatBody::Message("hi".into()),
-        });
-        let f = ChatFilters {
-            hide_bots: true,
-            ..ChatFilters::default()
-        };
-        let result: Vec<_> = filter_log(&log, &f).collect();
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].username, "viewer");
-    }
-
-    #[test]
-    fn filter_log_events_only_hides_messages() {
-        let mut log = VecDeque::new();
-        log.push_back(ChatRow {
-            seq: 0,
-            timestamp: "00:00:00".into(),
-            platform: Platform::Twitch,
-            badges: vec![],
-            username: "msg_user".into(),
-            username_color: Color::WHITE,
-            body: ChatBody::Message("regular chat".into()),
-        });
-        log.push_back(ChatRow {
-            seq: 0,
-            timestamp: "00:00:01".into(),
-            platform: Platform::Twitch,
-            badges: vec![],
-            username: "sub_user".into(),
-            username_color: Color::WHITE,
-            body: ChatBody::Subscription {
-                tier: 1,
-                months: None,
-                message: None,
-                triggered_action: None,
-            },
-        });
-        log.push_back(ChatRow {
-            seq: 0,
-            timestamp: "00:00:02".into(),
-            platform: Platform::Twitch,
-            badges: vec![],
-            username: "raider".into(),
-            username_color: Color::WHITE,
-            body: ChatBody::Raid {
-                viewers: 10,
-                triggered_action: None,
-            },
-        });
-        let f = ChatFilters {
-            events_only: true,
-            ..ChatFilters::default()
-        };
-        let result: Vec<_> = filter_log(&log, &f).collect();
-        assert_eq!(result.len(), 2);
-        assert!(matches!(result[0].body, ChatBody::Subscription { .. }));
-        assert!(matches!(result[1].body, ChatBody::Raid { .. }));
-    }
-
-    #[test]
-    fn filter_log_events_only_and_hide_bots_combine() {
-        let mut log = VecDeque::new();
-        log.push_back(ChatRow {
-            seq: 0,
-            timestamp: "00:00:00".into(),
-            platform: Platform::Twitch,
-            badges: vec![BadgeKind::Bot],
-            username: "nightbot".into(),
-            username_color: Color::WHITE,
-            body: ChatBody::Message("bot msg".into()),
-        });
-        log.push_back(ChatRow {
-            seq: 0,
-            timestamp: "00:00:01".into(),
-            platform: Platform::Twitch,
-            badges: vec![],
-            username: "cheerer".into(),
-            username_color: Color::WHITE,
-            body: ChatBody::Cheer {
-                bits: 100,
-                text: "gg".into(),
-            },
-        });
-        let f = ChatFilters {
-            events_only: true,
-            hide_bots: true,
-            ..ChatFilters::default()
-        };
-        let result: Vec<_> = filter_log(&log, &f).collect();
-        assert_eq!(result.len(), 1);
-        assert!(matches!(result[0].body, ChatBody::Cheer { bits: 100, .. }));
-    }
-
-    #[test]
-    fn chat_filters_default_state() {
-        let f = ChatFilters::default();
-        assert_eq!(f.platform, PlatformFilter::All);
-        assert!(!f.events_only);
-        assert!(!f.hide_bots);
+    fn hide_bots_filter_removes_bot_rows() {
+        let rows = [
+            make_bot_row_for_filter("b1"),
+            make_row("m1", ChatSource::Twitch, "viewer", false),
+        ];
+        let visible: Vec<_> = rows.iter().filter(|r| !row_is_bot(r)).collect();
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].id, "m1");
     }
 
     #[test]
@@ -1137,68 +1206,16 @@ mod tests {
     #[test]
     fn live_chat_state_new_has_seed_rows() {
         let state = LiveChatState::new();
-        assert!(!state.chat_log.is_empty());
+        assert!(!state.rows.is_empty());
         assert!(!state.drawer_open);
+        assert!(state.auto_scroll);
     }
 
     #[test]
-    fn chat_log_bounded_at_max() {
-        let mut log: VecDeque<ChatRow> = VecDeque::new();
-        for i in 0..=CHAT_LOG_MAX {
-            log.push_back(ChatRow {
-                seq: 0,
-                timestamp: format!("{i:08}"),
-                platform: Platform::Twitch,
-                badges: vec![],
-                username: format!("user{i}"),
-                username_color: Color::WHITE,
-                body: ChatBody::Message(format!("msg{i}")),
-            });
-            if log.len() > CHAT_LOG_MAX {
-                log.pop_front();
-            }
-        }
-        assert_eq!(log.len(), CHAT_LOG_MAX);
-    }
-
-    #[test]
-    fn chat_row_from_event_handles_missing_color_gracefully() {
-        let ev = Event::new(
-            EventSource::Twitch,
-            "chat.message",
-            serde_json::json!({
-                "username": "nocoloruser",
-                "message": "hey",
-                "badges": [],
-            }),
-        );
-        let row = chat_row_from_event(&ev, &mut 0u64).unwrap();
-        assert_eq!(row.username, "nocoloruser");
-    }
-
-    #[test]
-    fn chat_row_from_event_handles_invalid_hex_color_gracefully() {
-        let ev = make_chat_event("badcolor", "msg", serde_json::json!([]), "#ZZZZZZ");
-        let row = chat_row_from_event(&ev, &mut 0u64).unwrap();
-        assert_eq!(row.username, "badcolor");
-    }
-
-    #[test]
-    fn chat_row_from_event_assigns_mod_badge() {
-        let ev = make_chat_event(
-            "mod_user",
-            "modding",
-            serde_json::json!(["moderator"]),
-            "#00ff00",
-        );
-        let row = chat_row_from_event(&ev, &mut 0u64).unwrap();
-        assert!(row.badges.contains(&BadgeKind::Moderator));
-    }
-
-    #[test]
-    fn chat_row_from_event_marks_bot_badge() {
-        let ev = make_bot_event("coolbot");
-        let row = chat_row_from_event(&ev, &mut 0u64).unwrap();
-        assert_eq!(row.username, "coolbot");
+    fn drawer_width_field_round_trip() {
+        let mut state = LiveChatState::new();
+        assert!(state.drawer_width.is_none());
+        state.drawer_width = Some(420.0);
+        assert_eq!(state.drawer_width, Some(420.0));
     }
 }

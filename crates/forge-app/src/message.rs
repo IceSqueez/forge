@@ -11,7 +11,7 @@ use forge_widgets::{DeviceLabel, PickerItem, ToastKind};
 
 use forge_platform_core::{HeaderAction, HealthDelta};
 use forge_storage::GlobalEntry;
-use forge_types::{ActionId, PlatformId};
+use forge_types::{ActionId, PlatformId, UnifiedChatRow};
 use forge_widgets::{ThemeId, VariantKind};
 use time::OffsetDateTime;
 
@@ -19,7 +19,7 @@ use crate::Screen;
 use crate::actions::{AddActionMsg, AddSubActionMsg, RemoveSubActionMsg};
 use crate::device_code_flow::DeviceCodeFlowMsg;
 use crate::event_feed::EventFeedMsg;
-use crate::live_chat::PlatformFilter;
+use crate::live_chat::{EventsFilter, PlatformFilter, SendId};
 use crate::queues_view::QueueSummary;
 use crate::script_editor::ScriptEditorMsg;
 use crate::server_screen::ServerScreenMsg;
@@ -315,11 +315,19 @@ pub enum TtsMsg {
 
 #[derive(Debug, Clone)]
 pub enum LiveChatMsg {
+    RowReceived(UnifiedChatRow),
+    PlatformFilterChanged(PlatformFilter),
+    EventsFilterToggled(EventsFilter),
+    HideBotsToggled,
+    SearchChanged(String),
+    AutoScrollToggled,
     InputChanged(String),
-    Submit,
-    PlatformFilter(PlatformFilter),
-    ToggleEventsOnly,
-    ToggleHideBots,
+    CrossPostToggled,
+    PrimarySendTargetChanged(PlatformId),
+    SecondarySendTargetToggled(PlatformId),
+    SendPressed,
+    SendCompleted(SendId, Result<(), String>),
+    ConnectedPlatformsUpdated(Vec<PlatformId>),
     ToggleDrawer,
     DrawerSearchChanged(String),
     DrawerSelectViewer(String),

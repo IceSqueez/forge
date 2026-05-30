@@ -1,7 +1,8 @@
 use std::collections::{HashSet, VecDeque};
 
+use forge_types::{UnifiedChatRow, UserBadge};
 use forge_widgets::{
-    BadgeKind, ChatRow, ForgePalette, search_input,
+    BadgeKind, ForgePalette, search_input,
     tokens::{Spacing, sp, spf},
 };
 use iced::{Color, Element, Length};
@@ -31,17 +32,28 @@ fn drawer_matches(username: &str, search: &str) -> bool {
     username.to_ascii_lowercase().contains(search)
 }
 
+fn unified_badge_to_kind(badge: &UserBadge) -> BadgeKind {
+    match badge {
+        UserBadge::Broadcaster => BadgeKind::Broadcaster,
+        UserBadge::Moderator => BadgeKind::Moderator,
+        UserBadge::Vip => BadgeKind::Vip,
+        UserBadge::Subscriber { .. } => BadgeKind::Subscriber,
+        UserBadge::Member { .. } => BadgeKind::Subscriber,
+        UserBadge::Bot => BadgeKind::Bot,
+    }
+}
+
 fn synthesize_from_chat(
     username: &str,
-    chat_log: &VecDeque<ChatRow>,
+    rows: &VecDeque<UnifiedChatRow>,
     palette: &ForgePalette,
 ) -> Option<ViewerSummary> {
-    let count = chat_log.iter().filter(|r| r.username == username).count();
+    let count = rows.iter().filter(|r| r.author == username).count();
     if count == 0 {
         return None;
     }
-    let last_entry = chat_log.iter().rev().find(|r| r.username == username)?;
-    let role = last_entry.badges.first().copied();
+    let last_entry = rows.iter().rev().find(|r| r.author == username)?;
+    let role = last_entry.badges.first().map(unified_badge_to_kind);
     let avatar_letter = username
         .chars()
         .next()
@@ -131,12 +143,12 @@ fn effective_summary(
     palette: &ForgePalette,
 ) -> Option<ViewerSummary> {
     if let Some(sel) = state.selected_viewer.as_deref()
-        && let Some(s) = synthesize_from_chat(sel, &state.chat_log, palette)
+        && let Some(s) = synthesize_from_chat(sel, &state.rows, palette)
     {
         return Some(enrich_with_storage(s, viewers));
     }
-    let last = state.chat_log.back()?.username.as_str();
-    synthesize_from_chat(last, &state.chat_log, palette).map(|s| enrich_with_storage(s, viewers))
+    let last = state.rows.back()?.author.as_str();
+    synthesize_from_chat(last, &state.rows, palette).map(|s| enrich_with_storage(s, viewers))
 }
 
 fn viewer_hash_color(username: &str, palette: &ForgePalette) -> Color {
@@ -306,12 +318,12 @@ fn drawer_header<'a>(state: &'a LiveChatState, palette: &'a ForgePalette) -> Ele
 
     let mut seen = HashSet::new();
     let unique: Vec<&str> = state
-        .chat_log
+        .rows
         .iter()
         .rev()
         .filter_map(|r| {
-            if seen.insert(r.username.as_str()) {
-                Some(r.username.as_str())
+            if seen.insert(r.author.as_str()) {
+                Some(r.author.as_str())
             } else {
                 None
             }
@@ -709,12 +721,12 @@ fn viewer_list<'a>(
 
     let mut seen: HashSet<&str> = HashSet::new();
     let unique_usernames: Vec<&str> = state
-        .chat_log
+        .rows
         .iter()
         .rev()
         .filter_map(|r| {
-            if seen.insert(r.username.as_str()) {
-                Some(r.username.as_str())
+            if seen.insert(r.author.as_str()) {
+                Some(r.author.as_str())
             } else {
                 None
             }
@@ -742,7 +754,7 @@ fn viewer_list<'a>(
     let list_items: Vec<Element<'a, Message>> = unique_usernames
         .iter()
         .filter_map(|username| {
-            synthesize_from_chat(username, &state.chat_log, palette)
+            synthesize_from_chat(username, &state.rows, palette)
                 .map(|s| enrich_with_storage(s, viewers))
         })
         .map(|summary| {
@@ -789,9 +801,38 @@ pub(crate) fn drawer_panel<'a>(
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::*;
+    use std::collections::VecDeque;
+
     use forge_storage::{Viewer, ViewerPlatform};
-    use forge_widgets::{ChatBody, Platform};
+    use forge_types::{
+        ChatSegment, ChatSource, EventId, ModerationMarks, UnifiedChatRow, UserBadge,
+    };
+    use time::OffsetDateTime;
+
+    use super::*;
+
+    fn make_unified_row(
+        id: &str,
+        source: ChatSource,
+        author: &str,
+        badges: Vec<UserBadge>,
+    ) -> UnifiedChatRow {
+        UnifiedChatRow {
+            id: id.to_owned(),
+            event_id: EventId::new(),
+            source,
+            received_at: OffsetDateTime::now_utc(),
+            author: author.to_owned(),
+            author_color: None,
+            body_segments: vec![ChatSegment::Text {
+                text: "test".to_owned(),
+            }],
+            badges,
+            is_event: false,
+            event_detail: None,
+            moderation: ModerationMarks::default(),
+        }
+    }
 
     fn make_viewer(username: &str, msg_count: u64) -> Viewer {
         Viewer {
@@ -813,35 +854,29 @@ mod tests {
 
     #[test]
     fn summary_role_is_latest_badge_from_chat() {
-        let mut log = VecDeque::new();
-        log.push_back(ChatRow {
-            seq: 0,
-            timestamp: "00:00:00".into(),
-            platform: Platform::Twitch,
-            badges: vec![BadgeKind::Moderator],
-            username: "danylo_ua".into(),
-            username_color: Color::WHITE,
-            body: ChatBody::Message("first".into()),
-        });
-        log.push_back(ChatRow {
-            seq: 0,
-            timestamp: "00:00:01".into(),
-            platform: Platform::Twitch,
-            badges: vec![BadgeKind::Vip],
-            username: "danylo_ua".into(),
-            username_color: Color::WHITE,
-            body: ChatBody::Message("second".into()),
-        });
+        let mut rows = VecDeque::new();
+        rows.push_back(make_unified_row(
+            "r1",
+            ChatSource::Twitch,
+            "danylo_ua",
+            vec![UserBadge::Moderator],
+        ));
+        rows.push_back(make_unified_row(
+            "r2",
+            ChatSource::Twitch,
+            "danylo_ua",
+            vec![UserBadge::Vip],
+        ));
         let (_, palette) = forge_widgets::catppuccin_mocha();
-        let summary = synthesize_from_chat("danylo_ua", &log, &palette).unwrap();
+        let summary = synthesize_from_chat("danylo_ua", &rows, &palette).unwrap();
         assert_eq!(summary.role, Some(BadgeKind::Vip));
     }
 
     #[test]
     fn summary_none_when_username_absent_from_chat() {
-        let log = VecDeque::new();
+        let rows = VecDeque::new();
         let (_, palette) = forge_widgets::catppuccin_mocha();
-        assert!(synthesize_from_chat("ghost_user", &log, &palette).is_none());
+        assert!(synthesize_from_chat("ghost_user", &rows, &palette).is_none());
     }
 
     #[test]
@@ -876,36 +911,22 @@ mod tests {
 
     #[test]
     fn synthesize_from_chat_counts_occurrences_and_uses_latest_badge() {
-        let mut log = VecDeque::new();
-        log.push_back(ChatRow {
-            seq: 0,
-            timestamp: "00:00:00".into(),
-            platform: Platform::Twitch,
-            badges: vec![BadgeKind::Moderator],
-            username: "alice".into(),
-            username_color: Color::WHITE,
-            body: ChatBody::Message("first".into()),
-        });
-        log.push_back(ChatRow {
-            seq: 0,
-            timestamp: "00:00:01".into(),
-            platform: Platform::Twitch,
-            badges: vec![BadgeKind::Vip],
-            username: "alice".into(),
-            username_color: Color::WHITE,
-            body: ChatBody::Message("second".into()),
-        });
-        log.push_back(ChatRow {
-            seq: 0,
-            timestamp: "00:00:02".into(),
-            platform: Platform::Twitch,
-            badges: vec![],
-            username: "bob".into(),
-            username_color: Color::WHITE,
-            body: ChatBody::Message("hi".into()),
-        });
+        let mut rows = VecDeque::new();
+        rows.push_back(make_unified_row(
+            "a1",
+            ChatSource::Twitch,
+            "alice",
+            vec![UserBadge::Moderator],
+        ));
+        rows.push_back(make_unified_row(
+            "a2",
+            ChatSource::Twitch,
+            "alice",
+            vec![UserBadge::Vip],
+        ));
+        rows.push_back(make_unified_row("b1", ChatSource::Twitch, "bob", vec![]));
         let (_, palette) = forge_widgets::catppuccin_mocha();
-        let summary = synthesize_from_chat("alice", &log, &palette).unwrap();
+        let summary = synthesize_from_chat("alice", &rows, &palette).unwrap();
         assert_eq!(summary.message_count, 2);
         assert_eq!(summary.role, Some(BadgeKind::Vip));
         assert_eq!(summary.username, "alice");
@@ -913,25 +934,17 @@ mod tests {
 
     #[test]
     fn synthesize_from_chat_returns_none_when_username_absent() {
-        let log = VecDeque::new();
+        let rows = VecDeque::new();
         let (_, palette) = forge_widgets::catppuccin_mocha();
-        assert!(synthesize_from_chat("nobody", &log, &palette).is_none());
+        assert!(synthesize_from_chat("nobody", &rows, &palette).is_none());
     }
 
     #[test]
     fn enrich_with_storage_overwrites_message_count_when_viewer_present() {
-        let mut log = VecDeque::new();
-        log.push_back(ChatRow {
-            seq: 0,
-            timestamp: "00:00:00".into(),
-            platform: Platform::Twitch,
-            badges: vec![],
-            username: "alice".into(),
-            username_color: Color::WHITE,
-            body: ChatBody::Message("hi".into()),
-        });
+        let mut rows = VecDeque::new();
+        rows.push_back(make_unified_row("x1", ChatSource::Twitch, "alice", vec![]));
         let (_, palette) = forge_widgets::catppuccin_mocha();
-        let summary = synthesize_from_chat("alice", &log, &palette).unwrap();
+        let summary = synthesize_from_chat("alice", &rows, &palette).unwrap();
         assert_eq!(summary.message_count, 1);
         let vs = make_viewers_state(&["alice"]);
         let enriched = enrich_with_storage(summary, &vs);
@@ -946,5 +959,29 @@ mod tests {
             .filter(|u| drawer_matches(u, "alice"))
             .collect();
         assert_eq!(matches.len(), 2);
+    }
+
+    #[test]
+    fn unified_badge_to_kind_maps_all_variants() {
+        assert_eq!(
+            unified_badge_to_kind(&UserBadge::Broadcaster),
+            BadgeKind::Broadcaster
+        );
+        assert_eq!(
+            unified_badge_to_kind(&UserBadge::Moderator),
+            BadgeKind::Moderator
+        );
+        assert_eq!(unified_badge_to_kind(&UserBadge::Vip), BadgeKind::Vip);
+        assert_eq!(
+            unified_badge_to_kind(&UserBadge::Subscriber { months: 3 }),
+            BadgeKind::Subscriber
+        );
+        assert_eq!(
+            unified_badge_to_kind(&UserBadge::Member {
+                level: "Level 1".into()
+            }),
+            BadgeKind::Subscriber
+        );
+        assert_eq!(unified_badge_to_kind(&UserBadge::Bot), BadgeKind::Bot);
     }
 }

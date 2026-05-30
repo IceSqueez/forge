@@ -5,12 +5,14 @@ use std::sync::Arc;
 use forge_app::{
     App, LiveChatMsg, Message, PlatformFilter, RuntimeView, Screen, SidebarExpandState, app::update,
 };
-use forge_events::{Event, EventSource};
+use forge_events::EventSource;
 use forge_runtime::{
     EventBus, NullEventLogRepo, ScriptRegistry, actions::ActionsService, bus_subscription,
 };
 use forge_storage_sqlite::SqliteBackend;
+use forge_types::{ChatSource, EventId, ModerationMarks, PlatformId, UnifiedChatRow};
 use futures_util::StreamExt as _;
+use time::OffsetDateTime;
 
 const TEST_KEY: [u8; 32] = [0xab; 32];
 
@@ -63,71 +65,72 @@ fn test_app() -> App {
     }
 }
 
-fn make_twitch_chat_event(username: &str, message: &str) -> Event {
-    Event::new(
-        EventSource::Twitch,
-        "chat.message",
-        serde_json::json!({
-            "username": username,
-            "message": message,
-            "badges": [],
-            "color": "#cba6f7",
-        }),
-    )
+fn make_unified_row(id: &str, author: &str, source: ChatSource) -> UnifiedChatRow {
+    UnifiedChatRow {
+        id: id.to_owned(),
+        event_id: EventId::new(),
+        source,
+        received_at: OffsetDateTime::now_utc(),
+        author: author.to_owned(),
+        author_color: None,
+        body_segments: vec![forge_types::ChatSegment::Text {
+            text: "test".to_owned(),
+        }],
+        badges: vec![],
+        is_event: false,
+        event_detail: None,
+        moderation: ModerationMarks::default(),
+    }
 }
 
 #[test]
-fn chat_message_event_appends_to_log() {
+fn row_received_appends_to_log() {
     let mut app = test_app();
-    app.ui.live_chat.chat_log.clear();
-    let ev = make_twitch_chat_event("INTEGRATION_TEST_USERNAME", "INTEGRATION_TEST_MESSAGE_BODY");
-    let _ = update(&mut app, Message::EventArrived(Arc::new(ev)));
-    assert_eq!(app.ui.live_chat.chat_log.len(), 1);
-    let row = &app.ui.live_chat.chat_log[0];
-    assert_eq!(row.username, "INTEGRATION_TEST_USERNAME");
-    assert_eq!(
-        row.body,
-        forge_widgets::ChatBody::Message("INTEGRATION_TEST_MESSAGE_BODY".to_owned()),
+    app.ui.live_chat.rows.clear();
+    let row = make_unified_row(
+        "integration-1",
+        "INTEGRATION_TEST_USERNAME",
+        ChatSource::Twitch,
     );
+    let _ = update(&mut app, Message::LiveChat(LiveChatMsg::RowReceived(row)));
+    assert_eq!(app.ui.live_chat.rows.len(), 1);
+    assert_eq!(app.ui.live_chat.rows[0].author, "INTEGRATION_TEST_USERNAME");
 }
 
 #[test]
-fn chat_log_trims_at_1000_entries() {
+fn chat_log_trims_at_cap() {
     let mut app = test_app();
-    app.ui.live_chat.chat_log.clear();
+    app.ui.live_chat.rows.clear();
     let limit = forge_app::live_chat::CHAT_LOG_MAX;
     for i in 0..=limit {
-        let ev = make_twitch_chat_event(
-            &format!("INTEGRATION_TEST_USERNAME_{i}"),
-            "INTEGRATION_TEST_MESSAGE_BODY",
-        );
-        let _ = update(&mut app, Message::EventArrived(Arc::new(ev)));
+        let row = make_unified_row(&format!("id-{i}"), &format!("user-{i}"), ChatSource::Twitch);
+        let _ = update(&mut app, Message::LiveChat(LiveChatMsg::RowReceived(row)));
     }
-    assert_eq!(app.ui.live_chat.chat_log.len(), limit);
-    let first = &app.ui.live_chat.chat_log[0];
-    assert_ne!(first.username, "INTEGRATION_TEST_USERNAME_0");
+    assert_eq!(app.ui.live_chat.rows.len(), limit);
+    assert_ne!(app.ui.live_chat.rows[0].author, "user-0");
 }
 
 #[test]
-fn non_chat_events_are_ignored() {
+fn event_arrived_does_not_append_to_rows() {
+    use forge_events::Event;
     let mut app = test_app();
-    app.ui.live_chat.chat_log.clear();
+    app.ui.live_chat.rows.clear();
     let ev = Event::new(
         EventSource::Twitch,
-        "platform.connected",
-        serde_json::json!({ "platform": "twitch" }),
+        "chat.message",
+        serde_json::json!({ "username": "x", "message": "y" }),
     );
     let _ = update(&mut app, Message::EventArrived(Arc::new(ev)));
-    assert!(app.ui.live_chat.chat_log.is_empty());
+    assert!(app.ui.live_chat.rows.is_empty());
 }
 
 #[test]
-fn filter_changed_updates_filter_state() {
+fn hide_bots_toggled_updates_state() {
     let mut app = test_app();
-    let _ = update(&mut app, Message::LiveChat(LiveChatMsg::ToggleHideBots));
-    assert!(app.ui.live_chat.chat_filter.hide_bots);
-    let _ = update(&mut app, Message::LiveChat(LiveChatMsg::ToggleHideBots));
-    assert!(!app.ui.live_chat.chat_filter.hide_bots);
+    let _ = update(&mut app, Message::LiveChat(LiveChatMsg::HideBotsToggled));
+    assert!(app.ui.live_chat.hide_bots);
+    let _ = update(&mut app, Message::LiveChat(LiveChatMsg::HideBotsToggled));
+    assert!(!app.ui.live_chat.hide_bots);
 }
 
 #[test]
@@ -135,11 +138,13 @@ fn platform_filter_changed_updates_state() {
     let mut app = test_app();
     let _ = update(
         &mut app,
-        Message::LiveChat(LiveChatMsg::PlatformFilter(PlatformFilter::Twitch)),
+        Message::LiveChat(LiveChatMsg::PlatformFilterChanged(PlatformFilter::Single(
+            PlatformId::Twitch,
+        ))),
     );
     assert_eq!(
-        app.ui.live_chat.chat_filter.platform,
-        PlatformFilter::Twitch
+        app.ui.live_chat.platform_filter,
+        PlatformFilter::Single(PlatformId::Twitch)
     );
 }
 
@@ -150,19 +155,20 @@ fn chat_input_changed_updates_state() {
         &mut app,
         Message::LiveChat(LiveChatMsg::InputChanged("INTEGRATION_TEST_INPUT".into())),
     );
-    assert_eq!(app.ui.live_chat.chat_input, "INTEGRATION_TEST_INPUT");
+    assert_eq!(app.ui.live_chat.input_buffer, "INTEGRATION_TEST_INPUT");
 }
 
 #[test]
-fn chat_submit_clears_input_optimistically() {
+fn chat_send_clears_input_buffer() {
     let mut app = test_app();
-    app.ui.live_chat.chat_input = "INTEGRATION_TEST_MESSAGE_BODY".to_owned();
-    let _ = update(&mut app, Message::LiveChat(LiveChatMsg::Submit));
-    assert!(app.ui.live_chat.chat_input.is_empty());
+    app.ui.live_chat.input_buffer = "INTEGRATION_TEST_MESSAGE_BODY".to_owned();
+    let _ = update(&mut app, Message::LiveChat(LiveChatMsg::SendPressed));
+    assert!(app.ui.live_chat.input_buffer.is_empty());
 }
 
 #[tokio::test]
 async fn event_bus_subscription_bridge_delivers_events() {
+    use forge_events::Event;
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let mut stream = bus_subscription(Arc::clone(&bus));
 

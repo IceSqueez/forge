@@ -189,7 +189,7 @@ fn home_jump_cards<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, M
 
     let actions_count = app.ui.home.actions_count.unwrap_or(0);
     let triggers_fired = app.ui.home.triggers_fired.unwrap_or(0);
-    let chat_count = app.ui.live_chat.chat_log.len();
+    let chat_count = app.ui.live_chat.rows.len();
     let twitch_ok = app.rt.twitch_chat_handle.is_some();
     let obs_ok = app.rt.obs_client.is_some();
     let total_integrations: u8 = 6;

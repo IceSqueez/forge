@@ -6,7 +6,7 @@ use iced::Subscription;
 
 use crate::app::App;
 use crate::builtin_detail::health_subscription;
-use crate::message::Message;
+use crate::message::{LiveChatMsg, Message};
 use crate::screen::Screen;
 use crate::server_screen::ServerScreenMsg;
 
@@ -181,6 +181,31 @@ pub fn subscription(app: &App) -> Subscription<Message> {
     }
 
     let bus = from_recipe(BusRecipe(app.rt.bus.clone()));
+
+    struct ChatStreamRecipe(Arc<EventBus>);
+
+    impl Recipe for ChatStreamRecipe {
+        type Output = Message;
+
+        fn hash(&self, state: &mut Hasher) {
+            use std::hash::Hash as _;
+            "forge:chat-stream".hash(state);
+            (Arc::as_ptr(&self.0) as usize).hash(state);
+        }
+
+        fn stream(
+            self: Box<Self>,
+            _input: EventStream,
+        ) -> iced::futures::stream::BoxStream<'static, Self::Output> {
+            use iced::futures::StreamExt as _;
+            let stream = forge_runtime::chat_stream(self.0);
+            stream
+                .map(|row| Message::LiveChat(LiveChatMsg::RowReceived(row)))
+                .boxed()
+        }
+    }
+
+    let chat_stream = from_recipe(ChatStreamRecipe(app.rt.bus.clone()));
 
     struct ServerMetricsRecipe(Arc<crate::server_subsystem::ServerSubsystem>);
 
@@ -366,6 +391,7 @@ pub fn subscription(app: &App) -> Subscription<Message> {
     if let Some(state) = app.ui.builtin_detail.as_ref() {
         Subscription::batch([
             bus,
+            chat_stream,
             health_subscription(state),
             server_tick,
             soundboard_keys,
@@ -376,6 +402,7 @@ pub fn subscription(app: &App) -> Subscription<Message> {
     } else {
         Subscription::batch([
             bus,
+            chat_stream,
             server_tick,
             soundboard_keys,
             tts_events,

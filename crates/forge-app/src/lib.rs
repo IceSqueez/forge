@@ -61,7 +61,7 @@ pub use builtin_detail::{BuiltinDetailState, health_subscription};
 pub use event_feed::{EventFeedMsg, EventFeedState, EventFilter, matches_filter};
 pub use globals_view::{GlobalsState, VariantEditorFields, VariantEditorForm, load_globals_data};
 pub use home::HomeStats;
-pub use live_chat::{ChatFilters, LiveChatState, PlatformFilter};
+pub use live_chat::{EventsFilter, LiveChatState, PlatformFilter, SendId};
 pub use message::{
     ActionsMsg, BootMsg, BuiltinDetailMsg, EditorMode, GlobalsFilter, GlobalsLoadData, GlobalsMsg,
     HomeMsg, HomeStatsData, LiveChatMsg, Message, ObsClientRef, ServerSubsystemMsg,

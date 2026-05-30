@@ -10,6 +10,8 @@ use tokio::sync::Mutex;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_util::sync::CancellationToken;
 
+use crate::live_chat_id::LiveChatIdHandle;
+
 const DEFAULT_API_BASE: &str = "https://www.googleapis.com/youtube/v3";
 const POLL_FLOOR_MS: u64 = 3_000;
 const LONG_INTERVAL_MS: u64 = 60_000;
@@ -103,6 +105,7 @@ pub struct YoutubeChatPoller {
     channel_id: String,
     api_base: String,
     quota_tracker: Arc<Mutex<QuotaState>>,
+    live_chat_id: LiveChatIdHandle,
 }
 
 impl YoutubeChatPoller {
@@ -112,6 +115,8 @@ impl YoutubeChatPoller {
         >,
         bus_sender: UnboundedSender<Event>,
         channel_id: String,
+        live_chat_id: LiveChatIdHandle,
+        quota_tracker: Arc<Mutex<QuotaState>>,
     ) -> Self {
         Self {
             client: reqwest::Client::new(),
@@ -119,7 +124,8 @@ impl YoutubeChatPoller {
             bus_sender,
             channel_id,
             api_base: DEFAULT_API_BASE.to_owned(),
-            quota_tracker: Arc::new(Mutex::new(QuotaState::default())),
+            quota_tracker,
+            live_chat_id,
         }
     }
 
@@ -166,6 +172,7 @@ impl YoutubeChatPoller {
             let live_chat_id = match self.fetch_live_chat_id(&token).await {
                 Ok(Some(id)) => id,
                 Ok(None) => {
+                    self.live_chat_id.set(None);
                     let event = Event::new(
                         EventSource::YouTube,
                         "youtube.channel.no_active_broadcast",
@@ -181,6 +188,7 @@ impl YoutubeChatPoller {
                     continue 'outer;
                 }
                 Err(e) => {
+                    self.live_chat_id.set(None);
                     tracing::warn!("broadcast resolution failed: {e}");
                     tokio::select! {
                         () = tokio::time::sleep(Duration::from_secs(BROADCAST_CADENCE_SECS)) => {}
@@ -189,6 +197,8 @@ impl YoutubeChatPoller {
                     continue 'outer;
                 }
             };
+
+            self.live_chat_id.set(Some(live_chat_id.clone()));
 
             let mut next_page_token: Option<String> = None;
             let broadcast_resolved_at = tokio::time::Instant::now();
@@ -270,6 +280,8 @@ impl YoutubeChatPoller {
                     () = cancel.cancelled() => return Ok(()),
                 }
             }
+
+            self.live_chat_id.set(None);
         }
     }
 
@@ -710,7 +722,7 @@ impl YoutubeChatPoller {
     }
 }
 
-fn today_pacific() -> time::Date {
+pub(crate) fn today_pacific() -> time::Date {
     (time::OffsetDateTime::now_utc() - time::Duration::hours(8)).date()
 }
 
@@ -772,6 +784,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+    use crate::live_chat_id::LiveChatIdHandle;
     use serde_json::json;
     use wiremock::matchers::{method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -848,10 +861,20 @@ mod tests {
             .await;
     }
 
+    fn make_quota() -> Arc<tokio::sync::Mutex<QuotaState>> {
+        Arc::new(tokio::sync::Mutex::new(QuotaState::default()))
+    }
+
     fn make_poller(server: &MockServer) -> (YoutubeChatPoller, UnboundedSender<Event>) {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-        let poller = YoutubeChatPoller::new(token_source(), tx.clone(), "UCtest".to_owned())
-            .with_api_base(server.uri());
+        let poller = YoutubeChatPoller::new(
+            token_source(),
+            tx.clone(),
+            "UCtest".to_owned(),
+            LiveChatIdHandle::new(),
+            make_quota(),
+        )
+        .with_api_base(server.uri());
         (poller, tx)
     }
 
@@ -862,9 +885,35 @@ mod tests {
         tokio::sync::mpsc::UnboundedReceiver<Event>,
     ) {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-        let poller = YoutubeChatPoller::new(token_source(), tx, "UCtest".to_owned())
-            .with_api_base(server.uri());
+        let poller = YoutubeChatPoller::new(
+            token_source(),
+            tx,
+            "UCtest".to_owned(),
+            LiveChatIdHandle::new(),
+            make_quota(),
+        )
+        .with_api_base(server.uri());
         (poller, rx)
+    }
+
+    fn make_poller_with_handle(
+        server: &MockServer,
+    ) -> (
+        YoutubeChatPoller,
+        LiveChatIdHandle,
+        tokio::sync::mpsc::UnboundedReceiver<Event>,
+    ) {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let handle = LiveChatIdHandle::new();
+        let poller = YoutubeChatPoller::new(
+            token_source(),
+            tx,
+            "UCtest".to_owned(),
+            handle.clone(),
+            make_quota(),
+        )
+        .with_api_base(server.uri());
+        (poller, handle, rx)
     }
 
     #[tokio::test]
@@ -873,8 +922,14 @@ mod tests {
         mount_broadcast_mock(&server, empty_broadcast_response()).await;
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        let poller = YoutubeChatPoller::new(token_source(), tx, "UCtest".to_owned())
-            .with_api_base(server.uri());
+        let poller = YoutubeChatPoller::new(
+            token_source(),
+            tx,
+            "UCtest".to_owned(),
+            LiveChatIdHandle::new(),
+            make_quota(),
+        )
+        .with_api_base(server.uri());
 
         let cancel = CancellationToken::new();
         let cancel_clone = cancel.clone();
@@ -1147,8 +1202,14 @@ mod tests {
             .await;
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        let poller = YoutubeChatPoller::new(token_source(), tx, "UCtest".to_owned())
-            .with_api_base(server.uri());
+        let poller = YoutubeChatPoller::new(
+            token_source(),
+            tx,
+            "UCtest".to_owned(),
+            LiveChatIdHandle::new(),
+            make_quota(),
+        )
+        .with_api_base(server.uri());
 
         let cancel = CancellationToken::new();
         let cancel_clone = cancel.clone();
@@ -1215,5 +1276,72 @@ mod tests {
             .unwrap();
 
         assert!(result.is_ok(), "run() must return Ok(()) on cancellation");
+    }
+
+    #[tokio::test]
+    async fn poller_updates_live_chat_id_handle_when_broadcast_active() {
+        let server = MockServer::start().await;
+        mount_broadcast_mock(&server, broadcast_response("lc-active-123")).await;
+        mount_chat_mock(&server, chat_response(json!([]), 3000)).await;
+
+        let (poller, handle, _rx) = make_poller_with_handle(&server);
+        let cancel = CancellationToken::new();
+        let cancel_clone = cancel.clone();
+        let join = tokio::spawn(async move { poller.run(cancel_clone).await });
+
+        let found = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if let Some(id) = handle.get() {
+                    return id;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("handle was not set within timeout");
+
+        cancel.cancel();
+        join.await.unwrap().unwrap();
+
+        assert_eq!(found, "lc-active-123");
+    }
+
+    #[tokio::test]
+    async fn poller_clears_live_chat_id_handle_when_no_broadcast() {
+        let server = MockServer::start().await;
+        mount_broadcast_mock(&server, empty_broadcast_response()).await;
+
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let handle = LiveChatIdHandle::new();
+        handle.set(Some("stale-id".to_owned()));
+
+        let poller = YoutubeChatPoller::new(
+            token_source(),
+            tx,
+            "UCtest".to_owned(),
+            handle.clone(),
+            make_quota(),
+        )
+        .with_api_base(server.uri());
+
+        let cancel = CancellationToken::new();
+        let cancel_clone = cancel.clone();
+        let join = tokio::spawn(async move { poller.run(cancel_clone).await });
+
+        let cleared = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if handle.get().is_none() {
+                    return true;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("handle was not cleared within timeout");
+
+        cancel.cancel();
+        join.await.unwrap().unwrap();
+
+        assert!(cleared);
     }
 }

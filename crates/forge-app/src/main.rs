@@ -314,6 +314,22 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
                         bus_bridge.publish(event);
                     }
                 });
+
+                let yt_live_chat_id = forge_platform_youtube::LiveChatIdHandle::new();
+                let yt_quota = Arc::new(tokio::sync::Mutex::new(
+                    forge_platform_youtube::QuotaState::default(),
+                ));
+
+                let manager_for_send = manager.clone();
+                let yt_send = Arc::new(forge_platform_youtube::YoutubeSendChat::new(
+                    Arc::new(move || {
+                        let m = manager_for_send.clone();
+                        Box::pin(async move { m.get_valid_access_token().await })
+                    }),
+                    yt_live_chat_id.clone(),
+                    Arc::clone(&yt_quota),
+                ));
+
                 let cancel = tokio_util::sync::CancellationToken::new();
                 let poller = forge_platform_youtube::YoutubeChatPoller::new(
                     Arc::new(move || {
@@ -322,10 +338,70 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
                     }),
                     yt_tx,
                     channel_id,
+                    yt_live_chat_id,
+                    yt_quota,
                 );
                 tokio::spawn(async move {
                     if let Err(err) = poller.run(cancel).await {
                         tracing::warn!("youtube chat poller exited: {err}");
+                    }
+                });
+
+                let bus_yt_send = Arc::clone(&bus);
+                tokio::spawn(async move {
+                    let mut sub = bus_yt_send.subscribe();
+                    loop {
+                        let event = match sub.recv().await {
+                            Ok(e) => e,
+                            Err(forge_events::EventsError::BusClosed) => break,
+                            Err(forge_events::EventsError::LaggingReceiver) => {
+                                tracing::warn!("youtube_send_bridge: lagging receiver");
+                                continue;
+                            }
+                            Err(_) => continue,
+                        };
+                        if event.source != forge_events::EventSource::Core
+                            || event.kind != "chat.send.request"
+                        {
+                            continue;
+                        }
+                        let target = event
+                            .payload
+                            .get("target")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        if target != "youtube" {
+                            continue;
+                        }
+                        let message = match event
+                            .payload
+                            .get("message")
+                            .and_then(|v| v.as_str())
+                            .map(ToOwned::to_owned)
+                        {
+                            Some(m) => m,
+                            None => continue,
+                        };
+                        let caused_by = event.id;
+                        match yt_send.send(&message).await {
+                            Ok(()) => {
+                                bus_yt_send.publish(forge_events::Event::caused_by(
+                                    forge_events::EventSource::YouTube,
+                                    "chat.sent",
+                                    serde_json::json!({"channel": "youtube", "message": message}),
+                                    caused_by,
+                                ));
+                            }
+                            Err(e) => {
+                                tracing::warn!(error = %e, "youtube chat send failed");
+                                bus_yt_send.publish(forge_events::Event::caused_by(
+                                    forge_events::EventSource::YouTube,
+                                    "chat.send.failed",
+                                    serde_json::json!({"target": "youtube", "error": e.to_string()}),
+                                    caused_by,
+                                ));
+                            }
+                        }
                     }
                 });
             }

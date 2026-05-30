@@ -5,6 +5,7 @@ use directories::BaseDirs;
 #[cfg(target_os = "macos")]
 const MACOS_BUNDLE_ID: &str = "com.icesqueez.forge";
 
+#[cfg(not(target_os = "macos"))]
 const APP_DIR_NAME: &str = "forge";
 
 #[allow(clippy::expect_used)]

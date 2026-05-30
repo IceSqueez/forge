@@ -28,6 +28,11 @@ pub struct ForgePalette {
     pub accent_teal: Color,
     pub disabled: Color,
 
+    pub platform_twitch: Color,
+    pub platform_youtube: Color,
+    pub platform_trovo: Color,
+    pub platform_kick: Color,
+
     pub code_keyword: Color,
     pub code_fn: Color,
     pub code_str: Color,
@@ -94,6 +99,11 @@ pub const CATPPUCCIN_MOCHA: ForgePalette = ForgePalette {
     accent_teal: hex(0x94, 0xe2, 0xd5),
     disabled: hex(0x6c, 0x70, 0x86),
 
+    platform_twitch: hex(0x91, 0x46, 0xff),
+    platform_youtube: hex(0xff, 0x00, 0x00),
+    platform_trovo: hex(0x00, 0xb2, 0x73),
+    platform_kick: hex(0x53, 0xfc, 0x18),
+
     code_keyword: hex(0xcb, 0xa6, 0xf7),
     code_fn: hex(0x89, 0xdc, 0xeb),
     code_str: hex(0xa6, 0xe3, 0xa1),
@@ -136,6 +146,11 @@ pub const TOKYO_NIGHT: ForgePalette = ForgePalette {
     accent_teal: hex(0x73, 0xda, 0xca),
     disabled: hex(0x56, 0x5f, 0x89),
 
+    platform_twitch: hex(0x91, 0x46, 0xff),
+    platform_youtube: hex(0xff, 0x00, 0x00),
+    platform_trovo: hex(0x00, 0xb2, 0x73),
+    platform_kick: hex(0x53, 0xfc, 0x18),
+
     code_keyword: hex(0xbb, 0x9a, 0xf7),
     code_fn: hex(0x7a, 0xa2, 0xf7),
     code_str: hex(0x9e, 0xce, 0x6a),
@@ -177,6 +192,11 @@ pub const LATTE: ForgePalette = ForgePalette {
     accent_pink_light: hex(0xea, 0x76, 0xcb),
     accent_teal: hex(0x17, 0x9a, 0x99),
     disabled: hex(0xac, 0xb0, 0xbe),
+
+    platform_twitch: hex(0x91, 0x46, 0xff),
+    platform_youtube: hex(0xff, 0x00, 0x00),
+    platform_trovo: hex(0x00, 0xb2, 0x73),
+    platform_kick: hex(0x53, 0xfc, 0x18),
 
     code_keyword: hex(0x88, 0x39, 0xef),
     code_fn: hex(0x04, 0xa5, 0xe5),
@@ -242,6 +262,45 @@ mod tests {
         let _m = CATPPUCCIN_MOCHA;
         let _t = TOKYO_NIGHT;
         let _l = LATTE;
+    }
+
+    #[test]
+    fn all_themes_define_platform_tokens() {
+        for p in [CATPPUCCIN_MOCHA, TOKYO_NIGHT, LATTE] {
+            assert!(
+                p.platform_twitch.r > 0.0 || p.platform_twitch.g > 0.0 || p.platform_twitch.b > 0.0
+            );
+            assert!(
+                p.platform_youtube.r > 0.0
+                    || p.platform_youtube.g > 0.0
+                    || p.platform_youtube.b > 0.0
+            );
+            assert!(
+                p.platform_trovo.r > 0.0 || p.platform_trovo.g > 0.0 || p.platform_trovo.b > 0.0
+            );
+            assert!(p.platform_kick.r > 0.0 || p.platform_kick.g > 0.0 || p.platform_kick.b > 0.0);
+        }
+    }
+
+    #[test]
+    fn platform_tokens_consistent_across_themes() {
+        let palettes = [CATPPUCCIN_MOCHA, TOKYO_NIGHT, LATTE];
+        let approx = |a: f32, b: f32| (a - b).abs() < 0.001;
+        for w in palettes.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            assert!(approx(a.platform_twitch.r, b.platform_twitch.r));
+            assert!(approx(a.platform_twitch.g, b.platform_twitch.g));
+            assert!(approx(a.platform_twitch.b, b.platform_twitch.b));
+            assert!(approx(a.platform_youtube.r, b.platform_youtube.r));
+            assert!(approx(a.platform_youtube.g, b.platform_youtube.g));
+            assert!(approx(a.platform_youtube.b, b.platform_youtube.b));
+            assert!(approx(a.platform_trovo.r, b.platform_trovo.r));
+            assert!(approx(a.platform_trovo.g, b.platform_trovo.g));
+            assert!(approx(a.platform_trovo.b, b.platform_trovo.b));
+            assert!(approx(a.platform_kick.r, b.platform_kick.r));
+            assert!(approx(a.platform_kick.g, b.platform_kick.g));
+            assert!(approx(a.platform_kick.b, b.platform_kick.b));
+        }
     }
 
     #[test]

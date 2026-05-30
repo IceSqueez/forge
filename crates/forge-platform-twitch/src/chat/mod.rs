@@ -1,4 +1,5 @@
 pub mod parsers;
+pub(crate) mod payload;
 mod reconnect;
 mod send;
 mod session;

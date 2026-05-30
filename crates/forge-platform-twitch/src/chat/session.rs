@@ -3,7 +3,7 @@ use crate::chat::subscriber::{SubscribeError, subscribe_all};
 use crate::subscriptions::SubscriptionTracker;
 use forge_events::{Event, EventSource};
 use forge_runtime::EventBus;
-use forge_types::OAuthToken;
+use forge_types::{ChatPayload, OAuthToken};
 use futures_util::StreamExt;
 use serde::Deserialize;
 use std::sync::Arc;
@@ -11,6 +11,8 @@ use tokio::sync::{oneshot, watch};
 use tokio::time::{Duration, Instant, sleep_until};
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{debug, info, warn};
+
+use super::payload;
 
 const EVENTSUB_WS_URL: &str = "wss://eventsub.wss.twitch.tv/ws";
 const KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(15);
@@ -236,11 +238,32 @@ impl ChatSession {
             }
 
             "notification" => {
-                if let Some(payload) = &frame.payload
-                    && let Some(event_data) = &payload.event
+                let sub_type = frame.metadata.subscription_type.as_deref().unwrap_or("");
+                let frame_msg_id = frame.metadata.message_id.as_str();
+                if let Some(frame_payload) = &frame.payload
+                    && let Some(event_data) = &frame_payload.event
                 {
-                    debug!("chat notification received");
-                    self.publish_chat_message(event_data);
+                    match sub_type {
+                        "channel.chat.message" => self.publish_chat_message(event_data),
+                        "channel.subscribe" => {
+                            self.publish_subscribe_event(event_data, frame_msg_id);
+                        }
+                        "channel.subscription.message" => {
+                            self.publish_resubscribe_event(event_data, frame_msg_id);
+                        }
+                        "channel.subscription.gift" => {
+                            self.publish_gift_sub_event(event_data, frame_msg_id);
+                        }
+                        "channel.cheer" => {
+                            self.publish_cheer_event(event_data, frame_msg_id);
+                        }
+                        "channel.raid" => {
+                            self.publish_raid_event(event_data, frame_msg_id);
+                        }
+                        other => {
+                            debug!(subscription_type = %other, "unhandled notification subscription type");
+                        }
+                    }
                 }
             }
 
@@ -288,20 +311,257 @@ impl ChatSession {
             "chat message received"
         );
 
+        let chat_payload = payload::build_chat_message_chat_payload(event_data);
+        let mut forge_payload = serde_json::json!({
+            "channel": channel,
+            "user": {
+                "login": user_login,
+                "id": user_id,
+                "roles": roles,
+            },
+            "message": message,
+            "badges": badges,
+            "color": color,
+        });
+        attach_chat_payload(&mut forge_payload, chat_payload);
+
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
             "chat.message",
-            serde_json::json!({
-                "channel": channel,
-                "user": {
-                    "login": user_login,
-                    "id": user_id,
-                    "roles": roles,
-                },
-                "message": message,
-                "badges": badges,
-                "color": color,
-            }),
+            forge_payload,
+        ));
+    }
+
+    fn publish_subscribe_event(&self, event_data: &serde_json::Value, frame_msg_id: &str) {
+        let user_login = event_data
+            .get("user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_id = event_data
+            .get("user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_display = event_data
+            .get("user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let tier = event_data
+            .get("tier")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let is_gift = event_data
+            .get("is_gift")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        info!(user_login = %user_login, "subscriber event received");
+
+        let chat_payload = payload::build_subscribe_chat_payload(event_data, frame_msg_id);
+        let mut forge_payload = serde_json::json!({
+            "user": { "id": user_id, "login": user_login, "display_name": user_display },
+            "tier": tier,
+            "is_gift": is_gift,
+        });
+        attach_chat_payload(&mut forge_payload, chat_payload);
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.subscribe",
+            forge_payload,
+        ));
+    }
+
+    fn publish_resubscribe_event(&self, event_data: &serde_json::Value, frame_msg_id: &str) {
+        let user_login = event_data
+            .get("user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_id = event_data
+            .get("user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_display = event_data
+            .get("user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let tier = event_data
+            .get("tier")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let cumulative_months = event_data
+            .get("cumulative_months")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let streak_months = event_data
+            .get("streak_months")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let message_text = event_data
+            .get("message")
+            .and_then(|m| m.get("text"))
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let share_streak = event_data
+            .get("share_streak")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        info!(user_login = %user_login, cumulative_months = cumulative_months, "resub event received");
+
+        let chat_payload = payload::build_resubscribe_chat_payload(event_data, frame_msg_id);
+        let mut forge_payload = serde_json::json!({
+            "user": { "id": user_id, "login": user_login, "display_name": user_display },
+            "tier": tier,
+            "cumulative_months": cumulative_months,
+            "streak_months": streak_months,
+            "message": message_text,
+            "share_streak": share_streak,
+        });
+        attach_chat_payload(&mut forge_payload, chat_payload);
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.subscription.message",
+            forge_payload,
+        ));
+    }
+
+    fn publish_gift_sub_event(&self, event_data: &serde_json::Value, frame_msg_id: &str) {
+        let gifter_login = event_data
+            .get("user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let gifter_id = event_data
+            .get("user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let gifter_display = event_data
+            .get("user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let is_anonymous = event_data
+            .get("is_anonymous")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let tier = event_data
+            .get("tier")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(gifter_login = %gifter_login, "gift sub event received");
+
+        let chat_payload = payload::build_gift_sub_chat_payload(event_data, frame_msg_id);
+        let mut forge_payload = serde_json::json!({
+            "tier": tier,
+            "is_anonymous": is_anonymous,
+            "gifter": { "id": gifter_id, "login": gifter_login, "display_name": gifter_display },
+            "recipient": { "id": "", "login": "", "display_name": "" },
+        });
+        attach_chat_payload(&mut forge_payload, chat_payload);
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.subscription.gift",
+            forge_payload,
+        ));
+    }
+
+    fn publish_cheer_event(&self, event_data: &serde_json::Value, frame_msg_id: &str) {
+        let user_login = event_data
+            .get("user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_id = event_data
+            .get("user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_display = event_data
+            .get("user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let bits = event_data.get("bits").and_then(|v| v.as_i64()).unwrap_or(0);
+        let message = event_data
+            .get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let is_anonymous = event_data
+            .get("is_anonymous")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        info!(user_login = %user_login, bits = bits, "cheer event received");
+
+        let chat_payload = payload::build_cheer_chat_payload(event_data, frame_msg_id);
+        let mut forge_payload = serde_json::json!({
+            "bits": bits,
+            "message": message,
+            "is_anonymous": is_anonymous,
+            "user": { "id": user_id, "login": user_login, "display_name": user_display },
+        });
+        attach_chat_payload(&mut forge_payload, chat_payload);
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.cheer",
+            forge_payload,
+        ));
+    }
+
+    fn publish_raid_event(&self, event_data: &serde_json::Value, frame_msg_id: &str) {
+        let from_login = event_data
+            .get("from_broadcaster_user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let from_id = event_data
+            .get("from_broadcaster_user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let from_display = event_data
+            .get("from_broadcaster_user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let viewer_count = event_data
+            .get("viewers")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+
+        info!(from_login = %from_login, viewer_count = viewer_count, "raid event received");
+
+        let chat_payload = payload::build_raid_chat_payload(event_data, frame_msg_id);
+        let mut forge_payload = serde_json::json!({
+            "viewer_count": viewer_count,
+            "from_broadcaster": {
+                "id": from_id,
+                "login": from_login,
+                "display_name": from_display,
+            },
+        });
+        attach_chat_payload(&mut forge_payload, chat_payload);
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.raid",
+            forge_payload,
         ));
     }
 
@@ -339,6 +599,19 @@ impl ChatSession {
     }
 }
 
+fn attach_chat_payload(forge_payload: &mut serde_json::Value, chat: ChatPayload) {
+    match serde_json::to_value(&chat) {
+        Ok(chat_value) => {
+            if let serde_json::Value::Object(map) = forge_payload {
+                map.insert(ChatPayload::KEY.to_owned(), chat_value);
+            }
+        }
+        Err(e) => {
+            warn!(error = %e, "failed to serialize ChatPayload; _chat key omitted");
+        }
+    }
+}
+
 fn extract_roles_from_badges(badges: Option<&serde_json::Value>) -> Vec<String> {
     badges
         .and_then(|v| v.as_array())
@@ -372,7 +645,10 @@ struct WsFrame {
 
 #[derive(Debug, Deserialize)]
 struct FrameMetadata {
+    #[serde(default)]
+    message_id: String,
     message_type: String,
+    subscription_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -390,13 +666,34 @@ struct SessionInfo {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
+    use std::time::Duration;
+
+    use forge_events::EventSource;
+    use forge_runtime::{EventBus, NullEventLogRepo};
+    use forge_types::{ChatEventDetail, ChatPayload, ChatSegment, OAuthToken};
+
     use super::*;
+
+    fn make_session(bus: &Arc<EventBus>) -> ChatSession {
+        let token = OAuthToken::new("dummy".to_string());
+        let tracker = crate::subscriptions::SubscriptionTracker::default();
+        let (session, _, _) = ChatSession::new(
+            token,
+            "client".to_string(),
+            "bcast".to_string(),
+            "user".to_string(),
+            Arc::clone(bus),
+            tracker,
+        );
+        session
+    }
 
     #[test]
     fn ws_frame_deserializes_session_welcome() {
         let raw = r#"{"metadata":{"message_type":"session_welcome","message_id":"abc"},"payload":{"session":{"id":"sess-123","reconnect_url":null}}}"#;
         let frame: WsFrame = serde_json::from_str(raw).expect("must parse");
         assert_eq!(frame.metadata.message_type, "session_welcome");
+        assert_eq!(frame.metadata.message_id, "abc");
         let sid = frame.payload.unwrap().session.unwrap().id;
         assert_eq!(sid, "sess-123");
     }
@@ -417,6 +714,17 @@ mod tests {
     }
 
     #[test]
+    fn ws_frame_deserializes_notification_with_subscription_type() {
+        let raw = r#"{"metadata":{"message_type":"notification","message_id":"notif-001","subscription_type":"channel.chat.message"},"payload":{"event":{"chatter_user_login":"viewer","message":{"text":"hi"}}}}"#;
+        let frame: WsFrame = serde_json::from_str(raw).expect("must parse");
+        assert_eq!(frame.metadata.message_type, "notification");
+        assert_eq!(
+            frame.metadata.subscription_type.as_deref(),
+            Some("channel.chat.message")
+        );
+    }
+
+    #[test]
     fn ws_frame_deserializes_notification_with_event() {
         let raw = r#"{"metadata":{"message_type":"notification"},"payload":{"event":{"broadcaster_user_id":"12345","chatter_user_id":"67890","chatter_user_login":"someuser","message_id":"msg-001","message":{"text":"Hello!"},"color":"red"}}}"#;
         let frame: WsFrame = serde_json::from_str(raw).expect("must parse");
@@ -430,6 +738,13 @@ mod tests {
         let raw = r#"{"metadata":{"message_type":"session_keepalive"},"payload":{}}"#;
         let frame: WsFrame = serde_json::from_str(raw).expect("must parse");
         assert_eq!(frame.metadata.message_type, "session_keepalive");
+    }
+
+    #[test]
+    fn ws_frame_message_id_defaults_to_empty_when_absent() {
+        let raw = r#"{"metadata":{"message_type":"session_keepalive"},"payload":{}}"#;
+        let frame: WsFrame = serde_json::from_str(raw).expect("must parse");
+        assert_eq!(frame.metadata.message_id, "");
     }
 
     #[test]
@@ -469,21 +784,8 @@ mod tests {
 
     #[tokio::test]
     async fn publish_chat_message_emits_rfc031_payload_shape() {
-        use forge_runtime::{EventBus, NullEventLogRepo};
-        use forge_types::OAuthToken;
-        use std::sync::Arc;
-
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let token = OAuthToken::new("dummy".to_string());
-        let tracker = crate::subscriptions::SubscriptionTracker::default();
-        let (session, _, _) = ChatSession::new(
-            token,
-            "client".to_string(),
-            "bcast".to_string(),
-            "user".to_string(),
-            Arc::clone(&bus),
-            tracker,
-        );
+        let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
         let event_data = serde_json::json!({
@@ -500,7 +802,7 @@ mod tests {
 
         session.publish_chat_message(&event_data);
 
-        let ev = tokio::time::timeout(std::time::Duration::from_millis(100), sub.recv())
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
             .await
             .expect("timeout")
             .expect("recv error");
@@ -518,5 +820,156 @@ mod tests {
         assert_eq!(roles[1].as_str(), Some("vip"));
         let badges = ev.payload["badges"].as_array().unwrap();
         assert_eq!(badges[0].as_str(), Some("moderator"));
+    }
+
+    #[tokio::test]
+    async fn chat_message_attaches_chat_payload() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "broadcaster_user_login": "streamer",
+            "chatter_user_id": "123",
+            "chatter_user_login": "viewer",
+            "chatter_user_name": "Viewer",
+            "message_id": "msg-abc",
+            "message": {
+                "text": "hello KEKW",
+                "fragments": [
+                    { "type": "text", "text": "hello " },
+                    { "type": "emote", "text": "KEKW", "emote": { "id": "55edbc60" } }
+                ]
+            },
+            "color": "#FF0000",
+            "badges": []
+        });
+        session.publish_chat_message(&event_data);
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        let chat_val = ev.payload.get(ChatPayload::KEY).expect("_chat key missing");
+        let chat: ChatPayload = serde_json::from_value(chat_val.clone()).unwrap();
+        assert_eq!(chat.platform_msg_id, "msg-abc");
+        assert_eq!(chat.author, "Viewer");
+        assert!(!chat.is_event);
+        assert_eq!(chat.segments.len(), 2);
+        assert!(matches!(chat.segments[0], ChatSegment::Text { .. }));
+        assert!(matches!(chat.segments[1], ChatSegment::Emote { .. }));
+    }
+
+    #[tokio::test]
+    async fn chat_payload_is_additive_to_existing_argstack_keys() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "broadcaster_user_login": "chan",
+            "chatter_user_id": "456",
+            "chatter_user_login": "bob",
+            "chatter_user_name": "Bob",
+            "message_id": "m1",
+            "message": {
+                "text": "hi",
+                "fragments": [{ "type": "text", "text": "hi" }]
+            },
+            "color": "#AABBCC",
+            "badges": []
+        });
+        session.publish_chat_message(&event_data);
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert!(ev.payload.get("channel").is_some(), "channel key missing");
+        assert!(ev.payload.get("user").is_some(), "user key missing");
+        assert!(ev.payload.get("message").is_some(), "message key missing");
+        assert!(ev.payload.get("color").is_some(), "color key missing");
+        assert!(ev.payload.get("badges").is_some(), "badges key missing");
+        let chat_val = ev.payload.get(ChatPayload::KEY);
+        assert!(chat_val.is_some(), "_chat key must be present");
+        let _chat: ChatPayload = serde_json::from_value(chat_val.unwrap().clone()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn subscriber_event_attaches_chat_payload_with_event_detail() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "user_id": "111",
+            "user_login": "newbie",
+            "user_name": "Newbie",
+            "tier": "1000",
+            "is_gift": false
+        });
+        session.publish_subscribe_event(&event_data, "meta-msg-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.subscribe");
+        let chat_val = ev.payload.get(ChatPayload::KEY).expect("_chat key missing");
+        let chat: ChatPayload = serde_json::from_value(chat_val.clone()).unwrap();
+        assert!(chat.is_event);
+        assert!(chat.event_detail.is_some());
+        assert!(
+            matches!(
+                chat.event_detail.unwrap(),
+                ChatEventDetail::Subscription {
+                    tier: 1,
+                    months: None,
+                    message: None
+                }
+            ),
+            "expected Subscription {{ tier: 1, months: None, message: None }}"
+        );
+    }
+
+    #[tokio::test]
+    async fn raid_received_attaches_event_detail_raid() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "from_broadcaster_user_id": "666",
+            "from_broadcaster_user_login": "big_streamer",
+            "from_broadcaster_user_name": "BigStreamer",
+            "to_broadcaster_user_id": "777",
+            "viewers": 500u64
+        });
+        session.publish_raid_event(&event_data, "meta-raid-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.raid");
+        assert_eq!(ev.payload["viewer_count"].as_i64(), Some(500));
+        assert_eq!(
+            ev.payload["from_broadcaster"]["login"].as_str(),
+            Some("big_streamer")
+        );
+        let chat_val = ev.payload.get(ChatPayload::KEY).expect("_chat key missing");
+        let chat: ChatPayload = serde_json::from_value(chat_val.clone()).unwrap();
+        assert!(chat.is_event);
+        assert!(
+            matches!(
+                chat.event_detail,
+                Some(ChatEventDetail::Raid { viewer_count: 500 })
+            ),
+            "expected Raid {{ viewer_count: 500 }}"
+        );
     }
 }

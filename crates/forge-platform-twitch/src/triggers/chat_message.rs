@@ -1,6 +1,8 @@
 use forge_events::{Event, EventSource};
-use forge_registry::{EventFilter, FormField, TriggerCategory, TriggerKindDescriptor};
-use forge_types::{ArgStack, TriggerConfig, Variant};
+use forge_registry::{
+    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+};
+use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
 
 pub(crate) struct ChatMessageDescriptor;
 
@@ -27,6 +29,10 @@ impl TriggerKindDescriptor for ChatMessageDescriptor {
 
     fn icon_name(&self) -> &str {
         "message-circle"
+    }
+
+    fn platform_contract(&self) -> KindPlatformContract {
+        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
     }
 
     fn default_config(&self) -> TriggerConfig {
@@ -117,6 +123,14 @@ mod tests {
     #[test]
     fn id_is_stable() {
         assert_eq!(ChatMessageDescriptor.id(), "twitch.chat.message");
+    }
+
+    #[test]
+    fn chat_message_descriptor_is_platform_specific_twitch() {
+        assert_eq!(
+            ChatMessageDescriptor.platform_contract(),
+            KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
+        );
     }
 
     #[test]

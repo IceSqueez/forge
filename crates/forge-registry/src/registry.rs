@@ -67,6 +67,7 @@ mod tests {
     use crate::category::{SubActionCategory, TriggerCategory};
     use crate::evaluator::EventFilter;
     use crate::form::FormField;
+    use crate::kind_platform_contract::KindPlatformContract;
     use crate::run_context::RunContext;
     use crate::runner::SubActionConfig;
     use async_trait::async_trait;
@@ -96,6 +97,9 @@ mod tests {
         }
         fn icon_name(&self) -> &str {
             "bolt"
+        }
+        fn platform_contract(&self) -> KindPlatformContract {
+            KindPlatformContract::Universal
         }
         fn default_config(&self) -> TriggerConfig {
             TriggerConfig::new()

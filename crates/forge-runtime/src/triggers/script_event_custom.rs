@@ -1,5 +1,7 @@
 use forge_events::{Event, EventSource};
-use forge_registry::{EventFilter, FormField, TriggerCategory, TriggerKindDescriptor};
+use forge_registry::{
+    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+};
 use forge_types::{ArgStack, TriggerConfig, Variant};
 
 pub struct ScriptEventCustomDescriptor;
@@ -27,6 +29,10 @@ impl TriggerKindDescriptor for ScriptEventCustomDescriptor {
 
     fn icon_name(&self) -> &str {
         "bolt"
+    }
+
+    fn platform_contract(&self) -> KindPlatformContract {
+        KindPlatformContract::Universal
     }
 
     fn default_config(&self) -> TriggerConfig {

@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
-use forge_registry::{EventFilter, FormField, TriggerCategory, TriggerKindDescriptor};
+use forge_registry::{
+    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+};
 use forge_types::{ArgStack, TriggerConfig, Variant};
 
 pub struct SceneCurrentChangedDescriptor;
@@ -29,6 +31,10 @@ impl TriggerKindDescriptor for SceneCurrentChangedDescriptor {
 
     fn icon_name(&self) -> &str {
         "layers-subtract"
+    }
+
+    fn platform_contract(&self) -> KindPlatformContract {
+        KindPlatformContract::Universal
     }
 
     fn default_config(&self) -> TriggerConfig {

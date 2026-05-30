@@ -1,6 +1,8 @@
 use forge_events::{Event, EventSource};
-use forge_registry::{EventFilter, FormField, TriggerCategory, TriggerKindDescriptor};
-use forge_types::{ArgStack, TriggerConfig, Variant};
+use forge_registry::{
+    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+};
+use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
 
 pub(crate) struct SupportGiftSubDescriptor;
 
@@ -27,6 +29,10 @@ impl TriggerKindDescriptor for SupportGiftSubDescriptor {
 
     fn icon_name(&self) -> &str {
         "gift"
+    }
+
+    fn platform_contract(&self) -> KindPlatformContract {
+        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
     }
 
     fn default_config(&self) -> TriggerConfig {

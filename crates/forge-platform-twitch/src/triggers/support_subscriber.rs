@@ -1,6 +1,8 @@
 use forge_events::{Event, EventSource};
-use forge_registry::{EventFilter, FormField, TriggerCategory, TriggerKindDescriptor};
-use forge_types::{ArgStack, TriggerConfig, Variant};
+use forge_registry::{
+    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+};
+use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
 
 pub(crate) struct SupportSubscriberDescriptor;
 
@@ -27,6 +29,10 @@ impl TriggerKindDescriptor for SupportSubscriberDescriptor {
 
     fn icon_name(&self) -> &str {
         "user-plus"
+    }
+
+    fn platform_contract(&self) -> KindPlatformContract {
+        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
     }
 
     fn default_config(&self) -> TriggerConfig {
@@ -109,6 +115,14 @@ mod tests {
         assert_eq!(
             SupportSubscriberDescriptor.id(),
             "twitch.support.subscriber"
+        );
+    }
+
+    #[test]
+    fn twitch_subscription_descriptor_is_platform_specific_twitch() {
+        assert_eq!(
+            SupportSubscriberDescriptor.platform_contract(),
+            KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
         );
     }
 

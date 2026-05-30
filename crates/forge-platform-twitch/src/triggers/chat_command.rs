@@ -1,6 +1,8 @@
 use forge_events::{Event, EventSource};
-use forge_registry::{EventFilter, FormField, TriggerCategory, TriggerKindDescriptor};
-use forge_types::{ArgStack, TriggerConfig, Variant};
+use forge_registry::{
+    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+};
+use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
 
 pub(crate) struct ChatCommandDescriptor;
 
@@ -27,6 +29,10 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
 
     fn icon_name(&self) -> &str {
         "terminal-2"
+    }
+
+    fn platform_contract(&self) -> KindPlatformContract {
+        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
     }
 
     fn default_config(&self) -> TriggerConfig {

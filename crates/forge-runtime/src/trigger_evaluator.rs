@@ -126,6 +126,10 @@ impl TriggerEvaluator {
                     continue;
                 }
 
+                if !scope_matches(instance, &event) {
+                    continue;
+                }
+
                 let effective = effective_config(&descriptor.default_config(), &instance.overrides);
                 if !descriptor.matches_trigger(&effective, &event) {
                     continue;
@@ -145,6 +149,12 @@ impl TriggerEvaluator {
             }
         }
     }
+}
+
+fn scope_matches(instance: &forge_types::TriggerInstance, event: &forge_events::Event) -> bool {
+    instance
+        .platform_scope
+        .matches(event.source.to_platform_id())
 }
 
 pub fn spawn_trigger_evaluator(
@@ -168,7 +178,8 @@ mod tests {
     use forge_storage::{DataProvider, GlobalsRepo};
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::{
-        Action, ActionId, Queue, QueueId, SubActionStep, TriggerInstance, TriggerInstanceId,
+        Action, ActionId, PlatformId, PlatformScope, Queue, QueueId, SubActionStep,
+        TriggerInstance, TriggerInstanceId,
     };
     use serde_json::json;
 
@@ -386,5 +397,72 @@ mod tests {
             !fired,
             "action.done must not fire for non-matching event name"
         );
+    }
+
+    fn scoped_instance(scope: PlatformScope) -> TriggerInstance {
+        TriggerInstance {
+            id: TriggerInstanceId::new(),
+            kind_id: "script.event.custom".to_owned(),
+            name: "scoped".to_owned(),
+            overrides: std::collections::BTreeMap::new(),
+            enabled: true,
+            user_defined: true,
+            platform_scope: scope,
+        }
+    }
+
+    #[test]
+    fn any_scope_fires_on_twitch_source() {
+        let instance = scoped_instance(PlatformScope::Any);
+        let event = Event::new(EventSource::Twitch, "chat.message", json!({}));
+        assert!(scope_matches(&instance, &event));
+    }
+
+    #[test]
+    fn any_scope_fires_on_core_source() {
+        let instance = scoped_instance(PlatformScope::Any);
+        let event = Event::new(EventSource::Core, "timer.tick", json!({}));
+        assert!(scope_matches(&instance, &event));
+    }
+
+    #[test]
+    fn only_twitch_fires_on_twitch() {
+        let mut set = std::collections::BTreeSet::new();
+        set.insert(PlatformId::Twitch);
+        let instance = scoped_instance(PlatformScope::only(set).unwrap());
+        let event = Event::new(EventSource::Twitch, "chat.message", json!({}));
+        assert!(scope_matches(&instance, &event));
+    }
+
+    #[test]
+    fn only_twitch_does_not_fire_on_youtube() {
+        let mut set = std::collections::BTreeSet::new();
+        set.insert(PlatformId::Twitch);
+        let instance = scoped_instance(PlatformScope::only(set).unwrap());
+        let event = Event::new(EventSource::YouTube, "chat.message", json!({}));
+        assert!(!scope_matches(&instance, &event));
+    }
+
+    #[test]
+    fn only_twitch_does_not_fire_on_core() {
+        let mut set = std::collections::BTreeSet::new();
+        set.insert(PlatformId::Twitch);
+        let instance = scoped_instance(PlatformScope::only(set).unwrap());
+        let event = Event::new(EventSource::Core, "timer.tick", json!({}));
+        assert!(!scope_matches(&instance, &event));
+    }
+
+    #[test]
+    fn only_multi_platform_fires_on_listed() {
+        let mut set = std::collections::BTreeSet::new();
+        set.insert(PlatformId::Twitch);
+        set.insert(PlatformId::YouTube);
+        let scope = PlatformScope::only(set).unwrap();
+        let instance_twitch = scoped_instance(scope.clone());
+        let instance_youtube = scoped_instance(scope);
+        let twitch_event = Event::new(EventSource::Twitch, "chat.message", json!({}));
+        let youtube_event = Event::new(EventSource::YouTube, "chat.message", json!({}));
+        assert!(scope_matches(&instance_twitch, &twitch_event));
+        assert!(scope_matches(&instance_youtube, &youtube_event));
     }
 }

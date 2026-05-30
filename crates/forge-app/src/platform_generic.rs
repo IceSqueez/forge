@@ -1,14 +1,16 @@
 use forge_platform_core::BuiltinId;
+use forge_types::PlatformId;
 use forge_widgets::{
     ForgePalette, Icon, tabler_icon,
     tokens::{FONT_MD, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf},
 };
 use iced::{
     Alignment, Background, Border, Color, Element, Length, Padding,
-    widget::{column, container, row, scrollable, text},
+    widget::{button, column, container, row, scrollable, text},
 };
 
 use crate::Message;
+use crate::screen::Screen;
 
 pub struct GenericPlatform {
     pub name: &'static str,
@@ -17,6 +19,7 @@ pub struct GenericPlatform {
     pub description: &'static str,
     pub features: &'static [&'static str],
     pub kind: PlatformKind,
+    pub connect_screen: Option<Screen>,
 }
 
 pub enum PlatformKind {
@@ -40,6 +43,7 @@ pub fn registry(id: &BuiltinId, palette: &ForgePalette) -> Option<(Color, Generi
                     "Subscriber milestone triggers",
                 ],
                 kind: PlatformKind::Platform,
+                connect_screen: Some(Screen::DeviceCodeFlow(PlatformId::YouTube)),
             },
         )),
         "kick" => Some((
@@ -55,6 +59,7 @@ pub fn registry(id: &BuiltinId, palette: &ForgePalette) -> Option<(Color, Generi
                     "Channel raid detection",
                 ],
                 kind: PlatformKind::Platform,
+                connect_screen: None,
             },
         )),
         "trovo" => Some((
@@ -70,6 +75,7 @@ pub fn registry(id: &BuiltinId, palette: &ForgePalette) -> Option<(Color, Generi
                     "Subscriber and follow events",
                 ],
                 kind: PlatformKind::Platform,
+                connect_screen: None,
             },
         )),
         "vtube" => Some((
@@ -85,6 +91,7 @@ pub fn registry(id: &BuiltinId, palette: &ForgePalette) -> Option<(Color, Generi
                     "Spawn item drops on bits/subs",
                 ],
                 kind: PlatformKind::StreamApp,
+                connect_screen: None,
             },
         )),
         _ => None,
@@ -209,7 +216,42 @@ pub fn platform_generic_view<'a>(
         ..container::Style::default()
     });
 
-    let body = column![hero_card, features_col, footer].spacing(spf(Spacing::Sm));
+    let mut body_parts: Vec<Element<'_, Message>> = vec![hero_card.into(), features_col.into()];
+
+    if let Some(target) = info.connect_screen {
+        let connect_btn = button(
+            row![
+                tabler_icon(Icon::Lock, 14.0, p.shell),
+                text("Connect").size(FONT_SM).color(p.shell),
+            ]
+            .spacing(spf(Spacing::Xs))
+            .align_y(Alignment::Center),
+        )
+        .on_press(Message::Navigate(target))
+        .padding([sp(Spacing::Xs), sp(Spacing::Md)])
+        .style(move |_: &iced::Theme, _status| button::Style {
+            background: Some(Background::Color(p.brand)),
+            text_color: p.shell,
+            border: Border {
+                color: Color::TRANSPARENT,
+                width: 0.0,
+                radius: radius(Radius::Sm).into(),
+            },
+            shadow: iced::Shadow::default(),
+            snap: false,
+        });
+
+        body_parts.push(
+            container(connect_btn)
+                .width(Length::Fill)
+                .center_x(Length::Fill)
+                .into(),
+        );
+    }
+
+    body_parts.push(footer.into());
+
+    let body = column(body_parts).spacing(spf(Spacing::Sm));
 
     let page_header =
         crate::page_chrome::simple_page_header(&[("Builtin", false), (info.name, true)], palette);

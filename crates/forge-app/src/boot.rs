@@ -4,7 +4,7 @@ use forge_events::EventPublisher;
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, QuickActions, SectionIcon,
 };
-use forge_platform_twitch::{SubscriptionTracker, TwitchChat, TwitchIntegrationBundle, client_id};
+use forge_platform_twitch::{SubscriptionTracker, TwitchChat, TwitchIntegrationBundle};
 use forge_runtime::EventBus;
 use forge_storage::{CredentialId, CredentialsRepo};
 use forge_types::OAuthToken;
@@ -14,34 +14,6 @@ use crate::app::App;
 use crate::builtin_detail::BuiltinDetailState;
 use crate::message::{Message, ObsClientRef, ServerSubsystemMsg, TwitchBootBundle};
 use crate::server_screen::ServerStatus;
-
-pub(crate) async fn reconnect_twitch(
-    creds: Arc<dyn CredentialsRepo>,
-    bus: Arc<EventBus>,
-) -> Result<(), String> {
-    let cid = client_id().ok_or_else(|| "FORGE_TWITCH_CLIENT_ID not set".to_owned())?;
-    let bundle_json = creds
-        .load(&CredentialId::new("twitch:broadcaster"))
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "no Twitch credential stored".to_owned())?;
-
-    let bundle: serde_json::Value =
-        serde_json::from_str(&bundle_json).map_err(|e| e.to_string())?;
-    let access = bundle["access_token"]
-        .as_str()
-        .ok_or_else(|| "missing access_token in credential bundle".to_owned())?
-        .to_owned();
-    let user_id = bundle["user_id"]
-        .as_str()
-        .ok_or_else(|| "missing user_id — re-authorize in Settings → Platforms".to_owned())?
-        .to_owned();
-
-    let token = OAuthToken::new(access);
-    let tracker = SubscriptionTracker::default();
-    TwitchChat::new(token, cid, user_id.clone(), user_id, bus, tracker).start();
-    Ok(())
-}
 
 pub async fn load_twitch_credential(
     creds: Arc<dyn CredentialsRepo>,

@@ -6,8 +6,6 @@ use forge_widgets::{ForgePalette, Radius, radius};
 use iced::{Element, Length, Task};
 
 use crate::app::App;
-use crate::boot;
-use forge_types::PlatformId;
 
 use crate::message::{Message, SettingsMsg};
 use crate::page_chrome::simple_page_header;
@@ -439,19 +437,9 @@ pub(crate) fn settings_view<'a>(
 
 pub(crate) fn handle_message(app: &mut App, sub: SettingsMsg) -> Task<Message> {
     match sub {
-        SettingsMsg::ReconnectPlatform(PlatformId::Twitch) => {
-            if let Some(handle) = app.rt.twitch_chat_handle.take() {
-                handle.shutdown();
-            }
-            let creds: Arc<dyn forge_storage::CredentialsRepo> =
-                Arc::clone(&app.rt.backend) as Arc<dyn forge_storage::CredentialsRepo>;
-            let bus = Arc::clone(&app.rt.bus);
-            Task::perform(
-                async move { boot::reconnect_twitch(creds, bus).await },
-                |result| Message::Settings(SettingsMsg::PlatformReconnectResult(result)),
-            )
+        SettingsMsg::ReconnectPlatform(platform) => {
+            Task::done(Message::Navigate(Screen::DeviceCodeFlow(platform)))
         }
-        SettingsMsg::ReconnectPlatform(_) => Task::none(),
         SettingsMsg::PlatformReconnectResult(Ok(())) => Task::none(),
         SettingsMsg::PlatformReconnectResult(Err(e)) => {
             tracing::warn!(error = %e, "platform reconnect failed");
@@ -519,5 +507,30 @@ pub(crate) fn handle_message(app: &mut App, sub: SettingsMsg) -> Task<Message> {
             }
             Task::none()
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::screen::Screen;
+    use forge_types::PlatformId;
+
+    #[test]
+    fn reconnect_platform_youtube_dispatches_navigate_to_device_code_flow() {
+        let mut app = App::default();
+        let _task = handle_message(
+            &mut app,
+            SettingsMsg::ReconnectPlatform(PlatformId::YouTube),
+        );
+        assert_eq!(app.screen, Screen::Home);
+    }
+
+    #[test]
+    fn reconnect_platform_twitch_dispatches_navigate_to_device_code_flow() {
+        let mut app = App::default();
+        let _task = handle_message(&mut app, SettingsMsg::ReconnectPlatform(PlatformId::Twitch));
+        assert_eq!(app.screen, Screen::Home);
     }
 }

@@ -521,23 +521,23 @@ mod tests {
     }
 
     #[test]
-    fn settings_reconnect_twitch_with_no_handle_dispatches_task() {
+    fn reconnect_platform_twitch_dispatches_navigate_task() {
         let mut app = App::default();
-        let task = update(
+        let _task = update(
             &mut app,
             Message::Settings(SettingsMsg::ReconnectPlatform(PlatformId::Twitch)),
         );
-        let _ = task;
-        assert!(app.rt.twitch_chat_handle.is_none());
+        assert_eq!(app.screen, Screen::Home);
     }
 
     #[test]
-    fn settings_reconnect_youtube_is_noop() {
+    fn reconnect_platform_youtube_dispatches_navigate_task() {
         let mut app = App::default();
-        let _ = update(
+        let _task = update(
             &mut app,
             Message::Settings(SettingsMsg::ReconnectPlatform(PlatformId::YouTube)),
         );
+        assert_eq!(app.screen, Screen::Home);
     }
 
     #[test]

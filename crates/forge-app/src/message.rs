@@ -17,6 +17,7 @@ use time::OffsetDateTime;
 
 use crate::Screen;
 use crate::actions::{AddActionMsg, AddSubActionMsg, RemoveSubActionMsg};
+use crate::device_code_flow::DeviceCodeFlowMsg;
 use crate::event_feed::EventFeedMsg;
 use crate::live_chat::PlatformFilter;
 use crate::queues_view::QueueSummary;
@@ -374,6 +375,7 @@ pub enum Message {
     Soundboard(SoundboardMsg),
     SettingsAudio(SettingsAudioMsg),
     Tts(TtsMsg),
+    DeviceCodeFlow(DeviceCodeFlowMsg),
     OutsideClick,
     Noop,
 }

@@ -10,6 +10,7 @@ pub mod sub_action_step;
 pub mod token;
 pub mod trigger_config;
 pub mod trigger_instance;
+pub mod unified_chat;
 pub mod variant;
 
 pub use action::{Action, ExecutionMode};
@@ -27,4 +28,7 @@ pub use sub_action_step::{SubActionConfig, SubActionStep};
 pub use token::{ApiKey, OAuthToken, RefreshToken};
 pub use trigger_config::TriggerConfig;
 pub use trigger_instance::TriggerInstance;
+pub use unified_chat::{
+    ChatEventDetail, ChatSegment, ChatSource, ModerationMarks, UnifiedChatRow, UserBadge,
+};
 pub use variant::{Variant, VariantError, VariantKind, VariantType};

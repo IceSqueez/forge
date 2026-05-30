@@ -1,0 +1,24 @@
+[package]
+name                  = "forge-platform-youtube"
+version.workspace     = true
+edition.workspace     = true
+license.workspace     = true
+repository.workspace  = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+forge-types          = { path = "../forge-types" }
+forge-events         = { path = "../forge-events" }
+forge-platform-core  = { path = "../forge-platform-core" }
+forge-storage        = { path = "../forge-storage" }
+tokio               = { workspace = true }
+serde               = { workspace = true }
+serde_json          = { workspace = true }
+thiserror           = { workspace = true }
+async-trait         = { workspace = true }
+reqwest             = { workspace = true }
+tracing             = { workspace = true }
+time                = { workspace = true }

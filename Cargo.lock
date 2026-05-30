@@ -2349,6 +2349,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-platform-youtube"
+version = "0.1.0-alpha.16"
+dependencies = [
+ "async-trait",
+ "forge-events",
+ "forge-platform-core",
+ "forge-storage",
+ "forge-types",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "time",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "forge-registry"
 version = "0.1.0-alpha.16"
 dependencies = [

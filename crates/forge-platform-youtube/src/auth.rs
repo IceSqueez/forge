@@ -79,6 +79,18 @@ impl GoogleAuthFlow {
         }
     }
 
+    pub(crate) fn client_secret(&self) -> &str {
+        &self.client_secret
+    }
+
+    pub(crate) fn token_endpoint(&self) -> &str {
+        &self.token_endpoint
+    }
+
+    pub(crate) fn http_client(&self) -> &reqwest::Client {
+        &self.client
+    }
+
     pub async fn start(&self) -> Result<YoutubeDeviceCode, YoutubeAuthError> {
         let scope_string = YOUTUBE_BROADCASTER_SCOPES.join(" ");
         let response = self

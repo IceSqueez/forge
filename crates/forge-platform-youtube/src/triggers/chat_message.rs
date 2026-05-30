@@ -1,0 +1,142 @@
+use forge_events::{Event, EventSource};
+use forge_registry::{
+    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+};
+use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+
+pub(crate) struct ChatMessageDescriptor;
+
+impl TriggerKindDescriptor for ChatMessageDescriptor {
+    fn id(&self) -> &str {
+        "youtube.chat.message"
+    }
+
+    fn category(&self) -> TriggerCategory {
+        TriggerCategory::Chat
+    }
+
+    fn label(&self) -> &str {
+        "Chat message"
+    }
+
+    fn summary(&self) -> &str {
+        "Fires for every message posted in YouTube live chat"
+    }
+
+    fn search_text(&self) -> &str {
+        "youtube chat message trigger any incoming live"
+    }
+
+    fn icon_name(&self) -> &str {
+        "message-circle"
+    }
+
+    fn platform_contract(&self) -> KindPlatformContract {
+        KindPlatformContract::PlatformSpecific(PlatformId::YouTube)
+    }
+
+    fn default_config(&self) -> TriggerConfig {
+        TriggerConfig::new()
+    }
+
+    fn config_fields(&self) -> Vec<FormField> {
+        vec![]
+    }
+
+    fn condition_display(&self, _config: &TriggerConfig) -> String {
+        "any".to_owned()
+    }
+
+    fn event_filter(&self) -> EventFilter {
+        EventFilter {
+            source: Some(EventSource::YouTube),
+            kind_prefix: Some("youtube.chat.message".to_owned()),
+        }
+    }
+
+    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
+        true
+    }
+
+    fn build_arg_stack(&self, event: &Event) -> ArgStack {
+        let message_text = event
+            .payload
+            .get("message_text")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
+        let user_display_name = event
+            .payload
+            .get("user_display_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
+        let channel_id = event
+            .payload
+            .get("channel_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
+
+        ArgStack::new()
+            .set("message_text".to_owned(), Variant::String(message_text))
+            .set(
+                "user_display_name".to_owned(),
+                Variant::String(user_display_name),
+            )
+            .set("channel_id".to_owned(), Variant::String(channel_id))
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    fn chat_event() -> Event {
+        Event::new(
+            EventSource::YouTube,
+            "youtube.chat.message",
+            serde_json::json!({
+                "message_text": "hello world",
+                "user_display_name": "Viewer One",
+                "channel_id": "UCxyz"
+            }),
+        )
+    }
+
+    #[test]
+    fn kind_id_matches_canonical() {
+        assert_eq!(ChatMessageDescriptor.id(), "youtube.chat.message");
+    }
+
+    #[test]
+    fn is_platform_specific_youtube() {
+        assert_eq!(
+            ChatMessageDescriptor.event_filter().source,
+            Some(EventSource::YouTube)
+        );
+    }
+
+    #[test]
+    fn always_matches() {
+        assert!(ChatMessageDescriptor.matches_trigger(&TriggerConfig::new(), &chat_event()));
+    }
+
+    #[test]
+    fn build_arg_stack_extracts_fields() {
+        let stack = ChatMessageDescriptor.build_arg_stack(&chat_event());
+        assert_eq!(
+            stack.get("message_text"),
+            Some(&Variant::String("hello world".to_owned()))
+        );
+        assert_eq!(
+            stack.get("user_display_name"),
+            Some(&Variant::String("Viewer One".to_owned()))
+        );
+        assert_eq!(
+            stack.get("channel_id"),
+            Some(&Variant::String("UCxyz".to_owned()))
+        );
+    }
+}

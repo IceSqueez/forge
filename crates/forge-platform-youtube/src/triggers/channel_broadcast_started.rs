@@ -1,0 +1,136 @@
+use forge_events::{Event, EventSource};
+use forge_registry::{
+    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+};
+use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+
+pub(crate) struct ChannelBroadcastStartedDescriptor;
+
+impl TriggerKindDescriptor for ChannelBroadcastStartedDescriptor {
+    fn id(&self) -> &str {
+        "youtube.channel.live_broadcast_started"
+    }
+
+    fn category(&self) -> TriggerCategory {
+        TriggerCategory::Streams
+    }
+
+    fn label(&self) -> &str {
+        "Live broadcast started"
+    }
+
+    fn summary(&self) -> &str {
+        "Fires when a YouTube live broadcast becomes active"
+    }
+
+    fn search_text(&self) -> &str {
+        "youtube live broadcast started stream online channel"
+    }
+
+    fn icon_name(&self) -> &str {
+        "radio"
+    }
+
+    fn platform_contract(&self) -> KindPlatformContract {
+        KindPlatformContract::PlatformSpecific(PlatformId::YouTube)
+    }
+
+    fn default_config(&self) -> TriggerConfig {
+        TriggerConfig::new()
+    }
+
+    fn config_fields(&self) -> Vec<FormField> {
+        vec![]
+    }
+
+    fn condition_display(&self, _config: &TriggerConfig) -> String {
+        "any".to_owned()
+    }
+
+    fn event_filter(&self) -> EventFilter {
+        EventFilter {
+            source: Some(EventSource::YouTube),
+            kind_prefix: Some("youtube.channel.live_broadcast_started".to_owned()),
+        }
+    }
+
+    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
+        true
+    }
+
+    fn build_arg_stack(&self, event: &Event) -> ArgStack {
+        let broadcast_title = event
+            .payload
+            .get("broadcast_title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
+        let broadcast_id = event
+            .payload
+            .get("broadcast_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
+
+        ArgStack::new()
+            .set(
+                "broadcast_title".to_owned(),
+                Variant::String(broadcast_title),
+            )
+            .set("broadcast_id".to_owned(), Variant::String(broadcast_id))
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    fn broadcast_started_event() -> Event {
+        Event::new(
+            EventSource::YouTube,
+            "youtube.channel.live_broadcast_started",
+            serde_json::json!({
+                "broadcast_title": "Sunday Stream",
+                "broadcast_id": "broadcast_xyz"
+            }),
+        )
+    }
+
+    #[test]
+    fn kind_id_matches_canonical() {
+        assert_eq!(
+            ChannelBroadcastStartedDescriptor.id(),
+            "youtube.channel.live_broadcast_started"
+        );
+    }
+
+    #[test]
+    fn is_platform_specific_youtube() {
+        assert_eq!(
+            ChannelBroadcastStartedDescriptor.event_filter().source,
+            Some(EventSource::YouTube)
+        );
+    }
+
+    #[test]
+    fn always_matches() {
+        assert!(
+            ChannelBroadcastStartedDescriptor
+                .matches_trigger(&TriggerConfig::new(), &broadcast_started_event())
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_extracts_broadcast_fields() {
+        let stack = ChannelBroadcastStartedDescriptor.build_arg_stack(&broadcast_started_event());
+        assert_eq!(
+            stack.get("broadcast_title"),
+            Some(&Variant::String("Sunday Stream".to_owned()))
+        );
+        assert_eq!(
+            stack.get("broadcast_id"),
+            Some(&Variant::String("broadcast_xyz".to_owned()))
+        );
+    }
+}

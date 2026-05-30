@@ -12,6 +12,7 @@ workspace = true
 [dependencies]
 forge-types          = { path = "../forge-types" }
 forge-events         = { path = "../forge-events" }
+forge-registry       = { path = "../forge-registry" }
 forge-platform-core  = { path = "../forge-platform-core" }
 forge-storage        = { path = "../forge-storage" }
 tokio               = { workspace = true }

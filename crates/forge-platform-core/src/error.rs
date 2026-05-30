@@ -21,6 +21,11 @@ pub enum PlatformError {
     #[error("client-side rate limit exhausted; no budget remaining")]
     RateLimitExhausted,
 
+    /// Daily API quota for this platform has been exhausted; no further calls will succeed
+    /// until midnight reset. Callers should switch to long-interval mode or suspend polling.
+    #[error("daily API quota exhausted; next reset at platform midnight")]
+    QuotaExhausted,
+
     #[error("feature '{feature}' is not supported by this platform")]
     Unsupported { feature: String },
 
@@ -82,6 +87,12 @@ mod tests {
     #[test]
     fn rate_limit_exhausted_displays_non_empty() {
         let e = PlatformError::RateLimitExhausted;
+        assert!(!e.to_string().is_empty());
+    }
+
+    #[test]
+    fn quota_exhausted_displays_non_empty() {
+        let e = PlatformError::QuotaExhausted;
         assert!(!e.to_string().is_empty());
     }
 

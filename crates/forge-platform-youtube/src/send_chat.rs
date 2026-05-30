@@ -4,8 +4,8 @@ use forge_platform_core::PlatformError;
 use futures::future::BoxFuture;
 use tokio::sync::Mutex;
 
-use crate::chat_poller::{QuotaState, today_pacific};
 use crate::live_chat_id::LiveChatIdHandle;
+use crate::quota_state::{QuotaState, today_pacific};
 
 const DEFAULT_API_BASE: &str = "https://www.googleapis.com/youtube/v3";
 const SEND_COST: u32 = 50;

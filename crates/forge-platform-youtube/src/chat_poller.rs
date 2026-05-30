@@ -1,4 +1,3 @@
-use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -10,86 +9,14 @@ use tokio::sync::Mutex;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_util::sync::CancellationToken;
 
+use crate::dedup_window::{DEDUP_WINDOW_SIZE, DedupWindow};
 use crate::live_chat_id::LiveChatIdHandle;
+use crate::quota_state::{BROADCAST_COST, CHAT_POLL_COST, QuotaState, today_pacific};
 
 const DEFAULT_API_BASE: &str = "https://www.googleapis.com/youtube/v3";
 const POLL_FLOOR_MS: u64 = 3_000;
 const LONG_INTERVAL_MS: u64 = 60_000;
 const BROADCAST_CADENCE_SECS: u64 = 60;
-const QUOTA_HIGH_WATER: u32 = 9_000;
-const QUOTA_DAILY_LIMIT: u32 = 10_000;
-const DEDUP_WINDOW_SIZE: usize = 500;
-const BROADCAST_COST: u32 = 1;
-const CHAT_POLL_COST: u32 = 5;
-
-pub struct QuotaState {
-    pub used_today: u32,
-    pub peak_seen: u32,
-    pub last_reset_date: time::Date,
-    pub long_interval_mode: bool,
-}
-
-impl Default for QuotaState {
-    fn default() -> Self {
-        Self {
-            used_today: 0,
-            peak_seen: 0,
-            last_reset_date: time::Date::MIN,
-            long_interval_mode: false,
-        }
-    }
-}
-
-impl QuotaState {
-    pub fn charge(&mut self, cost: u32, today: time::Date) -> Result<(), PlatformError> {
-        if self.last_reset_date != today {
-            self.used_today = 0;
-            self.last_reset_date = today;
-        }
-        if self.used_today + cost > QUOTA_DAILY_LIMIT {
-            return Err(PlatformError::QuotaExhausted);
-        }
-        self.used_today += cost;
-        if self.used_today > self.peak_seen {
-            self.peak_seen = self.used_today;
-        }
-        if self.used_today >= QUOTA_HIGH_WATER {
-            self.long_interval_mode = true;
-        }
-        Ok(())
-    }
-}
-
-struct DedupWindow {
-    window: VecDeque<String>,
-    seen: HashSet<String>,
-    capacity: usize,
-}
-
-impl DedupWindow {
-    fn new(capacity: usize) -> Self {
-        Self {
-            window: VecDeque::with_capacity(capacity + 1),
-            seen: HashSet::with_capacity(capacity),
-            capacity,
-        }
-    }
-
-    /// Returns `true` when `id` was new and has been recorded. Returns `false` for duplicates.
-    fn try_insert(&mut self, id: String) -> bool {
-        if self.seen.contains(&id) {
-            return false;
-        }
-        if self.window.len() >= self.capacity
-            && let Some(evicted) = self.window.pop_front()
-        {
-            self.seen.remove(&evicted);
-        }
-        self.seen.insert(id.clone());
-        self.window.push_back(id);
-        true
-    }
-}
 
 struct ChatMessagesResponse {
     items: Vec<serde_json::Value>,
@@ -722,10 +649,6 @@ impl YoutubeChatPoller {
     }
 }
 
-pub(crate) fn today_pacific() -> time::Date {
-    (time::OffsetDateTime::now_utc() - time::Duration::hours(8)).date()
-}
-
 fn sleep_duration(polling_interval_millis: u64, floor_ms: u64) -> Duration {
     Duration::from_millis(polling_interval_millis).max(Duration::from_millis(floor_ms))
 }
@@ -785,6 +708,7 @@ mod tests {
 
     use super::*;
     use crate::live_chat_id::LiveChatIdHandle;
+    use crate::quota_state::QuotaState;
     use serde_json::json;
     use wiremock::matchers::{method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -1102,54 +1026,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn quota_charges_correctly_for_chat_list() {
-        let today = today_pacific();
-        let mut qt = QuotaState {
-            used_today: 0,
-            peak_seen: 0,
-            last_reset_date: today,
-            long_interval_mode: false,
-        };
-        qt.charge(CHAT_POLL_COST, today).unwrap();
-        assert_eq!(qt.used_today, 5);
-        assert_eq!(qt.peak_seen, 5);
-    }
-
-    #[test]
-    fn quota_guard_switches_to_long_interval_at_9000() {
-        let today = today_pacific();
-        let mut qt = QuotaState {
-            used_today: 8998,
-            peak_seen: 8998,
-            last_reset_date: today,
-            long_interval_mode: false,
-        };
-        qt.charge(CHAT_POLL_COST, today).unwrap();
-        qt.charge(CHAT_POLL_COST, today).unwrap();
-        assert!(
-            qt.long_interval_mode,
-            "long_interval_mode must be true at >= 9000 used"
-        );
-        assert_eq!(qt.used_today, 9008);
-    }
-
-    #[test]
-    fn quota_exhausted_at_10000_returns_quota_exhausted_error() {
-        let today = today_pacific();
-        let mut qt = QuotaState {
-            used_today: 9999,
-            peak_seen: 9999,
-            last_reset_date: today,
-            long_interval_mode: true,
-        };
-        let result = qt.charge(CHAT_POLL_COST, today);
-        assert!(
-            matches!(result, Err(PlatformError::QuotaExhausted)),
-            "expected QuotaExhausted, got {result:?}"
-        );
-    }
-
     #[tokio::test]
     async fn dedup_via_next_page_token() {
         let server = MockServer::start().await;
@@ -1162,7 +1038,6 @@ mod tests {
             .mount(&server)
             .await;
 
-        // First call (no pageToken): returns id1 + id2, next page = "ptX"
         Mock::given(method("GET"))
             .and(path("/liveChat/messages"))
             .respond_with(
@@ -1179,7 +1054,6 @@ mod tests {
             .mount(&server)
             .await;
 
-        // Second call (pageToken=ptX): id2 overlaps + id3 is new
         Mock::given(method("GET"))
             .and(path("/liveChat/messages"))
             .and(query_param("pageToken", "ptX"))
@@ -1194,7 +1068,6 @@ mod tests {
             .mount(&server)
             .await;
 
-        // Remaining calls: empty
         Mock::given(method("GET"))
             .and(path("/liveChat/messages"))
             .respond_with(ResponseTemplate::new(200).set_body_json(chat_response(json!([]), 0)))

@@ -1,15 +1,15 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use forge_registry::FormField;
-use forge_types::{TriggerInstance, TriggerInstanceId, Variant};
+use forge_registry::{FormField, KindPlatformContract};
+use forge_types::{PlatformId, PlatformScope, TriggerInstance, TriggerInstanceId, Variant};
 use iced::{
     Alignment, Background, Border, Color, Element, Length, Task,
     widget::{Space, button, column, container, row, rule, scrollable, stack, text},
 };
 
 use forge_widgets::{
-    ForgePalette, Radius, Spacing, ToastKind, ToggleProps,
+    ForgePalette, Radius, Spacing, ToastKind, ToggleProps, category_chip,
     icons::{Icon, tabler_icon},
     primary_button, radius, search_input, secondary_button, section_header, sp, spf,
     text_input_field, toggle,
@@ -36,6 +36,8 @@ pub struct CreateInstanceFormState {
     pub search: String,
     pub saving: bool,
     pub validation_error: Option<String>,
+    pub platform_scope: PlatformScope,
+    pub custom_expanded: bool,
 }
 
 impl Default for CreateInstanceFormState {
@@ -49,6 +51,8 @@ impl Default for CreateInstanceFormState {
             search: String::new(),
             saving: false,
             validation_error: None,
+            platform_scope: PlatformScope::Any,
+            custom_expanded: false,
         }
     }
 }
@@ -65,6 +69,9 @@ pub enum CreateInstanceFormMsg {
     SubmitRequested,
     SubmitResult(Result<TriggerInstanceId, String>),
     Cancelled,
+    PlatformScopeChanged(PlatformScope),
+    PlatformScopeCustomToggled(PlatformId),
+    PlatformScopeCustomExpansionToggled,
 }
 
 pub fn update(
@@ -166,7 +173,7 @@ pub fn update(
                 overrides: form.overrides_buffer.clone(),
                 enabled: true,
                 user_defined: true,
-                platform_scope: Default::default(),
+                platform_scope: form.platform_scope.clone(),
             };
             let dp = Arc::clone(&rt.backend);
             Task::perform(
@@ -193,6 +200,32 @@ pub fn update(
                 message: err,
                 duration_ms: 5000,
             }))
+        }
+        CreateInstanceFormMsg::PlatformScopeChanged(scope) => {
+            form.platform_scope = scope;
+            form.custom_expanded = false;
+            Task::none()
+        }
+        CreateInstanceFormMsg::PlatformScopeCustomToggled(platform_id) => {
+            let mut new_set: BTreeSet<PlatformId> = match &form.platform_scope {
+                PlatformScope::Any => BTreeSet::new(),
+                PlatformScope::Only(set) => set.clone(),
+            };
+            if new_set.contains(&platform_id) {
+                new_set.remove(&platform_id);
+            } else {
+                new_set.insert(platform_id);
+            }
+            form.platform_scope = if new_set.is_empty() {
+                PlatformScope::Any
+            } else {
+                PlatformScope::only(new_set).unwrap_or(PlatformScope::Any)
+            };
+            Task::none()
+        }
+        CreateInstanceFormMsg::PlatformScopeCustomExpansionToggled => {
+            form.custom_expanded = !form.custom_expanded;
+            Task::none()
         }
     }
 }
@@ -535,10 +568,13 @@ fn form_view<'a>(
         Space::new().width(0).height(0).into()
     };
 
+    let platform_section = render_platform_section(form, kind_id, rt, palette);
+
     let scrollable_body = scrollable(
         column![
             Space::new().height(spf(Spacing::Xs)),
             name_section,
+            platform_section,
             Space::new().height(spf(Spacing::Xs)),
             fields_section,
             error_el,
@@ -848,6 +884,254 @@ fn variant_to_display_str(v: &Variant) -> String {
     }
 }
 
+fn platform_name_str(p: PlatformId) -> &'static str {
+    match p {
+        PlatformId::Twitch => "Twitch",
+        PlatformId::YouTube => "YouTube",
+        PlatformId::Trovo => "Trovo",
+        PlatformId::Kick => "Kick",
+    }
+}
+
+fn platform_color(p: PlatformId, palette: &ForgePalette) -> Color {
+    match p {
+        PlatformId::Twitch => palette.platform_twitch,
+        PlatformId::YouTube => palette.platform_youtube,
+        PlatformId::Trovo => palette.platform_trovo,
+        PlatformId::Kick => palette.platform_kick,
+    }
+}
+
+fn scope_display_text(scope: &PlatformScope) -> String {
+    match scope {
+        PlatformScope::Any => "any platform".to_owned(),
+        PlatformScope::Only(set) => {
+            let names: Vec<&str> = set.iter().map(|p| platform_name_str(*p)).collect();
+            names.join(", ")
+        }
+    }
+}
+
+fn scope_mode_pill<'a>(
+    label: &'a str,
+    active: bool,
+    p: ForgePalette,
+    on_press: Message,
+) -> Element<'a, Message> {
+    let bg = if active {
+        Some(Background::Color(p.surface_overlay))
+    } else {
+        None
+    };
+    let text_color = if active {
+        p.text_primary
+    } else {
+        p.text_secondary
+    };
+    button(
+        text(label)
+            .size(FONT_XS)
+            .color(text_color)
+            .font(font(FontRole::Body)),
+    )
+    .on_press(on_press)
+    .padding([2, sp(Spacing::Xs)])
+    .style(move |_: &iced::Theme, _status| button::Style {
+        background: bg,
+        border: Border {
+            radius: radius(Radius::Pill).into(),
+            color: Color::TRANSPARENT,
+            width: 0.0,
+        },
+        text_color,
+        shadow: iced::Shadow::default(),
+        snap: false,
+    })
+    .into()
+}
+
+fn render_platform_section<'a>(
+    form: &'a CreateInstanceFormState,
+    kind_id: &str,
+    rt: &'a RuntimeView,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    let p = *palette;
+
+    let Some(descriptor) = rt.trigger_registry.get(kind_id) else {
+        return Space::new().width(0).height(0).into();
+    };
+
+    match descriptor.platform_contract() {
+        KindPlatformContract::Universal => Space::new().width(0).height(0).into(),
+
+        KindPlatformContract::PlatformSpecific(pid) => {
+            let dot_color = platform_color(pid, palette);
+            let dot_size = 6.0_f32;
+            let dot = container(Space::new().width(dot_size).height(dot_size))
+                .width(dot_size)
+                .height(dot_size)
+                .style(move |_: &iced::Theme| container::Style {
+                    background: Some(Background::Color(Color {
+                        a: 0.6,
+                        ..dot_color
+                    })),
+                    border: Border {
+                        radius: (dot_size / 2.0).into(),
+                        color: Color::TRANSPARENT,
+                        width: 0.0,
+                    },
+                    ..container::Style::default()
+                });
+            let badge = container(
+                row![
+                    dot,
+                    text(platform_name_str(pid))
+                        .size(FONT_XS)
+                        .color(p.text_muted)
+                        .font(font(FontRole::Body)),
+                ]
+                .spacing(spf(Spacing::Xxs))
+                .align_y(Alignment::Center),
+            )
+            .padding([2, sp(Spacing::Xs)])
+            .style(move |_: &iced::Theme| container::Style {
+                background: Some(Background::Color(p.surface_overlay)),
+                border: Border {
+                    radius: radius(Radius::Sm).into(),
+                    color: Color::TRANSPARENT,
+                    width: 0.0,
+                },
+                ..container::Style::default()
+            });
+            let preview = text(format!("Will fire on: {}", platform_name_str(pid)))
+                .size(FONT_XS)
+                .color(p.text_faint)
+                .font(font(FontRole::Body));
+            column![
+                Space::new().height(spf(Spacing::Xs)),
+                section_header("PLATFORM", None, palette),
+                container(badge).padding([sp(Spacing::Xxs), sp(Spacing::Md)]),
+                container(preview).padding([2, sp(Spacing::Md)]),
+            ]
+            .into()
+        }
+
+        KindPlatformContract::MultiPlatform => {
+            let scope = &form.platform_scope;
+
+            let is_single_only = |pid: PlatformId| matches!(scope, PlatformScope::Only(s) if s.len() == 1 && s.contains(&pid));
+            let any_active = !form.custom_expanded && matches!(scope, PlatformScope::Any);
+            let custom_active =
+                form.custom_expanded || matches!(scope, PlatformScope::Only(s) if s.len() > 1);
+
+            let any_pill = scope_mode_pill(
+                "Any",
+                any_active,
+                p,
+                Message::TriggersRegistry(TriggersRegistryMsg::CreateFormMsg(
+                    CreateInstanceFormMsg::PlatformScopeChanged(PlatformScope::Any),
+                )),
+            );
+
+            let platform_pill_els: Vec<Element<'_, Message>> = [
+                PlatformId::Twitch,
+                PlatformId::YouTube,
+                PlatformId::Trovo,
+                PlatformId::Kick,
+            ]
+            .iter()
+            .map(|&pid| {
+                let active = !form.custom_expanded && is_single_only(pid);
+                let dot_color = platform_color(pid, palette);
+                let mut single_set = BTreeSet::new();
+                single_set.insert(pid);
+                let new_scope = PlatformScope::only(single_set).unwrap_or(PlatformScope::Any);
+                category_chip(
+                    palette,
+                    platform_name_str(pid),
+                    dot_color,
+                    active,
+                    Message::TriggersRegistry(TriggersRegistryMsg::CreateFormMsg(
+                        CreateInstanceFormMsg::PlatformScopeChanged(new_scope),
+                    )),
+                )
+            })
+            .collect();
+
+            let custom_pill = scope_mode_pill(
+                "Custom\u{2026}",
+                custom_active,
+                p,
+                Message::TriggersRegistry(TriggersRegistryMsg::CreateFormMsg(
+                    CreateInstanceFormMsg::PlatformScopeCustomExpansionToggled,
+                )),
+            );
+
+            let mut pill_items: Vec<Element<'_, Message>> = vec![any_pill];
+            pill_items.extend(platform_pill_els);
+            pill_items.push(custom_pill);
+
+            let pill_row = container(
+                row(pill_items)
+                    .spacing(spf(Spacing::Xxs))
+                    .align_y(Alignment::Center),
+            )
+            .padding([0, sp(Spacing::Md)]);
+
+            let expanded_el: Element<'_, Message> = if form.custom_expanded {
+                let checkbox_els: Vec<Element<'_, Message>> = [
+                    PlatformId::Twitch,
+                    PlatformId::YouTube,
+                    PlatformId::Trovo,
+                    PlatformId::Kick,
+                ]
+                .iter()
+                .map(|&pid| {
+                    let checked = matches!(scope, PlatformScope::Only(s) if s.contains(&pid));
+                    let dot_color = platform_color(pid, palette);
+                    category_chip(
+                        palette,
+                        platform_name_str(pid),
+                        dot_color,
+                        checked,
+                        Message::TriggersRegistry(TriggersRegistryMsg::CreateFormMsg(
+                            CreateInstanceFormMsg::PlatformScopeCustomToggled(pid),
+                        )),
+                    )
+                })
+                .collect();
+                container(
+                    row(checkbox_els)
+                        .spacing(spf(Spacing::Xxs))
+                        .align_y(Alignment::Center),
+                )
+                .padding([sp(Spacing::Xxs), sp(Spacing::Md)])
+                .into()
+            } else {
+                Space::new().width(0).height(0).into()
+            };
+
+            let preview = container(
+                text(format!("Will fire on: {}", scope_display_text(scope)))
+                    .size(FONT_XS)
+                    .color(p.text_faint)
+                    .font(font(FontRole::Body)),
+            )
+            .padding([2, sp(Spacing::Md)]);
+
+            column![
+                Space::new().height(spf(Spacing::Xs)),
+                section_header("PLATFORM", None, palette),
+                pill_row,
+                expanded_el,
+                preview,
+            ]
+            .into()
+        }
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
@@ -953,5 +1237,75 @@ mod tests {
         let mut state = Some(CreateInstanceFormState::default());
         let _task = update(&mut state, &rt, CreateInstanceFormMsg::Cancelled);
         assert!(state.is_none());
+    }
+
+    #[test]
+    fn platform_scope_changed_replaces_scope() {
+        let rt = test_rt();
+        let mut set = std::collections::BTreeSet::new();
+        set.insert(PlatformId::Twitch);
+        let new_scope = PlatformScope::only(set).unwrap();
+        let mut state = Some(CreateInstanceFormState::default());
+        let _task = update(
+            &mut state,
+            &rt,
+            CreateInstanceFormMsg::PlatformScopeChanged(new_scope.clone()),
+        );
+        let form = state.as_ref().unwrap();
+        assert_eq!(form.platform_scope, new_scope);
+        assert!(!form.custom_expanded);
+    }
+
+    #[test]
+    fn platform_scope_custom_toggled_adds_platform() {
+        let rt = test_rt();
+        let mut state = Some(CreateInstanceFormState::default());
+        let _task = update(
+            &mut state,
+            &rt,
+            CreateInstanceFormMsg::PlatformScopeCustomToggled(PlatformId::YouTube),
+        );
+        let form = state.as_ref().unwrap();
+        let mut expected_set = std::collections::BTreeSet::new();
+        expected_set.insert(PlatformId::YouTube);
+        assert_eq!(
+            form.platform_scope,
+            PlatformScope::only(expected_set).unwrap()
+        );
+    }
+
+    #[test]
+    fn platform_scope_custom_toggled_removes_last_platform_reverts_to_any() {
+        let rt = test_rt();
+        let mut set = std::collections::BTreeSet::new();
+        set.insert(PlatformId::Kick);
+        let mut state = Some(CreateInstanceFormState {
+            platform_scope: PlatformScope::only(set).unwrap(),
+            ..Default::default()
+        });
+        let _task = update(
+            &mut state,
+            &rt,
+            CreateInstanceFormMsg::PlatformScopeCustomToggled(PlatformId::Kick),
+        );
+        assert_eq!(state.as_ref().unwrap().platform_scope, PlatformScope::Any);
+    }
+
+    #[test]
+    fn platform_scope_expansion_toggled_flips_flag() {
+        let rt = test_rt();
+        let mut state = Some(CreateInstanceFormState::default());
+        let _task = update(
+            &mut state,
+            &rt,
+            CreateInstanceFormMsg::PlatformScopeCustomExpansionToggled,
+        );
+        assert!(state.as_ref().unwrap().custom_expanded);
+        let _task2 = update(
+            &mut state,
+            &rt,
+            CreateInstanceFormMsg::PlatformScopeCustomExpansionToggled,
+        );
+        assert!(!state.as_ref().unwrap().custom_expanded);
     }
 }

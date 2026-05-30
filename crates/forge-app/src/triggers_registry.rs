@@ -1,9 +1,9 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use forge_registry::effective_config;
+use forge_registry::{KindPlatformContract, effective_config};
 use forge_storage::StorageError;
-use forge_types::{ActionId, TriggerConfig, TriggerInstanceId};
+use forge_types::{ActionId, PlatformId, PlatformScope, TriggerConfig, TriggerInstanceId};
 use iced::{
     Alignment, Background, Border, Color, Element, Length, Task,
     widget::{Space, button, column, container, row, rule, scrollable, stack, text},
@@ -32,6 +32,7 @@ pub struct TriggerInstanceRow {
     pub enabled: bool,
     pub used_in_count: usize,
     pub overrides: TriggerConfig,
+    pub platform_scope: PlatformScope,
 }
 
 #[derive(Debug, Clone)]
@@ -137,6 +138,7 @@ pub fn update(
                                 overrides: inst.overrides,
                                 enabled: inst.enabled,
                                 used_in_count: count,
+                                platform_scope: inst.platform_scope,
                             });
                         }
                         Ok::<Vec<TriggerInstanceRow>, String>(rows)
@@ -835,11 +837,85 @@ fn instance_row<'a>(
         Color::TRANSPARENT
     };
 
+    let scope_indicator: Element<'_, Message> = match &row.platform_scope {
+        PlatformScope::Any => Space::new().width(0).into(),
+        PlatformScope::Only(set) => {
+            let platforms: Vec<PlatformId> = set.iter().copied().collect();
+            if platforms.is_empty() {
+                Space::new().width(0).into()
+            } else if platforms.len() == 1 {
+                let pid = platforms[0];
+                let sdot_color = platform_id_color(pid, palette);
+                let sdot_size = 5.0_f32;
+                let sdot = container(Space::new().width(sdot_size).height(sdot_size))
+                    .width(sdot_size)
+                    .height(sdot_size)
+                    .style(move |_: &iced::Theme| container::Style {
+                        background: Some(Background::Color(sdot_color)),
+                        border: Border {
+                            radius: (sdot_size / 2.0).into(),
+                            color: Color::TRANSPARENT,
+                            width: 0.0,
+                        },
+                        ..container::Style::default()
+                    });
+                row![
+                    sdot,
+                    text(platform_id_name(pid))
+                        .size(FONT_XS)
+                        .color(p.text_muted)
+                        .font(font(FontRole::Body)),
+                ]
+                .spacing(spf(Spacing::Xxs))
+                .align_y(Alignment::Center)
+                .into()
+            } else {
+                let mut dot_els: Vec<Element<'_, Message>> = platforms
+                    .iter()
+                    .take(2)
+                    .map(|&pid| {
+                        let sdot_color = platform_id_color(pid, palette);
+                        let sdot_size = 5.0_f32;
+                        container(Space::new().width(sdot_size).height(sdot_size))
+                            .width(sdot_size)
+                            .height(sdot_size)
+                            .style(move |_: &iced::Theme| container::Style {
+                                background: Some(Background::Color(sdot_color)),
+                                border: Border {
+                                    radius: (sdot_size / 2.0).into(),
+                                    color: Color::TRANSPARENT,
+                                    width: 0.0,
+                                },
+                                ..container::Style::default()
+                            })
+                            .into()
+                    })
+                    .collect();
+                if platforms.len() > 2 {
+                    dot_els.push(
+                        text(format!("+{}", platforms.len() - 2))
+                            .size(FONT_XS)
+                            .color(p.text_faint)
+                            .font(font(FontRole::Body))
+                            .into(),
+                    );
+                }
+                iced::widget::row(dot_els)
+                    .spacing(spf(Spacing::Xxs))
+                    .align_y(Alignment::Center)
+                    .into()
+            }
+        }
+    };
+
     let inner = row![
         container(dot)
             .align_y(Alignment::Center)
             .padding([0, sp(Spacing::Xs)]),
         container(column![name_col]).width(Length::Fill),
+        container(scope_indicator)
+            .align_y(Alignment::Center)
+            .padding([0, sp(Spacing::Xs)]),
         container(usage_badge)
             .align_y(Alignment::Center)
             .padding([0, sp(Spacing::Xs)]),
@@ -1045,9 +1121,12 @@ fn sheet_body_for<'a>(
         ..container::Style::default()
     });
 
+    let platform_section = sheet_platform_section(row, rt, palette);
+
     column![
         kind_row,
         rule::horizontal(1.0).style(divider_style),
+        platform_section,
         config_section,
         rule::horizontal(1.0).style(divider_style),
         scrollable(used_in_section).height(Length::Fill),
@@ -1057,6 +1136,185 @@ fn sheet_body_for<'a>(
     .width(Length::Fill)
     .height(Length::Fill)
     .into()
+}
+
+fn sheet_platform_section<'a>(
+    row: &'a TriggerInstanceRow,
+    rt: &'a RuntimeView,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    let p = *palette;
+    let mono = font(FontRole::Monospace);
+
+    let Some(descriptor) = rt.trigger_registry.get(&row.kind_id) else {
+        return Space::new().width(0).height(0).into();
+    };
+
+    match descriptor.platform_contract() {
+        KindPlatformContract::Universal => Space::new().width(0).height(0).into(),
+
+        KindPlatformContract::PlatformSpecific(pid) => {
+            let dot_color = platform_id_color(pid, palette);
+            let dot_size = 6.0_f32;
+            let dot = container(Space::new().width(dot_size).height(dot_size))
+                .width(dot_size)
+                .height(dot_size)
+                .style(move |_: &iced::Theme| container::Style {
+                    background: Some(Background::Color(Color {
+                        a: 0.6,
+                        ..dot_color
+                    })),
+                    border: Border {
+                        radius: (dot_size / 2.0).into(),
+                        color: Color::TRANSPARENT,
+                        width: 0.0,
+                    },
+                    ..container::Style::default()
+                });
+            let badge = container(
+                row![
+                    dot,
+                    text(platform_id_name(pid))
+                        .size(FONT_XS)
+                        .color(p.text_muted)
+                        .font(font(FontRole::Body)),
+                ]
+                .spacing(spf(Spacing::Xxs))
+                .align_y(Alignment::Center),
+            )
+            .padding([2, sp(Spacing::Xs)])
+            .style(move |_: &iced::Theme| container::Style {
+                background: Some(Background::Color(p.surface_overlay)),
+                border: Border {
+                    radius: radius(Radius::Sm).into(),
+                    color: Color::TRANSPARENT,
+                    width: 0.0,
+                },
+                ..container::Style::default()
+            });
+            let preview = text(format!("Will fire on: {}", platform_id_name(pid)))
+                .size(FONT_XS)
+                .color(p.text_faint)
+                .font(mono);
+            let divider_style = move |_: &iced::Theme| rule::Style {
+                color: p.border_regular,
+                radius: 0.0.into(),
+                fill_mode: rule::FillMode::Full,
+                snap: true,
+            };
+            column![
+                section_header("PLATFORM", None, palette),
+                container(badge).padding([sp(Spacing::Xxs), sp(Spacing::Md)]),
+                container(preview).padding([2, sp(Spacing::Md)]),
+                rule::horizontal(1.0).style(divider_style),
+            ]
+            .into()
+        }
+
+        KindPlatformContract::MultiPlatform => {
+            let scope_text = platform_scope_text(&row.platform_scope);
+            let preview = text(format!("Will fire on: {scope_text}"))
+                .size(FONT_XS)
+                .color(p.text_faint)
+                .font(mono);
+
+            let scope_badge_el: Element<'_, Message> = match &row.platform_scope {
+                PlatformScope::Any => container(
+                    text("Any platform")
+                        .size(FONT_XS)
+                        .color(p.text_muted)
+                        .font(font(FontRole::Body)),
+                )
+                .padding([2, sp(Spacing::Xs)])
+                .style(move |_: &iced::Theme| container::Style {
+                    background: Some(Background::Color(p.surface_overlay)),
+                    border: Border {
+                        radius: radius(Radius::Sm).into(),
+                        color: Color::TRANSPARENT,
+                        width: 0.0,
+                    },
+                    ..container::Style::default()
+                })
+                .into(),
+                PlatformScope::Only(set) => {
+                    let dot_els: Vec<Element<'_, Message>> = set
+                        .iter()
+                        .map(|&pid| {
+                            let dot_color = platform_id_color(pid, palette);
+                            let dot_size = 6.0_f32;
+                            let dot = container(Space::new().width(dot_size).height(dot_size))
+                                .width(dot_size)
+                                .height(dot_size)
+                                .style(move |_: &iced::Theme| container::Style {
+                                    background: Some(Background::Color(dot_color)),
+                                    border: Border {
+                                        radius: (dot_size / 2.0).into(),
+                                        color: Color::TRANSPARENT,
+                                        width: 0.0,
+                                    },
+                                    ..container::Style::default()
+                                });
+                            row![
+                                dot,
+                                text(platform_id_name(pid))
+                                    .size(FONT_XS)
+                                    .color(p.text_muted)
+                                    .font(font(FontRole::Body)),
+                            ]
+                            .spacing(spf(Spacing::Xxs))
+                            .align_y(Alignment::Center)
+                            .into()
+                        })
+                        .collect();
+                    iced::widget::row(dot_els)
+                        .spacing(spf(Spacing::Xs))
+                        .align_y(Alignment::Center)
+                        .into()
+                }
+            };
+            let divider_style = move |_: &iced::Theme| rule::Style {
+                color: p.border_regular,
+                radius: 0.0.into(),
+                fill_mode: rule::FillMode::Full,
+                snap: true,
+            };
+            column![
+                section_header("PLATFORM", None, palette),
+                container(scope_badge_el).padding([sp(Spacing::Xxs), sp(Spacing::Md)]),
+                container(preview).padding([2, sp(Spacing::Md)]),
+                rule::horizontal(1.0).style(divider_style),
+            ]
+            .into()
+        }
+    }
+}
+
+fn platform_id_name(p: PlatformId) -> &'static str {
+    match p {
+        PlatformId::Twitch => "Twitch",
+        PlatformId::YouTube => "YouTube",
+        PlatformId::Trovo => "Trovo",
+        PlatformId::Kick => "Kick",
+    }
+}
+
+fn platform_id_color(p: PlatformId, palette: &ForgePalette) -> Color {
+    match p {
+        PlatformId::Twitch => palette.platform_twitch,
+        PlatformId::YouTube => palette.platform_youtube,
+        PlatformId::Trovo => palette.platform_trovo,
+        PlatformId::Kick => palette.platform_kick,
+    }
+}
+
+fn platform_scope_text(scope: &PlatformScope) -> String {
+    match scope {
+        PlatformScope::Any => "any platform".to_owned(),
+        PlatformScope::Only(set) => {
+            let names: Vec<&str> = set.iter().map(|p| platform_id_name(*p)).collect();
+            names.join(", ")
+        }
+    }
 }
 
 fn confirm_disable_dialog<'a>(
@@ -1185,6 +1443,7 @@ mod tests {
             enabled: true,
             used_in_count,
             overrides: Default::default(),
+            platform_scope: PlatformScope::Any,
         }
     }
 
@@ -1241,5 +1500,24 @@ mod tests {
             variant_one_line(&Variant::Array(vec![Variant::Int(1)])),
             "[1 items]"
         );
+    }
+
+    #[test]
+    fn platform_scope_text_any_yields_label() {
+        assert_eq!(platform_scope_text(&PlatformScope::Any), "any platform");
+    }
+
+    #[test]
+    fn platform_scope_text_only_single_yields_name() {
+        let mut set = std::collections::BTreeSet::new();
+        set.insert(PlatformId::YouTube);
+        let scope = PlatformScope::only(set).unwrap();
+        assert_eq!(platform_scope_text(&scope), "YouTube");
+    }
+
+    #[test]
+    fn row_platform_scope_defaults_to_any() {
+        let row = make_row("twitch.chat.command", 0);
+        assert_eq!(row.platform_scope, PlatformScope::Any);
     }
 }

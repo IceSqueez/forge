@@ -1469,6 +1469,7 @@ mod tests {
             enabled: true,
             used_in_count: 0,
             overrides: Default::default(),
+            platform_scope: Default::default(),
         });
         let _ = update(
             &mut app,

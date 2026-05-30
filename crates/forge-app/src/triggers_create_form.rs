@@ -166,6 +166,7 @@ pub fn update(
                 overrides: form.overrides_buffer.clone(),
                 enabled: true,
                 user_defined: true,
+                platform_scope: Default::default(),
             };
             let dp = Arc::clone(&rt.backend);
             Task::perform(

@@ -105,6 +105,7 @@ mod tests {
             overrides: BTreeMap::new(),
             enabled: true,
             user_defined: false,
+            platform_scope: Default::default(),
         }
     }
 
@@ -140,6 +141,7 @@ mod tests {
             overrides: BTreeMap::from([("scene".to_owned(), Variant::String("Gaming".to_owned()))]),
             enabled: true,
             user_defined: false,
+            platform_scope: Default::default(),
         };
         let event = synthesize_test_event(&instance);
         assert_eq!(event.kind, "scene.changed");

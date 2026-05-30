@@ -226,6 +226,7 @@ mod tests {
             overrides,
             enabled: true,
             user_defined: true,
+            platform_scope: Default::default(),
         }
     }
 

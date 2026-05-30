@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::ids::TriggerInstanceId;
+use crate::platform_scope::PlatformScope;
 use crate::trigger_config::TriggerConfig;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -11,6 +12,7 @@ pub struct TriggerInstance {
     pub overrides: TriggerConfig,
     pub enabled: bool,
     pub user_defined: bool,
+    pub platform_scope: PlatformScope,
 }
 
 #[cfg(test)]
@@ -32,6 +34,7 @@ mod tests {
             overrides: BTreeMap::new(),
             enabled: true,
             user_defined: false,
+            platform_scope: Default::default(),
         };
         let json = serde_json::to_string(&instance).unwrap();
         let back: TriggerInstance = serde_json::from_str(&json).unwrap();
@@ -53,6 +56,7 @@ mod tests {
             overrides,
             enabled: true,
             user_defined: true,
+            platform_scope: Default::default(),
         };
         let json = serde_json::to_string(&instance).unwrap();
         let back: TriggerInstance = serde_json::from_str(&json).unwrap();

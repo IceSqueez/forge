@@ -1,11 +1,12 @@
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use forge_storage::{DataProvider, StorageError};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
-    Action, ActionId, ExecutionMode, QueueId, TriggerInstance, TriggerInstanceId, Variant,
+    Action, ActionId, ExecutionMode, PlatformId, PlatformScope, QueueId, TriggerInstance,
+    TriggerInstanceId, Variant,
 };
 
 const TEST_KEY: [u8; 32] = [0xcd; 32];
@@ -57,6 +58,7 @@ fn make_instance(kind_id: &str, name: &str, user_defined: bool) -> TriggerInstan
         overrides: BTreeMap::new(),
         enabled: true,
         user_defined,
+        platform_scope: Default::default(),
     }
 }
 
@@ -112,6 +114,7 @@ async fn overrides_survive_roundtrip() {
         overrides,
         enabled: true,
         user_defined: true,
+        platform_scope: Default::default(),
     };
     let id = inst.id;
     repo.save(&inst).await.expect("save");
@@ -483,4 +486,65 @@ async fn list_all_returns_default_and_user_defined_ordered() {
     assert!(!all[0].user_defined);
     assert_eq!(all[1].id, user_id, "user-defined instance must come second");
     assert!(all[1].user_defined);
+}
+
+#[tokio::test]
+async fn platform_scope_default_round_trips_as_any() {
+    let backend = setup().await;
+    let repo = backend.trigger_instance_repo();
+    let inst = make_instance("twitch.chat.message", "Scope Any", true);
+    assert_eq!(inst.platform_scope, PlatformScope::Any);
+    let id = inst.id;
+    repo.save(&inst).await.expect("save");
+    let got = repo.get(id).await.expect("get").unwrap();
+    assert_eq!(got.platform_scope, PlatformScope::Any);
+}
+
+#[tokio::test]
+async fn platform_scope_only_subset_round_trips() {
+    let backend = setup().await;
+    let repo = backend.trigger_instance_repo();
+    let mut set = BTreeSet::new();
+    set.insert(PlatformId::Twitch);
+    let scope = PlatformScope::only(set).expect("non-empty set");
+    let inst = TriggerInstance {
+        id: TriggerInstanceId::new(),
+        kind_id: "twitch.chat.message".to_owned(),
+        name: "Twitch Only".to_owned(),
+        overrides: BTreeMap::new(),
+        enabled: true,
+        user_defined: true,
+        platform_scope: scope.clone(),
+    };
+    let id = inst.id;
+    repo.save(&inst).await.expect("save");
+    let got = repo.get(id).await.expect("get").unwrap();
+    assert_eq!(got.platform_scope, scope);
+}
+
+#[tokio::test]
+async fn migration_applies_any_default_to_legacy_rows() {
+    let backend = setup().await;
+    let repo = backend.trigger_instance_repo();
+
+    let instance_id = TriggerInstanceId::new();
+    backend
+        .insert_trigger_instance_without_scope_for_test(
+            &instance_id.to_string(),
+            "core.timer",
+            "Timer",
+        )
+        .await
+        .expect("raw insert without platform_scope column");
+
+    let got = repo
+        .get(instance_id)
+        .await
+        .expect("get")
+        .expect("row must exist");
+    assert_eq!(
+        got.platform_scope,
+        PlatformScope::Any,
+        "DEFAULT '\"any\"' must decode as PlatformScope::Any"
+    );
 }

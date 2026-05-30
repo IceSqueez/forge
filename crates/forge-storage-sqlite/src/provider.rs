@@ -162,6 +162,26 @@ impl SqliteBackend {
             .map_err(|e| SqliteStorageError::Decode(e.to_string()))
     }
 
+    #[doc(hidden)]
+    pub async fn insert_trigger_instance_without_scope_for_test(
+        &self,
+        id: &str,
+        kind_id: &str,
+        name: &str,
+    ) -> Result<(), SqliteStorageError> {
+        sqlx::query(
+            "INSERT INTO trigger_instances (id, kind_id, name, overrides, enabled, user_defined)
+             VALUES (?, ?, ?, '{}', 1, 0)",
+        )
+        .bind(id)
+        .bind(kind_id)
+        .bind(name)
+        .execute(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+        Ok(())
+    }
+
     pub fn soundboard_clips_repo_impl(&self) -> &SqliteSoundboardClipsRepo {
         &self.soundboard
     }

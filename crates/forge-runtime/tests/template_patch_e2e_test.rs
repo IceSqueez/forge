@@ -89,6 +89,7 @@ fn custom_instance(event_name: &str) -> TriggerInstance {
         overrides,
         enabled: true,
         user_defined: true,
+        platform_scope: Default::default(),
     }
 }
 

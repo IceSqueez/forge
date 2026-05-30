@@ -2,6 +2,7 @@ pub mod action;
 pub mod execution;
 pub mod ids;
 pub mod platform;
+pub mod platform_scope;
 pub mod queue;
 pub mod script;
 pub mod sub_action;
@@ -18,6 +19,7 @@ pub use execution::{
 };
 pub use ids::{ActionId, ClipId, EventId, GlobalId, QueueId, ScriptId, TriggerInstanceId, UserId};
 pub use platform::PlatformId;
+pub use platform_scope::{PlatformScope, PlatformScopeError};
 pub use queue::Queue;
 pub use script::{ScriptContract, ScriptInput};
 pub use sub_action::{LogLevel, OutputDevice, VariantTemplate};

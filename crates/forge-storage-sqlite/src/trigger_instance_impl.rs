@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use forge_storage::{StorageError, TriggerInstanceRepo};
-use forge_types::{ActionId, TriggerInstance, TriggerInstanceId};
+use forge_types::{ActionId, PlatformScope, TriggerInstance, TriggerInstanceId};
 
 use crate::error::SqliteStorageError;
 
@@ -9,13 +9,15 @@ fn parse_id<T: serde::de::DeserializeOwned>(s: &str, label: &str) -> Result<T, S
         .map_err(|e| SqliteStorageError::Decode(format!("invalid {label} id '{s}': {e}")))
 }
 
-type InstanceRow = (String, String, String, String, i64, i64);
+type InstanceRow = (String, String, String, String, i64, i64, String);
 
 fn decode_row(row: InstanceRow) -> Result<TriggerInstance, SqliteStorageError> {
-    let (id_str, kind_id, name, overrides_json, enabled, user_defined) = row;
+    let (id_str, kind_id, name, overrides_json, enabled, user_defined, platform_scope_json) = row;
     let id: TriggerInstanceId = parse_id(&id_str, "trigger_instance")?;
     let overrides = serde_json::from_str(&overrides_json)
         .map_err(|e| SqliteStorageError::Decode(format!("invalid overrides json: {e}")))?;
+    let platform_scope = serde_json::from_str::<PlatformScope>(&platform_scope_json)
+        .map_err(|e| SqliteStorageError::Decode(format!("invalid platform_scope json: {e}")))?;
     Ok(TriggerInstance {
         id,
         kind_id,
@@ -23,6 +25,7 @@ fn decode_row(row: InstanceRow) -> Result<TriggerInstance, SqliteStorageError> {
         overrides,
         enabled: enabled != 0,
         user_defined: user_defined != 0,
+        platform_scope,
     })
 }
 
@@ -40,7 +43,7 @@ impl SqliteTriggerInstanceRepo {
 impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
     async fn list_all(&self) -> Result<Vec<TriggerInstance>, StorageError> {
         let rows: Vec<InstanceRow> = sqlx::query_as(
-            "SELECT id, kind_id, name, overrides, enabled, user_defined
+            "SELECT id, kind_id, name, overrides, enabled, user_defined, platform_scope
              FROM trigger_instances
              ORDER BY user_defined ASC, name ASC",
         )
@@ -55,7 +58,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
 
     async fn list_user_defined(&self) -> Result<Vec<TriggerInstance>, StorageError> {
         let rows: Vec<InstanceRow> = sqlx::query_as(
-            "SELECT id, kind_id, name, overrides, enabled, user_defined
+            "SELECT id, kind_id, name, overrides, enabled, user_defined, platform_scope
              FROM trigger_instances WHERE user_defined = 1 ORDER BY name",
         )
         .fetch_all(&self.pool)
@@ -73,7 +76,8 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
     ) -> Result<Vec<TriggerInstance>, StorageError> {
         let action_id_str = action_id.to_string();
         let rows: Vec<InstanceRow> = sqlx::query_as(
-            "SELECT ti.id, ti.kind_id, ti.name, ti.overrides, ti.enabled, ti.user_defined
+            "SELECT ti.id, ti.kind_id, ti.name, ti.overrides, ti.enabled, ti.user_defined,
+                    ti.platform_scope
              FROM trigger_instances ti
              JOIN action_trigger_instances ati ON ati.trigger_instance_id = ti.id
              WHERE ati.action_id = ?
@@ -157,7 +161,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
     async fn get(&self, id: TriggerInstanceId) -> Result<Option<TriggerInstance>, StorageError> {
         let id_str = id.to_string();
         let row: Option<InstanceRow> = sqlx::query_as(
-            "SELECT id, kind_id, name, overrides, enabled, user_defined
+            "SELECT id, kind_id, name, overrides, enabled, user_defined, platform_scope
              FROM trigger_instances WHERE id = ?",
         )
         .bind(&id_str)
@@ -173,18 +177,22 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
         let id_str = instance.id.to_string();
         let overrides_json =
             serde_json::to_string(&instance.overrides).map_err(StorageError::Serialization)?;
+        let platform_scope_json =
+            serde_json::to_string(&instance.platform_scope).map_err(StorageError::Serialization)?;
         let enabled: i64 = if instance.enabled { 1 } else { 0 };
         let user_defined: i64 = if instance.user_defined { 1 } else { 0 };
 
         sqlx::query(
-            "INSERT INTO trigger_instances (id, kind_id, name, overrides, enabled, user_defined)
-             VALUES (?, ?, ?, ?, ?, ?)
+            "INSERT INTO trigger_instances
+                 (id, kind_id, name, overrides, enabled, user_defined, platform_scope)
+             VALUES (?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
-                 kind_id      = excluded.kind_id,
-                 name         = excluded.name,
-                 overrides    = excluded.overrides,
-                 enabled      = excluded.enabled,
-                 user_defined = excluded.user_defined",
+                 kind_id        = excluded.kind_id,
+                 name           = excluded.name,
+                 overrides      = excluded.overrides,
+                 enabled        = excluded.enabled,
+                 user_defined   = excluded.user_defined,
+                 platform_scope = excluded.platform_scope",
         )
         .bind(&id_str)
         .bind(&instance.kind_id)
@@ -192,6 +200,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
         .bind(&overrides_json)
         .bind(enabled)
         .bind(user_defined)
+        .bind(&platform_scope_json)
         .execute(&self.pool)
         .await
         .map_err(SqliteStorageError::Sqlx)?;
@@ -242,8 +251,9 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
         let new_id_str = new_id.to_string();
 
         let result = sqlx::query(
-            "INSERT INTO trigger_instances (id, kind_id, name, overrides, enabled, user_defined)
-             VALUES (?, ?, ?, '{}', 1, 0)
+            "INSERT INTO trigger_instances
+                 (id, kind_id, name, overrides, enabled, user_defined, platform_scope)
+             VALUES (?, ?, ?, '{}', 1, 0, '\"any\"')
              ON CONFLICT(kind_id) WHERE user_defined = 0 DO NOTHING",
         )
         .bind(&new_id_str)

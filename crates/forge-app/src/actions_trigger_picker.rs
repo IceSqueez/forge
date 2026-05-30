@@ -689,6 +689,7 @@ mod tests {
                 overrides: Default::default(),
                 enabled: true,
                 user_defined: false,
+                platform_scope: Default::default(),
             },
             TriggerInstance {
                 id: custom_id,
@@ -697,6 +698,7 @@ mod tests {
                 overrides: Default::default(),
                 enabled: true,
                 user_defined: true,
+                platform_scope: Default::default(),
             },
         ];
         let entries = build_picker_entries(descriptor_infos, instances);

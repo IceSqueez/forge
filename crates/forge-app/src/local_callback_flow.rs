@@ -13,23 +13,23 @@ use crate::message::Message;
 use crate::runtime_view::RuntimeView;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DeviceCodeFlowPhase {
+pub enum LocalCallbackFlowPhase {
     Idle,
     Starting,
-    Polling,
+    Waiting,
     Authorized,
     Failed,
 }
 
 #[derive(Debug, Clone)]
-pub struct DeviceCodeData {
+pub struct LocalCallbackData {
     pub auth_url: String,
 }
 
 #[derive(Debug, Clone)]
-pub enum DeviceCodeFlowMsg {
+pub enum LocalCallbackFlowMsg {
     ConnectPressed,
-    StartResult(Result<DeviceCodeData, String>),
+    StartResult(Result<LocalCallbackData, String>),
     WaitResult(Result<(), String>),
     RetryPressed,
     CancelPressed,
@@ -37,18 +37,18 @@ pub enum DeviceCodeFlowMsg {
 }
 
 #[derive(Debug)]
-pub struct DeviceCodeFlowState {
+pub struct LocalCallbackFlowState {
     pub platform: PlatformId,
-    pub phase: DeviceCodeFlowPhase,
+    pub phase: LocalCallbackFlowPhase,
     pub auth_url: Option<String>,
     pub error: Option<String>,
 }
 
-impl Default for DeviceCodeFlowState {
+impl Default for LocalCallbackFlowState {
     fn default() -> Self {
         Self {
             platform: PlatformId::YouTube,
-            phase: DeviceCodeFlowPhase::Idle,
+            phase: LocalCallbackFlowPhase::Idle,
             auth_url: None,
             error: None,
         }
@@ -56,18 +56,18 @@ impl Default for DeviceCodeFlowState {
 }
 
 pub fn update(
-    state: &mut DeviceCodeFlowState,
+    state: &mut LocalCallbackFlowState,
     rt: &mut RuntimeView,
-    msg: DeviceCodeFlowMsg,
+    msg: LocalCallbackFlowMsg,
 ) -> Task<Message> {
     match msg {
-        DeviceCodeFlowMsg::ConnectPressed => {
-            state.phase = DeviceCodeFlowPhase::Starting;
+        LocalCallbackFlowMsg::ConnectPressed => {
+            state.phase = LocalCallbackFlowPhase::Starting;
             let platform = state.platform;
             let flow_handle = match platform {
                 PlatformId::YouTube => {
                     let Some((cid, csec)) = forge_platform_youtube::client_credentials() else {
-                        state.phase = DeviceCodeFlowPhase::Failed;
+                        state.phase = LocalCallbackFlowPhase::Failed;
                         state.error =
                             Some("YouTube OAuth client credentials are not configured".to_owned());
                         return Task::none();
@@ -79,25 +79,25 @@ pub fn update(
                     handle
                 }
                 PlatformId::Twitch | PlatformId::Kick | PlatformId::Trovo => {
-                    state.phase = DeviceCodeFlowPhase::Failed;
+                    state.phase = LocalCallbackFlowPhase::Failed;
                     state.error = Some(format!(
-                        "{} is not wired through DeviceCodeFlow",
+                        "{} is not wired through LocalCallbackFlow",
                         platform_display_name(platform)
                     ));
                     return Task::none();
                 }
             };
             Task::perform(async move { start_device_code(flow_handle).await }, |r| {
-                Message::DeviceCodeFlow(DeviceCodeFlowMsg::StartResult(r))
+                Message::LocalCallbackFlow(LocalCallbackFlowMsg::StartResult(r))
             })
         }
-        DeviceCodeFlowMsg::StartResult(Ok(data)) => {
+        LocalCallbackFlowMsg::StartResult(Ok(data)) => {
             let auth_url = data.auth_url.clone();
             state.auth_url = Some(data.auth_url);
-            state.phase = DeviceCodeFlowPhase::Polling;
+            state.phase = LocalCallbackFlowPhase::Waiting;
             let platform = state.platform;
             let Some(flow_handle) = rt.youtube_flow.clone() else {
-                state.phase = DeviceCodeFlowPhase::Failed;
+                state.phase = LocalCallbackFlowPhase::Failed;
                 state.error = Some("no active flow handle".to_owned());
                 return Task::none();
             };
@@ -105,7 +105,7 @@ pub fn update(
                 Arc::clone(&rt.backend) as Arc<dyn CredentialsRepo>;
             let wait_task = Task::perform(
                 async move { wait_for_authorization(platform, flow_handle, credentials_repo).await },
-                |r| Message::DeviceCodeFlow(DeviceCodeFlowMsg::WaitResult(r)),
+                |r| Message::LocalCallbackFlow(LocalCallbackFlowMsg::WaitResult(r)),
             );
             let open_task = Task::perform(
                 async move {
@@ -117,28 +117,28 @@ pub fn update(
             );
             Task::batch([open_task, wait_task])
         }
-        DeviceCodeFlowMsg::StartResult(Err(e)) => {
-            state.phase = DeviceCodeFlowPhase::Failed;
+        LocalCallbackFlowMsg::StartResult(Err(e)) => {
+            state.phase = LocalCallbackFlowPhase::Failed;
             state.error = Some(e);
             Task::none()
         }
-        DeviceCodeFlowMsg::WaitResult(Ok(())) => {
-            state.phase = DeviceCodeFlowPhase::Authorized;
+        LocalCallbackFlowMsg::WaitResult(Ok(())) => {
+            state.phase = LocalCallbackFlowPhase::Authorized;
             Task::none()
         }
-        DeviceCodeFlowMsg::WaitResult(Err(e)) => {
-            state.phase = DeviceCodeFlowPhase::Failed;
+        LocalCallbackFlowMsg::WaitResult(Err(e)) => {
+            state.phase = LocalCallbackFlowPhase::Failed;
             state.error = Some(e);
             Task::none()
         }
-        DeviceCodeFlowMsg::RetryPressed => {
-            state.phase = DeviceCodeFlowPhase::Idle;
+        LocalCallbackFlowMsg::RetryPressed => {
+            state.phase = LocalCallbackFlowPhase::Idle;
             state.auth_url = None;
             state.error = None;
             Task::none()
         }
-        DeviceCodeFlowMsg::CancelPressed => Task::done(Message::Navigate(Screen::Platforms)),
-        DeviceCodeFlowMsg::OpenAuthUrl => {
+        LocalCallbackFlowMsg::CancelPressed => Task::done(Message::Navigate(Screen::Platforms)),
+        LocalCallbackFlowMsg::OpenAuthUrl => {
             if let Some(url) = state.auth_url.clone() {
                 Task::perform(
                     async move {
@@ -157,13 +157,13 @@ pub fn update(
 
 type YoutubeFlowHandle = Arc<tokio::sync::Mutex<Option<forge_platform_youtube::GoogleAuthFlow>>>;
 
-async fn start_device_code(flow_handle: YoutubeFlowHandle) -> Result<DeviceCodeData, String> {
+async fn start_device_code(flow_handle: YoutubeFlowHandle) -> Result<LocalCallbackData, String> {
     let mut guard = flow_handle.lock().await;
     let flow = guard
         .as_mut()
         .ok_or_else(|| "OAuth flow already consumed".to_owned())?;
     let code = flow.start().await.map_err(|e| e.to_string())?;
-    Ok(DeviceCodeData {
+    Ok(LocalCallbackData {
         auth_url: code.auth_url,
     })
 }
@@ -193,7 +193,7 @@ async fn wait_for_authorization(
                 .map_err(|e| e.to_string())
         }
         PlatformId::Twitch | PlatformId::Kick | PlatformId::Trovo => Err(format!(
-            "{} is not wired through DeviceCodeFlow",
+            "{} is not wired through LocalCallbackFlow",
             platform_display_name(platform)
         )),
     }
@@ -345,7 +345,7 @@ fn idle_card<'a>(name: &'a str, palette: &'a ForgePalette) -> Element<'a, Messag
     let intro = flow_intro(name, palette);
     let cta = primary_btn(
         "Connect",
-        Message::DeviceCodeFlow(DeviceCodeFlowMsg::ConnectPressed),
+        Message::LocalCallbackFlow(LocalCallbackFlowMsg::ConnectPressed),
         palette,
     );
     let body = container(cta)
@@ -442,7 +442,9 @@ fn step_open_url<'a>(verification_url: &'a str, palette: &'a ForgePalette) -> El
     .spacing(spf(Spacing::Xxs))
     .align_y(Alignment::Center);
     let open_btn = button(open_btn_content)
-        .on_press(Message::DeviceCodeFlow(DeviceCodeFlowMsg::OpenAuthUrl))
+        .on_press(Message::LocalCallbackFlow(
+            LocalCallbackFlowMsg::OpenAuthUrl,
+        ))
         .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
         .style(move |_theme: &Theme, _status| button::Style {
             background: Some(Background::Color(Color::TRANSPARENT)),
@@ -509,7 +511,7 @@ fn polling_banner<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
 
     let cancel = ghost_btn(
         "Cancel",
-        Message::DeviceCodeFlow(DeviceCodeFlowMsg::CancelPressed),
+        Message::LocalCallbackFlow(LocalCallbackFlowMsg::CancelPressed),
         palette,
     );
 
@@ -568,7 +570,7 @@ fn authorized_card<'a>(name: &'a str, palette: &'a ForgePalette) -> Element<'a, 
 
     let return_btn = primary_btn(
         "Return to Platforms",
-        Message::DeviceCodeFlow(DeviceCodeFlowMsg::CancelPressed),
+        Message::LocalCallbackFlow(LocalCallbackFlowMsg::CancelPressed),
         palette,
     );
 
@@ -599,12 +601,12 @@ fn failed_card<'a>(error: &'a str, palette: &'a ForgePalette) -> Element<'a, Mes
 
     let retry = primary_btn(
         "Retry",
-        Message::DeviceCodeFlow(DeviceCodeFlowMsg::RetryPressed),
+        Message::LocalCallbackFlow(LocalCallbackFlowMsg::RetryPressed),
         palette,
     );
     let cancel = ghost_btn(
         "Cancel",
-        Message::DeviceCodeFlow(DeviceCodeFlowMsg::CancelPressed),
+        Message::LocalCallbackFlow(LocalCallbackFlowMsg::CancelPressed),
         palette,
     );
     let btn_row = row![retry, cancel]
@@ -627,7 +629,10 @@ fn failed_card<'a>(error: &'a str, palette: &'a ForgePalette) -> Element<'a, Mes
         .into()
 }
 
-pub fn view<'a>(state: &'a DeviceCodeFlowState, palette: &'a ForgePalette) -> Element<'a, Message> {
+pub fn view<'a>(
+    state: &'a LocalCallbackFlowState,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
     let name = platform_display_name(state.platform);
     let dot_color = platform_dot_color(state.platform, palette);
 
@@ -639,14 +644,14 @@ pub fn view<'a>(state: &'a DeviceCodeFlowState, palette: &'a ForgePalette) -> El
     let header_card = platform_header_card(name, dot_color, palette);
 
     let phase_card = match &state.phase {
-        DeviceCodeFlowPhase::Idle => idle_card(name, palette),
-        DeviceCodeFlowPhase::Starting => starting_card(name, palette),
-        DeviceCodeFlowPhase::Polling => {
+        LocalCallbackFlowPhase::Idle => idle_card(name, palette),
+        LocalCallbackFlowPhase::Starting => starting_card(name, palette),
+        LocalCallbackFlowPhase::Waiting => {
             let url = state.auth_url.as_deref().unwrap_or("");
             polling_card(name, url, palette)
         }
-        DeviceCodeFlowPhase::Authorized => authorized_card(name, palette),
-        DeviceCodeFlowPhase::Failed => {
+        LocalCallbackFlowPhase::Authorized => authorized_card(name, palette),
+        LocalCallbackFlowPhase::Failed => {
             let err = state.error.as_deref().unwrap_or("Unknown error");
             failed_card(err, palette)
         }
@@ -714,8 +719,8 @@ mod tests {
         }
     }
 
-    fn idle_state() -> DeviceCodeFlowState {
-        DeviceCodeFlowState {
+    fn idle_state() -> LocalCallbackFlowState {
+        LocalCallbackFlowState {
             platform: PlatformId::YouTube,
             ..Default::default()
         }
@@ -728,16 +733,16 @@ mod tests {
         // StartResult handler doesn't bail with "no active flow handle".
         rt.youtube_flow = Some(std::sync::Arc::new(tokio::sync::Mutex::new(None)));
         let mut state = idle_state();
-        state.phase = DeviceCodeFlowPhase::Starting;
-        let data = DeviceCodeData {
+        state.phase = LocalCallbackFlowPhase::Starting;
+        let data = LocalCallbackData {
             auth_url: "https://accounts.google.com/o/oauth2/v2/auth?code_challenge=abc".to_owned(),
         };
         let _ = update(
             &mut state,
             &mut rt,
-            DeviceCodeFlowMsg::StartResult(Ok(data)),
+            LocalCallbackFlowMsg::StartResult(Ok(data)),
         );
-        assert_eq!(state.phase, DeviceCodeFlowPhase::Polling);
+        assert_eq!(state.phase, LocalCallbackFlowPhase::Waiting);
         assert_eq!(
             state.auth_url.as_deref(),
             Some("https://accounts.google.com/o/oauth2/v2/auth?code_challenge=abc"),
@@ -748,13 +753,13 @@ mod tests {
     fn start_result_err_transitions_to_failed() {
         let mut rt = make_rt();
         let mut state = idle_state();
-        state.phase = DeviceCodeFlowPhase::Starting;
+        state.phase = LocalCallbackFlowPhase::Starting;
         let _ = update(
             &mut state,
             &mut rt,
-            DeviceCodeFlowMsg::StartResult(Err("network error".to_owned())),
+            LocalCallbackFlowMsg::StartResult(Err("network error".to_owned())),
         );
-        assert_eq!(state.phase, DeviceCodeFlowPhase::Failed);
+        assert_eq!(state.phase, LocalCallbackFlowPhase::Failed);
         assert_eq!(state.error.as_deref(), Some("network error"));
     }
 
@@ -762,36 +767,40 @@ mod tests {
     fn wait_result_ok_transitions_to_authorized() {
         let mut rt = make_rt();
         let mut state = idle_state();
-        state.phase = DeviceCodeFlowPhase::Polling;
-        let _ = update(&mut state, &mut rt, DeviceCodeFlowMsg::WaitResult(Ok(())));
-        assert_eq!(state.phase, DeviceCodeFlowPhase::Authorized);
+        state.phase = LocalCallbackFlowPhase::Waiting;
+        let _ = update(
+            &mut state,
+            &mut rt,
+            LocalCallbackFlowMsg::WaitResult(Ok(())),
+        );
+        assert_eq!(state.phase, LocalCallbackFlowPhase::Authorized);
     }
 
     #[test]
     fn wait_result_err_transitions_to_failed() {
         let mut rt = make_rt();
         let mut state = idle_state();
-        state.phase = DeviceCodeFlowPhase::Polling;
+        state.phase = LocalCallbackFlowPhase::Waiting;
         let _ = update(
             &mut state,
             &mut rt,
-            DeviceCodeFlowMsg::WaitResult(Err("access_denied".to_owned())),
+            LocalCallbackFlowMsg::WaitResult(Err("access_denied".to_owned())),
         );
-        assert_eq!(state.phase, DeviceCodeFlowPhase::Failed);
+        assert_eq!(state.phase, LocalCallbackFlowPhase::Failed);
         assert_eq!(state.error.as_deref(), Some("access_denied"));
     }
 
     #[test]
     fn retry_pressed_resets_to_idle() {
         let mut rt = make_rt();
-        let mut state = DeviceCodeFlowState {
+        let mut state = LocalCallbackFlowState {
             platform: PlatformId::YouTube,
-            phase: DeviceCodeFlowPhase::Failed,
+            phase: LocalCallbackFlowPhase::Failed,
             auth_url: Some("https://accounts.google.com/o/oauth2/v2/auth?...".to_owned()),
             error: Some("auth failed".to_owned()),
         };
-        let _ = update(&mut state, &mut rt, DeviceCodeFlowMsg::RetryPressed);
-        assert_eq!(state.phase, DeviceCodeFlowPhase::Idle);
+        let _ = update(&mut state, &mut rt, LocalCallbackFlowMsg::RetryPressed);
+        assert_eq!(state.phase, LocalCallbackFlowPhase::Idle);
         assert!(state.auth_url.is_none());
         assert!(state.error.is_none());
     }
@@ -800,8 +809,8 @@ mod tests {
     fn cancel_pressed_returns_navigate_task() {
         let mut rt = make_rt();
         let mut state = idle_state();
-        let task = update(&mut state, &mut rt, DeviceCodeFlowMsg::CancelPressed);
-        assert_eq!(state.phase, DeviceCodeFlowPhase::Idle);
+        let task = update(&mut state, &mut rt, LocalCallbackFlowMsg::CancelPressed);
+        assert_eq!(state.phase, LocalCallbackFlowPhase::Idle);
         drop(task);
     }
 }

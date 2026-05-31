@@ -438,7 +438,7 @@ pub(crate) fn settings_view<'a>(
 pub(crate) fn handle_message(app: &mut App, sub: SettingsMsg) -> Task<Message> {
     match sub {
         SettingsMsg::ReconnectPlatform(platform) => {
-            Task::done(Message::Navigate(Screen::DeviceCodeFlow(platform)))
+            Task::done(Message::Navigate(Screen::LocalCallbackFlow(platform)))
         }
         SettingsMsg::PlatformReconnectResult(Ok(())) => Task::none(),
         SettingsMsg::PlatformReconnectResult(Err(e)) => {
@@ -518,7 +518,7 @@ mod tests {
     use forge_types::PlatformId;
 
     #[test]
-    fn reconnect_platform_youtube_dispatches_navigate_to_device_code_flow() {
+    fn reconnect_platform_youtube_dispatches_navigate_to_local_callback_flow() {
         let mut app = App::default();
         let _task = handle_message(
             &mut app,
@@ -528,7 +528,7 @@ mod tests {
     }
 
     #[test]
-    fn reconnect_platform_twitch_dispatches_navigate_to_device_code_flow() {
+    fn reconnect_platform_twitch_dispatches_navigate_to_local_callback_flow() {
         let mut app = App::default();
         let _task = handle_message(&mut app, SettingsMsg::ReconnectPlatform(PlatformId::Twitch));
         assert_eq!(app.screen, Screen::Home);

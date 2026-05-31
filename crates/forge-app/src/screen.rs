@@ -36,7 +36,7 @@ pub enum Screen {
     Queues,
     TriggersRegistry,
     Platforms,
-    DeviceCodeFlow(PlatformId),
+    LocalCallbackFlow(PlatformId),
     StreamApps,
     Builtin,
     BuiltinDetail(BuiltinId),

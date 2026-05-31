@@ -43,7 +43,7 @@ pub fn registry(id: &BuiltinId, palette: &ForgePalette) -> Option<(Color, Generi
                     "Subscriber milestone triggers",
                 ],
                 kind: PlatformKind::Platform,
-                connect_screen: Some(Screen::DeviceCodeFlow(PlatformId::YouTube)),
+                connect_screen: Some(Screen::LocalCallbackFlow(PlatformId::YouTube)),
             },
         )),
         "kick" => Some((

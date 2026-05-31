@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+pub mod local_callback;
+pub use local_callback::{CallbackCode, LocalCallbackDriver};
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AuthFlow {

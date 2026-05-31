@@ -174,6 +174,7 @@ impl App {
                 twitch_chat_handle: None,
                 chat_send_bridge: None,
                 twitch_flow: None,
+                youtube_flow: None,
                 twitch_login: None,
                 twitch_token_expires: None,
                 twitch_reauth_required: false,
@@ -230,6 +231,7 @@ impl Default for App {
                 twitch_chat_handle: None,
                 chat_send_bridge: None,
                 twitch_flow: None,
+                youtube_flow: None,
                 twitch_login: None,
                 twitch_token_expires: None,
                 twitch_reauth_required: false,
@@ -364,7 +366,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             crate::tts_triggers::update(&mut app.ui.tts_triggers, &app.rt, sub)
         }
         Message::DeviceCodeFlow(sub) => {
-            crate::device_code_flow::update(&mut app.ui.device_code_flow, &app.rt, sub)
+            crate::device_code_flow::update(&mut app.ui.device_code_flow, &mut app.rt, sub)
         }
         Message::Toast(sub) => match sub {
             ToastMsg::Fired {
@@ -637,6 +639,7 @@ mod tests {
                 twitch_chat_handle: None,
                 chat_send_bridge: None,
                 twitch_flow: None,
+                youtube_flow: None,
                 twitch_login: None,
                 twitch_token_expires: None,
                 twitch_reauth_required: false,
@@ -979,6 +982,7 @@ mod tests {
                 twitch_chat_handle: None,
                 chat_send_bridge: None,
                 twitch_flow: None,
+                youtube_flow: None,
                 twitch_login: None,
                 twitch_token_expires: None,
                 twitch_reauth_required: false,

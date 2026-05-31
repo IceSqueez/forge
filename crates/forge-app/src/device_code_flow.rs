@@ -23,10 +23,7 @@ pub enum DeviceCodeFlowPhase {
 
 #[derive(Debug, Clone)]
 pub struct DeviceCodeData {
-    pub user_code: String,
-    pub verification_url: String,
-    pub device_code: String,
-    pub interval_secs: u64,
+    pub auth_url: String,
 }
 
 #[derive(Debug, Clone)]
@@ -36,18 +33,14 @@ pub enum DeviceCodeFlowMsg {
     WaitResult(Result<(), String>),
     RetryPressed,
     CancelPressed,
-    CopyCode,
-    OpenVerificationUrl,
+    OpenAuthUrl,
 }
 
 #[derive(Debug)]
 pub struct DeviceCodeFlowState {
     pub platform: PlatformId,
     pub phase: DeviceCodeFlowPhase,
-    pub user_code: Option<String>,
-    pub verification_url: Option<String>,
-    pub device_code: Option<String>,
-    pub interval_secs: Option<u64>,
+    pub auth_url: Option<String>,
     pub error: Option<String>,
 }
 
@@ -56,10 +49,7 @@ impl Default for DeviceCodeFlowState {
         Self {
             platform: PlatformId::YouTube,
             phase: DeviceCodeFlowPhase::Idle,
-            user_code: None,
-            verification_url: None,
-            device_code: None,
-            interval_secs: None,
+            auth_url: None,
             error: None,
         }
     }
@@ -67,35 +57,65 @@ impl Default for DeviceCodeFlowState {
 
 pub fn update(
     state: &mut DeviceCodeFlowState,
-    rt: &RuntimeView,
+    rt: &mut RuntimeView,
     msg: DeviceCodeFlowMsg,
 ) -> Task<Message> {
     match msg {
         DeviceCodeFlowMsg::ConnectPressed => {
             state.phase = DeviceCodeFlowPhase::Starting;
             let platform = state.platform;
-            Task::perform(async move { start_device_code(platform).await }, |r| {
+            let flow_handle = match platform {
+                PlatformId::YouTube => {
+                    let Some((cid, csec)) = forge_platform_youtube::client_credentials() else {
+                        state.phase = DeviceCodeFlowPhase::Failed;
+                        state.error =
+                            Some("YouTube OAuth client credentials are not configured".to_owned());
+                        return Task::none();
+                    };
+                    let handle = Arc::new(tokio::sync::Mutex::new(Some(
+                        forge_platform_youtube::GoogleAuthFlow::new(cid, csec),
+                    )));
+                    rt.youtube_flow = Some(Arc::clone(&handle));
+                    handle
+                }
+                PlatformId::Twitch | PlatformId::Kick | PlatformId::Trovo => {
+                    state.phase = DeviceCodeFlowPhase::Failed;
+                    state.error = Some(format!(
+                        "{} is not wired through DeviceCodeFlow",
+                        platform_display_name(platform)
+                    ));
+                    return Task::none();
+                }
+            };
+            Task::perform(async move { start_device_code(flow_handle).await }, |r| {
                 Message::DeviceCodeFlow(DeviceCodeFlowMsg::StartResult(r))
             })
         }
         DeviceCodeFlowMsg::StartResult(Ok(data)) => {
-            state.user_code = Some(data.user_code.clone());
-            state.verification_url = Some(data.verification_url.clone());
-            state.device_code = Some(data.device_code.clone());
-            state.interval_secs = Some(data.interval_secs);
+            let auth_url = data.auth_url.clone();
+            state.auth_url = Some(data.auth_url);
             state.phase = DeviceCodeFlowPhase::Polling;
-            let device_code = data.device_code;
-            let interval_secs = data.interval_secs;
             let platform = state.platform;
+            let Some(flow_handle) = rt.youtube_flow.clone() else {
+                state.phase = DeviceCodeFlowPhase::Failed;
+                state.error = Some("no active flow handle".to_owned());
+                return Task::none();
+            };
             let credentials_repo: Arc<dyn CredentialsRepo> =
                 Arc::clone(&rt.backend) as Arc<dyn CredentialsRepo>;
-            Task::perform(
-                async move {
-                    wait_for_authorization(platform, device_code, interval_secs, credentials_repo)
-                        .await
-                },
+            let wait_task = Task::perform(
+                async move { wait_for_authorization(platform, flow_handle, credentials_repo).await },
                 |r| Message::DeviceCodeFlow(DeviceCodeFlowMsg::WaitResult(r)),
-            )
+            );
+            let open_task = Task::perform(
+                async move {
+                    if let Err(e) = open::that(&auth_url) {
+                        tracing::warn!(error = %e, url = %auth_url, "open browser failed");
+                    }
+                },
+                |()| Message::Noop,
+            );
+            Task::batch([open_task, wait_task])
         }
         DeviceCodeFlowMsg::StartResult(Err(e)) => {
             state.phase = DeviceCodeFlowPhase::Failed;
@@ -113,23 +133,13 @@ pub fn update(
         }
         DeviceCodeFlowMsg::RetryPressed => {
             state.phase = DeviceCodeFlowPhase::Idle;
-            state.user_code = None;
-            state.verification_url = None;
-            state.device_code = None;
-            state.interval_secs = None;
+            state.auth_url = None;
             state.error = None;
             Task::none()
         }
         DeviceCodeFlowMsg::CancelPressed => Task::done(Message::Navigate(Screen::Platforms)),
-        DeviceCodeFlowMsg::CopyCode => {
-            if let Some(code) = &state.user_code {
-                iced::clipboard::write::<Message>(code.clone())
-            } else {
-                Task::none()
-            }
-        }
-        DeviceCodeFlowMsg::OpenVerificationUrl => {
-            if let Some(url) = state.verification_url.clone() {
+        DeviceCodeFlowMsg::OpenAuthUrl => {
+            if let Some(url) = state.auth_url.clone() {
                 Task::perform(
                     async move {
                         if let Err(e) = open::that(&url) {
@@ -145,48 +155,34 @@ pub fn update(
     }
 }
 
-async fn start_device_code(platform: PlatformId) -> Result<DeviceCodeData, String> {
-    match platform {
-        PlatformId::YouTube => {
-            let cid = std::env::var("FORGE_YOUTUBE_CLIENT_ID")
-                .map_err(|_| "FORGE_YOUTUBE_CLIENT_ID is not set".to_owned())?;
-            let csec = std::env::var("FORGE_YOUTUBE_CLIENT_SECRET")
-                .map_err(|_| "FORGE_YOUTUBE_CLIENT_SECRET is not set".to_owned())?;
-            let flow = forge_platform_youtube::GoogleAuthFlow::new(cid, csec);
-            let code = flow.start().await.map_err(|e| e.to_string())?;
-            Ok(DeviceCodeData {
-                user_code: code.user_code,
-                verification_url: code.verification_url,
-                device_code: code.device_code,
-                interval_secs: code.interval.as_secs(),
-            })
-        }
-        PlatformId::Twitch => Err(
-            "DeviceCodeFlow screen not yet wired for Twitch — use the Twitch integration panel"
-                .to_owned(),
-        ),
-        PlatformId::Kick | PlatformId::Trovo => Err(format!(
-            "{} does not support device code flow",
-            platform_display_name(platform)
-        )),
-    }
+type YoutubeFlowHandle = Arc<tokio::sync::Mutex<Option<forge_platform_youtube::GoogleAuthFlow>>>;
+
+async fn start_device_code(flow_handle: YoutubeFlowHandle) -> Result<DeviceCodeData, String> {
+    let mut guard = flow_handle.lock().await;
+    let flow = guard
+        .as_mut()
+        .ok_or_else(|| "OAuth flow already consumed".to_owned())?;
+    let code = flow.start().await.map_err(|e| e.to_string())?;
+    Ok(DeviceCodeData {
+        auth_url: code.auth_url,
+    })
 }
 
 async fn wait_for_authorization(
     platform: PlatformId,
-    device_code: String,
-    interval_secs: u64,
+    flow_handle: YoutubeFlowHandle,
     credentials_repo: Arc<dyn CredentialsRepo>,
 ) -> Result<(), String> {
     match platform {
         PlatformId::YouTube => {
-            let cid = std::env::var("FORGE_YOUTUBE_CLIENT_ID")
-                .map_err(|_| "FORGE_YOUTUBE_CLIENT_ID is not set".to_owned())?;
-            let csec = std::env::var("FORGE_YOUTUBE_CLIENT_SECRET")
-                .map_err(|_| "FORGE_YOUTUBE_CLIENT_SECRET is not set".to_owned())?;
-            let flow = forge_platform_youtube::GoogleAuthFlow::new(cid, csec);
+            let mut flow = {
+                let mut guard = flow_handle.lock().await;
+                guard
+                    .take()
+                    .ok_or_else(|| "OAuth flow already consumed".to_owned())?
+            };
             let bundle = flow
-                .wait_for_authorization(&device_code, std::time::Duration::from_secs(interval_secs))
+                .wait_for_authorization(std::time::Duration::from_secs(300))
                 .await
                 .map_err(|e| e.to_string())?;
             let manager =
@@ -196,12 +192,8 @@ async fn wait_for_authorization(
                 .await
                 .map_err(|e| e.to_string())
         }
-        PlatformId::Twitch => Err(
-            "DeviceCodeFlow screen not yet wired for Twitch — use the Twitch integration panel"
-                .to_owned(),
-        ),
-        PlatformId::Kick | PlatformId::Trovo => Err(format!(
-            "{} does not support device code flow",
+        PlatformId::Twitch | PlatformId::Kick | PlatformId::Trovo => Err(format!(
+            "{} is not wired through DeviceCodeFlow",
             platform_display_name(platform)
         )),
     }
@@ -450,9 +442,7 @@ fn step_open_url<'a>(verification_url: &'a str, palette: &'a ForgePalette) -> El
     .spacing(spf(Spacing::Xxs))
     .align_y(Alignment::Center);
     let open_btn = button(open_btn_content)
-        .on_press(Message::DeviceCodeFlow(
-            DeviceCodeFlowMsg::OpenVerificationUrl,
-        ))
+        .on_press(Message::DeviceCodeFlow(DeviceCodeFlowMsg::OpenAuthUrl))
         .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
         .style(move |_theme: &Theme, _status| button::Style {
             background: Some(Background::Color(Color::TRANSPARENT)),
@@ -477,57 +467,17 @@ fn step_open_url<'a>(verification_url: &'a str, palette: &'a ForgePalette) -> El
         .into()
 }
 
-fn step_enter_code<'a>(user_code: &'a str, palette: &'a ForgePalette) -> Element<'a, Message> {
+fn step_wait_for_browser<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     let circle = step_circle(2, true, palette);
-    let title = text("Enter this code on the page")
+    let title = text("Approve in your browser")
         .size(FONT_SM)
         .color(palette.text_primary);
+    let detail = text("forge is listening on a local port for the OAuth callback. The window will refresh once you approve.")
+        .size(FONT_XS)
+        .color(palette.text_muted)
+        .wrapping(iced::widget::text::Wrapping::Word);
 
-    let code_display = container(
-        text(user_code)
-            .size(28.0)
-            .color(palette.brand)
-            .font(font(FontRole::Monospace)),
-    )
-    .width(Length::Fill)
-    .padding([sp(Spacing::Sm), sp(Spacing::Lg)])
-    .center_x(Length::Fill)
-    .style(move |_theme: &Theme| container::Style {
-        background: Some(Background::Color(palette.shell)),
-        border: Border {
-            color: palette.brand,
-            width: 1.0,
-            radius: 9.0.into(),
-        },
-        ..container::Style::default()
-    });
-
-    let copy_btn_content = column![
-        tabler_icon(Icon::Copy, 18.0, palette.text_secondary),
-        text("Copy").size(FONT_XS).color(palette.text_secondary),
-    ]
-    .spacing(spf(Spacing::Xxs))
-    .align_x(Alignment::Center);
-    let copy_btn = button(copy_btn_content)
-        .on_press(Message::DeviceCodeFlow(DeviceCodeFlowMsg::CopyCode))
-        .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
-        .style(move |_theme: &Theme, _status| button::Style {
-            background: Some(Background::Color(Color::TRANSPARENT)),
-            text_color: palette.text_secondary,
-            border: Border {
-                color: palette.border_regular,
-                width: 0.5,
-                radius: 9.0.into(),
-            },
-            shadow: Shadow::default(),
-            snap: false,
-        });
-
-    let code_row = row![code_display, copy_btn]
-        .spacing(spf(Spacing::Xs))
-        .align_y(Alignment::Center);
-
-    let content = column![title, code_row].spacing(spf(Spacing::Xs));
+    let content = column![title, detail].spacing(spf(Spacing::Xxs));
     row![circle, content]
         .spacing(spf(Spacing::Sm))
         .align_y(Alignment::Start)
@@ -589,13 +539,12 @@ fn polling_banner<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
 
 fn polling_card<'a>(
     name: &'a str,
-    user_code: &'a str,
-    verification_url: &'a str,
+    auth_url: &'a str,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let intro = flow_intro(name, palette);
-    let step1 = step_open_url(verification_url, palette);
-    let step2 = step_enter_code(user_code, palette);
+    let step1 = step_open_url(auth_url, palette);
+    let step2 = step_wait_for_browser(palette);
     let polling = polling_banner(palette);
 
     let body = container(column![step1, step2, polling].spacing(spf(Spacing::Sm)))
@@ -693,9 +642,8 @@ pub fn view<'a>(state: &'a DeviceCodeFlowState, palette: &'a ForgePalette) -> El
         DeviceCodeFlowPhase::Idle => idle_card(name, palette),
         DeviceCodeFlowPhase::Starting => starting_card(name, palette),
         DeviceCodeFlowPhase::Polling => {
-            let code = state.user_code.as_deref().unwrap_or("");
-            let url = state.verification_url.as_deref().unwrap_or("");
-            polling_card(name, code, url, palette)
+            let url = state.auth_url.as_deref().unwrap_or("");
+            polling_card(name, url, palette)
         }
         DeviceCodeFlowPhase::Authorized => authorized_card(name, palette),
         DeviceCodeFlowPhase::Failed => {
@@ -757,6 +705,7 @@ mod tests {
             twitch_chat_handle: None,
             chat_send_bridge: None,
             twitch_flow: None,
+            youtube_flow: None,
             twitch_login: None,
             twitch_token_expires: None,
             twitch_reauth_required: false,
@@ -773,41 +722,36 @@ mod tests {
     }
 
     #[test]
-    fn connect_pressed_transitions_to_starting() {
-        let rt = make_rt();
-        let mut state = idle_state();
-        let _ = update(&mut state, &rt, DeviceCodeFlowMsg::ConnectPressed);
-        assert_eq!(state.phase, DeviceCodeFlowPhase::Starting);
-    }
-
-    #[test]
     fn start_result_ok_transitions_to_polling() {
-        let rt = make_rt();
+        let mut rt = make_rt();
+        // ConnectPressed normally populates rt.youtube_flow; simulate it so the
+        // StartResult handler doesn't bail with "no active flow handle".
+        rt.youtube_flow = Some(std::sync::Arc::new(tokio::sync::Mutex::new(None)));
         let mut state = idle_state();
         state.phase = DeviceCodeFlowPhase::Starting;
         let data = DeviceCodeData {
-            user_code: "ABCD-1234".to_owned(),
-            verification_url: "https://google.com/device".to_owned(),
-            device_code: "device_code_xyz".to_owned(),
-            interval_secs: 5,
+            auth_url: "https://accounts.google.com/o/oauth2/v2/auth?code_challenge=abc".to_owned(),
         };
-        let _ = update(&mut state, &rt, DeviceCodeFlowMsg::StartResult(Ok(data)));
+        let _ = update(
+            &mut state,
+            &mut rt,
+            DeviceCodeFlowMsg::StartResult(Ok(data)),
+        );
         assert_eq!(state.phase, DeviceCodeFlowPhase::Polling);
-        assert_eq!(state.user_code.as_deref(), Some("ABCD-1234"));
         assert_eq!(
-            state.verification_url.as_deref(),
-            Some("https://google.com/device")
+            state.auth_url.as_deref(),
+            Some("https://accounts.google.com/o/oauth2/v2/auth?code_challenge=abc"),
         );
     }
 
     #[test]
     fn start_result_err_transitions_to_failed() {
-        let rt = make_rt();
+        let mut rt = make_rt();
         let mut state = idle_state();
         state.phase = DeviceCodeFlowPhase::Starting;
         let _ = update(
             &mut state,
-            &rt,
+            &mut rt,
             DeviceCodeFlowMsg::StartResult(Err("network error".to_owned())),
         );
         assert_eq!(state.phase, DeviceCodeFlowPhase::Failed);
@@ -816,21 +760,21 @@ mod tests {
 
     #[test]
     fn wait_result_ok_transitions_to_authorized() {
-        let rt = make_rt();
+        let mut rt = make_rt();
         let mut state = idle_state();
         state.phase = DeviceCodeFlowPhase::Polling;
-        let _ = update(&mut state, &rt, DeviceCodeFlowMsg::WaitResult(Ok(())));
+        let _ = update(&mut state, &mut rt, DeviceCodeFlowMsg::WaitResult(Ok(())));
         assert_eq!(state.phase, DeviceCodeFlowPhase::Authorized);
     }
 
     #[test]
     fn wait_result_err_transitions_to_failed() {
-        let rt = make_rt();
+        let mut rt = make_rt();
         let mut state = idle_state();
         state.phase = DeviceCodeFlowPhase::Polling;
         let _ = update(
             &mut state,
-            &rt,
+            &mut rt,
             DeviceCodeFlowMsg::WaitResult(Err("access_denied".to_owned())),
         );
         assert_eq!(state.phase, DeviceCodeFlowPhase::Failed);
@@ -839,29 +783,24 @@ mod tests {
 
     #[test]
     fn retry_pressed_resets_to_idle() {
-        let rt = make_rt();
+        let mut rt = make_rt();
         let mut state = DeviceCodeFlowState {
             platform: PlatformId::YouTube,
             phase: DeviceCodeFlowPhase::Failed,
-            user_code: Some("XXXX".to_owned()),
-            verification_url: Some("https://example.com".to_owned()),
-            device_code: Some("dc".to_owned()),
-            interval_secs: Some(5),
+            auth_url: Some("https://accounts.google.com/o/oauth2/v2/auth?...".to_owned()),
             error: Some("auth failed".to_owned()),
         };
-        let _ = update(&mut state, &rt, DeviceCodeFlowMsg::RetryPressed);
+        let _ = update(&mut state, &mut rt, DeviceCodeFlowMsg::RetryPressed);
         assert_eq!(state.phase, DeviceCodeFlowPhase::Idle);
-        assert!(state.user_code.is_none());
-        assert!(state.verification_url.is_none());
-        assert!(state.device_code.is_none());
+        assert!(state.auth_url.is_none());
         assert!(state.error.is_none());
     }
 
     #[test]
     fn cancel_pressed_returns_navigate_task() {
-        let rt = make_rt();
+        let mut rt = make_rt();
         let mut state = idle_state();
-        let task = update(&mut state, &rt, DeviceCodeFlowMsg::CancelPressed);
+        let task = update(&mut state, &mut rt, DeviceCodeFlowMsg::CancelPressed);
         assert_eq!(state.phase, DeviceCodeFlowPhase::Idle);
         drop(task);
     }

@@ -302,7 +302,9 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
     if let Some((yt_id, yt_secret)) = forge_platform_youtube::client_credentials() {
         let google = forge_platform_youtube::GoogleAuthFlow::new(yt_id, yt_secret);
         let yt_creds: Arc<dyn CredentialsRepo> = Arc::clone(&dp) as Arc<dyn CredentialsRepo>;
-        let manager = forge_platform_youtube::YoutubeCredentialsManager::new(yt_creds, google);
+        let manager = Arc::new(forge_platform_youtube::YoutubeCredentialsManager::new(
+            yt_creds, google,
+        ));
         match rt.block_on(manager.load()) {
             Ok(Some(creds)) => {
                 let channel_id = creds.channel_id.clone();
@@ -320,10 +322,10 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
                     forge_platform_youtube::QuotaState::default(),
                 ));
 
-                let manager_for_send = manager.clone();
+                let manager_for_send = Arc::clone(&manager);
                 let yt_send = Arc::new(forge_platform_youtube::YoutubeSendChat::new(
                     Arc::new(move || {
-                        let m = manager_for_send.clone();
+                        let m = Arc::clone(&manager_for_send);
                         Box::pin(async move { m.get_valid_access_token().await })
                     }),
                     yt_live_chat_id.clone(),
@@ -331,9 +333,10 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
                 ));
 
                 let cancel = tokio_util::sync::CancellationToken::new();
+                let manager_for_poll = Arc::clone(&manager);
                 let poller = forge_platform_youtube::YoutubeChatPoller::new(
                     Arc::new(move || {
-                        let m = manager.clone();
+                        let m = Arc::clone(&manager_for_poll);
                         Box::pin(async move { m.get_valid_access_token().await })
                     }),
                     yt_tx,

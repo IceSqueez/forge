@@ -3,6 +3,7 @@ use std::time::SystemTime;
 
 use forge_obs::ObsClient;
 use forge_platform_twitch::{ChatSendBridgeHandle, TwitchChatHandle};
+use forge_platform_youtube::GoogleAuthFlow;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
     ActionEngineHandle, EventBus, QueueSchedulerHandle, ScriptRegistry, actions::ActionsService,
@@ -28,6 +29,7 @@ pub struct RuntimeView {
     pub twitch_chat_handle: Option<TwitchChatHandle>,
     pub chat_send_bridge: Option<ChatSendBridgeHandle>,
     pub twitch_flow: Option<TwitchFlowHandle>,
+    pub youtube_flow: Option<Arc<tokio::sync::Mutex<Option<GoogleAuthFlow>>>>,
     pub twitch_login: Option<String>,
     pub twitch_token_expires: Option<SystemTime>,
     pub twitch_reauth_required: bool,

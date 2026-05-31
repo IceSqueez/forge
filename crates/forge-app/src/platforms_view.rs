@@ -166,7 +166,7 @@ pub(crate) fn platforms_overview_view<'a>(
 
     let twitch_card = platform_overview_card(
         "T",
-        p.brand,
+        p.platform_twitch,
         "Twitch",
         "Chat, EventSub subscriptions, channel points, bits, raids",
         &["IRC chat", "EventSub", "Channel points", "Bits & subs"],
@@ -176,7 +176,7 @@ pub(crate) fn platforms_overview_view<'a>(
     );
     let youtube_card = platform_overview_card(
         "Y",
-        p.random,
+        p.platform_youtube,
         "YouTube",
         "Live chat, super chats, channel memberships, subscribers",
         &["Live chat", "Super chat", "Memberships"],
@@ -186,7 +186,7 @@ pub(crate) fn platforms_overview_view<'a>(
     );
     let kick_card = platform_overview_card(
         "K",
-        p.info,
+        p.platform_kick,
         "Kick",
         "Chat, channel events, subscribers — newer streaming platform",
         &["Chat", "Subs", "Channel events"],
@@ -196,7 +196,7 @@ pub(crate) fn platforms_overview_view<'a>(
     );
     let trovo_card = platform_overview_card(
         "V",
-        p.success,
+        p.platform_trovo,
         "Trovo",
         "Chat, spells, mana, subscribers — Tencent streaming platform",
         &["Chat", "Spells", "Subs"],

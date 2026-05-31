@@ -1,5 +1,4 @@
 use forge_platform_core::BuiltinId;
-use forge_types::PlatformId;
 use forge_widgets::{
     ForgePalette, Icon, tabler_icon,
     tokens::{FONT_MD, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf},
@@ -29,50 +28,17 @@ pub enum PlatformKind {
 
 pub fn registry(id: &BuiltinId, palette: &ForgePalette) -> Option<(Color, GenericPlatform)> {
     match id.as_str() {
-        "youtube" => Some((
-            palette.random,
-            GenericPlatform {
-                name: "YouTube",
-                letter: "Y",
-                since: "Coming in beta-1",
-                description: "Live chat, super chats, channel memberships, subscribers.",
-                features: &[
-                    "Live chat with sentiment markers",
-                    "Super Chat alerts with bits-equivalent tiers",
-                    "Channel memberships join/upgrade/cancel events",
-                    "Subscriber milestone triggers",
-                ],
-                kind: PlatformKind::Platform,
-                connect_screen: Some(Screen::LocalCallbackFlow(PlatformId::YouTube)),
-            },
-        )),
         "kick" => Some((
-            palette.info,
+            palette.platform_kick,
             GenericPlatform {
                 name: "Kick",
                 letter: "K",
-                since: "Coming in beta-2",
+                since: "Coming in beta-3",
                 description: "Chat, channel events, subscribers — newer streaming platform.",
                 features: &[
                     "Chat over Kick WebSocket (community implementation)",
                     "Subscription and follow events",
                     "Channel raid detection",
-                ],
-                kind: PlatformKind::Platform,
-                connect_screen: None,
-            },
-        )),
-        "trovo" => Some((
-            palette.success,
-            GenericPlatform {
-                name: "Trovo",
-                letter: "V",
-                since: "Coming in beta-3",
-                description: "Chat, spells, mana, subscribers — Tencent streaming platform.",
-                features: &[
-                    "Chat over Trovo IRC bridge",
-                    "Mana spell triggers",
-                    "Subscriber and follow events",
                 ],
                 kind: PlatformKind::Platform,
                 connect_screen: None,

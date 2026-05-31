@@ -1,6 +1,46 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-beta.1] - 2026-05-31
+### ⚙️ Miscellaneous Tasks
+- *(workspace)* Regenerate Cargo.lock for forge-platform-youtube
+
+### 🐛 Bug Fixes
+- *(platform-core)* Gate APP_DIR_NAME on non-macos targets
+- Track new modules from earlier SRP refactor commits
+
+### 📚 Documentation
+- Add YouTube platform guide + README beta-1 mention
+
+### 🚀 Features
+- *(events)* Add EventSource::to_platform_id helper
+- *(widgets)* Add platform color tokens to ForgePalette
+- *(types)* Add PlatformScope and trigger_instances migration
+- *(platform-youtube)* Scaffold crate with DeviceCode AuthFlow
+- *(registry)* Add KindPlatformContract to descriptor trait
+- *(runtime)* Add platform scope guard to TriggerEvaluator
+- *(types)* Add UnifiedChatRow and supporting types
+- *(runtime)* Add ChatPayload envelope and chat_stream bus bridge
+- *(platform-youtube)* Implement GoogleAuthFlow device-code polling
+- *(platform-twitch)* Emit _chat payload on chat and events
+- *(app)* Add platform-scope picker to trigger editor
+- *(platform-youtube)* Add credentials manager with on-demand refresh
+- *(platform-youtube)* Add live chat polling with quota guard
+- *(platform-youtube)* Register 10 YouTube trigger descriptors
+- *(app)* Add DeviceCodeFlow screen for OAuth completion
+- *(app)* Refactor LiveChat to render UnifiedChatRow
+- *(runtime)* Wire YouTube credentials + chat poller + triggers
+- *(app)* Wire Settings platforms to DeviceCodeFlow screen
+- *(platform-youtube)* Implement send-chat with liveChatId tracking
+
+### 🚜 Refactor
+- *(types)* Promote PlatformId to forge-types
+- *(platform-youtube)* Split chat_poller per SRP
+- *(app)* Extract LiveChat view into separate module
+
+### 🛠️ Build
+- Pass YouTube OAuth credentials to CI builds
+
 ## [0.1.0-alpha.16] - 2026-05-29
 ### ⚠️ BREAKING CHANGES
 - **general**: DataProvider::command_repo() removed;
@@ -9,6 +49,7 @@ migration 0013 drops the commands table
 
 ### ⚙️ Miscellaneous Tasks
 - *(workspace)* Remove tautological comments
+- Release
 
 ### 🐛 Bug Fixes
 - *(ci)* Install libasound2-dev on Linux for cpal/alsa-sys builds
@@ -16,6 +57,9 @@ migration 0013 drops the commands table
 - *(app)* Render trigger picker overlay on Actions list page
 - *(app)* Make trigger picker assign refresh detail and surface custom vs default
 - *(ui)* Click on trigger now moves you to editor
+
+### 📚 Documentation
+- *(release)* Release v0.1.0-alpha.16
 
 ### 🚀 Features
 - *(storage)* Add migration 0012 for trigger_instances and action_trigger_instances tables

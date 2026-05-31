@@ -228,10 +228,10 @@ pub fn live_chat_view<'a>(
 
 fn platform_filter_chip_color(id: PlatformId, palette: &ForgePalette) -> Color {
     match id {
-        PlatformId::Twitch => palette.brand,
-        PlatformId::YouTube => palette.random,
-        PlatformId::Kick => palette.info,
-        PlatformId::Trovo => palette.success,
+        PlatformId::Twitch => palette.platform_twitch,
+        PlatformId::YouTube => palette.platform_youtube,
+        PlatformId::Kick => palette.platform_kick,
+        PlatformId::Trovo => palette.platform_trovo,
     }
 }
 

@@ -2249,6 +2249,7 @@ dependencies = [
  "forge-events",
  "forge-obs",
  "forge-platform-core",
+ "forge-platform-kick",
  "forge-platform-trovo",
  "forge-platform-twitch",
  "forge-platform-youtube",

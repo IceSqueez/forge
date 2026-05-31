@@ -291,6 +291,9 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
     if let Err(e) = forge_platform_trovo::register_trovo_triggers(&mut trigger_reg) {
         tracing::warn!("trovo trigger descriptor registration failed: {e}");
     }
+    if let Err(e) = forge_platform_kick::register_kick_triggers(&mut trigger_reg) {
+        tracing::warn!("kick trigger descriptor registration failed: {e}");
+    }
     let trigger_reg = Arc::new(trigger_reg);
     let trigger_instance_repo = dp.trigger_instance_repo();
     for descriptor in trigger_reg.all() {

@@ -29,6 +29,7 @@ forge-obs             = { path = "../forge-obs" }
 forge-platform-twitch = { path = "../forge-platform-twitch" }
 forge-platform-youtube = { path = "../forge-platform-youtube" }
 forge-platform-trovo  = { path = "../forge-platform-trovo" }
+forge-platform-kick   = { path = "../forge-platform-kick" }
 async-trait          = { workspace = true }
 reqwest             = { workspace = true }
 forge-audio           = { path = "../forge-audio" }

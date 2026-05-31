@@ -78,16 +78,17 @@ pub fn registry(id: &BuiltinId, palette: &ForgePalette) -> Option<(Color, Generi
             GenericPlatform {
                 name: "Kick",
                 letter: "K",
-                status_badge: "Coming in beta-3",
-                description: "Chat, channel events, subscribers — newer streaming platform.",
+                status_badge: "Read-only · community",
+                description: "Chat, subs, hosts — anonymous community WebSocket. Kick has no public chat WS API; this is a reverse-engineered implementation. Not affiliated with Kick.com.",
                 features: &[
-                    "Chat over Kick WebSocket (community implementation)",
-                    "Subscription and follow events",
-                    "Channel raid detection",
+                    "Live chat (read-only)",
+                    "Subscription and gifted-sub events",
+                    "Host and ban events",
+                    "Message-deleted and reply events",
                 ],
                 kind: PlatformKind::Platform,
                 connect_platform: None,
-                status: PlatformStatus::Coming,
+                status: PlatformStatus::Available,
             },
         )),
         "vtube" => Some((

@@ -9,8 +9,8 @@ pub mod subscriptions;
 pub mod triggers;
 
 pub use auth::{
-    TWITCH_BROADCASTER_SCOPES, TWITCH_DEVICE_ENDPOINT, TWITCH_TOKEN_ENDPOINT, TwitchAuthBundle,
-    TwitchAuthFlow, TwitchDeviceCode, UserInfo, client_id, fetch_user_info, twitch_auth_flow,
+    LoopbackCode, TWITCH_AUTHORIZE_ENDPOINT, TWITCH_BROADCASTER_SCOPES, TWITCH_TOKEN_ENDPOINT,
+    TwitchAuthBundle, TwitchAuthFlow, UserInfo, client_id, fetch_user_info, twitch_auth_flow,
 };
 pub use builtin::TwitchIntegrationBundle;
 pub use chat::parsers::parse as parse_chat_event;

@@ -27,9 +27,8 @@ use crate::runtime_view::RuntimeView;
 pub type TwitchFlowHandle = Arc<TokioMutex<TwitchAuthFlow>>;
 
 #[derive(Debug, Clone)]
-pub struct DcfCodeData {
-    pub user_code: String,
-    pub verification_uri: String,
+pub struct LoopbackData {
+    pub auth_url: String,
     pub expires_at: SystemTime,
 }
 
@@ -40,14 +39,14 @@ pub struct TwitchAuthOutcome {
     pub client_id: String,
 }
 
-pub async fn request_code(flow: TwitchFlowHandle) -> Result<DcfCodeData, String> {
+const AUTH_TIMEOUT: Duration = Duration::from_secs(300);
+
+pub async fn request_code(flow: TwitchFlowHandle) -> Result<LoopbackData, String> {
     let mut guard = flow.lock().await;
     let code = guard.start().await.map_err(|e| e.to_string())?;
-    let expires_at = SystemTime::now() + code.expires_in;
-    Ok(DcfCodeData {
-        user_code: code.user_code,
-        verification_uri: code.verification_uri,
-        expires_at,
+    Ok(LoopbackData {
+        auth_url: code.auth_url,
+        expires_at: SystemTime::now() + AUTH_TIMEOUT,
     })
 }
 
@@ -58,7 +57,7 @@ pub async fn wait_for_auth(
     let bundle = {
         let mut guard = flow.lock().await;
         guard
-            .wait_for_authorization()
+            .wait_for_authorization(AUTH_TIMEOUT)
             .await
             .map_err(|e| e.to_string())?
     };
@@ -95,19 +94,9 @@ pub fn update(
             *state = TwitchPanelState::Disconnected;
             Task::none()
         }
-        TwitchPanelMsg::CopyCode => {
-            if let TwitchPanelState::AwaitingAuthorization { user_code, .. } = &*state {
-                iced::clipboard::write::<Message>(user_code.clone())
-            } else {
-                Task::none()
-            }
-        }
-        TwitchPanelMsg::OpenVerificationUrl => {
-            if let TwitchPanelState::AwaitingAuthorization {
-                verification_uri, ..
-            } = &*state
-            {
-                let uri = verification_uri.clone();
+        TwitchPanelMsg::OpenAuthUrl => {
+            if let TwitchPanelState::AwaitingAuthorization { auth_url, .. } = &*state {
+                let uri = auth_url.clone();
                 Task::perform(
                     async move {
                         if let Err(e) = open::that(&uri) {
@@ -121,9 +110,9 @@ pub fn update(
             }
         }
         TwitchPanelMsg::DeviceCodeReceived(Ok(data)) => {
+            let auth_url = data.auth_url.clone();
             *state = TwitchPanelState::AwaitingAuthorization {
-                user_code: data.user_code,
-                verification_uri: data.verification_uri,
+                auth_url: data.auth_url,
                 expires_at: data.expires_at,
             };
             let Some(flow) = rt.twitch_flow.clone() else {
@@ -132,12 +121,21 @@ pub fn update(
             };
             let creds: Arc<dyn CredentialsRepo> =
                 Arc::clone(&rt.backend) as Arc<dyn CredentialsRepo>;
-            Task::perform(wait_for_auth(flow, creds), |r| {
+            let wait_task = Task::perform(wait_for_auth(flow, creds), |r| {
                 Message::TwitchPanel(TwitchPanelMsg::AuthCompleted(r))
-            })
+            });
+            let open_task = Task::perform(
+                async move {
+                    if let Err(e) = open::that(&auth_url) {
+                        tracing::warn!(error = %e, url = %auth_url, "open browser failed");
+                    }
+                },
+                |()| Message::Noop,
+            );
+            Task::batch([open_task, wait_task])
         }
         TwitchPanelMsg::DeviceCodeReceived(Err(e)) => {
-            tracing::warn!(error = %e, "twitch device code request failed");
+            tracing::warn!(error = %e, "twitch authorization start failed");
             *state = TwitchPanelState::Error(e);
             Task::none()
         }
@@ -194,8 +192,7 @@ pub enum TwitchPanelState {
     Disconnected,
     Requesting,
     AwaitingAuthorization {
-        user_code: String,
-        verification_uri: String,
+        auth_url: String,
         expires_at: SystemTime,
     },
     Authorizing,
@@ -207,9 +204,8 @@ pub enum TwitchPanelState {
 pub enum TwitchPanelMsg {
     StartConnect,
     Cancel,
-    CopyCode,
-    OpenVerificationUrl,
-    DeviceCodeReceived(Result<DcfCodeData, String>),
+    OpenAuthUrl,
+    DeviceCodeReceived(Result<LoopbackData, String>),
     AuthCompleted(Result<TwitchAuthOutcome, String>),
 }
 
@@ -274,10 +270,9 @@ pub fn twitch_disconnected_view<'a>(
         TwitchPanelState::Disconnected => disconnected_idle_card(palette),
         TwitchPanelState::Requesting => requesting_card(palette),
         TwitchPanelState::AwaitingAuthorization {
-            user_code,
-            verification_uri,
+            auth_url,
             expires_at,
-        } => awaiting_card(user_code, verification_uri, *expires_at, palette),
+        } => awaiting_card(auth_url, *expires_at, palette),
         TwitchPanelState::Authorizing => authorizing_card(palette),
         TwitchPanelState::Error(msg) => error_card(msg, palette),
         TwitchPanelState::MissingClientId => missing_client_id_card(palette),
@@ -404,15 +399,14 @@ fn requesting_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
 }
 
 fn awaiting_card<'a>(
-    user_code: &'a str,
-    verification_uri: &'a str,
+    auth_url: &'a str,
     expires_at: SystemTime,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let intro = flow_intro(palette);
 
-    let step1 = step_open_url(verification_uri, palette);
-    let step2 = step_enter_code(user_code, expires_at, palette);
+    let step1 = step_open_url(auth_url, palette);
+    let step2 = step_wait_for_browser(expires_at, palette);
     let polling = polling_banner(palette);
 
     let body = container(column![step1, step2, polling].spacing(spf(Spacing::Sm)))
@@ -455,7 +449,7 @@ fn step_open_url<'a>(uri: &'a str, palette: &'a ForgePalette) -> Element<'a, Mes
     .spacing(spf(Spacing::Xxs))
     .align_y(Alignment::Center);
     let open_btn = button(open_btn_content)
-        .on_press(Message::TwitchPanel(TwitchPanelMsg::OpenVerificationUrl))
+        .on_press(Message::TwitchPanel(TwitchPanelMsg::OpenAuthUrl))
         .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
         .style(move |_theme: &Theme, _status| button::Style {
             background: Some(Background::Color(Color::TRANSPARENT)),
@@ -481,59 +475,18 @@ fn step_open_url<'a>(uri: &'a str, palette: &'a ForgePalette) -> Element<'a, Mes
         .into()
 }
 
-fn step_enter_code<'a>(
-    user_code: &'a str,
+fn step_wait_for_browser<'a>(
     expires_at: SystemTime,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let circle = step_circle(2, true, palette);
-    let title = text("Enter this code on the page")
+    let title = text("Approve in your browser")
         .size(FONT_SM)
         .color(palette.text_primary);
-
-    let code_display = container(
-        text(user_code)
-            .size(28.0)
-            .color(palette.brand)
-            .font(font(FontRole::Monospace)),
-    )
-    .width(Length::Fill)
-    .padding([sp(Spacing::Sm), sp(Spacing::Lg)])
-    .center_x(Length::Fill)
-    .style(move |_theme: &Theme| container::Style {
-        background: Some(Background::Color(palette.shell)),
-        border: Border {
-            color: palette.brand,
-            width: 1.0,
-            radius: 9.0.into(),
-        },
-        ..container::Style::default()
-    });
-
-    let copy_btn_content = column![
-        tabler_icon(Icon::Copy, 18.0, palette.text_secondary),
-        text("Copy").size(FONT_XS).color(palette.text_secondary),
-    ]
-    .spacing(spf(Spacing::Xxs))
-    .align_x(Alignment::Center);
-    let copy_btn = button(copy_btn_content)
-        .on_press(Message::TwitchPanel(TwitchPanelMsg::CopyCode))
-        .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
-        .style(move |_theme: &Theme, _status| button::Style {
-            background: Some(Background::Color(Color::TRANSPARENT)),
-            text_color: palette.text_secondary,
-            border: Border {
-                color: palette.border_regular,
-                width: 0.5,
-                radius: 9.0.into(),
-            },
-            shadow: Shadow::default(),
-            snap: false,
-        });
-
-    let code_row = row![code_display, copy_btn]
-        .spacing(spf(Spacing::Xs))
-        .align_y(Alignment::Center);
+    let detail = text("forge is listening on a local port for the OAuth callback. The window will refresh once you approve.")
+        .size(FONT_XS)
+        .color(palette.text_muted)
+        .wrapping(iced::widget::text::Wrapping::Word);
 
     let remaining = expires_at
         .duration_since(SystemTime::now())
@@ -541,7 +494,9 @@ fn step_enter_code<'a>(
     let timer_label = format_mm_ss(remaining);
     let timer_row = row![
         tabler_icon(Icon::Clock, 13.0, palette.text_muted),
-        text("Expires in ").size(FONT_XS).color(palette.text_muted),
+        text("Times out in ")
+            .size(FONT_XS)
+            .color(palette.text_muted),
         text(timer_label)
             .size(FONT_XS)
             .color(palette.text_primary)
@@ -550,7 +505,7 @@ fn step_enter_code<'a>(
         button(
             row![
                 tabler_icon(Icon::Refresh, 12.0, palette.brand),
-                text("Get new code").size(FONT_XS).color(palette.brand),
+                text("Restart").size(FONT_XS).color(palette.brand),
             ]
             .spacing(spf(Spacing::Xxs))
             .align_y(Alignment::Center),
@@ -572,7 +527,7 @@ fn step_enter_code<'a>(
     .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
-    let content = column![title, code_row, timer_row].spacing(spf(Spacing::Xs));
+    let content = column![title, detail, timer_row].spacing(spf(Spacing::Xs));
 
     row![circle, content]
         .spacing(spf(Spacing::Sm))

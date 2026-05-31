@@ -1,14 +1,13 @@
 use std::time::Duration;
 
+use forge_platform_core::auth::LocalCallbackDriver;
 use forge_platform_core::{AuthFlow, PlatformError};
 use forge_types::OAuthToken;
-
+use serde::Deserialize;
 use twitch_api::HelixClient;
-use twitch_api::twitch_oauth2::{
-    AccessToken, ClientId, DeviceUserTokenBuilder, Scope, TwitchToken, UserToken,
-};
+use twitch_api::twitch_oauth2::{AccessToken, ClientId, TwitchToken, UserToken};
 
-pub const TWITCH_DEVICE_ENDPOINT: &str = "https://id.twitch.tv/oauth2/device";
+pub const TWITCH_AUTHORIZE_ENDPOINT: &str = "https://id.twitch.tv/oauth2/authorize";
 pub const TWITCH_TOKEN_ENDPOINT: &str = "https://id.twitch.tv/oauth2/token";
 
 pub const TWITCH_BROADCASTER_SCOPES: &[&str] = &[
@@ -21,10 +20,13 @@ pub const TWITCH_BROADCASTER_SCOPES: &[&str] = &[
     "user:write:chat",
 ];
 
+const CALLBACK_REDIRECT_PATH: &str = "/oauth/callback";
+
 pub fn twitch_auth_flow() -> AuthFlow {
-    AuthFlow::DeviceCode {
-        user_code_endpoint: TWITCH_DEVICE_ENDPOINT.to_owned(),
+    AuthFlow::LocalCallback {
+        authorize_url: TWITCH_AUTHORIZE_ENDPOINT.to_owned(),
         token_endpoint: TWITCH_TOKEN_ENDPOINT.to_owned(),
+        redirect_path: CALLBACK_REDIRECT_PATH.to_owned(),
         scopes: TWITCH_BROADCASTER_SCOPES
             .iter()
             .map(|s| (*s).to_owned())
@@ -39,17 +41,12 @@ pub struct UserInfo {
     pub display_name: String,
 }
 
-/// Public DCF code data returned to UI before polling.
+/// Returned by `TwitchAuthFlow::start`. The URL the UI opens in a browser.
 #[derive(Debug, Clone)]
-pub struct TwitchDeviceCode {
-    pub user_code: String,
-    pub verification_uri: String,
-    pub expires_in: Duration,
-    pub interval: Duration,
-    pub device_code: String,
+pub struct LoopbackCode {
+    pub auth_url: String,
 }
 
-/// Bundle returned from the polling loop once the user completes authorization.
 #[derive(Debug, Clone)]
 pub struct TwitchAuthBundle {
     pub access_token: OAuthToken,
@@ -59,74 +56,162 @@ pub struct TwitchAuthBundle {
     pub expires_at: Option<std::time::SystemTime>,
 }
 
-fn build_scopes() -> Vec<Scope> {
-    TWITCH_BROADCASTER_SCOPES
-        .iter()
-        .map(|s| Scope::parse(*s))
-        .collect()
-}
-
-/// Owns a `DeviceUserTokenBuilder` mid-flow and an HTTP client for both the
-/// token endpoint and the subsequent Helix lookup.
 pub struct TwitchAuthFlow {
-    builder: DeviceUserTokenBuilder,
-    client: reqwest::Client,
-    helix: HelixClient<'static, reqwest::Client>,
     client_id: String,
+    http: reqwest::Client,
+    helix: HelixClient<'static, reqwest::Client>,
+    authorize_endpoint: String,
+    token_endpoint: String,
+    pending: Option<LocalCallbackDriver>,
 }
 
 impl TwitchAuthFlow {
     pub fn new(client_id: String) -> Self {
-        let builder = DeviceUserTokenBuilder::new(ClientId::new(client_id.clone()), build_scopes());
-        let client = reqwest::Client::new();
-        let helix = HelixClient::with_client(client.clone());
-        Self {
-            builder,
-            client,
-            helix,
+        Self::with_endpoints(
             client_id,
+            TWITCH_AUTHORIZE_ENDPOINT.to_owned(),
+            TWITCH_TOKEN_ENDPOINT.to_owned(),
+        )
+    }
+
+    pub(crate) fn with_endpoints(
+        client_id: String,
+        authorize_endpoint: String,
+        token_endpoint: String,
+    ) -> Self {
+        let http = reqwest::Client::new();
+        let helix = HelixClient::with_client(http.clone());
+        Self {
+            client_id,
+            http,
+            helix,
+            authorize_endpoint,
+            token_endpoint,
+            pending: None,
         }
     }
 
-    /// Asks Twitch for a device code. Returns the user-facing code + URL.
-    pub async fn start(&mut self) -> Result<TwitchDeviceCode, PlatformError> {
-        let resp = self
-            .builder
-            .start(&self.client)
-            .await
-            .map_err(|e| PlatformError::Auth {
-                reason: format!("device code request failed: {e}"),
-            })?;
-        Ok(TwitchDeviceCode {
-            user_code: resp.user_code.clone(),
-            verification_uri: resp.verification_uri.clone(),
-            expires_in: Duration::from_secs(resp.expires_in),
-            interval: Duration::from_secs(resp.interval),
-            device_code: resp.device_code.clone(),
-        })
+    /// Binds a loopback listener, generates PKCE + state, stores the driver, and
+    /// returns the URL the caller should open in the user's browser. Subsequent
+    /// `wait_for_authorization` will consume the stored driver.
+    pub async fn start(&mut self) -> Result<LoopbackCode, PlatformError> {
+        let driver = LocalCallbackDriver::bind().await?;
+        let auth_url = build_authorize_url(&self.authorize_endpoint, &self.client_id, &driver)?;
+        self.pending = Some(driver);
+        Ok(LoopbackCode { auth_url })
     }
 
-    /// Polls the token endpoint until the user authorizes, then resolves the
-    /// signed-in user's Helix profile. Returns the full auth bundle.
-    pub async fn wait_for_authorization(&mut self) -> Result<TwitchAuthBundle, PlatformError> {
-        let user_token = self
-            .builder
-            .wait_for_code(&self.client, tokio::time::sleep)
+    /// Consumes the pending driver, waits for the loopback callback, exchanges
+    /// the code for a Twitch access token (PKCE — no `client_secret`), validates
+    /// against Helix, and resolves the broadcaster's profile.
+    pub async fn wait_for_authorization(
+        &mut self,
+        timeout: Duration,
+    ) -> Result<TwitchAuthBundle, PlatformError> {
+        let driver = self.pending.take().ok_or_else(|| PlatformError::Auth {
+            reason: "wait_for_authorization called before start".into(),
+        })?;
+        let redirect_uri = driver.redirect_uri().to_owned();
+        let code_verifier = driver.code_verifier().to_owned();
+        let callback = driver.await_callback(timeout).await?;
+
+        let token_response = exchange_code(
+            &self.http,
+            &self.token_endpoint,
+            &self.client_id,
+            &callback.code,
+            &redirect_uri,
+            &code_verifier,
+        )
+        .await?;
+
+        let access = AccessToken::new(token_response.access_token.clone());
+        let user_token = UserToken::from_existing(&self.helix, access, None, None)
             .await
             .map_err(|e| PlatformError::Auth {
-                reason: format!("device code polling failed: {e}"),
+                reason: format!("token validate failed: {e}"),
             })?;
+
+        if user_token.client_id() != &ClientId::new(self.client_id.clone()) {
+            return Err(PlatformError::Auth {
+                reason: "token client_id does not match configured client_id".into(),
+            });
+        }
 
         let user_info = fetch_user_info_from_token(&user_token, &self.helix).await?;
         let expires_at = expires_at_from_token(&user_token);
 
         Ok(TwitchAuthBundle {
-            access_token: OAuthToken::new(user_token.access_token.secret().to_owned()),
+            access_token: OAuthToken::new(token_response.access_token),
             user_info,
             client_id: self.client_id.clone(),
             expires_at,
         })
     }
+}
+
+fn build_authorize_url(
+    endpoint: &str,
+    client_id: &str,
+    driver: &LocalCallbackDriver,
+) -> Result<String, PlatformError> {
+    let scope_string = TWITCH_BROADCASTER_SCOPES.join(" ");
+    let url = reqwest::Url::parse_with_params(
+        endpoint,
+        &[
+            ("response_type", "code"),
+            ("client_id", client_id),
+            ("redirect_uri", driver.redirect_uri()),
+            ("scope", scope_string.as_str()),
+            ("state", driver.state()),
+            ("code_challenge", driver.code_challenge()),
+            ("code_challenge_method", "S256"),
+        ],
+    )
+    .map_err(|e| PlatformError::Auth {
+        reason: format!("invalid authorize endpoint URL: {e}"),
+    })?;
+    Ok(url.into())
+}
+
+#[derive(Debug, Deserialize)]
+struct TokenResponse {
+    access_token: String,
+}
+
+async fn exchange_code(
+    http: &reqwest::Client,
+    token_endpoint: &str,
+    client_id: &str,
+    code: &str,
+    redirect_uri: &str,
+    code_verifier: &str,
+) -> Result<TokenResponse, PlatformError> {
+    let resp = http
+        .post(token_endpoint)
+        .form(&[
+            ("client_id", client_id),
+            ("code", code),
+            ("grant_type", "authorization_code"),
+            ("redirect_uri", redirect_uri),
+            ("code_verifier", code_verifier),
+        ])
+        .send()
+        .await
+        .map_err(|e| PlatformError::Network {
+            reason: e.to_string(),
+        })?;
+
+    let status = resp.status().as_u16();
+    if status != 200 {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(PlatformError::Http { status, body });
+    }
+    resp.json::<TokenResponse>()
+        .await
+        .map_err(|e| PlatformError::Network {
+            reason: format!("token response parse failed: {e}"),
+        })
 }
 
 fn expires_at_from_token(token: &UserToken) -> Option<std::time::SystemTime> {
@@ -156,9 +241,9 @@ async fn fetch_user_info_from_token(
     })
 }
 
-/// Fetches the authorized user's Twitch ID + login via Helix GET /users using
-/// a stored access token. Used by the chat-send bridge to resolve the
-/// broadcaster ID on demand.
+/// Fetches the authorized user's Twitch profile via Helix GET /users using a
+/// stored access token. Used by the chat-send bridge to resolve the broadcaster
+/// ID on demand.
 pub async fn fetch_user_info(
     token: &OAuthToken,
     client_id: &str,
@@ -204,20 +289,25 @@ fn resolve_client_id(
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use serde_json::json;
+    use wiremock::matchers::{body_string_contains, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[test]
-    fn twitch_auth_flow_yields_device_code_variant() {
+    fn twitch_auth_flow_yields_local_callback_variant() {
         let flow = twitch_auth_flow();
-        let AuthFlow::DeviceCode {
-            user_code_endpoint,
+        let AuthFlow::LocalCallback {
+            authorize_url,
             token_endpoint,
+            redirect_path,
             scopes,
         } = flow
         else {
-            unreachable!("twitch_auth_flow must return DeviceCode variant");
+            unreachable!("twitch_auth_flow must return LocalCallback variant");
         };
-        assert_eq!(user_code_endpoint, TWITCH_DEVICE_ENDPOINT);
+        assert_eq!(authorize_url, TWITCH_AUTHORIZE_ENDPOINT);
         assert_eq!(token_endpoint, TWITCH_TOKEN_ENDPOINT);
+        assert_eq!(redirect_path, CALLBACK_REDIRECT_PATH);
         assert_eq!(
             scopes,
             TWITCH_BROADCASTER_SCOPES
@@ -266,8 +356,77 @@ mod tests {
         assert_eq!(resolve_client_id(None, Some("")), None);
     }
 
-    #[test]
-    fn build_scopes_returns_seven_entries() {
-        assert_eq!(build_scopes().len(), TWITCH_BROADCASTER_SCOPES.len());
+    #[tokio::test]
+    async fn authorize_url_contains_required_pkce_params() {
+        let driver = LocalCallbackDriver::bind().await.unwrap();
+        let url = build_authorize_url(TWITCH_AUTHORIZE_ENDPOINT, "test_client", &driver).unwrap();
+        assert!(url.starts_with(TWITCH_AUTHORIZE_ENDPOINT));
+        assert!(url.contains("response_type=code"));
+        assert!(url.contains("client_id=test_client"));
+        assert!(url.contains("code_challenge_method=S256"));
+        assert!(url.contains(&format!("code_challenge={}", driver.code_challenge())));
+        assert!(url.contains(&format!("state={}", driver.state())));
+        assert!(url.contains("scope="));
+        // No client_secret in URL.
+        assert!(!url.to_lowercase().contains("client_secret"));
+    }
+
+    #[tokio::test]
+    async fn exchange_code_sends_pkce_form_and_parses_token() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .and(body_string_contains("grant_type=authorization_code"))
+            .and(body_string_contains("code_verifier=verifier123"))
+            .and(body_string_contains("code=auth_code_xyz"))
+            // Confirm no client_secret in body — public client flow.
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "access_token": "twitch_access_abc",
+                "token_type": "bearer",
+                "scope": ["chat:read"],
+                "expires_in": 14400,
+            })))
+            .mount(&server)
+            .await;
+
+        let http = reqwest::Client::new();
+        let token_url = format!("{}/token", server.uri());
+        let resp = exchange_code(
+            &http,
+            &token_url,
+            "test_client",
+            "auth_code_xyz",
+            "http://127.0.0.1:0/oauth/callback",
+            "verifier123",
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.access_token, "twitch_access_abc");
+    }
+
+    #[tokio::test]
+    async fn exchange_code_propagates_http_error_on_4xx() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(
+                ResponseTemplate::new(400).set_body_json(json!({"error": "invalid_grant"})),
+            )
+            .mount(&server)
+            .await;
+
+        let http = reqwest::Client::new();
+        let token_url = format!("{}/token", server.uri());
+        let err = exchange_code(
+            &http,
+            &token_url,
+            "test_client",
+            "bad_code",
+            "http://127.0.0.1:0/oauth/callback",
+            "verifier",
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(err, PlatformError::Http { status: 400, .. }));
     }
 }

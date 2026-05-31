@@ -12,6 +12,7 @@ workspace = true
 [dev-dependencies]
 forge-storage-sqlite = { path = "../forge-storage-sqlite" }
 tracing-subscriber   = { workspace = true }
+wiremock             = "0.6"
 
 [dependencies]
 forge-types          = { path = "../forge-types" }

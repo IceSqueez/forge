@@ -142,6 +142,8 @@ jobs:
         env:
           # Compile-time Twitch client_id from repo secret. Empty if secret unset → app falls back to runtime env var or shows UX error.
           FORGE_TWITCH_CLIENT_ID: ${{ secrets.FORGE_TWITCH_CLIENT_ID }}
+          FORGE_YOUTUBE_CLIENT_ID: ${{ secrets.FORGE_YOUTUBE_CLIENT_ID }}
+          FORGE_YOUTUBE_CLIENT_SECRET: ${{ secrets.FORGE_YOUTUBE_CLIENT_SECRET }}
         run: |
           # Actually do builds and make zips and whatnot
           dist build ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json

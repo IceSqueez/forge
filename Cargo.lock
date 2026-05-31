@@ -2357,6 +2357,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-platform-kick"
+version = "0.1.0-beta.2"
+dependencies = [
+ "async-trait",
+ "forge-events",
+ "forge-platform-core",
+ "forge-registry",
+ "forge-types",
+ "futures-core",
+ "futures-util",
+ "rand 0.10.1",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-stream",
+ "tokio-tungstenite",
+ "tracing",
+ "wiremock",
+]
+
+[[package]]
 name = "forge-platform-trovo"
 version = "0.1.0-beta.2"
 dependencies = [

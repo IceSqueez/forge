@@ -230,7 +230,7 @@ pub fn obs_disconnected_view<'a>(
     let tip = obs_tip_card(palette);
 
     let page_header = crate::page_chrome::simple_page_header(
-        &[("Builtin", false), ("OBS Studio", true)],
+        &[("Stream apps", false), ("OBS Studio", true)],
         palette,
     );
 

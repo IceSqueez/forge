@@ -277,10 +277,17 @@ pub fn platform_generic_view<'a>(
 
     body_parts.push(footer.into());
 
+    let parent_label = match info.kind {
+        PlatformKind::Platform => "Platforms",
+        PlatformKind::StreamApp => "Stream apps",
+    };
+
     let body = column(body_parts).spacing(spf(Spacing::Sm));
 
-    let page_header =
-        crate::page_chrome::simple_page_header(&[("Builtin", false), (info.name, true)], palette);
+    let page_header = crate::page_chrome::simple_page_header(
+        &[(parent_label, false), (info.name, true)],
+        palette,
+    );
 
     let body_container = container(scrollable(body).height(Length::Fill))
         .width(Length::Fill)

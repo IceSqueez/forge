@@ -724,7 +724,7 @@ pub fn view<'a>(
     let dot_color = platform_dot_color(state.platform, palette);
 
     let page_header =
-        crate::page_chrome::simple_page_header(&[("Builtin", false), (name, true)], palette);
+        crate::page_chrome::simple_page_header(&[("Platforms", false), (name, true)], palette);
 
     let header_card = platform_header_card(name, dot_color, palette);
 

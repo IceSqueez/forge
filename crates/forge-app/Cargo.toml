@@ -28,7 +28,9 @@ forge-platform-core   = { path = "../forge-platform-core" }
 forge-obs             = { path = "../forge-obs" }
 forge-platform-twitch = { path = "../forge-platform-twitch" }
 forge-platform-youtube = { path = "../forge-platform-youtube" }
+forge-platform-trovo  = { path = "../forge-platform-trovo" }
 async-trait          = { workspace = true }
+reqwest             = { workspace = true }
 forge-audio           = { path = "../forge-audio" }
 forge-server          = { path = "../forge-server" }
 forge-soundboard      = { path = "../forge-soundboard" }

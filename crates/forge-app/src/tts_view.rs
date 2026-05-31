@@ -91,7 +91,10 @@ pub(crate) fn tts_section_view<'a>(
         TtsSection::Filters => "Filters",
         TtsSection::Triggers => "Triggers",
     };
-    let page_header = simple_page_header(&[("TTS", false), (section_label, true)], palette);
+    let page_header = simple_page_header(
+        &[("Builtin", false), ("TTS", false), (section_label, true)],
+        palette,
+    );
 
     column![page_header, tab_bar, content]
         .spacing(0)

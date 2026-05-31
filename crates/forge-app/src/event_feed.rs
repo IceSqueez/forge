@@ -789,7 +789,7 @@ pub fn event_feed_view<'a>(
     });
 
     let page_header = crate::page_chrome::page_header_with_actions(
-        &[("Event Feed", true)],
+        &[("Automation", false), ("Event Feed", true)],
         Some(right_side.into()),
         palette,
     );

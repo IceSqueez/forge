@@ -745,7 +745,7 @@ pub fn soundboard_view<'a>(
     });
 
     let page_header = crate::page_chrome::page_header_with_actions(
-        &[("Soundboard", true)],
+        &[("Builtin", false), ("Soundboard", true)],
         Some(add_btn.into()),
         palette,
     );

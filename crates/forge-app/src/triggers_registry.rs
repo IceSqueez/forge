@@ -604,6 +604,8 @@ fn registry_header<'a>(
     let breadcrumb_row = row![
         tabler_icon::<Message>(Icon::Home, 13.0, p.text_faint),
         tabler_icon::<Message>(Icon::ChevronRight, 11.0, p.text_faint),
+        text("Automation").size(FONT_SM).color(p.text_muted),
+        tabler_icon::<Message>(Icon::ChevronRight, 11.0, p.text_faint),
         text("Triggers").size(FONT_SM).color(p.text_primary),
     ]
     .spacing(spf(Spacing::Xs))

@@ -12,6 +12,7 @@ members = [
   "crates/forge-platform-twitch",
   "crates/forge-platform-youtube",
   "crates/forge-platform-trovo",
+  "crates/forge-platform-kick",
   "crates/forge-obs",
   "crates/forge-server",
   "crates/forge-audio",

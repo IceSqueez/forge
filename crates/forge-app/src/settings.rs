@@ -438,7 +438,20 @@ pub(crate) fn settings_view<'a>(
 pub(crate) fn handle_message(app: &mut App, sub: SettingsMsg) -> Task<Message> {
     match sub {
         SettingsMsg::ReconnectPlatform(platform) => {
-            Task::done(Message::Navigate(Screen::LocalCallbackFlow(platform)))
+            let builtin = match platform {
+                forge_types::PlatformId::Twitch => "twitch",
+                forge_types::PlatformId::YouTube => "youtube",
+                forge_types::PlatformId::Trovo => "trovo",
+                forge_types::PlatformId::Kick => "kick",
+            };
+            Task::batch([
+                Task::done(Message::Navigate(Screen::BuiltinDetail(
+                    forge_platform_core::BuiltinId::new(builtin),
+                ))),
+                Task::done(Message::LocalCallbackFlow(
+                    crate::local_callback_flow::LocalCallbackFlowMsg::ConnectPlatform(platform),
+                )),
+            ])
         }
         SettingsMsg::PlatformReconnectResult(Ok(())) => Task::none(),
         SettingsMsg::PlatformReconnectResult(Err(e)) => {

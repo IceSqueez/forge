@@ -8,7 +8,6 @@ use forge_widgets::tokens::{FONT_SM, FONT_XS, FontRole, Spacing, font, sp, spf};
 use iced::widget::{button, column, container, row, text};
 use iced::{Alignment, Background, Border, Color, Element, Length, Shadow, Task, Theme};
 
-use crate::Screen;
 use crate::message::Message;
 use crate::runtime_view::RuntimeView;
 
@@ -28,6 +27,8 @@ pub struct LocalCallbackData {
 
 #[derive(Debug, Clone)]
 pub enum LocalCallbackFlowMsg {
+    /// Sets platform + starts OAuth in one step (used by BuiltinDetail Connect button).
+    ConnectPlatform(PlatformId),
     ConnectPressed,
     StartResult(Result<LocalCallbackData, String>),
     WaitResult(Result<(), String>),
@@ -61,6 +62,15 @@ pub fn update(
     msg: LocalCallbackFlowMsg,
 ) -> Task<Message> {
     match msg {
+        LocalCallbackFlowMsg::ConnectPlatform(p) => {
+            *state = LocalCallbackFlowState {
+                platform: p,
+                phase: LocalCallbackFlowPhase::Idle,
+                auth_url: None,
+                error: None,
+            };
+            update(state, rt, LocalCallbackFlowMsg::ConnectPressed)
+        }
         LocalCallbackFlowMsg::ConnectPressed => {
             state.phase = LocalCallbackFlowPhase::Starting;
             let platform = state.platform;
@@ -176,7 +186,13 @@ pub fn update(
             state.error = None;
             Task::none()
         }
-        LocalCallbackFlowMsg::CancelPressed => Task::done(Message::Navigate(Screen::Platforms)),
+        LocalCallbackFlowMsg::CancelPressed => {
+            // Reset to Idle so BuiltinDetail flips back to the platform_generic Connect view.
+            state.phase = LocalCallbackFlowPhase::Idle;
+            state.auth_url = None;
+            state.error = None;
+            Task::none()
+        }
         LocalCallbackFlowMsg::OpenAuthUrl => {
             if let Some(url) = state.auth_url.clone() {
                 Task::perform(
@@ -707,10 +723,8 @@ pub fn view<'a>(
     let name = platform_display_name(state.platform);
     let dot_color = platform_dot_color(state.platform, palette);
 
-    let page_header = crate::page_chrome::simple_page_header(
-        &[("Platforms", false), (name, false), ("Connect", true)],
-        palette,
-    );
+    let page_header =
+        crate::page_chrome::simple_page_header(&[("Builtin", false), (name, true)], palette);
 
     let header_card = platform_header_card(name, dot_color, palette);
 

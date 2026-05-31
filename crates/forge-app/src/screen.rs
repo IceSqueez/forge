@@ -1,5 +1,5 @@
 use forge_platform_core::BuiltinId;
-use forge_types::{ActionId, PlatformId};
+use forge_types::ActionId;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SettingsSection {
@@ -36,7 +36,6 @@ pub enum Screen {
     Queues,
     TriggersRegistry,
     Platforms,
-    LocalCallbackFlow(PlatformId),
     StreamApps,
     Builtin,
     BuiltinDetail(BuiltinId),

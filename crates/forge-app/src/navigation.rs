@@ -33,7 +33,7 @@ pub(crate) fn breadcrumb_icon_for(screen: &Screen) -> Icon {
         Screen::Actions | Screen::ActionEditor(_) | Screen::Queues | Screen::TriggersRegistry => {
             Icon::Bolt
         }
-        Screen::Platforms | Screen::LocalCallbackFlow(_) => Icon::Broadcast,
+        Screen::Platforms => Icon::Broadcast,
         Screen::StreamApps | Screen::Builtin | Screen::BuiltinDetail(_) => Icon::LayoutGrid,
         Screen::LiveChat => Icon::MessageCircle,
         Screen::EventFeed => Icon::Activity,
@@ -54,7 +54,6 @@ pub(crate) fn screen_label(screen: &Screen) -> &'static str {
         Screen::Queues => "Queues",
         Screen::TriggersRegistry => "Triggers",
         Screen::Platforms => "Platforms",
-        Screen::LocalCallbackFlow(_) => "Connect",
         Screen::StreamApps => "Stream apps",
         Screen::Builtin => "Builtin",
         Screen::BuiltinDetail(_) => "Integration",
@@ -226,11 +225,6 @@ pub(crate) fn handle_navigate(app: &mut App, screen: Screen) -> Task<Message> {
     } else {
         None
     };
-    let dcf_platform = if let Screen::LocalCallbackFlow(p) = &screen {
-        Some(*p)
-    } else {
-        None
-    };
     app.screen = screen;
     if is_actions {
         Task::done(Message::Actions(ActionsMsg::LoadRequested))
@@ -259,12 +253,6 @@ pub(crate) fn handle_navigate(app: &mut App, screen: Screen) -> Task<Message> {
         Task::done(Message::SettingsWebSocket(
             SettingsWebSocketMsg::LoadRequested,
         ))
-    } else if let Some(p) = dcf_platform {
-        app.ui.local_callback_flow = crate::local_callback_flow::LocalCallbackFlowState {
-            platform: p,
-            ..crate::local_callback_flow::LocalCallbackFlowState::default()
-        };
-        Task::none()
     } else if let Some(id) = editor_id {
         let needs_load = app
             .ui

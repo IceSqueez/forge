@@ -10,7 +10,7 @@ use iced::{
 };
 
 use crate::Message;
-use crate::screen::Screen;
+use crate::local_callback_flow::LocalCallbackFlowMsg;
 
 pub struct GenericPlatform {
     pub name: &'static str,
@@ -19,7 +19,7 @@ pub struct GenericPlatform {
     pub description: &'static str,
     pub features: &'static [&'static str],
     pub kind: PlatformKind,
-    pub connect_screen: Option<Screen>,
+    pub connect_platform: Option<PlatformId>,
     pub status: PlatformStatus,
 }
 
@@ -51,7 +51,7 @@ pub fn registry(id: &BuiltinId, palette: &ForgePalette) -> Option<(Color, Generi
                     "Subscriber milestone triggers",
                 ],
                 kind: PlatformKind::Platform,
-                connect_screen: Some(Screen::LocalCallbackFlow(PlatformId::YouTube)),
+                connect_platform: Some(PlatformId::YouTube),
                 status: PlatformStatus::Available,
             },
         )),
@@ -69,7 +69,7 @@ pub fn registry(id: &BuiltinId, palette: &ForgePalette) -> Option<(Color, Generi
                     "Send chat from forge into the broadcaster channel",
                 ],
                 kind: PlatformKind::Platform,
-                connect_screen: Some(Screen::LocalCallbackFlow(PlatformId::Trovo)),
+                connect_platform: Some(PlatformId::Trovo),
                 status: PlatformStatus::Available,
             },
         )),
@@ -86,7 +86,7 @@ pub fn registry(id: &BuiltinId, palette: &ForgePalette) -> Option<(Color, Generi
                     "Channel raid detection",
                 ],
                 kind: PlatformKind::Platform,
-                connect_screen: None,
+                connect_platform: None,
                 status: PlatformStatus::Coming,
             },
         )),
@@ -103,7 +103,7 @@ pub fn registry(id: &BuiltinId, palette: &ForgePalette) -> Option<(Color, Generi
                     "Spawn item drops on bits/subs",
                 ],
                 kind: PlatformKind::StreamApp,
-                connect_screen: None,
+                connect_platform: None,
                 status: PlatformStatus::Coming,
             },
         )),
@@ -242,7 +242,7 @@ pub fn platform_generic_view<'a>(
 
     let mut body_parts: Vec<Element<'_, Message>> = vec![hero_card.into(), features_col.into()];
 
-    if let Some(target) = info.connect_screen {
+    if let Some(target_platform) = info.connect_platform {
         let connect_btn = button(
             row![
                 tabler_icon(Icon::Lock, 14.0, p.shell),
@@ -251,7 +251,9 @@ pub fn platform_generic_view<'a>(
             .spacing(spf(Spacing::Xs))
             .align_y(Alignment::Center),
         )
-        .on_press(Message::Navigate(target))
+        .on_press(Message::LocalCallbackFlow(
+            LocalCallbackFlowMsg::ConnectPlatform(target_platform),
+        ))
         .padding([sp(Spacing::Xs), sp(Spacing::Md)])
         .style(move |_: &iced::Theme, _status| button::Style {
             background: Some(Background::Color(p.brand)),

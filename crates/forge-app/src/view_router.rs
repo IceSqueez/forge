@@ -69,7 +69,21 @@ pub fn view(app: &App) -> Element<'_, Message> {
             } else if id.as_str() == "obs" && app.rt.obs_client.is_none() {
                 crate::obs_panel::obs_disconnected_view(&app.ui.obs_panel, palette)
             } else if let Some((color, info)) = crate::platform_generic::registry(id, palette) {
-                crate::platform_generic::platform_generic_view(color, info, palette)
+                // When the OAuth flow for THIS platform is in-progress, render its phase
+                // cards inline instead of the static "Connect" placeholder.
+                let oauth_for_this = info
+                    .connect_platform
+                    .filter(|p| {
+                        *p == app.ui.local_callback_flow.platform
+                            && app.ui.local_callback_flow.phase
+                                != crate::local_callback_flow::LocalCallbackFlowPhase::Idle
+                    })
+                    .is_some();
+                if oauth_for_this {
+                    crate::local_callback_flow::view(&app.ui.local_callback_flow, palette)
+                } else {
+                    crate::platform_generic::platform_generic_view(color, info, palette)
+                }
             } else if let Some(state) = app.ui.builtin_detail.as_ref() {
                 let inner = builtin_detail_view(state, palette);
                 if id.as_str() == "twitch" && app.rt.twitch_reauth_required {
@@ -101,9 +115,6 @@ pub fn view(app: &App) -> Element<'_, Message> {
         }
         Screen::Soundboard => soundboard_view(&app.ui.soundboard, palette),
         Screen::Tts(section) => crate::tts_view::tts_section_view(app, section, palette),
-        Screen::LocalCallbackFlow(_) => {
-            crate::local_callback_flow::view(&app.ui.local_callback_flow, palette)
-        }
         other => navigation::coming_soon_view(format!("{other:?}"), palette),
     };
 
@@ -125,7 +136,6 @@ pub fn view(app: &App) -> Element<'_, Message> {
             | Screen::ScriptEditor
             | Screen::Soundboard
             | Screen::Tts(_)
-            | Screen::LocalCallbackFlow(_)
     );
     let content: Element<'_, Message> = if screen_uses_own_header {
         iced::widget::column![screen_content]

@@ -10,7 +10,7 @@ All contributors and maintainers are expected to follow the [Contributor Covenan
 
 ### Prerequisites
 
-- Rust 1.95.0 stable toolchain (managed via `rust-toolchain.toml` — rustup installs it automatically when you build).
+- Rust 1.96.0 stable toolchain (managed via `rust-toolchain.toml` — rustup installs it automatically when you build).
 - Standard build tools (gcc/clang, pkg-config).
 - Linux/Wayland (Hyprland tested), Windows 10+, or macOS 12+.
 

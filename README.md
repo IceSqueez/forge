@@ -3,7 +3,7 @@
 Cross-platform desktop tool for stream automation and multi-engine TTS — built in Rust.
 
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](./LICENSE)
-[![Rust 1.95.0+](https://img.shields.io/badge/rust-1.95.0%2B-orange)](https://www.rust-lang.org/)
+[![Rust 1.96.0+](https://img.shields.io/badge/rust-1.96.0%2B-orange)](https://www.rust-lang.org/)
 [![Platforms](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-green)](#installing-releases)
 
 [![Latest Release](https://img.shields.io/github/v/release/IceSqueez/forge?include_prereleases&logo=github&label=Latest&cacheSeconds=600)](https://github.com/IceSqueez/forge/releases)
@@ -76,7 +76,7 @@ Forge is an open-source desktop application that automates stream workflows acro
 
 ### Prerequisites
 
-- **Rust 1.95.0 or later** — [install here](https://rustup.rs/).
+- **Rust 1.96.0 or later** — [install here](https://rustup.rs/).
 - **Linux:** GCC, pkg-config. On Ubuntu/Debian: `sudo apt-get install build-essential pkg-config libssl-dev`.
 - **Windows:** Visual Studio Build Tools or MSVC.
 - **macOS:** Xcode Command Line Tools (`xcode-select --install`).

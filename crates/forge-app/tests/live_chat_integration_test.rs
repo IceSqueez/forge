@@ -56,6 +56,7 @@ fn test_app() -> App {
             chat_send_bridge: None,
             twitch_flow: None,
             youtube_flow: None,
+            trovo_flow: None,
             twitch_login: None,
             twitch_token_expires: None,
             twitch_reauth_required: false,

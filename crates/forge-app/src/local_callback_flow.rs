@@ -64,7 +64,7 @@ pub fn update(
         LocalCallbackFlowMsg::ConnectPressed => {
             state.phase = LocalCallbackFlowPhase::Starting;
             let platform = state.platform;
-            let flow_handle = match platform {
+            match platform {
                 PlatformId::YouTube => {
                     let Some((cid, csec)) = forge_platform_youtube::client_credentials() else {
                         state.phase = LocalCallbackFlowPhase::Failed;
@@ -76,9 +76,68 @@ pub fn update(
                         forge_platform_youtube::GoogleAuthFlow::new(cid, csec),
                     )));
                     rt.youtube_flow = Some(Arc::clone(&handle));
-                    handle
+                    Task::perform(async move { start_youtube_oauth(handle).await }, |r| {
+                        Message::LocalCallbackFlow(LocalCallbackFlowMsg::StartResult(r))
+                    })
                 }
-                PlatformId::Twitch | PlatformId::Kick | PlatformId::Trovo => {
+                PlatformId::Trovo => {
+                    let Some((cid, csec)) = forge_platform_trovo::client_credentials() else {
+                        state.phase = LocalCallbackFlowPhase::Failed;
+                        state.error =
+                            Some("Trovo OAuth client credentials are not configured".to_owned());
+                        return Task::none();
+                    };
+                    let handle = Arc::new(tokio::sync::Mutex::new(Some(
+                        forge_platform_trovo::TrovoAuthFlow::new(cid, csec),
+                    )));
+                    rt.trovo_flow = Some(Arc::clone(&handle));
+                    Task::perform(async move { start_trovo_oauth(handle).await }, |r| {
+                        Message::LocalCallbackFlow(LocalCallbackFlowMsg::StartResult(r))
+                    })
+                }
+                PlatformId::Twitch | PlatformId::Kick => {
+                    state.phase = LocalCallbackFlowPhase::Failed;
+                    state.error = Some(format!(
+                        "{} is not wired through LocalCallbackFlow",
+                        platform_display_name(platform)
+                    ));
+                    Task::none()
+                }
+            }
+        }
+        LocalCallbackFlowMsg::StartResult(Ok(data)) => {
+            let auth_url = data.auth_url.clone();
+            state.auth_url = Some(data.auth_url);
+            state.phase = LocalCallbackFlowPhase::Waiting;
+            let platform = state.platform;
+            let credentials_repo: Arc<dyn CredentialsRepo> =
+                Arc::clone(&rt.backend) as Arc<dyn CredentialsRepo>;
+            let wait_task = match platform {
+                PlatformId::YouTube => {
+                    let Some(flow_handle) = rt.youtube_flow.clone() else {
+                        state.phase = LocalCallbackFlowPhase::Failed;
+                        state.error = Some("no active YouTube flow handle".to_owned());
+                        return Task::none();
+                    };
+                    Task::perform(
+                        async move {
+                            wait_for_youtube_authorization(flow_handle, credentials_repo).await
+                        },
+                        |r| Message::LocalCallbackFlow(LocalCallbackFlowMsg::WaitResult(r)),
+                    )
+                }
+                PlatformId::Trovo => {
+                    let Some(flow_handle) = rt.trovo_flow.clone() else {
+                        state.phase = LocalCallbackFlowPhase::Failed;
+                        state.error = Some("no active Trovo flow handle".to_owned());
+                        return Task::none();
+                    };
+                    Task::perform(
+                        async move { wait_for_trovo_authorization(flow_handle, credentials_repo).await },
+                        |r| Message::LocalCallbackFlow(LocalCallbackFlowMsg::WaitResult(r)),
+                    )
+                }
+                PlatformId::Twitch | PlatformId::Kick => {
                     state.phase = LocalCallbackFlowPhase::Failed;
                     state.error = Some(format!(
                         "{} is not wired through LocalCallbackFlow",
@@ -87,26 +146,6 @@ pub fn update(
                     return Task::none();
                 }
             };
-            Task::perform(async move { start_device_code(flow_handle).await }, |r| {
-                Message::LocalCallbackFlow(LocalCallbackFlowMsg::StartResult(r))
-            })
-        }
-        LocalCallbackFlowMsg::StartResult(Ok(data)) => {
-            let auth_url = data.auth_url.clone();
-            state.auth_url = Some(data.auth_url);
-            state.phase = LocalCallbackFlowPhase::Waiting;
-            let platform = state.platform;
-            let Some(flow_handle) = rt.youtube_flow.clone() else {
-                state.phase = LocalCallbackFlowPhase::Failed;
-                state.error = Some("no active flow handle".to_owned());
-                return Task::none();
-            };
-            let credentials_repo: Arc<dyn CredentialsRepo> =
-                Arc::clone(&rt.backend) as Arc<dyn CredentialsRepo>;
-            let wait_task = Task::perform(
-                async move { wait_for_authorization(platform, flow_handle, credentials_repo).await },
-                |r| Message::LocalCallbackFlow(LocalCallbackFlowMsg::WaitResult(r)),
-            );
             let open_task = Task::perform(
                 async move {
                     if let Err(e) = open::that(&auth_url) {
@@ -156,8 +195,9 @@ pub fn update(
 }
 
 type YoutubeFlowHandle = Arc<tokio::sync::Mutex<Option<forge_platform_youtube::GoogleAuthFlow>>>;
+type TrovoFlowHandle = Arc<tokio::sync::Mutex<Option<forge_platform_trovo::TrovoAuthFlow>>>;
 
-async fn start_device_code(flow_handle: YoutubeFlowHandle) -> Result<LocalCallbackData, String> {
+async fn start_youtube_oauth(flow_handle: YoutubeFlowHandle) -> Result<LocalCallbackData, String> {
     let mut guard = flow_handle.lock().await;
     let flow = guard
         .as_mut()
@@ -168,35 +208,66 @@ async fn start_device_code(flow_handle: YoutubeFlowHandle) -> Result<LocalCallba
     })
 }
 
-async fn wait_for_authorization(
-    platform: PlatformId,
+async fn start_trovo_oauth(flow_handle: TrovoFlowHandle) -> Result<LocalCallbackData, String> {
+    let mut guard = flow_handle.lock().await;
+    let flow = guard
+        .as_mut()
+        .ok_or_else(|| "OAuth flow already consumed".to_owned())?;
+    let code = flow.start().await.map_err(|e| e.to_string())?;
+    Ok(LocalCallbackData {
+        auth_url: code.auth_url,
+    })
+}
+
+async fn wait_for_youtube_authorization(
     flow_handle: YoutubeFlowHandle,
     credentials_repo: Arc<dyn CredentialsRepo>,
 ) -> Result<(), String> {
-    match platform {
-        PlatformId::YouTube => {
-            let mut flow = {
-                let mut guard = flow_handle.lock().await;
-                guard
-                    .take()
-                    .ok_or_else(|| "OAuth flow already consumed".to_owned())?
-            };
-            let bundle = flow
-                .wait_for_authorization(std::time::Duration::from_secs(300))
-                .await
-                .map_err(|e| e.to_string())?;
-            let manager =
-                forge_platform_youtube::YoutubeCredentialsManager::new(credentials_repo, flow);
-            manager
-                .save_from_bundle(bundle)
-                .await
-                .map_err(|e| e.to_string())
-        }
-        PlatformId::Twitch | PlatformId::Kick | PlatformId::Trovo => Err(format!(
-            "{} is not wired through LocalCallbackFlow",
-            platform_display_name(platform)
-        )),
-    }
+    let mut flow = {
+        let mut guard = flow_handle.lock().await;
+        guard
+            .take()
+            .ok_or_else(|| "OAuth flow already consumed".to_owned())?
+    };
+    let bundle = flow
+        .wait_for_authorization(std::time::Duration::from_secs(300))
+        .await
+        .map_err(|e| e.to_string())?;
+    let manager = forge_platform_youtube::YoutubeCredentialsManager::new(credentials_repo, flow);
+    manager
+        .save_from_bundle(bundle)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+async fn wait_for_trovo_authorization(
+    flow_handle: TrovoFlowHandle,
+    credentials_repo: Arc<dyn CredentialsRepo>,
+) -> Result<(), String> {
+    let mut flow = {
+        let mut guard = flow_handle.lock().await;
+        guard
+            .take()
+            .ok_or_else(|| "OAuth flow already consumed".to_owned())?
+    };
+    // 60s listener cap per beta-2 roadmap exit criteria.
+    let bundle = flow
+        .wait_for_authorization(std::time::Duration::from_secs(60))
+        .await
+        .map_err(|e| e.to_string())?;
+    let Some((cid, csec)) = forge_platform_trovo::client_credentials() else {
+        return Err("Trovo OAuth client credentials are not configured".to_owned());
+    };
+    let manager = forge_platform_trovo::TrovoCredentialsManager::new(
+        credentials_repo,
+        reqwest::Client::new(),
+        cid,
+        csec,
+    );
+    manager
+        .save_from_bundle(bundle)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 fn platform_display_name(p: PlatformId) -> &'static str {
@@ -711,6 +782,7 @@ mod tests {
             chat_send_bridge: None,
             twitch_flow: None,
             youtube_flow: None,
+            trovo_flow: None,
             twitch_login: None,
             twitch_token_expires: None,
             twitch_reauth_required: false,

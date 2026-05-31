@@ -1,4 +1,5 @@
 use forge_platform_core::BuiltinId;
+use forge_types::PlatformId;
 use forge_widgets::{
     ForgePalette, Icon, tabler_icon,
     tokens::{FONT_MD, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf},
@@ -14,11 +15,12 @@ use crate::screen::Screen;
 pub struct GenericPlatform {
     pub name: &'static str,
     pub letter: &'static str,
-    pub since: &'static str,
+    pub status_badge: &'static str,
     pub description: &'static str,
     pub features: &'static [&'static str],
     pub kind: PlatformKind,
     pub connect_screen: Option<Screen>,
+    pub status: PlatformStatus,
 }
 
 pub enum PlatformKind {
@@ -26,14 +28,57 @@ pub enum PlatformKind {
     StreamApp,
 }
 
+pub enum PlatformStatus {
+    /// Shipped — has a working Connect flow. Badge styled as info/success.
+    Available,
+    /// Not yet shipped — displayed as informational placeholder. Badge styled as warning.
+    Coming,
+}
+
 pub fn registry(id: &BuiltinId, palette: &ForgePalette) -> Option<(Color, GenericPlatform)> {
     match id.as_str() {
+        "youtube" => Some((
+            palette.platform_youtube,
+            GenericPlatform {
+                name: "YouTube",
+                letter: "Y",
+                status_badge: "Not connected",
+                description: "Live chat, super chats, channel memberships, subscribers.",
+                features: &[
+                    "Live chat with sentiment markers",
+                    "Super Chat alerts with bits-equivalent tiers",
+                    "Channel memberships join/upgrade/cancel events",
+                    "Subscriber milestone triggers",
+                ],
+                kind: PlatformKind::Platform,
+                connect_screen: Some(Screen::LocalCallbackFlow(PlatformId::YouTube)),
+                status: PlatformStatus::Available,
+            },
+        )),
+        "trovo" => Some((
+            palette.platform_trovo,
+            GenericPlatform {
+                name: "Trovo",
+                letter: "V",
+                status_badge: "Not connected",
+                description: "Chat, spells, gift subscriptions, follows — Trovo streaming.",
+                features: &[
+                    "Live chat over the Trovo WebSocket bridge",
+                    "Spell / super-chat triggers with token tiers",
+                    "Gift subscription and follow events",
+                    "Send chat from forge into the broadcaster channel",
+                ],
+                kind: PlatformKind::Platform,
+                connect_screen: Some(Screen::LocalCallbackFlow(PlatformId::Trovo)),
+                status: PlatformStatus::Available,
+            },
+        )),
         "kick" => Some((
             palette.platform_kick,
             GenericPlatform {
                 name: "Kick",
                 letter: "K",
-                since: "Coming in beta-3",
+                status_badge: "Coming in beta-3",
                 description: "Chat, channel events, subscribers — newer streaming platform.",
                 features: &[
                     "Chat over Kick WebSocket (community implementation)",
@@ -42,6 +87,7 @@ pub fn registry(id: &BuiltinId, palette: &ForgePalette) -> Option<(Color, Generi
                 ],
                 kind: PlatformKind::Platform,
                 connect_screen: None,
+                status: PlatformStatus::Coming,
             },
         )),
         "vtube" => Some((
@@ -49,7 +95,7 @@ pub fn registry(id: &BuiltinId, palette: &ForgePalette) -> Option<(Color, Generi
             GenericPlatform {
                 name: "VTube Studio",
                 letter: "V",
-                since: "Coming in beta-6",
+                status_badge: "Coming in beta-6",
                 description: "Vtuber avatar control: hotkeys, expressions, item triggers.",
                 features: &[
                     "Trigger hotkeys from chat events",
@@ -58,6 +104,7 @@ pub fn registry(id: &BuiltinId, palette: &ForgePalette) -> Option<(Color, Generi
                 ],
                 kind: PlatformKind::StreamApp,
                 connect_screen: None,
+                status: PlatformStatus::Coming,
             },
         )),
         _ => None,
@@ -97,10 +144,14 @@ pub fn platform_generic_view<'a>(
 
     let name_text = text(info.name).size(FONT_MD).color(p.text_primary);
 
-    let since_badge = container(
-        text(info.since)
+    let badge_text_color = match info.status {
+        PlatformStatus::Available => p.info,
+        PlatformStatus::Coming => p.warning,
+    };
+    let status_badge = container(
+        text(info.status_badge)
             .size(FONT_XS)
-            .color(p.warning)
+            .color(badge_text_color)
             .font(font(FontRole::Body)),
     )
     .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
@@ -113,7 +164,7 @@ pub fn platform_generic_view<'a>(
         ..container::Style::default()
     });
 
-    let name_row = row![name_text, since_badge]
+    let name_row = row![name_text, status_badge]
         .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Center);
 
@@ -138,7 +189,11 @@ pub fn platform_generic_view<'a>(
             ..container::Style::default()
         });
 
-    let features_label = text("WHAT YOU'LL BE ABLE TO DO")
+    let features_label_text = match info.status {
+        PlatformStatus::Available => "WHAT YOU CAN DO ONCE CONNECTED",
+        PlatformStatus::Coming => "WHAT YOU'LL BE ABLE TO DO",
+    };
+    let features_label = text(features_label_text)
         .size(FONT_XS)
         .color(p.text_muted)
         .font(mono);
@@ -161,10 +216,13 @@ pub fn platform_generic_view<'a>(
         PlatformKind::Platform => "Streaming platform",
         PlatformKind::StreamApp => "Stream app",
     };
+    let footer_status_label = match info.status {
+        PlatformStatus::Available => "available — click Connect to authorize",
+        PlatformStatus::Coming => "not yet implemented",
+    };
     let footer = container(
         text(format!(
-            "{footer_kind_label} \u{00b7} {since} \u{00b7} not yet implemented",
-            since = info.since.to_lowercase(),
+            "{footer_kind_label} \u{00b7} {footer_status_label}"
         ))
         .size(FONT_XS)
         .color(p.text_faint)

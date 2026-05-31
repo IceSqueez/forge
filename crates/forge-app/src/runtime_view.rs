@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use forge_obs::ObsClient;
+use forge_platform_trovo::TrovoAuthFlow;
 use forge_platform_twitch::{ChatSendBridgeHandle, TwitchChatHandle};
 use forge_platform_youtube::GoogleAuthFlow;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
@@ -30,6 +31,7 @@ pub struct RuntimeView {
     pub chat_send_bridge: Option<ChatSendBridgeHandle>,
     pub twitch_flow: Option<TwitchFlowHandle>,
     pub youtube_flow: Option<Arc<tokio::sync::Mutex<Option<GoogleAuthFlow>>>>,
+    pub trovo_flow: Option<Arc<tokio::sync::Mutex<Option<TrovoAuthFlow>>>>,
     pub twitch_login: Option<String>,
     pub twitch_token_expires: Option<SystemTime>,
     pub twitch_reauth_required: bool,

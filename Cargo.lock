@@ -2355,6 +2355,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-platform-trovo"
+version = "0.1.0-beta.1"
+dependencies = [
+ "async-trait",
+ "forge-events",
+ "forge-platform-core",
+ "forge-registry",
+ "forge-runtime",
+ "forge-storage",
+ "forge-storage-sqlite",
+ "forge-types",
+ "futures-util",
+ "rand 0.10.1",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "time",
+ "tokio",
+ "tokio-stream",
+ "tokio-tungstenite",
+ "tracing",
+ "tracing-subscriber",
+ "wiremock",
+]
+
+[[package]]
 name = "forge-platform-twitch"
 version = "0.1.0-beta.1"
 dependencies = [

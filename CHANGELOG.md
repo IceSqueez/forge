@@ -1,9 +1,39 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-beta.2] - 2026-05-31
+### ⚙️ Miscellaneous Tasks
+- *(workspace)* Bump toolchain to 1.96.0
+- Remove docs/ — README and in-app docs are canonical
+- *(workspace)* Regenerate Cargo.lock for forge-platform-trovo
+
+### 🐛 Bug Fixes
+- *(livechat)* Use platform-specific palette colors for chips
+- *(platforms)* Drop coming-soon stubs for YouTube and Trovo
+- *(oauth)* Wire Trovo + YouTube Connect through LocalCallbackFlow
+- *(app)* Show Platforms/Stream apps parent in builtin breadcrumb
+- *(app)* Add Automation/Builtin parents to remaining breadcrumbs
+
+### 🚀 Features
+- *(oauth)* Add LocalCallbackDriver with PKCE and CSRF state
+- *(twitch)* Switch to OAuth Authorization Code + PKCE
+- *(youtube)* Switch to OAuth Authorization Code + PKCE
+- *(trovo)* Scaffold crate with AuthFlow factory
+- *(trovo)* Implement OAuth Authorization Code flow
+- *(trovo)* Add credentials manager with token refresh
+- *(trovo)* Add chat WebSocket subscriber
+- *(trovo)* Add send-chat action
+- *(trovo)* Register chat/spell/gift/follow triggers
+- *(runtime)* Wire Trovo credentials + chat into runtime
+
+### 🚜 Refactor
+- *(app)* Rename DeviceCodeFlow screen to LocalCallbackFlow
+- *(app)* Merge LocalCallbackFlow screen into BuiltinDetail
+
 ## [0.1.0-beta.1] - 2026-05-31
 ### ⚙️ Miscellaneous Tasks
 - *(workspace)* Regenerate Cargo.lock for forge-platform-youtube
+- Release
 
 ### 🐛 Bug Fixes
 - *(platform-core)* Gate APP_DIR_NAME on non-macos targets
@@ -11,6 +41,7 @@ All notable changes to this project will be documented in this file.
 
 ### 📚 Documentation
 - Add YouTube platform guide + README beta-1 mention
+- *(release)* Release v0.1.0-beta.1
 
 ### 🚀 Features
 - *(events)* Add EventSource::to_platform_id helper

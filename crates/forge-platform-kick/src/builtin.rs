@@ -13,7 +13,7 @@ use tokio::sync::{broadcast, watch};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 
-use crate::capabilities::KICK_LIMITED_REASON;
+use crate::capabilities::KICK_COMMUNITY_NOTE;
 use crate::triggers::ban::BanDescriptor;
 use crate::triggers::chat::ChatDescriptor;
 use crate::triggers::host::HostDescriptor;
@@ -80,13 +80,13 @@ impl BuiltinStatus for KickIntegrationBundle {
     }
 
     fn endpoint(&self) -> Option<&str> {
-        Some("Community WebSocket — read-only")
+        Some("Pusher WS (read) + OAuth API (write)")
     }
 
     fn capability_flags(&self) -> CapabilityFlags {
         CapabilityFlags {
-            limited: true,
-            label: Some("Community implementation".to_owned()),
+            limited: false,
+            label: None,
         }
     }
 
@@ -117,8 +117,8 @@ impl BuiltinHealth for KickIntegrationBundle {
             HealthMetric {
                 label: "Chat mode".to_owned(),
                 value: HealthValue::Text {
-                    primary: "Read-only".to_owned(),
-                    secondary: Some("send unavailable".to_owned()),
+                    primary: "Read + send".to_owned(),
+                    secondary: Some("send via OAuth API".to_owned()),
                 },
             },
             HealthMetric {
@@ -131,7 +131,7 @@ impl BuiltinHealth for KickIntegrationBundle {
             HealthMetric {
                 label: "Auth".to_owned(),
                 value: HealthValue::Status {
-                    label: "None (community WS)".to_owned(),
+                    label: "OAuth 2.1 + PKCE".to_owned(),
                     active: true,
                     detail: None,
                 },
@@ -149,8 +149,8 @@ impl BuiltinContent for KickIntegrationBundle {
     fn sections(&self) -> Vec<DetailSection> {
         vec![DetailSection::WarningBanner {
             level: BannerLevel::Warning,
-            title: "Community implementation".to_owned(),
-            body: KICK_LIMITED_REASON.to_owned(),
+            title: "Hybrid chat transport".to_owned(),
+            body: KICK_COMMUNITY_NOTE.to_owned(),
             cta: None,
         }]
     }
@@ -199,12 +199,18 @@ impl QuickActions for KickIntegrationBundle {
             QuickAction {
                 label: "Send message".to_owned(),
                 icon: SectionIcon::new("send"),
-                enabled: false,
+                enabled: connected,
                 subaction_template: SubActionStep {
                     kind_id: "core.log.write".to_owned(),
-                    config: BTreeMap::new(),
-                    enabled: false,
-                    label: Some("N/A — official send API pending".to_owned()),
+                    config: BTreeMap::from([
+                        ("level".to_owned(), Variant::String("info".to_owned())),
+                        (
+                            "message".to_owned(),
+                            Variant::String("kick.send_message_requested".to_owned()),
+                        ),
+                    ]),
+                    enabled: true,
+                    label: None,
                 },
                 picker: None,
             },
@@ -284,18 +290,34 @@ mod tests {
     }
 
     #[test]
-    fn bundle_capability_flags_are_limited() {
+    fn bundle_capability_flags_are_not_limited() {
         let bundle = make_bundle();
         let flags = bundle.capability_flags();
-        assert!(flags.limited);
-        assert!(flags.label.is_some());
+        assert!(!flags.limited);
+        assert!(flags.label.is_none());
     }
 
     #[test]
-    fn bundle_send_message_action_is_disabled() {
+    fn bundle_send_message_action_enabled_when_connected() {
+        let (tx, rx) = watch::channel(ConnectionState::Connected);
+        let (bundle, _) = KickIntegrationBundle::new("test_channel".to_owned(), rx);
+        drop(tx);
+        let send_action = bundle
+            .actions()
+            .into_iter()
+            .find(|a| a.label == "Send message")
+            .unwrap();
+        assert!(send_action.enabled);
+    }
+
+    #[test]
+    fn bundle_send_message_action_disabled_when_disconnected() {
         let bundle = make_bundle();
-        let actions = bundle.actions();
-        let send_action = actions.iter().find(|a| a.label == "Send message").unwrap();
+        let send_action = bundle
+            .actions()
+            .into_iter()
+            .find(|a| a.label == "Send message")
+            .unwrap();
         assert!(!send_action.enabled);
     }
 

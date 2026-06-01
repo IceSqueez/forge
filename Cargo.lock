@@ -2365,6 +2365,7 @@ dependencies = [
  "forge-events",
  "forge-platform-core",
  "forge-registry",
+ "forge-storage",
  "forge-types",
  "futures-core",
  "futures-util",

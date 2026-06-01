@@ -1,10 +1,21 @@
 use forge_platform_core::PlatformCapabilities;
 
-pub const KICK_LIMITED_REASON: &str = "Community implementation — read-only via unofficial WebSocket. \
-     Not affiliated with Kick.com. May break without notice.";
+/// Disclaimer surfaced in UI: Kick OAuth covers chat-write but chat-receive still
+/// flows through the unofficial Pusher WebSocket — this hybrid posture is unique to Kick.
+pub const KICK_COMMUNITY_NOTE: &str = "Chat receive uses the unofficial Pusher WebSocket — Kick exposes no official chat:read \
+     scope. Chat send uses the official OAuth API. Not affiliated with Kick.com.";
 
 pub fn kick_capabilities() -> PlatformCapabilities {
-    PlatformCapabilities::limited_read_only(KICK_LIMITED_REASON)
+    PlatformCapabilities {
+        can_send_chat: true,
+        can_moderate: false,
+        can_subscribe_events: false,
+        can_polls: false,
+        can_predictions: false,
+        can_channel_points: false,
+        limited: false,
+        limited_reason: None,
+    }
 }
 
 #[cfg(test)]
@@ -12,26 +23,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn capabilities_are_limited() {
+    fn capabilities_not_marked_limited() {
         let caps = kick_capabilities();
-        assert!(caps.limited);
+        assert!(!caps.limited);
+        assert!(caps.limited_reason.is_none());
     }
 
     #[test]
-    fn capabilities_have_non_empty_reason() {
+    fn capabilities_enable_chat_send() {
         let caps = kick_capabilities();
-        assert!(
-            caps.limited_reason
-                .as_deref()
-                .is_some_and(|r| !r.is_empty()),
-            "limited_reason must be non-empty"
-        );
+        assert!(caps.can_send_chat);
     }
 
     #[test]
-    fn no_send_or_moderation_flags_set() {
+    fn unsupported_features_remain_false() {
         let caps = kick_capabilities();
-        assert!(!caps.can_send_chat);
         assert!(!caps.can_moderate);
         assert!(!caps.can_subscribe_events);
         assert!(!caps.can_polls);
@@ -40,8 +46,7 @@ mod tests {
     }
 
     #[test]
-    fn reason_matches_constant() {
-        let caps = kick_capabilities();
-        assert_eq!(caps.limited_reason.as_deref(), Some(KICK_LIMITED_REASON));
+    fn community_note_is_non_empty() {
+        assert!(!KICK_COMMUNITY_NOTE.is_empty());
     }
 }

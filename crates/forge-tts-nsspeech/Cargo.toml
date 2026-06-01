@@ -1,0 +1,33 @@
+[package]
+name = "forge-tts-nsspeech"
+description = "AVFoundation TTS engine for forge (macOS-only, via objc2)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+forge-tts-core = { path = "../forge-tts-core" }
+async-trait = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSRunLoop", "NSDate"] }
+objc2-avf-audio = { version = "0.3", features = [
+    "AVSpeechSynthesis",
+    "AVAudioBuffer",
+    "AVAudioFormat",
+    "AVAudioTypes",
+    "block2",
+] }
+block2 = "0.6"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros"] }
+
+[lints]
+workspace = true

@@ -23,6 +23,7 @@ members = [
   "crates/forge-tts-piper",
   "crates/forge-tts-espeak",
   "crates/forge-tts-sapi",
+  "crates/forge-tts-nsspeech",
   "crates/forge-speak-queue",
   "crates/forge-widgets",
   "crates/forge-app",

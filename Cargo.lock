@@ -2265,6 +2265,7 @@ dependencies = [
  "forge-tts-espeak",
  "forge-tts-pipeline",
  "forge-tts-piper",
+ "forge-tts-sapi",
  "forge-types",
  "forge-voice",
  "forge-widgets",
@@ -2671,6 +2672,18 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "forge-tts-sapi"
+version = "0.1.0-beta.3"
+dependencies = [
+ "async-trait",
+ "forge-tts-core",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "windows 0.58.0",
 ]
 
 [[package]]

@@ -1,4 +1,5 @@
 use crate::app::App;
+use crate::cloud_tts_engines;
 use crate::message::Message;
 use crate::page_chrome::simple_page_header;
 use crate::screen::{Screen, TtsSection};
@@ -62,6 +63,7 @@ pub(crate) fn tts_section_view<'a>(
             tts_tab_button("Voice aliases", TtsSection::Aliases, section, palette),
             tts_tab_button("Filters", TtsSection::Filters, section, palette),
             tts_tab_button("Triggers", TtsSection::Triggers, section, palette),
+            tts_tab_button("Cloud engines", TtsSection::CloudEngines, section, palette),
         ]
         .spacing(spf(Spacing::Xxs)),
     )
@@ -82,6 +84,7 @@ pub(crate) fn tts_section_view<'a>(
         TtsSection::Aliases => voice_aliases_view(&app.ui.tts_aliases, palette),
         TtsSection::Filters => tts_filters_view(&app.ui.tts_filters, palette),
         TtsSection::Triggers => tts_triggers_view(&app.ui.tts_triggers, palette),
+        TtsSection::CloudEngines => cloud_tts_engines::view(&app.ui.tts_cloud_engines, palette),
     };
 
     let section_label = match section {
@@ -90,6 +93,7 @@ pub(crate) fn tts_section_view<'a>(
         TtsSection::Aliases => "Voice aliases",
         TtsSection::Filters => "Filters",
         TtsSection::Triggers => "Triggers",
+        TtsSection::CloudEngines => "Cloud engines",
     };
     let page_header = simple_page_header(
         &[("Builtin", false), ("TTS", false), (section_label, true)],

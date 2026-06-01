@@ -100,6 +100,7 @@ pub struct UiState {
     pub tts_aliases: VoiceAliasesState,
     pub tts_filters: TtsFiltersState,
     pub tts_triggers: TtsTriggersState,
+    pub tts_cloud_engines: crate::cloud_tts_engines::CloudTtsEnginesState,
     pub local_callback_flow: crate::local_callback_flow::LocalCallbackFlowState,
 }
 
@@ -127,6 +128,7 @@ impl Default for UiState {
             tts_aliases: VoiceAliasesState::new(),
             tts_filters: TtsFiltersState::new(),
             tts_triggers: TtsTriggersState::new(),
+            tts_cloud_engines: crate::cloud_tts_engines::CloudTtsEnginesState::default(),
             local_callback_flow: crate::local_callback_flow::LocalCallbackFlowState::default(),
         }
     }
@@ -370,6 +372,9 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         }
         Message::Tts(TtsMsg::Triggers(sub)) => {
             crate::tts_triggers::update(&mut app.ui.tts_triggers, &app.rt, sub)
+        }
+        Message::Tts(TtsMsg::CloudEngines(sub)) => {
+            crate::cloud_tts_engines::update(&mut app.ui.tts_cloud_engines, &app.rt, sub)
         }
         Message::LocalCallbackFlow(sub) => {
             crate::local_callback_flow::update(&mut app.ui.local_callback_flow, &mut app.rt, sub)

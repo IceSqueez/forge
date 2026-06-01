@@ -23,6 +23,7 @@ pub enum TtsSection {
     Aliases,
     Filters,
     Triggers,
+    CloudEngines,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

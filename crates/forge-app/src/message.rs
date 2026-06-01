@@ -304,6 +304,36 @@ pub enum TtsTriggersMsg {
     BitsSkipLineToggled(bool),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CloudEngineKind {
+    Azure,
+    ElevenLabs,
+    OpenAI,
+    Polly,
+}
+
+impl CloudEngineKind {
+    pub fn display_name(self) -> &'static str {
+        match self {
+            Self::Azure => "Azure Speech",
+            Self::ElevenLabs => "ElevenLabs",
+            Self::OpenAI => "OpenAI TTS",
+            Self::Polly => "Amazon Polly",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum CloudTtsEnginesMsg {
+    ApiKeyChanged(CloudEngineKind, String),
+    RegionChanged(CloudEngineKind, String),
+    PollySecretKeyChanged(String),
+    SavePressed(CloudEngineKind),
+    Saved(CloudEngineKind, Result<(), String>),
+    TestPressed(CloudEngineKind),
+    Tested(CloudEngineKind, Result<(), String>),
+}
+
 #[derive(Debug, Clone)]
 pub enum TtsMsg {
     Dashboard(TtsDashMsg),
@@ -311,6 +341,7 @@ pub enum TtsMsg {
     Aliases(VoiceAliasesMsg),
     Filters(TtsFiltersMsg),
     Triggers(TtsTriggersMsg),
+    CloudEngines(CloudTtsEnginesMsg),
 }
 
 #[derive(Debug, Clone)]

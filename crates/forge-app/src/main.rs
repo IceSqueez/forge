@@ -23,7 +23,8 @@ use forge_soundboard::{BusAudioEventSink, CpalSinkFactory, SoundboardPlayer};
 use forge_speak_queue::{QueueConfig, QueueDeps, SpeakQueueHandle};
 use forge_storage::{CredentialsRepo, DataProvider, GlobalsRepo};
 use forge_storage_sqlite::SqliteBackend;
-use forge_tts_core::{EngineId, TtsRegistry};
+use forge_tts_core::{EngineId, TtsEngineFactory, TtsRegistry};
+use forge_tts_espeak::EspeakEngineFactory;
 use forge_tts_piper::{PiperEngine, PiperEngineFactory};
 use forge_voice::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults, VoiceAliasResolver};
 
@@ -199,6 +200,18 @@ fn spawn_speak_queue(bus: Arc<EventBus>) -> Arc<SpeakQueueHandle> {
     } else {
         tracing::warn!("Piper binary not found in <exe_dir>/piper or PATH; TTS disabled");
     }
+
+    match EspeakEngineFactory.create() {
+        Ok(engine) => {
+            let id = engine.engine_id().clone();
+            registry.register(id, Arc::new(EspeakEngineFactory));
+            tracing::info!("registered eSpeak-NG TTS engine");
+        }
+        Err(e) => {
+            tracing::debug!(error = %e, "eSpeak-NG TTS engine unavailable");
+        }
+    }
+
     let registry = Arc::new(registry);
 
     let resolver = Arc::new(std::sync::RwLock::new(VoiceAliasResolver::new(

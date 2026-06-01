@@ -20,6 +20,22 @@ pub fn decode_file(path: &Path) -> Result<PcmBuffer, AudioError> {
         hint.with_extension(ext);
     }
 
+    decode_stream(mss, hint)
+}
+
+pub fn decode_bytes(bytes: &[u8], hint_ext: Option<&str>) -> Result<PcmBuffer, AudioError> {
+    let cursor = std::io::Cursor::new(bytes.to_vec());
+    let mss = MediaSourceStream::new(Box::new(cursor), Default::default());
+
+    let mut hint = Hint::new();
+    if let Some(ext) = hint_ext {
+        hint.with_extension(ext);
+    }
+
+    decode_stream(mss, hint)
+}
+
+fn decode_stream(mss: MediaSourceStream, hint: Hint) -> Result<PcmBuffer, AudioError> {
     let mut format = symphonia::default::get_probe()
         .probe(
             &hint,
@@ -150,6 +166,27 @@ mod tests {
         std::fs::write(tmp.path(), &wav_bytes).unwrap();
 
         let pcm = decode_file(tmp.path()).unwrap();
+
+        assert_eq!(pcm.sample_rate, sample_rate);
+        assert_eq!(pcm.channels, 1);
+
+        let expected_frames = samples.len();
+        let tolerance = expected_frames / 20 + 2;
+        assert!(
+            pcm.frame_count().abs_diff(expected_frames) <= tolerance,
+            "expected ~{} frames, got {}",
+            expected_frames,
+            pcm.frame_count(),
+        );
+    }
+
+    #[test]
+    fn decode_bytes_24000_mono_wav_50ms() {
+        let sample_rate = 24_000_u32;
+        let samples = sine_samples(sample_rate, 440.0, 50);
+        let wav_bytes = write_wav(sample_rate, 1, &samples);
+
+        let pcm = decode_bytes(&wav_bytes, Some("wav")).unwrap();
 
         assert_eq!(pcm.sample_rate, sample_rate);
         assert_eq!(pcm.channels, 1);

@@ -25,6 +25,7 @@ use forge_storage::{CredentialsRepo, DataProvider, GlobalsRepo};
 use forge_storage_sqlite::SqliteBackend;
 use forge_tts_core::{EngineId, TtsEngineFactory, TtsRegistry};
 use forge_tts_espeak::EspeakEngineFactory;
+use forge_tts_nsspeech::NsSpeechEngineFactory;
 use forge_tts_piper::{PiperEngine, PiperEngineFactory};
 use forge_tts_sapi::SapiEngineFactory;
 use forge_voice::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults, VoiceAliasResolver};
@@ -221,6 +222,17 @@ fn spawn_speak_queue(bus: Arc<EventBus>) -> Arc<SpeakQueueHandle> {
         }
         Err(e) => {
             tracing::debug!(error = %e, "SAPI 5 TTS engine unavailable");
+        }
+    }
+
+    match NsSpeechEngineFactory.create() {
+        Ok(engine) => {
+            let id = engine.engine_id().clone();
+            registry.register(id, Arc::new(NsSpeechEngineFactory));
+            tracing::info!("registered AVFoundation TTS engine");
+        }
+        Err(e) => {
+            tracing::debug!(error = %e, "AVFoundation TTS engine unavailable");
         }
     }
 

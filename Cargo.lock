@@ -2263,6 +2263,7 @@ dependencies = [
  "forge-storage-sqlite",
  "forge-tts-core",
  "forge-tts-espeak",
+ "forge-tts-nsspeech",
  "forge-tts-pipeline",
  "forge-tts-piper",
  "forge-tts-sapi",

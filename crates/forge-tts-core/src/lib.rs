@@ -87,6 +87,9 @@ pub enum TtsError {
 
     #[error("engine I/O: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("quota exhausted for engine {id:?}: {detail}")]
+    QuotaExceeded { id: EngineId, detail: String },
 }
 
 #[async_trait]

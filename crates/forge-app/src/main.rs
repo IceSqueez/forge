@@ -5,6 +5,7 @@ use forge_app::App;
 use forge_app::Screen;
 use forge_app::app::{theme_callback, update};
 use forge_app::boot::{load_obs_and_connect, load_twitch_credential};
+use forge_app::cloud_tts_boot::register_cloud_engines;
 use forge_app::speak_bridge::SpeakBridge;
 use forge_app::subscriptions::subscription;
 use forge_app::view_router::view;
@@ -180,7 +181,11 @@ fn default_audio_device_id() -> Option<DeviceId> {
     })
 }
 
-fn spawn_speak_queue(bus: Arc<EventBus>) -> (Arc<SpeakQueueHandle>, Vec<EngineId>) {
+fn spawn_speak_queue(
+    bus: Arc<EventBus>,
+    creds: Arc<dyn forge_storage::CredentialsRepo>,
+    rt: &tokio::runtime::Runtime,
+) -> (Arc<SpeakQueueHandle>, Vec<EngineId>) {
     let mut registry = TtsRegistry::new();
     if let Some(piper_binary) = find_piper_binary() {
         let voices_dir = PiperEngine::voices_dir(&paths::data_dir());
@@ -237,8 +242,13 @@ fn spawn_speak_queue(bus: Arc<EventBus>) -> (Arc<SpeakQueueHandle>, Vec<EngineId
         }
     }
 
+    let registry = std::sync::RwLock::new(registry);
+    rt.block_on(register_cloud_engines(&registry, creds.as_ref()));
     let registry = Arc::new(registry);
-    let engine_ids = registry.engine_ids();
+    let engine_ids = registry
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .engine_ids();
 
     let resolver = Arc::new(std::sync::RwLock::new(VoiceAliasResolver::new(
         vec![],
@@ -293,7 +303,8 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         }
     };
 
-    let (speak_queue, tts_engine_ids) = spawn_speak_queue(Arc::clone(&bus));
+    let creds_repo = Arc::clone(&dp) as Arc<dyn forge_storage::CredentialsRepo>;
+    let (speak_queue, tts_engine_ids) = spawn_speak_queue(Arc::clone(&bus), creds_repo, &rt);
     let _viewer_tracker = forge_app::viewer_tracker::spawn(Arc::clone(&bus), dp.viewer_repo());
     let speak_bridge_concrete = Arc::new(SpeakBridge::new(Arc::clone(&speak_queue)));
     let speak_dispatcher: Arc<dyn forge_runtime::SpeakDispatcher> = speak_bridge_concrete.clone();

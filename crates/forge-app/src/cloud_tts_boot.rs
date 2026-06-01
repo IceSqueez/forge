@@ -1,0 +1,167 @@
+use std::sync::{Arc, RwLock};
+
+use forge_storage::{CredentialId, CredentialsRepo};
+use forge_tts_cloud::azure::AzureEngineFactory;
+use forge_tts_cloud::credentials::{
+    AZURE_CREDENTIAL_ID, AzureCredentials, ELEVENLABS_CREDENTIAL_ID, ElevenLabsCredentials,
+    OPENAI_CREDENTIAL_ID, OpenAiCredentials, POLLY_CREDENTIAL_ID, PollyCredentials,
+};
+use forge_tts_cloud::elevenlabs::ElevenLabsEngineFactory;
+use forge_tts_cloud::openai::OpenAiEngineFactory;
+use forge_tts_cloud::polly::PollyEngineFactory;
+use forge_tts_core::{EngineId, TtsRegistry};
+
+pub async fn register_cloud_engines(
+    registry: &RwLock<TtsRegistry>,
+    creds: &dyn CredentialsRepo,
+) -> Vec<EngineId> {
+    let mut registered = Vec::new();
+    if let Some(id) = try_register_azure(registry, creds).await {
+        registered.push(id);
+    }
+    if let Some(id) = try_register_elevenlabs(registry, creds).await {
+        registered.push(id);
+    }
+    if let Some(id) = try_register_openai(registry, creds).await {
+        registered.push(id);
+    }
+    if let Some(id) = try_register_polly(registry, creds).await {
+        registered.push(id);
+    }
+    registered
+}
+
+async fn try_register_azure(
+    registry: &RwLock<TtsRegistry>,
+    creds: &dyn CredentialsRepo,
+) -> Option<EngineId> {
+    let json = match creds.load(&CredentialId::new(AZURE_CREDENTIAL_ID)).await {
+        Ok(Some(j)) => j,
+        Ok(None) => return None,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to load Azure TTS credentials");
+            return None;
+        }
+    };
+    let azure_creds: AzureCredentials = match serde_json::from_str(&json) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!(error = %e, "malformed Azure TTS credentials");
+            return None;
+        }
+    };
+    let id = EngineId("azure".into());
+    registry
+        .write()
+        .unwrap_or_else(|e| e.into_inner())
+        .register(
+            id.clone(),
+            Arc::new(AzureEngineFactory {
+                credentials: azure_creds,
+            }),
+        );
+    tracing::info!("registered Azure TTS engine");
+    Some(id)
+}
+
+async fn try_register_elevenlabs(
+    registry: &RwLock<TtsRegistry>,
+    creds: &dyn CredentialsRepo,
+) -> Option<EngineId> {
+    let json = match creds
+        .load(&CredentialId::new(ELEVENLABS_CREDENTIAL_ID))
+        .await
+    {
+        Ok(Some(j)) => j,
+        Ok(None) => return None,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to load ElevenLabs TTS credentials");
+            return None;
+        }
+    };
+    let el_creds: ElevenLabsCredentials = match serde_json::from_str(&json) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!(error = %e, "malformed ElevenLabs TTS credentials");
+            return None;
+        }
+    };
+    let id = EngineId("elevenlabs".into());
+    registry
+        .write()
+        .unwrap_or_else(|e| e.into_inner())
+        .register(
+            id.clone(),
+            Arc::new(ElevenLabsEngineFactory {
+                credentials: el_creds,
+            }),
+        );
+    tracing::info!("registered ElevenLabs TTS engine");
+    Some(id)
+}
+
+async fn try_register_openai(
+    registry: &RwLock<TtsRegistry>,
+    creds: &dyn CredentialsRepo,
+) -> Option<EngineId> {
+    let json = match creds.load(&CredentialId::new(OPENAI_CREDENTIAL_ID)).await {
+        Ok(Some(j)) => j,
+        Ok(None) => return None,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to load OpenAI TTS credentials");
+            return None;
+        }
+    };
+    let oa_creds: OpenAiCredentials = match serde_json::from_str(&json) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!(error = %e, "malformed OpenAI TTS credentials");
+            return None;
+        }
+    };
+    let id = EngineId("openai".into());
+    registry
+        .write()
+        .unwrap_or_else(|e| e.into_inner())
+        .register(
+            id.clone(),
+            Arc::new(OpenAiEngineFactory {
+                credentials: oa_creds,
+            }),
+        );
+    tracing::info!("registered OpenAI TTS engine");
+    Some(id)
+}
+
+async fn try_register_polly(
+    registry: &RwLock<TtsRegistry>,
+    creds: &dyn CredentialsRepo,
+) -> Option<EngineId> {
+    let json = match creds.load(&CredentialId::new(POLLY_CREDENTIAL_ID)).await {
+        Ok(Some(j)) => j,
+        Ok(None) => return None,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to load Polly TTS credentials");
+            return None;
+        }
+    };
+    let polly_creds: PollyCredentials = match serde_json::from_str(&json) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!(error = %e, "malformed Polly TTS credentials");
+            return None;
+        }
+    };
+    let id = EngineId("polly".into());
+    registry
+        .write()
+        .unwrap_or_else(|e| e.into_inner())
+        .register(
+            id.clone(),
+            Arc::new(PollyEngineFactory {
+                credentials: polly_creds,
+            }),
+        );
+    tracing::info!("registered Polly TTS engine");
+    Some(id)
+}

@@ -7,12 +7,6 @@ use tokio::time::Instant;
 
 const EXHAUSTED_THRESHOLD: Duration = Duration::from_secs(60);
 
-/// Floor-based rate limiter for synthesis calls.
-///
-/// Stores the earliest `Instant` at which the next call is permitted.
-/// `observe_remote_throttle` advances the floor to `now + retry_after`.
-/// `acquire` returns `Exhausted` when the floor is more than
-/// `EXHAUSTED_THRESHOLD` in the future (server signalled a very long back-off).
 pub struct SynthesisRateLimiter {
     next_allowed: Mutex<Option<Instant>>,
 }

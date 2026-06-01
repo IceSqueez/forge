@@ -6,7 +6,6 @@ pub const ELEVENLABS_CREDENTIAL_ID: &str = "audio:elevenlabs";
 pub const OPENAI_CREDENTIAL_ID: &str = "audio:openai";
 pub const POLLY_CREDENTIAL_ID: &str = "audio:polly";
 
-/// Returns the `EngineId` string for a given credential ID, or `None` if unknown.
 pub fn engine_id_for_credential(credential_id: &str) -> Option<EngineId> {
     match credential_id {
         AZURE_CREDENTIAL_ID => Some(EngineId("azure".into())),

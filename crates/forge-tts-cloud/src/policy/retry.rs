@@ -31,21 +31,9 @@ fn is_retryable(err: &TtsError) -> bool {
     matches!(err, TtsError::NetworkFailed(_) | TtsError::Io(_))
 }
 
-/// Runs `call` with per-attempt timeout, retrying transient failures with
-/// exponential back-off.
-///
-/// Each attempt is gated through `limiter`:
-/// - `Exhausted` → immediate `TtsError::RateLimited`.
-/// - `Throttled` → sleep without consuming a retry slot.
-/// - `Granted` → the call proceeds.
-///
-/// `TtsError::Timeout` is never retried (the connection is stalled; retrying
-/// immediately would also stall). Non-retryable errors (`AuthFailed`,
-/// `QuotaExceeded`, `InvalidVoice`, `SsmlUnsupported`, `EngineUnavailable`)
-/// propagate directly. `NetworkFailed` and `Io` are retried up to
-/// `cfg.max_retries` times. A `RateLimited` response with a non-zero
-/// `retry_after_secs` observes the limiter floor and counts as one retry
-/// attempt; without a `Retry-After` hint the normal back-off schedule applies.
+/// Retries only `NetworkFailed` and `Io`. `Timeout` is treated as a stalled
+/// connection and propagates immediately. `RateLimited` with a non-zero
+/// `Retry-After` advances the limiter floor and counts as one retry attempt.
 pub async fn retry_synthesize<F, Fut>(
     engine_id: EngineId,
     limiter: Arc<dyn RateLimiter>,

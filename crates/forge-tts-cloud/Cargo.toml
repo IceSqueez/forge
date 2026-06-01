@@ -1,0 +1,31 @@
+[package]
+name                  = "forge-tts-cloud"
+version.workspace     = true
+edition.workspace     = true
+license.workspace     = true
+repository.workspace  = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default    = []
+azure      = ["dep:reqwest", "dep:serde_json"]
+elevenlabs = ["dep:reqwest", "dep:serde_json"]
+openai     = ["dep:reqwest", "dep:serde_json"]
+polly      = ["dep:reqwest", "dep:serde_json"]
+
+[dependencies]
+forge-tts-core = { path = "../forge-tts-core" }
+forge-audio    = { path = "../forge-audio" }
+async-trait    = { workspace = true }
+serde          = { workspace = true }
+thiserror      = { workspace = true }
+tracing        = { workspace = true }
+tokio          = { workspace = true, features = ["time", "sync"] }
+reqwest        = { workspace = true, optional = true }
+serde_json     = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

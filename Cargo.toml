@@ -24,6 +24,7 @@ members = [
   "crates/forge-tts-espeak",
   "crates/forge-tts-sapi",
   "crates/forge-tts-nsspeech",
+  "crates/forge-tts-cloud",
   "crates/forge-speak-queue",
   "crates/forge-widgets",
   "crates/forge-app",

@@ -17,15 +17,19 @@ openai     = ["dep:reqwest", "dep:serde_json"]
 polly      = ["dep:reqwest", "dep:serde_json"]
 
 [dependencies]
-forge-tts-core = { path = "../forge-tts-core" }
-forge-audio    = { path = "../forge-audio" }
-async-trait    = { workspace = true }
-serde          = { workspace = true }
-thiserror      = { workspace = true }
-tracing        = { workspace = true }
-tokio          = { workspace = true, features = ["time", "sync"] }
-reqwest        = { workspace = true, optional = true }
-serde_json     = { workspace = true, optional = true }
+forge-tts-core      = { path = "../forge-tts-core" }
+forge-audio         = { path = "../forge-audio" }
+forge-platform-core = { path = "../forge-platform-core" }
+async-trait         = { workspace = true }
+serde               = { workspace = true }
+thiserror           = { workspace = true }
+tracing             = { workspace = true }
+tokio               = { workspace = true, features = ["time", "sync"] }
+reqwest             = { workspace = true, optional = true }
+serde_json          = { workspace = true, optional = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+reqwest    = { workspace = true }
+wiremock   = "0.6"
+tokio      = { workspace = true, features = ["test-util"] }

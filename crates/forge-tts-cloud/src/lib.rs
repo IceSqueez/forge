@@ -1,4 +1,5 @@
 pub mod credentials;
+pub mod policy;
 
 #[cfg(feature = "azure")]
 pub mod azure;

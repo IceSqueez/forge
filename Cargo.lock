@@ -2630,6 +2630,7 @@ version = "0.1.0-beta.4"
 dependencies = [
  "async-trait",
  "forge-audio",
+ "forge-platform-core",
  "forge-tts-core",
  "reqwest",
  "serde",
@@ -2637,6 +2638,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+ "wiremock",
 ]
 
 [[package]]

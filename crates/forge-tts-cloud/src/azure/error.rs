@@ -1,3 +1,4 @@
+use forge_tts_core::VoiceId;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -10,6 +11,10 @@ pub enum AzureError {
     QuotaExceeded(String),
     #[error("rate limited; retry after {retry_after_secs}s")]
     RateLimited { retry_after_secs: u64 },
+    #[error("voice not found: {0:?}")]
+    VoiceNotFound(VoiceId),
+    #[error("decode error: {0}")]
+    Decode(String),
     #[error("I/O: {0}")]
     Io(#[from] std::io::Error),
 }

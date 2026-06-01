@@ -20,6 +20,8 @@ pub fn engine_id_for_credential(credential_id: &str) -> Option<EngineId> {
 pub struct AzureCredentials {
     pub api_key: String,
     pub region: String,
+    #[serde(default)]
+    pub base_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,11 +54,32 @@ mod tests {
         let creds = AzureCredentials {
             api_key: "key123".into(),
             region: "eastus".into(),
+            base_url: None,
         };
         let json = serde_json::to_string(&creds).unwrap();
         let back: AzureCredentials = serde_json::from_str(&json).unwrap();
         assert_eq!(back.api_key, creds.api_key);
         assert_eq!(back.region, creds.region);
+        assert!(back.base_url.is_none());
+    }
+
+    #[test]
+    fn azure_base_url_roundtrip() {
+        let creds = AzureCredentials {
+            api_key: "key456".into(),
+            region: "westus".into(),
+            base_url: Some("http://localhost:8080".into()),
+        };
+        let json = serde_json::to_string(&creds).unwrap();
+        let back: AzureCredentials = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.base_url, Some("http://localhost:8080".into()));
+    }
+
+    #[test]
+    fn azure_base_url_absent_deserializes_as_none() {
+        let json = r#"{"api_key":"k","region":"r"}"#;
+        let back: AzureCredentials = serde_json::from_str(json).unwrap();
+        assert!(back.base_url.is_none());
     }
 
     #[test]

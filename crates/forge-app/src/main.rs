@@ -26,6 +26,7 @@ use forge_storage_sqlite::SqliteBackend;
 use forge_tts_core::{EngineId, TtsEngineFactory, TtsRegistry};
 use forge_tts_espeak::EspeakEngineFactory;
 use forge_tts_piper::{PiperEngine, PiperEngineFactory};
+use forge_tts_sapi::SapiEngineFactory;
 use forge_voice::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults, VoiceAliasResolver};
 
 struct TrovoNoopLimiter;
@@ -209,6 +210,17 @@ fn spawn_speak_queue(bus: Arc<EventBus>) -> Arc<SpeakQueueHandle> {
         }
         Err(e) => {
             tracing::debug!(error = %e, "eSpeak-NG TTS engine unavailable");
+        }
+    }
+
+    match SapiEngineFactory.create() {
+        Ok(engine) => {
+            let id = engine.engine_id().clone();
+            registry.register(id, Arc::new(SapiEngineFactory));
+            tracing::info!("registered SAPI 5 TTS engine");
+        }
+        Err(e) => {
+            tracing::debug!(error = %e, "SAPI 5 TTS engine unavailable");
         }
     }
 

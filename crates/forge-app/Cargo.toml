@@ -39,6 +39,7 @@ forge-speak-queue     = { path = "../forge-speak-queue" }
 forge-tts-core        = { path = "../forge-tts-core" }
 forge-tts-piper       = { path = "../forge-tts-piper" }
 forge-tts-espeak      = { path = "../forge-tts-espeak" }
+forge-tts-sapi        = { path = "../forge-tts-sapi" }
 forge-tts-pipeline    = { path = "../forge-tts-pipeline" }
 forge-voice           = { path = "../forge-voice" }
 forge-registry       = { path = "../forge-registry" }

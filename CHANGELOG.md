@@ -1,9 +1,39 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-beta.4] - 2026-06-01
+### ⚙️ Miscellaneous Tasks
+- *(workspace)* Update Cargo.lock for forge-tts-espeak
+
+### 🎨 Styling
+- Drop tautological rustdoc and stale comments
+
+### 🐛 Bug Fixes
+- *(tts-piper)* Gate voice_scan tests under cfg(unix)
+
+### 🚀 Features
+- *(tts-espeak)* Scaffold crate with subprocess engine factory
+- *(tts-espeak)* Parse espeak-ng --voices into TtsVoice catalog
+- *(tts-espeak)* Synthesize via subprocess pipe to PcmBuffer
+- *(app)* Register eSpeak-NG engine in TTS engine registry
+- *(tts-sapi)* Scaffold crate with stub for non-Windows
+- *(tts-sapi)* Add LCID-to-BCP47 conversion and voice metadata helpers
+- *(tts-sapi)* Map SynthesisRequest to SAPI rate and SSML pitch
+- *(tts-sapi)* Add STA worker thread and ISpVoice lifecycle
+- *(app)* Register SAPI engine in TTS engine registry
+- *(tts-nsspeech)* Scaffold crate with stub for non-macOS
+- *(tts-nsspeech)* Map SynthesisRequest to AVSpeech rate + pitch
+- *(tts-nsspeech)* Add AVFoundation worker and synthesis path
+- *(app)* Register AVFoundation TTS engine in TTS registry
+- *(app)* Show registered TTS engines in Tts → Engines screen
+
 ## [0.1.0-beta.3] - 2026-06-01
 ### ⚙️ Miscellaneous Tasks
 - *(workspace)* Regenerate Cargo.lock for forge-platform-kick
+- Release
+
+### 📚 Documentation
+- *(release)* Release v0.1.0-beta.3
 
 ### 🚀 Features
 - *(platforms)* Add limited_reason field to PlatformCapabilities

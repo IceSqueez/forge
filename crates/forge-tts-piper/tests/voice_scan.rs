@@ -39,7 +39,6 @@ fn synthetic_voice(
     .expect("write sidecar");
 }
 
-/// Create a fake `piper` binary that immediately exits with success.
 fn fake_piper_binary(dir: &std::path::Path) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let path = dir.join("piper");
@@ -131,11 +130,9 @@ async fn onnx_without_sidecar_is_silently_skipped() {
     let voices_dir = tmp.path().join("voices");
     std::fs::create_dir(&voices_dir).expect("mkdir voices");
 
-    // Only the .onnx file — no sidecar.
     let onnx = voices_dir.join("orphan.onnx");
     std::fs::write(&onnx, b"no sidecar here").expect("write onnx");
 
-    // Valid voice alongside the orphan.
     synthetic_voice(&voices_dir, "en_US-valid", "en_US", 22_050, 1);
 
     let bin_dir = tmp.path().join("bin");

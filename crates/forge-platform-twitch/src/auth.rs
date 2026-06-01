@@ -41,7 +41,6 @@ pub struct UserInfo {
     pub display_name: String,
 }
 
-/// Returned by `TwitchAuthFlow::start`. The URL the UI opens in a browser.
 #[derive(Debug, Clone)]
 pub struct LoopbackCode {
     pub auth_url: String,
@@ -241,9 +240,6 @@ async fn fetch_user_info_from_token(
     })
 }
 
-/// Fetches the authorized user's Twitch profile via Helix GET /users using a
-/// stored access token. Used by the chat-send bridge to resolve the broadcaster
-/// ID on demand.
 pub async fn fetch_user_info(
     token: &OAuthToken,
     client_id: &str,
@@ -367,7 +363,6 @@ mod tests {
         assert!(url.contains(&format!("code_challenge={}", driver.code_challenge())));
         assert!(url.contains(&format!("state={}", driver.state())));
         assert!(url.contains("scope="));
-        // No client_secret in URL.
         assert!(!url.to_lowercase().contains("client_secret"));
     }
 
@@ -379,7 +374,6 @@ mod tests {
             .and(body_string_contains("grant_type=authorization_code"))
             .and(body_string_contains("code_verifier=verifier123"))
             .and(body_string_contains("code=auth_code_xyz"))
-            // Confirm no client_secret in body — public client flow.
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "access_token": "twitch_access_abc",
                 "token_type": "bearer",

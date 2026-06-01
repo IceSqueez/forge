@@ -27,7 +27,6 @@ pub struct LocalCallbackData {
 
 #[derive(Debug, Clone)]
 pub enum LocalCallbackFlowMsg {
-    /// Sets platform + starts OAuth in one step (used by BuiltinDetail Connect button).
     ConnectPlatform(PlatformId),
     ConnectPressed,
     StartResult(Result<LocalCallbackData, String>),
@@ -304,7 +303,6 @@ async fn wait_for_trovo_authorization(
             .take()
             .ok_or_else(|| "OAuth flow already consumed".to_owned())?
     };
-    // 60s listener cap per beta-2 roadmap exit criteria.
     let bundle = flow
         .wait_for_authorization(std::time::Duration::from_secs(60))
         .await

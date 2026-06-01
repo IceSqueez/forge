@@ -68,8 +68,6 @@ impl YoutubeCredentialsManager {
         Ok(creds.access_token)
     }
 
-    /// Issues a token-refresh request directly.
-    ///
     /// When the Google response omits `refresh_token`, the previously stored token is
     /// preserved. Returns `Err(PlatformError::ReauthRequired)` on `invalid_grant`.
     pub async fn refresh(&self, refresh_token: &str) -> Result<YoutubeCredentials, PlatformError> {

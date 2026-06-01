@@ -69,10 +69,8 @@ impl KickCredentialsManager {
         Ok(creds.access_token)
     }
 
-    /// Issues a token-refresh request to the Kick token endpoint.
-    ///
-    /// Kick refresh is a public-client form POST — no `client_secret` required.
-    /// Returns `Err(PlatformError::ReauthRequired)` on 400 or 401 from the upstream.
+    /// Public-client form POST — no `client_secret`. Returns
+    /// `Err(PlatformError::ReauthRequired)` on 400 or 401 from the upstream.
     pub async fn refresh(&self, refresh_token: &str) -> Result<KickCredentials, PlatformError> {
         let existing = self.load().await?.ok_or_else(reauth_err)?;
 

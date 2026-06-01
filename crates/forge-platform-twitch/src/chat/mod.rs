@@ -48,7 +48,6 @@ impl TwitchChat {
         }
     }
 
-    /// Spawns the EventSub WS session task. Returns immediately.
     pub fn start(self) -> TwitchChatHandle {
         let (sess, state_rx, shutdown_tx) = session::ChatSession::new(
             self.token,

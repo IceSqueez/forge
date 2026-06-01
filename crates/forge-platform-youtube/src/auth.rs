@@ -379,7 +379,6 @@ mod tests {
         assert!(url.contains(&format!("code_challenge={}", driver.code_challenge())));
         assert!(url.contains(&format!("state={}", driver.state())));
         assert!(url.contains("access_type=offline"));
-        // Default flow omits prompt=consent.
         assert!(!url.contains("prompt=consent"));
     }
 

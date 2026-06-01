@@ -89,8 +89,6 @@ impl TrovoCredentialsManager {
         Ok(creds.access_token)
     }
 
-    /// Issues a token-refresh request to the Trovo refresh endpoint.
-    ///
     /// When the Trovo response omits `refresh_token`, the previously stored token is preserved.
     /// Returns `Err(PlatformError::ReauthRequired)` on any non-200 response.
     pub async fn refresh(&self, refresh_token: &str) -> Result<TrovoCredentials, PlatformError> {

@@ -29,9 +29,7 @@ pub enum PlatformKind {
 }
 
 pub enum PlatformStatus {
-    /// Shipped — has a working Connect flow. Badge styled as info/success.
     Available,
-    /// Not yet shipped — displayed as informational placeholder. Badge styled as warning.
     Coming,
 }
 

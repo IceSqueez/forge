@@ -69,8 +69,6 @@ pub fn view(app: &App) -> Element<'_, Message> {
             } else if id.as_str() == "obs" && app.rt.obs_client.is_none() {
                 crate::obs_panel::obs_disconnected_view(&app.ui.obs_panel, palette)
             } else if let Some((color, info)) = crate::platform_generic::registry(id, palette) {
-                // When the OAuth flow for THIS platform is in-progress, render its phase
-                // cards inline instead of the static "Connect" placeholder.
                 let oauth_for_this = info
                     .connect_platform
                     .filter(|p| {

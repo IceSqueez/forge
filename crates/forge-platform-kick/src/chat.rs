@@ -39,9 +39,8 @@ impl KickChat {
         format!("{PUSHER_WS_BASE}/{PUSHER_APP_KEY}?{PUSHER_PROTOCOL_PARAMS}")
     }
 
-    /// Bootstraps chatroom_id lookup, connects the Pusher WebSocket, and begins
-    /// dispatching events. The returned handle's `close_tx` signals graceful shutdown.
-    /// Reconnects automatically with exponential backoff capped at 60 s.
+    /// Reconnects automatically with exponential backoff capped at 60 s. The returned
+    /// handle's `close_tx` signals graceful shutdown.
     pub async fn connect(self, event_tx: mpsc::Sender<Event>) -> Result<KickChatHandle, KickError> {
         let fetcher = ChannelInfoFetcher::new(self.slug.clone(), self.http.clone());
         let channel_info = fetcher.fetch().await?;

@@ -864,6 +864,7 @@ mod tests {
             youtube_flow: None,
             trovo_flow: None,
             kick_flow: None,
+            tts_engine_ids: Vec::new(),
             twitch_login: None,
             twitch_token_expires: None,
             twitch_reauth_required: false,

@@ -13,6 +13,7 @@ use forge_runtime::{
 use forge_soundboard::SoundboardPlayer;
 use forge_speak_queue::SpeakQueueHandle;
 use forge_storage::DataProvider;
+use forge_tts_core::EngineId;
 
 use crate::server_subsystem::ServerSubsystem;
 use crate::twitch_panel::TwitchFlowHandle;
@@ -39,4 +40,5 @@ pub struct RuntimeView {
     pub twitch_reauth_required: bool,
     pub sub_action_registry: Arc<SubActionRegistry>,
     pub trigger_registry: Arc<TriggerRegistry>,
+    pub tts_engine_ids: Vec<EngineId>,
 }

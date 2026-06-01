@@ -147,6 +147,7 @@ struct RuntimeHandles {
     scheduler: QueueSchedulerHandle,
     chat_send_bridge: ChatSendBridgeHandle,
     speak_queue: Arc<SpeakQueueHandle>,
+    tts_engine_ids: Vec<EngineId>,
     sound_player: Arc<SoundboardPlayer>,
     sub_action_reg: Arc<SubActionRegistry>,
     trigger_reg: Arc<TriggerRegistry>,
@@ -179,7 +180,7 @@ fn default_audio_device_id() -> Option<DeviceId> {
     })
 }
 
-fn spawn_speak_queue(bus: Arc<EventBus>) -> Arc<SpeakQueueHandle> {
+fn spawn_speak_queue(bus: Arc<EventBus>) -> (Arc<SpeakQueueHandle>, Vec<EngineId>) {
     let mut registry = TtsRegistry::new();
     if let Some(piper_binary) = find_piper_binary() {
         let voices_dir = PiperEngine::voices_dir(&paths::data_dir());
@@ -237,6 +238,7 @@ fn spawn_speak_queue(bus: Arc<EventBus>) -> Arc<SpeakQueueHandle> {
     }
 
     let registry = Arc::new(registry);
+    let engine_ids = registry.engine_ids();
 
     let resolver = Arc::new(std::sync::RwLock::new(VoiceAliasResolver::new(
         vec![],
@@ -270,7 +272,7 @@ fn spawn_speak_queue(bus: Arc<EventBus>) -> Arc<SpeakQueueHandle> {
     };
     let config = QueueConfig::default();
     let (handle, _stream) = forge_speak_queue::spawn(config, deps);
-    Arc::new(handle)
+    (Arc::new(handle), engine_ids)
 }
 
 #[allow(clippy::expect_used)]
@@ -291,7 +293,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         }
     };
 
-    let speak_queue = spawn_speak_queue(Arc::clone(&bus));
+    let (speak_queue, tts_engine_ids) = spawn_speak_queue(Arc::clone(&bus));
     let _viewer_tracker = forge_app::viewer_tracker::spawn(Arc::clone(&bus), dp.viewer_repo());
     let speak_bridge_concrete = Arc::new(SpeakBridge::new(Arc::clone(&speak_queue)));
     let speak_dispatcher: Arc<dyn forge_runtime::SpeakDispatcher> = speak_bridge_concrete.clone();
@@ -731,6 +733,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         scheduler,
         chat_send_bridge,
         speak_queue,
+        tts_engine_ids,
         sound_player,
         sub_action_reg,
         trigger_reg,
@@ -764,6 +767,7 @@ fn main() -> iced::Result {
         scheduler,
         chat_send_bridge,
         speak_queue,
+        tts_engine_ids,
         sound_player,
         sub_action_reg,
         trigger_reg,
@@ -775,6 +779,7 @@ fn main() -> iced::Result {
             None,
             None,
             None,
+            Vec::<EngineId>::new(),
             None,
             Arc::new(SubActionRegistry::new()),
             Arc::new(TriggerRegistry::new()),
@@ -788,6 +793,7 @@ fn main() -> iced::Result {
                 Some(h.scheduler),
                 Some(h.chat_send_bridge),
                 Some(h.speak_queue),
+                h.tts_engine_ids,
                 Some(h.sound_player),
                 h.sub_action_reg,
                 h.trigger_reg,
@@ -799,6 +805,7 @@ fn main() -> iced::Result {
                 None,
                 None,
                 None,
+                Vec::<EngineId>::new(),
                 None,
                 Arc::new(SubActionRegistry::new()),
                 Arc::new(TriggerRegistry::new()),
@@ -823,6 +830,7 @@ fn main() -> iced::Result {
         app.rt.bus = Arc::clone(&bus_boot);
         app.rt.chat_send_bridge = chat_send_bridge.clone();
         app.rt.speak_queue = speak_queue.clone();
+        app.rt.tts_engine_ids = tts_engine_ids.clone();
         app.rt.sub_action_registry = Arc::clone(&sub_action_reg);
         app.rt.trigger_registry = Arc::clone(&trigger_reg);
         let obs_creds: Arc<dyn forge_storage::CredentialsRepo> =

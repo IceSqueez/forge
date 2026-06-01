@@ -74,13 +74,14 @@ pub fn update(state: &mut TtsEnginesState, _rt: &RuntimeView, msg: TtsEnginesMsg
 
 pub fn tts_engines_view<'a>(
     state: &'a TtsEnginesState,
+    rt: &'a RuntimeView,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let gap_sm = spf(Spacing::Xs);
     let gap_md = spf(Spacing::Sm);
 
-    let engine_list = engine_list_view(state, palette, gap_sm);
-    let detail = engine_detail_view(state, palette, gap_sm, gap_md);
+    let engine_list = engine_list_view(state, rt, palette, gap_sm);
+    let detail = engine_detail_view(state, rt, palette, gap_sm, gap_md);
 
     row![engine_list, detail]
         .spacing(gap_md)
@@ -89,8 +90,16 @@ pub fn tts_engines_view<'a>(
         .into()
 }
 
-struct StaticEngine {
-    id: &'static str,
+fn current_engines(rt: &RuntimeView) -> Vec<EngineCard> {
+    rt.tts_engine_ids
+        .iter()
+        .enumerate()
+        .map(|(i, id)| engine_meta(&id.0, i == 0))
+        .collect()
+}
+
+struct EngineCard {
+    id: String,
     name: &'static str,
     kind: &'static str,
     voice_count: u8,
@@ -98,28 +107,47 @@ struct StaticEngine {
     is_default: bool,
 }
 
-const STATIC_ENGINES: &[StaticEngine] = &[StaticEngine {
-    id: "piper",
-    name: "Piper",
-    kind: "local",
-    voice_count: 4,
-    status_color: |p| p.success,
-    is_default: true,
-}];
+fn engine_meta(id: &str, is_default: bool) -> EngineCard {
+    let (name, kind, voice_count, status_color): (
+        &'static str,
+        &'static str,
+        u8,
+        fn(&ForgePalette) -> Color,
+    ) = match id {
+        "piper" => ("Piper", "local", 4, |p| p.success),
+        "espeak" => ("eSpeak-NG", "local", 0, |p| p.success),
+        "sapi" => ("Microsoft SAPI 5", "system", 0, |p| p.info),
+        "nsspeech" => ("Apple AVSpeech", "system", 0, |p| p.info),
+        _ => ("Unknown engine", "external", 0, |p| p.text_muted),
+    };
+    EngineCard {
+        id: id.to_owned(),
+        name,
+        kind,
+        voice_count,
+        status_color,
+        is_default,
+    }
+}
 
 fn engine_list_view<'a>(
     state: &'a TtsEnginesState,
+    rt: &'a RuntimeView,
     palette: &'a ForgePalette,
     gap_sm: f32,
 ) -> Element<'a, Message> {
-    let header = text(format!("CONFIGURED \u{b7} {}", STATIC_ENGINES.len()))
+    let engines = current_engines(rt);
+    let header = text(format!("CONFIGURED \u{b7} {}", engines.len()))
         .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
-    let engine_cards: Vec<Element<'a, Message>> = STATIC_ENGINES
-        .iter()
-        .map(|e| engine_list_card(e, state.selected_engine == e.id, palette))
+    let engine_cards: Vec<Element<'a, Message>> = engines
+        .into_iter()
+        .map(|e| {
+            let selected = state.selected_engine == e.id;
+            engine_list_card(e, selected, palette)
+        })
         .collect();
 
     let placeholder = container(
@@ -152,7 +180,7 @@ fn engine_list_view<'a>(
 }
 
 fn engine_list_card<'a>(
-    engine: &'a StaticEngine,
+    engine: EngineCard,
     selected: bool,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
@@ -194,7 +222,7 @@ fn engine_list_card<'a>(
 
     button(column![name_row, meta].spacing(spf(Spacing::Xxs)))
         .on_press(Message::Tts(TtsMsg::Engines(TtsEnginesMsg::SelectEngine(
-            engine.id.to_owned(),
+            engine.id,
         ))))
         .style(move |_, _| button::Style {
             background: Some(Background::Color(palette.elevated)),
@@ -213,12 +241,13 @@ fn engine_list_card<'a>(
 
 fn engine_detail_view<'a>(
     state: &'a TtsEnginesState,
+    rt: &'a RuntimeView,
     palette: &'a ForgePalette,
     gap_sm: f32,
     gap_md: f32,
 ) -> Element<'a, Message> {
-    let engine = STATIC_ENGINES
-        .iter()
+    let engine = current_engines(rt)
+        .into_iter()
         .find(|e| e.id == state.selected_engine);
 
     let detail_inner: Element<'a, Message> = if let Some(eng) = engine {
@@ -250,7 +279,7 @@ fn engine_detail_view<'a>(
 }
 
 fn engine_detail_pane<'a>(
-    engine: &'a StaticEngine,
+    engine: EngineCard,
     state: &'a TtsEnginesState,
     palette: &'a ForgePalette,
     gap_sm: f32,
@@ -271,7 +300,7 @@ fn engine_detail_pane<'a>(
 }
 
 fn engine_detail_header<'a>(
-    engine: &'a StaticEngine,
+    engine: EngineCard,
     palette: &'a ForgePalette,
     gap_sm: f32,
 ) -> Element<'a, Message> {

@@ -2634,6 +2634,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-tts-espeak"
+version = "0.1.0-beta.3"
+dependencies = [
+ "async-trait",
+ "forge-tts-core",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "which",
+]
+
+[[package]]
 name = "forge-tts-pipeline"
 version = "0.1.0-beta.3"
 dependencies = [

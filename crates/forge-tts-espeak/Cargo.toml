@@ -1,0 +1,22 @@
+[package]
+name = "forge-tts-espeak"
+description = "eSpeak-NG TTS engine for forge (subprocess invocation, not FFI)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+forge-tts-core = { path = "../forge-tts-core" }
+async-trait = { workspace = true }
+tokio = { workspace = true, features = ["process", "io-util", "sync"] }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros"] }
+which = { version = "4" }
+
+[lints]
+workspace = true

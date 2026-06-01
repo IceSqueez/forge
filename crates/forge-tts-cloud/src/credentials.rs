@@ -42,6 +42,8 @@ pub struct PollyCredentials {
     pub access_key_id: String,
     pub secret_access_key: String,
     pub region: String,
+    #[serde(default)]
+    pub base_url: Option<String>,
 }
 
 #[cfg(test)]
@@ -122,11 +124,33 @@ mod tests {
             access_key_id: "AKID".into(),
             secret_access_key: "secret".into(),
             region: "us-east-1".into(),
+            base_url: None,
         };
         let json = serde_json::to_string(&creds).unwrap();
         let back: PollyCredentials = serde_json::from_str(&json).unwrap();
         assert_eq!(back.access_key_id, creds.access_key_id);
         assert_eq!(back.region, creds.region);
+        assert!(back.base_url.is_none());
+    }
+
+    #[test]
+    fn polly_base_url_roundtrip() {
+        let creds = PollyCredentials {
+            access_key_id: "AKID".into(),
+            secret_access_key: "secret".into(),
+            region: "us-east-1".into(),
+            base_url: Some("http://localhost:9000".into()),
+        };
+        let json = serde_json::to_string(&creds).unwrap();
+        let back: PollyCredentials = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.base_url, Some("http://localhost:9000".into()));
+    }
+
+    #[test]
+    fn polly_base_url_absent_deserializes_as_none() {
+        let json = r#"{"access_key_id":"A","secret_access_key":"s","region":"us-east-1"}"#;
+        let back: PollyCredentials = serde_json::from_str(json).unwrap();
+        assert!(back.base_url.is_none());
     }
 
     #[test]

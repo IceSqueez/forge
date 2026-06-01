@@ -10,6 +10,10 @@ pub enum PollyError {
     QuotaExceeded(String),
     #[error("rate limited; retry after {retry_after_secs}s")]
     RateLimited { retry_after_secs: u64 },
+    #[error("signature error: {0}")]
+    SignatureError(String),
+    #[error("voice not found: {0}")]
+    VoiceNotFound(String),
     #[error("I/O: {0}")]
     Io(#[from] std::io::Error),
 }

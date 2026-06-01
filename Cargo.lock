@@ -2262,6 +2262,7 @@ dependencies = [
  "forge-storage",
  "forge-storage-sqlite",
  "forge-tts-core",
+ "forge-tts-espeak",
  "forge-tts-pipeline",
  "forge-tts-piper",
  "forge-types",

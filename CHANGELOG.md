@@ -1,11 +1,25 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-beta.3] - 2026-06-01
+### ⚙️ Miscellaneous Tasks
+- *(workspace)* Regenerate Cargo.lock for forge-platform-kick
+
+### 🚀 Features
+- *(platforms)* Add limited_reason field to PlatformCapabilities
+- *(kick)* Scaffold crate with AuthFlow::None and capabilities
+- *(runtime)* Register Kick triggers + mark platform Available
+- *(kick)* Switch AuthFlow to LocalCallback with OAuth PKCE
+- *(kick)* Add OAuth chat-send with credential refresh manager
+- *(app)* Wire Kick OAuth through LocalCallbackFlow
+- *(app)* Wire Kick boot chat read + OAuth send bridge
+
 ## [0.1.0-beta.2] - 2026-05-31
 ### ⚙️ Miscellaneous Tasks
 - *(workspace)* Bump toolchain to 1.96.0
 - Remove docs/ — README and in-app docs are canonical
 - *(workspace)* Regenerate Cargo.lock for forge-platform-trovo
+- Release
 
 ### 🐛 Bug Fixes
 - *(livechat)* Use platform-specific palette colors for chips
@@ -13,6 +27,9 @@ All notable changes to this project will be documented in this file.
 - *(oauth)* Wire Trovo + YouTube Connect through LocalCallbackFlow
 - *(app)* Show Platforms/Stream apps parent in builtin breadcrumb
 - *(app)* Add Automation/Builtin parents to remaining breadcrumbs
+
+### 📚 Documentation
+- *(release)* Release v0.1.0-beta.2
 
 ### 🚀 Features
 - *(oauth)* Add LocalCallbackDriver with PKCE and CSRF state

@@ -25,6 +25,8 @@ pub struct AzureCredentials {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ElevenLabsCredentials {
     pub api_key: String,
+    #[serde(default)]
+    pub base_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,6 +63,7 @@ mod tests {
     fn elevenlabs_serde_roundtrip() {
         let creds = ElevenLabsCredentials {
             api_key: "xi-key".into(),
+            base_url: None,
         };
         let json = serde_json::to_string(&creds).unwrap();
         let back: ElevenLabsCredentials = serde_json::from_str(&json).unwrap();

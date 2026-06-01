@@ -98,6 +98,15 @@ pub trait TtsEngine: Send + Sync {
     fn capabilities(&self) -> &EngineCapabilities;
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError>;
     async fn synthesize(&self, request: SynthesisRequest) -> Result<PcmBuffer, TtsError>;
+
+    /// Validates that the engine is reachable and credentials are accepted.
+    ///
+    /// Default: calls `list_voices()` and discards the result. Cloud engines may
+    /// override with a lighter-weight probe. Local engines inherit this default,
+    /// which verifies binary availability via `list_voices()`.
+    async fn test_connection(&self) -> Result<(), TtsError> {
+        self.list_voices().await.map(|_| ())
+    }
 }
 
 pub trait TtsEngineFactory: Send + Sync {

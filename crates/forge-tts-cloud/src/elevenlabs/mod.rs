@@ -90,7 +90,12 @@ impl TtsEngine for ElevenLabsEngine {
     }
 
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {
-        voices::fetch_voices(&self.credentials)
+        let base_url = self
+            .credentials
+            .base_url
+            .as_deref()
+            .unwrap_or(DEFAULT_BASE_URL);
+        voices::fetch_voices(&self.client, &self.credentials.api_key, base_url)
             .await
             .map_err(TtsError::from)
     }

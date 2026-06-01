@@ -32,7 +32,7 @@ enum SynthOutcome {
 struct SynthTaskDeps {
     resolver: Arc<std::sync::RwLock<forge_voice::VoiceAliasResolver>>,
     pipeline: Arc<forge_tts_pipeline::PipelineConfig>,
-    registry: Arc<forge_tts_core::TtsRegistry>,
+    registry: Arc<std::sync::RwLock<forge_tts_core::TtsRegistry>>,
     voice_catalog: Arc<Vec<TtsVoice>>,
 }
 
@@ -74,7 +74,12 @@ async fn run_synthesis(req: SpeakRequest, deps: SynthTaskDeps) -> SynthTaskResul
         }
     };
 
-    let factory = match deps.registry.get(&engine_id) {
+    let factory = match deps
+        .registry
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(&engine_id)
+    {
         Some(f) => f,
         None => {
             return SynthTaskResult {
@@ -494,10 +499,20 @@ fn pop_next(
     req
 }
 
-async fn build_voice_catalog(registry: &forge_tts_core::TtsRegistry) -> Vec<TtsVoice> {
+async fn build_voice_catalog(
+    registry: &std::sync::RwLock<forge_tts_core::TtsRegistry>,
+) -> Vec<TtsVoice> {
+    let engine_ids = registry
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .engine_ids();
     let mut catalog = Vec::new();
-    for engine_id in registry.engine_ids() {
-        if let Some(factory) = registry.get(&engine_id) {
+    for engine_id in engine_ids {
+        let factory = registry
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&engine_id);
+        if let Some(factory) = factory {
             match factory.create() {
                 Ok(engine) => match engine.list_voices().await {
                     Ok(voices) => catalog.extend(voices),

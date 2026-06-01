@@ -93,7 +93,7 @@ fn make_deps() -> QueueDeps {
         SynthesisDefaults::default(),
     );
     QueueDeps {
-        registry: Arc::new(registry),
+        registry: Arc::new(std::sync::RwLock::new(registry)),
         resolver: Arc::new(std::sync::RwLock::new(resolver)),
         pipeline: Arc::new(forge_tts_pipeline::PipelineConfig::default()),
         audio_sink: Arc::new(NullSink),

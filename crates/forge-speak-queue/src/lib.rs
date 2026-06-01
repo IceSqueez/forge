@@ -129,7 +129,8 @@ impl Default for QueueConfig {
 }
 
 pub struct QueueDeps {
-    pub registry: Arc<TtsRegistry>,
+    // std::sync::RwLock here, not tokio — guard never crosses await.
+    pub registry: Arc<std::sync::RwLock<TtsRegistry>>,
     pub resolver: Arc<std::sync::RwLock<VoiceAliasResolver>>,
     pub pipeline: Arc<forge_tts_pipeline::PipelineConfig>,
     pub audio_sink: Arc<dyn forge_audio::AudioSink>,

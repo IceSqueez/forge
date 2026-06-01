@@ -174,7 +174,6 @@ pub(super) async fn probe_connection(
 
     match resp.status().as_u16() {
         200..=299 => Ok(()),
-        // Polly returns 403 (not 401) for invalid credentials.
         403 => Err(PollyError::Unauthorized("invalid credentials".into())),
         s => Err(PollyError::Http(format!("unexpected status {s}"))),
     }
@@ -297,7 +296,6 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/v1/speech"))
-            // Polly returns 403 (not 401) for invalid credentials.
             .respond_with(ResponseTemplate::new(403))
             .mount(&server)
             .await;
@@ -354,7 +352,6 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/v1/voices"))
-            // Polly returns 403 (not 401) for invalid credentials.
             .respond_with(ResponseTemplate::new(403))
             .mount(&server)
             .await;

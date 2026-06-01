@@ -30,7 +30,6 @@ impl From<PollyError> for TtsError {
             PollyError::RateLimited { retry_after_secs } => {
                 TtsError::RateLimited { retry_after_secs }
             }
-            // SigV4 signing failures indicate a credentials configuration problem.
             PollyError::SignatureError(msg) => TtsError::AuthFailed { reason: msg },
             PollyError::VoiceNotFound(id) => TtsError::InvalidVoice { id: VoiceId(id) },
             PollyError::Io(io_err) => TtsError::Io(io_err),
@@ -168,7 +167,6 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/v1/voices"))
-            // Polly returns 403 (not 401) for invalid credentials.
             .respond_with(ResponseTemplate::new(403))
             .mount(&server)
             .await;

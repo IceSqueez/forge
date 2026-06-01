@@ -49,7 +49,6 @@ pub(super) async fn fetch_voices(
         .map_err(|e| PollyError::Http(e.to_string()))?;
 
     match resp.status().as_u16() {
-        // Polly returns 403 (not 401) for invalid credentials.
         403 => return Err(PollyError::Unauthorized("invalid credentials".into())),
         200..=299 => {}
         s => {
@@ -149,7 +148,6 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/v1/voices"))
-            // Polly returns 403 (not 401) for invalid credentials.
             .respond_with(ResponseTemplate::new(403))
             .mount(&server)
             .await;

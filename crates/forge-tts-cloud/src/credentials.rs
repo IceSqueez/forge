@@ -16,7 +16,7 @@ pub fn engine_id_for_credential(credential_id: &str) -> Option<EngineId> {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct AzureCredentials {
     pub api_key: String,
     pub region: String,
@@ -24,26 +24,65 @@ pub struct AzureCredentials {
     pub base_url: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl std::fmt::Debug for AzureCredentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AzureCredentials")
+            .field("api_key", &"***")
+            .field("region", &self.region)
+            .field("base_url", &self.base_url)
+            .finish()
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ElevenLabsCredentials {
     pub api_key: String,
     #[serde(default)]
     pub base_url: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl std::fmt::Debug for ElevenLabsCredentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ElevenLabsCredentials")
+            .field("api_key", &"***")
+            .field("base_url", &self.base_url)
+            .finish()
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct OpenAiCredentials {
     pub api_key: String,
     pub base_url: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl std::fmt::Debug for OpenAiCredentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OpenAiCredentials")
+            .field("api_key", &"***")
+            .field("base_url", &self.base_url)
+            .finish()
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct PollyCredentials {
     pub access_key_id: String,
     pub secret_access_key: String,
     pub region: String,
     #[serde(default)]
     pub base_url: Option<String>,
+}
+
+impl std::fmt::Debug for PollyCredentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PollyCredentials")
+            .field("access_key_id", &"***")
+            .field("secret_access_key", &"***")
+            .field("region", &self.region)
+            .field("base_url", &self.base_url)
+            .finish()
+    }
 }
 
 #[cfg(test)]
@@ -151,6 +190,56 @@ mod tests {
         let json = r#"{"access_key_id":"A","secret_access_key":"s","region":"us-east-1"}"#;
         let back: PollyCredentials = serde_json::from_str(json).unwrap();
         assert!(back.base_url.is_none());
+    }
+
+    #[test]
+    fn azure_debug_redacts_api_key() {
+        let creds = AzureCredentials {
+            api_key: "super-secret-key".into(),
+            region: "eastus".into(),
+            base_url: None,
+        };
+        let s = format!("{creds:?}");
+        assert!(!s.contains("super-secret-key"));
+        assert!(s.contains("***"));
+        assert!(s.contains("eastus"));
+    }
+
+    #[test]
+    fn elevenlabs_debug_redacts_api_key() {
+        let creds = ElevenLabsCredentials {
+            api_key: "xi-secret-key".into(),
+            base_url: None,
+        };
+        let s = format!("{creds:?}");
+        assert!(!s.contains("xi-secret-key"));
+        assert!(s.contains("***"));
+    }
+
+    #[test]
+    fn openai_debug_redacts_api_key() {
+        let creds = OpenAiCredentials {
+            api_key: "sk-secret-key".into(),
+            base_url: None,
+        };
+        let s = format!("{creds:?}");
+        assert!(!s.contains("sk-secret-key"));
+        assert!(s.contains("***"));
+    }
+
+    #[test]
+    fn polly_debug_redacts_both_keys() {
+        let creds = PollyCredentials {
+            access_key_id: "AKIASECRETID".into(),
+            secret_access_key: "very-secret-access-key".into(),
+            region: "us-east-1".into(),
+            base_url: None,
+        };
+        let s = format!("{creds:?}");
+        assert!(!s.contains("AKIASECRETID"));
+        assert!(!s.contains("very-secret-access-key"));
+        assert!(s.contains("***"));
+        assert!(s.contains("us-east-1"));
     }
 
     #[test]

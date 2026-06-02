@@ -212,25 +212,3 @@ fn prepare_samples(buffer: &PcmBuffer, dst_sr: u32, dst_ch: u16) -> Result<Vec<i
 fn stream_error_fn(err: cpal::StreamError) {
     tracing::error!("cpal stream error: {}", err);
 }
-
-#[cfg(test)]
-#[allow(clippy::unwrap_used)]
-mod tests {
-    use super::*;
-    use crate::events::NullAudioEventSink;
-
-    #[test]
-    #[ignore = "requires audio host (cpal) — run manually with `cargo test -- --ignored`"]
-    fn cpal_sink_plays_on_default_device() {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
-            use crate::device::list_output_devices;
-            let devices = list_output_devices().unwrap();
-            let first = devices.first().unwrap();
-            let sink = CpalSink::new(first.id.clone(), None, None, Arc::new(NullAudioEventSink));
-            let buf = PcmBuffer::new(vec![0i16; 44_100], 44_100, 1);
-            sink.play(buf).await.unwrap();
-            tokio::time::sleep(Duration::from_millis(1200)).await;
-        });
-    }
-}

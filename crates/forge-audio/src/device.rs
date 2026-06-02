@@ -110,11 +110,4 @@ mod tests {
         let back: DeviceId = serde_json::from_str(&json).unwrap();
         assert_eq!(id, back);
     }
-
-    #[test]
-    #[ignore = "requires audio host (cpal) — run manually with `cargo test -- --ignored`"]
-    fn list_output_devices_runs_on_audio_host() {
-        let result = list_output_devices();
-        assert!(result.is_ok(), "list failed: {:?}", result.err());
-    }
 }

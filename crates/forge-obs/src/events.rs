@@ -160,8 +160,8 @@ mod tests {
     use super::*;
     // obws::events::Event is #[non_exhaustive] — variants cannot be constructed outside
     // the defining crate, so map_obs_event / apply_catalog_update / apply_health_update
-    // are covered by live-OBS integration tests (marked #[ignore]).  The payload-builder
-    // helpers make_scene_changed_event and make_record_event are tested here directly.
+    // can't be unit-tested. The payload-builder helpers make_scene_changed_event and
+    // make_record_event are tested here directly.
 
     #[test]
     fn make_scene_changed_event_emits_from_and_to_fields() {

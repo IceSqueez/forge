@@ -661,15 +661,4 @@ mod tests {
             );
         }
     }
-
-    #[tokio::test]
-    #[ignore = "requires a live OBS instance at ws://127.0.0.1:4455 with no password; \
-                verifies that the supervisor task retries with exponential backoff after \
-                disconnect — obws::Client connects to a real TCP socket and cannot be mocked \
-                in-process; remove #[ignore] when a mock transport is available"]
-    async fn reconnect_supervisor_retries_with_backoff_on_disconnect() {
-        // Boot a real ObsClient, kill the OBS websocket, wait for the first reconnect attempt,
-        // assert state transitions: Connected → Reconnecting → Connected.
-        // Validate that at least one compute_backoff delay is observed before re-connection.
-    }
 }

@@ -3,8 +3,6 @@
 //! Uses a synthetic voices directory with hand-crafted .onnx stubs and
 //! .onnx.json sidecars. No real Piper binary is required — the scanner only
 //! reads the filesystem.
-//!
-//! Live synthesis tests are `#[ignore]`-gated in the crate inline tests.
 
 #![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::expect_used)]

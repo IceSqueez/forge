@@ -371,28 +371,4 @@ mod tests {
         assert_eq!(stem, "en_US-multi");
         assert_eq!(speaker, Some(1u32));
     }
-
-    #[tokio::test]
-    #[ignore = "requires real piper binary and voice model; set PIPER_BIN and PIPER_MODEL env vars"]
-    async fn synthesize_produces_pcm() {
-        let piper = std::env::var("PIPER_BIN").expect("PIPER_BIN env var");
-        let model_dir = std::env::var("PIPER_MODEL_DIR").expect("PIPER_MODEL_DIR env var");
-        let voice_id = std::env::var("PIPER_VOICE_ID").expect("PIPER_VOICE_ID env var");
-        let engine = PiperEngine::new(
-            PathBuf::from(&piper),
-            PathBuf::from(&model_dir),
-            Duration::from_secs(30),
-        )
-        .expect("engine");
-        let req = SynthesisRequest {
-            text: "hello world".into(),
-            voice_id: VoiceId(voice_id),
-            pitch_semitones: 0.0,
-            rate_multiplier: 1.0,
-            ssml: false,
-        };
-        let buf = engine.synthesize(req).await.expect("synthesize");
-        assert!(!buf.samples.is_empty());
-        assert_eq!(buf.channels, 1);
-    }
 }

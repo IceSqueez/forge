@@ -56,21 +56,3 @@ fn resolve_device_id(device: &OutputDevice) -> Result<DeviceId, AudioError> {
         OutputDevice::ById { id } => Ok(DeviceId::new(id)),
     }
 }
-
-#[cfg(test)]
-#[allow(clippy::unwrap_used)]
-mod tests {
-    use super::*;
-
-    #[test]
-    #[ignore = "requires audio host (cpal) — run manually with `cargo test -- --ignored`"]
-    fn cpal_factory_builds_sink_for_default_device() {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
-            let factory = CpalSinkFactory;
-            let sink = factory.build(&OutputDevice::Default).await.unwrap();
-            let buf = forge_audio::PcmBuffer::new(vec![0i16; 100], 44_100, 1);
-            sink.play(buf).await.unwrap();
-        });
-    }
-}

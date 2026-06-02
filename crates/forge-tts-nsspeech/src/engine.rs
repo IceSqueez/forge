@@ -6,7 +6,6 @@ use forge_tts_core::{
     TtsError, TtsVoice,
 };
 
-use crate::error::NsSpeechError;
 use crate::synth::{NsSpeechRequest, spawn_worker};
 use crate::voices;
 
@@ -90,6 +89,7 @@ impl TtsEngineFactory for NsSpeechEngineFactory {
 }
 
 #[cfg(all(test, target_os = "macos"))]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
     use forge_tts_core::VoiceId;

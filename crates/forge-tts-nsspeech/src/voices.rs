@@ -1,3 +1,5 @@
+#![allow(unsafe_code)]
+
 use forge_tts_core::{EngineId, TtsVoice, VoiceGender, VoiceId};
 use objc2_avf_audio::{
     AVSpeechSynthesisVoice, AVSpeechSynthesisVoiceGender, AVSpeechSynthesisVoiceQuality,
@@ -13,7 +15,7 @@ pub(crate) fn voice_catalog(engine_id: &EngineId) -> Result<Vec<TtsVoice>, NsSpe
     let voices: Vec<TtsVoice> = objc2::rc::autoreleasepool(|_| {
         let raw: objc2::rc::Retained<NSArray<AVSpeechSynthesisVoice>> =
             unsafe { AVSpeechSynthesisVoice::speechVoices() };
-        raw.iter().map(|v| map_voice(v, engine_id)).collect()
+        raw.iter().map(|v| map_voice(&v, engine_id)).collect()
     });
 
     if voices.is_empty() {

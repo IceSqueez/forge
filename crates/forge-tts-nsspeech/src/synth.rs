@@ -1,3 +1,5 @@
+#![allow(unsafe_code)]
+
 #[cfg(target_os = "macos")]
 use std::sync::mpsc;
 

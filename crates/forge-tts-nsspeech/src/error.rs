@@ -5,9 +5,6 @@ pub(crate) enum NsSpeechError {
     #[error("no AVSpeech voices installed")]
     NoCatalog,
 
-    #[error("AVFoundation worker terminated")]
-    WorkerTerminated,
-
     #[error("synthesis timed out after 30s without audio")]
     Timeout,
 
@@ -24,10 +21,6 @@ impl From<NsSpeechError> for TtsError {
             NsSpeechError::NoCatalog => TtsError::EngineUnavailable {
                 id: EngineId("nsspeech".into()),
                 detail: "no AVSpeech voices installed".into(),
-            },
-            NsSpeechError::WorkerTerminated => TtsError::EngineUnavailable {
-                id: EngineId("nsspeech".into()),
-                detail: "AVFoundation worker terminated".into(),
             },
             NsSpeechError::Timeout | NsSpeechError::NoAudio => {
                 TtsError::Io(std::io::Error::other(e.to_string()))

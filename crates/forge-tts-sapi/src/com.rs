@@ -1,21 +1,23 @@
+#![allow(unsafe_code)]
+
 use std::sync::mpsc;
 
 use forge_audio::PcmBuffer;
 use forge_tts_core::{EngineId, SynthesisRequest, TtsVoice, VoiceId};
-use windows::Win32::Foundation::{BOOL, PCWSTR};
+use windows::Win32::Foundation::BOOL;
 use windows::Win32::Media::Speech::{
-    CoCreateInstance, IEnumSpObjectTokens, ISpObjectToken, ISpObjectTokenCategory, ISpStream,
-    ISpVoice, SPCAT_VOICES, SPEAKFLAGS, SPF_DEFAULT, SPF_PARSE_SSML, SpObjectTokenCategory,
-    SpStream, SpVoice,
+    IEnumSpObjectTokens, ISpObjectToken, ISpObjectTokenCategory, ISpVoice, SPCAT_VOICES,
+    SpObjectTokenCategory, SpVoice,
 };
 use windows::Win32::System::Com::{
-    CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoInitializeEx, CoUninitialize,
-    CreateStreamOnHGlobal, IStream, STREAM_SEEK_SET,
+    CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
+    CoUninitialize,
 };
 
 use crate::error::SapiError;
 use crate::{synth, voices};
 
+#[allow(dead_code)]
 pub(crate) enum StaRequest {
     ListVoices {
         tx: tokio::sync::oneshot::Sender<Result<Vec<TtsVoice>, SapiError>>,
@@ -37,7 +39,8 @@ pub(crate) fn spawn_sta_worker(
         sta_worker_main(req_rx, init_tx, engine_id);
     });
 
-    init_rx.recv().map_err(|_| SapiError::WorkerTerminated)?
+    let voices = init_rx.recv().map_err(|_| SapiError::WorkerTerminated)??;
+    Ok((req_tx, voices))
 }
 
 fn sta_worker_main(
@@ -50,8 +53,7 @@ fn sta_worker_main(
     // ISpObjectTokenCategory pointers are created, used, and dropped exclusively here.
     // Only Vec<TtsVoice> and PcmBuffer (plain heap data) travel across the channel;
     // no COM pointer is ever transmitted outside this thread.
-    let hr = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
-    if let Err(e) = hr {
+    if let Err(e) = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }.ok() {
         let _ = init_tx.send(Err(SapiError::ComInit(e.code().0)));
         return;
     }
@@ -115,9 +117,10 @@ fn enumerate_voice_tokens(
     unsafe { category.SetId(SPCAT_VOICES, BOOL(0)) }.map_err(|e| SapiError::ComInit(e.code().0))?;
 
     // SAFETY: EnumTokens queries installed SAPI voices. Null PCWSTR = no attribute filter.
-    let enum_tokens: IEnumSpObjectTokens =
-        unsafe { category.EnumTokens(PCWSTR::null(), PCWSTR::null()) }
-            .map_err(|e| SapiError::ComInit(e.code().0))?;
+    let enum_tokens: IEnumSpObjectTokens = unsafe {
+        category.EnumTokens(windows::core::PCWSTR::null(), windows::core::PCWSTR::null())
+    }
+    .map_err(|e| SapiError::ComInit(e.code().0))?;
 
     let mut result = Vec::new();
     loop {
@@ -125,33 +128,38 @@ fn enumerate_voice_tokens(
         let mut fetched: u32 = 0;
         // SAFETY: Next writes at most 1 token pointer into `token`. `fetched` receives
         // the actual count. Both are stack-allocated on this STA thread.
-        let hr = unsafe { enum_tokens.Next(1, &mut token, &mut fetched) };
+        let hr = unsafe { enum_tokens.Next(1, &mut token, Some(&mut fetched)) };
         if hr.is_err() || fetched == 0 {
             break;
         }
-        if let Some(tok) = token {
-            if let Ok(tv) = token_to_tts_voice(&tok, engine_id) {
-                result.push((tv, tok));
-            }
+        if let Some(tok) = token
+            && let Ok(tv) = token_to_tts_voice(&tok, engine_id)
+        {
+            result.push((tv, tok));
         }
     }
 
     Ok(result)
 }
 
-fn get_attribute(token: &ISpObjectToken, name: PCWSTR) -> Result<String, SapiError> {
-    // SAFETY: GetAttribute returns a PWSTR allocated via CoTaskMemAlloc.
-    // to_string() copies the UTF-16 data into an owned String immediately.
-    // The PWSTR itself is freed by the windows-rs binding after to_string().
-    let pwstr = unsafe { token.GetAttribute(name) }.map_err(|e| SapiError::ComInit(e.code().0))?;
-    unsafe { pwstr.to_string() }.map_err(|e| SapiError::ComInit(e.code().0))
+fn get_attribute(token: &ISpObjectToken, name: windows::core::PCWSTR) -> Result<String, SapiError> {
+    // SAFETY: OpenKey opens the "Attributes" subkey of the token. Both the token and
+    // the returned key are valid COM objects on this STA thread.
+    let attrs = unsafe { token.OpenKey(windows::core::w!("Attributes")) }
+        .map_err(|e| SapiError::ComInit(e.code().0))?;
+    // SAFETY: GetStringValue reads the named string value from the registry key.
+    // The returned PWSTR points to CoTaskMem-allocated UTF-16 data.
+    let pwstr =
+        unsafe { attrs.GetStringValue(name) }.map_err(|e| SapiError::ComInit(e.code().0))?;
+    // SAFETY: The PWSTR is valid, non-null UTF-16 as returned by SAPI's registry read.
+    unsafe { pwstr.to_string() }.map_err(|_| SapiError::ComInit(-1))
 }
 
 fn get_id(token: &ISpObjectToken) -> Result<String, SapiError> {
-    // SAFETY: GetId returns a CoTaskMemAlloc-allocated PWSTR. to_string() copies
-    // immediately; the windows-rs binding frees the pointer after conversion.
+    // SAFETY: GetId returns the CoTaskMem-allocated registry path string for this token.
     let pwstr = unsafe { token.GetId() }.map_err(|e| SapiError::ComInit(e.code().0))?;
-    unsafe { pwstr.to_string() }.map_err(|e| SapiError::ComInit(e.code().0))
+    // SAFETY: The PWSTR is valid, non-null UTF-16 as returned by SAPI.
+    unsafe { pwstr.to_string() }.map_err(|_| SapiError::ComInit(-1))
 }
 
 fn token_to_tts_voice(token: &ISpObjectToken, engine_id: &EngineId) -> Result<TtsVoice, SapiError> {

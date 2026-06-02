@@ -5,6 +5,7 @@ pub(crate) enum SapiError {
     #[error("CoInitializeEx failed: HRESULT 0x{0:08x}")]
     ComInit(i32),
 
+    #[allow(dead_code)]
     #[error("voice catalog is empty")]
     NoCatalog,
 

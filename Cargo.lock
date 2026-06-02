@@ -2716,6 +2716,7 @@ name = "forge-tts-sapi"
 version = "0.1.0-beta.5"
 dependencies = [
  "async-trait",
+ "forge-audio",
  "forge-tts-core",
  "thiserror 2.0.18",
  "tokio",

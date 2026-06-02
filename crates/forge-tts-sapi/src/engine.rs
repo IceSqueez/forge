@@ -7,7 +7,6 @@ use forge_tts_core::{
 };
 
 use crate::com::{StaRequest, spawn_sta_worker};
-use crate::error::SapiError;
 
 static CAPABILITIES: EngineCapabilities = EngineCapabilities {
     ssml: true,
@@ -89,6 +88,7 @@ impl TtsEngineFactory for SapiEngineFactory {
 }
 
 #[cfg(all(test, target_os = "windows"))]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
     use forge_tts_core::VoiceId;

@@ -30,26 +30,30 @@ pub(crate) fn prepare_speak_text(
 }
 
 #[cfg(target_os = "windows")]
+#[allow(unsafe_code)]
 pub(crate) fn capture_pcm(
     voice: &windows::Win32::Media::Speech::ISpVoice,
     text: &str,
     use_xml: bool,
 ) -> Result<forge_audio::PcmBuffer, crate::error::SapiError> {
-    use windows::Win32::Foundation::{HGLOBAL, LARGE_INTEGER, ULARGE_INTEGER};
+    use windows::Win32::Foundation::{BOOL, HGLOBAL};
     use windows::Win32::Media::Audio::WAVEFORMATEX;
-    use windows::Win32::Media::Speech::{
-        ISpStream, SPDFID_WaveFormatEx, SPF_DEFAULT, SPF_PARSE_SSML, SpStream,
-    };
+    use windows::Win32::Media::Speech::{ISpStream, SPF_DEFAULT, SPF_PARSE_SSML, SpStream};
+    use windows::Win32::System::Com::StructuredStorage::CreateStreamOnHGlobal;
     use windows::Win32::System::Com::{
-        CLSCTX_INPROC_SERVER, CreateStreamOnHGlobal, IStream, STREAM_SEEK_SET,
+        CLSCTX_INPROC_SERVER, CoCreateInstance, IStream, STREAM_SEEK_SET,
     };
 
+    const SPDFID_WAVE_FORMAT_EX: windows::core::GUID =
+        windows::core::GUID::from_u128(0xc31adbae_527f_4ff5_a230_f62bb61ff70c);
+
     // SAFETY: CreateStreamOnHGlobal allocates an in-memory COM stream. HGLOBAL(null)
-    // instructs COM to allocate the global memory itself. fDeleteOnRelease=1 frees the
+    // instructs COM to allocate the global memory itself. fDeleteOnRelease=BOOL(1) frees the
     // HGLOBAL when the IStream's reference count reaches zero. All operations on the
     // returned stream occur on this STA thread before the stream is released.
     let com_stream: IStream =
-        unsafe { CreateStreamOnHGlobal(HGLOBAL(std::ptr::null_mut()), true)? };
+        unsafe { CreateStreamOnHGlobal(HGLOBAL(std::ptr::null_mut()), BOOL(1)) }
+            .map_err(|e| crate::error::SapiError::ComInit(e.code().0))?;
 
     let wfex = WAVEFORMATEX {
         wFormatTag: 1,
@@ -63,14 +67,12 @@ pub(crate) fn capture_pcm(
 
     // SAFETY: CoCreateInstance is called on the STA thread. The returned ISpStream
     // is used and dropped here before any other COM call on the STA thread.
-    let sp_stream: ISpStream = unsafe {
-        windows::Win32::System::Com::CoCreateInstance(&SpStream, None, CLSCTX_INPROC_SERVER)
-    }
-    .map_err(|e| crate::error::SapiError::ComInit(e.code().0))?;
+    let sp_stream: ISpStream = unsafe { CoCreateInstance(&SpStream, None, CLSCTX_INPROC_SERVER) }
+        .map_err(|e| crate::error::SapiError::ComInit(e.code().0))?;
 
     // SAFETY: SetBaseStream binds the IStream to the ISpStream with a fixed PCM format.
     // Both pointers are valid for the duration of this function on the STA thread.
-    unsafe { sp_stream.SetBaseStream(&com_stream, &SPDFID_WaveFormatEx, &wfex) }
+    unsafe { sp_stream.SetBaseStream(&com_stream, &SPDFID_WAVE_FORMAT_EX, &wfex) }
         .map_err(|e| crate::error::SapiError::ComInit(e.code().0))?;
 
     // SAFETY: SetOutput directs synthesized audio to sp_stream. voice and sp_stream
@@ -85,12 +87,11 @@ pub(crate) fn capture_pcm(
     // SAFETY: Speak takes a null-terminated UTF-16 string, which text_utf16 provides.
     // The Vec remains alive for the duration of this call. SPF_DEFAULT means synchronous
     // synthesis — Speak blocks until all audio is written to sp_stream.
-    unsafe { voice.Speak(pcwstr, speak_flags, None) }
+    unsafe { voice.Speak(pcwstr, speak_flags.0 as u32, None) }
         .map_err(|e| crate::error::SapiError::Speak(e.code().0))?;
 
-    let seek_pos = LARGE_INTEGER { QuadPart: 0 };
     // SAFETY: Seek repositions the COM stream to the beginning so we can read the PCM bytes.
-    unsafe { com_stream.Seek(seek_pos, STREAM_SEEK_SET, None) }
+    unsafe { com_stream.Seek(0i64, STREAM_SEEK_SET, None) }
         .map_err(|e| crate::error::SapiError::ComInit(e.code().0))?;
 
     let mut pcm_bytes = Vec::<u8>::new();

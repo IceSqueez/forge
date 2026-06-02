@@ -1,15 +1,54 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-beta.5] - 2026-06-02
+### ⚠️ BREAKING CHANGES
+- **tts-cloud**: PollyCredentials gains base_url field (serde default = None)
+
+### ⚙️ Miscellaneous Tasks
+- *(workspace)* Update Cargo.lock for forge-tts-cloud
+
+### 🎨 Styling
+- Drop tautological docstrings on TTS core and policy
+- Drop repeated Polly 403 comment from match arms and tests
+
+### 🐛 Bug Fixes
+- *(tts-cloud)* Redact secrets in credential Debug output
+- *(app)* Replace zero-size text placeholders with Space widget
+
+### 🚀 Features
+- *(tts-core)* Add TtsError::QuotaExceeded variant
+- *(tts-core)* Add TtsEngine::test_connection default impl
+- *(tts-cloud)* Scaffold feature-gated crate with 4 engine stubs
+- *(tts-cloud)* Add retry/timeout/rate-limit policy module
+- *(audio)* Add decode_bytes for in-memory audio decoding
+- *(tts-cloud)* Implement OpenAI synthesize via retry helper
+- *(tts-cloud)* Implement ElevenLabs synthesize via retry helper
+- *(tts-cloud)* Fetch ElevenLabs voices from /v1/voices endpoint
+- *(tts-cloud)* Implement Azure Speech Service TTS engine
+- *(tts-cloud)* [**breaking**] Add Polly SigV4 signer and error types
+- *(tts-cloud)* Implement Polly synthesize via retry helper
+- *(tts-cloud)* Fetch Polly voices and wire engine with retry
+- *(app)* Load cloud TTS credentials and register engines at boot
+- *(app)* Add Cloud TTS Engines screen with credentials form
+
+### 🚜 Refactor
+- *(speak-queue)* Hold TtsRegistry behind Arc<RwLock>
+- *(tts-cloud)* Make EngineFactory credentials field private
+
 ## [0.1.0-beta.4] - 2026-06-01
 ### ⚙️ Miscellaneous Tasks
 - *(workspace)* Update Cargo.lock for forge-tts-espeak
+- Release
 
 ### 🎨 Styling
 - Drop tautological rustdoc and stale comments
 
 ### 🐛 Bug Fixes
 - *(tts-piper)* Gate voice_scan tests under cfg(unix)
+
+### 📚 Documentation
+- *(release)* Release v0.1.0-beta.4
 
 ### 🚀 Features
 - *(tts-espeak)* Scaffold crate with subprocess engine factory

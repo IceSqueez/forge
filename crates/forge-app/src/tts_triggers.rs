@@ -2,7 +2,7 @@ use forge_widgets::tokens::{
     BORDER_THIN, FONT_MD, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
 };
 use forge_widgets::{ForgePalette, Icon, tabler_icon};
-use iced::widget::{column, container, row, text};
+use iced::widget::{Space, column, container, row, text};
 use iced::{Alignment, Background, Border, Element, Length, Task};
 
 use crate::Message;
@@ -452,7 +452,7 @@ fn trigger_card_subs<'a>(
     .spacing(gap_sm);
 
     let disabled_note: Element<'a, Message> = if state.sub_messages_enabled {
-        text("").size(0.0).into()
+        Space::new().into()
     } else {
         text("Disabled \u{2014} toggle to enable")
             .size(FONT_XS)

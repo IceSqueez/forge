@@ -5,7 +5,7 @@ use forge_widgets::tokens::{
     BORDER_THIN, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
 };
 use forge_widgets::{ForgePalette, Icon, tabler_icon};
-use iced::widget::{button, column, container, row, scrollable, text, text_input};
+use iced::widget::{Space, button, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Background, Border, Color, Element, Length, Task};
 
 use crate::Message;
@@ -178,7 +178,7 @@ fn pipeline_column_view<'a>(
         palette.success,
         "Sent to voice engine",
         String::new(),
-        text("").size(0.0).into(),
+        Space::new().into(),
         palette,
         false,
     );
@@ -234,7 +234,7 @@ fn pipeline_stage<'a>(
             .height(8)
             .into()
     } else {
-        text("").size(0.0).into()
+        Space::new().into()
     };
 
     let left_col = column![badge, connector]

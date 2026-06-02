@@ -2,7 +2,7 @@ use forge_widgets::ForgePalette;
 use forge_widgets::tokens::{
     BORDER_THIN, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
 };
-use iced::widget::{button, column, container, row, scrollable, text, text_input};
+use iced::widget::{Space, button, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Background, Border, Color, Element, Length, Task};
 
 use crate::Message;
@@ -341,7 +341,7 @@ fn engine_detail_header<'a>(
         .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
         .into()
     } else {
-        text("").size(0.0).into()
+        Space::new().into()
     };
 
     let title_row = row![

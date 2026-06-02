@@ -2,7 +2,7 @@ use forge_widgets::ForgePalette;
 use forge_widgets::tokens::{
     BORDER_THIN, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
 };
-use iced::widget::{button, column, container, row, scrollable, text, text_input};
+use iced::widget::{Space, button, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Background, Border, Element, Length, Task};
 
 use crate::Message;
@@ -422,7 +422,7 @@ fn alias_row<'a>(
         Some(ViewerRole::Vip) => role_badge_el("VIP", palette.brand, palette),
         Some(ViewerRole::Sub) => role_badge_el("SUB", palette.success, palette),
         None if muted => role_badge_el("BLOCKED", palette.random, palette),
-        None => text("").size(0.0).into(),
+        None => Space::new().into(),
     };
 
     let viewer_col = row![

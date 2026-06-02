@@ -4,7 +4,7 @@ use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::tokens::{
     BORDER_THIN, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
 };
-use iced::widget::{button, column, container, row, scrollable, slider, text, text_input};
+use iced::widget::{Space, button, column, container, row, scrollable, slider, text, text_input};
 use iced::{Alignment, Background, Border, Color, Element, Length, Task};
 
 use crate::Message;
@@ -464,7 +464,7 @@ fn queue_item_row<'a>(
         .padding([sp(Spacing::Xxs), sp(Spacing::Xxs)])
         .into()
     } else {
-        text("").size(0.0).into()
+        Space::new().into()
     };
 
     let name_row = row![

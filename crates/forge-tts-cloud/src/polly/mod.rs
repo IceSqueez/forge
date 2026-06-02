@@ -78,7 +78,13 @@ impl PollyEngine {
 }
 
 pub struct PollyEngineFactory {
-    pub credentials: PollyCredentials,
+    credentials: PollyCredentials,
+}
+
+impl PollyEngineFactory {
+    pub fn new(credentials: PollyCredentials) -> Self {
+        Self { credentials }
+    }
 }
 
 impl forge_tts_core::TtsEngineFactory for PollyEngineFactory {

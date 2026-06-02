@@ -77,7 +77,13 @@ impl AzureEngine {
 }
 
 pub struct AzureEngineFactory {
-    pub credentials: AzureCredentials,
+    credentials: AzureCredentials,
+}
+
+impl AzureEngineFactory {
+    pub fn new(credentials: AzureCredentials) -> Self {
+        Self { credentials }
+    }
 }
 
 impl forge_tts_core::TtsEngineFactory for AzureEngineFactory {

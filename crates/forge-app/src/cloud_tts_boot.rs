@@ -54,12 +54,7 @@ async fn try_register_azure(
     registry
         .write()
         .unwrap_or_else(|e| e.into_inner())
-        .register(
-            id.clone(),
-            Arc::new(AzureEngineFactory {
-                credentials: azure_creds,
-            }),
-        );
+        .register(id.clone(), Arc::new(AzureEngineFactory::new(azure_creds)));
     tracing::info!("registered Azure TTS engine");
     Some(id)
 }
@@ -90,12 +85,7 @@ async fn try_register_elevenlabs(
     registry
         .write()
         .unwrap_or_else(|e| e.into_inner())
-        .register(
-            id.clone(),
-            Arc::new(ElevenLabsEngineFactory {
-                credentials: el_creds,
-            }),
-        );
+        .register(id.clone(), Arc::new(ElevenLabsEngineFactory::new(el_creds)));
     tracing::info!("registered ElevenLabs TTS engine");
     Some(id)
 }
@@ -123,12 +113,7 @@ async fn try_register_openai(
     registry
         .write()
         .unwrap_or_else(|e| e.into_inner())
-        .register(
-            id.clone(),
-            Arc::new(OpenAiEngineFactory {
-                credentials: oa_creds,
-            }),
-        );
+        .register(id.clone(), Arc::new(OpenAiEngineFactory::new(oa_creds)));
     tracing::info!("registered OpenAI TTS engine");
     Some(id)
 }
@@ -156,12 +141,7 @@ async fn try_register_polly(
     registry
         .write()
         .unwrap_or_else(|e| e.into_inner())
-        .register(
-            id.clone(),
-            Arc::new(PollyEngineFactory {
-                credentials: polly_creds,
-            }),
-        );
+        .register(id.clone(), Arc::new(PollyEngineFactory::new(polly_creds)));
     tracing::info!("registered Polly TTS engine");
     Some(id)
 }

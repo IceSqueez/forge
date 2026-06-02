@@ -71,7 +71,13 @@ impl OpenAiEngine {
 }
 
 pub struct OpenAiEngineFactory {
-    pub credentials: OpenAiCredentials,
+    credentials: OpenAiCredentials,
+}
+
+impl OpenAiEngineFactory {
+    pub fn new(credentials: OpenAiCredentials) -> Self {
+        Self { credentials }
+    }
 }
 
 impl forge_tts_core::TtsEngineFactory for OpenAiEngineFactory {

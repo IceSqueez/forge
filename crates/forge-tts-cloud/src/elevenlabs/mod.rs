@@ -70,7 +70,13 @@ impl ElevenLabsEngine {
 }
 
 pub struct ElevenLabsEngineFactory {
-    pub credentials: ElevenLabsCredentials,
+    credentials: ElevenLabsCredentials,
+}
+
+impl ElevenLabsEngineFactory {
+    pub fn new(credentials: ElevenLabsCredentials) -> Self {
+        Self { credentials }
+    }
 }
 
 impl forge_tts_core::TtsEngineFactory for ElevenLabsEngineFactory {

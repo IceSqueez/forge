@@ -286,7 +286,7 @@ pub fn update(
                 };
                 Task::perform(
                     async move {
-                        AzureEngineFactory { credentials: creds }
+                        AzureEngineFactory::new(creds)
                             .create()
                             .map_err(|e| e.to_string())?
                             .test_connection()
@@ -312,7 +312,7 @@ pub fn update(
                 };
                 Task::perform(
                     async move {
-                        ElevenLabsEngineFactory { credentials: creds }
+                        ElevenLabsEngineFactory::new(creds)
                             .create()
                             .map_err(|e| e.to_string())?
                             .test_connection()
@@ -338,7 +338,7 @@ pub fn update(
                 };
                 Task::perform(
                     async move {
-                        OpenAiEngineFactory { credentials: creds }
+                        OpenAiEngineFactory::new(creds)
                             .create()
                             .map_err(|e| e.to_string())?
                             .test_connection()
@@ -369,7 +369,7 @@ pub fn update(
                 };
                 Task::perform(
                     async move {
-                        PollyEngineFactory { credentials: creds }
+                        PollyEngineFactory::new(creds)
                             .create()
                             .map_err(|e| e.to_string())?
                             .test_connection()

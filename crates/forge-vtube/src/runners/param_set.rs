@@ -129,7 +129,7 @@ impl SubActionRunner for ParamSetRunner {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use crate::error::VTubeError;
@@ -224,5 +224,93 @@ mod tests {
         let (tel, _) = runner.execute(&config, &ctx).await;
         assert_eq!(tel.outcome, SubActionOutcome::Success);
         assert_eq!(tel.kind, "vtube.param.set");
+    }
+
+    struct CaptureSink {
+        last_id: Arc<std::sync::Mutex<Option<String>>>,
+        last_value: Arc<std::sync::Mutex<Option<f64>>>,
+    }
+
+    impl CaptureSink {
+        fn new() -> Self {
+            Self {
+                last_id: Arc::new(std::sync::Mutex::new(None)),
+                last_value: Arc::new(std::sync::Mutex::new(None)),
+            }
+        }
+
+        fn captured(&self) -> Option<(String, f64)> {
+            let id = self.last_id.lock().unwrap().clone()?;
+            let val = *self.last_value.lock().unwrap();
+            Some((id, val?))
+        }
+    }
+
+    #[async_trait]
+    impl VTubeSink for CaptureSink {
+        async fn trigger_hotkey(&self, _: &str) -> Result<(), VTubeError> {
+            Ok(())
+        }
+        async fn set_expression(&self, _: &str, _: bool) -> Result<(), VTubeError> {
+            Ok(())
+        }
+        async fn set_param(&self, param_id: &str, value: f64) -> Result<(), VTubeError> {
+            *self.last_id.lock().unwrap() = Some(param_id.to_owned());
+            *self.last_value.lock().unwrap() = Some(value);
+            Ok(())
+        }
+        async fn load_model(&self, _: &str) -> Result<(), VTubeError> {
+            Ok(())
+        }
+        async fn reset_params(&self) -> Result<(), VTubeError> {
+            Ok(())
+        }
+        async fn move_model(
+            &self,
+            _: Option<f64>,
+            _: Option<f64>,
+            _: Option<f64>,
+            _: f64,
+        ) -> Result<(), VTubeError> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_passes_interpolated_id_and_literal_value_to_sink() {
+        let sink = Arc::new(CaptureSink::new());
+        let runner = ParamSetRunner::new(Arc::clone(&sink) as Arc<dyn VTubeSink>);
+        let stack =
+            ArgStack::new().set("pid".to_owned(), Variant::String("DynamicParam".to_owned()));
+        let config = BTreeMap::from([
+            ("param_id".to_owned(), Variant::String("%pid%".to_owned())),
+            ("value".to_owned(), Variant::Float(0.75)),
+        ]);
+        let ctx = make_ctx(&stack);
+        runner.execute(&config, &ctx).await;
+        let (id, val) = sink
+            .captured()
+            .expect("sink must have been called after execute");
+        assert_eq!(
+            id, "DynamicParam",
+            "param_id must be interpolated before passing to sink"
+        );
+        assert!(
+            (val - 0.75).abs() < f64::EPSILON,
+            "float value must be passed verbatim, not interpolated"
+        );
+    }
+
+    #[test]
+    fn validate_config_rejects_non_float_value() {
+        let runner = ParamSetRunner::new(Arc::new(MockSink));
+        let config = BTreeMap::from([
+            ("param_id".to_owned(), Variant::String("P".to_owned())),
+            (
+                "value".to_owned(),
+                Variant::String("not-a-float".to_owned()),
+            ),
+        ]);
+        assert!(runner.validate_config(&config).is_err());
     }
 }

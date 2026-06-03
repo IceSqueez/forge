@@ -192,4 +192,108 @@ mod tests {
         assert_eq!(tel.outcome, SubActionOutcome::Success);
         assert_eq!(tel.kind, "vtube.hotkey.trigger");
     }
+
+    struct CaptureSink {
+        last_id: Arc<std::sync::Mutex<Option<String>>>,
+    }
+
+    impl CaptureSink {
+        fn new() -> Self {
+            Self {
+                last_id: Arc::new(std::sync::Mutex::new(None)),
+            }
+        }
+
+        fn captured_id(&self) -> Option<String> {
+            self.last_id.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait]
+    impl VTubeSink for CaptureSink {
+        async fn trigger_hotkey(&self, hotkey_id: &str) -> Result<(), VTubeError> {
+            *self.last_id.lock().unwrap() = Some(hotkey_id.to_owned());
+            Ok(())
+        }
+        async fn set_expression(&self, _: &str, _: bool) -> Result<(), VTubeError> {
+            Ok(())
+        }
+        async fn set_param(&self, _: &str, _: f64) -> Result<(), VTubeError> {
+            Ok(())
+        }
+        async fn load_model(&self, _: &str) -> Result<(), VTubeError> {
+            Ok(())
+        }
+        async fn reset_params(&self) -> Result<(), VTubeError> {
+            Ok(())
+        }
+        async fn move_model(
+            &self,
+            _: Option<f64>,
+            _: Option<f64>,
+            _: Option<f64>,
+            _: f64,
+        ) -> Result<(), VTubeError> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_passes_interpolated_id_to_sink() {
+        let sink = Arc::new(CaptureSink::new());
+        let runner = HotkeyTriggerRunner::new(Arc::clone(&sink) as Arc<dyn VTubeSink>);
+        let stack = ArgStack::new().set("id".to_owned(), Variant::String("hk-abc".to_owned()));
+        let config = BTreeMap::from([("hotkey_id".to_owned(), Variant::String("%id%".to_owned()))]);
+        let ctx = make_ctx(&stack);
+        runner.execute(&config, &ctx).await;
+        assert_eq!(
+            sink.captured_id().as_deref(),
+            Some("hk-abc"),
+            "sink must receive the interpolated hotkey ID, not the raw template"
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_propagates_sink_error_as_failed_outcome() {
+        struct ErrorSink;
+
+        #[async_trait]
+        impl VTubeSink for ErrorSink {
+            async fn trigger_hotkey(&self, _: &str) -> Result<(), VTubeError> {
+                Err(VTubeError::NotConnected)
+            }
+            async fn set_expression(&self, _: &str, _: bool) -> Result<(), VTubeError> {
+                Ok(())
+            }
+            async fn set_param(&self, _: &str, _: f64) -> Result<(), VTubeError> {
+                Ok(())
+            }
+            async fn load_model(&self, _: &str) -> Result<(), VTubeError> {
+                Ok(())
+            }
+            async fn reset_params(&self) -> Result<(), VTubeError> {
+                Ok(())
+            }
+            async fn move_model(
+                &self,
+                _: Option<f64>,
+                _: Option<f64>,
+                _: Option<f64>,
+                _: f64,
+            ) -> Result<(), VTubeError> {
+                Ok(())
+            }
+        }
+
+        let runner = HotkeyTriggerRunner::new(Arc::new(ErrorSink));
+        let stack = ArgStack::new();
+        let config =
+            BTreeMap::from([("hotkey_id".to_owned(), Variant::String("hk-bad".to_owned()))]);
+        let ctx = make_ctx(&stack);
+        let (tel, _) = runner.execute(&config, &ctx).await;
+        assert!(
+            matches!(tel.outcome, SubActionOutcome::Failed(_)),
+            "sink error must produce Failed outcome"
+        );
+    }
 }

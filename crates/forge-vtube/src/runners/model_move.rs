@@ -115,7 +115,7 @@ impl SubActionRunner for ModelMoveRunner {
         let rotation = read_opt_float(config, "rotation");
         let duration = read_opt_float(config, "duration");
 
-        let outcome = if x.is_none() && y.is_none() && rotation.is_none() && duration.is_none() {
+        let outcome = if x.is_none() && y.is_none() && rotation.is_none() {
             SubActionOutcome::Success
         } else {
             let time_in_seconds = duration.unwrap_or(0.0);
@@ -139,7 +139,7 @@ impl SubActionRunner for ModelMoveRunner {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::type_complexity)]
 mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -254,5 +254,104 @@ mod tests {
         assert_eq!(tel.kind, "vtube.model.move");
         assert!(extra.is_none());
         assert!(sink.was_called());
+    }
+
+    #[tokio::test]
+    async fn execute_duration_only_without_coords_is_noop() {
+        let sink = Arc::new(MockSink::new());
+        let runner = ModelMoveRunner::new(Arc::clone(&sink) as Arc<dyn VTubeSink>);
+        let config = BTreeMap::from([("duration".to_owned(), Variant::Float(0.5))]);
+        let stack = ArgStack::new();
+        let ctx = make_ctx(&stack);
+        let (tel, extra) = runner.execute(&config, &ctx).await;
+        assert_eq!(tel.outcome, SubActionOutcome::Success);
+        assert!(extra.is_none());
+        assert!(
+            !sink.was_called(),
+            "sink must not be called when only duration is set and x/y/rotation are absent"
+        );
+    }
+
+    struct CaptureSink {
+        captured_x: Arc<std::sync::Mutex<Option<Option<f64>>>>,
+        captured_y: Arc<std::sync::Mutex<Option<Option<f64>>>>,
+        captured_rotation: Arc<std::sync::Mutex<Option<Option<f64>>>>,
+        captured_duration: Arc<std::sync::Mutex<Option<f64>>>,
+    }
+
+    impl CaptureSink {
+        fn new() -> Self {
+            Self {
+                captured_x: Arc::new(std::sync::Mutex::new(None)),
+                captured_y: Arc::new(std::sync::Mutex::new(None)),
+                captured_rotation: Arc::new(std::sync::Mutex::new(None)),
+                captured_duration: Arc::new(std::sync::Mutex::new(None)),
+            }
+        }
+
+        fn get_call(&self) -> Option<(Option<f64>, Option<f64>, Option<f64>, f64)> {
+            let x = *self.captured_x.lock().unwrap();
+            let dur = *self.captured_duration.lock().unwrap();
+            x.map(|xv| {
+                let y = *self.captured_y.lock().unwrap();
+                let r = *self.captured_rotation.lock().unwrap();
+                (xv, y.flatten(), r.flatten(), dur.unwrap_or(0.0))
+            })
+        }
+    }
+
+    #[async_trait]
+    impl VTubeSink for CaptureSink {
+        async fn trigger_hotkey(&self, _: &str) -> Result<(), VTubeError> {
+            Ok(())
+        }
+        async fn set_expression(&self, _: &str, _: bool) -> Result<(), VTubeError> {
+            Ok(())
+        }
+        async fn set_param(&self, _: &str, _: f64) -> Result<(), VTubeError> {
+            Ok(())
+        }
+        async fn load_model(&self, _: &str) -> Result<(), VTubeError> {
+            Ok(())
+        }
+        async fn reset_params(&self) -> Result<(), VTubeError> {
+            Ok(())
+        }
+        async fn move_model(
+            &self,
+            x: Option<f64>,
+            y: Option<f64>,
+            rotation: Option<f64>,
+            time_in_seconds: f64,
+        ) -> Result<(), VTubeError> {
+            *self.captured_x.lock().unwrap() = Some(x);
+            *self.captured_y.lock().unwrap() = Some(y);
+            *self.captured_rotation.lock().unwrap() = Some(rotation);
+            *self.captured_duration.lock().unwrap() = Some(time_in_seconds);
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_passes_correct_args_to_sink() {
+        let sink = Arc::new(CaptureSink::new());
+        let runner = ModelMoveRunner::new(Arc::clone(&sink) as Arc<dyn VTubeSink>);
+        let config = BTreeMap::from([
+            ("x".to_owned(), Variant::Float(0.3)),
+            ("rotation".to_owned(), Variant::Float(90.0)),
+            ("duration".to_owned(), Variant::Float(0.25)),
+        ]);
+        let stack = ArgStack::new();
+        let ctx = make_ctx(&stack);
+        let (tel, _) = runner.execute(&config, &ctx).await;
+        assert_eq!(tel.outcome, SubActionOutcome::Success);
+        let (x, y, rot, dur) = sink
+            .get_call()
+            .expect("sink must have been called with coordinate arguments");
+        assert!(x.is_some(), "x should have been passed to sink");
+        assert!((x.unwrap() - 0.3).abs() < f64::EPSILON);
+        assert!(y.is_none(), "y was not specified in config");
+        assert!((rot.unwrap() - 90.0).abs() < f64::EPSILON);
+        assert!((dur - 0.25).abs() < f64::EPSILON);
     }
 }

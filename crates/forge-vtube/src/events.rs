@@ -6,10 +6,6 @@ use crate::client::VtsWs;
 use crate::error::VTubeError;
 use crate::protocol::new_request;
 
-/// Parsed form of any inbound VTS message, routing before deserializing `data`.
-///
-/// `requestID` and `apiName`/`apiVersion` are present in the wire format but
-/// irrelevant for event dispatch; serde ignores them by default.
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct RawEnvelope {
     #[serde(rename = "messageType")]

@@ -4,6 +4,7 @@ pub mod credentials;
 pub mod error;
 pub mod events;
 pub mod protocol;
+pub mod status;
 
 pub use auth::{AuthEvent, AuthState, AuthStateMachine};
 pub use client::{VTubeClient, VTubeConfig};

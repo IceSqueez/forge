@@ -9,9 +9,7 @@ use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite::Message;
 
 use forge_events::{Event, EventPublisher, EventSource};
-use forge_platform_core::{
-    BuiltinId, BuiltinStatus, CapabilityFlags, ConnectionState, HeaderAction,
-};
+use forge_platform_core::{BuiltinId, ConnectionState};
 use forge_storage::CredentialsRepo;
 
 use crate::auth::AuthState;
@@ -40,14 +38,14 @@ impl Default for VTubeConfig {
 }
 
 pub struct VTubeClient {
-    config: VTubeConfig,
-    vtube_id: BuiltinId,
-    state: Arc<AtomicU8>,
+    pub(crate) config: VTubeConfig,
+    pub(crate) vtube_id: BuiltinId,
+    pub(crate) state: Arc<AtomicU8>,
     auth_state: Arc<RwLock<AuthState>>,
     shutdown: Arc<Notify>,
     supervisor: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
-    connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
-    vtube_version: Arc<OnceLock<String>>,
+    pub(crate) connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
+    pub(crate) vtube_version: Arc<OnceLock<String>>,
 }
 
 impl VTubeClient {
@@ -130,49 +128,6 @@ impl VTubeClient {
 impl Drop for VTubeClient {
     fn drop(&mut self) {
         self.shutdown.notify_one();
-    }
-}
-
-impl BuiltinStatus for VTubeClient {
-    fn id(&self) -> &BuiltinId {
-        &self.vtube_id
-    }
-
-    fn display_name(&self) -> &str {
-        "VTube Studio"
-    }
-
-    fn version(&self) -> Option<&str> {
-        self.vtube_version.get().map(|s| s.as_str())
-    }
-
-    fn connection(&self) -> ConnectionState {
-        self.connection_state()
-    }
-
-    fn uptime(&self) -> Option<Duration> {
-        let at = self.connected_at.read().ok().and_then(|g| *g)?;
-        let elapsed = OffsetDateTime::now_utc() - at;
-        if elapsed.is_positive() {
-            Some(elapsed.unsigned_abs())
-        } else {
-            None
-        }
-    }
-
-    fn endpoint(&self) -> Option<&str> {
-        Some(&self.config.endpoint)
-    }
-
-    fn capability_flags(&self) -> CapabilityFlags {
-        CapabilityFlags {
-            limited: false,
-            label: None,
-        }
-    }
-
-    fn header_actions(&self) -> Vec<HeaderAction> {
-        vec![HeaderAction::Reconnect, HeaderAction::Disconnect]
     }
 }
 
@@ -485,7 +440,6 @@ pub(crate) mod tests {
 
     use super::*;
     use forge_events::EventPublisher;
-    use forge_platform_core::BuiltinStatus;
 
     pub(crate) struct MockPublisher {
         pub events: Arc<std::sync::Mutex<Vec<Event>>>,
@@ -676,8 +630,6 @@ pub(crate) mod tests {
         false
     }
 
-    // ── existing tests ────────────────────────────────────────────────────────
-
     #[test]
     fn new_for_test_connection_state_is_disconnected() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
@@ -688,60 +640,6 @@ pub(crate) mod tests {
     fn new_for_test_connected_at_is_none() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
         assert!(c.connected_at().is_none());
-    }
-
-    #[test]
-    fn builtin_status_id_is_vtube() {
-        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        let s: &dyn BuiltinStatus = &c;
-        assert_eq!(s.id().as_str(), "vtube");
-    }
-
-    #[test]
-    fn builtin_status_display_name_is_vtube_studio() {
-        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        let s: &dyn BuiltinStatus = &c;
-        assert_eq!(s.display_name(), "VTube Studio");
-    }
-
-    #[test]
-    fn builtin_status_version_none_before_connect() {
-        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        let s: &dyn BuiltinStatus = &c;
-        assert!(s.version().is_none());
-    }
-
-    #[test]
-    fn builtin_status_endpoint_reflects_config() {
-        let c = VTubeClient::new_for_test("ws://127.0.0.1:9001/");
-        let s: &dyn BuiltinStatus = &c;
-        assert_eq!(s.endpoint(), Some("ws://127.0.0.1:9001/"));
-    }
-
-    #[test]
-    fn builtin_status_capability_flags_not_limited() {
-        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        let s: &dyn BuiltinStatus = &c;
-        let flags = s.capability_flags();
-        assert!(!flags.limited);
-        assert!(flags.label.is_none());
-    }
-
-    #[test]
-    fn builtin_status_header_actions_contains_reconnect_and_disconnect() {
-        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        let s: &dyn BuiltinStatus = &c;
-        let actions = s.header_actions();
-        assert!(actions.contains(&HeaderAction::Reconnect));
-        assert!(actions.contains(&HeaderAction::Disconnect));
-        assert!(!actions.contains(&HeaderAction::RefreshToken));
-    }
-
-    #[test]
-    fn builtin_status_uptime_none_when_not_connected() {
-        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        let s: &dyn BuiltinStatus = &c;
-        assert!(s.uptime().is_none());
     }
 
     #[test]

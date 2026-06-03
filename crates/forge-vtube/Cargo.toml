@@ -17,6 +17,7 @@ forge-storage       = { path = "../forge-storage" }
 forge-types         = { path = "../forge-types" }
 
 tokio             = { workspace = true }
+tokio-stream      = { workspace = true }
 tokio-tungstenite = { workspace = true }
 futures-util      = { workspace = true }
 async-trait       = { workspace = true }

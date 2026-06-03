@@ -3,7 +3,9 @@ pub mod client;
 pub mod credentials;
 pub mod error;
 pub mod events;
+pub mod health;
 pub mod protocol;
+pub(crate) mod request;
 pub mod status;
 
 pub use auth::{AuthEvent, AuthState, AuthStateMachine};

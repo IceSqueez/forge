@@ -1,22 +1,25 @@
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, OnceLock, RwLock};
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use time::OffsetDateTime;
-use tokio::sync::Notify;
+use tokio::sync::{Notify, broadcast, mpsc};
 use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite::Message;
 
 use forge_events::{Event, EventPublisher, EventSource};
-use forge_platform_core::{BuiltinId, ConnectionState};
+use forge_platform_core::{BuiltinId, ConnectionState, HealthDelta};
 use forge_storage::CredentialsRepo;
 
 use crate::auth::AuthState;
 use crate::error::VTubeError;
+use crate::health::{HealthSnapshot, make_health_channel, spawn_health_task, update_from_event};
 use crate::protocol::new_request;
+use crate::request::PendingRequest;
 
-const STATE_DISCONNECTED: u8 = 0;
+pub(crate) const STATE_DISCONNECTED: u8 = 0;
 const STATE_CONNECTING: u8 = 1;
 pub(crate) const STATE_CONNECTED: u8 = 2;
 const STATE_RECONNECTING: u8 = 3;
@@ -46,6 +49,12 @@ pub struct VTubeClient {
     supervisor: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
     pub(crate) connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
     pub(crate) vtube_version: Arc<OnceLock<String>>,
+    pub(crate) req_tx: mpsc::UnboundedSender<PendingRequest>,
+    pub(crate) health_state: Arc<RwLock<HealthSnapshot>>,
+    pub(crate) health_tx: broadcast::Sender<HealthDelta>,
+    #[allow(dead_code)]
+    api_call_tx: mpsc::UnboundedSender<()>,
+    health_task: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
 }
 
 impl VTubeClient {
@@ -59,6 +68,17 @@ impl VTubeClient {
         let shutdown = Arc::new(Notify::new());
         let connected_at = Arc::new(RwLock::new(None::<OffsetDateTime>));
         let vtube_version = Arc::new(OnceLock::<String>::new());
+        let (health_tx, health_state) = make_health_channel();
+        let (req_tx, req_rx) = mpsc::unbounded_channel::<PendingRequest>();
+        let (api_call_tx, api_call_rx) = mpsc::unbounded_channel::<()>();
+
+        let health_handle = spawn_health_task(
+            Arc::clone(&health_state),
+            health_tx.clone(),
+            req_tx.clone(),
+            api_call_rx,
+            Arc::clone(&state),
+        );
 
         let ctx = SupervisorContext {
             endpoint: cfg.endpoint.clone(),
@@ -68,6 +88,9 @@ impl VTubeClient {
             connected_at: Arc::clone(&connected_at),
             publisher,
             creds,
+            req_rx,
+            health_state: Arc::clone(&health_state),
+            health_tx: health_tx.clone(),
         };
         let handle = tokio::spawn(run_supervisor(ctx));
 
@@ -80,6 +103,11 @@ impl VTubeClient {
             supervisor: Arc::new(std::sync::Mutex::new(Some(handle))),
             connected_at,
             vtube_version,
+            req_tx,
+            health_state,
+            health_tx,
+            api_call_tx,
+            health_task: Arc::new(std::sync::Mutex::new(Some(health_handle))),
         }
     }
 
@@ -100,7 +128,34 @@ impl VTubeClient {
         self.auth_state.read().ok().map_or(AuthState::Cold, |g| *g)
     }
 
+    #[allow(dead_code)]
+    pub(crate) async fn send_json_request(
+        &self,
+        msg_type: &str,
+        data: serde_json::Value,
+    ) -> Result<serde_json::Value, VTubeError> {
+        if self.state.load(Ordering::Acquire) != STATE_CONNECTED {
+            return Err(VTubeError::NotConnected);
+        }
+        let req = new_request(msg_type, data);
+        let request_id = req.request_id.clone();
+        let payload = serde_json::to_string(&req).map_err(VTubeError::Json)?;
+        let (respond_to, rx) = tokio::sync::oneshot::channel();
+        self.req_tx
+            .send(PendingRequest {
+                request_id,
+                payload,
+                respond_to,
+            })
+            .map_err(|_| VTubeError::NotConnected)?;
+        self.api_call_tx.send(()).ok();
+        rx.await.map_err(|_| VTubeError::NotConnected)
+    }
+
     pub async fn shutdown(&self) {
+        if let Some(h) = self.health_task.lock().ok().and_then(|mut g| g.take()) {
+            h.abort();
+        }
         self.shutdown.notify_one();
         let handle = self.supervisor.lock().ok().and_then(|mut g| g.take());
         if let Some(h) = handle {
@@ -110,6 +165,9 @@ impl VTubeClient {
 
     #[cfg(test)]
     pub(crate) fn new_for_test(endpoint: impl Into<String>) -> Self {
+        let (health_tx, health_state) = make_health_channel();
+        let (req_tx, _) = mpsc::unbounded_channel::<PendingRequest>();
+        let (api_call_tx, _) = mpsc::unbounded_channel::<()>();
         Self {
             config: VTubeConfig {
                 endpoint: endpoint.into(),
@@ -121,12 +179,22 @@ impl VTubeClient {
             supervisor: Arc::new(std::sync::Mutex::new(None)),
             connected_at: Arc::new(RwLock::new(None)),
             vtube_version: Arc::new(OnceLock::new()),
+            req_tx,
+            health_state,
+            health_tx,
+            api_call_tx,
+            health_task: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 }
 
 impl Drop for VTubeClient {
     fn drop(&mut self) {
+        if let Ok(mut g) = self.health_task.lock()
+            && let Some(h) = g.take()
+        {
+            h.abort();
+        }
         self.shutdown.notify_one();
     }
 }
@@ -278,6 +346,9 @@ struct SupervisorContext {
     connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
     publisher: Arc<dyn EventPublisher>,
     creds: Arc<dyn CredentialsRepo>,
+    req_rx: mpsc::UnboundedReceiver<PendingRequest>,
+    health_state: Arc<RwLock<HealthSnapshot>>,
+    health_tx: broadcast::Sender<HealthDelta>,
 }
 
 async fn run_supervisor(ctx: SupervisorContext) {
@@ -289,6 +360,9 @@ async fn run_supervisor(ctx: SupervisorContext) {
         connected_at,
         publisher,
         creds,
+        mut req_rx,
+        health_state,
+        health_tx,
     } = ctx;
 
     let mut attempt: u32 = 0;
@@ -392,6 +466,9 @@ async fn run_supervisor(ctx: SupervisorContext) {
         emit_connection_changed(&*publisher, &endpoint, true, None);
         tracing::info!(endpoint = %endpoint, "connected and authenticated to VTube Studio");
 
+        let mut pending: HashMap<String, tokio::sync::oneshot::Sender<serde_json::Value>> =
+            HashMap::new();
+
         loop {
             tokio::select! {
                 () = shutdown.notified() => {
@@ -402,15 +479,40 @@ async fn run_supervisor(ctx: SupervisorContext) {
                     emit_connection_changed(&*publisher, &endpoint, false, None);
                     return;
                 }
+                Some(req) = req_rx.recv() => {
+                    if ws
+                        .send(Message::Text(req.payload.into()))
+                        .await
+                        .is_ok()
+                    {
+                        pending.insert(req.request_id, req.respond_to);
+                    }
+                }
                 msg = ws.next() => {
                     match msg {
                         None | Some(Err(_)) => {
                             tracing::info!(endpoint = %endpoint, "VTube Studio connection closed");
+                            pending.clear();
                             break;
                         }
                         Some(Ok(Message::Text(text))) => {
-                            if let Ok(env) = serde_json::from_str::<crate::events::RawEnvelope>(&text) {
-                                crate::events::dispatch_vts_event(&env, &*publisher);
+                            if let Ok(val) =
+                                serde_json::from_str::<serde_json::Value>(&text)
+                            {
+                                let msg_type = val["messageType"].as_str().unwrap_or("");
+                                if msg_type.ends_with("Response") {
+                                    let req_id =
+                                        val["requestID"].as_str().unwrap_or("").to_owned();
+                                    if let Some(tx) = pending.remove(&req_id) {
+                                        let _ = tx.send(val["data"].clone());
+                                    }
+                                } else if let Ok(env) = serde_json::from_value::<
+                                    crate::events::RawEnvelope,
+                                >(val)
+                                {
+                                    crate::events::dispatch_vts_event(&env, &*publisher);
+                                    update_from_event(&env, &health_state, &health_tx);
+                                }
                             }
                         }
                         Some(Ok(_)) => {}

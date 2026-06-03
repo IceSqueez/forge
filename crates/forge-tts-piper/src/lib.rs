@@ -297,10 +297,7 @@ mod tests {
     fn voices_dir_path() {
         let data = std::path::Path::new("/home/user/.local/share/forge");
         let dir = PiperEngine::voices_dir(data);
-        assert_eq!(
-            dir.to_str().unwrap(),
-            "/home/user/.local/share/forge/tts/piper-voices"
-        );
+        assert_eq!(dir, data.join("tts").join("piper-voices"));
     }
 
     #[test]

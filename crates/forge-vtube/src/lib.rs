@@ -6,6 +6,7 @@ pub mod error;
 pub mod events;
 pub mod health;
 pub mod protocol;
+pub mod quick_actions;
 pub(crate) mod request;
 pub mod status;
 

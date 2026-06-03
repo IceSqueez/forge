@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod client;
+pub mod content;
 pub mod credentials;
 pub mod error;
 pub mod events;

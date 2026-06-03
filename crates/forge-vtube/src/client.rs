@@ -55,6 +55,10 @@ pub struct VTubeClient {
     #[allow(dead_code)]
     api_call_tx: mpsc::UnboundedSender<()>,
     health_task: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
+    pub(crate) content_state: Arc<RwLock<crate::content::ContentSnapshot>>,
+    #[allow(dead_code)]
+    content_notifier: crate::content::ContentNotifier,
+    content_task: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
 }
 
 impl VTubeClient {
@@ -71,6 +75,8 @@ impl VTubeClient {
         let (health_tx, health_state) = make_health_channel();
         let (req_tx, req_rx) = mpsc::unbounded_channel::<PendingRequest>();
         let (api_call_tx, api_call_rx) = mpsc::unbounded_channel::<()>();
+        let content_state = Arc::new(RwLock::new(crate::content::ContentSnapshot::default()));
+        let (content_notifier, content_changed_rx) = crate::content::ContentNotifier::new();
 
         let health_handle = spawn_health_task(
             Arc::clone(&health_state),
@@ -78,6 +84,11 @@ impl VTubeClient {
             req_tx.clone(),
             api_call_rx,
             Arc::clone(&state),
+        );
+        let content_handle = crate::content::spawn_content_task(
+            Arc::clone(&content_state),
+            req_tx.clone(),
+            content_changed_rx,
         );
 
         let ctx = SupervisorContext {
@@ -91,6 +102,7 @@ impl VTubeClient {
             req_rx,
             health_state: Arc::clone(&health_state),
             health_tx: health_tx.clone(),
+            content_notifier: content_notifier.clone(),
         };
         let handle = tokio::spawn(run_supervisor(ctx));
 
@@ -108,6 +120,9 @@ impl VTubeClient {
             health_tx,
             api_call_tx,
             health_task: Arc::new(std::sync::Mutex::new(Some(health_handle))),
+            content_state,
+            content_notifier,
+            content_task: Arc::new(std::sync::Mutex::new(Some(content_handle))),
         }
     }
 
@@ -153,8 +168,10 @@ impl VTubeClient {
     }
 
     pub async fn shutdown(&self) {
-        if let Some(h) = self.health_task.lock().ok().and_then(|mut g| g.take()) {
-            h.abort();
+        for task in [&self.health_task, &self.content_task] {
+            if let Some(h) = task.lock().ok().and_then(|mut g| g.take()) {
+                h.abort();
+            }
         }
         self.shutdown.notify_one();
         let handle = self.supervisor.lock().ok().and_then(|mut g| g.take());
@@ -184,16 +201,21 @@ impl VTubeClient {
             health_tx,
             api_call_tx,
             health_task: Arc::new(std::sync::Mutex::new(None)),
+            content_state: Arc::new(RwLock::new(crate::content::ContentSnapshot::default())),
+            content_notifier: crate::content::ContentNotifier::noop(),
+            content_task: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 }
 
 impl Drop for VTubeClient {
     fn drop(&mut self) {
-        if let Ok(mut g) = self.health_task.lock()
-            && let Some(h) = g.take()
-        {
-            h.abort();
+        for task in [&self.health_task, &self.content_task] {
+            if let Ok(mut g) = task.lock()
+                && let Some(h) = g.take()
+            {
+                h.abort();
+            }
         }
         self.shutdown.notify_one();
     }
@@ -349,6 +371,7 @@ struct SupervisorContext {
     req_rx: mpsc::UnboundedReceiver<PendingRequest>,
     health_state: Arc<RwLock<HealthSnapshot>>,
     health_tx: broadcast::Sender<HealthDelta>,
+    content_notifier: crate::content::ContentNotifier,
 }
 
 async fn run_supervisor(ctx: SupervisorContext) {
@@ -363,6 +386,7 @@ async fn run_supervisor(ctx: SupervisorContext) {
         mut req_rx,
         health_state,
         health_tx,
+        content_notifier,
     } = ctx;
 
     let mut attempt: u32 = 0;
@@ -510,6 +534,9 @@ async fn run_supervisor(ctx: SupervisorContext) {
                                     crate::events::RawEnvelope,
                                 >(val)
                                 {
+                                    if env.message_type == "ModelLoadedEvent" {
+                                        content_notifier.notify_model_changed();
+                                    }
                                     crate::events::dispatch_vts_event(&env, &*publisher);
                                     update_from_event(&env, &health_state, &health_tx);
                                 }

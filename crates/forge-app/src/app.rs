@@ -1503,6 +1503,36 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::expect_used)]
+    fn vtube_all_six_sub_action_runners_register_successfully() {
+        use forge_registry::SubActionRegistry;
+        use forge_vtube::{VTubeSink, register_vtube_sub_actions};
+
+        let app = App::default();
+        let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+        let _enter = rt.enter();
+        let client = Arc::new(VTubeClient::connect(
+            VTubeConfig::default(),
+            Arc::clone(&app.rt.bus) as Arc<dyn EventPublisher>,
+            Arc::clone(&app.rt.backend) as Arc<dyn forge_storage::CredentialsRepo>,
+        ));
+        let mut reg = SubActionRegistry::new();
+        register_vtube_sub_actions(&mut reg, client as Arc<dyn VTubeSink>)
+            .expect("registration succeeds with a fresh registry");
+        assert_eq!(reg.all().count(), 6);
+        for id in &[
+            "vtube.hotkey.trigger",
+            "vtube.expression.set",
+            "vtube.param.set",
+            "vtube.model.load",
+            "vtube.params.reset",
+            "vtube.model.move",
+        ] {
+            assert!(reg.get(id).is_some(), "missing runner: {id}");
+        }
+    }
+
+    #[test]
     fn scroll_to_unknown_trigger_instance_is_noop() {
         use crate::triggers_registry::TriggersRegistryMsg;
         use forge_types::TriggerInstanceId;

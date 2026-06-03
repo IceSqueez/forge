@@ -30,6 +30,7 @@ use forge_tts_nsspeech::NsSpeechEngineFactory;
 use forge_tts_piper::{PiperEngine, PiperEngineFactory};
 use forge_tts_sapi::SapiEngineFactory;
 use forge_voice::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults, VoiceAliasResolver};
+use forge_vtube::{VTubeClient, VTubeConfig, register_vtube_sub_actions};
 
 struct TrovoNoopLimiter;
 
@@ -153,6 +154,7 @@ struct RuntimeHandles {
     sub_action_reg: Arc<SubActionRegistry>,
     trigger_reg: Arc<TriggerRegistry>,
     trigger_evaluator: TriggerEvaluatorHandle,
+    vtube_client: Arc<VTubeClient>,
 }
 
 fn find_piper_binary() -> Option<PathBuf> {
@@ -340,6 +342,20 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         speak_dispatcher,
     ) {
         tracing::warn!("audio sub-action runner registration failed: {e}");
+    }
+    let vtube_publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
+    let vtube_creds: Arc<dyn forge_storage::CredentialsRepo> =
+        Arc::clone(&dp) as Arc<dyn forge_storage::CredentialsRepo>;
+    let vtube_client = Arc::new(VTubeClient::connect(
+        VTubeConfig::default(),
+        vtube_publisher,
+        vtube_creds,
+    ));
+    if let Err(e) = register_vtube_sub_actions(
+        &mut sub_action_reg,
+        Arc::clone(&vtube_client) as Arc<dyn forge_vtube::VTubeSink>,
+    ) {
+        tracing::warn!("vtube sub-action runner registration failed: {e}");
     }
     let sub_action_reg = Arc::new(sub_action_reg);
 
@@ -749,6 +765,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         sub_action_reg,
         trigger_reg,
         trigger_evaluator,
+        vtube_client,
     })
 }
 
@@ -783,7 +800,15 @@ fn main() -> iced::Result {
         sub_action_reg,
         trigger_reg,
         _trigger_evaluator,
+        vtube_client,
     ) = if storage_offline {
+        let vt_pub: Arc<dyn EventPublisher> = Arc::clone(&bus) as _;
+        let vt_creds: Arc<dyn forge_storage::CredentialsRepo> = Arc::clone(&backend) as _;
+        let vc = Arc::new(VTubeClient::connect(
+            VTubeConfig::default(),
+            vt_pub,
+            vt_creds,
+        ));
         (
             Arc::new(ScriptRegistry::new()),
             None,
@@ -795,6 +820,7 @@ fn main() -> iced::Result {
             Arc::new(SubActionRegistry::new()),
             Arc::new(TriggerRegistry::new()),
             None,
+            vc,
         )
     } else {
         match spawn_runtime(Arc::clone(&backend), Arc::clone(&bus)) {
@@ -809,19 +835,30 @@ fn main() -> iced::Result {
                 h.sub_action_reg,
                 h.trigger_reg,
                 Some(h.trigger_evaluator),
+                h.vtube_client,
             ),
-            None => (
-                Arc::new(ScriptRegistry::new()),
-                None,
-                None,
-                None,
-                None,
-                Vec::<EngineId>::new(),
-                None,
-                Arc::new(SubActionRegistry::new()),
-                Arc::new(TriggerRegistry::new()),
-                None,
-            ),
+            None => {
+                let vt_pub: Arc<dyn EventPublisher> = Arc::clone(&bus) as _;
+                let vt_creds: Arc<dyn forge_storage::CredentialsRepo> = Arc::clone(&backend) as _;
+                let vc = Arc::new(VTubeClient::connect(
+                    VTubeConfig::default(),
+                    vt_pub,
+                    vt_creds,
+                ));
+                (
+                    Arc::new(ScriptRegistry::new()),
+                    None,
+                    None,
+                    None,
+                    None,
+                    Vec::<EngineId>::new(),
+                    None,
+                    Arc::new(SubActionRegistry::new()),
+                    Arc::new(TriggerRegistry::new()),
+                    None,
+                    vc,
+                )
+            }
         }
     };
 
@@ -855,6 +892,9 @@ fn main() -> iced::Result {
         let twitch_task = iced::Task::perform(load_twitch_credential(twitch_creds), |r| {
             forge_app::Message::Boot(forge_app::BootMsg::Twitch(r))
         });
+        let vtube_task = iced::Task::done(forge_app::Message::Boot(forge_app::BootMsg::Vtube(Ok(
+            forge_app::message::VTubeClientRef::new(Arc::clone(&vtube_client)),
+        ))));
         let boot_task = match app.rt.action_engine.clone() {
             Some(engine) => {
                 let dp = Arc::clone(&backend_boot);
@@ -867,9 +907,9 @@ fn main() -> iced::Result {
                     ),
                     |r| forge_app::Message::Boot(forge_app::BootMsg::Server(r)),
                 );
-                iced::Task::batch([obs_task, twitch_task, server_boot_task])
+                iced::Task::batch([obs_task, twitch_task, vtube_task, server_boot_task])
             }
-            None => iced::Task::batch([obs_task, twitch_task]),
+            None => iced::Task::batch([obs_task, twitch_task, vtube_task]),
         };
         (app, boot_task)
     };

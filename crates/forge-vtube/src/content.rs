@@ -53,7 +53,7 @@ impl ContentNotifier {
         )
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn noop() -> Self {
         let (tx, _) = mpsc::unbounded_channel();
         Self {

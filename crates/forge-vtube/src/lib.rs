@@ -10,10 +10,12 @@ pub mod quick_actions;
 pub(crate) mod request;
 pub mod runners;
 pub mod sink;
+mod sink_impl;
 pub mod status;
 
 pub use auth::{AuthEvent, AuthState, AuthStateMachine};
 pub use client::{VTubeClient, VTubeConfig};
 pub use credentials::{VTUBE_CREDENTIAL_ID, VTubeCredentials};
 pub use error::VTubeError;
+pub use runners::register_vtube_sub_actions;
 pub use sink::VTubeSink;

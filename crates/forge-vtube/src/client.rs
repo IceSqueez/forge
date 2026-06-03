@@ -52,12 +52,10 @@ pub struct VTubeClient {
     pub(crate) req_tx: mpsc::UnboundedSender<PendingRequest>,
     pub(crate) health_state: Arc<RwLock<HealthSnapshot>>,
     pub(crate) health_tx: broadcast::Sender<HealthDelta>,
-    #[allow(dead_code)]
-    api_call_tx: mpsc::UnboundedSender<()>,
+    pub(crate) api_call_tx: mpsc::UnboundedSender<()>,
     health_task: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
     pub(crate) content_state: Arc<RwLock<crate::content::ContentSnapshot>>,
-    #[allow(dead_code)]
-    content_notifier: crate::content::ContentNotifier,
+    pub(crate) content_notifier: crate::content::ContentNotifier,
     content_task: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
 }
 
@@ -143,7 +141,6 @@ impl VTubeClient {
         self.auth_state.read().ok().map_or(AuthState::Cold, |g| *g)
     }
 
-    #[allow(dead_code)]
     pub(crate) async fn send_json_request(
         &self,
         msg_type: &str,

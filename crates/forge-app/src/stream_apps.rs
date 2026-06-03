@@ -34,12 +34,17 @@ pub fn view<'a>(state: &'a App, palette: &'a ForgePalette) -> Element<'a, Messag
         BuiltinId::new("obs"),
         palette,
     );
+    let vtube_connected = matches!(
+        state.rt.vtube_client.as_ref().map(|c| c.connection_state()),
+        Some(ConnectionState::Connected)
+    );
+
     let vtube_card = app_overview_card(
         Icon::MoodSmile,
         p.warning,
         "VTube Studio",
         "Vtuber avatar control: hotkeys, expressions, item triggers",
-        false,
+        vtube_connected,
         BuiltinId::new("vtube"),
         palette,
     );
@@ -205,5 +210,23 @@ mod tests {
             on_press,
             Message::Navigate(Screen::BuiltinDetail(ref id)) if id == &BuiltinId::new("obs")
         ));
+    }
+
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn stream_apps_view_with_vtube_connected_does_not_panic() {
+        use forge_vtube::{VTubeClient, VTubeConfig};
+        use std::sync::Arc;
+
+        let mut app = App::default();
+        let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+        let _enter = rt.enter();
+        let client = Arc::new(VTubeClient::connect(
+            VTubeConfig::default(),
+            Arc::clone(&app.rt.bus) as Arc<dyn forge_events::EventPublisher>,
+            Arc::clone(&app.rt.backend) as Arc<dyn forge_storage::CredentialsRepo>,
+        ));
+        app.rt.vtube_client = Some(client);
+        let _ = view(&app, &app.palette.clone());
     }
 }

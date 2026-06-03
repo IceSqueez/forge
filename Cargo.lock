@@ -2750,6 +2750,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-vtube"
+version = "0.1.0-beta.5"
+dependencies = [
+ "forge-events",
+ "forge-platform-core",
+ "forge-registry",
+ "forge-storage",
+ "forge-types",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-tungstenite",
+ "tracing",
+]
+
+[[package]]
 name = "forge-widgets"
 version = "0.1.0-beta.5"
 dependencies = [

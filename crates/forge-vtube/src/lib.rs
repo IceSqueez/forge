@@ -12,6 +12,7 @@ pub mod runners;
 pub mod sink;
 mod sink_impl;
 pub mod status;
+pub(crate) mod supervisor;
 
 pub use auth::{AuthEvent, AuthState, AuthStateMachine};
 pub use client::{VTubeClient, VTubeConfig};

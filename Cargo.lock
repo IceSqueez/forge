@@ -2270,6 +2270,7 @@ dependencies = [
  "forge-tts-sapi",
  "forge-types",
  "forge-voice",
+ "forge-vtube",
  "forge-widgets",
  "futures-util",
  "iced",
@@ -2753,17 +2754,22 @@ dependencies = [
 name = "forge-vtube"
 version = "0.1.0-beta.5"
 dependencies = [
+ "async-trait",
  "forge-events",
  "forge-platform-core",
  "forge-registry",
  "forge-storage",
  "forge-types",
+ "futures-util",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "time",
  "tokio",
+ "tokio-stream",
  "tokio-tungstenite",
  "tracing",
+ "ulid",
 ]
 
 [[package]]

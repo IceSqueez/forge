@@ -12,7 +12,7 @@ use iced::Task;
 
 use crate::app::App;
 use crate::builtin_detail::BuiltinDetailState;
-use crate::message::{Message, ObsClientRef, ServerSubsystemMsg, TwitchBootBundle};
+use crate::message::{Message, ObsClientRef, ServerSubsystemMsg, TwitchBootBundle, VTubeClientRef};
 use crate::server_screen::ServerStatus;
 
 pub async fn load_twitch_credential(
@@ -124,6 +124,37 @@ pub(crate) fn handle_obs_boot_result(
         }
         Err(e) => {
             tracing::warn!(error = %e, "OBS boot connection failed");
+            Task::none()
+        }
+    }
+}
+
+pub(crate) fn handle_vtube_boot_result(
+    app: &mut App,
+    result: Result<VTubeClientRef, String>,
+) -> Task<Message> {
+    match result {
+        Ok(handle) => {
+            let client = handle.into_arc();
+            let id = BuiltinId::new("vtube");
+            let icon = SectionIcon::new("mood-smile");
+            let status: Arc<dyn BuiltinStatus> = client.clone();
+            let health: Arc<dyn BuiltinHealth> = client.clone();
+            let content: Arc<dyn BuiltinContent> = client.clone();
+            let quick_actions: Arc<dyn QuickActions> = client.clone();
+            app.ui.builtin_detail = Some(BuiltinDetailState::new(
+                id,
+                icon,
+                status,
+                health,
+                content,
+                quick_actions,
+            ));
+            app.rt.vtube_client = Some(client);
+            Task::none()
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "VTube Studio boot connection failed");
             Task::none()
         }
     }

@@ -14,6 +14,7 @@ use forge_soundboard::SoundboardPlayer;
 use forge_speak_queue::SpeakQueueHandle;
 use forge_storage::DataProvider;
 use forge_tts_core::EngineId;
+use forge_vtube::VTubeClient;
 
 use crate::server_subsystem::ServerSubsystem;
 use crate::twitch_panel::TwitchFlowHandle;
@@ -27,6 +28,7 @@ pub struct RuntimeView {
     pub action_engine: Option<ActionEngineHandle>,
     pub scheduler: Option<QueueSchedulerHandle>,
     pub obs_client: Option<Arc<ObsClient>>,
+    pub vtube_client: Option<Arc<VTubeClient>>,
     pub speak_queue: Option<Arc<SpeakQueueHandle>>,
     pub sound_player: Option<Arc<SoundboardPlayer>>,
     pub twitch_chat_handle: Option<TwitchChatHandle>,

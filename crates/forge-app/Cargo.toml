@@ -26,6 +26,7 @@ forge-storage        = { path = "../forge-storage" }
 forge-storage-sqlite = { path = "../forge-storage-sqlite" }
 forge-platform-core   = { path = "../forge-platform-core" }
 forge-obs             = { path = "../forge-obs" }
+forge-vtube           = { path = "../forge-vtube" }
 forge-platform-twitch = { path = "../forge-platform-twitch" }
 forge-platform-youtube = { path = "../forge-platform-youtube" }
 forge-platform-trovo  = { path = "../forge-platform-trovo" }

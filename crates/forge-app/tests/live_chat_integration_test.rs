@@ -50,6 +50,7 @@ fn test_app() -> App {
             action_engine: None,
             scheduler: None,
             obs_client: None,
+            vtube_client: None,
             speak_queue: None,
             sound_player: None,
             twitch_chat_handle: None,

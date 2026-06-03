@@ -13,6 +13,8 @@ use forge_runtime::{
     ActionEngineHandle, EventBus, NullEventLogRepo, QueueSchedulerHandle, ScriptRegistry,
 };
 use forge_storage::{CredentialsRepo, DataProvider};
+#[cfg(test)]
+use forge_vtube::{VTubeClient, VTubeConfig};
 use forge_widgets::{ForgePalette, ThemeId, ToastQueue};
 use iced::{Task, Theme};
 
@@ -31,6 +33,8 @@ use crate::live_chat::LiveChatState;
 use crate::message::ObsClientRef;
 #[cfg(test)]
 use crate::message::SettingsMsg;
+#[cfg(test)]
+use crate::message::VTubeClientRef;
 use crate::message::{ActionsMsg, BootMsg, ServerSubsystemMsg, SidebarMsg, ToastMsg, TtsMsg};
 use crate::queues_view::QueuesState;
 use crate::script_editor::ScriptEditorState;
@@ -171,6 +175,7 @@ impl App {
                 action_engine,
                 scheduler,
                 obs_client: None,
+                vtube_client: None,
                 speak_queue: None,
                 sound_player,
                 twitch_chat_handle: None,
@@ -231,6 +236,7 @@ impl Default for App {
                 action_engine: None,
                 scheduler: None,
                 obs_client: None,
+                vtube_client: None,
                 speak_queue: None,
                 sound_player: None,
                 twitch_chat_handle: None,
@@ -304,6 +310,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         }
         Message::Boot(boot_msg) => match boot_msg {
             BootMsg::Obs(result) => boot::handle_obs_boot_result(app, result),
+            BootMsg::Vtube(result) => boot::handle_vtube_boot_result(app, result),
             BootMsg::Twitch(result) => boot::handle_twitch_boot_result(app, result),
             BootMsg::Server(result) => boot::handle_server_boot_result(app, result),
         },
@@ -645,6 +652,7 @@ mod tests {
                 action_engine: Some(engine),
                 scheduler: Some(scheduler),
                 obs_client: None,
+                vtube_client: None,
                 speak_queue: None,
                 sound_player: None,
                 twitch_chat_handle: None,
@@ -991,6 +999,7 @@ mod tests {
                 action_engine: None,
                 scheduler: None,
                 obs_client: None,
+                vtube_client: None,
                 speak_queue: None,
                 sound_player: None,
                 twitch_chat_handle: None,
@@ -1460,6 +1469,36 @@ mod tests {
             Message::Boot(BootMsg::Obs(Err("connection refused".into()))),
         );
         assert!(app.rt.obs_client.is_none());
+        assert!(app.ui.builtin_detail.is_none());
+    }
+
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn vtube_boot_result_ok_sets_vtube_client_and_integration_detail() {
+        let mut app = App::default();
+        let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+        let _enter = rt.enter();
+        let client = Arc::new(VTubeClient::connect(
+            VTubeConfig::default(),
+            Arc::clone(&app.rt.bus) as Arc<dyn EventPublisher>,
+            Arc::clone(&app.rt.backend) as Arc<dyn forge_storage::CredentialsRepo>,
+        ));
+        let _ = update(
+            &mut app,
+            Message::Boot(BootMsg::Vtube(Ok(VTubeClientRef::new(client)))),
+        );
+        assert!(app.rt.vtube_client.is_some());
+        assert!(app.ui.builtin_detail.is_some());
+    }
+
+    #[test]
+    fn vtube_boot_result_err_leaves_vtube_client_none() {
+        let mut app = App::default();
+        let _ = update(
+            &mut app,
+            Message::Boot(BootMsg::Vtube(Err("vtube not running".into()))),
+        );
+        assert!(app.rt.vtube_client.is_none());
         assert!(app.ui.builtin_detail.is_none());
     }
 

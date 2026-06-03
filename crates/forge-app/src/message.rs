@@ -7,6 +7,7 @@ use forge_types::ClipId;
 
 use forge_events::Event;
 use forge_obs::ObsClient;
+use forge_vtube::VTubeClient;
 use forge_widgets::{DeviceLabel, PickerItem, ToastKind};
 
 use forge_platform_core::{HeaderAction, HealthDelta};
@@ -55,6 +56,32 @@ impl std::fmt::Debug for ObsClientRef {
 }
 
 impl Clone for ObsClientRef {
+    fn clone(&self) -> Self {
+        Self(Arc::clone(&self.0))
+    }
+}
+
+pub struct VTubeClientRef(pub(crate) Arc<VTubeClient>);
+
+impl VTubeClientRef {
+    pub fn new(client: Arc<VTubeClient>) -> Self {
+        Self(client)
+    }
+
+    pub(crate) fn into_arc(self) -> Arc<VTubeClient> {
+        self.0
+    }
+}
+
+impl std::fmt::Debug for VTubeClientRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("VTubeClientRef")
+            .field(&self.0.connection_state())
+            .finish()
+    }
+}
+
+impl Clone for VTubeClientRef {
     fn clone(&self) -> Self {
         Self(Arc::clone(&self.0))
     }
@@ -375,6 +402,7 @@ pub enum LiveChatMsg {
 #[derive(Debug, Clone)]
 pub enum BootMsg {
     Obs(Result<ObsClientRef, String>),
+    Vtube(Result<VTubeClientRef, String>),
     Twitch(Result<Option<TwitchBootBundle>, String>),
     Server(Result<crate::server_subsystem::ServerBootSnapshot, String>),
 }

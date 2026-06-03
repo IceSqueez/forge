@@ -420,6 +420,13 @@ async fn run_supervisor(ctx: SupervisorContext) {
             }
         }
 
+        if let Err(e) = crate::events::subscribe_all(&mut ws).await {
+            tracing::debug!(endpoint = %endpoint, error = %e, "event subscription failed, will retry");
+            emit_connection_changed(&*publisher, &endpoint, false, Some(e.to_string()));
+            attempt = attempt.saturating_add(1);
+            continue;
+        }
+
         if let Ok(mut g) = connected_at.write() {
             *g = Some(OffsetDateTime::now_utc());
         }
@@ -446,6 +453,11 @@ async fn run_supervisor(ctx: SupervisorContext) {
                             tracing::info!(endpoint = %endpoint, "VTube Studio connection closed");
                             break;
                         }
+                        Some(Ok(Message::Text(text))) => {
+                            if let Ok(env) = serde_json::from_str::<crate::events::RawEnvelope>(&text) {
+                                crate::events::dispatch_vts_event(&env, &*publisher);
+                            }
+                        }
                         Some(Ok(_)) => {}
                     }
                 }
@@ -465,7 +477,7 @@ async fn run_supervisor(ctx: SupervisorContext) {
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
-mod tests {
+pub(crate) mod tests {
     use std::sync::atomic::{AtomicU32, Ordering as AO};
 
     use async_trait::async_trait;

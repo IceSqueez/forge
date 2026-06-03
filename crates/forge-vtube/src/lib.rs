@@ -2,6 +2,7 @@ pub mod auth;
 pub mod client;
 pub mod credentials;
 pub mod error;
+pub mod events;
 pub mod protocol;
 
 pub use auth::{AuthEvent, AuthState, AuthStateMachine};

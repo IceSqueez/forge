@@ -2,20 +2,29 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, OnceLock, RwLock};
 use std::time::Duration;
 
-use futures_util::StreamExt;
+use futures_util::{SinkExt, StreamExt};
 use time::OffsetDateTime;
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
+use tokio_tungstenite::tungstenite::Message;
 
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_platform_core::{
     BuiltinId, BuiltinStatus, CapabilityFlags, ConnectionState, HeaderAction,
 };
+use forge_storage::CredentialsRepo;
+
+use crate::auth::AuthState;
+use crate::error::VTubeError;
+use crate::protocol::new_request;
 
 const STATE_DISCONNECTED: u8 = 0;
 const STATE_CONNECTING: u8 = 1;
 pub(crate) const STATE_CONNECTED: u8 = 2;
 const STATE_RECONNECTING: u8 = 3;
+
+pub(crate) type VtsWs =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 #[derive(Debug, Clone)]
 pub struct VTubeConfig {
@@ -34,6 +43,7 @@ pub struct VTubeClient {
     config: VTubeConfig,
     vtube_id: BuiltinId,
     state: Arc<AtomicU8>,
+    auth_state: Arc<RwLock<AuthState>>,
     shutdown: Arc<Notify>,
     supervisor: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
     connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
@@ -41,8 +51,13 @@ pub struct VTubeClient {
 }
 
 impl VTubeClient {
-    pub fn connect(cfg: VTubeConfig, publisher: Arc<dyn EventPublisher>) -> Self {
+    pub fn connect(
+        cfg: VTubeConfig,
+        publisher: Arc<dyn EventPublisher>,
+        creds: Arc<dyn CredentialsRepo>,
+    ) -> Self {
         let state = Arc::new(AtomicU8::new(STATE_CONNECTING));
+        let auth_state = Arc::new(RwLock::new(AuthState::Cold));
         let shutdown = Arc::new(Notify::new());
         let connected_at = Arc::new(RwLock::new(None::<OffsetDateTime>));
         let vtube_version = Arc::new(OnceLock::<String>::new());
@@ -50,9 +65,11 @@ impl VTubeClient {
         let ctx = SupervisorContext {
             endpoint: cfg.endpoint.clone(),
             state: Arc::clone(&state),
+            auth_state: Arc::clone(&auth_state),
             shutdown: Arc::clone(&shutdown),
             connected_at: Arc::clone(&connected_at),
             publisher,
+            creds,
         };
         let handle = tokio::spawn(run_supervisor(ctx));
 
@@ -60,6 +77,7 @@ impl VTubeClient {
             config: cfg,
             vtube_id: BuiltinId::new("vtube"),
             state,
+            auth_state,
             shutdown,
             supervisor: Arc::new(std::sync::Mutex::new(Some(handle))),
             connected_at,
@@ -80,6 +98,10 @@ impl VTubeClient {
         self.connected_at.read().ok().and_then(|g| *g)
     }
 
+    pub fn auth_state_value(&self) -> AuthState {
+        self.auth_state.read().ok().map_or(AuthState::Cold, |g| *g)
+    }
+
     pub async fn shutdown(&self) {
         self.shutdown.notify_one();
         let handle = self.supervisor.lock().ok().and_then(|mut g| g.take());
@@ -96,6 +118,7 @@ impl VTubeClient {
             },
             vtube_id: BuiltinId::new("vtube"),
             state: Arc::new(AtomicU8::new(STATE_DISCONNECTED)),
+            auth_state: Arc::new(RwLock::new(AuthState::Cold)),
             shutdown: Arc::new(Notify::new()),
             supervisor: Arc::new(std::sync::Mutex::new(None)),
             connected_at: Arc::new(RwLock::new(None)),
@@ -179,21 +202,138 @@ fn emit_connection_changed(
     ));
 }
 
+async fn send_ws_msg<T: serde::Serialize>(ws: &mut VtsWs, msg: &T) -> Result<(), VTubeError> {
+    let text = serde_json::to_string(msg).map_err(VTubeError::Json)?;
+    ws.send(Message::Text(text.into()))
+        .await
+        .map_err(|e| VTubeError::Connect(e.to_string()))
+}
+
+async fn recv_next_text(ws: &mut VtsWs) -> Result<serde_json::Value, VTubeError> {
+    loop {
+        match ws.next().await {
+            None => return Err(VTubeError::Connect("connection closed".to_owned())),
+            Some(Err(e)) => return Err(VTubeError::Connect(e.to_string())),
+            Some(Ok(Message::Text(text))) => {
+                return serde_json::from_str(&text).map_err(VTubeError::Json);
+            }
+            Some(Ok(_)) => {}
+        }
+    }
+}
+
+async fn request_new_token(ws: &mut VtsWs, endpoint: &str) -> Result<String, VTubeError> {
+    let req = new_request(
+        "AuthenticationTokenRequest",
+        serde_json::json!({ "pluginName": "forge", "pluginDeveloper": "forge" }),
+    );
+    send_ws_msg(ws, &req).await?;
+    tracing::debug!(endpoint, "sent AuthenticationTokenRequest, awaiting popup");
+
+    let msg = tokio::time::timeout(Duration::from_secs(30), recv_next_text(ws))
+        .await
+        .map_err(|_| VTubeError::TokenTimeout)??;
+
+    let msg_type = msg["messageType"].as_str().unwrap_or("");
+    if msg_type != "AuthenticationTokenResponse" {
+        return Err(VTubeError::Request {
+            message: format!("expected AuthenticationTokenResponse, got {msg_type}"),
+        });
+    }
+
+    let granted = msg["data"]["granted"].as_bool().unwrap_or(false);
+    if !granted {
+        return Err(VTubeError::TokenDenied);
+    }
+
+    msg["data"]["authenticationToken"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .ok_or_else(|| VTubeError::Request {
+            message: "authenticationToken missing in response".to_owned(),
+        })
+}
+
+async fn authenticate_with_token(
+    ws: &mut VtsWs,
+    creds: &dyn CredentialsRepo,
+    token: &str,
+    endpoint: &str,
+) -> Result<(), VTubeError> {
+    let req = new_request(
+        "AuthenticationRequest",
+        serde_json::json!({
+            "pluginName": "forge",
+            "pluginDeveloper": "forge",
+            "authenticationToken": token
+        }),
+    );
+    send_ws_msg(ws, &req).await?;
+    tracing::debug!(endpoint, "sent AuthenticationRequest");
+
+    let msg = recv_next_text(ws).await?;
+
+    let msg_type = msg["messageType"].as_str().unwrap_or("");
+    if msg_type != "AuthenticationResponse" {
+        return Err(VTubeError::Request {
+            message: format!("expected AuthenticationResponse, got {msg_type}"),
+        });
+    }
+
+    let authenticated = msg["data"]["authenticated"].as_bool().unwrap_or(false);
+    if !authenticated {
+        let _ = crate::credentials::clear(creds).await;
+        tracing::warn!(
+            endpoint,
+            "VTube Studio token rejected; cleared stored credential"
+        );
+        return Err(VTubeError::TokenRejected);
+    }
+
+    Ok(())
+}
+
+async fn run_auth(
+    ws: &mut VtsWs,
+    creds: &dyn CredentialsRepo,
+    endpoint: &str,
+) -> Result<(), VTubeError> {
+    let stored = crate::credentials::load(creds).await.ok().flatten();
+
+    let token = if let Some(c) = stored {
+        tracing::debug!(endpoint, "using stored VTube Studio credential");
+        c.token
+    } else {
+        let new_token = request_new_token(ws, endpoint).await?;
+        if let Err(e) = crate::credentials::store(creds, &new_token, "1.0").await {
+            tracing::warn!(endpoint, error = %e, "failed to persist VTube Studio token");
+        }
+        new_token
+    };
+
+    authenticate_with_token(ws, creds, &token, endpoint).await
+}
+
 struct SupervisorContext {
     endpoint: String,
     state: Arc<AtomicU8>,
+    auth_state: Arc<RwLock<AuthState>>,
     shutdown: Arc<Notify>,
     connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
     publisher: Arc<dyn EventPublisher>,
+    creds: Arc<dyn CredentialsRepo>,
 }
 
 async fn run_supervisor(ctx: SupervisorContext) {
     let SupervisorContext {
         endpoint,
         state,
+        auth_state,
         shutdown,
         connected_at,
         publisher,
+        creds,
     } = ctx;
 
     let mut attempt: u32 = 0;
@@ -225,45 +365,8 @@ async fn run_supervisor(ctx: SupervisorContext) {
         state.store(conn_state, Ordering::Release);
         tracing::debug!(endpoint = %endpoint, attempt, "attempting VTube Studio connection");
 
-        match tokio_tungstenite::connect_async(&endpoint).await {
-            Ok((ws, _)) => {
-                if let Ok(mut g) = connected_at.write() {
-                    *g = Some(OffsetDateTime::now_utc());
-                }
-                state.store(STATE_CONNECTED, Ordering::Release);
-                emit_connection_changed(&*publisher, &endpoint, true, None);
-                tracing::info!(endpoint = %endpoint, "connected to VTube Studio");
-
-                let mut stream = ws;
-
-                loop {
-                    tokio::select! {
-                        () = shutdown.notified() => {
-                            state.store(STATE_DISCONNECTED, Ordering::Release);
-                            emit_connection_changed(&*publisher, &endpoint, false, None);
-                            return;
-                        }
-                        msg = stream.next() => {
-                            match msg {
-                                None | Some(Err(_)) => {
-                                    tracing::info!(
-                                        endpoint = %endpoint,
-                                        "VTube Studio connection closed"
-                                    );
-                                    break;
-                                }
-                                Some(Ok(_)) => {}
-                            }
-                        }
-                    }
-                }
-
-                if let Ok(mut g) = connected_at.write() {
-                    *g = None;
-                }
-                emit_connection_changed(&*publisher, &endpoint, false, None);
-                attempt = 1;
-            }
+        let mut ws = match tokio_tungstenite::connect_async(&endpoint).await {
+            Ok((ws, _)) => ws,
             Err(e) => {
                 tracing::debug!(
                     endpoint = %endpoint,
@@ -273,8 +376,90 @@ async fn run_supervisor(ctx: SupervisorContext) {
                 );
                 emit_connection_changed(&*publisher, &endpoint, false, Some(e.to_string()));
                 attempt = attempt.saturating_add(1);
+                continue;
+            }
+        };
+
+        match run_auth(&mut ws, &*creds, &endpoint).await {
+            Ok(()) => {}
+            Err(VTubeError::TokenRejected) => {
+                if let Ok(mut g) = auth_state.write() {
+                    *g = AuthState::AuthRequired;
+                }
+                emit_connection_changed(
+                    &*publisher,
+                    &endpoint,
+                    false,
+                    Some("auth_required".to_owned()),
+                );
+                state.store(STATE_DISCONNECTED, Ordering::Release);
+                return;
+            }
+            Err(VTubeError::TokenDenied | VTubeError::TokenTimeout) => {
+                if let Ok(mut g) = auth_state.write() {
+                    *g = AuthState::AuthRequired;
+                }
+                emit_connection_changed(
+                    &*publisher,
+                    &endpoint,
+                    false,
+                    Some("auth_denied".to_owned()),
+                );
+                state.store(STATE_DISCONNECTED, Ordering::Release);
+                return;
+            }
+            Err(e) => {
+                tracing::debug!(
+                    endpoint = %endpoint,
+                    error = %e,
+                    "auth failed, will retry"
+                );
+                emit_connection_changed(&*publisher, &endpoint, false, Some(e.to_string()));
+                attempt = attempt.saturating_add(1);
+                continue;
             }
         }
+
+        if let Ok(mut g) = connected_at.write() {
+            *g = Some(OffsetDateTime::now_utc());
+        }
+        if let Ok(mut g) = auth_state.write() {
+            *g = AuthState::Connected;
+        }
+        state.store(STATE_CONNECTED, Ordering::Release);
+        emit_connection_changed(&*publisher, &endpoint, true, None);
+        tracing::info!(endpoint = %endpoint, "connected and authenticated to VTube Studio");
+
+        loop {
+            tokio::select! {
+                () = shutdown.notified() => {
+                    state.store(STATE_DISCONNECTED, Ordering::Release);
+                    if let Ok(mut g) = auth_state.write() {
+                        *g = AuthState::Cold;
+                    }
+                    emit_connection_changed(&*publisher, &endpoint, false, None);
+                    return;
+                }
+                msg = ws.next() => {
+                    match msg {
+                        None | Some(Err(_)) => {
+                            tracing::info!(endpoint = %endpoint, "VTube Studio connection closed");
+                            break;
+                        }
+                        Some(Ok(_)) => {}
+                    }
+                }
+            }
+        }
+
+        if let Ok(mut g) = connected_at.write() {
+            *g = None;
+        }
+        if let Ok(mut g) = auth_state.write() {
+            *g = AuthState::Cold;
+        }
+        emit_connection_changed(&*publisher, &endpoint, false, None);
+        attempt = 1;
     }
 }
 
@@ -282,6 +467,9 @@ async fn run_supervisor(ctx: SupervisorContext) {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use std::sync::atomic::{AtomicU32, Ordering as AO};
+
+    use async_trait::async_trait;
+    use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 
     use super::*;
     use forge_events::EventPublisher;
@@ -325,6 +513,14 @@ mod tests {
                 })
                 .cloned()
         }
+
+        pub(crate) fn disconnected_with_reason(&self, reason: &str) -> bool {
+            self.events.lock().unwrap().iter().any(|e| {
+                e.kind == "vtube.connection.changed"
+                    && e.payload["connected"].as_bool() == Some(false)
+                    && e.payload["reason"].as_str() == Some(reason)
+            })
+        }
     }
 
     impl EventPublisher for MockPublisher {
@@ -332,6 +528,143 @@ mod tests {
             self.events.lock().unwrap().push(event);
         }
     }
+
+    pub(crate) struct MockCreds {
+        store: Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
+    }
+
+    impl MockCreds {
+        pub(crate) fn new() -> Arc<Self> {
+            Arc::new(Self {
+                store: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            })
+        }
+
+        pub(crate) fn creds(self: &Arc<Self>) -> Arc<dyn CredentialsRepo> {
+            Arc::clone(self) as Arc<dyn CredentialsRepo>
+        }
+
+        pub(crate) fn has_key(&self, key: &str) -> bool {
+            self.store.lock().unwrap().contains_key(key)
+        }
+
+        pub(crate) fn insert(&self, key: &str, value: &str) {
+            self.store
+                .lock()
+                .unwrap()
+                .insert(key.to_owned(), value.to_owned());
+        }
+    }
+
+    #[async_trait]
+    impl CredentialsRepo for MockCreds {
+        async fn store(&self, id: &CredentialId, plaintext: &str) -> Result<(), StorageError> {
+            self.store
+                .lock()
+                .unwrap()
+                .insert(id.as_str().to_owned(), plaintext.to_owned());
+            Ok(())
+        }
+
+        async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
+            Ok(self.store.lock().unwrap().get(id.as_str()).cloned())
+        }
+
+        async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
+            Ok(self.store.lock().unwrap().remove(id.as_str()).is_some())
+        }
+
+        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
+            Ok(self
+                .store
+                .lock()
+                .unwrap()
+                .keys()
+                .map(|k| CredentialId::new(k.clone()))
+                .collect())
+        }
+
+        async fn last_refresh(
+            &self,
+            _id: &CredentialId,
+        ) -> Result<Option<OffsetDateTime>, StorageError> {
+            Ok(None)
+        }
+
+        async fn mark_refreshed(&self, _id: &CredentialId) -> Result<(), StorageError> {
+            Ok(())
+        }
+    }
+
+    async fn serve_full_auth(ws: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>) {
+        use tokio_tungstenite::tungstenite::Message;
+        // Read the first request from client
+        let Ok(Some(Ok(Message::Text(text)))) =
+            tokio::time::timeout(Duration::from_secs(3), futures_util::StreamExt::next(ws)).await
+        else {
+            return;
+        };
+        let req: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+        let request_id = req["requestID"].as_str().unwrap_or("unknown");
+        let msg_type = req["messageType"].as_str().unwrap_or("");
+
+        // If it's a token request, respond with token then accept auth
+        if msg_type == "AuthenticationTokenRequest" {
+            let resp = serde_json::json!({
+                "apiName": "VTubeStudioPublicAPI",
+                "apiVersion": "1.0",
+                "requestID": request_id,
+                "messageType": "AuthenticationTokenResponse",
+                "data": { "authenticationToken": "test-token-abc", "granted": true }
+            });
+            ws.send(Message::Text(resp.to_string().into())).await.ok();
+
+            // Read auth request
+            let Ok(Some(Ok(Message::Text(text2)))) =
+                tokio::time::timeout(Duration::from_secs(3), futures_util::StreamExt::next(ws))
+                    .await
+            else {
+                return;
+            };
+            let req2: serde_json::Value = serde_json::from_str(&text2).unwrap_or_default();
+            let rid2 = req2["requestID"].as_str().unwrap_or("unknown");
+            let auth_resp = serde_json::json!({
+                "apiName": "VTubeStudioPublicAPI",
+                "apiVersion": "1.0",
+                "requestID": rid2,
+                "messageType": "AuthenticationResponse",
+                "data": { "authenticated": true, "reason": "" }
+            });
+            ws.send(Message::Text(auth_resp.to_string().into()))
+                .await
+                .ok();
+        } else if msg_type == "AuthenticationRequest" {
+            // Stored-token path: respond with authenticated
+            let auth_resp = serde_json::json!({
+                "apiName": "VTubeStudioPublicAPI",
+                "apiVersion": "1.0",
+                "requestID": request_id,
+                "messageType": "AuthenticationResponse",
+                "data": { "authenticated": true, "reason": "" }
+            });
+            ws.send(Message::Text(auth_resp.to_string().into()))
+                .await
+                .ok();
+        }
+    }
+
+    async fn wait_for_connected(publisher: &MockPublisher) -> bool {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while tokio::time::Instant::now() < deadline {
+            if publisher.connected_event().is_some() {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        false
+    }
+
+    // ── existing tests ────────────────────────────────────────────────────────
 
     #[test]
     fn new_for_test_connection_state_is_disconnected() {
@@ -425,22 +758,21 @@ mod tests {
             let Ok((stream, _)) = listener.accept().await else {
                 return;
             };
-            let ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+            serve_full_auth(&mut ws).await;
             tokio::time::sleep(Duration::from_millis(500)).await;
-            drop(ws);
         });
 
         let publisher = MockPublisher::new();
+        let creds = MockCreds::new();
         let cfg = VTubeConfig {
             endpoint: format!("ws://{addr}"),
         };
-        let _client = VTubeClient::connect(cfg, publisher.publisher());
-
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        let _client = VTubeClient::connect(cfg, publisher.publisher(), creds.creds());
 
         assert!(
-            publisher.connected_event().is_some(),
-            "expected vtube.connection.changed {{connected: true}}"
+            wait_for_connected(&publisher).await,
+            "expected connected event"
         );
     }
 
@@ -453,17 +785,19 @@ mod tests {
             let Ok((stream, _)) = listener.accept().await else {
                 return;
             };
-            let _ = tokio_tungstenite::accept_async(stream).await;
+            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+            serve_full_auth(&mut ws).await;
+            // drop ws to close connection
         });
 
         let publisher = MockPublisher::new();
+        let creds = MockCreds::new();
         let cfg = VTubeConfig {
             endpoint: format!("ws://{addr}"),
         };
-        let _client = VTubeClient::connect(cfg, publisher.publisher());
+        let _client = VTubeClient::connect(cfg, publisher.publisher(), creds.creds());
 
-        tokio::time::sleep(Duration::from_millis(300)).await;
-
+        tokio::time::sleep(Duration::from_millis(500)).await;
         assert!(
             publisher.disconnected_event().is_some(),
             "expected vtube.connection.changed {{connected: false}}"
@@ -486,26 +820,146 @@ mod tests {
                 };
                 counter.fetch_add(1, AO::Release);
                 let _ = accept_tx.send(()).await;
-                let _ = tokio_tungstenite::accept_async(stream).await;
+                let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+                serve_full_auth(&mut ws).await;
+                // drop ws
             }
         });
 
         let publisher = MockPublisher::new();
+        let creds = MockCreds::new();
         let cfg = VTubeConfig {
             endpoint: format!("ws://{addr}"),
         };
-        let _client = VTubeClient::connect(cfg, publisher.publisher());
+        let _client = VTubeClient::connect(cfg, publisher.publisher(), creds.creds());
 
         let result = tokio::time::timeout(Duration::from_secs(5), async {
-            accept_rx.recv().await; // first connect
-            accept_rx.recv().await; // reconnect
+            accept_rx.recv().await;
+            accept_rx.recv().await;
         })
         .await;
 
         assert!(result.is_ok(), "expected reconnect within 5 s");
+        assert!(accept_count.load(AO::Acquire) >= 2);
+    }
+
+    // ── auth-specific tests ───────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn cold_start_auth_stores_token_and_reaches_connected() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            let Ok((stream, _)) = listener.accept().await else {
+                return;
+            };
+            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+            serve_full_auth(&mut ws).await;
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        });
+
+        let publisher = MockPublisher::new();
+        let creds = MockCreds::new();
+        let cfg = VTubeConfig {
+            endpoint: format!("ws://{addr}"),
+        };
+        let _client = VTubeClient::connect(cfg, publisher.publisher(), creds.creds());
+
         assert!(
-            accept_count.load(AO::Acquire) >= 2,
-            "expected at least 2 connection attempts"
+            wait_for_connected(&publisher).await,
+            "expected connected after cold-start auth"
+        );
+        assert!(
+            creds.has_key("vtube:default"),
+            "token should have been persisted to creds"
+        );
+    }
+
+    #[tokio::test]
+    async fn stored_token_skips_token_request_and_reaches_connected() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            let Ok((stream, _)) = listener.accept().await else {
+                return;
+            };
+            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+            // serve_full_auth handles the stored-token path (AuthenticationRequest only)
+            serve_full_auth(&mut ws).await;
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        });
+
+        let publisher = MockPublisher::new();
+        let creds = MockCreds::new();
+        // Pre-populate stored token
+        let token_blob = serde_json::json!({ "token": "pre-stored-tok", "api_version": "1.0" });
+        creds.insert("vtube:default", &token_blob.to_string());
+
+        let cfg = VTubeConfig {
+            endpoint: format!("ws://{addr}"),
+        };
+        let _client = VTubeClient::connect(cfg, publisher.publisher(), creds.creds());
+
+        assert!(
+            wait_for_connected(&publisher).await,
+            "expected connected with stored token"
+        );
+    }
+
+    #[tokio::test]
+    async fn rejected_token_emits_auth_required_and_stops_reconnect() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            let Ok((stream, _)) = listener.accept().await else {
+                return;
+            };
+            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+            // Reject any AuthenticationRequest
+            use tokio_tungstenite::tungstenite::Message;
+            let Ok(Some(Ok(Message::Text(text)))) = tokio::time::timeout(
+                Duration::from_secs(3),
+                futures_util::StreamExt::next(&mut ws),
+            )
+            .await
+            else {
+                return;
+            };
+            let req: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+            let request_id = req["requestID"].as_str().unwrap_or("unknown");
+            let resp = serde_json::json!({
+                "apiName": "VTubeStudioPublicAPI",
+                "apiVersion": "1.0",
+                "requestID": request_id,
+                "messageType": "AuthenticationResponse",
+                "data": { "authenticated": false, "reason": "Plugin removed" }
+            });
+            ws.send(Message::Text(resp.to_string().into())).await.ok();
+        });
+
+        let publisher = MockPublisher::new();
+        let creds = MockCreds::new();
+        // Pre-populate stored token that will be rejected
+        let token_blob = serde_json::json!({ "token": "stale-token", "api_version": "1.0" });
+        creds.insert("vtube:default", &token_blob.to_string());
+
+        let cfg = VTubeConfig {
+            endpoint: format!("ws://{addr}"),
+        };
+        let _client = VTubeClient::connect(cfg, publisher.publisher(), creds.creds());
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        assert!(
+            publisher.disconnected_with_reason("auth_required"),
+            "expected disconnected event with auth_required reason"
+        );
+        assert!(
+            !creds.has_key("vtube:default"),
+            "stale token should have been cleared from creds"
         );
     }
 }

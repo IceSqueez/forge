@@ -13,7 +13,8 @@ use iced::Task;
 use crate::app::App;
 use crate::builtin_detail::BuiltinDetailState;
 use crate::message::{
-    DiscordClientRef, Message, ObsClientRef, ServerSubsystemMsg, TwitchBootBundle, VTubeClientRef,
+    DiscordClientRef, Message, MidiClientRef, ObsClientRef, ServerSubsystemMsg, TwitchBootBundle,
+    VTubeClientRef,
 };
 use crate::server_screen::ServerStatus;
 
@@ -188,6 +189,37 @@ pub(crate) fn handle_discord_boot_result(
         }
         Err(e) => {
             tracing::warn!(error = %e, "Discord boot setup failed");
+            Task::none()
+        }
+    }
+}
+
+pub(crate) fn handle_midi_boot_result(
+    app: &mut App,
+    result: Result<MidiClientRef, String>,
+) -> Task<Message> {
+    match result {
+        Ok(handle) => {
+            let client = handle.into_arc();
+            let id = BuiltinId::new("midi");
+            let icon = SectionIcon::new("piano");
+            let status: Arc<dyn BuiltinStatus> = client.clone();
+            let health: Arc<dyn BuiltinHealth> = client.clone();
+            let content: Arc<dyn BuiltinContent> = client.clone();
+            let quick_actions: Arc<dyn QuickActions> = client.clone();
+            app.ui.builtin_detail = Some(BuiltinDetailState::new(
+                id,
+                icon,
+                status,
+                health,
+                content,
+                quick_actions,
+            ));
+            app.rt.midi_client = Some(client);
+            Task::none()
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "MIDI boot setup failed");
             Task::none()
         }
     }

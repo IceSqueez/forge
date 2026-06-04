@@ -7,6 +7,7 @@ use forge_types::ClipId;
 
 use forge_discord::DiscordClient;
 use forge_events::Event;
+use forge_midi::MidiClient;
 use forge_obs::ObsClient;
 use forge_vtube::VTubeClient;
 use forge_widgets::{DeviceLabel, PickerItem, ToastKind};
@@ -81,6 +82,30 @@ impl std::fmt::Debug for DiscordClientRef {
 }
 
 impl Clone for DiscordClientRef {
+    fn clone(&self) -> Self {
+        Self(Arc::clone(&self.0))
+    }
+}
+
+pub struct MidiClientRef(pub(crate) Arc<MidiClient>);
+
+impl MidiClientRef {
+    pub fn new(client: Arc<MidiClient>) -> Self {
+        Self(client)
+    }
+
+    pub(crate) fn into_arc(self) -> Arc<MidiClient> {
+        self.0
+    }
+}
+
+impl std::fmt::Debug for MidiClientRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("MidiClientRef").finish()
+    }
+}
+
+impl Clone for MidiClientRef {
     fn clone(&self) -> Self {
         Self(Arc::clone(&self.0))
     }
@@ -429,6 +454,7 @@ pub enum BootMsg {
     Obs(Result<ObsClientRef, String>),
     Vtube(Result<VTubeClientRef, String>),
     Discord(Result<DiscordClientRef, String>),
+    Midi(Result<MidiClientRef, String>),
     Twitch(Result<Option<TwitchBootBundle>, String>),
     Server(Result<crate::server_subsystem::ServerBootSnapshot, String>),
 }

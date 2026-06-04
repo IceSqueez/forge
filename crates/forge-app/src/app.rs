@@ -319,6 +319,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             BootMsg::Vtube(result) => boot::handle_vtube_boot_result(app, result),
             BootMsg::Discord(result) => boot::handle_discord_boot_result(app, result),
             BootMsg::Midi(result) => boot::handle_midi_boot_result(app, result),
+            BootMsg::Hotkey(result) => boot::handle_hotkey_boot_result(app, result),
             BootMsg::Twitch(result) => boot::handle_twitch_boot_result(app, result),
             BootMsg::Server(result) => boot::handle_server_boot_result(app, result),
         },

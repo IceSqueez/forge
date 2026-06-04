@@ -13,8 +13,8 @@ use iced::Task;
 use crate::app::App;
 use crate::builtin_detail::BuiltinDetailState;
 use crate::message::{
-    DiscordClientRef, Message, MidiClientRef, ObsClientRef, ServerSubsystemMsg, TwitchBootBundle,
-    VTubeClientRef,
+    DiscordClientRef, HotkeyClientRef, Message, MidiClientRef, ObsClientRef, ServerSubsystemMsg,
+    TwitchBootBundle, VTubeClientRef,
 };
 use crate::server_screen::ServerStatus;
 
@@ -220,6 +220,37 @@ pub(crate) fn handle_midi_boot_result(
         }
         Err(e) => {
             tracing::warn!(error = %e, "MIDI boot setup failed");
+            Task::none()
+        }
+    }
+}
+
+pub(crate) fn handle_hotkey_boot_result(
+    app: &mut App,
+    result: Result<HotkeyClientRef, String>,
+) -> Task<Message> {
+    match result {
+        Ok(handle) => {
+            let client = handle.into_arc();
+            let id = BuiltinId::new("hotkey");
+            let icon = SectionIcon::new("keyboard");
+            let status: Arc<dyn BuiltinStatus> = client.clone();
+            let health: Arc<dyn BuiltinHealth> = client.clone();
+            let content: Arc<dyn BuiltinContent> = client.clone();
+            let quick_actions: Arc<dyn QuickActions> = client.clone();
+            app.ui.builtin_detail = Some(BuiltinDetailState::new(
+                id,
+                icon,
+                status,
+                health,
+                content,
+                quick_actions,
+            ));
+            app.rt.hotkey_client = Some(client);
+            Task::none()
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "hotkey boot setup failed");
             Task::none()
         }
     }

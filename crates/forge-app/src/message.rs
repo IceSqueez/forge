@@ -7,6 +7,7 @@ use forge_types::ClipId;
 
 use forge_discord::DiscordClient;
 use forge_events::Event;
+use forge_hotkey::HotkeyClient;
 use forge_midi::MidiClient;
 use forge_obs::ObsClient;
 use forge_vtube::VTubeClient;
@@ -106,6 +107,30 @@ impl std::fmt::Debug for MidiClientRef {
 }
 
 impl Clone for MidiClientRef {
+    fn clone(&self) -> Self {
+        Self(Arc::clone(&self.0))
+    }
+}
+
+pub struct HotkeyClientRef(pub(crate) Arc<HotkeyClient>);
+
+impl HotkeyClientRef {
+    pub fn new(client: Arc<HotkeyClient>) -> Self {
+        Self(client)
+    }
+
+    pub(crate) fn into_arc(self) -> Arc<HotkeyClient> {
+        self.0
+    }
+}
+
+impl std::fmt::Debug for HotkeyClientRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("HotkeyClientRef").finish()
+    }
+}
+
+impl Clone for HotkeyClientRef {
     fn clone(&self) -> Self {
         Self(Arc::clone(&self.0))
     }
@@ -455,6 +480,7 @@ pub enum BootMsg {
     Vtube(Result<VTubeClientRef, String>),
     Discord(Result<DiscordClientRef, String>),
     Midi(Result<MidiClientRef, String>),
+    Hotkey(Result<HotkeyClientRef, String>),
     Twitch(Result<Option<TwitchBootBundle>, String>),
     Server(Result<crate::server_subsystem::ServerBootSnapshot, String>),
 }

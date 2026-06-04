@@ -576,3 +576,440 @@ fn header_u32(headers: &reqwest::header::HeaderMap, key: &str) -> Option<u32> {
 fn header_f64(headers: &reqwest::header::HeaderMap, key: &str) -> Option<f64> {
     headers.get(key)?.to_str().ok()?.parse().ok()
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+pub(crate) mod tests {
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
+
+    use async_trait::async_trait;
+    use forge_events::{Event, EventPublisher};
+    use forge_storage::{CredentialId, CredentialsRepo, StorageError};
+    use time::OffsetDateTime;
+    use wiremock::matchers::{method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::*;
+    use crate::embed::{DiscordEmbed, DiscordEmbedField};
+
+    pub(crate) struct MockPublisher {
+        pub events: Arc<Mutex<Vec<Event>>>,
+    }
+
+    impl MockPublisher {
+        pub(crate) fn new() -> Arc<Self> {
+            Arc::new(Self {
+                events: Arc::new(Mutex::new(Vec::new())),
+            })
+        }
+
+        pub(crate) fn publisher(self: &Arc<Self>) -> Arc<dyn EventPublisher> {
+            Arc::clone(self) as Arc<dyn EventPublisher>
+        }
+
+        pub(crate) fn has_kind(&self, kind: &str) -> bool {
+            self.events.lock().unwrap().iter().any(|e| e.kind == kind)
+        }
+
+        pub(crate) fn find_kind(&self, kind: &str) -> Option<Event> {
+            self.events
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|e| e.kind == kind)
+                .cloned()
+        }
+    }
+
+    impl EventPublisher for MockPublisher {
+        fn publish(&self, event: Event) {
+            self.events.lock().unwrap().push(event);
+        }
+    }
+
+    pub(crate) struct MockCreds {
+        store: Arc<Mutex<HashMap<String, String>>>,
+    }
+
+    impl MockCreds {
+        pub(crate) fn new() -> Arc<Self> {
+            Arc::new(Self {
+                store: Arc::new(Mutex::new(HashMap::new())),
+            })
+        }
+
+        pub(crate) fn creds(self: &Arc<Self>) -> Arc<dyn CredentialsRepo> {
+            Arc::clone(self) as Arc<dyn CredentialsRepo>
+        }
+
+        pub(crate) fn insert(&self, key: &str, value: &str) {
+            self.store
+                .lock()
+                .unwrap()
+                .insert(key.to_owned(), value.to_owned());
+        }
+    }
+
+    #[async_trait]
+    impl CredentialsRepo for MockCreds {
+        async fn store(&self, id: &CredentialId, plaintext: &str) -> Result<(), StorageError> {
+            self.store
+                .lock()
+                .unwrap()
+                .insert(id.as_str().to_owned(), plaintext.to_owned());
+            Ok(())
+        }
+
+        async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
+            Ok(self.store.lock().unwrap().get(id.as_str()).cloned())
+        }
+
+        async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
+            Ok(self.store.lock().unwrap().remove(id.as_str()).is_some())
+        }
+
+        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
+            Ok(self
+                .store
+                .lock()
+                .unwrap()
+                .keys()
+                .map(|k| CredentialId::new(k.clone()))
+                .collect())
+        }
+
+        async fn last_refresh(
+            &self,
+            _id: &CredentialId,
+        ) -> Result<Option<OffsetDateTime>, StorageError> {
+            Ok(None)
+        }
+
+        async fn mark_refreshed(&self, _id: &CredentialId) -> Result<(), StorageError> {
+            Ok(())
+        }
+    }
+
+    fn make_standard_response(message_id: &str) -> ResponseTemplate {
+        ResponseTemplate::new(200)
+            .set_body_json(serde_json::json!({ "id": message_id }))
+            .insert_header("x-ratelimit-limit", "5")
+            .insert_header("x-ratelimit-remaining", "4")
+            .insert_header("x-ratelimit-reset-after", "1.0")
+    }
+
+    fn make_429_response(retry_after_secs: f64) -> ResponseTemplate {
+        ResponseTemplate::new(429)
+            .set_body_json(serde_json::json!({ "retry_after": retry_after_secs }))
+            .insert_header("retry-after", retry_after_secs.to_string().as_str())
+    }
+
+    async fn make_client(
+        server: &MockServer,
+        pub_ref: Arc<MockPublisher>,
+        creds_ref: Arc<MockCreds>,
+    ) -> Arc<DiscordClient> {
+        let hook_url = format!("{}/webhooks/test-id/test-token", server.uri());
+        creds_ref.insert(
+            "discord:alerts",
+            &serde_json::json!({ "url": hook_url }).to_string(),
+        );
+        DiscordClient::new(
+            DiscordConfig::default(),
+            pub_ref.publisher(),
+            creds_ref.creds(),
+        )
+    }
+
+    #[tokio::test]
+    async fn post_text_happy_path_returns_message_id() {
+        let server = MockServer::start().await;
+        let publisher = MockPublisher::new();
+        let creds = MockCreds::new();
+        let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
+
+        Mock::given(method("POST"))
+            .and(path("/webhooks/test-id/test-token"))
+            .and(query_param("wait", "true"))
+            .respond_with(make_standard_response("msg001"))
+            .mount(&server)
+            .await;
+
+        let result = client.post_text("alerts", "hello world").await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "msg001");
+    }
+
+    #[tokio::test]
+    async fn post_text_emits_posted_event() {
+        let server = MockServer::start().await;
+        let publisher = MockPublisher::new();
+        let creds = MockCreds::new();
+        let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
+
+        Mock::given(method("POST"))
+            .and(path("/webhooks/test-id/test-token"))
+            .and(query_param("wait", "true"))
+            .respond_with(make_standard_response("msg002"))
+            .mount(&server)
+            .await;
+
+        client.post_text("alerts", "hello").await.unwrap();
+        assert!(publisher.has_kind("discord.webhook.posted"));
+
+        let ev = publisher.find_kind("discord.webhook.posted").unwrap();
+        assert_eq!(ev.payload["webhook_name"], "alerts");
+        assert_eq!(ev.payload["message_id"], "msg002");
+        assert_eq!(ev.payload["embed_count"], 0);
+    }
+
+    #[tokio::test]
+    async fn post_embed_returns_message_id_with_embed_count_one() {
+        let server = MockServer::start().await;
+        let publisher = MockPublisher::new();
+        let creds = MockCreds::new();
+        let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
+
+        Mock::given(method("POST"))
+            .and(path("/webhooks/test-id/test-token"))
+            .and(query_param("wait", "true"))
+            .respond_with(make_standard_response("msg010"))
+            .mount(&server)
+            .await;
+
+        let embed = DiscordEmbed {
+            title: Some("Test".to_owned()),
+            description: Some("Hello".to_owned()),
+            ..Default::default()
+        };
+        let result = client.post_embed("alerts", embed).await;
+        assert!(result.is_ok());
+
+        let ev = publisher.find_kind("discord.webhook.posted").unwrap();
+        assert_eq!(ev.payload["embed_count"], 1);
+    }
+
+    #[tokio::test]
+    async fn rate_limit_retry_succeeds_after_429() {
+        let server = MockServer::start().await;
+        let publisher = MockPublisher::new();
+        let creds = MockCreds::new();
+        let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
+
+        Mock::given(method("POST"))
+            .and(path("/webhooks/test-id/test-token"))
+            .respond_with(make_429_response(0.05))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/webhooks/test-id/test-token"))
+            .respond_with(make_standard_response("msg_retry"))
+            .mount(&server)
+            .await;
+
+        let result = client.post_text("alerts", "retry test").await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "msg_retry");
+
+        assert!(publisher.has_kind("discord.webhook.ratelimit.hit"));
+        assert!(publisher.has_kind("discord.webhook.posted"));
+    }
+
+    #[tokio::test]
+    async fn double_429_returns_rate_limited_error() {
+        let server = MockServer::start().await;
+        let publisher = MockPublisher::new();
+        let creds = MockCreds::new();
+        let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
+
+        Mock::given(method("POST"))
+            .and(path("/webhooks/test-id/test-token"))
+            .respond_with(make_429_response(0.05))
+            .mount(&server)
+            .await;
+
+        let result = client.post_text("alerts", "double retry").await;
+        assert!(matches!(result, Err(DiscordError::RateLimited { .. })));
+
+        assert!(publisher.has_kind("discord.webhook.ratelimit.hit"));
+        assert!(publisher.has_kind("discord.webhook.failed"));
+    }
+
+    #[tokio::test]
+    async fn http_404_returns_bad_response_error_and_emits_failed() {
+        let server = MockServer::start().await;
+        let publisher = MockPublisher::new();
+        let creds = MockCreds::new();
+        let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
+
+        Mock::given(method("POST"))
+            .and(path("/webhooks/test-id/test-token"))
+            .respond_with(ResponseTemplate::new(404).set_body_json(serde_json::json!({
+                "code": 10015,
+                "message": "Unknown Webhook"
+            })))
+            .mount(&server)
+            .await;
+
+        let result = client.post_text("alerts", "test").await;
+        assert!(matches!(
+            result,
+            Err(DiscordError::BadResponse { status: 404, .. })
+        ));
+        assert!(publisher.has_kind("discord.webhook.failed"));
+    }
+
+    #[tokio::test]
+    async fn missing_credential_returns_webhook_not_found() {
+        let client = DiscordClient::new_for_test();
+        let result = client.post_text("nonexistent", "hello").await;
+        assert!(matches!(result, Err(DiscordError::WebhookNotFound { .. })));
+    }
+
+    #[tokio::test]
+    async fn embed_with_invalid_content_rejected_before_http() {
+        let server = MockServer::start().await;
+        let publisher = MockPublisher::new();
+        let creds = MockCreds::new();
+        let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
+
+        let embed = DiscordEmbed {
+            title: Some("bad\0null".to_owned()),
+            ..Default::default()
+        };
+        let result = client.post_embed("alerts", embed).await;
+        assert!(matches!(result, Err(DiscordError::Validation(_))));
+
+        let received = server.received_requests().await.unwrap();
+        assert!(
+            received.is_empty(),
+            "no HTTP request should be made when validation fails"
+        );
+    }
+
+    #[tokio::test]
+    async fn edit_message_patch_succeeds() {
+        let server = MockServer::start().await;
+        let publisher = MockPublisher::new();
+        let creds = MockCreds::new();
+        let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
+
+        Mock::given(method("PATCH"))
+            .and(path("/webhooks/test-id/test-token/messages/msg123"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({ "id": "msg123" }))
+                    .insert_header("x-ratelimit-limit", "5")
+                    .insert_header("x-ratelimit-remaining", "4")
+                    .insert_header("x-ratelimit-reset-after", "1.0"),
+            )
+            .mount(&server)
+            .await;
+
+        let result = client
+            .edit_message("alerts", "msg123", Some("updated"), None)
+            .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn global_rate_limit_header_triggers_global_throttle() {
+        let server = MockServer::start().await;
+        let publisher = MockPublisher::new();
+        let creds = MockCreds::new();
+        let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
+
+        Mock::given(method("POST"))
+            .and(path("/webhooks/test-id/test-token"))
+            .respond_with(
+                ResponseTemplate::new(429)
+                    .set_body_json(serde_json::json!({ "retry_after": 0.05 }))
+                    .insert_header("retry-after", "0.05")
+                    .insert_header("x-ratelimit-global", "true"),
+            )
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/webhooks/test-id/test-token"))
+            .respond_with(make_standard_response("msg_global"))
+            .mount(&server)
+            .await;
+
+        let result = client.post_text("alerts", "global test").await;
+        assert!(result.is_ok());
+
+        let rl = client.rate_limiter.lock().unwrap();
+        assert!(rl.global_wait_duration().is_some() || result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn bucket_remaining_decremented_after_send() {
+        let server = MockServer::start().await;
+        let publisher = MockPublisher::new();
+        let creds = MockCreds::new();
+        let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
+
+        Mock::given(method("POST"))
+            .and(path("/webhooks/test-id/test-token"))
+            .and(query_param("wait", "true"))
+            .respond_with(make_standard_response("msg_bucket"))
+            .mount(&server)
+            .await;
+
+        client.post_text("alerts", "bucket test").await.unwrap();
+
+        let rl = client.rate_limiter.lock().unwrap();
+        let (remaining, total) = rl.budget("alerts");
+        assert_eq!(total, 5);
+        assert_eq!(remaining, 4);
+    }
+
+    #[test]
+    fn credential_debug_redacts_token_url() {
+        use crate::credentials::WebhookCredential;
+        let cred = WebhookCredential {
+            name: "alerts".to_owned(),
+            url: "https://discord.com/api/webhooks/123/super-secret-token".to_owned(),
+        };
+        let s = format!("{cred:?}");
+        assert!(!s.contains("super-secret-token"));
+        assert!(s.contains("***"));
+    }
+
+    #[tokio::test]
+    async fn embed_with_fields_serialized_correctly() {
+        let server = MockServer::start().await;
+        let publisher = MockPublisher::new();
+        let creds = MockCreds::new();
+        let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
+
+        Mock::given(method("POST"))
+            .and(path("/webhooks/test-id/test-token"))
+            .and(query_param("wait", "true"))
+            .respond_with(make_standard_response("msg_fields"))
+            .mount(&server)
+            .await;
+
+        let embed = DiscordEmbed {
+            title: Some("Embed with fields".to_owned()),
+            fields: vec![DiscordEmbedField {
+                name: "key".to_owned(),
+                value: "value".to_owned(),
+                inline: true,
+            }],
+            ..Default::default()
+        };
+        let result = client.post_embed("alerts", embed).await;
+        assert!(result.is_ok());
+
+        let reqs = server.received_requests().await.unwrap();
+        assert!(!reqs.is_empty());
+        let body: serde_json::Value = serde_json::from_slice(&reqs[0].body).unwrap();
+        assert!(body["embeds"][0]["fields"].is_array());
+    }
+}

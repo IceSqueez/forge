@@ -169,7 +169,7 @@ impl DiscordClient {
             .json(&body)
             .send()
             .await
-            .map_err(|e| DiscordError::Connect(e.to_string()))?;
+            .map_err(|e| DiscordError::Connect(e.without_url().to_string()))?;
 
         let status = resp.status();
         if status.as_u16() == 429 {
@@ -193,7 +193,7 @@ impl DiscordClient {
                 .json(&body)
                 .send()
                 .await
-                .map_err(|e| DiscordError::Connect(e.to_string()))?;
+                .map_err(|e| DiscordError::Connect(e.without_url().to_string()))?;
 
             if retry_resp.status().as_u16() == 429 {
                 let ra = parse_retry_after(retry_resp.headers()).unwrap_or(1.0);
@@ -277,7 +277,7 @@ impl DiscordClient {
             .json(&body)
             .send()
             .await
-            .map_err(|e| DiscordError::Connect(e.to_string()))?;
+            .map_err(|e| DiscordError::Connect(e.without_url().to_string()))?;
 
         let status = resp.status();
         if status.as_u16() == 429 {
@@ -300,7 +300,7 @@ impl DiscordClient {
                 .json(&body)
                 .send()
                 .await
-                .map_err(|e| DiscordError::Connect(e.to_string()))?;
+                .map_err(|e| DiscordError::Connect(e.without_url().to_string()))?;
 
             if retry_resp.status().as_u16() == 429 {
                 let ra = parse_retry_after(retry_resp.headers()).unwrap_or(1.0);

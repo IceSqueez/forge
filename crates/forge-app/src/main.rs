@@ -10,6 +10,7 @@ use forge_app::speak_bridge::SpeakBridge;
 use forge_app::subscriptions::subscription;
 use forge_app::view_router::view;
 use forge_audio::{CpalSink, DeviceId, NullSink};
+use forge_discord::{DiscordClient, DiscordConfig, register_discord_sub_actions};
 use forge_events::EventPublisher;
 use forge_obs::register_obs_triggers;
 use forge_platform_core::paths;
@@ -155,6 +156,7 @@ struct RuntimeHandles {
     trigger_reg: Arc<TriggerRegistry>,
     trigger_evaluator: TriggerEvaluatorHandle,
     vtube_client: Arc<VTubeClient>,
+    discord_client: Arc<DiscordClient>,
 }
 
 fn find_piper_binary() -> Option<PathBuf> {
@@ -356,6 +358,14 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         Arc::clone(&vtube_client) as Arc<dyn forge_vtube::VTubeSink>,
     ) {
         tracing::warn!("vtube sub-action runner registration failed: {e}");
+    }
+    let discord_publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
+    let discord_creds: Arc<dyn forge_storage::CredentialsRepo> =
+        Arc::clone(&dp) as Arc<dyn forge_storage::CredentialsRepo>;
+    let discord_client =
+        DiscordClient::new(DiscordConfig::default(), discord_publisher, discord_creds);
+    if let Err(e) = register_discord_sub_actions(&mut sub_action_reg, Arc::clone(&discord_client)) {
+        tracing::warn!("discord sub-action runner registration failed: {e}");
     }
     let sub_action_reg = Arc::new(sub_action_reg);
 
@@ -766,6 +776,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         trigger_reg,
         trigger_evaluator,
         vtube_client,
+        discord_client,
     })
 }
 
@@ -801,6 +812,7 @@ fn main() -> iced::Result {
         trigger_reg,
         _trigger_evaluator,
         vtube_client,
+        discord_client,
     ) = if storage_offline {
         let vt_pub: Arc<dyn EventPublisher> = Arc::clone(&bus) as _;
         let vt_creds: Arc<dyn forge_storage::CredentialsRepo> = Arc::clone(&backend) as _;
@@ -809,6 +821,9 @@ fn main() -> iced::Result {
             vt_pub,
             vt_creds,
         ));
+        let dc_pub: Arc<dyn EventPublisher> = Arc::clone(&bus) as _;
+        let dc_creds: Arc<dyn forge_storage::CredentialsRepo> = Arc::clone(&backend) as _;
+        let dc = DiscordClient::new(DiscordConfig::default(), dc_pub, dc_creds);
         (
             Arc::new(ScriptRegistry::new()),
             None,
@@ -821,6 +836,7 @@ fn main() -> iced::Result {
             Arc::new(TriggerRegistry::new()),
             None,
             vc,
+            dc,
         )
     } else {
         match spawn_runtime(Arc::clone(&backend), Arc::clone(&bus)) {
@@ -836,6 +852,7 @@ fn main() -> iced::Result {
                 h.trigger_reg,
                 Some(h.trigger_evaluator),
                 h.vtube_client,
+                h.discord_client,
             ),
             None => {
                 let vt_pub: Arc<dyn EventPublisher> = Arc::clone(&bus) as _;
@@ -845,6 +862,9 @@ fn main() -> iced::Result {
                     vt_pub,
                     vt_creds,
                 ));
+                let dc_pub: Arc<dyn EventPublisher> = Arc::clone(&bus) as _;
+                let dc_creds: Arc<dyn forge_storage::CredentialsRepo> = Arc::clone(&backend) as _;
+                let dc = DiscordClient::new(DiscordConfig::default(), dc_pub, dc_creds);
                 (
                     Arc::new(ScriptRegistry::new()),
                     None,
@@ -857,6 +877,7 @@ fn main() -> iced::Result {
                     Arc::new(TriggerRegistry::new()),
                     None,
                     vc,
+                    dc,
                 )
             }
         }
@@ -895,6 +916,10 @@ fn main() -> iced::Result {
         let vtube_task = iced::Task::done(forge_app::Message::Boot(forge_app::BootMsg::Vtube(Ok(
             forge_app::message::VTubeClientRef::new(Arc::clone(&vtube_client)),
         ))));
+        let discord_task =
+            iced::Task::done(forge_app::Message::Boot(forge_app::BootMsg::Discord(Ok(
+                forge_app::message::DiscordClientRef::new(Arc::clone(&discord_client)),
+            ))));
         let boot_task = match app.rt.action_engine.clone() {
             Some(engine) => {
                 let dp = Arc::clone(&backend_boot);
@@ -907,9 +932,15 @@ fn main() -> iced::Result {
                     ),
                     |r| forge_app::Message::Boot(forge_app::BootMsg::Server(r)),
                 );
-                iced::Task::batch([obs_task, twitch_task, vtube_task, server_boot_task])
+                iced::Task::batch([
+                    obs_task,
+                    twitch_task,
+                    vtube_task,
+                    discord_task,
+                    server_boot_task,
+                ])
             }
-            None => iced::Task::batch([obs_task, twitch_task, vtube_task]),
+            None => iced::Task::batch([obs_task, twitch_task, vtube_task, discord_task]),
         };
         (app, boot_task)
     };

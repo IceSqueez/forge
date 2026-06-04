@@ -28,6 +28,7 @@ forge-platform-core   = { path = "../forge-platform-core" }
 forge-obs             = { path = "../forge-obs" }
 forge-vtube           = { path = "../forge-vtube" }
 forge-discord         = { path = "../forge-discord" }
+forge-midi            = { path = "../forge-midi" }
 forge-platform-twitch = { path = "../forge-platform-twitch" }
 forge-platform-youtube = { path = "../forge-platform-youtube" }
 forge-platform-trovo  = { path = "../forge-platform-trovo" }

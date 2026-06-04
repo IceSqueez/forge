@@ -85,10 +85,12 @@ fn check_len(field: &str, value: Option<&str>, max: usize) -> Result<(), Discord
 }
 
 fn check_no_nul(field: &str, s: &str) -> Result<(), DiscordError> {
-    if s.contains('\0') {
-        return Err(DiscordError::Validation(format!(
-            "{field} contains null byte"
-        )));
+    for c in s.chars() {
+        if (c < '\x20' && c != '\n' && c != '\t') || c == '\x7f' {
+            return Err(DiscordError::Validation(format!(
+                "{field} contains invalid control character"
+            )));
+        }
     }
     Ok(())
 }
@@ -151,6 +153,24 @@ mod tests {
             ..Default::default()
         };
         assert!(matches!(e.validate(), Err(DiscordError::Validation(_))));
+    }
+
+    #[test]
+    fn other_control_char_in_description_rejected() {
+        let e = DiscordEmbed {
+            description: Some("bad\x01char".to_owned()),
+            ..Default::default()
+        };
+        assert!(matches!(e.validate(), Err(DiscordError::Validation(_))));
+    }
+
+    #[test]
+    fn newline_and_tab_are_allowed() {
+        let e = DiscordEmbed {
+            description: Some("line1\nline2\ttabbed".to_owned()),
+            ..Default::default()
+        };
+        assert!(e.validate().is_ok());
     }
 
     #[test]

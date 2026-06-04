@@ -982,6 +982,29 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn webhook_url_not_in_error_message_after_network_failure() {
+        use std::time::Duration;
+
+        let url = "https://192.0.2.1/api/webhooks/123/SECRET_TOKEN";
+        let creds = MockCreds::new();
+        creds.insert(
+            "discord:test-webhook",
+            &serde_json::json!({ "url": url }).to_string(),
+        );
+        let publisher = MockPublisher::new();
+        let config = DiscordConfig {
+            request_timeout: Duration::from_millis(500),
+            ..DiscordConfig::default()
+        };
+        let client = DiscordClient::new(config, publisher.publisher(), creds.creds());
+        let result = client.post_text("test-webhook", "hi").await;
+        let err = result.unwrap_err();
+        let msg = err.to_string();
+        assert!(!msg.contains("SECRET_TOKEN"), "url leaked: {msg}");
+        assert!(!msg.contains("192.0.2.1"), "url leaked: {msg}");
+    }
+
+    #[tokio::test]
     async fn embed_with_fields_serialized_correctly() {
         let server = MockServer::start().await;
         let publisher = MockPublisher::new();

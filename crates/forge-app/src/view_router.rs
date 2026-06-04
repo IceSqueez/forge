@@ -56,6 +56,8 @@ pub fn view(app: &App) -> Element<'_, Message> {
             &app.ui.settings_websocket,
             &app.ui.server_screen,
             &app.ui.settings_audio,
+            &app.ui.settings_hotkeys,
+            &app.rt,
             palette,
         ),
         Screen::ScriptEditor => script_editor_view(app, palette),

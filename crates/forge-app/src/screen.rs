@@ -12,6 +12,7 @@ pub enum SettingsSection {
     Queues,
     Storage,
     WebSocket,
+    Hotkeys,
     Version,
     Diagnostics,
 }

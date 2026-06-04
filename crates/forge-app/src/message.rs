@@ -521,6 +521,7 @@ pub enum Message {
     SettingsAudio(SettingsAudioMsg),
     Tts(TtsMsg),
     LocalCallbackFlow(LocalCallbackFlowMsg),
+    SettingsHotkeys(crate::settings_hotkeys::SettingsHotkeysMsg),
     OutsideClick,
     Noop,
 }

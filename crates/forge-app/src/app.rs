@@ -41,6 +41,7 @@ use crate::script_editor::ScriptEditorState;
 use crate::server_screen::ServerScreenState;
 use crate::server_subsystem::ServerSubsystem;
 use crate::settings_audio::SettingsAudioState;
+use crate::settings_hotkeys::SettingsHotkeysState;
 use crate::settings_websocket::SettingsWebSocketState;
 use crate::soundboard::SoundboardState;
 use crate::tts_dashboard::TtsDashState;
@@ -95,6 +96,7 @@ pub struct UiState {
     pub builtin_detail: Option<BuiltinDetailState>,
     pub server_screen: ServerScreenState,
     pub settings_websocket: SettingsWebSocketState,
+    pub settings_hotkeys: SettingsHotkeysState,
     pub twitch_panel: crate::twitch_panel::TwitchPanelState,
     pub obs_panel: crate::obs_panel::ObsPanelState,
     pub soundboard: SoundboardState,
@@ -123,6 +125,7 @@ impl Default for UiState {
             builtin_detail: None,
             server_screen: ServerScreenState::default(),
             settings_websocket: SettingsWebSocketState::default(),
+            settings_hotkeys: SettingsHotkeysState::default(),
             twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
             obs_panel: crate::obs_panel::ObsPanelState::default(),
             soundboard: SoundboardState::new(),
@@ -394,6 +397,9 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         }
         Message::LocalCallbackFlow(sub) => {
             crate::local_callback_flow::update(&mut app.ui.local_callback_flow, &mut app.rt, sub)
+        }
+        Message::SettingsHotkeys(sub) => {
+            crate::settings_hotkeys::update(&mut app.ui.settings_hotkeys, &app.rt, sub)
         }
         Message::Toast(sub) => match sub {
             ToastMsg::Fired {

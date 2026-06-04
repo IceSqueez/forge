@@ -9,9 +9,11 @@ use crate::app::App;
 
 use crate::message::{Message, SettingsMsg};
 use crate::page_chrome::simple_page_header;
+use crate::runtime_view::RuntimeView;
 use crate::screen::{Screen, SettingsSection};
 use crate::server_screen::ServerScreenState;
 use crate::settings_audio::{SettingsAudioState, settings_audio_view};
+use crate::settings_hotkeys::SettingsHotkeysState;
 use crate::settings_websocket::settings_websocket_view;
 
 fn settings_section_button<'a>(
@@ -355,6 +357,8 @@ pub(crate) fn settings_view<'a>(
     ws: &'a crate::settings_websocket::SettingsWebSocketState,
     server: &'a ServerScreenState,
     audio: &'a SettingsAudioState,
+    hotkeys: &'a SettingsHotkeysState,
+    rt: &'a RuntimeView,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let nav = iced::widget::column![
@@ -375,6 +379,7 @@ pub(crate) fn settings_view<'a>(
         settings_section_button("Queues", SettingsSection::Queues, section, palette),
         settings_section_button("Storage", SettingsSection::Storage, section, palette),
         settings_section_button("WebSocket", SettingsSection::WebSocket, section, palette),
+        settings_section_button("Hotkeys", SettingsSection::Hotkeys, section, palette),
         iced::widget::Space::new().height(6),
         nav_group_header("ABOUT", palette),
         settings_section_button("Version", SettingsSection::Version, section, palette),
@@ -412,6 +417,7 @@ pub(crate) fn settings_view<'a>(
         SettingsSection::Notifications => settings_notifications_pane(palette),
         SettingsSection::Language => settings_language_pane(palette),
         SettingsSection::Shortcuts => settings_shortcuts_pane(palette),
+        SettingsSection::Hotkeys => crate::settings_hotkeys::view(hotkeys, rt, palette),
         other => {
             let label = format!("Settings · {other:?}");
             iced::widget::container(forge_widgets::empty_state(

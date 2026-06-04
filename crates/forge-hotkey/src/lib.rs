@@ -3,6 +3,8 @@ pub mod client;
 pub mod combo;
 pub mod config;
 pub mod error;
+pub mod runners;
+pub mod triggers;
 pub(crate) mod health;
 pub(crate) mod supervisor;
 
@@ -19,3 +21,5 @@ pub use client::HotkeyClient;
 pub use combo::HotkeyCombo;
 pub use config::HotkeyConfig;
 pub use error::HotkeyError;
+pub use runners::register_hotkey_sub_actions;
+pub use triggers::register_hotkey_triggers;

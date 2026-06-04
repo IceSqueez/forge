@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::SystemTime;
 
+use forge_discord::DiscordClient;
 use forge_obs::ObsClient;
 use forge_platform_kick::KickAuthFlow;
 use forge_platform_trovo::TrovoAuthFlow;
@@ -29,6 +30,7 @@ pub struct RuntimeView {
     pub scheduler: Option<QueueSchedulerHandle>,
     pub obs_client: Option<Arc<ObsClient>>,
     pub vtube_client: Option<Arc<VTubeClient>>,
+    pub discord_client: Option<Arc<DiscordClient>>,
     pub speak_queue: Option<Arc<SpeakQueueHandle>>,
     pub sound_player: Option<Arc<SoundboardPlayer>>,
     pub twitch_chat_handle: Option<TwitchChatHandle>,

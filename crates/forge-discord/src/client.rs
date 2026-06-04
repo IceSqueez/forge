@@ -37,10 +37,11 @@ impl DiscordClient {
         publisher: Arc<dyn EventPublisher>,
         creds: Arc<dyn CredentialsRepo>,
     ) -> Arc<Self> {
+        #[allow(clippy::expect_used)]
         let http = reqwest::Client::builder()
             .timeout(config.request_timeout)
             .build()
-            .unwrap_or_default();
+            .expect("reqwest TLS client init failed; system certificates may be missing");
         let (health_tx, health_state) = make_health_state();
         let content_state = make_content_state();
         let rate_limiter = Arc::new(Mutex::new(DiscordRateLimiter::new()));

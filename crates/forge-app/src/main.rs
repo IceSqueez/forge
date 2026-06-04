@@ -12,6 +12,7 @@ use forge_app::view_router::view;
 use forge_audio::{CpalSink, DeviceId, NullSink};
 use forge_discord::{DiscordClient, DiscordConfig, register_discord_sub_actions};
 use forge_events::EventPublisher;
+use forge_hotkey::{HotkeyClient, HotkeyConfig, register_hotkey_triggers};
 use forge_midi::{MidiClient, MidiConfig, register_midi_sub_actions, register_midi_triggers};
 use forge_obs::register_obs_triggers;
 use forge_platform_core::paths;
@@ -396,6 +397,9 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
     }
     if let Err(e) = register_midi_triggers(&mut trigger_reg) {
         tracing::warn!("midi trigger descriptor registration failed: {e}");
+    }
+    if let Err(e) = register_hotkey_triggers(&mut trigger_reg) {
+        tracing::warn!("hotkey trigger descriptor registration failed: {e}");
     }
     if let Err(e) = forge_platform_youtube::register_youtube_triggers(&mut trigger_reg) {
         tracing::warn!("youtube trigger descriptor registration failed: {e}");
@@ -955,6 +959,17 @@ fn main() -> iced::Result {
                 "MIDI unavailable".to_owned(),
             )))),
         };
+        let bus_hotkey = Arc::clone(&bus_boot);
+        let hotkey_task = iced::Task::perform(
+            async move {
+                let publisher: Arc<dyn EventPublisher> = bus_hotkey;
+                let client = HotkeyClient::new(HotkeyConfig::default(), publisher).await;
+                Ok::<forge_app::message::HotkeyClientRef, String>(
+                    forge_app::message::HotkeyClientRef::new(client),
+                )
+            },
+            |r| forge_app::Message::Boot(forge_app::BootMsg::Hotkey(r)),
+        );
         let boot_task = match app.rt.action_engine.clone() {
             Some(engine) => {
                 let dp = Arc::clone(&backend_boot);
@@ -973,10 +988,18 @@ fn main() -> iced::Result {
                     vtube_task,
                     discord_task,
                     midi_task,
+                    hotkey_task,
                     server_boot_task,
                 ])
             }
-            None => iced::Task::batch([obs_task, twitch_task, vtube_task, discord_task, midi_task]),
+            None => iced::Task::batch([
+                obs_task,
+                twitch_task,
+                vtube_task,
+                discord_task,
+                midi_task,
+                hotkey_task,
+            ]),
         };
         (app, boot_task)
     };

@@ -8,11 +8,8 @@ pub enum DiscordError {
     #[error("rate limited; retry after {retry_after_secs:.2}s")]
     RateLimited { retry_after_secs: f64 },
 
-    #[error("forbidden")]
-    Forbidden,
-
-    #[error("webhook not found")]
-    NotFound,
+    #[error("webhook not found: {name:?}")]
+    WebhookNotFound { name: String },
 
     #[error("validation failed: {0}")]
     Validation(String),
@@ -56,5 +53,13 @@ mod tests {
         let json_err = serde_json::from_str::<serde_json::Value>("{bad}").unwrap_err();
         let e: DiscordError = json_err.into();
         assert!(matches!(e, DiscordError::Serde(_)));
+    }
+
+    #[test]
+    fn webhook_not_found_display_contains_name() {
+        let e = DiscordError::WebhookNotFound {
+            name: "alerts".to_owned(),
+        };
+        assert!(e.to_string().contains("alerts"));
     }
 }

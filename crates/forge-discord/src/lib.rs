@@ -1,13 +1,13 @@
 pub mod client;
 pub mod config;
-pub mod content;
-pub mod credentials;
+pub(crate) mod content;
+pub(crate) mod credentials;
 pub mod embed;
 pub mod error;
-pub mod events;
+pub(crate) mod events;
 pub mod health;
 pub mod quick_actions;
-pub mod ratelimit;
+pub(crate) mod ratelimit;
 pub mod runners;
 pub mod sink;
 pub mod status;

@@ -2281,6 +2281,7 @@ dependencies = [
  "forge-audio",
  "forge-discord",
  "forge-events",
+ "forge-hotkey",
  "forge-midi",
  "forge-obs",
  "forge-platform-core",

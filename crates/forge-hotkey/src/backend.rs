@@ -9,20 +9,17 @@ use crate::error::HotkeyError;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct HotkeyId(pub u32);
 
-#[allow(dead_code)]
 pub(crate) struct HotkeyFiredEvent {
     pub(crate) id: HotkeyId,
     pub(crate) combo: HotkeyCombo,
     pub(crate) timestamp_us: u64,
 }
 
-#[allow(dead_code)]
 pub(crate) struct NullBackend {
     fired_rx_slot: Mutex<Option<mpsc::Receiver<HotkeyFiredEvent>>>,
 }
 
 impl NullBackend {
-    #[allow(dead_code)]
     pub(crate) fn new() -> Self {
         let (_tx, rx) = mpsc::channel::<HotkeyFiredEvent>(1);
         Self {
@@ -49,7 +46,6 @@ impl HotkeyBackend for NullBackend {
     }
 }
 
-#[allow(dead_code)]
 pub(crate) trait HotkeyBackend: Send + Sync {
     fn register(&self, id: HotkeyId, combo: &HotkeyCombo) -> Result<(), HotkeyError>;
     fn unregister(&self, id: HotkeyId) -> Result<(), HotkeyError>;

@@ -15,6 +15,7 @@ members = [
   "crates/forge-platform-kick",
   "crates/forge-obs",
   "crates/forge-vtube",
+  "crates/forge-discord",
   "crates/forge-server",
   "crates/forge-audio",
   "crates/forge-soundboard",

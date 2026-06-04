@@ -2307,6 +2307,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-discord"
+version = "0.1.0-beta.6"
+dependencies = [
+ "async-trait",
+ "forge-events",
+ "forge-platform-core",
+ "forge-registry",
+ "forge-storage",
+ "forge-types",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "time",
+ "tokio",
+ "tokio-stream",
+ "tracing",
+ "wiremock",
+]
+
+[[package]]
 name = "forge-events"
 version = "0.1.0-beta.6"
 dependencies = [

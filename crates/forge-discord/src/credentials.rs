@@ -1,12 +1,7 @@
-use forge_storage::{CredentialId, CredentialsRepo};
 use serde::{Deserialize, Serialize};
 
-use crate::error::DiscordError;
-
-#[allow(dead_code)]
 pub(crate) const DISCORD_CRED_PREFIX: &str = "discord:";
 
-#[allow(dead_code)]
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct WebhookCredential {
     pub(crate) name: String,
@@ -21,52 +16,6 @@ impl std::fmt::Debug for WebhookCredential {
             .field("url", &"***")
             .finish()
     }
-}
-
-#[allow(dead_code)]
-pub(crate) async fn load_all_webhooks(
-    creds: &dyn CredentialsRepo,
-) -> Result<Vec<WebhookCredential>, DiscordError> {
-    let ids = creds
-        .list_ids()
-        .await
-        .map_err(|e| DiscordError::Credential(e.to_string()))?;
-
-    let mut out = Vec::new();
-    for id in ids {
-        if !id.as_str().starts_with(DISCORD_CRED_PREFIX) {
-            continue;
-        }
-        let name = id.as_str()[DISCORD_CRED_PREFIX.len()..].to_owned();
-        let Some(json) = creds
-            .load(&id)
-            .await
-            .map_err(|e| DiscordError::Credential(e.to_string()))?
-        else {
-            continue;
-        };
-        let blob: serde_json::Value = serde_json::from_str(&json).map_err(DiscordError::Serde)?;
-        let url = blob["url"]
-            .as_str()
-            .ok_or_else(|| DiscordError::Credential(format!("missing url in {id}")))?
-            .to_owned();
-        out.push(WebhookCredential { name, url });
-    }
-    Ok(out)
-}
-
-#[allow(dead_code)]
-pub(crate) async fn store_webhook(
-    creds: &dyn CredentialsRepo,
-    name: &str,
-    url: &str,
-) -> Result<(), DiscordError> {
-    let id = CredentialId::new(format!("{DISCORD_CRED_PREFIX}{name}"));
-    let blob = serde_json::json!({ "url": url }).to_string();
-    creds
-        .store(&id, &blob)
-        .await
-        .map_err(|e| DiscordError::Credential(e.to_string()))
 }
 
 #[cfg(test)]

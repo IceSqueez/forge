@@ -839,6 +839,7 @@ mod tests {
             vtube_client: None,
             discord_client: None,
             midi_client: None,
+            hotkey_client: None,
             speak_queue: None,
             sound_player: None,
             twitch_chat_handle: None,

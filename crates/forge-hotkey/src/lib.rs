@@ -2,14 +2,14 @@ pub mod backend;
 pub mod client;
 pub mod combo;
 pub mod config;
+pub(crate) mod content;
 pub mod error;
+pub(crate) mod health;
 pub mod quick_actions;
 pub mod runners;
-pub mod triggers;
-pub(crate) mod content;
-pub(crate) mod health;
 pub(crate) mod status;
 pub(crate) mod supervisor;
+pub mod triggers;
 
 #[cfg(target_os = "linux")]
 pub(crate) mod backend_evdev;

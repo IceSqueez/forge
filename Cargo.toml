@@ -17,6 +17,7 @@ members = [
   "crates/forge-vtube",
   "crates/forge-discord",
   "crates/forge-midi",
+  "crates/forge-hotkey",
   "crates/forge-server",
   "crates/forge-audio",
   "crates/forge-soundboard",
@@ -87,6 +88,9 @@ arc-swap = { version = "1" }
 rhai = { version = "1", features = ["sync"] }
 
 midir = { version = "0.10" }
+
+global-hotkey = { version = "0.6" }
+zbus          = { version = "4", default-features = false, features = ["tokio"] }
 
 reqwest = { version = "0.12", features = [
   "json",

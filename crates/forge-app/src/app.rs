@@ -313,6 +313,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
         Message::Boot(boot_msg) => match boot_msg {
             BootMsg::Obs(result) => boot::handle_obs_boot_result(app, result),
             BootMsg::Vtube(result) => boot::handle_vtube_boot_result(app, result),
+            BootMsg::Discord(result) => boot::handle_discord_boot_result(app, result),
             BootMsg::Twitch(result) => boot::handle_twitch_boot_result(app, result),
             BootMsg::Server(result) => boot::handle_server_boot_result(app, result),
         },

@@ -5,6 +5,7 @@ use std::time::Instant;
 use forge_speak_queue::SpeakEvent;
 use forge_types::ClipId;
 
+use forge_discord::DiscordClient;
 use forge_events::Event;
 use forge_obs::ObsClient;
 use forge_vtube::VTubeClient;
@@ -56,6 +57,30 @@ impl std::fmt::Debug for ObsClientRef {
 }
 
 impl Clone for ObsClientRef {
+    fn clone(&self) -> Self {
+        Self(Arc::clone(&self.0))
+    }
+}
+
+pub struct DiscordClientRef(pub(crate) Arc<DiscordClient>);
+
+impl DiscordClientRef {
+    pub fn new(client: Arc<DiscordClient>) -> Self {
+        Self(client)
+    }
+
+    pub(crate) fn into_arc(self) -> Arc<DiscordClient> {
+        self.0
+    }
+}
+
+impl std::fmt::Debug for DiscordClientRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("DiscordClientRef").finish()
+    }
+}
+
+impl Clone for DiscordClientRef {
     fn clone(&self) -> Self {
         Self(Arc::clone(&self.0))
     }
@@ -403,6 +428,7 @@ pub enum LiveChatMsg {
 pub enum BootMsg {
     Obs(Result<ObsClientRef, String>),
     Vtube(Result<VTubeClientRef, String>),
+    Discord(Result<DiscordClientRef, String>),
     Twitch(Result<Option<TwitchBootBundle>, String>),
     Server(Result<crate::server_subsystem::ServerBootSnapshot, String>),
 }

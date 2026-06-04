@@ -12,7 +12,9 @@ use iced::Task;
 
 use crate::app::App;
 use crate::builtin_detail::BuiltinDetailState;
-use crate::message::{Message, ObsClientRef, ServerSubsystemMsg, TwitchBootBundle, VTubeClientRef};
+use crate::message::{
+    DiscordClientRef, Message, ObsClientRef, ServerSubsystemMsg, TwitchBootBundle, VTubeClientRef,
+};
 use crate::server_screen::ServerStatus;
 
 pub async fn load_twitch_credential(
@@ -155,6 +157,37 @@ pub(crate) fn handle_vtube_boot_result(
         }
         Err(e) => {
             tracing::warn!(error = %e, "VTube Studio boot connection failed");
+            Task::none()
+        }
+    }
+}
+
+pub(crate) fn handle_discord_boot_result(
+    app: &mut App,
+    result: Result<DiscordClientRef, String>,
+) -> Task<Message> {
+    match result {
+        Ok(handle) => {
+            let client = handle.into_arc();
+            let id = BuiltinId::new("discord");
+            let icon = SectionIcon::new("brand-discord");
+            let status: Arc<dyn BuiltinStatus> = client.clone();
+            let health: Arc<dyn BuiltinHealth> = client.clone();
+            let content: Arc<dyn BuiltinContent> = client.clone();
+            let quick_actions: Arc<dyn QuickActions> = client.clone();
+            app.ui.builtin_detail = Some(BuiltinDetailState::new(
+                id,
+                icon,
+                status,
+                health,
+                content,
+                quick_actions,
+            ));
+            app.rt.discord_client = Some(client);
+            Task::none()
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "Discord boot setup failed");
             Task::none()
         }
     }

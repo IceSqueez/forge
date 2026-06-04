@@ -16,6 +16,7 @@ members = [
   "crates/forge-obs",
   "crates/forge-vtube",
   "crates/forge-discord",
+  "crates/forge-midi",
   "crates/forge-server",
   "crates/forge-audio",
   "crates/forge-soundboard",
@@ -84,6 +85,8 @@ subtle = { version = "2" }
 arc-swap = { version = "1" }
 
 rhai = { version = "1", features = ["sync"] }
+
+midir = { version = "0.10" }
 
 reqwest = { version = "0.12", features = [
   "json",

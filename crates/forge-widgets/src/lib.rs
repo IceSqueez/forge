@@ -18,6 +18,7 @@ pub mod data;
 pub mod events;
 pub mod icons;
 pub mod inputs;
+pub mod key_capture;
 pub mod layout;
 pub mod navigation;
 pub mod output_device_picker;
@@ -67,6 +68,7 @@ pub use events::{
 };
 pub use icons::{Icon, tabler_icon};
 pub use inputs::{input_padding, search_input, select, text_input_field};
+pub use key_capture::{KeyCapture, key_capture};
 pub use layout::{app_footer, page_shell, title_bar, toolbar};
 pub use navigation::{NavChild, NavItem, SIDEBAR_WIDTH, Sidebar, sidebar};
 pub use output_device_picker::{DeviceLabel, output_device_picker};

@@ -14,9 +14,7 @@ pub(crate) type HealthTx = broadcast::Sender<HealthDelta>;
 
 #[derive(Debug, Clone)]
 pub(crate) struct TriggerRecord {
-    #[allow(dead_code)]
     pub(crate) combo: String,
-    #[allow(dead_code)]
     pub(crate) at: OffsetDateTime,
 }
 

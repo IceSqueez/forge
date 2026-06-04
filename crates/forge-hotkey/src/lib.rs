@@ -3,9 +3,12 @@ pub mod client;
 pub mod combo;
 pub mod config;
 pub mod error;
+pub mod quick_actions;
 pub mod runners;
 pub mod triggers;
+pub(crate) mod content;
 pub(crate) mod health;
+pub(crate) mod status;
 pub(crate) mod supervisor;
 
 #[cfg(target_os = "linux")]

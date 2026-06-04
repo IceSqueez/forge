@@ -13,9 +13,7 @@ use crate::health::{HealthTx, HotkeyHealthSnapshot, make_health_state};
 use crate::supervisor;
 
 pub struct HotkeyClient {
-    #[allow(dead_code)]
     pub(crate) id: BuiltinId,
-    #[allow(dead_code)]
     pub(crate) config: HotkeyConfig,
     pub(crate) backend: Arc<dyn HotkeyBackend>,
     pub(crate) registry: RwLock<HashMap<String, HotkeyId>>,

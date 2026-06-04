@@ -11,3 +11,10 @@ pub mod ratelimit;
 pub mod runners;
 pub mod sink;
 pub mod status;
+
+pub use client::DiscordClient;
+pub use config::DiscordConfig;
+pub use embed::{DiscordEmbed, DiscordEmbedField};
+pub use error::DiscordError;
+pub use runners::register_discord_sub_actions;
+pub use sink::DiscordSink;

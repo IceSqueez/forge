@@ -236,7 +236,9 @@ pub fn update(
                     spec.config
                         .insert("source".to_owned(), Variant::String(selected_id));
                 }
-                PickerKind::Hotkey | PickerKind::Expression => return Task::none(),
+                PickerKind::Hotkey | PickerKind::Expression | PickerKind::MidiPort => {
+                    return Task::none();
+                }
             }
 
             let engine = rt.action_engine.clone();
@@ -316,8 +318,8 @@ async fn fetch_picker_items(
                 .collect();
             Ok((items, None))
         }
-        PickerKind::Hotkey | PickerKind::Expression => {
-            Err("Not supported for OBS — VTube only".to_owned())
+        PickerKind::Hotkey | PickerKind::Expression | PickerKind::MidiPort => {
+            Err("Not supported for OBS".to_owned())
         }
     }
 }
@@ -405,6 +407,7 @@ fn build_picker_overlay<'a>(
         PickerKind::Input => "Choose an Audio Input",
         PickerKind::Hotkey => "Choose a Hotkey",
         PickerKind::Expression => "Choose an Expression",
+        PickerKind::MidiPort => "Choose a MIDI Port",
     };
 
     picker_modal(

@@ -4,6 +4,8 @@ pub mod config;
 pub mod error;
 
 #[cfg(target_os = "linux")]
+pub(crate) mod backend_evdev;
+#[cfg(target_os = "linux")]
 pub(crate) mod backend_portal;
 
 pub use backend::HotkeyId;

@@ -11,8 +11,8 @@ use forge_app::subscriptions::subscription;
 use forge_app::view_router::view;
 use forge_audio::{CpalSink, DeviceId, NullSink};
 use forge_discord::{DiscordClient, DiscordConfig, register_discord_sub_actions};
-use forge_midi::{MidiClient, MidiConfig, register_midi_sub_actions, register_midi_triggers};
 use forge_events::EventPublisher;
+use forge_midi::{MidiClient, MidiConfig, register_midi_sub_actions, register_midi_triggers};
 use forge_obs::register_obs_triggers;
 use forge_platform_core::paths;
 use forge_platform_twitch::{ChatSendBridge, ChatSendBridgeHandle, register_twitch_triggers};
@@ -976,13 +976,7 @@ fn main() -> iced::Result {
                     server_boot_task,
                 ])
             }
-            None => iced::Task::batch([
-                obs_task,
-                twitch_task,
-                vtube_task,
-                discord_task,
-                midi_task,
-            ]),
+            None => iced::Task::batch([obs_task, twitch_task, vtube_task, discord_task, midi_task]),
         };
         (app, boot_task)
     };

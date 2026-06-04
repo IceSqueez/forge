@@ -11,6 +11,7 @@ use forge_app::subscriptions::subscription;
 use forge_app::view_router::view;
 use forge_audio::{CpalSink, DeviceId, NullSink};
 use forge_discord::{DiscordClient, DiscordConfig, register_discord_sub_actions};
+use forge_midi::{MidiClient, MidiConfig, register_midi_sub_actions, register_midi_triggers};
 use forge_events::EventPublisher;
 use forge_obs::register_obs_triggers;
 use forge_platform_core::paths;
@@ -157,6 +158,7 @@ struct RuntimeHandles {
     trigger_evaluator: TriggerEvaluatorHandle,
     vtube_client: Arc<VTubeClient>,
     discord_client: Arc<DiscordClient>,
+    midi_client: Option<Arc<MidiClient>>,
 }
 
 fn find_piper_binary() -> Option<PathBuf> {
@@ -367,6 +369,19 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
     if let Err(e) = register_discord_sub_actions(&mut sub_action_reg, Arc::clone(&discord_client)) {
         tracing::warn!("discord sub-action runner registration failed: {e}");
     }
+    let midi_publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
+    let midi_client = match MidiClient::start_with_midir(MidiConfig::default(), midi_publisher) {
+        Ok(c) => {
+            if let Err(e) = register_midi_sub_actions(&mut sub_action_reg, Arc::clone(&c)) {
+                tracing::warn!("midi sub-action runner registration failed: {e}");
+            }
+            Some(c)
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "MIDI init failed; sub-actions unavailable");
+            None
+        }
+    };
     let sub_action_reg = Arc::new(sub_action_reg);
 
     let mut trigger_reg = TriggerRegistry::new();
@@ -378,6 +393,9 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
     }
     if let Err(e) = register_obs_triggers(&mut trigger_reg) {
         tracing::warn!("obs trigger descriptor registration failed: {e}");
+    }
+    if let Err(e) = register_midi_triggers(&mut trigger_reg) {
+        tracing::warn!("midi trigger descriptor registration failed: {e}");
     }
     if let Err(e) = forge_platform_youtube::register_youtube_triggers(&mut trigger_reg) {
         tracing::warn!("youtube trigger descriptor registration failed: {e}");
@@ -777,6 +795,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         trigger_evaluator,
         vtube_client,
         discord_client,
+        midi_client,
     })
 }
 
@@ -813,6 +832,7 @@ fn main() -> iced::Result {
         _trigger_evaluator,
         vtube_client,
         discord_client,
+        midi_client,
     ) = if storage_offline {
         let vt_pub: Arc<dyn EventPublisher> = Arc::clone(&bus) as _;
         let vt_creds: Arc<dyn forge_storage::CredentialsRepo> = Arc::clone(&backend) as _;
@@ -824,6 +844,8 @@ fn main() -> iced::Result {
         let dc_pub: Arc<dyn EventPublisher> = Arc::clone(&bus) as _;
         let dc_creds: Arc<dyn forge_storage::CredentialsRepo> = Arc::clone(&backend) as _;
         let dc = DiscordClient::new(DiscordConfig::default(), dc_pub, dc_creds);
+        let mc_pub: Arc<dyn EventPublisher> = Arc::clone(&bus) as _;
+        let mc = MidiClient::start_with_midir(MidiConfig::default(), mc_pub).ok();
         (
             Arc::new(ScriptRegistry::new()),
             None,
@@ -837,6 +859,7 @@ fn main() -> iced::Result {
             None,
             vc,
             dc,
+            mc,
         )
     } else {
         match spawn_runtime(Arc::clone(&backend), Arc::clone(&bus)) {
@@ -853,6 +876,7 @@ fn main() -> iced::Result {
                 Some(h.trigger_evaluator),
                 h.vtube_client,
                 h.discord_client,
+                h.midi_client,
             ),
             None => {
                 let vt_pub: Arc<dyn EventPublisher> = Arc::clone(&bus) as _;
@@ -865,6 +889,8 @@ fn main() -> iced::Result {
                 let dc_pub: Arc<dyn EventPublisher> = Arc::clone(&bus) as _;
                 let dc_creds: Arc<dyn forge_storage::CredentialsRepo> = Arc::clone(&backend) as _;
                 let dc = DiscordClient::new(DiscordConfig::default(), dc_pub, dc_creds);
+                let mc_pub: Arc<dyn EventPublisher> = Arc::clone(&bus) as _;
+                let mc = MidiClient::start_with_midir(MidiConfig::default(), mc_pub).ok();
                 (
                     Arc::new(ScriptRegistry::new()),
                     None,
@@ -878,6 +904,7 @@ fn main() -> iced::Result {
                     None,
                     vc,
                     dc,
+                    mc,
                 )
             }
         }
@@ -920,6 +947,14 @@ fn main() -> iced::Result {
             iced::Task::done(forge_app::Message::Boot(forge_app::BootMsg::Discord(Ok(
                 forge_app::message::DiscordClientRef::new(Arc::clone(&discord_client)),
             ))));
+        let midi_task = match midi_client.as_ref() {
+            Some(c) => iced::Task::done(forge_app::Message::Boot(forge_app::BootMsg::Midi(Ok(
+                forge_app::message::MidiClientRef::new(Arc::clone(c)),
+            )))),
+            None => iced::Task::done(forge_app::Message::Boot(forge_app::BootMsg::Midi(Err(
+                "MIDI unavailable".to_owned(),
+            )))),
+        };
         let boot_task = match app.rt.action_engine.clone() {
             Some(engine) => {
                 let dp = Arc::clone(&backend_boot);
@@ -937,10 +972,17 @@ fn main() -> iced::Result {
                     twitch_task,
                     vtube_task,
                     discord_task,
+                    midi_task,
                     server_boot_task,
                 ])
             }
-            None => iced::Task::batch([obs_task, twitch_task, vtube_task, discord_task]),
+            None => iced::Task::batch([
+                obs_task,
+                twitch_task,
+                vtube_task,
+                discord_task,
+                midi_task,
+            ]),
         };
         (app, boot_task)
     };

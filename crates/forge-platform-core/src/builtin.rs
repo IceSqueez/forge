@@ -256,6 +256,7 @@ pub enum PickerKind {
     Input,
     Hotkey,
     Expression,
+    MidiPort,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -582,6 +583,7 @@ mod tests {
             (PickerKind::Input, r#""input""#),
             (PickerKind::Hotkey, r#""hotkey""#),
             (PickerKind::Expression, r#""expression""#),
+            (PickerKind::MidiPort, r#""midi_port""#),
         ];
         for (kind, expected) in &cases {
             let json = serde_json::to_string(kind).unwrap();

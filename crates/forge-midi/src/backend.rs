@@ -3,9 +3,9 @@ use tokio::sync::mpsc;
 use crate::error::MidiError;
 use crate::events::{MidiPortInfo, PortDirection};
 
-pub trait InputHandle: Send {}
+pub(crate) trait InputHandle: Send {}
 
-pub trait MidiBackend: Send + Sync {
+pub(crate) trait MidiBackend: Send + Sync {
     fn list_input_ports(&self) -> Vec<MidiPortInfo>;
     fn list_output_ports(&self) -> Vec<MidiPortInfo>;
 

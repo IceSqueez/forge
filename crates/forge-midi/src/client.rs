@@ -27,7 +27,7 @@ pub struct MidiClient {
 }
 
 impl MidiClient {
-    pub fn start(
+    pub(crate) fn start(
         config: MidiConfig,
         publisher: Arc<dyn EventPublisher>,
         backend: Arc<dyn MidiBackend>,

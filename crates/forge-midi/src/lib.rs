@@ -1,4 +1,4 @@
-pub mod backend;
+pub(crate) mod backend;
 pub mod client;
 pub mod config;
 pub(crate) mod content;
@@ -13,7 +13,6 @@ pub mod status;
 pub(crate) mod supervisor;
 pub mod triggers;
 
-pub use backend::MidiBackend;
 pub use client::MidiClient;
 pub use config::MidiConfig;
 pub use error::MidiError;

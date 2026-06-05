@@ -30,7 +30,7 @@ pub struct HotkeyBinding {
 #[derive(Debug, Clone)]
 pub struct ConflictModal {
     pub combo: String,
-    pub existing_hotkey_id: HotkeyId,
+    pub existing_hotkey_id: Option<HotkeyId>,
 }
 
 #[derive(Default)]
@@ -168,8 +168,7 @@ pub fn update(
                     .bindings
                     .iter()
                     .find(|b| b.combo == combo)
-                    .map(|b| b.hotkey_id)
-                    .unwrap_or(HotkeyId(0));
+                    .map(|b| b.hotkey_id);
                 state.conflict_modal = Some(ConflictModal {
                     combo,
                     existing_hotkey_id: existing_id,
@@ -212,6 +211,13 @@ pub fn update(
             let Some(modal) = state.conflict_modal.take() else {
                 return Task::none();
             };
+            let Some(existing_id) = modal.existing_hotkey_id else {
+                state.bind_error = Some(
+                    "Conflicting hotkey not found in local cache. Refresh and try again."
+                        .to_string(),
+                );
+                return Task::none();
+            };
             let Some(combo_str) = state.captured_combo.clone() else {
                 return Task::none();
             };
@@ -227,7 +233,6 @@ pub fn update(
                 return Task::none();
             };
             let backend = Arc::clone(&rt.backend);
-            let existing_id = modal.existing_hotkey_id;
             state.bind_in_progress = true;
             Task::perform(
                 async move { do_replace(client, backend, existing_id, combo_str, action_id).await },
@@ -903,7 +908,7 @@ mod tests {
         let mut state = SettingsHotkeysState {
             conflict_modal: Some(ConflictModal {
                 combo: "Ctrl+A".to_owned(),
-                existing_hotkey_id: HotkeyId(1),
+                existing_hotkey_id: Some(HotkeyId(1)),
             }),
             ..Default::default()
         };
@@ -949,5 +954,21 @@ mod tests {
         assert!(portal_status_label(Some(true)).contains("Portal"));
         assert!(portal_status_label(Some(false)).contains("fallback"));
         assert!(portal_status_label(None).contains("N/A"));
+    }
+
+    #[test]
+    fn conflict_replace_with_no_cached_id_sets_error_and_closes_modal() {
+        let rt = test_rt();
+        let mut state = SettingsHotkeysState {
+            captured_combo: Some("Ctrl+A".to_owned()),
+            conflict_modal: Some(ConflictModal {
+                combo: "Ctrl+A".to_owned(),
+                existing_hotkey_id: None,
+            }),
+            ..Default::default()
+        };
+        let _ = update(&mut state, &rt, SettingsHotkeysMsg::ConflictReplace);
+        assert!(state.conflict_modal.is_none());
+        assert!(state.bind_error.is_some());
     }
 }

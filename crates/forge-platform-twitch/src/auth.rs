@@ -128,7 +128,7 @@ impl TwitchAuthFlow {
         let user_token = UserToken::from_existing(&self.helix, access, None, None)
             .await
             .map_err(|e| PlatformError::Auth {
-                reason: format!("token validate failed: {e}"),
+                reason: format!("token validate failed: {}", sanitize_validation_error(&e)),
             })?;
 
         if user_token.client_id() != &ClientId::new(self.client_id.clone()) {
@@ -228,7 +228,7 @@ async fn fetch_user_info_from_token(
         .get_user_from_id(&token.user_id, token)
         .await
         .map_err(|e| PlatformError::Auth {
-            reason: format!("helix get_user failed: {e}"),
+            reason: format!("helix get_user failed: {}", sanitize_helix_error(&e)),
         })?
         .ok_or_else(|| PlatformError::Auth {
             reason: "helix returned empty user list".into(),
@@ -253,7 +253,7 @@ pub async fn fetch_user_info(
         UserToken::from_token(&helix, access)
             .await
             .map_err(|e| PlatformError::Auth {
-                reason: format!("validate token failed: {e}"),
+                reason: format!("validate token failed: {}", sanitize_validation_error(&e)),
             })?;
 
     if user_token.client_id() != &client_id_owned {
@@ -279,6 +279,37 @@ fn resolve_client_id(
         .filter(|s| !s.is_empty())
         .map(str::to_owned)
         .or_else(|| compile_env.filter(|s| !s.is_empty()).map(str::to_owned))
+}
+
+fn sanitize_validation_error<E>(
+    e: &twitch_api::twitch_oauth2::tokens::errors::ValidationError<E>,
+) -> String
+where
+    E: std::error::Error + Send + Sync + 'static,
+{
+    use twitch_api::twitch_oauth2::tokens::errors::ValidationError as VE;
+    match e {
+        VE::NotAuthorized => "not authorized".to_owned(),
+        VE::RequestParseError(_) => "response parse error".to_owned(),
+        VE::Request(_) => "network error".to_owned(),
+        VE::InvalidToken(s) => format!("invalid token type: {s}"),
+        _ => "validation error".to_owned(),
+    }
+}
+
+fn sanitize_helix_error<E>(e: &twitch_api::helix::ClientRequestError<E>) -> String
+where
+    E: std::error::Error + Send + Sync + 'static,
+{
+    use twitch_api::helix::{ClientRequestError as CE, HelixRequestGetError as HRGE};
+    match e {
+        CE::RequestError(_) => "network error".to_owned(),
+        CE::NoPage => "no pagination".to_owned(),
+        CE::HelixRequestGetError(HRGE::Error { status, .. }) => {
+            format!("HTTP {}", status.as_u16())
+        }
+        _ => "helix error".to_owned(),
+    }
 }
 
 #[cfg(test)]
@@ -396,6 +427,27 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(resp.access_token, "twitch_access_abc");
+    }
+
+    #[test]
+    fn helix_error_sanitizer_strips_bearer_from_custom_variant() {
+        use std::borrow::Cow;
+        use twitch_api::helix::ClientRequestError;
+
+        let e: ClientRequestError<reqwest::Error> =
+            ClientRequestError::Custom(Cow::Borrowed("Bearer FAKE_BEARER_VALUE_123 is invalid"));
+        let msg = sanitize_helix_error(&e);
+        assert!(!msg.contains("FAKE_BEARER_VALUE_123"));
+    }
+
+    #[test]
+    fn validation_error_sanitizer_excludes_arbitrary_content() {
+        use twitch_api::twitch_oauth2::tokens::errors::ValidationError;
+
+        let e: ValidationError<reqwest::Error> = ValidationError::NotAuthorized;
+        let msg = sanitize_validation_error(&e);
+        assert!(!msg.contains("FAKE_BEARER_VALUE_123"));
+        assert!(!msg.is_empty());
     }
 
     #[tokio::test]

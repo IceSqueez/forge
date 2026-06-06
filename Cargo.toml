@@ -97,7 +97,7 @@ reqwest = { version = "0.12", features = [
   "rustls-tls",
 ], default-features = false }
 
-twitch_api = { version = "0.7", features = [
+twitch_api = { version = "0.8", features = [
   "reqwest",
   "helix",
 ], default-features = false }

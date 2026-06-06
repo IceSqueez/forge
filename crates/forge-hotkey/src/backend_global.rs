@@ -1,4 +1,5 @@
 #![cfg(any(target_os = "windows", target_os = "macos"))]
+#![allow(unsafe_code)]
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -24,6 +25,17 @@ pub(crate) struct GlobalHotkeyBackend {
     registrations: RegistrationMap,
     fired_rx_slot: Mutex<Option<mpsc::Receiver<HotkeyFiredEvent>>>,
 }
+
+// SAFETY: `GlobalHotKeyManager` holds a Windows HWND (raw pointer) which makes it
+// `!Send` + `!Sync` by default. Win32 `RegisterHotKey`/`UnregisterHotKey` are
+// documented as safe to invoke from any thread, and `WM_HOTKEY` is delivered to
+// the message queue of the thread that owns the HWND. The backend is created on
+// the iced main thread (which runs the Windows message pump for hotkey events)
+// and is then shared as `Arc<dyn HotkeyBackend>` — callers only invoke
+// register/unregister; the HWND itself is never dereferenced outside the
+// crate's internal `Drop`.
+unsafe impl Send for GlobalHotkeyBackend {}
+unsafe impl Sync for GlobalHotkeyBackend {}
 
 impl GlobalHotkeyBackend {
     pub(crate) fn new() -> Result<Self, HotkeyError> {

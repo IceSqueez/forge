@@ -37,7 +37,6 @@ pub(crate) fn capture_pcm(
     use_xml: bool,
 ) -> Result<forge_audio::PcmBuffer, crate::error::SapiError> {
     use windows::Win32::Foundation::HGLOBAL;
-    use windows::core::BOOL;
     use windows::Win32::Media::Audio::WAVEFORMATEX;
     use windows::Win32::Media::Speech::{ISpStream, SPF_DEFAULT, SPF_PARSE_SSML, SpStream};
     use windows::Win32::System::Com::StructuredStorage::CreateStreamOnHGlobal;
@@ -49,11 +48,11 @@ pub(crate) fn capture_pcm(
         windows::core::GUID::from_u128(0xc31adbae_527f_4ff5_a230_f62bb61ff70c);
 
     // SAFETY: CreateStreamOnHGlobal allocates an in-memory COM stream. HGLOBAL(null)
-    // instructs COM to allocate the global memory itself. fDeleteOnRelease=BOOL(1) frees the
+    // instructs COM to allocate the global memory itself. fDeleteOnRelease=true frees the
     // HGLOBAL when the IStream's reference count reaches zero. All operations on the
     // returned stream occur on this STA thread before the stream is released.
     let com_stream: IStream =
-        unsafe { CreateStreamOnHGlobal(HGLOBAL(std::ptr::null_mut()), BOOL(1)) }
+        unsafe { CreateStreamOnHGlobal(HGLOBAL(std::ptr::null_mut()), true) }
             .map_err(|e| crate::error::SapiError::ComInit(e.code().0))?;
 
     let wfex = WAVEFORMATEX {

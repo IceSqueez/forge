@@ -1,12 +1,104 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## [0.1.0-beta.5] - 2026-06-02
+## [0.1.0-beta.7] - 2026-06-06
+### ⚙️ Miscellaneous Tasks
+- *(discord)* Remove unused webhook credential loader/writer
+- *(workspace)* Update Cargo.lock for midir workspace dep
+- *(workspace)* Update Cargo.lock after MIDI wiring
+- *(workspace)* Update Cargo.lock after Hotkey wiring
+
+### 🐛 Bug Fixes
+- *(discord)* Strip webhook URL from reqwest error messages
+- *(discord)* Panic on reqwest client TLS init failure
+- *(app)* Handle PickerKind::MidiPort in builtin_detail match arms
+- *(app)* Handle missing existing hotkey id in conflict modal
+- *(twitch)* Redact bearer token in StoredCredential Debug
+- *(twitch)* Strip URLs from reqwest error display
+- *(twitch)* Sanitize HelixRequestError display for token leaks
+
+### 🚀 Features
+- *(discord)* Scaffold forge-discord crate skeleton
+- *(discord)* Add DiscordError + WebhookCredential with redacted Debug
+- *(discord)* Add DiscordEmbed, DiscordConfig, DiscordClient stub, sink + runners
+- *(discord)* Add DiscordRateLimiter with global rate-limit tracking
+- *(discord)* Implement embed control-character validation
+- *(discord)* Implement webhook HTTP post with rate-limit + retry
+- *(discord)* Impl BuiltinStatus + Health + Content + QuickActions
+- *(app)* Add discord_client field to RuntimeView
+- *(app)* Add Discord boot handler and DiscordClientRef in message
+- *(app)* Register Discord sub-actions at startup
+- *(midi)* Scaffold forge-midi crate skeleton
+- *(midi)* Add MidiError, MidiEvent, MidiOutMessage, MidiPortInfo types
+- *(midi)* Add MidiBackend trait with MidirBackend impl and PickerKind::MidiPort
+- *(midi)* Implement MIDI byte decoding with message_to_bytes
+- *(midi)* Implement supervisor with hot-plug detection and event dispatch
+- *(midi)* Implement BuiltinStatus/Health/Content/QuickActions and MidiSink
+- *(midi)* Add MidiSend sub-action runner
+- *(midi)* Add MidiNoteOn/NoteOff/Cc trigger descriptors
+- *(app)* Add midi_client field to RuntimeView
+- *(app)* Add MIDI boot handler and MidiClientRef in message
+- *(app)* Register MIDI sub-actions and triggers at startup
+- *(hotkey)* Scaffold crate with error, combo, and config
+- *(hotkey)* Add HotkeyBackend trait with NullBackend and test mocks
+- *(hotkey)* Implement PortalBackend with NameOwnerChanged recovery
+- *(hotkey)* Implement EvdevBackend as Linux fallback
+- *(hotkey)* Implement GlobalHotkeyBackend for Windows and macOS
+- *(hotkey)* Implement HotkeyClient with supervisor and health state
+- *(hotkey)* Add HotkeyPressed trigger and sub-action registration
+- *(hotkey)* Implement BuiltinStatus, BuiltinContent, and QuickActions
+- *(app)* Add hotkey_client field to RuntimeView
+- *(app)* Add Hotkey boot handler and HotkeyClientRef in message
+- *(app)* Register Hotkey triggers and spawn HotkeyClient at startup
+- *(widgets)* Add KeyCapture widget for hotkey combo input
+- *(app)* Add Settings → Hotkeys screen
+
+### 🚜 Refactor
+- *(midi)* Downgrade MidiBackend trait visibility
+
+### 🧪 Testing
+- *(discord)* Add wiremock delivery, rate-limit, and embed HTTP tests
+- *(discord)* Assert webhook URL never appears in error display
+
+## [0.1.0-beta.6] - 2026-06-04
+### ⚙️ Miscellaneous Tasks
+- Release
+
+### 🐛 Bug Fixes
+- *(vtube)* Skip move_model call when all positional coords are None
+
+### 🚀 Features
+- *(vtube)* Scaffold forge-vtube crate with error type
+- *(vtube)* Add credentials helpers and auth state machine
+- *(vtube)* Add VTubeClient with WS connect and envelope codec
+- *(vtube)* Add backoff reconnect supervisor with health events
+- *(vtube)* Wire AuthenticationTokenRequest and AuthenticationRequest
+- *(vtube)* Subscribe model+hotkey+tracking events and emit bus events
+- *(vtube)* Impl BuiltinHealth with model / tracking / fps / api metrics
+- *(vtube)* Impl BuiltinContent with models, hotkeys, expressions
+- *(vtube)* Impl QuickActions (hotkey / expression / model / move)
+- *(vtube)* Add hotkey_trigger sub-action runner
+- *(vtube)* Add expression_set sub-action runner
+- *(vtube)* Add param_set sub-action runner
+- *(vtube)* Add model_load sub-action runner
+- *(vtube)* Add params_reset sub-action runner
+- *(vtube)* Add model_move sub-action runner
+- *(vtube)* Register all six runners via register_vtube_sub_actions
+- *(app)* Add vtube_client field and boot path to RuntimeView
+- *(app)* Connect VTube card to live connection state in stream_apps
+- *(app)* Register VTube sub-actions at startup
+
+### 🚜 Refactor
+- *(vtube)* Extract BuiltinStatus impl into status.rs
+- *(vtube)* Extract supervisor loop into supervisor.rs
+
+## [0.1.0-beta.5] - 2026-06-03
 ### ⚠️ BREAKING CHANGES
 - **tts-cloud**: PollyCredentials gains base_url field (serde default = None)
 
 ### ⚙️ Miscellaneous Tasks
 - *(workspace)* Update Cargo.lock for forge-tts-cloud
+- Release
 
 ### 🎨 Styling
 - Drop tautological docstrings on TTS core and policy
@@ -15,6 +107,12 @@ All notable changes to this project will be documented in this file.
 ### 🐛 Bug Fixes
 - *(tts-cloud)* Redact secrets in credential Debug output
 - *(app)* Replace zero-size text placeholders with Space widget
+- *(tts-nsspeech)* Unblock macOS build
+- *(tts-sapi)* Rewrite against windows-rs 0.58 to unblock build
+- *(tts-piper)* Make voices_dir_path test platform-agnostic
+
+### 📚 Documentation
+- *(release)* Release v0.1.0-beta.5
 
 ### 🚀 Features
 - *(tts-core)* Add TtsError::QuotaExceeded variant
@@ -35,6 +133,9 @@ All notable changes to this project will be documented in this file.
 ### 🚜 Refactor
 - *(speak-queue)* Hold TtsRegistry behind Arc<RwLock>
 - *(tts-cloud)* Make EngineFactory credentials field private
+
+### 🧪 Testing
+- *(tts)* Remove real-service tests from nsspeech and sapi
 
 ## [0.1.0-beta.4] - 2026-06-01
 ### ⚙️ Miscellaneous Tasks

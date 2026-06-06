@@ -16,7 +16,6 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros"] }
-which = { version = "8" }
 
 [lints]
 workspace = true

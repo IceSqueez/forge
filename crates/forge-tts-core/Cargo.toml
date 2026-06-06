@@ -1,18 +1,18 @@
 [package]
-name                  = "forge-tts-core"
-version.workspace     = true
-edition.workspace     = true
-license.workspace     = true
-repository.workspace  = true
+name = "forge-tts-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 rust-version.workspace = true
 
 [lints]
 workspace = true
 
 [dependencies]
-forge-audio  = { path = "../forge-audio" }
-async-trait  = { workspace = true }
-thiserror    = { workspace = true }
-serde        = { workspace = true }
-serde_json   = { workspace = true }
-tracing      = { workspace = true }
+forge-audio = { path = "../forge-audio" }
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }

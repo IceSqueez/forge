@@ -15,16 +15,10 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSRunLoop", "NSDate"] }
-objc2-avf-audio = { version = "0.3", features = [
-    "AVSpeechSynthesis",
-    "AVAudioBuffer",
-    "AVAudioFormat",
-    "AVAudioTypes",
-    "block2",
-] }
-block2 = "0.6"
+objc2 = { workspace = true }
+objc2-foundation = { workspace = true }
+objc2-avf-audio = { workspace = true }
+block2 = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros"] }

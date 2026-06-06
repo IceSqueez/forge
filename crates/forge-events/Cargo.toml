@@ -1,18 +1,18 @@
 [package]
-name                  = "forge-events"
-version.workspace     = true
-edition.workspace     = true
-license.workspace     = true
-repository.workspace  = true
+name = "forge-events"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 rust-version.workspace = true
 
 [lints]
 workspace = true
 
 [dependencies]
-forge-types  = { path = "../forge-types" }
-serde       = { workspace = true }
-serde_json  = { workspace = true }
-thiserror   = { workspace = true }
-time        = { workspace = true }
-tokio       = { workspace = true }
+forge-types = { path = "../forge-types" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+time = { workspace = true }
+tokio = { workspace = true }

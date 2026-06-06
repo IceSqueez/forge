@@ -1,9 +1,9 @@
 [package]
-name                  = "forge-app"
-version.workspace     = true
-edition.workspace     = true
-license.workspace     = true
-repository.workspace  = true
+name = "forge-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 rust-version.workspace = true
 
 [lints]
@@ -18,49 +18,54 @@ name = "forge_app"
 path = "src/lib.rs"
 
 [dependencies]
-forge-types          = { path = "../forge-types" }
-forge-events         = { path = "../forge-events" }
-forge-runtime        = { path = "../forge-runtime" }
-forge-script         = { path = "../forge-script" }
-forge-storage        = { path = "../forge-storage" }
+forge-types = { path = "../forge-types" }
+forge-events = { path = "../forge-events" }
+forge-runtime = { path = "../forge-runtime" }
+forge-script = { path = "../forge-script" }
+forge-storage = { path = "../forge-storage" }
 forge-storage-sqlite = { path = "../forge-storage-sqlite" }
-forge-platform-core   = { path = "../forge-platform-core" }
-forge-obs             = { path = "../forge-obs" }
-forge-vtube           = { path = "../forge-vtube" }
-forge-discord         = { path = "../forge-discord" }
-forge-midi            = { path = "../forge-midi" }
-forge-hotkey          = { path = "../forge-hotkey" }
+forge-platform-core = { path = "../forge-platform-core" }
+forge-obs = { path = "../forge-obs" }
+forge-vtube = { path = "../forge-vtube" }
+forge-discord = { path = "../forge-discord" }
+forge-midi = { path = "../forge-midi" }
+forge-hotkey = { path = "../forge-hotkey" }
 forge-platform-twitch = { path = "../forge-platform-twitch" }
 forge-platform-youtube = { path = "../forge-platform-youtube" }
-forge-platform-trovo  = { path = "../forge-platform-trovo" }
-forge-platform-kick   = { path = "../forge-platform-kick" }
-async-trait          = { workspace = true }
-reqwest             = { workspace = true }
-forge-audio           = { path = "../forge-audio" }
-forge-server          = { path = "../forge-server" }
-forge-soundboard      = { path = "../forge-soundboard" }
-forge-speak-queue     = { path = "../forge-speak-queue" }
-forge-tts-core        = { path = "../forge-tts-core" }
-forge-tts-piper       = { path = "../forge-tts-piper" }
-forge-tts-espeak      = { path = "../forge-tts-espeak" }
-forge-tts-sapi        = { path = "../forge-tts-sapi" }
-forge-tts-nsspeech    = { path = "../forge-tts-nsspeech" }
-forge-tts-cloud       = { path = "../forge-tts-cloud", features = ["azure", "elevenlabs", "openai", "polly"] }
-forge-tts-pipeline    = { path = "../forge-tts-pipeline" }
-forge-voice           = { path = "../forge-voice" }
-forge-registry       = { path = "../forge-registry" }
-forge-widgets        = { path = "../forge-widgets" }
-iced                = { workspace = true }
-rfd                 = { workspace = true }
-open                = { workspace = true }
-serde_json          = { workspace = true }
-thiserror           = { workspace = true }
-time                = { workspace = true }
-tokio               = { workspace = true }
-tokio-util          = { workspace = true }
-tracing             = { workspace = true }
-tracing-subscriber  = { workspace = true }
-tracing-appender    = { workspace = true }
+forge-platform-trovo = { path = "../forge-platform-trovo" }
+forge-platform-kick = { path = "../forge-platform-kick" }
+async-trait = { workspace = true }
+reqwest = { workspace = true }
+forge-audio = { path = "../forge-audio" }
+forge-server = { path = "../forge-server" }
+forge-soundboard = { path = "../forge-soundboard" }
+forge-speak-queue = { path = "../forge-speak-queue" }
+forge-tts-core = { path = "../forge-tts-core" }
+forge-tts-piper = { path = "../forge-tts-piper" }
+forge-tts-espeak = { path = "../forge-tts-espeak" }
+forge-tts-sapi = { path = "../forge-tts-sapi" }
+forge-tts-nsspeech = { path = "../forge-tts-nsspeech" }
+forge-tts-cloud = { path = "../forge-tts-cloud", features = [
+  "azure",
+  "elevenlabs",
+  "openai",
+  "polly",
+] }
+forge-tts-pipeline = { path = "../forge-tts-pipeline" }
+forge-voice = { path = "../forge-voice" }
+forge-registry = { path = "../forge-registry" }
+forge-widgets = { path = "../forge-widgets" }
+iced = { workspace = true }
+rfd = { workspace = true }
+open = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+time = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-appender = { workspace = true }
 
 [dev-dependencies]
 futures-util = { workspace = true }

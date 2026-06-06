@@ -1,37 +1,37 @@
 [package]
-name                  = "forge-storage-sqlite"
-version.workspace     = true
-edition.workspace     = true
-license.workspace     = true
-repository.workspace  = true
+name = "forge-storage-sqlite"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 rust-version.workspace = true
 
 [lints]
 workspace = true
 
 [dependencies]
-forge-types          = { path = "../forge-types" }
-forge-storage        = { path = "../forge-storage" }
-forge-events         = { path = "../forge-events" }
-forge-platform-core  = { path = "../forge-platform-core" }
-forge-tts-core       = { path = "../forge-tts-core" }
-forge-voice          = { path = "../forge-voice" }
-serde        = { workspace = true }
-serde_json   = { workspace = true }
-thiserror    = { workspace = true }
-async-trait  = { workspace = true }
-tokio        = { workspace = true }
-sqlx         = { workspace = true }
-aes-gcm      = { workspace = true }
-sha2         = { workspace = true }
-keyring      = { workspace = true }
+forge-types = { path = "../forge-types" }
+forge-storage = { path = "../forge-storage" }
+forge-events = { path = "../forge-events" }
+forge-platform-core = { path = "../forge-platform-core" }
+forge-tts-core = { path = "../forge-tts-core" }
+forge-voice = { path = "../forge-voice" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true }
+sqlx = { workspace = true }
+aes-gcm = { workspace = true }
+sha2 = { workspace = true }
+keyring = { workspace = true }
 keyring-core = { workspace = true }
-rand         = { workspace = true }
-time         = { workspace = true }
-tracing      = { workspace = true }
+rand = { workspace = true }
+time = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
-tempfile     = { workspace = true }
-sha2         = { workspace = true }
-tokio        = { workspace = true, features = ["test-util"] }
-ulid         = { workspace = true }
+tempfile = { workspace = true }
+sha2 = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
+ulid = { workspace = true }

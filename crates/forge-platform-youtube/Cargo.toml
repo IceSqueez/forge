@@ -1,31 +1,31 @@
 [package]
-name                  = "forge-platform-youtube"
-version.workspace     = true
-edition.workspace     = true
-license.workspace     = true
-repository.workspace  = true
+name = "forge-platform-youtube"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 rust-version.workspace = true
 
 [lints]
 workspace = true
 
 [dependencies]
-forge-types          = { path = "../forge-types" }
-forge-events         = { path = "../forge-events" }
-forge-registry       = { path = "../forge-registry" }
-forge-platform-core  = { path = "../forge-platform-core" }
-forge-storage        = { path = "../forge-storage" }
-tokio               = { workspace = true }
-tokio-util          = { workspace = true }
-futures             = { workspace = true }
-serde               = { workspace = true }
-serde_json          = { workspace = true }
-thiserror           = { workspace = true }
-async-trait         = { workspace = true }
-reqwest             = { workspace = true }
-tracing             = { workspace = true }
-time                = { workspace = true }
+forge-types = { path = "../forge-types" }
+forge-events = { path = "../forge-events" }
+forge-registry = { path = "../forge-registry" }
+forge-platform-core = { path = "../forge-platform-core" }
+forge-storage = { path = "../forge-storage" }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+futures = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+reqwest = { workspace = true }
+tracing = { workspace = true }
+time = { workspace = true }
 
 [dev-dependencies]
-wiremock = "0.6"
-tokio   = { workspace = true, features = ["test-util"] }
+wiremock = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }

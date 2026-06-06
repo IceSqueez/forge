@@ -1,9 +1,9 @@
 [package]
-name                  = "forge-voice"
-version.workspace     = true
-edition.workspace     = true
-license.workspace     = true
-repository.workspace  = true
+name = "forge-voice"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 rust-version.workspace = true
 
 [lints]
@@ -11,10 +11,10 @@ workspace = true
 
 [dependencies]
 forge-tts-core = { path = "../forge-tts-core" }
-serde          = { workspace = true }
-serde_json     = { workspace = true }
-thiserror      = { workspace = true }
-tracing        = { workspace = true }
-ulid           = { workspace = true }
-sha2           = { workspace = true }
-rand           = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+ulid = { workspace = true }
+sha2 = { workspace = true }
+rand = { workspace = true }

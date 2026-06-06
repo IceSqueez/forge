@@ -128,7 +128,10 @@ impl TwitchAuthFlow {
         let user_token = UserToken::from_existing(&self.helix, access, None, None)
             .await
             .map_err(|e| PlatformError::Auth {
-                reason: format!("token validate failed: {}", sanitize_validation_error(&e)),
+                reason: format!(
+                    "token validate failed: {}",
+                    sanitize_validation_error(&e.error)
+                ),
             })?;
 
         if user_token.client_id() != &ClientId::new(self.client_id.clone()) {
@@ -253,7 +256,10 @@ pub async fn fetch_user_info(
         UserToken::from_token(&helix, access)
             .await
             .map_err(|e| PlatformError::Auth {
-                reason: format!("validate token failed: {}", sanitize_validation_error(&e)),
+                reason: format!(
+                    "validate token failed: {}",
+                    sanitize_validation_error(&e.error)
+                ),
             })?;
 
     if user_token.client_id() != &client_id_owned {

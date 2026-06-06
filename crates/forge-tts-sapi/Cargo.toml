@@ -16,13 +16,7 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows = { version = "0.62", features = [
-    "Win32_Media_Speech",
-    "Win32_System_Com",
-    "Win32_System_Com_StructuredStorage",
-    "Win32_Foundation",
-    "Win32_Media_Audio",
-] }
+windows = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros"] }

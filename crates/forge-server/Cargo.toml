@@ -1,41 +1,41 @@
 [package]
-name                  = "forge-server"
-version.workspace     = true
-edition.workspace     = true
-license.workspace     = true
-repository.workspace  = true
+name = "forge-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 rust-version.workspace = true
 
 [lints]
 workspace = true
 
 [dependencies]
-forge-types         = { path = "../forge-types" }
-forge-events        = { path = "../forge-events" }
-forge-runtime       = { path = "../forge-runtime" }
-forge-registry      = { path = "../forge-registry" }
+forge-types = { path = "../forge-types" }
+forge-events = { path = "../forge-events" }
+forge-runtime = { path = "../forge-runtime" }
+forge-registry = { path = "../forge-registry" }
 forge-platform-core = { path = "../forge-platform-core" }
-forge-storage       = { path = "../forge-storage" }
-axum              = { workspace = true }
-tower-http        = { workspace = true }
+forge-storage = { path = "../forge-storage" }
+axum = { workspace = true }
+tower-http = { workspace = true }
 tokio-tungstenite = { workspace = true }
-tokio             = { workspace = true }
-serde             = { workspace = true }
-serde_json        = { workspace = true }
-thiserror         = { workspace = true }
-tracing           = { workspace = true }
-rand              = { workspace = true }
-base64            = { workspace = true }
-subtle            = { workspace = true }
-time              = { workspace = true }
-arc-swap          = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+rand = { workspace = true }
+base64 = { workspace = true }
+subtle = { workspace = true }
+time = { workspace = true }
+arc-swap = { workspace = true }
 
 [dev-dependencies]
-async-trait       = { workspace = true }
-forge-storage     = { path = "../forge-storage", features = ["test-mocks"] }
-futures-util      = { workspace = true }
-mockall           = { workspace = true }
-reqwest           = { workspace = true }
-tempfile          = { workspace = true }
-time              = { workspace = true }
-tokio             = { workspace = true, features = ["test-util"] }
+async-trait = { workspace = true }
+forge-storage = { path = "../forge-storage", features = ["test-mocks"] }
+futures-util = { workspace = true }
+mockall = { workspace = true }
+reqwest = { workspace = true }
+tempfile = { workspace = true }
+time = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }

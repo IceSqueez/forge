@@ -79,6 +79,7 @@ keyring-core = { version = "1" }
 rand = { version = "0.10" }
 tempfile = { version = "3" }
 mockall = { version = "0.14" }
+wiremock = { version = "0.6" }
 
 sha2 = { version = "0.11" }
 base64 = { version = "0.22" }
@@ -90,17 +91,42 @@ rhai = { version = "1", features = ["sync"] }
 midir = { version = "0.10" }
 
 global-hotkey = { version = "0.6" }
-zbus          = { version = "4", default-features = false, features = ["tokio"] }
+zbus = { version = "4", default-features = false, features = ["tokio"] }
 
-reqwest = { version = "0.12", features = [
+reqwest = { version = "0.13", features = [
   "json",
-  "rustls-tls",
+  "rustls",
+  "query",
+  "form",
 ], default-features = false }
 
 twitch_api = { version = "0.8", features = [
   "reqwest",
   "helix",
 ], default-features = false }
+
+obws = { version = "0.15", features = ["events"] }
+
+windows = { version = "0.62", features = [
+  "Win32_Media_Speech",
+  "Win32_System_Com",
+  "Win32_System_Com_StructuredStorage",
+  "Win32_Foundation",
+  "Win32_Media_Audio",
+] }
+
+hmac = { version = "0.13" }
+
+objc2 = { version = "0.6" }
+objc2-foundation = { version = "0.3", features = ["NSRunLoop", "NSDate"] }
+objc2-avf-audio = { version = "0.3", features = [
+  "AVSpeechSynthesis",
+  "AVAudioBuffer",
+  "AVAudioFormat",
+  "AVAudioTypes",
+  "block2",
+] }
+block2 = { version = "0.6" }
 
 axum = { version = "0.8", features = ["ws"] }
 tower-http = { version = "0.6", features = ["cors", "fs"] }

@@ -129,7 +129,7 @@ fn run_playback(
 
     let stream = match sample_format {
         SampleFormat::F32 => device.build_output_stream(
-            &stream_config,
+            stream_config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
                 for s in data.iter_mut() {
                     *s = rx_f32.try_recv().map(|v| v as f32 / 32767.0).unwrap_or(0.0);
@@ -139,7 +139,7 @@ fn run_playback(
             None,
         ),
         SampleFormat::I16 => device.build_output_stream(
-            &stream_config,
+            stream_config,
             move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
                 for s in data.iter_mut() {
                     *s = rx_i16.try_recv().unwrap_or(0);
@@ -149,7 +149,7 @@ fn run_playback(
             None,
         ),
         SampleFormat::I32 => device.build_output_stream(
-            &stream_config,
+            stream_config,
             move |data: &mut [i32], _: &cpal::OutputCallbackInfo| {
                 for s in data.iter_mut() {
                     *s = rx_i32.try_recv().map(|v| v as i32).unwrap_or(0);
@@ -200,7 +200,7 @@ fn run_playback(
 fn find_device(host: &cpal::Host, id_str: &str) -> Option<cpal::Device> {
     host.output_devices()
         .ok()?
-        .find(|d| d.id().ok().map(|id| id.1 == id_str).unwrap_or(false))
+        .find(|d| d.id().ok().map(|id| id.id() == id_str).unwrap_or(false))
 }
 
 fn prepare_samples(buffer: &PcmBuffer, dst_sr: u32, dst_ch: u16) -> Result<Vec<i16>, AudioError> {
@@ -209,6 +209,6 @@ fn prepare_samples(buffer: &PcmBuffer, dst_sr: u32, dst_ch: u16) -> Result<Vec<i
     Ok(convert::remix(&resampled, buffer.channels, dst_ch))
 }
 
-fn stream_error_fn(err: cpal::StreamError) {
+fn stream_error_fn(err: cpal::Error) {
     tracing::error!("cpal stream error: {}", err);
 }

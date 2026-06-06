@@ -81,7 +81,10 @@ fn enumerate_uncached() -> Result<Vec<DeviceInfo>, AudioError> {
             continue;
         };
         let name = desc.name().to_owned();
-        let id_str = device.id().map(|id| id.1).unwrap_or_else(|_| name.clone());
+        let id_str = device
+            .id()
+            .map(|id| id.id().to_owned())
+            .unwrap_or_else(|_| name.clone());
         let is_default = !default_name.is_empty() && name == default_name;
         out.push(DeviceInfo {
             id: DeviceId::new(id_str),

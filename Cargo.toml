@@ -43,23 +43,23 @@ repository = "https://github.com/IceSqueez/forge"
 rust-version = "1.96"
 
 [workspace.dependencies]
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1.52", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-tungstenite = { version = "0.29", features = ["rustls-tls-webpki-roots"] }
 tokio-util = { version = "0.7" }
 futures-core = { version = "0.3" }
 futures-util = { version = "0.3" }
 
-serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0" }
 
-thiserror = { version = "2" }
+thiserror = { version = "2.0" }
 
 async-trait = { version = "0.1" }
 
 time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
 
-ulid = { version = "1", features = ["serde"] }
+ulid = { version = "1.2", features = ["serde"] }
 
 tracing = { version = "0.1" }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -73,25 +73,25 @@ sqlx = { version = "0.9", features = [
 ] }
 
 aes-gcm = { version = "0.10" }
-directories = { version = "6" }
-keyring = { version = "4" }
-keyring-core = { version = "1" }
+directories = { version = "6.0" }
+keyring = { version = "4.0" }
+keyring-core = { version = "1.0" }
 rand = { version = "0.10" }
-tempfile = { version = "3" }
+tempfile = { version = "3.27" }
 mockall = { version = "0.14" }
 wiremock = { version = "0.6" }
 
 sha2 = { version = "0.11" }
 base64 = { version = "0.22" }
-subtle = { version = "2" }
-arc-swap = { version = "1" }
+subtle = { version = "2.6" }
+arc-swap = { version = "1.9" }
 
-rhai = { version = "1", features = ["sync"] }
+rhai = { version = "1.25", features = ["sync"] }
 
-midir = { version = "0.10" }
+midir = { version = "0.11" }
 
-global-hotkey = { version = "0.6" }
-zbus = { version = "4", default-features = false, features = ["tokio"] }
+global-hotkey = { version = "0.8" }
+zbus = { version = "5.16", default-features = false, features = ["tokio"] }
 
 reqwest = { version = "0.13", features = [
   "json",
@@ -145,12 +145,12 @@ rfd = { version = "0.17", default-features = false, features = [
   "xdg-portal",
   "wayland",
 ] }
-open = { version = "5" }
+open = { version = "5.3" }
 
-cpal = { version = "0.17" }
+cpal = { version = "0.18" }
 rubato = { version = "3.0" }
-regex = { version = "1" }
-once_cell = { version = "1" }
+regex = { version = "1.12" }
+once_cell = { version = "1.21" }
 symphonia = { version = "0.6", features = ["all-codecs", "all-formats"] }
 crossbeam-channel = { version = "0.5" }
 futures = { version = "0.3" }
@@ -180,4 +180,3 @@ inherits = "release"
 lto = "fat"
 codegen-units = 1
 strip = "symbols"
-

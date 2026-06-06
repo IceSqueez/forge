@@ -2311,7 +2311,7 @@ dependencies = [
  "futures-util",
  "iced",
  "open",
- "reqwest",
+ "reqwest 0.12.28",
  "rfd",
  "serde_json",
  "thiserror 2.0.18",
@@ -2352,7 +2352,7 @@ dependencies = [
  "forge-registry",
  "forge-storage",
  "forge-types",
- "reqwest",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -2448,7 +2448,7 @@ dependencies = [
  "forge-types",
  "futures-core",
  "rand 0.10.1",
- "reqwest",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -2471,7 +2471,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "rand 0.10.1",
- "reqwest",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -2497,7 +2497,7 @@ dependencies = [
  "forge-types",
  "futures-util",
  "rand 0.10.1",
- "reqwest",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -2524,7 +2524,7 @@ dependencies = [
  "forge-types",
  "futures-util",
  "rand 0.10.1",
- "reqwest",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -2549,7 +2549,7 @@ dependencies = [
  "forge-storage",
  "forge-types",
  "futures",
- "reqwest",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -2629,7 +2629,7 @@ dependencies = [
  "futures-util",
  "mockall",
  "rand 0.10.1",
- "reqwest",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "subtle",
@@ -2731,7 +2731,7 @@ dependencies = [
  "forge-platform-core",
  "forge-tts-core",
  "hmac 0.13.0",
- "reqwest",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -6484,6 +6484,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "reqwest"
+version = "0.13.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "219c5811de6525e5416c7d5d53bb656d3afdbc6c5af816e0802bcfa42dbdc1c3"
+dependencies = [
+ "base64",
+ "bytes",
+ "futures-core",
+ "http",
+ "http-body",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "js-sys",
+ "log",
+ "percent-encoding",
+ "pin-project-lite",
+ "sync_wrapper",
+ "tokio",
+ "tower 0.5.3",
+ "tower-http",
+ "tower-service",
+ "url",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
 name = "resvg"
 version = "0.45.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8758,9 +8787,9 @@ dependencies = [
 
 [[package]]
 name = "twitch_api"
-version = "0.7.2"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "758fa65710ccb4643ba36ee31115d978df06fe4f232b407e4b09582a98227ac6"
+checksum = "15a232246d430ce75d77fb271aa9f9a1f731294b6394d78c86c111613745775e"
 dependencies = [
  "aliri_braid",
  "async-trait",
@@ -8769,7 +8798,7 @@ dependencies = [
  "http",
  "hyper",
  "once_cell",
- "reqwest",
+ "reqwest 0.13.4",
  "serde",
  "serde_derive",
  "serde_json",
@@ -8784,24 +8813,25 @@ dependencies = [
 
 [[package]]
 name = "twitch_oauth2"
-version = "0.15.2"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eaec6e008ed2818c0d9a146ffc16b0af8491a71fc8d433ef09d79de740980a51"
+checksum = "08dc2f82af87d9794d20176d02b6b4e2f5301f59ba3faa0d6da61b33cd9ba620"
 dependencies = [
  "aliri_braid",
- "async-trait",
  "base64",
  "displaydoc",
+ "futures",
  "http",
  "once_cell",
- "rand 0.8.6",
- "reqwest",
+ "rand 0.10.1",
+ "reqwest 0.13.4",
  "serde",
  "serde_derive",
  "serde_json",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "twitch_types",
  "url",
+ "web-time",
 ]
 
 [[package]]

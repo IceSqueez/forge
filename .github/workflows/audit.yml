@@ -1,0 +1,31 @@
+name: Audit
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'Cargo.lock'
+
+jobs:
+  audit:
+    name: Security audit
+    runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Cache advisory-db
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/advisory-db
+          key: advisory-db-${{ github.run_id }}
+          restore-keys: |
+            advisory-db-
+
+      - uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}

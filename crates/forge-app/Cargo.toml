@@ -69,3 +69,44 @@ tracing-appender = { workspace = true }
 
 [dev-dependencies]
 futures-util = { workspace = true }
+
+[package.metadata.wix]
+eula = false
+
+[package.metadata.deb]
+name = "forge"
+maintainer = "IceSqueez <icesqueez@gmail.com>"
+copyright = "2026, IceSqueez"
+license-file = ["../../LICENSE-MIT", "0"]
+extended-description = "Cross-platform desktop tool combining event-driven automation across Twitch / YouTube / Trovo / Kick / OBS / Discord / etc. with multi-engine TTS, voice aliases, queues, and message preprocessing."
+section = "sound"
+priority = "optional"
+depends = "libc6, libwayland-client0, libxkbcommon0, libgl1, libasound2, libdbus-1-3"
+assets = [
+  ["target/release/forge", "usr/bin/forge", "755"],
+  ["../../assets/forge.desktop", "usr/share/applications/forge.desktop", "644"],
+  ["../../assets/icon-16.png",  "usr/share/icons/hicolor/16x16/apps/forge.png",   "644"],
+  ["../../assets/icon-32.png",  "usr/share/icons/hicolor/32x32/apps/forge.png",   "644"],
+  ["../../assets/icon-48.png",  "usr/share/icons/hicolor/48x48/apps/forge.png",   "644"],
+  ["../../assets/icon-64.png",  "usr/share/icons/hicolor/64x64/apps/forge.png",   "644"],
+  ["../../assets/icon-128.png", "usr/share/icons/hicolor/128x128/apps/forge.png", "644"],
+  ["../../assets/icon-256.png", "usr/share/icons/hicolor/256x256/apps/forge.png", "644"],
+  ["../../assets/icon-512.png", "usr/share/icons/hicolor/512x512/apps/forge.png", "644"],
+]
+
+[package.metadata.generate-rpm]
+name = "forge"
+license = "MIT OR Apache-2.0"
+summary = "Streaming automation toolkit with multi-engine TTS"
+requires = { "libwayland-client" = "*", "libxkbcommon" = "*", "mesa-libGL" = "*", "alsa-lib" = "*", "dbus-libs" = "*" }
+assets = [
+  { source = "target/release/forge", dest = "/usr/bin/forge", mode = "755" },
+  { source = "../../assets/forge.desktop", dest = "/usr/share/applications/forge.desktop", mode = "644" },
+  { source = "../../assets/icon-16.png",  dest = "/usr/share/icons/hicolor/16x16/apps/forge.png",   mode = "644" },
+  { source = "../../assets/icon-32.png",  dest = "/usr/share/icons/hicolor/32x32/apps/forge.png",   mode = "644" },
+  { source = "../../assets/icon-48.png",  dest = "/usr/share/icons/hicolor/48x48/apps/forge.png",   mode = "644" },
+  { source = "../../assets/icon-64.png",  dest = "/usr/share/icons/hicolor/64x64/apps/forge.png",   mode = "644" },
+  { source = "../../assets/icon-128.png", dest = "/usr/share/icons/hicolor/128x128/apps/forge.png", mode = "644" },
+  { source = "../../assets/icon-256.png", dest = "/usr/share/icons/hicolor/256x256/apps/forge.png", mode = "644" },
+  { source = "../../assets/icon-512.png", dest = "/usr/share/icons/hicolor/512x512/apps/forge.png", mode = "644" },
+]

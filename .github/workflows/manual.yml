@@ -1,4 +1,4 @@
-name: Manual
+name: Manual Check
 
 on:
   workflow_dispatch:
@@ -18,7 +18,6 @@ on:
         options:
           - test
           - clippy
-          - build-release
 
 permissions:
   contents: read
@@ -44,21 +43,3 @@ jobs:
         if: inputs.command == 'clippy'
         shell: bash
         run: cargo clippy --workspace --all-targets -- -D warnings
-
-      - name: Run build-release
-        if: inputs.command == 'build-release'
-        env:
-          # Compile-time Twitch client_id from repo secret. Empty if secret unset → app falls back to runtime env var or shows UX error.
-          FORGE_TWITCH_CLIENT_ID: ${{ secrets.FORGE_TWITCH_CLIENT_ID }}
-          FORGE_YOUTUBE_CLIENT_ID: ${{ secrets.FORGE_YOUTUBE_CLIENT_ID }}
-          FORGE_YOUTUBE_CLIENT_SECRET: ${{ secrets.FORGE_YOUTUBE_CLIENT_SECRET }}
-        shell: bash
-        run: cargo build --workspace --release
-
-      - name: Upload artifacts
-        if: inputs.command == 'build-release'
-        uses: actions/upload-artifact@v7
-        with:
-          name: binaries-${{ inputs.os }}
-          path: target/release/forge${{ runner.os == 'Windows' && '.exe' || '' }}
-          if-no-files-found: error

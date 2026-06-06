@@ -1,0 +1,266 @@
+name: Build Matrix (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      package_name:
+        required: true
+        type: string
+      bin_name:
+        required: true
+        type: string
+      retention_days:
+        required: false
+        type: number
+        default: 0
+
+jobs:
+  build:
+    name: Build ${{ matrix.asset_name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Cancel remaining matrix entries on first failure: the `publish` job
+      # in the caller (`release.yml`) requires ALL matrix entries to succeed,
+      # so a partial failure produces no release anyway. No sense burning
+      # ~50 min of macOS time confirming macOS is also broken when Linux or
+      # Windows already failed.
+      fail-fast: true
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset_name: windows-x64
+
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            asset_name: linux-x64
+
+          - os: macos-latest
+            target: universal-apple-darwin
+            asset_name: macos-universal
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.asset_name == 'macos-universal' && 'aarch64-apple-darwin,x86_64-apple-darwin' || matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-${{ matrix.target }}
+          cache-all-crates: true
+
+      - name: Install Linux system dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            libwayland-dev libxkbcommon-dev libgl1-mesa-dev libx11-dev \
+            libasound2-dev libdbus-1-dev libudev-dev pkg-config \
+            libfuse2 desktop-file-utils
+
+      - name: Get Version
+        id: get_version
+        shell: bash
+        run: |
+          RAW_VERSION=$(cargo pkgid -p ${{ inputs.package_name }} | cut -d# -f2 | cut -d@ -f2)
+          echo "VERSION=$RAW_VERSION" >> $GITHUB_ENV
+
+      - name: Build
+        shell: bash
+        run: |
+          if [[ "${{ matrix.asset_name }}" == "macos-universal" ]]; then
+            cargo build --release --locked --target aarch64-apple-darwin -p ${{ inputs.package_name }}
+            cargo build --release --locked --target x86_64-apple-darwin -p ${{ inputs.package_name }}
+            mkdir -p target/${{ matrix.target }}/release
+            lipo -create \
+              target/aarch64-apple-darwin/release/${{ inputs.bin_name }} \
+              target/x86_64-apple-darwin/release/${{ inputs.bin_name }} \
+              -output target/${{ matrix.target }}/release/${{ inputs.bin_name }}
+            lipo -info target/${{ matrix.target }}/release/${{ inputs.bin_name }}
+          else
+            cargo build --release --locked --target ${{ matrix.target }} -p ${{ inputs.package_name }}
+          fi
+
+      # ---------- Windows: portable .exe + MSI installer ----------
+      - name: Package Windows .exe
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          SRC="target/${{ matrix.target }}/release/${{ inputs.bin_name }}.exe"
+          OUT="${{ inputs.bin_name }}-${{ env.VERSION }}+${{ github.run_number }}-${{ matrix.asset_name }}.exe"
+          cp "$SRC" "$OUT"
+
+      - name: Install cargo-wix
+        if: matrix.os == 'windows-latest'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-wix
+
+      - name: Package Windows MSI
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          INSTALL_VERSION=$(echo "${VERSION}" | sed 's/+.*//')
+          (cd crates/${{ inputs.package_name }} && cargo wix -p ${{ inputs.package_name }} --target ${{ matrix.target }} --install-version "${INSTALL_VERSION}" --no-build --nocapture)
+          MSI=$(ls target/wix/*.msi | head -1)
+          OUT="${{ inputs.bin_name }}-${{ env.VERSION }}+${{ github.run_number }}-${{ matrix.asset_name }}.msi"
+          mv "$MSI" "$OUT"
+
+      # ---------- Linux: AppImage with hicolor icon set + top-level icon ----------
+      - name: Package Linux AppImage
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          curl -L --fail -o appimagetool \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+
+          APPDIR="AppDir"
+          rm -rf "$APPDIR"
+          mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/applications"
+
+          for SZ in 16 32 48 64 128 256 512; do
+            mkdir -p "$APPDIR/usr/share/icons/hicolor/${SZ}x${SZ}/apps"
+            cp "assets/icon-${SZ}.png" \
+              "$APPDIR/usr/share/icons/hicolor/${SZ}x${SZ}/apps/forge.png"
+          done
+
+          # AppImage convention: icon + .desktop at AppDir root
+          cp assets/icon-256.png "$APPDIR/forge.png"
+          cp assets/forge.desktop "$APPDIR/forge.desktop"
+          cp assets/forge.desktop "$APPDIR/usr/share/applications/forge.desktop"
+
+          cat > "$APPDIR/AppRun" <<'EOF'
+          #!/bin/sh
+          HERE="$(dirname "$(readlink -f "${0}")")"
+          export PATH="$HERE/usr/bin:$PATH"
+          exec "$HERE/usr/bin/forge" "$@"
+          EOF
+          chmod +x "$APPDIR/AppRun"
+
+          cp "target/${{ matrix.target }}/release/${{ inputs.bin_name }}" \
+             "$APPDIR/usr/bin/${{ inputs.bin_name }}"
+          chmod +x "$APPDIR/usr/bin/${{ inputs.bin_name }}"
+
+          OUT="${{ inputs.bin_name }}-${{ env.VERSION }}+${{ github.run_number }}-${{ matrix.asset_name }}.AppImage"
+          ARCH=x86_64 ./appimagetool --no-appstream "$APPDIR" "$OUT"
+
+      # ---------- Linux: .deb (Debian/Ubuntu) and .rpm (Fedora/openSUSE) ----------
+      - name: Install Linux packaging tools
+        if: matrix.os == 'ubuntu-latest'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb,cargo-generate-rpm
+
+      - name: Package Linux .deb
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          cargo deb -p ${{ inputs.package_name }} --target ${{ matrix.target }} --no-build --no-strip
+          DEB=$(ls target/${{ matrix.target }}/debian/*.deb | head -1)
+          OUT="${{ inputs.bin_name }}-${{ env.VERSION }}+${{ github.run_number }}-${{ matrix.asset_name }}.deb"
+          mv "$DEB" "$OUT"
+
+      - name: Package Linux .rpm
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          RPM_VERSION=$(echo "${VERSION}" | sed 's/-/~/g')
+          echo "version = \"${RPM_VERSION}\"" > /tmp/rpm-overwrite.toml
+          cargo generate-rpm -p crates/${{ inputs.package_name }} --target ${{ matrix.target }} --metadata-overwrite /tmp/rpm-overwrite.toml
+          RPM=$(ls target/${{ matrix.target }}/generate-rpm/*.rpm | head -1)
+          OUT="${{ inputs.bin_name }}-${{ env.VERSION }}+${{ github.run_number }}-${{ matrix.asset_name }}.rpm"
+          mv "$RPM" "$OUT"
+
+      # ---------- macOS: .app bundle wrapped in .dmg ----------
+      - name: Package macOS .dmg
+        if: startsWith(matrix.os, 'macos')
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APP_NAME="Forge"
+          APP_BUNDLE="${APP_NAME}.app"
+          CONTENTS="${APP_BUNDLE}/Contents"
+          rm -rf "$APP_BUNDLE"
+          mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"
+
+          cp "target/${{ matrix.target }}/release/${{ inputs.bin_name }}" \
+             "$CONTENTS/MacOS/${APP_NAME}"
+          chmod +x "$CONTENTS/MacOS/${APP_NAME}"
+
+          # Build .icns from per-size PNGs using Apple's iconutil
+          ICONSET="${APP_NAME}.iconset"
+          rm -rf "$ICONSET"
+          mkdir -p "$ICONSET"
+          cp assets/icon-16.png  "$ICONSET/icon_16x16.png"
+          cp assets/icon-32.png  "$ICONSET/icon_16x16@2x.png"
+          cp assets/icon-32.png  "$ICONSET/icon_32x32.png"
+          cp assets/icon-64.png  "$ICONSET/icon_32x32@2x.png"
+          cp assets/icon-128.png "$ICONSET/icon_128x128.png"
+          cp assets/icon-256.png "$ICONSET/icon_128x128@2x.png"
+          cp assets/icon-256.png "$ICONSET/icon_256x256.png"
+          cp assets/icon-512.png "$ICONSET/icon_256x256@2x.png"
+          cp assets/icon-512.png "$ICONSET/icon_512x512.png"
+          iconutil -c icns "$ICONSET" -o "$CONTENTS/Resources/${APP_NAME}.icns"
+
+          cat > "$CONTENTS/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleExecutable</key>
+              <string>${APP_NAME}</string>
+              <key>CFBundleIconFile</key>
+              <string>${APP_NAME}</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.icesqueez.forge</string>
+              <key>CFBundleName</key>
+              <string>${APP_NAME}</string>
+              <key>CFBundleDisplayName</key>
+              <string>${APP_NAME}</string>
+              <key>CFBundleShortVersionString</key>
+              <string>${VERSION}</string>
+              <key>CFBundleVersion</key>
+              <string>${VERSION}</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>LSMinimumSystemVersion</key>
+              <string>11.0</string>
+              <key>NSHighResolutionCapable</key>
+              <true/>
+              <key>NSMicrophoneUsageDescription</key>
+              <string>Forge does not record audio; the microphone permission is required only if a user-installed script accesses it.</string>
+          </dict>
+          </plist>
+          EOF
+
+          # Ad-hoc sign the bundle so arm64 macOS does not flag it as "damaged".
+          # No Apple Developer ID — Gatekeeper still warns "unverified developer"
+          # and users need the README workaround, but the binary is now a valid
+          # signed Mach-O and `xattr -dr com.apple.quarantine` will let it run.
+          codesign --force --deep --sign - "$APP_BUNDLE"
+          codesign --verify --verbose "$APP_BUNDLE"
+
+          OUT="${{ inputs.bin_name }}-${{ env.VERSION }}+${{ github.run_number }}-${{ matrix.asset_name }}.dmg"
+          hdiutil create -volname "${APP_NAME}" -srcfolder "$APP_BUNDLE" \
+            -ov -format UDZO "$OUT"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.bin_name }}-${{ matrix.asset_name }}
+          path: |
+            ${{ inputs.bin_name }}-*.exe
+            ${{ inputs.bin_name }}-*.msi
+            ${{ inputs.bin_name }}-*.AppImage
+            ${{ inputs.bin_name }}-*.deb
+            ${{ inputs.bin_name }}-*.rpm
+            ${{ inputs.bin_name }}-*.dmg
+          if-no-files-found: ignore
+          retention-days: ${{ inputs.retention_days == 0 && 3 || inputs.retention_days }}

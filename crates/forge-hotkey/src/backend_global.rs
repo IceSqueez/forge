@@ -1,7 +1,7 @@
 #![cfg(any(target_os = "windows", target_os = "macos"))]
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use global_hotkey::hotkey::{Code, HotKey, Modifiers};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
@@ -11,9 +11,17 @@ use crate::backend::{HotkeyBackend, HotkeyFiredEvent, HotkeyId};
 use crate::combo::HotkeyCombo;
 use crate::error::HotkeyError;
 
+struct Registration {
+    hotkey: HotKey,
+    caller_id: HotkeyId,
+    combo: HotkeyCombo,
+}
+
+type RegistrationMap = Arc<Mutex<HashMap<u32, Registration>>>;
+
 pub(crate) struct GlobalHotkeyBackend {
     manager: GlobalHotKeyManager,
-    hotkeys: Mutex<HashMap<HotkeyId, HotKey>>,
+    registrations: RegistrationMap,
     fired_rx_slot: Mutex<Option<mpsc::Receiver<HotkeyFiredEvent>>>,
 }
 
@@ -24,11 +32,15 @@ impl GlobalHotkeyBackend {
 
         let (fired_tx, fired_rx) = mpsc::channel::<HotkeyFiredEvent>(64);
 
-        tokio::spawn(poll_global_hotkey_events(fired_tx));
+        let registrations: RegistrationMap = Arc::new(Mutex::new(HashMap::new()));
+        tokio::spawn(poll_global_hotkey_events(
+            fired_tx,
+            Arc::clone(&registrations),
+        ));
 
         Ok(Self {
             manager,
-            hotkeys: Mutex::new(HashMap::new()),
+            registrations,
             fired_rx_slot: Mutex::new(Some(fired_rx)),
         })
     }
@@ -40,17 +52,28 @@ impl HotkeyBackend for GlobalHotkeyBackend {
         self.manager
             .register(hotkey)
             .map_err(|e| HotkeyError::Backend(e.to_string()))?;
-        self.hotkeys
+        self.registrations
             .lock()
             .unwrap_or_else(|p| p.into_inner())
-            .insert(id, hotkey);
+            .insert(
+                hotkey.id(),
+                Registration {
+                    hotkey,
+                    caller_id: id,
+                    combo: combo.clone(),
+                },
+            );
         Ok(())
     }
 
     fn unregister(&self, id: HotkeyId) -> Result<(), HotkeyError> {
         let hotkey = {
-            let mut guard = self.hotkeys.lock().unwrap_or_else(|p| p.into_inner());
-            guard.remove(&id)
+            let mut guard = self.registrations.lock().unwrap_or_else(|p| p.into_inner());
+            let internal_id = guard
+                .iter()
+                .find(|(_, reg)| reg.caller_id == id)
+                .map(|(k, _)| *k);
+            internal_id.and_then(|k| guard.remove(&k)).map(|r| r.hotkey)
         };
         if let Some(hk) = hotkey {
             self.manager
@@ -68,20 +91,22 @@ impl HotkeyBackend for GlobalHotkeyBackend {
     }
 }
 
-async fn poll_global_hotkey_events(fired_tx: mpsc::Sender<HotkeyFiredEvent>) {
+async fn poll_global_hotkey_events(
+    fired_tx: mpsc::Sender<HotkeyFiredEvent>,
+    registrations: RegistrationMap,
+) {
     loop {
-        if let Ok(event) = GlobalHotKeyEvent::receiver().try_recv() {
-            if event.state == HotKeyState::Pressed {
-                let combo_str = format!("{:?}", event.hotkey());
-                let combo = match HotkeyCombo::parse(&combo_str) {
-                    Ok(c) => c,
-                    Err(_) => {
-                        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-                        continue;
-                    }
-                };
+        if let Ok(event) = GlobalHotKeyEvent::receiver().try_recv()
+            && event.state == HotKeyState::Pressed
+        {
+            let lookup = registrations
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .get(&event.id)
+                .map(|r| (r.caller_id, r.combo.clone()));
+            if let Some((caller_id, combo)) = lookup {
                 let ev = HotkeyFiredEvent {
-                    id: HotkeyId(event.id()),
+                    id: caller_id,
                     combo,
                     timestamp_us: std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)

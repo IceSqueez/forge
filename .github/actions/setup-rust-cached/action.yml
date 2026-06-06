@@ -1,5 +1,11 @@
 name: Setup Rust with cache
-description: Install toolchain from rust-toolchain.toml. Cache is provided by setup-rust-toolchain itself. On Linux runners, installs libasound2-dev (required by cpal via alsa-sys).
+description: Install toolchain from rust-toolchain.toml. Cache is shared across dev workflows via shared-key=dev-<os> so pr/nightly/manual reuse each other's target/debug/ rather than rebuilding cold. On Linux runners, installs libasound2-dev (required by cpal via alsa-sys).
+
+inputs:
+  shared-key:
+    description: "Cache key shared across workflows. Default `dev-<os>` lets pr/nightly/manual reuse target/debug/ across workflow boundaries."
+    required: false
+    default: dev-${{ runner.os }}
 
 runs:
   using: composite
@@ -15,3 +21,4 @@ runs:
       uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
         components: rustfmt,clippy
+        cache-shared-key: ${{ inputs.shared-key }}

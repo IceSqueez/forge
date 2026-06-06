@@ -4,7 +4,12 @@ on:
   pull_request:
     branches:
       - main
-      - "release/**"
+    paths:
+      - '**/*.rs'
+      - '**/Cargo.toml'
+      - 'Cargo.lock'
+      - '**/build.rs'
+      - '.github/**'
 
 permissions:
   contents: read
@@ -31,6 +36,12 @@ jobs:
       - name: Clippy
         shell: bash
         run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Doc
+        shell: bash
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps
 
   test:
     name: test (${{ matrix.os }})

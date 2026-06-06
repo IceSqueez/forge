@@ -78,7 +78,7 @@ keyring = { version = "4" }
 keyring-core = { version = "1" }
 rand = { version = "0.10" }
 tempfile = { version = "3" }
-mockall = { version = "0.13" }
+mockall = { version = "0.14" }
 
 sha2 = { version = "0.11" }
 base64 = { version = "0.22" }

@@ -152,7 +152,7 @@ pub(crate) async fn subscribe_all(
 
         match result {
             Err(e) => {
-                let reason = e.to_string();
+                let reason = e.without_url().to_string();
                 warn!(kind = topic.kind, error = %reason, "eventsub subscription network error");
                 set_tracker_status(tracker, i, SubStatus::Failed(reason));
             }
@@ -246,6 +246,7 @@ fn extract_retry_after(resp: &reqwest::Response) -> Option<u64> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
@@ -253,5 +254,19 @@ mod tests {
     fn subscribe_error_scope_missing_displays_non_empty() {
         let e = SubscribeError::ScopeMissing;
         assert!(!e.to_string().is_empty());
+    }
+
+    #[tokio::test]
+    async fn subscribe_network_error_strips_url() {
+        let client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(1))
+            .build()
+            .unwrap();
+        let err = client
+            .post("https://192.0.2.1/helix/eventsub/subscriptions")
+            .send()
+            .await
+            .unwrap_err();
+        assert!(!err.without_url().to_string().contains("192.0.2.1"));
     }
 }

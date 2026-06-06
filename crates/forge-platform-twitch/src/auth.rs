@@ -198,7 +198,7 @@ async fn exchange_code(
         .send()
         .await
         .map_err(|e| PlatformError::Network {
-            reason: e.to_string(),
+            reason: e.without_url().to_string(),
         })?;
 
     let status = resp.status().as_u16();
@@ -396,6 +396,25 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(resp.access_token, "twitch_access_abc");
+    }
+
+    #[tokio::test]
+    async fn exchange_code_network_error_strips_url() {
+        let http = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(1))
+            .build()
+            .unwrap();
+        let err = exchange_code(
+            &http,
+            "https://192.0.2.1/token",
+            "client",
+            "code",
+            "http://127.0.0.1:0/callback",
+            "verifier",
+        )
+        .await
+        .unwrap_err();
+        assert!(!format!("{err}").contains("192.0.2.1"));
     }
 
     #[tokio::test]

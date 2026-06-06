@@ -76,7 +76,7 @@ pub async fn send_chat(
         .json(&body)
         .send()
         .await
-        .map_err(|e| ChatSendError::Http(e.to_string()))?;
+        .map_err(|e| ChatSendError::Http(e.without_url().to_string()))?;
 
     let status = resp.status().as_u16();
 
@@ -106,7 +106,7 @@ pub async fn send_chat(
     let parsed: SendChatResponse = resp
         .json()
         .await
-        .map_err(|e| ChatSendError::Http(e.to_string()))?;
+        .map_err(|e| ChatSendError::Http(e.without_url().to_string()))?;
 
     let message_id = parsed
         .data
@@ -126,8 +126,23 @@ fn extract_retry_after(resp: &reqwest::Response) -> Option<u64> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn send_network_error_strips_url() {
+        let client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(1))
+            .build()
+            .unwrap();
+        let err = client
+            .post("https://192.0.2.1/helix/chat/messages")
+            .send()
+            .await
+            .unwrap_err();
+        assert!(!err.without_url().to_string().contains("192.0.2.1"));
+    }
 
     #[test]
     fn message_too_long_exactly_at_boundary() {

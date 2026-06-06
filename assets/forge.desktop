@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Forge
+GenericName=Streaming Automation Toolkit
+Comment=Event-driven automation across Twitch/YouTube/Trovo/Kick + multi-engine TTS
+Exec=forge
+Icon=forge
+Categories=AudioVideo;Network;Utility;
+Terminal=false
+StartupWMClass=forge

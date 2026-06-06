@@ -96,6 +96,7 @@ pub(crate) fn emit_unregistered(client: &HotkeyClient, combo_str: &str, id_u32: 
     let _ = client.health_tx.send(delta);
 }
 
+#[cfg(target_os = "linux")]
 pub(crate) fn emit_portal_unavailable(client: &HotkeyClient, reason: &str) {
     client.publisher.publish(Event::new(
         EventSource::Hotkey,

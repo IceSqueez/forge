@@ -15,7 +15,7 @@ use forge_widgets::{DeviceLabel, PickerItem, ToastKind};
 
 use forge_platform_core::{HeaderAction, HealthDelta};
 use forge_storage::GlobalEntry;
-use forge_types::{ActionId, PlatformId, UnifiedChatRow};
+use forge_types::{ActionId, OAuthToken, PlatformId, UnifiedChatRow};
 use forge_widgets::{ThemeId, VariantKind};
 use time::OffsetDateTime;
 
@@ -31,7 +31,7 @@ use crate::settings_websocket::SettingsWebSocketMsg;
 
 #[derive(Debug, Clone)]
 pub struct TwitchBootBundle {
-    pub access_token: String,
+    pub access_token: OAuthToken,
     pub client_id: String,
     pub user_id: String,
     pub login: String,

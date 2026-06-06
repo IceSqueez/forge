@@ -7,7 +7,6 @@ use forge_platform_core::{
 use forge_platform_twitch::{SubscriptionTracker, TwitchChat, TwitchIntegrationBundle};
 use forge_runtime::EventBus;
 use forge_storage::{CredentialId, CredentialsRepo};
-use forge_types::OAuthToken;
 use iced::Task;
 
 use crate::app::App;
@@ -60,7 +59,7 @@ pub(crate) fn handle_twitch_boot_result(
             };
             let tracker = SubscriptionTracker::default();
             let chat = TwitchChat::new(
-                OAuthToken::new(bundle.access_token),
+                bundle.access_token,
                 bundle.client_id,
                 bundle.user_id.clone(),
                 bundle.user_id,

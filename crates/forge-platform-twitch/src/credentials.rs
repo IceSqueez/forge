@@ -1,17 +1,29 @@
 use std::time::SystemTime;
 
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
+use forge_types::OAuthToken;
 
 use crate::auth::TwitchAuthBundle;
 
 pub const TWITCH_CREDENTIAL_ID: &str = "twitch:broadcaster";
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct StoredCredential {
-    pub access_token: String,
+    pub access_token: OAuthToken,
     pub user_id: String,
     pub login: String,
     pub expires_at: Option<SystemTime>,
+}
+
+impl std::fmt::Debug for StoredCredential {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StoredCredential")
+            .field("access_token", &self.access_token)
+            .field("user_id", &self.user_id)
+            .field("login", &self.login)
+            .field("expires_at", &self.expires_at)
+            .finish()
+    }
 }
 
 pub async fn store(
@@ -42,10 +54,12 @@ pub async fn load(creds: &dyn CredentialsRepo) -> Result<Option<StoredCredential
         return Ok(None);
     };
     let bundle: serde_json::Value = serde_json::from_str(&json)?;
-    let access_token = bundle["access_token"]
-        .as_str()
-        .ok_or_else(|| StorageError::Parse("missing access_token in twitch credential".into()))?
-        .to_owned();
+    let access_token = OAuthToken::new(
+        bundle["access_token"]
+            .as_str()
+            .ok_or_else(|| StorageError::Parse("missing access_token in twitch credential".into()))?
+            .to_owned(),
+    );
     let user_id = bundle["user_id"]
         .as_str()
         .ok_or_else(|| StorageError::Parse("missing user_id in twitch credential".into()))?
@@ -70,6 +84,17 @@ pub async fn load(creds: &dyn CredentialsRepo) -> Result<Option<StoredCredential
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stored_credential_debug_does_not_expose_bearer_token() {
+        let cred = StoredCredential {
+            access_token: OAuthToken::new("DEADBEEF_BEARER"),
+            user_id: "123".to_owned(),
+            login: "user".to_owned(),
+            expires_at: None,
+        };
+        assert!(!format!("{cred:?}").contains("DEADBEEF_BEARER"));
+    }
 
     #[test]
     fn twitch_credential_id_matches_expected_key() {

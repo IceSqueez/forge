@@ -4,7 +4,7 @@ use std::sync::mpsc;
 
 use forge_audio::PcmBuffer;
 use forge_tts_core::{EngineId, SynthesisRequest, TtsVoice, VoiceId};
-use windows::Win32::Foundation::BOOL;
+use windows::core::BOOL;
 use windows::Win32::Media::Speech::{
     IEnumSpObjectTokens, ISpObjectToken, ISpObjectTokenCategory, ISpVoice, SPCAT_VOICES,
     SpObjectTokenCategory, SpVoice,

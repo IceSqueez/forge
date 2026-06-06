@@ -36,7 +36,8 @@ pub(crate) fn capture_pcm(
     text: &str,
     use_xml: bool,
 ) -> Result<forge_audio::PcmBuffer, crate::error::SapiError> {
-    use windows::Win32::Foundation::{BOOL, HGLOBAL};
+    use windows::Win32::Foundation::HGLOBAL;
+    use windows::core::BOOL;
     use windows::Win32::Media::Audio::WAVEFORMATEX;
     use windows::Win32::Media::Speech::{ISpStream, SPF_DEFAULT, SPF_PARSE_SSML, SpStream};
     use windows::Win32::System::Com::StructuredStorage::CreateStreamOnHGlobal;

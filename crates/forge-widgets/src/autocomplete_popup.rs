@@ -178,7 +178,10 @@ pub fn autocomplete_popup<'a, Msg: 'a + Clone>(
         .into()
 }
 
-fn kind_badge<'a, Msg: 'a>(kind: SymbolKind, palette: &ForgePalette) -> Element<'a, Msg> {
+pub(crate) fn kind_badge<'a, Msg: 'a>(
+    kind: SymbolKind,
+    palette: &ForgePalette,
+) -> Element<'a, Msg> {
     let (label, base_color) = match kind {
         SymbolKind::Fn => ("fn", palette.brand),
         SymbolKind::Property => ("prp", palette.info),

@@ -609,4 +609,126 @@ mod tests {
         let (tokens, _) = tokenize_line("0b1010", false);
         assert_eq!(tokens, [(0..6, RhaiTokenKind::Number)]);
     }
+
+    #[test]
+    fn highlighter_500_line_script_within_budget() {
+        use std::time::Instant;
+
+        use iced::advanced::text::Highlighter as IcedHighlighter;
+
+        let script_lines = build_500_line_script();
+        assert_eq!(
+            script_lines.len(),
+            500,
+            "script generator must emit exactly 500 lines"
+        );
+
+        // Measure tokenize_line over all 500 lines.
+        let t0 = Instant::now();
+        let mut block_state = false;
+        let all_tokens: Vec<_> = script_lines
+            .iter()
+            .map(|line| {
+                let (tokens, next) = tokenize_line(line, block_state);
+                block_state = next;
+                tokens
+            })
+            .collect();
+        let tokenize_ms = t0.elapsed().as_millis();
+
+        // Measure highlight_line over all 500 lines via the iced Highlighter path.
+        let settings = RhaiHighlighterSettings::default();
+        let mut h = RhaiHighlighter::new(&settings);
+        let t1 = Instant::now();
+        for line in &script_lines {
+            let _ = h.highlight_line(line).collect::<Vec<_>>();
+        }
+        let highlight_ms = t1.elapsed().as_millis();
+
+        // Prevent the optimizer from eliding the tokenize pass.
+        let _ = all_tokens;
+
+        assert!(
+            tokenize_ms < 50,
+            "tokenize 500 lines took {tokenize_ms}ms, budget is 50ms"
+        );
+        assert!(
+            highlight_ms < 100,
+            "highlight_line 500 lines took {highlight_ms}ms, budget is 100ms"
+        );
+    }
+
+    fn build_500_line_script() -> Vec<String> {
+        let mut lines: Vec<String> = Vec::with_capacity(500);
+
+        lines.push("// @input user: string".into());
+        lines.push("// @input count: int".into());
+        lines.push("// @input enabled: bool".into());
+        lines.push("// @return string".into());
+        lines.push("".into());
+
+        for i in 0..20usize {
+            lines.push(format!("fn handler_{i}(user, count) {{"));
+            lines.push(format!(
+                "    let greeting = \"Hello, \" + user + \" #{i}\";"
+            ));
+            lines.push(format!("    let limit = {};", (i + 1) * 5));
+            lines.push(format!(
+                "    let flag = {};",
+                if i.is_multiple_of(2) { "true" } else { "false" }
+            ));
+            lines.push("    if count > limit {".into());
+            lines.push("        let val = forge::globals::get(\"counter\");".into());
+            lines.push(format!("        forge::globals::incr(\"counter_{i}\", 1);"));
+            lines.push("        forge::tts::speak(val);".into());
+            lines.push("    } else {".into());
+            lines.push(format!("        forge::globals::set(\"counter_{i}\", 0);"));
+            lines.push("        forge::chat::send(greeting);".into());
+            lines.push("    }".into());
+            lines.push(format!("    for j in 0..{} {{", i + 1));
+            lines.push(format!("        let x = j * {};", i + 2));
+            lines.push("        if x == 0 { continue; }".into());
+            lines.push(format!("        let hex_check = 0x{:02X};", i * 4));
+            lines.push(format!("        let bin_check = 0b{:08b};", i));
+            lines.push("    }".into());
+            lines.push("    /* begin multi-line block".into());
+            lines.push(format!("       iteration {i} processed */"));
+            lines.push("    let ts = forge::time::now();".into());
+            lines.push("    let unix = forge::time::unix();".into());
+            lines.push(format!("    forge::log(\"handler_{i} at: \" + ts);"));
+            lines.push(format!("    `result of handler_{i}: ${{greeting}}`"));
+            lines.push(format!(
+                "    let result_{i} = forge::globals::get(\"state_{i}\");"
+            ));
+            lines.push(format!("    result_{i}"));
+            lines.push("}".into());
+            lines.push("".into());
+        }
+
+        // Fill the remainder with varied single-statement lines so we reach exactly 500.
+        while lines.len() < 500 {
+            let idx = lines.len();
+            let line = match idx % 8 {
+                0 => format!("let var_{idx} = {idx};"),
+                1 => format!("let str_{idx} = \"value {idx}\";"),
+                2 => format!("// single-line comment at position {idx}"),
+                3 => format!("forge::globals::set(\"key_{idx}\", {idx});"),
+                4 => format!("let f_{idx} = {};", (idx as f64) * 0.5),
+                5 => format!(
+                    "let b_{idx} = {};",
+                    if idx.is_multiple_of(2) {
+                        "true"
+                    } else {
+                        "false"
+                    }
+                ),
+                6 => format!("forge::log(\"step {idx}\");"),
+                _ => format!("let x_{idx} = 0x{idx:02X};"),
+            };
+            lines.push(line);
+        }
+
+        lines.truncate(500);
+        lines
+    }
 }

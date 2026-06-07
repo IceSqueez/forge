@@ -95,6 +95,10 @@ fn now_timestamp() -> String {
     format!("{:02}:{:02}:{:02}", now.hour(), now.minute(), now.second())
 }
 
+fn format_run_stats(duration_ms: f64, error_count: usize) -> String {
+    format!("executed in {:.2}ms · {} errors", duration_ms, error_count)
+}
+
 fn parse_input_to_variant(field: &RunModalInputField) -> Result<Variant, String> {
     match field.kind {
         VariantKind::Int => field
@@ -452,7 +456,7 @@ pub fn update(
             state.console_lines.push(ConsoleLine {
                 level: ConsoleLevel::Stats,
                 timestamp: Some(ts),
-                text: format!("executed in {}ms", result.duration_ms),
+                text: format_run_stats(result.duration_ms, result.error_count),
             });
             iced::Task::none()
         }
@@ -1744,5 +1748,20 @@ mod tests {
     #[test]
     fn type_check_pill_label_shows_count_with_diagnostics() {
         assert_eq!(type_check_pill_label(2), "2 errors");
+    }
+
+    #[test]
+    fn format_run_stats_zero_errors() {
+        assert_eq!(format_run_stats(1.84, 0), "executed in 1.84ms · 0 errors");
+    }
+
+    #[test]
+    fn format_run_stats_with_errors() {
+        assert_eq!(format_run_stats(0.5, 3), "executed in 0.50ms · 3 errors");
+    }
+
+    #[test]
+    fn format_run_stats_handles_sub_millisecond() {
+        assert_eq!(format_run_stats(0.001, 0), "executed in 0.00ms · 0 errors");
     }
 }

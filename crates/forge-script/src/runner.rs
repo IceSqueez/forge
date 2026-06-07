@@ -12,7 +12,8 @@ use crate::{Engine, EngineConfig, ForgeApi, build_scope_for_contract, parse_cont
 #[derive(Debug, Clone)]
 pub struct RunResult {
     pub script_id: ScriptId,
-    pub duration_ms: u64,
+    pub duration_ms: f64,
+    pub error_count: usize,
     pub output_display: String,
 }
 
@@ -50,7 +51,7 @@ pub async fn run_inline(
                 script: String::new(),
                 reason: e.to_string(),
             })?;
-    let duration_ms = start.elapsed().as_millis() as u64;
+    let duration_ms = start.elapsed().as_secs_f64() * 1000.0;
     let output_display = match result {
         Ok(dyn_val) => {
             if dyn_val.is_unit() {
@@ -64,6 +65,7 @@ pub async fn run_inline(
     Ok(RunResult {
         script_id,
         duration_ms,
+        error_count: 0,
         output_display,
     })
 }

@@ -94,7 +94,7 @@ pub use rhai_highlight::{
 pub use script_editor_overlay::ScriptEditorOverlay;
 pub use script_editor_widget::{
     OverlayChoice, ScriptEditorWidgetMsg, ScriptEditorWidgetState, apply_autocomplete_insert,
-    choose_overlay, prefix_under_cursor, script_editor_widget,
+    choose_overlay, prefix_under_cursor, script_editor_widget, should_trigger_autocomplete,
 };
 pub use sections::{
     BannerKind, ToastVariant, counter_badge, empty_state, live_status_banner, section_header,

@@ -12,7 +12,8 @@ use forge_widgets::tokens::{FONT_SM, FONT_XS, FontRole, Spacing, font, spf};
 use forge_widgets::{
     ConsoleLevel, ConsoleLine, ForgePalette, ModalProps, ScriptEditorWidgetMsg,
     ScriptEditorWidgetState, StatusVariant, apply_autocomplete_insert, filter_candidates, modal,
-    prefix_under_cursor, scan_type_hint, script_editor_widget, status_pill,
+    prefix_under_cursor, scan_type_hint, script_editor_widget, should_trigger_autocomplete,
+    status_pill,
 };
 use iced::widget::{column, container, row, scrollable, text, text_editor, tooltip};
 use iced::{Alignment, Background, Border, Element, Length};
@@ -201,20 +202,42 @@ pub fn update(
             iced::Task::none()
         }
         ScriptEditorMsg::EditorAction(action) => {
+            let just_typed = if let iced::widget::text_editor::Action::Edit(
+                iced::widget::text_editor::Edit::Insert(ch),
+            ) = &action
+            {
+                Some(*ch)
+            } else {
+                None
+            };
             let is_edit = action.is_edit();
             if let Some(open) = state.editor.as_mut() {
                 open.widget.editor.content.perform(action);
                 open.widget.overlay_dismissed = false;
-            }
-            if is_edit && let Some(open) = state.editor.as_mut() {
-                let text = open.widget.editor.text();
-                open.widget.annotation_diagnostics = collect_annotation_diagnostics(&text);
-                open.widget.error_lines = open
-                    .widget
-                    .annotation_diagnostics
-                    .iter()
-                    .map(|d| d.line)
-                    .collect();
+
+                let (line, col) = open.widget.editor.cursor_position();
+                let line_text = open.widget.editor.line_text(line).unwrap_or_default();
+
+                if should_trigger_autocomplete(&line_text, col, just_typed, false) {
+                    open.widget.autocomplete_visible = true;
+                    open.widget.autocomplete.selected_idx = 0;
+                } else if open.widget.autocomplete_visible {
+                    let pfx = prefix_under_cursor(&line_text, col);
+                    if pfx.is_empty() {
+                        open.widget.autocomplete_visible = false;
+                    }
+                }
+
+                if is_edit {
+                    let text = open.widget.editor.text();
+                    open.widget.annotation_diagnostics = collect_annotation_diagnostics(&text);
+                    open.widget.error_lines = open
+                        .widget
+                        .annotation_diagnostics
+                        .iter()
+                        .map(|d| d.line)
+                        .collect();
+                }
             }
             iced::Task::none()
         }
@@ -253,6 +276,7 @@ pub fn update(
                     open.widget.editor.content.perform(action);
                 }
                 open.widget.overlay_dismissed = true;
+                open.widget.autocomplete_visible = false;
                 open.widget.autocomplete.selected_idx = 0;
             }
             iced::Task::none()
@@ -260,6 +284,14 @@ pub fn update(
         ScriptEditorMsg::OverlayDismissed => {
             if let Some(open) = state.editor.as_mut() {
                 open.widget.overlay_dismissed = true;
+                open.widget.autocomplete_visible = false;
+            }
+            iced::Task::none()
+        }
+        ScriptEditorMsg::CtrlSpacePressed => {
+            if let Some(open) = state.editor.as_mut() {
+                open.widget.autocomplete_visible = true;
+                open.widget.autocomplete.selected_idx = 0;
             }
             iced::Task::none()
         }
@@ -944,6 +976,9 @@ fn center_pane<'a>(
             ScriptEditorWidgetMsg::OverlayDismissed => {
                 Message::ScriptEditor(ScriptEditorMsg::OverlayDismissed)
             }
+            ScriptEditorWidgetMsg::CtrlSpacePressed => {
+                Message::ScriptEditor(ScriptEditorMsg::CtrlSpacePressed)
+            }
         })
     } else {
         container(
@@ -1404,6 +1439,7 @@ pub enum ScriptEditorMsg {
     FormatPressed,
     ApiDocsRequested,
     ApiDocsSearchChanged(String),
+    CtrlSpacePressed,
 }
 
 #[cfg(test)]

@@ -33,6 +33,7 @@ pub struct ScriptEditorWidgetState {
     pub error_lines: Vec<usize>,
     pub autocomplete: AutocompletePopupState,
     pub overlay_dismissed: bool,
+    pub autocomplete_visible: bool,
 }
 
 impl ScriptEditorWidgetState {
@@ -43,6 +44,7 @@ impl ScriptEditorWidgetState {
             error_lines: Vec::new(),
             autocomplete: AutocompletePopupState::default(),
             overlay_dismissed: false,
+            autocomplete_visible: false,
         }
     }
 
@@ -53,6 +55,7 @@ impl ScriptEditorWidgetState {
             error_lines: Vec::new(),
             autocomplete: AutocompletePopupState::default(),
             overlay_dismissed: false,
+            autocomplete_visible: false,
         }
     }
 }
@@ -70,6 +73,7 @@ pub enum ScriptEditorWidgetMsg {
     AutocompleteSelectionDown,
     AutocompleteInsert(MethodDescriptor),
     OverlayDismissed,
+    CtrlSpacePressed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,6 +96,41 @@ pub fn choose_overlay(
         OverlayChoice::Autocomplete
     } else {
         OverlayChoice::None
+    }
+}
+
+/// Dots after `)` are not triggered — `foo().` does not open completion by default.
+pub fn should_trigger_autocomplete(
+    line_text: &str,
+    cursor_col: usize,
+    just_typed: Option<char>,
+    ctrl_space_pressed: bool,
+) -> bool {
+    if ctrl_space_pressed {
+        return true;
+    }
+    let Some(ch) = just_typed else {
+        return false;
+    };
+    let bytes = line_text.as_bytes();
+    let pos = cursor_col.min(bytes.len());
+    match ch {
+        '.' => {
+            if pos < 2 {
+                return false;
+            }
+            let prev = bytes[pos - 2];
+            prev.is_ascii_alphanumeric() || prev == b'_'
+        }
+        ':' => {
+            if pos < 3 {
+                return false;
+            }
+            let prev = bytes[pos - 2];
+            let prev_prev = bytes[pos - 3];
+            prev == b':' && (prev_prev.is_ascii_alphanumeric() || prev_prev == b'_')
+        }
+        _ => false,
     }
 }
 
@@ -171,7 +210,7 @@ pub fn script_editor_widget<'a, Msg: Clone + 'a>(
 
     let prefix = prefix_under_cursor(&line_text, col);
     let candidates: Vec<&'static MethodDescriptor> =
-        if !state.overlay_dismissed && !prefix.is_empty() {
+        if state.autocomplete_visible && !state.overlay_dismissed && !prefix.is_empty() {
             filter_candidates(catalog(), &prefix)
         } else {
             Vec::new()
@@ -327,6 +366,20 @@ impl<'a, Msg: Clone + 'a> Widget<Msg, iced::Theme, iced::Renderer>
         shell: &mut Shell<'_, Msg>,
         viewport: &Rectangle,
     ) {
+        use iced::keyboard::key::Named;
+
+        if let Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key: iced::keyboard::Key::Named(Named::Space),
+            modifiers,
+            ..
+        }) = event
+            && modifiers.control()
+        {
+            shell.publish((self.on_message)(ScriptEditorWidgetMsg::CtrlSpacePressed));
+            shell.capture_event();
+            return;
+        }
+
         self.inner.as_widget_mut().update(
             &mut tree.children[0],
             event,
@@ -553,6 +606,57 @@ mod tests {
             return_type: "Int",
             doc: None,
         }
+    }
+
+    #[test]
+    fn trigger_on_dot_after_identifier() {
+        assert!(should_trigger_autocomplete("arr.", 4, Some('.'), false));
+    }
+
+    #[test]
+    fn trigger_on_dot_after_whitespace() {
+        assert!(!should_trigger_autocomplete("   .", 4, Some('.'), false));
+    }
+
+    #[test]
+    fn trigger_on_dot_after_paren() {
+        assert!(!should_trigger_autocomplete("foo().", 6, Some('.'), false));
+    }
+
+    #[test]
+    fn trigger_on_double_colon_after_identifier() {
+        assert!(should_trigger_autocomplete(
+            "globals::",
+            9,
+            Some(':'),
+            false
+        ));
+    }
+
+    #[test]
+    fn trigger_on_single_colon_no_trigger() {
+        assert!(!should_trigger_autocomplete(
+            "let q ::",
+            9,
+            Some(':'),
+            false
+        ));
+    }
+
+    #[test]
+    fn trigger_ctrl_space_forces_open() {
+        assert!(should_trigger_autocomplete("let x = 1", 9, None, true));
+        assert!(should_trigger_autocomplete("", 0, None, true));
+    }
+
+    #[test]
+    fn trigger_after_non_trigger_char_no_trigger() {
+        assert!(!should_trigger_autocomplete(
+            "let q = 12",
+            10,
+            Some('2'),
+            false
+        ));
     }
 
     #[test]

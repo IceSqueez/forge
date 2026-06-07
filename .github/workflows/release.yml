@@ -100,7 +100,7 @@ jobs:
             echo ""
             echo "## Downloads"
             echo ""
-            echo "| File | Platform | SHA-256 |"
+            echo "| File | Platform | Checksum |"
             echo "| :--- | :--- | :--- |"
             # Fixed order: Linux (portable → deb → rpm) → macOS → Windows (installer → portable)
             for ext in AppImage deb rpm dmg msi exe; do
@@ -109,8 +109,7 @@ jobs:
                 name="$(basename "$f")"
                 platform="$(classify "$name")"
                 [ -z "$platform" ] && continue
-                sha="$(awk '{print $1}' "$f.sha256")"
-                echo "| [\`$name\`](https://github.com/$REPO/releases/download/$TAG/$name) | $platform | \`$sha\` |"
+                echo "| [\`$name\`](https://github.com/$REPO/releases/download/$TAG/$name) | $platform | [checksum](https://github.com/$REPO/releases/download/$TAG/$name.sha256) |"
               done
             done
             echo ""

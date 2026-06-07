@@ -1,12 +1,46 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-beta.8] - 2026-06-07
+### 🎨 Styling
+- *(tts-sapi)* Collapse com_stream let-binding for nightly fmt
+- *(script)* Condense multi-paragraph docs to single-line invariants
+
+### 🚀 Features
+- *(types)* Add AnnotationDiagnostic for script editor surface
+- *(script)* Add collect_annotation_diagnostics stub
+- *(widgets)* Add RhaiTokenKind enum for syntax highlighter
+- *(widgets)* Add tokenize_line rhai lexer
+- *(widgets)* Impl iced Highlighter for RhaiHighlighter and wire into rhai_editor
+- *(app)* Wire annotation_diagnostics + diagnostic status bar
+- *(widgets)* LoomApi signature registry + status-bar type hints
+- *(script)* Impl collect_annotation_diagnostics for doc comments
+
+### 🚜 Refactor
+- *(widgets)* Rename code_editor to rhai_editor + add RhaiHighlighterSettings
+
+### 🛠️ Build
+- *(release)* Link to .sha256 sidecar instead of inline hash
+
+### 🧪 Testing
+- *(widgets)* Add rhai lexer correctness fixtures
+- *(widgets)* Add highlighter 500-line performance test
+
 ## [0.1.0-beta.7] - 2026-06-06
 ### ⚙️ Miscellaneous Tasks
 - *(discord)* Remove unused webhook credential loader/writer
 - *(workspace)* Update Cargo.lock for midir workspace dep
 - *(workspace)* Update Cargo.lock after MIDI wiring
 - *(workspace)* Update Cargo.lock after Hotkey wiring
+- Release
+- *(deps)* Bump windows from 0.58.0 to 0.62.2 (#22)
+- *(deps)* Bump twitch_api from 0.7.2 to 0.8.0 (#23)
+- *(deps)* Bump rhai from 1.25.0 to 1.25.1 (#24)
+- *(deps)* Bump which from 4.4.2 to 8.0.2 (#25)
+- *(deps)* Bump mockall from 0.13.1 to 0.14.0 (#26)
+- Migrate version to workspace and apply formatter
+- Added assets
+- *(deps)* Bump midir/global-hotkey/zbus + adapt cpal 0.18 api
 
 ### 🐛 Bug Fixes
 - *(discord)* Strip webhook URL from reqwest error messages
@@ -16,6 +50,15 @@ All notable changes to this project will be documented in this file.
 - *(twitch)* Redact bearer token in StoredCredential Debug
 - *(twitch)* Strip URLs from reqwest error display
 - *(twitch)* Sanitize HelixRequestError display for token leaks
+- *(hotkey)* Resolve combo via id lookup in global backend
+- *(hotkey)* Gate emit_portal_unavailable to linux
+- *(app)* Add description field for cargo-deb packaging
+- *(hotkey)* Manually impl send+sync for global backend
+- *(tts-sapi)* Import BOOL from windows::core for 0.62
+- *(tts-sapi)* Pass rust bool to win32 fns for windows 0.62
+
+### 📚 Documentation
+- *(release)* Release v0.1.0-beta.7
 
 ### 🚀 Features
 - *(discord)* Scaffold forge-discord crate skeleton
@@ -55,6 +98,11 @@ All notable changes to this project will be documented in this file.
 
 ### 🚜 Refactor
 - *(midi)* Downgrade MidiBackend trait visibility
+
+### 🛠️ Build
+- *(release)* Replace cargo-dist with hand-rolled gui packaging matrix
+- Optimize build workflow and pass secrets
+- *(release)* Install rust toolchain from rust-toolchain.toml
 
 ### 🧪 Testing
 - *(discord)* Add wiremock delivery, rate-limit, and embed HTTP tests

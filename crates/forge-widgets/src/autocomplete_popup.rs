@@ -67,7 +67,7 @@ pub fn filter_candidates<'a>(
 
 pub fn autocomplete_popup<'a, Msg: 'a + Clone>(
     state: &'a AutocompletePopupState,
-    candidates: &'a [&'static MethodDescriptor],
+    candidates: &[&'static MethodDescriptor],
     on_message: impl Fn(AutocompletePopupMessage) -> Msg + 'static + Copy,
     palette: &ForgePalette,
 ) -> Element<'a, Msg> {

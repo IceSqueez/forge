@@ -29,6 +29,7 @@ pub mod picker;
 pub mod popover;
 pub mod rhai_highlight;
 pub mod script_editor_overlay;
+pub mod script_editor_widget;
 pub mod sections;
 pub mod server;
 pub mod side_sheet;
@@ -91,6 +92,10 @@ pub use rhai_highlight::{
     RhaiHighlighter, RhaiHighlighterSettings, RhaiTokenKind, scan_type_hint, tokenize_line,
 };
 pub use script_editor_overlay::ScriptEditorOverlay;
+pub use script_editor_widget::{
+    OverlayChoice, ScriptEditorWidgetMsg, ScriptEditorWidgetState, apply_autocomplete_insert,
+    choose_overlay, prefix_under_cursor, script_editor_widget,
+};
 pub use sections::{
     BannerKind, ToastVariant, counter_badge, empty_state, live_status_banner, section_header,
     section_header_expandable, toast_banner,

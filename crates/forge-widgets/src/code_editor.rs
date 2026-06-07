@@ -39,6 +39,10 @@ impl CodeEditorState {
         let c = self.content.cursor();
         (c.position.line, c.position.column)
     }
+
+    pub fn line_text(&self, line: usize) -> Option<String> {
+        self.content.line(line).map(|l| l.text.to_string())
+    }
 }
 
 impl Default for CodeEditorState {

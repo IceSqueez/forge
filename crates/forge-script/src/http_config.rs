@@ -79,8 +79,10 @@ pub async fn load_script_http_config(repo: &dyn SettingsRepo) -> ScriptHttpConfi
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+    use forge_storage_sqlite::SqliteBackend;
 
     #[test]
     fn default_is_deny_by_default() {
@@ -102,5 +104,19 @@ mod tests {
     #[test]
     fn default_max_response_bytes_is_1mib() {
         assert_eq!(ScriptHttpConfig::default().max_response_bytes, 1_048_576);
+    }
+
+    #[tokio::test]
+    async fn load_script_http_config_returns_defaults_when_keys_absent() {
+        let backend = SqliteBackend::open_with_key("sqlite::memory:", [0xab; 32])
+            .await
+            .expect("in-memory SQLite");
+        let cfg = load_script_http_config(&backend).await;
+        let defaults = ScriptHttpConfig::default();
+        assert_eq!(cfg.allowed_domains, defaults.allowed_domains);
+        assert_eq!(cfg.max_calls_per_script, defaults.max_calls_per_script);
+        assert_eq!(cfg.timeout_ms, defaults.timeout_ms);
+        assert_eq!(cfg.allow_local, defaults.allow_local);
+        assert_eq!(cfg.max_response_bytes, defaults.max_response_bytes);
     }
 }

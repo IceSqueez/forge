@@ -221,6 +221,7 @@ pub(crate) fn handle_navigate(app: &mut App, screen: Screen) -> Task<Message> {
     let is_settings_audio = matches!(screen, Screen::Settings(SettingsSection::Audio));
     let is_settings_ws = matches!(screen, Screen::Settings(SettingsSection::WebSocket));
     let is_settings_hotkeys = matches!(screen, Screen::Settings(SettingsSection::Hotkeys));
+    let is_settings_scripting = matches!(screen, Screen::Settings(SettingsSection::Scripting));
     let editor_id = if let Screen::ActionEditor(id) = &screen {
         Some(*id)
     } else {
@@ -258,6 +259,10 @@ pub(crate) fn handle_navigate(app: &mut App, screen: Screen) -> Task<Message> {
         Task::done(Message::SettingsHotkeys(
             crate::settings_hotkeys::SettingsHotkeysMsg::Enter,
         ))
+    } else if is_settings_scripting {
+        Task::done(Message::Settings(crate::message::SettingsMsg::Scripting(
+            crate::settings_scripting::ScriptingSettingsMsg::LoadRequested,
+        )))
     } else if let Some(id) = editor_id {
         let needs_load = app
             .ui

@@ -25,6 +25,8 @@ pub mod reserved_keys {
     pub const SCRIPT_HTTP_TIMEOUT_MS_KEY: &str = "script.http_timeout_ms";
     pub const SCRIPT_HTTP_ALLOW_LOCAL_KEY: &str = "script.http_allow_local";
     pub const SCRIPT_HTTP_MAX_RESPONSE_BYTES_KEY: &str = "script.http_max_response_bytes";
+    pub const SCRIPT_OP_LIMIT_KEY: &str = "script.op_limit";
+    pub const SCRIPT_TIMEOUT_MS_KEY: &str = "script.timeout_ms";
 }
 
 #[cfg_attr(feature = "test-mocks", mockall::automock)]
@@ -65,6 +67,8 @@ mod tests {
         assert!(!SCRIPT_HTTP_TIMEOUT_MS_KEY.is_empty());
         assert!(!SCRIPT_HTTP_ALLOW_LOCAL_KEY.is_empty());
         assert!(!SCRIPT_HTTP_MAX_RESPONSE_BYTES_KEY.is_empty());
+        assert!(!SCRIPT_OP_LIMIT_KEY.is_empty());
+        assert!(!SCRIPT_TIMEOUT_MS_KEY.is_empty());
     }
 
     #[test]
@@ -90,6 +94,8 @@ mod tests {
             SCRIPT_HTTP_TIMEOUT_MS_KEY,
             SCRIPT_HTTP_ALLOW_LOCAL_KEY,
             SCRIPT_HTTP_MAX_RESPONSE_BYTES_KEY,
+            SCRIPT_OP_LIMIT_KEY,
+            SCRIPT_TIMEOUT_MS_KEY,
         ];
         let unique: std::collections::HashSet<&str> = keys.iter().copied().collect();
         assert_eq!(unique.len(), keys.len());

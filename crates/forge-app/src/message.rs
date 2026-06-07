@@ -180,6 +180,7 @@ pub enum SettingsMsg {
     DbBackupDone(Result<String, String>),
     OpenLogDirectoryRequested,
     OpenLogDirectoryResult(Result<(), String>),
+    Scripting(crate::settings_scripting::ScriptingSettingsMsg),
 }
 
 #[derive(Debug, Clone)]

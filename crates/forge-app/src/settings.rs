@@ -14,6 +14,7 @@ use crate::screen::{Screen, SettingsSection};
 use crate::server_screen::ServerScreenState;
 use crate::settings_audio::{SettingsAudioState, settings_audio_view};
 use crate::settings_hotkeys::SettingsHotkeysState;
+use crate::settings_scripting::ScriptingSettingsState;
 use crate::settings_websocket::settings_websocket_view;
 
 fn settings_section_button<'a>(
@@ -352,15 +353,29 @@ fn nav_group_header<'a>(label: &'a str, palette: &'a ForgePalette) -> Element<'a
         .into()
 }
 
+pub(crate) struct SettingsViewParams<'a> {
+    pub section: &'a SettingsSection,
+    pub ws: &'a crate::settings_websocket::SettingsWebSocketState,
+    pub server: &'a ServerScreenState,
+    pub audio: &'a SettingsAudioState,
+    pub hotkeys: &'a SettingsHotkeysState,
+    pub scripting: &'a ScriptingSettingsState,
+    pub rt: &'a RuntimeView,
+}
+
 pub(crate) fn settings_view<'a>(
-    section: &'a SettingsSection,
-    ws: &'a crate::settings_websocket::SettingsWebSocketState,
-    server: &'a ServerScreenState,
-    audio: &'a SettingsAudioState,
-    hotkeys: &'a SettingsHotkeysState,
-    rt: &'a RuntimeView,
+    params: SettingsViewParams<'a>,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
+    let SettingsViewParams {
+        section,
+        ws,
+        server,
+        audio,
+        hotkeys,
+        scripting,
+        rt,
+    } = params;
     let nav = iced::widget::column![
         nav_group_header("PREFERENCES", palette),
         settings_section_button("Appearance", SettingsSection::Appearance, section, palette),
@@ -418,6 +433,7 @@ pub(crate) fn settings_view<'a>(
         SettingsSection::Language => settings_language_pane(palette),
         SettingsSection::Shortcuts => settings_shortcuts_pane(palette),
         SettingsSection::Hotkeys => crate::settings_hotkeys::view(hotkeys, rt, palette),
+        SettingsSection::Scripting => crate::settings_scripting::view(scripting, palette),
         other => {
             let label = format!("Settings · {other:?}");
             iced::widget::container(forge_widgets::empty_state(
@@ -525,6 +541,9 @@ pub(crate) fn handle_message(app: &mut App, sub: SettingsMsg) -> Task<Message> {
                 tracing::warn!(error = %e, "failed to open log directory");
             }
             Task::none()
+        }
+        SettingsMsg::Scripting(sub) => {
+            crate::settings_scripting::update(&mut app.ui.settings_scripting, &app.rt, sub)
         }
     }
 }

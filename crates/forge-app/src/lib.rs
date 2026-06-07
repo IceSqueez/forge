@@ -35,6 +35,7 @@ pub mod server_subsystem;
 pub mod settings;
 pub mod settings_audio;
 pub mod settings_hotkeys;
+pub mod settings_scripting;
 pub mod settings_websocket;
 pub mod soundboard;
 pub mod speak_bridge;

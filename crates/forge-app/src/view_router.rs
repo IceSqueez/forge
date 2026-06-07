@@ -52,12 +52,15 @@ pub fn view(app: &App) -> Element<'_, Message> {
             crate::triggers_registry::view(&app.ui.triggers_registry, &app.rt, palette)
         }
         Screen::Settings(section) => crate::settings::settings_view(
-            section,
-            &app.ui.settings_websocket,
-            &app.ui.server_screen,
-            &app.ui.settings_audio,
-            &app.ui.settings_hotkeys,
-            &app.rt,
+            crate::settings::SettingsViewParams {
+                section,
+                ws: &app.ui.settings_websocket,
+                server: &app.ui.server_screen,
+                audio: &app.ui.settings_audio,
+                hotkeys: &app.ui.settings_hotkeys,
+                scripting: &app.ui.settings_scripting,
+                rt: &app.rt,
+            },
             palette,
         ),
         Screen::ScriptEditor => script_editor_view(app, palette),

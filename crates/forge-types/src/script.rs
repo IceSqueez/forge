@@ -14,6 +14,13 @@ pub struct ScriptInput {
     pub kind: VariantKind,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AnnotationDiagnostic {
+    /// 0-indexed line number in the source.
+    pub line: usize,
+    pub message: String,
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
@@ -64,6 +71,27 @@ mod tests {
         assert_eq!(json["name"], "user");
         assert_eq!(json["kind"], "string");
         assert!(json.is_object());
+    }
+
+    #[test]
+    fn annotation_diagnostic_fields_accessible() {
+        let d = AnnotationDiagnostic {
+            line: 0,
+            message: "undeclared variable".into(),
+        };
+        assert_eq!(d.line, 0);
+        assert_eq!(d.message, "undeclared variable");
+    }
+
+    #[test]
+    fn annotation_diagnostic_serde_roundtrip() {
+        let d = AnnotationDiagnostic {
+            line: 7,
+            message: "type mismatch".into(),
+        };
+        let json = serde_json::to_string(&d).unwrap();
+        let back: AnnotationDiagnostic = serde_json::from_str(&json).unwrap();
+        assert_eq!(d, back);
     }
 
     #[test]

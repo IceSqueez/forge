@@ -22,7 +22,7 @@ pub use ids::{ActionId, ClipId, EventId, GlobalId, QueueId, ScriptId, TriggerIns
 pub use platform::PlatformId;
 pub use platform_scope::{PlatformScope, PlatformScopeError};
 pub use queue::Queue;
-pub use script::{ScriptContract, ScriptInput};
+pub use script::{AnnotationDiagnostic, ScriptContract, ScriptInput};
 pub use sub_action::{LogLevel, OutputDevice, VariantTemplate};
 pub use sub_action_step::{SubActionConfig, SubActionStep};
 pub use token::{ApiKey, OAuthToken, RefreshToken};

@@ -30,6 +30,7 @@ pub mod sections;
 pub mod server;
 pub mod side_sheet;
 pub mod status;
+pub mod tag_list_input;
 pub mod theme;
 pub mod toast;
 pub mod tokens;
@@ -96,6 +97,7 @@ pub use side_sheet::{
     Easing, SheetAnimation, SheetHeader, SheetPosition, SheetWidth, SideSheet, SideSheetConfig,
 };
 pub use status::{StatusVariant, platform_badge, role_badge, status_dot, status_pill};
+pub use tag_list_input::{TagListInputMessage, TagListInputState, tag_list_input};
 pub use theme::{catppuccin_mocha, latte, palette_for_theme, tokyo_night_storm};
 pub use toast::{Toast, ToastAction, ToastKind, ToastQueue, toast_viewport};
 pub use tokens::{

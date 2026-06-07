@@ -5,7 +5,9 @@ use forge_script::{content_hash, parse_contract, run_inline};
 use forge_storage::{GlobalsRepo, ScriptRecord, ScriptRepo};
 use forge_types::{ArgStack, ScriptContract, ScriptId, Variant, VariantKind};
 use forge_widgets::tokens::{FONT_SM, FONT_XS, FontRole, Spacing, font, spf};
-use forge_widgets::{CodeEditorState, ConsoleLevel, ConsoleLine, ForgePalette, ModalProps, modal};
+use forge_widgets::{
+    CodeEditorState, ConsoleLevel, ConsoleLine, ForgePalette, ModalProps, modal, rhai_editor,
+};
 use iced::widget::{column, container, row, scrollable, text};
 use iced::{Alignment, Background, Border, Element, Length};
 use time::OffsetDateTime;
@@ -768,7 +770,7 @@ fn center_pane<'a>(
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let editor_area: Element<'a, Message> = if let Some(open) = state.editor.as_ref() {
-        forge_widgets::code_editor(palette, &open.content, |a| {
+        rhai_editor(palette, &open.content, |a| {
             Message::ScriptEditor(ScriptEditorMsg::EditorAction(a))
         })
     } else {

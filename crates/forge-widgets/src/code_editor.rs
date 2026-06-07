@@ -50,7 +50,7 @@ impl Default for CodeEditorState {
 /// The gutter renders all line numbers as a non-scrollable column; it does NOT
 /// scroll-sync with the editor body. Acceptable for short scripts; long scripts
 /// will see the gutter stay fixed while the editor scrolls.
-pub fn code_editor<'a, Msg: Clone + 'a>(
+pub fn rhai_editor<'a, Msg: Clone + 'a>(
     palette: &'a ForgePalette,
     state: &'a CodeEditorState,
     on_action: impl Fn(text_editor::Action) -> Msg + 'a,
@@ -150,14 +150,14 @@ mod tests {
     }
 
     #[test]
-    fn code_editor_widget_compiles_empty() {
+    fn rhai_editor_widget_compiles_empty() {
         let state = CodeEditorState::new();
-        let _: Element<'_, text_editor::Action> = code_editor(&CATPPUCCIN_MOCHA, &state, |a| a);
+        let _: Element<'_, text_editor::Action> = rhai_editor(&CATPPUCCIN_MOCHA, &state, |a| a);
     }
 
     #[test]
-    fn code_editor_widget_compiles_with_content() {
+    fn rhai_editor_widget_compiles_with_content() {
         let state = CodeEditorState::with_text("fn main() {\n    let x = 42;\n}");
-        let _: Element<'_, text_editor::Action> = code_editor(&CATPPUCCIN_MOCHA, &state, |a| a);
+        let _: Element<'_, text_editor::Action> = rhai_editor(&CATPPUCCIN_MOCHA, &state, |a| a);
     }
 }

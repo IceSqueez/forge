@@ -57,7 +57,7 @@ pub use chat::{
 };
 pub use chat_widget::ChatRowWidget;
 pub use clip_card::{ClipCardData, clip_card};
-pub use code_editor::{CodeEditorState, code_editor};
+pub use code_editor::{CodeEditorState, rhai_editor};
 pub use console::{ConsoleLevel, ConsoleLine, console};
 pub use data::{
     FooterProps, VariantKind, data_screen_footer, data_table, persistence_toggle_inline, type_pill,
@@ -79,7 +79,7 @@ pub use popover::{
     MenuItem, MenuPlacement, RowAction, actionable_count, menu_button, menu_button_trigger,
     menu_panel, row_actions,
 };
-pub use rhai_highlight::RhaiTokenKind;
+pub use rhai_highlight::{RhaiHighlighterSettings, RhaiTokenKind};
 pub use sections::{
     BannerKind, ToastVariant, counter_badge, empty_state, live_status_banner, section_header,
     section_header_expandable, toast_banner,

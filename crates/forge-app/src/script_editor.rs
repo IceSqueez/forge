@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 pub use forge_script::RunResult;
+use forge_script::contract::collect_annotation_diagnostics;
 use forge_script::{content_hash, parse_contract, run_inline};
 use forge_storage::{GlobalsRepo, ScriptRecord, ScriptRepo};
-use forge_types::{ArgStack, ScriptContract, ScriptId, Variant, VariantKind};
+use forge_types::{AnnotationDiagnostic, ArgStack, ScriptContract, ScriptId, Variant, VariantKind};
 use forge_widgets::tokens::{FONT_SM, FONT_XS, FontRole, Spacing, font, spf};
 use forge_widgets::{
     CodeEditorState, ConsoleLevel, ConsoleLine, ForgePalette, ModalProps, modal, rhai_editor,
@@ -54,6 +55,8 @@ pub struct ScriptEditorState {
     pub variables_in_scope: Vec<(String, VariantKind)>,
     pub run_modal: Option<RunModalForm>,
     pub loading: bool,
+    pub annotation_diagnostics: Vec<AnnotationDiagnostic>,
+    pub error_lines: Vec<usize>,
 }
 
 impl ScriptEditorState {
@@ -66,6 +69,8 @@ impl ScriptEditorState {
             variables_in_scope: Vec::new(),
             run_modal: None,
             loading: false,
+            annotation_diagnostics: Vec::new(),
+            error_lines: Vec::new(),
         }
     }
 
@@ -189,8 +194,18 @@ pub fn update(
             iced::Task::none()
         }
         ScriptEditorMsg::EditorAction(action) => {
+            let is_edit = action.is_edit();
             if let Some(open) = state.editor.as_mut() {
                 open.content.content.perform(action);
+            }
+            if is_edit && let Some(open) = state.editor.as_ref() {
+                let text = open.content.text();
+                state.annotation_diagnostics = collect_annotation_diagnostics(&text);
+                state.error_lines = state
+                    .annotation_diagnostics
+                    .iter()
+                    .map(|d| d.line)
+                    .collect();
             }
             iced::Task::none()
         }
@@ -770,7 +785,7 @@ fn center_pane<'a>(
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let editor_area: Element<'a, Message> = if let Some(open) = state.editor.as_ref() {
-        rhai_editor(palette, &open.content, &[], |a| {
+        rhai_editor(palette, &open.content, &state.error_lines, |a| {
             Message::ScriptEditor(ScriptEditorMsg::EditorAction(a))
         })
     } else {
@@ -791,6 +806,26 @@ fn center_pane<'a>(
         .align_x(Alignment::Center)
         .align_y(Alignment::Center)
         .into()
+    };
+
+    let status_bar: Element<'a, Message> = {
+        let cursor_line = state.editor.as_ref().map(|o| o.content.cursor_position().0);
+        let diag = cursor_line
+            .and_then(|line| state.annotation_diagnostics.iter().find(|d| d.line == line));
+        let msg_text = match diag {
+            Some(d) => text(d.message.clone())
+                .size(FONT_XS)
+                .color(palette.random)
+                .font(font(FontRole::Monospace)),
+            None => text("")
+                .size(FONT_XS)
+                .color(iced::Color::TRANSPARENT)
+                .font(font(FontRole::Monospace)),
+        };
+        container(msg_text)
+            .width(Length::Fill)
+            .padding([spf(Spacing::Xxs), spf(Spacing::Sm)])
+            .into()
     };
 
     let output_header = {
@@ -842,6 +877,7 @@ fn center_pane<'a>(
                 background: Some(Background::Color(palette.base)),
                 ..container::Style::default()
             }),
+        status_bar,
         console_panel,
     ]
     .width(Length::Fill)
@@ -1316,6 +1352,21 @@ mod tests {
     fn hash_body_is_deterministic() {
         assert_eq!(content_hash("hello"), content_hash("hello"));
         assert_ne!(content_hash("hello"), content_hash("world"));
+    }
+
+    #[test]
+    fn error_lines_derived_from_annotation_diagnostics() {
+        let mut state = ScriptEditorState::new();
+        state.annotation_diagnostics = vec![AnnotationDiagnostic {
+            line: 2,
+            message: "missing input lines".into(),
+        }];
+        state.error_lines = state
+            .annotation_diagnostics
+            .iter()
+            .map(|d| d.line)
+            .collect();
+        assert_eq!(state.error_lines, vec![2]);
     }
 
     #[tokio::test]

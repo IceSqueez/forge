@@ -51,9 +51,8 @@ pub(crate) fn capture_pcm(
     // instructs COM to allocate the global memory itself. fDeleteOnRelease=true frees the
     // HGLOBAL when the IStream's reference count reaches zero. All operations on the
     // returned stream occur on this STA thread before the stream is released.
-    let com_stream: IStream =
-        unsafe { CreateStreamOnHGlobal(HGLOBAL(std::ptr::null_mut()), true) }
-            .map_err(|e| crate::error::SapiError::ComInit(e.code().0))?;
+    let com_stream: IStream = unsafe { CreateStreamOnHGlobal(HGLOBAL(std::ptr::null_mut()), true) }
+        .map_err(|e| crate::error::SapiError::ComInit(e.code().0))?;
 
     let wfex = WAVEFORMATEX {
         wFormatTag: 1,

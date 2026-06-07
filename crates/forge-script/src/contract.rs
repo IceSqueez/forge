@@ -37,9 +37,75 @@ pub enum InputMismatchError {
     },
 }
 
+/// Non-failing parallel surface to `parse_contract`: emits one diagnostic per annotation
+/// error instead of returning on first failure.
 pub fn collect_annotation_diagnostics(source: &str) -> Vec<AnnotationDiagnostic> {
-    let _ = source;
-    Vec::new()
+    let mut diagnostics = Vec::new();
+    let mut seen_names: HashSet<String> = HashSet::new();
+    let mut return_seen = false;
+
+    for (line_idx, raw) in source.lines().take(50).enumerate() {
+        let trimmed = raw.trim();
+        if !trimmed.starts_with("//") {
+            continue;
+        }
+        let after_slashes = trimmed.trim_start_matches("//").trim();
+
+        if let Some(rest) = after_slashes.strip_prefix("@input ") {
+            let parts: Vec<&str> = rest.splitn(2, ':').collect();
+            if parts.len() != 2 {
+                diagnostics.push(AnnotationDiagnostic {
+                    line: line_idx,
+                    message: "expected `// @input <name>: <type>`".into(),
+                });
+                continue;
+            }
+            let name = parts[0].trim().to_string();
+            let type_name = parts[1].trim();
+            if name.is_empty() || type_name.is_empty() {
+                diagnostics.push(AnnotationDiagnostic {
+                    line: line_idx,
+                    message: "expected `// @input <name>: <type>`".into(),
+                });
+                continue;
+            }
+            if !seen_names.insert(name.clone()) {
+                diagnostics.push(AnnotationDiagnostic {
+                    line: line_idx,
+                    message: format!("duplicate input name `{name}`"),
+                });
+            } else if VariantKind::from_contract_name(type_name).is_none() {
+                diagnostics.push(AnnotationDiagnostic {
+                    line: line_idx,
+                    message: format!(
+                        "invalid type `{type_name}`: \
+                         must be int/float/bool/string/datetime/array/object"
+                    ),
+                });
+            }
+        } else if let Some(rest) = after_slashes.strip_prefix("@return ") {
+            let type_name = rest.trim();
+            if return_seen {
+                diagnostics.push(AnnotationDiagnostic {
+                    line: line_idx,
+                    message: "@return appears multiple times".into(),
+                });
+            } else {
+                return_seen = true;
+                if VariantKind::from_contract_name(type_name).is_none() {
+                    diagnostics.push(AnnotationDiagnostic {
+                        line: line_idx,
+                        message: format!(
+                            "invalid type `{type_name}`: \
+                             must be int/float/bool/string/datetime/array/object"
+                        ),
+                    });
+                }
+            }
+        }
+    }
+
+    diagnostics
 }
 
 /// Parses `// @input` and `// @return` doc-comment annotations from script source.
@@ -137,13 +203,75 @@ mod tests {
     use super::*;
 
     #[test]
-    fn collect_annotation_diagnostics_empty_source_returns_empty_vec() {
+    fn collect_empty_source_returns_empty() {
         assert!(collect_annotation_diagnostics("").is_empty());
     }
 
     #[test]
-    fn collect_annotation_diagnostics_nonempty_source_returns_empty_vec() {
+    fn collect_pure_code_returns_empty() {
         assert!(collect_annotation_diagnostics("let x = 1;").is_empty());
+    }
+
+    #[test]
+    fn collect_valid_input_return_returns_empty() {
+        let src = "// @input foo: string\n// @return int";
+        assert!(collect_annotation_diagnostics(src).is_empty());
+    }
+
+    #[test]
+    fn collect_malformed_input_missing_type_returns_diagnostic() {
+        let src = "// @input foo";
+        let diags = collect_annotation_diagnostics(src);
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].line, 0);
+        assert!(diags[0].message.contains("@input"));
+    }
+
+    #[test]
+    fn collect_duplicate_input_emits_on_second_line() {
+        let src = "// @input x: int\n// @input x: float";
+        let diags = collect_annotation_diagnostics(src);
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].line, 1);
+        assert!(diags[0].message.contains("duplicate"));
+    }
+
+    #[test]
+    fn collect_duplicate_return_emits_on_second_line() {
+        let src = "// @return int\n// @return string";
+        let diags = collect_annotation_diagnostics(src);
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].line, 1);
+        assert!(diags[0].message.contains("multiple"));
+    }
+
+    #[test]
+    fn collect_unknown_type_emits_diagnostic() {
+        let src = "// @input x: unicorn";
+        let diags = collect_annotation_diagnostics(src);
+        assert_eq!(diags.len(), 1);
+        assert!(diags[0].message.contains("unicorn"));
+    }
+
+    #[test]
+    fn collect_line_numbers_are_zero_indexed() {
+        let src = "// @input foo: bad_type";
+        let diags = collect_annotation_diagnostics(src);
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].line, 0);
+    }
+
+    #[test]
+    fn collect_multiple_errors_on_different_lines_all_reported() {
+        let src = "// @input x: bad\n// @input x: int\n// @return wrong";
+        let diags = collect_annotation_diagnostics(src);
+        assert_eq!(diags.len(), 3);
+        assert_eq!(diags[0].line, 0);
+        assert!(diags[0].message.contains("bad"));
+        assert_eq!(diags[1].line, 1);
+        assert!(diags[1].message.contains("duplicate"));
+        assert_eq!(diags[2].line, 2);
+        assert!(diags[2].message.contains("wrong"));
     }
 
     #[test]

@@ -20,7 +20,6 @@ pub mod icons;
 pub mod inputs;
 pub mod key_capture;
 pub mod layout;
-pub mod loom_signatures;
 pub mod navigation;
 pub mod output_device_picker;
 pub mod palette;
@@ -72,7 +71,6 @@ pub use icons::{Icon, tabler_icon};
 pub use inputs::{input_padding, search_input, select, text_input_field};
 pub use key_capture::{KeyCapture, key_capture};
 pub use layout::{app_footer, page_shell, title_bar, toolbar};
-pub use loom_signatures::{lookup_signature, scan_type_hint};
 pub use navigation::{NavChild, NavItem, SIDEBAR_WIDTH, Sidebar, sidebar};
 pub use output_device_picker::{DeviceLabel, output_device_picker};
 pub use palette::{CATPPUCCIN_MOCHA, ForgePalette, LATTE, TOKYO_NIGHT};
@@ -81,7 +79,9 @@ pub use popover::{
     MenuItem, MenuPlacement, RowAction, actionable_count, menu_button, menu_button_trigger,
     menu_panel, row_actions,
 };
-pub use rhai_highlight::{RhaiHighlighter, RhaiHighlighterSettings, RhaiTokenKind, tokenize_line};
+pub use rhai_highlight::{
+    RhaiHighlighter, RhaiHighlighterSettings, RhaiTokenKind, scan_type_hint, tokenize_line,
+};
 pub use sections::{
     BannerKind, ToastVariant, counter_badge, empty_state, live_status_banner, section_header,
     section_header_expandable, toast_banner,

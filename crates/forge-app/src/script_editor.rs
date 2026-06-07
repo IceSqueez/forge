@@ -8,6 +8,7 @@ use forge_types::{AnnotationDiagnostic, ArgStack, ScriptContract, ScriptId, Vari
 use forge_widgets::tokens::{FONT_SM, FONT_XS, FontRole, Spacing, font, spf};
 use forge_widgets::{
     CodeEditorState, ConsoleLevel, ConsoleLine, ForgePalette, ModalProps, modal, rhai_editor,
+    scan_type_hint,
 };
 use iced::widget::{column, container, row, scrollable, text};
 use iced::{Alignment, Background, Border, Element, Length};
@@ -812,15 +813,31 @@ fn center_pane<'a>(
         let cursor_line = state.editor.as_ref().map(|o| o.content.cursor_position().0);
         let diag = cursor_line
             .and_then(|line| state.annotation_diagnostics.iter().find(|d| d.line == line));
-        let msg_text = match diag {
-            Some(d) => text(d.message.clone())
+        let msg_text = if let Some(d) = diag {
+            text(d.message.clone())
                 .size(FONT_XS)
                 .color(palette.random)
-                .font(font(FontRole::Monospace)),
-            None => text("")
-                .size(FONT_XS)
-                .color(iced::Color::TRANSPARENT)
-                .font(font(FontRole::Monospace)),
+                .font(font(FontRole::Monospace))
+        } else {
+            let hint = cursor_line.and_then(|line_idx| {
+                state.editor.as_ref().and_then(|o| {
+                    o.content
+                        .content
+                        .line(line_idx)
+                        .and_then(|l| scan_type_hint(&l.text))
+                })
+            });
+            if let Some((name, ty)) = hint {
+                text(format!("{name}: {ty}"))
+                    .size(FONT_XS)
+                    .color(palette.text_muted)
+                    .font(font(FontRole::Monospace))
+            } else {
+                text("")
+                    .size(FONT_XS)
+                    .color(iced::Color::TRANSPARENT)
+                    .font(font(FontRole::Monospace))
+            }
         };
         container(msg_text)
             .width(Length::Fill)

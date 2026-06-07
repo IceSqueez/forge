@@ -41,7 +41,7 @@ pub(crate) fn breadcrumb_icon_for(screen: &Screen) -> Icon {
         Screen::Settings(_) => Icon::Settings,
         Screen::Tts(_) => Icon::Volume,
         Screen::Soundboard => Icon::Music,
-        Screen::ScriptEditor => Icon::Terminal,
+        Screen::ScriptEditor | Screen::ScriptingApiDocs => Icon::Terminal,
         Screen::Server | Screen::Logs => Icon::Settings,
     }
 }
@@ -64,6 +64,7 @@ pub(crate) fn screen_label(screen: &Screen) -> &'static str {
         Screen::Tts(_) => "TTS",
         Screen::Soundboard => "Soundboard",
         Screen::ScriptEditor => "Script editor",
+        Screen::ScriptingApiDocs => "API reference",
         Screen::Server => "Server",
         Screen::Logs => "Logs",
     }

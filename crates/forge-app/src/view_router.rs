@@ -64,6 +64,9 @@ pub fn view(app: &App) -> Element<'_, Message> {
             palette,
         ),
         Screen::ScriptEditor => script_editor_view(app, palette),
+        Screen::ScriptingApiDocs => {
+            crate::scripting_api_docs::scripting_api_docs_view(&app.ui.script_editor, palette)
+        }
         Screen::Platforms => crate::platforms_view::platforms_overview_view(app, palette),
         Screen::StreamApps => stream_apps_view(app, palette),
         Screen::EventFeed => event_feed_view(&app.ui.event_feed, palette),

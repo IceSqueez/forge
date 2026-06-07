@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 pub use forge_script::RunResult;
 use forge_script::contract::collect_annotation_diagnostics;
-use forge_script::{MethodDescriptor, catalog, content_hash, parse_contract, run_inline};
+use forge_script::{
+    MethodDescriptor, catalog, content_hash, format_script, parse_contract, run_inline,
+};
 use forge_storage::{GlobalsRepo, ScriptRecord, ScriptRepo};
 use forge_types::{ArgStack, ScriptContract, ScriptId, Variant, VariantKind};
 use forge_widgets::tokens::{FONT_SM, FONT_XS, FontRole, Spacing, font, spf};
@@ -11,7 +13,7 @@ use forge_widgets::{
     ScriptEditorWidgetState, apply_autocomplete_insert, filter_candidates, modal,
     prefix_under_cursor, scan_type_hint, script_editor_widget,
 };
-use iced::widget::{column, container, row, scrollable, text};
+use iced::widget::{column, container, row, scrollable, text, text_editor, tooltip};
 use iced::{Alignment, Background, Border, Element, Length};
 use time::OffsetDateTime;
 
@@ -57,6 +59,7 @@ pub struct ScriptEditorState {
     pub variables_in_scope: Vec<(String, VariantKind)>,
     pub run_modal: Option<RunModalForm>,
     pub loading: bool,
+    pub api_docs_search: String,
 }
 
 impl ScriptEditorState {
@@ -69,6 +72,7 @@ impl ScriptEditorState {
             variables_in_scope: Vec::new(),
             run_modal: None,
             loading: false,
+            api_docs_search: String::new(),
         }
     }
 
@@ -540,6 +544,30 @@ pub fn update(
         }
         ScriptEditorMsg::ConsoleClear => {
             state.console_lines.clear();
+            iced::Task::none()
+        }
+        ScriptEditorMsg::FormatPressed => {
+            if let Some(open) = state.editor.as_mut() {
+                let source = open.widget.editor.text();
+                let formatted = format_script(&source);
+                if formatted != source {
+                    open.widget.editor.content = text_editor::Content::with_text(&formatted);
+                    open.widget.annotation_diagnostics = collect_annotation_diagnostics(&formatted);
+                    open.widget.error_lines = open
+                        .widget
+                        .annotation_diagnostics
+                        .iter()
+                        .map(|d| d.line)
+                        .collect();
+                }
+            }
+            iced::Task::none()
+        }
+        ScriptEditorMsg::ApiDocsRequested => {
+            iced::Task::done(Message::Navigate(crate::Screen::ScriptingApiDocs))
+        }
+        ScriptEditorMsg::ApiDocsSearchChanged(q) => {
+            state.api_docs_search = q;
             iced::Task::none()
         }
     }
@@ -1179,19 +1207,103 @@ fn toolbar_action_row<'a>(
     state: &'a ScriptEditorState,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
+    use iced::widget::button;
+    use iced::{Color, Shadow};
+
     let dirty = state.is_dirty();
     let has_script = state.editor.is_some();
 
     let run_btn = run_button(has_script, palette);
     let save_btn = save_button(dirty, palette);
-    let format_btn = disabled_toolbar_button("Format", palette);
-    let api_docs_btn = disabled_toolbar_button("API docs", palette);
+
+    let fg_format = if has_script {
+        palette.text_secondary
+    } else {
+        palette.text_faint
+    };
+    let format_btn: Element<'a, Message> = {
+        let label = text("Format").size(FONT_SM).color(fg_format);
+        let mut btn = button(label)
+            .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
+            .style(move |_: &iced::Theme, _status| button::Style {
+                background: Some(Background::Color(Color::TRANSPARENT)),
+                border: Border {
+                    radius: 5.0.into(),
+                    ..Border::default()
+                },
+                text_color: fg_format,
+                shadow: Shadow::default(),
+                snap: false,
+            });
+        if has_script {
+            btn = btn.on_press(Message::ScriptEditor(ScriptEditorMsg::FormatPressed));
+        }
+        btn.into()
+    };
+
+    let api_docs_btn: Element<'a, Message> = {
+        let fg = palette.text_secondary;
+        button(text("API docs").size(FONT_SM).color(fg))
+            .on_press(Message::ScriptEditor(ScriptEditorMsg::ApiDocsRequested))
+            .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
+            .style(move |_: &iced::Theme, _status| button::Style {
+                background: Some(Background::Color(Color::TRANSPARENT)),
+                border: Border {
+                    radius: 5.0.into(),
+                    ..Border::default()
+                },
+                text_color: fg,
+                shadow: Shadow::default(),
+                snap: false,
+            })
+            .into()
+    };
+
+    let debug_btn: Element<'a, Message> = {
+        let fg = palette.disabled;
+        let inner = button(text("Debug").size(FONT_SM).color(fg))
+            .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
+            .style(move |_: &iced::Theme, _status| button::Style {
+                background: Some(Background::Color(Color::TRANSPARENT)),
+                border: Border {
+                    radius: 5.0.into(),
+                    ..Border::default()
+                },
+                text_color: fg,
+                shadow: Shadow::default(),
+                snap: false,
+            });
+        let tip = container(
+            text("Debugger planned for post-1.0")
+                .size(FONT_XS)
+                .color(palette.text_primary),
+        )
+        .padding([spf(Spacing::Xxs), spf(Spacing::Sm)])
+        .style(move |_: &iced::Theme| container::Style {
+            background: Some(Background::Color(palette.elevated)),
+            border: Border {
+                color: palette.border_regular,
+                width: 0.5,
+                radius: 6.0.into(),
+            },
+            ..container::Style::default()
+        });
+        tooltip(inner, tip, tooltip::Position::Bottom).into()
+    };
+
     let divider = crate::page_chrome::header_divider(palette);
 
-    row![run_btn, save_btn, format_btn, divider, api_docs_btn]
-        .spacing(spf(Spacing::Xs))
-        .align_y(Alignment::Center)
-        .into()
+    row![
+        run_btn,
+        save_btn,
+        format_btn,
+        debug_btn,
+        divider,
+        api_docs_btn
+    ]
+    .spacing(spf(Spacing::Xs))
+    .align_y(Alignment::Center)
+    .into()
 }
 
 #[derive(Debug, Clone)]
@@ -1218,6 +1330,9 @@ pub enum ScriptEditorMsg {
     AutocompleteSelectionDown,
     AutocompleteInsert(MethodDescriptor),
     OverlayDismissed,
+    FormatPressed,
+    ApiDocsRequested,
+    ApiDocsSearchChanged(String),
 }
 
 #[cfg(test)]

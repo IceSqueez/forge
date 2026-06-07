@@ -44,6 +44,7 @@ pub enum Screen {
     Tts(TtsSection),
     Soundboard,
     ScriptEditor,
+    ScriptingApiDocs,
     Server,
     Logs,
     Settings(SettingsSection),

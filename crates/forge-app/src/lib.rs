@@ -30,6 +30,7 @@ pub mod queues_view;
 pub mod runtime_view;
 pub mod screen;
 pub mod script_editor;
+pub mod scripting_api_docs;
 pub mod server_screen;
 pub mod server_subsystem;
 pub mod settings;

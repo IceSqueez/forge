@@ -3,15 +3,16 @@ use std::sync::Arc;
 pub use forge_script::RunResult;
 use forge_script::contract::collect_annotation_diagnostics;
 use forge_script::{
-    MethodDescriptor, catalog, content_hash, format_script, parse_contract, run_inline,
+    MethodDescriptor, RHAI_VERSION, catalog, content_hash, format_script, parse_contract,
+    run_inline,
 };
 use forge_storage::{GlobalsRepo, ScriptRecord, ScriptRepo};
 use forge_types::{ArgStack, ScriptContract, ScriptId, Variant, VariantKind};
 use forge_widgets::tokens::{FONT_SM, FONT_XS, FontRole, Spacing, font, spf};
 use forge_widgets::{
     ConsoleLevel, ConsoleLine, ForgePalette, ModalProps, ScriptEditorWidgetMsg,
-    ScriptEditorWidgetState, apply_autocomplete_insert, filter_candidates, modal,
-    prefix_under_cursor, scan_type_hint, script_editor_widget,
+    ScriptEditorWidgetState, StatusVariant, apply_autocomplete_insert, filter_candidates, modal,
+    prefix_under_cursor, scan_type_hint, script_editor_widget, status_pill,
 };
 use iced::widget::{column, container, row, scrollable, text, text_editor, tooltip};
 use iced::{Alignment, Background, Border, Element, Length};
@@ -716,6 +717,71 @@ fn save_button<'a>(dirty: bool, palette: &'a ForgePalette) -> Element<'a, Messag
     .into()
 }
 
+fn format_cursor_position(line: usize, col: usize) -> String {
+    format!("Ln {}, Col {}", line + 1, col + 1)
+}
+
+fn type_check_pill_label(error_count: usize) -> String {
+    if error_count == 0 {
+        "Type-check passed".to_string()
+    } else {
+        format!("{error_count} errors")
+    }
+}
+
+fn status_indicators_row<'a>(
+    state: &'a ScriptEditorState,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    let diag_count = state
+        .editor
+        .as_ref()
+        .map(|o| o.widget.annotation_diagnostics.len())
+        .unwrap_or(0);
+    let type_check_variant = if diag_count == 0 {
+        StatusVariant::Positive
+    } else {
+        StatusVariant::Negative
+    };
+    let type_check = status_pill(
+        type_check_pill_label(diag_count),
+        type_check_variant,
+        palette,
+    );
+
+    let rhai_pill = status_pill(
+        format!("Rhai {RHAI_VERSION}"),
+        StatusVariant::Neutral,
+        palette,
+    );
+
+    let (ln, col) = state
+        .editor
+        .as_ref()
+        .map(|o| o.widget.editor.cursor_position())
+        .unwrap_or((0, 0));
+    let cursor_label = text(format_cursor_position(ln, col))
+        .size(FONT_XS)
+        .color(palette.text_muted);
+
+    container(
+        row![type_check, rhai_pill, cursor_label]
+            .spacing(spf(Spacing::Sm))
+            .align_y(Alignment::Center),
+    )
+    .padding([spf(Spacing::Xxs), spf(Spacing::Sm)])
+    .width(Length::Fill)
+    .style(move |_: &iced::Theme| container::Style {
+        border: Border {
+            color: palette.border_regular,
+            width: 0.5,
+            radius: 0.0.into(),
+        },
+        ..container::Style::default()
+    })
+    .into()
+}
+
 fn disabled_toolbar_button<'a>(label: &'a str, palette: &'a ForgePalette) -> Element<'a, Message> {
     use iced::widget::button;
     use iced::{Color, Shadow};
@@ -1177,6 +1243,7 @@ pub fn script_editor_view<'a>(
     let state = &app.ui.script_editor;
 
     let toolbar_actions = toolbar_action_row(state, palette);
+    let indicators = status_indicators_row(state, palette);
     let left = left_pane(state, palette);
     let center = center_pane(state, palette);
     let right = right_pane(palette);
@@ -1191,7 +1258,7 @@ pub fn script_editor_view<'a>(
         palette,
     );
 
-    let main_content = column![page_header, three_pane]
+    let main_content = column![page_header, indicators, three_pane]
         .width(Length::Fill)
         .height(Length::Fill);
 
@@ -1657,5 +1724,25 @@ mod tests {
         let list = load_script_list(dp).await.unwrap();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name, "my_script");
+    }
+
+    #[test]
+    fn format_cursor_position_simple() {
+        assert_eq!(format_cursor_position(0, 0), "Ln 1, Col 1");
+    }
+
+    #[test]
+    fn format_cursor_position_large() {
+        assert_eq!(format_cursor_position(999, 80), "Ln 1000, Col 81");
+    }
+
+    #[test]
+    fn type_check_pill_label_passes_when_no_diagnostics() {
+        assert_eq!(type_check_pill_label(0), "Type-check passed");
+    }
+
+    #[test]
+    fn type_check_pill_label_shows_count_with_diagnostics() {
+        assert_eq!(type_check_pill_label(2), "2 errors");
     }
 }

@@ -1,8 +1,112 @@
 use std::ops::Range;
 
-#[derive(Debug, Clone, Default)]
+use iced::Color;
+use iced::advanced::text::Highlighter as IcedHighlighter;
+
+use crate::palette::{CATPPUCCIN_MOCHA, ForgePalette};
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct RhaiHighlighterSettings {
     pub error_lines: Vec<usize>,
+    pub palette: ForgePalette,
+}
+
+impl Default for RhaiHighlighterSettings {
+    fn default() -> Self {
+        Self {
+            error_lines: Vec::new(),
+            palette: CATPPUCCIN_MOCHA,
+        }
+    }
+}
+
+/// `in_block_comment` state recorded AFTER processing the line at index N.
+pub struct RhaiHighlighter {
+    settings: RhaiHighlighterSettings,
+    current_line: usize,
+    in_block_comment: bool,
+    line_states: Vec<bool>,
+}
+
+fn token_color(kind: RhaiTokenKind, palette: &ForgePalette) -> Option<Color> {
+    match kind {
+        RhaiTokenKind::Keyword => Some(palette.code_keyword),
+        RhaiTokenKind::FunctionCall => Some(palette.code_fn),
+        RhaiTokenKind::StringLit | RhaiTokenKind::TemplateLit => Some(palette.code_str),
+        RhaiTokenKind::Number => Some(palette.code_num),
+        RhaiTokenKind::Namespace => Some(palette.warning),
+        RhaiTokenKind::Comment => Some(palette.code_comment),
+        RhaiTokenKind::Identifier | RhaiTokenKind::Operator | RhaiTokenKind::Punctuation => None,
+    }
+}
+
+impl IcedHighlighter for RhaiHighlighter {
+    type Settings = RhaiHighlighterSettings;
+    type Highlight = Option<Color>;
+    type Iterator<'a>
+        = std::vec::IntoIter<(Range<usize>, Option<Color>)>
+    where
+        Self: 'a;
+
+    fn new(settings: &RhaiHighlighterSettings) -> Self {
+        Self {
+            settings: settings.clone(),
+            current_line: 0,
+            in_block_comment: false,
+            line_states: Vec::new(),
+        }
+    }
+
+    fn update(&mut self, new_settings: &RhaiHighlighterSettings) {
+        self.settings = new_settings.clone();
+        self.current_line = 0;
+        self.in_block_comment = false;
+        self.line_states.clear();
+    }
+
+    fn change_line(&mut self, line: usize) {
+        if line < self.current_line {
+            self.in_block_comment = if line == 0 {
+                false
+            } else {
+                self.line_states.get(line - 1).copied().unwrap_or(false)
+            };
+            self.line_states.truncate(line);
+            self.current_line = line;
+        }
+    }
+
+    fn highlight_line(&mut self, line: &str) -> Self::Iterator<'_> {
+        let (raw_tokens, next_state) = tokenize_line(line, self.in_block_comment);
+
+        if self.current_line < self.line_states.len() {
+            self.line_states[self.current_line] = next_state;
+        } else {
+            self.line_states.push(next_state);
+        }
+        self.in_block_comment = next_state;
+
+        let error = self.settings.error_lines.contains(&self.current_line);
+        self.current_line += 1;
+
+        let palette = self.settings.palette;
+        raw_tokens
+            .into_iter()
+            .map(move |(range, kind)| {
+                let color = if error {
+                    Some(palette.random)
+                } else {
+                    token_color(kind, &palette)
+                };
+                (range, color)
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+    }
+
+    fn current_line(&self) -> usize {
+        self.current_line
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -324,11 +428,74 @@ mod tests {
     }
 
     #[test]
+    fn highlighter_settings_default_has_catppuccin_palette() {
+        let s = RhaiHighlighterSettings::default();
+        assert_eq!(s.palette, CATPPUCCIN_MOCHA);
+    }
+
+    #[test]
     fn highlighter_settings_error_lines_round_trip() {
         let s = RhaiHighlighterSettings {
             error_lines: vec![1, 5, 12],
+            ..Default::default()
         };
         assert_eq!(s.error_lines, [1, 5, 12]);
+    }
+
+    #[test]
+    fn highlighter_forward_walk_line_states_and_current_line() {
+        use iced::advanced::text::Highlighter as IcedHighlighter;
+
+        let mut h = RhaiHighlighter::new(&RhaiHighlighterSettings::default());
+        assert_eq!(h.current_line(), 0);
+
+        let _ = h.highlight_line("let x = 1;").collect::<Vec<_>>();
+        assert_eq!(h.current_line(), 1);
+        assert_eq!(h.line_states.len(), 1);
+        assert!(!h.line_states[0]);
+
+        let _ = h.highlight_line("/* open").collect::<Vec<_>>();
+        assert_eq!(h.current_line(), 2);
+        assert_eq!(h.line_states.len(), 2);
+        assert!(h.line_states[1]);
+
+        let _ = h.highlight_line("still in comment */").collect::<Vec<_>>();
+        assert_eq!(h.current_line(), 3);
+        assert_eq!(h.line_states.len(), 3);
+        assert!(!h.line_states[2]);
+    }
+
+    #[test]
+    fn highlighter_backward_change_line_rewinds_block_comment_state() {
+        use iced::advanced::text::Highlighter as IcedHighlighter;
+
+        let mut h = RhaiHighlighter::new(&RhaiHighlighterSettings::default());
+        let _ = h.highlight_line("let x = 1;").collect::<Vec<_>>();
+        let _ = h.highlight_line("/* open block").collect::<Vec<_>>();
+        let _ = h.highlight_line("still inside */").collect::<Vec<_>>();
+        assert_eq!(h.current_line(), 3);
+
+        h.change_line(0);
+        assert_eq!(h.current_line(), 0);
+        assert!(!h.in_block_comment);
+        assert!(h.line_states.is_empty());
+    }
+
+    #[test]
+    fn highlighter_error_lines_override_all_token_colors_to_random() {
+        use iced::advanced::text::Highlighter as IcedHighlighter;
+
+        let settings = RhaiHighlighterSettings {
+            error_lines: vec![1],
+            palette: CATPPUCCIN_MOCHA,
+        };
+        let mut h = RhaiHighlighter::new(&settings);
+        let _ = h.highlight_line("let x = 1;").collect::<Vec<_>>();
+        let tokens: Vec<_> = h.highlight_line("let y = \"hello\";").collect();
+        assert!(!tokens.is_empty());
+        for (_, color) in &tokens {
+            assert_eq!(*color, Some(CATPPUCCIN_MOCHA.random));
+        }
     }
 
     #[test]

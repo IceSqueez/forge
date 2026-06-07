@@ -1,10 +1,12 @@
 use iced::{
-    Alignment, Background, Border, Color, Element, Length, Padding,
+    Alignment, Background, Border, Color, Element, Font, Length, Padding, Theme,
+    advanced::text::highlighter,
     widget::{column, container, text, text_editor},
 };
 
 use crate::{
     ForgePalette,
+    rhai_highlight::{RhaiHighlighter, RhaiHighlighterSettings},
     tokens::{FONT_SM, FONT_XS, FontRole, Spacing, font, spf},
 };
 
@@ -45,6 +47,13 @@ impl Default for CodeEditorState {
     }
 }
 
+fn format_rhai_highlight(color: &Option<Color>, _theme: &Theme) -> highlighter::Format<Font> {
+    highlighter::Format {
+        color: *color,
+        font: None,
+    }
+}
+
 /// Line-number gutter + styled `text_editor` side-by-side.
 ///
 /// The gutter renders all line numbers as a non-scrollable column; it does NOT
@@ -53,6 +62,7 @@ impl Default for CodeEditorState {
 pub fn rhai_editor<'a, Msg: Clone + 'a>(
     palette: &'a ForgePalette,
     state: &'a CodeEditorState,
+    error_lines: &[usize],
     on_action: impl Fn(text_editor::Action) -> Msg + 'a,
 ) -> Element<'a, Msg> {
     let mono = font(FontRole::Monospace);
@@ -96,11 +106,17 @@ pub fn rhai_editor<'a, Msg: Clone + 'a>(
             ..container::Style::default()
         });
 
+    let hl_settings = RhaiHighlighterSettings {
+        error_lines: error_lines.to_vec(),
+        palette: *palette,
+    };
+
     let editor = text_editor(&state.content)
         .on_action(on_action)
         .font(mono)
         .size(FONT_SM)
         .height(Length::Fill)
+        .highlight_with::<RhaiHighlighter>(hl_settings, format_rhai_highlight)
         .style(move |_: &iced::Theme, _status| text_editor::Style {
             background: Background::Color(base),
             border: Border::default(),
@@ -152,12 +168,21 @@ mod tests {
     #[test]
     fn rhai_editor_widget_compiles_empty() {
         let state = CodeEditorState::new();
-        let _: Element<'_, text_editor::Action> = rhai_editor(&CATPPUCCIN_MOCHA, &state, |a| a);
+        let _: Element<'_, text_editor::Action> =
+            rhai_editor(&CATPPUCCIN_MOCHA, &state, &[], |a| a);
     }
 
     #[test]
     fn rhai_editor_widget_compiles_with_content() {
         let state = CodeEditorState::with_text("fn main() {\n    let x = 42;\n}");
-        let _: Element<'_, text_editor::Action> = rhai_editor(&CATPPUCCIN_MOCHA, &state, |a| a);
+        let _: Element<'_, text_editor::Action> =
+            rhai_editor(&CATPPUCCIN_MOCHA, &state, &[], |a| a);
+    }
+
+    #[test]
+    fn rhai_editor_widget_compiles_with_error_lines() {
+        let state = CodeEditorState::with_text("let x = bad_syntax\nlet y = 1;");
+        let _: Element<'_, text_editor::Action> =
+            rhai_editor(&CATPPUCCIN_MOCHA, &state, &[0], |a| a);
     }
 }

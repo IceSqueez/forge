@@ -79,7 +79,7 @@ pub use popover::{
     MenuItem, MenuPlacement, RowAction, actionable_count, menu_button, menu_button_trigger,
     menu_panel, row_actions,
 };
-pub use rhai_highlight::{RhaiHighlighterSettings, RhaiTokenKind, tokenize_line};
+pub use rhai_highlight::{RhaiHighlighter, RhaiHighlighterSettings, RhaiTokenKind, tokenize_line};
 pub use sections::{
     BannerKind, ToastVariant, counter_badge, empty_state, live_status_banner, section_header,
     section_header_expandable, toast_banner,

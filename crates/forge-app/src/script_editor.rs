@@ -770,7 +770,7 @@ fn center_pane<'a>(
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let editor_area: Element<'a, Message> = if let Some(open) = state.editor.as_ref() {
-        rhai_editor(palette, &open.content, |a| {
+        rhai_editor(palette, &open.content, &[], |a| {
             Message::ScriptEditor(ScriptEditorMsg::EditorAction(a))
         })
     } else {

@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 #[derive(Debug, Clone, Default)]
 pub struct RhaiHighlighterSettings {
     pub error_lines: Vec<usize>,
@@ -15,6 +17,272 @@ pub enum RhaiTokenKind {
     Identifier,
     Operator,
     Punctuation,
+}
+
+const KEYWORDS: &[&str] = &[
+    "fn", "let", "const", "if", "else", "while", "for", "loop", "return", "break", "continue",
+    "do", "until", "switch", "try", "catch", "throw", "in", "true", "false", "import", "export",
+    "as", "private",
+];
+
+/// Byte ranges are relative to `line`; caller threads `in_block_comment` across lines.
+pub fn tokenize_line(
+    line: &str,
+    in_block_comment: bool,
+) -> (Vec<(Range<usize>, RhaiTokenKind)>, bool) {
+    let bytes = line.as_bytes();
+    let len = bytes.len();
+    let mut tokens: Vec<(Range<usize>, RhaiTokenKind)> = Vec::new();
+    let mut pos = 0usize;
+    let mut block_open = in_block_comment;
+
+    if block_open {
+        match find_block_close(bytes, 0) {
+            Some(close_star) => {
+                let end = close_star + 2;
+                tokens.push((0..end, RhaiTokenKind::Comment));
+                block_open = false;
+                pos = end;
+            }
+            None => {
+                if !line.is_empty() {
+                    tokens.push((0..len, RhaiTokenKind::Comment));
+                }
+                return (tokens, true);
+            }
+        }
+    }
+
+    while pos < len {
+        let b = bytes[pos];
+
+        if matches!(b, b' ' | b'\t' | b'\r') {
+            pos += 1;
+            continue;
+        }
+
+        if pos + 1 < len && b == b'/' && bytes[pos + 1] == b'/' {
+            tokens.push((pos..len, RhaiTokenKind::Comment));
+            return (tokens, false);
+        }
+
+        if pos + 1 < len && b == b'/' && bytes[pos + 1] == b'*' {
+            let start = pos;
+            pos += 2;
+            match find_block_close(bytes, pos) {
+                Some(close_star) => {
+                    let end = close_star + 2;
+                    tokens.push((start..end, RhaiTokenKind::Comment));
+                    pos = end;
+                }
+                None => {
+                    tokens.push((start..len, RhaiTokenKind::Comment));
+                    return (tokens, true);
+                }
+            }
+            continue;
+        }
+
+        if b == b'"' {
+            let start = pos;
+            pos += 1;
+            while pos < len {
+                let c = bytes[pos];
+                if c == b'\\' {
+                    pos += 1;
+                    if pos < len {
+                        if bytes[pos] == b'x' {
+                            pos = (pos + 3).min(len);
+                        } else if bytes[pos] == b'u' {
+                            pos += 1;
+                            if pos < len && bytes[pos] == b'{' {
+                                pos += 1;
+                                while pos < len && bytes[pos] != b'}' {
+                                    pos += 1;
+                                }
+                                pos = (pos + 1).min(len);
+                            }
+                        } else {
+                            pos += 1;
+                        }
+                    }
+                } else if c == b'"' {
+                    pos += 1;
+                    break;
+                } else {
+                    pos += 1;
+                }
+            }
+            tokens.push((start..pos, RhaiTokenKind::StringLit));
+            continue;
+        }
+
+        if b == b'`' {
+            let start = pos;
+            pos += 1;
+            while pos < len {
+                let c = bytes[pos];
+                if c == b'\\' {
+                    pos += 1;
+                    if pos < len {
+                        pos += 1;
+                    }
+                } else if c == b'`' {
+                    pos += 1;
+                    break;
+                } else {
+                    pos += 1;
+                }
+            }
+            tokens.push((start..pos, RhaiTokenKind::TemplateLit));
+            continue;
+        }
+
+        if b.is_ascii_digit() {
+            let start = pos;
+            if b == b'0'
+                && pos + 1 < len
+                && matches!(bytes[pos + 1], b'x' | b'X' | b'o' | b'O' | b'b' | b'B')
+            {
+                pos += 2;
+                while pos < len && (bytes[pos].is_ascii_alphanumeric() || bytes[pos] == b'_') {
+                    pos += 1;
+                }
+                tokens.push((start..pos, RhaiTokenKind::Number));
+                continue;
+            }
+            while pos < len && (bytes[pos].is_ascii_digit() || bytes[pos] == b'_') {
+                pos += 1;
+            }
+            if pos + 1 < len && bytes[pos] == b'.' && bytes[pos + 1].is_ascii_digit() {
+                pos += 1;
+                while pos < len && (bytes[pos].is_ascii_digit() || bytes[pos] == b'_') {
+                    pos += 1;
+                }
+            }
+            if pos < len && matches!(bytes[pos], b'e' | b'E') {
+                let exp_start = pos;
+                pos += 1;
+                if pos < len && matches!(bytes[pos], b'+' | b'-') {
+                    pos += 1;
+                }
+                if pos < len && bytes[pos].is_ascii_digit() {
+                    while pos < len && bytes[pos].is_ascii_digit() {
+                        pos += 1;
+                    }
+                } else {
+                    pos = exp_start;
+                }
+            }
+            tokens.push((start..pos, RhaiTokenKind::Number));
+            continue;
+        }
+
+        if b.is_ascii_alphabetic() || b == b'_' {
+            let start = pos;
+            pos += 1;
+            while pos < len && (bytes[pos].is_ascii_alphanumeric() || bytes[pos] == b'_') {
+                pos += 1;
+            }
+            let word = &line[start..pos];
+
+            if pos + 1 < len && bytes[pos] == b':' && bytes[pos + 1] == b':' {
+                tokens.push((start..pos, RhaiTokenKind::Namespace));
+                tokens.push((pos..pos + 2, RhaiTokenKind::Punctuation));
+                pos += 2;
+                continue;
+            }
+
+            let mut look = pos;
+            while look < len && matches!(bytes[look], b' ' | b'\t') {
+                look += 1;
+            }
+            if look < len && bytes[look] == b'(' {
+                if KEYWORDS.contains(&word) {
+                    tokens.push((start..pos, RhaiTokenKind::Keyword));
+                } else {
+                    tokens.push((start..pos, RhaiTokenKind::FunctionCall));
+                }
+                continue;
+            }
+
+            if KEYWORDS.contains(&word) {
+                tokens.push((start..pos, RhaiTokenKind::Keyword));
+            } else {
+                tokens.push((start..pos, RhaiTokenKind::Identifier));
+            }
+            continue;
+        }
+
+        if pos + 2 < len && bytes[pos] == b'.' && bytes[pos + 1] == b'.' && bytes[pos + 2] == b'=' {
+            tokens.push((pos..pos + 3, RhaiTokenKind::Operator));
+            pos += 3;
+            continue;
+        }
+
+        if pos + 1 < len {
+            let (a, c) = (bytes[pos], bytes[pos + 1]);
+            if matches!(
+                (a, c),
+                (b'=', b'=')
+                    | (b'!', b'=')
+                    | (b'<', b'=')
+                    | (b'>', b'=')
+                    | (b'&', b'&')
+                    | (b'|', b'|')
+                    | (b'?', b'?')
+                    | (b'?', b'.')
+                    | (b'.', b'.')
+                    | (b'<', b'<')
+                    | (b'>', b'>')
+                    | (b'+', b'=')
+                    | (b'-', b'=')
+                    | (b'*', b'=')
+                    | (b'/', b'=')
+                    | (b'%', b'=')
+            ) {
+                tokens.push((pos..pos + 2, RhaiTokenKind::Operator));
+                pos += 2;
+                continue;
+            }
+        }
+
+        if matches!(
+            b,
+            b'+' | b'-'
+                | b'*'
+                | b'/'
+                | b'%'
+                | b'='
+                | b'<'
+                | b'>'
+                | b'&'
+                | b'|'
+                | b'^'
+                | b'!'
+                | b'?'
+        ) {
+            tokens.push((pos..pos + 1, RhaiTokenKind::Operator));
+            pos += 1;
+            continue;
+        }
+
+        tokens.push((pos..pos + 1, RhaiTokenKind::Punctuation));
+        pos += 1;
+    }
+
+    (tokens, block_open)
+}
+
+fn find_block_close(bytes: &[u8], from: usize) -> Option<usize> {
+    let mut i = from;
+    while i + 1 < bytes.len() {
+        if bytes[i] == b'*' && bytes[i + 1] == b'/' {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
 }
 
 #[cfg(test)]

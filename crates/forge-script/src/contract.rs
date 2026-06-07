@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 
+pub use forge_types::AnnotationDiagnostic;
+
 use forge_types::{ArgStack, ScriptContract, ScriptInput, VariantKind};
 
 use crate::convert::variant_to_dynamic;
@@ -33,6 +35,11 @@ pub enum InputMismatchError {
         expected: VariantKind,
         got: VariantKind,
     },
+}
+
+pub fn collect_annotation_diagnostics(source: &str) -> Vec<AnnotationDiagnostic> {
+    let _ = source;
+    Vec::new()
 }
 
 /// Parses `// @input` and `// @return` doc-comment annotations from script source.
@@ -128,6 +135,16 @@ mod tests {
     use forge_types::{ArgStack, ScriptInput, Variant, VariantKind};
 
     use super::*;
+
+    #[test]
+    fn collect_annotation_diagnostics_empty_source_returns_empty_vec() {
+        assert!(collect_annotation_diagnostics("").is_empty());
+    }
+
+    #[test]
+    fn collect_annotation_diagnostics_nonempty_source_returns_empty_vec() {
+        assert!(collect_annotation_diagnostics("let x = 1;").is_empty());
+    }
 
     #[test]
     fn empty_source_returns_empty_contract() {

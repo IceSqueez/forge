@@ -20,6 +20,11 @@ pub mod reserved_keys {
     pub const SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_KEY: &str = "server.http_overlay_require_token";
     pub const SERVER_OVERLAY_CORS_ANY_ORIGIN_KEY: &str = "server.overlay_cors_any_origin";
     pub const SERVER_OVERLAY_ROOT_KEY: &str = "server.overlay_root";
+    pub const SCRIPT_HTTP_ALLOWED_DOMAINS_KEY: &str = "script.http_allowed_domains";
+    pub const SCRIPT_HTTP_MAX_CALLS_KEY: &str = "script.http_max_calls_per_script";
+    pub const SCRIPT_HTTP_TIMEOUT_MS_KEY: &str = "script.http_timeout_ms";
+    pub const SCRIPT_HTTP_ALLOW_LOCAL_KEY: &str = "script.http_allow_local";
+    pub const SCRIPT_HTTP_MAX_RESPONSE_BYTES_KEY: &str = "script.http_max_response_bytes";
 }
 
 #[cfg_attr(feature = "test-mocks", mockall::automock)]
@@ -55,6 +60,11 @@ mod tests {
         assert!(!SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_KEY.is_empty());
         assert!(!SERVER_OVERLAY_CORS_ANY_ORIGIN_KEY.is_empty());
         assert!(!SERVER_OVERLAY_ROOT_KEY.is_empty());
+        assert!(!SCRIPT_HTTP_ALLOWED_DOMAINS_KEY.is_empty());
+        assert!(!SCRIPT_HTTP_MAX_CALLS_KEY.is_empty());
+        assert!(!SCRIPT_HTTP_TIMEOUT_MS_KEY.is_empty());
+        assert!(!SCRIPT_HTTP_ALLOW_LOCAL_KEY.is_empty());
+        assert!(!SCRIPT_HTTP_MAX_RESPONSE_BYTES_KEY.is_empty());
     }
 
     #[test]
@@ -75,6 +85,11 @@ mod tests {
             SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_KEY,
             SERVER_OVERLAY_CORS_ANY_ORIGIN_KEY,
             SERVER_OVERLAY_ROOT_KEY,
+            SCRIPT_HTTP_ALLOWED_DOMAINS_KEY,
+            SCRIPT_HTTP_MAX_CALLS_KEY,
+            SCRIPT_HTTP_TIMEOUT_MS_KEY,
+            SCRIPT_HTTP_ALLOW_LOCAL_KEY,
+            SCRIPT_HTTP_MAX_RESPONSE_BYTES_KEY,
         ];
         let unique: std::collections::HashSet<&str> = keys.iter().copied().collect();
         assert_eq!(unique.len(), keys.len());

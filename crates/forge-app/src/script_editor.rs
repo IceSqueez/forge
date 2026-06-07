@@ -3,8 +3,8 @@ use std::sync::Arc;
 pub use forge_script::RunResult;
 use forge_script::contract::collect_annotation_diagnostics;
 use forge_script::{
-    MethodDescriptor, RHAI_VERSION, catalog, content_hash, format_script, parse_contract,
-    run_inline,
+    MethodDescriptor, RHAI_VERSION, catalog, collect_user_functions, content_hash, format_script,
+    parse_contract, run_inline,
 };
 use forge_storage::{GlobalsRepo, ScriptRecord, ScriptRepo};
 use forge_types::{ArgStack, ScriptContract, ScriptId, Variant, VariantKind};
@@ -188,10 +188,12 @@ pub fn update(
                 .map(|i| (i.name.clone(), i.kind))
                 .collect();
             let body = record.body.clone();
+            let mut widget = ScriptEditorWidgetState::with_text(&body);
+            widget.user_functions = collect_user_functions(&body);
             state.editor = Some(OpenScript {
                 id: record.id,
-                original_body: body.clone(),
-                widget: ScriptEditorWidgetState::with_text(&body),
+                original_body: body,
+                widget,
                 record,
             });
             state.variables_in_scope = vars;
@@ -237,6 +239,7 @@ pub fn update(
                         .iter()
                         .map(|d| d.line)
                         .collect();
+                    open.widget.user_functions = collect_user_functions(&text);
                 }
             }
             iced::Task::none()
@@ -539,10 +542,12 @@ pub fn update(
             state.scripts.push(entry);
             let id = record.id;
             let body = record.body.clone();
+            let mut widget = ScriptEditorWidgetState::with_text(&body);
+            widget.user_functions = collect_user_functions(&body);
             state.editor = Some(OpenScript {
                 id: record.id,
-                original_body: body.clone(),
-                widget: ScriptEditorWidgetState::with_text(&body),
+                original_body: body,
+                widget,
                 record,
             });
             state.selected = Some(id);

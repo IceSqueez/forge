@@ -1,4 +1,4 @@
-use forge_script::{MethodDescriptor, SymbolKind};
+use forge_script::{MethodDescriptor, SymbolKind, UserFunctionSig};
 use iced::{
     Alignment, Background, Border, Element, Length,
     widget::{Space, column, container, row, text},
@@ -7,6 +7,11 @@ use iced::{
 use crate::autocomplete_popup::kind_badge;
 use crate::palette::ForgePalette;
 use crate::tokens::{BORDER_ACCENT, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf};
+
+pub enum HoverTarget<'a> {
+    Catalog(&'a MethodDescriptor),
+    User(&'a UserFunctionSig),
+}
 
 /// `Property` kind emits `name -> return_type` (no parentheses); `Fn` emits `name(p: ty, …) -> return_type`.
 pub fn format_signature(descriptor: &MethodDescriptor) -> String {
@@ -29,7 +34,28 @@ pub fn format_signature(descriptor: &MethodDescriptor) -> String {
     }
 }
 
+fn format_user_fn_signature(sig: &UserFunctionSig) -> String {
+    let params: String = sig
+        .params
+        .iter()
+        .map(|p| format!("{}: {}", p.name, p.ty))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let ret = sig.return_type.as_deref().unwrap_or("dynamic");
+    format!("{}({}) -> {}", sig.name, params, ret)
+}
+
 pub fn hover_popover<'a, Msg: 'a>(
+    target: HoverTarget<'a>,
+    palette: &ForgePalette,
+) -> Element<'a, Msg> {
+    match target {
+        HoverTarget::Catalog(desc) => catalog_popover(desc, palette),
+        HoverTarget::User(sig) => user_fn_popover(sig, palette),
+    }
+}
+
+fn catalog_popover<'a, Msg: 'a>(
     descriptor: &'a MethodDescriptor,
     palette: &ForgePalette,
 ) -> Element<'a, Msg> {
@@ -68,7 +94,54 @@ pub fn hover_popover<'a, Msg: 'a>(
 
     let doc = text(doc_display).size(FONT_XS).color(text_muted);
 
-    container(column![header, sig, doc].spacing(spf(Spacing::Xxs)))
+    popover_container(
+        column![header, sig, doc].spacing(spf(Spacing::Xxs)),
+        elevated,
+        border_regular,
+    )
+}
+
+fn user_fn_popover<'a, Msg: 'a>(
+    sig: &'a UserFunctionSig,
+    palette: &ForgePalette,
+) -> Element<'a, Msg> {
+    let text_primary = palette.text_primary;
+    let text_muted = palette.text_muted;
+    let border_regular = palette.border_regular;
+    let elevated = palette.elevated;
+
+    let ret_label = sig.return_type.as_deref().unwrap_or("dynamic");
+
+    let header = row![
+        kind_badge(SymbolKind::Fn, palette),
+        Space::new().width(spf(Spacing::Xs)),
+        text(sig.name.clone()).size(FONT_XS).color(text_primary),
+        Space::new().width(Length::Fill),
+        text(ret_label).size(FONT_XS).color(text_muted),
+    ]
+    .align_y(Alignment::Center);
+
+    let sig_line = text(format_user_fn_signature(sig))
+        .size(FONT_XS)
+        .color(text_primary)
+        .font(font(FontRole::Monospace));
+
+    let doc_text = sig.doc.as_deref().unwrap_or("(no docs)");
+    let doc = text(doc_text).size(FONT_XS).color(text_muted);
+
+    popover_container(
+        column![header, sig_line, doc].spacing(spf(Spacing::Xxs)),
+        elevated,
+        border_regular,
+    )
+}
+
+fn popover_container<'a, Msg: 'a>(
+    content: iced::widget::Column<'a, Msg>,
+    elevated: iced::Color,
+    border_regular: iced::Color,
+) -> Element<'a, Msg> {
+    container(content)
         .max_width(400.0)
         .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
         .style(move |_| container::Style {
@@ -88,7 +161,7 @@ pub fn hover_popover<'a, Msg: 'a>(
 mod tests {
     use super::*;
     use crate::palette::CATPPUCCIN_MOCHA;
-    use forge_script::{ParamDescriptor, catalog};
+    use forge_script::{ParamDescriptor, UserParam, catalog};
 
     #[test]
     fn format_signature_function_with_params() {
@@ -133,12 +206,26 @@ mod tests {
     }
 
     #[test]
-    fn hover_popover_smoke_no_panic() {
+    fn hover_popover_catalog_smoke_no_panic() {
         let entries = catalog();
         let d = entries
             .iter()
             .find(|d| d.namespace == Some("globals") && d.name == "get")
             .unwrap();
-        let _: iced::Element<'_, u32> = hover_popover(d, &CATPPUCCIN_MOCHA);
+        let _: iced::Element<'_, u32> = hover_popover(HoverTarget::Catalog(d), &CATPPUCCIN_MOCHA);
+    }
+
+    #[test]
+    fn hover_popover_user_fn_smoke_no_panic() {
+        let sig = UserFunctionSig {
+            name: "double".to_owned(),
+            params: vec![UserParam {
+                name: "x".to_owned(),
+                ty: "int".to_owned(),
+            }],
+            return_type: Some("int".to_owned()),
+            doc: Some("Doubles the input.".to_owned()),
+        };
+        let _: iced::Element<'_, u32> = hover_popover(HoverTarget::User(&sig), &CATPPUCCIN_MOCHA);
     }
 }

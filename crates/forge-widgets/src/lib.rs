@@ -75,7 +75,7 @@ pub use events::{
     EventInspectorParams, EventRowData, causation_chip, color_for_source, event_inspector,
     event_row_observability, json_viewer, replay_button, source_badge, source_label,
 };
-pub use hover_popover::{format_signature, hover_popover};
+pub use hover_popover::{HoverTarget, format_signature, hover_popover};
 pub use icons::{Icon, tabler_icon};
 pub use inputs::{input_padding, search_input, select, text_input_field};
 pub use key_capture::{KeyCapture, key_capture};

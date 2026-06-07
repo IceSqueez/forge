@@ -2,7 +2,7 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use forge_script::{
-    MethodDescriptor, SymbolKind, SymbolToken, catalog, resolve_symbol_from_tokens,
+    MethodDescriptor, SymbolKind, SymbolToken, UserFunctionSig, catalog, resolve_symbol_from_tokens,
 };
 use forge_types::AnnotationDiagnostic;
 use iced::advanced::layout;
@@ -17,7 +17,7 @@ use iced::{Element, Event, Length, Rectangle, Size, Vector};
 
 use crate::autocomplete_popup::{AutocompletePopupState, autocomplete_popup, filter_candidates};
 use crate::code_editor::CodeEditorState;
-use crate::hover_popover::hover_popover;
+use crate::hover_popover::{HoverTarget, hover_popover};
 use crate::palette::ForgePalette;
 use crate::rhai_highlight::{RhaiTokenKind, tokenize_line};
 use crate::script_editor_overlay::clamp_to_bounds;
@@ -34,6 +34,7 @@ pub struct ScriptEditorWidgetState {
     pub autocomplete: AutocompletePopupState,
     pub overlay_dismissed: bool,
     pub autocomplete_visible: bool,
+    pub user_functions: Vec<UserFunctionSig>,
 }
 
 impl ScriptEditorWidgetState {
@@ -45,6 +46,7 @@ impl ScriptEditorWidgetState {
             autocomplete: AutocompletePopupState::default(),
             overlay_dismissed: false,
             autocomplete_visible: false,
+            user_functions: Vec::new(),
         }
     }
 
@@ -56,6 +58,7 @@ impl ScriptEditorWidgetState {
             autocomplete: AutocompletePopupState::default(),
             overlay_dismissed: false,
             autocomplete_visible: false,
+            user_functions: Vec::new(),
         }
     }
 }
@@ -83,20 +86,34 @@ pub enum OverlayChoice {
     Autocomplete,
 }
 
-/// Hover takes priority when cursor is on a resolved symbol; autocomplete is
-/// shown otherwise when candidates exist and `prefix_len >= 1`.
+/// Hover takes priority when cursor is on a resolved symbol (catalog or user-defined);
+/// autocomplete is shown otherwise when candidates exist and `prefix_len >= 1`.
 pub fn choose_overlay(
-    hover: Option<&'static MethodDescriptor>,
+    has_hover: bool,
     candidates: &[&'static MethodDescriptor],
     prefix_len: usize,
 ) -> OverlayChoice {
-    if hover.is_some() {
+    if has_hover {
         OverlayChoice::Hover
     } else if !candidates.is_empty() && prefix_len >= 1 {
         OverlayChoice::Autocomplete
     } else {
         OverlayChoice::None
     }
+}
+
+fn resolve_user_fn_hover<'a>(
+    rhai_tokens: &[(Range<usize>, RhaiTokenKind)],
+    line_text: &str,
+    col: usize,
+    user_functions: &'a [UserFunctionSig],
+) -> Option<&'a UserFunctionSig> {
+    let (tok_range, tok_kind) = rhai_tokens.iter().find(|(r, _)| r.contains(&col))?;
+    if *tok_kind != RhaiTokenKind::FunctionCall {
+        return None;
+    }
+    let fn_name = &line_text[tok_range.clone()];
+    user_functions.iter().find(|f| f.name == fn_name)
 }
 
 /// Dots after `)` are not triggered — `foo().` does not open completion by default.
@@ -206,7 +223,13 @@ pub fn script_editor_widget<'a, Msg: Clone + 'a>(
 
     let rhai_tokens = tokenize_line(&line_text, false).0;
     let sym_tokens = to_symbol_tokens(&rhai_tokens);
-    let hover = resolve_symbol_from_tokens(&sym_tokens, &line_text, col);
+    let catalog_hover = resolve_symbol_from_tokens(&sym_tokens, &line_text, col);
+    let user_hover = if catalog_hover.is_none() {
+        resolve_user_fn_hover(&rhai_tokens, &line_text, col, &state.user_functions)
+    } else {
+        None
+    };
+    let has_hover = catalog_hover.is_some() || user_hover.is_some();
 
     let prefix = prefix_under_cursor(&line_text, col);
     let candidates: Vec<&'static MethodDescriptor> =
@@ -219,7 +242,7 @@ pub fn script_editor_widget<'a, Msg: Clone + 'a>(
     let choice = if state.overlay_dismissed {
         OverlayChoice::None
     } else {
-        choose_overlay(hover, &candidates, prefix.len())
+        choose_overlay(has_hover, &candidates, prefix.len())
     };
 
     let inner: Element<'a, Msg> =
@@ -229,11 +252,10 @@ pub fn script_editor_widget<'a, Msg: Clone + 'a>(
 
     let (overlay_panel, is_autocomplete): (Option<Element<'a, Msg>>, bool) = match choice {
         OverlayChoice::Hover => {
-            if let Some(desc) = hover {
-                (Some(hover_popover(desc, palette)), false)
-            } else {
-                (None, false)
-            }
+            let target = catalog_hover
+                .map(HoverTarget::Catalog)
+                .or_else(|| user_hover.map(HoverTarget::User));
+            (target.map(|t| hover_popover(t, palette)), false)
         }
         OverlayChoice::Autocomplete => {
             let panel = autocomplete_popup(
@@ -730,14 +752,6 @@ mod tests {
 
     #[test]
     fn symbol_resolution_priority_over_autocomplete() {
-        static D1: MethodDescriptor = MethodDescriptor {
-            namespace: Some("globals"),
-            name: "get",
-            kind: SymbolKind::Fn,
-            params: EMPTY_PARAMS,
-            return_type: "Variant",
-            doc: None,
-        };
         static D2: MethodDescriptor = MethodDescriptor {
             namespace: Some("globals"),
             name: "set",
@@ -747,13 +761,13 @@ mod tests {
             doc: None,
         };
         let candidates = vec![&D2];
-        let result = choose_overlay(Some(&D1), &candidates, 3);
+        let result = choose_overlay(true, &candidates, 3);
         assert_eq!(result, OverlayChoice::Hover);
     }
 
     #[test]
     fn choose_overlay_none_when_no_hover_no_candidates() {
-        let result = choose_overlay(None, &[], 5);
+        let result = choose_overlay(false, &[], 5);
         assert_eq!(result, OverlayChoice::None);
     }
 
@@ -768,7 +782,7 @@ mod tests {
             doc: None,
         };
         let candidates = vec![&D];
-        let result = choose_overlay(None, &candidates, 2);
+        let result = choose_overlay(false, &candidates, 2);
         assert_eq!(result, OverlayChoice::Autocomplete);
     }
 
@@ -783,7 +797,7 @@ mod tests {
             doc: None,
         };
         let candidates = vec![&D];
-        let result = choose_overlay(None, &candidates, 0);
+        let result = choose_overlay(false, &candidates, 0);
         assert_eq!(result, OverlayChoice::None);
     }
 
@@ -797,5 +811,22 @@ mod tests {
             .filter(|a| matches!(a, text_editor::Action::Select(_)))
             .count();
         assert_eq!(select_count, prefix.chars().count());
+    }
+
+    #[test]
+    fn resolve_user_function_call_finds_matching_fn() {
+        use forge_script::UserFunctionSig;
+
+        let line = "double(x)";
+        let tokens = crate::rhai_highlight::tokenize_line(line, false).0;
+        let user_fns = vec![UserFunctionSig {
+            name: "double".to_owned(),
+            params: vec![],
+            return_type: Some("int".to_owned()),
+            doc: None,
+        }];
+        let result = resolve_user_fn_hover(&tokens, line, 3, &user_fns);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().name, "double");
     }
 }

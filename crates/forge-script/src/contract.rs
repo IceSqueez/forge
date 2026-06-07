@@ -108,13 +108,7 @@ pub fn collect_annotation_diagnostics(source: &str) -> Vec<AnnotationDiagnostic>
     diagnostics
 }
 
-/// Parses `// @input` and `// @return` doc-comment annotations from script source.
-///
-/// Scans only the first 50 lines. Lines that are not `@input`/`@return` directives are
-/// silently skipped. Whitespace around the name, colon, and type token is stripped.
-///
-/// Returns `Err` on unknown types, malformed `@input` lines, duplicate input names, or
-/// multiple `@return` annotations.
+/// Scans first 50 lines only; non-`@`-directive lines silently skipped; Err on unknown type, malformed `@input`, duplicate name, or multiple `@return`.
 pub fn parse_contract(source: &str) -> Result<ScriptContract, ContractParseError> {
     let mut inputs: Vec<ScriptInput> = Vec::new();
     let mut returns: Option<VariantKind> = None;
@@ -165,12 +159,7 @@ pub fn parse_contract(source: &str) -> Result<ScriptContract, ContractParseError
     Ok(ScriptContract { inputs, returns })
 }
 
-/// Validates `arg_stack` against `contract` and builds a rhai `Scope` populated with all
-/// declared inputs.
-///
-/// Returns `Err(InputMismatchError::Missing)` if a declared input is absent from the stack,
-/// and `Err(InputMismatchError::TypeMismatch)` if the runtime kind differs from the declared
-/// kind. An empty contract always succeeds and produces an empty `Scope`.
+/// Err on missing input or type mismatch; empty contract always succeeds and returns an empty `Scope`.
 pub fn build_scope_for_contract(
     contract: &ScriptContract,
     arg_stack: &ArgStack,

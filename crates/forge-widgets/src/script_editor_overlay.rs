@@ -4,7 +4,8 @@ use iced::advanced::mouse;
 use iced::advanced::overlay;
 use iced::advanced::renderer;
 use iced::advanced::widget::tree::Tree;
-use iced::{Element, Point, Rectangle, Size};
+use iced::advanced::{Clipboard, Shell};
+use iced::{Element, Event, Point, Rectangle, Size};
 
 pub(crate) fn compute_anchor_pixel(
     line: usize,
@@ -31,6 +32,23 @@ pub(crate) fn clamp_to_bounds(rect: Rectangle, bounds: Size, anchor_y: f32) -> P
     Point::new(x, y)
 }
 
+pub(crate) fn is_dismiss_event(
+    event: &Event,
+    content_bounds: Rectangle,
+    cursor: mouse::Cursor,
+) -> bool {
+    match event {
+        Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
+            ..
+        }) => true,
+        Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+            matches!(cursor, mouse::Cursor::Available(pos) if !content_bounds.contains(pos))
+        }
+        _ => false,
+    }
+}
+
 pub struct ScriptEditorOverlay<'a, Msg, Renderer = iced::Renderer>
 where
     Renderer: iced::advanced::Renderer,
@@ -41,6 +59,7 @@ where
     anchor_col: usize,
     line_height: f32,
     char_width: f32,
+    on_dismiss: Box<dyn Fn() -> Msg + 'a>,
 }
 
 impl<'a, Msg, Renderer> ScriptEditorOverlay<'a, Msg, Renderer>
@@ -53,6 +72,7 @@ where
         anchor_col: usize,
         line_height: f32,
         char_width: f32,
+        on_dismiss: impl Fn() -> Msg + 'a,
     ) -> Self {
         let content_tree = Tree::new(&content);
         Self {
@@ -62,6 +82,7 @@ where
             anchor_col,
             line_height,
             char_width,
+            on_dismiss: Box::new(on_dismiss),
         }
     }
 }
@@ -117,6 +138,33 @@ where
         );
     }
 
+    fn update(
+        &mut self,
+        event: &Event,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        renderer: &Renderer,
+        clipboard: &mut dyn Clipboard,
+        shell: &mut Shell<'_, Msg>,
+    ) {
+        let content_bounds = layout.bounds();
+        if is_dismiss_event(event, content_bounds, cursor) {
+            shell.publish((self.on_dismiss)());
+            shell.capture_event();
+            return;
+        }
+        self.content.as_widget_mut().update(
+            &mut self.content_tree,
+            event,
+            layout,
+            cursor,
+            renderer,
+            clipboard,
+            shell,
+            &content_bounds,
+        );
+    }
+
     fn mouse_interaction(
         &self,
         layout: Layout<'_>,
@@ -137,7 +185,34 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use iced::advanced::overlay::Overlay as _;
+    use iced::advanced::{Layout, Shell};
     use iced::{Point, Rectangle, Size};
+
+    fn esc_event() -> Event {
+        Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
+            modified_key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
+            physical_key: iced::keyboard::key::Physical::Code(iced::keyboard::key::Code::Escape),
+            location: iced::keyboard::Location::Standard,
+            modifiers: iced::keyboard::Modifiers::empty(),
+            text: None,
+            repeat: false,
+        })
+    }
+
+    fn left_click() -> Event {
+        Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
+    }
+
+    fn panel_bounds() -> Rectangle {
+        Rectangle {
+            x: 100.0,
+            y: 100.0,
+            width: 200.0,
+            height: 150.0,
+        }
+    }
 
     #[test]
     fn compute_anchor_pixel_basic() {
@@ -180,5 +255,137 @@ mod tests {
         };
         let p = clamp_to_bounds(rect, Size::new(800.0, 600.0), 50.0);
         assert_eq!(p, Point::new(100.0, 0.0));
+    }
+
+    #[test]
+    fn esc_is_dismiss_event() {
+        assert!(is_dismiss_event(
+            &esc_event(),
+            panel_bounds(),
+            mouse::Cursor::Available(Point::new(0.0, 0.0)),
+        ));
+    }
+
+    #[test]
+    fn left_click_outside_panel_is_dismiss() {
+        assert!(is_dismiss_event(
+            &left_click(),
+            panel_bounds(),
+            mouse::Cursor::Available(Point::new(500.0, 500.0)),
+        ));
+    }
+
+    #[test]
+    fn left_click_inside_panel_is_not_dismiss() {
+        assert!(!is_dismiss_event(
+            &left_click(),
+            panel_bounds(),
+            mouse::Cursor::Available(Point::new(150.0, 150.0)),
+        ));
+    }
+
+    #[test]
+    fn other_event_is_not_dismiss() {
+        let event = Event::Mouse(mouse::Event::CursorMoved {
+            position: Point::new(0.0, 0.0),
+        });
+        assert!(!is_dismiss_event(
+            &event,
+            panel_bounds(),
+            mouse::Cursor::Available(Point::new(0.0, 0.0)),
+        ));
+    }
+
+    #[test]
+    fn unavailable_cursor_click_is_not_dismiss() {
+        assert!(!is_dismiss_event(
+            &left_click(),
+            panel_bounds(),
+            mouse::Cursor::Unavailable,
+        ));
+    }
+
+    struct NullClipboard;
+    impl iced::advanced::Clipboard for NullClipboard {
+        fn read(&self, _kind: iced::advanced::clipboard::Kind) -> Option<String> {
+            None
+        }
+        fn write(&mut self, _kind: iced::advanced::clipboard::Kind, _contents: String) {}
+    }
+
+    #[test]
+    fn esc_publishes_dismiss_and_captures() {
+        let mut ov: ScriptEditorOverlay<'static, u32, ()> =
+            ScriptEditorOverlay::new(iced::widget::Space::new().into(), 0, 0, 16.0, 8.0, || 99u32);
+        let node = ov.layout(&(), Size::new(800.0, 600.0));
+        let layout = Layout::new(&node);
+        let mut messages: Vec<u32> = Vec::new();
+        let mut shell = Shell::new(&mut messages);
+        ov.update(
+            &esc_event(),
+            layout,
+            mouse::Cursor::Available(Point::new(0.0, 0.0)),
+            &(),
+            &mut NullClipboard,
+            &mut shell,
+        );
+        let captured = shell.is_event_captured();
+        drop(shell);
+        assert_eq!(messages, vec![99u32]);
+        assert!(captured);
+    }
+
+    #[test]
+    fn outside_click_publishes_dismiss_and_captures() {
+        let mut ov: ScriptEditorOverlay<'static, u32, ()> =
+            ScriptEditorOverlay::new(iced::widget::Space::new().into(), 0, 0, 16.0, 8.0, || 99u32);
+        let node = ov.layout(&(), Size::new(800.0, 600.0));
+        let layout = Layout::new(&node);
+        let mut messages: Vec<u32> = Vec::new();
+        let mut shell = Shell::new(&mut messages);
+        ov.update(
+            &left_click(),
+            layout,
+            mouse::Cursor::Available(Point::new(500.0, 500.0)),
+            &(),
+            &mut NullClipboard,
+            &mut shell,
+        );
+        let captured = shell.is_event_captured();
+        drop(shell);
+        assert_eq!(messages, vec![99u32]);
+        assert!(captured);
+    }
+
+    #[test]
+    fn inside_click_does_not_dismiss() {
+        let mut ov: ScriptEditorOverlay<'static, u32, ()> = ScriptEditorOverlay::new(
+            iced::widget::Space::new()
+                .width(iced::Length::Fixed(200.0))
+                .height(iced::Length::Fixed(150.0))
+                .into(),
+            0,
+            0,
+            16.0,
+            8.0,
+            || 99u32,
+        );
+        let node = ov.layout(&(), Size::new(800.0, 600.0));
+        let panel_b = node.bounds();
+        let layout = Layout::new(&node);
+        let mut messages: Vec<u32> = Vec::new();
+        let mut shell = Shell::new(&mut messages);
+        ov.update(
+            &left_click(),
+            layout,
+            mouse::Cursor::Available(Point::new(
+                panel_b.x + panel_b.width / 2.0,
+                panel_b.y + panel_b.height / 2.0,
+            )),
+            &(),
+            &mut NullClipboard,
+            &mut shell,
+        );
+        assert!(messages.is_empty());
     }
 }

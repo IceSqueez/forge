@@ -2,13 +2,14 @@ use std::sync::Arc;
 
 pub use forge_script::RunResult;
 use forge_script::contract::collect_annotation_diagnostics;
-use forge_script::{content_hash, parse_contract, run_inline};
+use forge_script::{MethodDescriptor, catalog, content_hash, parse_contract, run_inline};
 use forge_storage::{GlobalsRepo, ScriptRecord, ScriptRepo};
-use forge_types::{AnnotationDiagnostic, ArgStack, ScriptContract, ScriptId, Variant, VariantKind};
+use forge_types::{ArgStack, ScriptContract, ScriptId, Variant, VariantKind};
 use forge_widgets::tokens::{FONT_SM, FONT_XS, FontRole, Spacing, font, spf};
 use forge_widgets::{
-    CodeEditorState, ConsoleLevel, ConsoleLine, ForgePalette, ModalProps, modal, rhai_editor,
-    scan_type_hint,
+    ConsoleLevel, ConsoleLine, ForgePalette, ModalProps, ScriptEditorWidgetMsg,
+    ScriptEditorWidgetState, apply_autocomplete_insert, filter_candidates, modal,
+    prefix_under_cursor, scan_type_hint, script_editor_widget,
 };
 use iced::widget::{column, container, row, scrollable, text};
 use iced::{Alignment, Background, Border, Element, Length};
@@ -27,7 +28,7 @@ pub struct ScriptListEntry {
 pub struct OpenScript {
     pub id: ScriptId,
     pub record: ScriptRecord,
-    pub content: CodeEditorState,
+    pub widget: ScriptEditorWidgetState,
     pub original_body: String,
 }
 
@@ -56,8 +57,6 @@ pub struct ScriptEditorState {
     pub variables_in_scope: Vec<(String, VariantKind)>,
     pub run_modal: Option<RunModalForm>,
     pub loading: bool,
-    pub annotation_diagnostics: Vec<AnnotationDiagnostic>,
-    pub error_lines: Vec<usize>,
 }
 
 impl ScriptEditorState {
@@ -70,15 +69,13 @@ impl ScriptEditorState {
             variables_in_scope: Vec::new(),
             run_modal: None,
             loading: false,
-            annotation_diagnostics: Vec::new(),
-            error_lines: Vec::new(),
         }
     }
 
     pub fn is_dirty(&self) -> bool {
         self.editor
             .as_ref()
-            .is_some_and(|o| o.content.text() != o.original_body)
+            .is_some_and(|o| o.widget.editor.text() != o.original_body)
     }
 }
 
@@ -184,7 +181,7 @@ pub fn update(
             state.editor = Some(OpenScript {
                 id: record.id,
                 original_body: body.clone(),
-                content: CodeEditorState::with_text(&body),
+                widget: ScriptEditorWidgetState::with_text(&body),
                 record,
             });
             state.variables_in_scope = vars;
@@ -197,16 +194,63 @@ pub fn update(
         ScriptEditorMsg::EditorAction(action) => {
             let is_edit = action.is_edit();
             if let Some(open) = state.editor.as_mut() {
-                open.content.content.perform(action);
+                open.widget.editor.content.perform(action);
+                open.widget.overlay_dismissed = false;
             }
-            if is_edit && let Some(open) = state.editor.as_ref() {
-                let text = open.content.text();
-                state.annotation_diagnostics = collect_annotation_diagnostics(&text);
-                state.error_lines = state
+            if is_edit && let Some(open) = state.editor.as_mut() {
+                let text = open.widget.editor.text();
+                open.widget.annotation_diagnostics = collect_annotation_diagnostics(&text);
+                open.widget.error_lines = open
+                    .widget
                     .annotation_diagnostics
                     .iter()
                     .map(|d| d.line)
                     .collect();
+            }
+            iced::Task::none()
+        }
+        ScriptEditorMsg::AutocompleteSelectionUp => {
+            if let Some(open) = state.editor.as_mut() {
+                let (line, col) = open.widget.editor.cursor_position();
+                let line_text = open.widget.editor.line_text(line).unwrap_or_default();
+                let prefix = prefix_under_cursor(&line_text, col);
+                let count = filter_candidates(catalog(), &prefix).len();
+                if count > 0 {
+                    open.widget.autocomplete.selected_idx =
+                        open.widget.autocomplete.selected_idx.saturating_sub(1);
+                }
+            }
+            iced::Task::none()
+        }
+        ScriptEditorMsg::AutocompleteSelectionDown => {
+            if let Some(open) = state.editor.as_mut() {
+                let (line, col) = open.widget.editor.cursor_position();
+                let line_text = open.widget.editor.line_text(line).unwrap_or_default();
+                let prefix = prefix_under_cursor(&line_text, col);
+                let count = filter_candidates(catalog(), &prefix).len();
+                if count > 0 {
+                    open.widget.autocomplete.selected_idx =
+                        (open.widget.autocomplete.selected_idx + 1).min(count - 1);
+                }
+            }
+            iced::Task::none()
+        }
+        ScriptEditorMsg::AutocompleteInsert(descriptor) => {
+            if let Some(open) = state.editor.as_mut() {
+                let (line, col) = open.widget.editor.cursor_position();
+                let line_text = open.widget.editor.line_text(line).unwrap_or_default();
+                let prefix = prefix_under_cursor(&line_text, col);
+                for action in apply_autocomplete_insert(&prefix, &descriptor) {
+                    open.widget.editor.content.perform(action);
+                }
+                open.widget.overlay_dismissed = true;
+                open.widget.autocomplete.selected_idx = 0;
+            }
+            iced::Task::none()
+        }
+        ScriptEditorMsg::OverlayDismissed => {
+            if let Some(open) = state.editor.as_mut() {
+                open.widget.overlay_dismissed = true;
             }
             iced::Task::none()
         }
@@ -217,7 +261,7 @@ pub fn update(
             let Some(open) = state.editor.as_ref() else {
                 return iced::Task::none();
             };
-            let body = open.content.text();
+            let body = open.widget.editor.text();
             let contract = match parse_contract(&body) {
                 Ok(c) => c,
                 Err(e) => {
@@ -292,7 +336,7 @@ pub fn update(
             let Some(open) = state.editor.as_ref() else {
                 return iced::Task::none();
             };
-            let body = open.content.text();
+            let body = open.widget.editor.text();
             let contract = parse_contract(&body).unwrap_or_default();
             if contract.inputs.is_empty() {
                 let script_id = open.id;
@@ -367,7 +411,7 @@ pub fn update(
             let Some(open) = state.editor.as_ref() else {
                 return iced::Task::none();
             };
-            let body = open.content.text();
+            let body = open.widget.editor.text();
             let script_id = form.script_id;
             let script_name = form.script_name.clone();
             let dp = Arc::clone(&rt.backend) as Arc<dyn GlobalsRepo>;
@@ -457,7 +501,7 @@ pub fn update(
             state.editor = Some(OpenScript {
                 id: record.id,
                 original_body: body.clone(),
-                content: CodeEditorState::with_text(&body),
+                widget: ScriptEditorWidgetState::with_text(&body),
                 record,
             });
             state.selected = Some(id);
@@ -786,8 +830,22 @@ fn center_pane<'a>(
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let editor_area: Element<'a, Message> = if let Some(open) = state.editor.as_ref() {
-        rhai_editor(palette, &open.content, &state.error_lines, |a| {
-            Message::ScriptEditor(ScriptEditorMsg::EditorAction(a))
+        script_editor_widget(&open.widget, palette, |msg| match msg {
+            ScriptEditorWidgetMsg::EditorAction(a) => {
+                Message::ScriptEditor(ScriptEditorMsg::EditorAction(a))
+            }
+            ScriptEditorWidgetMsg::AutocompleteSelectionUp => {
+                Message::ScriptEditor(ScriptEditorMsg::AutocompleteSelectionUp)
+            }
+            ScriptEditorWidgetMsg::AutocompleteSelectionDown => {
+                Message::ScriptEditor(ScriptEditorMsg::AutocompleteSelectionDown)
+            }
+            ScriptEditorWidgetMsg::AutocompleteInsert(d) => {
+                Message::ScriptEditor(ScriptEditorMsg::AutocompleteInsert(d))
+            }
+            ScriptEditorWidgetMsg::OverlayDismissed => {
+                Message::ScriptEditor(ScriptEditorMsg::OverlayDismissed)
+            }
         })
     } else {
         container(
@@ -810,9 +868,18 @@ fn center_pane<'a>(
     };
 
     let status_bar: Element<'a, Message> = {
-        let cursor_line = state.editor.as_ref().map(|o| o.content.cursor_position().0);
-        let diag = cursor_line
-            .and_then(|line| state.annotation_diagnostics.iter().find(|d| d.line == line));
+        let cursor_line = state
+            .editor
+            .as_ref()
+            .map(|o| o.widget.editor.cursor_position().0);
+        let diag = cursor_line.and_then(|line| {
+            state.editor.as_ref().and_then(|o| {
+                o.widget
+                    .annotation_diagnostics
+                    .iter()
+                    .find(|d| d.line == line)
+            })
+        });
         let msg_text = if let Some(d) = diag {
             text(d.message.clone())
                 .size(FONT_XS)
@@ -821,10 +888,10 @@ fn center_pane<'a>(
         } else {
             let hint = cursor_line.and_then(|line_idx| {
                 state.editor.as_ref().and_then(|o| {
-                    o.content
-                        .content
-                        .line(line_idx)
-                        .and_then(|l| scan_type_hint(&l.text))
+                    o.widget
+                        .editor
+                        .line_text(line_idx)
+                        .and_then(|l| scan_type_hint(&l))
                 })
             });
             if let Some((name, ty)) = hint {
@@ -1147,6 +1214,10 @@ pub enum ScriptEditorMsg {
     DeleteRequested(ScriptId),
     Deleted(Result<(), String>),
     ConsoleClear,
+    AutocompleteSelectionUp,
+    AutocompleteSelectionDown,
+    AutocompleteInsert(MethodDescriptor),
+    OverlayDismissed,
 }
 
 #[cfg(test)]
@@ -1163,7 +1234,7 @@ mod tests {
         s.editor = Some(OpenScript {
             id,
             original_body: original.to_owned(),
-            content: CodeEditorState::with_text(body),
+            widget: ScriptEditorWidgetState::with_text(body),
             record: ScriptRecord {
                 id,
                 name: "test_script".to_owned(),
@@ -1236,7 +1307,7 @@ mod tests {
         state.editor = Some(OpenScript {
             id,
             original_body: body.clone(),
-            content: CodeEditorState::with_text(&body),
+            widget: ScriptEditorWidgetState::with_text(&body),
             record,
         });
         assert!(state.editor.is_some());
@@ -1274,7 +1345,7 @@ mod tests {
         app.ui.script_editor.editor = Some(OpenScript {
             id,
             original_body: body.clone(),
-            content: CodeEditorState::with_text(&body),
+            widget: ScriptEditorWidgetState::with_text(&body),
             record: ScriptRecord {
                 id,
                 name: "test".to_owned(),
@@ -1373,17 +1444,18 @@ mod tests {
 
     #[test]
     fn error_lines_derived_from_annotation_diagnostics() {
-        let mut state = ScriptEditorState::new();
-        state.annotation_diagnostics = vec![AnnotationDiagnostic {
+        use forge_types::AnnotationDiagnostic;
+        let mut widget = ScriptEditorWidgetState::new();
+        widget.annotation_diagnostics = vec![AnnotationDiagnostic {
             line: 2,
             message: "missing input lines".into(),
         }];
-        state.error_lines = state
+        widget.error_lines = widget
             .annotation_diagnostics
             .iter()
             .map(|d| d.line)
             .collect();
-        assert_eq!(state.error_lines, vec![2]);
+        assert_eq!(widget.error_lines, vec![2]);
     }
 
     #[tokio::test]

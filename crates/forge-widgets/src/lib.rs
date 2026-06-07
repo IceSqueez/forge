@@ -1,6 +1,7 @@
 #![doc = "Pure design-system kit: Tier 1 widget builders + ForgePalette theme tokens."]
 
 pub mod actions;
+pub mod autocomplete_popup;
 pub mod breadcrumb;
 pub mod builtin;
 pub mod builtin_header;
@@ -40,6 +41,9 @@ pub mod volume_slider;
 pub use actions::{
     ModalProps, NodeProps, NodeStatus, SubActionProps, ToggleProps, TriggerCardProps,
     category_chip, modal, sub_action_card, toggle, tree_node_with_status, variable_chip,
+};
+pub use autocomplete_popup::{
+    AutocompletePopupMessage, AutocompletePopupState, autocomplete_popup, filter_candidates,
 };
 pub use breadcrumb::{BreadcrumbCrumb, breadcrumb};
 pub use builtin::builtin_content_renderer;

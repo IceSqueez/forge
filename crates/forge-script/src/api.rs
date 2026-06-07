@@ -1,13 +1,15 @@
 use std::sync::Arc;
+use std::sync::atomic::AtomicU32;
 use std::time::{Duration, Instant};
 
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_storage::GlobalsRepo;
 use forge_types::{EventId, Variant};
-use rhai::{EvalAltResult, ImmutableString, Module};
+use rhai::{EvalAltResult, ImmutableString, Module, Position};
 use tokio::runtime::Handle;
 
 use crate::convert::{dynamic_to_variant, variant_to_dynamic};
+use crate::http_client::{HttpError, HttpResponse, ScriptHttpClient};
 
 /// Async TTS hook exposed to rhai scripts as `forge::tts::*`. The concrete impl
 /// lives in `forge-app::speak_bridge` to keep this crate cycle-free with respect
@@ -29,6 +31,7 @@ pub struct ForgeApi {
     globals: Arc<dyn GlobalsRepo>,
     caused_by: EventId,
     speak: Option<Arc<dyn SpeakRequester>>,
+    http: Option<Arc<ScriptHttpClient>>,
     pub deadline: Instant,
 }
 
@@ -44,6 +47,7 @@ impl ForgeApi {
             globals,
             caused_by,
             speak: None,
+            http: None,
             deadline,
         }
     }
@@ -52,6 +56,11 @@ impl ForgeApi {
     /// active. Without this, the `tts` sub-module is registered but empty.
     pub fn with_speak_requester(mut self, requester: Arc<dyn SpeakRequester>) -> Self {
         self.speak = Some(requester);
+        self
+    }
+
+    pub fn with_http(mut self, client: Arc<ScriptHttpClient>) -> Self {
+        self.http = Some(client);
         self
     }
 
@@ -98,6 +107,11 @@ impl ForgeApi {
         let chat = build_chat_module(Arc::clone(&self.publisher), self.caused_by);
         root.set_sub_module("chat", chat);
 
+        let http = match self.http {
+            Some(client) => build_http_module(client, Arc::clone(&self.publisher), self.caused_by),
+            None => Module::new(),
+        };
+
         let globals = build_globals_module(self.publisher, self.caused_by, self.globals);
         root.set_sub_module("globals", globals);
 
@@ -109,10 +123,101 @@ impl ForgeApi {
         root.set_sub_module("tts", tts);
         root.set_sub_module("time", build_time_module());
         root.set_sub_module("obs", Module::new());
-        root.set_sub_module("http", Module::new());
+        root.set_sub_module("http", http);
 
         Arc::new(root)
     }
+}
+
+fn build_http_module(
+    client: Arc<ScriptHttpClient>,
+    publisher: Arc<dyn EventPublisher>,
+    caused_by: EventId,
+) -> Module {
+    let mut m = Module::new();
+    let counter = Arc::new(AtomicU32::new(0));
+
+    {
+        let client = Arc::clone(&client);
+        let counter = Arc::clone(&counter);
+        let publisher = Arc::clone(&publisher);
+        m.set_native_fn(
+            "get",
+            move |url: ImmutableString| -> Result<rhai::Map, Box<EvalAltResult>> {
+                let result = client.get(url.as_str(), &counter);
+                if let Ok(ref resp) = result {
+                    publisher.publish(Event::caused_by(
+                        EventSource::Rhai,
+                        "script.http_call",
+                        serde_json::json!({
+                            "url_normalized": resp.url_normalized,
+                            "status": resp.status,
+                            "duration_ms": resp.duration_ms,
+                            "truncated": resp.truncated,
+                        }),
+                        caused_by,
+                    ));
+                }
+                result
+                    .map(http_response_to_rhai_map)
+                    .map_err(http_error_to_rhai_error)
+            },
+        );
+    }
+
+    {
+        let publisher = Arc::clone(&publisher);
+        m.set_native_fn(
+            "post",
+            move |url: ImmutableString,
+                  body: ImmutableString|
+                  -> Result<rhai::Map, Box<EvalAltResult>> {
+                let result = client.post(url.as_str(), body.as_str(), &counter);
+                if let Ok(ref resp) = result {
+                    publisher.publish(Event::caused_by(
+                        EventSource::Rhai,
+                        "script.http_call",
+                        serde_json::json!({
+                            "url_normalized": resp.url_normalized,
+                            "status": resp.status,
+                            "duration_ms": resp.duration_ms,
+                            "truncated": resp.truncated,
+                        }),
+                        caused_by,
+                    ));
+                }
+                result
+                    .map(http_response_to_rhai_map)
+                    .map_err(http_error_to_rhai_error)
+            },
+        );
+    }
+
+    m
+}
+
+fn http_response_to_rhai_map(resp: HttpResponse) -> rhai::Map {
+    let mut map = rhai::Map::new();
+    map.insert("status".into(), rhai::Dynamic::from(resp.status as i64));
+    map.insert("body".into(), rhai::Dynamic::from(resp.body));
+    map.insert("truncated".into(), rhai::Dynamic::from(resp.truncated));
+    map.insert(
+        "duration_ms".into(),
+        rhai::Dynamic::from(resp.duration_ms as i64),
+    );
+    let mut headers_map = rhai::Map::new();
+    for (k, v) in resp.headers {
+        headers_map.insert(k.into(), rhai::Dynamic::from(v));
+    }
+    map.insert("headers".into(), rhai::Dynamic::from(headers_map));
+    map
+}
+
+fn http_error_to_rhai_error(e: HttpError) -> Box<EvalAltResult> {
+    Box::new(EvalAltResult::ErrorRuntime(
+        e.to_string().into(),
+        Position::NONE,
+    ))
 }
 
 fn build_time_module() -> Module {
@@ -319,6 +424,8 @@ fn build_globals_module(
 mod tests {
     use super::*;
     use crate::engine::{Engine, EngineConfig};
+    use crate::http_client::new_without_tls_enforcement;
+    use crate::http_config::ScriptHttpConfig;
     use forge_events::Event;
     use forge_storage::GlobalsRepo;
     use forge_storage_sqlite::SqliteBackend;
@@ -440,5 +547,124 @@ mod tests {
         let ev = events.iter().find(|e| e.kind == "global.del").unwrap();
         assert_eq!(ev.caused_by, Some(caused_by));
         assert_eq!(ev.payload["key"].as_str(), Some("temp"));
+    }
+
+    // Build engine with an http client entirely inside a spawn_blocking closure to avoid
+    // dropping a reqwest::blocking::Client from within a tokio async context.
+    fn build_engine_with_http_in_blocking(
+        dp: Arc<SqliteBackend>,
+        captured: Arc<Mutex<Vec<Event>>>,
+        config: Arc<ScriptHttpConfig>,
+    ) -> Engine {
+        let caused_by = EventId::new();
+        let http_client = Arc::new(new_without_tls_enforcement(config).unwrap());
+        let api = ForgeApi::new(
+            Arc::new(CapturingPublisher(captured)),
+            dp as Arc<dyn GlobalsRepo>,
+            caused_by,
+            Instant::now() + std::time::Duration::from_secs(10),
+        )
+        .with_http(http_client);
+        Engine::with_api(EngineConfig::default(), api)
+    }
+
+    #[tokio::test]
+    async fn http_get_registered_under_forge_http_namespace() {
+        let dp = open_dp().await;
+        let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+        // allowlist is empty → DomainNotAllowed fires without any network access
+        let config = Arc::new(ScriptHttpConfig::default());
+
+        let result = tokio::task::spawn_blocking(move || {
+            let engine = build_engine_with_http_in_blocking(dp, captured, config);
+            engine.eval_script(r#"forge::http::get("https://example.com/")"#)
+        })
+        .await
+        .unwrap();
+
+        let err_str = result.unwrap_err().to_string();
+        assert!(
+            !err_str.contains("not found"),
+            "forge::http::get must be registered; got: {err_str}"
+        );
+        assert!(
+            err_str.contains("http:"),
+            "error must come from http sandbox; got: {err_str}"
+        );
+    }
+
+    #[tokio::test]
+    async fn http_get_returns_map_with_expected_keys() {
+        use wiremock::matchers::any;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(200).set_body_string("pong"))
+            .mount(&server)
+            .await;
+
+        let server_url = server.uri();
+        let parsed = reqwest::Url::parse(&server_url).unwrap();
+        let host = parsed.host_str().unwrap().to_string();
+        let dp = open_dp().await;
+        let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+        let config = Arc::new(ScriptHttpConfig {
+            allowed_domains: vec![host],
+            allow_local: true,
+            ..ScriptHttpConfig::default()
+        });
+        let script = format!(r#"let r = forge::http::get("{server_url}/ping"); r"#);
+
+        let result = tokio::task::spawn_blocking(move || {
+            let engine = build_engine_with_http_in_blocking(dp, captured, config);
+            engine.eval_script(&script)
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+        let map = result.try_cast::<rhai::Map>().unwrap();
+        assert!(map.contains_key("status"), "must have status");
+        assert!(map.contains_key("body"), "must have body");
+        assert!(map.contains_key("headers"), "must have headers");
+        assert!(map.contains_key("truncated"), "must have truncated");
+        assert!(map.contains_key("duration_ms"), "must have duration_ms");
+        assert_eq!(map["status"].clone().as_int().unwrap(), 200);
+    }
+
+    #[test]
+    fn http_error_display_does_not_contain_url() {
+        // Verify HttpError variants that carry sanitized strings do not include URLs.
+        // The Network variant uses reqwest's without_url() so only the status/reason appears.
+        let no_url = HttpError::Network("connection refused".into());
+        let msg = no_url.to_string();
+        assert!(
+            !msg.contains("http://"),
+            "URL scheme must not appear in: {msg}"
+        );
+        assert!(
+            !msg.contains("https://"),
+            "URL scheme must not appear in: {msg}"
+        );
+        assert!(
+            !msg.contains("token="),
+            "query params must not appear in: {msg}"
+        );
+
+        assert_eq!(
+            HttpError::DomainNotAllowed.to_string(),
+            "http: domain not allowed"
+        );
+        assert_eq!(HttpError::HttpsRequired.to_string(), "http: HTTPS required");
+        assert_eq!(
+            HttpError::PrivateAddress.to_string(),
+            "http: local addresses blocked"
+        );
+        assert_eq!(
+            HttpError::RateLimitExceeded.to_string(),
+            "http: rate limit exceeded"
+        );
+        assert_eq!(HttpError::Timeout.to_string(), "http: timeout");
     }
 }

@@ -27,7 +27,7 @@ use std::sync::Arc;
 
 use forge_events::EventPublisher;
 use forge_registry::{RegistryError, SubActionRegistry};
-use forge_storage::GlobalsRepo;
+use forge_storage::{GlobalsRepo, SettingsRepo};
 
 use crate::script_registry::ScriptRegistry;
 
@@ -36,6 +36,7 @@ pub fn register_core_sub_actions(
     globals: Arc<dyn GlobalsRepo>,
     scripts: Arc<ScriptRegistry>,
     publisher: Arc<dyn EventPublisher>,
+    settings: Arc<dyn SettingsRepo>,
 ) -> Result<(), RegistryError> {
     reg.register(Box::new(CoreGlobalsSetRunner::new(Arc::clone(&globals))))?;
     reg.register(Box::new(CoreGlobalsGetRunner::new(Arc::clone(&globals))))?;
@@ -54,11 +55,13 @@ pub fn register_core_sub_actions(
         Arc::clone(&scripts),
         Arc::clone(&globals),
         Arc::clone(&publisher),
+        Arc::clone(&settings),
     )))?;
     reg.register(Box::new(ScriptRunInlineRunner::new(
         Arc::clone(&scripts),
         Arc::clone(&globals),
         Arc::clone(&publisher),
+        settings,
     )))?;
     Ok(())
 }

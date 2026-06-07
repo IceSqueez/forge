@@ -25,7 +25,7 @@ use forge_runtime::{
     spawn_action_engine, spawn_trigger_evaluator, sub_action_runners::register_core_sub_actions,
     triggers::register_core_triggers,
 };
-use forge_storage::{DataProvider, GlobalsRepo};
+use forge_storage::{DataProvider, GlobalsRepo, SettingsRepo};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
     Action, ActionId, ArgStack, ExecutionMode, Queue, QueueId, SubActionOutcome, SubActionStep,
@@ -95,6 +95,7 @@ fn custom_instance(event_name: &str) -> TriggerInstance {
 
 fn build_core_registries(
     globals: Arc<dyn GlobalsRepo>,
+    settings: Arc<dyn SettingsRepo>,
 ) -> (Arc<SubActionRegistry>, Arc<TriggerRegistry>) {
     let scripts = Arc::new(ScriptRegistry::new());
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
@@ -102,7 +103,7 @@ fn build_core_registries(
         Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>;
 
     let mut sub_reg = SubActionRegistry::new();
-    register_core_sub_actions(&mut sub_reg, globals, scripts, publisher).unwrap();
+    register_core_sub_actions(&mut sub_reg, globals, scripts, publisher, settings).unwrap();
 
     let mut trig_reg = TriggerRegistry::new();
     register_core_triggers(&mut trig_reg).unwrap();
@@ -221,7 +222,10 @@ async fn trigger_evaluator_applies_effective_config_overrides() {
         .await
         .unwrap();
 
-    let (sub_reg, trig_reg) = build_core_registries(Arc::clone(&dp) as Arc<dyn GlobalsRepo>);
+    let (sub_reg, trig_reg) = build_core_registries(
+        Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
+        Arc::clone(&dp) as Arc<dyn SettingsRepo>,
+    );
 
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let mut sub = bus.subscribe();
@@ -391,7 +395,10 @@ async fn linked_action_executes_via_join_table_only() {
     dp.trigger_instance_repo().save(&instance).await.unwrap();
     // link_action intentionally NOT called — join table has no row.
 
-    let (sub_reg, trig_reg) = build_core_registries(Arc::clone(&dp) as Arc<dyn GlobalsRepo>);
+    let (sub_reg, trig_reg) = build_core_registries(
+        Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
+        Arc::clone(&dp) as Arc<dyn SettingsRepo>,
+    );
 
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let mut sub = bus.subscribe();

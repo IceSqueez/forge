@@ -175,7 +175,7 @@ mod tests {
 
     use forge_events::{Event, EventSource};
     use forge_registry::{SubActionRegistry, TriggerRegistry};
-    use forge_storage::{DataProvider, GlobalsRepo};
+    use forge_storage::{DataProvider, GlobalsRepo, SettingsRepo};
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::{
         Action, ActionId, PlatformId, PlatformScope, Queue, QueueId, SubActionStep,
@@ -270,6 +270,7 @@ mod tests {
 
     fn build_registries(
         globals: Arc<dyn GlobalsRepo>,
+        settings: Arc<dyn SettingsRepo>,
     ) -> (Arc<SubActionRegistry>, Arc<TriggerRegistry>) {
         let registry = Arc::new(ScriptRegistry::new());
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
@@ -277,7 +278,7 @@ mod tests {
             Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>;
 
         let mut sub_reg = SubActionRegistry::new();
-        register_core_sub_actions(&mut sub_reg, globals, registry, publisher).unwrap();
+        register_core_sub_actions(&mut sub_reg, globals, registry, publisher, settings).unwrap();
 
         let mut trig_reg = TriggerRegistry::new();
         register_core_triggers(&mut trig_reg).unwrap();
@@ -308,7 +309,10 @@ mod tests {
             .await
             .unwrap();
 
-        let (sub_reg, trig_reg) = build_registries(Arc::clone(&dp) as Arc<dyn GlobalsRepo>);
+        let (sub_reg, trig_reg) = build_registries(
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
+            Arc::clone(&dp) as Arc<dyn SettingsRepo>,
+        );
 
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
@@ -365,7 +369,10 @@ mod tests {
             .await
             .unwrap();
 
-        let (sub_reg, trig_reg) = build_registries(Arc::clone(&dp) as Arc<dyn GlobalsRepo>);
+        let (sub_reg, trig_reg) = build_registries(
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
+            Arc::clone(&dp) as Arc<dyn SettingsRepo>,
+        );
 
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();

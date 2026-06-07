@@ -4,8 +4,11 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
-use forge_script::{Engine, EngineConfig, ForgeApi, ScriptError, build_scope_for_contract};
-use forge_storage::GlobalsRepo;
+use forge_script::{
+    Engine, EngineConfig, ForgeApi, ScriptError, ScriptHttpClient, build_scope_for_contract,
+    load_script_http_config,
+};
+use forge_storage::{GlobalsRepo, SettingsRepo};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 use serde_json::json;
 use time::OffsetDateTime;
@@ -16,6 +19,7 @@ pub struct ScriptRunNamedRunner {
     registry: Arc<ScriptRegistry>,
     globals: Arc<dyn GlobalsRepo>,
     publisher: Arc<dyn EventPublisher>,
+    settings: Arc<dyn SettingsRepo>,
 }
 
 impl ScriptRunNamedRunner {
@@ -23,11 +27,13 @@ impl ScriptRunNamedRunner {
         registry: Arc<ScriptRegistry>,
         globals: Arc<dyn GlobalsRepo>,
         publisher: Arc<dyn EventPublisher>,
+        settings: Arc<dyn SettingsRepo>,
     ) -> Self {
         Self {
             registry,
             globals,
             publisher,
+            settings,
         }
     }
 }
@@ -119,6 +125,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
         let globals_arc = Arc::clone(&self.globals);
         let speak_requester = self.registry.speak_requester();
         let parent_event_id = ctx.parent_event_id;
+        let http_cfg = Arc::new(load_script_http_config(self.settings.as_ref()).await);
 
         let exec_event = Event::caused_by(
             EventSource::Rhai,
@@ -141,7 +148,14 @@ impl SubActionRunner for ScriptRunNamedRunner {
             })?;
             let cfg = EngineConfig::default();
             let deadline = Instant::now() + Duration::from_millis(cfg.wall_time_ms);
-            let mut api = ForgeApi::new(publisher_arc, globals_arc, parent_event_id, deadline);
+            // reqwest::blocking::Client must be built inside spawn_blocking — constructing it on
+            // the outer async task causes a runtime conflict on drop.
+            let http_client = ScriptHttpClient::new(http_cfg).map_err(|e| ScriptError::Runtime {
+                script: body.clone(),
+                reason: e.to_string(),
+            })?;
+            let mut api = ForgeApi::new(publisher_arc, globals_arc, parent_event_id, deadline)
+                .with_http(Arc::new(http_client));
             if let Some(req) = speak_requester {
                 api = api.with_speak_requester(req);
             }

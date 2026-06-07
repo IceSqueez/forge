@@ -4,8 +4,11 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
-use forge_script::{Engine, EngineConfig, ForgeApi, ScriptError, build_scope_for_contract};
-use forge_storage::GlobalsRepo;
+use forge_script::{
+    Engine, EngineConfig, ForgeApi, ScriptError, ScriptHttpClient, build_scope_for_contract,
+    load_script_http_config,
+};
+use forge_storage::{GlobalsRepo, SettingsRepo};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 use serde_json::json;
 use time::OffsetDateTime;
@@ -16,6 +19,7 @@ pub struct ScriptRunInlineRunner {
     registry: Arc<ScriptRegistry>,
     globals: Arc<dyn GlobalsRepo>,
     publisher: Arc<dyn EventPublisher>,
+    settings: Arc<dyn SettingsRepo>,
 }
 
 impl ScriptRunInlineRunner {
@@ -23,11 +27,13 @@ impl ScriptRunInlineRunner {
         registry: Arc<ScriptRegistry>,
         globals: Arc<dyn GlobalsRepo>,
         publisher: Arc<dyn EventPublisher>,
+        settings: Arc<dyn SettingsRepo>,
     ) -> Self {
         Self {
             registry,
             globals,
             publisher,
+            settings,
         }
     }
 }
@@ -99,6 +105,7 @@ impl SubActionRunner for ScriptRunInlineRunner {
         let speak_requester = self.registry.speak_requester();
         let parent_event_id = ctx.parent_event_id;
         let arg_stack_clone = ctx.arg_stack.clone();
+        let http_cfg = Arc::new(load_script_http_config(self.settings.as_ref()).await);
 
         let exec_event = Event::caused_by(
             EventSource::Rhai,
@@ -121,7 +128,14 @@ impl SubActionRunner for ScriptRunInlineRunner {
             })?;
             let cfg = EngineConfig::default();
             let deadline = Instant::now() + Duration::from_millis(cfg.wall_time_ms);
-            let mut api = ForgeApi::new(publisher_arc, globals_arc, parent_event_id, deadline);
+            // reqwest::blocking::Client must be built inside spawn_blocking — constructing it on
+            // the outer async task causes a runtime conflict on drop.
+            let http_client = ScriptHttpClient::new(http_cfg).map_err(|e| ScriptError::Runtime {
+                script: body.clone(),
+                reason: e.to_string(),
+            })?;
+            let mut api = ForgeApi::new(publisher_arc, globals_arc, parent_event_id, deadline)
+                .with_http(Arc::new(http_client));
             if let Some(req) = speak_requester {
                 api = api.with_speak_requester(req);
             }
@@ -182,5 +196,64 @@ fn error_kind(err: &ScriptError) -> &'static str {
         ScriptError::Timeout { .. } => "timeout",
         ScriptError::OperationLimit { .. } => "ops_exceeded",
         _ => "runtime",
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use crate::{EventBus, NullEventLogRepo, ScriptRegistry};
+    use forge_events::EventPublisher;
+    use forge_storage::{GlobalsRepo, SettingsRepo};
+    use forge_storage_sqlite::SqliteBackend;
+    use forge_types::EventId;
+
+    async fn make_backend() -> Arc<SqliteBackend> {
+        Arc::new(
+            SqliteBackend::open_with_key(":memory:", [0xab; 32])
+                .await
+                .unwrap(),
+        )
+    }
+
+    #[tokio::test]
+    async fn http_module_wired_denied_domain_returns_failed() {
+        let backend = make_backend().await;
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
+        let globals: Arc<dyn GlobalsRepo> = Arc::clone(&backend) as Arc<dyn GlobalsRepo>;
+        let settings: Arc<dyn SettingsRepo> = Arc::clone(&backend) as Arc<dyn SettingsRepo>;
+
+        let runner = ScriptRunInlineRunner::new(
+            Arc::new(ScriptRegistry::new()),
+            globals,
+            publisher,
+            settings,
+        );
+
+        let body = r#"forge::http::get("https://nope.invalid")"#;
+        let mut config = runner.default_config();
+        config.insert("body".to_owned(), Variant::String(body.to_owned()));
+
+        let arg_stack = ArgStack::default();
+        let dummy_pub: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
+        let ctx = forge_registry::RunContext {
+            arg_stack: &arg_stack,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher: dummy_pub.as_ref(),
+        };
+
+        let (telemetry, _) = runner.execute(&config, &ctx).await;
+
+        let msg = match telemetry.outcome {
+            SubActionOutcome::Failed(m) => m,
+            other => panic!("expected Failed, got {other:?}"),
+        };
+        assert!(
+            msg.contains("domain not allowed"),
+            "expected domain-not-allowed error from wired http module, got: {msg}"
+        );
     }
 }

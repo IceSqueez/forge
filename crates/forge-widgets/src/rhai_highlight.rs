@@ -330,4 +330,116 @@ mod tests {
         };
         assert_eq!(s.error_lines, [1, 5, 12]);
     }
+
+    #[test]
+    fn empty_line_no_block_comment() {
+        let (tokens, next) = tokenize_line("", false);
+        assert!(tokens.is_empty());
+        assert!(!next);
+    }
+
+    #[test]
+    fn empty_line_in_block_comment() {
+        let (tokens, next) = tokenize_line("", true);
+        assert!(tokens.is_empty());
+        assert!(next);
+    }
+
+    #[test]
+    fn globals_call_exact_token_sequence() {
+        let line = r#"let q = sl::globals::get("counter");"#;
+        let (tokens, next) = tokenize_line(line, false);
+        assert!(!next);
+        let kinds: Vec<RhaiTokenKind> = tokens.iter().map(|(_, k)| *k).collect();
+        assert_eq!(
+            kinds,
+            [
+                RhaiTokenKind::Keyword,
+                RhaiTokenKind::Identifier,
+                RhaiTokenKind::Operator,
+                RhaiTokenKind::Namespace,
+                RhaiTokenKind::Punctuation,
+                RhaiTokenKind::Namespace,
+                RhaiTokenKind::Punctuation,
+                RhaiTokenKind::FunctionCall,
+                RhaiTokenKind::Punctuation,
+                RhaiTokenKind::StringLit,
+                RhaiTokenKind::Punctuation,
+                RhaiTokenKind::Punctuation,
+            ]
+        );
+        assert_eq!(tokens[0].0, 0..3);
+        assert_eq!(tokens[1].0, 4..5);
+        assert_eq!(tokens[2].0, 6..7);
+        assert_eq!(tokens[3].0, 8..10);
+        assert_eq!(tokens[4].0, 10..12);
+        assert_eq!(tokens[5].0, 12..19);
+        assert_eq!(tokens[6].0, 19..21);
+        assert_eq!(tokens[7].0, 21..24);
+        assert_eq!(tokens[8].0, 24..25);
+        assert_eq!(tokens[9].0, 25..34);
+        assert_eq!(tokens[10].0, 34..35);
+        assert_eq!(tokens[11].0, 35..36);
+    }
+
+    #[test]
+    fn block_comment_across_three_lines() {
+        let (t1, s1) = tokenize_line("/* a", false);
+        assert_eq!(t1, [(0..4, RhaiTokenKind::Comment)]);
+        assert!(s1);
+
+        let (t2, s2) = tokenize_line("b", s1);
+        assert_eq!(t2, [(0..1, RhaiTokenKind::Comment)]);
+        assert!(s2);
+
+        let (t3, s3) = tokenize_line("c */", s2);
+        assert_eq!(t3, [(0..4, RhaiTokenKind::Comment)]);
+        assert!(!s3);
+    }
+
+    #[test]
+    fn template_literal_entire_span() {
+        let line = "`hello ${name}`";
+        let (tokens, next) = tokenize_line(line, false);
+        assert!(!next);
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].1, RhaiTokenKind::TemplateLit);
+        assert_eq!(tokens[0].0, 0..line.len());
+    }
+
+    #[test]
+    fn number_decimal_integer() {
+        let (tokens, _) = tokenize_line("42", false);
+        assert_eq!(tokens, [(0..2, RhaiTokenKind::Number)]);
+    }
+
+    #[test]
+    fn number_float() {
+        let (tokens, _) = tokenize_line("3.14", false);
+        assert_eq!(tokens, [(0..4, RhaiTokenKind::Number)]);
+    }
+
+    #[test]
+    fn number_hex_prefix() {
+        let (tokens, _) = tokenize_line("0xFF", false);
+        assert_eq!(tokens, [(0..4, RhaiTokenKind::Number)]);
+    }
+
+    #[test]
+    fn number_underscore_separator() {
+        let (tokens, _) = tokenize_line("1_000", false);
+        assert_eq!(tokens, [(0..5, RhaiTokenKind::Number)]);
+    }
+
+    #[test]
+    fn number_float_exponent() {
+        let (tokens, _) = tokenize_line("1.5e10", false);
+        assert_eq!(tokens, [(0..6, RhaiTokenKind::Number)]);
+    }
+
+    #[test]
+    fn number_binary_prefix() {
+        let (tokens, _) = tokenize_line("0b1010", false);
+        assert_eq!(tokens, [(0..6, RhaiTokenKind::Number)]);
+    }
 }

@@ -25,6 +25,7 @@ pub mod output_device_picker;
 pub mod palette;
 pub mod picker;
 pub mod popover;
+pub mod rhai_highlight;
 pub mod sections;
 pub mod server;
 pub mod side_sheet;
@@ -78,6 +79,7 @@ pub use popover::{
     MenuItem, MenuPlacement, RowAction, actionable_count, menu_button, menu_button_trigger,
     menu_panel, row_actions,
 };
+pub use rhai_highlight::RhaiTokenKind;
 pub use sections::{
     BannerKind, ToastVariant, counter_badge, empty_state, live_status_banner, section_header,
     section_header_expandable, toast_banner,

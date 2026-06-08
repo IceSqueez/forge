@@ -303,96 +303,10 @@ pub fn counter_badge<'a, Msg: 'a>(count: u32, palette: &ForgePalette) -> Element
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::palette::CATPPUCCIN_MOCHA;
-
-    #[test]
-    fn section_header_compiles_without_count() {
-        let _: Element<'_, ()> = section_header("TRIGGERS", None, &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn section_header_compiles_with_count() {
-        let _: Element<'_, ()> = section_header("SUB-ACTIONS", Some(5), &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn empty_state_compiles_without_action() {
-        let _: Element<'_, ()> = empty_state(
-            "No triggers yet",
-            "Add your first trigger to get started.",
-            None::<(&str, ())>,
-            &CATPPUCCIN_MOCHA,
-        );
-    }
-
-    #[test]
-    fn empty_state_compiles_with_action() {
-        let _: Element<'_, u32> = empty_state(
-            "No actions",
-            "Create an action to begin.",
-            Some(("Add Action", 1u32)),
-            &CATPPUCCIN_MOCHA,
-        );
-    }
-
-    #[test]
-    fn toast_banner_compiles_for_all_variants() {
-        let _: Element<'_, u32> = toast_banner(
-            "Connected to Twitch.",
-            ToastVariant::Success,
-            0u32,
-            &CATPPUCCIN_MOCHA,
-        );
-        let _: Element<'_, u32> = toast_banner(
-            "Rate limit approaching.",
-            ToastVariant::Warning,
-            0u32,
-            &CATPPUCCIN_MOCHA,
-        );
-        let _: Element<'_, u32> = toast_banner(
-            "Connection lost.",
-            ToastVariant::Error,
-            0u32,
-            &CATPPUCCIN_MOCHA,
-        );
-        let _: Element<'_, u32> = toast_banner(
-            "EventSub active.",
-            ToastVariant::Info,
-            0u32,
-            &CATPPUCCIN_MOCHA,
-        );
-    }
-
-    #[test]
-    fn counter_badge_shows_count_below_limit() {
-        let _: Element<'_, ()> = counter_badge(42, &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn counter_badge_clamps_above_99() {
-        let _: Element<'_, ()> = counter_badge(150, &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn counter_badge_zero_is_valid() {
-        let _: Element<'_, ()> = counter_badge(0, &CATPPUCCIN_MOCHA);
-    }
 
     #[test]
     fn section_header_expandable_uses_chevron_down_when_expanded() {
         assert_eq!(chevron_for(true), '▾');
         assert_eq!(chevron_for(false), '▸');
-    }
-
-    #[test]
-    fn section_header_expandable_compiles_expanded() {
-        let _: Element<'_, u32> =
-            section_header_expandable(&CATPPUCCIN_MOCHA, "CHAT COMMANDS", 7, true, 0u32);
-    }
-
-    #[test]
-    fn section_header_expandable_compiles_collapsed() {
-        let _: Element<'_, u32> =
-            section_header_expandable(&CATPPUCCIN_MOCHA, "TIMERS", 3, false, 0u32);
     }
 }

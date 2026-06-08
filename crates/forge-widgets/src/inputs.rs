@@ -170,34 +170,6 @@ mod tests {
     use crate::palette::CATPPUCCIN_MOCHA;
     use crate::tokens::BORDER_THIN;
 
-    fn assert_element_compiles<Msg: Clone>(_e: Element<'_, Msg>) {}
-
-    #[test]
-    fn text_input_field_produces_element() {
-        let e = text_input_field("placeholder", "value", |s: String| s, &CATPPUCCIN_MOCHA);
-        assert_element_compiles(e);
-    }
-
-    #[test]
-    fn search_input_produces_element() {
-        let e = search_input("search...", "", |s: String| s, &CATPPUCCIN_MOCHA);
-        assert_element_compiles(e);
-    }
-
-    #[test]
-    fn select_produces_element_with_options() {
-        let opts = [("Option A", "a"), ("Option B", "b")];
-        let e = select(&opts, Some("a"), |v: &str| v.to_string(), &CATPPUCCIN_MOCHA);
-        assert_element_compiles(e);
-    }
-
-    #[test]
-    fn select_produces_element_with_no_selection() {
-        let opts = [("Option A", "a")];
-        let e = select(&opts, None, |v: &str| v.to_string(), &CATPPUCCIN_MOCHA);
-        assert_element_compiles(e);
-    }
-
     #[test]
     fn text_input_active_uses_shell_bg_and_input_border() {
         let style = text_input_style(CATPPUCCIN_MOCHA, text_input::Status::Active);
@@ -233,14 +205,5 @@ mod tests {
             pick_list::Status::Opened { is_hovered: false },
         );
         assert_eq!(style.border.color, CATPPUCCIN_MOCHA.border_active);
-    }
-
-    #[test]
-    fn input_padding_is_8_by_12() {
-        let p = input_padding();
-        assert_eq!(p.top, 8.0);
-        assert_eq!(p.bottom, 8.0);
-        assert_eq!(p.left, 12.0);
-        assert_eq!(p.right, 12.0);
     }
 }

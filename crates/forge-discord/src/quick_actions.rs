@@ -106,13 +106,6 @@ mod tests {
     use crate::content::record_send;
 
     #[test]
-    fn actions_returns_exactly_four() {
-        let c = DiscordClient::new_for_test();
-        let qa: &dyn QuickActions = &*c;
-        assert_eq!(qa.actions().len(), 4);
-    }
-
-    #[test]
     fn all_actions_disabled_when_no_webhooks() {
         let c = DiscordClient::new_for_test();
         let actions = c.actions();

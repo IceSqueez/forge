@@ -231,13 +231,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stop_when_not_running_returns_ok() {
-        let creds: Arc<dyn CredentialsRepo> = MemCreds::new();
-        let sub = ServerSubsystem::new(creds);
-        sub.stop().await.expect("stop must succeed when idle");
-    }
-
-    #[tokio::test]
     async fn restart_when_not_running_returns_error() {
         let creds: Arc<dyn CredentialsRepo> = MemCreds::new();
         let sub = ServerSubsystem::new(creds);

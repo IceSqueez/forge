@@ -291,11 +291,6 @@ mod tests {
     }
 
     #[test]
-    fn scope_list_is_non_empty() {
-        assert!(!TROVO_BROADCASTER_SCOPES.is_empty());
-    }
-
-    #[test]
     fn scope_list_contains_required_scopes() {
         assert!(TROVO_BROADCASTER_SCOPES.contains(&"chat_connect"));
         assert!(TROVO_BROADCASTER_SCOPES.contains(&"send_to_my_channel"));

@@ -134,11 +134,6 @@ mod tests {
     }
 
     #[test]
-    fn id_is_stable() {
-        assert_eq!(SupportGiftSubDescriptor.id(), "twitch.support.gift_sub");
-    }
-
-    #[test]
     fn always_matches() {
         assert!(SupportGiftSubDescriptor.matches_trigger(&TriggerConfig::new(), &gift_event()));
     }

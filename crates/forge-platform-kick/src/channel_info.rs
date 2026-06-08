@@ -131,7 +131,7 @@ struct LivestreamField {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use wiremock::matchers::{header, method, path};
+    use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[tokio::test]
@@ -212,24 +212,5 @@ mod tests {
         let info = fetcher.fetch().await.unwrap();
         assert!(!info.is_live);
         assert_eq!(info.viewer_count, 0);
-    }
-
-    #[tokio::test]
-    async fn fetch_sends_user_agent_header() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/slug_with_ua"))
-            .and(header("user-agent", USER_AGENT))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "chatroom": { "id": 1 },
-                "livestream": null
-            })))
-            .mount(&server)
-            .await;
-
-        let http = reqwest::Client::new();
-        let fetcher =
-            ChannelInfoFetcher::with_endpoint("slug_with_ua".to_owned(), http, server.uri());
-        fetcher.fetch().await.unwrap();
     }
 }

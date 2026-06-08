@@ -41,24 +41,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn data_dir_ends_with_app_segment() {
-        let path = data_dir();
-        let last = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-        assert_eq!(last, app_segment());
-    }
-
-    #[test]
-    fn config_dir_ends_with_app_segment() {
-        let path = config_dir();
-        let last = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-        assert_eq!(last, app_segment());
-    }
-
-    #[test]
-    fn cache_dir_ends_with_app_segment() {
-        let path = cache_dir();
-        let last = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-        assert_eq!(last, app_segment());
+    fn all_three_dirs_end_with_app_segment() {
+        for path in [data_dir(), config_dir(), cache_dir()] {
+            let last = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+            assert_eq!(last, app_segment());
+        }
     }
 
     #[cfg(target_os = "linux")]

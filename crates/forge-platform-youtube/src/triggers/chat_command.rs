@@ -189,19 +189,6 @@ mod tests {
     }
 
     #[test]
-    fn kind_id_matches_canonical() {
-        assert_eq!(ChatCommandDescriptor.id(), "youtube.chat.command");
-    }
-
-    #[test]
-    fn is_platform_specific_youtube() {
-        assert_eq!(
-            ChatCommandDescriptor.event_filter().source,
-            Some(EventSource::YouTube)
-        );
-    }
-
-    #[test]
     fn matches_case_insensitive_prefix() {
         let cfg = make_config("!roll", false);
         assert!(ChatCommandDescriptor.matches_trigger(&cfg, &command_event("!Roll 1d6")));

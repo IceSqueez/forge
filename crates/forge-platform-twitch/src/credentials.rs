@@ -95,37 +95,4 @@ mod tests {
         };
         assert!(!format!("{cred:?}").contains("DEADBEEF_BEARER"));
     }
-
-    #[test]
-    fn twitch_credential_id_matches_expected_key() {
-        assert_eq!(TWITCH_CREDENTIAL_ID, "twitch:broadcaster");
-    }
-
-    #[test]
-    fn expires_at_none_on_zero_unix_secs() {
-        let bundle: serde_json::Value = serde_json::json!({
-            "access_token": "tok",
-            "user_id": "123",
-            "login": "user",
-            "expires_at_unix": 0_i64,
-        });
-        let secs = bundle["expires_at_unix"].as_i64().unwrap();
-        let result: Option<SystemTime> = if secs <= 0 {
-            None
-        } else {
-            Some(std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs as u64))
-        };
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn expires_at_some_on_positive_unix_secs() {
-        let secs: i64 = 1_700_000_000;
-        let result: Option<SystemTime> = if secs <= 0 {
-            None
-        } else {
-            Some(std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs as u64))
-        };
-        assert!(result.is_some());
-    }
 }

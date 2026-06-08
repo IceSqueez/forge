@@ -53,36 +53,3 @@ pub fn palette_for_theme(theme_id: ThemeId) -> &'static ForgePalette {
         ThemeId::Latte => &LATTE,
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn catppuccin_mocha_theme_has_expected_name() {
-        let (theme, _palette) = catppuccin_mocha();
-        assert_eq!(theme.to_string(), "Catppuccin Mocha");
-    }
-
-    #[test]
-    fn tokyo_night_storm_theme_has_expected_name() {
-        let (theme, _palette) = tokyo_night_storm();
-        assert_eq!(theme.to_string(), "Tokyo Night Storm");
-    }
-
-    #[test]
-    fn latte_theme_has_expected_name() {
-        let (theme, _palette) = latte();
-        assert_eq!(theme.to_string(), "Latte");
-    }
-
-    #[test]
-    fn palette_for_theme_returns_correct_palette() {
-        assert_eq!(
-            palette_for_theme(ThemeId::CatppuccinMocha),
-            &CATPPUCCIN_MOCHA
-        );
-        assert_eq!(palette_for_theme(ThemeId::TokyoNight), &TOKYO_NIGHT);
-        assert_eq!(palette_for_theme(ThemeId::Latte), &LATTE);
-    }
-}

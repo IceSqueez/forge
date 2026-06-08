@@ -93,16 +93,6 @@ mod tests {
     }
 
     #[test]
-    fn kind_id_matches_canonical() {
-        assert_eq!(FollowDescriptor.id(), "trovo.follow");
-    }
-
-    #[test]
-    fn category_is_users() {
-        assert_eq!(FollowDescriptor.category(), TriggerCategory::Users);
-    }
-
-    #[test]
     fn build_arg_stack_extracts_user_fields() {
         let stack = FollowDescriptor.build_arg_stack(&follow_event());
         assert_eq!(

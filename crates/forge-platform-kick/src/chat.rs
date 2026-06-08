@@ -311,7 +311,7 @@ struct PusherFrame {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use forge_events::EventSource;
@@ -333,59 +333,52 @@ mod tests {
     }
 
     #[test]
-    fn build_event_chat_message() {
-        let event = build_event("App\\Events\\ChatMessageEvent", chat_payload()).unwrap();
-        assert_eq!(event.kind, "kick.chat");
-        assert_eq!(event.source, EventSource::Kick);
-    }
-
-    #[test]
-    fn build_event_message_deleted() {
-        let payload = serde_json::json!({"message_id": "abc", "deleted_by": 5});
-        let event = build_event("App\\Events\\MessageDeletedEvent", payload).unwrap();
-        assert_eq!(event.kind, "kick.message_deleted");
-        assert_eq!(event.source, EventSource::Kick);
-    }
-
-    #[test]
-    fn build_event_user_banned() {
-        let payload =
-            serde_json::json!({"user": {"id": 1, "username": "bad_user"}, "banned_by": {"id": 2}});
-        let event = build_event("App\\Events\\UserBannedEvent", payload).unwrap();
-        assert_eq!(event.kind, "kick.ban");
-        assert_eq!(event.source, EventSource::Kick);
-    }
-
-    #[test]
-    fn build_event_subscription() {
-        let payload = serde_json::json!({"user_ids": [1], "username": "sub_user", "months": 1});
-        let event = build_event("App\\Events\\SubscriptionEvent", payload).unwrap();
-        assert_eq!(event.kind, "kick.sub");
-    }
-
-    #[test]
-    fn build_event_gifted_subs() {
-        let payload = serde_json::json!({"gifted_usernames": ["a", "b"], "gifter_username": "g"});
-        let event = build_event("App\\Events\\GiftedSubscriptionsEvent", payload).unwrap();
-        assert_eq!(event.kind, "kick.sub_gift");
-    }
-
-    #[test]
-    fn build_event_host() {
-        let payload = serde_json::json!({"host_username": "host_channel", "number_viewers": 150});
-        let event = build_event("App\\Events\\StreamHostEvent", payload).unwrap();
-        assert_eq!(event.kind, "kick.host");
-    }
-
-    #[test]
-    fn build_event_unknown_returns_none() {
-        let event = build_event("App\\Events\\Unknown", serde_json::Value::Null);
-        assert!(event.is_none());
-    }
-
-    #[test]
-    fn build_event_pusher_pong_skipped_in_handler() {
-        assert!(build_event("pusher:pong", serde_json::Value::Null).is_none());
+    fn build_event_dispatches_per_pusher_event_type() {
+        let cases = vec![
+            (
+                "App\\Events\\ChatMessageEvent",
+                chat_payload(),
+                Some("kick.chat"),
+            ),
+            (
+                "App\\Events\\MessageDeletedEvent",
+                serde_json::json!({"message_id": "abc", "deleted_by": 5}),
+                Some("kick.message_deleted"),
+            ),
+            (
+                "App\\Events\\UserBannedEvent",
+                serde_json::json!({"user": {"id": 1, "username": "bad_user"}, "banned_by": {"id": 2}}),
+                Some("kick.ban"),
+            ),
+            (
+                "App\\Events\\SubscriptionEvent",
+                serde_json::json!({"user_ids": [1], "username": "sub_user", "months": 1}),
+                Some("kick.sub"),
+            ),
+            (
+                "App\\Events\\GiftedSubscriptionsEvent",
+                serde_json::json!({"gifted_usernames": ["a", "b"], "gifter_username": "g"}),
+                Some("kick.sub_gift"),
+            ),
+            (
+                "App\\Events\\StreamHostEvent",
+                serde_json::json!({"host_username": "host_channel", "number_viewers": 150}),
+                Some("kick.host"),
+            ),
+            ("App\\Events\\Unknown", serde_json::Value::Null, None),
+            ("pusher:pong", serde_json::Value::Null, None),
+        ];
+        for (event_type, payload, expected_kind) in cases {
+            let result = build_event(event_type, payload);
+            match expected_kind {
+                Some(kind) => {
+                    let ev = result.expect("must build event");
+                    assert_eq!(ev.kind, kind, "kind for {event_type}");
+                    assert_eq!(ev.source, EventSource::Kick);
+                }
+                None => assert!(result.is_none(), "must be None for {event_type}"),
+            }
+        }
     }
 
     #[tokio::test]
@@ -429,10 +422,5 @@ mod tests {
         });
         handle_ws_text(&frame.to_string(), &tx).await;
         assert!(rx.try_recv().is_err());
-    }
-
-    #[test]
-    fn pusher_app_key_is_nonempty() {
-        assert!(!PUSHER_APP_KEY.is_empty());
     }
 }

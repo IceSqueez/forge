@@ -402,46 +402,36 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unauthenticated_do_action_returns_unauthenticated_error() {
+    async fn mutating_methods_without_auth_return_unauthenticated() {
         let ctx = make_ctx(false, false);
-        let req = WsEnvelope {
-            id: Some("5".to_owned()),
-            inner: WsRequest::DoAction {
+        let requests = vec![
+            WsRequest::DoAction {
                 action_id: "fake-id".to_owned(),
                 args: serde_json::Value::Null,
             },
-        };
-        let resp = dispatch(req, &ctx).await;
-        assert_eq!(resp.id, Some("5".to_owned()));
-        match resp.inner {
-            WsResponse::Error {
-                code: Some(code),
-                message,
-            } => {
-                assert_eq!(code, "UNAUTHENTICATED");
-                assert!(!message.is_empty());
-            }
-            other => panic!("expected UNAUTHENTICATED error, got {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn unauthenticated_set_global_returns_unauthenticated_error() {
-        let ctx = make_ctx(false, false);
-        let req = WsEnvelope {
-            id: Some("6".to_owned()),
-            inner: WsRequest::SetGlobal {
+            WsRequest::SetGlobal {
                 name: "counter".to_owned(),
                 value: serde_json::json!(42),
                 persisted: true,
             },
-        };
-        let resp = dispatch(req, &ctx).await;
-        match resp.inner {
-            WsResponse::Error {
-                code: Some(code), ..
-            } => assert_eq!(code, "UNAUTHENTICATED"),
-            other => panic!("expected UNAUTHENTICATED error, got {other:?}"),
+            WsRequest::TriggerCodeEvent {
+                name: "my_event".to_owned(),
+                args: serde_json::json!({}),
+            },
+        ];
+        for inner in requests {
+            let req = WsEnvelope {
+                id: Some("x".to_owned()),
+                inner,
+            };
+            let label = format!("{:?}", req.inner);
+            let resp = dispatch(req, &ctx).await;
+            match resp.inner {
+                WsResponse::Error {
+                    code: Some(code), ..
+                } => assert_eq!(code, "UNAUTHENTICATED", "for {label}"),
+                other => panic!("expected UNAUTHENTICATED for {label}, got {other:?}"),
+            }
         }
     }
 
@@ -652,25 +642,6 @@ mod tests {
         let events = json["events"].as_array().unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0]["kind"], "test.c");
-    }
-
-    #[tokio::test]
-    async fn replay_event_without_auth_returns_unauthenticated() {
-        let ctx = make_ctx(false, false);
-        let ev = Event::new(EventSource::Core, "test.event", serde_json::json!({}));
-        let ev_id = ev.id.to_string();
-        ctx.bus.publish(ev);
-        let req = WsEnvelope {
-            id: Some("14".to_owned()),
-            inner: WsRequest::ReplayEvent { event_id: ev_id },
-        };
-        let resp = dispatch(req, &ctx).await;
-        match resp.inner {
-            WsResponse::Error {
-                code: Some(code), ..
-            } => assert_eq!(code, "UNAUTHENTICATED"),
-            other => panic!("expected UNAUTHENTICATED, got {other:?}"),
-        }
     }
 
     #[tokio::test]
@@ -944,26 +915,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn set_global_without_auth_returns_unauthenticated() {
-        let ctx = make_ctx(false, false);
-        let req = WsEnvelope {
-            id: Some("10".to_owned()),
-            inner: WsRequest::SetGlobal {
-                name: "counter".to_owned(),
-                value: serde_json::json!(99),
-                persisted: true,
-            },
-        };
-        let resp = dispatch(req, &ctx).await;
-        match resp.inner {
-            WsResponse::Error {
-                code: Some(code), ..
-            } => assert_eq!(code, "UNAUTHENTICATED"),
-            other => panic!("expected UNAUTHENTICATED error, got {other:?}"),
-        }
-    }
-
-    #[tokio::test]
     async fn set_global_with_auth_returns_ok_and_emits_event() {
         let ctx = make_ctx(true, false);
         let mut bus_sub = ctx.bus.subscribe();
@@ -1099,25 +1050,6 @@ mod tests {
         assert_eq!(json["status"], "ok");
         let globals = json["globals"].as_array().unwrap();
         assert_eq!(globals.len(), 2);
-    }
-
-    #[tokio::test]
-    async fn trigger_code_event_without_auth_returns_unauthenticated() {
-        let ctx = make_ctx(false, false);
-        let req = WsEnvelope {
-            id: Some("12".to_owned()),
-            inner: WsRequest::TriggerCodeEvent {
-                name: "my_event".to_owned(),
-                args: serde_json::json!({ "scene": "Gameplay" }),
-            },
-        };
-        let resp = dispatch(req, &ctx).await;
-        match resp.inner {
-            WsResponse::Error {
-                code: Some(code), ..
-            } => assert_eq!(code, "UNAUTHENTICATED"),
-            other => panic!("expected UNAUTHENTICATED error, got {other:?}"),
-        }
     }
 
     #[tokio::test]

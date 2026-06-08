@@ -86,24 +86,6 @@ mod tests {
     }
 
     #[test]
-    fn kind_id_matches_canonical() {
-        assert_eq!(SpellDescriptor.id(), "trovo.spell");
-    }
-
-    #[test]
-    fn category_is_bits() {
-        assert_eq!(SpellDescriptor.category(), TriggerCategory::Bits);
-    }
-
-    #[test]
-    fn is_platform_specific_trovo() {
-        assert_eq!(
-            SpellDescriptor.event_filter().source,
-            Some(EventSource::Trovo)
-        );
-    }
-
-    #[test]
     fn build_arg_stack_extracts_content() {
         let stack = SpellDescriptor.build_arg_stack(&spell_event());
         assert_eq!(

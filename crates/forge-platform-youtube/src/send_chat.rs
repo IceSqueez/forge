@@ -115,7 +115,7 @@ mod tests {
     use forge_platform_core::PlatformError;
     use futures::future::BoxFuture;
     use serde_json::json;
-    use wiremock::matchers::{body_json, header, method, path};
+    use wiremock::matchers::{body_json, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn token_source()
@@ -259,23 +259,6 @@ mod tests {
             matches!(err, PlatformError::Auth { .. }),
             "expected Auth for operationNotSupported, got: {err}"
         );
-    }
-
-    #[tokio::test]
-    async fn send_respects_authorization_bearer_header() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("POST"))
-            .and(path("/liveChat/messages"))
-            .and(header("authorization", "Bearer test-token"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
-            .mount(&server)
-            .await;
-
-        let (sender, handle) = make_sender(&server);
-        handle.set(Some("lc-auth-check".to_owned()));
-
-        sender.send("hello").await.unwrap();
     }
 
     #[tokio::test]

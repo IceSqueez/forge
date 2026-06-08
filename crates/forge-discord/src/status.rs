@@ -49,45 +49,15 @@ impl BuiltinStatus for DiscordClient {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_platform_core::{BuiltinStatus, ConnectionState};
 
     use crate::client::DiscordClient;
 
     #[test]
-    fn id_is_discord() {
-        let c = DiscordClient::new_for_test();
-        let s: &dyn BuiltinStatus = &*c;
-        assert_eq!(s.id().as_str(), "discord");
-    }
-
-    #[test]
-    fn display_name_is_discord() {
-        let c = DiscordClient::new_for_test();
-        let s: &dyn BuiltinStatus = &*c;
-        assert_eq!(s.display_name(), "Discord");
-    }
-
-    #[test]
     fn connection_disconnected_when_no_webhooks() {
         let c = DiscordClient::new_for_test();
         let s: &dyn BuiltinStatus = &*c;
         assert_eq!(s.connection(), ConnectionState::Disconnected);
-    }
-
-    #[test]
-    fn capability_flags_not_limited() {
-        let c = DiscordClient::new_for_test();
-        let s: &dyn BuiltinStatus = &*c;
-        let flags = s.capability_flags();
-        assert!(!flags.limited);
-    }
-
-    #[test]
-    fn version_is_none() {
-        let c = DiscordClient::new_for_test();
-        let s: &dyn BuiltinStatus = &*c;
-        assert!(s.version().is_none());
     }
 }

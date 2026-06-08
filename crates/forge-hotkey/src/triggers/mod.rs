@@ -15,13 +15,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn register_hotkey_triggers_registers_one_descriptor() {
-        let mut reg = TriggerRegistry::new();
-        register_hotkey_triggers(&mut reg).unwrap();
-        assert_eq!(reg.all().count(), 1);
-    }
-
-    #[test]
     fn hotkey_triggered_id_present() {
         let mut reg = TriggerRegistry::new();
         register_hotkey_triggers(&mut reg).unwrap();

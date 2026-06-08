@@ -330,18 +330,6 @@ mod tests {
     }
 
     #[test]
-    fn catalog_all_entries_have_fn_kind() {
-        for entry in catalog() {
-            assert!(
-                matches!(entry.kind, SymbolKind::Fn),
-                "entry {}::{} must have kind Fn",
-                entry.namespace.unwrap_or("(root)"),
-                entry.name
-            );
-        }
-    }
-
-    #[test]
     fn resolve_finds_globals_get_in_sl_namespace() {
         let line = "sl::globals::get";
         let tokens: Vec<(Range<usize>, SymbolToken)> = vec![

@@ -351,11 +351,6 @@ mod tests {
     }
 
     #[test]
-    fn default_scopes_non_empty() {
-        assert!(!TWITCH_BROADCASTER_SCOPES.is_empty());
-    }
-
-    #[test]
     fn client_id_prefers_runtime_over_compile_time() {
         assert_eq!(
             resolve_client_id(Some("runtime_id"), Some("compile_id")),

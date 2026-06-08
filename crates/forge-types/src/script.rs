@@ -27,21 +27,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn script_contract_default_is_empty() {
-        let c = ScriptContract::default();
-        assert!(c.inputs.is_empty());
-        assert!(c.returns.is_none());
-    }
-
-    #[test]
-    fn script_contract_serde_roundtrip_empty() {
-        let c = ScriptContract::default();
-        let json = serde_json::to_string(&c).unwrap();
-        let back: ScriptContract = serde_json::from_str(&json).unwrap();
-        assert_eq!(c, back);
-    }
-
-    #[test]
     fn script_contract_serde_roundtrip_with_inputs_and_return() {
         let c = ScriptContract {
             inputs: vec![
@@ -71,16 +56,6 @@ mod tests {
         assert_eq!(json["name"], "user");
         assert_eq!(json["kind"], "string");
         assert!(json.is_object());
-    }
-
-    #[test]
-    fn annotation_diagnostic_fields_accessible() {
-        let d = AnnotationDiagnostic {
-            line: 0,
-            message: "undeclared variable".into(),
-        };
-        assert_eq!(d.line, 0);
-        assert_eq!(d.message, "undeclared variable");
     }
 
     #[test]

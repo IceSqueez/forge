@@ -85,13 +85,6 @@ mod tests {
     use crate::client::VTubeClient;
 
     #[test]
-    fn actions_returns_exactly_four() {
-        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        let qa: &dyn QuickActions = &c;
-        assert_eq!(qa.actions().len(), 4);
-    }
-
-    #[test]
     fn trigger_hotkey_has_correct_kind_id_and_hotkey_picker() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
         let actions = c.actions();

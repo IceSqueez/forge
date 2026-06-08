@@ -419,57 +419,26 @@ mod tests {
     }
 
     #[test]
-    fn any_scope_fires_on_twitch_source() {
+    fn any_scope_matches_every_source() {
         let instance = scoped_instance(PlatformScope::Any);
-        let event = Event::new(EventSource::Twitch, "chat.message", json!({}));
-        assert!(scope_matches(&instance, &event));
+        for src in [EventSource::Twitch, EventSource::Core, EventSource::YouTube] {
+            let event = Event::new(src, "x", json!({}));
+            assert!(scope_matches(&instance, &event), "Any failed for {src:?}");
+        }
     }
 
     #[test]
-    fn any_scope_fires_on_core_source() {
-        let instance = scoped_instance(PlatformScope::Any);
-        let event = Event::new(EventSource::Core, "timer.tick", json!({}));
-        assert!(scope_matches(&instance, &event));
-    }
-
-    #[test]
-    fn only_twitch_fires_on_twitch() {
-        let mut set = std::collections::BTreeSet::new();
-        set.insert(PlatformId::Twitch);
-        let instance = scoped_instance(PlatformScope::only(set).unwrap());
-        let event = Event::new(EventSource::Twitch, "chat.message", json!({}));
-        assert!(scope_matches(&instance, &event));
-    }
-
-    #[test]
-    fn only_twitch_does_not_fire_on_youtube() {
-        let mut set = std::collections::BTreeSet::new();
-        set.insert(PlatformId::Twitch);
-        let instance = scoped_instance(PlatformScope::only(set).unwrap());
-        let event = Event::new(EventSource::YouTube, "chat.message", json!({}));
-        assert!(!scope_matches(&instance, &event));
-    }
-
-    #[test]
-    fn only_twitch_does_not_fire_on_core() {
-        let mut set = std::collections::BTreeSet::new();
-        set.insert(PlatformId::Twitch);
-        let instance = scoped_instance(PlatformScope::only(set).unwrap());
-        let event = Event::new(EventSource::Core, "timer.tick", json!({}));
-        assert!(!scope_matches(&instance, &event));
-    }
-
-    #[test]
-    fn only_multi_platform_fires_on_listed() {
+    fn only_scope_matches_listed_and_rejects_others() {
         let mut set = std::collections::BTreeSet::new();
         set.insert(PlatformId::Twitch);
         set.insert(PlatformId::YouTube);
-        let scope = PlatformScope::only(set).unwrap();
-        let instance_twitch = scoped_instance(scope.clone());
-        let instance_youtube = scoped_instance(scope);
-        let twitch_event = Event::new(EventSource::Twitch, "chat.message", json!({}));
-        let youtube_event = Event::new(EventSource::YouTube, "chat.message", json!({}));
-        assert!(scope_matches(&instance_twitch, &twitch_event));
-        assert!(scope_matches(&instance_youtube, &youtube_event));
+        let instance = scoped_instance(PlatformScope::only(set).unwrap());
+
+        for src in [EventSource::Twitch, EventSource::YouTube] {
+            assert!(scope_matches(&instance, &Event::new(src, "x", json!({}))));
+        }
+        for src in [EventSource::Kick, EventSource::Core] {
+            assert!(!scope_matches(&instance, &Event::new(src, "x", json!({}))));
+        }
     }
 }

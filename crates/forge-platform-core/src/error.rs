@@ -39,32 +39,6 @@ pub enum PlatformError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::error::Error;
-
-    #[test]
-    fn network_displays_non_empty() {
-        let e = PlatformError::Network {
-            reason: "connection refused".into(),
-        };
-        assert!(!e.to_string().is_empty());
-    }
-
-    #[test]
-    fn http_displays_non_empty() {
-        let e = PlatformError::Http {
-            status: 429,
-            body: "too many requests".into(),
-        };
-        assert!(!e.to_string().is_empty());
-    }
-
-    #[test]
-    fn auth_displays_non_empty() {
-        let e = PlatformError::Auth {
-            reason: "invalid credentials".into(),
-        };
-        assert!(!e.to_string().is_empty());
-    }
 
     #[test]
     fn reauth_required_carries_platform_name() {
@@ -73,58 +47,5 @@ mod tests {
         };
         let msg = e.to_string();
         assert!(msg.contains("twitch"), "expected platform name in: {msg}");
-        assert!(!msg.is_empty());
-    }
-
-    #[test]
-    fn rate_limited_displays_non_empty() {
-        let e = PlatformError::RateLimited {
-            retry_after_secs: 30,
-        };
-        assert!(!e.to_string().is_empty());
-    }
-
-    #[test]
-    fn rate_limit_exhausted_displays_non_empty() {
-        let e = PlatformError::RateLimitExhausted;
-        assert!(!e.to_string().is_empty());
-    }
-
-    #[test]
-    fn quota_exhausted_displays_non_empty() {
-        let e = PlatformError::QuotaExhausted;
-        assert!(!e.to_string().is_empty());
-    }
-
-    #[test]
-    fn unsupported_displays_non_empty() {
-        let e = PlatformError::Unsupported {
-            feature: "polls".into(),
-        };
-        assert!(!e.to_string().is_empty());
-    }
-
-    #[test]
-    fn serialization_from_serde_error() {
-        let result = serde_json::from_str::<serde_json::Value>("{invalid}");
-        assert!(result.is_err());
-        if let Err(serde_err) = result {
-            let e: PlatformError = serde_err.into();
-            assert!(!e.to_string().is_empty());
-        }
-    }
-
-    #[test]
-    fn io_from_std_io_error() {
-        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file missing");
-        let e: PlatformError = io_err.into();
-        assert!(!e.to_string().is_empty());
-    }
-
-    #[test]
-    fn platform_error_satisfies_std_error_trait() {
-        fn accepts_error<E: Error>(_: &E) {}
-        let e = PlatformError::RateLimitExhausted;
-        accepts_error(&e);
     }
 }

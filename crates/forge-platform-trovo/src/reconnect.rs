@@ -26,19 +26,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn attempt_zero_is_within_bounds() {
-        let d = next_backoff(0);
-        assert!(d <= Duration::from_millis(CAP_MS));
-        assert!(d >= Duration::ZERO);
-    }
-
-    #[test]
-    fn attempt_saturates_at_cap() {
-        let d = next_backoff(100);
-        assert!(d <= Duration::from_millis(CAP_MS));
-    }
-
-    #[test]
     fn backoff_within_jitter_bounds_for_known_attempts() {
         for attempt in 0u32..8 {
             let shift = attempt.min(32);

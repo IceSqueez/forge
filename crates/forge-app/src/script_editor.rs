@@ -1452,7 +1452,6 @@ pub enum ScriptEditorMsg {
 mod tests {
     use super::*;
     use forge_storage_sqlite::SqliteBackend;
-    use forge_widgets::palette::CATPPUCCIN_MOCHA;
 
     fn make_test_state_with_editor(body: &str, original: &str) -> ScriptEditorState {
         let mut s = ScriptEditorState::new();
@@ -1539,72 +1538,6 @@ mod tests {
         });
         assert!(state.editor.is_some());
         assert_eq!(state.editor.as_ref().unwrap().record.name, "greet");
-    }
-
-    #[test]
-    fn view_no_scripts_compiles() {
-        use crate::app::App;
-        let app = App::default();
-        let _: iced::Element<'_, Message> = script_editor_view(&app, &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn view_with_scripts_compiles() {
-        use crate::app::App;
-        let mut app = App::default();
-        let id = ScriptId::new();
-        app.ui.script_editor.scripts.push(ScriptListEntry {
-            id,
-            name: "test".to_owned(),
-            enabled: true,
-        });
-        app.ui.script_editor.selected = Some(id);
-        let _: iced::Element<'_, Message> = script_editor_view(&app, &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn view_with_editor_open_compiles() {
-        use crate::app::App;
-        let mut app = App::default();
-        let id = ScriptId::new();
-        let now = OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap();
-        let body = "1 + 1".to_owned();
-        app.ui.script_editor.editor = Some(OpenScript {
-            id,
-            original_body: body.clone(),
-            widget: ScriptEditorWidgetState::with_text(&body),
-            record: ScriptRecord {
-                id,
-                name: "test".to_owned(),
-                body: body.clone(),
-                contract: ScriptContract::default(),
-                body_hash: content_hash(&body),
-                enabled: true,
-                created_at: now,
-                last_modified: now,
-            },
-        });
-        let _: iced::Element<'_, Message> = script_editor_view(&app, &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn view_with_run_modal_open_compiles() {
-        use crate::app::App;
-        let mut app = App::default();
-        let id = ScriptId::new();
-        app.ui.script_editor.run_modal = Some(RunModalForm {
-            script_id: id,
-            script_name: "test".to_owned(),
-            display_title: "Run script: test".to_owned(),
-            inputs: vec![RunModalInputField {
-                name: "x".to_owned(),
-                kind: VariantKind::Int,
-                raw_value: "42".to_owned(),
-            }],
-            error: None,
-            running: false,
-        });
-        let _: iced::Element<'_, Message> = script_editor_view(&app, &CATPPUCCIN_MOCHA);
     }
 
     #[test]

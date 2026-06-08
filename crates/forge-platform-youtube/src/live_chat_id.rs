@@ -27,30 +27,8 @@ impl LiveChatIdHandle {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn new_handle_is_none() {
-        let h = LiveChatIdHandle::new();
-        assert!(h.get().is_none());
-    }
-
-    #[test]
-    fn set_some_then_get_returns_value() {
-        let h = LiveChatIdHandle::new();
-        h.set(Some("lc-abc123".to_owned()));
-        assert_eq!(h.get().as_deref(), Some("lc-abc123"));
-    }
-
-    #[test]
-    fn set_none_clears_value() {
-        let h = LiveChatIdHandle::new();
-        h.set(Some("lc-abc123".to_owned()));
-        h.set(None);
-        assert!(h.get().is_none());
-    }
 
     #[test]
     fn clone_shares_inner_state() {

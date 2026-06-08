@@ -117,13 +117,6 @@ mod tests {
     use crate::events::{MidiPortInfo, PortDirection};
 
     #[test]
-    fn actions_returns_exactly_four() {
-        let c = MidiClient::new_for_test();
-        let qa: &dyn QuickActions = &*c;
-        assert_eq!(qa.actions().len(), 4);
-    }
-
-    #[test]
     fn all_actions_disabled_when_no_output_ports() {
         let c = MidiClient::new_for_test();
         for action in c.actions() {

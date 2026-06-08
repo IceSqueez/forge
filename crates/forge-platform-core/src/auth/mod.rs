@@ -23,47 +23,46 @@ pub enum AuthFlow {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
-    #[allow(clippy::unwrap_used)]
     #[test]
-    fn device_code_roundtrip_preserves_discriminant() {
-        let flow = AuthFlow::DeviceCode {
-            user_code_endpoint: "https://id.twitch.tv/oauth2/device".to_owned(),
-            token_endpoint: "https://id.twitch.tv/oauth2/token".to_owned(),
-            scopes: vec!["chat:read".to_owned(), "chat:edit".to_owned()],
-        };
-        let json = serde_json::to_string(&flow).unwrap();
-        assert!(json.contains(r#""kind":"device_code""#));
-        let decoded: AuthFlow = serde_json::from_str(&json).unwrap();
-        assert_eq!(flow, decoded);
-    }
-
-    #[allow(clippy::unwrap_used)]
-    #[test]
-    fn local_callback_roundtrip_preserves_discriminant() {
-        let flow = AuthFlow::LocalCallback {
-            authorize_url: "https://open.trovo.live/page/login.html".to_owned(),
-            token_endpoint: "https://open-api.trovo.live/openplatform/exchangetoken".to_owned(),
-            redirect_path: "/oauth/callback".to_owned(),
-            scopes: vec!["channel:read".to_owned()],
-        };
-        let json = serde_json::to_string(&flow).unwrap();
-        assert!(json.contains(r#""kind":"local_callback""#));
-        let decoded: AuthFlow = serde_json::from_str(&json).unwrap();
-        assert_eq!(flow, decoded);
-    }
-
-    #[allow(clippy::unwrap_used)]
-    #[test]
-    fn none_roundtrip_preserves_discriminant() {
-        let flow = AuthFlow::None {
-            reason: "no public OAuth API as of 2024; chat-only via unofficial WS".to_owned(),
-        };
-        let json = serde_json::to_string(&flow).unwrap();
-        assert!(json.contains(r#""kind":"none""#));
-        let decoded: AuthFlow = serde_json::from_str(&json).unwrap();
-        assert_eq!(flow, decoded);
+    fn auth_flow_serde_roundtrip_preserves_kind_per_variant() {
+        for (flow, expected_kind) in [
+            (
+                AuthFlow::DeviceCode {
+                    user_code_endpoint: "https://id.twitch.tv/oauth2/device".to_owned(),
+                    token_endpoint: "https://id.twitch.tv/oauth2/token".to_owned(),
+                    scopes: vec!["chat:read".to_owned(), "chat:edit".to_owned()],
+                },
+                "device_code",
+            ),
+            (
+                AuthFlow::LocalCallback {
+                    authorize_url: "https://open.trovo.live/page/login.html".to_owned(),
+                    token_endpoint: "https://open-api.trovo.live/openplatform/exchangetoken"
+                        .to_owned(),
+                    redirect_path: "/oauth/callback".to_owned(),
+                    scopes: vec!["channel:read".to_owned()],
+                },
+                "local_callback",
+            ),
+            (
+                AuthFlow::None {
+                    reason: "no public OAuth API as of 2024; chat-only via unofficial WS"
+                        .to_owned(),
+                },
+                "none",
+            ),
+        ] {
+            let json = serde_json::to_string(&flow).unwrap();
+            assert!(
+                json.contains(&format!(r#""kind":"{expected_kind}""#)),
+                "kind tag for {expected_kind}: {json}"
+            );
+            let decoded: AuthFlow = serde_json::from_str(&json).unwrap();
+            assert_eq!(flow, decoded);
+        }
     }
 }

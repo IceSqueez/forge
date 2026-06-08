@@ -191,12 +191,6 @@ mod tests {
     use crate::{App, Screen};
 
     #[test]
-    fn stream_apps_view_renders_without_panic() {
-        let app = App::default();
-        let _ = view(&app, &app.palette.clone());
-    }
-
-    #[test]
     fn navigate_stream_apps_sets_screen() {
         let mut app = App::default();
         let _ = update(&mut app, Message::Navigate(Screen::StreamApps));

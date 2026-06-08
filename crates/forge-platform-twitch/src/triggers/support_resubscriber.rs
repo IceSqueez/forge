@@ -130,14 +130,6 @@ mod tests {
     }
 
     #[test]
-    fn id_is_stable() {
-        assert_eq!(
-            SupportResubscriberDescriptor.id(),
-            "twitch.support.resubscriber"
-        );
-    }
-
-    #[test]
     fn always_matches() {
         assert!(
             SupportResubscriberDescriptor.matches_trigger(&TriggerConfig::new(), &resub_event())

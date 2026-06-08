@@ -993,29 +993,6 @@ mod tests {
     }
 
     #[test]
-    fn builder_api_compiles_to_element() {
-        let p = CATPPUCCIN_MOCHA;
-        let _elem: iced::Element<'_, CloseMsg> = SideSheet::new(Space::new())
-            .open(false)
-            .position(SheetPosition::Right)
-            .width(SheetWidth::new(360.0, 280.0, 560.0))
-            .animation(SheetAnimation {
-                duration_ms: 200,
-                easing: Easing::EaseOutCubic,
-            })
-            .header(SheetHeader {
-                title: Cow::Borrowed("Test"),
-                subtitle: Some(Cow::Borrowed("Sub")),
-                on_close: Some(CloseMsg::HeaderClose),
-            })
-            .on_close(CloseMsg::Close)
-            .resizable(false)
-            .sheet_key("test_sheet")
-            .palette(&p)
-            .into();
-    }
-
-    #[test]
     fn esc_with_on_close_publishes_message() {
         use iced::advanced::Shell;
 

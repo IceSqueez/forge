@@ -118,19 +118,6 @@ mod tests {
     }
 
     #[test]
-    fn id_is_hotkey_triggered() {
-        assert_eq!(HotkeyPressedDescriptor.id(), "hotkey.triggered");
-    }
-
-    #[test]
-    fn category_is_hotkey() {
-        assert!(matches!(
-            HotkeyPressedDescriptor.category(),
-            TriggerCategory::Hotkey
-        ));
-    }
-
-    #[test]
     fn matches_any_when_config_empty() {
         let ev = triggered_event("Ctrl+F1");
         assert!(HotkeyPressedDescriptor.matches_trigger(&BTreeMap::new(), &ev));

@@ -26,22 +26,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn attempt_zero_is_near_base() {
-        let d = next_backoff(0);
-        assert!(d <= Duration::from_millis(CAP_MS));
-        assert!(d >= Duration::ZERO);
-    }
-
-    #[test]
     fn attempt_saturates_at_cap() {
-        let d = next_backoff(100);
-        assert!(d <= Duration::from_millis(CAP_MS));
-    }
-
-    #[test]
-    fn successive_attempts_trend_upward_at_cap() {
-        let high = next_backoff(20);
-        assert!(high <= Duration::from_millis(CAP_MS));
+        for attempt in [20u32, 100] {
+            let d = next_backoff(attempt);
+            assert!(
+                d <= Duration::from_millis(CAP_MS),
+                "attempt {attempt}: {d:?} exceeds cap"
+            );
+        }
     }
 
     #[test]

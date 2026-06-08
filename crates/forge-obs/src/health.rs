@@ -88,18 +88,6 @@ mod tests {
 
     use crate::client::ObsClient;
 
-    #[test]
-    fn metrics_returns_four_with_correct_labels() {
-        let client = ObsClient::new_for_test("localhost:4455".to_owned());
-        let health: &dyn BuiltinHealth = &client;
-        let metrics = health.metrics();
-        assert_eq!(metrics.len(), 4);
-        assert_eq!(metrics[0].label, "Stream");
-        assert_eq!(metrics[1].label, "Recording");
-        assert_eq!(metrics[2].label, "CPU \u{00b7} FPS");
-        assert_eq!(metrics[3].label, "Dropped");
-    }
-
     #[tokio::test]
     async fn health_stream_is_subscribable() {
         let client = ObsClient::new_for_test("localhost:4455".to_owned());

@@ -19,32 +19,5 @@ pub trait RateLimiter: Send + Sync {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn outcomes_are_distinct() {
-        assert_ne!(RateLimitOutcome::Granted, RateLimitOutcome::Exhausted);
-        assert_ne!(
-            RateLimitOutcome::Granted,
-            RateLimitOutcome::Throttled {
-                wait_for: Duration::from_secs(1)
-            },
-        );
-        assert_ne!(
-            RateLimitOutcome::Exhausted,
-            RateLimitOutcome::Throttled {
-                wait_for: Duration::from_secs(1)
-            },
-        );
-    }
-
-    #[test]
-    fn throttled_preserves_duration() {
-        let d = Duration::from_millis(750);
-        let outcome = RateLimitOutcome::Throttled { wait_for: d };
-        assert!(matches!(outcome, RateLimitOutcome::Throttled { wait_for } if wait_for == d));
-    }
-
-    fn _dyn_safe(_: &dyn RateLimiter) {}
-}
+#[allow(dead_code)]
+fn _dyn_safe(_: &dyn RateLimiter) {}

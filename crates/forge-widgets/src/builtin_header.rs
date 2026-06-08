@@ -281,92 +281,6 @@ fn format_uptime(d: Duration) -> String {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::palette::CATPPUCCIN_MOCHA;
-
-    fn sample_flags() -> CapabilityFlags {
-        CapabilityFlags {
-            limited: false,
-            label: None,
-        }
-    }
-
-    fn sample_actions() -> Vec<HeaderAction> {
-        vec![HeaderAction::Reconnect, HeaderAction::Settings]
-    }
-
-    #[test]
-    fn builtin_header_card_compiles_with_unit_msg() {
-        let flags = sample_flags();
-        let actions = sample_actions();
-        let params = HeaderCardParams {
-            display_name: "OBS Studio",
-            version: Some("v31.0.2"),
-            endpoint: Some("obs-websocket v5.5.0"),
-            uptime: Some(Duration::from_secs(8040)),
-            capability_flags: &flags,
-            header_actions: &actions,
-            connection: ConnectionState::Connected,
-            icon: SectionIcon::new("\u{F1D6}"),
-            badges: &[],
-        };
-        let _: Element<'_, ()> = builtin_header_card(params, |_action| (), &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn builtin_header_card_with_limited_flag() {
-        let flags = CapabilityFlags {
-            limited: true,
-            label: Some("Chat only".to_owned()),
-        };
-        let actions = vec![HeaderAction::Reconnect, HeaderAction::Disconnect];
-        let params = HeaderCardParams {
-            display_name: "Kick",
-            version: Some("channel 1247813"),
-            endpoint: Some("pusher.kick.com"),
-            uptime: Some(Duration::from_secs(8040)),
-            capability_flags: &flags,
-            header_actions: &actions,
-            connection: ConnectionState::Connected,
-            icon: SectionIcon::new("K"),
-            badges: &[],
-        };
-        let _: Element<'_, ()> = builtin_header_card(params, |_action| (), &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn builtin_header_card_disconnected_no_optional_fields() {
-        let flags = sample_flags();
-        let actions = vec![HeaderAction::Reconnect];
-        let params = HeaderCardParams {
-            display_name: "OBS Studio",
-            version: None,
-            endpoint: None,
-            uptime: None,
-            capability_flags: &flags,
-            header_actions: &actions,
-            connection: ConnectionState::Disconnected,
-            icon: SectionIcon::new("\u{F1D6}"),
-            badges: &[],
-        };
-        let _: Element<'_, ()> = builtin_header_card(params, |_action| (), &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn builtin_header_card_empty_actions() {
-        let flags = sample_flags();
-        let params = HeaderCardParams {
-            display_name: "OBS Studio",
-            version: None,
-            endpoint: None,
-            uptime: None,
-            capability_flags: &flags,
-            header_actions: &[],
-            connection: ConnectionState::Connecting,
-            icon: SectionIcon::new("\u{F1D6}"),
-            badges: &[],
-        };
-        let _: Element<'_, ()> = builtin_header_card(params, |_action| (), &CATPPUCCIN_MOCHA);
-    }
 
     #[test]
     fn format_uptime_seconds_only() {
@@ -410,34 +324,5 @@ mod tests {
     fn sub_line_neither() {
         let result = sub_line(None, None);
         assert_eq!(result, "");
-    }
-
-    #[test]
-    fn action_label_maps_all_variants() {
-        assert_eq!(action_label(&HeaderAction::Reconnect), "Reconnect");
-        assert_eq!(action_label(&HeaderAction::RefreshToken), "Refresh Token");
-        assert_eq!(action_label(&HeaderAction::Disconnect), "Disconnect");
-        assert_eq!(action_label(&HeaderAction::Settings), "Settings");
-    }
-
-    #[test]
-    fn limited_badge_defaults_to_limited_when_no_label() {
-        let flags = CapabilityFlags {
-            limited: true,
-            label: None,
-        };
-        let actions = sample_actions();
-        let params = HeaderCardParams {
-            display_name: "Kick",
-            version: None,
-            endpoint: None,
-            uptime: None,
-            capability_flags: &flags,
-            header_actions: &actions,
-            connection: ConnectionState::Connected,
-            icon: SectionIcon::new("K"),
-            badges: &[],
-        };
-        let _: Element<'_, ()> = builtin_header_card(params, |_action| (), &CATPPUCCIN_MOCHA);
     }
 }

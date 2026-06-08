@@ -454,55 +454,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn token_kind_eq_reflexive() {
-        assert_eq!(RhaiTokenKind::Keyword, RhaiTokenKind::Keyword);
-        assert_eq!(RhaiTokenKind::Number, RhaiTokenKind::Number);
-        assert_eq!(RhaiTokenKind::StringLit, RhaiTokenKind::StringLit);
-        assert_eq!(RhaiTokenKind::TemplateLit, RhaiTokenKind::TemplateLit);
-        assert_eq!(RhaiTokenKind::Comment, RhaiTokenKind::Comment);
-        assert_eq!(RhaiTokenKind::Namespace, RhaiTokenKind::Namespace);
-        assert_eq!(RhaiTokenKind::FunctionCall, RhaiTokenKind::FunctionCall);
-        assert_eq!(RhaiTokenKind::Identifier, RhaiTokenKind::Identifier);
-        assert_eq!(RhaiTokenKind::Operator, RhaiTokenKind::Operator);
-        assert_eq!(RhaiTokenKind::Punctuation, RhaiTokenKind::Punctuation);
-    }
-
-    #[test]
-    fn token_kind_ne_distinct() {
-        assert_ne!(RhaiTokenKind::Keyword, RhaiTokenKind::Identifier);
-        assert_ne!(RhaiTokenKind::Number, RhaiTokenKind::StringLit);
-        assert_ne!(RhaiTokenKind::Comment, RhaiTokenKind::FunctionCall);
-    }
-
-    #[test]
-    fn token_kind_clone_round_trip() {
-        let original = RhaiTokenKind::Namespace;
-        let cloned = original;
-        assert_eq!(original, cloned);
-    }
-
-    #[test]
-    fn highlighter_settings_default_has_empty_error_lines() {
-        let s = RhaiHighlighterSettings::default();
-        assert!(s.error_lines.is_empty());
-    }
-
-    #[test]
-    fn highlighter_settings_default_has_catppuccin_palette() {
-        let s = RhaiHighlighterSettings::default();
-        assert_eq!(s.palette, CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn highlighter_settings_error_lines_round_trip() {
-        let s = RhaiHighlighterSettings {
-            error_lines: vec![1, 5, 12],
-            ..Default::default()
-        };
-        assert_eq!(s.error_lines, [1, 5, 12]);
-    }
-
-    #[test]
     fn highlighter_forward_walk_line_states_and_current_line() {
         use iced::advanced::text::Highlighter as IcedHighlighter;
 
@@ -635,39 +586,15 @@ mod tests {
     }
 
     #[test]
-    fn number_decimal_integer() {
-        let (tokens, _) = tokenize_line("42", false);
-        assert_eq!(tokens, [(0..2, RhaiTokenKind::Number)]);
-    }
-
-    #[test]
-    fn number_float() {
-        let (tokens, _) = tokenize_line("3.14", false);
-        assert_eq!(tokens, [(0..4, RhaiTokenKind::Number)]);
-    }
-
-    #[test]
-    fn number_hex_prefix() {
-        let (tokens, _) = tokenize_line("0xFF", false);
-        assert_eq!(tokens, [(0..4, RhaiTokenKind::Number)]);
-    }
-
-    #[test]
-    fn number_underscore_separator() {
-        let (tokens, _) = tokenize_line("1_000", false);
-        assert_eq!(tokens, [(0..5, RhaiTokenKind::Number)]);
-    }
-
-    #[test]
-    fn number_float_exponent() {
-        let (tokens, _) = tokenize_line("1.5e10", false);
-        assert_eq!(tokens, [(0..6, RhaiTokenKind::Number)]);
-    }
-
-    #[test]
-    fn number_binary_prefix() {
-        let (tokens, _) = tokenize_line("0b1010", false);
-        assert_eq!(tokens, [(0..6, RhaiTokenKind::Number)]);
+    fn number_tokenizer_recognises_each_literal_form() {
+        for input in ["42", "3.14", "0xFF", "1_000", "1.5e10", "0b1010"] {
+            let (tokens, _) = tokenize_line(input, false);
+            assert_eq!(
+                tokens,
+                [(0..input.len(), RhaiTokenKind::Number)],
+                "input={input}"
+            );
+        }
     }
 
     #[test]

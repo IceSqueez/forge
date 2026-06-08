@@ -86,22 +86,6 @@ mod tests {
     }
 
     #[test]
-    fn kind_id_matches_canonical() {
-        assert_eq!(
-            ChannelBroadcastEndedDescriptor.id(),
-            "youtube.channel.live_broadcast_ended"
-        );
-    }
-
-    #[test]
-    fn is_platform_specific_youtube() {
-        assert_eq!(
-            ChannelBroadcastEndedDescriptor.event_filter().source,
-            Some(EventSource::YouTube)
-        );
-    }
-
-    #[test]
     fn always_matches() {
         assert!(
             ChannelBroadcastEndedDescriptor

@@ -86,16 +86,6 @@ mod tests {
     }
 
     #[test]
-    fn kind_id_matches_canonical() {
-        assert_eq!(GiftSubDescriptor.id(), "trovo.gift_sub");
-    }
-
-    #[test]
-    fn category_is_subscriptions() {
-        assert_eq!(GiftSubDescriptor.category(), TriggerCategory::Subscriptions);
-    }
-
-    #[test]
     fn build_arg_stack_extracts_gift_count_from_content() {
         let stack = GiftSubDescriptor.build_arg_stack(&gift_event());
         assert_eq!(stack.get("content"), Some(&Variant::String("1".to_owned())));

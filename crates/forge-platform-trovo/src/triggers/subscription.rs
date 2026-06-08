@@ -86,19 +86,6 @@ mod tests {
     }
 
     #[test]
-    fn kind_id_matches_canonical() {
-        assert_eq!(SubscriptionDescriptor.id(), "trovo.subscription");
-    }
-
-    #[test]
-    fn category_is_subscriptions() {
-        assert_eq!(
-            SubscriptionDescriptor.category(),
-            TriggerCategory::Subscriptions
-        );
-    }
-
-    #[test]
     fn build_arg_stack_extracts_tier_from_content() {
         let stack = SubscriptionDescriptor.build_arg_stack(&sub_event());
         assert_eq!(

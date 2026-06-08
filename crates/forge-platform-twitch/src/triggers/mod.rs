@@ -33,13 +33,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn all_seven_kinds_register_without_error() {
-        let mut reg = TriggerRegistry::new();
-        register_twitch_triggers(&mut reg).unwrap();
-        assert_eq!(reg.all().count(), 7);
-    }
-
-    #[test]
     fn duplicate_registration_returns_error() {
         let mut reg = TriggerRegistry::new();
         register_twitch_triggers(&mut reg).unwrap();

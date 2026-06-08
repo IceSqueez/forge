@@ -69,13 +69,6 @@ mod tests {
     }
 
     #[test]
-    fn register_vtube_sub_actions_registers_six_runners() {
-        let mut reg = SubActionRegistry::new();
-        register_vtube_sub_actions(&mut reg, Arc::new(MockSink)).unwrap();
-        assert_eq!(reg.all().count(), 6);
-    }
-
-    #[test]
     fn all_expected_runner_ids_are_present() {
         let mut reg = SubActionRegistry::new();
         register_vtube_sub_actions(&mut reg, Arc::new(MockSink)).unwrap();

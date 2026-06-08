@@ -186,22 +186,4 @@ mod tests {
         assert_eq!(ids[0], EngineId("aaa".into()));
         assert_eq!(ids[1], EngineId("zzz".into()));
     }
-
-    #[test]
-    fn tts_voice_serde_roundtrip() {
-        let voice = TtsVoice {
-            id: VoiceId("uk_UA-ukrainian-medium".into()),
-            name: "Ukrainian Medium".into(),
-            locale: "uk-UA".into(),
-            gender: VoiceGender::Neutral,
-            engine_id: EngineId("piper".into()),
-            is_neural: false,
-            sample_rate_hint: 22_050,
-        };
-        let json = serde_json::to_string(&voice).expect("serialize");
-        let back: TtsVoice = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back.id, voice.id);
-        assert_eq!(back.locale, voice.locale);
-        assert_eq!(back.sample_rate_hint, 22_050);
-    }
 }

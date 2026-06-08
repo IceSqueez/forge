@@ -160,8 +160,8 @@ fn popover_container<'a, Msg: 'a>(
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::palette::CATPPUCCIN_MOCHA;
-    use forge_script::{ParamDescriptor, UserParam, catalog};
+
+    use forge_script::ParamDescriptor;
 
     #[test]
     fn format_signature_function_with_params() {
@@ -203,29 +203,5 @@ mod tests {
             doc: None,
         };
         assert_eq!(format_signature(&d), "len -> Int");
-    }
-
-    #[test]
-    fn hover_popover_catalog_smoke_no_panic() {
-        let entries = catalog();
-        let d = entries
-            .iter()
-            .find(|d| d.namespace == Some("globals") && d.name == "get")
-            .unwrap();
-        let _: iced::Element<'_, u32> = hover_popover(HoverTarget::Catalog(d), &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn hover_popover_user_fn_smoke_no_panic() {
-        let sig = UserFunctionSig {
-            name: "double".to_owned(),
-            params: vec![UserParam {
-                name: "x".to_owned(),
-                ty: "int".to_owned(),
-            }],
-            return_type: Some("int".to_owned()),
-            doc: Some("Doubles the input.".to_owned()),
-        };
-        let _: iced::Element<'_, u32> = hover_popover(HoverTarget::User(&sig), &CATPPUCCIN_MOCHA);
     }
 }

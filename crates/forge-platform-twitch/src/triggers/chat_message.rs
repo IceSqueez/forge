@@ -121,11 +121,6 @@ mod tests {
     }
 
     #[test]
-    fn id_is_stable() {
-        assert_eq!(ChatMessageDescriptor.id(), "twitch.chat.message");
-    }
-
-    #[test]
     fn chat_message_descriptor_is_platform_specific_twitch() {
         assert_eq!(
             ChatMessageDescriptor.platform_contract(),

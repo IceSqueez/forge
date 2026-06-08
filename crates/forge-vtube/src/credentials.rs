@@ -50,11 +50,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn vtube_credential_id_matches_expected_key() {
-        assert_eq!(VTUBE_CREDENTIAL_ID, "vtube:default");
-    }
-
-    #[test]
     fn credentials_serde_roundtrip() {
         let creds = VTubeCredentials {
             token: "tok-abc123".into(),

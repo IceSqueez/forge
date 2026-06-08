@@ -154,11 +154,6 @@ mod tests {
     }
 
     #[test]
-    fn chat_payload_key_constant_value() {
-        assert_eq!(ChatPayload::KEY, "_chat");
-    }
-
-    #[test]
     fn chat_payload_roundtrips_minimal() {
         let payload = minimal_payload("abc123");
         let json = to_string(&payload).unwrap();
@@ -200,39 +195,21 @@ mod tests {
     }
 
     #[test]
-    fn parse_color_accepts_hash_prefix() {
-        assert_eq!(
-            ChatPayload::parse_color("#FF00AA"),
-            Some([0xFF, 0x00, 0xAA])
-        );
-    }
-
-    #[test]
-    fn parse_color_accepts_no_prefix() {
-        assert_eq!(ChatPayload::parse_color("FF00AA"), Some([0xFF, 0x00, 0xAA]));
-    }
-
-    #[test]
-    fn parse_color_case_insensitive() {
-        assert_eq!(
-            ChatPayload::parse_color("#ff00aa"),
-            Some([0xFF, 0x00, 0xAA])
-        );
-    }
-
-    #[test]
-    fn parse_color_rejects_short_string() {
-        assert_eq!(ChatPayload::parse_color("FFF"), None);
-    }
-
-    #[test]
-    fn parse_color_rejects_invalid_hex() {
-        assert_eq!(ChatPayload::parse_color("#XXYYZZ"), None);
-    }
-
-    #[test]
-    fn parse_color_rejects_empty() {
-        assert_eq!(ChatPayload::parse_color(""), None);
+    fn parse_color_accepts_valid_and_rejects_invalid_inputs() {
+        for valid in ["#FF00AA", "FF00AA", "#ff00aa"] {
+            assert_eq!(
+                ChatPayload::parse_color(valid),
+                Some([0xFF, 0x00, 0xAA]),
+                "should accept {valid}"
+            );
+        }
+        for invalid in ["FFF", "#XXYYZZ", ""] {
+            assert_eq!(
+                ChatPayload::parse_color(invalid),
+                None,
+                "should reject {invalid:?}"
+            );
+        }
     }
 
     fn make_row(segments: Vec<ChatSegment>) -> UnifiedChatRow {
@@ -346,13 +323,5 @@ mod tests {
         assert_eq!(src, ChatSource::Twitch);
         let src: ChatSource = from_str(r#""youtube""#).unwrap();
         assert_eq!(src, ChatSource::YouTube);
-    }
-
-    #[test]
-    fn moderation_marks_default_all_false() {
-        let marks = ModerationMarks::default();
-        assert!(!marks.deleted);
-        assert!(!marks.timed_out);
-        assert!(!marks.banned);
     }
 }

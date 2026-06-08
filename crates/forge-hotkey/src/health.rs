@@ -175,51 +175,6 @@ mod tests {
     use super::*;
     use crate::client::HotkeyClient;
 
-    #[test]
-    fn metrics_returns_four_with_correct_labels() {
-        let c = HotkeyClient::new_for_test(None);
-        let h: &dyn BuiltinHealth = &*c;
-        let m = h.metrics();
-        assert_eq!(m.len(), 4);
-        assert_eq!(m[0].label, "REGISTERED");
-        assert_eq!(m[1].label, "LAST TRIGGERED");
-        assert_eq!(m[2].label, "CONFLICTS");
-        assert!(m[3].label == "PORTAL" || m[3].label == "BACKEND");
-    }
-
-    #[test]
-    fn initial_registered_count_is_zero() {
-        let c = HotkeyClient::new_for_test(None);
-        let h: &dyn BuiltinHealth = &*c;
-        let m = h.metrics();
-        assert!(matches!(
-            &m[0].value,
-            HealthValue::Text { primary, .. } if primary == "0"
-        ));
-    }
-
-    #[test]
-    fn initial_last_triggered_shows_dash() {
-        let c = HotkeyClient::new_for_test(None);
-        let h: &dyn BuiltinHealth = &*c;
-        let m = h.metrics();
-        assert!(matches!(
-            &m[1].value,
-            HealthValue::Text { primary, .. } if primary == "\u{2014}"
-        ));
-    }
-
-    #[test]
-    fn initial_conflict_count_is_zero() {
-        let c = HotkeyClient::new_for_test(None);
-        let h: &dyn BuiltinHealth = &*c;
-        let m = h.metrics();
-        assert!(matches!(
-            &m[2].value,
-            HealthValue::Text { primary, .. } if primary == "0"
-        ));
-    }
-
     #[tokio::test]
     async fn stream_is_subscribable() {
         let c = HotkeyClient::new_for_test(None);

@@ -98,22 +98,6 @@ mod tests {
     }
 
     #[test]
-    fn kind_id_matches_canonical() {
-        assert_eq!(
-            ChannelBroadcastStartedDescriptor.id(),
-            "youtube.channel.live_broadcast_started"
-        );
-    }
-
-    #[test]
-    fn is_platform_specific_youtube() {
-        assert_eq!(
-            ChannelBroadcastStartedDescriptor.event_filter().source,
-            Some(EventSource::YouTube)
-        );
-    }
-
-    #[test]
     fn always_matches() {
         assert!(
             ChannelBroadcastStartedDescriptor

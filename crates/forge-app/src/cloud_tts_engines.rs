@@ -1023,15 +1023,6 @@ mod tests {
     }
 
     #[test]
-    fn four_engine_forms_exist_in_default_state() {
-        let state = CloudTtsEnginesState::default();
-        assert_eq!(state.azure.test_status, TestStatus::Idle);
-        assert_eq!(state.elevenlabs.test_status, TestStatus::Idle);
-        assert_eq!(state.openai.test_status, TestStatus::Idle);
-        assert_eq!(state.polly.test_status, TestStatus::Idle);
-    }
-
-    #[test]
     fn region_changed_sets_dirty_for_azure() {
         let mut state = CloudTtsEnginesState::default();
         let _task = update(

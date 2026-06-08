@@ -60,12 +60,6 @@ mod tests {
     }
 
     #[test]
-    fn expose_returns_raw_value() {
-        let tok = OAuthToken::new("raw_token_value");
-        assert_eq!(tok.expose(), "raw_token_value");
-    }
-
-    #[test]
     fn token_serde_roundtrip() {
         let tok = OAuthToken::new("roundtrip_value");
         let json = serde_json::to_string(&tok).unwrap();

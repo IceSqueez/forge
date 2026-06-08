@@ -359,68 +359,6 @@ pub fn overlay_file_list<'a, Msg: Clone + 'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::palette::CATPPUCCIN_MOCHA;
-
-    fn make_entries() -> [OverlayEntry<'static>; 4] {
-        [
-            OverlayEntry {
-                name: "alerts.html",
-                kind: OverlayKind::File {
-                    mime: FileMime::Html,
-                },
-                size_bytes: Some(4_301),
-                child_count: None,
-            },
-            OverlayEntry {
-                name: "chat.html",
-                kind: OverlayKind::File {
-                    mime: FileMime::Html,
-                },
-                size_bytes: Some(2_867),
-                child_count: None,
-            },
-            OverlayEntry {
-                name: "logo.png",
-                kind: OverlayKind::File {
-                    mime: FileMime::Image,
-                },
-                size_bytes: Some(18_432),
-                child_count: None,
-            },
-            OverlayEntry {
-                name: "assets",
-                kind: OverlayKind::Dir,
-                size_bytes: None,
-                child_count: Some(12),
-            },
-        ]
-    }
-
-    #[test]
-    fn smoke_overlay_file_list_three_files_one_dir() {
-        let entries = make_entries();
-        let params = OverlayFileListParams {
-            root_path: "~/.local/share/forge/overlays",
-            entries: &entries,
-            bind_address: "127.0.0.1:8081",
-            selected_for_url: Some("alerts.html"),
-        };
-        let _: Element<'_, usize> =
-            overlay_file_list(params, 0usize, |_name| 1usize, |idx| idx, &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn smoke_overlay_file_list_no_selection_falls_back_to_first_html() {
-        let entries = make_entries();
-        let params = OverlayFileListParams {
-            root_path: "~/.local/share/forge/overlays",
-            entries: &entries,
-            bind_address: "127.0.0.1:8081",
-            selected_for_url: None,
-        };
-        let _: Element<'_, usize> =
-            overlay_file_list(params, 0usize, |_name| 1usize, |idx| idx, &CATPPUCCIN_MOCHA);
-    }
 
     #[test]
     fn format_size_zero_is_zero_bytes() {

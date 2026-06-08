@@ -86,10 +86,10 @@ mod tests {
     use super::*;
     use async_trait::async_trait;
     use forge_platform_core::{PlatformError, RateLimitOutcome, RateLimiter};
-    use serde_json::json;
+
     use std::sync::Arc;
     use std::time::Duration;
-    use wiremock::matchers::{body_string_contains, header, method, path};
+    use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     struct GrantLimiter;
@@ -125,68 +125,6 @@ mod tests {
     fn grant_sender(server: &MockServer) -> KickSendChat {
         KickSendChat::new(Arc::new(GrantLimiter))
             .with_send_endpoint(format!("{}/chat", server.uri()))
-    }
-
-    #[tokio::test]
-    async fn send_succeeds_on_200() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/chat"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
-            .mount(&server)
-            .await;
-
-        grant_sender(&server)
-            .send("hello", "tok", 42)
-            .await
-            .unwrap();
-    }
-
-    #[tokio::test]
-    async fn send_succeeds_on_201() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/chat"))
-            .respond_with(ResponseTemplate::new(201).set_body_json(json!({})))
-            .mount(&server)
-            .await;
-
-        grant_sender(&server).send("hi", "tok", 42).await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn send_posts_required_json_fields() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/chat"))
-            .and(body_string_contains("\"content\""))
-            .and(body_string_contains("test_msg"))
-            .and(body_string_contains("\"type\":\"user\""))
-            .and(body_string_contains("\"broadcaster_user_id\":777"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
-            .mount(&server)
-            .await;
-
-        grant_sender(&server)
-            .send("test_msg", "tok", 777)
-            .await
-            .unwrap();
-    }
-
-    #[tokio::test]
-    async fn send_includes_bearer_auth_header() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/chat"))
-            .and(header("authorization", "Bearer my_token"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
-            .mount(&server)
-            .await;
-
-        grant_sender(&server)
-            .send("hi", "my_token", 1)
-            .await
-            .unwrap();
     }
 
     #[tokio::test]

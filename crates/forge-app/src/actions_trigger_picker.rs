@@ -726,31 +726,14 @@ mod tests {
     }
 
     #[test]
-    fn platform_group_twitch_prefix() {
-        assert_eq!(
-            platform_group_for("twitch.chat.command"),
-            PlatformGroup::Twitch
-        );
-    }
-
-    #[test]
-    fn platform_group_obs_prefix() {
-        assert_eq!(
-            platform_group_for("obs.scenes.current_changed"),
-            PlatformGroup::Obs
-        );
-    }
-
-    #[test]
-    fn platform_group_script_prefix() {
-        assert_eq!(
-            platform_group_for("script.event.custom"),
-            PlatformGroup::Script
-        );
-    }
-
-    #[test]
-    fn platform_group_core_fallback() {
-        assert_eq!(platform_group_for("core.logic.wait"), PlatformGroup::Core);
+    fn platform_group_for_dispatches_by_kind_prefix() {
+        for (kind, expected) in [
+            ("twitch.chat.command", PlatformGroup::Twitch),
+            ("obs.scenes.current_changed", PlatformGroup::Obs),
+            ("script.event.custom", PlatformGroup::Script),
+            ("core.logic.wait", PlatformGroup::Core),
+        ] {
+            assert_eq!(platform_group_for(kind), expected, "kind={kind}");
+        }
     }
 }

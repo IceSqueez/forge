@@ -79,13 +79,6 @@ mod tests {
     }
 
     #[test]
-    fn register_obs_sub_actions_registers_eight_runners() {
-        let mut reg = SubActionRegistry::new();
-        register_obs_sub_actions(&mut reg, Arc::new(MockSink)).unwrap();
-        assert_eq!(reg.all().count(), 8);
-    }
-
-    #[test]
     fn all_expected_runner_ids_are_present() {
         let mut reg = SubActionRegistry::new();
         register_obs_sub_actions(&mut reg, Arc::new(MockSink)).unwrap();

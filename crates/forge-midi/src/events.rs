@@ -58,22 +58,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn midi_event_note_on_fields_accessible() {
-        let e = MidiEvent::NoteOn {
-            note: 60,
-            velocity: 100,
-            channel: 0,
-        };
-        assert!(matches!(e, MidiEvent::NoteOn { note: 60, .. }));
-    }
-
-    #[test]
-    fn midi_out_message_raw_holds_bytes() {
-        let m = MidiOutMessage::Raw(vec![0x90, 60, 127]);
-        assert!(matches!(m, MidiOutMessage::Raw(_)));
-    }
-
-    #[test]
     fn port_direction_serde_roundtrip() {
         let d = PortDirection::Input;
         let json = serde_json::to_string(&d).unwrap();

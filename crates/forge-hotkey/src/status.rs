@@ -55,27 +55,6 @@ mod tests {
 
     use crate::client::HotkeyClient;
 
-    #[test]
-    fn id_is_hotkey() {
-        let c = HotkeyClient::new_for_test(None);
-        let s: &dyn BuiltinStatus = &*c;
-        assert_eq!(s.id().as_str(), "hotkey");
-    }
-
-    #[test]
-    fn display_name_is_hotkeys() {
-        let c = HotkeyClient::new_for_test(None);
-        let s: &dyn BuiltinStatus = &*c;
-        assert_eq!(s.display_name(), "Hotkeys");
-    }
-
-    #[test]
-    fn connection_disconnected_with_no_registered() {
-        let c = HotkeyClient::new_for_test(None);
-        let s: &dyn BuiltinStatus = &*c;
-        assert_eq!(s.connection(), ConnectionState::Disconnected);
-    }
-
     #[tokio::test]
     async fn connection_connected_after_register() {
         use crate::combo::HotkeyCombo;
@@ -84,19 +63,5 @@ mod tests {
         let combo = HotkeyCombo::parse("Ctrl+G").unwrap();
         c.register(combo).await.unwrap();
         assert_eq!(s.connection(), ConnectionState::Connected);
-    }
-
-    #[test]
-    fn capability_flags_not_limited() {
-        let c = HotkeyClient::new_for_test(None);
-        let s: &dyn BuiltinStatus = &*c;
-        assert!(!s.capability_flags().limited);
-    }
-
-    #[test]
-    fn version_is_none() {
-        let c = HotkeyClient::new_for_test(None);
-        let s: &dyn BuiltinStatus = &*c;
-        assert!(s.version().is_none());
     }
 }

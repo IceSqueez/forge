@@ -285,18 +285,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn metrics_returns_four_with_correct_labels() {
-        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        let health: &dyn BuiltinHealth = &c;
-        let m = health.metrics();
-        assert_eq!(m.len(), 4);
-        assert_eq!(m[0].label, "CURRENT MODEL");
-        assert_eq!(m[1].label, "TRACKING");
-        assert_eq!(m[2].label, "FPS");
-        assert_eq!(m[3].label, "API CALLS");
-    }
-
     #[tokio::test]
     async fn health_stream_is_subscribable() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");

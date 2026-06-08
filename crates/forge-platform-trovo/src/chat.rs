@@ -415,7 +415,7 @@ struct ChatTokenResponse {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use serde_json::json;
     use wiremock::matchers::{header, method, path};
@@ -488,74 +488,41 @@ mod tests {
     }
 
     #[test]
-    fn build_event_from_subscription_item() {
-        let item = json!({
-            "type": 5001,
-            "content": "Tier 1",
-            "nick_name": "NewSub",
-            "user_name": "newsub_login",
-            "sender_id": "uid_sub"
-        });
-        let event = build_event_from_item(&item).unwrap();
-        assert_eq!(event.kind, "trovo.subscription");
-        assert_eq!(event.source, EventSource::Trovo);
-    }
-
-    #[test]
-    fn build_event_from_follow_item() {
-        let item = json!({
-            "type": 5003,
-            "content": "",
-            "nick_name": "NewFollower",
-            "user_name": "follower_login",
-            "sender_id": "uid_follow"
-        });
-        let event = build_event_from_item(&item).unwrap();
-        assert_eq!(event.kind, "trovo.follow");
-    }
-
-    #[test]
-    fn build_event_from_join_item_returns_none() {
-        let item = json!({
-            "type": 5004,
-            "content": "",
-            "nick_name": "Viewer",
-            "user_name": "viewer",
-            "sender_id": "uid_viewer"
-        });
-        assert!(build_event_from_item(&item).is_none());
-    }
-
-    #[test]
-    fn build_event_from_gift_sub_item() {
-        let item = json!({
-            "type": 5005,
-            "content": "1",
-            "nick_name": "Gifter",
-            "user_name": "gifter_login",
-            "sender_id": "uid_gifter"
-        });
-        let event = build_event_from_item(&item).unwrap();
-        assert_eq!(event.kind, "trovo.gift_sub");
-    }
-
-    #[test]
-    fn build_event_from_spell_item() {
-        let item = json!({
-            "type": 5,
-            "content": "FieryDragon",
-            "nick_name": "Caster",
-            "user_name": "caster_login",
-            "sender_id": "uid_caster"
-        });
-        let event = build_event_from_item(&item).unwrap();
-        assert_eq!(event.kind, "trovo.spell");
-    }
-
-    #[test]
-    fn build_event_from_missing_type_returns_none() {
-        let item = json!({"content": "hello"});
-        assert!(build_event_from_item(&item).is_none());
+    fn build_event_from_item_dispatches_per_type_code() {
+        let cases = vec![
+            (
+                json!({"type": 5001, "content": "Tier 1", "nick_name": "NewSub", "user_name": "newsub_login", "sender_id": "uid_sub"}),
+                Some("trovo.subscription"),
+            ),
+            (
+                json!({"type": 5003, "content": "", "nick_name": "NewFollower", "user_name": "follower_login", "sender_id": "uid_follow"}),
+                Some("trovo.follow"),
+            ),
+            (
+                json!({"type": 5005, "content": "1", "nick_name": "Gifter", "user_name": "gifter_login", "sender_id": "uid_gifter"}),
+                Some("trovo.gift_sub"),
+            ),
+            (
+                json!({"type": 5, "content": "FieryDragon", "nick_name": "Caster", "user_name": "caster_login", "sender_id": "uid_caster"}),
+                Some("trovo.spell"),
+            ),
+            (
+                json!({"type": 5004, "content": "", "nick_name": "Viewer", "user_name": "viewer", "sender_id": "uid_viewer"}),
+                None,
+            ),
+            (json!({"content": "hello"}), None),
+        ];
+        for (item, expected_kind) in cases {
+            let result = build_event_from_item(&item);
+            match expected_kind {
+                Some(kind) => {
+                    let ev = result.expect("must build event");
+                    assert_eq!(ev.kind, kind, "kind for item {item}");
+                    assert_eq!(ev.source, EventSource::Trovo);
+                }
+                None => assert!(result.is_none(), "must be None for item {item}"),
+            }
+        }
     }
 
     #[test]

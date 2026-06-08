@@ -100,22 +100,6 @@ mod tests {
     }
 
     #[test]
-    fn kind_id_matches_canonical() {
-        assert_eq!(
-            ModerationTimeoutDescriptor.id(),
-            "youtube.moderation.timeout"
-        );
-    }
-
-    #[test]
-    fn is_platform_specific_youtube() {
-        assert_eq!(
-            ModerationTimeoutDescriptor.event_filter().source,
-            Some(EventSource::YouTube)
-        );
-    }
-
-    #[test]
     fn always_matches() {
         assert!(
             ModerationTimeoutDescriptor.matches_trigger(&TriggerConfig::new(), &timeout_event())

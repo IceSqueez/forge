@@ -338,27 +338,6 @@ mod tests {
     }
 
     #[test]
-    fn status_id_is_twitch() {
-        let b = make_bundle(ChatConnectionState::Connected);
-        let status: &dyn BuiltinStatus = b.as_ref();
-        assert_eq!(status.id().as_str(), "twitch");
-    }
-
-    #[test]
-    fn status_display_name() {
-        let b = make_bundle(ChatConnectionState::Connected);
-        let status: &dyn BuiltinStatus = b.as_ref();
-        assert_eq!(status.display_name(), "Twitch");
-    }
-
-    #[test]
-    fn status_version_is_none() {
-        let b = make_bundle(ChatConnectionState::Connected);
-        let status: &dyn BuiltinStatus = b.as_ref();
-        assert!(status.version().is_none());
-    }
-
-    #[test]
     fn status_connection_maps_chat_state() {
         let cases = [
             (ChatConnectionState::Connected, ConnectionState::Connected),
@@ -575,23 +554,6 @@ mod tests {
                 TrailingToken::Label("failed".to_owned()),
             ]
         );
-    }
-
-    #[test]
-    fn quick_actions_returns_four() {
-        let b = make_bundle(ChatConnectionState::Connected);
-        let qa: &dyn QuickActions = b.as_ref();
-        assert_eq!(qa.actions().len(), 4);
-    }
-
-    #[test]
-    fn quick_actions_labels_in_order() {
-        let b = make_bundle(ChatConnectionState::Connected);
-        let actions = b.actions();
-        assert_eq!(actions[0].label, "Send chat message");
-        assert_eq!(actions[1].label, "Run shoutout");
-        assert_eq!(actions[2].label, "Run commercial");
-        assert_eq!(actions[3].label, "Update title/game");
     }
 
     #[test]

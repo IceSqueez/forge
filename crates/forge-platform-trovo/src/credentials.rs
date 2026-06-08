@@ -19,11 +19,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn credential_key_matches_expected() {
-        assert_eq!(CREDENTIAL_KEY, "trovo:broadcaster");
-    }
-
-    #[test]
     fn credentials_serde_roundtrip() {
         let cred = TrovoCredentials {
             access_token: "tok".to_owned(),

@@ -243,25 +243,11 @@ mod tests {
     }
 
     #[test]
-    fn tokyo_night_is_copy() {
-        let a = TOKYO_NIGHT;
-        let b = a;
-        assert_eq!(a, b);
-    }
-
-    #[test]
     fn latte_base_is_light() {
         let p = LATTE;
         assert!(p.base.r > 0.9);
         assert!(p.base.g > 0.9);
         assert!(p.base.b > 0.9);
-    }
-
-    #[test]
-    fn all_palettes_are_constructable() {
-        let _m = CATPPUCCIN_MOCHA;
-        let _t = TOKYO_NIGHT;
-        let _l = LATTE;
     }
 
     #[test]
@@ -307,13 +293,6 @@ mod tests {
     fn surface_overlay_differs_from_border_regular_in_tokyo_night() {
         let p = TOKYO_NIGHT;
         assert_ne!(p.surface_overlay.r, p.border_regular.r);
-    }
-
-    #[test]
-    fn surface_overlay_is_defined_for_all_palettes() {
-        let _mo = CATPPUCCIN_MOCHA.surface_overlay;
-        let _tn = TOKYO_NIGHT.surface_overlay;
-        let _la = LATTE.surface_overlay;
     }
 
     #[test]

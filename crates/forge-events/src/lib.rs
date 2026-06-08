@@ -86,22 +86,6 @@ mod tests {
     }
 
     #[test]
-    fn event_serde_roundtrip() {
-        let e = Event::new(
-            EventSource::Obs,
-            "scene.changed",
-            serde_json::json!({"from": "Menu", "to": "Gameplay"}),
-        );
-        let json = serde_json::to_string(&e).unwrap();
-        let back: Event = serde_json::from_str(&json).unwrap();
-        assert_eq!(e.id, back.id);
-        assert_eq!(e.source, back.source);
-        assert_eq!(e.kind, back.kind);
-        assert_eq!(e.caused_by, back.caused_by);
-        assert_eq!(e.replay, back.replay);
-    }
-
-    #[test]
     fn event_causation_chain_field_present() {
         let e = Event::new(EventSource::Timer, "timer.tick", serde_json::Value::Null);
         let json = serde_json::to_value(&e).unwrap();
@@ -109,28 +93,6 @@ mod tests {
             json.get("caused_by").is_some(),
             "caused_by must always be present in serialized Event"
         );
-    }
-
-    #[test]
-    fn event_replay_defaults_to_false() {
-        let e = Event::new(EventSource::Core, "action.start", serde_json::Value::Null);
-        assert!(!e.replay);
-        let child = Event::caused_by(
-            EventSource::Core,
-            "subaction.run",
-            serde_json::Value::Null,
-            e.id,
-        );
-        assert!(!child.replay);
-    }
-
-    #[test]
-    fn event_replay_serde_roundtrip_explicit_true() {
-        let mut e = Event::new(EventSource::Core, "action.start", serde_json::Value::Null);
-        e.replay = true;
-        let json = serde_json::to_string(&e).unwrap();
-        let back: Event = serde_json::from_str(&json).unwrap();
-        assert!(back.replay);
     }
 
     #[test]

@@ -38,24 +38,3 @@ pub fn volume_slider<'a, Msg: 'a + Clone>(
     .align_y(Alignment::Center)
     .into()
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::palette::CATPPUCCIN_MOCHA;
-
-    #[test]
-    fn volume_slider_below_100_pct_constructs() {
-        let _ = volume_slider::<f32>(0.8, |v| v, &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn volume_slider_above_100_pct_constructs() {
-        let _ = volume_slider::<f32>(1.2, |v| v, &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn volume_slider_at_zero_constructs() {
-        let _ = volume_slider::<f32>(0.0, |v| v, &CATPPUCCIN_MOCHA);
-    }
-}

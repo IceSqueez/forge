@@ -21,16 +21,3 @@ impl AudioSink for NullSink {
         Ok(())
     }
 }
-
-#[cfg(test)]
-#[allow(clippy::unwrap_used)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn null_sink_accepts_buffer() {
-        let sink = NullSink;
-        let buf = PcmBuffer::new(vec![0; 100], 44_100, 1);
-        sink.play(buf).await.unwrap();
-    }
-}

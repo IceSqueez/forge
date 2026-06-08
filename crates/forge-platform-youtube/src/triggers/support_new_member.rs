@@ -101,22 +101,6 @@ mod tests {
     }
 
     #[test]
-    fn kind_id_matches_canonical() {
-        assert_eq!(
-            SupportNewMemberDescriptor.id(),
-            "youtube.support.new_member"
-        );
-    }
-
-    #[test]
-    fn is_platform_specific_youtube() {
-        assert_eq!(
-            SupportNewMemberDescriptor.event_filter().source,
-            Some(EventSource::YouTube)
-        );
-    }
-
-    #[test]
     fn always_matches() {
         assert!(
             SupportNewMemberDescriptor.matches_trigger(&TriggerConfig::new(), &new_member_event())

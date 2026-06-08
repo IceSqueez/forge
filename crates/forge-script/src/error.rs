@@ -29,31 +29,11 @@ pub enum ScriptError {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use std::error::Error;
 
     #[test]
-    fn compile_display_non_empty() {
-        let e = ScriptError::Compile {
-            script: "my_script".into(),
-            reason: "unexpected token".into(),
-        };
-        assert!(!e.to_string().is_empty());
-    }
-
-    #[test]
-    fn runtime_display_non_empty() {
-        let e = ScriptError::Runtime {
-            script: "my_script".into(),
-            reason: "index out of bounds".into(),
-        };
-        assert!(!e.to_string().is_empty());
-    }
-
-    #[test]
-    fn timeout_carries_elapsed_and_limit() {
+    fn timeout_display_carries_numeric_fields() {
         let e = ScriptError::Timeout {
             script: "slow_script".into(),
             elapsed_ms: 750,
@@ -65,37 +45,11 @@ mod tests {
     }
 
     #[test]
-    fn operation_limit_carries_ops_count() {
+    fn operation_limit_display_carries_ops_count() {
         let e = ScriptError::OperationLimit {
             script: "heavy_script".into(),
             ops: 100_000,
         };
-        let s = e.to_string();
-        assert!(s.contains("100000"), "missing ops count in: {s}");
-    }
-
-    #[test]
-    fn host_call_denied_display_non_empty() {
-        let e = ScriptError::HostCallDenied {
-            fn_name: "fs::read".into(),
-            reason: "filesystem access is sandboxed".into(),
-        };
-        assert!(!e.to_string().is_empty());
-    }
-
-    #[test]
-    fn not_found_display_non_empty() {
-        let e = ScriptError::NotFound {
-            name: "missing_script".into(),
-        };
-        assert!(!e.to_string().is_empty());
-    }
-
-    #[test]
-    fn io_error_satisfies_std_error_trait() {
-        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file gone");
-        let e: ScriptError = io_err.into();
-        let _: &dyn Error = &e;
-        assert!(!e.to_string().is_empty());
+        assert!(e.to_string().contains("100000"));
     }
 }

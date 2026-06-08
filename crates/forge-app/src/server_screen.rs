@@ -1327,11 +1327,4 @@ mod tests {
         assert_eq!(app.ui.server_screen.bandwidth_samples[0], 10.0);
         assert_eq!(app.ui.server_screen.bandwidth_samples[59], 69.0);
     }
-
-    #[test]
-    fn view_smoke_renders_without_panic() {
-        let (_, palette) = forge_widgets::catppuccin_mocha();
-        let state = ServerScreenState::default();
-        let _ = server_screen_view(&state, &palette);
-    }
 }

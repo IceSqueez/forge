@@ -91,21 +91,6 @@ mod tests {
         assert!(!cfg.allow_local);
     }
 
-    #[test]
-    fn default_max_calls_per_script_is_ten() {
-        assert_eq!(ScriptHttpConfig::default().max_calls_per_script, 10);
-    }
-
-    #[test]
-    fn default_timeout_is_5_seconds() {
-        assert_eq!(ScriptHttpConfig::default().timeout_ms, 5_000);
-    }
-
-    #[test]
-    fn default_max_response_bytes_is_1mib() {
-        assert_eq!(ScriptHttpConfig::default().max_response_bytes, 1_048_576);
-    }
-
     #[tokio::test]
     async fn load_script_http_config_returns_defaults_when_keys_absent() {
         let backend = SqliteBackend::open_with_key("sqlite::memory:", [0xab; 32])

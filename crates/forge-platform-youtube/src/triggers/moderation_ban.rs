@@ -89,19 +89,6 @@ mod tests {
     }
 
     #[test]
-    fn kind_id_matches_canonical() {
-        assert_eq!(ModerationBanDescriptor.id(), "youtube.moderation.ban");
-    }
-
-    #[test]
-    fn is_platform_specific_youtube() {
-        assert_eq!(
-            ModerationBanDescriptor.event_filter().source,
-            Some(EventSource::YouTube)
-        );
-    }
-
-    #[test]
     fn always_matches() {
         assert!(ModerationBanDescriptor.matches_trigger(&TriggerConfig::new(), &ban_event()));
     }

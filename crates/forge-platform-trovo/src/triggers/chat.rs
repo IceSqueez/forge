@@ -104,24 +104,6 @@ mod tests {
     }
 
     #[test]
-    fn kind_id_matches_canonical() {
-        assert_eq!(ChatDescriptor.id(), "trovo.chat");
-    }
-
-    #[test]
-    fn category_is_chat() {
-        assert_eq!(ChatDescriptor.category(), TriggerCategory::Chat);
-    }
-
-    #[test]
-    fn is_platform_specific_trovo() {
-        assert_eq!(
-            ChatDescriptor.event_filter().source,
-            Some(EventSource::Trovo)
-        );
-    }
-
-    #[test]
     fn always_matches() {
         assert!(ChatDescriptor.matches_trigger(&TriggerConfig::new(), &chat_event()));
     }

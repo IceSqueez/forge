@@ -49,28 +49,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn credential_id_serde_roundtrip() {
-        let id = CredentialId::new("twitch:broadcaster");
-        let json = serde_json::to_string(&id).unwrap();
-        let restored: CredentialId = serde_json::from_str(&json).unwrap();
-        assert_eq!(id, restored);
-    }
-
-    #[test]
-    fn credential_id_transparent_serde() {
+    fn credential_id_serde_is_transparent_string() {
         let id = CredentialId::new("azure:tts");
         let json = serde_json::to_string(&id).unwrap();
         assert_eq!(json, r#""azure:tts""#);
+        let back: CredentialId = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, id);
     }
 
-    #[test]
-    fn credential_id_display_matches_inner() {
-        assert_eq!(format!("{}", CredentialId::new("twitch:bot")), "twitch:bot");
-    }
-
-    #[test]
-    fn credentials_repo_is_dyn_safe() {
-        fn accepts_repo(_: &dyn CredentialsRepo) {}
-        let _ = accepts_repo;
-    }
+    #[allow(dead_code)]
+    fn _credentials_repo_is_dyn_safe(_: &dyn CredentialsRepo) {}
 }

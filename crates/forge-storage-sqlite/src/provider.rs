@@ -4,12 +4,13 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_storage::{
-    ActionRepo, CredentialId, CredentialsRepo, DataProvider, EventLogRepo, GlobalEntry,
-    GlobalTransit, GlobalsRepo, HistoryRepo, QueueRepo, ScriptRecord, ScriptRepo, SettingsRepo,
+    ActionRepo, BundleExportOutcome, BundleImportOutcome, BundleRepo, CredentialId,
+    CredentialsRepo, DataProvider, EventLogRepo, GlobalEntry, GlobalTransit, GlobalsRepo,
+    HistoryRepo, ImportMode, QueueRepo, ScriptRecord, ScriptRepo, SettingsRepo,
     SoundboardClipsRepo, StorageError, TriggerInstanceRepo, UserGlobalEntry, UserGlobalsRepo,
     ViewerRepo, VoiceAliasRepo,
 };
-use forge_types::{ScriptId, Variant};
+use forge_types::{ActionId, ScriptId, Variant};
 use time::OffsetDateTime;
 use tokio::sync::Notify;
 
@@ -351,6 +352,25 @@ impl CredentialsRepo for SqliteBackend {
 
     async fn mark_refreshed(&self, id: &CredentialId) -> Result<(), StorageError> {
         self.credentials.mark_refreshed(id).await
+    }
+}
+
+#[async_trait]
+impl BundleRepo for SqliteBackend {
+    async fn import_bundle(
+        &self,
+        _bytes: &[u8],
+        _mode: ImportMode,
+    ) -> Result<BundleImportOutcome, StorageError> {
+        Err(StorageError::NotReady)
+    }
+
+    async fn export_bundle(
+        &self,
+        _action_ids: &[ActionId],
+        _include_orphan_globals: bool,
+    ) -> Result<BundleExportOutcome, StorageError> {
+        Err(StorageError::NotReady)
     }
 }
 

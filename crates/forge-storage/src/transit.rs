@@ -121,3 +121,50 @@ impl Default for BundleDocument {
         Self::new()
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImportMode {
+    /// Skip on identity match (UUID for Actions/TriggerInstances; case-sensitive name for
+    /// Scripts/Globals). No existing entity is modified or deleted.
+    MergeAdd,
+    /// Wipe Actions, user-defined TriggerInstances, Scripts, and persisted Globals first,
+    /// then insert bundle entities. Credentials, settings, user_globals, and event_log
+    /// are never touched. Calling this method IS the confirmation — UI owns the guard.
+    ReplaceConfirm,
+}
+
+/// Emitted by `MergeAdd` on identity collision. Carries both display names so the UI
+/// can offer a per-item override without re-querying storage.
+#[derive(Debug, Clone)]
+pub struct SkippedEntity {
+    pub bundle_display_name: String,
+    pub local_display_name: String,
+}
+
+/// Hard failures (malformed JSON, version too old, DB write error) are `Err`; everything
+/// else lands here. A `format_version` newer than current is a warning, not an error.
+#[derive(Debug, Clone, Default)]
+pub struct BundleImportOutcome {
+    pub actions_inserted: u32,
+    pub trigger_instances_inserted: u32,
+    pub scripts_inserted: u32,
+    pub globals_inserted: u32,
+    /// Entities present in the bundle but skipped due to identity collision in `MergeAdd`
+    /// mode. Empty in `ReplaceConfirm` mode.
+    pub actions_skipped: Vec<SkippedEntity>,
+    pub trigger_instances_skipped: Vec<SkippedEntity>,
+    pub scripts_skipped: Vec<SkippedEntity>,
+    pub globals_skipped: Vec<SkippedEntity>,
+    /// Non-fatal warnings: missing soundboard clips, unknown trigger `kind_id`s,
+    /// `format_version` newer than the current runtime, etc.
+    pub warnings: Vec<String>,
+}
+
+/// `document` is always populated even when `warnings` is non-empty.
+#[derive(Debug, Clone)]
+pub struct BundleExportOutcome {
+    pub document: BundleDocument,
+    /// Non-fatal warnings: deleted scripts referenced by sub-actions, unresolvable
+    /// global names, etc.
+    pub warnings: Vec<String>,
+}

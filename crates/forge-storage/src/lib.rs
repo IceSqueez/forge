@@ -23,14 +23,15 @@ pub use error::StorageError;
 pub use event_log::{EventLogRepo, event_log_retention_days, set_event_log_retention_days};
 pub use globals::{GlobalEntry, GlobalsRepo};
 pub use history::{ActionStats, HistoryRepo};
-pub use provider::DataProvider;
+pub use provider::{BundleRepo, DataProvider};
 pub use queue::QueueRepo;
 pub use script::{ScriptRecord, ScriptRepo};
 pub use settings::{SettingsRepo, reserved_keys};
 pub use soundboard::{SoundboardClipsRepo, StoredClip};
 pub use transit::{
-    ActionTransit, BUNDLE_FORMAT_VERSION, BundleDocument, CURRENT_FORMAT_VERSION, GlobalTransit,
-    GlobalsExport, MINIMUM_SUPPORTED_BUNDLE_VERSION, ScriptTransit, TriggerInstanceTransit,
+    ActionTransit, BUNDLE_FORMAT_VERSION, BundleDocument, BundleExportOutcome, BundleImportOutcome,
+    CURRENT_FORMAT_VERSION, GlobalTransit, GlobalsExport, ImportMode,
+    MINIMUM_SUPPORTED_BUNDLE_VERSION, ScriptTransit, SkippedEntity, TriggerInstanceTransit,
 };
 pub use trigger_instance::TriggerInstanceRepo;
 pub use user_globals::{UserGlobalEntry, UserGlobalsRepo};

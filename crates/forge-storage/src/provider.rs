@@ -6,11 +6,40 @@ use crate::{
     ActionRepo, CredentialsRepo, EventLogRepo, GlobalsRepo, HistoryRepo, QueueRepo, ScriptRepo,
     SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo, UserGlobalsRepo,
     ViewerRepo, VoiceAliasRepo,
+    transit::{BundleExportOutcome, BundleImportOutcome, ImportMode},
 };
+use forge_types::ActionId;
+
+#[async_trait]
+pub trait BundleRepo: Send + Sync {
+    /// Impl owns deserialization + version gating. Only hard failures (malformed JSON,
+    /// version below `MINIMUM_SUPPORTED_BUNDLE_VERSION`, DB write error) produce `Err`;
+    /// soft conditions land in `BundleImportOutcome::warnings`.
+    async fn import_bundle(
+        &self,
+        bytes: &[u8],
+        mode: ImportMode,
+    ) -> Result<BundleImportOutcome, StorageError>;
+
+    /// Collects the full transitive closure from the root Action IDs. Missing deleted
+    /// dependencies surface as warnings in the outcome; they do not abort the export.
+    async fn export_bundle(
+        &self,
+        action_ids: &[ActionId],
+        include_orphan_globals: bool,
+    ) -> Result<BundleExportOutcome, StorageError>;
+}
 
 #[async_trait]
 pub trait DataProvider:
-    GlobalsRepo + UserGlobalsRepo + SettingsRepo + ScriptRepo + CredentialsRepo + Send + Sync
+    GlobalsRepo
+    + UserGlobalsRepo
+    + SettingsRepo
+    + ScriptRepo
+    + CredentialsRepo
+    + BundleRepo
+    + Send
+    + Sync
 {
     fn action_repo(&self) -> Arc<dyn ActionRepo>;
     fn trigger_instance_repo(&self) -> Arc<dyn TriggerInstanceRepo>;

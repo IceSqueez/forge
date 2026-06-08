@@ -6,6 +6,10 @@ inputs:
     description: "Cache key shared across workflows. Default `dev-<os>` lets pr/nightly/manual reuse target/debug/ across workflow boundaries."
     required: false
     default: dev-${{ runner.os }}
+  save-if:
+    description: "Whether to save a new cache entry after this run. Set to 'false' on workflows that should READ the cache but not write new entries (e.g. pull-request runs and manual workflow_dispatch runs that would otherwise bloat storage with per-PR or per-run caches)."
+    required: false
+    default: 'true'
 
 runs:
   using: composite
@@ -22,3 +26,5 @@ runs:
       with:
         components: rustfmt,clippy
         cache-shared-key: ${{ inputs.shared-key }}
+        cache-on-failure: 'false'
+        cache-save-if: ${{ inputs.save-if }}

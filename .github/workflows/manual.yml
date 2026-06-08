@@ -33,6 +33,8 @@ jobs:
 
       - name: Setup Rust with cache
         uses: ./.github/actions/setup-rust-cached
+        with:
+          save-if: 'false'
 
       - name: Run test
         if: inputs.command == 'test'

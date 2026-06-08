@@ -28,6 +28,8 @@ jobs:
 
       - name: Setup Rust with cache
         uses: ./.github/actions/setup-rust-cached
+        with:
+          save-if: 'false'
 
       - name: Check formatting
         shell: bash
@@ -58,6 +60,8 @@ jobs:
 
       - name: Setup Rust with cache
         uses: ./.github/actions/setup-rust-cached
+        with:
+          save-if: 'false'
 
       - name: Test
         shell: bash

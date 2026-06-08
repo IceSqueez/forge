@@ -53,7 +53,8 @@ async fn load_all_returns_all_entries() {
         Some("catppuccin_mocha")
     );
     assert_eq!(map.get("density").map(String::as_str), Some("cozy"));
-    assert_eq!(map.len(), 2);
+    // Migration 0016 seeds app.language = 'en', so the map includes that row too.
+    assert_eq!(map.len(), 3);
 }
 
 #[tokio::test]

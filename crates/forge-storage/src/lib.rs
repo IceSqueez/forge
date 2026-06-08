@@ -26,7 +26,7 @@ pub use history::{ActionStats, HistoryRepo};
 pub use provider::{BundleRepo, DataProvider};
 pub use queue::QueueRepo;
 pub use script::{ScriptRecord, ScriptRepo};
-pub use settings::{SettingsRepo, reserved_keys};
+pub use settings::{Language, SettingsRepo, UnknownLanguage, reserved_keys};
 pub use soundboard::{SoundboardClipsRepo, StoredClip};
 pub use transit::{
     ActionTransit, BUNDLE_FORMAT_VERSION, BundleDocument, BundleExportOutcome, BundleImportOutcome,

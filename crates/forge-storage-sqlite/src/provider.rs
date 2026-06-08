@@ -17,8 +17,8 @@ use tokio::sync::Notify;
 use crate::error::SqliteStorageError;
 use crate::retention_task::spawn_retention_task;
 use crate::{
-    SqliteActionRepo, SqliteCredentialsRepo, SqliteEventLogRepo, SqliteGlobalsRepo,
-    SqliteHistoryRepo, SqliteQueueRepo, SqliteScriptRepo, SqliteSettingsRepo,
+    SqliteActionRepo, SqliteBundleRepo, SqliteCredentialsRepo, SqliteEventLogRepo,
+    SqliteGlobalsRepo, SqliteHistoryRepo, SqliteQueueRepo, SqliteScriptRepo, SqliteSettingsRepo,
     SqliteSoundboardClipsRepo, SqliteTriggerInstanceRepo, SqliteUserGlobalsRepo, SqliteViewerRepo,
     SqliteVoiceAliasRepo, apply_migrations, connect,
 };
@@ -40,6 +40,7 @@ pub struct SqliteBackend {
     soundboard: Arc<SqliteSoundboardClipsRepo>,
     voice_alias: Arc<SqliteVoiceAliasRepo>,
     viewer: Arc<SqliteViewerRepo>,
+    bundle: SqliteBundleRepo,
     shutdown: Arc<Notify>,
 }
 
@@ -122,6 +123,7 @@ impl SqliteBackend {
             soundboard: Arc::new(SqliteSoundboardClipsRepo::new(pool.clone())),
             voice_alias: Arc::new(SqliteVoiceAliasRepo::new(pool.clone())),
             viewer: Arc::new(SqliteViewerRepo::new(pool.clone())),
+            bundle: SqliteBundleRepo::new(pool.clone()),
             credentials,
             shutdown,
             pool,
@@ -359,18 +361,20 @@ impl CredentialsRepo for SqliteBackend {
 impl BundleRepo for SqliteBackend {
     async fn import_bundle(
         &self,
-        _bytes: &[u8],
-        _mode: ImportMode,
+        bytes: &[u8],
+        mode: ImportMode,
     ) -> Result<BundleImportOutcome, StorageError> {
-        Err(StorageError::NotReady)
+        self.bundle.import_bundle(bytes, mode).await
     }
 
     async fn export_bundle(
         &self,
-        _action_ids: &[ActionId],
-        _include_orphan_globals: bool,
+        action_ids: &[ActionId],
+        include_orphan_globals: bool,
     ) -> Result<BundleExportOutcome, StorageError> {
-        Err(StorageError::NotReady)
+        self.bundle
+            .export_bundle(action_ids, include_orphan_globals)
+            .await
     }
 }
 

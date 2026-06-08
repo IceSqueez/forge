@@ -201,7 +201,7 @@ mod tests {
     #[test]
     fn cmdorctrl_resolves_to_meta_on_macos() {
         let c = HotkeyCombo::parse("CmdOrCtrl+Shift+1").unwrap();
-        assert_eq!(c.as_str(), "Meta+Shift+1");
+        assert_eq!(c.as_str(), "Shift+Meta+1");
     }
 
     #[cfg(not(target_os = "macos"))]

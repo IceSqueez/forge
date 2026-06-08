@@ -238,10 +238,7 @@ pub fn catalog() -> &'static [MethodDescriptor] {
     CATALOG
 }
 
-/// Maps a pre-tokenized line position to the matching catalog entry.
-///
-/// Callers supply `(Range<usize>, SymbolToken)` pairs rather than rhai token types so
-/// this function stays free of any `forge-widgets` dependency.
+/// Takes `SymbolToken` pairs (not rhai token types) so this function stays dependency-free from forge-widgets.
 pub fn resolve_symbol_from_tokens(
     tokens: &[(Range<usize>, SymbolToken)],
     line_text: &str,

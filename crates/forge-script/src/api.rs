@@ -21,11 +21,7 @@ pub trait SpeakRequester: Send + Sync {
     async fn clear(&self);
 }
 
-/// The god-object exposed to rhai scripts as the `forge::*` namespace.
-///
-/// Holds `Arc` clones of the event publisher and storage needed by script-callable
-/// methods. Created once per script execution. `deadline` is the absolute wall-clock
-/// time at which `forge::sleep` must stop sleeping to respect the wall-time budget.
+/// Created once per script execution; `deadline` is the absolute wall-time limit for `forge::sleep`.
 pub struct ForgeApi {
     publisher: Arc<dyn EventPublisher>,
     globals: Arc<dyn GlobalsRepo>,

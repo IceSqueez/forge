@@ -1,10 +1,46 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-beta.9] - 2026-06-08
+### 🎨 Styling
+- *(runtime)* Apply rustfmt to script_run_* wrappers
+- *(script)* Compress tautological doc comments
+
+### 🚀 Features
+- *(script)* Add ForgeApi method catalog + SymbolKind
+- *(script)* Add ScriptHttpConfig + http_* settings keys
+- *(script)* Add IP deny-list + is_private_or_special helper
+- *(widgets)* Add TagListInput<Msg> for chip-style allowlist editing
+- *(widgets)* Add ScriptEditorOverlay positioning shell
+- *(widgets)* Add Esc + click-outside dismiss to ScriptEditorOverlay
+- *(widgets)* Add autocomplete_popup widget, filter, and kind badges
+- *(widgets)* Add hover_popover widget + signature formatter
+- *(widgets)* Add ScriptEditorWidget composing rhai_editor + overlays
+- *(app)* Adopt ScriptEditorWidget in script_editor screen
+- *(app)* Add Settings → Scripting sub-screen
+- *(app)* Add ScriptEditor toolbar (Debug, Format, API docs)
+- *(app)* Add ScriptEditor type-check, Rhai version, Ln/Col pills
+- *(app)* Add ScriptEditor run-stats line in console
+- *(script)* Add ScriptHttpClient with sandbox validation pipeline
+- *(script)* Register forge::http::get and post rhai bindings
+- *(runtime)* Wire ScriptHttpClient into RunScript runner
+- *(widgets)* Add autocomplete trigger predicate (. :: Ctrl+Space)
+- *(script)* Add user-function hover from @input/@return docs
+
+### 🧪 Testing
+- *(script)* Rename version-anchored catalog test
+- *(widgets)* Add autocomplete pipeline performance budget
+
 ## [0.1.0-beta.8] - 2026-06-07
+### ⚙️ Miscellaneous Tasks
+- Release
+
 ### 🎨 Styling
 - *(tts-sapi)* Collapse com_stream let-binding for nightly fmt
 - *(script)* Condense multi-paragraph docs to single-line invariants
+
+### 📚 Documentation
+- *(release)* Release v0.1.0-beta.8
 
 ### 🚀 Features
 - *(types)* Add AnnotationDiagnostic for script editor surface

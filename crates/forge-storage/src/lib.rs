@@ -28,7 +28,10 @@ pub use queue::QueueRepo;
 pub use script::{ScriptRecord, ScriptRepo};
 pub use settings::{SettingsRepo, reserved_keys};
 pub use soundboard::{SoundboardClipsRepo, StoredClip};
-pub use transit::{CURRENT_FORMAT_VERSION, GlobalTransit, GlobalsExport};
+pub use transit::{
+    ActionTransit, BUNDLE_FORMAT_VERSION, BundleDocument, CURRENT_FORMAT_VERSION, GlobalTransit,
+    GlobalsExport, MINIMUM_SUPPORTED_BUNDLE_VERSION, ScriptTransit, TriggerInstanceTransit,
+};
 pub use trigger_instance::TriggerInstanceRepo;
 pub use user_globals::{UserGlobalEntry, UserGlobalsRepo};
 pub use viewer::{Viewer, ViewerPlatform, ViewerRepo};

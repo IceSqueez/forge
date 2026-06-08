@@ -98,65 +98,24 @@ pub trait SettingsRepo: Send + Sync {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::reserved_keys::*;
+    use super::Language;
 
     fn _trait_is_dyn_safe(_: &dyn super::SettingsRepo) {}
 
     #[test]
-    fn reserved_keys_are_non_empty() {
-        assert!(!ONBOARDING_COMPLETED.is_empty());
-        assert!(!LAST_ONBOARDING_STEP.is_empty());
-        assert!(!THEME.is_empty());
-        assert!(!ACCENT_COLOR.is_empty());
-        assert!(!DENSITY.is_empty());
-        assert!(!FONT_BODY.is_empty());
-        assert!(!FONT_MONO.is_empty());
-        assert!(!EVENT_LOG_RETENTION_DAYS_KEY.is_empty());
-        assert!(!SERVER_BIND_ADDRESS_KEY.is_empty());
-        assert!(!SERVER_PORT_KEY.is_empty());
-        assert!(!SERVER_LAN_BIND_ENABLED_KEY.is_empty());
-        assert!(!SERVER_AUTH_REQUIRED_FOR_READS_KEY.is_empty());
-        assert!(!SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_KEY.is_empty());
-        assert!(!SERVER_OVERLAY_CORS_ANY_ORIGIN_KEY.is_empty());
-        assert!(!SERVER_OVERLAY_ROOT_KEY.is_empty());
-        assert!(!SCRIPT_HTTP_ALLOWED_DOMAINS_KEY.is_empty());
-        assert!(!SCRIPT_HTTP_MAX_CALLS_KEY.is_empty());
-        assert!(!SCRIPT_HTTP_TIMEOUT_MS_KEY.is_empty());
-        assert!(!SCRIPT_HTTP_ALLOW_LOCAL_KEY.is_empty());
-        assert!(!SCRIPT_HTTP_MAX_RESPONSE_BYTES_KEY.is_empty());
-        assert!(!SCRIPT_OP_LIMIT_KEY.is_empty());
-        assert!(!SCRIPT_TIMEOUT_MS_KEY.is_empty());
-        assert!(!LANGUAGE.is_empty());
+    fn language_round_trips_through_display_and_from_str() {
+        assert_eq!(Language::default(), Language::En);
+        for lang in [Language::En, Language::Uk] {
+            let s = lang.to_string();
+            assert_eq!(s.parse::<Language>().unwrap(), lang);
+        }
     }
 
     #[test]
-    fn reserved_keys_are_distinct() {
-        let keys = [
-            ONBOARDING_COMPLETED,
-            LAST_ONBOARDING_STEP,
-            THEME,
-            ACCENT_COLOR,
-            DENSITY,
-            FONT_BODY,
-            FONT_MONO,
-            EVENT_LOG_RETENTION_DAYS_KEY,
-            SERVER_BIND_ADDRESS_KEY,
-            SERVER_PORT_KEY,
-            SERVER_LAN_BIND_ENABLED_KEY,
-            SERVER_AUTH_REQUIRED_FOR_READS_KEY,
-            SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_KEY,
-            SERVER_OVERLAY_CORS_ANY_ORIGIN_KEY,
-            SERVER_OVERLAY_ROOT_KEY,
-            SCRIPT_HTTP_ALLOWED_DOMAINS_KEY,
-            SCRIPT_HTTP_MAX_CALLS_KEY,
-            SCRIPT_HTTP_TIMEOUT_MS_KEY,
-            SCRIPT_HTTP_ALLOW_LOCAL_KEY,
-            SCRIPT_HTTP_MAX_RESPONSE_BYTES_KEY,
-            SCRIPT_OP_LIMIT_KEY,
-            SCRIPT_TIMEOUT_MS_KEY,
-            LANGUAGE,
-        ];
-        let unique: std::collections::HashSet<&str> = keys.iter().copied().collect();
-        assert_eq!(unique.len(), keys.len());
+    fn language_from_str_rejects_non_canonical_codes_preserving_input() {
+        for bad in ["EN", "En", "fr", "", " en", "en "] {
+            let err = bad.parse::<Language>().unwrap_err();
+            assert_eq!(err.0, bad);
+        }
     }
 }

@@ -330,11 +330,11 @@ mod tests {
     }
 
     #[test]
-    fn catalog_all_kinds_are_fn_at_beta9() {
+    fn catalog_all_entries_have_fn_kind() {
         for entry in catalog() {
             assert!(
                 matches!(entry.kind, SymbolKind::Fn),
-                "entry {}::{} must have kind Fn at beta-9",
+                "entry {}::{} must have kind Fn",
                 entry.namespace.unwrap_or("(root)"),
                 entry.name
             );

@@ -10,7 +10,6 @@ pub enum ViewerPlatform {
     Twitch,
     YouTube,
     Kick,
-    Trovo,
 }
 
 impl ViewerPlatform {
@@ -19,7 +18,6 @@ impl ViewerPlatform {
             Self::Twitch => "twitch",
             Self::YouTube => "youtube",
             Self::Kick => "kick",
-            Self::Trovo => "trovo",
         }
     }
 
@@ -28,7 +26,6 @@ impl ViewerPlatform {
             "twitch" => Some(Self::Twitch),
             "youtube" => Some(Self::YouTube),
             "kick" => Some(Self::Kick),
-            "trovo" => Some(Self::Trovo),
             _ => None,
         }
     }
@@ -82,7 +79,6 @@ mod tests {
             ViewerPlatform::Twitch,
             ViewerPlatform::YouTube,
             ViewerPlatform::Kick,
-            ViewerPlatform::Trovo,
         ] {
             assert_eq!(ViewerPlatform::parse(p.as_str()), Some(p));
         }

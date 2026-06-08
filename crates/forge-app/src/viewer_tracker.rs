@@ -49,7 +49,6 @@ fn map_source_to_platform(source: EventSource) -> Option<ViewerPlatform> {
         EventSource::Twitch => Some(ViewerPlatform::Twitch),
         EventSource::YouTube => Some(ViewerPlatform::YouTube),
         EventSource::Kick => Some(ViewerPlatform::Kick),
-        EventSource::Trovo => Some(ViewerPlatform::Trovo),
         _ => None,
     }
 }

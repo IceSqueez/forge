@@ -60,7 +60,6 @@ fn test_app() -> App {
             chat_send_bridge: None,
             twitch_flow: None,
             youtube_flow: None,
-            trovo_flow: None,
             kick_flow: None,
             tts_engine_ids: Vec::new(),
             twitch_login: None,

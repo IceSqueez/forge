@@ -1295,7 +1295,6 @@ fn platform_id_name(p: PlatformId) -> &'static str {
     match p {
         PlatformId::Twitch => "Twitch",
         PlatformId::YouTube => "YouTube",
-        PlatformId::Trovo => "Trovo",
         PlatformId::Kick => "Kick",
     }
 }
@@ -1304,7 +1303,6 @@ fn platform_id_color(p: PlatformId, palette: &ForgePalette) -> Color {
     match p {
         PlatformId::Twitch => palette.platform_twitch,
         PlatformId::YouTube => palette.platform_youtube,
-        PlatformId::Trovo => palette.platform_trovo,
         PlatformId::Kick => palette.platform_kick,
     }
 }

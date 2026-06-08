@@ -21,7 +21,6 @@ pub enum Platform {
     Twitch,
     YouTube,
     Kick,
-    Trovo,
 }
 
 impl Platform {
@@ -30,7 +29,6 @@ impl Platform {
             Platform::Twitch => palette.brand,
             Platform::YouTube => palette.random,
             Platform::Kick => palette.info,
-            Platform::Trovo => palette.success,
         }
     }
 
@@ -39,7 +37,6 @@ impl Platform {
             Platform::Twitch => "T",
             Platform::YouTube => "Y",
             Platform::Kick => "K",
-            Platform::Trovo => "V",
         }
     }
 }

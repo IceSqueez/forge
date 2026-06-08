@@ -45,7 +45,6 @@ fn event_source_to_chat_source(src: EventSource) -> Option<ChatSource> {
         EventSource::Twitch => Some(ChatSource::Twitch),
         EventSource::YouTube => Some(ChatSource::YouTube),
         EventSource::Kick => Some(ChatSource::Kick),
-        EventSource::Trovo => Some(ChatSource::Trovo),
         EventSource::Core
         | EventSource::Rhai
         | EventSource::Http

@@ -30,7 +30,6 @@ pub struct ForgePalette {
 
     pub platform_twitch: Color,
     pub platform_youtube: Color,
-    pub platform_trovo: Color,
     pub platform_kick: Color,
 
     pub code_keyword: Color,
@@ -101,7 +100,6 @@ pub const CATPPUCCIN_MOCHA: ForgePalette = ForgePalette {
 
     platform_twitch: hex(0x91, 0x46, 0xff),
     platform_youtube: hex(0xff, 0x00, 0x00),
-    platform_trovo: hex(0x00, 0xb2, 0x73),
     platform_kick: hex(0x53, 0xfc, 0x18),
 
     code_keyword: hex(0xcb, 0xa6, 0xf7),
@@ -148,7 +146,6 @@ pub const TOKYO_NIGHT: ForgePalette = ForgePalette {
 
     platform_twitch: hex(0x91, 0x46, 0xff),
     platform_youtube: hex(0xff, 0x00, 0x00),
-    platform_trovo: hex(0x00, 0xb2, 0x73),
     platform_kick: hex(0x53, 0xfc, 0x18),
 
     code_keyword: hex(0xbb, 0x9a, 0xf7),
@@ -195,7 +192,6 @@ pub const LATTE: ForgePalette = ForgePalette {
 
     platform_twitch: hex(0x91, 0x46, 0xff),
     platform_youtube: hex(0xff, 0x00, 0x00),
-    platform_trovo: hex(0x00, 0xb2, 0x73),
     platform_kick: hex(0x53, 0xfc, 0x18),
 
     code_keyword: hex(0x88, 0x39, 0xef),
@@ -261,9 +257,6 @@ mod tests {
                     || p.platform_youtube.g > 0.0
                     || p.platform_youtube.b > 0.0
             );
-            assert!(
-                p.platform_trovo.r > 0.0 || p.platform_trovo.g > 0.0 || p.platform_trovo.b > 0.0
-            );
             assert!(p.platform_kick.r > 0.0 || p.platform_kick.g > 0.0 || p.platform_kick.b > 0.0);
         }
     }
@@ -280,9 +273,6 @@ mod tests {
             assert!(approx(a.platform_youtube.r, b.platform_youtube.r));
             assert!(approx(a.platform_youtube.g, b.platform_youtube.g));
             assert!(approx(a.platform_youtube.b, b.platform_youtube.b));
-            assert!(approx(a.platform_trovo.r, b.platform_trovo.r));
-            assert!(approx(a.platform_trovo.g, b.platform_trovo.g));
-            assert!(approx(a.platform_trovo.b, b.platform_trovo.b));
             assert!(approx(a.platform_kick.r, b.platform_kick.r));
             assert!(approx(a.platform_kick.g, b.platform_kick.g));
             assert!(approx(a.platform_kick.b, b.platform_kick.b));

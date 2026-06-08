@@ -47,7 +47,6 @@ pub enum ChatSource {
     Twitch,
     YouTube,
     Kick,
-    Trovo,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -318,7 +317,6 @@ mod tests {
         assert_eq!(to_string(&ChatSource::Twitch).unwrap(), r#""twitch""#);
         assert_eq!(to_string(&ChatSource::YouTube).unwrap(), r#""youtube""#);
         assert_eq!(to_string(&ChatSource::Kick).unwrap(), r#""kick""#);
-        assert_eq!(to_string(&ChatSource::Trovo).unwrap(), r#""trovo""#);
         let src: ChatSource = from_str(r#""twitch""#).unwrap();
         assert_eq!(src, ChatSource::Twitch);
         let src: ChatSource = from_str(r#""youtube""#).unwrap();

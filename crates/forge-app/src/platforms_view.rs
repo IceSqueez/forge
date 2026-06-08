@@ -194,21 +194,10 @@ pub(crate) fn platforms_overview_view<'a>(
         BuiltinId::new("kick"),
         palette,
     );
-    let trovo_card = platform_overview_card(
-        "V",
-        p.platform_trovo,
-        "Trovo",
-        "Chat, spells, mana, subscribers — Tencent streaming platform",
-        &["Chat", "Spells", "Subs"],
-        false,
-        BuiltinId::new("trovo"),
-        palette,
-    );
-
     let grid_row_1 = row![twitch_card, youtube_card]
         .spacing(spf(Spacing::Sm))
         .width(Length::Fill);
-    let grid_row_2 = row![kick_card, trovo_card]
+    let grid_row_2 = row![kick_card]
         .spacing(spf(Spacing::Sm))
         .width(Length::Fill);
     let grid = column![grid_row_1, grid_row_2].spacing(spf(Spacing::Sm));

@@ -6,7 +6,6 @@ pub enum PlatformId {
     Twitch,
     YouTube,
     Kick,
-    Trovo,
 }
 
 #[cfg(test)]
@@ -16,12 +15,7 @@ mod tests {
 
     #[test]
     fn serde_roundtrip_all_variants() {
-        for variant in [
-            PlatformId::Twitch,
-            PlatformId::YouTube,
-            PlatformId::Kick,
-            PlatformId::Trovo,
-        ] {
+        for variant in [PlatformId::Twitch, PlatformId::YouTube, PlatformId::Kick] {
             let json = serde_json::to_string(&variant).unwrap();
             let back: PlatformId = serde_json::from_str(&json).unwrap();
             assert_eq!(variant, back);

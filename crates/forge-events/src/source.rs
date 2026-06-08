@@ -7,7 +7,6 @@ pub enum EventSource {
     Twitch,
     YouTube,
     Kick,
-    Trovo,
     Core,
     Rhai,
     Http,
@@ -27,7 +26,6 @@ impl EventSource {
             Self::Twitch => Some(PlatformId::Twitch),
             Self::YouTube => Some(PlatformId::YouTube),
             Self::Kick => Some(PlatformId::Kick),
-            Self::Trovo => Some(PlatformId::Trovo),
             _ => None,
         }
     }
@@ -49,7 +47,6 @@ mod tests {
             Some(PlatformId::YouTube)
         );
         assert_eq!(EventSource::Kick.to_platform_id(), Some(PlatformId::Kick));
-        assert_eq!(EventSource::Trovo.to_platform_id(), Some(PlatformId::Trovo));
     }
 
     #[test]

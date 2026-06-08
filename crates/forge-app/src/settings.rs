@@ -465,7 +465,6 @@ pub(crate) fn handle_message(app: &mut App, sub: SettingsMsg) -> Task<Message> {
             let builtin = match platform {
                 forge_types::PlatformId::Twitch => "twitch",
                 forge_types::PlatformId::YouTube => "youtube",
-                forge_types::PlatformId::Trovo => "trovo",
                 forge_types::PlatformId::Kick => "kick",
             };
             Task::batch([

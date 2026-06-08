@@ -40,11 +40,10 @@ mod tests {
             ),
             (
                 AuthFlow::LocalCallback {
-                    authorize_url: "https://open.trovo.live/page/login.html".to_owned(),
-                    token_endpoint: "https://open-api.trovo.live/openplatform/exchangetoken"
-                        .to_owned(),
+                    authorize_url: "https://id.twitch.tv/oauth2/authorize".to_owned(),
+                    token_endpoint: "https://id.twitch.tv/oauth2/token".to_owned(),
                     redirect_path: "/oauth/callback".to_owned(),
-                    scopes: vec!["channel:read".to_owned()],
+                    scopes: vec!["chat:read".to_owned()],
                 },
                 "local_callback",
             ),

@@ -94,7 +94,6 @@ fn platform_name(platform: Platform) -> &'static str {
         Platform::Twitch => "Twitch",
         Platform::YouTube => "YouTube",
         Platform::Kick => "Kick",
-        Platform::Trovo => "Trovo",
     }
 }
 

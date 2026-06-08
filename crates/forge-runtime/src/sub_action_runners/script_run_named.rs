@@ -150,10 +150,11 @@ impl SubActionRunner for ScriptRunNamedRunner {
             let deadline = Instant::now() + Duration::from_millis(cfg.wall_time_ms);
             // reqwest::blocking::Client must be built inside spawn_blocking — constructing it on
             // the outer async task causes a runtime conflict on drop.
-            let http_client = ScriptHttpClient::new(http_cfg).map_err(|e| ScriptError::Runtime {
-                script: body.clone(),
-                reason: e.to_string(),
-            })?;
+            let http_client =
+                ScriptHttpClient::new(http_cfg).map_err(|e| ScriptError::Runtime {
+                    script: body.clone(),
+                    reason: e.to_string(),
+                })?;
             let mut api = ForgeApi::new(publisher_arc, globals_arc, parent_event_id, deadline)
                 .with_http(Arc::new(http_client));
             if let Some(req) = speak_requester {

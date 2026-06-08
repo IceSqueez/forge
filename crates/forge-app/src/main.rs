@@ -71,6 +71,18 @@ impl forge_platform_core::RateLimiter for KickNoopLimiter {
     async fn observe_remote_throttle(&self, _retry_after: std::time::Duration) {}
 }
 
+fn boot_locale(rt: &tokio::runtime::Runtime, backend: Arc<dyn DataProvider>) {
+    let settings: Arc<dyn forge_storage::SettingsRepo> =
+        Arc::clone(&backend) as Arc<dyn forge_storage::SettingsRepo>;
+    let (lang, persist) = rt.block_on(forge_app::i18n::resolve_startup_language(settings.clone()));
+    if let Some(detected) = persist
+        && let Err(e) = rt.block_on(settings.set_language(detected))
+    {
+        tracing::warn!(error = %e, "failed to persist detected locale");
+    }
+    forge_app::i18n::install_language(lang);
+}
+
 fn default_db_path() -> PathBuf {
     paths::data_dir().join("forge.db")
 }
@@ -818,6 +830,7 @@ fn main() -> iced::Result {
     let _runtime_guard = runtime.enter();
 
     let (backend, storage_offline) = boot_storage();
+    boot_locale(&runtime, Arc::clone(&backend));
     let initial_screen = Screen::Home;
 
     let event_log = backend.event_log_repo();

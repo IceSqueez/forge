@@ -16,6 +16,7 @@ pub mod event_feed;
 pub mod globals_variant_editor;
 pub mod globals_view;
 pub mod home;
+pub mod i18n;
 pub mod live_chat;
 pub mod live_chat_drawer;
 pub mod live_chat_view;

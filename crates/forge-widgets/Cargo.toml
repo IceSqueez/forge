@@ -16,6 +16,8 @@ forge-types = { path = "../forge-types" }
 forge-events = { path = "../forge-events" }
 forge-platform-core = { path = "../forge-platform-core" }
 forge-script = { path = "../forge-script" }
+fluent = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 time = { workspace = true }

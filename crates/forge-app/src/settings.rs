@@ -7,6 +7,8 @@ use iced::{Element, Length, Task};
 
 use crate::app::App;
 
+use forge_storage::SettingsRepo;
+
 use crate::message::{Message, SettingsMsg};
 use crate::page_chrome::simple_page_header;
 use crate::runtime_view::RuntimeView;
@@ -544,6 +546,21 @@ pub(crate) fn handle_message(app: &mut App, sub: SettingsMsg) -> Task<Message> {
         }
         SettingsMsg::Scripting(sub) => {
             crate::settings_scripting::update(&mut app.ui.settings_scripting, &app.rt, sub)
+        }
+        SettingsMsg::LanguageChanged(lang) => {
+            crate::i18n::install_language(lang);
+            let settings: Arc<dyn SettingsRepo> =
+                Arc::clone(&app.rt.backend) as Arc<dyn SettingsRepo>;
+            Task::perform(
+                async move { settings.set_language(lang).await.map_err(|e| e.to_string()) },
+                |r| Message::Settings(SettingsMsg::LanguagePersisted(r)),
+            )
+        }
+        SettingsMsg::LanguagePersisted(result) => {
+            if let Err(e) = result {
+                tracing::warn!(error = %e, "failed to persist language selection");
+            }
+            Task::none()
         }
     }
 }

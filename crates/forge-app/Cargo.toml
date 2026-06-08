@@ -57,6 +57,10 @@ forge-voice = { path = "../forge-voice" }
 forge-registry = { path = "../forge-registry" }
 forge-widgets = { path = "../forge-widgets" }
 iced = { workspace = true }
+fluent = { workspace = true }
+fluent-langneg = { workspace = true }
+unic-langid = { workspace = true }
+sys-locale = { workspace = true }
 rfd = { workspace = true }
 open = { workspace = true }
 serde_json = { workspace = true }

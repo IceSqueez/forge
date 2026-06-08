@@ -14,7 +14,7 @@ use forge_vtube::VTubeClient;
 use forge_widgets::{DeviceLabel, PickerItem, ToastKind};
 
 use forge_platform_core::{HeaderAction, HealthDelta};
-use forge_storage::GlobalEntry;
+use forge_storage::{GlobalEntry, Language};
 use forge_types::{ActionId, OAuthToken, PlatformId, UnifiedChatRow};
 use forge_widgets::{ThemeId, VariantKind};
 use time::OffsetDateTime;
@@ -181,6 +181,8 @@ pub enum SettingsMsg {
     OpenLogDirectoryRequested,
     OpenLogDirectoryResult(Result<(), String>),
     Scripting(crate::settings_scripting::ScriptingSettingsMsg),
+    LanguageChanged(Language),
+    LanguagePersisted(Result<(), String>),
 }
 
 #[derive(Debug, Clone)]

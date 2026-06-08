@@ -829,4 +829,51 @@ mod tests {
         assert!(result.is_some());
         assert_eq!(result.unwrap().name, "double");
     }
+
+    #[test]
+    fn autocomplete_pipeline_500_line_within_budget() {
+        use std::time::Instant;
+
+        let lines = build_pipeline_test_lines();
+        let catalog_entries = catalog();
+
+        let t0 = Instant::now();
+        for i in 0..100usize {
+            let line = &lines[i % lines.len()];
+            let col = (line.len() / 2).max(1);
+
+            let (raw_tokens, _) = tokenize_line(line, false);
+            let sym_tokens = to_symbol_tokens(&raw_tokens);
+            let last_char = line.chars().last();
+            let _ = should_trigger_autocomplete(line, col, last_char, false);
+            let prefix = prefix_under_cursor(line, col);
+            let _candidates = filter_candidates(catalog_entries, &prefix);
+            let _hover = resolve_symbol_from_tokens(&sym_tokens, line, col);
+        }
+        let total_ms = t0.elapsed().as_millis();
+        assert!(
+            total_ms <= 500,
+            "autocomplete pipeline 100 keystrokes took {total_ms}ms, budget is 500ms (5ms avg)"
+        );
+    }
+
+    fn build_pipeline_test_lines() -> Vec<String> {
+        let mut lines = Vec::with_capacity(500);
+        for i in 0..500usize {
+            let line = match i % 10 {
+                0 => format!("let x_{i} = forge::globals::get(\"key_{i}\");"),
+                1 => format!("forge::globals::set(\"key_{i}\", {i});"),
+                2 => format!("forge::chat::send(\"hello {i}\");"),
+                3 => format!("forge::tts::speak(\"msg {i}\");"),
+                4 => format!("// single-line comment {i}"),
+                5 => format!("let f_{i} = {};", (i as f64) * 1.5),
+                6 => format!("let b_{i} = {};", if i % 2 == 0 { "true" } else { "false" }),
+                7 => format!("forge::log(\"step {i}\");"),
+                8 => format!("forge::globals::incr(\"counter_{i}\", 1);"),
+                _ => format!("let s_{i} = \"value_{i}\";"),
+            };
+            lines.push(line);
+        }
+        lines
+    }
 }

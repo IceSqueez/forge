@@ -387,6 +387,8 @@ pub fn subscription(app: &App) -> Subscription<Message> {
         _ => None,
     });
 
+    let close_requests = iced::window::close_requests().map(|_id| Message::AppCloseRequested);
+
     if let Some(state) = app.ui.builtin_detail.as_ref() {
         Subscription::batch([
             bus,
@@ -397,6 +399,7 @@ pub fn subscription(app: &App) -> Subscription<Message> {
             tts_events,
             toast_tick,
             outside_click,
+            close_requests,
         ])
     } else {
         Subscription::batch([
@@ -407,6 +410,7 @@ pub fn subscription(app: &App) -> Subscription<Message> {
             tts_events,
             toast_tick,
             outside_click,
+            close_requests,
         ])
     }
 }

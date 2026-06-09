@@ -885,7 +885,8 @@ fn main() -> iced::Result {
     let mut app = iced::application(boot, update, view)
         .title("forge")
         .subscription(subscription)
-        .theme(theme_callback);
+        .theme(theme_callback)
+        .exit_on_close_request(false);
     for font_bytes in forge_widgets::load_fonts() {
         app = app.font(font_bytes);
     }

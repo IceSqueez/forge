@@ -527,4 +527,6 @@ pub enum Message {
     SettingsHotkeys(crate::settings_hotkeys::SettingsHotkeysMsg),
     OutsideClick,
     Noop,
+    AppCloseRequested,
+    AppShutdownComplete,
 }

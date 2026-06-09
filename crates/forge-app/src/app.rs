@@ -435,6 +435,24 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             }
         }
         Message::Noop => Task::none(),
+        Message::AppCloseRequested => {
+            let backend = Arc::clone(&app.rt.backend);
+            let vtube = app.rt.vtube_client.clone();
+            let obs = app.rt.obs_client.clone();
+            Task::perform(
+                async move {
+                    if let Some(c) = obs {
+                        c.shutdown().await;
+                    }
+                    if let Some(c) = vtube {
+                        c.shutdown().await;
+                    }
+                    backend.shutdown().await;
+                },
+                |()| Message::AppShutdownComplete,
+            )
+        }
+        Message::AppShutdownComplete => iced::exit(),
     }
 }
 

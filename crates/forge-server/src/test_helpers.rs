@@ -340,6 +340,8 @@ impl DataProvider for TestDataProvider {
     async fn export(&self, _path: &Path) -> Result<(), StorageError> {
         Ok(())
     }
+
+    async fn shutdown(&self) {}
 }
 
 pub fn test_dp() -> Arc<dyn DataProvider> {

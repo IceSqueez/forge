@@ -52,6 +52,7 @@ fn test_app() -> App {
             scheduler: None,
             obs_client: None,
             vtube_client: None,
+            vtube_sink: forge_vtube::SwitchableVTubeSink::new(),
             discord_client: None,
             midi_client: None,
             hotkey_client: None,

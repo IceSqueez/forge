@@ -13,10 +13,12 @@ pub mod sink;
 mod sink_impl;
 pub mod status;
 pub(crate) mod supervisor;
+pub mod switchable_sink;
 
 pub use auth::{AuthEvent, AuthState, AuthStateMachine};
 pub use client::{VTubeClient, VTubeConfig};
-pub use credentials::{VTUBE_CREDENTIAL_ID, VTubeCredentials};
+pub use credentials::{VTUBE_CREDENTIAL_ID, VTubeConnectError, VTubeCredentials};
 pub use error::VTubeError;
 pub use runners::register_vtube_sub_actions;
 pub use sink::VTubeSink;
+pub use switchable_sink::SwitchableVTubeSink;

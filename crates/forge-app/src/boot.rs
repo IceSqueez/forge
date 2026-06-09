@@ -35,6 +35,18 @@ pub async fn load_twitch_credential(
     }))
 }
 
+pub async fn load_vtube_and_connect(
+    creds: Arc<dyn CredentialsRepo>,
+    bus: Arc<EventBus>,
+) -> Result<VTubeClientRef, String> {
+    let publisher: Arc<dyn EventPublisher> = bus;
+    let creds_arc: Arc<dyn CredentialsRepo> = Arc::clone(&creds);
+    let client = forge_vtube::credentials::load_and_connect(&*creds, publisher, creds_arc)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(VTubeClientRef::new(client))
+}
+
 pub async fn load_obs_and_connect(
     creds: Arc<dyn CredentialsRepo>,
     bus: Arc<EventBus>,
@@ -152,11 +164,12 @@ pub(crate) fn handle_vtube_boot_result(
                 content,
                 quick_actions,
             ));
+            app.rt.vtube_sink.install(Arc::clone(&client));
             app.rt.vtube_client = Some(client);
             Task::none()
         }
         Err(e) => {
-            tracing::warn!(error = %e, "VTube Studio boot connection failed");
+            tracing::debug!(error = %e, "VTube Studio not started at boot");
             Task::none()
         }
     }

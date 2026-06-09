@@ -53,7 +53,10 @@ impl forge_platform_core::RateLimiter for KickNoopLimiter {
     async fn observe_remote_throttle(&self, _retry_after: std::time::Duration) {}
 }
 
-fn boot_locale(rt: &tokio::runtime::Runtime, backend: Arc<dyn DataProvider>) {
+fn boot_locale(
+    rt: &tokio::runtime::Runtime,
+    backend: Arc<dyn DataProvider>,
+) -> forge_storage::Language {
     let settings: Arc<dyn forge_storage::SettingsRepo> =
         Arc::clone(&backend) as Arc<dyn forge_storage::SettingsRepo>;
     let (lang, persist) = rt.block_on(forge_app::i18n::resolve_startup_language(settings.clone()));
@@ -63,6 +66,7 @@ fn boot_locale(rt: &tokio::runtime::Runtime, backend: Arc<dyn DataProvider>) {
         tracing::warn!(error = %e, "failed to persist detected locale");
     }
     forge_app::i18n::install_language(lang);
+    lang
 }
 
 fn default_db_path() -> PathBuf {
@@ -687,7 +691,7 @@ fn main() -> iced::Result {
     let _runtime_guard = runtime.enter();
 
     let (backend, storage_offline) = boot_storage();
-    boot_locale(&runtime, Arc::clone(&backend));
+    let boot_language = boot_locale(&runtime, Arc::clone(&backend));
     let initial_screen = Screen::Home;
 
     let event_log = backend.event_log_repo();
@@ -797,6 +801,7 @@ fn main() -> iced::Result {
             action_engine.clone(),
             scheduler.clone(),
             sound_player.clone(),
+            boot_language,
         );
         app.rt.bus = Arc::clone(&bus_boot);
         app.rt.chat_send_bridge = chat_send_bridge.clone();

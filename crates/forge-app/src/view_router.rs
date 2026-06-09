@@ -60,6 +60,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
                 hotkeys: &app.ui.settings_hotkeys,
                 scripting: &app.ui.settings_scripting,
                 rt: &app.rt,
+                current_language: app.language,
             },
             palette,
         ),

@@ -12,6 +12,7 @@ use forge_platform_twitch::ChatConnectionState;
 use forge_runtime::{
     ActionEngineHandle, EventBus, NullEventLogRepo, QueueSchedulerHandle, ScriptRegistry,
 };
+use forge_storage::Language;
 use forge_storage::{CredentialsRepo, DataProvider};
 #[cfg(test)]
 use forge_vtube::{VTubeClient, VTubeConfig};
@@ -72,6 +73,7 @@ pub struct App {
     pub screen: Screen,
     pub theme: Theme,
     pub palette: ForgePalette,
+    pub language: Language,
     pub toast_queue: ToastQueue<Message>,
     pub storage_offline: bool,
     pub boot_time: SystemTime,
@@ -141,6 +143,7 @@ impl Default for UiState {
 }
 
 impl App {
+    #[allow(clippy::too_many_arguments)]
     pub fn default_with(
         initial: Screen,
         backend: Arc<dyn DataProvider>,
@@ -149,6 +152,7 @@ impl App {
         action_engine: Option<ActionEngineHandle>,
         scheduler: Option<QueueSchedulerHandle>,
         sound_player: Option<Arc<SoundboardPlayer>>,
+        language: Language,
     ) -> Self {
         let (theme, palette) = forge_widgets::catppuccin_mocha();
         let server_subsystem = Arc::new(ServerSubsystem::new(
@@ -158,6 +162,7 @@ impl App {
             screen: initial,
             theme,
             palette,
+            language,
             toast_queue: ToastQueue::new(),
             storage_offline,
             boot_time: SystemTime::now(),
@@ -221,6 +226,7 @@ impl Default for App {
             screen: Screen::Home,
             theme,
             palette,
+            language: Language::En,
             toast_queue: ToastQueue::new(),
             storage_offline: false,
             boot_time: SystemTime::now(),
@@ -615,6 +621,7 @@ mod tests {
             screen: Screen::Home,
             theme,
             palette,
+            language: Language::En,
             toast_queue: ToastQueue::new(),
             storage_offline: false,
             boot_time: std::time::SystemTime::now(),
@@ -949,6 +956,7 @@ mod tests {
             screen: Screen::Actions,
             theme,
             palette,
+            language: Language::En,
             toast_queue: ToastQueue::new(),
             storage_offline: false,
             boot_time: std::time::SystemTime::now(),

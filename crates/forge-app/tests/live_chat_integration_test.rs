@@ -31,6 +31,7 @@ fn test_app() -> App {
         screen: Screen::Home,
         theme,
         palette,
+        language: forge_storage::Language::En,
         toast_queue: forge_widgets::ToastQueue::new(),
         storage_offline: false,
         boot_time: std::time::SystemTime::now(),

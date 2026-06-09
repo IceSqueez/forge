@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use forge_storage::Language;
 use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::tokens::{FONT_LG, FONT_SM, FONT_XS, Spacing, sp, spf};
 use forge_widgets::{ForgePalette, Radius, radius};
@@ -157,79 +158,95 @@ fn settings_queues_pane(palette: &ForgePalette) -> Element<'static, Message> {
         .into()
 }
 
-const FORGE_SETTINGS_ROW_BORDER: f32 = 0.5;
-
-fn settings_language_pane(palette: &ForgePalette) -> Element<'static, Message> {
-    use iced::widget::{Space, column, container, row, text};
+fn language_option_row<'a>(
+    native_label: &'a str,
+    bcp47: &'a str,
+    lang: Language,
+    current: Language,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    use iced::widget::{Space, button, container, row, text};
 
     let p = *palette;
     let mono = forge_widgets::font(forge_widgets::FontRole::Monospace);
+    let is_selected = lang == current;
+
+    let bcp47_chip = container(text(bcp47).size(FONT_XS).color(p.text_primary).font(mono))
+        .padding([3_u16, 8_u16])
+        .style(move |_: &iced::Theme| container::Style {
+            background: Some(iced::Background::Color(p.surface_overlay)),
+            border: iced::Border {
+                radius: radius(Radius::Sm).into(),
+                ..Default::default()
+            },
+            ..container::Style::default()
+        });
+
+    let inner = row![
+        text(native_label).size(FONT_SM).color(p.text_primary),
+        Space::new().width(Length::Fill),
+        bcp47_chip,
+    ]
+    .align_y(iced::Alignment::Center)
+    .padding([10_u16, 0_u16]);
+
+    button(inner)
+        .on_press(Message::Settings(
+            crate::message::SettingsMsg::LanguageChanged(lang),
+        ))
+        .width(Length::Fill)
+        .style(move |_: &iced::Theme, _status| {
+            let bg_color = if is_selected {
+                iced::Color { a: 0.12, ..p.brand }
+            } else {
+                iced::Color::TRANSPARENT
+            };
+            let border_color = if is_selected {
+                iced::Color { a: 0.5, ..p.brand }
+            } else {
+                iced::Color::TRANSPARENT
+            };
+            iced::widget::button::Style {
+                background: Some(iced::Background::Color(bg_color)),
+                border: iced::Border {
+                    color: border_color,
+                    width: if is_selected { 1.0 } else { 0.0 },
+                    radius: radius(Radius::Sm).into(),
+                },
+                text_color: p.text_primary,
+                ..iced::widget::button::Style::default()
+            }
+        })
+        .into()
+}
+
+fn settings_language_pane(current: Language, palette: &ForgePalette) -> Element<'_, Message> {
+    use iced::widget::{column, container, row, text};
+
+    let p = *palette;
 
     let header = row![
         tabler_icon(Icon::Globe, 18.0, p.brand),
-        text("Language & region")
+        text(forge_widgets::tr!("settings_language_title"))
             .size(FONT_LG)
             .color(p.text_primary),
     ]
     .spacing(spf(Spacing::Xs))
     .align_y(iced::Alignment::Center);
 
-    let rows: [(&str, &str); 4] = [
-        ("Interface language", "Ukrainian (uk-UA)"),
-        ("Region", "Ukraine"),
-        ("Date format", "DD.MM.YYYY"),
-        ("First day of week", "Monday"),
-    ];
+    let subtitle = text(forge_widgets::tr!("settings_language_subtitle"))
+        .size(FONT_SM)
+        .color(p.text_muted);
 
-    let mut list = column![].spacing(0);
-    let count = rows.len();
-    for (i, (label, value)) in rows.into_iter().enumerate() {
-        let bottom = if i == count - 1 {
-            0_u16
-        } else {
-            FORGE_SETTINGS_ROW_BORDER as u16
-        };
-        let _ = bottom;
-        let row_el = container(
-            row![
-                text(label).size(FONT_SM).color(p.text_primary),
-                Space::new().width(Length::Fill),
-                container(text(value).size(FONT_SM).color(p.text_secondary).font(mono))
-                    .padding([3_u16, 8_u16])
-                    .style(move |_: &iced::Theme| container::Style {
-                        background: Some(iced::Background::Color(p.surface_overlay)),
-                        border: iced::Border {
-                            radius: radius(Radius::Sm).into(),
-                            ..Default::default()
-                        },
-                        ..container::Style::default()
-                    }),
-            ]
-            .align_y(iced::Alignment::Center),
-        )
-        .padding([10_u16, 0_u16])
-        .width(Length::Fill)
-        .style(move |_: &iced::Theme| {
-            let border_color = if i + 1 == count {
-                iced::Color::TRANSPARENT
-            } else {
-                p.border_regular
-            };
-            container::Style {
-                border: iced::Border {
-                    color: border_color,
-                    width: 0.5,
-                    radius: 0.0.into(),
-                },
-                ..container::Style::default()
-            }
-        });
-        list = list.push(row_el);
-    }
+    let list = column![
+        language_option_row("English", "en-US", Language::En, current, palette),
+        language_option_row("Українська", "uk-UA", Language::Uk, current, palette),
+    ]
+    .spacing(spf(Spacing::Xs));
 
-    let body = column![header, list].spacing(spf(Spacing::Md));
+    let body = column![header, subtitle, list].spacing(spf(Spacing::Md));
 
-    iced::widget::container(body)
+    container(body)
         .width(Length::Fill)
         .height(Length::Fill)
         .padding(sp(Spacing::Lg))
@@ -363,6 +380,7 @@ pub(crate) struct SettingsViewParams<'a> {
     pub hotkeys: &'a SettingsHotkeysState,
     pub scripting: &'a ScriptingSettingsState,
     pub rt: &'a RuntimeView,
+    pub current_language: forge_storage::Language,
 }
 
 pub(crate) fn settings_view<'a>(
@@ -377,6 +395,7 @@ pub(crate) fn settings_view<'a>(
         hotkeys,
         scripting,
         rt,
+        current_language,
     } = params;
     let nav = iced::widget::column![
         nav_group_header("PREFERENCES", palette),
@@ -432,7 +451,7 @@ pub(crate) fn settings_view<'a>(
         SettingsSection::Storage => settings_storage_pane(palette),
         SettingsSection::Queues => settings_queues_pane(palette),
         SettingsSection::Notifications => settings_notifications_pane(palette),
-        SettingsSection::Language => settings_language_pane(palette),
+        SettingsSection::Language => settings_language_pane(current_language, palette),
         SettingsSection::Shortcuts => settings_shortcuts_pane(palette),
         SettingsSection::Hotkeys => crate::settings_hotkeys::view(hotkeys, rt, palette),
         SettingsSection::Scripting => crate::settings_scripting::view(scripting, palette),
@@ -547,6 +566,7 @@ pub(crate) fn handle_message(app: &mut App, sub: SettingsMsg) -> Task<Message> {
             crate::settings_scripting::update(&mut app.ui.settings_scripting, &app.rt, sub)
         }
         SettingsMsg::LanguageChanged(lang) => {
+            app.language = lang;
             crate::i18n::install_language(lang);
             let settings: Arc<dyn SettingsRepo> =
                 Arc::clone(&app.rt.backend) as Arc<dyn SettingsRepo>;

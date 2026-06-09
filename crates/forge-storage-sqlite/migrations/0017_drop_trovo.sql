@@ -4,5 +4,4 @@
 
 DELETE FROM credentials WHERE id LIKE 'trovo:%';
 DELETE FROM viewers WHERE platform = 'trovo';
-DELETE FROM action_history WHERE source = 'trovo';
 DELETE FROM event_log WHERE source = 'trovo';

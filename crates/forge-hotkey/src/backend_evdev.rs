@@ -1,11 +1,13 @@
 #![cfg(target_os = "linux")]
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::io::Read;
+use std::os::unix::fs::OpenOptionsExt;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::{Arc, RwLock};
 
-use tokio::io::AsyncReadExt;
+use tokio::io::unix::AsyncFd;
 use tokio::sync::mpsc;
 
 use crate::backend::{HotkeyBackend, HotkeyFiredEvent, HotkeyId};
@@ -16,6 +18,7 @@ const EV_KEY: u16 = 1;
 const KEY_DOWN: i32 = 1;
 const KEY_UP: i32 = 0;
 const INPUT_EVENT_SIZE: usize = 24;
+const READ_CHUNK_EVENTS: usize = 64;
 
 pub(crate) struct EvdevBackend {
     cmd_tx: mpsc::Sender<EvdevCmd>,
@@ -112,10 +115,8 @@ async fn discover_input_devices() -> Result<Vec<PathBuf>, HotkeyError> {
         let name_str = name.to_string_lossy();
         if name_str.starts_with("event") {
             let path = entry.path();
-            match tokio::fs::File::open(&path).await {
-                Ok(_) => devices.push(path),
-                Err(e) if e.raw_os_error() == Some(13) => {}
-                Err(_) => {}
+            if open_device_nonblocking(&path).is_ok() {
+                devices.push(path);
             }
         }
     }
@@ -126,48 +127,83 @@ async fn discover_input_devices() -> Result<Vec<PathBuf>, HotkeyError> {
     Ok(devices)
 }
 
+// O_NONBLOCK + AsyncFd keeps device reads on the epoll reactor; a blocking-pool
+// read on an idle device never returns and stalls tokio runtime shutdown.
+fn open_device_nonblocking(path: &Path) -> std::io::Result<std::fs::File> {
+    std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(path)
+}
+
 async fn read_device_events(
     path: PathBuf,
     modifier_state: Arc<Mutex<HashSet<u16>>>,
     registered: Arc<RwLock<HashMap<HotkeyId, HotkeyCombo>>>,
     fired_tx: mpsc::Sender<HotkeyFiredEvent>,
 ) {
-    let mut file = match tokio::fs::File::open(&path).await {
+    let file = match open_device_nonblocking(&path) {
         Ok(f) => f,
         Err(_) => return,
     };
+    let async_fd = match AsyncFd::new(file) {
+        Ok(fd) => fd,
+        Err(_) => return,
+    };
 
-    let mut buf = [0u8; INPUT_EVENT_SIZE];
+    let mut buf = [0u8; INPUT_EVENT_SIZE * READ_CHUNK_EVENTS];
     loop {
-        if file.read_exact(&mut buf).await.is_err() {
-            break;
-        }
+        let mut guard = match async_fd.readable().await {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        let read = match guard.try_io(|inner| inner.get_ref().read(&mut buf)) {
+            Ok(Ok(0)) => return,
+            Ok(Ok(n)) => n,
+            Ok(Err(e)) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Ok(Err(_)) => return,
+            Err(_would_block) => continue,
+        };
+        drop(guard);
 
-        let ev_type = u16::from_ne_bytes([buf[16], buf[17]]);
-        let code = u16::from_ne_bytes([buf[18], buf[19]]);
-        let value = i32::from_ne_bytes([buf[20], buf[21], buf[22], buf[23]]);
-
-        if ev_type != EV_KEY {
-            continue;
+        // The kernel writes whole input_event structs; chunks_exact also guards
+        // against ever acting on a partial trailing chunk.
+        for raw in buf[..read].chunks_exact(INPUT_EVENT_SIZE) {
+            handle_key_event(raw, &modifier_state, &registered, &fired_tx).await;
         }
+    }
+}
 
-        if let Some(modifier) = key_code_to_modifier(code) {
-            let mut state = modifier_state.lock().unwrap_or_else(|p| p.into_inner());
-            if value == KEY_DOWN {
-                state.insert(modifier);
-            } else if value == KEY_UP {
-                state.remove(&modifier);
-            }
-        } else if value == KEY_DOWN
-            && let Some(key_name) = key_code_to_name(code)
-        {
-            let modifiers_held: HashSet<u16> = modifier_state
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .clone();
-            let combo_str = build_combo_string(&modifiers_held, key_name);
-            check_and_fire(&combo_str, &registered, &fired_tx).await;
+async fn handle_key_event(
+    raw: &[u8],
+    modifier_state: &Mutex<HashSet<u16>>,
+    registered: &Arc<RwLock<HashMap<HotkeyId, HotkeyCombo>>>,
+    fired_tx: &mpsc::Sender<HotkeyFiredEvent>,
+) {
+    let ev_type = u16::from_ne_bytes([raw[16], raw[17]]);
+    let code = u16::from_ne_bytes([raw[18], raw[19]]);
+    let value = i32::from_ne_bytes([raw[20], raw[21], raw[22], raw[23]]);
+
+    if ev_type != EV_KEY {
+        return;
+    }
+
+    if let Some(modifier) = key_code_to_modifier(code) {
+        let mut state = modifier_state.lock().unwrap_or_else(|p| p.into_inner());
+        if value == KEY_DOWN {
+            state.insert(modifier);
+        } else if value == KEY_UP {
+            state.remove(&modifier);
         }
+    } else if value == KEY_DOWN
+        && let Some(key_name) = key_code_to_name(code)
+    {
+        let modifiers_held: HashSet<u16> = modifier_state
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone();
+        let combo_str = build_combo_string(&modifiers_held, key_name);
+        check_and_fire(&combo_str, registered, fired_tx).await;
     }
 }
 

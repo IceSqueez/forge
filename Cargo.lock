@@ -2457,6 +2457,7 @@ dependencies = [
  "forge-registry",
  "forge-types",
  "global-hotkey",
+ "libc",
  "serde",
  "serde_json",
  "thiserror 2.0.18",

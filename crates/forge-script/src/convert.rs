@@ -56,105 +56,59 @@ mod tests {
     use time::OffsetDateTime;
 
     #[test]
-    fn variant_to_dynamic_int() {
-        let d = variant_to_dynamic(Variant::Int(42));
-        assert!(d.is::<i64>());
-        assert_eq!(d.cast::<i64>(), 42);
-    }
+    fn variant_to_dynamic_maps_each_variant_to_expected_rhai_type() {
+        let int_d = variant_to_dynamic(Variant::Int(42));
+        assert_eq!(int_d.cast::<i64>(), 42);
 
-    #[test]
-    fn variant_to_dynamic_float() {
-        let d = variant_to_dynamic(Variant::Float(2.5));
-        assert!(d.is::<f64>());
-        assert!((d.cast::<f64>() - 2.5).abs() < f64::EPSILON);
-    }
+        let float_d = variant_to_dynamic(Variant::Float(2.5));
+        assert!((float_d.cast::<f64>() - 2.5).abs() < f64::EPSILON);
 
-    #[test]
-    fn variant_to_dynamic_bool_true() {
-        let d = variant_to_dynamic(Variant::Bool(true));
-        assert!(d.is::<bool>());
-        assert!(d.cast::<bool>());
-    }
+        let bool_d = variant_to_dynamic(Variant::Bool(true));
+        assert!(bool_d.cast::<bool>());
 
-    #[test]
-    fn variant_to_dynamic_bool_false() {
-        let d = variant_to_dynamic(Variant::Bool(false));
-        assert!(d.is::<bool>());
-        assert!(!d.cast::<bool>());
-    }
+        let str_d = variant_to_dynamic(Variant::String("hello".to_owned()));
+        assert_eq!(str_d.cast::<rhai::ImmutableString>().as_str(), "hello");
 
-    #[test]
-    fn variant_to_dynamic_string() {
-        let d = variant_to_dynamic(Variant::String("hello".to_owned()));
-        assert!(d.is::<rhai::ImmutableString>());
-        assert_eq!(d.cast::<rhai::ImmutableString>().as_str(), "hello");
-    }
-
-    #[test]
-    fn variant_to_dynamic_datetime_becomes_iso_string() {
         let dt = OffsetDateTime::from_unix_timestamp(0).unwrap();
-        let d = variant_to_dynamic(Variant::Datetime(dt));
-        assert!(d.is::<rhai::ImmutableString>());
-        let s = d.cast::<rhai::ImmutableString>();
-        assert!(s.contains("1970"), "ISO string must contain year: {s}");
-    }
+        let dt_d = variant_to_dynamic(Variant::Datetime(dt));
+        assert!(dt_d.cast::<rhai::ImmutableString>().contains("1970"));
 
-    #[test]
-    fn variant_to_dynamic_array_nested() {
-        let arr = vec![Variant::Int(1), Variant::Int(2)];
-        let d = variant_to_dynamic(Variant::Array(arr));
-        assert!(d.is::<rhai::Array>());
-        let a = d.cast::<rhai::Array>();
-        assert_eq!(a.len(), 2);
-        assert_eq!(a[0].clone().cast::<i64>(), 1);
-    }
+        let arr_d = variant_to_dynamic(Variant::Array(vec![Variant::Int(1), Variant::Int(2)]));
+        let arr = arr_d.cast::<rhai::Array>();
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0].clone().cast::<i64>(), 1);
 
-    #[test]
-    fn variant_to_dynamic_object() {
         let mut obj = std::collections::BTreeMap::new();
         obj.insert("key".to_owned(), Variant::Int(99));
-        let d = variant_to_dynamic(Variant::Object(obj));
-        assert!(d.is::<rhai::Map>());
-        let m = d.cast::<rhai::Map>();
-        let v = m.get("key").unwrap().clone().cast::<i64>();
-        assert_eq!(v, 99);
+        let obj_d = variant_to_dynamic(Variant::Object(obj));
+        let map = obj_d.cast::<rhai::Map>();
+        assert_eq!(map.get("key").unwrap().clone().cast::<i64>(), 99);
     }
 
     #[test]
-    fn dynamic_to_variant_int() {
-        let result = dynamic_to_variant(rhai::Dynamic::from(7i64)).unwrap();
-        assert_eq!(result, Variant::Int(7));
+    fn dynamic_to_variant_roundtrips_primitives_and_string() {
+        assert_eq!(
+            dynamic_to_variant(rhai::Dynamic::from(7i64)).unwrap(),
+            Variant::Int(7)
+        );
+        assert_eq!(
+            dynamic_to_variant(rhai::Dynamic::from(2.5f64)).unwrap(),
+            Variant::Float(2.5)
+        );
+        assert_eq!(
+            dynamic_to_variant(rhai::Dynamic::from(true)).unwrap(),
+            Variant::Bool(true)
+        );
+        assert_eq!(
+            dynamic_to_variant(rhai::Dynamic::from(rhai::ImmutableString::from("hi"))).unwrap(),
+            Variant::String("hi".to_owned())
+        );
     }
 
     #[test]
-    fn dynamic_to_variant_float() {
-        let result = dynamic_to_variant(rhai::Dynamic::from(2.5f64)).unwrap();
-        assert_eq!(result, Variant::Float(2.5));
-    }
-
-    #[test]
-    fn dynamic_to_variant_bool() {
-        let result = dynamic_to_variant(rhai::Dynamic::from(true)).unwrap();
-        assert_eq!(result, Variant::Bool(true));
-    }
-
-    #[test]
-    fn dynamic_to_variant_string() {
-        let result =
-            dynamic_to_variant(rhai::Dynamic::from(rhai::ImmutableString::from("hi"))).unwrap();
-        assert_eq!(result, Variant::String("hi".to_owned()));
-    }
-
-    #[test]
-    fn dynamic_to_variant_array_returns_err() {
+    fn dynamic_to_variant_rejects_unsupported_kinds() {
         let arr: rhai::Array = vec![rhai::Dynamic::from(1i64)];
-        let result = dynamic_to_variant(rhai::Dynamic::from(arr));
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn dynamic_to_variant_unit_returns_err() {
-        let result = dynamic_to_variant(rhai::Dynamic::UNIT);
-        assert!(result.is_err());
+        assert!(dynamic_to_variant(rhai::Dynamic::from(arr)).is_err());
+        assert!(dynamic_to_variant(rhai::Dynamic::UNIT).is_err());
     }
 }

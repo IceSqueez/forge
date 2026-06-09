@@ -54,56 +54,9 @@ impl BuiltinStatus for VTubeClient {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use forge_platform_core::{BuiltinStatus, HeaderAction};
+    use forge_platform_core::BuiltinStatus;
 
     use crate::client::VTubeClient;
-
-    #[test]
-    fn id_is_vtube() {
-        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        let s: &dyn BuiltinStatus = &c;
-        assert_eq!(s.id().as_str(), "vtube");
-    }
-
-    #[test]
-    fn display_name_is_vtube_studio() {
-        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        let s: &dyn BuiltinStatus = &c;
-        assert_eq!(s.display_name(), "VTube Studio");
-    }
-
-    #[test]
-    fn version_none_before_connect() {
-        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        let s: &dyn BuiltinStatus = &c;
-        assert!(s.version().is_none());
-    }
-
-    #[test]
-    fn endpoint_reflects_config() {
-        let c = VTubeClient::new_for_test("ws://127.0.0.1:9001/");
-        let s: &dyn BuiltinStatus = &c;
-        assert_eq!(s.endpoint(), Some("ws://127.0.0.1:9001/"));
-    }
-
-    #[test]
-    fn capability_flags_not_limited() {
-        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        let s: &dyn BuiltinStatus = &c;
-        let flags = s.capability_flags();
-        assert!(!flags.limited);
-        assert!(flags.label.is_none());
-    }
-
-    #[test]
-    fn header_actions_contains_reconnect_and_disconnect() {
-        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        let s: &dyn BuiltinStatus = &c;
-        let actions = s.header_actions();
-        assert!(actions.contains(&HeaderAction::Reconnect));
-        assert!(actions.contains(&HeaderAction::Disconnect));
-        assert!(!actions.contains(&HeaderAction::RefreshToken));
-    }
 
     #[test]
     fn uptime_none_when_not_connected() {

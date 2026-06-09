@@ -329,7 +329,6 @@ pub(crate) async fn handle_get_active_viewers(ctx: &DispatchContext) -> WsRespon
             EventSource::Twitch => "twitch",
             EventSource::YouTube => "youtube",
             EventSource::Kick => "kick",
-            EventSource::Trovo => "trovo",
             _ => continue,
         };
         let user = match ev.payload.get("user") {

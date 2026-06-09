@@ -748,18 +748,6 @@ mod tests {
     }
 
     #[test]
-    fn chat_connection_state_equality() {
-        assert_eq!(
-            ChatConnectionState::Connected,
-            ChatConnectionState::Connected
-        );
-        assert_ne!(
-            ChatConnectionState::Reconnecting { attempt: 1 },
-            ChatConnectionState::Reconnecting { attempt: 2 }
-        );
-    }
-
-    #[test]
     fn extract_roles_from_badges_returns_set_ids() {
         let badges = serde_json::json!([
             {"set_id": "moderator", "id": "1", "info": ""},

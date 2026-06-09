@@ -7,13 +7,6 @@ use forge_types::Variant;
 const TEST_KEY: [u8; 32] = [0xab; 32];
 
 #[tokio::test]
-async fn open_succeeds_with_in_memory_db() {
-    SqliteBackend::open_with_key("sqlite::memory:", TEST_KEY)
-        .await
-        .expect("SqliteBackend::open_with_key must succeed on sqlite::memory:");
-}
-
-#[tokio::test]
 async fn schema_version_is_at_least_2_after_all_migrations() {
     let backend = SqliteBackend::open_with_key("sqlite::memory:", TEST_KEY)
         .await

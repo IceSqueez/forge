@@ -333,85 +333,46 @@ mod tests {
     use super::*;
 
     #[test]
-    fn emote_fragment_maps_to_chat_segment_emote() {
-        let fragments = serde_json::json!([{
-            "type": "emote",
-            "text": "KEKW",
-            "emote": { "id": "12345" }
-        }]);
-        let segments = map_fragments(Some(&fragments));
-        assert_eq!(segments.len(), 1);
-        assert_eq!(
-            segments[0],
-            ChatSegment::Emote {
-                id: "12345".to_owned(),
-                name: "KEKW".to_owned(),
-            }
-        );
-    }
-
-    #[test]
-    fn mention_fragment_maps_to_chat_segment_mention() {
-        let fragments = serde_json::json!([{
-            "type": "mention",
-            "text": "@foo",
-            "mention": { "user_login": "foo" }
-        }]);
-        let segments = map_fragments(Some(&fragments));
-        assert_eq!(segments.len(), 1);
-        assert_eq!(
-            segments[0],
-            ChatSegment::Mention {
-                username: "foo".to_owned()
-            }
-        );
-    }
-
-    #[test]
-    fn text_fragment_maps_to_chat_segment_text() {
-        let fragments = serde_json::json!([{ "type": "text", "text": "hello" }]);
-        let segments = map_fragments(Some(&fragments));
-        assert_eq!(
-            segments,
-            vec![ChatSegment::Text {
-                text: "hello".to_owned()
-            }]
-        );
-    }
-
-    #[test]
-    fn unknown_fragment_type_is_skipped() {
-        let fragments = serde_json::json!([{ "type": "future_unknown", "text": "x" }]);
-        let segments = map_fragments(Some(&fragments));
-        assert!(segments.is_empty());
-    }
-
-    #[test]
-    fn cheermote_with_prefix_maps_to_emote() {
-        let fragments = serde_json::json!([{
-            "type": "cheermote",
-            "text": "Cheer100",
-            "cheermote": { "prefix": "Cheer", "bits": 100, "tier": 1 }
-        }]);
-        let segments = map_fragments(Some(&fragments));
-        assert_eq!(
-            segments,
-            vec![ChatSegment::Emote {
-                id: "Cheer".to_owned(),
-                name: "Cheer100".to_owned(),
-            }]
-        );
-    }
-
-    #[test]
-    fn cheermote_without_prefix_is_skipped() {
-        let fragments = serde_json::json!([{
-            "type": "cheermote",
-            "text": "x",
-            "cheermote": {}
-        }]);
-        let segments = map_fragments(Some(&fragments));
-        assert!(segments.is_empty());
+    fn map_fragments_dispatches_per_fragment_type() {
+        let cases = vec![
+            (
+                serde_json::json!([{"type": "emote", "text": "KEKW", "emote": {"id": "12345"}}]),
+                vec![ChatSegment::Emote {
+                    id: "12345".to_owned(),
+                    name: "KEKW".to_owned(),
+                }],
+            ),
+            (
+                serde_json::json!([{"type": "mention", "text": "@foo", "mention": {"user_login": "foo"}}]),
+                vec![ChatSegment::Mention {
+                    username: "foo".to_owned(),
+                }],
+            ),
+            (
+                serde_json::json!([{"type": "text", "text": "hello"}]),
+                vec![ChatSegment::Text {
+                    text: "hello".to_owned(),
+                }],
+            ),
+            (
+                serde_json::json!([{"type": "cheermote", "text": "Cheer100", "cheermote": {"prefix": "Cheer", "bits": 100, "tier": 1}}]),
+                vec![ChatSegment::Emote {
+                    id: "Cheer".to_owned(),
+                    name: "Cheer100".to_owned(),
+                }],
+            ),
+            (
+                serde_json::json!([{"type": "future_unknown", "text": "x"}]),
+                vec![],
+            ),
+            (
+                serde_json::json!([{"type": "cheermote", "text": "x", "cheermote": {}}]),
+                vec![],
+            ),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(map_fragments(Some(&input)), expected, "input={input}");
+        }
     }
 
     #[test]

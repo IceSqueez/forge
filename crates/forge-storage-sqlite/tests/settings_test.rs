@@ -1,7 +1,9 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use forge_storage::reserved_keys::EVENT_LOG_RETENTION_DAYS_KEY;
-use forge_storage::{SettingsRepo, event_log_retention_days, set_event_log_retention_days};
+use forge_storage::{
+    Language, SettingsRepo, event_log_retention_days, set_event_log_retention_days,
+};
 use forge_storage_sqlite::{SqliteBackend, SqliteSettingsRepo, apply_migrations};
 
 const TEST_KEY: [u8; 32] = [0xab; 32];
@@ -53,7 +55,8 @@ async fn load_all_returns_all_entries() {
         Some("catppuccin_mocha")
     );
     assert_eq!(map.get("density").map(String::as_str), Some("cozy"));
-    assert_eq!(map.len(), 2);
+    // Migration 0016 seeds app.language = 'en', so the map includes that row too.
+    assert_eq!(map.len(), 3);
 }
 
 #[tokio::test]
@@ -100,6 +103,17 @@ async fn last_onboarding_step_roundtrips() {
         .await
         .expect("get last_onboarding_step");
     assert_eq!(got, Some("connect_obs".to_owned()));
+}
+
+#[tokio::test]
+async fn language_seeds_en_and_round_trips_through_typed_repo() {
+    let repo = setup().await;
+    // Migration 0016 seeds 'en' so a fresh install reads En through the typed accessor.
+    assert_eq!(repo.language().await.expect("read seeded"), Language::En);
+    repo.set_language(Language::Uk).await.expect("write Uk");
+    assert_eq!(repo.language().await.expect("read after Uk"), Language::Uk);
+    repo.set_language(Language::En).await.expect("write En");
+    assert_eq!(repo.language().await.expect("read after En"), Language::En);
 }
 
 #[tokio::test]

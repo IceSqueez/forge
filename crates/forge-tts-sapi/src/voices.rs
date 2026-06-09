@@ -95,37 +95,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn lcid_en_us() {
-        assert_eq!(lcid_to_bcp47(0x0409), "en-US");
+    fn lcid_to_bcp47_maps_known_locales_and_falls_back_to_und() {
+        for (lcid, expected) in [
+            (0x0409, "en-US"),
+            (0x0419, "ru-RU"),
+            (0x0422, "uk-UA"),
+            (0xFFFF, "und"),
+        ] {
+            assert_eq!(lcid_to_bcp47(lcid), expected, "lcid={lcid:#x}");
+        }
     }
 
     #[test]
-    fn lcid_ru_ru() {
-        assert_eq!(lcid_to_bcp47(0x0419), "ru-RU");
-    }
-
-    #[test]
-    fn lcid_uk_ua() {
-        assert_eq!(lcid_to_bcp47(0x0422), "uk-UA");
-    }
-
-    #[test]
-    fn lcid_unknown_returns_und() {
-        assert_eq!(lcid_to_bcp47(0xFFFF), "und");
-    }
-
-    #[test]
-    fn parse_hex_en_us() {
+    fn parse_sapi_hex_locale_returns_bcp47_or_verbatim() {
         assert_eq!(parse_sapi_hex_locale("409"), "en-US");
-    }
-
-    #[test]
-    fn parse_hex_unknown_returns_verbatim() {
         assert_eq!(parse_sapi_hex_locale("FFFF"), "FFFF");
-    }
-
-    #[test]
-    fn parse_hex_invalid_string_returns_verbatim() {
         assert_eq!(parse_sapi_hex_locale("xyz"), "xyz");
     }
 

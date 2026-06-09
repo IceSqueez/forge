@@ -113,22 +113,6 @@ mod tests {
     }
 
     #[test]
-    fn kind_id_matches_canonical() {
-        assert_eq!(
-            SupportSuperChatDescriptor.id(),
-            "youtube.support.super_chat"
-        );
-    }
-
-    #[test]
-    fn is_platform_specific_youtube() {
-        assert_eq!(
-            SupportSuperChatDescriptor.event_filter().source,
-            Some(EventSource::YouTube)
-        );
-    }
-
-    #[test]
     fn always_matches() {
         assert!(
             SupportSuperChatDescriptor.matches_trigger(&TriggerConfig::new(), &super_chat_event())

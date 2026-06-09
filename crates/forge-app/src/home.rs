@@ -568,16 +568,6 @@ fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
         ))
         .width(Length::FillPortion(1)),
         container(home_connection_cell(
-            "Trovo",
-            palette.success,
-            false,
-            Message::Navigate(Screen::BuiltinDetail(forge_platform_core::BuiltinId::new(
-                "trovo"
-            ))),
-            palette,
-        ))
-        .width(Length::FillPortion(1)),
-        container(home_connection_cell(
             "OBS",
             palette.success,
             obs_ok,

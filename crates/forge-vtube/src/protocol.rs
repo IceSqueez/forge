@@ -88,11 +88,4 @@ mod tests {
         assert_eq!(resp.data["authenticationToken"], "tok-xyz");
         assert_eq!(resp.data["granted"], true);
     }
-
-    #[test]
-    fn request_id_is_nonempty_string() {
-        let req = new_request::<serde_json::Value>("TestRequest", serde_json::json!(null));
-        assert!(!req.request_id.is_empty());
-        assert!(req.request_id.len() > 8);
-    }
 }

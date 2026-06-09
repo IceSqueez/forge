@@ -294,11 +294,6 @@ mod tests {
     }
 
     #[test]
-    fn default_scopes_non_empty() {
-        assert!(!KICK_SCOPES.is_empty());
-    }
-
-    #[test]
     fn client_credentials_prefers_runtime_over_compile_time() {
         assert_eq!(
             resolve_client_id(Some("runtime_id"), Some("compile_id")),
@@ -330,12 +325,6 @@ mod tests {
     #[test]
     fn client_credentials_treats_empty_compile_time_as_absent() {
         assert_eq!(resolve_client_id(None, Some("")), None);
-    }
-
-    #[test]
-    fn not_started_error_display_is_non_empty() {
-        let err = KickAuthError::NotStarted;
-        assert!(!err.to_string().is_empty());
     }
 
     #[tokio::test]

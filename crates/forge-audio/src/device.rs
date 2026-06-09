@@ -101,12 +101,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn device_id_round_trip_as_str() {
-        let id = DeviceId::new("hw:0,0");
-        assert_eq!(id.as_str(), "hw:0,0");
-    }
-
-    #[test]
     fn device_id_serde_roundtrip() {
         let id = DeviceId::new("alsa-default");
         let json = serde_json::to_string(&id).unwrap();

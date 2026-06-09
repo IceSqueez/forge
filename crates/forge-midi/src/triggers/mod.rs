@@ -21,13 +21,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn register_midi_triggers_registers_three_descriptors() {
-        let mut reg = TriggerRegistry::new();
-        register_midi_triggers(&mut reg).unwrap();
-        assert_eq!(reg.all().count(), 3);
-    }
-
-    #[test]
     fn all_trigger_ids_are_present() {
         let mut reg = TriggerRegistry::new();
         register_midi_triggers(&mut reg).unwrap();

@@ -113,24 +113,6 @@ mod tests {
     }
 
     #[test]
-    fn kind_id_is_canonical() {
-        assert_eq!(BanDescriptor.id(), "kick.ban");
-    }
-
-    #[test]
-    fn category_is_users() {
-        assert_eq!(BanDescriptor.category(), TriggerCategory::Users);
-    }
-
-    #[test]
-    fn platform_contract_is_kick() {
-        assert_eq!(
-            BanDescriptor.platform_contract(),
-            KindPlatformContract::PlatformSpecific(PlatformId::Kick)
-        );
-    }
-
-    #[test]
     fn build_arg_stack_extracts_ban_fields() {
         let stack = BanDescriptor.build_arg_stack(&ban_event());
         assert_eq!(

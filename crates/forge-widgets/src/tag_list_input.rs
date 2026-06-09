@@ -152,28 +152,10 @@ fn build_chip<'a, Msg: Clone + 'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::palette::CATPPUCCIN_MOCHA;
 
     #[test]
     fn tag_list_input_state_default_draft_empty() {
         let state = TagListInputState::default();
         assert!(state.draft.is_empty());
-    }
-
-    #[test]
-    fn tag_list_input_builds_with_three_tags_without_panic() {
-        let state = TagListInputState::default();
-        let tags = vec![
-            String::from("alpha"),
-            String::from("beta"),
-            String::from("gamma"),
-        ];
-        let _elem: Element<'_, TagListInputMessage> = tag_list_input(
-            &state,
-            &tags,
-            "Add tag…",
-            std::convert::identity,
-            &CATPPUCCIN_MOCHA,
-        );
     }
 }

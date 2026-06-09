@@ -64,10 +64,4 @@ mod tests {
         let newest_first: Vec<u32> = rb.iter().rev().copied().collect();
         assert_eq!(newest_first, [3, 2, 1, 0]);
     }
-
-    #[test]
-    fn empty_buffer_len_is_zero() {
-        let rb: RingBuffer<u32> = RingBuffer::new(10);
-        assert_eq!(rb.len(), 0);
-    }
 }

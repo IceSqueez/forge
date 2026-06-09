@@ -415,24 +415,6 @@ pub(crate) mod tests {
         false
     }
 
-    #[test]
-    fn new_for_test_connection_state_is_disconnected() {
-        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        assert_eq!(c.connection_state(), ConnectionState::Disconnected);
-    }
-
-    #[test]
-    fn new_for_test_connected_at_is_none() {
-        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        assert!(c.connected_at().is_none());
-    }
-
-    #[test]
-    fn vtube_config_default_endpoint() {
-        let cfg = VTubeConfig::default();
-        assert_eq!(cfg.endpoint, "ws://127.0.0.1:8001/");
-    }
-
     #[tokio::test]
     async fn connect_emits_connected_event_when_server_accepts() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

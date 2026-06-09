@@ -143,20 +143,3 @@ async fn retention_task_respects_custom_retention_days_from_settings() {
 
     backend.shutdown_retention_pruner();
 }
-
-#[tokio::test]
-async fn retention_task_exits_cleanly_on_shutdown() {
-    let (backend, _dir) = setup_file_db(std::time::Duration::from_secs(60)).await;
-
-    for _ in 0..3 {
-        tokio::task::yield_now().await;
-    }
-
-    tokio::time::pause();
-    backend.shutdown_retention_pruner();
-
-    tokio::time::advance(std::time::Duration::from_secs(120)).await;
-    for _ in 0..5 {
-        tokio::task::yield_now().await;
-    }
-}

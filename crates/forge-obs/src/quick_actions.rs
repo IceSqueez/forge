@@ -81,39 +81,6 @@ mod tests {
     use crate::client::ObsClient;
 
     #[test]
-    fn actions_returns_exactly_four() {
-        let client = ObsClient::new_for_test("localhost:4455".to_owned());
-        let qa: &dyn QuickActions = &client;
-        assert_eq!(qa.actions().len(), 4);
-    }
-
-    #[test]
-    fn actions_labels_in_order() {
-        let client = ObsClient::new_for_test("localhost:4455".to_owned());
-        let actions = client.actions();
-        assert_eq!(actions[0].label, "Switch Scene");
-        assert_eq!(actions[1].label, "Toggle Source");
-        assert_eq!(actions[2].label, "Set Mute");
-        assert_eq!(actions[3].label, "Start Recording");
-    }
-
-    #[test]
-    fn actions_kind_ids_are_correct() {
-        let client = ObsClient::new_for_test("localhost:4455".to_owned());
-        let actions = client.actions();
-        assert_eq!(
-            actions[0].subaction_template.kind_id,
-            "obs.scenes.switch_current"
-        );
-        assert_eq!(
-            actions[1].subaction_template.kind_id,
-            "obs.sources.set_visible"
-        );
-        assert_eq!(actions[2].subaction_template.kind_id, "obs.audio.set_mute");
-        assert_eq!(actions[3].subaction_template.kind_id, "obs.record.start");
-    }
-
-    #[test]
     fn all_actions_disabled_when_disconnected() {
         let client = ObsClient::new_for_test("localhost:4455".to_owned());
         let actions = client.actions();

@@ -621,57 +621,6 @@ mod tests {
     use iced::advanced::{Layout, Shell};
 
     #[test]
-    fn menu_item_divider_is_constructable() {
-        let _d: MenuItem<()> = MenuItem::Divider;
-    }
-
-    #[test]
-    fn menu_item_header_carries_label() {
-        let h: MenuItem<()> = MenuItem::Header("Section".to_string());
-        assert!(matches!(h, MenuItem::Header(ref s) if s == "Section"));
-    }
-
-    #[test]
-    fn menu_item_enabled_item_matches_disabled_false() {
-        let i: MenuItem<u32> = MenuItem::Item {
-            label: "Rename".to_string(),
-            on_press: 1,
-            icon: Some(Icon::InfoCircle),
-            shortcut: None,
-            color: None,
-            disabled: false,
-        };
-        assert!(matches!(
-            i,
-            MenuItem::Item {
-                disabled: false,
-                ..
-            }
-        ));
-    }
-
-    #[test]
-    fn menu_item_disabled_item_matches_disabled_true() {
-        let i: MenuItem<u32> = MenuItem::Item {
-            label: "Delete".to_string(),
-            on_press: 2,
-            icon: None,
-            shortcut: Some("Del".to_string()),
-            color: None,
-            disabled: true,
-        };
-        assert!(matches!(i, MenuItem::Item { disabled: true, .. }));
-    }
-
-    #[test]
-    fn menu_placement_all_variants_are_distinct() {
-        assert_ne!(MenuPlacement::BottomLeft, MenuPlacement::BottomRight);
-        assert_ne!(MenuPlacement::TopLeft, MenuPlacement::TopRight);
-        assert_ne!(MenuPlacement::BottomLeft, MenuPlacement::TopLeft);
-        assert_ne!(MenuPlacement::BottomRight, MenuPlacement::TopRight);
-    }
-
-    #[test]
     fn actionable_count_excludes_dividers_headers_and_disabled() {
         let items: Vec<MenuItem<u32>> = vec![
             MenuItem::Header("Section".to_string()),

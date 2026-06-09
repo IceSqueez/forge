@@ -89,21 +89,6 @@ pub fn update(
                         Message::LocalCallbackFlow(LocalCallbackFlowMsg::StartResult(r))
                     })
                 }
-                PlatformId::Trovo => {
-                    let Some((cid, csec)) = forge_platform_trovo::client_credentials() else {
-                        state.phase = LocalCallbackFlowPhase::Failed;
-                        state.error =
-                            Some("Trovo OAuth client credentials are not configured".to_owned());
-                        return Task::none();
-                    };
-                    let handle = Arc::new(tokio::sync::Mutex::new(Some(
-                        forge_platform_trovo::TrovoAuthFlow::new(cid, csec),
-                    )));
-                    rt.trovo_flow = Some(Arc::clone(&handle));
-                    Task::perform(async move { start_trovo_oauth(handle).await }, |r| {
-                        Message::LocalCallbackFlow(LocalCallbackFlowMsg::StartResult(r))
-                    })
-                }
                 PlatformId::Kick => {
                     let Some(cid) = forge_platform_kick::client_credentials() else {
                         state.phase = LocalCallbackFlowPhase::Failed;
@@ -147,17 +132,6 @@ pub fn update(
                         async move {
                             wait_for_youtube_authorization(flow_handle, credentials_repo).await
                         },
-                        |r| Message::LocalCallbackFlow(LocalCallbackFlowMsg::WaitResult(r)),
-                    )
-                }
-                PlatformId::Trovo => {
-                    let Some(flow_handle) = rt.trovo_flow.clone() else {
-                        state.phase = LocalCallbackFlowPhase::Failed;
-                        state.error = Some("no active Trovo flow handle".to_owned());
-                        return Task::none();
-                    };
-                    Task::perform(
-                        async move { wait_for_trovo_authorization(flow_handle, credentials_repo).await },
                         |r| Message::LocalCallbackFlow(LocalCallbackFlowMsg::WaitResult(r)),
                     )
                 }
@@ -236,21 +210,9 @@ pub fn update(
 }
 
 type YoutubeFlowHandle = Arc<tokio::sync::Mutex<Option<forge_platform_youtube::GoogleAuthFlow>>>;
-type TrovoFlowHandle = Arc<tokio::sync::Mutex<Option<forge_platform_trovo::TrovoAuthFlow>>>;
 type KickFlowHandle = Arc<tokio::sync::Mutex<Option<forge_platform_kick::KickAuthFlow>>>;
 
 async fn start_youtube_oauth(flow_handle: YoutubeFlowHandle) -> Result<LocalCallbackData, String> {
-    let mut guard = flow_handle.lock().await;
-    let flow = guard
-        .as_mut()
-        .ok_or_else(|| "OAuth flow already consumed".to_owned())?;
-    let code = flow.start().await.map_err(|e| e.to_string())?;
-    Ok(LocalCallbackData {
-        auth_url: code.auth_url,
-    })
-}
-
-async fn start_trovo_oauth(flow_handle: TrovoFlowHandle) -> Result<LocalCallbackData, String> {
     let mut guard = flow_handle.lock().await;
     let flow = guard
         .as_mut()
@@ -293,35 +255,6 @@ async fn wait_for_youtube_authorization(
         .map_err(|e| e.to_string())
 }
 
-async fn wait_for_trovo_authorization(
-    flow_handle: TrovoFlowHandle,
-    credentials_repo: Arc<dyn CredentialsRepo>,
-) -> Result<(), String> {
-    let mut flow = {
-        let mut guard = flow_handle.lock().await;
-        guard
-            .take()
-            .ok_or_else(|| "OAuth flow already consumed".to_owned())?
-    };
-    let bundle = flow
-        .wait_for_authorization(std::time::Duration::from_secs(60))
-        .await
-        .map_err(|e| e.to_string())?;
-    let Some((cid, csec)) = forge_platform_trovo::client_credentials() else {
-        return Err("Trovo OAuth client credentials are not configured".to_owned());
-    };
-    let manager = forge_platform_trovo::TrovoCredentialsManager::new(
-        credentials_repo,
-        reqwest::Client::new(),
-        cid,
-        csec,
-    );
-    manager
-        .save_from_bundle(bundle)
-        .await
-        .map_err(|e| e.to_string())
-}
-
 async fn wait_for_kick_authorization(
     flow_handle: KickFlowHandle,
     credentials_repo: Arc<dyn CredentialsRepo>,
@@ -355,7 +288,6 @@ fn platform_display_name(p: PlatformId) -> &'static str {
         PlatformId::Twitch => "Twitch",
         PlatformId::YouTube => "YouTube",
         PlatformId::Kick => "Kick",
-        PlatformId::Trovo => "Trovo",
     }
 }
 
@@ -364,7 +296,6 @@ fn platform_dot_color(p: PlatformId, palette: &ForgePalette) -> Color {
         PlatformId::Twitch => palette.brand,
         PlatformId::YouTube => palette.random,
         PlatformId::Kick => palette.info,
-        PlatformId::Trovo => palette.success,
     }
 }
 
@@ -864,7 +795,6 @@ mod tests {
             chat_send_bridge: None,
             twitch_flow: None,
             youtube_flow: None,
-            trovo_flow: None,
             kick_flow: None,
             tts_engine_ids: Vec::new(),
             twitch_login: None,

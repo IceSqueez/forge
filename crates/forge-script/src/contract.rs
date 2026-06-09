@@ -243,14 +243,6 @@ mod tests {
     }
 
     #[test]
-    fn collect_line_numbers_are_zero_indexed() {
-        let src = "// @input foo: bad_type";
-        let diags = collect_annotation_diagnostics(src);
-        assert_eq!(diags.len(), 1);
-        assert_eq!(diags[0].line, 0);
-    }
-
-    #[test]
     fn collect_multiple_errors_on_different_lines_all_reported() {
         let src = "// @input x: bad\n// @input x: int\n// @return wrong";
         let diags = collect_annotation_diagnostics(src);

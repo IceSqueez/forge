@@ -19,11 +19,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn credential_key_matches_expected() {
-        assert_eq!(CREDENTIAL_KEY, "kick:broadcaster");
-    }
-
-    #[test]
     fn credentials_serde_roundtrip() {
         let cred = KickCredentials {
             access_token: "tok".to_owned(),

@@ -60,11 +60,6 @@ mod tests {
     }
 
     #[test]
-    fn clip_volume_default_is_unity() {
-        assert_eq!(ClipVolume::default().get(), 1.0);
-    }
-
-    #[test]
     fn clip_volume_serde_roundtrip() {
         let v = ClipVolume::new(0.7);
         let json = serde_json::to_string(&v).unwrap();

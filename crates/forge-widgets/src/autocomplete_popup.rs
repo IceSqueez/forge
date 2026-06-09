@@ -212,7 +212,7 @@ pub(crate) fn kind_badge<'a, Msg: 'a>(
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::palette::CATPPUCCIN_MOCHA;
+
     use forge_script::catalog;
 
     const KIND_TEST_CATALOG: [MethodDescriptor; 3] = [
@@ -241,31 +241,6 @@ mod tests {
             doc: None,
         },
     ];
-
-    static SMOKE_D1: MethodDescriptor = MethodDescriptor {
-        namespace: Some("globals"),
-        name: "get",
-        kind: SymbolKind::Fn,
-        params: &[],
-        return_type: "Variant",
-        doc: None,
-    };
-    static SMOKE_D2: MethodDescriptor = MethodDescriptor {
-        namespace: None,
-        name: "log",
-        kind: SymbolKind::Fn,
-        params: &[],
-        return_type: "()",
-        doc: None,
-    };
-    static SMOKE_D3: MethodDescriptor = MethodDescriptor {
-        namespace: Some("demo"),
-        name: "alpha_prop",
-        kind: SymbolKind::Property,
-        params: &[],
-        return_type: "String",
-        doc: None,
-    };
 
     #[test]
     fn filter_empty_prefix_returns_all() {
@@ -339,25 +314,5 @@ mod tests {
                 w[1]
             );
         }
-    }
-
-    #[test]
-    fn popup_state_default_selected_idx_is_zero() {
-        assert_eq!(AutocompletePopupState::default().selected_idx, 0);
-    }
-
-    #[test]
-    fn autocomplete_popup_smoke_no_panic() {
-        let state = AutocompletePopupState::default();
-        let candidates: &[&'static MethodDescriptor] = &[&SMOKE_D1, &SMOKE_D2, &SMOKE_D3];
-        let _: Element<'_, u32> = autocomplete_popup(
-            &state,
-            candidates,
-            |msg| match msg {
-                AutocompletePopupMessage::Insert(_) => 1u32,
-                _ => 0u32,
-            },
-            &CATPPUCCIN_MOCHA,
-        );
     }
 }

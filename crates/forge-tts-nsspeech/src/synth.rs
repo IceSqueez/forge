@@ -211,64 +211,41 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rate_neutral_multiplier_gives_default() {
-        let r = rate_apple_from_multiplier(1.0);
-        assert!((r - 0.5).abs() < 1e-6, "expected 0.5, got {r}");
+    fn rate_maps_multiplier_with_clamping_at_quad_speed() {
+        // (input, expected) — covers identity (1.0→0.5), half (0.5→0.25), double
+        // (2.0→1.0 = max), upper-clamp (4.0→1.0), and lower-bound (0.25→0.125, still
+        // above clamp floor).
+        for (input, expected) in [
+            (1.0, 0.5),
+            (0.25, 0.125),
+            (0.5, 0.25),
+            (2.0, 1.0),
+            (4.0, 1.0),
+        ] {
+            let got = rate_apple_from_multiplier(input);
+            assert!(
+                (got - expected).abs() < 1e-6,
+                "input {input}: expected {expected}, got {got}"
+            );
+        }
     }
 
     #[test]
-    fn rate_quarter_speed_clamped_to_min() {
-        let r = rate_apple_from_multiplier(0.25);
-        assert!((r - 0.125).abs() < 1e-6, "expected 0.125, got {r}");
-    }
-
-    #[test]
-    fn rate_half_speed() {
-        let r = rate_apple_from_multiplier(0.5);
-        assert!((r - 0.25).abs() < 1e-6, "expected 0.25, got {r}");
-    }
-
-    #[test]
-    fn rate_double_speed_gives_max() {
-        let r = rate_apple_from_multiplier(2.0);
-        assert!((r - 1.0).abs() < 1e-6, "expected 1.0, got {r}");
-    }
-
-    #[test]
-    fn rate_quad_speed_clamped_to_max() {
-        let r = rate_apple_from_multiplier(4.0);
-        assert!((r - 1.0).abs() < 1e-6, "expected 1.0 (clamped), got {r}");
-    }
-
-    #[test]
-    fn pitch_zero_semitones_gives_one() {
-        let p = pitch_mult_from_semitones(0.0);
-        assert!((p - 1.0).abs() < 1e-6, "expected 1.0, got {p}");
-    }
-
-    #[test]
-    fn pitch_minus_twelve_semitones_gives_half() {
-        let p = pitch_mult_from_semitones(-12.0);
-        assert!((p - 0.5).abs() < 1e-6, "expected 0.5, got {p}");
-    }
-
-    #[test]
-    fn pitch_plus_twelve_semitones_gives_two() {
-        let p = pitch_mult_from_semitones(12.0);
-        assert!((p - 2.0).abs() < 1e-6, "expected 2.0, got {p}");
-    }
-
-    #[test]
-    fn pitch_minus_six_semitones_approx_sqrt_half() {
-        let p = pitch_mult_from_semitones(-6.0);
-        let expected = 2.0_f32.powf(-0.5);
-        assert!((p - expected).abs() < 1e-6, "expected ~{expected}, got {p}");
-    }
-
-    #[test]
-    fn pitch_plus_six_semitones_approx_sqrt_two() {
-        let p = pitch_mult_from_semitones(6.0);
-        let expected = 2.0_f32.powf(0.5);
-        assert!((p - expected).abs() < 1e-6, "expected ~{expected}, got {p}");
+    fn pitch_maps_semitones_with_clamping_at_octave_extremes() {
+        // (input semitones, expected mult). Covers identity (0→1), full octave
+        // up/down (±12→2.0/0.5 = clamp boundary), half-octave (±6→sqrt(2)/sqrt(0.5)).
+        for (input, expected) in [
+            (0.0, 1.0),
+            (-12.0, 0.5),
+            (12.0, 2.0),
+            (-6.0, 2.0_f32.powf(-0.5)),
+            (6.0, 2.0_f32.powf(0.5)),
+        ] {
+            let got = pitch_mult_from_semitones(input);
+            assert!(
+                (got - expected).abs() < 1e-6,
+                "input {input}: expected {expected}, got {got}"
+            );
+        }
     }
 }

@@ -24,11 +24,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn discord_cred_prefix_value() {
-        assert_eq!(DISCORD_CRED_PREFIX, "discord:");
-    }
-
-    #[test]
     fn debug_redacts_url() {
         let cred = WebhookCredential {
             name: "alerts".to_owned(),

@@ -80,16 +80,3 @@ impl TwitchChatHandle {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn chat_connection_state_starts_as_connecting() {
-        assert_eq!(
-            ChatConnectionState::Connecting,
-            ChatConnectionState::Connecting
-        );
-    }
-}

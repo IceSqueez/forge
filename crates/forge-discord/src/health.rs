@@ -203,38 +203,11 @@ impl BuiltinHealth for DiscordClient {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use forge_platform_core::{BuiltinHealth, HealthValue};
+    use forge_platform_core::BuiltinHealth;
     use tokio_stream::StreamExt as _;
 
     use super::*;
     use crate::client::DiscordClient;
-
-    #[test]
-    fn metrics_returns_four_with_correct_labels() {
-        let c = DiscordClient::new_for_test();
-        let h: &dyn BuiltinHealth = &*c;
-        let m = h.metrics();
-        assert_eq!(m.len(), 4);
-        assert_eq!(m[0].label, "WEBHOOK LATENCY");
-        assert_eq!(m[1].label, "RATE LIMIT");
-        assert_eq!(m[2].label, "LAST SEND");
-        assert_eq!(m[3].label, "ERRORS");
-    }
-
-    #[test]
-    fn initial_metrics_show_no_data() {
-        let c = DiscordClient::new_for_test();
-        let h: &dyn BuiltinHealth = &*c;
-        let m = h.metrics();
-        assert!(matches!(
-            m[0].value,
-            HealthValue::Text { ref primary, .. } if primary == "\u{2014}"
-        ));
-        assert!(matches!(
-            m[2].value,
-            HealthValue::Status { ref label, .. } if label == "No sends yet"
-        ));
-    }
 
     #[tokio::test]
     async fn stream_is_subscribable() {

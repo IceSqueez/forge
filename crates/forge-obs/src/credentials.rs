@@ -81,23 +81,3 @@ pub async fn store_and_connect(
     let client = ObsClient::connect(&format!("ws://{host}:{port}"), pw, bus).await?;
     Ok(Arc::new(client))
 }
-
-#[cfg(test)]
-#[allow(clippy::unwrap_used)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn obs_credential_id_matches_expected_key() {
-        assert_eq!(OBS_CREDENTIAL_ID, "obs:default");
-    }
-
-    #[test]
-    fn missing_password_field_defaults_to_empty_string() {
-        let bundle: serde_json::Value = serde_json::json!({
-            "url": "ws://localhost:4455",
-        });
-        let password = bundle["password"].as_str().unwrap_or("").to_owned();
-        assert_eq!(password, "");
-    }
-}

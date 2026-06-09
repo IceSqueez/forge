@@ -5,7 +5,7 @@ use forge_storage::CredentialsRepo;
 use crate::bus_adapter::BusAdapter;
 use crate::server_info::ServerInfo;
 
-const PLATFORM_PREFIXES: &[&str] = &["twitch:", "youtube:", "kick:", "trovo:"];
+const PLATFORM_PREFIXES: &[&str] = &["twitch:", "youtube:", "kick:"];
 
 pub(crate) async fn build_connected_accounts(
     creds: &dyn CredentialsRepo,

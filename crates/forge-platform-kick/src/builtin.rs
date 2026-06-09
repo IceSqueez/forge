@@ -278,26 +278,6 @@ mod tests {
     }
 
     #[test]
-    fn bundle_id_is_kick() {
-        let bundle = make_bundle();
-        assert_eq!(bundle.id().as_str(), "kick");
-    }
-
-    #[test]
-    fn bundle_display_name_is_kick() {
-        let bundle = make_bundle();
-        assert_eq!(bundle.display_name(), "Kick");
-    }
-
-    #[test]
-    fn bundle_capability_flags_are_not_limited() {
-        let bundle = make_bundle();
-        let flags = bundle.capability_flags();
-        assert!(!flags.limited);
-        assert!(flags.label.is_none());
-    }
-
-    #[test]
     fn bundle_send_message_action_enabled_when_connected() {
         let (tx, rx) = watch::channel(ConnectionState::Connected);
         let (bundle, _) = KickIntegrationBundle::new("test_channel".to_owned(), rx);

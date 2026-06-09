@@ -114,14 +114,6 @@ mod tests {
     }
 
     #[test]
-    fn id_is_canonical() {
-        assert_eq!(
-            SceneCurrentChangedDescriptor.id(),
-            "obs.scenes.current_changed"
-        );
-    }
-
-    #[test]
     fn matches_any_scene_when_config_empty() {
         let d = SceneCurrentChangedDescriptor;
         let event = scene_changed_event("Menu", "Gameplay");

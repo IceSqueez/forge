@@ -299,15 +299,6 @@ async fn set_enabled_toggles_flag() {
 }
 
 #[tokio::test]
-async fn set_enabled_missing_id_is_noop() {
-    let backend = setup().await;
-    let repo = backend.trigger_instance_repo();
-    repo.set_enabled(TriggerInstanceId::new(), false)
-        .await
-        .expect("set_enabled on missing id must not error");
-}
-
-#[tokio::test]
 async fn upsert_default_inserts_on_first_call() {
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();

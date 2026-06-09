@@ -15,7 +15,6 @@ pub fn color_for_source(source: EventSource, palette: &ForgePalette) -> Color {
         EventSource::Twitch => palette.brand,
         EventSource::YouTube => palette.random,
         EventSource::Kick => palette.info,
-        EventSource::Trovo => palette.accent_pink_light,
         EventSource::Core => palette.warning,
         EventSource::Rhai => palette.warning,
         EventSource::Http => palette.random,
@@ -35,7 +34,6 @@ pub fn source_label(source: EventSource) -> &'static str {
         EventSource::Twitch => "TWITCH",
         EventSource::YouTube => "YOUTUBE",
         EventSource::Kick => "KICK",
-        EventSource::Trovo => "TROVO",
         EventSource::Core => "CORE",
         EventSource::Rhai => "RHAI",
         EventSource::Http => "HTTP",
@@ -617,173 +615,4 @@ pub fn event_inspector<'a, Msg: Clone + 'a>(
     col.push(Space::new().height(2))
         .push(replay_button(params.on_replay, palette))
         .into()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::palette::CATPPUCCIN_MOCHA;
-
-    #[test]
-    fn source_badge_constructs_for_all_sources() {
-        let palette = &CATPPUCCIN_MOCHA;
-        let sources = [
-            EventSource::Twitch,
-            EventSource::YouTube,
-            EventSource::Kick,
-            EventSource::Trovo,
-            EventSource::Core,
-            EventSource::Rhai,
-            EventSource::Http,
-            EventSource::Obs,
-            EventSource::VTube,
-            EventSource::Discord,
-            EventSource::Midi,
-            EventSource::Hotkey,
-            EventSource::Timer,
-            EventSource::Server,
-            EventSource::Audio,
-        ];
-        for source in sources {
-            let _: iced::Element<'_, ()> = source_badge(source, palette);
-        }
-    }
-
-    #[test]
-    fn twitch_color_is_brand() {
-        let color = color_for_source(EventSource::Twitch, &CATPPUCCIN_MOCHA);
-        assert_eq!(color, CATPPUCCIN_MOCHA.brand);
-    }
-
-    #[test]
-    fn event_row_unselected_constructs() {
-        let palette = &CATPPUCCIN_MOCHA;
-        let data = EventRowData {
-            timestamp: "14:23:01.124".to_owned(),
-            source: EventSource::Twitch,
-            event_type: "chat.message".to_owned(),
-            summary: "koval_dev: !quote".to_owned(),
-            result_tag: Some("\u{2192} 1 action".to_owned()),
-            is_error: false,
-        };
-        let _: iced::Element<'_, ()> = event_row_observability(&data, false, (), palette);
-    }
-
-    #[test]
-    fn event_row_selected_constructs() {
-        let palette = &CATPPUCCIN_MOCHA;
-        let data = EventRowData {
-            timestamp: "14:23:01.142".to_owned(),
-            source: EventSource::Twitch,
-            event_type: "command.matched".to_owned(),
-            summary: "!quote by koval_dev (VIP)".to_owned(),
-            result_tag: Some("\u{2192} trigger fired".to_owned()),
-            is_error: false,
-        };
-        let _: iced::Element<'_, ()> = event_row_observability(&data, true, (), palette);
-    }
-
-    #[test]
-    fn event_row_error_constructs() {
-        let palette = &CATPPUCCIN_MOCHA;
-        let data = EventRowData {
-            timestamp: "14:23:02.402".to_owned(),
-            source: EventSource::Http,
-            event_type: "request.fail".to_owned(),
-            summary: "GET api.twitch.tv/.../followers \u{2192} 429 rate limited".to_owned(),
-            result_tag: Some("retry in 12s".to_owned()),
-            is_error: true,
-        };
-        let _: iced::Element<'_, ()> = event_row_observability(&data, false, (), palette);
-    }
-
-    #[test]
-    fn event_row_no_result_tag_constructs() {
-        let palette = &CATPPUCCIN_MOCHA;
-        let data = EventRowData {
-            timestamp: "14:23:01.145".to_owned(),
-            source: EventSource::Core,
-            event_type: "subaction.run".to_owned(),
-            summary: "[1/5] read_file \u{2192} %lines% = [128]".to_owned(),
-            result_tag: None,
-            is_error: false,
-        };
-        let _: iced::Element<'_, ()> = event_row_observability(&data, false, (), palette);
-    }
-
-    #[test]
-    fn result_tag_ok_uses_success_color() {
-        let palette = &CATPPUCCIN_MOCHA;
-        let data = EventRowData {
-            timestamp: "14:23:01.158".to_owned(),
-            source: EventSource::Core,
-            event_type: "action.done".to_owned(),
-            summary: "!quote \u{b7} 5/5 sub-actions".to_owned(),
-            result_tag: Some("ok".to_owned()),
-            is_error: false,
-        };
-        let _: iced::Element<'_, ()> = event_row_observability(&data, false, (), palette);
-    }
-
-    #[test]
-    fn error_row_accent_is_random_color() {
-        let color = color_for_source(EventSource::Http, &CATPPUCCIN_MOCHA);
-        assert_eq!(color, CATPPUCCIN_MOCHA.random);
-    }
-
-    #[test]
-    fn replay_button_constructs_without_panic() {
-        let palette = &CATPPUCCIN_MOCHA;
-        let _: iced::Element<'_, ()> = replay_button((), palette);
-    }
-
-    #[test]
-    fn causation_chip_renders_without_panic() {
-        let palette = &CATPPUCCIN_MOCHA;
-        let _: iced::Element<'_, ()> = causation_chip("ACTION: Sub Alert", "#ac_3f2a", (), palette);
-    }
-
-    #[test]
-    fn json_viewer_flat_object_constructs() {
-        let value = serde_json::json!({"key": "value"});
-        let _: iced::Element<'_, ()> = json_viewer(&value, &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn json_viewer_nested_object_constructs() {
-        let value = serde_json::json!({"a": {"b": [1, true, null]}});
-        let _: iced::Element<'_, ()> = json_viewer(&value, &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn event_inspector_with_caused_action_constructs() {
-        let palette = &CATPPUCCIN_MOCHA;
-        let payload = serde_json::json!({"command": "!quote", "user": "koval_dev"});
-        let params = EventInspectorParams {
-            source: EventSource::Twitch,
-            event_type: "command.matched",
-            timestamp: "14:23:01.142",
-            event_id: "ev_a8f3",
-            payload: &payload,
-            caused_action: Some(("!quote", "#ac_1a2b", ())),
-            on_replay: (),
-        };
-        let _: iced::Element<'_, ()> = event_inspector(params, palette);
-    }
-
-    #[test]
-    fn event_inspector_without_caused_action_constructs() {
-        let palette = &CATPPUCCIN_MOCHA;
-        let payload = serde_json::json!({"scene": "Gameplay"});
-        let params: EventInspectorParams<'_, ()> = EventInspectorParams {
-            source: EventSource::Obs,
-            event_type: "scene.changed",
-            timestamp: "14:23:04.521",
-            event_id: "ev_b9c4",
-            payload: &payload,
-            caused_action: None,
-            on_replay: (),
-        };
-        let _: iced::Element<'_, ()> = event_inspector(params, palette);
-    }
 }

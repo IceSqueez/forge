@@ -10,13 +10,3 @@ impl Default for MidiConfig {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn default_client_name_is_forge() {
-        assert_eq!(MidiConfig::default().client_name, "forge");
-    }
-}

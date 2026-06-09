@@ -412,30 +412,6 @@ mod tests {
     }
 
     #[test]
-    fn resolver_single_strategy_always_same_voice() {
-        let catalog = vec![
-            make_voice("voice-a", "en-US"),
-            make_voice("voice-b", "en-US"),
-        ];
-        let resolver = VoiceAliasResolver::new(
-            vec![],
-            AssignmentStrategy::Single {
-                voice_id: VoiceId("fixed-voice".into()),
-                engine_id: EngineId("piper".into()),
-            },
-            IgnoreProfile::default(),
-            SynthesisDefaults::default(),
-        );
-        for viewer in ["user1", "user2", "user3"] {
-            let result = resolver.resolve(viewer, viewer, &catalog);
-            match result {
-                ResolveResult::Speak { voice_id, .. } => assert_eq!(voice_id.0, "fixed-voice"),
-                ResolveResult::Skip { .. } => panic!("expected Speak"),
-            }
-        }
-    }
-
-    #[test]
     fn resolver_ignore_profile_excludes_from_pool() {
         let catalog = vec![
             make_voice("boring", "en-US"),

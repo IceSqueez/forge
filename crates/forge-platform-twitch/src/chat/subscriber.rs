@@ -248,13 +248,6 @@ fn extract_retry_after(resp: &reqwest::Response) -> Option<u64> {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::*;
-
-    #[test]
-    fn subscribe_error_scope_missing_displays_non_empty() {
-        let e = SubscribeError::ScopeMissing;
-        assert!(!e.to_string().is_empty());
-    }
 
     #[tokio::test]
     async fn subscribe_network_error_strips_url() {

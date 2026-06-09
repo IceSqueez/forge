@@ -135,32 +135,6 @@ mod tests {
     }
 
     #[test]
-    fn kind_id_is_canonical() {
-        assert_eq!(ChatDescriptor.id(), "kick.chat");
-    }
-
-    #[test]
-    fn category_is_chat() {
-        assert_eq!(ChatDescriptor.category(), TriggerCategory::Chat);
-    }
-
-    #[test]
-    fn platform_contract_is_kick() {
-        assert_eq!(
-            ChatDescriptor.platform_contract(),
-            KindPlatformContract::PlatformSpecific(PlatformId::Kick)
-        );
-    }
-
-    #[test]
-    fn event_filter_source_is_kick() {
-        assert_eq!(
-            ChatDescriptor.event_filter().source,
-            Some(EventSource::Kick)
-        );
-    }
-
-    #[test]
     fn always_matches() {
         assert!(ChatDescriptor.matches_trigger(&TriggerConfig::new(), &chat_event()));
     }

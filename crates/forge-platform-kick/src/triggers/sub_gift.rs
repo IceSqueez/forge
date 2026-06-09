@@ -117,24 +117,6 @@ mod tests {
     }
 
     #[test]
-    fn kind_id_is_canonical() {
-        assert_eq!(SubGiftDescriptor.id(), "kick.sub_gift");
-    }
-
-    #[test]
-    fn category_is_subscriptions() {
-        assert_eq!(SubGiftDescriptor.category(), TriggerCategory::Subscriptions);
-    }
-
-    #[test]
-    fn platform_contract_is_kick() {
-        assert_eq!(
-            SubGiftDescriptor.platform_contract(),
-            KindPlatformContract::PlatformSpecific(PlatformId::Kick)
-        );
-    }
-
-    #[test]
     fn build_arg_stack_extracts_gift_fields() {
         let stack = SubGiftDescriptor.build_arg_stack(&gift_event());
         assert_eq!(

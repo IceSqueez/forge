@@ -167,40 +167,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_variant_integer() {
+    fn parse_variant_infers_type_per_input_format() {
         assert!(matches!(parse_variant("42"), Variant::Int(42)));
-    }
-
-    #[test]
-    fn parse_variant_negative_integer() {
         assert!(matches!(parse_variant("-7"), Variant::Int(-7)));
-    }
-
-    #[test]
-    fn parse_variant_float() {
-        let v = parse_variant("3.99");
-        assert!(matches!(v, Variant::Float(f) if (f - 3.99).abs() < 1e-10));
-    }
-
-    #[test]
-    fn parse_variant_bool_true() {
+        let f = parse_variant("3.99");
+        assert!(matches!(f, Variant::Float(x) if (x - 3.99).abs() < 1e-10));
         assert!(matches!(parse_variant("true"), Variant::Bool(true)));
         assert!(matches!(parse_variant("TRUE"), Variant::Bool(true)));
-    }
-
-    #[test]
-    fn parse_variant_bool_false() {
         assert!(matches!(parse_variant("false"), Variant::Bool(false)));
         assert!(matches!(parse_variant("False"), Variant::Bool(false)));
-    }
-
-    #[test]
-    fn parse_variant_string_fallback() {
         assert!(matches!(parse_variant("hello"), Variant::String(s) if s == "hello"));
-    }
-
-    #[test]
-    fn parse_variant_empty_string_falls_back_to_string() {
         assert!(matches!(parse_variant(""), Variant::String(s) if s.is_empty()));
     }
 }

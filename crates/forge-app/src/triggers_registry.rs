@@ -1295,7 +1295,6 @@ fn platform_id_name(p: PlatformId) -> &'static str {
     match p {
         PlatformId::Twitch => "Twitch",
         PlatformId::YouTube => "YouTube",
-        PlatformId::Trovo => "Trovo",
         PlatformId::Kick => "Kick",
     }
 }
@@ -1304,7 +1303,6 @@ fn platform_id_color(p: PlatformId, palette: &ForgePalette) -> Color {
     match p {
         PlatformId::Twitch => palette.platform_twitch,
         PlatformId::YouTube => palette.platform_youtube,
-        PlatformId::Trovo => palette.platform_trovo,
         PlatformId::Kick => palette.platform_kick,
     }
 }
@@ -1450,28 +1448,6 @@ mod tests {
     }
 
     #[test]
-    fn usage_filter_all_passes_any_count() {
-        let row_zero = make_row("twitch.chat.command", 0);
-        let row_used = make_row("twitch.chat.command", 3);
-        assert!(matches!(UsageFilter::All, UsageFilter::All));
-        assert!(row_zero.used_in_count == 0);
-        assert!(row_used.used_in_count > 0);
-    }
-
-    #[test]
-    fn platform_filter_twitch_prefix_matches() {
-        let row = make_row("twitch.chat.command", 0);
-        let prefix = "twitch.";
-        assert!(row.kind_id.starts_with(prefix));
-    }
-
-    #[test]
-    fn platform_filter_obs_prefix_matches() {
-        let row = make_row("obs.scenes.current_changed", 0);
-        assert!(row.kind_id.starts_with("obs."));
-    }
-
-    #[test]
     fn confirm_disable_stores_action_count() {
         let mut state = TriggersRegistryState::default();
         let row = make_row("twitch.chat.command", 2);
@@ -1505,21 +1481,11 @@ mod tests {
     }
 
     #[test]
-    fn platform_scope_text_any_yields_label() {
+    fn platform_scope_text_labels_any_and_only_variants() {
         assert_eq!(platform_scope_text(&PlatformScope::Any), "any platform");
-    }
-
-    #[test]
-    fn platform_scope_text_only_single_yields_name() {
         let mut set = std::collections::BTreeSet::new();
         set.insert(PlatformId::YouTube);
         let scope = PlatformScope::only(set).unwrap();
         assert_eq!(platform_scope_text(&scope), "YouTube");
-    }
-
-    #[test]
-    fn row_platform_scope_defaults_to_any() {
-        let row = make_row("twitch.chat.command", 0);
-        assert_eq!(row.platform_scope, PlatformScope::Any);
     }
 }

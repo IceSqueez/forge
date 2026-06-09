@@ -35,7 +35,6 @@ pub enum SubActionCategory {
     Twitch,
     YouTube,
     Kick,
-    Trovo,
     Obs,
     VTube,
     Discord,

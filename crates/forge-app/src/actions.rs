@@ -623,54 +623,21 @@ mod tests {
     }
 
     #[test]
-    fn chat_command_category_is_chat() {
-        assert_eq!(category_of("twitch.chat.command"), TriggerCategory::Chat);
-    }
-
-    #[test]
-    fn any_message_category_is_chat() {
-        assert_eq!(category_of("twitch.chat.message"), TriggerCategory::Chat);
-    }
-
-    #[test]
-    fn subscribe_category_is_subscriptions() {
-        assert_eq!(
-            category_of("twitch.support.subscriber"),
-            TriggerCategory::Subscriptions
-        );
-        assert_eq!(
-            category_of("twitch.support.resubscriber"),
-            TriggerCategory::Subscriptions
-        );
-        assert_eq!(
-            category_of("twitch.support.gift_sub"),
-            TriggerCategory::Subscriptions
-        );
-    }
-
-    #[test]
-    fn cheer_category_is_bits() {
-        assert_eq!(category_of("twitch.support.cheer"), TriggerCategory::Bits);
-    }
-
-    #[test]
-    fn raid_category_is_raids() {
-        assert_eq!(
-            category_of("twitch.channel.raid_received"),
-            TriggerCategory::Raids
-        );
-    }
-
-    #[test]
-    fn kind_search_text_contains_chat_keyword() {
-        assert!(kind_search_text("twitch.chat.command").contains("chat"));
-        assert!(kind_search_text("twitch.chat.message").contains("chat"));
-    }
-
-    #[test]
-    fn kind_search_text_contains_sub_keyword() {
-        assert!(kind_search_text("twitch.support.subscriber").contains("sub"));
-        assert!(kind_search_text("twitch.support.gift_sub").contains("sub"));
+    fn category_of_classifies_known_trigger_kinds() {
+        for (kind, expected) in [
+            ("twitch.chat.command", TriggerCategory::Chat),
+            ("twitch.chat.message", TriggerCategory::Chat),
+            ("twitch.support.subscriber", TriggerCategory::Subscriptions),
+            (
+                "twitch.support.resubscriber",
+                TriggerCategory::Subscriptions,
+            ),
+            ("twitch.support.gift_sub", TriggerCategory::Subscriptions),
+            ("twitch.support.cheer", TriggerCategory::Bits),
+            ("twitch.channel.raid_received", TriggerCategory::Raids),
+        ] {
+            assert_eq!(category_of(kind), expected, "category_of({kind})");
+        }
     }
 
     #[test]
@@ -844,82 +811,78 @@ mod tests {
     }
 
     #[test]
-    fn add_sub_action_form_send_chat_invalid_without_message() {
-        let mut form = AddSubActionForm::new(ActionId::new());
-        form.kind = SubActionKindChoice::SendChat;
-        form.config.send_chat_message = String::new();
-        assert!(!form.is_valid());
-    }
+    fn add_sub_action_form_validates_required_config_per_kind() {
+        let make = |kind: SubActionKindChoice, mutate: fn(&mut AddSubActionForm)| {
+            let mut form = AddSubActionForm::new(ActionId::new());
+            form.kind = kind;
+            mutate(&mut form);
+            form
+        };
 
-    #[test]
-    fn add_sub_action_form_send_chat_valid_with_message() {
-        let mut form = AddSubActionForm::new(ActionId::new());
-        form.kind = SubActionKindChoice::SendChat;
-        form.config.send_chat_message = "Hello %user%!".to_string();
-        assert!(form.is_valid());
-    }
+        // SendChat: requires non-empty message.
+        assert!(
+            !make(SubActionKindChoice::SendChat, |f| {
+                f.config.send_chat_message.clear()
+            })
+            .is_valid()
+        );
+        assert!(
+            make(SubActionKindChoice::SendChat, |f| {
+                f.config.send_chat_message = "Hello %user%!".into()
+            })
+            .is_valid()
+        );
 
-    #[test]
-    fn add_sub_action_form_set_global_invalid_without_name() {
-        let mut form = AddSubActionForm::new(ActionId::new());
-        form.kind = SubActionKindChoice::SetGlobal;
-        form.config.set_global_name = String::new();
-        assert!(!form.is_valid());
-    }
+        // SetGlobal: requires non-empty name.
+        assert!(
+            !make(SubActionKindChoice::SetGlobal, |f| {
+                f.config.set_global_name.clear()
+            })
+            .is_valid()
+        );
+        assert!(
+            make(SubActionKindChoice::SetGlobal, |f| {
+                f.config.set_global_name = "counter".into()
+            })
+            .is_valid()
+        );
 
-    #[test]
-    fn add_sub_action_form_set_global_valid_with_name() {
-        let mut form = AddSubActionForm::new(ActionId::new());
-        form.kind = SubActionKindChoice::SetGlobal;
-        form.config.set_global_name = "counter".to_string();
-        assert!(form.is_valid());
-    }
+        // Delay: requires numeric ms.
+        assert!(
+            !make(SubActionKindChoice::Delay, |f| {
+                f.config.delay_ms = "abc".into()
+            })
+            .is_valid()
+        );
+        assert!(
+            make(SubActionKindChoice::Delay, |f| {
+                f.config.delay_ms = "500".into()
+            })
+            .is_valid()
+        );
 
-    #[test]
-    fn add_sub_action_form_delay_invalid_with_non_numeric() {
-        let mut form = AddSubActionForm::new(ActionId::new());
-        form.kind = SubActionKindChoice::Delay;
-        form.config.delay_ms = "abc".to_string();
-        assert!(!form.is_valid());
-    }
+        // Log: requires non-empty message.
+        assert!(
+            !make(SubActionKindChoice::Log, |f| {
+                f.config.log_message.clear()
+            })
+            .is_valid()
+        );
+        assert!(
+            make(SubActionKindChoice::Log, |f| {
+                f.config.log_message = "action started".into()
+            })
+            .is_valid()
+        );
 
-    #[test]
-    fn add_sub_action_form_delay_valid_with_numeric() {
-        let mut form = AddSubActionForm::new(ActionId::new());
-        form.kind = SubActionKindChoice::Delay;
-        form.config.delay_ms = "500".to_string();
-        assert!(form.is_valid());
-    }
-
-    #[test]
-    fn add_sub_action_form_log_invalid_without_message() {
-        let mut form = AddSubActionForm::new(ActionId::new());
-        form.kind = SubActionKindChoice::Log;
-        form.config.log_message = String::new();
-        assert!(!form.is_valid());
-    }
-
-    #[test]
-    fn add_sub_action_form_log_valid_with_message() {
-        let mut form = AddSubActionForm::new(ActionId::new());
-        form.kind = SubActionKindChoice::Log;
-        form.config.log_message = "action started".to_string();
-        assert!(form.is_valid());
-    }
-
-    #[test]
-    fn add_sub_action_form_play_sound_invalid_without_clip() {
-        let mut form = AddSubActionForm::new(ActionId::new());
-        form.kind = SubActionKindChoice::PlaySound;
-        assert!(!form.is_valid());
-    }
-
-    #[test]
-    fn add_sub_action_form_play_sound_valid_with_clip() {
-        let mut form = AddSubActionForm::new(ActionId::new());
-        form.kind = SubActionKindChoice::PlaySound;
-        form.config.play_sound_clip_id = Some(forge_types::ClipId::new());
-        assert!(form.is_valid());
+        // PlaySound: requires clip_id.
+        assert!(!make(SubActionKindChoice::PlaySound, |_| {}).is_valid());
+        assert!(
+            make(SubActionKindChoice::PlaySound, |f| {
+                f.config.play_sound_clip_id = Some(forge_types::ClipId::new())
+            })
+            .is_valid()
+        );
     }
 
     #[tokio::test]

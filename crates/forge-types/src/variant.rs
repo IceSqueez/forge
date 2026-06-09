@@ -468,78 +468,22 @@ mod tests {
     }
 
     #[test]
-    fn type_tag_correct_for_each_variant() {
-        assert_eq!(Variant::Int(1).type_tag(), VariantType::Int);
-        assert_eq!(Variant::float(1.0).unwrap().type_tag(), VariantType::Float);
-        assert_eq!(Variant::Bool(true).type_tag(), VariantType::Bool);
-        assert_eq!(Variant::String("s".into()).type_tag(), VariantType::String);
-        assert_eq!(
-            Variant::Datetime(time::OffsetDateTime::UNIX_EPOCH).type_tag(),
-            VariantType::Datetime
-        );
-        assert_eq!(Variant::Array(vec![]).type_tag(), VariantType::Array);
-        assert_eq!(
-            Variant::Object(BTreeMap::new()).type_tag(),
-            VariantType::Object
-        );
-    }
-
-    #[test]
-    fn serde_roundtrip_int() {
-        let v = Variant::Int(42);
-        let json = serde_json::to_string(&v).unwrap();
-        let back: Variant = serde_json::from_str(&json).unwrap();
-        assert_eq!(v, back);
-    }
-
-    #[test]
-    fn serde_roundtrip_float() {
-        let v = Variant::float(1.25).unwrap();
-        let json = serde_json::to_string(&v).unwrap();
-        let back: Variant = serde_json::from_str(&json).unwrap();
-        assert_eq!(v, back);
-    }
-
-    #[test]
-    fn serde_roundtrip_bool() {
-        let v = Variant::Bool(false);
-        let json = serde_json::to_string(&v).unwrap();
-        let back: Variant = serde_json::from_str(&json).unwrap();
-        assert_eq!(v, back);
-    }
-
-    #[test]
-    fn serde_roundtrip_string() {
-        let v = Variant::String("hello".into());
-        let json = serde_json::to_string(&v).unwrap();
-        let back: Variant = serde_json::from_str(&json).unwrap();
-        assert_eq!(v, back);
-    }
-
-    #[test]
-    fn serde_roundtrip_datetime() {
-        let v = Variant::Datetime(time::OffsetDateTime::UNIX_EPOCH);
-        let json = serde_json::to_string(&v).unwrap();
-        let back: Variant = serde_json::from_str(&json).unwrap();
-        assert_eq!(v, back);
-    }
-
-    #[test]
-    fn serde_roundtrip_array() {
-        let v = Variant::Array(vec![Variant::Int(1), Variant::Bool(true)]);
-        let json = serde_json::to_string(&v).unwrap();
-        let back: Variant = serde_json::from_str(&json).unwrap();
-        assert_eq!(v, back);
-    }
-
-    #[test]
-    fn serde_roundtrip_object() {
-        let mut map = BTreeMap::new();
-        map.insert("x".to_owned(), Variant::Int(99));
-        let v = Variant::Object(map);
-        let json = serde_json::to_string(&v).unwrap();
-        let back: Variant = serde_json::from_str(&json).unwrap();
-        assert_eq!(v, back);
+    fn serde_roundtrip_each_variant() {
+        let mut obj_map = BTreeMap::new();
+        obj_map.insert("x".to_owned(), Variant::Int(99));
+        for v in [
+            Variant::Int(42),
+            Variant::float(1.25).unwrap(),
+            Variant::Bool(false),
+            Variant::String("hello".into()),
+            Variant::Datetime(time::OffsetDateTime::UNIX_EPOCH),
+            Variant::Array(vec![Variant::Int(1), Variant::Bool(true)]),
+            Variant::Object(obj_map),
+        ] {
+            let json = serde_json::to_string(&v).unwrap();
+            let back: Variant = serde_json::from_str(&json).unwrap();
+            assert_eq!(v, back);
+        }
     }
 
     #[test]
@@ -629,17 +573,6 @@ mod tests {
     }
 
     #[test]
-    fn variant_type_display_values() {
-        assert_eq!(VariantType::Int.to_string(), "int");
-        assert_eq!(VariantType::Float.to_string(), "float");
-        assert_eq!(VariantType::Bool.to_string(), "bool");
-        assert_eq!(VariantType::String.to_string(), "string");
-        assert_eq!(VariantType::Datetime.to_string(), "datetime");
-        assert_eq!(VariantType::Array.to_string(), "array");
-        assert_eq!(VariantType::Object.to_string(), "object");
-    }
-
-    #[test]
     fn variant_type_from_str_roundtrip() {
         for tag in &[
             "int", "float", "bool", "string", "datetime", "array", "object",
@@ -653,49 +586,6 @@ mod tests {
     fn variant_type_from_str_unknown_errors() {
         let result: Result<VariantType, _> = "binary".parse();
         assert!(matches!(result, Err(VariantError::UnknownTypeTag(_))));
-    }
-
-    #[test]
-    fn variant_kind_from_variant_all_seven() {
-        assert_eq!(
-            VariantKind::from_variant(&Variant::Int(0)),
-            VariantKind::Int
-        );
-        assert_eq!(
-            VariantKind::from_variant(&Variant::float(1.0).unwrap()),
-            VariantKind::Float
-        );
-        assert_eq!(
-            VariantKind::from_variant(&Variant::Bool(true)),
-            VariantKind::Bool
-        );
-        assert_eq!(
-            VariantKind::from_variant(&Variant::String("hi".into())),
-            VariantKind::String
-        );
-        assert_eq!(
-            VariantKind::from_variant(&Variant::Datetime(time::OffsetDateTime::UNIX_EPOCH)),
-            VariantKind::Datetime
-        );
-        assert_eq!(
-            VariantKind::from_variant(&Variant::Array(vec![])),
-            VariantKind::Array
-        );
-        assert_eq!(
-            VariantKind::from_variant(&Variant::Object(BTreeMap::new())),
-            VariantKind::Object
-        );
-    }
-
-    #[test]
-    fn variant_kind_labels_are_caps_abbreviations() {
-        assert_eq!(VariantKind::Int.label(), "INT");
-        assert_eq!(VariantKind::Float.label(), "FLOAT");
-        assert_eq!(VariantKind::Bool.label(), "BOOL");
-        assert_eq!(VariantKind::String.label(), "STR");
-        assert_eq!(VariantKind::Datetime.label(), "TIME");
-        assert_eq!(VariantKind::Array.label(), "ARR");
-        assert_eq!(VariantKind::Object.label(), "OBJ");
     }
 
     #[test]

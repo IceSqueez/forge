@@ -181,21 +181,6 @@ mod tests {
     }
 
     #[test]
-    fn id_is_stable() {
-        assert_eq!(ChatCommandDescriptor.id(), "twitch.chat.command");
-    }
-
-    #[test]
-    fn default_config_has_phrase_and_case_sensitive() {
-        let cfg = ChatCommandDescriptor.default_config();
-        assert!(matches!(cfg.get("phrase"), Some(Variant::String(_))));
-        assert!(matches!(
-            cfg.get("case_sensitive"),
-            Some(Variant::Bool(false))
-        ));
-    }
-
-    #[test]
     fn condition_display_uses_phrase() {
         let mut cfg = TriggerConfig::new();
         cfg.insert("phrase".to_owned(), Variant::String("!quote".to_owned()));

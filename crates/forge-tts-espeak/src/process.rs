@@ -107,52 +107,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rate_default_multiplier_is_175() {
-        assert_eq!(rate_wpm_from_multiplier(1.0), 175);
+    fn rate_wpm_maps_multiplier_with_clamping() {
+        for (mult, expected) in [(1.0, 175), (0.5, 88), (2.0, 350), (0.25, 50), (4.0, 450)] {
+            assert_eq!(rate_wpm_from_multiplier(mult), expected, "mult={mult}");
+        }
     }
 
     #[test]
-    fn rate_half_speed() {
-        assert_eq!(rate_wpm_from_multiplier(0.5), 88);
-    }
-
-    #[test]
-    fn rate_double_speed() {
-        assert_eq!(rate_wpm_from_multiplier(2.0), 350);
-    }
-
-    #[test]
-    fn rate_quarter_speed_clamped_to_minimum() {
-        assert_eq!(rate_wpm_from_multiplier(0.25), 50);
-    }
-
-    #[test]
-    fn rate_four_times_speed_clamped_to_maximum() {
-        assert_eq!(rate_wpm_from_multiplier(4.0), 450);
-    }
-
-    #[test]
-    fn pitch_neutral_semitones_is_50() {
-        assert_eq!(pitch_from_semitones(0.0), 50);
-    }
-
-    #[test]
-    fn pitch_plus_12_semitones() {
-        assert_eq!(pitch_from_semitones(12.0), 99);
-    }
-
-    #[test]
-    fn pitch_minus_12_semitones() {
-        assert_eq!(pitch_from_semitones(-12.0), 0);
-    }
-
-    #[test]
-    fn pitch_plus_6_semitones() {
-        assert_eq!(pitch_from_semitones(6.0), 75);
-    }
-
-    #[test]
-    fn pitch_minus_6_semitones() {
-        assert_eq!(pitch_from_semitones(-6.0), 25);
+    fn pitch_maps_semitones_within_zero_to_ninety_nine() {
+        for (semi, expected) in [(0.0, 50), (12.0, 99), (-12.0, 0), (6.0, 75), (-6.0, 25)] {
+            assert_eq!(pitch_from_semitones(semi), expected, "semi={semi}");
+        }
     }
 }

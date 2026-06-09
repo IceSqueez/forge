@@ -97,24 +97,6 @@ mod tests {
     }
 
     #[test]
-    fn kind_id_is_canonical() {
-        assert_eq!(MessageDeletedDescriptor.id(), "kick.message_deleted");
-    }
-
-    #[test]
-    fn category_is_chat() {
-        assert_eq!(MessageDeletedDescriptor.category(), TriggerCategory::Chat);
-    }
-
-    #[test]
-    fn platform_contract_is_kick() {
-        assert_eq!(
-            MessageDeletedDescriptor.platform_contract(),
-            KindPlatformContract::PlatformSpecific(PlatformId::Kick)
-        );
-    }
-
-    #[test]
     fn build_arg_stack_extracts_ids() {
         let stack = MessageDeletedDescriptor.build_arg_stack(&delete_event());
         assert_eq!(

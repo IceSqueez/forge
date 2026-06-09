@@ -155,12 +155,6 @@ pub(crate) fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Side
             active: builtin_active(&app.screen, "kick"),
             on_press: Message::Navigate(Screen::BuiltinDetail(BuiltinId::new("kick"))),
         },
-        NavItem::FlatLink {
-            dot_color: palette.success,
-            label: "Trovo",
-            active: builtin_active(&app.screen, "trovo"),
-            on_press: Message::Navigate(Screen::BuiltinDetail(BuiltinId::new("trovo"))),
-        },
         NavItem::MiniLabel("Stream apps"),
         NavItem::FlatLink {
             dot_color: palette.success,

@@ -50,7 +50,6 @@ pub fn chat_source_to_platform_id(source: ChatSource) -> PlatformId {
         ChatSource::Twitch => PlatformId::Twitch,
         ChatSource::YouTube => PlatformId::YouTube,
         ChatSource::Kick => PlatformId::Kick,
-        ChatSource::Trovo => PlatformId::Trovo,
     }
 }
 
@@ -59,7 +58,6 @@ fn platform_id_to_widget(id: PlatformId) -> Platform {
         PlatformId::Twitch => Platform::Twitch,
         PlatformId::YouTube => Platform::YouTube,
         PlatformId::Kick => Platform::Kick,
-        PlatformId::Trovo => Platform::Trovo,
     }
 }
 
@@ -68,7 +66,6 @@ pub(crate) fn platform_id_to_key(id: PlatformId) -> &'static str {
         PlatformId::Twitch => "twitch",
         PlatformId::YouTube => "youtube",
         PlatformId::Kick => "kick",
-        PlatformId::Trovo => "trovo",
     }
 }
 
@@ -103,7 +100,6 @@ fn unified_to_chat_row(row: &UnifiedChatRow, seq: u64) -> ChatRow {
         ChatSource::Twitch => Platform::Twitch,
         ChatSource::YouTube => Platform::YouTube,
         ChatSource::Kick => Platform::Kick,
-        ChatSource::Trovo => Platform::Trovo,
     };
     let badges: Vec<BadgeKind> = row.badges.iter().map(unified_badge_to_kind).collect();
     let username_color = author_color_to_iced(row.author_color, Color::from_rgb(0.4, 0.7, 1.0));
@@ -231,7 +227,6 @@ fn platform_filter_chip_color(id: PlatformId, palette: &ForgePalette) -> Color {
         PlatformId::Twitch => palette.platform_twitch,
         PlatformId::YouTube => palette.platform_youtube,
         PlatformId::Kick => palette.platform_kick,
-        PlatformId::Trovo => palette.platform_trovo,
     }
 }
 
@@ -271,7 +266,6 @@ fn live_chat_page_header<'a>(
             PlatformId::Twitch => "Twitch",
             PlatformId::YouTube => "YouTube",
             PlatformId::Kick => "Kick",
-            PlatformId::Trovo => "Trovo",
         };
         let is_active = state.platform_filter == PlatformFilter::Single(pid);
         filter_chips.push(forge_widgets::filter_chip(

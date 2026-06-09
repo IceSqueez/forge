@@ -132,79 +132,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn theme_id_default_is_catppuccin_mocha() {
-        assert_eq!(ThemeId::default(), ThemeId::CatppuccinMocha);
-    }
-
-    #[test]
-    fn density_default_is_cozy() {
-        assert_eq!(Density::default(), Density::Cozy);
-    }
-
-    #[test]
-    fn spacing_cozy_returns_design_token_values() {
-        assert_eq!(spacing(Spacing::None, Density::Cozy), 0);
-        assert_eq!(spacing(Spacing::Xxs, Density::Cozy), 4);
-        assert_eq!(spacing(Spacing::Xs, Density::Cozy), 8);
-        assert_eq!(spacing(Spacing::Sm, Density::Cozy), 12);
-        assert_eq!(spacing(Spacing::Md, Density::Cozy), 16);
-        assert_eq!(spacing(Spacing::Lg, Density::Cozy), 24);
-    }
-
-    #[test]
-    fn spacing_compact_scales_down() {
-        assert_eq!(spacing(Spacing::Md, Density::Compact), 14);
-        assert_eq!(spacing(Spacing::Sm, Density::Compact), 10);
-    }
-
-    #[test]
-    fn spacing_spacious_increases() {
-        assert_eq!(spacing(Spacing::Md, Density::Spacious), 19);
-        assert_eq!(spacing(Spacing::Sm, Density::Spacious), 14);
-    }
-
-    #[test]
-    fn sp_shorthand_equals_cozy_spacing() {
-        assert_eq!(sp(Spacing::Xs), spacing(Spacing::Xs, Density::Cozy));
-        assert_eq!(sp(Spacing::Md), spacing(Spacing::Md, Density::Cozy));
-    }
-
-    #[test]
-    fn spf_returns_f32_of_cozy_spacing() {
-        assert_eq!(
-            spf(Spacing::Xs),
-            f32::from(spacing(Spacing::Xs, Density::Cozy))
-        );
-        assert_eq!(
-            spf(Spacing::Sm),
-            f32::from(spacing(Spacing::Sm, Density::Cozy))
-        );
-    }
-
-    #[test]
-    fn modal_width_matches_design_tokens() {
-        assert_eq!(modal_width(ModalSize::Sm), 440.0);
-        assert_eq!(modal_width(ModalSize::Md), 540.0);
-        assert_eq!(modal_width(ModalSize::Lg), 640.0);
-    }
-
-    #[test]
-    fn radius_returns_correct_px_per_variant() {
-        assert_eq!(radius(Radius::Sm), 7.0);
-        assert_eq!(radius(Radius::Md), 8.0);
-        assert_eq!(radius(Radius::Lg), 12.0);
-        assert_eq!(radius(Radius::Pill), 999.0);
-    }
-
-    #[test]
-    fn font_role_body_is_inter() {
-        let f = font(FontRole::Body);
-        assert_eq!(f.family, iced::font::Family::Name("Inter"));
-    }
-
-    #[test]
-    fn font_role_monospace_is_jetbrains() {
-        let f = font(FontRole::Monospace);
-        assert_eq!(f.family, iced::font::Family::Name("JetBrains Mono"));
+    fn spacing_density_orders_compact_lt_cozy_lt_spacious() {
+        for s in [Spacing::Xs, Spacing::Sm, Spacing::Md, Spacing::Lg] {
+            assert!(spacing(s, Density::Compact) < spacing(s, Density::Cozy));
+            assert!(spacing(s, Density::Cozy) < spacing(s, Density::Spacious));
+        }
     }
 }

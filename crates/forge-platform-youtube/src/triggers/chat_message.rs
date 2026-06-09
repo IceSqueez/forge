@@ -106,19 +106,6 @@ mod tests {
     }
 
     #[test]
-    fn kind_id_matches_canonical() {
-        assert_eq!(ChatMessageDescriptor.id(), "youtube.chat.message");
-    }
-
-    #[test]
-    fn is_platform_specific_youtube() {
-        assert_eq!(
-            ChatMessageDescriptor.event_filter().source,
-            Some(EventSource::YouTube)
-        );
-    }
-
-    #[test]
     fn always_matches() {
         assert!(ChatMessageDescriptor.matches_trigger(&TriggerConfig::new(), &chat_event()));
     }

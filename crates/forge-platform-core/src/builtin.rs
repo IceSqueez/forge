@@ -325,18 +325,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn builtin_id_new_and_as_str() {
-        let id = BuiltinId::new("twitch");
-        assert_eq!(id.as_str(), "twitch");
-    }
-
-    #[test]
-    fn builtin_id_display() {
-        let id = BuiltinId::new("youtube");
-        assert_eq!(id.to_string(), "youtube");
-    }
-
-    #[test]
     fn builtin_id_serde_transparent() {
         let id = BuiltinId::new("kick");
         let json = serde_json::to_string(&id).unwrap();
@@ -371,72 +359,40 @@ mod tests {
     }
 
     #[test]
-    fn health_value_status_serde() {
-        let v = HealthValue::Status {
-            label: "Connected".to_owned(),
-            active: true,
-            detail: None,
-        };
-        let json = serde_json::to_string(&v).unwrap();
-        let back: HealthValue = serde_json::from_str(&json).unwrap();
-        assert_eq!(back, v);
-    }
-
-    #[test]
-    fn health_value_text_serde() {
-        let v = HealthValue::Text {
-            primary: "42 msg/s".to_owned(),
-            secondary: Some("peak: 150".to_owned()),
-        };
-        let json = serde_json::to_string(&v).unwrap();
-        let back: HealthValue = serde_json::from_str(&json).unwrap();
-        assert_eq!(back, v);
-    }
-
-    #[test]
-    fn health_value_text_no_secondary_serde() {
-        let v = HealthValue::Text {
-            primary: "idle".to_owned(),
-            secondary: None,
-        };
-        let json = serde_json::to_string(&v).unwrap();
-        let back: HealthValue = serde_json::from_str(&json).unwrap();
-        assert_eq!(back, v);
-    }
-
-    #[test]
-    fn health_value_pair_serde() {
-        let v = HealthValue::Pair {
-            left: "60 fps".to_owned(),
-            right: "2.4%".to_owned(),
-        };
-        let json = serde_json::to_string(&v).unwrap();
-        let back: HealthValue = serde_json::from_str(&json).unwrap();
-        assert_eq!(back, v);
-    }
-
-    #[test]
-    fn health_value_ratio_serde() {
-        let v = HealthValue::Ratio {
-            used: 800,
-            total: 1000,
-            reset_hint: Some("resets hourly".to_owned()),
-        };
-        let json = serde_json::to_string(&v).unwrap();
-        let back: HealthValue = serde_json::from_str(&json).unwrap();
-        assert_eq!(back, v);
-    }
-
-    #[test]
-    fn health_value_ratio_no_hint_serde() {
-        let v = HealthValue::Ratio {
-            used: 0,
-            total: 100,
-            reset_hint: None,
-        };
-        let json = serde_json::to_string(&v).unwrap();
-        let back: HealthValue = serde_json::from_str(&json).unwrap();
-        assert_eq!(back, v);
+    fn health_value_serde_roundtrip_each_variant() {
+        for v in [
+            HealthValue::Status {
+                label: "Connected".to_owned(),
+                active: true,
+                detail: None,
+            },
+            HealthValue::Text {
+                primary: "42 msg/s".to_owned(),
+                secondary: Some("peak: 150".to_owned()),
+            },
+            HealthValue::Text {
+                primary: "idle".to_owned(),
+                secondary: None,
+            },
+            HealthValue::Pair {
+                left: "60 fps".to_owned(),
+                right: "2.4%".to_owned(),
+            },
+            HealthValue::Ratio {
+                used: 800,
+                total: 1000,
+                reset_hint: Some("resets hourly".to_owned()),
+            },
+            HealthValue::Ratio {
+                used: 0,
+                total: 100,
+                reset_hint: None,
+            },
+        ] {
+            let json = serde_json::to_string(&v).unwrap();
+            let back: HealthValue = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, v);
+        }
     }
 
     #[test]
@@ -456,25 +412,21 @@ mod tests {
     }
 
     #[test]
-    fn capability_flags_serde_with_label() {
-        let flags = CapabilityFlags {
-            limited: true,
-            label: Some("read-only".to_owned()),
-        };
-        let json = serde_json::to_string(&flags).unwrap();
-        let back: CapabilityFlags = serde_json::from_str(&json).unwrap();
-        assert_eq!(back, flags);
-    }
-
-    #[test]
-    fn capability_flags_serde_without_label() {
-        let flags = CapabilityFlags {
-            limited: false,
-            label: None,
-        };
-        let json = serde_json::to_string(&flags).unwrap();
-        let back: CapabilityFlags = serde_json::from_str(&json).unwrap();
-        assert_eq!(back, flags);
+    fn capability_flags_serde_roundtrip_with_and_without_label() {
+        for flags in [
+            CapabilityFlags {
+                limited: true,
+                label: Some("read-only".to_owned()),
+            },
+            CapabilityFlags {
+                limited: false,
+                label: None,
+            },
+        ] {
+            let json = serde_json::to_string(&flags).unwrap();
+            let back: CapabilityFlags = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, flags);
+        }
     }
 
     #[test]

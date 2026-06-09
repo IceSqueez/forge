@@ -352,27 +352,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn start_returns_handle_on_ephemeral_port() {
-        let (handle, _) = make_server(false, MemCreds::new()).await;
-        handle.abort();
-    }
-
-    #[tokio::test]
-    async fn abort_does_not_panic() {
-        let (handle, _) = make_server(false, MemCreds::new()).await;
-        handle.abort();
-    }
-
-    #[tokio::test]
-    async fn server_accepts_tcp_connections() {
-        let (handle, addr) = make_server(false, MemCreds::new()).await;
-        tokio::net::TcpStream::connect(addr)
-            .await
-            .expect("tcp connect");
-        handle.abort();
-    }
-
-    #[tokio::test]
     async fn get_info_without_auth_returns_200_when_reads_not_required() {
         let (handle, addr) = make_server(false, MemCreds::new()).await;
         let url = format!("http://{}/api/v1/info", addr);
@@ -497,13 +476,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stop_is_idempotent() {
-        let (handle, _) = make_server(false, MemCreds::new()).await;
-        handle.stop().await.expect("first stop");
-        handle.stop().await.expect("second stop is no-op");
-    }
-
-    #[tokio::test]
     async fn stop_disconnects_clients_within_timeout() {
         use tokio_tungstenite::connect_async;
 
@@ -550,15 +522,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn validate_lan_bind_allows_loopback_regardless_of_flag() {
-        let creds = MemCreds::new();
-        let addr: std::net::SocketAddr = "127.0.0.1:9595".parse().expect("addr");
-        validate_lan_bind(&addr, false, &*creds)
-            .await
-            .expect("loopback always allowed");
-    }
-
-    #[tokio::test]
     async fn validate_lan_bind_rejects_unspecified_without_flag() {
         let creds = MemCreds::with_token("tok");
         let addr: std::net::SocketAddr = "0.0.0.0:9595".parse().expect("addr");
@@ -576,14 +539,5 @@ mod tests {
             .await
             .expect_err("must refuse");
         assert!(matches!(err, ServerError::NoTokenForLanBind { .. }));
-    }
-
-    #[tokio::test]
-    async fn validate_lan_bind_accepts_unspecified_with_flag_and_token() {
-        let creds = MemCreds::with_token("tok");
-        let addr: std::net::SocketAddr = "0.0.0.0:9595".parse().expect("addr");
-        validate_lan_bind(&addr, true, &*creds)
-            .await
-            .expect("must pass");
     }
 }

@@ -11,7 +11,6 @@ members = [
   "crates/forge-platform-core",
   "crates/forge-platform-twitch",
   "crates/forge-platform-youtube",
-  "crates/forge-platform-trovo",
   "crates/forge-platform-kick",
   "crates/forge-obs",
   "crates/forge-vtube",
@@ -154,6 +153,11 @@ once_cell = { version = "1.21" }
 symphonia = { version = "0.6", features = ["all-codecs", "all-formats"] }
 crossbeam-channel = { version = "0.5" }
 futures = { version = "0.3" }
+
+fluent = { version = "0.16" }
+fluent-langneg = { version = "0.13" }
+unic-langid = { version = "0.9" }
+sys-locale = { version = "0.3" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

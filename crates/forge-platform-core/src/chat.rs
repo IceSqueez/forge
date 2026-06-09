@@ -32,35 +32,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn disconnected_serde_roundtrip() {
-        let json = serde_json::to_string(&ConnectionState::Disconnected).unwrap();
-        assert_eq!(json, r#""disconnected""#);
-        let back: ConnectionState = serde_json::from_str(&json).unwrap();
-        assert_eq!(back, ConnectionState::Disconnected);
-    }
-
-    #[test]
-    fn connecting_serde_roundtrip() {
-        let json = serde_json::to_string(&ConnectionState::Connecting).unwrap();
-        assert_eq!(json, r#""connecting""#);
-        let back: ConnectionState = serde_json::from_str(&json).unwrap();
-        assert_eq!(back, ConnectionState::Connecting);
-    }
-
-    #[test]
-    fn connected_serde_roundtrip() {
-        let json = serde_json::to_string(&ConnectionState::Connected).unwrap();
-        assert_eq!(json, r#""connected""#);
-        let back: ConnectionState = serde_json::from_str(&json).unwrap();
-        assert_eq!(back, ConnectionState::Connected);
-    }
-
-    #[test]
-    fn reconnecting_serde_roundtrip() {
-        let json = serde_json::to_string(&ConnectionState::Reconnecting).unwrap();
-        assert_eq!(json, r#""reconnecting""#);
-        let back: ConnectionState = serde_json::from_str(&json).unwrap();
-        assert_eq!(back, ConnectionState::Reconnecting);
+    fn connection_state_serde_format_is_lowercase_for_each_variant() {
+        for (state, expected) in [
+            (ConnectionState::Disconnected, "disconnected"),
+            (ConnectionState::Connecting, "connecting"),
+            (ConnectionState::Connected, "connected"),
+            (ConnectionState::Reconnecting, "reconnecting"),
+        ] {
+            let json = serde_json::to_string(&state).unwrap();
+            assert_eq!(json, format!("\"{expected}\""));
+            let back: ConnectionState = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, state);
+        }
     }
 
     #[allow(dead_code)]

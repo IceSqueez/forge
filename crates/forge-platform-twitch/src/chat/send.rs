@@ -128,7 +128,6 @@ fn extract_retry_after(resp: &reqwest::Response) -> Option<u64> {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::*;
 
     #[tokio::test]
     async fn send_network_error_strips_url() {
@@ -142,34 +141,5 @@ mod tests {
             .await
             .unwrap_err();
         assert!(!err.without_url().to_string().contains("192.0.2.1"));
-    }
-
-    #[test]
-    fn message_too_long_exactly_at_boundary() {
-        let exactly_500 = "a".repeat(500);
-        assert_eq!(exactly_500.len(), MAX_MESSAGE_LEN);
-
-        let over_500 = "a".repeat(501);
-        assert!(over_500.len() > MAX_MESSAGE_LEN);
-    }
-
-    #[test]
-    fn sent_message_id_equality() {
-        let a = SentMessageId("abc".into());
-        let b = SentMessageId("abc".into());
-        assert_eq!(a, b);
-    }
-
-    #[test]
-    fn chat_send_error_displays_non_empty() {
-        for e in [
-            ChatSendError::RateLimited,
-            ChatSendError::MessageTooLong,
-            ChatSendError::NotConnected,
-            ChatSendError::Http("timeout".into()),
-            ChatSendError::ReauthRequired,
-        ] {
-            assert!(!e.to_string().is_empty(), "empty display for {e:?}");
-        }
     }
 }

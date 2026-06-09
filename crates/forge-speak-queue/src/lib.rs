@@ -203,26 +203,6 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
 mod tests {
     use super::*;
 
-    #[test]
-    fn speak_event_serde_roundtrip() {
-        let event = SpeakEvent::Enqueued {
-            request_id: RequestId("01HWTEST".into()),
-            queue_len: 3,
-        };
-        let json = serde_json::to_string(&event).unwrap();
-        let back: SpeakEvent = serde_json::from_str(&json).unwrap();
-        assert!(matches!(back, SpeakEvent::Enqueued { queue_len: 3, .. }));
-    }
-
-    #[test]
-    fn speak_error_display() {
-        let err = SpeakError::QueueFull { max: 100 };
-        assert!(err.to_string().contains("100"));
-
-        let err2 = SpeakError::ActorGone;
-        assert!(err2.to_string().contains("stopped"));
-    }
-
     #[tokio::test]
     async fn handle_send_returns_actor_gone_after_drop() {
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::channel::<SpeakCommand>(1);

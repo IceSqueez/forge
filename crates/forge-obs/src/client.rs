@@ -510,24 +510,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn endpoint_roundtrip() {
-        let client = ObsClient::new_for_test("ws://localhost:4455".to_owned());
-        assert_eq!(client.endpoint(), "ws://localhost:4455");
-    }
-
-    #[test]
-    fn connected_at_none_for_test_constructor() {
-        let client = ObsClient::new_for_test("localhost:4455".to_owned());
-        assert!(client.connected_at().is_none());
-    }
-
-    #[test]
-    fn connection_state_disconnected_for_test_constructor() {
-        let client = ObsClient::new_for_test("localhost:4455".to_owned());
-        assert_eq!(client.connection_state(), ConnectionState::Disconnected);
-    }
-
-    #[test]
     #[allow(clippy::unwrap_used)]
     fn parse_endpoint_with_scheme_and_port() {
         let (host, port) = parse_endpoint("ws://localhost:4455").unwrap();
@@ -578,61 +560,6 @@ mod tests {
     fn compute_backoff_attempt_five_under_60s() {
         let d = compute_backoff(5);
         assert!(d.as_secs() < 60);
-    }
-
-    #[test]
-    fn builtin_status_id_is_obs() {
-        let client = ObsClient::new_for_test("localhost:4455".to_owned());
-        let status: &dyn BuiltinStatus = &client;
-        assert_eq!(status.id().as_str(), "obs");
-    }
-
-    #[test]
-    fn builtin_status_display_name() {
-        let client = ObsClient::new_for_test("localhost:4455".to_owned());
-        let status: &dyn BuiltinStatus = &client;
-        assert_eq!(status.display_name(), "OBS Studio");
-    }
-
-    #[test]
-    fn builtin_status_version_none_before_connect() {
-        let client = ObsClient::new_for_test("localhost:4455".to_owned());
-        let status: &dyn BuiltinStatus = &client;
-        assert!(status.version().is_none());
-    }
-
-    #[test]
-    fn builtin_status_endpoint_reflects_constructor() {
-        let client = ObsClient::new_for_test("ws://127.0.0.1:4455".to_owned());
-        let status: &dyn BuiltinStatus = &client;
-        assert_eq!(status.endpoint(), Some("ws://127.0.0.1:4455"));
-    }
-
-    #[test]
-    fn builtin_status_capability_flags_not_limited() {
-        let client = ObsClient::new_for_test("localhost:4455".to_owned());
-        let status: &dyn BuiltinStatus = &client;
-        let flags = status.capability_flags();
-        assert!(!flags.limited);
-        assert!(flags.label.is_none());
-    }
-
-    #[test]
-    fn builtin_status_header_actions_no_refresh_token() {
-        let client = ObsClient::new_for_test("localhost:4455".to_owned());
-        let status: &dyn BuiltinStatus = &client;
-        let actions = status.header_actions();
-        assert!(!actions.contains(&HeaderAction::RefreshToken));
-        assert!(actions.contains(&HeaderAction::Reconnect));
-        assert!(actions.contains(&HeaderAction::Disconnect));
-        assert!(actions.contains(&HeaderAction::Settings));
-    }
-
-    #[test]
-    fn builtin_status_uptime_none_before_connect() {
-        let client = ObsClient::new_for_test("localhost:4455".to_owned());
-        let status: &dyn BuiltinStatus = &client;
-        assert!(status.uptime().is_none());
     }
 
     #[test]

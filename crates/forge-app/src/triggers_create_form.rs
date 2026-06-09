@@ -888,7 +888,6 @@ fn platform_name_str(p: PlatformId) -> &'static str {
     match p {
         PlatformId::Twitch => "Twitch",
         PlatformId::YouTube => "YouTube",
-        PlatformId::Trovo => "Trovo",
         PlatformId::Kick => "Kick",
     }
 }
@@ -897,7 +896,6 @@ fn platform_color(p: PlatformId, palette: &ForgePalette) -> Color {
     match p {
         PlatformId::Twitch => palette.platform_twitch,
         PlatformId::YouTube => palette.platform_youtube,
-        PlatformId::Trovo => palette.platform_trovo,
         PlatformId::Kick => palette.platform_kick,
     }
 }
@@ -1034,30 +1032,27 @@ fn render_platform_section<'a>(
                 )),
             );
 
-            let platform_pill_els: Vec<Element<'_, Message>> = [
-                PlatformId::Twitch,
-                PlatformId::YouTube,
-                PlatformId::Trovo,
-                PlatformId::Kick,
-            ]
-            .iter()
-            .map(|&pid| {
-                let active = !form.custom_expanded && is_single_only(pid);
-                let dot_color = platform_color(pid, palette);
-                let mut single_set = BTreeSet::new();
-                single_set.insert(pid);
-                let new_scope = PlatformScope::only(single_set).unwrap_or(PlatformScope::Any);
-                category_chip(
-                    palette,
-                    platform_name_str(pid),
-                    dot_color,
-                    active,
-                    Message::TriggersRegistry(TriggersRegistryMsg::CreateFormMsg(
-                        CreateInstanceFormMsg::PlatformScopeChanged(new_scope),
-                    )),
-                )
-            })
-            .collect();
+            let platform_pill_els: Vec<Element<'_, Message>> =
+                [PlatformId::Twitch, PlatformId::YouTube, PlatformId::Kick]
+                    .iter()
+                    .map(|&pid| {
+                        let active = !form.custom_expanded && is_single_only(pid);
+                        let dot_color = platform_color(pid, palette);
+                        let mut single_set = BTreeSet::new();
+                        single_set.insert(pid);
+                        let new_scope =
+                            PlatformScope::only(single_set).unwrap_or(PlatformScope::Any);
+                        category_chip(
+                            palette,
+                            platform_name_str(pid),
+                            dot_color,
+                            active,
+                            Message::TriggersRegistry(TriggersRegistryMsg::CreateFormMsg(
+                                CreateInstanceFormMsg::PlatformScopeChanged(new_scope),
+                            )),
+                        )
+                    })
+                    .collect();
 
             let custom_pill = scope_mode_pill(
                 "Custom\u{2026}",
@@ -1080,27 +1075,24 @@ fn render_platform_section<'a>(
             .padding([0, sp(Spacing::Md)]);
 
             let expanded_el: Element<'_, Message> = if form.custom_expanded {
-                let checkbox_els: Vec<Element<'_, Message>> = [
-                    PlatformId::Twitch,
-                    PlatformId::YouTube,
-                    PlatformId::Trovo,
-                    PlatformId::Kick,
-                ]
-                .iter()
-                .map(|&pid| {
-                    let checked = matches!(scope, PlatformScope::Only(s) if s.contains(&pid));
-                    let dot_color = platform_color(pid, palette);
-                    category_chip(
-                        palette,
-                        platform_name_str(pid),
-                        dot_color,
-                        checked,
-                        Message::TriggersRegistry(TriggersRegistryMsg::CreateFormMsg(
-                            CreateInstanceFormMsg::PlatformScopeCustomToggled(pid),
-                        )),
-                    )
-                })
-                .collect();
+                let checkbox_els: Vec<Element<'_, Message>> =
+                    [PlatformId::Twitch, PlatformId::YouTube, PlatformId::Kick]
+                        .iter()
+                        .map(|&pid| {
+                            let checked =
+                                matches!(scope, PlatformScope::Only(s) if s.contains(&pid));
+                            let dot_color = platform_color(pid, palette);
+                            category_chip(
+                                palette,
+                                platform_name_str(pid),
+                                dot_color,
+                                checked,
+                                Message::TriggersRegistry(TriggersRegistryMsg::CreateFormMsg(
+                                    CreateInstanceFormMsg::PlatformScopeCustomToggled(pid),
+                                )),
+                            )
+                        })
+                        .collect();
                 container(
                     row(checkbox_els)
                         .spacing(spf(Spacing::Xxs))
@@ -1178,7 +1170,6 @@ mod tests {
             chat_send_bridge: None,
             twitch_flow: None,
             youtube_flow: None,
-            trovo_flow: None,
             kick_flow: None,
             tts_engine_ids: Vec::new(),
             twitch_login: None,

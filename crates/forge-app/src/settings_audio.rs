@@ -297,7 +297,6 @@ pub fn settings_audio_view<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use forge_widgets::palette::CATPPUCCIN_MOCHA;
 
     #[test]
     fn settings_audio_state_new() {
@@ -305,18 +304,5 @@ mod tests {
         assert!(s.devices.is_empty());
         assert!(!s.devices_loading);
         assert!(!s.test_tone_playing);
-    }
-
-    #[test]
-    fn settings_audio_view_idle_constructs() {
-        let state = SettingsAudioState::new();
-        let _ = settings_audio_view(&state, &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn settings_audio_view_loading_constructs() {
-        let mut state = SettingsAudioState::new();
-        state.devices_loading = true;
-        let _ = settings_audio_view(&state, &CATPPUCCIN_MOCHA);
     }
 }

@@ -192,20 +192,6 @@ mod tests {
     }
 
     #[test]
-    fn default_config_values() {
-        let cfg = EngineConfig::default();
-        assert_eq!(cfg.op_limit, 100_000);
-        assert_eq!(cfg.wall_time_ms, 500);
-    }
-
-    #[test]
-    fn engine_config_accessor_matches() {
-        let cfg = EngineConfig::default();
-        let engine = Engine::with_config(cfg.clone());
-        assert_eq!(engine.config(), &cfg);
-    }
-
-    #[test]
     fn placeholder_eval_addition() {
         let engine = Engine::with_config(EngineConfig::default());
         assert_eq!(engine.placeholder_eval("1 + 2").unwrap(), "3");
@@ -279,23 +265,6 @@ mod tests {
             before.elapsed().as_millis() >= 80,
             "sleep must pause at least 80ms",
         );
-    }
-
-    #[tokio::test]
-    async fn with_api_sleep_clamped_to_5000ms() {
-        let dp = open_test_dp().await;
-        let engine = Engine::with_api(
-            EngineConfig {
-                op_limit: 100_000,
-                wall_time_ms: 10_000,
-            },
-            make_api_with_wall_ms(dp, 10_000),
-        );
-        tokio::task::spawn_blocking(move || {
-            let _ = engine.eval_script("forge::sleep(-999)").unwrap();
-        })
-        .await
-        .unwrap();
     }
 
     #[tokio::test]

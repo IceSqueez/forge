@@ -32,101 +32,41 @@ mod tests {
     use super::*;
 
     #[test]
-    fn imds_endpoint_169_254_169_254_blocked() {
-        assert!(is_private_or_special(
-            "169.254.169.254".parse::<IpAddr>().unwrap()
-        ));
+    fn private_special_and_imds_addresses_are_blocked() {
+        // IPv4 ranges: IMDS, CGNAT, RFC1918, loopback, multicast, broadcast, unspecified.
+        // IPv6 ranges: ULA (fc00/fd00), link-local, multicast, loopback, unspecified.
+        for addr in [
+            "169.254.169.254",
+            "100.64.0.1",
+            "100.127.255.255",
+            "192.168.1.1",
+            "127.0.0.1",
+            "127.255.255.255",
+            "224.0.0.1",
+            "239.255.255.255",
+            "255.255.255.255",
+            "0.0.0.0",
+            "fc00::1",
+            "fd00::1",
+            "fe80::1",
+            "ff02::1",
+            "::1",
+            "::",
+        ] {
+            assert!(
+                is_private_or_special(addr.parse::<IpAddr>().unwrap()),
+                "expected blocked: {addr}"
+            );
+        }
     }
 
     #[test]
-    fn cgnat_100_64_x_blocked() {
-        assert!(is_private_or_special(
-            "100.64.0.1".parse::<IpAddr>().unwrap()
-        ));
-        assert!(is_private_or_special(
-            "100.127.255.255".parse::<IpAddr>().unwrap()
-        ));
-    }
-
-    #[test]
-    fn private_192_168_blocked() {
-        assert!(is_private_or_special(
-            "192.168.1.1".parse::<IpAddr>().unwrap()
-        ));
-    }
-
-    #[test]
-    fn loopback_127_x_blocked() {
-        assert!(is_private_or_special(
-            "127.0.0.1".parse::<IpAddr>().unwrap()
-        ));
-        assert!(is_private_or_special(
-            "127.255.255.255".parse::<IpAddr>().unwrap()
-        ));
-    }
-
-    #[test]
-    fn multicast_224_x_blocked() {
-        assert!(is_private_or_special(
-            "224.0.0.1".parse::<IpAddr>().unwrap()
-        ));
-        assert!(is_private_or_special(
-            "239.255.255.255".parse::<IpAddr>().unwrap()
-        ));
-    }
-
-    #[test]
-    fn broadcast_255_255_255_255_blocked() {
-        assert!(is_private_or_special(
-            "255.255.255.255".parse::<IpAddr>().unwrap()
-        ));
-    }
-
-    #[test]
-    fn unspecified_0_0_0_0_blocked() {
-        assert!(is_private_or_special("0.0.0.0".parse::<IpAddr>().unwrap()));
-    }
-
-    #[test]
-    fn public_8_8_8_8_allowed() {
-        assert!(!is_private_or_special("8.8.8.8".parse::<IpAddr>().unwrap()));
-    }
-
-    #[test]
-    fn public_1_1_1_1_allowed() {
-        assert!(!is_private_or_special("1.1.1.1".parse::<IpAddr>().unwrap()));
-    }
-
-    #[test]
-    fn ipv6_ula_fc00_blocked() {
-        assert!(is_private_or_special("fc00::1".parse::<IpAddr>().unwrap()));
-        assert!(is_private_or_special("fd00::1".parse::<IpAddr>().unwrap()));
-    }
-
-    #[test]
-    fn ipv6_linklocal_fe80_blocked() {
-        assert!(is_private_or_special("fe80::1".parse::<IpAddr>().unwrap()));
-    }
-
-    #[test]
-    fn ipv6_multicast_ff_blocked() {
-        assert!(is_private_or_special("ff02::1".parse::<IpAddr>().unwrap()));
-    }
-
-    #[test]
-    fn ipv6_loopback_blocked() {
-        assert!(is_private_or_special("::1".parse::<IpAddr>().unwrap()));
-    }
-
-    #[test]
-    fn ipv6_unspecified_blocked() {
-        assert!(is_private_or_special("::".parse::<IpAddr>().unwrap()));
-    }
-
-    #[test]
-    fn ipv6_public_2606_allowed() {
-        assert!(!is_private_or_special(
-            "2606:4700::1111".parse::<IpAddr>().unwrap()
-        ));
+    fn public_ip_addresses_are_allowed() {
+        for addr in ["8.8.8.8", "1.1.1.1", "2606:4700::1111"] {
+            assert!(
+                !is_private_or_special(addr.parse::<IpAddr>().unwrap()),
+                "expected allowed: {addr}"
+            );
+        }
     }
 }

@@ -19,12 +19,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_app_name_is_forge() {
-        let cfg = HotkeyConfig::default();
-        assert_eq!(cfg.app_name, "forge");
-    }
-
-    #[test]
     fn config_serde_roundtrip() {
         let cfg = HotkeyConfig {
             app_name: "myapp".to_owned(),

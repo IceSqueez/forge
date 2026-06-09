@@ -41,23 +41,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn credential_key_matches_expected() {
-        assert_eq!(CREDENTIAL_KEY, "youtube:broadcaster");
-    }
-
-    #[test]
-    fn quota_key_matches_expected() {
-        assert_eq!(QUOTA_KEY, "youtube:quota");
-    }
-
-    #[test]
-    fn quota_state_default_has_zero_usage() {
-        let state = YoutubeQuotaState::default();
-        assert_eq!(state.used_today, 0);
-        assert_eq!(state.peak_seen, 0);
-    }
-
-    #[test]
     fn credentials_serde_roundtrip() {
         let cred = YoutubeCredentials {
             access_token: "tok".to_owned(),

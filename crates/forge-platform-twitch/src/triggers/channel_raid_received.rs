@@ -118,14 +118,6 @@ mod tests {
     }
 
     #[test]
-    fn id_is_stable() {
-        assert_eq!(
-            ChannelRaidReceivedDescriptor.id(),
-            "twitch.channel.raid_received"
-        );
-    }
-
-    #[test]
     fn always_matches() {
         assert!(
             ChannelRaidReceivedDescriptor.matches_trigger(&TriggerConfig::new(), &raid_event(100))

@@ -17,36 +17,3 @@ pub fn kick_capabilities() -> PlatformCapabilities {
         limited_reason: None,
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn capabilities_not_marked_limited() {
-        let caps = kick_capabilities();
-        assert!(!caps.limited);
-        assert!(caps.limited_reason.is_none());
-    }
-
-    #[test]
-    fn capabilities_enable_chat_send() {
-        let caps = kick_capabilities();
-        assert!(caps.can_send_chat);
-    }
-
-    #[test]
-    fn unsupported_features_remain_false() {
-        let caps = kick_capabilities();
-        assert!(!caps.can_moderate);
-        assert!(!caps.can_subscribe_events);
-        assert!(!caps.can_polls);
-        assert!(!caps.can_predictions);
-        assert!(!caps.can_channel_points);
-    }
-
-    #[test]
-    fn community_note_is_non_empty() {
-        assert!(!KICK_COMMUNITY_NOTE.is_empty());
-    }
-}

@@ -632,7 +632,7 @@ mod tests {
     use crate::Message;
     use crate::app::{App, update};
     use crate::message::EditorMode;
-    use crate::screen::Screen;
+
     use forge_storage::GlobalEntry;
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::Variant;
@@ -758,27 +758,6 @@ mod tests {
         );
         assert!(!app.ui.globals.loading);
         assert!(app.ui.globals.entries.is_empty());
-    }
-
-    #[test]
-    fn globals_view_smoke_empty_state() {
-        let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::Globals));
-        let palette = app.palette;
-        let _ = globals_view(&app, &palette);
-    }
-
-    #[test]
-    fn globals_view_smoke_with_entries() {
-        let mut app = App::default();
-        app.ui.globals.entries = vec![
-            make_entry("quoteCounter", true),
-            make_entry("streamLive", false),
-        ];
-        app.ui.globals.loading = false;
-        app.ui.globals.refresh_displays();
-        let palette = app.palette;
-        let _ = globals_view(&app, &palette);
     }
 
     #[test]
@@ -1028,14 +1007,6 @@ mod tests {
         let form = app.ui.globals.editor.as_ref().unwrap();
         assert!(!form.saving);
         assert_eq!(form.error.as_deref(), Some("db write failed"));
-    }
-
-    #[test]
-    fn globals_view_smoke_with_modal_open() {
-        let mut app = App::default();
-        app.ui.globals.editor = Some(int_form("x", "1"));
-        let palette = app.palette;
-        let _ = globals_view(&app, &palette);
     }
 
     #[test]

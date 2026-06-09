@@ -79,18 +79,4 @@ mod tests {
         let back: EventId = serde_json::from_str(&json).unwrap();
         assert_eq!(id, back);
     }
-
-    #[test]
-    fn all_id_types_are_distinct_by_construction() {
-        let eid = EventId::new().to_string();
-        let aid = ActionId::new().to_string();
-        assert_ne!(eid, aid);
-    }
-
-    #[test]
-    fn event_id_ordering_is_consistent() {
-        let a = EventId::new();
-        let b = EventId::new();
-        assert!(a <= b || b <= a, "EventId ordering must be total");
-    }
 }

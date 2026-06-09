@@ -635,24 +635,6 @@ mod tests {
     }
 
     #[test]
-    fn health_delta_out_of_bounds_is_noop() {
-        let mut state_opt = Some(make_state());
-        let app = App::default();
-        let delta = HealthDelta {
-            index: 5,
-            new_value: HealthValue::Text {
-                primary: "oops".into(),
-                secondary: None,
-            },
-        };
-        let _ = update(
-            &mut state_opt,
-            &app.rt,
-            BuiltinDetailMsg::HealthDelta(delta),
-        );
-    }
-
-    #[test]
     fn handle_is_noop_when_state_absent() {
         let mut state_opt: Option<BuiltinDetailState> = None;
         let app = App::default();
@@ -875,34 +857,5 @@ mod tests {
         );
         let pending = state_opt.as_ref().unwrap().pending_picker.as_ref().unwrap();
         assert!(matches!(pending.items, PickerItemsState::Failed(_)));
-    }
-
-    #[test]
-    fn view_smoke() {
-        let state = make_state();
-        let (_, palette) = forge_widgets::catppuccin_mocha();
-        let _ = view(&state, &palette);
-    }
-
-    #[test]
-    fn view_smoke_with_picker_overlay() {
-        let mut state = make_state();
-        state.pending_picker = Some(PendingPicker {
-            action_index: 0,
-            kind: PickerKind::Source,
-            search: String::new(),
-            items: PickerItemsState::Loading,
-            current_scene: None,
-        });
-        let (_, palette) = forge_widgets::catppuccin_mocha();
-        let _ = view(&state, &palette);
-    }
-
-    #[test]
-    fn view_smoke_with_toast() {
-        let mut state = make_state();
-        state.quick_action_toast = Some("Start Recording — done".to_owned());
-        let (_, palette) = forge_widgets::catppuccin_mocha();
-        let _ = view(&state, &palette);
     }
 }

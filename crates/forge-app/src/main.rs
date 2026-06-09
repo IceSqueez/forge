@@ -35,24 +35,6 @@ use forge_tts_sapi::SapiEngineFactory;
 use forge_voice::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults, VoiceAliasResolver};
 use forge_vtube::{VTubeClient, VTubeConfig, register_vtube_sub_actions};
 
-struct TrovoNoopLimiter;
-
-#[async_trait::async_trait]
-impl forge_platform_core::RateLimiter for TrovoNoopLimiter {
-    async fn acquire(
-        &self,
-        _weight: u32,
-    ) -> Result<forge_platform_core::RateLimitOutcome, forge_platform_core::PlatformError> {
-        Ok(forge_platform_core::RateLimitOutcome::Granted)
-    }
-
-    fn remaining(&self) -> u32 {
-        u32::MAX
-    }
-
-    async fn observe_remote_throttle(&self, _retry_after: std::time::Duration) {}
-}
-
 struct KickNoopLimiter;
 
 #[async_trait::async_trait]
@@ -69,6 +51,22 @@ impl forge_platform_core::RateLimiter for KickNoopLimiter {
     }
 
     async fn observe_remote_throttle(&self, _retry_after: std::time::Duration) {}
+}
+
+fn boot_locale(
+    rt: &tokio::runtime::Runtime,
+    backend: Arc<dyn DataProvider>,
+) -> forge_storage::Language {
+    let settings: Arc<dyn forge_storage::SettingsRepo> =
+        Arc::clone(&backend) as Arc<dyn forge_storage::SettingsRepo>;
+    let (lang, persist) = rt.block_on(forge_app::i18n::resolve_startup_language(settings.clone()));
+    if let Some(detected) = persist
+        && let Err(e) = rt.block_on(settings.set_language(detected))
+    {
+        tracing::warn!(error = %e, "failed to persist detected locale");
+    }
+    forge_app::i18n::install_language(lang);
+    lang
 }
 
 fn default_db_path() -> PathBuf {
@@ -405,9 +403,6 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
     if let Err(e) = forge_platform_youtube::register_youtube_triggers(&mut trigger_reg) {
         tracing::warn!("youtube trigger descriptor registration failed: {e}");
     }
-    if let Err(e) = forge_platform_trovo::register_trovo_triggers(&mut trigger_reg) {
-        tracing::warn!("trovo trigger descriptor registration failed: {e}");
-    }
     if let Err(e) = forge_platform_kick::register_kick_triggers(&mut trigger_reg) {
         tracing::warn!("kick trigger descriptor registration failed: {e}");
     }
@@ -556,128 +551,6 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         }
     }
 
-    if let Some((tv_id, tv_secret)) = forge_platform_trovo::client_credentials() {
-        let tv_creds: Arc<dyn CredentialsRepo> = Arc::clone(&dp) as Arc<dyn CredentialsRepo>;
-        let tv_http = reqwest::Client::new();
-        let manager = Arc::new(forge_platform_trovo::TrovoCredentialsManager::new(
-            tv_creds,
-            tv_http.clone(),
-            tv_id.clone(),
-            tv_secret,
-        ));
-        match rt.block_on(manager.load()) {
-            Ok(Some(_creds)) => {
-                let (tv_tx, mut tv_rx) = tokio::sync::mpsc::channel::<forge_events::Event>(256);
-                let bus_bridge = Arc::clone(&bus);
-                tokio::spawn(async move {
-                    while let Some(event) = tv_rx.recv().await {
-                        bus_bridge.publish(event);
-                    }
-                });
-
-                let manager_for_chat = Arc::clone(&manager);
-                let bus_chat = Arc::clone(&bus);
-                let tv_id_for_chat = tv_id.clone();
-                let tv_http_for_chat = tv_http.clone();
-                tokio::spawn(async move {
-                    match manager_for_chat.get_valid_access_token().await {
-                        Ok(token) => {
-                            let chat = forge_platform_trovo::TrovoChat::new(
-                                forge_types::OAuthToken::new(token),
-                                tv_id_for_chat,
-                                tv_http_for_chat,
-                            );
-                            if let Err(e) = chat.connect(tv_tx).await {
-                                tracing::warn!(error = %e, "trovo chat connect failed");
-                                bus_chat.publish(forge_events::Event::new(
-                                    forge_events::EventSource::Trovo,
-                                    "platform.connection.changed",
-                                    serde_json::json!({"state": "error", "reason": e.to_string()}),
-                                ));
-                            }
-                        }
-                        Err(e) => {
-                            tracing::warn!(error = %e, "trovo token unavailable");
-                        }
-                    }
-                });
-
-                let limiter: Arc<dyn forge_platform_core::RateLimiter> = Arc::new(TrovoNoopLimiter);
-                let sender = Arc::new(forge_platform_trovo::TrovoSendChat::new(limiter));
-                let manager_for_send = Arc::clone(&manager);
-                let bus_tv_send = Arc::clone(&bus);
-                let tv_id_for_send = tv_id;
-                tokio::spawn(async move {
-                    let mut sub = bus_tv_send.subscribe();
-                    loop {
-                        let event = match sub.recv().await {
-                            Ok(e) => e,
-                            Err(forge_events::EventsError::BusClosed) => break,
-                            Err(forge_events::EventsError::LaggingReceiver) => {
-                                tracing::warn!("trovo_send_bridge: lagging receiver");
-                                continue;
-                            }
-                            Err(_) => continue,
-                        };
-                        if event.source != forge_events::EventSource::Core
-                            || event.kind != "chat.send.request"
-                        {
-                            continue;
-                        }
-                        let target = event
-                            .payload
-                            .get("target")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("");
-                        if target != "trovo" {
-                            continue;
-                        }
-                        let message = match event
-                            .payload
-                            .get("message")
-                            .and_then(|v| v.as_str())
-                            .map(ToOwned::to_owned)
-                        {
-                            Some(m) => m,
-                            None => continue,
-                        };
-                        let caused_by = event.id;
-                        let token = match manager_for_send.get_valid_access_token().await {
-                            Ok(t) => t,
-                            Err(e) => {
-                                tracing::warn!(error = %e, "trovo send: token refresh failed");
-                                continue;
-                            }
-                        };
-                        match sender.send(&message, &token, &tv_id_for_send).await {
-                            Ok(()) => {
-                                bus_tv_send.publish(forge_events::Event::caused_by(
-                                    forge_events::EventSource::Trovo,
-                                    "chat.sent",
-                                    serde_json::json!({"channel": "trovo", "message": message}),
-                                    caused_by,
-                                ));
-                            }
-                            Err(e) => {
-                                tracing::warn!(error = %e, "trovo chat send failed");
-                                bus_tv_send.publish(forge_events::Event::caused_by(
-                                    forge_events::EventSource::Trovo,
-                                    "chat.send.failed",
-                                    serde_json::json!({"target": "trovo", "error": e.to_string()}),
-                                    caused_by,
-                                ));
-                            }
-                        }
-                    }
-                });
-            }
-            Ok(None) => {}
-            Err(e) => {
-                tracing::warn!(error = %e, "failed to load trovo credentials at boot");
-            }
-        }
-    }
-
     if let Some(kick_client_id) = forge_platform_kick::client_credentials() {
         let kk_creds: Arc<dyn CredentialsRepo> = Arc::clone(&dp) as Arc<dyn CredentialsRepo>;
         let kk_http = reqwest::Client::new();
@@ -818,6 +691,7 @@ fn main() -> iced::Result {
     let _runtime_guard = runtime.enter();
 
     let (backend, storage_offline) = boot_storage();
+    let boot_language = boot_locale(&runtime, Arc::clone(&backend));
     let initial_screen = Screen::Home;
 
     let event_log = backend.event_log_repo();
@@ -927,6 +801,7 @@ fn main() -> iced::Result {
             action_engine.clone(),
             scheduler.clone(),
             sound_player.clone(),
+            boot_language,
         );
         app.rt.bus = Arc::clone(&bus_boot);
         app.rt.chat_send_bridge = chat_send_bridge.clone();

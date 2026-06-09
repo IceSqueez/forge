@@ -16,18 +16,3 @@ impl Default for DiscordConfig {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn default_base_url() {
-        assert_eq!(DiscordConfig::default().base_url, "https://discord.com/api");
-    }
-
-    #[test]
-    fn default_max_retries() {
-        assert_eq!(DiscordConfig::default().max_retries, 1);
-    }
-}

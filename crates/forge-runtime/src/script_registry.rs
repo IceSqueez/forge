@@ -161,12 +161,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn count_is_zero_on_new() {
-        let registry = ScriptRegistry::new();
-        assert_eq!(registry.count().await, 0);
-    }
-
-    #[tokio::test]
     async fn load_all_includes_only_enabled_scripts() {
         let dp = make_dp().await;
         let r1 = make_record("greet", "let x = 1;", true);

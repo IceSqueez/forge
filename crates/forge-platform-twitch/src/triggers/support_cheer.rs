@@ -158,17 +158,6 @@ mod tests {
     }
 
     #[test]
-    fn id_is_stable() {
-        assert_eq!(SupportCheerDescriptor.id(), "twitch.support.cheer");
-    }
-
-    #[test]
-    fn default_config_has_min_bits_zero() {
-        let cfg = SupportCheerDescriptor.default_config();
-        assert_eq!(cfg.get("min_bits"), Some(&Variant::Int(0)));
-    }
-
-    #[test]
     fn condition_display_shows_bits_threshold() {
         let mut cfg = TriggerConfig::new();
         cfg.insert("min_bits".to_owned(), Variant::Int(100));

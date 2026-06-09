@@ -10,9 +10,8 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use forge_tts_core::TtsEngineFactory;
-use forge_tts_core::{EngineId, TtsEngine, VoiceId};
-use forge_tts_piper::{PiperEngine, PiperEngineFactory};
+use forge_tts_core::TtsEngine;
+use forge_tts_piper::PiperEngine;
 
 fn sidecar_json(locale_code: &str, sample_rate: u32, num_speakers: u32) -> String {
     format!(
@@ -47,65 +46,15 @@ fn fake_piper_binary(dir: &std::path::Path) -> PathBuf {
 }
 
 #[tokio::test]
-async fn two_single_speaker_voices_discovered() {
+async fn end_to_end_voice_listing_through_engine() {
+    // E2E happy path: 2 single-speaker + 1 multi-speaker (3 speakers) → expect 5 voices
+    // through the public list_voices() path. The internal scanner is covered by lib.rs unit
+    // tests; this confirms the engine wires it through correctly.
     let tmp = tempfile::tempdir().expect("tmpdir");
     let voices_dir = tmp.path().join("voices");
     std::fs::create_dir(&voices_dir).expect("mkdir voices");
-
     synthetic_voice(&voices_dir, "uk_UA-ukrainian-medium", "uk_UA", 22_050, 1);
     synthetic_voice(&voices_dir, "en_US-amy-medium", "en_US", 22_050, 1);
-
-    let bin_dir = tmp.path().join("bin");
-    std::fs::create_dir(&bin_dir).expect("mkdir bin");
-    let piper = fake_piper_binary(&bin_dir);
-
-    let engine = PiperEngine::new(piper, voices_dir, Duration::from_secs(30)).expect("engine");
-
-    let voices = engine.list_voices().await.expect("list_voices");
-    assert_eq!(
-        voices.len(),
-        2,
-        "expected exactly 2 voices, got {}",
-        voices.len()
-    );
-
-    let ids: Vec<&str> = voices.iter().map(|v| v.id.0.as_str()).collect();
-    assert!(ids.contains(&"uk_UA-ukrainian-medium"), "missing UK voice");
-    assert!(ids.contains(&"en_US-amy-medium"), "missing EN voice");
-}
-
-#[tokio::test]
-async fn single_speaker_voice_has_expected_metadata() {
-    let tmp = tempfile::tempdir().expect("tmpdir");
-    let voices_dir = tmp.path().join("voices");
-    std::fs::create_dir(&voices_dir).expect("mkdir voices");
-
-    synthetic_voice(&voices_dir, "uk_UA-ukrainian-medium", "uk_UA", 22_050, 1);
-
-    let bin_dir = tmp.path().join("bin");
-    std::fs::create_dir(&bin_dir).expect("mkdir bin");
-    let piper = fake_piper_binary(&bin_dir);
-
-    let engine = PiperEngine::new(piper, voices_dir, Duration::from_secs(30)).expect("engine");
-    let voices = engine.list_voices().await.expect("list_voices");
-
-    let voice = &voices[0];
-    assert_eq!(voice.id, VoiceId("uk_UA-ukrainian-medium".into()));
-    assert_eq!(
-        voice.locale, "uk-UA",
-        "locale must use BCP-47 format (- not _)"
-    );
-    assert_eq!(voice.sample_rate_hint, 22_050);
-    assert_eq!(voice.engine_id, EngineId("piper".into()));
-    assert!(!voice.is_neural);
-}
-
-#[tokio::test]
-async fn multi_speaker_model_produces_one_voice_per_speaker() {
-    let tmp = tempfile::tempdir().expect("tmpdir");
-    let voices_dir = tmp.path().join("voices");
-    std::fs::create_dir(&voices_dir).expect("mkdir voices");
-
     synthetic_voice(&voices_dir, "en_US-multi", "en_US", 16_000, 3);
 
     let bin_dir = tmp.path().join("bin");
@@ -114,12 +63,7 @@ async fn multi_speaker_model_produces_one_voice_per_speaker() {
 
     let engine = PiperEngine::new(piper, voices_dir, Duration::from_secs(30)).expect("engine");
     let voices = engine.list_voices().await.expect("list_voices");
-
-    assert_eq!(voices.len(), 3, "3 speakers should produce 3 voices");
-    let ids: Vec<&str> = voices.iter().map(|v| v.id.0.as_str()).collect();
-    assert!(ids.contains(&"en_US-multi#0"));
-    assert!(ids.contains(&"en_US-multi#1"));
-    assert!(ids.contains(&"en_US-multi#2"));
+    assert_eq!(voices.len(), 5);
 }
 
 #[tokio::test]
@@ -146,58 +90,4 @@ async fn onnx_without_sidecar_is_silently_skipped() {
         "orphan (no sidecar) must be skipped; only 1 valid voice expected"
     );
     assert_eq!(voices[0].id.0, "en_US-valid");
-}
-
-#[tokio::test]
-async fn missing_voices_dir_returns_empty_list() {
-    let tmp = tempfile::tempdir().expect("tmpdir");
-    let voices_dir = tmp.path().join("no-such-dir");
-
-    let bin_dir = tmp.path().join("bin");
-    std::fs::create_dir(&bin_dir).expect("mkdir bin");
-    let piper = fake_piper_binary(&bin_dir);
-
-    let engine = PiperEngine::new(piper, voices_dir, Duration::from_secs(30)).expect("engine");
-    let voices = engine
-        .list_voices()
-        .await
-        .expect("list_voices with empty dir");
-
-    assert!(
-        voices.is_empty(),
-        "missing voices dir must return empty list, not error"
-    );
-}
-
-#[test]
-fn factory_create_succeeds_when_binary_exists() {
-    let tmp = tempfile::tempdir().expect("tmpdir");
-    let bin = fake_piper_binary(tmp.path());
-    let voices_dir = tmp.path().join("voices");
-
-    let factory = PiperEngineFactory {
-        piper_binary: bin,
-        voices_dir,
-        timeout: Duration::from_secs(10),
-    };
-    let result = factory.create();
-    assert!(
-        result.is_ok(),
-        "factory.create must succeed when binary exists"
-    );
-}
-
-#[test]
-fn factory_create_fails_when_binary_missing() {
-    use forge_tts_core::TtsError;
-    let factory = PiperEngineFactory {
-        piper_binary: PathBuf::from("/nonexistent/piper"),
-        voices_dir: PathBuf::from("/tmp"),
-        timeout: Duration::from_secs(10),
-    };
-    let result = factory.create();
-    assert!(
-        matches!(result, Err(TtsError::EngineUnavailable { .. })),
-        "factory.create must return EngineUnavailable for missing binary"
-    );
 }

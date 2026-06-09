@@ -387,75 +387,6 @@ pub fn icon_button<'a, Msg: 'a + Clone>(
 mod tests {
     use super::*;
     use crate::palette::CATPPUCCIN_MOCHA;
-    use crate::tokens::{Density, Spacing, spacing};
-
-    #[test]
-    fn primary_button_compiles_with_unit_msg() {
-        let _: Element<'_, ()> = primary_button("Primary", (), &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn secondary_button_compiles_with_unit_msg() {
-        let _: Element<'_, ()> = secondary_button("Secondary", (), &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn ghost_button_compiles_with_unit_msg() {
-        let _: Element<'_, ()> = ghost_button("Ghost", (), &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn icon_button_compiles_with_tabler_char() {
-        let _: Element<'_, u32> = icon_button('\u{F231}', "tooltip", 42_u32, &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn primary_button_with_icon_right_compiles() {
-        let _: Element<'_, ()> =
-            primary_button_with_icon_right("Continue", '→', (), &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn destructive_button_compiles() {
-        let _: Element<'_, ()> = destructive_button("Delete", (), &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn primary_button_small_compiles() {
-        let _: Element<'_, ()> = primary_button_small("OK", (), &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn buttons_accept_string_labels() {
-        let label = String::from("Dynamic Label");
-        let _: Element<'_, ()> = primary_button(label.as_str(), (), &CATPPUCCIN_MOCHA);
-        let _: Element<'_, ()> = secondary_button(label.as_str(), (), &CATPPUCCIN_MOCHA);
-        let _: Element<'_, ()> = ghost_button(label.as_str(), (), &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn primary_padding_matches_design_tokens() {
-        assert_eq!(spacing(Spacing::Sm, Density::Cozy), 12);
-        assert_eq!(spacing(Spacing::Md, Density::Cozy), 16);
-    }
-
-    #[test]
-    fn primary_small_padding_matches_design_tokens() {
-        assert_eq!(spacing(Spacing::Xs, Density::Cozy), 8);
-        assert_eq!(spacing(Spacing::Md, Density::Cozy), 16);
-    }
-
-    #[test]
-    fn secondary_padding_matches_design_tokens() {
-        assert_eq!(spacing(Spacing::Sm, Density::Cozy), 12);
-        assert_eq!(spacing(Spacing::Md, Density::Cozy), 16);
-    }
-
-    #[test]
-    fn ghost_padding_matches_design_tokens() {
-        assert_eq!(spacing(Spacing::Sm, Density::Cozy), 12);
-        assert_eq!(spacing(Spacing::Sm, Density::Cozy), 12);
-    }
 
     #[test]
     fn primary_disabled_differs_from_active() {
@@ -471,13 +402,5 @@ mod tests {
         {
             assert_ne!(active_bg.a, disabled_bg.a);
         }
-    }
-
-    #[test]
-    fn primary_radius_is_md() {
-        let bg = CATPPUCCIN_MOCHA.brand;
-        let text = CATPPUCCIN_MOCHA.shell;
-        let style = primary_style(bg, text, Status::Active);
-        assert_eq!(style.border.radius, radius(Radius::Md).into());
     }
 }

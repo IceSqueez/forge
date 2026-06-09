@@ -775,7 +775,6 @@ pub fn soundboard_view<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use forge_widgets::palette::CATPPUCCIN_MOCHA;
 
     #[test]
     fn soundboard_state_new_is_empty() {
@@ -799,19 +798,6 @@ mod tests {
         m.name = "horn".to_string();
         m.file_path = Some(PathBuf::from("/tmp/horn.wav"));
         assert!(m.is_valid());
-    }
-
-    #[test]
-    fn soundboard_view_empty_state_constructs() {
-        let state = SoundboardState::new();
-        let _ = soundboard_view(&state, &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn soundboard_view_with_modal_constructs() {
-        let mut state = SoundboardState::new();
-        state.add_modal = Some(AddClipModal::new(None));
-        let _ = soundboard_view(&state, &CATPPUCCIN_MOCHA);
     }
 
     #[test]

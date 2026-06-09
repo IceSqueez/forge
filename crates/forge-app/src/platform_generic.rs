@@ -53,24 +53,6 @@ pub fn registry(id: &BuiltinId, palette: &ForgePalette) -> Option<(Color, Generi
                 status: PlatformStatus::Available,
             },
         )),
-        "trovo" => Some((
-            palette.platform_trovo,
-            GenericPlatform {
-                name: "Trovo",
-                letter: "V",
-                status_badge: "Not connected",
-                description: "Chat, spells, gift subscriptions, follows — Trovo streaming.",
-                features: &[
-                    "Live chat over the Trovo WebSocket bridge",
-                    "Spell / super-chat triggers with token tiers",
-                    "Gift subscription and follow events",
-                    "Send chat from forge into the broadcaster channel",
-                ],
-                kind: PlatformKind::Platform,
-                connect_platform: Some(PlatformId::Trovo),
-                status: PlatformStatus::Available,
-            },
-        )),
         "kick" => Some((
             palette.platform_kick,
             GenericPlatform {

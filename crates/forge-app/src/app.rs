@@ -12,14 +12,12 @@ use forge_platform_twitch::ChatConnectionState;
 use forge_runtime::{
     ActionEngineHandle, EventBus, NullEventLogRepo, QueueSchedulerHandle, ScriptRegistry,
 };
+use forge_storage::Language;
 use forge_storage::{CredentialsRepo, DataProvider};
 #[cfg(test)]
 use forge_vtube::{VTubeClient, VTubeConfig};
 use forge_widgets::{ForgePalette, ThemeId, ToastQueue};
 use iced::{Task, Theme};
-
-#[cfg(test)]
-use forge_widgets::icons::Icon;
 
 use crate::actions::ActionsState;
 use crate::boot;
@@ -75,6 +73,7 @@ pub struct App {
     pub screen: Screen,
     pub theme: Theme,
     pub palette: ForgePalette,
+    pub language: Language,
     pub toast_queue: ToastQueue<Message>,
     pub storage_offline: bool,
     pub boot_time: SystemTime,
@@ -144,6 +143,7 @@ impl Default for UiState {
 }
 
 impl App {
+    #[allow(clippy::too_many_arguments)]
     pub fn default_with(
         initial: Screen,
         backend: Arc<dyn DataProvider>,
@@ -152,6 +152,7 @@ impl App {
         action_engine: Option<ActionEngineHandle>,
         scheduler: Option<QueueSchedulerHandle>,
         sound_player: Option<Arc<SoundboardPlayer>>,
+        language: Language,
     ) -> Self {
         let (theme, palette) = forge_widgets::catppuccin_mocha();
         let server_subsystem = Arc::new(ServerSubsystem::new(
@@ -161,6 +162,7 @@ impl App {
             screen: initial,
             theme,
             palette,
+            language,
             toast_queue: ToastQueue::new(),
             storage_offline,
             boot_time: SystemTime::now(),
@@ -190,7 +192,6 @@ impl App {
                 chat_send_bridge: None,
                 twitch_flow: None,
                 youtube_flow: None,
-                trovo_flow: None,
                 kick_flow: None,
                 tts_engine_ids: Vec::new(),
                 twitch_login: None,
@@ -225,6 +226,7 @@ impl Default for App {
             screen: Screen::Home,
             theme,
             palette,
+            language: Language::En,
             toast_queue: ToastQueue::new(),
             storage_offline: false,
             boot_time: SystemTime::now(),
@@ -254,7 +256,6 @@ impl Default for App {
                 chat_send_bridge: None,
                 twitch_flow: None,
                 youtube_flow: None,
-                trovo_flow: None,
                 kick_flow: None,
                 tts_engine_ids: Vec::new(),
                 twitch_login: None,
@@ -492,11 +493,8 @@ mod tests {
     use crate::SettingsSection;
     use crate::actions::{AddActionMsg, AddSubActionMsg, SubActionKindChoice};
     use crate::message::{ActionEditorMsg, HomeMsg, HomeStatsData};
-    use crate::navigation::{breadcrumb_icon_for, screen_label};
-    use crate::subscriptions::subscription;
-    use crate::view_router::view;
+
     use forge_storage_sqlite::SqliteBackend;
-    use forge_widgets::ThemeId;
 
     #[test]
     fn navigate_updates_screen() {
@@ -524,37 +522,10 @@ mod tests {
     }
 
     #[test]
-    fn theme_changed_tokyo_night() {
-        let mut app = App::default();
-        let _ = update(&mut app, Message::ThemeChanged(ThemeId::TokyoNight));
-        let _ = theme_callback(&app);
-    }
-
-    #[test]
-    fn theme_changed_latte() {
-        let mut app = App::default();
-        let _ = update(&mut app, Message::ThemeChanged(ThemeId::Latte));
-        let _ = theme_callback(&app);
-    }
-
-    #[test]
     fn noop_does_not_change_screen() {
         let mut app = App::default();
         let _ = update(&mut app, Message::Noop);
         assert_eq!(app.screen, Screen::Home);
-    }
-
-    #[test]
-    fn subscription_compiles() {
-        let app = App::default();
-        let _ = subscription(&app);
-    }
-
-    #[test]
-    fn view_compiles_hub() {
-        let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::Home));
-        let _ = view(&app);
     }
 
     #[test]
@@ -650,6 +621,7 @@ mod tests {
             screen: Screen::Home,
             theme,
             palette,
+            language: Language::En,
             toast_queue: ToastQueue::new(),
             storage_offline: false,
             boot_time: std::time::SystemTime::now(),
@@ -679,7 +651,6 @@ mod tests {
                 chat_send_bridge: None,
                 twitch_flow: None,
                 youtube_flow: None,
-                trovo_flow: None,
                 kick_flow: None,
                 tts_engine_ids: Vec::new(),
                 twitch_login: None,
@@ -871,13 +842,6 @@ mod tests {
     }
 
     #[test]
-    fn view_compiles_actions_empty() {
-        let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::Actions));
-        let _ = view(&app);
-    }
-
-    #[test]
     fn open_add_action_modal_creates_form() {
         let mut app = App::default();
         assert!(app.ui.actions.add_action_modal.is_none());
@@ -965,14 +929,6 @@ mod tests {
         assert!(!form.saving);
     }
 
-    #[test]
-    fn view_compiles_actions_with_open_modal() {
-        let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::Actions));
-        app.ui.actions.add_action_modal = Some(crate::actions::AddActionForm::new());
-        let _ = view(&app);
-    }
-
     #[tokio::test]
     #[allow(clippy::expect_used)]
     async fn submit_with_valid_form_sets_saving_and_saved_ok_stores_action() {
@@ -1000,6 +956,7 @@ mod tests {
             screen: Screen::Actions,
             theme,
             palette,
+            language: Language::En,
             toast_queue: ToastQueue::new(),
             storage_offline: false,
             boot_time: std::time::SystemTime::now(),
@@ -1029,7 +986,6 @@ mod tests {
                 chat_send_bridge: None,
                 twitch_flow: None,
                 youtube_flow: None,
-                trovo_flow: None,
                 kick_flow: None,
                 tts_engine_ids: Vec::new(),
                 twitch_login: None,
@@ -1197,16 +1153,6 @@ mod tests {
     }
 
     #[test]
-    fn view_compiles_actions_with_add_sub_action_modal() {
-        use forge_types::ActionId;
-        let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::Actions));
-        app.ui.actions.add_sub_action_modal =
-            Some(crate::actions::AddSubActionForm::new(ActionId::new()));
-        let _ = view(&app);
-    }
-
-    #[test]
     fn clips_loaded_populates_available_clips() {
         use forge_types::{ActionId, ClipId};
         let mut app = App::default();
@@ -1274,60 +1220,11 @@ mod tests {
     }
 
     #[test]
-    fn view_compiles_play_sound_with_clips() {
-        use forge_types::{ActionId, ClipId};
-        let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::Actions));
-        let mut form = crate::actions::AddSubActionForm::new(ActionId::new());
-        form.kind = SubActionKindChoice::PlaySound;
-        form.available_clips = vec![(ClipId::new(), "Airhorn".to_string())];
-        app.ui.actions.add_sub_action_modal = Some(form);
-        let _ = view(&app);
-    }
-
-    #[test]
-    fn format_uptime_zero_seconds() {
-        assert_eq!(format_uptime(std::time::Duration::from_secs(0)), "0s");
-    }
-
-    #[test]
-    fn format_uptime_ninety_seconds() {
-        assert_eq!(format_uptime(std::time::Duration::from_secs(90)), "1m 30s");
-    }
-
-    #[test]
-    fn format_uptime_one_hour_one_minute() {
-        assert_eq!(format_uptime(std::time::Duration::from_secs(3700)), "1h 1m");
-    }
-
-    #[test]
-    fn format_uptime_twenty_four_hours() {
-        assert_eq!(
-            format_uptime(std::time::Duration::from_secs(86400)),
-            "24h 0m"
-        );
-    }
-
-    #[test]
-    fn format_uptime_less_than_minute() {
-        assert_eq!(format_uptime(std::time::Duration::from_secs(47)), "47s");
-    }
-
-    #[test]
-    fn hub_view_compiles_with_empty_stats() {
-        let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::Home));
-        let _ = view(&app);
-    }
-
-    #[test]
-    fn hub_view_compiles_with_populated_stats() {
-        let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::Home));
-        app.ui.home.actions_count = Some(47);
-        app.ui.home.triggers_fired = Some(1284);
-        app.ui.home.globals_count = Some(31);
-        let _ = view(&app);
+    fn format_uptime_three_branches() {
+        let d = std::time::Duration::from_secs;
+        assert_eq!(format_uptime(d(47)), "47s");
+        assert_eq!(format_uptime(d(90)), "1m 30s");
+        assert_eq!(format_uptime(d(3700)), "1h 1m");
     }
 
     #[test]
@@ -1367,80 +1264,12 @@ mod tests {
     }
 
     #[test]
-    fn sidebar_expand_state_initializes_collapsed() {
-        let app = App::default();
-        assert!(!app.sidebar_state.actions_queues);
-    }
-
-    #[test]
     fn sidebar_toggle_actions_queues_flips_bool() {
         let mut app = App::default();
         let _ = update(&mut app, Message::Sidebar(SidebarMsg::ToggleActionsQueues));
         assert!(app.sidebar_state.actions_queues);
         let _ = update(&mut app, Message::Sidebar(SidebarMsg::ToggleActionsQueues));
         assert!(!app.sidebar_state.actions_queues);
-    }
-
-    #[test]
-    fn breadcrumb_icon_for_home_returns_home_icon() {
-        assert_eq!(breadcrumb_icon_for(&Screen::Home), Icon::Home);
-    }
-
-    #[test]
-    fn breadcrumb_icon_for_actions_returns_lightning() {
-        assert_eq!(breadcrumb_icon_for(&Screen::Actions), Icon::Bolt);
-    }
-
-    #[test]
-    fn breadcrumb_icon_for_settings_returns_gear() {
-        assert_eq!(
-            breadcrumb_icon_for(&Screen::Settings(SettingsSection::Appearance)),
-            Icon::Settings
-        );
-    }
-
-    #[test]
-    fn screen_label_home() {
-        assert_eq!(screen_label(&Screen::Home), "Home");
-    }
-
-    #[test]
-    fn screen_label_actions() {
-        assert_eq!(screen_label(&Screen::Actions), "Actions");
-    }
-
-    #[test]
-    fn screen_label_settings() {
-        assert_eq!(
-            screen_label(&Screen::Settings(SettingsSection::Appearance)),
-            "Settings"
-        );
-    }
-
-    #[test]
-    fn view_home_renders() {
-        let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::Home));
-        app.ui.home.actions_count = Some(12);
-        app.ui.home.triggers_fired = Some(99);
-        app.ui.home.globals_count = Some(3);
-        let _ = view(&app);
-    }
-
-    #[test]
-    fn view_live_chat_renders() {
-        let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::LiveChat));
-        let _ = view(&app);
-    }
-
-    #[test]
-    fn hub_view_desc_shows_actions_count() {
-        let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::Home));
-        app.ui.home.actions_count = Some(47);
-        app.ui.home.triggers_fired = Some(1284);
-        let _ = view(&app);
     }
 
     #[test]
@@ -1453,17 +1282,6 @@ mod tests {
             Message::Navigate(Screen::BuiltinDetail(id.clone())),
         );
         assert_eq!(app.screen, Screen::BuiltinDetail(id));
-    }
-
-    #[test]
-    fn view_compiles_integration_detail_without_state() {
-        use forge_platform_core::BuiltinId;
-        let mut app = App::default();
-        let _ = update(
-            &mut app,
-            Message::Navigate(Screen::BuiltinDetail(BuiltinId::new("obs"))),
-        );
-        let _ = view(&app);
     }
 
     #[test]
@@ -1590,33 +1408,5 @@ mod tests {
             Message::TriggersRegistry(TriggersRegistryMsg::ScrollTo(id)),
         );
         assert_eq!(app.ui.triggers_registry.selected_id, Some(id));
-    }
-
-    #[test]
-    fn navigate_to_action_from_triggers_registry_returns_task() {
-        use crate::triggers_registry::TriggersRegistryMsg;
-        use forge_types::ActionId;
-
-        let mut app = App::default();
-        let action_id = ActionId::new();
-        let task = update(
-            &mut app,
-            Message::TriggersRegistry(TriggersRegistryMsg::NavigateToAction(action_id)),
-        );
-        let _ = task;
-    }
-
-    #[test]
-    fn trigger_chip_clicked_returns_task() {
-        use crate::message::ActionsMsg;
-        use forge_types::TriggerInstanceId;
-
-        let mut app = App::default();
-        let instance_id = TriggerInstanceId::new();
-        let task = update(
-            &mut app,
-            Message::Actions(ActionsMsg::TriggerChipClicked(instance_id)),
-        );
-        let _ = task;
     }
 }

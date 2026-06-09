@@ -903,7 +903,6 @@ mod tests {
             chat_send_bridge: None,
             twitch_flow: None,
             youtube_flow: None,
-            trovo_flow: None,
             kick_flow: None,
             tts_engine_ids: Vec::new(),
             twitch_login: None,
@@ -1020,15 +1019,6 @@ mod tests {
         );
         assert!(state.polly.is_dirty);
         assert_eq!(state.polly.secret_key, "secret");
-    }
-
-    #[test]
-    fn four_engine_forms_exist_in_default_state() {
-        let state = CloudTtsEnginesState::default();
-        assert_eq!(state.azure.test_status, TestStatus::Idle);
-        assert_eq!(state.elevenlabs.test_status, TestStatus::Idle);
-        assert_eq!(state.openai.test_status, TestStatus::Idle);
-        assert_eq!(state.polly.test_status, TestStatus::Idle);
     }
 
     #[test]

@@ -15,7 +15,6 @@ fn event_source_label(source: EventSource) -> &'static str {
         EventSource::Twitch => "twitch",
         EventSource::YouTube => "youtube",
         EventSource::Kick => "kick",
-        EventSource::Trovo => "trovo",
         EventSource::Core => "core",
         EventSource::Rhai => "rhai",
         EventSource::Http => "http",

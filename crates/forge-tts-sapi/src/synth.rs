@@ -119,55 +119,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rate_adj_neutral() {
-        assert_eq!(rate_adj_from_multiplier(1.0), 0);
+    fn rate_adj_maps_multiplier_with_clamping() {
+        for (mult, expected) in [(1.0, 0), (2.0, 10), (0.5, -10), (0.25, -10), (4.0, 10)] {
+            assert_eq!(rate_adj_from_multiplier(mult), expected, "mult={mult}");
+        }
     }
 
     #[test]
-    fn rate_adj_double_speed() {
-        assert_eq!(rate_adj_from_multiplier(2.0), 10);
-    }
-
-    #[test]
-    fn rate_adj_half_speed() {
-        assert_eq!(rate_adj_from_multiplier(0.5), -10);
-    }
-
-    #[test]
-    fn rate_adj_quarter_speed_clamped() {
-        assert_eq!(rate_adj_from_multiplier(0.25), -10);
-    }
-
-    #[test]
-    fn rate_adj_quad_speed_clamped() {
-        assert_eq!(rate_adj_from_multiplier(4.0), 10);
-    }
-
-    #[test]
-    fn pitch_pct_neutral() {
+    fn pitch_pct_maps_semitones_with_clamping() {
         assert_eq!(pitch_pct_from_semitones(0.0), 0);
-    }
-
-    #[test]
-    fn pitch_pct_octave_up() {
         assert_eq!(pitch_pct_from_semitones(12.0), 100);
-    }
-
-    #[test]
-    fn pitch_pct_octave_down() {
         assert_eq!(pitch_pct_from_semitones(-12.0), -50);
-    }
-
-    #[test]
-    fn pitch_pct_six_semitones_up() {
-        let pct = pitch_pct_from_semitones(6.0);
-        assert!(pct > 30 && pct < 50, "expected ~41, got {pct}");
-    }
-
-    #[test]
-    fn pitch_pct_six_semitones_down() {
-        let pct = pitch_pct_from_semitones(-6.0);
-        assert!(pct < -20 && pct > -40, "expected ~-29, got {pct}");
+        let up6 = pitch_pct_from_semitones(6.0);
+        assert!(up6 > 30 && up6 < 50, "expected ~41, got {up6}");
+        let down6 = pitch_pct_from_semitones(-6.0);
+        assert!(down6 < -20 && down6 > -40, "expected ~-29, got {down6}");
     }
 
     #[test]

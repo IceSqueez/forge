@@ -170,15 +170,10 @@ mod tests {
 
     #[test]
     fn dropped_notification_serializes_count() {
-        let frame = dropped_notification(42);
-        let parsed: serde_json::Value = serde_json::from_str(&frame).expect("valid json");
-        assert_eq!(parsed["dropped"], 42);
-    }
-
-    #[test]
-    fn dropped_notification_emits_zero_when_no_drops() {
-        let frame = dropped_notification(0);
-        let parsed: serde_json::Value = serde_json::from_str(&frame).expect("valid json");
-        assert_eq!(parsed["dropped"], 0);
+        for n in [0_u64, 42] {
+            let frame = dropped_notification(n);
+            let parsed: serde_json::Value = serde_json::from_str(&frame).expect("valid json");
+            assert_eq!(parsed["dropped"], n);
+        }
     }
 }

@@ -95,24 +95,6 @@ mod tests {
     }
 
     #[test]
-    fn kind_id_is_canonical() {
-        assert_eq!(HostDescriptor.id(), "kick.host");
-    }
-
-    #[test]
-    fn category_is_streams() {
-        assert_eq!(HostDescriptor.category(), TriggerCategory::Streams);
-    }
-
-    #[test]
-    fn platform_contract_is_kick() {
-        assert_eq!(
-            HostDescriptor.platform_contract(),
-            KindPlatformContract::PlatformSpecific(PlatformId::Kick)
-        );
-    }
-
-    #[test]
     fn build_arg_stack_extracts_host_fields() {
         let stack = HostDescriptor.build_arg_stack(&host_event());
         assert_eq!(

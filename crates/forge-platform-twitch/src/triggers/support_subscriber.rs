@@ -111,14 +111,6 @@ mod tests {
     }
 
     #[test]
-    fn id_is_stable() {
-        assert_eq!(
-            SupportSubscriberDescriptor.id(),
-            "twitch.support.subscriber"
-        );
-    }
-
-    #[test]
     fn twitch_subscription_descriptor_is_platform_specific_twitch() {
         assert_eq!(
             SupportSubscriberDescriptor.platform_contract(),

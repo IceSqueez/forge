@@ -76,11 +76,6 @@ mod tests {
     }
 
     #[test]
-    fn default_is_any() {
-        assert_eq!(PlatformScope::default(), PlatformScope::Any);
-    }
-
-    #[test]
     fn any_serde_roundtrip() {
         let scope = PlatformScope::Any;
         let json = serde_json::to_string(&scope).unwrap();

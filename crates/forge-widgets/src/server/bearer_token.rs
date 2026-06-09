@@ -132,7 +132,6 @@ pub fn bearer_token_display<'a, Msg: Clone + 'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::palette::CATPPUCCIN_MOCHA;
 
     #[test]
     fn mask_token_replaces_middle_with_bullets() {
@@ -167,18 +166,6 @@ mod tests {
     fn mask_token_differs_from_original() {
         let token = "fg_abc12345xyz5L9k";
         assert_ne!(mask_token(token), token);
-    }
-
-    #[test]
-    fn bearer_token_display_masked_smoke() {
-        let _: Element<'_, ()> =
-            bearer_token_display("fg_abc12345xyz5L9k", false, (), (), (), &CATPPUCCIN_MOCHA);
-    }
-
-    #[test]
-    fn bearer_token_display_revealed_smoke() {
-        let _: Element<'_, ()> =
-            bearer_token_display("fg_abc12345xyz5L9k", true, (), (), (), &CATPPUCCIN_MOCHA);
     }
 
     #[test]

@@ -97,7 +97,10 @@ pub fn on_event(state: Option<&mut BuiltinDetailState>, event: &Event) -> Task<M
     if event.kind != "quick_action.done" {
         return Task::none();
     }
-    let label = event.payload["label"].as_str().unwrap_or("Quick Action");
+    let quick_action_fallback = forge_widgets::tr!("builtin_quick_action_fallback");
+    let label = event.payload["label"]
+        .as_str()
+        .unwrap_or(quick_action_fallback.as_str());
     let outcome = event.payload["outcome"].as_str().unwrap_or("done");
     state.quick_action_toast = Some(if outcome == "success" {
         format!("{label} — done")
@@ -151,14 +154,13 @@ pub fn update(
                             Message::BuiltinDetail(BuiltinDetailMsg::PickerItemsLoaded(r))
                         })
                     }
-                    None => Task::perform(
-                        async {
-                            Err::<(Vec<PickerItem>, Option<String>), _>(
-                                "OBS not connected".to_owned(),
-                            )
-                        },
-                        |r| Message::BuiltinDetail(BuiltinDetailMsg::PickerItemsLoaded(r)),
-                    ),
+                    None => {
+                        let err_msg = forge_widgets::tr!("builtin_obs_not_connected");
+                        Task::perform(
+                            async move { Err::<(Vec<PickerItem>, Option<String>), _>(err_msg) },
+                            |r| Message::BuiltinDetail(BuiltinDetailMsg::PickerItemsLoaded(r)),
+                        )
+                    }
                 }
             } else {
                 let engine = rt.action_engine.clone();
@@ -319,7 +321,7 @@ async fn fetch_picker_items(
             Ok((items, None))
         }
         PickerKind::Hotkey | PickerKind::Expression | PickerKind::MidiPort => {
-            Err("Not supported for OBS".to_owned())
+            Err(forge_widgets::tr!("builtin_obs_not_supported"))
         }
     }
 }

@@ -78,7 +78,7 @@ pub fn update(
                     let Some((cid, csec)) = forge_platform_youtube::client_credentials() else {
                         state.phase = LocalCallbackFlowPhase::Failed;
                         state.error =
-                            Some("YouTube OAuth client credentials are not configured".to_owned());
+                            Some(forge_widgets::tr!("auth_error_credentials_missing_youtube"));
                         return Task::none();
                     };
                     let handle = Arc::new(tokio::sync::Mutex::new(Some(
@@ -93,7 +93,7 @@ pub fn update(
                     let Some(cid) = forge_platform_kick::client_credentials() else {
                         state.phase = LocalCallbackFlowPhase::Failed;
                         state.error =
-                            Some("Kick OAuth client credentials are not configured".to_owned());
+                            Some(forge_widgets::tr!("auth_error_credentials_missing_kick"));
                         return Task::none();
                     };
                     let handle = Arc::new(tokio::sync::Mutex::new(Some(
@@ -748,10 +748,10 @@ pub fn view<'a>(
             polling_card(name, url, palette)
         }
         LocalCallbackFlowPhase::Authorized => authorized_card(name, palette),
-        LocalCallbackFlowPhase::Failed => {
-            let err = state.error.as_deref().unwrap_or("Unknown error");
-            failed_card(err, palette)
-        }
+        LocalCallbackFlowPhase::Failed => failed_card(
+            state.error.as_deref().unwrap_or("auth_error_unknown"),
+            palette,
+        ),
     };
 
     let body = container(column![header_card, phase_card].spacing(spf(Spacing::Sm)))

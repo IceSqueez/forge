@@ -176,9 +176,9 @@ pub fn live_chat_view<'a>(
         .collect();
 
     let send_placeholder = if state.connected_platforms.is_empty() {
-        "Connect a platform to send..."
+        forge_widgets::tr!("chat_send_placeholder_disconnected")
     } else {
-        "Send to chat..."
+        forge_widgets::tr!("chat_send_placeholder_connected")
     };
 
     let bar = forge_widgets::input_bar(
@@ -208,7 +208,7 @@ pub fn live_chat_view<'a>(
         .resizable(true)
         .sheet_key("viewers_drawer")
         .header(forge_widgets::SheetHeader {
-            title: std::borrow::Cow::Borrowed("Viewers"),
+            title: std::borrow::Cow::Owned(forge_widgets::tr!("chat_viewers_title")),
             subtitle: None,
             on_close: Some(Message::LiveChat(LiveChatMsg::ToggleDrawer)),
         })
@@ -244,16 +244,21 @@ fn live_chat_page_header<'a>(
     let crumbs_left = row![
         tabler_icon(Icon::Home, 13.0, p.text_faint),
         tabler_icon(Icon::ChevronRight, 11.0, p.text_faint),
-        text("Audience").size(FONT_SM).color(p.text_muted),
+        text(forge_widgets::tr!("chat_breadcrumb_audience"))
+            .size(FONT_SM)
+            .color(p.text_muted),
         tabler_icon(Icon::ChevronRight, 11.0, p.text_faint),
-        text("Chat").size(FONT_SM).color(p.text_primary),
+        text(forge_widgets::tr!("chat_breadcrumb_chat"))
+            .size(FONT_SM)
+            .color(p.text_primary),
     ]
     .spacing(spf(Spacing::Xs))
     .align_y(iced::alignment::Vertical::Center);
 
+    let label_all = forge_widgets::tr!("chat_filter_all");
     let chip_all = forge_widgets::filter_chip(
         palette,
-        "All",
+        &label_all,
         p.brand,
         state.platform_filter == PlatformFilter::All,
         Message::LiveChat(LiveChatMsg::PlatformFilterChanged(PlatformFilter::All)),
@@ -279,9 +284,10 @@ fn live_chat_page_header<'a>(
         ));
     }
 
+    let label_events = forge_widgets::tr!("chat_filter_events");
     let events_chip = forge_widgets::filter_chip(
         palette,
-        "Events",
+        &label_events,
         p.warning,
         state.events_filter == EventsFilter::OnlyEvents,
         Message::LiveChat(LiveChatMsg::EventsFilterToggled(
@@ -316,9 +322,11 @@ fn live_chat_page_header<'a>(
     };
 
     let viewer_count_str = if state.search_query.is_empty() {
-        format!("{} messages", state.rows.len())
+        let count = state.rows.len() as i64;
+        forge_widgets::tr!("chat_messages_count", count = count)
     } else {
-        format!("{} matches", match_count)
+        let count = match_count as i64;
+        forge_widgets::tr!("chat_matches_count", count = count)
     };
     let viewer_info = row![
         text(viewer_count_str)
@@ -330,9 +338,9 @@ fn live_chat_page_header<'a>(
     .align_y(iced::alignment::Vertical::Center);
 
     let drawer_label = if state.drawer_open {
-        "Hide viewers"
+        forge_widgets::tr!("chat_hide_viewers")
     } else {
-        "Show viewers"
+        forge_widgets::tr!("chat_show_viewers")
     };
     let drawer_btn = button(
         row![
@@ -448,17 +456,17 @@ fn build_chat_area<'a>(
     let p = *palette;
 
     let empty_msg = if !state.search_query.is_empty() {
-        "No messages match your search."
+        forge_widgets::tr!("chat_no_search_matches")
     } else {
         match state.events_filter {
-            EventsFilter::OnlyEvents => "No events yet.",
-            _ => "Not connected — go to Settings → Platforms to connect.",
+            EventsFilter::OnlyEvents => forge_widgets::tr!("chat_no_events_yet"),
+            _ => forge_widgets::tr!("chat_no_messages_empty"),
         }
     };
 
     let content: Element<'a, Message> = if visible.is_empty() {
         container(forge_widgets::empty_state(
-            "No messages",
+            forge_widgets::tr!("chat_no_messages_title"),
             empty_msg,
             None::<(&str, Message)>,
             palette,
@@ -479,9 +487,10 @@ fn build_chat_area<'a>(
 
         if state.unread_count > 0 {
             let label = if state.unread_count == 1 {
-                "1 new message".to_owned()
+                forge_widgets::tr!("chat_new_message")
             } else {
-                format!("{} new messages", state.unread_count)
+                let count = state.unread_count as i64;
+                forge_widgets::tr!("chat_new_messages", count = count)
             };
 
             let bubble = button(

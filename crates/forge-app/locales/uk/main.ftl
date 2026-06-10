@@ -1095,3 +1095,175 @@ stream_apps_subtitle = Локальні додатки, з якими Forge сп
 stream_apps_breadcrumb = Стрим-додатки
 stream_apps_obs_desc = Сцени, джерела, керування записом, буфери реплею — повний obs-websocket API
 stream_apps_vtube_desc = Керування аватаром Vtuber: гарячі клавіші, вирази, тригери предметів
+
+## Живий чат — заголовок / фільтри
+
+chat_breadcrumb_audience = Аудиторія
+chat_breadcrumb_chat = Чат
+chat_filter_all = Всі
+chat_filter_events = Події
+chat_send_placeholder_disconnected = Підключіть платформу для відправки...
+chat_send_placeholder_connected = Надіслати в чат...
+chat_no_messages_title = Немає повідомлень
+chat_no_messages_empty = Не підключено — перейдіть до Налаштувань → Платформи.
+chat_no_events_yet = Подій ще немає.
+chat_no_search_matches = Жодних повідомлень не відповідає пошуку.
+chat_messages_count = { $count ->
+    [one] { $count } повідомлення
+    [few] { $count } повідомлення
+    [many] { $count } повідомлень
+   *[other] { $count } повідомлень
+}
+chat_matches_count = { $count ->
+    [one] { $count } збіг
+    [few] { $count } збіги
+    [many] { $count } збігів
+   *[other] { $count } збігів
+}
+chat_show_viewers = Показати глядачів
+chat_hide_viewers = Сховати глядачів
+chat_new_message = 1 нове повідомлення
+chat_new_messages = { $count ->
+    [one] { $count } нове повідомлення
+    [few] { $count } нових повідомлення
+    [many] { $count } нових повідомлень
+   *[other] { $count } нових повідомлень
+}
+chat_viewers_title = Глядачі
+
+## Живий чат — бічна панель глядачів
+
+chat_drawer_search_placeholder = Шукати глядачів...
+chat_drawer_active_count = { $total } активних · { $shown } показано
+chat_drawer_section_active = ЗАРАЗ АКТИВНІ · { $count }
+chat_drawer_no_matches = Жоден учасник чату не відповідає пошуку
+chat_drawer_click_hint = Натисніть на ім'я в чаті, щоб побачити деталі
+chat_drawer_last_seen = Востаннє { $when }
+chat_drawer_shoutout = Shoutout
+chat_drawer_whisper = Whisper
+chat_drawer_set_tts_voice = Встановити голос TTS…
+chat_drawer_block_tts = Заблокувати TTS
+chat_drawer_timeout = Таймаут 10 хв
+chat_drawer_ban = Заблокувати в каналі
+chat_stat_watch_time = ЧАС ПЕРЕГЛЯДУ
+chat_stat_messages = ПОВІДОМЛЕННЯ
+chat_stat_sub = ПІДПИСКА
+chat_stat_follow = ФОЛОУ
+
+## Стрічка подій — заголовок / фільтри
+
+event_feed_filter_all = Всі { $n }
+event_feed_filter_chat = Чат { $n }
+event_feed_filter_subs = Підписки { $n }
+event_feed_filter_bits = Бітси { $n }
+event_feed_filter_timers = Таймери { $n }
+event_feed_filter_obs = OBS { $n }
+event_feed_filter_errors = Помилки { $n }
+event_feed_pause = Призупинити
+event_feed_resume = Продовжити
+event_feed_clear = Очистити
+event_feed_export = Експорт
+event_feed_no_events = Подій ще немає — системна активність з'явиться тут в реальному часі.
+event_feed_no_filter_match = Жодна подія не відповідає активному фільтру.
+event_feed_inspector_title = Інспектор подій
+event_feed_inspector_hint = Виберіть подію, щоб переглянути її payload.
+event_feed_auto_scroll_on = Авто-прокрутка увімкнена
+event_feed_auto_scroll_off = Авто-прокрутка вимкнена
+event_feed_buffer = Буфер: { $count } / 10 000
+event_feed_rate = { $rate } под/с
+event_feed_breadcrumb_automation = Автоматизація
+event_feed_breadcrumb_feed = Стрічка подій
+event_feed_streaming_status = Стрімінг · WebSocket :8081
+
+## Глобальні змінні — заголовок / фільтри
+
+globals_breadcrumb_automation = Автоматизація
+globals_breadcrumb_globals = Глобальні
+globals_filter_all = Всі
+globals_filter_persisted = Збережені
+globals_filter_session = Сесійні
+globals_search_placeholder = Шукати змінні...
+globals_export_btn = Експорт JSON
+globals_new_btn = + Нова змінна
+globals_loading = Завантаження...
+globals_empty_title = Глобальних змінних немає
+globals_empty_desc = Змініть фільтр або пошук, або створіть нову за допомогою + Нова змінна.
+
+## Глобальні змінні — редактор значень
+
+globals_editor_title_create = Нова змінна
+globals_editor_title_edit = Редагувати змінну
+globals_editor_section_name = НАЗВА
+globals_editor_section_type = ТИП
+globals_editor_section_persistence = ЗБЕРЕЖЕННЯ
+globals_editor_section_value = ЗНАЧЕННЯ
+globals_editor_persist_label = Зберігати після перезапуску
+globals_editor_persist_desc = Збережені глобальні виживають після закриття; сесійні скидаються при запуску
+globals_editor_cancel = Скасувати
+globals_editor_save = Зберегти
+globals_editor_saving = Збереження...
+
+## Редактор скриптів — сторінка / панель інструментів
+
+script_editor_breadcrumb = Редактор скриптів
+script_editor_run = Запустити
+script_editor_save = Зберегти
+script_editor_format = Форматувати
+script_editor_api_docs = Документація API
+script_editor_debug = Відлагодження
+script_editor_debug_tip = Відлагоджувач планується після версії 1.0
+script_editor_output_header = Виведення
+script_editor_output_clear = Очистити
+script_editor_api_reference = Довідка API
+script_editor_scripts_label = СКРИПТИ
+script_editor_vars_label = ЗМІННІ В КОНТЕКСТІ
+script_editor_no_scripts = Скриптів ще немає
+script_editor_new_btn = + Новий
+script_editor_empty_title = Виберіть скрипт або натисніть + Новий
+script_editor_empty_desc = Скрипти дозволяють запускати код rhai з будь-якої дії.
+script_editor_running = Виконується…
+script_editor_run_modal_cancel = Скасувати
+
+## Редактор скриптів — модальне вікно запуску
+
+script_editor_type_check_passed = Перевірку типів пройдено
+script_editor_type_check_errors = { $count ->
+    [one] { $count } помилка
+    [few] { $count } помилки
+    [many] { $count } помилок
+   *[other] { $count } помилок
+}
+
+## Action telemetry — stat column headers
+
+telemetry_stat_last_fired = ОСТАННЯ ДІЯ
+telemetry_stat_runs_today = ЗАПУСКИ · СЬОГОДНІ
+telemetry_stat_avg_time = СЕР. ЧАС
+telemetry_stat_errors_7d = ПОМИЛКИ · 7Д
+
+## Action editor — validation errors
+
+action_editor_error_message_required = Повідомлення є обов'язковим.
+action_editor_error_var_required = Назва змінної є обов'язковою.
+action_editor_error_delay_invalid = Кількість мілісекунд має бути невід'ємним цілим числом.
+action_editor_error_log_required = Текст журналу є обов'язковим.
+action_editor_error_clip_required = Оберіть кліп для відтворення.
+action_editor_error_speak_required = Текст для озвучення є обов'язковим.
+action_editor_error_file_required = Шлях та цільова змінна є обов'язковими.
+action_editor_error_random_invalid = min, max (min ≤ max) та цільова змінна є обов'язковими.
+action_editor_pill_custom = Власний
+action_editor_pill_default = Типовий
+action_editor_fallback_name = Дія
+
+## Integration detail — OBS / quick-action
+
+builtin_quick_action_fallback = Швидка дія
+builtin_obs_not_connected = OBS не підключено
+builtin_obs_not_supported = Не підтримується для OBS
+
+## OAuth / authentication errors
+
+auth_error_credentials_missing_youtube = Облікові дані OAuth для YouTube не налаштовані
+auth_error_credentials_missing_kick = Облікові дані OAuth для Kick не налаштовані
+auth_error_flow_consumed = OAuth-потік уже використано
+auth_error_unknown = Невідома помилка

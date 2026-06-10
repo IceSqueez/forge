@@ -635,12 +635,17 @@ fn detail_pane<'a>(
 
             let kind_label = trigger_label_of(&instance.kind_id);
             let condition_str = kind_condition_text(&instance.kind_id, &instance.overrides);
-            let (pill_label, pill_variant) = if instance.user_defined {
-                ("Custom", StatusVariant::Positive)
+            let pill_label_str = if instance.user_defined {
+                forge_widgets::tr!("action_editor_pill_custom")
             } else {
-                ("Default", StatusVariant::Neutral)
+                forge_widgets::tr!("action_editor_pill_default")
             };
-            let pill: Element<'_, Message> = status_pill(pill_label, pill_variant, palette);
+            let pill_variant = if instance.user_defined {
+                StatusVariant::Positive
+            } else {
+                StatusVariant::Neutral
+            };
+            let pill: Element<'_, Message> = status_pill(pill_label_str, pill_variant, palette);
             let name_row: Element<'_, Message> = row![
                 text(instance.name.as_str())
                     .size(FONT_SM)
@@ -934,8 +939,8 @@ pub fn action_editor_view<'a>(
         .iter()
         .flat_map(|g| g.actions.iter())
         .find(|a| a.id == action_id)
-        .map(|a| a.name.as_str())
-        .unwrap_or("Action");
+        .map(|a| a.name.clone())
+        .unwrap_or_else(|| forge_widgets::tr!("action_editor_fallback_name"));
     let page_header = crate::page_chrome::simple_page_header(
         &[
             (
@@ -946,7 +951,7 @@ pub fn action_editor_view<'a>(
                 forge_widgets::tr!("action_editor_breadcrumb_actions"),
                 false,
             ),
-            (action_name.to_owned(), true),
+            (action_name, true),
         ],
         palette,
     );

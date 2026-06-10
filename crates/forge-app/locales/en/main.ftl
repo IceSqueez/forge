@@ -1082,3 +1082,164 @@ stream_apps_subtitle = Local apps Forge talks to over WebSocket. Connect to cont
 stream_apps_breadcrumb = Stream Apps
 stream_apps_obs_desc = Scenes, sources, recording control, replay buffers — full obs-websocket API
 stream_apps_vtube_desc = Vtuber avatar control: hotkeys, expressions, item triggers
+
+## Live Chat — page header / filters
+
+chat_breadcrumb_audience = Audience
+chat_breadcrumb_chat = Chat
+chat_filter_all = All
+chat_filter_events = Events
+chat_send_placeholder_disconnected = Connect a platform to send...
+chat_send_placeholder_connected = Send to chat...
+chat_no_messages_title = No messages
+chat_no_messages_empty = Not connected — go to Settings → Platforms to connect.
+chat_no_events_yet = No events yet.
+chat_no_search_matches = No messages match your search.
+chat_messages_count = { $count ->
+    [one] { $count } message
+   *[other] { $count } messages
+}
+chat_matches_count = { $count ->
+    [one] { $count } match
+   *[other] { $count } matches
+}
+chat_show_viewers = Show viewers
+chat_hide_viewers = Hide viewers
+chat_new_message = 1 new message
+chat_new_messages = { $count } new messages
+chat_viewers_title = Viewers
+
+## Live Chat — viewer drawer
+
+chat_drawer_search_placeholder = Search viewers...
+chat_drawer_active_count = { $total } active · { $shown } shown
+chat_drawer_section_active = ACTIVE NOW · { $count }
+chat_drawer_no_matches = No chat participants match the search
+chat_drawer_click_hint = Click a username in chat to see details
+chat_drawer_last_seen = Last seen { $when }
+chat_drawer_shoutout = Shoutout
+chat_drawer_whisper = Whisper
+chat_drawer_set_tts_voice = Set TTS voice…
+chat_drawer_block_tts = Block from TTS
+chat_drawer_timeout = Timeout 10 min
+chat_drawer_ban = Ban from channel
+chat_stat_watch_time = WATCH TIME
+chat_stat_messages = MESSAGES
+chat_stat_sub = SUB
+chat_stat_follow = FOLLOW
+
+## Event Feed — page header / filters
+
+event_feed_filter_all = All { $n }
+event_feed_filter_chat = Chat { $n }
+event_feed_filter_subs = Subs { $n }
+event_feed_filter_bits = Bits { $n }
+event_feed_filter_timers = Timers { $n }
+event_feed_filter_obs = OBS { $n }
+event_feed_filter_errors = Errors { $n }
+event_feed_pause = Pause
+event_feed_resume = Resume
+event_feed_clear = Clear
+event_feed_export = Export
+event_feed_no_events = No events yet — system activity appears here in real time.
+event_feed_no_filter_match = No events match the active filter.
+event_feed_inspector_title = Event inspector
+event_feed_inspector_hint = Select an event to inspect its payload.
+event_feed_auto_scroll_on = Auto-scroll on
+event_feed_auto_scroll_off = Auto-scroll off
+event_feed_buffer = Buffer: { $count } / 10,000
+event_feed_rate = { $rate } ev/s
+event_feed_breadcrumb_automation = Automation
+event_feed_breadcrumb_feed = Event Feed
+event_feed_streaming_status = Streaming · WebSocket :8081
+
+## Globals — page header / filters
+
+globals_breadcrumb_automation = Automation
+globals_breadcrumb_globals = Globals
+globals_filter_all = All
+globals_filter_persisted = Persisted
+globals_filter_session = Session
+globals_search_placeholder = Search variables...
+globals_export_btn = Export JSON
+globals_new_btn = + New variable
+globals_loading = Loading...
+globals_empty_title = No globals here
+globals_empty_desc = Adjust the filter or search, or create one with + New variable.
+
+## Globals — variant editor modal
+
+globals_editor_title_create = New variable
+globals_editor_title_edit = Edit variable
+globals_editor_section_name = NAME
+globals_editor_section_type = TYPE
+globals_editor_section_persistence = PERSISTENCE
+globals_editor_section_value = VALUE
+globals_editor_persist_label = Save across restarts
+globals_editor_persist_desc = Persisted globals survive app close; session-only reset on launch
+globals_editor_cancel = Cancel
+globals_editor_save = Save
+globals_editor_saving = Saving...
+
+## Script Editor — page / toolbar
+
+script_editor_breadcrumb = Script Editor
+script_editor_run = Run
+script_editor_save = Save
+script_editor_format = Format
+script_editor_api_docs = API docs
+script_editor_debug = Debug
+script_editor_debug_tip = Debugger planned for post-1.0
+script_editor_output_header = Output
+script_editor_output_clear = Clear
+script_editor_api_reference = API reference
+script_editor_scripts_label = SCRIPTS
+script_editor_vars_label = VARIABLES IN SCOPE
+script_editor_no_scripts = No scripts yet
+script_editor_new_btn = + New
+script_editor_empty_title = Select a script or click + New
+script_editor_empty_desc = Scripts let you run rhai code from any action.
+script_editor_running = Running…
+script_editor_run_modal_cancel = Cancel
+
+## Script Editor — run modal
+
+script_editor_type_check_passed = Type-check passed
+script_editor_type_check_errors = { $count ->
+    [one] { $count } error
+   *[other] { $count } errors
+}
+
+## Action telemetry — stat column headers
+
+telemetry_stat_last_fired = LAST FIRED
+telemetry_stat_runs_today = RUNS · TODAY
+telemetry_stat_avg_time = AVG TIME
+telemetry_stat_errors_7d = ERRORS · 7D
+
+## Action editor — validation errors
+
+action_editor_error_message_required = Message is required.
+action_editor_error_var_required = Variable name is required.
+action_editor_error_delay_invalid = Milliseconds must be a non-negative integer.
+action_editor_error_log_required = Log message is required.
+action_editor_error_clip_required = Select a clip to play.
+action_editor_error_speak_required = Speak text is required.
+action_editor_error_file_required = Path and target variable are required.
+action_editor_error_random_invalid = min, max (min ≤ max), and target variable are required.
+action_editor_pill_custom = Custom
+action_editor_pill_default = Default
+action_editor_fallback_name = Action
+
+## Integration detail — OBS / quick-action
+
+builtin_quick_action_fallback = Quick Action
+builtin_obs_not_connected = OBS not connected
+builtin_obs_not_supported = Not supported for OBS
+
+## OAuth / authentication errors
+
+auth_error_credentials_missing_youtube = YouTube OAuth client credentials are not configured
+auth_error_credentials_missing_kick = Kick OAuth client credentials are not configured
+auth_error_flow_consumed = OAuth flow already consumed
+auth_error_unknown = Unknown error

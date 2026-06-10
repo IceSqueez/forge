@@ -552,3 +552,360 @@ actions_speak_text_placeholder = Текст для озвучення…
 ## Triggers registry — error messages
 
 triggers_delete_reference_block = Вилучіть цей тригер з усіх дій перед видаленням.
+
+## TTS — підписи вкладок
+
+tts_tab_dashboard = Панель
+tts_tab_engines = Рушії
+tts_tab_aliases = Псевдоніми голосів
+tts_tab_filters = Фільтри
+tts_tab_triggers = Тригери
+tts_tab_cloud_engines = Хмарні рушії
+
+## TTS — хлібні крихти
+
+tts_breadcrumb_builtin = Вбудоване
+tts_breadcrumb_tts = TTS
+
+## TTS Dashboard — смуга керування
+
+tts_dash_pause_btn = Пауза черги
+tts_dash_resume_btn = Продовжити
+tts_dash_skip_btn = Пропустити
+tts_dash_stop_all_btn = Зупинити все
+tts_dash_test_placeholder = Введіть текст для тестування…
+tts_dash_speak_btn = Озвучити
+
+## TTS Dashboard — зараз говорить
+
+tts_dash_now_speaking_header = ЗАРАЗ ГОВОРИТЬ
+tts_dash_no_speaking = —
+
+## TTS Dashboard — черга
+
+tts_dash_queue_header = Наступний
+tts_dash_queue_empty = Черга порожня
+
+## TTS Dashboard — статистика сесії
+
+tts_dash_session_header = СЕСІЯ
+tts_dash_stat_spoken = Озвучено
+tts_dash_stat_skipped = Пропущено
+tts_dash_stat_filtered = Відфільтровано
+tts_dash_stat_avg_latency = Сер. затримка
+tts_dash_engines_header = РУШІЇ
+
+## TTS Engines — список
+
+tts_engines_header_prefix = НАЛАШТОВАНО
+tts_engines_more_placeholder = + Більше рушіїв у майбутніх оновленнях
+tts_engines_select_hint = Оберіть рушій для налаштування
+tts_engines_status_ready = Готовий
+
+## TTS Engines — заголовок деталей
+
+tts_engines_local_meta = локальний TTS-рушій
+tts_engines_default_badge = ТИПОВИЙ
+
+## TTS Engines — секції
+
+tts_engines_section_engine = РУШІЙ
+tts_engines_credentials_notice = Облікові дані зберігаються в системному сховищі ключів, ніколи у файлах конфігурації
+tts_engines_no_credentials = ЛОКАЛЬНИЙ — облікові дані не потрібні
+tts_engines_section_params = ПАРАМЕТРИ ГОЛОСУ ЗА ЗАМОВЧУВАННЯМ
+tts_engines_param_pitch = Висота тону
+tts_engines_param_speed = Швидкість
+tts_engines_param_volume = Гучність
+
+## TTS Engines — секція голосів
+
+tts_engines_voices_header_prefix = ДОСТУПНІ ГОЛОСИ
+tts_engines_voices_filter_placeholder = Фільтр голосів…
+
+## TTS Filters — колонка пайплайну
+
+tts_filters_pipeline_header = КОНВЕЄР ОБРОБКИ
+tts_filters_pipeline_hint = Кожне повідомлення проходить ці етапи по черзі перед озвученням
+
+## TTS Filters — назви / підзаголовки етапів
+
+tts_filters_stage_skip_title = Правила пропуску
+tts_filters_stage_skip_subtitle = повідомлення скидається при збігу
+tts_filters_stage_blocklist_title = Список блокувань
+tts_filters_stage_replacements_title = Заміни тексту
+tts_filters_stage_engine_title = Передано рушію голосу
+tts_filters_stage_words_count = { $count ->
+    [one] { $count } слово
+    [few] { $count } слова
+    [many] { $count } слів
+   *[other] { $count } слів
+}
+tts_filters_stage_rules_count = { $count ->
+    [one] { $count } правило
+    [few] { $count } правила
+    [many] { $count } правил
+   *[other] { $count } правил
+}
+
+## TTS Filters — чіпи правил пропуску
+
+tts_filters_chip_contains_url = Містить URL
+tts_filters_chip_starts_bang = Починається з !
+tts_filters_chip_from_bots = Від ботів
+tts_filters_chip_add_rule = + Додати правило
+
+## TTS Filters — список блокувань
+
+tts_filters_blocklist_manage = Керувати списком блокувань…
+tts_filters_mode_censor = Цензура
+tts_filters_mode_skip = Пропустити
+
+## TTS Filters — заміни
+
+tts_filters_no_replacements = Правил заміни немає
+
+## TTS Filters — колонка попереднього перегляду
+
+tts_filters_preview_header = ПОПЕРЕДНІЙ ПЕРЕГЛЯД
+tts_filters_preview_input_label = ВХІДНЕ ПОВІДОМЛЕННЯ
+tts_filters_preview_input_placeholder = Введіть повідомлення для перегляду…
+tts_filters_preview_empty = Введіть повідомлення вище для перегляду
+tts_filters_preview_output_label = ПІДСУМКОВИЙ РЕЗУЛЬТАТ
+tts_filters_speak_preview_btn = Озвучити перегляд
+tts_filters_preview_tip = Введіть будь-яке повідомлення вище, щоб побачити, як фільтри перетворюють його в реальному часі
+
+## TTS Triggers — заголовок
+
+tts_triggers_header = ЩО ОЗВУЧУЄТЬСЯ
+tts_triggers_hint = Вмикайте джерела та визначайте, хто може запускати TTS
+
+## TTS Triggers — картка команди
+
+tts_triggers_cmd_title = Команда в чаті
+tts_triggers_cmd_subtitle = !tts <повідомлення>
+tts_triggers_cmd_meta = затримка 8 с · макс. 250 символів
+
+## TTS Triggers — картка балів каналу
+
+tts_triggers_points_title = Нагорода за бали каналу
+tts_triggers_points_subtitle = «Озвучити моє повідомлення» · 500 балів
+tts_triggers_points_meta = без затримки · пріоритетна черга
+
+## TTS Triggers — картка бітсів
+
+tts_triggers_bits_title = Бітси / вигуки
+tts_triggers_bits_subtitle = Озвучити повідомлення вигуку
+tts_triggers_bits_min_label = Мінімум
+tts_triggers_bits_meta = більше = довше повідомлення
+
+## TTS Triggers — картка підписок
+
+tts_triggers_subs_title = Повідомлення підписок
+tts_triggers_subs_subtitle = Озвучувати ресаб / подаровані підписки
+tts_triggers_subs_disabled = Вимкнено — увімкніть перемикач
+
+## TTS Triggers — картка формату
+
+tts_triggers_format_header = ФОРМАТ ПОВІДОМЛЕННЯ
+tts_triggers_format_read_username = Читати ім'я користувача перед повідомленням
+tts_triggers_format_template_header = ШАБЛОН
+tts_triggers_format_speak_emotes = Вимовляти емоути як слова
+
+## TTS Triggers — картка поведінки черги
+
+tts_triggers_queue_header = ПОВЕДІНКА ЧЕРГИ
+tts_triggers_queue_max_length = Максимальна довжина черги
+tts_triggers_queue_per_user_limit = Ліміт на одного користувача в черзі
+tts_triggers_queue_bits_skip = Бітси та бали пропускають чергу
+
+## TTS Triggers — чіпи ролей
+
+tts_triggers_role_subscribers = Підписники
+tts_triggers_role_vips = VIP
+tts_triggers_role_mods = Модератори
+tts_triggers_role_everyone = Усі
+
+## Хмарні рушії — заголовок
+
+tts_cloud_header = ХМАРНІ РУШІЇ · 4
+
+## Хмарні рушії — кнопки картки
+
+tts_cloud_test_connection_btn = Перевірити підключення
+tts_cloud_testing_btn = Перевірка…
+tts_cloud_save_credentials_btn = Зберегти облікові дані
+
+## Хмарні рушії — бейджі статусу
+
+tts_cloud_not_configured = НЕ НАЛАШТОВАНО
+tts_cloud_configured = НАЛАШТОВАНО
+tts_cloud_connection_failed = ЗБІЙ ПІДКЛЮЧЕННЯ
+
+## Хмарні рушії — результат тесту
+
+tts_cloud_connection_verified = Підключення підтверджено
+
+## Хмарні рушії — сповіщення
+
+tts_cloud_saved_toast = Перезапустіть застосунок, щоб увімкнути рушій { $name }.
+tts_cloud_save_failed_toast = Не вдалося зберегти облікові дані { $name }: { $error }
+
+## Псевдоніми голосів — банер стратегії
+
+tts_aliases_strategy_label = Типова стратегія призначення
+tts_aliases_strategy_deterministic = Детерміновано за ім'ям
+tts_aliases_strategy_random = Випадково
+tts_aliases_strategy_single = Один голос
+
+## Псевдоніми голосів — панель інструментів
+
+tts_aliases_search_placeholder = Пошук глядачів…
+tts_aliases_count = { $count ->
+    [one] { $count } псевдонім
+    [few] { $count } псевдоніми
+    [many] { $count } псевдонімів
+   *[other] { $count } псевдонімів
+}
+tts_aliases_assign_btn = Призначити голос
+
+## Псевдоніми голосів — заголовки таблиці
+
+tts_aliases_col_viewer = ГЛЯДАЧ
+tts_aliases_col_voice = ГОЛОС
+tts_aliases_col_pitch = ВИСОТА
+tts_aliases_col_speed = ШВИДКІСТЬ
+tts_aliases_col_actions = ДІЇ
+
+## Псевдоніми голосів — порожній стан
+
+tts_aliases_empty = Псевдонімів голосів ще немає
+
+## Псевдоніми голосів — заблокований рядок
+
+tts_aliases_never_speak = Ніколи не озвучувати
+
+## TTS Псевдоніми голосів — бейджі ролей
+
+tts_aliases_role_mod = МОД
+tts_aliases_role_vip = VIP
+tts_aliases_role_sub = САБ
+tts_aliases_role_blocked = БЛОК
+
+## Звукова панель — хлібні крихти
+
+soundboard_breadcrumb_builtin = Вбудоване
+soundboard_breadcrumb_soundboard = Звукова панель
+
+## Звукова панель — заголовок / модальне вікно
+
+soundboard_add_clip_btn = Додати кліп
+soundboard_loading = Завантаження кліпів…
+soundboard_empty_title = Кліпів ще немає
+soundboard_empty_hint = Натисніть «Додати кліп», щоб додати перший звук.
+soundboard_playback_error_prefix = Помилка відтворення: { $error }
+
+## Звукова панель — модальне вікно
+
+soundboard_modal_title_add = Додати кліп
+soundboard_modal_title_edit = Редагувати кліп
+soundboard_modal_no_file = Файл не обрано
+soundboard_modal_browse_btn = Огляд
+soundboard_modal_name_placeholder = Назва кліпу
+soundboard_modal_hotkey_placeholder = наприклад Ctrl+1
+soundboard_modal_devices_loading = Завантаження пристроїв…
+soundboard_modal_save_btn = Зберегти
+soundboard_modal_saving_btn = Збереження…
+soundboard_modal_cancel_btn = Скасувати
+soundboard_modal_validation_error = Назва та аудіофайл обов'язкові.
+
+## Звукова панель — назви секцій модального вікна
+
+soundboard_modal_section_file = ФАЙЛ
+soundboard_modal_section_name = НАЗВА
+soundboard_modal_section_hotkey = ХОТКЕЙ
+soundboard_modal_section_device = ПРИСТРІЙ ВИВОДУ
+soundboard_modal_section_volume = ГУЧНІСТЬ
+
+## Звукова панель — помилка завантаження пристроїв
+
+soundboard_modal_device_load_error = Помилка завантаження пристроїв: { $error }
+
+## Звукова панель — помилка аудіоплеєра
+
+soundboard_player_not_init = Аудіоплеєр не ініціалізовано — перевірте Налаштування → Аудіо.
+
+## Черги — заголовок сторінки
+
+queues_breadcrumb_automation = Автоматизація
+queues_breadcrumb_queues = Черги
+queues_pause_all_btn = Пауза всіх
+queues_new_queue_btn = Нова черга
+queues_empty = Черг не налаштовано.
+queues_configure_btn = Налаштувати
+queues_drain_btn = Спустошити
+queues_pause_btn = Пауза
+queues_resume_btn = Продовжити
+
+## Черги — метрики картки
+
+queues_metric_concurrency = ПАРАЛЕЛІЗМ
+queues_metric_pending = ОЧІКУЮТЬ
+queues_metric_actions = ДІЇ
+queues_metric_assigned = призначено
+queues_metric_serial = послідовно
+queues_metric_parallel = паралельно
+queues_metric_in_flight = виконується
+queues_metric_idle = очікування
+queues_metric_held = заблоковано
+
+## Черги — панель паузи
+
+queues_paused_with_time = { $pending } дій в очікуванні — на паузі { $mins } хв тому
+queues_paused_simple = Черга на паузі
+
+## Черги — панель запущених дій
+
+queues_running_now_header = ВИКОНУЄТЬСЯ ЗАРАЗ
+queues_no_actions_running = Дій не виконується
+queues_running_label = виконується —
+
+## Черги — бейдж статусу
+
+queues_status_paused = ПАУЗА
+queues_status_running = ВИКОНУЄТЬСЯ
+
+## Черги — чіп переповнення
+
+queues_overflow_more = +{ $count } ще
+
+## Черги — описи вбудованих черг
+
+queues_desc_default = Черга за замовчуванням для дій без явного призначення черги
+queues_desc_alerts = Підписки, рейди, чіри · послідовно, щоб оверлеї не перекривалися
+queues_desc_background = Логування, аналітика, завдання без побічних ефектів · паралельно
+queues_desc_moderation = Авто-бани, таймаути, видалення повідомлень · на паузі для перевірки
+
+## TTS дашборд — підписи карток рушіїв / бейдж пріоритету
+
+tts_dash_engine_local_ready = локальний · готовий
+tts_dash_priority_high = ВИСОК.
+
+## TTS рушії — запасний підпис невідомого рушія
+
+tts_engines_unknown = Невідомий рушій
+
+## TTS фільтри — запасний підпис стадії пайплайну
+
+tts_filters_stage_fallback = СТАДІЯ
+
+## Хмарний TTS — підписи полів форми
+
+tts_cloud_field_api_key = API-ключ
+tts_cloud_field_region = Регіон
+tts_cloud_field_access_key_id = Ідентифікатор ключа доступу
+tts_cloud_field_secret_key = Секретний ключ
+tts_cloud_field_placeholder_subscription_key = Ключ підписки
+
+## Звукова панель — фільтр файлового діалогу
+
+soundboard_file_filter_audio = Аудіо

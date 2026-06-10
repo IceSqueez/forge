@@ -185,20 +185,26 @@ pub fn update(state: &mut SoundboardState, rt: &RuntimeView, msg: SoundboardMsg)
         SoundboardMsg::ModalDevicesLoaded(Err(e)) => {
             if let Some(modal) = state.add_modal.as_mut() {
                 modal.devices_loading = false;
-                modal.error = Some(format!("Device load failed: {e}"));
+                modal.error = Some(forge_widgets::tr!(
+                    "soundboard_modal_device_load_error",
+                    error = e.as_str()
+                ));
             }
             Task::none()
         }
-        SoundboardMsg::ModalFilePickRequested => Task::perform(
-            async {
-                rfd::AsyncFileDialog::new()
-                    .add_filter("Audio", &["mp3", "wav", "ogg", "flac", "aac", "m4a"])
-                    .pick_file()
-                    .await
-                    .map(|h| h.path().to_path_buf())
-            },
-            |p| Message::Soundboard(SoundboardMsg::ModalFilePicked(p)),
-        ),
+        SoundboardMsg::ModalFilePickRequested => {
+            let filter_name = forge_widgets::tr!("soundboard_file_filter_audio");
+            Task::perform(
+                async move {
+                    rfd::AsyncFileDialog::new()
+                        .add_filter(&filter_name, &["mp3", "wav", "ogg", "flac", "aac", "m4a"])
+                        .pick_file()
+                        .await
+                        .map(|h| h.path().to_path_buf())
+                },
+                |p| Message::Soundboard(SoundboardMsg::ModalFilePicked(p)),
+            )
+        }
         SoundboardMsg::ModalFilePicked(path) => {
             if let (Some(modal), Some(ref p)) = (state.add_modal.as_mut(), path) {
                 if modal.name.is_empty()
@@ -239,7 +245,7 @@ pub fn update(state: &mut SoundboardState, rt: &RuntimeView, msg: SoundboardMsg)
                 return Task::none();
             };
             if !modal.is_valid() {
-                modal.error = Some("Name and audio file are required.".to_string());
+                modal.error = Some(forge_widgets::tr!("soundboard_modal_validation_error"));
                 return Task::none();
             }
             modal.saving = true;
@@ -292,8 +298,7 @@ pub fn update(state: &mut SoundboardState, rt: &RuntimeView, msg: SoundboardMsg)
         SoundboardMsg::PlayClip(clip_id) => {
             state.play_error = None;
             let Some(p) = rt.sound_player.clone() else {
-                state.play_error =
-                    Some("Audio player not initialised — check Settings → Audio.".to_string());
+                state.play_error = Some(forge_widgets::tr!("soundboard_player_not_init"));
                 return Task::none();
             };
             Task::perform(play_clip(p, clip_id), |r| {
@@ -386,37 +391,38 @@ fn add_clip_modal<'a>(modal: &'a AddClipModal, palette: &'a ForgePalette) -> Ele
     let gap_md = spf(Spacing::Sm);
     let gap_lg = spf(Spacing::Sm);
 
-    let title = text(if modal.editing_id.is_some() {
-        "Edit clip"
+    let modal_title = if modal.editing_id.is_some() {
+        forge_widgets::tr!("soundboard_modal_title_edit")
     } else {
-        "Add clip"
-    })
-    .size(FONT_SM)
-    .color(palette.text_primary)
-    .font(font(FontRole::Body));
+        forge_widgets::tr!("soundboard_modal_title_add")
+    };
+    let title = text(modal_title)
+        .size(FONT_SM)
+        .color(palette.text_primary)
+        .font(font(FontRole::Body));
 
-    let file_label = text(
-        modal
-            .file_path
-            .as_ref()
-            .and_then(|p| p.file_name())
-            .and_then(|n| n.to_str())
-            .unwrap_or("No file selected"),
-    )
-    .size(FONT_SM)
-    .color(if modal.file_path.is_some() {
-        palette.text_secondary
-    } else {
-        palette.text_muted
-    })
-    .font(font(FontRole::Monospace))
-    .width(Length::Fill);
+    let file_display: String = modal
+        .file_path
+        .as_ref()
+        .and_then(|p| p.file_name())
+        .and_then(|n| n.to_str())
+        .map(|s| s.to_owned())
+        .unwrap_or_else(|| forge_widgets::tr!("soundboard_modal_no_file"));
+    let file_label = text(file_display)
+        .size(FONT_SM)
+        .color(if modal.file_path.is_some() {
+            palette.text_secondary
+        } else {
+            palette.text_muted
+        })
+        .font(font(FontRole::Monospace))
+        .width(Length::Fill);
 
     let p = *palette;
     let pick_btn = button(
         row![
             tabler_icon(Icon::FolderOpen, 12.0, p.info),
-            text("Browse")
+            text(forge_widgets::tr!("soundboard_modal_browse_btn"))
                 .size(FONT_SM)
                 .color(p.info)
                 .font(font(FontRole::Body)),
@@ -449,13 +455,15 @@ fn add_clip_modal<'a>(modal: &'a AddClipModal, palette: &'a ForgePalette) -> Ele
         .spacing(gap_md)
         .align_y(Alignment::Center);
 
-    let name_input = text_input("Clip name", &modal.name)
+    let clip_name_placeholder = forge_widgets::tr!("soundboard_modal_name_placeholder");
+    let name_input = text_input(&clip_name_placeholder, &modal.name)
         .on_input(|s| Message::Soundboard(SoundboardMsg::ModalNameChanged(s)))
         .size(FONT_SM)
         .font(font(FontRole::Body))
         .padding(forge_widgets::input_padding());
 
-    let hotkey_input = text_input("e.g. Ctrl+1", &modal.hotkey)
+    let hotkey_placeholder = forge_widgets::tr!("soundboard_modal_hotkey_placeholder");
+    let hotkey_input = text_input(&hotkey_placeholder, &modal.hotkey)
         .on_input(|s| Message::Soundboard(SoundboardMsg::ModalHotkeyChanged(s)))
         .size(FONT_SM)
         .font(font(FontRole::Monospace))
@@ -468,7 +476,7 @@ fn add_clip_modal<'a>(modal: &'a AddClipModal, palette: &'a ForgePalette) -> Ele
     );
 
     let device_section = if modal.devices_loading {
-        text("Loading devices\u{2026}")
+        text(forge_widgets::tr!("soundboard_modal_devices_loading"))
             .size(FONT_SM)
             .color(palette.text_muted)
             .into()
@@ -491,16 +499,17 @@ fn add_clip_modal<'a>(modal: &'a AddClipModal, palette: &'a ForgePalette) -> Ele
             .into()
     });
 
+    let save_label = if modal.saving {
+        forge_widgets::tr!("soundboard_modal_saving_btn")
+    } else {
+        forge_widgets::tr!("soundboard_modal_save_btn")
+    };
     let p2 = *palette;
     let save_btn = button(
-        text(if modal.saving {
-            "Saving\u{2026}"
-        } else {
-            "Save"
-        })
-        .size(FONT_SM)
-        .color(p2.shell)
-        .font(font(FontRole::Body)),
+        text(save_label)
+            .size(FONT_SM)
+            .color(p2.shell)
+            .font(font(FontRole::Body)),
     )
     .on_press_maybe(if modal.is_valid() && !modal.saving {
         Some(Message::Soundboard(SoundboardMsg::ModalSave))
@@ -526,7 +535,7 @@ fn add_clip_modal<'a>(modal: &'a AddClipModal, palette: &'a ForgePalette) -> Ele
 
     let p3 = *palette;
     let cancel_btn = button(
-        text("Cancel")
+        text(forge_widgets::tr!("soundboard_modal_cancel_btn"))
             .size(FONT_SM)
             .color(p3.text_secondary)
             .font(font(FontRole::Body)),
@@ -558,27 +567,27 @@ fn add_clip_modal<'a>(modal: &'a AddClipModal, palette: &'a ForgePalette) -> Ele
     .align_y(Alignment::Center);
 
     let mut form_col = column![
-        text("FILE")
+        text(forge_widgets::tr!("soundboard_modal_section_file"))
             .size(FONT_XS)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace)),
         file_row,
-        text("NAME")
+        text(forge_widgets::tr!("soundboard_modal_section_name"))
             .size(FONT_XS)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace)),
         name_input,
-        text("HOTKEY")
+        text(forge_widgets::tr!("soundboard_modal_section_hotkey"))
             .size(FONT_XS)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace)),
         hotkey_input,
-        text("OUTPUT DEVICE")
+        text(forge_widgets::tr!("soundboard_modal_section_device"))
             .size(FONT_XS)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace)),
         device_section,
-        text("VOLUME")
+        text(forge_widgets::tr!("soundboard_modal_section_volume"))
             .size(FONT_XS)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace)),
@@ -636,7 +645,7 @@ pub fn soundboard_view<'a>(
     let add_btn = button(
         row![
             tabler_icon(Icon::Plus, 12.0, p.brand),
-            text("Add clip")
+            text(forge_widgets::tr!("soundboard_add_clip_btn"))
                 .size(FONT_SM)
                 .color(p.brand)
                 .font(font(FontRole::Body)),
@@ -652,7 +661,7 @@ pub fn soundboard_view<'a>(
 
     let body: Element<'a, Message> = if state.loading {
         container(
-            text("Loading clips\u{2026}")
+            text(forge_widgets::tr!("soundboard_loading"))
                 .size(FONT_SM)
                 .color(palette.text_muted),
         )
@@ -672,8 +681,10 @@ pub fn soundboard_view<'a>(
         container(
             column![
                 tabler_icon(Icon::Music, 24.0, palette.text_faint),
-                text("No clips yet").size(FONT_SM).color(palette.text_muted),
-                text("Click \u{201c}Add clip\u{201d} to add your first sound.")
+                text(forge_widgets::tr!("soundboard_empty_title"))
+                    .size(FONT_SM)
+                    .color(palette.text_muted),
+                text(forge_widgets::tr!("soundboard_empty_hint"))
                     .size(FONT_SM)
                     .color(palette.text_faint),
             ]
@@ -728,9 +739,12 @@ pub fn soundboard_view<'a>(
 
     let play_error_banner: Option<Element<'a, Message>> = state.play_error.as_ref().map(|e| {
         container(
-            text(format!("Playback error: {e}"))
-                .size(FONT_SM)
-                .color(palette.random),
+            text(forge_widgets::tr!(
+                "soundboard_playback_error_prefix",
+                error = e.as_str()
+            ))
+            .size(FONT_SM)
+            .color(palette.random),
         )
         .width(Length::Fill)
         .padding([spf(Spacing::Xs), spf(Spacing::Md)])
@@ -746,8 +760,8 @@ pub fn soundboard_view<'a>(
 
     let page_header = crate::page_chrome::page_header_with_actions(
         &[
-            ("Builtin".to_owned(), false),
-            ("Soundboard".to_owned(), true),
+            (forge_widgets::tr!("soundboard_breadcrumb_builtin"), false),
+            (forge_widgets::tr!("soundboard_breadcrumb_soundboard"), true),
         ],
         Some(add_btn.into()),
         palette,

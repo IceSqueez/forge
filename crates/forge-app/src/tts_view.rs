@@ -13,7 +13,7 @@ use forge_widgets::tokens::{FONT_SM, Spacing, spf};
 use iced::Element;
 
 fn tts_tab_button<'a>(
-    label: &'static str,
+    label: String,
     section: TtsSection,
     active: &TtsSection,
     palette: &'a ForgePalette,
@@ -31,7 +31,7 @@ fn tts_tab_button<'a>(
         iced::Color::TRANSPARENT
     };
     let inner = column![
-        text(label).size(FONT_SM).color(fg),
+        text(label.clone()).size(FONT_SM).color(fg),
         container(iced::widget::Space::new())
             .width(iced::Length::Fill)
             .height(2)
@@ -58,12 +58,42 @@ pub(crate) fn tts_section_view<'a>(
     use iced::widget::{column, container, row};
     let tab_bar = container(
         row![
-            tts_tab_button("Dashboard", TtsSection::Dashboard, section, palette),
-            tts_tab_button("Engines", TtsSection::Engines, section, palette),
-            tts_tab_button("Voice aliases", TtsSection::Aliases, section, palette),
-            tts_tab_button("Filters", TtsSection::Filters, section, palette),
-            tts_tab_button("Triggers", TtsSection::Triggers, section, palette),
-            tts_tab_button("Cloud engines", TtsSection::CloudEngines, section, palette),
+            tts_tab_button(
+                forge_widgets::tr!("tts_tab_dashboard"),
+                TtsSection::Dashboard,
+                section,
+                palette
+            ),
+            tts_tab_button(
+                forge_widgets::tr!("tts_tab_engines"),
+                TtsSection::Engines,
+                section,
+                palette
+            ),
+            tts_tab_button(
+                forge_widgets::tr!("tts_tab_aliases"),
+                TtsSection::Aliases,
+                section,
+                palette
+            ),
+            tts_tab_button(
+                forge_widgets::tr!("tts_tab_filters"),
+                TtsSection::Filters,
+                section,
+                palette
+            ),
+            tts_tab_button(
+                forge_widgets::tr!("tts_tab_triggers"),
+                TtsSection::Triggers,
+                section,
+                palette
+            ),
+            tts_tab_button(
+                forge_widgets::tr!("tts_tab_cloud_engines"),
+                TtsSection::CloudEngines,
+                section,
+                palette
+            ),
         ]
         .spacing(spf(Spacing::Xxs)),
     )
@@ -88,17 +118,17 @@ pub(crate) fn tts_section_view<'a>(
     };
 
     let section_label = match section {
-        TtsSection::Dashboard => "Dashboard".to_owned(),
-        TtsSection::Engines => "Engines".to_owned(),
-        TtsSection::Aliases => "Voice aliases".to_owned(),
-        TtsSection::Filters => "Filters".to_owned(),
-        TtsSection::Triggers => "Triggers".to_owned(),
-        TtsSection::CloudEngines => "Cloud engines".to_owned(),
+        TtsSection::Dashboard => forge_widgets::tr!("tts_tab_dashboard"),
+        TtsSection::Engines => forge_widgets::tr!("tts_tab_engines"),
+        TtsSection::Aliases => forge_widgets::tr!("tts_tab_aliases"),
+        TtsSection::Filters => forge_widgets::tr!("tts_tab_filters"),
+        TtsSection::Triggers => forge_widgets::tr!("tts_tab_triggers"),
+        TtsSection::CloudEngines => forge_widgets::tr!("tts_tab_cloud_engines"),
     };
     let page_header = simple_page_header(
         &[
-            ("Builtin".to_owned(), false),
-            ("TTS".to_owned(), false),
+            (forge_widgets::tr!("tts_breadcrumb_builtin"), false),
+            (forge_widgets::tr!("tts_breadcrumb_tts"), false),
             (section_label, true),
         ],
         palette,

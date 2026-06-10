@@ -100,25 +100,27 @@ fn current_engines(rt: &RuntimeView) -> Vec<EngineCard> {
 
 struct EngineCard {
     id: String,
-    name: &'static str,
+    name: Option<&'static str>,
     kind: &'static str,
     voice_count: u8,
     status_color: fn(&ForgePalette) -> Color,
     is_default: bool,
 }
 
+type EngineMetaTuple = (
+    Option<&'static str>,
+    &'static str,
+    u8,
+    fn(&ForgePalette) -> Color,
+);
+
 fn engine_meta(id: &str, is_default: bool) -> EngineCard {
-    let (name, kind, voice_count, status_color): (
-        &'static str,
-        &'static str,
-        u8,
-        fn(&ForgePalette) -> Color,
-    ) = match id {
-        "piper" => ("Piper", "local", 4, |p| p.success),
-        "espeak" => ("eSpeak-NG", "local", 0, |p| p.success),
-        "sapi" => ("Microsoft SAPI 5", "system", 0, |p| p.info),
-        "nsspeech" => ("Apple AVSpeech", "system", 0, |p| p.info),
-        _ => ("Unknown engine", "external", 0, |p| p.text_muted),
+    let (name, kind, voice_count, status_color): EngineMetaTuple = match id {
+        "piper" => (Some("Piper"), "local", 4, |p| p.success),
+        "espeak" => (Some("eSpeak-NG"), "local", 0, |p| p.success),
+        "sapi" => (Some("Microsoft SAPI 5"), "system", 0, |p| p.info),
+        "nsspeech" => (Some("Apple AVSpeech"), "system", 0, |p| p.info),
+        _ => (None, "external", 0, |p: &ForgePalette| p.text_muted),
     };
     EngineCard {
         id: id.to_owned(),
@@ -137,10 +139,14 @@ fn engine_list_view<'a>(
     gap_sm: f32,
 ) -> Element<'a, Message> {
     let engines = current_engines(rt);
-    let header = text(format!("CONFIGURED \u{b7} {}", engines.len()))
-        .size(FONT_XS)
-        .color(palette.text_muted)
-        .font(font(FontRole::Monospace));
+    let header = text(format!(
+        "{} \u{b7} {}",
+        forge_widgets::tr!("tts_engines_header_prefix"),
+        engines.len()
+    ))
+    .size(FONT_XS)
+    .color(palette.text_muted)
+    .font(font(FontRole::Monospace));
 
     let engine_cards: Vec<Element<'a, Message>> = engines
         .into_iter()
@@ -151,7 +157,7 @@ fn engine_list_view<'a>(
         .collect();
 
     let placeholder = container(
-        text("+ More engines in future releases")
+        text(forge_widgets::tr!("tts_engines_more_placeholder"))
             .size(FONT_SM)
             .color(palette.text_muted),
     )
@@ -196,8 +202,12 @@ fn engine_list_card<'a>(
         .width(7)
         .height(7);
 
+    let display_name = engine
+        .name
+        .map(str::to_owned)
+        .unwrap_or_else(|| forge_widgets::tr!("tts_engines_unknown"));
     let name_row = row![
-        text(engine.name)
+        text(display_name)
             .size(FONT_SM)
             .color(palette.text_primary)
             .width(Length::Fill),
@@ -254,7 +264,7 @@ fn engine_detail_view<'a>(
         engine_detail_pane(eng, state, palette, gap_sm, gap_md)
     } else {
         container(
-            text("Select an engine to configure")
+            text(forge_widgets::tr!("tts_engines_select_hint"))
                 .size(FONT_SM)
                 .color(palette.text_muted),
         )
@@ -318,14 +328,16 @@ fn engine_detail_header<'a>(
             })
             .width(7)
             .height(7),
-        text("Ready").size(FONT_SM).color(status_color),
+        text(forge_widgets::tr!("tts_engines_status_ready"))
+            .size(FONT_SM)
+            .color(status_color),
     ]
     .align_y(Alignment::Center)
     .spacing(gap_sm);
 
     let default_badge: Element<'a, Message> = if engine.is_default {
         container(
-            text("DEFAULT")
+            text(forge_widgets::tr!("tts_engines_default_badge"))
                 .size(FONT_XS)
                 .color(palette.brand)
                 .font(font(FontRole::Monospace)),
@@ -344,15 +356,22 @@ fn engine_detail_header<'a>(
         Space::new().into()
     };
 
+    let engine_display_name = engine
+        .name
+        .map(str::to_owned)
+        .unwrap_or_else(|| forge_widgets::tr!("tts_engines_unknown"));
     let title_row = row![
-        text(engine.name).size(FONT_SM).color(palette.text_primary),
+        text(engine_display_name)
+            .size(FONT_SM)
+            .color(palette.text_primary),
         default_badge,
     ]
     .align_y(Alignment::Center)
     .spacing(gap_sm);
 
     let sub = text(format!(
-        "local TTS engine \u{b7} {} voices",
+        "{} \u{b7} {} voices",
+        forge_widgets::tr!("tts_engines_local_meta"),
         engine.voice_count
     ))
     .size(FONT_SM)
@@ -382,19 +401,19 @@ fn engine_detail_header<'a>(
 }
 
 fn credentials_section<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
-    let header = text("ENGINE")
+    let header = text(forge_widgets::tr!("tts_engines_section_engine"))
         .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
     let keyring_notice = container(
         row![
-            text("Credentials stored in system keyring, never in config files")
+            text(forge_widgets::tr!("tts_engines_credentials_notice"))
                 .size(FONT_SM)
                 .color(palette.text_muted)
                 .width(Length::Fill),
             container(
-                text("LOCAL \u{2014} no credentials")
+                text(forge_widgets::tr!("tts_engines_no_credentials"))
                     .size(FONT_XS)
                     .color(palette.success)
                     .font(font(FontRole::Monospace)),
@@ -439,13 +458,13 @@ fn credentials_section<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
 }
 
 fn param_slider_row<'a>(
-    label: &'static str,
+    label: &str,
     value_label: &'static str,
     palette: &'a ForgePalette,
     gap_sm: f32,
 ) -> Element<'a, Message> {
     row![
-        text(label)
+        text(label.to_owned())
             .size(FONT_SM)
             .color(palette.text_muted)
             .width(70),
@@ -468,7 +487,7 @@ fn param_slider_row<'a>(
 }
 
 fn params_section<'a>(palette: &'a ForgePalette, gap_sm: f32) -> Element<'a, Message> {
-    let header = text("DEFAULT VOICE PARAMETERS")
+    let header = text(forge_widgets::tr!("tts_engines_section_params"))
         .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
@@ -476,9 +495,24 @@ fn params_section<'a>(palette: &'a ForgePalette, gap_sm: f32) -> Element<'a, Mes
     container(
         column![
             header,
-            param_slider_row("Pitch", "0 st", palette, gap_sm),
-            param_slider_row("Speed", "1.0x", palette, gap_sm),
-            param_slider_row("Volume", "0 dB", palette, gap_sm),
+            param_slider_row(
+                &forge_widgets::tr!("tts_engines_param_pitch"),
+                "0 st",
+                palette,
+                gap_sm
+            ),
+            param_slider_row(
+                &forge_widgets::tr!("tts_engines_param_speed"),
+                "1.0x",
+                palette,
+                gap_sm
+            ),
+            param_slider_row(
+                &forge_widgets::tr!("tts_engines_param_volume"),
+                "0 dB",
+                palette,
+                gap_sm
+            ),
         ]
         .spacing(spf(Spacing::Xs)),
     )
@@ -504,28 +538,34 @@ fn voices_section<'a>(
     let count = voices.len();
 
     let header_row = row![
-        text(format!("AVAILABLE VOICES \u{b7} {count}"))
-            .size(FONT_XS)
-            .color(palette.text_muted)
-            .font(font(FontRole::Monospace))
-            .width(Length::Fill),
+        text(format!(
+            "{} \u{b7} {count}",
+            forge_widgets::tr!("tts_engines_voices_header_prefix")
+        ))
+        .size(FONT_XS)
+        .color(palette.text_muted)
+        .font(font(FontRole::Monospace))
+        .width(Length::Fill),
         container(
-            text_input("Filter voices...", search)
-                .on_input(|_| Message::Noop)
-                .size(FONT_XS)
-                .width(90)
-                .style(move |_, _| text_input::Style {
-                    background: Background::Color(palette.shell),
-                    border: Border {
-                        color: palette.border_regular,
-                        width: BORDER_THIN,
-                        radius: radius(Radius::Sm).into(),
-                    },
-                    icon: palette.text_muted,
-                    placeholder: palette.text_muted,
-                    value: palette.text_primary,
-                    selection: palette.brand,
-                }),
+            text_input(
+                &forge_widgets::tr!("tts_engines_voices_filter_placeholder"),
+                search
+            )
+            .on_input(|_| Message::Noop)
+            .size(FONT_XS)
+            .width(90)
+            .style(move |_, _| text_input::Style {
+                background: Background::Color(palette.shell),
+                border: Border {
+                    color: palette.border_regular,
+                    width: BORDER_THIN,
+                    radius: radius(Radius::Sm).into(),
+                },
+                icon: palette.text_muted,
+                placeholder: palette.text_muted,
+                value: palette.text_primary,
+                selection: palette.brand,
+            }),
         )
         .padding([sp(Spacing::Xxs), sp(Spacing::Xxs)]),
     ]

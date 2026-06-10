@@ -238,6 +238,259 @@ settings_hotkeys_error_unbind = Unbind failed: { $error }
 settings_hotkeys_error_replace = Replace failed: { $error }
 settings_hotkeys_error_conflict_not_found = Conflicting hotkey not found in local cache. Refresh and try again.
 
+## Actions — page header / breadcrumb
+
+actions_breadcrumb_automation = Automation
+actions_breadcrumb_actions = Actions
+actions_filter_all = All
+actions_filter_chat = Chat
+actions_filter_timers = Timers
+actions_filter_points = Points
+actions_search_placeholder = Search actions...
+actions_new_btn = + New action
+actions_loading = Loading...
+actions_empty = No actions yet
+
+## Actions — detail panel
+
+actions_detail_empty_title = No action selected
+actions_detail_empty_hint = Select an action from the list to view its details.
+actions_detail_loading = Loading...
+actions_detail_enabled = Enabled
+actions_detail_disabled = Disabled
+actions_detail_test_run = Test run
+actions_detail_duplicate = Duplicate
+actions_detail_section_triggers = TRIGGERS · { $count }
+actions_detail_section_sub_actions = SUB-ACTIONS · { $count }
+actions_detail_add_trigger = Add trigger
+actions_detail_add_sub_action = Add sub-action
+actions_detail_no_triggers = No triggers — this action will never fire on its own
+actions_detail_no_steps = No steps yet — add one
+
+## Actions — context menu
+
+actions_menu_rename = Rename…
+actions_menu_duplicate = Duplicate
+actions_menu_enable = Enable
+actions_menu_disable = Disable
+actions_menu_delete = Delete…
+
+## Actions — footer
+
+actions_footer_showing = Showing { $visible } of { $total } · grouped by trigger
+actions_footer_storage = Storage: —
+actions_footer_autosaved = Auto-saved just now
+
+## Actions — ESC hint
+
+actions_esc_hint = ESC to cancel
+
+## Actions — add-action modal
+
+actions_modal_new_action_title = New action
+actions_modal_section_name = NAME
+actions_modal_section_group = GROUP
+actions_modal_section_queue = QUEUE
+actions_modal_section_description = DESCRIPTION
+actions_modal_section_behavior = BEHAVIOR
+actions_modal_enabled_label = Enabled
+actions_modal_enabled_desc = Action runs when a trigger fires.
+actions_modal_concurrent_label = Concurrent execution
+actions_modal_concurrent_desc = Allow parallel runs in this queue.
+actions_modal_bypass_label = Bypass queue pause
+actions_modal_bypass_desc = Always run even if queue is paused.
+actions_modal_random_pick_label = Random pick
+actions_modal_random_pick_desc = Run ONE random sub-action per trigger instead of all.
+actions_modal_create_btn = Create action
+actions_modal_cancel_btn = Cancel
+
+## Actions — add-sub-action modal / step chips
+
+actions_sub_modal_add_title = Add step
+actions_sub_modal_edit_title = Edit step
+actions_sub_chip_send_chat = Send chat
+actions_sub_chip_set_global = Set global
+actions_sub_chip_delay = Delay
+actions_sub_chip_log = Log
+actions_sub_chip_play_sound = Play sound
+actions_sub_chip_speak = Speak
+actions_sub_chip_read_file = Read file
+actions_sub_chip_random_int = Random int
+actions_sub_modal_add_btn = Add step
+actions_sub_modal_save_btn = Save changes
+actions_sub_modal_cancel_btn = Cancel
+
+## Actions — sub-action config sections
+
+actions_sub_section_message = MESSAGE
+actions_sub_section_target_platform = TARGET PLATFORM
+actions_sub_section_variable_name = VARIABLE NAME
+actions_sub_section_value = VALUE
+actions_sub_section_milliseconds = MILLISECONDS
+actions_sub_section_level = LEVEL
+actions_sub_section_clip = CLIP
+actions_sub_section_text = TEXT
+actions_sub_section_voice_override = VOICE OVERRIDE (optional)
+actions_sub_section_path = PATH (relative to assets sandbox)
+actions_sub_section_target_var = TARGET VARIABLE
+actions_sub_section_min = MIN
+actions_sub_section_max = MAX
+actions_sub_helper_variables = Variables: %user%, %message%, %args%
+actions_sub_helper_interpolation = Supports variable interpolation
+actions_sub_voice_hint = Leave blank to use alias resolver
+actions_sub_path_hint = Sandboxed under data_dir/assets/ · no ../ traversal · max 1 MiB
+actions_sub_no_clips = No clips yet — add one in the Soundboard screen first.
+
+## Actions — trigger picker (side-sheet)
+
+actions_picker_title = Add trigger
+actions_picker_loading = Loading triggers…
+actions_picker_cancel = Cancel
+actions_picker_select_platform = Select a platform
+actions_picker_no_triggers = No triggers available
+actions_picker_select_hint = Select a platform to browse triggers.
+actions_picker_no_triggers_selection = No triggers available for this selection.
+actions_picker_default_label = (default)
+
+## Actions — trigger category display names (section headers)
+
+actions_cat_chat_commands = CHAT COMMANDS
+actions_cat_subs_bits = SUBS & BITS
+actions_cat_bits = BITS
+actions_cat_raids = RAIDS
+actions_cat_obs_events = OBS EVENTS
+actions_cat_server_events = SERVER EVENTS
+actions_cat_timers = TIMERS
+actions_cat_ungrouped = UNGROUPED
+actions_cat_all = ALL
+
+## Actions — trigger kind labels
+
+actions_kind_twitch_chat_command = Twitch · chat command
+actions_kind_twitch_chat_message = Twitch · any chat message
+actions_kind_twitch_subscriber = Twitch · new subscriber
+actions_kind_twitch_resubscriber = Twitch · re-subscribe
+actions_kind_twitch_gift_sub = Twitch · gift subs
+actions_kind_twitch_cheer = Twitch · bits cheered
+actions_kind_twitch_raid = Twitch · raid received
+actions_kind_obs_scene_changed = OBS · scene changed
+actions_kind_server_custom_event = Server · custom event
+actions_kind_unknown = Unknown trigger
+
+## Actions — trigger kind summaries
+
+actions_summary_twitch_chat_command = User types !command in chat
+actions_summary_twitch_chat_message = Every chat message fires this
+actions_summary_twitch_subscriber = Fires when someone subscribes
+actions_summary_twitch_resubscriber = Existing sub renews
+actions_summary_twitch_gift_sub = Someone gifts subs to channel
+actions_summary_twitch_cheer = Viewer sends bits
+actions_summary_twitch_raid = Another stream raids you
+actions_summary_obs_scene_changed = Fires when OBS switches the active scene
+actions_summary_server_custom_event = Fires when triggerCodeEvent is called via the WebSocket API
+
+## Action editor — breadcrumb / tree pane / detail pane
+
+action_editor_breadcrumb_automation = Automation
+action_editor_breadcrumb_actions = Actions
+action_editor_loading = Loading action…
+action_editor_no_description = No description
+action_editor_test_run = Test run
+action_editor_duplicate = Duplicate
+action_editor_add_trigger = Add trigger
+action_editor_add_step = Add step
+action_editor_no_triggers = No triggers · click Add trigger to start
+action_editor_delete = Delete
+action_editor_section_triggers = TRIGGERS
+action_editor_section_sub_actions = SUB-ACTIONS · { $count }
+action_editor_sub_count = { $count } sub
+action_editor_enabled = Enabled
+action_editor_disabled = Disabled
+
+## Action editor — step menu
+
+action_editor_step_menu_edit = Edit step…
+action_editor_step_menu_duplicate = Duplicate
+action_editor_step_menu_move_top = Move to top
+action_editor_step_menu_move_bottom = Move to bottom
+action_editor_step_menu_delete = Delete step
+
+## Action editor — sub-action card titles
+
+action_editor_kind_send_chat = Send chat message
+action_editor_kind_set_global = Set global
+action_editor_kind_delay = Delay
+action_editor_kind_log = Log
+action_editor_kind_play_sound = Play sound
+action_editor_kind_speak = Speak
+action_editor_kind_read_file = Read file
+action_editor_kind_random_int = Random int
+action_editor_kind_sub_action = Sub-action
+
+## Triggers registry — page header / filters
+
+triggers_breadcrumb_automation = Automation
+triggers_breadcrumb_triggers = Triggers
+triggers_open_create_btn = + Create
+triggers_search_placeholder = Search triggers…
+triggers_filter_twitch = Twitch
+triggers_filter_obs = OBS
+triggers_filter_script = Script
+triggers_filter_all = All
+triggers_usage_all = All
+triggers_usage_used = Used
+triggers_usage_unused = Unused
+
+## Triggers registry — list / empty states
+
+triggers_empty_title = No custom trigger instances yet
+triggers_empty_hint = Create a named trigger with custom settings to reuse across multiple actions.
+triggers_empty_create = + Create trigger instance
+triggers_no_results_title = No results
+triggers_no_results_hint = Adjust or clear the filters to find your triggers.
+triggers_clear_filters = Clear filters
+triggers_usage_badge = used in { $count }
+triggers_toggle_on = ON
+triggers_toggle_off = OFF
+
+## Triggers registry — sheet detail
+
+triggers_sheet_section_configuration = CONFIGURATION
+triggers_sheet_no_config = No configurable fields
+triggers_sheet_not_registered = Trigger kind not registered
+triggers_sheet_section_used_in = USED IN
+triggers_sheet_section_platform = PLATFORM
+triggers_sheet_delete_btn = Delete
+triggers_sheet_any_platform = Any platform
+triggers_sheet_will_fire_on = Will fire on: { $platform }
+triggers_sheet_will_fire_on_scope = Will fire on: { $scope }
+
+## Triggers registry — confirm-disable dialog
+
+triggers_confirm_disable_body = Disabling this trigger will pause it for { $count } action(s). Continue?
+triggers_confirm_disable_dismiss = Cancel
+triggers_confirm_disable_accept = Disable anyway
+
+## Triggers create form — kind picker
+
+triggers_create_select_kind = Select trigger kind
+triggers_create_search_placeholder = Search kinds…
+triggers_create_no_results = No matching trigger kinds
+triggers_create_cancel = Cancel
+
+## Triggers create form — fill form
+
+triggers_create_back = Back
+triggers_create_new_instance = New { $kind } instance
+triggers_create_section_name = NAME
+triggers_create_name_placeholder = Instance name (required)
+triggers_create_section_config = CONFIGURATION
+triggers_create_section_platform = PLATFORM
+triggers_create_scope_any = Any
+triggers_create_scope_custom = Custom…
+triggers_create_will_fire = Will fire on: { $scope }
+triggers_create_btn = Create
+
 ## Settings → Scripting pane
 
 settings_scripting_title = Scripting (Rhai)
@@ -263,3 +516,37 @@ settings_scripting_max_response_hint = Range 1 – 10 240 (default 1 024 KiB = 1
 settings_scripting_allow_local_label = Allow localhost / private IPs
 settings_scripting_allow_local_description = Disables SSRF protections. Only enable for local development.
 settings_scripting_ssrf_warning = WARNING — disables SSRF protections. Only enable for local development.
+
+## Actions trigger picker — category labels
+
+trigger_cat_chat = Chat
+trigger_cat_subscriptions = Subscriptions
+trigger_cat_bits = Bits
+trigger_cat_raids = Raids
+trigger_cat_channel_points = Channel Points
+trigger_cat_polls = Polls
+trigger_cat_predictions = Predictions
+trigger_cat_hype = Hype Train
+trigger_cat_charity = Charity
+trigger_cat_goals = Goals
+trigger_cat_clips = Clips
+trigger_cat_streams = Streams
+trigger_cat_users = Users
+trigger_cat_obs = Scenes
+trigger_cat_hotkey = Hotkeys
+trigger_cat_core = Core
+trigger_cat_server = Server Events
+trigger_cat_timer = Timers
+trigger_cat_other = Other
+
+## Actions modals — placeholder literals
+
+actions_name_placeholder = My automation
+actions_group_placeholder = Examples
+actions_description_placeholder = Plays a sound, shows overlay alert…
+actions_log_message_placeholder = Action started
+actions_speak_text_placeholder = Text to speak…
+
+## Triggers registry — error messages
+
+triggers_delete_reference_block = Remove this trigger from all actions before deleting.

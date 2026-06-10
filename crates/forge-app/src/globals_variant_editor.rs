@@ -523,7 +523,7 @@ pub fn variant_editor_modal_view<'a>(
     modal(
         palette,
         ModalProps {
-            title,
+            title: std::borrow::Cow::Borrowed(title),
             on_close: Message::Globals(GlobalsMsg::VariantEditor(VariantEditorMsg::Cancel)),
             kbd_hint: Some("ESC to cancel"),
         },

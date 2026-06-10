@@ -21,17 +21,17 @@ pub enum ActionsFilter {
 }
 
 impl TriggerCategory {
-    pub fn display_name(&self) -> &'static str {
+    pub fn display_name(&self) -> String {
         match self {
-            TriggerCategory::Chat => "CHAT COMMANDS",
-            TriggerCategory::Subscriptions => "SUBS & BITS",
-            TriggerCategory::Bits => "BITS",
-            TriggerCategory::Raids => "RAIDS",
-            TriggerCategory::Obs => "OBS EVENTS",
-            TriggerCategory::Server => "SERVER EVENTS",
-            TriggerCategory::Timer => "TIMERS",
-            TriggerCategory::Ungrouped => "UNGROUPED",
-            TriggerCategory::All => "ALL",
+            TriggerCategory::Chat => forge_widgets::tr!("actions_cat_chat_commands"),
+            TriggerCategory::Subscriptions => forge_widgets::tr!("actions_cat_subs_bits"),
+            TriggerCategory::Bits => forge_widgets::tr!("actions_cat_bits"),
+            TriggerCategory::Raids => forge_widgets::tr!("actions_cat_raids"),
+            TriggerCategory::Obs => forge_widgets::tr!("actions_cat_obs_events"),
+            TriggerCategory::Server => forge_widgets::tr!("actions_cat_server_events"),
+            TriggerCategory::Timer => forge_widgets::tr!("actions_cat_timers"),
+            TriggerCategory::Ungrouped => forge_widgets::tr!("actions_cat_ungrouped"),
+            TriggerCategory::All => forge_widgets::tr!("actions_cat_all"),
         }
     }
 }
@@ -52,47 +52,50 @@ pub fn category_of(kind_id: &str) -> TriggerCategory {
 
 pub fn trigger_label_of(kind_id: &str) -> String {
     match kind_id {
-        "twitch.chat.command" => "Twitch \u{00b7} chat command",
-        "twitch.chat.message" => "Twitch \u{00b7} any chat message",
-        "twitch.support.subscriber" => "Twitch \u{00b7} new subscriber",
-        "twitch.support.resubscriber" => "Twitch \u{00b7} re-subscribe",
-        "twitch.support.gift_sub" => "Twitch \u{00b7} gift subs",
-        "twitch.support.cheer" => "Twitch \u{00b7} bits cheered",
-        "twitch.channel.raid_received" => "Twitch \u{00b7} raid received",
-        "obs.scenes.current_changed" => "OBS \u{00b7} scene changed",
-        "script.event.custom" => "Server \u{00b7} custom event",
-        other => other,
-    }
-    .to_string()
-}
-
-pub fn kind_label(kind_id: &str) -> &'static str {
-    match kind_id {
-        "twitch.chat.command" => "Twitch \u{00b7} Chat command",
-        "twitch.chat.message" => "Twitch \u{00b7} Any chat message",
-        "twitch.support.subscriber" => "Twitch \u{00b7} New subscriber",
-        "twitch.support.resubscriber" => "Twitch \u{00b7} Re-subscribe",
-        "twitch.support.gift_sub" => "Twitch \u{00b7} Gift subs",
-        "twitch.support.cheer" => "Twitch \u{00b7} Bits cheered",
-        "twitch.channel.raid_received" => "Twitch \u{00b7} Raid received",
-        "obs.scenes.current_changed" => "OBS \u{00b7} Scene changed",
-        "script.event.custom" => "Server \u{00b7} Custom event",
-        _ => "Unknown trigger",
+        "twitch.chat.command" => forge_widgets::tr!("actions_kind_twitch_chat_command"),
+        "twitch.chat.message" => forge_widgets::tr!("actions_kind_twitch_chat_message"),
+        "twitch.support.subscriber" => forge_widgets::tr!("actions_kind_twitch_subscriber"),
+        "twitch.support.resubscriber" => forge_widgets::tr!("actions_kind_twitch_resubscriber"),
+        "twitch.support.gift_sub" => forge_widgets::tr!("actions_kind_twitch_gift_sub"),
+        "twitch.support.cheer" => forge_widgets::tr!("actions_kind_twitch_cheer"),
+        "twitch.channel.raid_received" => forge_widgets::tr!("actions_kind_twitch_raid"),
+        "obs.scenes.current_changed" => forge_widgets::tr!("actions_kind_obs_scene_changed"),
+        "script.event.custom" => forge_widgets::tr!("actions_kind_server_custom_event"),
+        other => other.to_string(),
     }
 }
 
-pub fn kind_summary(kind_id: &str) -> &'static str {
+pub fn kind_label(kind_id: &str) -> String {
     match kind_id {
-        "twitch.chat.command" => "User types !command in chat",
-        "twitch.chat.message" => "Every chat message fires this",
-        "twitch.support.subscriber" => "Fires when someone subscribes",
-        "twitch.support.resubscriber" => "Existing sub renews",
-        "twitch.support.gift_sub" => "Someone gifts subs to channel",
-        "twitch.support.cheer" => "Viewer sends bits",
-        "twitch.channel.raid_received" => "Another stream raids you",
-        "obs.scenes.current_changed" => "Fires when OBS switches the active scene",
-        "script.event.custom" => "Fires when triggerCodeEvent is called via the WebSocket API",
-        _ => "",
+        "twitch.chat.command" => forge_widgets::tr!("actions_kind_twitch_chat_command"),
+        "twitch.chat.message" => forge_widgets::tr!("actions_kind_twitch_chat_message"),
+        "twitch.support.subscriber" => forge_widgets::tr!("actions_kind_twitch_subscriber"),
+        "twitch.support.resubscriber" => forge_widgets::tr!("actions_kind_twitch_resubscriber"),
+        "twitch.support.gift_sub" => forge_widgets::tr!("actions_kind_twitch_gift_sub"),
+        "twitch.support.cheer" => forge_widgets::tr!("actions_kind_twitch_cheer"),
+        "twitch.channel.raid_received" => forge_widgets::tr!("actions_kind_twitch_raid"),
+        "obs.scenes.current_changed" => forge_widgets::tr!("actions_kind_obs_scene_changed"),
+        "script.event.custom" => forge_widgets::tr!("actions_kind_server_custom_event"),
+        _ => forge_widgets::tr!("actions_kind_unknown"),
+    }
+}
+
+pub fn kind_summary(kind_id: &str) -> String {
+    match kind_id {
+        "twitch.chat.command" => forge_widgets::tr!("actions_summary_twitch_chat_command"),
+        "twitch.chat.message" => forge_widgets::tr!("actions_summary_twitch_chat_message"),
+        "twitch.support.subscriber" => forge_widgets::tr!("actions_summary_twitch_subscriber"),
+        "twitch.support.resubscriber" => forge_widgets::tr!("actions_summary_twitch_resubscriber"),
+        "twitch.support.gift_sub" => forge_widgets::tr!("actions_summary_twitch_gift_sub"),
+        "twitch.support.cheer" => forge_widgets::tr!("actions_summary_twitch_cheer"),
+        "twitch.channel.raid_received" => forge_widgets::tr!("actions_summary_twitch_raid"),
+        "obs.scenes.current_changed" => {
+            forge_widgets::tr!("actions_summary_obs_scene_changed")
+        }
+        "script.event.custom" => {
+            forge_widgets::tr!("actions_summary_server_custom_event")
+        }
+        _ => String::new(),
     }
 }
 

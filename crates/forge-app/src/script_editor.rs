@@ -1271,7 +1271,7 @@ fn run_modal_view<'a>(
     modal(
         palette,
         ModalProps {
-            title: &form.display_title,
+            title: std::borrow::Cow::Borrowed(form.display_title.as_str()),
             on_close: Message::ScriptEditor(ScriptEditorMsg::RunModalCancel),
             kbd_hint: None,
         },

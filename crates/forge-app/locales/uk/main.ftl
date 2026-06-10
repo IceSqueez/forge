@@ -240,6 +240,259 @@ settings_hotkeys_error_unbind = Помилка відв'язки: { $error }
 settings_hotkeys_error_replace = Помилка заміни: { $error }
 settings_hotkeys_error_conflict_not_found = Конфліктний хоткей не знайдено в локальному кеші. Оновіть і спробуйте знову.
 
+## Дії — заголовок сторінки / хлібні крихти
+
+actions_breadcrumb_automation = Автоматизація
+actions_breadcrumb_actions = Дії
+actions_filter_all = Всі
+actions_filter_chat = Чат
+actions_filter_timers = Таймери
+actions_filter_points = Поінти
+actions_search_placeholder = Пошук дій...
+actions_new_btn = + Нова дія
+actions_loading = Завантаження...
+actions_empty = Дій ще немає
+
+## Дії — панель деталей
+
+actions_detail_empty_title = Дію не обрано
+actions_detail_empty_hint = Оберіть дію зі списку, щоб переглянути деталі.
+actions_detail_loading = Завантаження...
+actions_detail_enabled = Увімкнено
+actions_detail_disabled = Вимкнено
+actions_detail_test_run = Тестовий запуск
+actions_detail_duplicate = Дублювати
+actions_detail_section_triggers = ТРИГЕРИ · { $count }
+actions_detail_section_sub_actions = ПІДПУНКТИ · { $count }
+actions_detail_add_trigger = Додати тригер
+actions_detail_add_sub_action = Додати крок
+actions_detail_no_triggers = Тригерів немає — ця дія не спрацює самостійно
+actions_detail_no_steps = Кроків ще немає — додайте перший
+
+## Дії — контекстне меню
+
+actions_menu_rename = Перейменувати…
+actions_menu_duplicate = Дублювати
+actions_menu_enable = Увімкнути
+actions_menu_disable = Вимкнути
+actions_menu_delete = Видалити…
+
+## Дії — нижній рядок
+
+actions_footer_showing = Показано { $visible } з { $total } · згруповано за тригером
+actions_footer_storage = Сховище: —
+actions_footer_autosaved = Автозбереження щойно
+
+## Дії — підказка ESC
+
+actions_esc_hint = ESC — скасувати
+
+## Дії — модальне вікно нової дії
+
+actions_modal_new_action_title = Нова дія
+actions_modal_section_name = НАЗВА
+actions_modal_section_group = ГРУПА
+actions_modal_section_queue = ЧЕРГА
+actions_modal_section_description = ОПИС
+actions_modal_section_behavior = ПОВЕДІНКА
+actions_modal_enabled_label = Увімкнено
+actions_modal_enabled_desc = Дія виконується, коли спрацьовує тригер.
+actions_modal_concurrent_label = Паралельне виконання
+actions_modal_concurrent_desc = Дозволити паралельні запуски в цій черзі.
+actions_modal_bypass_label = Обходити паузу черги
+actions_modal_bypass_desc = Завжди виконувати, навіть якщо черга на паузі.
+actions_modal_random_pick_label = Випадковий вибір
+actions_modal_random_pick_desc = Виконувати ОДИН випадковий крок замість усіх.
+actions_modal_create_btn = Створити дію
+actions_modal_cancel_btn = Скасувати
+
+## Дії — модальне вікно кроку
+
+actions_sub_modal_add_title = Додати крок
+actions_sub_modal_edit_title = Редагувати крок
+actions_sub_chip_send_chat = Чат-повідомлення
+actions_sub_chip_set_global = Глобальна змінна
+actions_sub_chip_delay = Затримка
+actions_sub_chip_log = Журнал
+actions_sub_chip_play_sound = Відтворити звук
+actions_sub_chip_speak = Синтез мовлення
+actions_sub_chip_read_file = Читати файл
+actions_sub_chip_random_int = Випадкове число
+actions_sub_modal_add_btn = Додати крок
+actions_sub_modal_save_btn = Зберегти зміни
+actions_sub_modal_cancel_btn = Скасувати
+
+## Дії — секції конфігурації кроку
+
+actions_sub_section_message = ПОВІДОМЛЕННЯ
+actions_sub_section_target_platform = ПЛАТФОРМА-ЦІЛЬ
+actions_sub_section_variable_name = НАЗВА ЗМІННОЇ
+actions_sub_section_value = ЗНАЧЕННЯ
+actions_sub_section_milliseconds = МІЛІСЕКУНДИ
+actions_sub_section_level = РІВЕНЬ
+actions_sub_section_clip = КЛІП
+actions_sub_section_text = ТЕКСТ
+actions_sub_section_voice_override = ГОЛОС (необов'язково)
+actions_sub_section_path = ШЛЯХ (відносно пісочниці assets)
+actions_sub_section_target_var = ЦІЛЬОВА ЗМІННА
+actions_sub_section_min = МІН
+actions_sub_section_max = МАКС
+actions_sub_helper_variables = Змінні: %user%, %message%, %args%
+actions_sub_helper_interpolation = Підтримує інтерполяцію змінних
+actions_sub_voice_hint = Залишіть порожнім, щоб використати резолвер псевдонімів
+actions_sub_path_hint = Пісочниця data_dir/assets/ · без ../ · максимум 1 МіБ
+actions_sub_no_clips = Кліпів немає — спочатку додайте їх на екрані Звукова панель.
+
+## Дії — вибір тригера (бічна панель)
+
+actions_picker_title = Додати тригер
+actions_picker_loading = Завантаження тригерів…
+actions_picker_cancel = Скасувати
+actions_picker_select_platform = Оберіть платформу
+actions_picker_no_triggers = Тригерів немає
+actions_picker_select_hint = Оберіть платформу, щоб переглянути тригери.
+actions_picker_no_triggers_selection = Для цього вибору тригерів немає.
+actions_picker_default_label = (типовий)
+
+## Дії — назви категорій тригерів (заголовки секцій)
+
+actions_cat_chat_commands = ЧАТ-КОМАНДИ
+actions_cat_subs_bits = ПІДПИСКИ ТА БІТСИ
+actions_cat_bits = БІТСИ
+actions_cat_raids = РЕЙДИ
+actions_cat_obs_events = ПОДІЇ OBS
+actions_cat_server_events = ПОДІЇ СЕРВЕРА
+actions_cat_timers = ТАЙМЕРИ
+actions_cat_ungrouped = БЕЗ ГРУПИ
+actions_cat_all = ВСІ
+
+## Дії — підписи типів тригерів
+
+actions_kind_twitch_chat_command = Twitch · команда в чаті
+actions_kind_twitch_chat_message = Twitch · будь-яке повідомлення
+actions_kind_twitch_subscriber = Twitch · новий підписник
+actions_kind_twitch_resubscriber = Twitch · повторна підписка
+actions_kind_twitch_gift_sub = Twitch · подарункові підписки
+actions_kind_twitch_cheer = Twitch · відправлено бітсів
+actions_kind_twitch_raid = Twitch · отримано рейд
+actions_kind_obs_scene_changed = OBS · зміна сцени
+actions_kind_server_custom_event = Сервер · користувацька подія
+actions_kind_unknown = Невідомий тригер
+
+## Дії — опис типів тригерів
+
+actions_summary_twitch_chat_command = Користувач вводить !команду в чаті
+actions_summary_twitch_chat_message = Кожне повідомлення в чаті спрацьовує
+actions_summary_twitch_subscriber = Спрацьовує, коли хтось підписується
+actions_summary_twitch_resubscriber = Наявний підписник продовжує підписку
+actions_summary_twitch_gift_sub = Хтось дарує підписки каналу
+actions_summary_twitch_cheer = Глядач відправляє бітси
+actions_summary_twitch_raid = Інший стрім робить рейд на вас
+actions_summary_obs_scene_changed = Спрацьовує, коли OBS перемикає активну сцену
+actions_summary_server_custom_event = Спрацьовує при виклику triggerCodeEvent через WebSocket API
+
+## Редактор дій — хлібні крихти / дерево / деталі
+
+action_editor_breadcrumb_automation = Автоматизація
+action_editor_breadcrumb_actions = Дії
+action_editor_loading = Завантаження дії…
+action_editor_no_description = Без опису
+action_editor_test_run = Тестовий запуск
+action_editor_duplicate = Дублювати
+action_editor_add_trigger = Додати тригер
+action_editor_add_step = Додати крок
+action_editor_no_triggers = Тригерів немає · натисніть «Додати тригер», щоб почати
+action_editor_delete = Видалити
+action_editor_section_triggers = ТРИГЕРИ
+action_editor_section_sub_actions = ПІДПУНКТИ · { $count }
+action_editor_sub_count = { $count } кр.
+action_editor_enabled = Увімкнено
+action_editor_disabled = Вимкнено
+
+## Редактор дій — меню кроку
+
+action_editor_step_menu_edit = Редагувати крок…
+action_editor_step_menu_duplicate = Дублювати
+action_editor_step_menu_move_top = Перемістити вгору
+action_editor_step_menu_move_bottom = Перемістити вниз
+action_editor_step_menu_delete = Видалити крок
+
+## Редактор дій — назви типів кроків
+
+action_editor_kind_send_chat = Надіслати в чат
+action_editor_kind_set_global = Встановити змінну
+action_editor_kind_delay = Затримка
+action_editor_kind_log = Журнал
+action_editor_kind_play_sound = Відтворити звук
+action_editor_kind_speak = Синтез мовлення
+action_editor_kind_read_file = Читати файл
+action_editor_kind_random_int = Випадкове число
+action_editor_kind_sub_action = Підпункт
+
+## Реєстр тригерів — заголовок / фільтри
+
+triggers_breadcrumb_automation = Автоматизація
+triggers_breadcrumb_triggers = Тригери
+triggers_open_create_btn = + Створити
+triggers_search_placeholder = Пошук тригерів…
+triggers_filter_twitch = Twitch
+triggers_filter_obs = OBS
+triggers_filter_script = Скрипт
+triggers_filter_all = Всі
+triggers_usage_all = Всі
+triggers_usage_used = Використовуються
+triggers_usage_unused = Не використовуються
+
+## Реєстр тригерів — список / порожні стани
+
+triggers_empty_title = Власних тригерів ще немає
+triggers_empty_hint = Створіть іменований тригер із власними налаштуваннями для повторного використання в кількох діях.
+triggers_empty_create = + Створити тригер
+triggers_no_results_title = Нічого не знайдено
+triggers_no_results_hint = Змініть або скиньте фільтри, щоб знайти тригери.
+triggers_clear_filters = Скинути фільтри
+triggers_usage_badge = використовується в { $count }
+triggers_toggle_on = УВІМК
+triggers_toggle_off = ВИМК
+
+## Реєстр тригерів — деталі у бічній панелі
+
+triggers_sheet_section_configuration = КОНФІГУРАЦІЯ
+triggers_sheet_no_config = Налаштованих полів немає
+triggers_sheet_not_registered = Тип тригера не зареєстровано
+triggers_sheet_section_used_in = ВИКОРИСТОВУЄТЬСЯ В
+triggers_sheet_section_platform = ПЛАТФОРМА
+triggers_sheet_delete_btn = Видалити
+triggers_sheet_any_platform = Будь-яка платформа
+triggers_sheet_will_fire_on = Спрацює на: { $platform }
+triggers_sheet_will_fire_on_scope = Спрацює на: { $scope }
+
+## Реєстр тригерів — діалог підтвердження вимкнення
+
+triggers_confirm_disable_body = Вимкнення цього тригера призупинить його для { $count } дій. Продовжити?
+triggers_confirm_disable_dismiss = Скасувати
+triggers_confirm_disable_accept = Все одно вимкнути
+
+## Форма створення тригера — вибір типу
+
+triggers_create_select_kind = Оберіть тип тригера
+triggers_create_search_placeholder = Пошук типів…
+triggers_create_no_results = Відповідних типів тригерів немає
+triggers_create_cancel = Скасувати
+
+## Форма створення тригера — заповнення
+
+triggers_create_back = Назад
+triggers_create_new_instance = Новий екземпляр: { $kind }
+triggers_create_section_name = НАЗВА
+triggers_create_name_placeholder = Назва екземпляра (обов'язково)
+triggers_create_section_config = КОНФІГУРАЦІЯ
+triggers_create_section_platform = ПЛАТФОРМА
+triggers_create_scope_any = Будь-яка
+triggers_create_scope_custom = Власний вибір…
+triggers_create_will_fire = Спрацює на: { $scope }
+triggers_create_btn = Створити
+
 ## Налаштування → панель скриптів
 
 settings_scripting_title = Скрипти (Rhai)
@@ -265,3 +518,37 @@ settings_scripting_max_response_hint = Діапазон 1 – 10 240 (за за�
 settings_scripting_allow_local_label = Дозволити localhost / приватні IP
 settings_scripting_allow_local_description = Вимикає захист від SSRF. Вмикайте лише для локальної розробки.
 settings_scripting_ssrf_warning = УВАГА — вимикає захист від SSRF. Вмикайте лише для локальної розробки.
+
+## Actions trigger picker — category labels
+
+trigger_cat_chat = Чат
+trigger_cat_subscriptions = Підписки
+trigger_cat_bits = Бітси
+trigger_cat_raids = Рейди
+trigger_cat_channel_points = Бали каналу
+trigger_cat_polls = Опитування
+trigger_cat_predictions = Прогнози
+trigger_cat_hype = Hype Train
+trigger_cat_charity = Благодійність
+trigger_cat_goals = Цілі
+trigger_cat_clips = Кліпи
+trigger_cat_streams = Трансляції
+trigger_cat_users = Користувачі
+trigger_cat_obs = Сцени
+trigger_cat_hotkey = Гарячі клавіші
+trigger_cat_core = Ядро
+trigger_cat_server = Події сервера
+trigger_cat_timer = Таймери
+trigger_cat_other = Інше
+
+## Actions modals — placeholder literals
+
+actions_name_placeholder = Моя автоматизація
+actions_group_placeholder = Приклади
+actions_description_placeholder = Відтворює звук, показує сповіщення…
+actions_log_message_placeholder = Дію розпочато
+actions_speak_text_placeholder = Текст для озвучення…
+
+## Triggers registry — error messages
+
+triggers_delete_reference_block = Вилучіть цей тригер з усіх дій перед видаленням.

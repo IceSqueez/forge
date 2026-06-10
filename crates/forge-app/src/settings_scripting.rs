@@ -318,7 +318,7 @@ fn section_rule<'a>(border_color: Color) -> Element<'a, Message> {
         .into()
 }
 
-fn section_header<'a>(label: &'a str, palette: &'a ForgePalette) -> Element<'a, Message> {
+fn section_header<'a>(label: String, palette: &ForgePalette) -> Element<'a, Message> {
     text(label)
         .size(FONT_SM)
         .color(palette.text_primary)
@@ -347,8 +347,8 @@ fn field_input_style(
 }
 
 fn labeled_row<'a>(
-    label: &'a str,
-    hint: &'a str,
+    label: String,
+    hint: String,
     input: Element<'a, Message>,
     palette: &ForgePalette,
 ) -> Element<'a, Message> {
@@ -374,22 +374,30 @@ pub fn view<'a>(
     let p = palette;
 
     let save_indicator: Element<'a, Message> = if let Some(ref err) = state.save_error {
-        text(format!("Save failed: {err}"))
-            .size(FONT_SM)
-            .color(p.random)
-            .into()
+        text(forge_widgets::tr!(
+            "settings_scripting_save_failed",
+            error = err.as_str()
+        ))
+        .size(FONT_SM)
+        .color(p.random)
+        .into()
     } else if state.saving {
-        text("Saving…").size(FONT_SM).color(p.text_faint).into()
+        text(forge_widgets::tr!("settings_scripting_saving"))
+            .size(FONT_SM)
+            .color(p.text_faint)
+            .into()
     } else if state.all_changes_saved {
         row![
             tabler_icon(Icon::CircleCheck, 13.0, p.success),
-            text("All changes saved").size(FONT_SM).color(p.success),
+            text(forge_widgets::tr!("settings_scripting_all_saved"))
+                .size(FONT_SM)
+                .color(p.success),
         ]
         .spacing(spf(Spacing::Xs))
         .align_y(iced::Alignment::Center)
         .into()
     } else {
-        text("Unsaved changes")
+        text(forge_widgets::tr!("settings_scripting_unsaved"))
             .size(FONT_SM)
             .color(p.warning)
             .into()
@@ -397,7 +405,7 @@ pub fn view<'a>(
 
     let header_row = row![
         tabler_icon(Icon::FileCode, 20.0, p.brand),
-        text("Scripting (Rhai)")
+        text(forge_widgets::tr!("settings_scripting_title"))
             .size(FONT_LG)
             .color(p.text_primary)
             .font(iced::Font {
@@ -435,17 +443,17 @@ pub fn view<'a>(
         .style(field_input_style(*p));
 
     let engine_section = column![
-        section_header("Engine Limits", p),
+        section_header(forge_widgets::tr!("settings_scripting_engine_section"), p),
         section_rule(p.border_regular),
         labeled_row(
-            "Op-count limit",
-            "Range 1 000 – 10 000 000 (default 100 000)",
+            forge_widgets::tr!("settings_scripting_op_limit_label"),
+            forge_widgets::tr!("settings_scripting_op_limit_hint"),
             op_input.into(),
             p,
         ),
         labeled_row(
-            "Timeout (ms)",
-            "Range 50 – 10 000 (default 500)",
+            forge_widgets::tr!("settings_scripting_engine_timeout_label"),
+            forge_widgets::tr!("settings_scripting_engine_timeout_hint"),
             engine_timeout_input.into(),
             p,
         ),
@@ -455,22 +463,22 @@ pub fn view<'a>(
     let domain_list = tag_list_input(
         &state.tag_input,
         &state.allowed_domains,
-        "e.g. api.example.com",
+        forge_widgets::tr!("settings_scripting_domains_placeholder"),
         |m| Message::Settings(SettingsMsg::Scripting(ScriptingSettingsMsg::TagInput(m))),
         p,
     );
 
+    let allowed_domains_label = forge_widgets::tr!("settings_scripting_allowed_domains_label");
+    let allowed_domains_hint = forge_widgets::tr!("settings_scripting_allowed_domains_hint");
     let domains_col = column![
-        text("Allowed domains")
+        text(allowed_domains_label)
             .size(FONT_SM)
             .color(p.text_primary)
             .font(iced::Font {
                 weight: iced::font::Weight::Medium,
                 ..font(FontRole::Body)
             }),
-        text("Requests to unlisted domains are blocked. Wildcards: *.example.com")
-            .size(FONT_XS)
-            .color(p.text_muted),
+        text(allowed_domains_hint).size(FONT_XS).color(p.text_muted),
         domain_list,
     ]
     .spacing(spf(Spacing::Xs));
@@ -514,8 +522,8 @@ pub fn view<'a>(
     let allow_local_toggle = toggle(
         p,
         ToggleProps {
-            label: "Allow localhost / private IPs",
-            description: "Disables SSRF protections. Only enable for local development.",
+            label: forge_widgets::tr!("settings_scripting_allow_local_label"),
+            description: forge_widgets::tr!("settings_scripting_allow_local_description"),
             value: state.allow_local,
             on_toggle: Message::Settings(SettingsMsg::Scripting(
                 ScriptingSettingsMsg::AllowLocalToggled,
@@ -525,7 +533,7 @@ pub fn view<'a>(
 
     let ssrf_warning: Element<'a, Message> = if state.allow_local {
         container(
-            text("WARNING — disables SSRF protections. Only enable for local development.")
+            text(forge_widgets::tr!("settings_scripting_ssrf_warning"))
                 .size(FONT_XS)
                 .color(p.random),
         )
@@ -536,24 +544,24 @@ pub fn view<'a>(
     };
 
     let http_section = column![
-        section_header("HTTP Sandbox", p),
+        section_header(forge_widgets::tr!("settings_scripting_http_section"), p),
         section_rule(p.border_regular),
         domains_col,
         labeled_row(
-            "Max calls per script",
-            "Range 1 – 100 (default 10)",
+            forge_widgets::tr!("settings_scripting_max_calls_label"),
+            forge_widgets::tr!("settings_scripting_max_calls_hint"),
             max_calls_input.into(),
             p,
         ),
         labeled_row(
-            "Request timeout (ms)",
-            "Range 100 – 30 000 (default 5 000)",
+            forge_widgets::tr!("settings_scripting_http_timeout_label"),
+            forge_widgets::tr!("settings_scripting_http_timeout_hint"),
             http_timeout_input.into(),
             p,
         ),
         labeled_row(
-            "Max response size (KiB)",
-            "Range 1 – 10 240 (default 1 024 KiB = 1 MiB)",
+            forge_widgets::tr!("settings_scripting_max_response_label"),
+            forge_widgets::tr!("settings_scripting_max_response_hint"),
             max_response_input.into(),
             p,
         ),
@@ -563,7 +571,7 @@ pub fn view<'a>(
     .spacing(spf(Spacing::Sm));
 
     let save_btn = forge_widgets::primary_button(
-        "Save",
+        forge_widgets::tr!("common_save"),
         Message::Settings(SettingsMsg::Scripting(ScriptingSettingsMsg::SavePressed)),
         p,
     );

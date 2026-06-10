@@ -51,9 +51,9 @@ pub struct ModalProps<'a, Msg> {
 }
 
 #[derive(Debug, Clone)]
-pub struct ToggleProps<'a, Msg> {
-    pub label: &'a str,
-    pub description: &'a str,
+pub struct ToggleProps<Msg> {
+    pub label: String,
+    pub description: String,
     pub value: bool,
     pub on_toggle: Msg,
 }
@@ -420,7 +420,7 @@ pub fn modal<'a, Msg: Clone + 'a>(
 
 pub fn toggle<'a, Msg: Clone + 'a>(
     palette: &'a ForgePalette,
-    props: ToggleProps<'a, Msg>,
+    props: ToggleProps<Msg>,
 ) -> Element<'a, Msg> {
     let track_bg = toggle_thumb_bg(props.value, palette);
     let thumb_color = palette.text_primary;

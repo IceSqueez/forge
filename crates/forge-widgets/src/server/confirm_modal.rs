@@ -17,18 +17,18 @@ pub enum BulletKind {
     Info,
 }
 
-pub struct BulletItem<'a> {
+pub struct BulletItem {
     pub kind: BulletKind,
-    pub text: &'a str,
+    pub text: String,
 }
 
 pub struct TypeToConfirmModalParams<'a> {
-    pub title: &'a str,
-    pub explanation: &'a str,
-    pub bullets: &'a [BulletItem<'a>],
+    pub title: String,
+    pub explanation: String,
+    pub bullets: Vec<BulletItem>,
     pub confirmation_phrase: &'a str,
     pub current_input: &'a str,
-    pub confirm_label: &'a str,
+    pub confirm_label: String,
 }
 
 fn bullet_icon_and_color(kind: BulletKind, p: ForgePalette) -> (Icon, Color) {
@@ -139,7 +139,7 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
         let (icon, icon_color) = bullet_icon_and_color(item.kind, p);
         let bullet_row = row![
             tabler_icon(icon, 14.0, icon_color),
-            text(item.text).size(FONT_SM).color(p.text_primary),
+            text(item.text.clone()).size(FONT_SM).color(p.text_primary),
         ]
         .spacing(10)
         .align_y(Alignment::Start)

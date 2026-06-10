@@ -20,16 +20,24 @@ use crate::settings_hotkeys::SettingsHotkeysState;
 use crate::settings_scripting::ScriptingSettingsState;
 use crate::settings_websocket::settings_websocket_view;
 
-fn settings_section_button<'a>(
-    label: &'a str,
+fn settings_section_button(
+    label: &str,
     section: SettingsSection,
     active: &SettingsSection,
     palette: &ForgePalette,
-) -> Element<'a, Message> {
+) -> Element<'static, Message> {
     if &section == active {
-        forge_widgets::primary_button(label, Message::Navigate(Screen::Settings(section)), palette)
+        forge_widgets::primary_button(
+            label.to_owned(),
+            Message::Navigate(Screen::Settings(section)),
+            palette,
+        )
     } else {
-        forge_widgets::ghost_button(label, Message::Navigate(Screen::Settings(section)), palette)
+        forge_widgets::ghost_button(
+            label.to_owned(),
+            Message::Navigate(Screen::Settings(section)),
+            palette,
+        )
     }
 }
 
@@ -38,28 +46,35 @@ fn settings_diagnostics_pane(palette: &ForgePalette) -> Element<'static, Message
     let log_dir = forge_platform_core::paths::data_dir().join("logs");
 
     let metrics = iced::widget::row![
-        forge_widgets::metric_card("Build", version, None::<&str>, palette),
+        forge_widgets::metric_card(
+            forge_widgets::tr!("settings_about_build_label"),
+            version,
+            None::<&str>,
+            palette,
+        ),
         forge_widgets::metric_card("Rust", "1.95.0", None::<&str>, palette),
         forge_widgets::metric_card("OS", std::env::consts::OS, None::<&str>, palette),
     ]
     .spacing(spf(Spacing::Sm));
 
-    let log_path_label = iced::widget::text(format!("Log directory: {}", log_dir.display()))
-        .size(FONT_SM)
-        .color(palette.text_muted);
+    let log_path_label = iced::widget::text(forge_widgets::tr!(
+        "settings_diagnostics_log_dir",
+        path = log_dir.display().to_string()
+    ))
+    .size(FONT_SM)
+    .color(palette.text_muted);
     let open_logs_btn = forge_widgets::primary_button(
-        "Open log directory",
+        forge_widgets::tr!("settings_diagnostics_open_log_dir"),
         Message::Settings(SettingsMsg::OpenLogDirectoryRequested),
         palette,
     );
-    let level_label =
-        iced::widget::text("Log level: controlled via RUST_LOG env var (e.g. info, debug, trace).")
-            .size(FONT_SM)
-            .color(palette.text_muted);
+    let level_label = iced::widget::text(forge_widgets::tr!("settings_diagnostics_log_level_hint"))
+        .size(FONT_SM)
+        .color(palette.text_muted);
 
     let logs_card = forge_widgets::card(
         [
-            iced::widget::text("Logs & diagnostics")
+            iced::widget::text(forge_widgets::tr!("settings_diagnostics_section_title"))
                 .size(FONT_SM)
                 .color(palette.text_primary)
                 .into(),
@@ -79,33 +94,34 @@ fn settings_diagnostics_pane(palette: &ForgePalette) -> Element<'static, Message
 
 fn settings_storage_pane(palette: &ForgePalette) -> Element<'static, Message> {
     let db_path = forge_platform_core::paths::data_dir().join("forge.db");
-    let path_label = iced::widget::text(format!("Database: {}", db_path.display()))
-        .size(FONT_SM)
-        .color(palette.text_muted);
+    let path_label = iced::widget::text(forge_widgets::tr!(
+        "settings_storage_db_path",
+        path = db_path.display().to_string()
+    ))
+    .size(FONT_SM)
+    .color(palette.text_muted);
 
     let vacuum_btn = forge_widgets::primary_button(
-        "Vacuum (export compact snapshot)",
+        forge_widgets::tr!("settings_storage_vacuum_btn"),
         Message::Settings(SettingsMsg::DbVacuumRequested),
         palette,
     );
-    let vacuum_hint = iced::widget::text(
-        "Writes a vacuumed snapshot to a temp file; useful before manual backups.",
-    )
-    .size(FONT_XS)
-    .color(palette.text_faint);
+    let vacuum_hint = iced::widget::text(forge_widgets::tr!("settings_storage_vacuum_hint"))
+        .size(FONT_XS)
+        .color(palette.text_faint);
 
     let backup_btn = forge_widgets::primary_button(
-        "Backup now",
+        forge_widgets::tr!("settings_storage_backup_btn"),
         Message::Settings(SettingsMsg::DbBackupRequested),
         palette,
     );
-    let backup_hint = iced::widget::text("Creates a timestamped DB copy in the data directory.")
+    let backup_hint = iced::widget::text(forge_widgets::tr!("settings_storage_backup_hint"))
         .size(FONT_XS)
         .color(palette.text_faint);
 
     let storage_card = forge_widgets::card(
         [
-            iced::widget::text("Storage & backups")
+            iced::widget::text(forge_widgets::tr!("settings_storage_section_title"))
                 .size(FONT_SM)
                 .color(palette.text_primary)
                 .into(),
@@ -126,15 +142,14 @@ fn settings_storage_pane(palette: &ForgePalette) -> Element<'static, Message> {
 }
 
 fn settings_queues_pane(palette: &ForgePalette) -> Element<'static, Message> {
-    let thread_hint = format!(
-        "Tokio threadpool: {} worker(s) (auto-sized to system).",
-        std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(0)
-    );
+    let workers = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(0);
+    let thread_hint =
+        forge_widgets::tr!("settings_queues_thread_hint", workers = workers.to_string());
     let card = forge_widgets::card(
         [
-            iced::widget::text("Queues & threading")
+            iced::widget::text(forge_widgets::tr!("settings_queues_section_title"))
                 .size(FONT_SM)
                 .color(palette.text_primary)
                 .into(),
@@ -142,12 +157,10 @@ fn settings_queues_pane(palette: &ForgePalette) -> Element<'static, Message> {
                 .size(FONT_SM)
                 .color(palette.text_muted)
                 .into(),
-            iced::widget::text(
-                "Per-queue concurrency limits and blocking flags are managed on the Queues screen.",
-            )
-            .size(FONT_XS)
-            .color(palette.text_faint)
-            .into(),
+            iced::widget::text(forge_widgets::tr!("settings_queues_managed_hint"))
+                .size(FONT_XS)
+                .color(palette.text_faint)
+                .into(),
         ],
         palette,
     );
@@ -261,22 +274,36 @@ fn settings_shortcuts_pane(palette: &ForgePalette) -> Element<'static, Message> 
 
     let header = row![
         tabler_icon(Icon::Keyboard, 18.0, p.brand),
-        text("Shortcuts").size(FONT_LG).color(p.text_primary),
+        text(forge_widgets::tr!("settings_shortcuts_title"))
+            .size(FONT_LG)
+            .color(p.text_primary),
     ]
     .spacing(spf(Spacing::Xs))
     .align_y(iced::Alignment::Center);
 
-    let subtitle = text("Quick keys across Forge")
+    let subtitle = text(forge_widgets::tr!("settings_shortcuts_subtitle"))
         .size(FONT_SM)
         .color(p.text_muted);
 
-    let rows: [(&str, &str); 6] = [
-        ("Save", "Ctrl + S"),
-        ("New action", "Ctrl + N"),
-        ("Quick switcher", "Ctrl + K"),
-        ("Toggle Live Chat", "Ctrl + Shift + C"),
-        ("Toggle Event Feed", "Ctrl + Shift + E"),
-        ("Run script", "F5"),
+    let rows = [
+        (forge_widgets::tr!("settings_shortcut_save"), "Ctrl + S"),
+        (
+            forge_widgets::tr!("settings_shortcut_new_action"),
+            "Ctrl + N",
+        ),
+        (
+            forge_widgets::tr!("settings_shortcut_quick_switcher"),
+            "Ctrl + K",
+        ),
+        (
+            forge_widgets::tr!("settings_shortcut_toggle_chat"),
+            "Ctrl + Shift + C",
+        ),
+        (
+            forge_widgets::tr!("settings_shortcut_toggle_events"),
+            "Ctrl + Shift + E",
+        ),
+        (forge_widgets::tr!("settings_shortcut_run_script"), "F5"),
     ];
 
     let mut list = column![].spacing(0);
@@ -322,7 +349,7 @@ fn settings_shortcuts_pane(palette: &ForgePalette) -> Element<'static, Message> 
     }
 
     let note = container(
-        text("Keyboard shortcuts not yet bound — labels only for now.")
+        text(forge_widgets::tr!("settings_shortcuts_note"))
             .size(FONT_XS)
             .color(p.text_faint)
             .font(mono),
@@ -341,17 +368,14 @@ fn settings_shortcuts_pane(palette: &ForgePalette) -> Element<'static, Message> 
 fn settings_notifications_pane(palette: &ForgePalette) -> Element<'static, Message> {
     let card = forge_widgets::card(
         [
-            iced::widget::text("Notifications")
+            iced::widget::text(forge_widgets::tr!("settings_notifications_section_title"))
                 .size(FONT_SM)
                 .color(palette.text_primary)
                 .into(),
-            iced::widget::text(
-                "Per-event-type toast customisation lands in beta-2. Errors and connection \
-                 changes always surface in the status bar.",
-            )
-            .size(FONT_SM)
-            .color(palette.text_muted)
-            .into(),
+            iced::widget::text(forge_widgets::tr!("settings_notifications_hint"))
+                .size(FONT_SM)
+                .color(palette.text_muted)
+                .into(),
         ],
         palette,
     );
@@ -362,8 +386,8 @@ fn settings_notifications_pane(palette: &ForgePalette) -> Element<'static, Messa
         .into()
 }
 
-fn nav_group_header<'a>(label: &'a str, palette: &'a ForgePalette) -> Element<'a, Message> {
-    iced::widget::text(label)
+fn nav_group_header(label: &str, palette: &ForgePalette) -> Element<'static, Message> {
+    iced::widget::text(label.to_owned())
         .font(forge_widgets::tokens::font(
             forge_widgets::tokens::FontRole::Monospace,
         ))
@@ -398,29 +422,82 @@ pub(crate) fn settings_view<'a>(
         current_language,
     } = params;
     let nav = iced::widget::column![
-        nav_group_header("PREFERENCES", palette),
-        settings_section_button("Appearance", SettingsSection::Appearance, section, palette),
-        settings_section_button("Language", SettingsSection::Language, section, palette),
-        settings_section_button("Shortcuts", SettingsSection::Shortcuts, section, palette),
+        nav_group_header(
+            &forge_widgets::tr!("settings_nav_group_preferences"),
+            palette
+        ),
         settings_section_button(
-            "Notifications",
+            &forge_widgets::tr!("settings_nav_appearance"),
+            SettingsSection::Appearance,
+            section,
+            palette,
+        ),
+        settings_section_button(
+            &forge_widgets::tr!("settings_nav_language"),
+            SettingsSection::Language,
+            section,
+            palette,
+        ),
+        settings_section_button(
+            &forge_widgets::tr!("settings_nav_shortcuts"),
+            SettingsSection::Shortcuts,
+            section,
+            palette,
+        ),
+        settings_section_button(
+            &forge_widgets::tr!("settings_nav_notifications"),
             SettingsSection::Notifications,
             section,
             palette,
         ),
         iced::widget::Space::new().height(6),
-        nav_group_header("ENGINE", palette),
-        settings_section_button("Audio", SettingsSection::Audio, section, palette),
-        settings_section_button("Scripting", SettingsSection::Scripting, section, palette),
-        settings_section_button("Queues", SettingsSection::Queues, section, palette),
-        settings_section_button("Storage", SettingsSection::Storage, section, palette),
-        settings_section_button("WebSocket", SettingsSection::WebSocket, section, palette),
-        settings_section_button("Hotkeys", SettingsSection::Hotkeys, section, palette),
-        iced::widget::Space::new().height(6),
-        nav_group_header("ABOUT", palette),
-        settings_section_button("Version", SettingsSection::Version, section, palette),
+        nav_group_header(&forge_widgets::tr!("settings_nav_group_engine"), palette),
         settings_section_button(
-            "Diagnostics",
+            &forge_widgets::tr!("settings_nav_audio"),
+            SettingsSection::Audio,
+            section,
+            palette,
+        ),
+        settings_section_button(
+            &forge_widgets::tr!("settings_nav_scripting"),
+            SettingsSection::Scripting,
+            section,
+            palette,
+        ),
+        settings_section_button(
+            &forge_widgets::tr!("settings_nav_queues"),
+            SettingsSection::Queues,
+            section,
+            palette,
+        ),
+        settings_section_button(
+            &forge_widgets::tr!("settings_nav_storage"),
+            SettingsSection::Storage,
+            section,
+            palette,
+        ),
+        settings_section_button(
+            &forge_widgets::tr!("settings_nav_websocket"),
+            SettingsSection::WebSocket,
+            section,
+            palette,
+        ),
+        settings_section_button(
+            &forge_widgets::tr!("settings_nav_hotkeys"),
+            SettingsSection::Hotkeys,
+            section,
+            palette,
+        ),
+        iced::widget::Space::new().height(6),
+        nav_group_header(&forge_widgets::tr!("settings_nav_group_about"), palette),
+        settings_section_button(
+            &forge_widgets::tr!("settings_nav_version"),
+            SettingsSection::Version,
+            section,
+            palette,
+        ),
+        settings_section_button(
+            &forge_widgets::tr!("settings_nav_diagnostics"),
             SettingsSection::Diagnostics,
             section,
             palette,
@@ -459,7 +536,7 @@ pub(crate) fn settings_view<'a>(
             let label = format!("Settings · {other:?}");
             iced::widget::container(forge_widgets::empty_state(
                 label,
-                "Coming with alpha-N.",
+                forge_widgets::tr!("settings_coming_soon_placeholder"),
                 None::<(&str, Message)>,
                 palette,
             ))
@@ -469,7 +546,10 @@ pub(crate) fn settings_view<'a>(
         }
     };
 
-    let page_header = simple_page_header(&[("Settings".to_owned(), true)], palette);
+    let page_header = simple_page_header(
+        &[(forge_widgets::tr!("settings_page_title"), true)],
+        palette,
+    );
     let body = iced::widget::row![nav_container, pane].spacing(0);
 
     iced::widget::column![page_header, body]

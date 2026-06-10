@@ -119,8 +119,8 @@ pub(crate) fn add_action_modal_view<'a>(
     let enabled_toggle = forge_widgets::toggle(
         palette,
         ToggleProps {
-            label: "Enabled",
-            description: "Action runs when a trigger fires.",
+            label: "Enabled".to_owned(),
+            description: "Action runs when a trigger fires.".to_owned(),
             value: form.enabled,
             on_toggle: Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
                 AddActionMsg::EnabledToggled(!form.enabled),
@@ -131,8 +131,8 @@ pub(crate) fn add_action_modal_view<'a>(
     let concurrent_toggle = forge_widgets::toggle(
         palette,
         ToggleProps {
-            label: "Concurrent execution",
-            description: "Allow parallel runs in this queue.",
+            label: "Concurrent execution".to_owned(),
+            description: "Allow parallel runs in this queue.".to_owned(),
             value: form.concurrent,
             on_toggle: Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
                 AddActionMsg::ConcurrentToggled(!form.concurrent),
@@ -143,8 +143,8 @@ pub(crate) fn add_action_modal_view<'a>(
     let bypass_toggle = forge_widgets::toggle(
         palette,
         ToggleProps {
-            label: "Bypass queue pause",
-            description: "Always run even if queue is paused.",
+            label: "Bypass queue pause".to_owned(),
+            description: "Always run even if queue is paused.".to_owned(),
             value: form.bypass_pause,
             on_toggle: Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
                 AddActionMsg::BypassPauseToggled(!form.bypass_pause),
@@ -155,8 +155,8 @@ pub(crate) fn add_action_modal_view<'a>(
     let random_pick_toggle = forge_widgets::toggle(
         palette,
         ToggleProps {
-            label: "Random pick",
-            description: "Run ONE random sub-action per trigger instead of all.",
+            label: "Random pick".to_owned(),
+            description: "Run ONE random sub-action per trigger instead of all.".to_owned(),
             value: form.random_pick,
             on_toggle: Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
                 AddActionMsg::RandomPickToggled(!form.random_pick),

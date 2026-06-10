@@ -404,8 +404,9 @@ pub fn variant_editor_modal_view<'a>(
     let persist_toggle = toggle(
         palette,
         ToggleProps {
-            label: "Save across restarts",
-            description: "Persisted globals survive app close; session-only reset on launch",
+            label: "Save across restarts".to_owned(),
+            description: "Persisted globals survive app close; session-only reset on launch"
+                .to_owned(),
             value: form.persisted,
             on_toggle: Message::Globals(GlobalsMsg::VariantEditor(
                 VariantEditorMsg::PersistenceToggled(!form.persisted),
@@ -439,8 +440,8 @@ pub fn variant_editor_modal_view<'a>(
         VariantKind::Bool => toggle(
             palette,
             ToggleProps {
-                label: "Value",
-                description: "",
+                label: "Value".to_owned(),
+                description: String::new(),
                 value: form.fields.bool_value,
                 on_toggle: Message::Globals(GlobalsMsg::VariantEditor(
                     VariantEditorMsg::BoolValueChanged(!form.fields.bool_value),

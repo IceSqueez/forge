@@ -745,8 +745,8 @@ fn render_field<'a>(
             container(toggle(
                 palette,
                 ToggleProps {
-                    label,
-                    description: "",
+                    label: label.to_string(),
+                    description: String::new(),
                     value: checked,
                     on_toggle: Message::TriggersRegistry(TriggersRegistryMsg::CreateFormMsg(
                         CreateInstanceFormMsg::FieldChanged(k, Variant::Bool(!checked)),
@@ -841,8 +841,8 @@ fn render_field<'a>(
             let toggle_el = toggle(
                 palette,
                 ToggleProps {
-                    label,
-                    description: "",
+                    label: label.to_string(),
+                    description: String::new(),
                     value: is_enabled,
                     on_toggle: Message::TriggersRegistry(TriggersRegistryMsg::CreateFormMsg(
                         CreateInstanceFormMsg::FieldChanged(k, Variant::Bool(!is_enabled)),

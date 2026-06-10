@@ -23,7 +23,7 @@ pub enum TagListInputMessage {
 pub fn tag_list_input<'a, Msg: Clone + 'a>(
     state: &'a TagListInputState,
     tags: &'a [String],
-    placeholder: &'a str,
+    placeholder: String,
     on_message: impl Fn(TagListInputMessage) -> Msg + 'static + Copy,
     palette: &ForgePalette,
 ) -> Element<'a, Msg> {
@@ -37,7 +37,7 @@ pub fn tag_list_input<'a, Msg: Clone + 'a>(
 
     let chips_row = row(chips).spacing(spf(Spacing::Xxs)).wrap();
 
-    let input = text_input(placeholder, &state.draft)
+    let input = text_input(&placeholder, &state.draft)
         .on_input(move |s| on_message(TagListInputMessage::DraftChanged(s)))
         .on_submit(on_message(TagListInputMessage::AddPressed))
         .padding(Padding::from([sp(Spacing::Xs), sp(Spacing::Sm)]))

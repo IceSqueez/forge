@@ -17,10 +17,10 @@ pub enum BindBadge {
 }
 
 pub struct BindAddressCardParams<'a> {
-    pub title: &'a str,
+    pub title: String,
     pub tech_label: &'a str,
     pub badge: BindBadge,
-    pub description: &'a str,
+    pub description: String,
     pub selected: bool,
 }
 

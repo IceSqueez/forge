@@ -16,7 +16,7 @@ pub struct DeviceLabel {
 
 fn display_name(d: &DeviceLabel) -> String {
     if d.is_default {
-        format!("{} (default)", d.name)
+        format!("{} {}", d.name, crate::tr!("widget.device.default_suffix"))
     } else {
         d.name.clone()
     }
@@ -77,7 +77,7 @@ pub fn output_device_picker<'a, Msg: 'a + Clone>(
     let test_btn = button(
         row![
             tabler_icon(Icon::PlayerPlay, 11.0, p2.text_secondary),
-            text("Test")
+            text(crate::tr!("widget.device.test"))
                 .size(FONT_SM)
                 .color(p2.text_secondary)
                 .font(font(FontRole::Body)),

@@ -1243,3 +1243,97 @@ auth_error_credentials_missing_youtube = YouTube OAuth client credentials are no
 auth_error_credentials_missing_kick = Kick OAuth client credentials are not configured
 auth_error_flow_consumed = OAuth flow already consumed
 auth_error_unknown = Unknown error
+
+## Widget — key capture
+
+widget_key_capture_placeholder = Press a combo…
+
+## Widget — event inspector
+
+widget_event_replay = Replay this event
+widget_event_payload_header = PAYLOAD
+widget_event_caused_header = CAUSED
+
+## Widget — chat row
+
+widget_chat_subscribed = subscribed (Tier { $tier })
+widget_chat_cheered = cheered
+widget_chat_raiding_with = is raiding with
+widget_chat_viewers = { $viewers } viewers
+widget_chat_triggered = Triggered: { $action }
+
+## Widget — builtin header actions
+
+widget_header_action_reconnect = Reconnect
+widget_header_action_refresh_token = Refresh Token
+widget_header_action_disconnect = Disconnect
+widget_header_action_settings = Settings
+widget_header_uptime = uptime { $duration }
+widget_header_uptime_only = uptime { $duration }
+widget_header_capability_limited = Limited
+
+## Widget — builtin content
+
+widget_builtin_stream_health = STREAM HEALTH
+widget_builtin_active_badge = ACTIVE
+widget_builtin_live_badge = LIVE
+widget_builtin_active_count = { $count } active
+widget_builtin_event_count =
+    { $count ->
+        [one] { $count } event
+       *[other] { $count } events
+    }
+
+## Widget — server file list
+
+widget_file_list_header = Overlay host root
+widget_file_list_path_label = PATH
+widget_file_list_files_label = FILES
+widget_file_list_url_label = BROWSER SOURCE URL
+widget_file_list_dir_count =
+    { $count ->
+        [one] { $count } file
+       *[other] { $count } files
+    }
+
+
+## Widget — server confirm modal
+
+widget_confirm_what_this_means = WHAT THIS MEANS
+widget_confirm_type_prefix = Type
+widget_confirm_type_suffix = to confirm:
+widget_confirm_esc_to_cancel = to cancel
+widget_confirm_cancel = Cancel
+
+## Widget — server bearer token
+
+widget_bearer_copy = COPY
+widget_bearer_regenerate = REGENERATE
+widget_bearer_regen_warning = Regenerating disconnects all clients
+
+## Widget — server bind card
+
+widget_bind_badge_recommended = Recommended
+widget_bind_badge_requires_confirmation = Requires confirmation
+
+## Widget — picker modal
+
+widget_picker_search_placeholder = Search…
+widget_picker_loading = Loading…
+widget_picker_no_results = No results.
+
+## Widget — output device picker
+
+widget_device_default_suffix = (default)
+widget_device_test = Test
+
+## Widget — layout chrome
+
+widget_layout_app_name = Forge
+widget_layout_footer_app = forge
+widget_layout_connected = { $connected }/{ $total } connected
+widget_layout_uptime_suffix = uptime
+
+## Widget — volume slider
+
+widget_volume_label = VOL

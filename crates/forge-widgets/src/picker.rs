@@ -61,7 +61,7 @@ pub fn picker_modal<'a, Msg: 'a + Clone>(
     });
 
     let search_row = container(search_input(
-        "Search...",
+        crate::tr!("widget.picker.search_placeholder"),
         search_value,
         on_search_change,
         palette,
@@ -79,7 +79,7 @@ pub fn picker_modal<'a, Msg: 'a + Clone>(
 
     let list_area: Element<'a, Msg> = if loading {
         container(
-            text("Loading...")
+            text(crate::tr!("widget.picker.loading"))
                 .size(FONT_SM)
                 .color(p.text_muted)
                 .font(font(FontRole::Body)),
@@ -107,7 +107,7 @@ pub fn picker_modal<'a, Msg: 'a + Clone>(
 
         if filtered.is_empty() {
             container(
-                text("No results.")
+                text(crate::tr!("widget.picker.no_results"))
                     .size(FONT_SM)
                     .color(p.text_muted)
                     .font(font(FontRole::Body)),
@@ -130,7 +130,7 @@ pub fn picker_modal<'a, Msg: 'a + Clone>(
     let footer = container(
         row![
             Space::new().width(Length::Fill),
-            secondary_button("Cancel", on_cancel, palette),
+            secondary_button(crate::tr!("widget.confirm.cancel"), on_cancel, palette),
         ]
         .align_y(Alignment::Center),
     )

@@ -1267,3 +1267,99 @@ auth_error_credentials_missing_youtube = Облікові дані OAuth для 
 auth_error_credentials_missing_kick = Облікові дані OAuth для Kick не налаштовані
 auth_error_flow_consumed = OAuth-потік уже використано
 auth_error_unknown = Невідома помилка
+
+## Widget — key capture
+
+widget_key_capture_placeholder = Натисніть комбінацію…
+
+## Widget — event inspector
+
+widget_event_replay = Відтворити цю подію
+widget_event_payload_header = ДАНІ
+widget_event_caused_header = ПРИЧИНА
+
+## Widget — chat row
+
+widget_chat_subscribed = підписався (Рівень { $tier })
+widget_chat_cheered = зробив cheer
+widget_chat_raiding_with = рейдить з
+widget_chat_viewers = { $viewers } глядачів
+widget_chat_triggered = Спрацювало: { $action }
+
+## Widget — builtin header actions
+
+widget_header_action_reconnect = Підключитися
+widget_header_action_refresh_token = Оновити токен
+widget_header_action_disconnect = Відключитися
+widget_header_action_settings = Налаштування
+widget_header_uptime = час роботи { $duration }
+widget_header_uptime_only = час роботи { $duration }
+widget_header_capability_limited = Обмежено
+
+## Widget — builtin content
+
+widget_builtin_stream_health = ЯКІСТЬ СТРІМУ
+widget_builtin_active_badge = АКТИВНО
+widget_builtin_live_badge = НАЖИВО
+widget_builtin_active_count = { $count } активних
+widget_builtin_event_count =
+    { $count ->
+        [one] { $count } подія
+        [few] { $count } події
+       *[other] { $count } подій
+    }
+
+## Widget — server file list
+
+widget_file_list_header = Коренева директорія оверлею
+widget_file_list_path_label = ШЛЯХ
+widget_file_list_files_label = ФАЙЛИ
+widget_file_list_url_label = URL ДЖЕРЕЛА В БРАУЗЕРІ
+widget_file_list_dir_count =
+    { $count ->
+        [one] { $count } файл
+        [few] { $count } файли
+       *[other] { $count } файлів
+    }
+
+
+## Widget — server confirm modal
+
+widget_confirm_what_this_means = ЩО ЦЕ ОЗНАЧАЄ
+widget_confirm_type_prefix = Введіть
+widget_confirm_type_suffix = для підтвердження:
+widget_confirm_esc_to_cancel = щоб скасувати
+widget_confirm_cancel = Скасувати
+
+## Widget — server bearer token
+
+widget_bearer_copy = КОПІЮВАТИ
+widget_bearer_regenerate = ПЕРЕГЕНЕРУВАТИ
+widget_bearer_regen_warning = Перегенерація відключить всіх клієнтів
+
+## Widget — server bind card
+
+widget_bind_badge_recommended = Рекомендовано
+widget_bind_badge_requires_confirmation = Потребує підтвердження
+
+## Widget — picker modal
+
+widget_picker_search_placeholder = Пошук…
+widget_picker_loading = Завантаження…
+widget_picker_no_results = Нічого не знайдено.
+
+## Widget — output device picker
+
+widget_device_default_suffix = (за замовчуванням)
+widget_device_test = Тест
+
+## Widget — layout chrome
+
+widget_layout_app_name = Forge
+widget_layout_footer_app = forge
+widget_layout_connected = { $connected }/{ $total } підключено
+widget_layout_uptime_suffix = час роботи
+
+## Widget — volume slider
+
+widget_volume_label = ГУЧН

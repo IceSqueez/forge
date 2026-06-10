@@ -103,12 +103,12 @@ fn triggered_label(body: &ChatBody) -> Option<String> {
             triggered_action, ..
         } => triggered_action
             .as_deref()
-            .map(|a| format!("Triggered: {a}")),
+            .map(|a| crate::tr!("widget.chat.triggered", action = a.to_owned())),
         ChatBody::Raid {
             triggered_action, ..
         } => triggered_action
             .as_deref()
-            .map(|a| format!("Triggered: {a}")),
+            .map(|a| crate::tr!("widget.chat.triggered", action = a.to_owned())),
         ChatBody::Command {
             action_name,
             action_duration_ms,
@@ -297,7 +297,10 @@ where
                         text::Wrapping::Word,
                     )
                 });
-                let descriptor = format!(" subscribed (Tier {tier})");
+                let descriptor = {
+                    let s = crate::tr!("widget.chat.subscribed", tier = *tier as i64);
+                    format!(" {s}")
+                };
                 state.paragraphs.inline_descriptor = Some(shape_text::<R::Paragraph>(
                     &descriptor,
                     FONT_SM,
@@ -333,13 +336,16 @@ where
                     Size::new(wrap_w, f32::INFINITY),
                     text::Wrapping::Word,
                 ));
-                state.paragraphs.inline_descriptor = Some(shape_text::<R::Paragraph>(
-                    " cheered",
-                    FONT_SM,
-                    font(FontRole::Body),
-                    Size::INFINITE,
-                    text::Wrapping::None,
-                ));
+                {
+                    let cheered = format!(" {}", crate::tr!("widget.chat.cheered"));
+                    state.paragraphs.inline_descriptor = Some(shape_text::<R::Paragraph>(
+                        &cheered,
+                        FONT_SM,
+                        font(FontRole::Body),
+                        Size::INFINITE,
+                        text::Wrapping::None,
+                    ));
+                }
                 state.paragraphs.inline_badge = Some(shape_text::<R::Paragraph>(
                     &format!("{bits} bits"),
                     FONT_XS,
@@ -360,15 +366,18 @@ where
             }
             ChatBody::Raid { viewers, .. } => {
                 state.paragraphs.secondary_body = None;
-                state.paragraphs.inline_descriptor = Some(shape_text::<R::Paragraph>(
-                    " is raiding with",
-                    FONT_SM,
-                    font(FontRole::Body),
-                    Size::INFINITE,
-                    text::Wrapping::None,
-                ));
+                {
+                    let raiding = format!(" {}", crate::tr!("widget.chat.raiding_with"));
+                    state.paragraphs.inline_descriptor = Some(shape_text::<R::Paragraph>(
+                        &raiding,
+                        FONT_SM,
+                        font(FontRole::Body),
+                        Size::INFINITE,
+                        text::Wrapping::None,
+                    ));
+                }
                 state.paragraphs.inline_badge = Some(shape_text::<R::Paragraph>(
-                    &format!("{viewers} viewers"),
+                    &crate::tr!("widget.chat.viewers", viewers = *viewers as i64),
                     FONT_XS,
                     font(FontRole::Body),
                     Size::INFINITE,

@@ -221,7 +221,7 @@ pub(crate) fn render_subscription_list<'a, Msg: 'a>(
     let bg = palette.elevated;
     let border_color = palette.border_regular;
     let r = radius(Radius::Md);
-    let count_str = format!("{} active", items.len());
+    let count_str = crate::tr!("widget.builtin.active_count", count = items.len() as i64);
 
     let header = panel_header_row(icon.as_str(), title, Some(&count_str), palette);
     let divider = horizontal_divider(border_color);
@@ -520,7 +520,10 @@ fn active_item_row_elem<'a, Msg: 'a>(
         .push(container(name_elem).width(Length::Fill));
 
     if item.active {
-        row = row.push(active_badge("ACTIVE", palette));
+        row = row.push(active_badge(
+            &crate::tr!("widget.builtin.active_badge"),
+            palette,
+        ));
     } else if let Some(mode) = &item.mode_label {
         row = row.push(text(mode.clone()).size(FONT_XS).color(palette.text_faint));
     }
@@ -562,11 +565,7 @@ fn subscription_row_elem<'a, Msg: 'a>(
     let trailing: Element<'a, Msg> = if let Some(err) = &item.error_label {
         text(err.clone()).size(FONT_XS).color(palette.random).into()
     } else if let Some(count) = item.event_count {
-        let label = if count == 1 {
-            format!("{count} event")
-        } else {
-            format!("{count} events")
-        };
+        let label = crate::tr!("widget.builtin.event_count", count = count as i64);
         text(label).size(FONT_XS).color(palette.text_muted).into()
     } else {
         Space::new().into()
@@ -669,7 +668,7 @@ fn health_bar_section<'a, Msg: 'a>(
                 ..container::Style::default()
             });
 
-    let health_label = text("STREAM HEALTH")
+    let health_label = text(crate::tr!("widget.builtin.stream_health"))
         .font(font(FontRole::Monospace))
         .size(FONT_XS)
         .color(palette.text_muted);
@@ -820,7 +819,11 @@ fn info_card_header<'a, Msg: 'a>(
                 .spacing(5.0)
                 .align_y(Alignment::Center)
                 .push(dot)
-                .push(text("LIVE").size(FONT_XS).color(success)),
+                .push(
+                    text(crate::tr!("widget.builtin.live_badge"))
+                        .size(FONT_XS)
+                        .color(success),
+                ),
         )
         .padding([0, sp(Spacing::Xs)])
         .style(move |_: &iced::Theme| container::Style {

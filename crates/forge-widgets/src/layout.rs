@@ -36,7 +36,7 @@ pub fn title_bar<'a, Msg: 'a>(palette: &'a ForgePalette) -> Element<'a, Msg> {
     let text_primary = palette.text_primary;
 
     let logo = logo_box(palette);
-    let forge_label = text("Forge")
+    let forge_label = text(crate::tr!("widget.layout.app_name"))
         .size(FONT_SM)
         .color(text_primary)
         .font(iced::Font {
@@ -80,7 +80,10 @@ pub fn app_footer<'a, Msg: 'a>(
     let success = palette.success;
     let mono = font(FontRole::Monospace);
 
-    let forge_label = text("forge").size(FONT_XS).color(text_muted).font(mono);
+    let forge_label = text(crate::tr!("widget.layout.footer_app"))
+        .size(FONT_XS)
+        .color(text_muted)
+        .font(mono);
     let dot_sep = text("·").size(FONT_XS).color(text_faint).font(mono);
     let version_label = text(format!("v{version}"))
         .size(FONT_XS)
@@ -92,10 +95,14 @@ pub fn app_footer<'a, Msg: 'a>(
 
     let dot_color = if connected == 0 { text_faint } else { success };
     let dot_el = status_dot(dot_color, 6.0);
-    let conn_label = text(format!("{connected}/{total} connected"))
-        .size(FONT_XS)
-        .color(text_secondary)
-        .font(mono);
+    let conn_label = text(crate::tr!(
+        "widget.layout.connected",
+        connected = connected as i64,
+        total = total as i64
+    ))
+    .size(FONT_XS)
+    .color(text_secondary)
+    .font(mono);
     let conn_row = row![dot_el, conn_label]
         .spacing(6)
         .align_y(iced::Alignment::Center);
@@ -103,10 +110,13 @@ pub fn app_footer<'a, Msg: 'a>(
     let sep2 = text("·").size(FONT_XS).color(text_faint).font(mono);
 
     let clock_icon = tabler_icon(Icon::Clock, 10.0, text_faint);
-    let uptime_label = text(format!("{uptime} uptime"))
-        .size(FONT_XS)
-        .color(text_secondary)
-        .font(mono);
+    let uptime_label = text(format!(
+        "{uptime} {}",
+        crate::tr!("widget.layout.uptime_suffix")
+    ))
+    .size(FONT_XS)
+    .color(text_secondary)
+    .font(mono);
     let uptime_row = row![clock_icon, uptime_label]
         .spacing(5)
         .align_y(iced::Alignment::Center);

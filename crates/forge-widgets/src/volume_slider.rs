@@ -22,7 +22,7 @@ pub fn volume_slider<'a, Msg: 'a + Clone>(
     let gap = f32::from(spacing(Spacing::Sm, Density::Cozy));
 
     row![
-        text("VOL")
+        text(crate::tr!("widget.volume.label"))
             .size(FONT_SM)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace))

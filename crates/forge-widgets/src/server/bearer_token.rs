@@ -88,7 +88,9 @@ pub fn bearer_token_display<'a, Msg: Clone + 'a>(
     let copy_btn = button(
         row![
             tabler_icon(Icon::Copy, 12.0, copy_normal),
-            text("COPY").font(font(FontRole::Monospace)).size(FONT_XS),
+            text(crate::tr!("widget.bearer.copy"))
+                .font(font(FontRole::Monospace))
+                .size(FONT_XS),
         ]
         .spacing(5)
         .align_y(Alignment::Center),
@@ -102,7 +104,7 @@ pub fn bearer_token_display<'a, Msg: Clone + 'a>(
     let regen_btn = button(
         row![
             tabler_icon(Icon::Refresh, 12.0, warn_color),
-            text("REGENERATE")
+            text(crate::tr!("widget.bearer.regenerate"))
                 .font(font(FontRole::Monospace))
                 .size(FONT_XS),
         ]
@@ -119,7 +121,7 @@ pub fn bearer_token_display<'a, Msg: Clone + 'a>(
 
     let warning_row = row![
         tabler_icon(Icon::AlertTriangle, 11.0, palette.warning),
-        text("Regenerating disconnects all clients")
+        text(crate::tr!("widget.bearer.regen_warning"))
             .size(FONT_XS)
             .color(palette.text_faint),
     ]

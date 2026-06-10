@@ -35,7 +35,7 @@ pub struct KeyCapture<'a, Msg> {
 
 pub fn key_capture<'a, Msg>(palette: &'a ForgePalette) -> KeyCapture<'a, Msg> {
     KeyCapture {
-        placeholder: "Press a combo\u{2026}".to_owned(),
+        placeholder: crate::tr!("widget.key_capture.placeholder"),
         value: None,
         on_captured: None,
         on_reset: None,
@@ -501,7 +501,7 @@ mod tests {
         let palette = crate::palette::CATPPUCCIN_MOCHA;
         let widget = key_capture::<()>(&palette);
         let state = KeyCaptureState::default();
-        assert_eq!(widget.display_str(&state), "Press a combo\u{2026}");
+        assert_eq!(widget.display_str(&state), "widget.key_capture.placeholder");
     }
 
     #[test]
@@ -522,7 +522,7 @@ mod tests {
             partial_key: None,
             locked: false,
         };
-        assert_eq!(widget.display_str(&state), "Press a combo\u{2026}");
+        assert_eq!(widget.display_str(&state), "widget.key_capture.placeholder");
     }
 
     #[test]

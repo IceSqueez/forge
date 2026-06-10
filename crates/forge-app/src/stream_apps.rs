@@ -54,7 +54,8 @@ pub fn view<'a>(state: &'a App, palette: &'a ForgePalette) -> Element<'a, Messag
         .width(Length::Fill);
 
     let body = column![header, grid].spacing(spf(Spacing::Md));
-    let page_header = crate::page_chrome::simple_page_header(&[("Stream Apps", true)], palette);
+    let page_header =
+        crate::page_chrome::simple_page_header(&[("Stream Apps".to_owned(), true)], palette);
     let body_container = container(scrollable(body).height(Length::Fill))
         .width(Length::Fill)
         .height(Length::Fill)

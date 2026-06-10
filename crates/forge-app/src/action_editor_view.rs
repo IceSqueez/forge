@@ -898,9 +898,9 @@ pub fn action_editor_view<'a>(
         .unwrap_or("Action");
     let page_header = crate::page_chrome::simple_page_header(
         &[
-            ("Automation", false),
-            ("Actions", false),
-            (action_name, true),
+            ("Automation".to_owned(), false),
+            ("Actions".to_owned(), false),
+            (action_name.to_owned(), true),
         ],
         palette,
     );

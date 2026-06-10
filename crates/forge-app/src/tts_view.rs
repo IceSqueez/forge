@@ -88,15 +88,19 @@ pub(crate) fn tts_section_view<'a>(
     };
 
     let section_label = match section {
-        TtsSection::Dashboard => "Dashboard",
-        TtsSection::Engines => "Engines",
-        TtsSection::Aliases => "Voice aliases",
-        TtsSection::Filters => "Filters",
-        TtsSection::Triggers => "Triggers",
-        TtsSection::CloudEngines => "Cloud engines",
+        TtsSection::Dashboard => "Dashboard".to_owned(),
+        TtsSection::Engines => "Engines".to_owned(),
+        TtsSection::Aliases => "Voice aliases".to_owned(),
+        TtsSection::Filters => "Filters".to_owned(),
+        TtsSection::Triggers => "Triggers".to_owned(),
+        TtsSection::CloudEngines => "Cloud engines".to_owned(),
     };
     let page_header = simple_page_header(
-        &[("Builtin", false), ("TTS", false), (section_label, true)],
+        &[
+            ("Builtin".to_owned(), false),
+            ("TTS".to_owned(), false),
+            (section_label, true),
+        ],
         palette,
     );
 

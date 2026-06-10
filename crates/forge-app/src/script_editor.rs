@@ -1297,7 +1297,7 @@ pub fn script_editor_view<'a>(
         .height(Length::Fill);
 
     let page_header = crate::page_chrome::page_header_with_actions(
-        &[("Script Editor", true)],
+        &[("Script Editor".to_owned(), true)],
         Some(toolbar_actions),
         palette,
     );

@@ -469,7 +469,7 @@ pub(crate) fn settings_view<'a>(
         }
     };
 
-    let page_header = simple_page_header(&[("Settings", true)], palette);
+    let page_header = simple_page_header(&[("Settings".to_owned(), true)], palette);
     let body = iced::widget::row![nav_container, pane].spacing(0);
 
     iced::widget::column![page_header, body]

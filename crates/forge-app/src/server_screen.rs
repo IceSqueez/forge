@@ -1277,8 +1277,10 @@ pub fn server_screen_view<'a>(
     .spacing(spf(Spacing::Sm))
     .padding([sp(Spacing::Md), sp(Spacing::Lg)]);
 
-    let page_header =
-        crate::page_chrome::simple_page_header(&[("Builtin", false), ("Server", true)], palette);
+    let page_header = crate::page_chrome::simple_page_header(
+        &[("Builtin".to_owned(), false), ("Server".to_owned(), true)],
+        palette,
+    );
 
     column![
         page_header,

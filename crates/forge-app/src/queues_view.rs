@@ -229,7 +229,10 @@ pub fn queues_view<'a>(state: &'a QueuesState, palette: &'a ForgePalette) -> Ele
     .align_y(iced::Alignment::Center);
 
     let page_header = crate::page_chrome::page_header_with_actions(
-        &[("Automation", false), ("Queues", true)],
+        &[
+            ("Automation".to_owned(), false),
+            ("Queues".to_owned(), true),
+        ],
         Some(right_side.into()),
         palette,
     );

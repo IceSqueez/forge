@@ -203,7 +203,7 @@ pub(crate) fn platforms_overview_view<'a>(
     let grid = column![grid_row_1, grid_row_2].spacing(spf(Spacing::Sm));
 
     let body = column![header, grid].spacing(spf(Spacing::Md));
-    let page_header = simple_page_header(&[("Platforms", true)], palette);
+    let page_header = simple_page_header(&[("Platforms".to_owned(), true)], palette);
     let body_container = container(scrollable(body).height(Length::Fill))
         .width(Length::Fill)
         .height(Length::Fill)

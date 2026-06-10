@@ -149,20 +149,20 @@ pub fn hero_card<'a, Msg: 'a>(
         .into()
 }
 
-pub struct BigJumpCardProps<'a, Msg> {
+pub struct BigJumpCardProps<Msg> {
     pub icon: Icon,
     pub icon_color: iced::Color,
-    pub section_label: &'a str,
-    pub title: &'a str,
+    pub section_label: String,
+    pub title: String,
     pub stat: String,
     pub stat_label: String,
-    pub hint: &'a str,
+    pub hint: String,
     pub on_press: Msg,
     pub warn: bool,
 }
 
 pub fn big_jump_card<'a, Msg: Clone + 'a>(
-    props: BigJumpCardProps<'a, Msg>,
+    props: BigJumpCardProps<Msg>,
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
     let surface_overlay = palette.surface_overlay;

@@ -718,8 +718,10 @@ pub fn view<'a>(
     let name = platform_display_name(state.platform);
     let dot_color = platform_dot_color(state.platform, palette);
 
-    let page_header =
-        crate::page_chrome::simple_page_header(&[("Platforms", false), (name, true)], palette);
+    let page_header = crate::page_chrome::simple_page_header(
+        &[("Platforms".to_owned(), false), (name.to_owned(), true)],
+        palette,
+    );
 
     let header_card = platform_header_card(name, dot_color, palette);
 

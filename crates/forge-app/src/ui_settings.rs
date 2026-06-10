@@ -1,5 +1,15 @@
 use forge_storage::{SettingsRepo, StorageError};
 
+/// Maps the storage-side density onto the widget-side token cell; call on the main thread.
+pub fn install_density(density: forge_storage::settings::Density) {
+    let widget_density = match density {
+        forge_storage::settings::Density::Compact => forge_widgets::Density::Compact,
+        forge_storage::settings::Density::Cozy => forge_widgets::Density::Cozy,
+        forge_storage::settings::Density::Spacious => forge_widgets::Density::Spacious,
+    };
+    forge_widgets::install_density(widget_density);
+}
+
 pub async fn sheet_width(repo: &dyn SettingsRepo, key: &str) -> Result<Option<f32>, StorageError> {
     let storage_key = format!("sheet_width:{key}");
     let raw = repo.get_string(&storage_key).await?;

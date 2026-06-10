@@ -1,4 +1,20 @@
+use std::cell::Cell;
+
 use iced::{Font, font};
+
+thread_local! {
+    static ACTIVE_DENSITY: Cell<Density> = const { Cell::new(Density::Cozy) };
+}
+
+/// Replaces the active density for this thread. Per-thread, like the locale bundle — iced's
+/// view loop runs on the main thread, so installing once there covers every token call site.
+pub fn install_density(density: Density) {
+    ACTIVE_DENSITY.with(|cell| cell.set(density));
+}
+
+fn active_density() -> Density {
+    ACTIVE_DENSITY.with(Cell::get)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ThemeId {
@@ -49,11 +65,11 @@ pub fn spacing(s: Spacing, d: Density) -> u16 {
 }
 
 pub fn sp(token: Spacing) -> u16 {
-    spacing(token, Density::Cozy)
+    spacing(token, active_density())
 }
 
 pub fn spf(token: Spacing) -> f32 {
-    f32::from(spacing(token, Density::Cozy))
+    f32::from(spacing(token, active_density()))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

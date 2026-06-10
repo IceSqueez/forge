@@ -13,6 +13,7 @@ use forge_runtime::{
     ActionEngineHandle, EventBus, NullEventLogRepo, QueueSchedulerHandle, ScriptRegistry,
 };
 use forge_storage::Language;
+use forge_storage::settings::Density;
 use forge_storage::{CredentialsRepo, DataProvider};
 #[cfg(test)]
 use forge_vtube::{VTubeClient, VTubeConfig};
@@ -74,6 +75,7 @@ pub struct App {
     pub theme: Theme,
     pub palette: ForgePalette,
     pub language: Language,
+    pub density: Density,
     pub toast_queue: ToastQueue<Message>,
     pub storage_offline: bool,
     pub boot_time: SystemTime,
@@ -153,6 +155,7 @@ impl App {
         scheduler: Option<QueueSchedulerHandle>,
         sound_player: Option<Arc<SoundboardPlayer>>,
         language: Language,
+        density: Density,
     ) -> Self {
         let (theme, palette) = forge_widgets::catppuccin_mocha();
         let server_subsystem = Arc::new(ServerSubsystem::new(
@@ -163,6 +166,7 @@ impl App {
             theme,
             palette,
             language,
+            density,
             toast_queue: ToastQueue::new(),
             storage_offline,
             boot_time: SystemTime::now(),
@@ -228,6 +232,7 @@ impl Default for App {
             theme,
             palette,
             language: Language::En,
+            density: Density::Cozy,
             toast_queue: ToastQueue::new(),
             storage_offline: false,
             boot_time: SystemTime::now(),
@@ -642,6 +647,7 @@ mod tests {
             theme,
             palette,
             language: Language::En,
+            density: Density::Cozy,
             toast_queue: ToastQueue::new(),
             storage_offline: false,
             boot_time: std::time::SystemTime::now(),
@@ -978,6 +984,7 @@ mod tests {
             theme,
             palette,
             language: Language::En,
+            density: Density::Cozy,
             toast_queue: ToastQueue::new(),
             storage_offline: false,
             boot_time: std::time::SystemTime::now(),

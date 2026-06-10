@@ -266,6 +266,116 @@ fn settings_language_pane(current: Language, palette: &ForgePalette) -> Element<
         .into()
 }
 
+fn density_option_row(
+    density: forge_storage::settings::Density,
+    current: forge_storage::settings::Density,
+    palette: &ForgePalette,
+) -> Element<'static, Message> {
+    use iced::widget::{Space, button, column, row, text};
+
+    let p = *palette;
+    let is_selected = density == current;
+    let (label, hint) = match density {
+        forge_storage::settings::Density::Compact => (
+            forge_widgets::tr!("settings_appearance_density_compact"),
+            forge_widgets::tr!("settings_appearance_density_compact_hint"),
+        ),
+        forge_storage::settings::Density::Cozy => (
+            forge_widgets::tr!("settings_appearance_density_cozy"),
+            forge_widgets::tr!("settings_appearance_density_cozy_hint"),
+        ),
+        forge_storage::settings::Density::Spacious => (
+            forge_widgets::tr!("settings_appearance_density_spacious"),
+            forge_widgets::tr!("settings_appearance_density_spacious_hint"),
+        ),
+    };
+
+    let labels = column![
+        text(label).size(FONT_SM).color(p.text_primary),
+        text(hint).size(FONT_XS).color(p.text_muted),
+    ]
+    .spacing(2);
+
+    let mut inner = row![labels, Space::new().width(Length::Fill)]
+        .align_y(iced::Alignment::Center)
+        .padding([10_u16, 0_u16]);
+    if is_selected {
+        inner = inner.push(tabler_icon(Icon::CircleCheck, 16.0, p.brand));
+    }
+
+    button(inner)
+        .on_press(Message::Settings(SettingsMsg::DensityChanged(density)))
+        .width(Length::Fill)
+        .style(move |_: &iced::Theme, _status| {
+            let bg_color = if is_selected {
+                iced::Color { a: 0.12, ..p.brand }
+            } else {
+                iced::Color::TRANSPARENT
+            };
+            let border_color = if is_selected {
+                iced::Color { a: 0.5, ..p.brand }
+            } else {
+                iced::Color::TRANSPARENT
+            };
+            iced::widget::button::Style {
+                background: Some(iced::Background::Color(bg_color)),
+                border: iced::Border {
+                    color: border_color,
+                    width: if is_selected { 1.0 } else { 0.0 },
+                    radius: radius(Radius::Sm).into(),
+                },
+                text_color: p.text_primary,
+                ..iced::widget::button::Style::default()
+            }
+        })
+        .into()
+}
+
+fn settings_appearance_pane(
+    current: forge_storage::settings::Density,
+    palette: &ForgePalette,
+) -> Element<'_, Message> {
+    use iced::widget::{column, container, row, text};
+
+    let p = *palette;
+
+    let header = row![
+        tabler_icon(Icon::LayoutGrid, 18.0, p.brand),
+        text(forge_widgets::tr!("settings_appearance_title"))
+            .size(FONT_LG)
+            .color(p.text_primary),
+    ]
+    .spacing(spf(Spacing::Xs))
+    .align_y(iced::Alignment::Center);
+
+    let density_label = text(forge_widgets::tr!("settings_appearance_density_label"))
+        .size(FONT_SM)
+        .color(p.text_primary);
+    let density_subtitle = text(forge_widgets::tr!("settings_appearance_density_subtitle"))
+        .size(FONT_XS)
+        .color(p.text_muted);
+
+    let options = column![
+        density_option_row(forge_storage::settings::Density::Compact, current, palette),
+        density_option_row(forge_storage::settings::Density::Cozy, current, palette),
+        density_option_row(forge_storage::settings::Density::Spacious, current, palette),
+    ]
+    .spacing(spf(Spacing::Xs));
+
+    let body = column![
+        header,
+        column![density_label, density_subtitle].spacing(2),
+        options
+    ]
+    .spacing(spf(Spacing::Md));
+
+    container(body)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(sp(Spacing::Lg))
+        .into()
+}
+
 fn settings_shortcuts_pane(palette: &ForgePalette) -> Element<'static, Message> {
     use iced::widget::{Space, column, container, row, text};
 
@@ -405,6 +515,7 @@ pub(crate) struct SettingsViewParams<'a> {
     pub scripting: &'a ScriptingSettingsState,
     pub rt: &'a RuntimeView,
     pub current_language: forge_storage::Language,
+    pub current_density: forge_storage::settings::Density,
 }
 
 pub(crate) fn settings_view<'a>(
@@ -420,6 +531,7 @@ pub(crate) fn settings_view<'a>(
         scripting,
         rt,
         current_language,
+        current_density,
     } = params;
     let nav = iced::widget::column![
         nav_group_header(
@@ -529,6 +641,7 @@ pub(crate) fn settings_view<'a>(
         SettingsSection::Queues => settings_queues_pane(palette),
         SettingsSection::Notifications => settings_notifications_pane(palette),
         SettingsSection::Language => settings_language_pane(current_language, palette),
+        SettingsSection::Appearance => settings_appearance_pane(current_density, palette),
         SettingsSection::Shortcuts => settings_shortcuts_pane(palette),
         SettingsSection::Hotkeys => crate::settings_hotkeys::view(hotkeys, rt, palette),
         SettingsSection::Scripting => crate::settings_scripting::view(scripting, palette),
@@ -658,6 +771,27 @@ pub(crate) fn handle_message(app: &mut App, sub: SettingsMsg) -> Task<Message> {
         SettingsMsg::LanguagePersisted(result) => {
             if let Err(e) = result {
                 tracing::warn!(error = %e, "failed to persist language selection");
+            }
+            Task::none()
+        }
+        SettingsMsg::DensityChanged(density) => {
+            app.density = density;
+            crate::ui_settings::install_density(density);
+            let settings: Arc<dyn SettingsRepo> =
+                Arc::clone(&app.rt.backend) as Arc<dyn SettingsRepo>;
+            Task::perform(
+                async move {
+                    settings
+                        .set_density(density)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                |r| Message::Settings(SettingsMsg::DensityPersisted(r)),
+            )
+        }
+        SettingsMsg::DensityPersisted(result) => {
+            if let Err(e) = result {
+                tracing::warn!(error = %e, "failed to persist density selection");
             }
             Task::none()
         }

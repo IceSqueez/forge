@@ -10,8 +10,7 @@ use crate::{
     icons::{Icon, tabler_icon},
     palette::ForgePalette,
     tokens::{
-        BORDER_THIN, Density, FONT_LG, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius,
-        sp, spacing,
+        BORDER_THIN, FONT_LG, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
     },
 };
 
@@ -40,15 +39,15 @@ pub fn builtin_header_card<'a, Msg: Clone + 'a>(
     let bg = palette.elevated;
     let border_color = palette.border_regular;
     let r = radius(Radius::Lg);
-    let v_pad = spacing(Spacing::Md, Density::Cozy);
-    let h_pad = spacing(Spacing::Md, Density::Cozy);
+    let v_pad = sp(Spacing::Md);
+    let h_pad = sp(Spacing::Md);
 
     let inner = iced::widget::row![
         icon_elem,
         container(info_elem).width(Length::Fill),
         actions_elem,
     ]
-    .spacing(spacing(Spacing::Md, Density::Cozy) as f32)
+    .spacing(spf(Spacing::Md))
     .align_y(Alignment::Center);
 
     container(inner)
@@ -107,7 +106,7 @@ fn info_column<'a, Msg: 'a>(
     let warning = palette.warning;
 
     let mut name_row: Row<'a, Msg> = Row::new()
-        .spacing(spacing(Spacing::Sm, Density::Cozy) as f32)
+        .spacing(spf(Spacing::Sm))
         .align_y(Alignment::Center)
         .push(
             iced::widget::text(params.display_name)
@@ -140,7 +139,7 @@ fn info_column<'a, Msg: 'a>(
         .color(text_muted);
 
     iced::widget::column![name_row, sub_text]
-        .spacing(spacing(Spacing::Xs, Density::Cozy) as f32)
+        .spacing(spf(Spacing::Xs))
         .into()
 }
 
@@ -206,10 +205,10 @@ fn action_buttons<'a, Msg: Clone + 'a>(
     let text_secondary = palette.text_secondary;
     let text_disconnect = palette.random;
     let r = radius(Radius::Sm);
-    let v_pad = spacing(Spacing::Xs, Density::Cozy);
-    let h_pad = spacing(Spacing::Md, Density::Cozy);
+    let v_pad = sp(Spacing::Xs);
+    let h_pad = sp(Spacing::Md);
 
-    let mut row: Row<'a, Msg> = Row::new().spacing(spacing(Spacing::Xs, Density::Cozy) as f32);
+    let mut row: Row<'a, Msg> = Row::new().spacing(spf(Spacing::Xs));
 
     for action in actions {
         let label = action_label(action);

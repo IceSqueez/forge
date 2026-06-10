@@ -119,6 +119,7 @@ pub use tag_list_input::{TagListInputMessage, TagListInputState, tag_list_input}
 pub use theme::{catppuccin_mocha, latte, palette_for_theme, tokyo_night_storm};
 pub use toast::{Toast, ToastAction, ToastKind, ToastQueue, toast_viewport};
 pub use tokens::{
-    Density, FontRole, Radius, Spacing, ThemeId, font, load_fonts, radius, sp, spacing, spf,
+    Density, FontRole, Radius, Spacing, ThemeId, font, install_density, load_fonts, radius, sp,
+    spacing, spf,
 };
 pub use volume_slider::volume_slider;

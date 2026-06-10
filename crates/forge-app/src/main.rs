@@ -69,6 +69,23 @@ fn boot_locale(
     lang
 }
 
+fn boot_density(
+    rt: &tokio::runtime::Runtime,
+    backend: Arc<dyn DataProvider>,
+) -> forge_storage::settings::Density {
+    let settings: Arc<dyn forge_storage::SettingsRepo> =
+        Arc::clone(&backend) as Arc<dyn forge_storage::SettingsRepo>;
+    let density = match rt.block_on(settings.density()) {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to read density setting; defaulting to cozy");
+            forge_storage::settings::Density::Cozy
+        }
+    };
+    forge_app::ui_settings::install_density(density);
+    density
+}
+
 fn default_db_path() -> PathBuf {
     paths::data_dir().join("forge.db")
 }
@@ -687,6 +704,7 @@ fn main() -> iced::Result {
 
     let (backend, storage_offline) = boot_storage();
     let boot_language = boot_locale(&runtime, Arc::clone(&backend));
+    let boot_density = boot_density(&runtime, Arc::clone(&backend));
     let initial_screen = Screen::Home;
 
     let event_log = backend.event_log_repo();
@@ -800,6 +818,7 @@ fn main() -> iced::Result {
             scheduler.clone(),
             sound_player.clone(),
             boot_language,
+            boot_density,
         );
         app.rt.bus = Arc::clone(&bus_boot);
         app.rt.chat_send_bridge = chat_send_bridge.clone();

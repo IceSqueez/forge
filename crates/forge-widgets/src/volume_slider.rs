@@ -4,7 +4,7 @@ use iced::{
 };
 
 use crate::palette::ForgePalette;
-use crate::tokens::{Density, FONT_SM, FontRole, Spacing, font, spacing};
+use crate::tokens::{FONT_SM, FontRole, Spacing, font, spf};
 
 pub fn volume_slider<'a, Msg: 'a + Clone>(
     value: f32,
@@ -19,7 +19,7 @@ pub fn volume_slider<'a, Msg: 'a + Clone>(
     };
     let pct_label = format!("{pct}%");
     let label_w = 36.0_f32;
-    let gap = f32::from(spacing(Spacing::Sm, Density::Cozy));
+    let gap = spf(Spacing::Sm);
 
     row![
         text(crate::tr!("widget.volume.label"))

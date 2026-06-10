@@ -6,8 +6,7 @@ use iced::{Alignment, Background, Border, Element, Length, Shadow};
 use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
 use crate::tokens::{
-    BORDER_THIN, Density, FONT_LG, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius,
-    spacing, spf,
+    BORDER_THIN, FONT_LG, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
 };
 
 fn card_style(
@@ -45,7 +44,7 @@ pub fn card_with_radius<'a, Msg: 'a>(
     let col = iced::widget::column(children).spacing(8);
 
     container(col)
-        .padding(spacing(Spacing::Md, Density::default()))
+        .padding(sp(Spacing::Md))
         .style(card_style(bg, border_color, radius(r)))
         .into()
 }
@@ -85,7 +84,7 @@ pub fn metric_card<'a, Msg: 'a>(
     }
 
     container(col)
-        .padding(spacing(Spacing::Md, Density::default()))
+        .padding(sp(Spacing::Md))
         .style(card_style(bg, border_color, radius(Radius::Md)))
         .into()
 }
@@ -144,7 +143,7 @@ pub fn hero_card<'a, Msg: 'a>(
     }
 
     container(col)
-        .padding(spacing(Spacing::Lg, Density::default()))
+        .padding(sp(Spacing::Lg))
         .style(card_style(bg, border_color, radius(Radius::Lg)))
         .into()
 }

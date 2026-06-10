@@ -114,6 +114,18 @@ home_card_automation_stat_label = { $count ->
 
 home_connections_summary = { $active } active · { $disconnected } disconnected
 
+## Settings → Appearance pane
+
+settings_appearance_title = Appearance
+settings_appearance_density_label = Interface density
+settings_appearance_density_subtitle = How much breathing room the interface gets — applies instantly
+settings_appearance_density_compact = Compact
+settings_appearance_density_compact_hint = Tighter spacing, more rows on screen
+settings_appearance_density_cozy = Cozy
+settings_appearance_density_cozy_hint = Balanced spacing (default)
+settings_appearance_density_spacious = Spacious
+settings_appearance_density_spacious_hint = Extra breathing room between elements
+
 ## Settings → Language pane
 
 settings_language_title = Language

@@ -116,6 +116,18 @@ home_card_automation_stat_label = { $count ->
 
 home_connections_summary = { $active } активних · { $disconnected } відключено
 
+## Налаштування → панель зовнішнього вигляду
+
+settings_appearance_title = Зовнішній вигляд
+settings_appearance_density_label = Щільність інтерфейсу
+settings_appearance_density_subtitle = Скільки простору отримує інтерфейс — застосовується миттєво
+settings_appearance_density_compact = Компактна
+settings_appearance_density_compact_hint = Щільніше розташування, більше рядків на екрані
+settings_appearance_density_cozy = Затишна
+settings_appearance_density_cozy_hint = Збалансовані відступи (типово)
+settings_appearance_density_spacious = Простора
+settings_appearance_density_spacious_hint = Більше повітря між елементами
+
 ## Налаштування → панель мови
 
 settings_language_title = Мова

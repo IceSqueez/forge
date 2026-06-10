@@ -5,20 +5,7 @@ use iced::{Color, Element, Length};
 use time::OffsetDateTime;
 
 pub fn format_relative_time(opt: Option<OffsetDateTime>) -> String {
-    let Some(dt) = opt else {
-        return "never".to_string();
-    };
-    let delta = OffsetDateTime::now_utc() - dt;
-    let secs = delta.whole_seconds().max(0) as u64;
-    if secs < 60 {
-        format!("{}s ago", secs)
-    } else if secs < 3600 {
-        format!("{} min ago", secs / 60)
-    } else if secs < 86400 {
-        format!("{}h ago", secs / 3600)
-    } else {
-        format!("{}d ago", secs / 86400)
-    }
+    forge_widgets::fmt_relative_time(opt)
 }
 
 pub fn action_stat<'a, Msg: 'a>(

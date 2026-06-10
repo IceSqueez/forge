@@ -1363,3 +1363,50 @@ widget_layout_uptime_suffix = час роботи
 ## Widget — volume slider
 
 widget_volume_label = ГУЧН
+
+## Locale-aware formatting — feed time
+
+fmt_feed_time_pattern = {HH}:{MM}:{SS}.{mmm}
+
+## Locale-aware formatting — month abbreviations (uk, genitive short form for date display)
+
+fmt_month_abbr_01 = січ.
+fmt_month_abbr_02 = лют.
+fmt_month_abbr_03 = бер.
+fmt_month_abbr_04 = квіт.
+fmt_month_abbr_05 = трав.
+fmt_month_abbr_06 = черв.
+fmt_month_abbr_07 = лип.
+fmt_month_abbr_08 = серп.
+fmt_month_abbr_09 = вер.
+fmt_month_abbr_10 = жовт.
+fmt_month_abbr_11 = лист.
+fmt_month_abbr_12 = груд.
+
+## Locale-aware formatting — relative time (uk four-form plural: one/few/many/other)
+
+fmt_relative_never = ніколи
+fmt_relative_seconds = { $count ->
+    [one] { $count } с тому
+    [few] { $count } с тому
+    [many] { $count } с тому
+   *[other] { $count } с тому
+}
+fmt_relative_minutes = { $count ->
+    [one] { $count } хв тому
+    [few] { $count } хв тому
+    [many] { $count } хв тому
+   *[other] { $count } хв тому
+}
+fmt_relative_hours = { $count ->
+    [one] { $count } год тому
+    [few] { $count } год тому
+    [many] { $count } год тому
+   *[other] { $count } год тому
+}
+fmt_relative_days = { $count ->
+    [one] { $count } д тому
+    [few] { $count } д тому
+    [many] { $count } д тому
+   *[other] { $count } д тому
+}

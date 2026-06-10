@@ -1337,3 +1337,42 @@ widget_layout_uptime_suffix = uptime
 ## Widget — volume slider
 
 widget_volume_label = VOL
+
+## Locale-aware formatting — feed time
+
+fmt_feed_time_pattern = {HH}:{MM}:{SS}.{mmm}
+
+## Locale-aware formatting — month abbreviations (en)
+
+fmt_month_abbr_01 = Jan
+fmt_month_abbr_02 = Feb
+fmt_month_abbr_03 = Mar
+fmt_month_abbr_04 = Apr
+fmt_month_abbr_05 = May
+fmt_month_abbr_06 = Jun
+fmt_month_abbr_07 = Jul
+fmt_month_abbr_08 = Aug
+fmt_month_abbr_09 = Sep
+fmt_month_abbr_10 = Oct
+fmt_month_abbr_11 = Nov
+fmt_month_abbr_12 = Dec
+
+## Locale-aware formatting — relative time
+
+fmt_relative_never = never
+fmt_relative_seconds = { $count ->
+    [one] { $count }s ago
+   *[other] { $count }s ago
+}
+fmt_relative_minutes = { $count ->
+    [one] { $count } min ago
+   *[other] { $count } min ago
+}
+fmt_relative_hours = { $count ->
+    [one] { $count }h ago
+   *[other] { $count }h ago
+}
+fmt_relative_days = { $count ->
+    [one] { $count }d ago
+   *[other] { $count }d ago
+}

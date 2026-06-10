@@ -100,4 +100,9 @@ pub async fn resolve_startup_language(
 pub fn install_language(lang: Language) {
     let bundle = build_bundle(lang);
     forge_widgets::install_bundle(bundle);
+    let locale_id: &'static str = match lang {
+        Language::En => "en",
+        Language::Uk => "uk",
+    };
+    forge_widgets::set_locale_id(locale_id);
 }

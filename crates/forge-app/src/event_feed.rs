@@ -134,13 +134,7 @@ impl EventFeedState {
         let found = self.events.iter().rev().find(|e| e.id == id).cloned();
         if let Some(ev) = found {
             let ts = ev.timestamp;
-            self.selected_ts_str = format!(
-                "{:02}:{:02}:{:02}.{:03}",
-                ts.hour(),
-                ts.minute(),
-                ts.second(),
-                ts.millisecond()
-            );
+            self.selected_ts_str = forge_widgets::fmt_feed_time(&ts);
             let id_s = id.to_string();
             self.selected_id_str = format!("ev_{}", &id_s[..id_s.len().min(4)]);
             self.selected_action_name = ev.payload["action_name"].as_str().map(str::to_owned);
@@ -200,13 +194,7 @@ pub fn matches_filter(event: &Event, filter: EventFilter) -> bool {
 }
 
 fn format_timestamp(ts: &time::OffsetDateTime) -> String {
-    format!(
-        "{:02}:{:02}:{:02}.{:03}",
-        ts.hour(),
-        ts.minute(),
-        ts.second(),
-        ts.millisecond()
-    )
+    forge_widgets::fmt_feed_time(ts)
 }
 
 pub(crate) fn format_summary(event: &Event) -> String {

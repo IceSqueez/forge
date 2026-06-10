@@ -909,3 +909,189 @@ tts_cloud_field_placeholder_subscription_key = Ключ підписки
 ## Звукова панель — фільтр файлового діалогу
 
 soundboard_file_filter_audio = Аудіо
+
+## Огляд платформ
+
+platforms_title = Стримінгові платформи
+platforms_subtitle = Підключіть один раз — Forge слухатиме всі чати й події в одному місці.
+platforms_breadcrumb = Платформи
+
+platforms_status_connected = Підключено
+platforms_status_not_connected = Не підключено
+
+platforms_twitch_desc = Чат, підписки EventSub, нагороди каналу, біти, рейди
+platforms_youtube_desc = Живий чат, супер-чати, членство в каналі, підписники
+platforms_kick_desc = Чат, події каналу, підписники — нова стримінгова платформа
+
+## Загальна сторінка платформи
+
+platform_generic_features_available = ЩО МОЖНА РОБИТИ ПІСЛЯ ПІДКЛЮЧЕННЯ
+platform_generic_features_coming = ЩО БУДЕ ДОСТУПНО
+platform_generic_kind_platform = Стримінгова платформа
+platform_generic_kind_stream_app = Стрим-додаток
+platform_generic_status_available = доступно — натисніть «Підключити» для авторизації
+platform_generic_status_coming = ще не реалізовано
+platform_generic_parent_platforms = Платформи
+platform_generic_parent_stream_apps = Стрим-додатки
+platform_generic_connect_btn = Підключити
+
+## Панель Twitch
+
+twitch_breadcrumb_platforms = Платформи
+twitch_header_subtitle = Підключіть, щоб увімкнути чат, підписки, біти, рейди, нагороди каналу та EventSub
+twitch_auth_title = Авторизувати Forge на Twitch
+twitch_auth_subtitle = Twitch використовує авторизацію за кодом пристрою. Ви побачите код тут — введіть його на сайті Twitch, і ми автоматично визначимо, коли ви закінчите. Ми ніколи не бачимо вашого пароля.
+twitch_btn_start = Почати авторизацію
+twitch_btn_try_again = Спробувати знову
+twitch_btn_cancel = Скасувати
+twitch_btn_restart = Перезапустити
+twitch_btn_open = Відкрити
+twitch_requesting = Запит коду авторизації від Twitch…
+twitch_authorizing = Код прийнято. Завершення авторизації…
+twitch_polling_primary = Очікування авторизації на Twitch…
+twitch_polling_secondary = перевірка кожні 5с
+twitch_step1_title = Відкрийте це посилання в будь-якому браузері
+twitch_step2_title = Підтвердьте у браузері
+twitch_step2_detail = Forge прослуховує локальний порт для зворотного виклику OAuth. Вікно оновиться після підтвердження.
+twitch_timer_prefix = Закінчується через
+twitch_scopes_header = Дозволи, які запитуватиме Forge
+twitch_scopes_count = { $count } областей
+twitch_missing_client_id = Інтеграцію Twitch не налаштовано. Встановіть FORGE_TWITCH_CLIENT_ID із client_id вашого зареєстрованого додатка та перезапустіть.
+twitch_reauth_title = Токен Twitch не має необхідних областей
+twitch_reauth_detail = EventSub відхилив підписку на чат. Виконайте повторну авторизацію, щоб оновити токен із поточними областями.
+twitch_reauth_btn = Повторна авторизація
+
+## Панель OBS
+
+obs_breadcrumb_stream_apps = Стрим-додатки
+obs_header_subtitle = Підключіть для керування сценами, джерелами, аудіо, фільтрами та записом
+obs_instructions_title = Перш ніж почати
+obs_instructions_lead = У OBS Studio увімкніть вбудований сервер WebSocket, потім скопіюйте налаштування сюди.
+obs_step1 = У OBS: Інструменти → Налаштування сервера WebSocket
+obs_step2 = Позначте «Увімкнути сервер WebSocket»
+obs_step3 = Запишіть порт (за замовчуванням 4455)
+obs_step4 = Натисніть «Показати інформацію підключення», щоб побачити пароль
+obs_requirements_header = ВИМОГИ
+obs_req_version = OBS Studio 28+ (WebSocket v5 вбудовано)
+obs_req_network = Та сама машина або доступна в LAN
+obs_form_title = Налаштування підключення
+obs_field_host = ХОСТ
+obs_field_port = ПОРТ
+obs_field_password = ПАРОЛЬ
+obs_field_keychain = зберігається в ОС-сховищі ключів
+obs_toggle_reconnect_title = Авто-перепідключення при відключенні
+obs_toggle_reconnect_subtitle = Повторні спроби з експоненційним відступом
+obs_toggle_launch_title = Підключатися при запуску
+obs_toggle_launch_subtitle = Починати підключення при відкритті Forge
+obs_btn_test = Тест підключення
+obs_btn_connect = Підключити
+obs_test_running = Тестування підключення…
+obs_test_success = Тест успішний
+obs_test_failed = Тест не вдався
+obs_tip = Запускаєте OBS на іншому ПК? Вкажіть IP тієї машини. Переконайтеся, що OBS WebSocket прив'язаний до 0.0.0.0, а не до localhost, і порт відкритий у файрволі.
+obs_port_invalid = порт має бути числом від 1 до 65535
+
+## Вбудована деталь
+
+builtin_breadcrumb = Вбудований
+builtin_picker_scene = Оберіть сцену
+builtin_picker_source = Оберіть джерело
+builtin_picker_audio_input = Оберіть аудіовхід
+builtin_picker_hotkey = Оберіть гарячу клавішу
+builtin_picker_expression = Оберіть вираз
+builtin_picker_midi_port = Оберіть порт MIDI
+
+## OAuth / локальний callback-потік
+
+oauth_header_subtitle = Підключіть для доступу до живого чату та подій
+oauth_auth_title = Авторизувати Forge на { $name }
+oauth_auth_subtitle = Ця платформа використовує авторизацію за кодом. Ви побачите посилання нижче — перейдіть на сайт платформи і підтвердьте. Ми ніколи не бачимо вашого пароля.
+oauth_btn_connect = Підключити
+oauth_btn_retry = Повторити
+oauth_btn_cancel = Скасувати
+oauth_btn_return = Повернутися до платформ
+oauth_step1_title = Відкрийте це посилання в будь-якому браузері
+oauth_step1_open = Відкрити
+oauth_step2_title = Підтвердьте у браузері
+oauth_step2_detail = Forge прослуховує локальний порт для зворотного виклику OAuth. Вікно оновиться після підтвердження.
+oauth_polling_primary = Очікування авторизації на платформі…
+oauth_polling_secondary = перевірка кожні 5с
+oauth_requesting = Запит коду авторизації…
+oauth_authorized_title = Підключено до { $name }!
+oauth_authorized_subtitle = Авторизацію завершено.
+oauth_failed_title = Авторизація не вдалася
+
+## Екран сервера
+
+server_breadcrumb_builtin = Вбудований
+server_breadcrumb_server = Сервер
+server_header_title = Вбудований сервер
+server_header_desc = Внутрішній HTTP + WebSocket сервер для оверлеїв і дистанційного керування
+server_status_running = Запущено
+server_status_stopped = Зупинено
+server_status_error = Помилка
+server_not_running = Не запущено
+server_up_prefix = Працює { $uptime }
+server_bind_address = АДРЕСА ПРИВ'ЯЗКИ
+server_bearer_token = BEARER-ТОКЕН
+server_btn_restart = Перезапуск
+server_btn_stop = Зупинити
+server_btn_copy = КОПІЯ
+server_stat_clients = КЛІЄНТИ
+server_stat_clients_sub = підключено
+server_stat_events_out = ПОДІЇ НАЗОВНІ
+server_stat_events_sub = сер. { $avg } под/с
+server_stat_http = HTTP-ЗАПИТИ
+server_stat_http_sub = оверлеїв подано
+server_stat_bandwidth = ПРОПУСКНА ЗДАТНІСТЬ
+server_stat_bandwidth_sub = пік { $peak } КБ/с
+server_clients_header = Підключені клієнти
+server_clients_hint = натисніть K на рядку для відключення
+server_clients_empty = Немає підключених клієнтів
+server_col_client = КЛІЄНТ
+server_col_subscriptions = ПІДПИСКИ
+server_col_evs = ПОД/С
+server_col_uptime = АПТАЙМ
+server_overlay_files_empty = Файли оверлею не знайдено
+server_overlay_dir_items = { $count ->
+    [one] { $count } елемент
+    [few] { $count } елементи
+    [many] { $count } елементів
+   *[other] { $count } елементів
+}
+
+## Загальні бейджі статусу (використовуються на сторінках деталей платформ)
+
+common_status_not_connected = Не підключено
+common_status_coming_soon = Незабаром
+
+## Деталі платформи YouTube
+
+youtube_description = Живий чат, супер-чати, членство в каналі, підписники.
+youtube_feature_live_chat = Живий чат із маркерами настрою
+youtube_feature_super_chat = Сповіщення Super Chat з рівнями аналогічно бітсам
+youtube_feature_memberships = Події вступу/підвищення/скасування членства в каналі
+youtube_feature_subscribers = Тригери досягнень підписників
+
+## Деталі платформи Kick
+
+kick_description = Чат, підписки, хости — гібрид: офіційний OAuth API для відправки, Pusher WS спільноти для отримання. Не афілійовано з Kick.com.
+kick_feature_live_chat = Живий чат (отримання + відправка через OAuth)
+kick_feature_subs = Події підписок і подарованих підписок
+kick_feature_hosts_bans = Події хостів і банів
+kick_feature_deleted_replies = Події видалення повідомлень і відповідей
+
+## Деталі VTube Studio
+
+vtube_description = Керування аватаром Vtuber: гарячі клавіші, вирази, тригери предметів.
+vtube_feature_hotkeys = Запускати гарячі клавіші з подій чату
+vtube_feature_expressions = Перемикати вирази та вбрання
+vtube_feature_item_drops = Спавнити випадання предметів на бітси/підписки
+
+## Огляд стрим-додатків
+
+stream_apps_title = Стрим-додатки
+stream_apps_subtitle = Локальні додатки, з якими Forge спілкується через WebSocket. Підключіть для керування з дій.
+stream_apps_breadcrumb = Стрим-додатки
+stream_apps_obs_desc = Сцени, джерела, керування записом, буфери реплею — повний obs-websocket API
+stream_apps_vtube_desc = Керування аватаром Vtuber: гарячі клавіші, вирази, тригери предметів

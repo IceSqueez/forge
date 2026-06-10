@@ -13,11 +13,12 @@ use crate::{App, Message, Screen};
 pub fn view<'a>(state: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
     let p = *palette;
 
-    let title = text("Stream apps").size(FONT_MD).color(p.text_primary);
-    let subtitle =
-        text("Local apps Forge talks to over WebSocket. Connect to control them from actions.")
-            .size(FONT_SM)
-            .color(p.text_muted);
+    let title = text(forge_widgets::tr!("stream_apps.title"))
+        .size(FONT_MD)
+        .color(p.text_primary);
+    let subtitle = text(forge_widgets::tr!("stream_apps.subtitle"))
+        .size(FONT_SM)
+        .color(p.text_muted);
     let header = column![title, subtitle].spacing(spf(Spacing::Xxs));
 
     let obs_connected = matches!(
@@ -29,7 +30,7 @@ pub fn view<'a>(state: &'a App, palette: &'a ForgePalette) -> Element<'a, Messag
         Icon::Broadcast,
         p.success,
         "OBS Studio",
-        "Scenes, sources, recording control, replay buffers — full obs-websocket API",
+        forge_widgets::tr!("stream_apps.obs.desc"),
         obs_connected,
         BuiltinId::new("obs"),
         palette,
@@ -43,7 +44,7 @@ pub fn view<'a>(state: &'a App, palette: &'a ForgePalette) -> Element<'a, Messag
         Icon::MoodSmile,
         p.warning,
         "VTube Studio",
-        "Vtuber avatar control: hotkeys, expressions, item triggers",
+        forge_widgets::tr!("stream_apps.vtube.desc"),
         vtube_connected,
         BuiltinId::new("vtube"),
         palette,
@@ -54,8 +55,10 @@ pub fn view<'a>(state: &'a App, palette: &'a ForgePalette) -> Element<'a, Messag
         .width(Length::Fill);
 
     let body = column![header, grid].spacing(spf(Spacing::Md));
-    let page_header =
-        crate::page_chrome::simple_page_header(&[("Stream Apps".to_owned(), true)], palette);
+    let page_header = crate::page_chrome::simple_page_header(
+        &[(forge_widgets::tr!("stream_apps.breadcrumb"), true)],
+        palette,
+    );
     let body_container = container(scrollable(body).height(Length::Fill))
         .width(Length::Fill)
         .height(Length::Fill)
@@ -72,7 +75,7 @@ fn app_overview_card<'a>(
     icon: Icon,
     icon_color: Color,
     name: &'a str,
-    desc: &'a str,
+    desc: impl Into<String>,
     connected: bool,
     target: BuiltinId,
     palette: &'a ForgePalette,
@@ -108,20 +111,15 @@ fn app_overview_card<'a>(
         });
 
     let badge_label = if connected {
-        "Connected"
+        forge_widgets::tr!("platforms.status.connected")
     } else {
-        "Not connected"
+        forge_widgets::tr!("platforms.status.not_connected")
     };
     let badge_text_color = if connected { p.success } else { p.text_muted };
     let badge = container(
-        row![
-            dot,
-            text(badge_label.to_owned())
-                .size(FONT_XS)
-                .color(badge_text_color),
-        ]
-        .spacing(spf(Spacing::Xxs))
-        .align_y(Alignment::Center),
+        row![dot, text(badge_label).size(FONT_XS).color(badge_text_color),]
+            .spacing(spf(Spacing::Xxs))
+            .align_y(Alignment::Center),
     )
     .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
     .style(move |_: &iced::Theme| container::Style {
@@ -140,7 +138,7 @@ fn app_overview_card<'a>(
     .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
-    let desc_text = text(desc.to_owned()).size(FONT_SM).color(p.text_muted);
+    let desc_text = text(desc.into()).size(FONT_SM).color(p.text_muted);
 
     let info_col = column![title_row, desc_text].spacing(spf(Spacing::Xs));
 

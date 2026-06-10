@@ -240,11 +240,11 @@ fn status_color(status: &ServerStatus, palette: &ForgePalette) -> Color {
     }
 }
 
-fn status_label(status: &ServerStatus) -> &'static str {
+fn status_label(status: &ServerStatus) -> String {
     match status {
-        ServerStatus::Running => "Running",
-        ServerStatus::Stopped => "Stopped",
-        ServerStatus::Error(_) => "Error",
+        ServerStatus::Running => forge_widgets::tr!("server.status.running"),
+        ServerStatus::Stopped => forge_widgets::tr!("server.status.stopped"),
+        ServerStatus::Error(_) => forge_widgets::tr!("server.status.error"),
     }
 }
 
@@ -528,7 +528,9 @@ fn overlay_entry_row<'a>(
     palette: &ForgePalette,
 ) -> Element<'a, Message> {
     let size_label = match &entry.kind {
-        OwnedOverlayKind::Dir => format!("{} items", entry.child_count),
+        OwnedOverlayKind::Dir => {
+            forge_widgets::tr!("server.overlay.dir.items", count = entry.child_count as i64)
+        }
         OwnedOverlayKind::File { .. } => format_bytes(entry.size_bytes),
     };
 
@@ -720,7 +722,7 @@ fn header_card<'a>(
         });
 
     let title_row = row![
-        text("Built-in Server")
+        text(forge_widgets::tr!("server.header.title"))
             .size(FONT_SM)
             .color(palette.text_primary),
         ws_badge,
@@ -734,7 +736,7 @@ fn header_card<'a>(
     .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
-    let description = text("Internal HTTP + WebSocket server for overlays and remote control")
+    let description = text(forge_widgets::tr!("server.header.desc"))
         .size(FONT_SM)
         .color(palette.text_muted);
 
@@ -761,13 +763,16 @@ fn header_card<'a>(
         });
 
     let uptime_str = if state.uptime_seconds > 0 {
-        format!("Up {}", format_server_uptime(state.uptime_seconds))
+        forge_widgets::tr!(
+            "server.up.prefix",
+            uptime = format_server_uptime(state.uptime_seconds)
+        )
     } else {
-        "Not running".to_string()
+        forge_widgets::tr!("server.not.running")
     };
 
     let bind_col = column![
-        text("BIND ADDRESS")
+        text(forge_widgets::tr!("server.bind.address"))
             .font(font(FontRole::Monospace))
             .size(FONT_XS)
             .color(palette.text_faint),
@@ -785,7 +790,7 @@ fn header_card<'a>(
     .width(Length::FillPortion(1));
 
     let token_col = column![
-        text("BEARER TOKEN")
+        text(forge_widgets::tr!("server.bearer.token"))
             .font(font(FontRole::Monospace))
             .size(FONT_XS)
             .color(palette.text_faint),
@@ -829,7 +834,7 @@ fn restart_btn<'a>(palette: &ForgePalette) -> Element<'a, Message> {
     button(
         row![
             tabler_icon(Icon::Refresh, 12.0, palette.success),
-            text("Restart")
+            text(forge_widgets::tr!("server.btn.restart"))
                 .font(font(FontRole::Monospace))
                 .size(FONT_XS),
         ]
@@ -862,27 +867,31 @@ fn stop_btn<'a>(palette: &ForgePalette) -> Element<'a, Message> {
     let border = palette.random;
     let hover_bg = Color { a: 0.08, ..border };
 
-    button(text("Stop").font(font(FontRole::Monospace)).size(FONT_XS))
-        .on_press(Message::Server(ServerScreenMsg::StopServer))
-        .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
-        .style(move |_theme: &iced::Theme, status| {
-            use iced::widget::button::Status;
-            iced::widget::button::Style {
-                background: match status {
-                    Status::Hovered | Status::Pressed => Some(Background::Color(hover_bg)),
-                    _ => None,
-                },
-                text_color: border,
-                border: Border {
-                    color: border,
-                    width: 0.5,
-                    radius: radius(Radius::Md).into(),
-                },
-                shadow: iced::Shadow::default(),
-                snap: false,
-            }
-        })
-        .into()
+    button(
+        text(forge_widgets::tr!("server.btn.stop"))
+            .font(font(FontRole::Monospace))
+            .size(FONT_XS),
+    )
+    .on_press(Message::Server(ServerScreenMsg::StopServer))
+    .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
+    .style(move |_theme: &iced::Theme, status| {
+        use iced::widget::button::Status;
+        iced::widget::button::Style {
+            background: match status {
+                Status::Hovered | Status::Pressed => Some(Background::Color(hover_bg)),
+                _ => None,
+            },
+            text_color: border,
+            border: Border {
+                color: border,
+                width: 0.5,
+                radius: radius(Radius::Md).into(),
+            },
+            shadow: iced::Shadow::default(),
+            snap: false,
+        }
+    })
+    .into()
 }
 
 fn copy_address_btn<'a>(palette: &ForgePalette) -> Element<'a, Message> {
@@ -894,7 +903,9 @@ fn copy_address_btn<'a>(palette: &ForgePalette) -> Element<'a, Message> {
     button(
         row![
             tabler_icon(Icon::Copy, 12.0, normal),
-            text("COPY").font(font(FontRole::Monospace)).size(FONT_XS),
+            text(forge_widgets::tr!("server.btn.copy"))
+                .font(font(FontRole::Monospace))
+                .size(FONT_XS),
         ]
         .spacing(spf(Spacing::Xxs))
         .align_y(Alignment::Center),
@@ -931,30 +942,36 @@ fn stats_grid<'a>(state: &'a ServerScreenState, palette: &ForgePalette) -> Eleme
 
     row![
         stat_card(
-            "CLIENTS",
+            forge_widgets::tr!("server.stat.clients"),
             format!("{clients_n}"),
-            "connected",
+            forge_widgets::tr!("server.stat.clients_sub"),
             success,
             palette
         ),
         stat_card(
-            "EVENTS OUT",
+            forge_widgets::tr!("server.stat.events_out"),
             format!("{:.1} ev/s", state.stats.events_per_second),
-            format!("avg {:.1} ev/s", state.stats.events_per_second_avg),
+            forge_widgets::tr!(
+                "server.stat.events_sub",
+                avg = format!("{:.1}", state.stats.events_per_second_avg)
+            ),
             text_faint,
             palette
         ),
         stat_card(
-            "HTTP REQUESTS",
+            forge_widgets::tr!("server.stat.http"),
             format!("{}", state.stats.http_requests),
-            "overlays served",
+            forge_widgets::tr!("server.stat.http_sub"),
             text_faint,
             palette
         ),
         stat_card(
-            "BANDWIDTH",
+            forge_widgets::tr!("server.stat.bandwidth"),
             format!("{:.0} KB/s", state.stats.bandwidth_kbps),
-            format!("peak {:.0} KB/s", state.stats.bandwidth_peak_kbps),
+            forge_widgets::tr!(
+                "server.stat.bandwidth_sub",
+                peak = format!("{:.0}", state.stats.bandwidth_peak_kbps)
+            ),
             success,
             palette
         ),
@@ -991,14 +1008,14 @@ fn clients_panel<'a>(
         ..container::Style::default()
     });
 
-    let kick_hint = text("press K on a row to disconnect")
+    let kick_hint = text(forge_widgets::tr!("server.clients.hint"))
         .font(font(FontRole::Monospace))
         .size(FONT_XS)
         .color(text_faint);
 
     let header = row![
         tabler_icon(Icon::Users, 14.0, text_faint),
-        text("Connected Clients")
+        text(forge_widgets::tr!("server.clients.header"))
             .font(font(FontRole::Monospace))
             .size(FONT_XS)
             .color(text_faint),
@@ -1012,22 +1029,22 @@ fn clients_panel<'a>(
 
     let col_header = row![
         Space::new().width(Length::Fixed(24.0)),
-        text("CLIENT")
+        text(forge_widgets::tr!("server.col.client"))
             .font(font(FontRole::Monospace))
             .size(FONT_XS)
             .color(text_faint)
             .width(Length::FillPortion(14)),
-        text("SUBSCRIPTIONS")
+        text(forge_widgets::tr!("server.col.subscriptions"))
             .font(font(FontRole::Monospace))
             .size(FONT_XS)
             .color(text_faint)
             .width(Length::FillPortion(16)),
-        text("EV/S")
+        text(forge_widgets::tr!("server.col.evs"))
             .font(font(FontRole::Monospace))
             .size(FONT_XS)
             .color(text_faint)
             .width(Length::Fixed(80.0)),
-        text("UPTIME")
+        text(forge_widgets::tr!("server.col.uptime"))
             .font(font(FontRole::Monospace))
             .size(FONT_XS)
             .color(text_faint)
@@ -1046,7 +1063,7 @@ fn clients_panel<'a>(
 
     let rows_col: Element<'a, Message> = if state.connected_clients.is_empty() {
         container(
-            text("No clients connected")
+            text(forge_widgets::tr!("server.clients.empty"))
                 .font(font(FontRole::Monospace))
                 .size(FONT_SM)
                 .color(text_faint),
@@ -1147,7 +1164,7 @@ fn overlay_panel<'a>(
 
     let files_section: Element<'a, Message> = if state.overlay_entries.is_empty() {
         container(
-            text("No overlay files found")
+            text(forge_widgets::tr!("server.overlay.files.empty"))
                 .font(font(FontRole::Monospace))
                 .size(FONT_SM)
                 .color(text_faint),
@@ -1278,7 +1295,10 @@ pub fn server_screen_view<'a>(
     .padding([sp(Spacing::Md), sp(Spacing::Lg)]);
 
     let page_header = crate::page_chrome::simple_page_header(
-        &[("Builtin".to_owned(), false), ("Server".to_owned(), true)],
+        &[
+            (forge_widgets::tr!("server.breadcrumb.builtin"), false),
+            (forge_widgets::tr!("server.breadcrumb.server"), true),
+        ],
         palette,
     );
 

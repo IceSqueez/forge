@@ -367,7 +367,7 @@ pub fn view<'a>(state: &'a BuiltinDetailState, palette: &'a ForgePalette) -> Ele
     let scroll_body: Element<'_, Message> = iced::widget::scrollable(padded).into();
     let page_header = crate::page_chrome::simple_page_header(
         &[
-            ("Builtin".to_owned(), false),
+            (forge_widgets::tr!("builtin.breadcrumb"), false),
             (state.display_name.clone(), true),
         ],
         palette,
@@ -404,13 +404,23 @@ fn build_picker_overlay<'a>(
         PickerItemsState::Failed(_) => (&[], false),
     };
 
-    let title = match pending.kind {
-        PickerKind::Scene => "Choose a Scene",
-        PickerKind::Source => "Choose a Source",
-        PickerKind::Input => "Choose an Audio Input",
-        PickerKind::Hotkey => "Choose a Hotkey",
-        PickerKind::Expression => "Choose an Expression",
-        PickerKind::MidiPort => "Choose a MIDI Port",
+    let title: &'static str = match pending.kind {
+        PickerKind::Scene => Box::leak(forge_widgets::tr!("builtin.picker.scene").into_boxed_str()),
+        PickerKind::Source => {
+            Box::leak(forge_widgets::tr!("builtin.picker.source").into_boxed_str())
+        }
+        PickerKind::Input => {
+            Box::leak(forge_widgets::tr!("builtin.picker.audio_input").into_boxed_str())
+        }
+        PickerKind::Hotkey => {
+            Box::leak(forge_widgets::tr!("builtin.picker.hotkey").into_boxed_str())
+        }
+        PickerKind::Expression => {
+            Box::leak(forge_widgets::tr!("builtin.picker.expression").into_boxed_str())
+        }
+        PickerKind::MidiPort => {
+            Box::leak(forge_widgets::tr!("builtin.picker.midi_port").into_boxed_str())
+        }
     };
 
     picker_modal(

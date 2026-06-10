@@ -901,3 +901,184 @@ tts_cloud_field_placeholder_subscription_key = Subscription key
 ## Soundboard — file-dialog filter
 
 soundboard_file_filter_audio = Audio
+
+## Platforms overview
+
+platforms_title = Streaming platforms
+platforms_subtitle = Connect once, Forge listens to all chats and events in one place.
+platforms_breadcrumb = Platforms
+
+platforms_status_connected = Connected
+platforms_status_not_connected = Not connected
+
+platforms_twitch_desc = Chat, EventSub subscriptions, channel points, bits, raids
+platforms_youtube_desc = Live chat, super chats, channel memberships, subscribers
+platforms_kick_desc = Chat, channel events, subscribers — newer streaming platform
+
+## Platform generic detail
+
+platform_generic_features_available = WHAT YOU CAN DO ONCE CONNECTED
+platform_generic_features_coming = WHAT YOU'LL BE ABLE TO DO
+platform_generic_kind_platform = Streaming platform
+platform_generic_kind_stream_app = Stream app
+platform_generic_status_available = available — click Connect to authorize
+platform_generic_status_coming = not yet implemented
+platform_generic_parent_platforms = Platforms
+platform_generic_parent_stream_apps = Stream apps
+platform_generic_connect_btn = Connect
+
+## Twitch panel
+
+twitch_breadcrumb_platforms = Platforms
+twitch_header_subtitle = Connect to enable chat, subs, bits, raids, channel points, and EventSub
+twitch_auth_title = Authorize Forge on Twitch
+twitch_auth_subtitle = Twitch uses device code authorization. You'll see a code here, enter it on Twitch's site, and we'll auto-detect when you're done. We never see your password.
+twitch_btn_start = Start authorization
+twitch_btn_try_again = Try again
+twitch_btn_cancel = Cancel
+twitch_btn_restart = Restart
+twitch_btn_open = Open
+twitch_requesting = Requesting authorization code from Twitch…
+twitch_authorizing = Code accepted. Finalising authorization…
+twitch_polling_primary = Waiting for you to authorize on Twitch…
+twitch_polling_secondary = polling every 5s
+twitch_step1_title = Open this URL in any browser
+twitch_step2_title = Approve in your browser
+twitch_step2_detail = forge is listening on a local port for the OAuth callback. The window will refresh once you approve.
+twitch_timer_prefix = Times out in
+twitch_scopes_header = Permissions Forge will request
+twitch_scopes_count = { $count } scopes
+twitch_missing_client_id = Twitch integration is not configured. Set FORGE_TWITCH_CLIENT_ID with your own registered application's client_id and restart the app.
+twitch_reauth_title = Twitch token is missing required scopes
+twitch_reauth_detail = EventSub rejected the chat subscription. Re-authorize to refresh the token with all current scopes.
+twitch_reauth_btn = Re-authorize
+
+## OBS panel
+
+obs_breadcrumb_stream_apps = Stream apps
+obs_header_subtitle = Connect to control scenes, sources, audio, filters, and recording
+obs_instructions_title = Before you start
+obs_instructions_lead = In OBS Studio, enable the built-in WebSocket server, then copy the settings here.
+obs_step1 = In OBS: Tools → WebSocket Server Settings
+obs_step2 = Check 'Enable WebSocket server'
+obs_step3 = Note the port (default 4455)
+obs_step4 = Click 'Show Connect Info' to reveal password
+obs_requirements_header = REQUIREMENTS
+obs_req_version = OBS Studio 28+ (WebSocket v5 built-in)
+obs_req_network = Running on the same machine or LAN-reachable
+obs_form_title = Connection settings
+obs_field_host = HOST
+obs_field_port = PORT
+obs_field_password = PASSWORD
+obs_field_keychain = stored in OS keychain
+obs_toggle_reconnect_title = Auto-reconnect on disconnect
+obs_toggle_reconnect_subtitle = Retry with exponential backoff
+obs_toggle_launch_title = Connect on app launch
+obs_toggle_launch_subtitle = Start connecting when Forge opens
+obs_btn_test = Test connection
+obs_btn_connect = Connect
+obs_test_running = Testing connection…
+obs_test_success = Test successful
+obs_test_failed = Test failed
+obs_tip = Running OBS on a different PC? Set host to that machine's IP. Make sure OBS WebSocket is configured to bind to 0.0.0.0 instead of localhost, and the port is open in firewall.
+obs_port_invalid = port must be a number 1-65535
+
+## Builtin detail
+
+builtin_breadcrumb = Builtin
+builtin_picker_scene = Choose a Scene
+builtin_picker_source = Choose a Source
+builtin_picker_audio_input = Choose an Audio Input
+builtin_picker_hotkey = Choose a Hotkey
+builtin_picker_expression = Choose an Expression
+builtin_picker_midi_port = Choose a MIDI Port
+
+## OAuth / local callback flow
+
+oauth_header_subtitle = Connect to enable live chat and events
+oauth_auth_title = Authorize Forge on { $name }
+oauth_auth_subtitle = This platform uses device code authorization. You will see a code below — enter it on the platform's site and we will detect when you are done. We never see your password.
+oauth_btn_connect = Connect
+oauth_btn_retry = Retry
+oauth_btn_cancel = Cancel
+oauth_btn_return = Return to Platforms
+oauth_step1_title = Open this URL in any browser
+oauth_step1_open = Open
+oauth_step2_title = Approve in your browser
+oauth_step2_detail = forge is listening on a local port for the OAuth callback. The window will refresh once you approve.
+oauth_polling_primary = Waiting for you to authorize on the platform…
+oauth_polling_secondary = polling every 5s
+oauth_requesting = Requesting authorization code…
+oauth_authorized_title = Connected to { $name }!
+oauth_authorized_subtitle = Authorization complete.
+oauth_failed_title = Authorization failed
+
+## Server screen
+
+server_breadcrumb_builtin = Builtin
+server_breadcrumb_server = Server
+server_header_title = Built-in Server
+server_header_desc = Internal HTTP + WebSocket server for overlays and remote control
+server_status_running = Running
+server_status_stopped = Stopped
+server_status_error = Error
+server_not_running = Not running
+server_up_prefix = Up { $uptime }
+server_bind_address = BIND ADDRESS
+server_bearer_token = BEARER TOKEN
+server_btn_restart = Restart
+server_btn_stop = Stop
+server_btn_copy = COPY
+server_stat_clients = CLIENTS
+server_stat_clients_sub = connected
+server_stat_events_out = EVENTS OUT
+server_stat_events_sub = avg { $avg } ev/s
+server_stat_http = HTTP REQUESTS
+server_stat_http_sub = overlays served
+server_stat_bandwidth = BANDWIDTH
+server_stat_bandwidth_sub = peak { $peak } KB/s
+server_clients_header = Connected Clients
+server_clients_hint = press K on a row to disconnect
+server_clients_empty = No clients connected
+server_col_client = CLIENT
+server_col_subscriptions = SUBSCRIPTIONS
+server_col_evs = EV/S
+server_col_uptime = UPTIME
+server_overlay_files_empty = No overlay files found
+server_overlay_dir_items = { $count } items
+
+## Common status badges (shared across platform detail pages)
+
+common_status_not_connected = Not connected
+common_status_coming_soon = Coming soon
+
+## YouTube platform detail
+
+youtube_description = Live chat, super chats, channel memberships, subscribers.
+youtube_feature_live_chat = Live chat with sentiment markers
+youtube_feature_super_chat = Super Chat alerts with bits-equivalent tiers
+youtube_feature_memberships = Channel memberships join/upgrade/cancel events
+youtube_feature_subscribers = Subscriber milestone triggers
+
+## Kick platform detail
+
+kick_description = Chat, subs, hosts — hybrid: official OAuth API for send, community Pusher WS for receive. Not affiliated with Kick.com.
+kick_feature_live_chat = Live chat (receive + send via OAuth)
+kick_feature_subs = Subscription and gifted-sub events
+kick_feature_hosts_bans = Host and ban events
+kick_feature_deleted_replies = Message-deleted and reply events
+
+## VTube Studio platform detail
+
+vtube_description = Vtuber avatar control: hotkeys, expressions, item triggers.
+vtube_feature_hotkeys = Trigger hotkeys from chat events
+vtube_feature_expressions = Switch expressions and outfits
+vtube_feature_item_drops = Spawn item drops on bits/subs
+
+## Stream apps overview
+
+stream_apps_title = Stream apps
+stream_apps_subtitle = Local apps Forge talks to over WebSocket. Connect to control them from actions.
+stream_apps_breadcrumb = Stream Apps
+stream_apps_obs_desc = Scenes, sources, recording control, replay buffers — full obs-websocket API
+stream_apps_vtube_desc = Vtuber avatar control: hotkeys, expressions, item triggers

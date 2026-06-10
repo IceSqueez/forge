@@ -13,7 +13,7 @@ fn platform_overview_card<'a>(
     letter: &'static str,
     color: iced::Color,
     name: &'a str,
-    desc: &'a str,
+    desc: impl Into<String>,
     features: &'static [&'static str],
     connected: bool,
     target: BuiltinId,
@@ -56,9 +56,9 @@ fn platform_overview_card<'a>(
         });
 
     let badge_label = if connected {
-        "Connected"
+        forge_widgets::tr!("platforms.status.connected")
     } else {
-        "Not connected"
+        forge_widgets::tr!("platforms.status.not_connected")
     };
     let badge_text_color = if connected { p.success } else { p.text_muted };
     let badge = container(
@@ -88,7 +88,7 @@ fn platform_overview_card<'a>(
     .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
-    let desc_text = text(desc.to_owned()).size(FONT_SM).color(p.text_muted);
+    let desc_text = text(desc.into()).size(FONT_SM).color(p.text_muted);
 
     let mut chip_row = iced::widget::Row::new().spacing(spf(Spacing::Xxs));
     for f in features {
@@ -154,10 +154,10 @@ pub(crate) fn platforms_overview_view<'a>(
 
     let p = *palette;
 
-    let title = text("Streaming platforms")
+    let title = text(forge_widgets::tr!("platforms.title"))
         .size(FONT_MD)
         .color(p.text_primary);
-    let subtitle = text("Connect once, Forge listens to all chats and events in one place.")
+    let subtitle = text(forge_widgets::tr!("platforms.subtitle"))
         .size(FONT_SM)
         .color(p.text_muted);
     let header = column![title, subtitle].spacing(spf(Spacing::Xxs));
@@ -168,7 +168,7 @@ pub(crate) fn platforms_overview_view<'a>(
         "T",
         p.platform_twitch,
         "Twitch",
-        "Chat, EventSub subscriptions, channel points, bits, raids",
+        forge_widgets::tr!("platforms.twitch.desc"),
         &["IRC chat", "EventSub", "Channel points", "Bits & subs"],
         twitch_connected,
         BuiltinId::new("twitch"),
@@ -178,7 +178,7 @@ pub(crate) fn platforms_overview_view<'a>(
         "Y",
         p.platform_youtube,
         "YouTube",
-        "Live chat, super chats, channel memberships, subscribers",
+        forge_widgets::tr!("platforms.youtube.desc"),
         &["Live chat", "Super chat", "Memberships"],
         false,
         BuiltinId::new("youtube"),
@@ -188,7 +188,7 @@ pub(crate) fn platforms_overview_view<'a>(
         "K",
         p.platform_kick,
         "Kick",
-        "Chat, channel events, subscribers — newer streaming platform",
+        forge_widgets::tr!("platforms.kick.desc"),
         &["Chat", "Subs", "Channel events"],
         false,
         BuiltinId::new("kick"),
@@ -203,7 +203,10 @@ pub(crate) fn platforms_overview_view<'a>(
     let grid = column![grid_row_1, grid_row_2].spacing(spf(Spacing::Sm));
 
     let body = column![header, grid].spacing(spf(Spacing::Md));
-    let page_header = simple_page_header(&[("Platforms".to_owned(), true)], palette);
+    let page_header = simple_page_header(
+        &[(forge_widgets::tr!("platforms.breadcrumb"), true)],
+        palette,
+    );
     let body_container = container(scrollable(body).height(Length::Fill))
         .width(Length::Fill)
         .height(Length::Fill)

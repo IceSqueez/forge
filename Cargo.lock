@@ -2930,6 +2930,7 @@ dependencies = [
  "serde_json",
  "time",
  "tracing",
+ "unic-langid",
 ]
 
 [[package]]

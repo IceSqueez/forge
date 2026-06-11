@@ -14,6 +14,7 @@ pub mod sink;
 mod sink_impl;
 pub mod source;
 mod source_impl;
+pub mod switchable_sink;
 pub mod test_connect;
 pub mod triggers;
 
@@ -23,6 +24,7 @@ pub use health::HealthSnapshot;
 pub use runners::register_obs_sub_actions;
 pub use sink::ObsSink;
 pub use source::{ObsSource, SourceInfo};
+pub use switchable_sink::SwitchableObsSink;
 pub use test_connect::{ObsServerInfo, test_connect};
 pub use triggers::register_obs_triggers;
 

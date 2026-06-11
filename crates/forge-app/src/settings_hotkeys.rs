@@ -828,6 +828,7 @@ mod tests {
             obs_client: None,
             vtube_client: None,
             vtube_sink: forge_vtube::SwitchableVTubeSink::new(),
+            obs_sink: forge_obs::SwitchableObsSink::new(),
             discord_client: None,
             midi_client: None,
             hotkey_client: None,

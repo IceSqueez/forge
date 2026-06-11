@@ -97,3 +97,51 @@ impl ObsSink for SwitchableObsSink {
         client.raw_request(request_type, payload).await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use forge_types::Variant;
+
+    // Forwarding to an installed client is not unit-testable: `install` takes a
+    // concrete `Arc<ObsClient>`, which always opens a WebSocket supervisor.
+
+    #[tokio::test]
+    async fn every_method_on_an_empty_sink_returns_disconnected() {
+        let sink = SwitchableObsSink::new();
+        let payload = Variant::Object(Default::default());
+
+        let results: Vec<Result<(), ObsError>> = vec![
+            sink.set_scene("scene").await,
+            sink.set_source_visible("scene", "src", true).await,
+            sink.set_input_mute("mic", true).await,
+            sink.start_record().await,
+            sink.stop_record().await,
+            sink.start_stream().await,
+            sink.stop_stream().await,
+        ];
+        for result in results {
+            assert!(
+                matches!(result, Err(ObsError::Disconnected)),
+                "expected Disconnected, got {result:?}",
+            );
+        }
+
+        let raw = sink.raw_request("GetVersion", &payload).await;
+        assert!(
+            matches!(raw, Err(ObsError::Disconnected)),
+            "raw_request: expected Disconnected, got {raw:?}",
+        );
+    }
+
+    #[tokio::test]
+    async fn clear_on_an_empty_sink_is_idempotent() {
+        let sink = SwitchableObsSink::new();
+        sink.clear();
+        sink.clear();
+        assert!(matches!(
+            sink.set_scene("scene").await,
+            Err(ObsError::Disconnected)
+        ));
+    }
+}

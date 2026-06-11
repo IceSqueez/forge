@@ -604,3 +604,246 @@ fn conflict_overlay<'a>(
 
     iced::widget::stack![backdrop, centered].into()
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use forge_runtime::{EventBus, NullEventLogRepo, ScriptRegistry, actions::ActionsService};
+    use forge_storage_sqlite::SqliteBackend;
+
+    use super::*;
+    use crate::runtime_view::RuntimeView;
+
+    const TEST_KEY: [u8; 32] = [0xab; 32];
+
+    fn test_rt() -> RuntimeView {
+        let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+        let backend = Arc::new(
+            rt.block_on(SqliteBackend::open_with_key(":memory:", TEST_KEY))
+                .expect("in-memory backend"),
+        );
+        let server_subsystem = Arc::new(crate::server_subsystem::ServerSubsystem::new(Arc::clone(
+            &backend,
+        )
+            as Arc<dyn forge_storage::CredentialsRepo>));
+        let backend: Arc<dyn forge_storage::DataProvider> = backend;
+        RuntimeView {
+            actions: Arc::new(ActionsService::new(
+                backend.action_repo(),
+                backend.queue_repo(),
+                backend.history_repo(),
+                backend.trigger_instance_repo(),
+                backend.soundboard_clips_repo(),
+            )),
+            backend,
+            bus: EventBus::new(Arc::new(NullEventLogRepo)),
+            script_registry: Arc::new(ScriptRegistry::new()),
+            server_subsystem,
+            action_engine: None,
+            scheduler: None,
+            obs_client: None,
+            vtube_client: None,
+            vtube_sink: forge_vtube::SwitchableVTubeSink::new(),
+            discord_client: None,
+            midi_client: None,
+            hotkey_client: None,
+            speak_queue: None,
+            sound_player: None,
+            twitch_chat_handle: None,
+            chat_send_bridge: None,
+            twitch_flow: None,
+            youtube_flow: None,
+            kick_flow: None,
+            twitch_login: None,
+            twitch_token_expires: None,
+            twitch_reauth_required: false,
+            sub_action_registry: Arc::new(forge_registry::SubActionRegistry::new()),
+            trigger_registry: Arc::new(forge_registry::TriggerRegistry::new()),
+            tts_engine_ids: Vec::new(),
+        }
+    }
+
+    fn entry(id: &str) -> &'static ShortcutEntry {
+        CATALOG.iter().find(|e| e.id == id).unwrap()
+    }
+
+    #[test]
+    fn parse_stored_overrides_garbled_document_yields_empty_map() {
+        for raw in ["not-json{{{", "", "[1,2,3]", r#"{"nav.home": 5}"#] {
+            assert!(parse_stored_overrides(raw).is_empty(), "input {raw:?}");
+        }
+    }
+
+    #[test]
+    fn parse_stored_overrides_drops_unknown_action_ids_and_keeps_known() {
+        let raw = r#"{"nav.home":"Ctrl+Alt+H","ghost.action":"Ctrl+X"}"#;
+        let map = parse_stored_overrides(raw);
+        assert_eq!(map.get("nav.home").map(String::as_str), Some("Ctrl+Alt+H"));
+        assert!(!map.contains_key("ghost.action"));
+    }
+
+    #[test]
+    fn effective_chord_resolves_default_override_and_unbound_states() {
+        let mut state = ShortcutsState::default();
+        let home = entry("nav.home");
+        assert_eq!(effective_chord(&state, home), Some(home.default_chord));
+
+        state
+            .overrides
+            .insert("nav.home".to_owned(), "Ctrl+Alt+K".to_owned());
+        assert_eq!(effective_chord(&state, home), Some("Ctrl+Alt+K"));
+
+        // Empty string marks an explicit unbind.
+        state.overrides.insert("nav.home".to_owned(), String::new());
+        assert_eq!(effective_chord(&state, home), None);
+
+        // A stored chord without a strong modifier must never become live —
+        // an always-on listener would eat plain typing.
+        state
+            .overrides
+            .insert("nav.home".to_owned(), "Shift+H".to_owned());
+        assert_eq!(effective_chord(&state, home), None);
+    }
+
+    #[test]
+    fn capturing_unbindable_chord_reports_error_and_applies_nothing() {
+        let rt = test_rt();
+        let mut state = ShortcutsState::default();
+        let _ = update(&mut state, &rt, ShortcutsMsg::RebindStarted("nav.home"));
+        let _ = update(&mut state, &rt, ShortcutsMsg::ChordCaptured("H".to_owned()));
+        assert!(state.rebind_error.is_some());
+        assert!(state.overrides.is_empty());
+        assert!(state.rebinding.is_none());
+    }
+
+    #[test]
+    fn capturing_a_chord_owned_by_another_entry_opens_conflict_without_applying() {
+        let rt = test_rt();
+        let mut state = ShortcutsState::default();
+        let stolen = entry("nav.live_chat").default_chord;
+        let _ = update(&mut state, &rt, ShortcutsMsg::RebindStarted("nav.home"));
+        let _ = update(
+            &mut state,
+            &rt,
+            ShortcutsMsg::ChordCaptured(stolen.to_owned()),
+        );
+        let conflict = state.conflict.as_ref().expect("conflict must open");
+        assert_eq!(conflict.target_id, "nav.home");
+        assert_eq!(conflict.owner_id, "nav.live_chat");
+        assert!(
+            state.overrides.is_empty(),
+            "nothing applied until confirmed"
+        );
+    }
+
+    #[test]
+    fn conflict_steal_unbinds_previous_owner_and_assigns_target() {
+        let rt = test_rt();
+        let mut state = ShortcutsState::default();
+        let stolen = entry("nav.live_chat").default_chord;
+        let _ = update(&mut state, &rt, ShortcutsMsg::RebindStarted("nav.home"));
+        let _ = update(
+            &mut state,
+            &rt,
+            ShortcutsMsg::ChordCaptured(stolen.to_owned()),
+        );
+        let _ = update(&mut state, &rt, ShortcutsMsg::ConflictSteal);
+        assert!(state.conflict.is_none());
+        assert_eq!(
+            effective_chord(&state, entry("nav.home")),
+            Some(stolen),
+            "target owns the chord after steal"
+        );
+        assert_eq!(
+            effective_chord(&state, entry("nav.live_chat")),
+            None,
+            "previous owner becomes unbound"
+        );
+    }
+
+    #[test]
+    fn conflict_cancel_keeps_previous_bindings() {
+        let rt = test_rt();
+        let mut state = ShortcutsState::default();
+        let stolen = entry("nav.live_chat").default_chord;
+        let _ = update(&mut state, &rt, ShortcutsMsg::RebindStarted("nav.home"));
+        let _ = update(
+            &mut state,
+            &rt,
+            ShortcutsMsg::ChordCaptured(stolen.to_owned()),
+        );
+        let _ = update(&mut state, &rt, ShortcutsMsg::ConflictCancel);
+        assert!(state.conflict.is_none());
+        assert!(state.overrides.is_empty());
+        assert_eq!(
+            effective_chord(&state, entry("nav.live_chat")),
+            Some(stolen)
+        );
+    }
+
+    #[test]
+    fn capturing_an_entrys_default_chord_removes_its_override() {
+        let rt = test_rt();
+        let mut state = ShortcutsState::default();
+        state
+            .overrides
+            .insert("nav.home".to_owned(), "Ctrl+Alt+K".to_owned());
+        let _ = update(&mut state, &rt, ShortcutsMsg::RebindStarted("nav.home"));
+        let _ = update(
+            &mut state,
+            &rt,
+            ShortcutsMsg::ChordCaptured(entry("nav.home").default_chord.to_owned()),
+        );
+        assert!(
+            !state.overrides.contains_key("nav.home"),
+            "default chord must not be stored as an override"
+        );
+    }
+
+    #[test]
+    fn chord_captured_without_rebind_target_changes_nothing() {
+        let rt = test_rt();
+        let mut state = ShortcutsState::default();
+        let _ = update(
+            &mut state,
+            &rt,
+            ShortcutsMsg::ChordCaptured("Ctrl+Alt+K".to_owned()),
+        );
+        assert!(state.overrides.is_empty());
+        assert!(state.rebind_error.is_none());
+    }
+
+    #[test]
+    fn reset_all_clears_overrides_and_capture_state() {
+        let rt = test_rt();
+        let mut state = ShortcutsState::default();
+        state
+            .overrides
+            .insert("nav.home".to_owned(), "Ctrl+Alt+K".to_owned());
+        state.rebinding = Some("nav.actions");
+        state.rebind_error = Some("stale".to_owned());
+        let _ = update(&mut state, &rt, ShortcutsMsg::ResetAll);
+        assert!(state.overrides.is_empty());
+        assert!(state.rebinding.is_none());
+        assert!(state.rebind_error.is_none());
+    }
+
+    #[test]
+    fn chord_is_bindable_requires_strong_modifier_or_f_key() {
+        for (chord, expected) in [
+            ("Ctrl+Shift+H", true),
+            ("Alt+K", true),
+            ("Meta+Space", true),
+            ("F5", true),   // F-keys bind bare
+            ("F12", true),  // upper F-key boundary
+            ("F13", false), // one past the F-key range
+            ("Shift+H", false),
+            ("H", false),
+            ("Ctrl", false), // modifier alone cannot anchor a chord
+            ("Ctrl+", false),
+            ("", false),
+        ] {
+            assert_eq!(chord_is_bindable(chord), expected, "{chord:?}");
+        }
+    }
+}

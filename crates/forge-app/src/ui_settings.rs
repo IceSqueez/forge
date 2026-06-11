@@ -96,6 +96,44 @@ mod tests {
             .expect("in-memory backend")
     }
 
+    fn catalog(names: &[(&str, bool)]) -> Vec<FontFamily> {
+        names
+            .iter()
+            .map(|(name, monospaced)| FontFamily {
+                name: (*name).to_owned(),
+                monospaced: *monospaced,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn missing_is_none_until_the_catalog_arrives() {
+        // Stored preference must not be flagged while enumeration is pending.
+        let fonts = FontSettings::from_stored(Some("Vanished Sans".to_owned()), None);
+        assert_eq!(fonts.missing(FontRole::Body), None);
+    }
+
+    #[test]
+    fn missing_reports_stored_family_absent_from_catalog() {
+        let mut fonts = FontSettings::from_stored(
+            Some("Vanished Sans".to_owned()),
+            Some("JetBrains Mono".to_owned()),
+        );
+        fonts.catalog = catalog(&[("Inter", false), ("JetBrains Mono", true)]);
+        assert_eq!(fonts.missing(FontRole::Body), Some("Vanished Sans"));
+        assert_eq!(fonts.missing(FontRole::Monospace), None);
+    }
+
+    #[test]
+    fn missing_is_none_when_no_preference_is_stored() {
+        let fonts = FontSettings {
+            catalog: catalog(&[("Inter", false)]),
+            ..FontSettings::default()
+        };
+        assert_eq!(fonts.missing(FontRole::Body), None);
+        assert_eq!(fonts.missing(FontRole::Monospace), None);
+    }
+
     #[tokio::test]
     async fn sheet_width_roundtrip() {
         let backend = setup().await;

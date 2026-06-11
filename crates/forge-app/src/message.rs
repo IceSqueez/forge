@@ -182,6 +182,7 @@ pub enum SettingsMsg {
     OpenLogDirectoryRequested,
     OpenLogDirectoryResult(Result<(), String>),
     Scripting(crate::settings_scripting::ScriptingSettingsMsg),
+    Shortcuts(crate::settings_shortcuts::ShortcutsMsg),
     LanguageChanged(Language),
     LanguagePersisted(Result<(), String>),
     DensityChanged(Density),

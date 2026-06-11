@@ -218,6 +218,7 @@ where
                     if let Some(cb) = &self.on_reset {
                         shell.publish((cb)());
                     }
+                    shell.capture_event();
                     shell.request_redraw();
                     return;
                 }
@@ -233,6 +234,9 @@ where
                     if let Some(cb) = &self.on_captured {
                         shell.publish((cb)(combo));
                     }
+                    // Consume the keystroke so app-level keyboard subscriptions
+                    // never dispatch a shortcut for the chord being recorded.
+                    shell.capture_event();
                     shell.request_redraw();
                 }
             }
@@ -265,6 +269,16 @@ where
     fn from(widget: KeyCapture<'a, Msg>) -> Self {
         Element::new(widget)
     }
+}
+
+/// Canonical chord form shared by capture, display, persistence and dispatch
+/// (modifiers in Ctrl/Shift/Alt/Meta order, `+`-joined). None for keys that
+/// cannot anchor a chord (modifiers alone, Escape, punctuation).
+pub fn chord_from_key(key: &keyboard::Key, modifiers: keyboard::Modifiers) -> Option<String> {
+    if is_modifier_key(key) {
+        return None;
+    }
+    key_to_combo_segment(key).map(|segment| build_combo_string(modifiers, &segment))
 }
 
 fn is_modifier_key(key: &keyboard::Key) -> bool {

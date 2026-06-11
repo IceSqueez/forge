@@ -498,105 +498,6 @@ fn settings_appearance_pane<'a>(
         .into()
 }
 
-fn settings_shortcuts_pane(palette: &ForgePalette) -> Element<'static, Message> {
-    use iced::widget::{Space, column, container, row, text};
-
-    let p = *palette;
-    let mono = forge_widgets::font(forge_widgets::FontRole::Monospace);
-
-    let header = row![
-        tabler_icon(Icon::Keyboard, 18.0, p.brand),
-        text(forge_widgets::tr!("settings_shortcuts_title"))
-            .size(FONT_LG)
-            .color(p.text_primary),
-    ]
-    .spacing(spf(Spacing::Xs))
-    .align_y(iced::Alignment::Center);
-
-    let subtitle = text(forge_widgets::tr!("settings_shortcuts_subtitle"))
-        .size(FONT_SM)
-        .color(p.text_muted);
-
-    let rows = [
-        (forge_widgets::tr!("settings_shortcut_save"), "Ctrl + S"),
-        (
-            forge_widgets::tr!("settings_shortcut_new_action"),
-            "Ctrl + N",
-        ),
-        (
-            forge_widgets::tr!("settings_shortcut_quick_switcher"),
-            "Ctrl + K",
-        ),
-        (
-            forge_widgets::tr!("settings_shortcut_toggle_chat"),
-            "Ctrl + Shift + C",
-        ),
-        (
-            forge_widgets::tr!("settings_shortcut_toggle_events"),
-            "Ctrl + Shift + E",
-        ),
-        (forge_widgets::tr!("settings_shortcut_run_script"), "F5"),
-    ];
-
-    let mut list = column![].spacing(0);
-    let count = rows.len();
-    for (i, (label, key)) in rows.into_iter().enumerate() {
-        let key_chip = container(text(key).size(FONT_XS).color(p.text_primary).font(mono))
-            .padding([3_u16, 8_u16])
-            .style(move |_: &iced::Theme| container::Style {
-                background: Some(iced::Background::Color(p.surface_overlay)),
-                border: iced::Border {
-                    radius: radius(Radius::Sm).into(),
-                    ..Default::default()
-                },
-                ..container::Style::default()
-            });
-
-        let row_el = container(
-            row![
-                text(label).size(FONT_SM).color(p.text_primary),
-                Space::new().width(Length::Fill),
-                key_chip,
-            ]
-            .align_y(iced::Alignment::Center),
-        )
-        .padding([10_u16, 0_u16])
-        .width(Length::Fill)
-        .style(move |_: &iced::Theme| {
-            let border_color = if i + 1 == count {
-                iced::Color::TRANSPARENT
-            } else {
-                p.border_regular
-            };
-            container::Style {
-                border: iced::Border {
-                    color: border_color,
-                    width: 0.5,
-                    radius: 0.0.into(),
-                },
-                ..container::Style::default()
-            }
-        });
-        list = list.push(row_el);
-    }
-
-    let note = container(
-        text(forge_widgets::tr!("settings_shortcuts_note"))
-            .size(FONT_XS)
-            .color(p.text_faint)
-            .font(mono),
-    )
-    .padding([8_u16, 0_u16]);
-
-    let body = column![header, subtitle, list, note].spacing(spf(Spacing::Sm));
-
-    iced::widget::container(body)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .padding(sp(Spacing::Lg))
-        .into()
-}
-
 fn settings_notifications_pane(palette: &ForgePalette) -> Element<'static, Message> {
     let card = forge_widgets::card(
         [
@@ -635,6 +536,7 @@ pub(crate) struct SettingsViewParams<'a> {
     pub audio: &'a SettingsAudioState,
     pub hotkeys: &'a SettingsHotkeysState,
     pub scripting: &'a ScriptingSettingsState,
+    pub shortcuts: &'a crate::settings_shortcuts::ShortcutsState,
     pub rt: &'a RuntimeView,
     pub current_language: forge_storage::Language,
     pub current_density: forge_storage::settings::Density,
@@ -652,6 +554,7 @@ pub(crate) fn settings_view<'a>(
         audio,
         hotkeys,
         scripting,
+        shortcuts,
         rt,
         current_language,
         current_density,
@@ -766,7 +669,7 @@ pub(crate) fn settings_view<'a>(
         SettingsSection::Notifications => settings_notifications_pane(palette),
         SettingsSection::Language => settings_language_pane(current_language, palette),
         SettingsSection::Appearance => settings_appearance_pane(current_density, fonts, palette),
-        SettingsSection::Shortcuts => settings_shortcuts_pane(palette),
+        SettingsSection::Shortcuts => crate::settings_shortcuts::view(shortcuts, palette),
         SettingsSection::Hotkeys => crate::settings_hotkeys::view(hotkeys, rt, palette),
         SettingsSection::Scripting => crate::settings_scripting::view(scripting, palette),
         other => {
@@ -881,6 +784,9 @@ pub(crate) fn handle_message(app: &mut App, sub: SettingsMsg) -> Task<Message> {
         }
         SettingsMsg::Scripting(sub) => {
             crate::settings_scripting::update(&mut app.ui.settings_scripting, &app.rt, sub)
+        }
+        SettingsMsg::Shortcuts(sub) => {
+            crate::settings_shortcuts::update(&mut app.ui.settings_shortcuts, &app.rt, sub)
         }
         SettingsMsg::LanguageChanged(lang) => {
             app.language = lang;

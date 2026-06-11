@@ -81,7 +81,7 @@ pub use font_catalog::{FontFamily, enumerate_font_families};
 pub use hover_popover::{HoverTarget, format_signature, hover_popover};
 pub use icons::{Icon, tabler_icon};
 pub use inputs::{input_padding, search_input, select, select_owned, text_input_field};
-pub use key_capture::{KeyCapture, key_capture};
+pub use key_capture::{KeyCapture, chord_from_key, key_capture};
 pub use layout::{app_footer, page_shell, title_bar, toolbar};
 pub use locale::{
     ArgsBuilder, fmt_feed_time, fmt_number, fmt_relative_time, fmt_short_date, install_bundle,

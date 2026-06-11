@@ -331,6 +331,9 @@ pub fn subscription(app: &App) -> Subscription<Message> {
         Subscription::none()
     };
 
+    let app_shortcuts =
+        iced::keyboard::listen().filter_map(crate::settings_shortcuts::shortcut_filter);
+
     struct SpeakEventRecipe(Arc<forge_speak_queue::SpeakQueueHandle>);
 
     impl Recipe for SpeakEventRecipe {
@@ -396,6 +399,7 @@ pub fn subscription(app: &App) -> Subscription<Message> {
             health_subscription(state),
             server_tick,
             soundboard_keys,
+            app_shortcuts,
             tts_events,
             toast_tick,
             outside_click,
@@ -407,6 +411,7 @@ pub fn subscription(app: &App) -> Subscription<Message> {
             chat_stream,
             server_tick,
             soundboard_keys,
+            app_shortcuts,
             tts_events,
             toast_tick,
             outside_click,

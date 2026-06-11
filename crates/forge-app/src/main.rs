@@ -107,6 +107,24 @@ fn boot_fonts(
     forge_app::ui_settings::FontSettings::from_stored(body, mono)
 }
 
+fn boot_shortcuts(
+    rt: &tokio::runtime::Runtime,
+    backend: Arc<dyn DataProvider>,
+) -> std::collections::HashMap<String, String> {
+    let settings: Arc<dyn forge_storage::SettingsRepo> =
+        Arc::clone(&backend) as Arc<dyn forge_storage::SettingsRepo>;
+    match rt
+        .block_on(settings.get_string(forge_storage::settings::reserved_keys::KEYBOARD_SHORTCUTS))
+    {
+        Ok(Some(raw)) => forge_app::settings_shortcuts::parse_stored_overrides(&raw),
+        Ok(None) => std::collections::HashMap::new(),
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to read keyboard shortcuts; using defaults");
+            std::collections::HashMap::new()
+        }
+    }
+}
+
 fn default_db_path() -> PathBuf {
     paths::data_dir().join("forge.db")
 }
@@ -727,6 +745,7 @@ fn main() -> iced::Result {
     let boot_language = boot_locale(&runtime, Arc::clone(&backend));
     let boot_density = boot_density(&runtime, Arc::clone(&backend));
     let boot_font_settings = boot_fonts(&runtime, Arc::clone(&backend));
+    let boot_shortcut_overrides = boot_shortcuts(&runtime, Arc::clone(&backend));
     let initial_screen = Screen::Home;
 
     let event_log = backend.event_log_repo();
@@ -843,6 +862,7 @@ fn main() -> iced::Result {
             boot_density,
             boot_font_settings.clone(),
         );
+        app.ui.settings_shortcuts.overrides = boot_shortcut_overrides.clone();
         app.rt.bus = Arc::clone(&bus_boot);
         app.rt.chat_send_bridge = chat_send_bridge.clone();
         app.rt.speak_queue = speak_queue.clone();

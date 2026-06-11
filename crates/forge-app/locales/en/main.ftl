@@ -191,15 +191,27 @@ settings_notifications_hint = Per-event-type toast customisation coming later. E
 
 ## Settings → Shortcuts pane
 
-settings_shortcuts_title = Shortcuts
-settings_shortcuts_subtitle = Quick keys across Forge
-settings_shortcuts_note = Keyboard shortcuts not yet bound — labels only for now.
-settings_shortcut_save = Save
-settings_shortcut_new_action = New action
-settings_shortcut_quick_switcher = Quick switcher
-settings_shortcut_toggle_chat = Toggle Live Chat
-settings_shortcut_toggle_events = Toggle Event Feed
-settings_shortcut_run_script = Run script
+settings_shortcuts_title = Keyboard shortcuts
+settings_shortcuts_subtitle = These shortcuts work only while the forge window is focused. System-wide combinations live under Hotkeys.
+settings_shortcuts_action_nav_home = Go to Hub
+settings_shortcuts_action_nav_live_chat = Open Live Chat
+settings_shortcuts_action_nav_event_feed = Open Event Feed
+settings_shortcuts_action_nav_actions = Open Actions
+settings_shortcuts_action_nav_globals = Open Globals
+settings_shortcuts_action_nav_script_editor = Open Script Editor
+settings_shortcuts_action_nav_settings = Open Settings
+settings_shortcuts_unbound = Not bound
+settings_shortcuts_rebind = Change
+settings_shortcuts_reset = Reset
+settings_shortcuts_reset_all = Reset all to defaults
+settings_shortcuts_fixed_section = FIXED KEYS
+settings_shortcuts_fixed_enter = Confirm a form or dialog
+settings_shortcuts_fixed_escape = Close a modal or cancel capture
+settings_shortcuts_fixed_note = These keys are built in and cannot be rebound.
+settings_shortcuts_error_needs_modifier = Combine the key with Ctrl, Alt or Meta, or pick an F-key — plain keys would interfere with typing.
+settings_shortcuts_error_global_hotkey = { $chord } is already claimed by a global hotkey. Unbind it under Settings → Hotkeys first.
+settings_shortcuts_conflict_body = { $chord } is currently assigned to “{ $owner }”. Reassign it? The previous shortcut becomes unbound.
+settings_shortcuts_conflict_steal = Reassign
 
 ## Settings → WebSocket pane
 
@@ -242,6 +254,7 @@ settings_ws_lan_bullet_firewall = Your firewall must also allow the configured p
 
 ## Settings → Hotkeys pane
 
+settings_hotkeys_scope_subtitle = These combinations are registered with the operating system and fire even when forge runs in the background.
 settings_hotkeys_bind_section = BIND NEW HOTKEY
 settings_hotkeys_registered_section = REGISTERED
 settings_hotkeys_backend_section = BACKEND

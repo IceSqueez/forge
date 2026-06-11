@@ -31,6 +31,7 @@ pub mod reserved_keys {
     pub const SCRIPT_OP_LIMIT_KEY: &str = "script.op_limit";
     pub const SCRIPT_TIMEOUT_MS_KEY: &str = "script.timeout_ms";
     pub const LANGUAGE: &str = "app.language";
+    pub const KEYBOARD_SHORTCUTS: &str = "app.keyboard_shortcuts";
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

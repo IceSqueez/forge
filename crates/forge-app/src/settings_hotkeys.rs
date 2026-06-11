@@ -394,7 +394,13 @@ pub fn view<'a>(
     ]
     .spacing(spf(Spacing::Sm));
 
+    let scope_subtitle = text(forge_widgets::tr!("settings_hotkeys_scope_subtitle"))
+        .size(FONT_SM)
+        .color(palette.text_muted);
+
     let body = column![
+        scope_subtitle,
+        Space::new().height(spf(Spacing::Xs)),
         bind_section,
         Space::new().height(spf(Spacing::Md)),
         registered_section,

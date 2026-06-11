@@ -151,7 +151,7 @@ settings_nav_group_engine = РУШІЙ
 settings_nav_group_about = ПРО ПРОГРАМУ
 settings_nav_appearance = Зовнішній вигляд
 settings_nav_language = Мова
-settings_nav_shortcuts = Гарячі клавіші
+settings_nav_shortcuts = Скорочення
 settings_nav_notifications = Сповіщення
 settings_nav_audio = Аудіо
 settings_nav_scripting = Скрипти
@@ -193,15 +193,27 @@ settings_notifications_hint = Налаштування спливаючих пі
 
 ## Налаштування → панель гарячих клавіш (ярлики)
 
-settings_shortcuts_title = Гарячі клавіші
-settings_shortcuts_subtitle = Клавіатурні скорочення у Forge
-settings_shortcuts_note = Гарячі клавіші ще не прив'язані — тут лише підписи.
-settings_shortcut_save = Зберегти
-settings_shortcut_new_action = Нова дія
-settings_shortcut_quick_switcher = Швидкий перехід
-settings_shortcut_toggle_chat = Живий чат
-settings_shortcut_toggle_events = Стрічка подій
-settings_shortcut_run_script = Запустити скрипт
+settings_shortcuts_title = Клавіатурні скорочення
+settings_shortcuts_subtitle = Ці скорочення працюють лише тоді, коли вікно forge у фокусі. Системні комбінації — у розділі «Хоткеї».
+settings_shortcuts_action_nav_home = Перейти на Хаб
+settings_shortcuts_action_nav_live_chat = Відкрити живий чат
+settings_shortcuts_action_nav_event_feed = Відкрити стрічку подій
+settings_shortcuts_action_nav_actions = Відкрити дії
+settings_shortcuts_action_nav_globals = Відкрити глобальні змінні
+settings_shortcuts_action_nav_script_editor = Відкрити редактор скриптів
+settings_shortcuts_action_nav_settings = Відкрити налаштування
+settings_shortcuts_unbound = Не призначено
+settings_shortcuts_rebind = Змінити
+settings_shortcuts_reset = Скинути
+settings_shortcuts_reset_all = Скинути все до типових
+settings_shortcuts_fixed_section = НЕЗМІННІ КЛАВІШІ
+settings_shortcuts_fixed_enter = Підтвердити форму чи діалог
+settings_shortcuts_fixed_escape = Закрити модальне вікно чи скасувати захоплення
+settings_shortcuts_fixed_note = Ці клавіші вбудовані, їх не можна перепризначити.
+settings_shortcuts_error_needs_modifier = Поєднайте клавішу з Ctrl, Alt чи Meta або оберіть F-клавішу — звичайні клавіші заважали б набору тексту.
+settings_shortcuts_error_global_hotkey = { $chord } вже зайнято глобальним хоткеєм. Спершу звільніть його в Налаштування → Хоткеї.
+settings_shortcuts_conflict_body = { $chord } зараз призначено дії «{ $owner }». Перепризначити? Попереднє скорочення стане непризначеним.
+settings_shortcuts_conflict_steal = Перепризначити
 
 ## Налаштування → панель WebSocket
 
@@ -244,6 +256,7 @@ settings_ws_lan_bullet_firewall = Ваш брандмауер також пов�
 
 ## Налаштування → панель хоткеїв
 
+settings_hotkeys_scope_subtitle = Ці комбінації реєструються в операційній системі та спрацьовують, навіть коли forge працює у фоні.
 settings_hotkeys_bind_section = ПРИВ'ЯЗАТИ ХОТКЕЙ
 settings_hotkeys_registered_section = ЗАРЕЄСТРОВАНІ
 settings_hotkeys_backend_section = БЕКЕНД

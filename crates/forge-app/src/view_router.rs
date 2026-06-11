@@ -59,6 +59,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
                 audio: &app.ui.settings_audio,
                 hotkeys: &app.ui.settings_hotkeys,
                 scripting: &app.ui.settings_scripting,
+                shortcuts: &app.ui.settings_shortcuts,
                 rt: &app.rt,
                 current_language: app.language,
                 current_density: app.density,

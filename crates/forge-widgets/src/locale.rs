@@ -185,6 +185,8 @@ pub fn tr_lookup(key: &str, args: Option<&FluentArgs<'_>>) -> String {
 
 #[allow(dead_code)]
 fn warn_missing_once(key: &str) {
+    #[cfg(not(debug_assertions))]
+    let _ = key;
     #[cfg(debug_assertions)]
     {
         WARNED_KEYS.with(|cell| {

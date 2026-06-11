@@ -22,7 +22,7 @@ Connect to Twitch, YouTube, and Kick simultaneously. React to chat events with a
 - Queue scheduling: Sequential or RandomPick execution
 
 ### Integrations
-- **OBS WebSocket v5** — scene-changed trigger and live OBS state events on the bus
+- **OBS WebSocket v5** — switch scene, source visibility, input mute, start/stop stream/record; scene-changed trigger
 - **VTube Studio** — model load/move, expression set, parameter set/reset
 - **Discord** — post text, embed, edit message
 - **MIDI** — note-on/off triggers, CC triggers

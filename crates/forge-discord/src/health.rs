@@ -106,9 +106,13 @@ pub(crate) fn update_on_send(
 }
 
 fn age_out_errors(timestamps: &mut VecDeque<Instant>) -> usize {
-    let cutoff = Instant::now() - Duration::from_secs(3600);
-    while timestamps.front().is_some_and(|t| *t < cutoff) {
-        timestamps.pop_front();
+    // On platforms where the monotonic clock starts near zero (Windows early in
+    // process life), `now - 3600s` would underflow; nothing can be older than the
+    // process itself, so skip pruning when the cutoff predates the clock epoch.
+    if let Some(cutoff) = Instant::now().checked_sub(Duration::from_secs(3600)) {
+        while timestamps.front().is_some_and(|t| *t < cutoff) {
+            timestamps.pop_front();
+        }
     }
     timestamps.len()
 }

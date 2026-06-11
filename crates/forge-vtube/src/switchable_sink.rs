@@ -20,25 +20,20 @@ impl SwitchableVTubeSink {
     }
 
     pub fn install(&self, client: Arc<VTubeClient>) {
-        if let Ok(mut guard) = self.inner.write() {
-            *guard = Some(client);
-        }
+        let mut guard = self.inner.write().unwrap_or_else(|e| e.into_inner());
+        *guard = Some(client);
     }
 
     pub fn clear(&self) {
-        if let Ok(mut guard) = self.inner.write() {
-            *guard = None;
-        }
+        let mut guard = self.inner.write().unwrap_or_else(|e| e.into_inner());
+        *guard = None;
     }
 
     // Clone the Arc out before any await so the sync RwLock guard is never held
     // across an async call.
     fn get(&self) -> Result<Arc<VTubeClient>, VTubeError> {
-        self.inner
-            .read()
-            .ok()
-            .and_then(|g| g.clone())
-            .ok_or(VTubeError::NotConnected)
+        let guard = self.inner.read().unwrap_or_else(|e| e.into_inner());
+        guard.clone().ok_or(VTubeError::NotConnected)
     }
 }
 

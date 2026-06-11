@@ -58,7 +58,7 @@ pub fn console<'a, Msg: 'a>(
 
     let inner: Element<'a, Msg> = if lines.is_empty() {
         container(
-            text("No output yet")
+            text(crate::tr!("widget_console_no_output"))
                 .font(mono)
                 .size(FONT_XS)
                 .color(palette.text_faint),

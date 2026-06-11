@@ -4,7 +4,7 @@ use std::time::SystemTime;
 use forge_discord::DiscordClient;
 use forge_hotkey::HotkeyClient;
 use forge_midi::MidiClient;
-use forge_obs::ObsClient;
+use forge_obs::{ObsClient, SwitchableObsSink};
 use forge_platform_kick::KickAuthFlow;
 use forge_platform_twitch::{ChatSendBridgeHandle, TwitchChatHandle};
 use forge_platform_youtube::GoogleAuthFlow;
@@ -30,6 +30,7 @@ pub struct RuntimeView {
     pub action_engine: Option<ActionEngineHandle>,
     pub scheduler: Option<QueueSchedulerHandle>,
     pub obs_client: Option<Arc<ObsClient>>,
+    pub obs_sink: Arc<SwitchableObsSink>,
     pub vtube_client: Option<Arc<VTubeClient>>,
     pub vtube_sink: Arc<SwitchableVTubeSink>,
     pub discord_client: Option<Arc<DiscordClient>>,

@@ -1,10 +1,82 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-beta.11] - 2026-06-11
+### ⚠️ BREAKING CHANGES
+- **trovo**: EventSource/PlatformId/ChatSource lose Trovo variant
+
+### ⚙️ Miscellaneous Tasks
+- *(workspace)* Drop tautological and useless tests
+- *(trovo)* [**breaking**] Remove integration after upstream decommissions streaming
+- *(workspace)* Sync lockfile with widgets dev-dependency
+
+### 🐛 Bug Fixes
+- *(storage)* Drop invalid action_history filter from trovo migration
+- *(vtube)* Supervisor starts lazily; sub-actions via switchable sink
+- *(hotkey)* Read evdev via AsyncFd so exit is not blocked
+- *(app)* Shut down integrations and sqlite pool on window close
+- *(app)* Nest lifecycle messages under one Message variant
+- *(app)* Localize missed quick-actions, console and audio labels
+- *(vtube)* Recover switchable sink locks from poisoned state
+- *(obs)* Register sub-actions via switchable sink for lazy boot
+
+### 📚 Documentation
+- Refresh README audit and document
+- Restore OBS action coverage in README feature list
+- Fix install artifacts, restore badges, drop onboarding claim
+
+### 🚀 Features
+- *(storage)* Add Language enum with persistence
+- *(widgets)* Add fluent-rs i18n foundation + tr! macro
+- *(app)* Add language picker to Settings → Language pane
+- *(app)* Localize navigation and home screens via Fluent keys
+- *(app)* Localize settings screens via Fluent keys
+- *(app)* Localize actions and triggers screens via Fluent keys
+- *(app)* Localize TTS, soundboard and queue screens via Fluent keys
+- *(app)* Localize platform and integration screens via Fluent keys
+- *(app)* Localize chat, feed, globals and script screens
+- *(widgets)* Localize widget prose via Fluent keys
+- *(widgets)* Add locale-aware date, number and time formatting
+- *(storage)* Add Density enum with persistence
+- *(app)* Add UI density picker with live spacing scaling
+- *(storage)* Add font override settings accessors
+- *(app)* Add interface and monospace font pickers
+- *(app)* Add rebindable in-app keyboard shortcuts editor
+
+### 🧪 Testing
+- *(storage)* Cover Language enum contract
+- *(i18n)* Verify locale key parity, fallbacks and uk plurals
+- *(widgets)* Cover locale formatting, density tokens and chords
+- *(app)* Cover shortcuts state machine and font preference checks
+- *(storage)* Cover density, font accessors and pool shutdown
+- *(vtube)* Empty switchable sink rejects calls as NotConnected
+- *(obs)* Empty switchable sink rejects calls as Disconnected
+
+## [0.1.0-beta.10] - 2026-06-08
+### ⚙️ Miscellaneous Tasks
+- Release
+
+### 🚀 Features
+- *(storage)* Add transit types for bundle import/export
+- *(storage)* Add BundleRepo trait with import/export API
+- *(storage-sqlite)* Implement BundleRepo import and export logic
+
+### 🛠️ Build
+- *(cache)* Scope save-if to main + drop cache-on-failure
+
+### 🧪 Testing
+- *(hotkey)* Fix canonical order in cmdorctrl macos test
+
 ## [0.1.0-beta.9] - 2026-06-08
+### ⚙️ Miscellaneous Tasks
+- Release
+
 ### 🎨 Styling
 - *(runtime)* Apply rustfmt to script_run_* wrappers
 - *(script)* Compress tautological doc comments
+
+### 📚 Documentation
+- *(release)* Release v0.1.0-beta.9
 
 ### 🚀 Features
 - *(script)* Add ForgeApi method catalog + SymbolKind

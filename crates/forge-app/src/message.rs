@@ -535,6 +535,11 @@ pub enum Message {
     SettingsHotkeys(crate::settings_hotkeys::SettingsHotkeysMsg),
     OutsideClick,
     Noop,
-    AppCloseRequested,
-    AppShutdownComplete,
+    Lifecycle(LifecycleMsg),
+}
+
+#[derive(Debug, Clone)]
+pub enum LifecycleMsg {
+    CloseRequested,
+    ShutdownComplete,
 }

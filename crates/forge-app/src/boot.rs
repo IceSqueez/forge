@@ -133,6 +133,7 @@ pub(crate) fn handle_obs_boot_result(
                 content,
                 quick_actions,
             ));
+            app.rt.obs_sink.install(Arc::clone(&client));
             app.rt.obs_client = Some(client);
             Task::none()
         }

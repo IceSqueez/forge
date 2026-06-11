@@ -14,7 +14,7 @@ use forge_discord::{DiscordClient, DiscordConfig, register_discord_sub_actions};
 use forge_events::EventPublisher;
 use forge_hotkey::{HotkeyClient, HotkeyConfig, register_hotkey_triggers};
 use forge_midi::{MidiClient, MidiConfig, register_midi_sub_actions, register_midi_triggers};
-use forge_obs::register_obs_triggers;
+use forge_obs::{ObsSink, SwitchableObsSink, register_obs_sub_actions, register_obs_triggers};
 use forge_platform_core::paths;
 use forge_platform_twitch::{ChatSendBridge, ChatSendBridgeHandle, register_twitch_triggers};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
@@ -213,6 +213,7 @@ struct RuntimeHandles {
     trigger_evaluator: TriggerEvaluatorHandle,
     vtube_client: Option<Arc<VTubeClient>>,
     vtube_sink: Arc<SwitchableVTubeSink>,
+    obs_sink: Arc<SwitchableObsSink>,
     discord_client: Arc<DiscordClient>,
     midi_client: Option<Arc<MidiClient>>,
 }
@@ -431,6 +432,13 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         Arc::clone(&vtube_sink) as Arc<dyn VTubeSink>,
     ) {
         tracing::warn!("vtube sub-action runner registration failed: {e}");
+    }
+    let obs_sink = SwitchableObsSink::new();
+    if let Err(e) = register_obs_sub_actions(
+        &mut sub_action_reg,
+        Arc::clone(&obs_sink) as Arc<dyn ObsSink>,
+    ) {
+        tracing::warn!("obs sub-action runner registration failed: {e}");
     }
     let sub_action_reg = Arc::new(sub_action_reg);
 
@@ -723,6 +731,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         trigger_evaluator,
         vtube_client: None,
         vtube_sink,
+        obs_sink,
         discord_client,
         midi_client,
     })
@@ -765,6 +774,7 @@ fn main() -> iced::Result {
         _trigger_evaluator,
         _vtube_client,
         vtube_sink,
+        obs_sink,
         discord_client,
         midi_client,
     ) = if storage_offline {
@@ -779,6 +789,10 @@ fn main() -> iced::Result {
         {
             tracing::warn!("vtube sub-action runner registration failed: {e}");
         }
+        let os = SwitchableObsSink::new();
+        if let Err(e) = register_obs_sub_actions(&mut sar, Arc::clone(&os) as Arc<dyn ObsSink>) {
+            tracing::warn!("obs sub-action runner registration failed: {e}");
+        }
         (
             Arc::new(ScriptRegistry::new()),
             None,
@@ -792,6 +806,7 @@ fn main() -> iced::Result {
             None,
             None::<Arc<VTubeClient>>,
             vs,
+            os,
             dc,
             mc,
         )
@@ -810,6 +825,7 @@ fn main() -> iced::Result {
                 Some(h.trigger_evaluator),
                 h.vtube_client,
                 h.vtube_sink,
+                h.obs_sink,
                 h.discord_client,
                 h.midi_client,
             ),
@@ -826,6 +842,12 @@ fn main() -> iced::Result {
                 {
                     tracing::warn!("vtube sub-action runner registration failed: {e}");
                 }
+                let os = SwitchableObsSink::new();
+                if let Err(e) =
+                    register_obs_sub_actions(&mut sar, Arc::clone(&os) as Arc<dyn ObsSink>)
+                {
+                    tracing::warn!("obs sub-action runner registration failed: {e}");
+                }
                 (
                     Arc::new(ScriptRegistry::new()),
                     None,
@@ -839,6 +861,7 @@ fn main() -> iced::Result {
                     None,
                     None::<Arc<VTubeClient>>,
                     vs,
+                    os,
                     dc,
                     mc,
                 )
@@ -870,6 +893,7 @@ fn main() -> iced::Result {
         app.rt.sub_action_registry = Arc::clone(&sub_action_reg);
         app.rt.trigger_registry = Arc::clone(&trigger_reg);
         app.rt.vtube_sink = Arc::clone(&vtube_sink);
+        app.rt.obs_sink = Arc::clone(&obs_sink);
         let obs_creds: Arc<dyn forge_storage::CredentialsRepo> =
             Arc::clone(&backend_boot) as Arc<dyn forge_storage::CredentialsRepo>;
         let obs_task = iced::Task::perform(

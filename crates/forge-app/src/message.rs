@@ -186,6 +186,10 @@ pub enum SettingsMsg {
     LanguagePersisted(Result<(), String>),
     DensityChanged(Density),
     DensityPersisted(Result<(), String>),
+    FontCatalogLoaded(Vec<forge_widgets::FontFamily>),
+    FontChanged(forge_widgets::FontRole, Option<String>),
+    FontPersisted(Result<(), String>),
+    FontMonoShowAllToggled(bool),
 }
 
 #[derive(Debug, Clone)]

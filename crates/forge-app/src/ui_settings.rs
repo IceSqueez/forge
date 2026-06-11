@@ -1,4 +1,50 @@
 use forge_storage::{SettingsRepo, StorageError};
+use forge_widgets::{FontFamily, FontRole};
+
+#[derive(Debug, Clone, Default)]
+pub struct FontSettings {
+    pub body: Option<String>,
+    pub mono: Option<String>,
+    pub catalog: Vec<FontFamily>,
+    pub catalog_loaded: bool,
+    pub mono_show_all: bool,
+}
+
+impl FontSettings {
+    pub fn from_stored(body: Option<String>, mono: Option<String>) -> Self {
+        Self {
+            body,
+            mono,
+            ..Self::default()
+        }
+    }
+
+    pub fn stored(&self, role: FontRole) -> Option<&str> {
+        match role {
+            FontRole::Body => self.body.as_deref(),
+            FontRole::Monospace => self.mono.as_deref(),
+        }
+    }
+
+    pub fn set_stored(&mut self, role: FontRole, family: Option<String>) {
+        match role {
+            FontRole::Body => self.body = family,
+            FontRole::Monospace => self.mono = family,
+        }
+    }
+
+    pub fn is_installed(&self, name: &str) -> bool {
+        self.catalog.iter().any(|f| f.name == name)
+    }
+
+    /// Stored-but-not-installed family for the role; `None` until the catalog arrives.
+    pub fn missing(&self, role: FontRole) -> Option<&str> {
+        if self.catalog.is_empty() {
+            return None;
+        }
+        self.stored(role).filter(|name| !self.is_installed(name))
+    }
+}
 
 /// Maps the storage-side density onto the widget-side token cell; call on the main thread.
 pub fn install_density(density: forge_storage::settings::Density) {

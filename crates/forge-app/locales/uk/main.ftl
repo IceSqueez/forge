@@ -127,6 +127,16 @@ settings_appearance_density_cozy = Затишна
 settings_appearance_density_cozy_hint = Збалансовані відступи (типово)
 settings_appearance_density_spacious = Простора
 settings_appearance_density_spacious_hint = Більше повітря між елементами
+settings_appearance_fonts_label = Шрифти
+settings_appearance_fonts_subtitle = Шрифти інтерфейсу та коду — застосовується миттєво
+settings_appearance_fonts_scanning = Сканування встановлених шрифтів…
+settings_appearance_font_body_label = Шрифт інтерфейсу
+settings_appearance_font_mono_label = Моноширинний шрифт
+settings_appearance_font_default_placeholder = { $family } (типовий)
+settings_appearance_font_reset = Скинути до типового
+settings_appearance_font_missing = «{ $family }» не встановлено — доки він не з'явиться, діє типовий
+settings_appearance_font_show_all = Показати всі шрифти
+settings_appearance_font_preview = Жебракують філософи при ґанку церкви в Гадячі · 0123456789
 
 ## Налаштування → панель мови
 

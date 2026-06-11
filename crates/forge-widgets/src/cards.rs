@@ -208,12 +208,7 @@ pub fn big_jump_card<'a, Msg: Clone + 'a>(
         .spacing(10.0)
         .align_y(Alignment::Center);
 
-    let mono_font = iced::Font {
-        family: iced::font::Family::Name("JetBrains Mono"),
-        weight: iced::font::Weight::Normal,
-        stretch: iced::font::Stretch::Normal,
-        style: iced::font::Style::Normal,
-    };
+    let mono_font = font(FontRole::Monospace);
 
     let stat_row = row![
         text(props.stat)

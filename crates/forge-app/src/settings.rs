@@ -331,11 +331,132 @@ fn density_option_row(
         .into()
 }
 
-fn settings_appearance_pane(
+fn font_role_picker<'a>(
+    role: forge_widgets::FontRole,
+    fonts: &'a crate::ui_settings::FontSettings,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    use iced::widget::{checkbox, column, row, text};
+
+    let p = *palette;
+    let (label, default_family) = match role {
+        forge_widgets::FontRole::Body => (
+            forge_widgets::tr!("settings_appearance_font_body_label"),
+            forge_widgets::DEFAULT_BODY_FAMILY,
+        ),
+        forge_widgets::FontRole::Monospace => (
+            forge_widgets::tr!("settings_appearance_font_mono_label"),
+            forge_widgets::DEFAULT_MONO_FAMILY,
+        ),
+    };
+
+    let selected = fonts.stored(role).map(str::to_owned);
+    let options: Vec<String> = fonts
+        .catalog
+        .iter()
+        .filter(|f| {
+            !matches!(role, forge_widgets::FontRole::Monospace)
+                || fonts.mono_show_all
+                || f.monospaced
+                || Some(f.name.as_str()) == fonts.stored(role)
+        })
+        .map(|f| f.name.clone())
+        .collect();
+
+    let picker = forge_widgets::select_owned(
+        options,
+        selected.clone(),
+        forge_widgets::tr!(
+            "settings_appearance_font_default_placeholder",
+            family = default_family
+        ),
+        move |name| Message::Settings(SettingsMsg::FontChanged(role, Some(name))),
+        palette,
+    );
+
+    let mut controls = row![picker]
+        .spacing(spf(Spacing::Xs))
+        .align_y(iced::Alignment::Center);
+    if selected.is_some() {
+        controls = controls.push(forge_widgets::ghost_button(
+            forge_widgets::tr!("settings_appearance_font_reset"),
+            Message::Settings(SettingsMsg::FontChanged(role, None)),
+            palette,
+        ));
+    }
+
+    let mut section = column![text(label).size(FONT_SM).color(p.text_primary), controls]
+        .spacing(spf(Spacing::Xxs));
+
+    if let Some(name) = fonts.missing(role) {
+        section = section.push(
+            text(forge_widgets::tr!(
+                "settings_appearance_font_missing",
+                family = name.to_owned()
+            ))
+            .size(FONT_XS)
+            .color(p.warning),
+        );
+    }
+
+    section = section.push(
+        text(forge_widgets::tr!("settings_appearance_font_preview"))
+            .size(FONT_SM)
+            .font(forge_widgets::font(role))
+            .color(p.text_muted),
+    );
+
+    if matches!(role, forge_widgets::FontRole::Monospace) {
+        section = section.push(
+            checkbox(fonts.mono_show_all)
+                .label(forge_widgets::tr!("settings_appearance_font_show_all"))
+                .size(FONT_SM)
+                .on_toggle(|b| Message::Settings(SettingsMsg::FontMonoShowAllToggled(b))),
+        );
+    }
+
+    section.into()
+}
+
+fn settings_fonts_section<'a>(
+    fonts: &'a crate::ui_settings::FontSettings,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    use iced::widget::{column, text};
+
+    let p = *palette;
+    let label = text(forge_widgets::tr!("settings_appearance_fonts_label"))
+        .size(FONT_SM)
+        .color(p.text_primary);
+    let subtitle = text(forge_widgets::tr!("settings_appearance_fonts_subtitle"))
+        .size(FONT_XS)
+        .color(p.text_muted);
+
+    let content: Element<'a, Message> = if fonts.catalog_loaded {
+        column![
+            font_role_picker(forge_widgets::FontRole::Body, fonts, palette),
+            font_role_picker(forge_widgets::FontRole::Monospace, fonts, palette),
+        ]
+        .spacing(spf(Spacing::Sm))
+        .into()
+    } else {
+        text(forge_widgets::tr!("settings_appearance_fonts_scanning"))
+            .size(FONT_SM)
+            .color(p.text_muted)
+            .into()
+    };
+
+    column![column![label, subtitle].spacing(2), content]
+        .spacing(spf(Spacing::Sm))
+        .into()
+}
+
+fn settings_appearance_pane<'a>(
     current: forge_storage::settings::Density,
-    palette: &ForgePalette,
-) -> Element<'_, Message> {
-    use iced::widget::{column, container, row, text};
+    fonts: &'a crate::ui_settings::FontSettings,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    use iced::widget::{column, container, row, scrollable, text};
 
     let p = *palette;
 
@@ -365,14 +486,15 @@ fn settings_appearance_pane(
     let body = column![
         header,
         column![density_label, density_subtitle].spacing(2),
-        options
+        options,
+        settings_fonts_section(fonts, palette),
     ]
-    .spacing(spf(Spacing::Md));
+    .spacing(spf(Spacing::Md))
+    .padding(sp(Spacing::Lg));
 
-    container(body)
+    container(scrollable(body))
         .width(Length::Fill)
         .height(Length::Fill)
-        .padding(sp(Spacing::Lg))
         .into()
 }
 
@@ -516,6 +638,7 @@ pub(crate) struct SettingsViewParams<'a> {
     pub rt: &'a RuntimeView,
     pub current_language: forge_storage::Language,
     pub current_density: forge_storage::settings::Density,
+    pub fonts: &'a crate::ui_settings::FontSettings,
 }
 
 pub(crate) fn settings_view<'a>(
@@ -532,6 +655,7 @@ pub(crate) fn settings_view<'a>(
         rt,
         current_language,
         current_density,
+        fonts,
     } = params;
     let nav = iced::widget::column![
         nav_group_header(
@@ -641,7 +765,7 @@ pub(crate) fn settings_view<'a>(
         SettingsSection::Queues => settings_queues_pane(palette),
         SettingsSection::Notifications => settings_notifications_pane(palette),
         SettingsSection::Language => settings_language_pane(current_language, palette),
-        SettingsSection::Appearance => settings_appearance_pane(current_density, palette),
+        SettingsSection::Appearance => settings_appearance_pane(current_density, fonts, palette),
         SettingsSection::Shortcuts => settings_shortcuts_pane(palette),
         SettingsSection::Hotkeys => crate::settings_hotkeys::view(hotkeys, rt, palette),
         SettingsSection::Scripting => crate::settings_scripting::view(scripting, palette),
@@ -793,6 +917,49 @@ pub(crate) fn handle_message(app: &mut App, sub: SettingsMsg) -> Task<Message> {
             if let Err(e) = result {
                 tracing::warn!(error = %e, "failed to persist density selection");
             }
+            Task::none()
+        }
+        SettingsMsg::FontCatalogLoaded(catalog) => {
+            app.fonts.catalog = catalog;
+            app.fonts.catalog_loaded = true;
+            for role in [
+                forge_widgets::FontRole::Body,
+                forge_widgets::FontRole::Monospace,
+            ] {
+                if let Some(name) = app.fonts.missing(role) {
+                    tracing::warn!(
+                        family = name,
+                        "stored font family not installed; rendering bundled default"
+                    );
+                    forge_widgets::install_font_override(role, None);
+                }
+            }
+            Task::none()
+        }
+        SettingsMsg::FontChanged(role, family) => {
+            forge_widgets::install_font_override(role, family.as_deref());
+            app.fonts.set_stored(role, family.clone());
+            let settings: Arc<dyn SettingsRepo> =
+                Arc::clone(&app.rt.backend) as Arc<dyn SettingsRepo>;
+            Task::perform(
+                async move {
+                    match role {
+                        forge_widgets::FontRole::Body => settings.set_font_body(family).await,
+                        forge_widgets::FontRole::Monospace => settings.set_font_mono(family).await,
+                    }
+                    .map_err(|e| e.to_string())
+                },
+                |r| Message::Settings(SettingsMsg::FontPersisted(r)),
+            )
+        }
+        SettingsMsg::FontPersisted(result) => {
+            if let Err(e) = result {
+                tracing::warn!(error = %e, "failed to persist font selection");
+            }
+            Task::none()
+        }
+        SettingsMsg::FontMonoShowAllToggled(show_all) => {
+            app.fonts.mono_show_all = show_all;
             Task::none()
         }
     }

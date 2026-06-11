@@ -76,6 +76,7 @@ pub struct App {
     pub palette: ForgePalette,
     pub language: Language,
     pub density: Density,
+    pub fonts: crate::ui_settings::FontSettings,
     pub toast_queue: ToastQueue<Message>,
     pub storage_offline: bool,
     pub boot_time: SystemTime,
@@ -156,6 +157,7 @@ impl App {
         sound_player: Option<Arc<SoundboardPlayer>>,
         language: Language,
         density: Density,
+        fonts: crate::ui_settings::FontSettings,
     ) -> Self {
         let (theme, palette) = forge_widgets::catppuccin_mocha();
         let server_subsystem = Arc::new(ServerSubsystem::new(
@@ -167,6 +169,7 @@ impl App {
             palette,
             language,
             density,
+            fonts,
             toast_queue: ToastQueue::new(),
             storage_offline,
             boot_time: SystemTime::now(),
@@ -233,6 +236,7 @@ impl Default for App {
             palette,
             language: Language::En,
             density: Density::Cozy,
+            fonts: crate::ui_settings::FontSettings::default(),
             toast_queue: ToastQueue::new(),
             storage_offline: false,
             boot_time: SystemTime::now(),
@@ -648,6 +652,7 @@ mod tests {
             palette,
             language: Language::En,
             density: Density::Cozy,
+            fonts: crate::ui_settings::FontSettings::default(),
             toast_queue: ToastQueue::new(),
             storage_offline: false,
             boot_time: std::time::SystemTime::now(),
@@ -985,6 +990,7 @@ mod tests {
             palette,
             language: Language::En,
             density: Density::Cozy,
+            fonts: crate::ui_settings::FontSettings::default(),
             toast_queue: ToastQueue::new(),
             storage_offline: false,
             boot_time: std::time::SystemTime::now(),

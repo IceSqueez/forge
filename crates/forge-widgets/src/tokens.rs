@@ -1,9 +1,16 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 
 use iced::{Font, font};
 
+pub const DEFAULT_BODY_FAMILY: &str = "Inter";
+pub const DEFAULT_MONO_FAMILY: &str = "JetBrains Mono";
+
 thread_local! {
     static ACTIVE_DENSITY: Cell<Density> = const { Cell::new(Density::Cozy) };
+    static BODY_FAMILY_OVERRIDE: Cell<Option<&'static str>> = const { Cell::new(None) };
+    static MONO_FAMILY_OVERRIDE: Cell<Option<&'static str>> = const { Cell::new(None) };
+    static LEAKED_FAMILY_NAMES: RefCell<HashMap<String, &'static str>> = RefCell::new(HashMap::new());
 }
 
 /// Replaces the active density for this thread. Per-thread, like the locale bundle — iced's
@@ -121,12 +128,45 @@ pub enum FontRole {
     Monospace,
 }
 
+/// Replaces the active family for one role on this thread; `None` restores the bundled default.
+pub fn install_font_override(role: FontRole, family: Option<&str>) {
+    let name = family.map(leak_family_name);
+    match role {
+        FontRole::Body => BODY_FAMILY_OVERRIDE.with(|cell| cell.set(name)),
+        FontRole::Monospace => MONO_FAMILY_OVERRIDE.with(|cell| cell.set(name)),
+    }
+}
+
+// Why: iced font families are `&'static str`; the cache bounds the leak to one
+// allocation per distinct family name per thread.
+fn leak_family_name(name: &str) -> &'static str {
+    LEAKED_FAMILY_NAMES.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        match cache.get(name) {
+            Some(leaked) => leaked,
+            None => {
+                let leaked: &'static str = Box::leak(name.to_owned().into_boxed_str());
+                cache.insert(name.to_owned(), leaked);
+                leaked
+            }
+        }
+    })
+}
+
 /// Caller must invoke `load_fonts()` at startup; otherwise iced falls back to system fonts.
 pub fn font(role: FontRole) -> Font {
     match role {
-        FontRole::Body => Font::with_name("Inter"),
+        FontRole::Body => Font::with_name(
+            BODY_FAMILY_OVERRIDE
+                .with(Cell::get)
+                .unwrap_or(DEFAULT_BODY_FAMILY),
+        ),
         FontRole::Monospace => Font {
-            family: font::Family::Name("JetBrains Mono"),
+            family: font::Family::Name(
+                MONO_FAMILY_OVERRIDE
+                    .with(Cell::get)
+                    .unwrap_or(DEFAULT_MONO_FAMILY),
+            ),
             weight: font::Weight::Normal,
             stretch: font::Stretch::Normal,
             style: font::Style::Normal,

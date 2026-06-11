@@ -35,10 +35,8 @@ pub fn type_pill<'a, Msg: 'a>(palette: &'a ForgePalette, kind: VariantKind) -> E
     let bg = palette.surface_overlay;
     let fg = variant_kind_color(kind, palette);
     let pill_font = Font {
-        family: iced_font::Family::Name("JetBrains Mono"),
         weight: iced_font::Weight::Medium,
-        stretch: iced_font::Stretch::Normal,
-        style: iced_font::Style::Normal,
+        ..font(FontRole::Monospace)
     };
     let r = radius(Radius::Md);
 

@@ -62,6 +62,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
                 rt: &app.rt,
                 current_language: app.language,
                 current_density: app.density,
+                fonts: &app.fonts,
             },
             palette,
         ),

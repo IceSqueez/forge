@@ -125,6 +125,16 @@ settings_appearance_density_cozy = Cozy
 settings_appearance_density_cozy_hint = Balanced spacing (default)
 settings_appearance_density_spacious = Spacious
 settings_appearance_density_spacious_hint = Extra breathing room between elements
+settings_appearance_fonts_label = Fonts
+settings_appearance_fonts_subtitle = Interface and code typefaces — applies instantly
+settings_appearance_fonts_scanning = Scanning installed fonts…
+settings_appearance_font_body_label = Interface font
+settings_appearance_font_mono_label = Monospace font
+settings_appearance_font_default_placeholder = { $family } (default)
+settings_appearance_font_reset = Reset to default
+settings_appearance_font_missing = "{ $family }" is not installed — the default is used until it returns
+settings_appearance_font_show_all = Show all fonts
+settings_appearance_font_preview = The quick brown fox jumps over the lazy dog · 0123456789
 
 ## Settings → Language pane
 

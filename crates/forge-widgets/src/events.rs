@@ -57,10 +57,8 @@ pub fn source_badge<'a, Msg: 'a>(source: EventSource, palette: &ForgePalette) ->
         .size(FONT_XS)
         .color(fg)
         .font(iced::Font {
-            family: iced::font::Family::Name("JetBrains Mono"),
             weight: iced::font::Weight::Medium,
-            stretch: iced::font::Stretch::Normal,
-            style: iced::font::Style::Normal,
+            ..font(FontRole::Monospace)
         });
 
     container(txt)

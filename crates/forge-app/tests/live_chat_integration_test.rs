@@ -33,6 +33,7 @@ fn test_app() -> App {
         palette,
         language: forge_storage::Language::En,
         density: forge_storage::settings::Density::Cozy,
+        fonts: forge_app::ui_settings::FontSettings::default(),
         toast_queue: forge_widgets::ToastQueue::new(),
         storage_offline: false,
         boot_time: std::time::SystemTime::now(),

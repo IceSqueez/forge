@@ -164,6 +164,22 @@ pub fn select<'a, Msg: 'a + Clone>(
     .into()
 }
 
+pub fn select_owned<'a, Msg: 'a + Clone>(
+    options: Vec<String>,
+    selected: Option<String>,
+    placeholder: String,
+    on_select: impl Fn(String) -> Msg + 'a,
+    palette: &ForgePalette,
+) -> Element<'a, Msg> {
+    let p = *palette;
+    pick_list(options, selected, on_select)
+        .placeholder(placeholder)
+        .padding(input_padding())
+        .width(iced::Length::Fill)
+        .style(move |_theme, status| pick_list_style(p, status))
+        .into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -185,7 +185,7 @@ pub trait SettingsRepo: Send + Sync {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::Language;
+    use super::{Density, Language};
 
     fn _trait_is_dyn_safe(_: &dyn super::SettingsRepo) {}
 
@@ -202,6 +202,24 @@ mod tests {
     fn language_from_str_rejects_non_canonical_codes_preserving_input() {
         for bad in ["EN", "En", "fr", "", " en", "en "] {
             let err = bad.parse::<Language>().unwrap_err();
+            assert_eq!(err.0, bad);
+        }
+    }
+
+    #[test]
+    fn density_round_trips_through_display_and_from_str() {
+        // Cozy is the product default — display strings are the persisted format.
+        assert_eq!(Density::default(), Density::Cozy);
+        for density in [Density::Compact, Density::Cozy, Density::Spacious] {
+            let s = density.to_string();
+            assert_eq!(s.parse::<Density>().unwrap(), density);
+        }
+    }
+
+    #[test]
+    fn density_from_str_rejects_non_canonical_values_preserving_input() {
+        for bad in ["Cozy", "COMPACT", "dense", "", " cozy"] {
+            let err = bad.parse::<Density>().unwrap_err();
             assert_eq!(err.0, bad);
         }
     }

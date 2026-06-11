@@ -165,3 +165,75 @@ async fn event_log_retention_days_invalid_string_falls_back_to_seven() {
     let days = event_log_retention_days(&backend).await.expect("fallback");
     assert_eq!(days, 7);
 }
+
+#[tokio::test]
+async fn density_round_trips_through_typed_accessors() {
+    use forge_storage::settings::Density;
+    let backend = setup_backend().await;
+    backend
+        .set_density(Density::Spacious)
+        .await
+        .expect("set density");
+    assert_eq!(
+        backend.density().await.expect("get density"),
+        Density::Spacious
+    );
+}
+
+#[tokio::test]
+async fn density_absent_key_defaults_to_cozy() {
+    use forge_storage::settings::Density;
+    let backend = setup_backend().await;
+    assert_eq!(backend.density().await.expect("get density"), Density::Cozy);
+}
+
+#[tokio::test]
+async fn density_corrupt_stored_value_falls_back_to_cozy() {
+    use forge_storage::settings::Density;
+    let backend = setup_backend().await;
+    backend
+        .set_string(forge_storage::reserved_keys::DENSITY, "ultra-wide")
+        .await
+        .expect("inject corrupt density");
+    // Unlike language(), a corrupt density must not error — the UI boots anyway.
+    assert_eq!(backend.density().await.expect("get density"), Density::Cozy);
+}
+
+#[tokio::test]
+async fn font_overrides_persist_per_role_and_unset_deletes() {
+    let backend = setup_backend().await;
+    backend
+        .set_font_body(Some("Custom Sans".to_owned()))
+        .await
+        .expect("set body font");
+    backend
+        .set_font_mono(Some("Custom Mono".to_owned()))
+        .await
+        .expect("set mono font");
+    assert_eq!(
+        backend.font_body().await.expect("get body"),
+        Some("Custom Sans".to_owned())
+    );
+    assert_eq!(
+        backend.font_mono().await.expect("get mono"),
+        Some("Custom Mono".to_owned())
+    );
+
+    backend.set_font_body(None).await.expect("unset body");
+    assert_eq!(backend.font_body().await.expect("get body"), None);
+    assert_eq!(
+        backend.font_mono().await.expect("get mono"),
+        Some("Custom Mono".to_owned()),
+        "unsetting one role must not clear the other"
+    );
+}
+
+#[tokio::test]
+async fn unsetting_a_font_that_was_never_stored_succeeds() {
+    let backend = setup_backend().await;
+    backend
+        .set_font_mono(None)
+        .await
+        .expect("unset on absent key must not error");
+    assert_eq!(backend.font_mono().await.expect("get mono"), None);
+}

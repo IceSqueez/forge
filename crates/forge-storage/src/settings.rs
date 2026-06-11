@@ -147,6 +147,38 @@ pub trait SettingsRepo: Send + Sync {
         self.set_string(reserved_keys::DENSITY, &density.to_string())
             .await
     }
+
+    /// Returns stored font family name for interface (body) text, or None if unset (bundled default applies).
+    async fn font_body(&self) -> Result<Option<String>, StorageError> {
+        self.get_string(reserved_keys::FONT_BODY).await
+    }
+
+    /// Sets interface (body) font family name, or passes None to unset and use bundled default.
+    async fn set_font_body(&self, name: Option<String>) -> Result<(), StorageError> {
+        match name {
+            Some(family) => self.set_string(reserved_keys::FONT_BODY, &family).await,
+            None => {
+                self.delete(reserved_keys::FONT_BODY).await?;
+                Ok(())
+            }
+        }
+    }
+
+    /// Returns stored font family name for monospace (code) text, or None if unset (bundled default applies).
+    async fn font_mono(&self) -> Result<Option<String>, StorageError> {
+        self.get_string(reserved_keys::FONT_MONO).await
+    }
+
+    /// Sets monospace (code) font family name, or passes None to unset and use bundled default.
+    async fn set_font_mono(&self, name: Option<String>) -> Result<(), StorageError> {
+        match name {
+            Some(family) => self.set_string(reserved_keys::FONT_MONO, &family).await,
+            None => {
+                self.delete(reserved_keys::FONT_MONO).await?;
+                Ok(())
+            }
+        }
+    }
 }
 
 #[cfg(test)]

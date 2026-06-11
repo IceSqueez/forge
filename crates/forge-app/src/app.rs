@@ -34,7 +34,9 @@ use crate::message::ObsClientRef;
 use crate::message::SettingsMsg;
 #[cfg(test)]
 use crate::message::VTubeClientRef;
-use crate::message::{ActionsMsg, BootMsg, ServerSubsystemMsg, SidebarMsg, ToastMsg, TtsMsg};
+use crate::message::{
+    ActionsMsg, BootMsg, LifecycleMsg, ServerSubsystemMsg, SidebarMsg, ToastMsg, TtsMsg,
+};
 use crate::queues_view::QueuesState;
 use crate::script_editor::ScriptEditorState;
 use crate::server_screen::ServerScreenState;
@@ -446,7 +448,13 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             }
         }
         Message::Noop => Task::none(),
-        Message::AppCloseRequested => {
+        Message::Lifecycle(sub) => handle_lifecycle(app, sub),
+    }
+}
+
+fn handle_lifecycle(app: &mut App, msg: LifecycleMsg) -> Task<Message> {
+    match msg {
+        LifecycleMsg::CloseRequested => {
             let backend = Arc::clone(&app.rt.backend);
             let vtube = app.rt.vtube_client.clone();
             let obs = app.rt.obs_client.clone();
@@ -460,10 +468,10 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                     }
                     backend.shutdown().await;
                 },
-                |()| Message::AppShutdownComplete,
+                |()| Message::Lifecycle(LifecycleMsg::ShutdownComplete),
             )
         }
-        Message::AppShutdownComplete => iced::exit(),
+        LifecycleMsg::ShutdownComplete => iced::exit(),
     }
 }
 

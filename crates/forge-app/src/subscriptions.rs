@@ -390,7 +390,8 @@ pub fn subscription(app: &App) -> Subscription<Message> {
         _ => None,
     });
 
-    let close_requests = iced::window::close_requests().map(|_id| Message::AppCloseRequested);
+    let close_requests = iced::window::close_requests()
+        .map(|_id| Message::Lifecycle(crate::message::LifecycleMsg::CloseRequested));
 
     if let Some(state) = app.ui.builtin_detail.as_ref() {
         Subscription::batch([

@@ -73,7 +73,7 @@ fn quick_actions_section_header<'a, Msg: 'a>(
 ) -> Element<'a, Msg> {
     let icon_elem = tabler_icon(Icon::Bolt, FONT_SM, palette.warning);
 
-    let title_elem = text("Quick actions")
+    let title_elem = text(crate::tr!("widget_quick_actions_title"))
         .size(FONT_SM)
         .color(palette.text_primary);
 

@@ -163,7 +163,7 @@ pub fn settings_audio_view<'a>(
     let header = section_header("OUTPUT DEVICES", None, palette);
 
     let device_section: Element<'a, Message> = if state.devices_loading {
-        text("Scanning devices\u{2026}")
+        text(forge_widgets::tr!("settings_audio_scanning"))
             .size(FONT_SM)
             .color(palette.text_muted)
             .into()
@@ -264,7 +264,7 @@ pub fn settings_audio_view<'a>(
 
     let screen_header = row![
         icon_el,
-        text("Audio")
+        text(forge_widgets::tr!("settings_audio_title"))
             .size(FONT_SM)
             .color(palette.text_primary)
             .font(font(FontRole::Body)),

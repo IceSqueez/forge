@@ -108,7 +108,9 @@ pub fn scripting_api_docs_view<'a>(
     }
 
     if candidates.is_empty() {
-        let empty = text("No matches").size(FONT_SM).color(palette.text_muted);
+        let empty = text(forge_widgets::tr!("script_editor_api_no_matches"))
+            .size(FONT_SM)
+            .color(palette.text_muted);
         list = list.push(container(empty).padding([spf(Spacing::Md), 0.0]));
     }
 

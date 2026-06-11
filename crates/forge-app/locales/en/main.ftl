@@ -1362,6 +1362,23 @@ widget_picker_no_results = No results.
 widget_device_default_suffix = (default)
 widget_device_test = Test
 
+## Widget — quick actions panel
+
+widget_quick_actions_title = Quick actions
+
+## Widget — console (script output)
+
+widget_console_no_output = No output yet
+
+## Settings — audio output
+
+settings_audio_scanning = Scanning devices…
+settings_audio_title = Audio
+
+## Script editor — API docs panel
+
+script_editor_api_no_matches = No matches
+
 ## Widget — layout chrome
 
 widget_layout_app_name = Forge

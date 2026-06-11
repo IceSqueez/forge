@@ -1388,6 +1388,23 @@ widget_picker_no_results = Нічого не знайдено.
 widget_device_default_suffix = (за замовчуванням)
 widget_device_test = Тест
 
+## Widget — quick actions panel
+
+widget_quick_actions_title = Швидкі дії
+
+## Widget — console (script output)
+
+widget_console_no_output = Вихідних даних ще немає
+
+## Settings — audio output
+
+settings_audio_scanning = Сканування пристроїв…
+settings_audio_title = Аудіо
+
+## Script editor — API docs panel
+
+script_editor_api_no_matches = Збігів не знайдено
+
 ## Widget — layout chrome
 
 widget_layout_app_name = Forge

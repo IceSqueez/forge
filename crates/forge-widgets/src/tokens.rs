@@ -189,9 +189,52 @@ mod tests {
 
     #[test]
     fn spacing_density_orders_compact_lt_cozy_lt_spacious() {
-        for s in [Spacing::Xs, Spacing::Sm, Spacing::Md, Spacing::Lg] {
+        for s in [
+            Spacing::Xxs,
+            Spacing::Xs,
+            Spacing::Sm,
+            Spacing::Md,
+            Spacing::Lg,
+        ] {
             assert!(spacing(s, Density::Compact) < spacing(s, Density::Cozy));
             assert!(spacing(s, Density::Cozy) < spacing(s, Density::Spacious));
         }
+    }
+
+    #[test]
+    fn spacing_none_stays_zero_for_every_density() {
+        for d in [Density::Compact, Density::Cozy, Density::Spacious] {
+            assert_eq!(spacing(Spacing::None, d), 0);
+        }
+    }
+
+    #[test]
+    fn install_density_rescales_ambient_spacing_tokens() {
+        // Fresh test thread starts at the Cozy default.
+        assert_eq!(sp(Spacing::Md), 16);
+        install_density(Density::Compact);
+        assert_eq!(sp(Spacing::Md), 14); // 16 * 0.85 rounds, not truncates
+        assert_eq!(spf(Spacing::Md), 14.0);
+        install_density(Density::Spacious);
+        assert_eq!(sp(Spacing::Md), 19);
+    }
+
+    #[test]
+    fn font_override_replaces_family_and_none_restores_default() {
+        assert_eq!(font(FontRole::Body), Font::with_name(DEFAULT_BODY_FAMILY));
+        install_font_override(FontRole::Body, Some("Custom Sans"));
+        assert_eq!(font(FontRole::Body), Font::with_name("Custom Sans"));
+        install_font_override(FontRole::Body, None);
+        assert_eq!(font(FontRole::Body), Font::with_name(DEFAULT_BODY_FAMILY));
+    }
+
+    #[test]
+    fn font_override_roles_do_not_cross_contaminate() {
+        install_font_override(FontRole::Monospace, Some("Custom Mono"));
+        assert_eq!(font(FontRole::Body), Font::with_name(DEFAULT_BODY_FAMILY));
+        assert_eq!(
+            font(FontRole::Monospace).family,
+            font::Family::Name("Custom Mono")
+        );
     }
 }

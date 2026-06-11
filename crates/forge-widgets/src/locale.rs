@@ -237,3 +237,127 @@ macro_rules! tr {
         $crate::locale::tr_lookup($key, Some(&args))
     }};
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use time::OffsetDateTime;
+
+    use super::*;
+
+    /// Builds a bundle from inline FTL and installs it on this test's thread
+    /// (each Rust test runs on its own thread, so installs never leak across tests).
+    fn install_test_bundle(locale_id: &'static str, ftl: &str) {
+        let resource = FluentResource::try_new(ftl.to_owned()).unwrap();
+        let lang: unic_langid::LanguageIdentifier = locale_id.parse().unwrap();
+        let mut bundle = FluentBundle::new(vec![lang]);
+        bundle.add_resource(resource).unwrap();
+        install_bundle(Rc::new(bundle));
+        set_locale_id(locale_id);
+    }
+
+    fn ts(hour: u8, minute: u8, second: u8, milli: u16) -> OffsetDateTime {
+        time::Date::from_calendar_date(2026, time::Month::June, 10)
+            .unwrap()
+            .with_hms_milli(hour, minute, second, milli)
+            .unwrap()
+            .assume_utc()
+    }
+
+    #[test]
+    fn fmt_number_uses_locale_separators_and_grouping() {
+        set_locale_id("en");
+        for (value, dp, expected) in [
+            (0.0, 0, "0"),
+            (999.0, 0, "999"),
+            (1_000.0, 0, "1,000"),
+            (1_234.5, 1, "1,234.5"),
+            (1_234_567.89, 2, "1,234,567.89"),
+            (-1_234.5, 1, "-1,234.5"),
+            (5.0, 2, "5.00"),
+            (9.99, 1, "10.0"),
+        ] {
+            assert_eq!(fmt_number(value, dp), expected, "en {value} dp={dp}");
+        }
+        set_locale_id("uk");
+        for (value, dp, expected) in [
+            (1_234.5, 1, "1 234,5"),
+            (1_000_000.0, 0, "1 000 000"),
+            (0.5, 1, "0,5"),
+        ] {
+            assert_eq!(fmt_number(value, dp), expected, "uk {value} dp={dp}");
+        }
+    }
+
+    #[test]
+    fn fmt_feed_time_without_bundle_falls_back_to_24h_clock() {
+        // No bundle installed on this thread — must degrade, not panic or echo the key.
+        assert_eq!(fmt_feed_time(&ts(8, 5, 9, 42)), "08:05:09.042");
+    }
+
+    #[test]
+    fn fmt_short_date_orders_day_and_month_per_locale() {
+        install_test_bundle("en", "fmt_month_abbr_06 = Jun\n");
+        assert_eq!(fmt_short_date(&ts(8, 0, 0, 0)), "Jun 10, 2026");
+        install_test_bundle("uk", "fmt_month_abbr_06 = черв.\n");
+        assert_eq!(fmt_short_date(&ts(8, 0, 0, 0)), "10 черв. 2026");
+    }
+
+    const RELATIVE_FTL: &str = "\
+fmt_relative_never = never-branch
+fmt_relative_seconds = sec-branch
+fmt_relative_minutes = min-branch
+fmt_relative_hours = hour-branch
+fmt_relative_days = day-branch
+fmt_month_abbr_01 = Jan
+fmt_month_abbr_02 = Feb
+fmt_month_abbr_03 = Mar
+fmt_month_abbr_04 = Apr
+fmt_month_abbr_05 = May
+fmt_month_abbr_06 = Jun
+fmt_month_abbr_07 = Jul
+fmt_month_abbr_08 = Aug
+fmt_month_abbr_09 = Sep
+fmt_month_abbr_10 = Oct
+fmt_month_abbr_11 = Nov
+fmt_month_abbr_12 = Dec
+";
+
+    #[test]
+    fn fmt_relative_time_none_resolves_to_never_message() {
+        install_test_bundle("en", RELATIVE_FTL);
+        assert_eq!(fmt_relative_time(None), "never-branch");
+    }
+
+    #[test]
+    fn fmt_relative_time_selects_unit_by_elapsed_seconds() {
+        install_test_bundle("en", RELATIVE_FTL);
+        let now = OffsetDateTime::now_utc();
+        for (offset_secs, expected) in [
+            (5_i64, "sec-branch"),
+            (-120, "sec-branch"), // future timestamps clamp to zero seconds
+            (60, "min-branch"),   // lower boundary of the minutes branch
+            (3_600, "hour-branch"),
+            (86_400, "day-branch"),
+            (6 * 86_400, "day-branch"), // last value before the absolute-date fallback
+        ] {
+            let dt = now - time::Duration::seconds(offset_secs);
+            assert_eq!(
+                fmt_relative_time(Some(dt)),
+                expected,
+                "offset {offset_secs}s"
+            );
+        }
+    }
+
+    #[test]
+    fn fmt_relative_time_beyond_seven_days_falls_back_to_absolute_date() {
+        install_test_bundle("en", RELATIVE_FTL);
+        let dt = OffsetDateTime::now_utc() - time::Duration::days(8);
+        let formatted = fmt_relative_time(Some(dt));
+        assert!(
+            formatted.contains(&dt.year().to_string()),
+            "expected absolute date, got {formatted:?}"
+        );
+    }
+}

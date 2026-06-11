@@ -17,18 +17,18 @@ pub enum BulletKind {
     Info,
 }
 
-pub struct BulletItem<'a> {
+pub struct BulletItem {
     pub kind: BulletKind,
-    pub text: &'a str,
+    pub text: String,
 }
 
 pub struct TypeToConfirmModalParams<'a> {
-    pub title: &'a str,
-    pub explanation: &'a str,
-    pub bullets: &'a [BulletItem<'a>],
+    pub title: String,
+    pub explanation: String,
+    pub bullets: Vec<BulletItem>,
     pub confirmation_phrase: &'a str,
     pub current_input: &'a str,
-    pub confirm_label: &'a str,
+    pub confirm_label: String,
 }
 
 fn bullet_icon_and_color(kind: BulletKind, p: ForgePalette) -> (Icon, Color) {
@@ -129,7 +129,7 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
             left: spf(Spacing::Lg),
         });
 
-    let section_cap = text("WHAT THIS MEANS")
+    let section_cap = text(crate::tr!("widget.confirm.what_this_means"))
         .font(font(FontRole::Monospace))
         .size(FONT_XS)
         .color(p.text_muted);
@@ -139,7 +139,7 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
         let (icon, icon_color) = bullet_icon_and_color(item.kind, p);
         let bullet_row = row![
             tabler_icon(icon, 14.0, icon_color),
-            text(item.text).size(FONT_SM).color(p.text_primary),
+            text(item.text.clone()).size(FONT_SM).color(p.text_primary),
         ]
         .spacing(10)
         .align_y(Alignment::Start)
@@ -173,9 +173,13 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
     });
 
     let confirm_label_row = row![
-        text("Type ").size(FONT_SM).color(p.text_primary),
+        text(format!("{} ", crate::tr!("widget.confirm.type_prefix")))
+            .size(FONT_SM)
+            .color(p.text_primary),
         phrase_chip,
-        text(" to confirm:").size(FONT_SM).color(p.text_primary),
+        text(format!(" {}", crate::tr!("widget.confirm.type_suffix")))
+            .size(FONT_SM)
+            .color(p.text_primary),
     ]
     .align_y(Alignment::Center);
 
@@ -213,19 +217,25 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
             .font(font(FontRole::Monospace))
             .size(FONT_XS)
             .color(p.text_faint),
-        text(" to cancel").size(FONT_XS).color(p.text_faint),
+        text(format!(" {}", crate::tr!("widget.confirm.esc_to_cancel")))
+            .size(FONT_XS)
+            .color(p.text_faint),
     ]
     .spacing(5)
     .align_y(Alignment::Center);
 
-    let cancel_btn = button(text("Cancel").size(FONT_SM).color(p.text_secondary))
-        .on_press(on_cancel)
-        .padding([sp(Spacing::Xs), sp(Spacing::Md)])
-        .style(super::outline_btn_style(
-            p.border_regular,
-            p.text_secondary,
-            p.text_primary,
-        ));
+    let cancel_btn = button(
+        text(crate::tr!("widget.confirm.cancel"))
+            .size(FONT_SM)
+            .color(p.text_secondary),
+    )
+    .on_press(on_cancel)
+    .padding([sp(Spacing::Xs), sp(Spacing::Md)])
+    .style(super::outline_btn_style(
+        p.border_regular,
+        p.text_secondary,
+        p.text_primary,
+    ));
 
     let confirm_btn: Element<'a, Msg> = if phrase_matches {
         button(

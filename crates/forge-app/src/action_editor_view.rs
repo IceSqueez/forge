@@ -14,7 +14,7 @@ use crate::actions::{
 use crate::app::App;
 use crate::message::{ActionEditorMsg, ActionsMsg, Message, MoveSubActionMsg};
 
-fn sub_action_summary(step: &forge_types::SubActionStep) -> (&'static str, &'static str, String) {
+fn sub_action_summary(step: &forge_types::SubActionStep) -> (&'static str, String, String) {
     fn as_str(v: &forge_types::Variant) -> &str {
         if let forge_types::Variant::String(s) = v {
             s.as_str()
@@ -35,36 +35,60 @@ fn sub_action_summary(step: &forge_types::SubActionStep) -> (&'static str, &'sta
             let message = step.config.get("message").map(as_str).unwrap_or("");
             (
                 "send",
-                "Send chat message",
+                forge_widgets::tr!("action_editor_kind_send_chat"),
                 format!("\u{2192} {target}: \"{message}\""),
             )
         }
         "core.globals.set" => {
             let name = step.config.get("name").map(as_str).unwrap_or("");
             let value = step.config.get("value").map(as_str).unwrap_or("");
-            ("variable", "Set global", format!("{name} = \"{value}\""))
+            (
+                "variable",
+                forge_widgets::tr!("action_editor_kind_set_global"),
+                format!("{name} = \"{value}\""),
+            )
         }
         "core.logic.wait" => {
             let ms = step.config.get("ms").map(as_i64).unwrap_or(0);
-            ("clock", "Delay", format!("{ms} ms"))
+            (
+                "clock",
+                forge_widgets::tr!("action_editor_kind_delay"),
+                format!("{ms} ms"),
+            )
         }
         "core.log.write" => {
             let level = step.config.get("level").map(as_str).unwrap_or("info");
             let message = step.config.get("message").map(as_str).unwrap_or("");
-            ("info-circle", "Log", format!("[{level}] \"{message}\""))
+            (
+                "info-circle",
+                forge_widgets::tr!("action_editor_kind_log"),
+                format!("[{level}] \"{message}\""),
+            )
         }
         "soundboard.sound.play" => {
             let clip_id = step.config.get("clip_id").map(as_str).unwrap_or("");
-            ("music", "Play sound", clip_id.to_string())
+            (
+                "music",
+                forge_widgets::tr!("action_editor_kind_play_sound"),
+                clip_id.to_string(),
+            )
         }
         "tts.speak.text" => {
             let text = step.config.get("text").map(as_str).unwrap_or("");
-            ("volume", "Speak", text.to_string())
+            (
+                "volume",
+                forge_widgets::tr!("action_editor_kind_speak"),
+                text.to_string(),
+            )
         }
         "core.file.read" => {
             let path = step.config.get("path").map(as_str).unwrap_or("");
             let var = step.config.get("target_var").map(as_str).unwrap_or("");
-            ("file", "Read file", format!("{path} \u{2192} %{var}%"))
+            (
+                "file",
+                forge_widgets::tr!("action_editor_kind_read_file"),
+                format!("{path} \u{2192} %{var}%"),
+            )
         }
         "core.random.int" => {
             let min = step.config.get("min").map(as_i64).unwrap_or(0);
@@ -72,11 +96,15 @@ fn sub_action_summary(step: &forge_types::SubActionStep) -> (&'static str, &'sta
             let var = step.config.get("target_var").map(as_str).unwrap_or("");
             (
                 "dice",
-                "Random int",
+                forge_widgets::tr!("action_editor_kind_random_int"),
                 format!("[{min}..{max}] \u{2192} %{var}%"),
             )
         }
-        _ => ("bolt", "Sub-action", step.kind_id.clone()),
+        _ => (
+            "bolt",
+            forge_widgets::tr!("action_editor_kind_sub_action"),
+            step.kind_id.clone(),
+        ),
     }
 }
 
@@ -95,25 +123,25 @@ fn trigger_icon_name(category: &TriggerCategory) -> &'static str {
 
 fn kind_condition_text(kind_id: &str, config: &forge_types::TriggerConfig) -> String {
     match kind_id {
-        "twitch.chat.command" => "any command match".to_string(),
-        "twitch.chat.message" => "every chat message".to_string(),
-        "twitch.support.subscriber" => "new subscriber".to_string(),
-        "twitch.support.resubscriber" => "re-subscribe".to_string(),
-        "twitch.support.gift_sub" => "gift subs".to_string(),
-        "twitch.support.cheer" => "bits cheered".to_string(),
-        "twitch.channel.raid_received" => "raid received".to_string(),
+        "twitch.chat.command" => forge_widgets::tr!("actions_summary_twitch_chat_command"),
+        "twitch.chat.message" => forge_widgets::tr!("actions_summary_twitch_chat_message"),
+        "twitch.support.subscriber" => forge_widgets::tr!("actions_summary_twitch_subscriber"),
+        "twitch.support.resubscriber" => forge_widgets::tr!("actions_summary_twitch_resubscriber"),
+        "twitch.support.gift_sub" => forge_widgets::tr!("actions_summary_twitch_gift_sub"),
+        "twitch.support.cheer" => forge_widgets::tr!("actions_summary_twitch_cheer"),
+        "twitch.channel.raid_received" => forge_widgets::tr!("actions_summary_twitch_raid"),
         "obs.scenes.current_changed" => {
             if let Some(forge_types::Variant::String(s)) = config.get("scene") {
                 format!("scene = {s}")
             } else {
-                "any scene".to_string()
+                forge_widgets::tr!("actions_summary_obs_scene_changed")
             }
         }
         "script.event.custom" => {
             if let Some(forge_types::Variant::String(s)) = config.get("name") {
                 format!("event = {s}")
             } else {
-                "any event".to_string()
+                forge_widgets::tr!("actions_summary_server_custom_event")
             }
         }
         _ => String::new(),
@@ -267,7 +295,7 @@ fn step_controls<'a>(
 
     let items: Vec<MenuItem<Message>> = vec![
         MenuItem::Item {
-            label: "Edit step\u{2026}".to_string(),
+            label: forge_widgets::tr!("action_editor_step_menu_edit"),
             on_press: Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
                 AddSubActionMsg::EditRequested(action_id, i),
             ))),
@@ -277,7 +305,7 @@ fn step_controls<'a>(
             disabled: false,
         },
         MenuItem::Item {
-            label: "Duplicate".to_string(),
+            label: forge_widgets::tr!("action_editor_step_menu_duplicate"),
             on_press: Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
                 AddSubActionMsg::DuplicateRequested(action_id, i),
             ))),
@@ -288,7 +316,7 @@ fn step_controls<'a>(
         },
         MenuItem::Divider,
         MenuItem::Item {
-            label: "Move to top".to_string(),
+            label: forge_widgets::tr!("action_editor_step_menu_move_top"),
             on_press: Message::Actions(ActionsMsg::Editor(ActionEditorMsg::MoveSubAction(
                 MoveSubActionMsg::ToTop(action_id, i),
             ))),
@@ -298,7 +326,7 @@ fn step_controls<'a>(
             disabled: i == 0,
         },
         MenuItem::Item {
-            label: "Move to bottom".to_string(),
+            label: forge_widgets::tr!("action_editor_step_menu_move_bottom"),
             on_press: Message::Actions(ActionsMsg::Editor(ActionEditorMsg::MoveSubAction(
                 MoveSubActionMsg::ToBottom(action_id, i),
             ))),
@@ -309,7 +337,7 @@ fn step_controls<'a>(
         },
         MenuItem::Divider,
         MenuItem::Item {
-            label: "Delete step".to_string(),
+            label: forge_widgets::tr!("action_editor_step_menu_delete"),
             on_press: Message::Actions(ActionsMsg::Editor(ActionEditorMsg::RemoveSubAction(
                 RemoveSubActionMsg::Requested(action_id, i),
             ))),
@@ -396,11 +424,13 @@ fn tree_pane<'a>(
                 });
 
             let sub_count = summary.sub_action_count;
+            let sub_count_lbl =
+                forge_widgets::tr!("action_editor_sub_count", count = sub_count as i64);
             let inner = row![
                 dot,
                 text(summary.name.clone()).size(FONT_SM).color(name_color),
                 iced::widget::Space::new().width(Length::Fill),
-                text(format!("{sub_count} sub"))
+                text(sub_count_lbl)
                     .size(FONT_XS)
                     .color(p.text_faint)
                     .font(mono),
@@ -478,7 +508,7 @@ fn detail_pane<'a>(
         Some(d) if d.action.id == action_id => d,
         _ => {
             return container(
-                text("Loading action\u{2026}")
+                text(forge_widgets::tr!("action_editor_loading"))
                     .size(FONT_SM)
                     .color(p.text_muted),
             )
@@ -497,9 +527,9 @@ fn detail_pane<'a>(
         forge_widgets::StatusVariant::Negative
     };
     let pill_label = if action.enabled {
-        "Enabled"
+        forge_widgets::tr!("action_editor_enabled")
     } else {
-        "Disabled"
+        forge_widgets::tr!("action_editor_disabled")
     };
     let pill = forge_widgets::status_pill(pill_label, pill_variant, palette);
 
@@ -512,16 +542,19 @@ fn detail_pane<'a>(
     .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
-    let desc_text = action.description.as_deref().unwrap_or("No description");
+    let desc_text: String = action
+        .description
+        .clone()
+        .unwrap_or_else(|| forge_widgets::tr!("action_editor_no_description"));
     let desc = text(desc_text).size(FONT_XS).color(p.text_muted);
 
     let test_run_btn = forge_widgets::secondary_button(
-        "Test run",
+        forge_widgets::tr!("action_editor_test_run"),
         Message::Actions(ActionsMsg::TestTrigger(action_id)),
         palette,
     );
     let dup_btn = forge_widgets::secondary_button(
-        "Duplicate",
+        forge_widgets::tr!("action_editor_duplicate"),
         Message::Actions(ActionsMsg::DuplicateAction(action_id)),
         palette,
     );
@@ -538,15 +571,16 @@ fn detail_pane<'a>(
     .align_y(Alignment::Start)
     .into();
 
-    let triggers_label = text("TRIGGERS")
+    let triggers_label = text(forge_widgets::tr!("action_editor_section_triggers"))
         .size(FONT_XS)
         .color(p.text_muted)
         .font(mono);
 
+    let add_trigger_lbl = forge_widgets::tr!("action_editor_add_trigger");
     let add_trigger_btn = iced::widget::button(
         row![
             tabler_icon(Icon::Plus, 11.0, p.brand),
-            text("Add trigger").size(FONT_XS).color(p.brand),
+            text(add_trigger_lbl).size(FONT_XS).color(p.brand),
         ]
         .spacing(spf(Spacing::Xxs))
         .align_y(Alignment::Center),
@@ -575,7 +609,7 @@ fn detail_pane<'a>(
     if detail.trigger_instances.is_empty() {
         triggers_col = triggers_col.push(
             container(
-                text("No triggers \u{00b7} click Add trigger to start")
+                text(forge_widgets::tr!("action_editor_no_triggers"))
                     .size(FONT_XS)
                     .color(p.text_faint),
             )
@@ -601,12 +635,17 @@ fn detail_pane<'a>(
 
             let kind_label = trigger_label_of(&instance.kind_id);
             let condition_str = kind_condition_text(&instance.kind_id, &instance.overrides);
-            let (pill_label, pill_variant) = if instance.user_defined {
-                ("Custom", StatusVariant::Positive)
+            let pill_label_str = if instance.user_defined {
+                forge_widgets::tr!("action_editor_pill_custom")
             } else {
-                ("Default", StatusVariant::Neutral)
+                forge_widgets::tr!("action_editor_pill_default")
             };
-            let pill: Element<'_, Message> = status_pill(pill_label, pill_variant, palette);
+            let pill_variant = if instance.user_defined {
+                StatusVariant::Positive
+            } else {
+                StatusVariant::Neutral
+            };
+            let pill: Element<'_, Message> = status_pill(pill_label_str, pill_variant, palette);
             let name_row: Element<'_, Message> = row![
                 text(instance.name.as_str())
                     .size(FONT_SM)
@@ -635,8 +674,9 @@ fn detail_pane<'a>(
             let action_id_local = action_id;
             let p_btn = p;
             let p_nav = p;
+            let delete_lbl = forge_widgets::tr!("action_editor_delete");
             let delete_btn = iced::widget::button(
-                text("Delete")
+                text(delete_lbl)
                     .size(FONT_XS)
                     .color(p.random)
                     .font(forge_widgets::font(forge_widgets::FontRole::Monospace)),
@@ -720,15 +760,20 @@ fn detail_pane<'a>(
         .into();
 
     let sub_count = action.sub_actions.len();
-    let sub_label = text(format!("SUB-ACTIONS \u{00b7} {sub_count}"))
+    let sub_hdr_str = forge_widgets::tr!(
+        "action_editor_section_sub_actions",
+        count = sub_count as i64
+    );
+    let sub_label = text(sub_hdr_str)
         .size(FONT_XS)
         .color(p.text_muted)
         .font(mono);
 
+    let add_step_lbl = forge_widgets::tr!("action_editor_add_step");
     let add_step_btn = iced::widget::button(
         row![
             tabler_icon(Icon::Plus, 11.0, p.brand),
-            text("Add step").size(FONT_XS).color(p.brand),
+            text(add_step_lbl).size(FONT_XS).color(p.brand),
         ]
         .spacing(spf(Spacing::Xxs))
         .align_y(Alignment::Center),
@@ -894,12 +939,18 @@ pub fn action_editor_view<'a>(
         .iter()
         .flat_map(|g| g.actions.iter())
         .find(|a| a.id == action_id)
-        .map(|a| a.name.as_str())
-        .unwrap_or("Action");
+        .map(|a| a.name.clone())
+        .unwrap_or_else(|| forge_widgets::tr!("action_editor_fallback_name"));
     let page_header = crate::page_chrome::simple_page_header(
         &[
-            ("Automation", false),
-            ("Actions", false),
+            (
+                forge_widgets::tr!("action_editor_breadcrumb_automation"),
+                false,
+            ),
+            (
+                forge_widgets::tr!("action_editor_breadcrumb_actions"),
+                false,
+            ),
             (action_name, true),
         ],
         palette,

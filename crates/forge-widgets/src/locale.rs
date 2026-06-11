@@ -3,12 +3,16 @@ use std::collections::HashSet;
 use std::rc::Rc;
 
 use fluent::{FluentArgs, FluentBundle, FluentResource, FluentValue};
+use time::OffsetDateTime;
 
 thread_local! {
     static BUNDLE: RefCell<Option<Rc<FluentBundle<FluentResource>>>> = const { RefCell::new(None) };
 
     /// Tracks keys already warned about in this thread to emit each warning once.
     static WARNED_KEYS: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
+
+    // "en" | "uk" — set alongside BUNDLE so formatters read the same locale.
+    static LOCALE_ID: RefCell<&'static str> = const { RefCell::new("en") };
 }
 
 /// Replaces the active bundle for this thread. Subsequent `tr!` calls on this thread see the new
@@ -22,6 +26,124 @@ pub fn install_bundle(bundle: Rc<FluentBundle<FluentResource>>) {
     WARNED_KEYS.with(|cell| {
         cell.borrow_mut().clear();
     });
+}
+
+/// Records the active locale identifier alongside the bundle. Must be called each time
+/// `install_bundle` is called so formatters stay in sync.
+pub fn set_locale_id(id: &'static str) {
+    LOCALE_ID.with(|cell| {
+        *cell.borrow_mut() = id;
+    });
+}
+
+fn active_locale() -> &'static str {
+    LOCALE_ID.with(|cell| *cell.borrow())
+}
+
+/// Formats `ts` as a short time-of-day with millisecond precision for log/feed rows.
+///
+/// Both locales use 24-hour clock for feed rows; pattern is defined in locale resources so
+/// future per-locale divergence is a data edit only.
+pub fn fmt_feed_time(ts: &OffsetDateTime) -> String {
+    let pattern = tr_lookup("fmt_feed_time_pattern", None);
+    if pattern == "fmt_feed_time_pattern" {
+        // Neutral fallback — locale key missing; gracefully degrade.
+        return format!(
+            "{:02}:{:02}:{:02}.{:03}",
+            ts.hour(),
+            ts.minute(),
+            ts.second(),
+            ts.millisecond()
+        );
+    }
+    pattern
+        .replace("{HH}", &format!("{:02}", ts.hour()))
+        .replace("{MM}", &format!("{:02}", ts.minute()))
+        .replace("{SS}", &format!("{:02}", ts.second()))
+        .replace("{mmm}", &format!("{:03}", ts.millisecond()))
+}
+
+/// Formats `ts` as a short date suitable for display contexts such as "first seen" labels.
+///
+/// en: "Jun 10, 2026"; uk: "10 черв. 2026" — month abbreviation from locale resources.
+pub fn fmt_short_date(ts: &OffsetDateTime) -> String {
+    let locale = active_locale();
+    let month_key = format!("fmt_month_abbr_{:02}", ts.month() as u8);
+    let month = tr_lookup(&month_key, None);
+    match locale {
+        "uk" => format!("{} {} {}", ts.day(), month, ts.year()),
+        _ => format!("{} {}, {}", month, ts.day(), ts.year()),
+    }
+}
+
+/// Formats a number with locale-aware grouping and decimal separators for display.
+///
+/// en: `1,234.5`; uk: `1 234,5` (space grouping, comma decimal per CLDR).
+/// Editable numeric inputs must NOT use this — only read-only display.
+pub fn fmt_number(value: f64, decimal_places: usize) -> String {
+    let locale = active_locale();
+    let (group_sep, decimal_sep) = match locale {
+        "uk" => (" ", ","),
+        _ => (",", "."),
+    };
+    let scaled =
+        (value * 10f64.powi(decimal_places as i32)).round() / 10f64.powi(decimal_places as i32);
+    let int_part = scaled.abs().floor() as u64;
+    let int_str = group_integer(int_part, group_sep);
+    let signed = if value < 0.0 { "-" } else { "" };
+    if decimal_places == 0 {
+        format!("{signed}{int_str}")
+    } else {
+        let frac = (scaled.abs().fract() * 10f64.powi(decimal_places as i32)).round() as u64;
+        format!(
+            "{signed}{int_str}{decimal_sep}{frac:0>width$}",
+            width = decimal_places
+        )
+    }
+}
+
+/// Formats `opt` as a locale-aware relative-time phrase via Fluent plural messages.
+///
+/// Returns `tr!("fmt_relative_never")` when `opt` is `None`. Beyond 7 days, returns an
+/// absolute short date (via `fmt_short_date`) so stale timestamps remain readable.
+pub fn fmt_relative_time(opt: Option<OffsetDateTime>) -> String {
+    let Some(dt) = opt else {
+        return tr_lookup("fmt_relative_never", None);
+    };
+    let delta = OffsetDateTime::now_utc() - dt;
+    let secs = delta.whole_seconds().max(0) as u64;
+
+    if secs < 60 {
+        let args = ArgsBuilder::new().set("count", secs as i64).build();
+        tr_lookup("fmt_relative_seconds", Some(&args))
+    } else if secs < 3_600 {
+        let mins = secs / 60;
+        let args = ArgsBuilder::new().set("count", mins as i64).build();
+        tr_lookup("fmt_relative_minutes", Some(&args))
+    } else if secs < 86_400 {
+        let hours = secs / 3_600;
+        let args = ArgsBuilder::new().set("count", hours as i64).build();
+        tr_lookup("fmt_relative_hours", Some(&args))
+    } else if secs < 7 * 86_400 {
+        let days = secs / 86_400;
+        let args = ArgsBuilder::new().set("count", days as i64).build();
+        tr_lookup("fmt_relative_days", Some(&args))
+    } else {
+        fmt_short_date(&dt)
+    }
+}
+
+fn group_integer(n: u64, sep: &str) -> String {
+    let s = n.to_string();
+    let mut out = String::with_capacity(s.len() + s.len() / 3);
+    for (i, ch) in s.chars().enumerate() {
+        let pos = s.len() - i;
+        if i > 0 && pos.is_multiple_of(3) {
+            out.push_str(sep);
+        }
+        out.push(ch);
+    }
+    out
 }
 
 /// Missing key → returns the raw key string (debug builds also emit `tracing::warn!` once per
@@ -114,4 +236,128 @@ macro_rules! tr {
             .build();
         $crate::locale::tr_lookup($key, Some(&args))
     }};
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use time::OffsetDateTime;
+
+    use super::*;
+
+    /// Builds a bundle from inline FTL and installs it on this test's thread
+    /// (each Rust test runs on its own thread, so installs never leak across tests).
+    fn install_test_bundle(locale_id: &'static str, ftl: &str) {
+        let resource = FluentResource::try_new(ftl.to_owned()).unwrap();
+        let lang: unic_langid::LanguageIdentifier = locale_id.parse().unwrap();
+        let mut bundle = FluentBundle::new(vec![lang]);
+        bundle.add_resource(resource).unwrap();
+        install_bundle(Rc::new(bundle));
+        set_locale_id(locale_id);
+    }
+
+    fn ts(hour: u8, minute: u8, second: u8, milli: u16) -> OffsetDateTime {
+        time::Date::from_calendar_date(2026, time::Month::June, 10)
+            .unwrap()
+            .with_hms_milli(hour, minute, second, milli)
+            .unwrap()
+            .assume_utc()
+    }
+
+    #[test]
+    fn fmt_number_uses_locale_separators_and_grouping() {
+        set_locale_id("en");
+        for (value, dp, expected) in [
+            (0.0, 0, "0"),
+            (999.0, 0, "999"),
+            (1_000.0, 0, "1,000"),
+            (1_234.5, 1, "1,234.5"),
+            (1_234_567.89, 2, "1,234,567.89"),
+            (-1_234.5, 1, "-1,234.5"),
+            (5.0, 2, "5.00"),
+            (9.99, 1, "10.0"),
+        ] {
+            assert_eq!(fmt_number(value, dp), expected, "en {value} dp={dp}");
+        }
+        set_locale_id("uk");
+        for (value, dp, expected) in [
+            (1_234.5, 1, "1 234,5"),
+            (1_000_000.0, 0, "1 000 000"),
+            (0.5, 1, "0,5"),
+        ] {
+            assert_eq!(fmt_number(value, dp), expected, "uk {value} dp={dp}");
+        }
+    }
+
+    #[test]
+    fn fmt_feed_time_without_bundle_falls_back_to_24h_clock() {
+        // No bundle installed on this thread — must degrade, not panic or echo the key.
+        assert_eq!(fmt_feed_time(&ts(8, 5, 9, 42)), "08:05:09.042");
+    }
+
+    #[test]
+    fn fmt_short_date_orders_day_and_month_per_locale() {
+        install_test_bundle("en", "fmt_month_abbr_06 = Jun\n");
+        assert_eq!(fmt_short_date(&ts(8, 0, 0, 0)), "Jun 10, 2026");
+        install_test_bundle("uk", "fmt_month_abbr_06 = черв.\n");
+        assert_eq!(fmt_short_date(&ts(8, 0, 0, 0)), "10 черв. 2026");
+    }
+
+    const RELATIVE_FTL: &str = "\
+fmt_relative_never = never-branch
+fmt_relative_seconds = sec-branch
+fmt_relative_minutes = min-branch
+fmt_relative_hours = hour-branch
+fmt_relative_days = day-branch
+fmt_month_abbr_01 = Jan
+fmt_month_abbr_02 = Feb
+fmt_month_abbr_03 = Mar
+fmt_month_abbr_04 = Apr
+fmt_month_abbr_05 = May
+fmt_month_abbr_06 = Jun
+fmt_month_abbr_07 = Jul
+fmt_month_abbr_08 = Aug
+fmt_month_abbr_09 = Sep
+fmt_month_abbr_10 = Oct
+fmt_month_abbr_11 = Nov
+fmt_month_abbr_12 = Dec
+";
+
+    #[test]
+    fn fmt_relative_time_none_resolves_to_never_message() {
+        install_test_bundle("en", RELATIVE_FTL);
+        assert_eq!(fmt_relative_time(None), "never-branch");
+    }
+
+    #[test]
+    fn fmt_relative_time_selects_unit_by_elapsed_seconds() {
+        install_test_bundle("en", RELATIVE_FTL);
+        let now = OffsetDateTime::now_utc();
+        for (offset_secs, expected) in [
+            (5_i64, "sec-branch"),
+            (-120, "sec-branch"), // future timestamps clamp to zero seconds
+            (60, "min-branch"),   // lower boundary of the minutes branch
+            (3_600, "hour-branch"),
+            (86_400, "day-branch"),
+            (6 * 86_400, "day-branch"), // last value before the absolute-date fallback
+        ] {
+            let dt = now - time::Duration::seconds(offset_secs);
+            assert_eq!(
+                fmt_relative_time(Some(dt)),
+                expected,
+                "offset {offset_secs}s"
+            );
+        }
+    }
+
+    #[test]
+    fn fmt_relative_time_beyond_seven_days_falls_back_to_absolute_date() {
+        install_test_bundle("en", RELATIVE_FTL);
+        let dt = OffsetDateTime::now_utc() - time::Duration::days(8);
+        let formatted = fmt_relative_time(Some(dt));
+        assert!(
+            formatted.contains(&dt.year().to_string()),
+            "expected absolute date, got {formatted:?}"
+        );
+    }
 }

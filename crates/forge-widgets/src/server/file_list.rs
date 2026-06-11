@@ -91,7 +91,7 @@ fn right_label_for_entry(entry: &OverlayEntry<'_>) -> String {
     match entry.kind {
         OverlayKind::Dir => entry
             .child_count
-            .map(|n| format!("{n} files"))
+            .map(|n| crate::tr!("widget.file_list.dir_count", count = n as i64))
             .unwrap_or_default(),
         OverlayKind::File { .. } => entry.size_bytes.map(format_size).unwrap_or_default(),
     }
@@ -144,7 +144,7 @@ pub fn overlay_file_list<'a, Msg: Clone + 'a>(
     let header_row = row![
         row![
             tabler_icon(Icon::Folder, 14.0, p.warning),
-            text("Overlay host root")
+            text(crate::tr!("widget.file_list.header"))
                 .size(FONT_SM)
                 .font(iced::Font {
                     weight: iced::font::Weight::Medium,
@@ -160,7 +160,7 @@ pub fn overlay_file_list<'a, Msg: Clone + 'a>(
     .align_y(Alignment::Center)
     .padding([sp(Spacing::Sm), sp(Spacing::Md)]);
 
-    let path_label = text("PATH")
+    let path_label = text(crate::tr!("widget.file_list.path_label"))
         .font(font(FontRole::Monospace))
         .size(FONT_XS)
         .color(p.text_muted);
@@ -200,7 +200,7 @@ pub fn overlay_file_list<'a, Msg: Clone + 'a>(
 
     let entry_count = params.entries.len();
     let files_label_row = row![
-        text("FILES")
+        text(crate::tr!("widget.file_list.files_label"))
             .font(font(FontRole::Monospace))
             .size(FONT_XS)
             .color(p.text_muted),
@@ -314,7 +314,7 @@ pub fn overlay_file_list<'a, Msg: Clone + 'a>(
         ..container::Style::default()
     });
 
-    let url_label = text("BROWSER SOURCE URL")
+    let url_label = text(crate::tr!("widget.file_list.url_label"))
         .font(font(FontRole::Monospace))
         .size(FONT_XS)
         .color(p.text_muted);

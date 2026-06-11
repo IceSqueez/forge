@@ -35,7 +35,7 @@ pub struct KeyCapture<'a, Msg> {
 
 pub fn key_capture<'a, Msg>(palette: &'a ForgePalette) -> KeyCapture<'a, Msg> {
     KeyCapture {
-        placeholder: "Press a combo\u{2026}".to_owned(),
+        placeholder: crate::tr!("widget.key_capture.placeholder"),
         value: None,
         on_captured: None,
         on_reset: None,
@@ -218,6 +218,7 @@ where
                     if let Some(cb) = &self.on_reset {
                         shell.publish((cb)());
                     }
+                    shell.capture_event();
                     shell.request_redraw();
                     return;
                 }
@@ -233,6 +234,9 @@ where
                     if let Some(cb) = &self.on_captured {
                         shell.publish((cb)(combo));
                     }
+                    // Consume the keystroke so app-level keyboard subscriptions
+                    // never dispatch a shortcut for the chord being recorded.
+                    shell.capture_event();
                     shell.request_redraw();
                 }
             }
@@ -265,6 +269,16 @@ where
     fn from(widget: KeyCapture<'a, Msg>) -> Self {
         Element::new(widget)
     }
+}
+
+/// Canonical chord form shared by capture, display, persistence and dispatch
+/// (modifiers in Ctrl/Shift/Alt/Meta order, `+`-joined). None for keys that
+/// cannot anchor a chord (modifiers alone, Escape, punctuation).
+pub fn chord_from_key(key: &keyboard::Key, modifiers: keyboard::Modifiers) -> Option<String> {
+    if is_modifier_key(key) {
+        return None;
+    }
+    key_to_combo_segment(key).map(|segment| build_combo_string(modifiers, &segment))
 }
 
 fn is_modifier_key(key: &keyboard::Key) -> bool {
@@ -380,105 +394,90 @@ mod tests {
     use super::*;
 
     #[test]
-    fn format_modifiers_empty_gives_empty_string() {
-        assert_eq!(format_modifiers(keyboard::Modifiers::empty()), "");
+    fn format_modifiers_orders_modifiers_canonically() {
+        for (mods, expected) in [
+            (keyboard::Modifiers::empty(), ""),
+            (keyboard::Modifiers::CTRL, "Ctrl"),
+            (
+                keyboard::Modifiers::SHIFT | keyboard::Modifiers::CTRL,
+                "Ctrl+Shift",
+            ),
+            (
+                keyboard::Modifiers::SHIFT
+                    | keyboard::Modifiers::CTRL
+                    | keyboard::Modifiers::ALT
+                    | keyboard::Modifiers::LOGO,
+                "Ctrl+Shift+Alt+Meta",
+            ),
+        ] {
+            assert_eq!(format_modifiers(mods), expected);
+        }
     }
 
     #[test]
-    fn format_modifiers_ctrl_only() {
-        assert_eq!(format_modifiers(keyboard::Modifiers::CTRL), "Ctrl");
+    fn key_to_combo_segment_maps_letters_digits_and_named_keys() {
+        for (key, expected) in [
+            (keyboard::Key::Character("a".into()), "A"), // letters uppercase
+            (keyboard::Key::Character("A".into()), "A"),
+            (keyboard::Key::Character("5".into()), "5"),
+            (keyboard::Key::Named(Named::F7), "F7"),
+            (keyboard::Key::Named(Named::Delete), "Delete"),
+            (keyboard::Key::Named(Named::ArrowUp), "ArrowUp"),
+            (keyboard::Key::Named(Named::Space), "Space"),
+        ] {
+            assert_eq!(key_to_combo_segment(&key), Some(expected.to_owned()));
+        }
     }
 
     #[test]
-    fn format_modifiers_canonical_order_ctrl_shift() {
-        let mods = keyboard::Modifiers::CTRL | keyboard::Modifiers::SHIFT;
-        assert_eq!(format_modifiers(mods), "Ctrl+Shift");
+    fn key_to_combo_segment_rejects_keys_that_cannot_anchor_a_chord() {
+        for key in [
+            keyboard::Key::Named(Named::Shift),
+            keyboard::Key::Named(Named::Control),
+            keyboard::Key::Named(Named::Escape),
+            keyboard::Key::Character(";".into()), // punctuation
+            keyboard::Key::Unidentified,
+        ] {
+            assert_eq!(key_to_combo_segment(&key), None, "{key:?}");
+        }
     }
 
     #[test]
-    fn format_modifiers_all_four_canonical_order() {
-        let mods = keyboard::Modifiers::SHIFT
-            | keyboard::Modifiers::CTRL
-            | keyboard::Modifiers::ALT
-            | keyboard::Modifiers::LOGO;
-        assert_eq!(format_modifiers(mods), "Ctrl+Shift+Alt+Meta");
-    }
-
-    #[test]
-    fn build_combo_string_no_modifiers() {
-        assert_eq!(build_combo_string(keyboard::Modifiers::empty(), "A"), "A");
-    }
-
-    #[test]
-    fn build_combo_string_ctrl_shift_a() {
-        let mods = keyboard::Modifiers::CTRL | keyboard::Modifiers::SHIFT;
-        assert_eq!(build_combo_string(mods, "A"), "Ctrl+Shift+A");
-    }
-
-    #[test]
-    fn build_combo_string_preserves_canonical_order() {
-        let mods = keyboard::Modifiers::SHIFT | keyboard::Modifiers::CTRL;
-        assert_eq!(build_combo_string(mods, "F1"), "Ctrl+Shift+F1");
-    }
-
-    #[test]
-    fn key_to_combo_segment_letter() {
-        let key = keyboard::Key::Character("a".into());
-        assert_eq!(key_to_combo_segment(&key), Some("A".to_owned()));
-    }
-
-    #[test]
-    fn key_to_combo_segment_uppercase_letter() {
-        let key = keyboard::Key::Character("A".into());
-        assert_eq!(key_to_combo_segment(&key), Some("A".to_owned()));
-    }
-
-    #[test]
-    fn key_to_combo_segment_digit() {
-        let key = keyboard::Key::Character("5".into());
-        assert_eq!(key_to_combo_segment(&key), Some("5".to_owned()));
-    }
-
-    #[test]
-    fn key_to_combo_segment_function_key() {
-        let key = keyboard::Key::Named(Named::F7);
-        assert_eq!(key_to_combo_segment(&key), Some("F7".to_owned()));
-    }
-
-    #[test]
-    fn key_to_combo_segment_named_keys() {
-        assert_eq!(
-            key_to_combo_segment(&keyboard::Key::Named(Named::Delete)),
-            Some("Delete".to_owned())
-        );
-        assert_eq!(
-            key_to_combo_segment(&keyboard::Key::Named(Named::ArrowUp)),
-            Some("ArrowUp".to_owned())
-        );
-        assert_eq!(
-            key_to_combo_segment(&keyboard::Key::Named(Named::Space)),
-            Some("Space".to_owned())
-        );
-    }
-
-    #[test]
-    fn key_to_combo_segment_modifier_is_none() {
-        assert_eq!(
-            key_to_combo_segment(&keyboard::Key::Named(Named::Shift)),
-            None
-        );
-        assert_eq!(
-            key_to_combo_segment(&keyboard::Key::Named(Named::Control)),
-            None
-        );
-    }
-
-    #[test]
-    fn key_to_combo_segment_escape_is_none() {
-        assert_eq!(
-            key_to_combo_segment(&keyboard::Key::Named(Named::Escape)),
-            None
-        );
+    fn chord_from_key_canonicalizes_modifiers_and_key() {
+        for (key, mods, expected) in [
+            (
+                keyboard::Key::Character("a".into()),
+                keyboard::Modifiers::SHIFT | keyboard::Modifiers::CTRL,
+                Some("Ctrl+Shift+A"),
+            ),
+            (
+                keyboard::Key::Named(Named::F5),
+                keyboard::Modifiers::ALT,
+                Some("Alt+F5"),
+            ),
+            // Bindability is enforced later — a bare digit still canonicalizes.
+            (
+                keyboard::Key::Character("5".into()),
+                keyboard::Modifiers::empty(),
+                Some("5"),
+            ),
+            (
+                keyboard::Key::Named(Named::Shift),
+                keyboard::Modifiers::CTRL,
+                None,
+            ),
+            (
+                keyboard::Key::Named(Named::Escape),
+                keyboard::Modifiers::empty(),
+                None,
+            ),
+        ] {
+            assert_eq!(
+                chord_from_key(&key, mods),
+                expected.map(str::to_owned),
+                "{key:?}"
+            );
+        }
     }
 
     #[test]
@@ -501,7 +500,7 @@ mod tests {
         let palette = crate::palette::CATPPUCCIN_MOCHA;
         let widget = key_capture::<()>(&palette);
         let state = KeyCaptureState::default();
-        assert_eq!(widget.display_str(&state), "Press a combo\u{2026}");
+        assert_eq!(widget.display_str(&state), "widget.key_capture.placeholder");
     }
 
     #[test]
@@ -522,7 +521,7 @@ mod tests {
             partial_key: None,
             locked: false,
         };
-        assert_eq!(widget.display_str(&state), "Press a combo\u{2026}");
+        assert_eq!(widget.display_str(&state), "widget.key_capture.placeholder");
     }
 
     #[test]

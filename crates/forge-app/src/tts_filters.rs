@@ -133,21 +133,23 @@ fn pipeline_column_view<'a>(
     gap_md: f32,
 ) -> Element<'a, Message> {
     let header = column![
-        text("PROCESSING PIPELINE")
+        text(forge_widgets::tr!("tts_filters_pipeline_header"))
             .size(FONT_XS)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace)),
-        text("Each message passes through these stages in order before being spoken")
+        text(forge_widgets::tr!("tts_filters_pipeline_hint"))
             .size(FONT_SM)
             .color(palette.text_muted),
     ]
     .spacing(spf(Spacing::Xxs));
 
+    let word_count = state.word_blocklist.len();
+    let rule_count = state.replacement_rules.len();
     let stage1 = pipeline_stage(
         "1",
         palette.random,
-        "Skip rules",
-        "message dropped if matched".to_owned(),
+        forge_widgets::tr!("tts_filters_stage_skip_title"),
+        forge_widgets::tr!("tts_filters_stage_skip_subtitle"),
         skip_rules_content(state, palette, gap_sm),
         palette,
         true,
@@ -156,8 +158,8 @@ fn pipeline_column_view<'a>(
     let stage2 = pipeline_stage(
         "2",
         palette.warning,
-        "Word blocklist",
-        format!("{} words", state.word_blocklist.len()),
+        forge_widgets::tr!("tts_filters_stage_blocklist_title"),
+        forge_widgets::tr!("tts_filters_stage_words_count", count = word_count as i64),
         blocklist_content(state, palette, gap_sm),
         palette,
         true,
@@ -166,8 +168,8 @@ fn pipeline_column_view<'a>(
     let stage3 = pipeline_stage(
         "3",
         palette.brand,
-        "Text replacements",
-        format!("{} rules", state.replacement_rules.len()),
+        forge_widgets::tr!("tts_filters_stage_replacements_title"),
+        forge_widgets::tr!("tts_filters_stage_rules_count", count = rule_count as i64),
         replacements_content(state, palette, gap_sm),
         palette,
         true,
@@ -176,7 +178,7 @@ fn pipeline_column_view<'a>(
     let stage4 = pipeline_stage(
         "\u{2713}",
         palette.success,
-        "Sent to voice engine",
+        forge_widgets::tr!("tts_filters_stage_engine_title"),
         String::new(),
         Space::new().into(),
         palette,
@@ -198,7 +200,7 @@ fn pipeline_column_view<'a>(
 fn pipeline_stage<'a>(
     number: &'static str,
     num_color: Color,
-    title: &'a str,
+    title: String,
     subtitle: String,
     content: Element<'a, Message>,
     palette: &'a ForgePalette,
@@ -242,7 +244,7 @@ fn pipeline_stage<'a>(
         .width(24);
 
     let stage_header = row![
-        text(title)
+        text(title.clone())
             .size(FONT_SM)
             .color(palette.text_primary)
             .width(Length::Fill),
@@ -300,31 +302,44 @@ fn skip_rules_content<'a>(
     }
 
     fn add_chip<'b>(palette: &'b ForgePalette) -> Element<'b, Message> {
-        button(text("+ Add rule").size(FONT_XS).color(palette.text_muted))
-            .on_press(Message::Tts(TtsMsg::Filters(TtsFiltersMsg::AddRuleClicked)))
-            .style(move |_, _| button::Style {
-                background: None,
-                border: Border {
-                    color: palette.border_regular,
-                    width: BORDER_THIN,
-                    radius: radius(Radius::Pill).into(),
-                },
-                text_color: palette.text_muted,
-                ..button::Style::default()
-            })
-            .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
-            .into()
+        button(
+            text(forge_widgets::tr!("tts_filters_chip_add_rule"))
+                .size(FONT_XS)
+                .color(palette.text_muted),
+        )
+        .on_press(Message::Tts(TtsMsg::Filters(TtsFiltersMsg::AddRuleClicked)))
+        .style(move |_, _| button::Style {
+            background: None,
+            border: Border {
+                color: palette.border_regular,
+                width: BORDER_THIN,
+                radius: radius(Radius::Pill).into(),
+            },
+            text_color: palette.text_muted,
+            ..button::Style::default()
+        })
+        .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
+        .into()
     }
 
     let mut chips: Vec<Element<'a, Message>> = Vec::new();
     if state.skip_contains_url {
-        chips.push(chip("Contains URL", palette));
+        chips.push(chip(
+            Box::leak(forge_widgets::tr!("tts_filters_chip_contains_url").into_boxed_str()),
+            palette,
+        ));
     }
     if state.skip_starts_with_bang {
-        chips.push(chip("Starts with !", palette));
+        chips.push(chip(
+            Box::leak(forge_widgets::tr!("tts_filters_chip_starts_bang").into_boxed_str()),
+            palette,
+        ));
     }
     if state.skip_from_bots {
-        chips.push(chip("From bots", palette));
+        chips.push(chip(
+            Box::leak(forge_widgets::tr!("tts_filters_chip_from_bots").into_boxed_str()),
+            palette,
+        ));
     }
     if let Some(limit) = state.skip_length_limit {
         chips.push(chip(
@@ -377,7 +392,7 @@ fn blocklist_content<'a>(
     }
 
     let manage_box = container(
-        text("Manage blocklist...")
+        text(forge_widgets::tr!("tts_filters_blocklist_manage"))
             .size(FONT_SM)
             .color(palette.text_muted),
     )
@@ -396,13 +411,13 @@ fn blocklist_content<'a>(
     let mode_toggle = container(
         row![
             mode_btn(
-                "Censor",
+                Box::leak(forge_widgets::tr!("tts_filters_mode_censor").into_boxed_str()),
                 BlocklistModeChoice::Censor,
                 &state.blocklist_mode,
                 palette
             ),
             mode_btn(
-                "Skip msg",
+                Box::leak(forge_widgets::tr!("tts_filters_mode_skip").into_boxed_str()),
                 BlocklistModeChoice::SkipMessage,
                 &state.blocklist_mode,
                 palette,
@@ -434,7 +449,7 @@ fn replacements_content<'a>(
 ) -> Element<'a, Message> {
     if state.replacement_rules.is_empty() {
         return container(
-            text("No replacement rules")
+            text(forge_widgets::tr!("tts_filters_no_replacements"))
                 .size(FONT_SM)
                 .color(palette.text_muted),
         )
@@ -516,43 +531,46 @@ fn preview_column_view<'a>(
     gap_sm: f32,
     gap_md: f32,
 ) -> Element<'a, Message> {
-    let header = text("PIPELINE PREVIEW")
+    let header = text(forge_widgets::tr!("tts_filters_preview_header"))
         .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
-    let input_label = text("INPUT MESSAGE")
+    let input_label = text(forge_widgets::tr!("tts_filters_preview_input_label"))
         .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
-    let input_box = text_input("Type a message to preview...", &state.preview_input)
-        .on_input(|s| Message::Tts(TtsMsg::Filters(TtsFiltersMsg::PreviewInputChanged(s))))
-        .size(FONT_SM)
-        .width(Length::Fill)
-        .style(move |_, _| text_input::Style {
-            background: Background::Color(palette.elevated),
-            border: Border {
-                color: palette.border_regular,
-                width: BORDER_THIN,
-                radius: radius(Radius::Sm).into(),
-            },
-            icon: palette.text_muted,
-            placeholder: palette.text_muted,
-            value: palette.text_primary,
-            selection: palette.brand,
-        });
+    let input_box = text_input(
+        &forge_widgets::tr!("tts_filters_preview_input_placeholder"),
+        &state.preview_input,
+    )
+    .on_input(|s| Message::Tts(TtsMsg::Filters(TtsFiltersMsg::PreviewInputChanged(s))))
+    .size(FONT_SM)
+    .width(Length::Fill)
+    .style(move |_, _| text_input::Style {
+        background: Background::Color(palette.elevated),
+        border: Border {
+            color: palette.border_regular,
+            width: BORDER_THIN,
+            radius: radius(Radius::Sm).into(),
+        },
+        icon: palette.text_muted,
+        placeholder: palette.text_muted,
+        value: palette.text_primary,
+        selection: palette.brand,
+    });
 
     let stage_results = if let Some(preview) = &state.cached_preview {
         preview_stage_rows(preview, palette, gap_sm)
     } else {
-        text("Enter a message above to preview")
+        text(forge_widgets::tr!("tts_filters_preview_empty"))
             .size(FONT_SM)
             .color(palette.text_muted)
             .into()
     };
 
-    let output_label = text("FINAL OUTPUT")
+    let output_label = text(forge_widgets::tr!("tts_filters_preview_output_label"))
         .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
@@ -596,7 +614,7 @@ fn preview_column_view<'a>(
     .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
     .width(Length::Fill);
 
-    let speak_btn = button(text("Speak preview").size(FONT_SM))
+    let speak_btn = button(text(forge_widgets::tr!("tts_filters_speak_preview_btn")).size(FONT_SM))
         .on_press(Message::Noop)
         .style(move |_, _| button::Style {
             background: Some(Background::Color(palette.brand)),
@@ -611,7 +629,7 @@ fn preview_column_view<'a>(
         .width(Length::Fill);
 
     let tip = container(
-        text("Type any message above to see how filters transform it in real time")
+        text(forge_widgets::tr!("tts_filters_preview_tip"))
             .size(FONT_XS)
             .color(palette.text_muted),
     )
@@ -675,7 +693,10 @@ fn preview_stage_rows<'a>(
         .iter()
         .enumerate()
         .map(|(i, outcome)| {
-            let label = stage_names.get(i).copied().unwrap_or("STAGE");
+            let label = stage_names
+                .get(i)
+                .map(|s| (*s).to_owned())
+                .unwrap_or_else(|| forge_widgets::tr!("tts_filters_stage_fallback"));
             preview_stage_card(label, outcome, palette)
         })
         .collect();
@@ -684,13 +705,13 @@ fn preview_stage_rows<'a>(
 }
 
 fn preview_stage_card<'a>(
-    label: &'a str,
+    label: String,
     outcome: &'a StageOutcome,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let p = *palette;
 
-    let label_el = text(label.to_owned())
+    let label_el = text(label)
         .size(FONT_XS)
         .color(p.text_faint)
         .font(font(FontRole::Monospace));

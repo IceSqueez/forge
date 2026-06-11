@@ -57,10 +57,8 @@ pub fn source_badge<'a, Msg: 'a>(source: EventSource, palette: &ForgePalette) ->
         .size(FONT_XS)
         .color(fg)
         .font(iced::Font {
-            family: iced::font::Family::Name("JetBrains Mono"),
             weight: iced::font::Weight::Medium,
-            stretch: iced::font::Stretch::Normal,
-            style: iced::font::Style::Normal,
+            ..font(FontRole::Monospace)
         });
 
     container(txt)
@@ -501,7 +499,7 @@ pub fn replay_button<'a, Msg: Clone + 'a>(
 
     let icon = tabler_icon(Icon::Repeat, FONT_SM, brand);
 
-    let label = iced::widget::text("Replay this event")
+    let label = iced::widget::text(crate::tr!("widget.event.replay"))
         .size(FONT_XS)
         .color(brand);
 
@@ -592,7 +590,7 @@ pub fn event_inspector<'a, Msg: Clone + 'a>(
             ..container::Style::default()
         });
 
-    let payload_label = iced::widget::text("PAYLOAD")
+    let payload_label = iced::widget::text(crate::tr!("widget.event.payload_header"))
         .size(FONT_XS)
         .color(text_faint)
         .font(mono);
@@ -602,7 +600,7 @@ pub fn event_inspector<'a, Msg: Clone + 'a>(
     let mut col = column![header_card, payload_label, viewer].spacing(8);
 
     if let Some((label, action_id_display, on_click)) = params.caused_action {
-        let caused_label = iced::widget::text("CAUSED")
+        let caused_label = iced::widget::text(crate::tr!("widget.event.caused_header"))
             .size(FONT_XS)
             .color(text_faint)
             .font(mono);

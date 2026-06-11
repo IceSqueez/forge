@@ -317,7 +317,7 @@ pub fn update(
                         .map(|_| ())
                         .map_err(|e| match e {
                             StorageError::ReferenceBlock { .. } => {
-                                "Remove this trigger from all actions before deleting.".to_owned()
+                                forge_widgets::tr!("triggers_delete_reference_block")
                             }
                             other => other.to_string(),
                         })
@@ -408,10 +408,10 @@ pub fn view<'a>(
 
     let list_content: Element<'_, Message> = if state.instances.is_empty() && !filters_active {
         container(empty_state(
-            "No custom trigger instances yet",
-            "Create a named trigger with custom settings to reuse across multiple actions.",
+            forge_widgets::tr!("triggers_empty_title"),
+            forge_widgets::tr!("triggers_empty_hint"),
             Some((
-                "+ Create trigger instance",
+                forge_widgets::tr!("triggers_empty_create"),
                 Message::TriggersRegistry(TriggersRegistryMsg::OpenCreateForm),
             )),
             palette,
@@ -422,9 +422,9 @@ pub fn view<'a>(
     } else if filtered.is_empty() {
         let clear_msg = Message::TriggersRegistry(TriggersRegistryMsg::PlatformFilterChanged(None));
         container(empty_state(
-            "No results",
-            "Adjust or clear the filters to find your triggers.",
-            Some(("Clear filters", clear_msg)),
+            forge_widgets::tr!("triggers_no_results_title"),
+            forge_widgets::tr!("triggers_no_results_hint"),
+            Some((forge_widgets::tr!("triggers_clear_filters"), clear_msg)),
             palette,
         ))
         .width(Length::Fill)
@@ -504,7 +504,7 @@ fn registry_header<'a>(
     let p = *palette;
 
     let search = container(search_input(
-        "Search triggers…",
+        forge_widgets::tr!("triggers_search_placeholder"),
         &state.search,
         |s| Message::TriggersRegistry(TriggersRegistryMsg::SearchChanged(s)),
         palette,
@@ -525,9 +525,14 @@ fn registry_header<'a>(
         .is_some_and(|x| x == "script.");
     let all_active = state.platform_filter.is_none();
 
+    let lbl_filter_all = forge_widgets::tr!("triggers_filter_all");
+    let lbl_filter_twitch = forge_widgets::tr!("triggers_filter_twitch");
+    let lbl_filter_obs = forge_widgets::tr!("triggers_filter_obs");
+    let lbl_filter_script = forge_widgets::tr!("triggers_filter_script");
+
     let chip_twitch = category_chip(
         palette,
-        "Twitch",
+        lbl_filter_twitch.as_str(),
         p.brand,
         twitch_active,
         Message::TriggersRegistry(TriggersRegistryMsg::PlatformFilterChanged(Some(
@@ -536,7 +541,7 @@ fn registry_header<'a>(
     );
     let chip_obs = category_chip(
         palette,
-        "OBS",
+        lbl_filter_obs.as_str(),
         p.success,
         obs_active,
         Message::TriggersRegistry(TriggersRegistryMsg::PlatformFilterChanged(Some(
@@ -545,7 +550,7 @@ fn registry_header<'a>(
     );
     let chip_script = category_chip(
         palette,
-        "Script",
+        lbl_filter_script.as_str(),
         p.warning,
         script_active,
         Message::TriggersRegistry(TriggersRegistryMsg::PlatformFilterChanged(Some(
@@ -554,7 +559,7 @@ fn registry_header<'a>(
     );
     let chip_all = category_chip(
         palette,
-        "All",
+        lbl_filter_all.as_str(),
         p.text_secondary,
         all_active,
         Message::TriggersRegistry(TriggersRegistryMsg::PlatformFilterChanged(None)),
@@ -569,19 +574,19 @@ fn registry_header<'a>(
     let usage_unused_active = state.usage_filter == UsageFilter::Unused;
 
     let chip_u_all = usage_filter_chip(
-        "All",
+        forge_widgets::tr!("triggers_usage_all"),
         usage_all_active,
         Message::TriggersRegistry(TriggersRegistryMsg::UsageFilterChanged(UsageFilter::All)),
         palette,
     );
     let chip_u_used = usage_filter_chip(
-        "Used",
+        forge_widgets::tr!("triggers_usage_used"),
         usage_used_active,
         Message::TriggersRegistry(TriggersRegistryMsg::UsageFilterChanged(UsageFilter::Used)),
         palette,
     );
     let chip_u_unused = usage_filter_chip(
-        "Unused",
+        forge_widgets::tr!("triggers_usage_unused"),
         usage_unused_active,
         Message::TriggersRegistry(TriggersRegistryMsg::UsageFilterChanged(UsageFilter::Unused)),
         palette,
@@ -604,15 +609,19 @@ fn registry_header<'a>(
     let breadcrumb_row = row![
         tabler_icon::<Message>(Icon::Home, 13.0, p.text_faint),
         tabler_icon::<Message>(Icon::ChevronRight, 11.0, p.text_faint),
-        text("Automation").size(FONT_SM).color(p.text_muted),
+        text(forge_widgets::tr!("triggers_breadcrumb_automation"))
+            .size(FONT_SM)
+            .color(p.text_muted),
         tabler_icon::<Message>(Icon::ChevronRight, 11.0, p.text_faint),
-        text("Triggers").size(FONT_SM).color(p.text_primary),
+        text(forge_widgets::tr!("triggers_breadcrumb_triggers"))
+            .size(FONT_SM)
+            .color(p.text_primary),
     ]
     .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
     let create_btn = secondary_button(
-        "+ Create",
+        forge_widgets::tr!("triggers_open_create_btn"),
         Message::TriggersRegistry(TriggersRegistryMsg::OpenCreateForm),
         palette,
     );
@@ -648,7 +657,7 @@ fn registry_header<'a>(
 }
 
 fn usage_filter_chip<'a>(
-    label: &'a str,
+    label: impl Into<std::borrow::Cow<'a, str>>,
     active: bool,
     on_press: Message,
     palette: &'a ForgePalette,
@@ -665,7 +674,7 @@ fn usage_filter_chip<'a>(
         p.text_secondary
     };
 
-    let inner = text(label)
+    let inner = text(label.into())
         .size(FONT_XS)
         .color(text_color)
         .font(font(FontRole::Body));
@@ -745,7 +754,7 @@ fn instance_row<'a>(
     .spacing(2);
 
     let usage_badge: Element<'_, Message> = if row.used_in_count > 0 {
-        let label = format!("used in {}", row.used_in_count);
+        let label = forge_widgets::tr!("triggers_usage_badge", count = row.used_in_count as i64);
         container(
             text(label)
                 .size(FONT_XS)
@@ -767,7 +776,11 @@ fn instance_row<'a>(
         Space::new().width(0).into()
     };
 
-    let toggle_label = if row.enabled { "ON" } else { "OFF" };
+    let toggle_label = if row.enabled {
+        forge_widgets::tr!("triggers_toggle_on")
+    } else {
+        forge_widgets::tr!("triggers_toggle_off")
+    };
     let toggle_bg = if row.enabled {
         p.brand
     } else {
@@ -986,7 +999,7 @@ fn sheet_body_for<'a>(
 
             if fields.is_empty() {
                 container(
-                    text("No configurable fields")
+                    text(forge_widgets::tr!("triggers_sheet_no_config"))
                         .size(FONT_XS)
                         .color(p.text_faint)
                         .font(font(FontRole::Body)),
@@ -1036,12 +1049,16 @@ fn sheet_body_for<'a>(
                     })
                     .collect();
 
-                let hdr = section_header("CONFIGURATION", None, palette);
+                let hdr = section_header(
+                    forge_widgets::tr!("triggers_sheet_section_configuration"),
+                    None,
+                    palette,
+                );
                 column(std::iter::once(hdr).chain(field_rows).collect::<Vec<_>>()).into()
             }
         } else {
             container(
-                text("Trigger kind not registered")
+                text(forge_widgets::tr!("triggers_sheet_not_registered"))
                     .size(FONT_XS)
                     .color(p.text_faint)
                     .font(font(FontRole::Body)),
@@ -1051,7 +1068,11 @@ fn sheet_body_for<'a>(
         };
 
     let used_in_section: Element<'_, Message> = if !used_in.is_empty() {
-        let hdr = section_header("USED IN", Some(used_in.len() as u32), palette);
+        let hdr = section_header(
+            forge_widgets::tr!("triggers_sheet_section_used_in"),
+            Some(used_in.len() as u32),
+            palette,
+        );
         let usage_rows: Vec<Element<'_, Message>> = used_in
             .iter()
             .map(|u| {
@@ -1089,18 +1110,19 @@ fn sheet_body_for<'a>(
     let can_delete = row.used_in_count == 0;
     let delete_id = row.id;
 
+    let delete_lbl = forge_widgets::tr!("triggers_sheet_delete_btn");
     let footer = container(
         row![
             Space::new().width(Length::Fill),
             if can_delete {
                 destructive_button(
-                    "Delete",
+                    delete_lbl.clone(),
                     Message::TriggersRegistry(TriggersRegistryMsg::DeleteRequested(delete_id)),
                     palette,
                 )
             } else {
                 container(
-                    text("Delete")
+                    text(delete_lbl)
                         .size(FONT_SM)
                         .color(p.disabled)
                         .font(font(FontRole::Body)),
@@ -1194,7 +1216,11 @@ fn sheet_platform_section<'a>(
                 },
                 ..container::Style::default()
             });
-            let preview = text(format!("Will fire on: {}", platform_id_name(pid)))
+            let will_fire_str = forge_widgets::tr!(
+                "triggers_sheet_will_fire_on",
+                platform = platform_id_name(pid)
+            );
+            let preview = text(will_fire_str)
                 .size(FONT_XS)
                 .color(p.text_faint)
                 .font(mono);
@@ -1205,7 +1231,11 @@ fn sheet_platform_section<'a>(
                 snap: true,
             };
             column![
-                section_header("PLATFORM", None, palette),
+                section_header(
+                    forge_widgets::tr!("triggers_sheet_section_platform"),
+                    None,
+                    palette
+                ),
                 container(badge).padding([sp(Spacing::Xxs), sp(Spacing::Md)]),
                 container(preview).padding([2, sp(Spacing::Md)]),
                 rule::horizontal(1.0).style(divider_style),
@@ -1215,14 +1245,17 @@ fn sheet_platform_section<'a>(
 
         KindPlatformContract::MultiPlatform => {
             let scope_text = platform_scope_text(&row.platform_scope);
-            let preview = text(format!("Will fire on: {scope_text}"))
+            let will_fire_scope_str =
+                forge_widgets::tr!("triggers_sheet_will_fire_on_scope", scope = scope_text);
+            let preview = text(will_fire_scope_str)
                 .size(FONT_XS)
                 .color(p.text_faint)
                 .font(mono);
 
+            let any_platform_lbl = forge_widgets::tr!("triggers_sheet_any_platform");
             let scope_badge_el: Element<'_, Message> = match &row.platform_scope {
                 PlatformScope::Any => container(
-                    text("Any platform")
+                    text(any_platform_lbl)
                         .size(FONT_XS)
                         .color(p.text_muted)
                         .font(font(FontRole::Body)),
@@ -1281,7 +1314,11 @@ fn sheet_platform_section<'a>(
                 snap: true,
             };
             column![
-                section_header("PLATFORM", None, palette),
+                section_header(
+                    forge_widgets::tr!("triggers_sheet_section_platform"),
+                    None,
+                    palette
+                ),
                 container(scope_badge_el).padding([sp(Spacing::Xxs), sp(Spacing::Md)]),
                 container(preview).padding([2, sp(Spacing::Md)]),
                 rule::horizontal(1.0).style(divider_style),
@@ -1344,9 +1381,9 @@ fn confirm_disable_dialog<'a>(
             snap: false,
         });
 
-    let body_text = format!(
-        "Disabling this trigger will pause it for {} action(s). Continue?",
-        cd.action_count
+    let body_text = forge_widgets::tr!(
+        "triggers_confirm_disable_body",
+        count = cd.action_count as i64
     );
 
     let card = container(
@@ -1357,13 +1394,13 @@ fn confirm_disable_dialog<'a>(
                 .font(font(FontRole::Body)),
             row![
                 secondary_button(
-                    "Cancel",
+                    forge_widgets::tr!("triggers_confirm_disable_dismiss"),
                     Message::TriggersRegistry(TriggersRegistryMsg::DisableConfirmDismissed),
                     palette,
                 ),
                 Space::new().width(Length::Fill),
                 destructive_button(
-                    "Disable anyway",
+                    forge_widgets::tr!("triggers_confirm_disable_accept"),
                     Message::TriggersRegistry(TriggersRegistryMsg::DisableConfirmAccepted(id)),
                     palette,
                 ),

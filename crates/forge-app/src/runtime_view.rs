@@ -16,7 +16,7 @@ use forge_soundboard::SoundboardPlayer;
 use forge_speak_queue::SpeakQueueHandle;
 use forge_storage::DataProvider;
 use forge_tts_core::EngineId;
-use forge_vtube::VTubeClient;
+use forge_vtube::{SwitchableVTubeSink, VTubeClient};
 
 use crate::server_subsystem::ServerSubsystem;
 use crate::twitch_panel::TwitchFlowHandle;
@@ -31,6 +31,7 @@ pub struct RuntimeView {
     pub scheduler: Option<QueueSchedulerHandle>,
     pub obs_client: Option<Arc<ObsClient>>,
     pub vtube_client: Option<Arc<VTubeClient>>,
+    pub vtube_sink: Arc<SwitchableVTubeSink>,
     pub discord_client: Option<Arc<DiscordClient>>,
     pub midi_client: Option<Arc<MidiClient>>,
     pub hotkey_client: Option<Arc<HotkeyClient>>,

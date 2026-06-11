@@ -157,16 +157,10 @@ pub fn update(state: &mut QueuesState, rt: &RuntimeView, msg: QueuesMsg) -> Task
 
 fn default_description(name: &str) -> Option<String> {
     match name {
-        "Default" => {
-            Some("Catch-all queue for actions without explicit queue assignment".to_owned())
-        }
-        "Alerts" => Some("Subs, raids, cheers · serialized so overlays don't overlap".to_owned()),
-        "Background" => {
-            Some("Logging, analytics, side-effect-free tasks · parallel execution".to_owned())
-        }
-        "Moderation" => {
-            Some("Auto-bans, timeouts, message deletions · paused for review".to_owned())
-        }
+        "Default" => Some(forge_widgets::tr!("queues_desc_default")),
+        "Alerts" => Some(forge_widgets::tr!("queues_desc_alerts")),
+        "Background" => Some(forge_widgets::tr!("queues_desc_background")),
+        "Moderation" => Some(forge_widgets::tr!("queues_desc_moderation")),
         _ => None,
     }
 }
@@ -229,7 +223,10 @@ pub fn queues_view<'a>(state: &'a QueuesState, palette: &'a ForgePalette) -> Ele
     .align_y(iced::Alignment::Center);
 
     let page_header = crate::page_chrome::page_header_with_actions(
-        &[("Automation", false), ("Queues", true)],
+        &[
+            (forge_widgets::tr!("queues_breadcrumb_automation"), false),
+            (forge_widgets::tr!("queues_breadcrumb_queues"), true),
+        ],
         Some(right_side.into()),
         palette,
     );
@@ -256,7 +253,9 @@ fn pause_all_button<'a>(border_col: Color, warning: Color) -> Element<'a, Messag
 
     let icon = tabler_icon(Icon::PlayerPause, 13.0, warning);
 
-    let label = text("Pause all").size(FONT_SM).color(warning);
+    let label = text(forge_widgets::tr!("queues_pause_all_btn"))
+        .size(FONT_SM)
+        .color(warning);
 
     button(
         row![icon, label]
@@ -286,7 +285,9 @@ fn new_queue_button<'a>(brand: Color, dark: Color) -> Element<'a, Message> {
 
     let icon = tabler_icon(Icon::Plus, 13.0, dark);
 
-    let label = text("New queue").size(FONT_SM).color(dark);
+    let label = text(forge_widgets::tr!("queues_new_queue_btn"))
+        .size(FONT_SM)
+        .color(dark);
 
     button(
         row![icon, label]
@@ -310,7 +311,7 @@ fn new_queue_button<'a>(brand: Color, dark: Color) -> Element<'a, Message> {
 fn build_grid<'a>(state: &'a QueuesState, palette: &'a ForgePalette) -> Element<'a, Message> {
     if state.queues.is_empty() {
         return column![
-            text("No queues configured.")
+            text(forge_widgets::tr!("queues_empty"))
                 .size(FONT_SM)
                 .color(palette.text_secondary)
         ]
@@ -408,7 +409,7 @@ fn status_badge<'a>(paused: bool, palette: &'a ForgePalette) -> Element<'a, Mess
     if paused {
         let warning = palette.warning;
         let icon = tabler_icon(Icon::PlayerPause, 9.0, warning);
-        let label = text("PAUSED")
+        let label = text(forge_widgets::tr!("queues_status_paused"))
             .size(FONT_XS)
             .font(font(FontRole::Monospace))
             .color(warning);
@@ -439,7 +440,7 @@ fn status_badge<'a>(paused: bool, palette: &'a ForgePalette) -> Element<'a, Mess
                 ..Default::default()
             }
         });
-        let label = text("RUNNING")
+        let label = text(forge_widgets::tr!("queues_status_running"))
             .size(FONT_XS)
             .font(font(FontRole::Monospace))
             .color(success);
@@ -469,20 +470,24 @@ fn queue_card_metrics<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
 
     let border_color = palette.border_regular;
 
-    let concurrency_label_str = if q.blocking { "serial" } else { "parallel" };
+    let concurrency_label_str = if q.blocking {
+        forge_widgets::tr!("queues_metric_serial")
+    } else {
+        forge_widgets::tr!("queues_metric_parallel")
+    };
 
     let pending_value_color = if q.paused { warning } else { value_color };
     let pending_sub_color = if q.paused { warning } else { sub_color };
     let pending_sub_str = if q.paused {
-        "held"
+        forge_widgets::tr!("queues_metric_held")
     } else if q.in_flight > 0 {
-        "in flight"
+        forge_widgets::tr!("queues_metric_in_flight")
     } else {
-        "idle"
+        forge_widgets::tr!("queues_metric_idle")
     };
 
     let concurrency_col = column![
-        text("CONCURRENCY")
+        text(forge_widgets::tr!("queues_metric_concurrency"))
             .size(FONT_XS)
             .font(font(FontRole::Monospace))
             .color(label_color),
@@ -499,7 +504,7 @@ fn queue_card_metrics<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
     .width(Length::FillPortion(1));
 
     let pending_col = column![
-        text("PENDING")
+        text(forge_widgets::tr!("queues_metric_pending"))
             .size(FONT_XS)
             .font(font(FontRole::Monospace))
             .color(label_color),
@@ -516,7 +521,7 @@ fn queue_card_metrics<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
     .width(Length::FillPortion(1));
 
     let actions_col = column![
-        text("ACTIONS")
+        text(forge_widgets::tr!("queues_metric_actions"))
             .size(FONT_XS)
             .font(font(FontRole::Monospace))
             .color(label_color),
@@ -524,7 +529,7 @@ fn queue_card_metrics<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
             .size(FONT_SM)
             .font(font(FontRole::Monospace))
             .color(value_color),
-        text("assigned")
+        text(forge_widgets::tr!("queues_metric_assigned"))
             .size(FONT_XS)
             .font(font(FontRole::Monospace))
             .color(sub_color),
@@ -571,9 +576,13 @@ fn queue_running_panel<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> El
             let now = OffsetDateTime::now_utc();
             let diff = now - *at;
             let mins = diff.whole_minutes();
-            format!("{} actions waiting — paused {} min ago", q.pending, mins)
+            forge_widgets::tr!(
+                "queues_paused_with_time",
+                pending = q.pending as i64,
+                mins = mins
+            )
         } else {
-            "queue is paused".to_owned()
+            forge_widgets::tr!("queues_paused_simple")
         };
 
         let icon = tabler_icon(Icon::AlertTriangle, 12.0, warning);
@@ -600,7 +609,9 @@ fn queue_running_panel<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> El
     } else if q.running_now.is_empty() {
         let muted = palette.text_faint;
         let icon = tabler_icon(Icon::CircleDashed, 12.0, muted);
-        let label = text("No actions running").size(FONT_XS).color(muted);
+        let label = text(forge_widgets::tr!("queues_no_actions_running"))
+            .size(FONT_XS)
+            .color(muted);
 
         container(
             row![icon, label]
@@ -641,7 +652,7 @@ fn serial_running_panel<'a>(
         .font(font(FontRole::Monospace))
         .color(palette.text_primary);
 
-    let running_label = text("running —")
+    let running_label = text(forge_widgets::tr!("queues_running_label"))
         .size(FONT_XS)
         .font(font(FontRole::Monospace))
         .color(muted);
@@ -678,7 +689,7 @@ fn concurrent_running_panel<'a>(
     let pill_bg = palette.border_regular;
     let text_col = palette.text_primary;
 
-    let header = text("RUNNING NOW")
+    let header = text(forge_widgets::tr!("queues_running_now_header"))
         .size(FONT_XS)
         .font(font(FontRole::Monospace))
         .color(muted);
@@ -716,10 +727,13 @@ fn concurrent_running_panel<'a>(
         let bg = pill_bg;
         let tc = text_col;
         let overflow_pill: Element<'a, Message> = container(
-            text(format!("+{overflow} more"))
-                .size(FONT_XS)
-                .font(font(FontRole::Monospace))
-                .color(tc),
+            text(forge_widgets::tr!(
+                "queues_overflow_more",
+                count = overflow as i64
+            ))
+            .size(FONT_XS)
+            .font(font(FontRole::Monospace))
+            .color(tc),
         )
         .padding([2, 6])
         .style(move |_: &iced::Theme| iced::widget::container::Style {
@@ -762,7 +776,9 @@ fn queue_card_buttons<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
 
     let action_btn: Element<'a, Message> = if q.paused {
         let icon = tabler_icon(Icon::PlayerPlay, 12.0, dark);
-        let label = text("Resume").size(FONT_SM).color(dark);
+        let label = text(forge_widgets::tr!("queues_resume_btn"))
+            .size(FONT_SM)
+            .color(dark);
         button(
             row![icon, label]
                 .spacing(spf(Spacing::Xxs))
@@ -783,7 +799,9 @@ fn queue_card_buttons<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
         .into()
     } else {
         let icon = tabler_icon(Icon::PlayerPause, 12.0, warning);
-        let label = text("Pause").size(FONT_SM).color(warning);
+        let label = text(forge_widgets::tr!("queues_pause_btn"))
+            .size(FONT_SM)
+            .color(warning);
         button(
             row![icon, label]
                 .spacing(spf(Spacing::Xxs))
@@ -809,7 +827,9 @@ fn queue_card_buttons<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
     };
 
     let drain_icon = tabler_icon(Icon::Eraser, 12.0, muted);
-    let drain_label = text("Drain").size(FONT_SM).color(muted);
+    let drain_label = text(forge_widgets::tr!("queues_drain_btn"))
+        .size(FONT_SM)
+        .color(muted);
     let drain_btn: Element<'a, Message> = button(
         row![drain_icon, drain_label]
             .spacing(spf(Spacing::Xxs))
@@ -834,7 +854,9 @@ fn queue_card_buttons<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
     .into();
 
     let cfg_icon = tabler_icon(Icon::Settings, 12.0, muted);
-    let cfg_label = text("Configure").size(FONT_SM).color(muted);
+    let cfg_label = text(forge_widgets::tr!("queues_configure_btn"))
+        .size(FONT_SM)
+        .color(muted);
     let cfg_btn: Element<'a, Message> = button(
         row![cfg_icon, cfg_label]
             .spacing(spf(Spacing::Xxs))

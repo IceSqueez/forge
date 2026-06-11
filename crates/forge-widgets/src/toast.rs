@@ -7,7 +7,7 @@ use iced::{
 
 use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
-use crate::tokens::{Density, FONT_SM, FontRole, Radius, Spacing, font, radius, sp, spacing};
+use crate::tokens::{FONT_SM, FontRole, Radius, Spacing, font, radius, sp};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToastKind {
@@ -123,8 +123,8 @@ fn toast_row<'a, Msg: Clone + 'a>(
     on_dismiss: &dyn Fn(u64) -> Msg,
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
-    let sm = spacing(Spacing::Sm, Density::Cozy);
-    let md = spacing(Spacing::Md, Density::Cozy);
+    let sm = sp(Spacing::Sm);
+    let md = sp(Spacing::Md);
     let accent = kind_color(toast.kind, palette);
     let icon = kind_icon(toast.kind);
 
@@ -249,8 +249,8 @@ pub fn toast_viewport<'a, Msg: Clone + 'a>(
             .into();
     }
 
-    let sm = spacing(Spacing::Sm, Density::Cozy);
-    let md = spacing(Spacing::Md, Density::Cozy);
+    let sm = sp(Spacing::Sm);
+    let md = sp(Spacing::Md);
 
     let rows: Vec<Element<'a, Msg>> = queue
         .toasts

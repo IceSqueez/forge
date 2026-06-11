@@ -55,6 +55,11 @@ pub trait DataProvider:
 
     /// Copies the underlying database file to `path`.
     async fn export(&self, path: &std::path::Path) -> Result<(), StorageError>;
+
+    /// Closes the underlying connection pool. Must be awaited before the host runtime
+    /// drops, otherwise sqlx's blocking workers hold the runtime's blocking pool open
+    /// and `Runtime::drop` hangs indefinitely.
+    async fn shutdown(&self);
 }
 
 #[cfg(test)]

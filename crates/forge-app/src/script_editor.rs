@@ -691,13 +691,17 @@ fn api_catalog() -> Vec<ApiNamespace> {
     ]
 }
 
-fn run_button<'a>(enabled: bool, palette: &'a ForgePalette) -> Element<'a, Message> {
+fn run_button<'a>(
+    enabled: bool,
+    palette: &'a ForgePalette,
+    label_str: &str,
+) -> Element<'a, Message> {
     use iced::widget::button;
     use iced::{Color, Shadow};
 
     let success = palette.success;
     let shell = palette.shell;
-    let label = text("Run").size(FONT_SM).color(Color {
+    let label = text(label_str.to_owned()).size(FONT_SM).color(Color {
         a: if enabled { 1.0 } else { 0.4 },
         ..shell
     });
@@ -726,7 +730,11 @@ fn run_button<'a>(enabled: bool, palette: &'a ForgePalette) -> Element<'a, Messa
     .into()
 }
 
-fn save_button<'a>(dirty: bool, palette: &'a ForgePalette) -> Element<'a, Message> {
+fn save_button<'a>(
+    dirty: bool,
+    palette: &'a ForgePalette,
+    label_str: &str,
+) -> Element<'a, Message> {
     use iced::widget::button;
     use iced::{Color, Shadow};
 
@@ -735,7 +743,7 @@ fn save_button<'a>(dirty: bool, palette: &'a ForgePalette) -> Element<'a, Messag
     } else {
         palette.text_faint
     };
-    let label = text("Save").size(FONT_SM).color(fg);
+    let label = text(label_str.to_owned()).size(FONT_SM).color(fg);
     let msg = if dirty {
         Some(Message::ScriptEditor(ScriptEditorMsg::SaveRequested))
     } else {
@@ -764,9 +772,12 @@ fn format_cursor_position(line: usize, col: usize) -> String {
 
 fn type_check_pill_label(error_count: usize) -> String {
     if error_count == 0 {
-        "Type-check passed".to_string()
+        forge_widgets::tr!("script_editor_type_check_passed")
     } else {
-        format!("{error_count} errors")
+        forge_widgets::tr!(
+            "script_editor_type_check_errors",
+            count = error_count as i64
+        )
     }
 }
 
@@ -823,12 +834,15 @@ fn status_indicators_row<'a>(
     .into()
 }
 
-fn disabled_toolbar_button<'a>(label: &'a str, palette: &'a ForgePalette) -> Element<'a, Message> {
+fn disabled_toolbar_button<'a>(
+    label: impl Into<String>,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
     use iced::widget::button;
     use iced::{Color, Shadow};
 
     let fg = palette.text_faint;
-    button(text(label).size(FONT_SM).color(fg))
+    button(text(label.into()).size(FONT_SM).color(fg))
         .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
         .style(move |_: &iced::Theme, _status| button::Style {
             background: Some(Background::Color(Color::TRANSPARENT)),
@@ -847,7 +861,7 @@ fn left_pane<'a>(state: &'a ScriptEditorState, palette: &'a ForgePalette) -> Ele
     use iced::widget::button;
     use iced::{Color, Shadow};
 
-    let scripts_label = text("SCRIPTS")
+    let scripts_label = text(forge_widgets::tr!("script_editor_scripts_label"))
         .size(FONT_XS)
         .color(palette.text_faint)
         .font(font(FontRole::Monospace));
@@ -856,7 +870,7 @@ fn left_pane<'a>(state: &'a ScriptEditorState, palette: &'a ForgePalette) -> Ele
     let mut tree_col = column![scripts_header].spacing(0);
 
     if state.scripts.is_empty() {
-        let empty_label = text("No scripts yet")
+        let empty_label = text(forge_widgets::tr!("script_editor_no_scripts"))
             .size(FONT_XS)
             .color(palette.text_extreme_faint)
             .font(font(FontRole::Monospace));
@@ -903,22 +917,26 @@ fn left_pane<'a>(state: &'a ScriptEditorState, palette: &'a ForgePalette) -> Ele
         }
     }
 
-    let new_script_btn = button(text("+ New").size(FONT_SM).color(palette.text_secondary))
-        .on_press(Message::ScriptEditor(ScriptEditorMsg::NewScriptRequested))
-        .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
-        .width(Length::Fill)
-        .style(move |_: &iced::Theme, _status| button::Style {
-            background: Some(Background::Color(Color::TRANSPARENT)),
-            border: Border::default(),
-            text_color: palette.text_secondary,
-            shadow: Shadow::default(),
-            snap: false,
-        });
+    let new_script_btn = button(
+        text(forge_widgets::tr!("script_editor_new_btn"))
+            .size(FONT_SM)
+            .color(palette.text_secondary),
+    )
+    .on_press(Message::ScriptEditor(ScriptEditorMsg::NewScriptRequested))
+    .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
+    .width(Length::Fill)
+    .style(move |_: &iced::Theme, _status| button::Style {
+        background: Some(Background::Color(Color::TRANSPARENT)),
+        border: Border::default(),
+        text_color: palette.text_secondary,
+        shadow: Shadow::default(),
+        snap: false,
+    });
 
     tree_col = tree_col.push(new_script_btn);
 
     if !state.variables_in_scope.is_empty() {
-        let vars_label = text("VARIABLES IN SCOPE")
+        let vars_label = text(forge_widgets::tr!("script_editor_vars_label"))
             .size(FONT_XS)
             .color(palette.text_faint)
             .font(font(FontRole::Monospace));
@@ -988,10 +1006,10 @@ fn center_pane<'a>(
     } else {
         container(
             column![
-                text("Select a script or click + New")
+                text(forge_widgets::tr!("script_editor_empty_title"))
                     .size(FONT_SM)
                     .color(palette.text_faint),
-                text("Scripts let you run rhai code from any action.")
+                text(forge_widgets::tr!("script_editor_empty_desc"))
                     .size(FONT_SM)
                     .color(palette.text_extreme_faint),
             ]
@@ -1051,20 +1069,26 @@ fn center_pane<'a>(
     };
 
     let output_header = {
-        let out_label = text("Output").size(FONT_SM).color(palette.text_primary);
+        let out_label = text(forge_widgets::tr!("script_editor_output_header"))
+            .size(FONT_SM)
+            .color(palette.text_primary);
         let clear_btn = {
             use iced::widget::button;
             use iced::{Color, Shadow};
-            button(text("Clear").size(FONT_XS).color(palette.text_faint))
-                .on_press(Message::ScriptEditor(ScriptEditorMsg::ConsoleClear))
-                .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
-                .style(move |_: &iced::Theme, _status| button::Style {
-                    background: Some(Background::Color(Color::TRANSPARENT)),
-                    border: Border::default(),
-                    text_color: palette.text_faint,
-                    shadow: Shadow::default(),
-                    snap: false,
-                })
+            button(
+                text(forge_widgets::tr!("script_editor_output_clear"))
+                    .size(FONT_XS)
+                    .color(palette.text_faint),
+            )
+            .on_press(Message::ScriptEditor(ScriptEditorMsg::ConsoleClear))
+            .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
+            .style(move |_: &iced::Theme, _status| button::Style {
+                background: Some(Background::Color(Color::TRANSPARENT)),
+                border: Border::default(),
+                text_color: palette.text_faint,
+                shadow: Shadow::default(),
+                snap: false,
+            })
         };
         let header_inner = row![
             out_label,
@@ -1109,7 +1133,7 @@ fn center_pane<'a>(
 
 fn right_pane<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     let header = row![
-        text("API reference")
+        text(forge_widgets::tr!("script_editor_api_reference"))
             .size(FONT_SM)
             .color(palette.text_primary),
         iced::widget::Space::new().width(Length::Fill),
@@ -1245,12 +1269,16 @@ fn run_modal_view<'a>(
 
     let footer = {
         let cancel = forge_widgets::ghost_button(
-            "Cancel",
+            forge_widgets::tr!("script_editor_run_modal_cancel"),
             Message::ScriptEditor(ScriptEditorMsg::RunModalCancel),
             palette,
         );
-        let run_label = if form.running { "Running…" } else { "Run" };
-        let run_btn = if form.running {
+        let run_label = if form.running {
+            forge_widgets::tr!("script_editor_running")
+        } else {
+            forge_widgets::tr!("script_editor_run")
+        };
+        let run_btn: Element<'_, Message> = if form.running {
             disabled_toolbar_button(run_label, palette)
         } else {
             forge_widgets::primary_button(
@@ -1271,7 +1299,7 @@ fn run_modal_view<'a>(
     modal(
         palette,
         ModalProps {
-            title: &form.display_title,
+            title: std::borrow::Cow::Borrowed(form.display_title.as_str()),
             on_close: Message::ScriptEditor(ScriptEditorMsg::RunModalCancel),
             kbd_hint: None,
         },
@@ -1297,7 +1325,7 @@ pub fn script_editor_view<'a>(
         .height(Length::Fill);
 
     let page_header = crate::page_chrome::page_header_with_actions(
-        &[("Script Editor", true)],
+        &[(forge_widgets::tr!("script_editor_breadcrumb"), true)],
         Some(toolbar_actions),
         palette,
     );
@@ -1324,8 +1352,12 @@ fn toolbar_action_row<'a>(
     let dirty = state.is_dirty();
     let has_script = state.editor.is_some();
 
-    let run_btn = run_button(has_script, palette);
-    let save_btn = save_button(dirty, palette);
+    let run_btn = run_button(
+        has_script,
+        palette,
+        &forge_widgets::tr!("script_editor_run"),
+    );
+    let save_btn = save_button(dirty, palette, &forge_widgets::tr!("script_editor_save"));
 
     let fg_format = if has_script {
         palette.text_secondary
@@ -1333,7 +1365,9 @@ fn toolbar_action_row<'a>(
         palette.text_faint
     };
     let format_btn: Element<'a, Message> = {
-        let label = text("Format").size(FONT_SM).color(fg_format);
+        let label = text(forge_widgets::tr!("script_editor_format"))
+            .size(FONT_SM)
+            .color(fg_format);
         let mut btn = button(label)
             .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
             .style(move |_: &iced::Theme, _status| button::Style {
@@ -1354,38 +1388,46 @@ fn toolbar_action_row<'a>(
 
     let api_docs_btn: Element<'a, Message> = {
         let fg = palette.text_secondary;
-        button(text("API docs").size(FONT_SM).color(fg))
-            .on_press(Message::ScriptEditor(ScriptEditorMsg::ApiDocsRequested))
-            .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
-            .style(move |_: &iced::Theme, _status| button::Style {
-                background: Some(Background::Color(Color::TRANSPARENT)),
-                border: Border {
-                    radius: 5.0.into(),
-                    ..Border::default()
-                },
-                text_color: fg,
-                shadow: Shadow::default(),
-                snap: false,
-            })
-            .into()
+        button(
+            text(forge_widgets::tr!("script_editor_api_docs"))
+                .size(FONT_SM)
+                .color(fg),
+        )
+        .on_press(Message::ScriptEditor(ScriptEditorMsg::ApiDocsRequested))
+        .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
+        .style(move |_: &iced::Theme, _status| button::Style {
+            background: Some(Background::Color(Color::TRANSPARENT)),
+            border: Border {
+                radius: 5.0.into(),
+                ..Border::default()
+            },
+            text_color: fg,
+            shadow: Shadow::default(),
+            snap: false,
+        })
+        .into()
     };
 
     let debug_btn: Element<'a, Message> = {
         let fg = palette.disabled;
-        let inner = button(text("Debug").size(FONT_SM).color(fg))
-            .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
-            .style(move |_: &iced::Theme, _status| button::Style {
-                background: Some(Background::Color(Color::TRANSPARENT)),
-                border: Border {
-                    radius: 5.0.into(),
-                    ..Border::default()
-                },
-                text_color: fg,
-                shadow: Shadow::default(),
-                snap: false,
-            });
+        let inner = button(
+            text(forge_widgets::tr!("script_editor_debug"))
+                .size(FONT_SM)
+                .color(fg),
+        )
+        .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
+        .style(move |_: &iced::Theme, _status| button::Style {
+            background: Some(Background::Color(Color::TRANSPARENT)),
+            border: Border {
+                radius: 5.0.into(),
+                ..Border::default()
+            },
+            text_color: fg,
+            shadow: Shadow::default(),
+            snap: false,
+        });
         let tip = container(
-            text("Debugger planned for post-1.0")
+            text(forge_widgets::tr!("script_editor_debug_tip"))
                 .size(FONT_XS)
                 .color(palette.text_primary),
         )
@@ -1716,12 +1758,12 @@ mod tests {
 
     #[test]
     fn type_check_pill_label_passes_when_no_diagnostics() {
-        assert_eq!(type_check_pill_label(0), "Type-check passed");
+        assert_eq!(type_check_pill_label(0), "script_editor_type_check_passed");
     }
 
     #[test]
     fn type_check_pill_label_shows_count_with_diagnostics() {
-        assert_eq!(type_check_pill_label(2), "2 errors");
+        assert_eq!(type_check_pill_label(2), "script_editor_type_check_errors");
     }
 
     #[test]

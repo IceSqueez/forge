@@ -100,4 +100,105 @@ pub async fn resolve_startup_language(
 pub fn install_language(lang: Language) {
     let bundle = build_bundle(lang);
     forge_widgets::install_bundle(bundle);
+    let locale_id: &'static str = match lang {
+        Language::En => "en",
+        Language::Uk => "uk",
+    };
+    forge_widgets::set_locale_id(locale_id);
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use forge_widgets::{ArgsBuilder, tr_lookup};
+
+    use super::*;
+
+    /// Message ids start at column 0 as `id =`; continuation/plural-branch lines
+    /// are indented, comments start with `#`, attributes with `.`.
+    fn message_ids(ftl: &str) -> BTreeSet<&str> {
+        ftl.lines()
+            .filter(|line| line.starts_with(|c: char| c.is_ascii_alphabetic()))
+            .filter_map(|line| line.split_once('='))
+            .map(|(id, _)| id.trim())
+            .filter(|id| {
+                id.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+            })
+            .collect()
+    }
+
+    #[test]
+    fn en_and_uk_locale_key_sets_are_identical() {
+        let en = message_ids(EN_MAIN_FTL);
+        let uk = message_ids(UK_MAIN_FTL);
+        let missing_in_uk: Vec<_> = en.difference(&uk).collect();
+        let missing_in_en: Vec<_> = uk.difference(&en).collect();
+        assert!(
+            missing_in_uk.is_empty() && missing_in_en.is_empty(),
+            "locale key drift — missing in uk: {missing_in_uk:?}; missing in en: {missing_in_en:?}"
+        );
+    }
+
+    #[test]
+    fn locale_resources_parse_and_install_without_errors() {
+        for (lang, source) in [(Language::En, EN_MAIN_FTL), (Language::Uk, UK_MAIN_FTL)] {
+            let resource = fluent::FluentResource::try_new(source.to_owned())
+                .unwrap_or_else(|(_, errors)| panic!("{lang:?} FTL has syntax errors: {errors:?}"));
+            let mut bundle = fluent::FluentBundle::new(vec![
+                "en".parse::<unic_langid::LanguageIdentifier>().unwrap(),
+            ]);
+            // add_resource reports duplicate-id overrides that parsing alone misses.
+            bundle
+                .add_resource(resource)
+                .unwrap_or_else(|errors| panic!("{lang:?} FTL has duplicate ids: {errors:?}"));
+        }
+    }
+
+    #[test]
+    fn missing_key_falls_back_to_raw_key_without_panic() {
+        install_language(Language::En);
+        assert_eq!(
+            tr_lookup("definitely_not_a_real_key", None),
+            "definitely_not_a_real_key"
+        );
+    }
+
+    #[test]
+    fn installing_a_different_language_switches_translations_on_this_thread() {
+        install_language(Language::En);
+        assert_eq!(tr_lookup("common_cancel", None), "Cancel");
+        install_language(Language::Uk);
+        assert_eq!(tr_lookup("common_cancel", None), "Скасувати");
+    }
+
+    #[test]
+    fn uk_relative_time_plural_messages_format_for_every_plural_category() {
+        install_language(Language::Uk);
+        // 1 → one, 2 → few, 5 → many, 21 → one, 100 → many (CLDR uk rules); a
+        // syntax error in any plural branch would surface as a raw-key fallback
+        // or a missing count.
+        for key in [
+            "fmt_relative_seconds",
+            "fmt_relative_minutes",
+            "fmt_relative_hours",
+            "fmt_relative_days",
+        ] {
+            for count in [1_i64, 2, 5, 21, 100] {
+                let args = ArgsBuilder::new().set("count", count).build();
+                let formatted = tr_lookup(key, Some(&args));
+                assert_ne!(formatted, key, "{key} fell back to raw key");
+                assert!(
+                    formatted.contains(&count.to_string()),
+                    "{key} with count {count} lost the count: {formatted:?}"
+                );
+                assert!(
+                    formatted.contains("тому"),
+                    "{key} with count {count} lost the phrase: {formatted:?}"
+                );
+            }
+        }
+    }
 }

@@ -6,7 +6,7 @@ use iced::{
 };
 
 use crate::palette::ForgePalette;
-use crate::tokens::{BORDER_THIN, Density, FONT_MD, Radius, Spacing, radius, sp, spacing};
+use crate::tokens::{BORDER_THIN, FONT_MD, Radius, Spacing, radius, sp};
 
 fn primary_style(bg: Color, text_color: Color, status: Status) -> Style {
     let r = radius(Radius::Md);
@@ -60,8 +60,8 @@ pub fn primary_button<'a, Msg: 'a + Clone>(
 ) -> Element<'a, Msg> {
     let bg = palette.brand;
     let text_color = palette.shell;
-    let v = spacing(Spacing::Sm, Density::Cozy);
-    let h = spacing(Spacing::Md, Density::Cozy);
+    let v = sp(Spacing::Sm);
+    let h = sp(Spacing::Md);
 
     iced::widget::button(iced::widget::text(label.into()).color(text_color))
         .on_press(on_press)
@@ -77,8 +77,8 @@ pub fn primary_button_small<'a, Msg: 'a + Clone>(
 ) -> Element<'a, Msg> {
     let bg = palette.brand;
     let text_color = palette.shell;
-    let v = spacing(Spacing::Xs, Density::Cozy);
-    let h = spacing(Spacing::Md, Density::Cozy);
+    let v = sp(Spacing::Xs);
+    let h = sp(Spacing::Md);
 
     iced::widget::button(iced::widget::text(label.into()).color(text_color))
         .on_press(on_press)
@@ -95,9 +95,9 @@ pub fn primary_button_with_icon_right<'a, Msg: 'a + Clone>(
 ) -> Element<'a, Msg> {
     let bg = palette.brand;
     let text_color = palette.shell;
-    let v = spacing(Spacing::Sm, Density::Cozy);
-    let h = spacing(Spacing::Md, Density::Cozy);
-    let gap = spacing(Spacing::Xs, Density::Cozy);
+    let v = sp(Spacing::Sm);
+    let h = sp(Spacing::Md);
+    let gap = sp(Spacing::Xs);
 
     let content = iced::widget::row![
         iced::widget::text(label.into()).color(text_color),
@@ -119,8 +119,8 @@ pub fn destructive_button<'a, Msg: 'a + Clone>(
 ) -> Element<'a, Msg> {
     let bg = palette.random;
     let text_color = palette.shell;
-    let v = spacing(Spacing::Sm, Density::Cozy);
-    let h = spacing(Spacing::Md, Density::Cozy);
+    let v = sp(Spacing::Sm);
+    let h = sp(Spacing::Md);
 
     iced::widget::button(iced::widget::text(label.into()).color(text_color))
         .on_press(on_press)
@@ -138,8 +138,8 @@ pub fn secondary_button<'a, Msg: 'a + Clone>(
     let text_color = palette.text_secondary;
     let text_hover = palette.text_primary;
     let r = radius(Radius::Md);
-    let v = spacing(Spacing::Sm, Density::Cozy);
-    let h = spacing(Spacing::Md, Density::Cozy);
+    let v = sp(Spacing::Sm);
+    let h = sp(Spacing::Md);
 
     iced::widget::button(iced::widget::text(label.into()).color(text_color))
         .on_press(on_press)
@@ -205,8 +205,8 @@ pub fn ghost_button_with_icon<'a, Msg: 'a + Clone>(
     let border_color = palette.border_regular;
     let border_hover = palette.border_input;
     let r = radius(Radius::Sm);
-    let v = spacing(Spacing::Xs, Density::Cozy);
-    let h = spacing(Spacing::Sm, Density::Cozy);
+    let v = sp(Spacing::Xs);
+    let h = sp(Spacing::Sm);
 
     let content = iced::widget::row![
         tabler_icon::<Msg>(icon, FONT_SM, text_color),
@@ -274,8 +274,8 @@ pub fn ghost_button<'a, Msg: 'a + Clone>(
     let border_color = palette.border_regular;
     let border_hover = palette.border_input;
     let r = radius(Radius::Sm);
-    let v = spacing(Spacing::Sm, Density::Cozy);
-    let h = spacing(Spacing::Sm, Density::Cozy);
+    let v = sp(Spacing::Sm);
+    let h = sp(Spacing::Sm);
 
     iced::widget::button(iced::widget::text(label.into()))
         .on_press(on_press)

@@ -24,15 +24,23 @@ pub(crate) fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
 
     if actions_state.loading {
         tree_col = tree_col.push(
-            container(text("Loading...").size(FONT_XS).color(p.text_muted))
-                .padding([16, 14])
-                .width(Length::Fill),
+            container(
+                text(forge_widgets::tr!("actions_loading"))
+                    .size(FONT_XS)
+                    .color(p.text_muted),
+            )
+            .padding([16, 14])
+            .width(Length::Fill),
         );
     } else if total == 0 {
         tree_col = tree_col.push(
-            container(text("No actions yet").size(FONT_XS).color(p.text_faint))
-                .padding([16, 14])
-                .width(Length::Fill),
+            container(
+                text(forge_widgets::tr!("actions_empty"))
+                    .size(FONT_XS)
+                    .color(p.text_faint),
+            )
+            .padding([16, 14])
+            .width(Length::Fill),
         );
     } else {
         for group in &actions_state.tree {
@@ -106,10 +114,14 @@ pub(crate) fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
             None
         };
         if let (Some(summary), Some(top_y)) = (open_summary, menu_top_offset) {
-            let toggle_label = if summary.enabled { "Disable" } else { "Enable" };
+            let toggle_label = if summary.enabled {
+                forge_widgets::tr!("actions_menu_disable")
+            } else {
+                forge_widgets::tr!("actions_menu_enable")
+            };
             let menu_items: Vec<forge_widgets::MenuItem<Message>> = vec![
                 forge_widgets::MenuItem::Item {
-                    label: "Rename\u{2026}".into(),
+                    label: forge_widgets::tr!("actions_menu_rename"),
                     icon: Some(Icon::InfoCircle),
                     on_press: Message::Actions(ActionsMsg::RenameStarted(open_id)),
                     shortcut: None,
@@ -117,7 +129,7 @@ pub(crate) fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
                     disabled: false,
                 },
                 forge_widgets::MenuItem::Item {
-                    label: "Duplicate".into(),
+                    label: forge_widgets::tr!("actions_menu_duplicate"),
                     icon: Some(Icon::Copy),
                     on_press: Message::Actions(ActionsMsg::DuplicateAction(open_id)),
                     shortcut: None,
@@ -125,7 +137,7 @@ pub(crate) fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
                     disabled: false,
                 },
                 forge_widgets::MenuItem::Item {
-                    label: toggle_label.to_owned(),
+                    label: toggle_label,
                     icon: Some(Icon::Bolt),
                     on_press: Message::Actions(ActionsMsg::ToggleEnabled(
                         open_id,
@@ -137,7 +149,7 @@ pub(crate) fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
                 },
                 forge_widgets::MenuItem::Divider,
                 forge_widgets::MenuItem::Item {
-                    label: "Delete\u{2026}".into(),
+                    label: forge_widgets::tr!("actions_menu_delete"),
                     icon: Some(Icon::Eraser),
                     on_press: Message::Actions(ActionsMsg::DeleteAction(open_id)),
                     shortcut: None,
@@ -197,37 +209,46 @@ fn actions_page_header<'a>(
     let crumbs_left = row![
         tabler_icon(Icon::Home, 13.0, p.text_faint),
         crumb_chevron,
-        text("Automation").size(FONT_SM).color(p.text_muted),
+        text(forge_widgets::tr!("actions_breadcrumb_automation"))
+            .size(FONT_SM)
+            .color(p.text_muted),
         crumb_chevron_2,
-        text("Actions").size(FONT_SM).color(p.text_primary),
+        text(forge_widgets::tr!("actions_breadcrumb_actions"))
+            .size(FONT_SM)
+            .color(p.text_primary),
     ]
     .spacing(spf(Spacing::Xs))
     .align_y(iced::alignment::Vertical::Center);
 
+    let lbl_all = forge_widgets::tr!("actions_filter_all");
+    let lbl_chat = forge_widgets::tr!("actions_filter_chat");
+    let lbl_timers = forge_widgets::tr!("actions_filter_timers");
+    let lbl_points = forge_widgets::tr!("actions_filter_points");
+
     let chip_all = forge_widgets::filter_chip(
         palette,
-        "All",
+        &lbl_all,
         p.brand,
         state.filter == ActionsFilter::All,
         Message::Actions(ActionsMsg::FilterChanged(ActionsFilter::All)),
     );
     let chip_chat = forge_widgets::filter_chip(
         palette,
-        "Chat",
+        &lbl_chat,
         p.info,
         state.filter == ActionsFilter::Chat,
         Message::Actions(ActionsMsg::FilterChanged(ActionsFilter::Chat)),
     );
     let chip_timers = forge_widgets::filter_chip(
         palette,
-        "Timers",
+        &lbl_timers,
         p.warning,
         state.filter == ActionsFilter::Timers,
         Message::Actions(ActionsMsg::FilterChanged(ActionsFilter::Timers)),
     );
     let chip_points = forge_widgets::filter_chip(
         palette,
-        "Points",
+        &lbl_points,
         p.accent_pink_light,
         state.filter == ActionsFilter::Points,
         Message::Actions(ActionsMsg::FilterChanged(ActionsFilter::Points)),
@@ -243,14 +264,14 @@ fn actions_page_header<'a>(
         });
 
     let search = forge_widgets::search_input(
-        "Search actions...",
+        forge_widgets::tr!("actions_search_placeholder"),
         &state.search,
         |q| Message::Actions(ActionsMsg::SearchChanged(q)),
         palette,
     );
 
     let new_btn = forge_widgets::primary_button_small(
-        "+ New action",
+        forge_widgets::tr!("actions_new_btn"),
         Message::Actions(ActionsMsg::OpenAddActionModal),
         palette,
     );
@@ -492,9 +513,9 @@ fn actions_detail_panel<'a>(
 
     if state.selected.is_none() {
         return container(forge_widgets::empty_state(
-            "No action selected",
-            "Select an action from the list to view its details.",
-            None::<(&str, Message)>,
+            forge_widgets::tr!("actions_detail_empty_title"),
+            forge_widgets::tr!("actions_detail_empty_hint"),
+            None::<(String, Message)>,
             palette,
         ))
         .width(Length::Fill)
@@ -505,11 +526,15 @@ fn actions_detail_panel<'a>(
     }
 
     let Some(detail) = &state.detail else {
-        return container(text("Loading...").size(FONT_XS).color(p.text_muted))
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .padding([24, 24])
-            .into();
+        return container(
+            text(forge_widgets::tr!("actions_detail_loading"))
+                .size(FONT_XS)
+                .color(p.text_muted),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding([24, 24])
+        .into();
     };
 
     let action = &detail.action;
@@ -538,9 +563,9 @@ fn actions_detail_panel<'a>(
     });
 
     let status_label = if action.enabled {
-        "Enabled"
+        forge_widgets::tr!("actions_detail_enabled")
     } else {
-        "Disabled"
+        forge_widgets::tr!("actions_detail_disabled")
     };
     let status_badge = container(
         row![
@@ -575,13 +600,13 @@ fn actions_detail_panel<'a>(
 
     let test_btn = forge_widgets::ghost_button_with_icon(
         Icon::PlayerPlay,
-        "Test run",
+        forge_widgets::tr!("actions_detail_test_run"),
         Message::Actions(ActionsMsg::TestTrigger(action.id)),
         palette,
     );
     let dup_btn = forge_widgets::ghost_button_with_icon(
         Icon::Copy,
-        "Duplicate",
+        forge_widgets::tr!("actions_detail_duplicate"),
         Message::Actions(ActionsMsg::DuplicateAction(action.id)),
         palette,
     );
@@ -610,9 +635,13 @@ fn actions_detail_panel<'a>(
         detail_col = detail_col.push(iced::widget::Space::new().height(18.0));
     }
 
+    let trigger_count = detail.trigger_instances.len();
     detail_col = detail_col.push(section_header_with_add(
-        &format!("TRIGGERS \u{00b7} {}", detail.trigger_instances.len()),
-        "Add trigger",
+        forge_widgets::tr!(
+            "actions_detail_section_triggers",
+            count = trigger_count as i64
+        ),
+        forge_widgets::tr!("actions_detail_add_trigger"),
         p.warning,
         Message::Actions(ActionsMsg::OpenTriggerPicker(action.id)),
         palette,
@@ -623,7 +652,7 @@ fn actions_detail_panel<'a>(
         detail_col = detail_col.push(empty_placeholder_card(
             Icon::Bolt,
             p.warning,
-            "No triggers \u{2014} this action will never fire on its own",
+            forge_widgets::tr!("actions_detail_no_triggers"),
             palette,
         ));
     } else {
@@ -680,9 +709,13 @@ fn actions_detail_panel<'a>(
     }
     detail_col = detail_col.push(iced::widget::Space::new().height(14.0));
 
+    let sub_count = action.sub_actions.len();
     detail_col = detail_col.push(section_header_with_add(
-        &format!("SUB-ACTIONS \u{00b7} {}", action.sub_actions.len()),
-        "Add sub-action",
+        forge_widgets::tr!(
+            "actions_detail_section_sub_actions",
+            count = sub_count as i64
+        ),
+        forge_widgets::tr!("actions_detail_add_sub_action"),
         p.brand,
         Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
             AddSubActionMsg::OpenRequested(action.id),
@@ -695,7 +728,7 @@ fn actions_detail_panel<'a>(
         detail_col = detail_col.push(empty_placeholder_card(
             Icon::Plus,
             p.brand,
-            "No steps yet \u{2014} add one",
+            forge_widgets::tr!("actions_detail_no_steps"),
             palette,
         ));
     } else {
@@ -729,8 +762,8 @@ fn actions_detail_panel<'a>(
 }
 
 fn section_header_with_add<'a>(
-    label: &str,
-    add_label: &'static str,
+    label: String,
+    add_label: String,
     add_color: iced::Color,
     on_add: Message,
     palette: &'a ForgePalette,
@@ -739,10 +772,7 @@ fn section_header_with_add<'a>(
     let p = *palette;
     let mono = forge_widgets::font(forge_widgets::FontRole::Monospace);
 
-    let label_el = text(label.to_owned())
-        .size(FONT_XS)
-        .color(p.text_muted)
-        .font(mono);
+    let label_el = text(label).size(FONT_XS).color(p.text_muted).font(mono);
 
     let add_btn = button(
         row![
@@ -812,7 +842,7 @@ fn compute_action_menu_y_offset(
 fn empty_placeholder_card<'a>(
     icon: Icon,
     icon_color: iced::Color,
-    label: &'static str,
+    label: impl Into<std::borrow::Cow<'a, str>>,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     use iced::widget::{column, container, text};
@@ -820,7 +850,7 @@ fn empty_placeholder_card<'a>(
 
     let inner = column![
         tabler_icon(icon, 16.0, icon_color),
-        text(label).size(FONT_XS).color(p.text_muted),
+        text(label.into()).size(FONT_XS).color(p.text_muted),
     ]
     .spacing(spf(Spacing::Xs))
     .align_x(iced::Alignment::Center);
@@ -851,13 +881,14 @@ fn actions_footer<'a>(
     let p = *palette;
     let mono = forge_widgets::font(forge_widgets::FontRole::Monospace);
 
-    let left_str = format!(
-        "Showing {} of {} \u{00b7} grouped by trigger",
-        visible, total
+    let left_str = forge_widgets::tr!(
+        "actions_footer_showing",
+        visible = visible as i64,
+        total = total as i64
     );
     let left_el = text(left_str).size(FONT_XS).color(p.text_faint).font(mono);
 
-    let storage_el = text("Storage: \u{2014}")
+    let storage_el = text(forge_widgets::tr!("actions_footer_storage"))
         .size(FONT_XS)
         .color(p.text_faint)
         .font(mono);
@@ -876,7 +907,7 @@ fn actions_footer<'a>(
             ..iced::widget::container::Style::default()
         });
 
-    let saved_el = text("Auto-saved just now")
+    let saved_el = text(forge_widgets::tr!("actions_footer_autosaved"))
         .size(FONT_XS)
         .color(p.text_faint)
         .font(mono);

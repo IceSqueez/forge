@@ -331,6 +331,9 @@ pub fn subscription(app: &App) -> Subscription<Message> {
         Subscription::none()
     };
 
+    let app_shortcuts =
+        iced::keyboard::listen().filter_map(crate::settings_shortcuts::shortcut_filter);
+
     struct SpeakEventRecipe(Arc<forge_speak_queue::SpeakQueueHandle>);
 
     impl Recipe for SpeakEventRecipe {
@@ -387,6 +390,8 @@ pub fn subscription(app: &App) -> Subscription<Message> {
         _ => None,
     });
 
+    let close_requests = iced::window::close_requests().map(|_id| Message::AppCloseRequested);
+
     if let Some(state) = app.ui.builtin_detail.as_ref() {
         Subscription::batch([
             bus,
@@ -394,9 +399,11 @@ pub fn subscription(app: &App) -> Subscription<Message> {
             health_subscription(state),
             server_tick,
             soundboard_keys,
+            app_shortcuts,
             tts_events,
             toast_tick,
             outside_click,
+            close_requests,
         ])
     } else {
         Subscription::batch([
@@ -404,9 +411,11 @@ pub fn subscription(app: &App) -> Subscription<Message> {
             chat_stream,
             server_tick,
             soundboard_keys,
+            app_shortcuts,
             tts_events,
             toast_tick,
             outside_click,
+            close_requests,
         ])
     }
 }

@@ -107,7 +107,10 @@ pub fn update(
         }
 
         SettingsHotkeysMsg::ActionsLoaded(Err(e)) => {
-            state.bind_error = Some(format!("Failed to load actions: {e}"));
+            state.bind_error = Some(forge_widgets::tr!(
+                "settings_hotkeys_error_load_actions",
+                error = e.as_str()
+            ));
             Task::none()
         }
 
@@ -118,14 +121,17 @@ pub fn update(
         }
 
         SettingsHotkeysMsg::BindingsLoaded(Err(e)) => {
-            state.bind_error = Some(format!("Failed to load bindings: {e}"));
+            state.bind_error = Some(forge_widgets::tr!(
+                "settings_hotkeys_error_load_bindings",
+                error = e.as_str()
+            ));
             state.bindings_loading = false;
             Task::none()
         }
 
         SettingsHotkeysMsg::BindClicked => {
             let Some(combo_str) = state.captured_combo.clone() else {
-                state.bind_error = Some("Capture a hotkey combo first.".to_owned());
+                state.bind_error = Some(forge_widgets::tr!("settings_hotkeys_error_no_combo"));
                 return Task::none();
             };
             let action_id = state
@@ -134,11 +140,11 @@ pub fn update(
                 .and_then(|name| state.actions_list.iter().find(|(_, n)| n == name))
                 .map(|(id, _)| *id);
             let Some(action_id) = action_id else {
-                state.bind_error = Some("Select an action to bind.".to_owned());
+                state.bind_error = Some(forge_widgets::tr!("settings_hotkeys_error_no_action"));
                 return Task::none();
             };
             let Some(client) = rt.hotkey_client.clone() else {
-                state.bind_error = Some("Hotkey system is not available.".to_owned());
+                state.bind_error = Some(forge_widgets::tr!("settings_hotkeys_error_unavailable"));
                 return Task::none();
             };
             state.bind_in_progress = true;
@@ -203,7 +209,10 @@ pub fn update(
         }
 
         SettingsHotkeysMsg::UnbindResult(Err(e)) => {
-            state.bind_error = Some(format!("Unbind failed: {e}"));
+            state.bind_error = Some(forge_widgets::tr!(
+                "settings_hotkeys_error_unbind",
+                error = e.as_str()
+            ));
             Task::none()
         }
 
@@ -212,10 +221,9 @@ pub fn update(
                 return Task::none();
             };
             let Some(existing_id) = modal.existing_hotkey_id else {
-                state.bind_error = Some(
-                    "Conflicting hotkey not found in local cache. Refresh and try again."
-                        .to_string(),
-                );
+                state.bind_error = Some(forge_widgets::tr!(
+                    "settings_hotkeys_error_conflict_not_found"
+                ));
                 return Task::none();
             };
             let Some(combo_str) = state.captured_combo.clone() else {
@@ -258,7 +266,10 @@ pub fn update(
 
         SettingsHotkeysMsg::ReplaceResult(Err(e)) => {
             state.bind_in_progress = false;
-            state.bind_error = Some(format!("Replace failed: {e}"));
+            state.bind_error = Some(forge_widgets::tr!(
+                "settings_hotkeys_error_replace",
+                error = e.as_str()
+            ));
             Task::none()
         }
 
@@ -293,7 +304,7 @@ pub fn view<'a>(
         && !state.bind_in_progress;
 
     let bind_btn = {
-        let label = text("Bind")
+        let label = text(forge_widgets::tr!("settings_hotkeys_bind_btn"))
             .size(FONT_SM)
             .font(font(FontRole::Body))
             .color(palette.text_primary);
@@ -335,7 +346,7 @@ pub fn view<'a>(
     let action_picker = pick_list(action_names, state.selected_action_name.clone(), |name| {
         Message::SettingsHotkeys(SettingsHotkeysMsg::ActionPicked(name))
     })
-    .placeholder("Select action…")
+    .placeholder(forge_widgets::tr!("settings_hotkeys_select_action"))
     .text_size(FONT_SM)
     .width(Length::Fixed(240.0));
 
@@ -344,7 +355,11 @@ pub fn view<'a>(
         .align_y(iced::Alignment::Center);
 
     let bind_section = column![
-        section_header("BIND NEW HOTKEY", None, palette),
+        section_header(
+            forge_widgets::tr!("settings_hotkeys_bind_section"),
+            None,
+            palette
+        ),
         bind_row,
         bind_error_el(state, palette),
     ]
@@ -353,14 +368,22 @@ pub fn view<'a>(
     let bindings_list = bindings_list_view(&state.bindings, palette);
 
     let registered_section = column![
-        section_header("REGISTERED", Some(state.bindings.len() as u32), palette),
+        section_header(
+            forge_widgets::tr!("settings_hotkeys_registered_section"),
+            Some(state.bindings.len() as u32),
+            palette,
+        ),
         bindings_list,
     ]
     .spacing(spf(Spacing::Sm));
 
     let backend_label = portal_status_label(portal_status);
     let backend_section = column![
-        section_header("BACKEND", None, palette),
+        section_header(
+            forge_widgets::tr!("settings_hotkeys_backend_section"),
+            None,
+            palette,
+        ),
         container(
             text(backend_label)
                 .size(FONT_SM)
@@ -371,7 +394,13 @@ pub fn view<'a>(
     ]
     .spacing(spf(Spacing::Sm));
 
+    let scope_subtitle = text(forge_widgets::tr!("settings_hotkeys_scope_subtitle"))
+        .size(FONT_SM)
+        .color(palette.text_muted);
+
     let body = column![
+        scope_subtitle,
+        Space::new().height(spf(Spacing::Xs)),
         bind_section,
         Space::new().height(spf(Spacing::Md)),
         registered_section,
@@ -446,7 +475,7 @@ fn bindings_list_view<'a>(
 ) -> Element<'a, Message> {
     if bindings.is_empty() {
         return container(
-            text("No hotkeys registered yet.")
+            text(forge_widgets::tr!("settings_hotkeys_no_bindings"))
                 .size(FONT_SM)
                 .font(font(FontRole::Body))
                 .color(palette.text_faint),
@@ -543,19 +572,19 @@ fn conflict_overlay<'a>(
         .color(palette.warning);
 
     let body_text = row![
-        text("Combo ")
+        text(forge_widgets::tr!("settings_hotkeys_conflict_body_prefix"))
             .size(FONT_SM)
             .font(font(FontRole::Body))
             .color(palette.text_secondary),
         combo_display,
-        text(" is already registered. Replace or cancel?")
+        text(forge_widgets::tr!("settings_hotkeys_conflict_body_suffix"))
             .size(FONT_SM)
             .font(font(FontRole::Body))
             .color(palette.text_secondary),
     ];
 
     let cancel_btn = button(
-        text("Cancel")
+        text(forge_widgets::tr!("common_cancel"))
             .size(FONT_SM)
             .font(font(FontRole::Body))
             .color(palette.text_secondary),
@@ -574,7 +603,7 @@ fn conflict_overlay<'a>(
     });
 
     let replace_btn = button(
-        text("Replace")
+        text(forge_widgets::tr!("settings_hotkeys_replace_btn"))
             .size(FONT_SM)
             .font(font(FontRole::Body))
             .color(palette.shell),
@@ -619,11 +648,11 @@ fn conflict_overlay<'a>(
     iced::widget::stack![backdrop, centered].into()
 }
 
-fn portal_status_label(available: Option<bool>) -> &'static str {
+fn portal_status_label(available: Option<bool>) -> String {
     match available {
-        Some(true) => "Portal (Wayland GlobalShortcuts) \u{2014} active",
-        Some(false) => "Evdev / X11 fallback \u{2014} active",
-        None => "N/A (Windows / macOS native)",
+        Some(true) => "Portal (Wayland GlobalShortcuts) — active".to_owned(),
+        Some(false) => "Evdev / X11 fallback — active".to_owned(),
+        None => "N/A (Windows / macOS native)".to_owned(),
     }
 }
 
@@ -798,6 +827,7 @@ mod tests {
             scheduler: None,
             obs_client: None,
             vtube_client: None,
+            vtube_sink: forge_vtube::SwitchableVTubeSink::new(),
             discord_client: None,
             midi_client: None,
             hotkey_client: None,

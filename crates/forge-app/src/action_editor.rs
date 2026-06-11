@@ -330,19 +330,33 @@ pub fn add_sub_action_update(
             };
             if !form.is_valid() {
                 let error_msg = match form.kind {
-                    SubActionKindChoice::SendChat => "Message is required.",
-                    SubActionKindChoice::SetGlobal => "Variable name is required.",
-                    SubActionKindChoice::Delay => "Milliseconds must be a non-negative integer.",
-                    SubActionKindChoice::Log => "Log message is required.",
-                    SubActionKindChoice::PlaySound => "Select a clip to play.",
-                    SubActionKindChoice::Speak => "Speak text is required.",
-                    SubActionKindChoice::ReadFile => "Path and target variable are required.",
+                    SubActionKindChoice::SendChat => {
+                        forge_widgets::tr!("action_editor_error_message_required")
+                    }
+                    SubActionKindChoice::SetGlobal => {
+                        forge_widgets::tr!("action_editor_error_var_required")
+                    }
+                    SubActionKindChoice::Delay => {
+                        forge_widgets::tr!("action_editor_error_delay_invalid")
+                    }
+                    SubActionKindChoice::Log => {
+                        forge_widgets::tr!("action_editor_error_log_required")
+                    }
+                    SubActionKindChoice::PlaySound => {
+                        forge_widgets::tr!("action_editor_error_clip_required")
+                    }
+                    SubActionKindChoice::Speak => {
+                        forge_widgets::tr!("action_editor_error_speak_required")
+                    }
+                    SubActionKindChoice::ReadFile => {
+                        forge_widgets::tr!("action_editor_error_file_required")
+                    }
                     SubActionKindChoice::RandomInt => {
-                        "min, max (min \u{2264} max), and target variable are required."
+                        forge_widgets::tr!("action_editor_error_random_invalid")
                     }
                 };
                 if let Some(f) = state.as_mut() {
-                    f.error = Some(error_msg.to_string());
+                    f.error = Some(error_msg);
                 }
                 return Task::none();
             }

@@ -5,7 +5,7 @@ use iced::{
 
 use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
-use crate::tokens::{Density, FONT_SM, FontRole, Spacing, font, spacing, spf};
+use crate::tokens::{FONT_SM, FontRole, Spacing, font, spf};
 
 #[derive(Debug, Clone)]
 pub struct DeviceLabel {
@@ -16,7 +16,7 @@ pub struct DeviceLabel {
 
 fn display_name(d: &DeviceLabel) -> String {
     if d.is_default {
-        format!("{} (default)", d.name)
+        format!("{} {}", d.name, crate::tr!("widget.device.default_suffix"))
     } else {
         d.name.clone()
     }
@@ -77,7 +77,7 @@ pub fn output_device_picker<'a, Msg: 'a + Clone>(
     let test_btn = button(
         row![
             tabler_icon(Icon::PlayerPlay, 11.0, p2.text_secondary),
-            text("Test")
+            text(crate::tr!("widget.device.test"))
                 .size(FONT_SM)
                 .color(p2.text_secondary)
                 .font(font(FontRole::Body)),
@@ -89,7 +89,7 @@ pub fn output_device_picker<'a, Msg: 'a + Clone>(
     .padding([spf(Spacing::Xxs), spf(Spacing::Sm)])
     .style(move |_theme, status| icon_btn_style(&p2, status));
 
-    let gap = f32::from(spacing(Spacing::Sm, Density::Cozy));
+    let gap = spf(Spacing::Sm);
 
     row![picker, refresh_btn, test_btn]
         .spacing(gap)

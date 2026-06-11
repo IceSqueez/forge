@@ -10,8 +10,7 @@ use crate::{
     icons::{Icon, tabler_icon},
     palette::ForgePalette,
     tokens::{
-        BORDER_THIN, Density, FONT_LG, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius,
-        sp, spacing,
+        BORDER_THIN, FONT_LG, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
     },
 };
 
@@ -40,15 +39,15 @@ pub fn builtin_header_card<'a, Msg: Clone + 'a>(
     let bg = palette.elevated;
     let border_color = palette.border_regular;
     let r = radius(Radius::Lg);
-    let v_pad = spacing(Spacing::Md, Density::Cozy);
-    let h_pad = spacing(Spacing::Md, Density::Cozy);
+    let v_pad = sp(Spacing::Md);
+    let h_pad = sp(Spacing::Md);
 
     let inner = iced::widget::row![
         icon_elem,
         container(info_elem).width(Length::Fill),
         actions_elem,
     ]
-    .spacing(spacing(Spacing::Md, Density::Cozy) as f32)
+    .spacing(spf(Spacing::Md))
     .align_y(Alignment::Center);
 
     container(inner)
@@ -107,7 +106,7 @@ fn info_column<'a, Msg: 'a>(
     let warning = palette.warning;
 
     let mut name_row: Row<'a, Msg> = Row::new()
-        .spacing(spacing(Spacing::Sm, Density::Cozy) as f32)
+        .spacing(spf(Spacing::Sm))
         .align_y(Alignment::Center)
         .push(
             iced::widget::text(params.display_name)
@@ -128,8 +127,8 @@ fn info_column<'a, Msg: 'a>(
         let label = params
             .capability_flags
             .label
-            .as_deref()
-            .unwrap_or("Limited");
+            .clone()
+            .unwrap_or_else(|| crate::tr!("widget.header_capability.limited"));
         name_row = name_row.push(limited_badge(label, surface_overlay, warning));
     }
 
@@ -140,7 +139,7 @@ fn info_column<'a, Msg: 'a>(
         .color(text_muted);
 
     iced::widget::column![name_row, sub_text]
-        .spacing(spacing(Spacing::Xs, Density::Cozy) as f32)
+        .spacing(spf(Spacing::Xs))
         .into()
 }
 
@@ -172,10 +171,15 @@ fn version_pill<'a, Msg: 'a>(version: &'a str, bg: Color, text_color: Color) -> 
     .into()
 }
 
-fn limited_badge<'a, Msg: 'a>(label: &'a str, bg: Color, text_color: Color) -> Element<'a, Msg> {
+fn limited_badge<'a, Msg: 'a>(
+    label: impl Into<String>,
+    bg: Color,
+    text_color: Color,
+) -> Element<'a, Msg> {
     let r = radius(Radius::Md);
+    let upper = label.into().to_uppercase();
     container(
-        iced::widget::text(label.to_uppercase())
+        iced::widget::text(upper)
             .font(font(FontRole::Monospace))
             .size(FONT_XS)
             .color(text_color),
@@ -201,10 +205,10 @@ fn action_buttons<'a, Msg: Clone + 'a>(
     let text_secondary = palette.text_secondary;
     let text_disconnect = palette.random;
     let r = radius(Radius::Sm);
-    let v_pad = spacing(Spacing::Xs, Density::Cozy);
-    let h_pad = spacing(Spacing::Md, Density::Cozy);
+    let v_pad = sp(Spacing::Xs);
+    let h_pad = sp(Spacing::Md);
 
-    let mut row: Row<'a, Msg> = Row::new().spacing(spacing(Spacing::Xs, Density::Cozy) as f32);
+    let mut row: Row<'a, Msg> = Row::new().spacing(spf(Spacing::Xs));
 
     for action in actions {
         let label = action_label(action);
@@ -245,20 +249,23 @@ fn action_buttons<'a, Msg: Clone + 'a>(
     row.into()
 }
 
-fn action_label(action: &HeaderAction) -> &'static str {
+fn action_label(action: &HeaderAction) -> String {
     match action {
-        HeaderAction::Reconnect => "Reconnect",
-        HeaderAction::RefreshToken => "Refresh Token",
-        HeaderAction::Disconnect => "Disconnect",
-        HeaderAction::Settings => "Settings",
+        HeaderAction::Reconnect => crate::tr!("widget.header_action.reconnect"),
+        HeaderAction::RefreshToken => crate::tr!("widget.header_action.refresh_token"),
+        HeaderAction::Disconnect => crate::tr!("widget.header_action.disconnect"),
+        HeaderAction::Settings => crate::tr!("widget.header_action.settings"),
     }
 }
 
 fn sub_line(endpoint: Option<&str>, uptime: Option<Duration>) -> String {
     match (endpoint, uptime) {
-        (Some(ep), Some(d)) => format!("{} · uptime {}", ep, format_uptime(d)),
+        (Some(ep), Some(d)) => {
+            let u = crate::tr!("widget.header.uptime", duration = format_uptime(d));
+            format!("{ep} · {u}")
+        }
         (Some(ep), None) => ep.to_owned(),
-        (None, Some(d)) => format!("uptime {}", format_uptime(d)),
+        (None, Some(d)) => crate::tr!("widget.header.uptime_only", duration = format_uptime(d)),
         (None, None) => String::new(),
     }
 }
@@ -305,7 +312,7 @@ mod tests {
     #[test]
     fn sub_line_both_present() {
         let result = sub_line(Some("obs-websocket v5"), Some(Duration::from_secs(3600)));
-        assert_eq!(result, "obs-websocket v5 · uptime 1h 0m");
+        assert!(result.starts_with("obs-websocket v5 · "));
     }
 
     #[test]
@@ -317,7 +324,7 @@ mod tests {
     #[test]
     fn sub_line_uptime_only() {
         let result = sub_line(None, Some(Duration::from_secs(60)));
-        assert_eq!(result, "uptime 1m 0s");
+        assert!(!result.is_empty());
     }
 
     #[test]

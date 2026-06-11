@@ -6,8 +6,7 @@ use iced::{Alignment, Background, Border, Element, Length, Shadow};
 use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
 use crate::tokens::{
-    BORDER_THIN, Density, FONT_LG, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius,
-    spacing, spf,
+    BORDER_THIN, FONT_LG, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
 };
 
 fn card_style(
@@ -45,7 +44,7 @@ pub fn card_with_radius<'a, Msg: 'a>(
     let col = iced::widget::column(children).spacing(8);
 
     container(col)
-        .padding(spacing(Spacing::Md, Density::default()))
+        .padding(sp(Spacing::Md))
         .style(card_style(bg, border_color, radius(r)))
         .into()
 }
@@ -85,7 +84,7 @@ pub fn metric_card<'a, Msg: 'a>(
     }
 
     container(col)
-        .padding(spacing(Spacing::Md, Density::default()))
+        .padding(sp(Spacing::Md))
         .style(card_style(bg, border_color, radius(Radius::Md)))
         .into()
 }
@@ -144,25 +143,25 @@ pub fn hero_card<'a, Msg: 'a>(
     }
 
     container(col)
-        .padding(spacing(Spacing::Lg, Density::default()))
+        .padding(sp(Spacing::Lg))
         .style(card_style(bg, border_color, radius(Radius::Lg)))
         .into()
 }
 
-pub struct BigJumpCardProps<'a, Msg> {
+pub struct BigJumpCardProps<Msg> {
     pub icon: Icon,
     pub icon_color: iced::Color,
-    pub section_label: &'a str,
-    pub title: &'a str,
+    pub section_label: String,
+    pub title: String,
     pub stat: String,
     pub stat_label: String,
-    pub hint: &'a str,
+    pub hint: String,
     pub on_press: Msg,
     pub warn: bool,
 }
 
 pub fn big_jump_card<'a, Msg: Clone + 'a>(
-    props: BigJumpCardProps<'a, Msg>,
+    props: BigJumpCardProps<Msg>,
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
     let surface_overlay = palette.surface_overlay;
@@ -209,12 +208,7 @@ pub fn big_jump_card<'a, Msg: Clone + 'a>(
         .spacing(10.0)
         .align_y(Alignment::Center);
 
-    let mono_font = iced::Font {
-        family: iced::font::Family::Name("JetBrains Mono"),
-        weight: iced::font::Weight::Normal,
-        stretch: iced::font::Stretch::Normal,
-        style: iced::font::Style::Normal,
-    };
+    let mono_font = font(FontRole::Monospace);
 
     let stat_row = row![
         text(props.stat)

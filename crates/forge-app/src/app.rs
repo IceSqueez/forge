@@ -13,6 +13,7 @@ use forge_runtime::{
     ActionEngineHandle, EventBus, NullEventLogRepo, QueueSchedulerHandle, ScriptRegistry,
 };
 use forge_storage::Language;
+use forge_storage::settings::Density;
 use forge_storage::{CredentialsRepo, DataProvider};
 #[cfg(test)]
 use forge_vtube::{VTubeClient, VTubeConfig};
@@ -74,6 +75,8 @@ pub struct App {
     pub theme: Theme,
     pub palette: ForgePalette,
     pub language: Language,
+    pub density: Density,
+    pub fonts: crate::ui_settings::FontSettings,
     pub toast_queue: ToastQueue<Message>,
     pub storage_offline: bool,
     pub boot_time: SystemTime,
@@ -97,6 +100,7 @@ pub struct UiState {
     pub settings_websocket: SettingsWebSocketState,
     pub settings_hotkeys: SettingsHotkeysState,
     pub settings_scripting: crate::settings_scripting::ScriptingSettingsState,
+    pub settings_shortcuts: crate::settings_shortcuts::ShortcutsState,
     pub twitch_panel: crate::twitch_panel::TwitchPanelState,
     pub obs_panel: crate::obs_panel::ObsPanelState,
     pub soundboard: SoundboardState,
@@ -127,6 +131,7 @@ impl Default for UiState {
             settings_websocket: SettingsWebSocketState::default(),
             settings_hotkeys: SettingsHotkeysState::default(),
             settings_scripting: crate::settings_scripting::ScriptingSettingsState::default(),
+            settings_shortcuts: crate::settings_shortcuts::ShortcutsState::default(),
             twitch_panel: crate::twitch_panel::TwitchPanelState::default(),
             obs_panel: crate::obs_panel::ObsPanelState::default(),
             soundboard: SoundboardState::new(),
@@ -153,6 +158,8 @@ impl App {
         scheduler: Option<QueueSchedulerHandle>,
         sound_player: Option<Arc<SoundboardPlayer>>,
         language: Language,
+        density: Density,
+        fonts: crate::ui_settings::FontSettings,
     ) -> Self {
         let (theme, palette) = forge_widgets::catppuccin_mocha();
         let server_subsystem = Arc::new(ServerSubsystem::new(
@@ -163,6 +170,8 @@ impl App {
             theme,
             palette,
             language,
+            density,
+            fonts,
             toast_queue: ToastQueue::new(),
             storage_offline,
             boot_time: SystemTime::now(),
@@ -183,6 +192,7 @@ impl App {
                 scheduler,
                 obs_client: None,
                 vtube_client: None,
+                vtube_sink: forge_vtube::SwitchableVTubeSink::new(),
                 discord_client: None,
                 midi_client: None,
                 hotkey_client: None,
@@ -227,6 +237,8 @@ impl Default for App {
             theme,
             palette,
             language: Language::En,
+            density: Density::Cozy,
+            fonts: crate::ui_settings::FontSettings::default(),
             toast_queue: ToastQueue::new(),
             storage_offline: false,
             boot_time: SystemTime::now(),
@@ -247,6 +259,7 @@ impl Default for App {
                 scheduler: None,
                 obs_client: None,
                 vtube_client: None,
+                vtube_sink: forge_vtube::SwitchableVTubeSink::new(),
                 discord_client: None,
                 midi_client: None,
                 hotkey_client: None,
@@ -433,6 +446,24 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             }
         }
         Message::Noop => Task::none(),
+        Message::AppCloseRequested => {
+            let backend = Arc::clone(&app.rt.backend);
+            let vtube = app.rt.vtube_client.clone();
+            let obs = app.rt.obs_client.clone();
+            Task::perform(
+                async move {
+                    if let Some(c) = obs {
+                        c.shutdown().await;
+                    }
+                    if let Some(c) = vtube {
+                        c.shutdown().await;
+                    }
+                    backend.shutdown().await;
+                },
+                |()| Message::AppShutdownComplete,
+            )
+        }
+        Message::AppShutdownComplete => iced::exit(),
     }
 }
 
@@ -622,6 +653,8 @@ mod tests {
             theme,
             palette,
             language: Language::En,
+            density: Density::Cozy,
+            fonts: crate::ui_settings::FontSettings::default(),
             toast_queue: ToastQueue::new(),
             storage_offline: false,
             boot_time: std::time::SystemTime::now(),
@@ -642,6 +675,7 @@ mod tests {
                 scheduler: Some(scheduler),
                 obs_client: None,
                 vtube_client: None,
+                vtube_sink: forge_vtube::SwitchableVTubeSink::new(),
                 discord_client: None,
                 midi_client: None,
                 hotkey_client: None,
@@ -957,6 +991,8 @@ mod tests {
             theme,
             palette,
             language: Language::En,
+            density: Density::Cozy,
+            fonts: crate::ui_settings::FontSettings::default(),
             toast_queue: ToastQueue::new(),
             storage_offline: false,
             boot_time: std::time::SystemTime::now(),
@@ -977,6 +1013,7 @@ mod tests {
                 scheduler: None,
                 obs_client: None,
                 vtube_client: None,
+                vtube_sink: forge_vtube::SwitchableVTubeSink::new(),
                 discord_client: None,
                 midi_client: None,
                 hotkey_client: None,

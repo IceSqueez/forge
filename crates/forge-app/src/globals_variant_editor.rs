@@ -357,8 +357,8 @@ pub fn variant_editor_modal_view<'a>(
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let title = match &form.mode {
-        EditorMode::Create => "New variable",
-        EditorMode::Edit(_) => "Edit variable",
+        EditorMode::Create => forge_widgets::tr!("globals_editor_title_create"),
+        EditorMode::Edit(_) => forge_widgets::tr!("globals_editor_title_edit"),
     };
 
     let name_count = format!("{}/64", form.name.len().min(64));
@@ -375,8 +375,15 @@ pub fn variant_editor_modal_view<'a>(
     let name_row = row![name_input, name_counter]
         .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Center);
-    let name_block =
-        column![section_header("NAME", None, palette), name_row].spacing(spf(Spacing::Xxs));
+    let name_block = column![
+        section_header(
+            forge_widgets::tr!("globals_editor_section_name"),
+            None,
+            palette
+        ),
+        name_row
+    ]
+    .spacing(spf(Spacing::Xxs));
 
     let kinds = [
         VariantKind::Int,
@@ -398,22 +405,36 @@ pub fn variant_editor_modal_view<'a>(
                 Message::Globals(GlobalsMsg::VariantEditor(VariantEditorMsg::KindSelected(k))),
             ))
         });
-    let type_block =
-        column![section_header("TYPE", None, palette), chips_row].spacing(spf(Spacing::Xxs));
+    let type_block = column![
+        section_header(
+            forge_widgets::tr!("globals_editor_section_type"),
+            None,
+            palette
+        ),
+        chips_row
+    ]
+    .spacing(spf(Spacing::Xxs));
 
     let persist_toggle = toggle(
         palette,
         ToggleProps {
-            label: "Save across restarts",
-            description: "Persisted globals survive app close; session-only reset on launch",
+            label: forge_widgets::tr!("globals_editor_persist_label"),
+            description: forge_widgets::tr!("globals_editor_persist_desc"),
             value: form.persisted,
             on_toggle: Message::Globals(GlobalsMsg::VariantEditor(
                 VariantEditorMsg::PersistenceToggled(!form.persisted),
             )),
         },
     );
-    let persist_block = column![section_header("PERSISTENCE", None, palette), persist_toggle]
-        .spacing(spf(Spacing::Xxs));
+    let persist_block = column![
+        section_header(
+            forge_widgets::tr!("globals_editor_section_persistence"),
+            None,
+            palette
+        ),
+        persist_toggle
+    ]
+    .spacing(spf(Spacing::Xxs));
 
     let value_editor: Element<'_, Message> = match form.kind {
         VariantKind::Int => forge_widgets::text_input_field(
@@ -439,8 +460,8 @@ pub fn variant_editor_modal_view<'a>(
         VariantKind::Bool => toggle(
             palette,
             ToggleProps {
-                label: "Value",
-                description: "",
+                label: "Value".to_owned(),
+                description: String::new(),
                 value: form.fields.bool_value,
                 on_toggle: Message::Globals(GlobalsMsg::VariantEditor(
                     VariantEditorMsg::BoolValueChanged(!form.fields.bool_value),
@@ -488,8 +509,15 @@ pub fn variant_editor_modal_view<'a>(
             palette,
         ),
     };
-    let value_block =
-        column![section_header("VALUE", None, palette), value_editor].spacing(spf(Spacing::Xxs));
+    let value_block = column![
+        section_header(
+            forge_widgets::tr!("globals_editor_section_value"),
+            None,
+            palette
+        ),
+        value_editor
+    ]
+    .spacing(spf(Spacing::Xxs));
 
     let mut body_col =
         column![name_block, type_block, persist_block, value_block].spacing(spf(Spacing::Sm));
@@ -499,12 +527,16 @@ pub fn variant_editor_modal_view<'a>(
     let body: Element<'_, Message> = body_col.into();
 
     let cancel_btn = secondary_button(
-        "Cancel",
+        forge_widgets::tr!("globals_editor_cancel"),
         Message::Globals(GlobalsMsg::VariantEditor(VariantEditorMsg::Cancel)),
         palette,
     );
     let is_saveable = form.is_valid().is_none() && !form.saving;
-    let save_label = if form.saving { "Saving..." } else { "Save" };
+    let save_label = if form.saving {
+        forge_widgets::tr!("globals_editor_saving")
+    } else {
+        forge_widgets::tr!("globals_editor_save")
+    };
     let save_btn: Element<'_, Message> = if is_saveable {
         primary_button_small(
             save_label,
@@ -522,7 +554,7 @@ pub fn variant_editor_modal_view<'a>(
     modal(
         palette,
         ModalProps {
-            title,
+            title: std::borrow::Cow::Owned(title),
             on_close: Message::Globals(GlobalsMsg::VariantEditor(VariantEditorMsg::Cancel)),
             kbd_hint: Some("ESC to cancel"),
         },

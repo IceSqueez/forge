@@ -4,7 +4,7 @@ use std::sync::Arc;
 use forge_app::App;
 use forge_app::Screen;
 use forge_app::app::{theme_callback, update};
-use forge_app::boot::{load_obs_and_connect, load_twitch_credential};
+use forge_app::boot::{load_obs_and_connect, load_twitch_credential, load_vtube_and_connect};
 use forge_app::cloud_tts_boot::register_cloud_engines;
 use forge_app::speak_bridge::SpeakBridge;
 use forge_app::subscriptions::subscription;
@@ -33,7 +33,7 @@ use forge_tts_nsspeech::NsSpeechEngineFactory;
 use forge_tts_piper::{PiperEngine, PiperEngineFactory};
 use forge_tts_sapi::SapiEngineFactory;
 use forge_voice::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults, VoiceAliasResolver};
-use forge_vtube::{VTubeClient, VTubeConfig, register_vtube_sub_actions};
+use forge_vtube::{SwitchableVTubeSink, VTubeClient, VTubeSink, register_vtube_sub_actions};
 
 struct KickNoopLimiter;
 
@@ -67,6 +67,62 @@ fn boot_locale(
     }
     forge_app::i18n::install_language(lang);
     lang
+}
+
+fn boot_density(
+    rt: &tokio::runtime::Runtime,
+    backend: Arc<dyn DataProvider>,
+) -> forge_storage::settings::Density {
+    let settings: Arc<dyn forge_storage::SettingsRepo> =
+        Arc::clone(&backend) as Arc<dyn forge_storage::SettingsRepo>;
+    let density = match rt.block_on(settings.density()) {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to read density setting; defaulting to cozy");
+            forge_storage::settings::Density::Cozy
+        }
+    };
+    forge_app::ui_settings::install_density(density);
+    density
+}
+
+fn boot_fonts(
+    rt: &tokio::runtime::Runtime,
+    backend: Arc<dyn DataProvider>,
+) -> forge_app::ui_settings::FontSettings {
+    let settings: Arc<dyn forge_storage::SettingsRepo> =
+        Arc::clone(&backend) as Arc<dyn forge_storage::SettingsRepo>;
+    let body = rt.block_on(settings.font_body()).unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "failed to read interface font setting; using bundled default");
+        None
+    });
+    let mono = rt.block_on(settings.font_mono()).unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "failed to read monospace font setting; using bundled default");
+        None
+    });
+    // Optimistic install before enumeration finishes: a missing family falls back to the
+    // renderer's per-glyph defaults for at most a few frames, then catalog validation resets it.
+    forge_widgets::install_font_override(forge_widgets::FontRole::Body, body.as_deref());
+    forge_widgets::install_font_override(forge_widgets::FontRole::Monospace, mono.as_deref());
+    forge_app::ui_settings::FontSettings::from_stored(body, mono)
+}
+
+fn boot_shortcuts(
+    rt: &tokio::runtime::Runtime,
+    backend: Arc<dyn DataProvider>,
+) -> std::collections::HashMap<String, String> {
+    let settings: Arc<dyn forge_storage::SettingsRepo> =
+        Arc::clone(&backend) as Arc<dyn forge_storage::SettingsRepo>;
+    match rt
+        .block_on(settings.get_string(forge_storage::settings::reserved_keys::KEYBOARD_SHORTCUTS))
+    {
+        Ok(Some(raw)) => forge_app::settings_shortcuts::parse_stored_overrides(&raw),
+        Ok(None) => std::collections::HashMap::new(),
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to read keyboard shortcuts; using defaults");
+            std::collections::HashMap::new()
+        }
+    }
 }
 
 fn default_db_path() -> PathBuf {
@@ -155,7 +211,8 @@ struct RuntimeHandles {
     sub_action_reg: Arc<SubActionRegistry>,
     trigger_reg: Arc<TriggerRegistry>,
     trigger_evaluator: TriggerEvaluatorHandle,
-    vtube_client: Arc<VTubeClient>,
+    vtube_client: Option<Arc<VTubeClient>>,
+    vtube_sink: Arc<SwitchableVTubeSink>,
     discord_client: Arc<DiscordClient>,
     midi_client: Option<Arc<MidiClient>>,
 }
@@ -347,20 +404,6 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
     ) {
         tracing::warn!("audio sub-action runner registration failed: {e}");
     }
-    let vtube_publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
-    let vtube_creds: Arc<dyn forge_storage::CredentialsRepo> =
-        Arc::clone(&dp) as Arc<dyn forge_storage::CredentialsRepo>;
-    let vtube_client = Arc::new(VTubeClient::connect(
-        VTubeConfig::default(),
-        vtube_publisher,
-        vtube_creds,
-    ));
-    if let Err(e) = register_vtube_sub_actions(
-        &mut sub_action_reg,
-        Arc::clone(&vtube_client) as Arc<dyn forge_vtube::VTubeSink>,
-    ) {
-        tracing::warn!("vtube sub-action runner registration failed: {e}");
-    }
     let discord_publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
     let discord_creds: Arc<dyn forge_storage::CredentialsRepo> =
         Arc::clone(&dp) as Arc<dyn forge_storage::CredentialsRepo>;
@@ -382,6 +425,13 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
             None
         }
     };
+    let vtube_sink = SwitchableVTubeSink::new();
+    if let Err(e) = register_vtube_sub_actions(
+        &mut sub_action_reg,
+        Arc::clone(&vtube_sink) as Arc<dyn VTubeSink>,
+    ) {
+        tracing::warn!("vtube sub-action runner registration failed: {e}");
+    }
     let sub_action_reg = Arc::new(sub_action_reg);
 
     let mut trigger_reg = TriggerRegistry::new();
@@ -671,7 +721,8 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         sub_action_reg,
         trigger_reg,
         trigger_evaluator,
-        vtube_client,
+        vtube_client: None,
+        vtube_sink,
         discord_client,
         midi_client,
     })
@@ -692,6 +743,9 @@ fn main() -> iced::Result {
 
     let (backend, storage_offline) = boot_storage();
     let boot_language = boot_locale(&runtime, Arc::clone(&backend));
+    let boot_density = boot_density(&runtime, Arc::clone(&backend));
+    let boot_font_settings = boot_fonts(&runtime, Arc::clone(&backend));
+    let boot_shortcut_overrides = boot_shortcuts(&runtime, Arc::clone(&backend));
     let initial_screen = Screen::Home;
 
     let event_log = backend.event_log_repo();
@@ -709,22 +763,22 @@ fn main() -> iced::Result {
         sub_action_reg,
         trigger_reg,
         _trigger_evaluator,
-        vtube_client,
+        _vtube_client,
+        vtube_sink,
         discord_client,
         midi_client,
     ) = if storage_offline {
-        let vt_pub: Arc<dyn EventPublisher> = Arc::clone(&bus) as _;
-        let vt_creds: Arc<dyn forge_storage::CredentialsRepo> = Arc::clone(&backend) as _;
-        let vc = Arc::new(VTubeClient::connect(
-            VTubeConfig::default(),
-            vt_pub,
-            vt_creds,
-        ));
         let dc_pub: Arc<dyn EventPublisher> = Arc::clone(&bus) as _;
         let dc_creds: Arc<dyn forge_storage::CredentialsRepo> = Arc::clone(&backend) as _;
         let dc = DiscordClient::new(DiscordConfig::default(), dc_pub, dc_creds);
         let mc_pub: Arc<dyn EventPublisher> = Arc::clone(&bus) as _;
         let mc = MidiClient::start_with_midir(MidiConfig::default(), mc_pub).ok();
+        let vs = SwitchableVTubeSink::new();
+        let mut sar = SubActionRegistry::new();
+        if let Err(e) = register_vtube_sub_actions(&mut sar, Arc::clone(&vs) as Arc<dyn VTubeSink>)
+        {
+            tracing::warn!("vtube sub-action runner registration failed: {e}");
+        }
         (
             Arc::new(ScriptRegistry::new()),
             None,
@@ -733,10 +787,11 @@ fn main() -> iced::Result {
             None,
             Vec::<EngineId>::new(),
             None,
-            Arc::new(SubActionRegistry::new()),
+            Arc::new(sar),
             Arc::new(TriggerRegistry::new()),
             None,
-            vc,
+            None::<Arc<VTubeClient>>,
+            vs,
             dc,
             mc,
         )
@@ -754,22 +809,23 @@ fn main() -> iced::Result {
                 h.trigger_reg,
                 Some(h.trigger_evaluator),
                 h.vtube_client,
+                h.vtube_sink,
                 h.discord_client,
                 h.midi_client,
             ),
             None => {
-                let vt_pub: Arc<dyn EventPublisher> = Arc::clone(&bus) as _;
-                let vt_creds: Arc<dyn forge_storage::CredentialsRepo> = Arc::clone(&backend) as _;
-                let vc = Arc::new(VTubeClient::connect(
-                    VTubeConfig::default(),
-                    vt_pub,
-                    vt_creds,
-                ));
                 let dc_pub: Arc<dyn EventPublisher> = Arc::clone(&bus) as _;
                 let dc_creds: Arc<dyn forge_storage::CredentialsRepo> = Arc::clone(&backend) as _;
                 let dc = DiscordClient::new(DiscordConfig::default(), dc_pub, dc_creds);
                 let mc_pub: Arc<dyn EventPublisher> = Arc::clone(&bus) as _;
                 let mc = MidiClient::start_with_midir(MidiConfig::default(), mc_pub).ok();
+                let vs = SwitchableVTubeSink::new();
+                let mut sar = SubActionRegistry::new();
+                if let Err(e) =
+                    register_vtube_sub_actions(&mut sar, Arc::clone(&vs) as Arc<dyn VTubeSink>)
+                {
+                    tracing::warn!("vtube sub-action runner registration failed: {e}");
+                }
                 (
                     Arc::new(ScriptRegistry::new()),
                     None,
@@ -778,10 +834,11 @@ fn main() -> iced::Result {
                     None,
                     Vec::<EngineId>::new(),
                     None,
-                    Arc::new(SubActionRegistry::new()),
+                    Arc::new(sar),
                     Arc::new(TriggerRegistry::new()),
                     None,
-                    vc,
+                    None::<Arc<VTubeClient>>,
+                    vs,
                     dc,
                     mc,
                 )
@@ -802,13 +859,17 @@ fn main() -> iced::Result {
             scheduler.clone(),
             sound_player.clone(),
             boot_language,
+            boot_density,
+            boot_font_settings.clone(),
         );
+        app.ui.settings_shortcuts.overrides = boot_shortcut_overrides.clone();
         app.rt.bus = Arc::clone(&bus_boot);
         app.rt.chat_send_bridge = chat_send_bridge.clone();
         app.rt.speak_queue = speak_queue.clone();
         app.rt.tts_engine_ids = tts_engine_ids.clone();
         app.rt.sub_action_registry = Arc::clone(&sub_action_reg);
         app.rt.trigger_registry = Arc::clone(&trigger_reg);
+        app.rt.vtube_sink = Arc::clone(&vtube_sink);
         let obs_creds: Arc<dyn forge_storage::CredentialsRepo> =
             Arc::clone(&backend_boot) as Arc<dyn forge_storage::CredentialsRepo>;
         let obs_task = iced::Task::perform(
@@ -820,9 +881,12 @@ fn main() -> iced::Result {
         let twitch_task = iced::Task::perform(load_twitch_credential(twitch_creds), |r| {
             forge_app::Message::Boot(forge_app::BootMsg::Twitch(r))
         });
-        let vtube_task = iced::Task::done(forge_app::Message::Boot(forge_app::BootMsg::Vtube(Ok(
-            forge_app::message::VTubeClientRef::new(Arc::clone(&vtube_client)),
-        ))));
+        let vtube_creds: Arc<dyn forge_storage::CredentialsRepo> =
+            Arc::clone(&backend_boot) as Arc<dyn forge_storage::CredentialsRepo>;
+        let vtube_task = iced::Task::perform(
+            load_vtube_and_connect(vtube_creds, Arc::clone(&bus_boot)),
+            |r| forge_app::Message::Boot(forge_app::BootMsg::Vtube(r)),
+        );
         let discord_task =
             iced::Task::done(forge_app::Message::Boot(forge_app::BootMsg::Discord(Ok(
                 forge_app::message::DiscordClientRef::new(Arc::clone(&discord_client)),
@@ -835,6 +899,22 @@ fn main() -> iced::Result {
                 "MIDI unavailable".to_owned(),
             )))),
         };
+        let font_catalog_task = iced::Task::perform(
+            async {
+                match tokio::task::spawn_blocking(forge_widgets::enumerate_font_families).await {
+                    Ok(families) => families,
+                    Err(e) => {
+                        tracing::warn!(error = %e, "font enumeration task failed");
+                        Vec::new()
+                    }
+                }
+            },
+            |families| {
+                forge_app::Message::Settings(forge_app::message::SettingsMsg::FontCatalogLoaded(
+                    families,
+                ))
+            },
+        );
         let bus_hotkey = Arc::clone(&bus_boot);
         let hotkey_task = iced::Task::perform(
             async move {
@@ -865,6 +945,7 @@ fn main() -> iced::Result {
                     discord_task,
                     midi_task,
                     hotkey_task,
+                    font_catalog_task,
                     server_boot_task,
                 ])
             }
@@ -875,6 +956,7 @@ fn main() -> iced::Result {
                 discord_task,
                 midi_task,
                 hotkey_task,
+                font_catalog_task,
             ]),
         };
         (app, boot_task)
@@ -883,7 +965,8 @@ fn main() -> iced::Result {
     let mut app = iced::application(boot, update, view)
         .title("forge")
         .subscription(subscription)
-        .theme(theme_callback);
+        .theme(theme_callback)
+        .exit_on_close_request(false);
     for font_bytes in forge_widgets::load_fonts() {
         app = app.font(font_bytes);
     }

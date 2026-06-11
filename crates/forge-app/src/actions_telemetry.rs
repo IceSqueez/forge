@@ -5,20 +5,7 @@ use iced::{Color, Element, Length};
 use time::OffsetDateTime;
 
 pub fn format_relative_time(opt: Option<OffsetDateTime>) -> String {
-    let Some(dt) = opt else {
-        return "never".to_string();
-    };
-    let delta = OffsetDateTime::now_utc() - dt;
-    let secs = delta.whole_seconds().max(0) as u64;
-    if secs < 60 {
-        format!("{}s ago", secs)
-    } else if secs < 3600 {
-        format!("{} min ago", secs / 60)
-    } else if secs < 86400 {
-        format!("{}h ago", secs / 3600)
-    } else {
-        format!("{}d ago", secs / 86400)
-    }
+    forge_widgets::fmt_relative_time(opt)
 }
 
 pub fn action_stat<'a, Msg: 'a>(
@@ -79,27 +66,26 @@ pub fn telemetry_grid<'a, Msg: 'a>(
     let errors_val = t.errors_7d.to_string();
     let errors_color = if t.errors_7d > 0 { p.random } else { p.success };
 
+    let lbl_last = forge_widgets::tr!("telemetry_stat_last_fired");
+    let lbl_runs = forge_widgets::tr!("telemetry_stat_runs_today");
+    let lbl_avg = forge_widgets::tr!("telemetry_stat_avg_time");
+    let lbl_errors = forge_widgets::tr!("telemetry_stat_errors_7d");
+
     let cells = row![
         container(action_stat(
-            "LAST FIRED",
+            &lbl_last,
             &last_fired_val,
             p.text_primary,
             None,
             palette
         ))
         .width(Length::FillPortion(1)),
-        container(action_stat(
-            "RUNS \u{00b7} TODAY",
-            &runs_val,
-            p.brand,
-            None,
-            palette
-        ))
-        .width(Length::FillPortion(1)),
-        container(action_stat("AVG TIME", &avg_val, p.success, None, palette))
+        container(action_stat(&lbl_runs, &runs_val, p.brand, None, palette))
+            .width(Length::FillPortion(1)),
+        container(action_stat(&lbl_avg, &avg_val, p.success, None, palette))
             .width(Length::FillPortion(1)),
         container(action_stat(
-            "ERRORS \u{00b7} 7D",
+            &lbl_errors,
             &errors_val,
             errors_color,
             None,

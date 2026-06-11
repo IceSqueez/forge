@@ -14,6 +14,7 @@ use forge_vtube::VTubeClient;
 use forge_widgets::{DeviceLabel, PickerItem, ToastKind};
 
 use forge_platform_core::{HeaderAction, HealthDelta};
+use forge_storage::settings::Density;
 use forge_storage::{GlobalEntry, Language};
 use forge_types::{ActionId, OAuthToken, PlatformId, UnifiedChatRow};
 use forge_widgets::{ThemeId, VariantKind};
@@ -181,8 +182,15 @@ pub enum SettingsMsg {
     OpenLogDirectoryRequested,
     OpenLogDirectoryResult(Result<(), String>),
     Scripting(crate::settings_scripting::ScriptingSettingsMsg),
+    Shortcuts(crate::settings_shortcuts::ShortcutsMsg),
     LanguageChanged(Language),
     LanguagePersisted(Result<(), String>),
+    DensityChanged(Density),
+    DensityPersisted(Result<(), String>),
+    FontCatalogLoaded(Vec<forge_widgets::FontFamily>),
+    FontChanged(forge_widgets::FontRole, Option<String>),
+    FontPersisted(Result<(), String>),
+    FontMonoShowAllToggled(bool),
 }
 
 #[derive(Debug, Clone)]
@@ -527,4 +535,6 @@ pub enum Message {
     SettingsHotkeys(crate::settings_hotkeys::SettingsHotkeysMsg),
     OutsideClick,
     Noop,
+    AppCloseRequested,
+    AppShutdownComplete,
 }

@@ -97,7 +97,10 @@ pub fn on_event(state: Option<&mut BuiltinDetailState>, event: &Event) -> Task<M
     if event.kind != "quick_action.done" {
         return Task::none();
     }
-    let label = event.payload["label"].as_str().unwrap_or("Quick Action");
+    let quick_action_fallback = forge_widgets::tr!("builtin_quick_action_fallback");
+    let label = event.payload["label"]
+        .as_str()
+        .unwrap_or(quick_action_fallback.as_str());
     let outcome = event.payload["outcome"].as_str().unwrap_or("done");
     state.quick_action_toast = Some(if outcome == "success" {
         format!("{label} — done")
@@ -151,14 +154,13 @@ pub fn update(
                             Message::BuiltinDetail(BuiltinDetailMsg::PickerItemsLoaded(r))
                         })
                     }
-                    None => Task::perform(
-                        async {
-                            Err::<(Vec<PickerItem>, Option<String>), _>(
-                                "OBS not connected".to_owned(),
-                            )
-                        },
-                        |r| Message::BuiltinDetail(BuiltinDetailMsg::PickerItemsLoaded(r)),
-                    ),
+                    None => {
+                        let err_msg = forge_widgets::tr!("builtin_obs_not_connected");
+                        Task::perform(
+                            async move { Err::<(Vec<PickerItem>, Option<String>), _>(err_msg) },
+                            |r| Message::BuiltinDetail(BuiltinDetailMsg::PickerItemsLoaded(r)),
+                        )
+                    }
                 }
             } else {
                 let engine = rt.action_engine.clone();
@@ -319,7 +321,7 @@ async fn fetch_picker_items(
             Ok((items, None))
         }
         PickerKind::Hotkey | PickerKind::Expression | PickerKind::MidiPort => {
-            Err("Not supported for OBS".to_owned())
+            Err(forge_widgets::tr!("builtin_obs_not_supported"))
         }
     }
 }
@@ -366,7 +368,10 @@ pub fn view<'a>(state: &'a BuiltinDetailState, palette: &'a ForgePalette) -> Ele
 
     let scroll_body: Element<'_, Message> = iced::widget::scrollable(padded).into();
     let page_header = crate::page_chrome::simple_page_header(
-        &[("Builtin", false), (state.display_name.as_str(), true)],
+        &[
+            (forge_widgets::tr!("builtin.breadcrumb"), false),
+            (state.display_name.clone(), true),
+        ],
         palette,
     );
     let base: Element<'_, Message> = iced::widget::column![page_header, scroll_body]
@@ -401,13 +406,23 @@ fn build_picker_overlay<'a>(
         PickerItemsState::Failed(_) => (&[], false),
     };
 
-    let title = match pending.kind {
-        PickerKind::Scene => "Choose a Scene",
-        PickerKind::Source => "Choose a Source",
-        PickerKind::Input => "Choose an Audio Input",
-        PickerKind::Hotkey => "Choose a Hotkey",
-        PickerKind::Expression => "Choose an Expression",
-        PickerKind::MidiPort => "Choose a MIDI Port",
+    let title: &'static str = match pending.kind {
+        PickerKind::Scene => Box::leak(forge_widgets::tr!("builtin.picker.scene").into_boxed_str()),
+        PickerKind::Source => {
+            Box::leak(forge_widgets::tr!("builtin.picker.source").into_boxed_str())
+        }
+        PickerKind::Input => {
+            Box::leak(forge_widgets::tr!("builtin.picker.audio_input").into_boxed_str())
+        }
+        PickerKind::Hotkey => {
+            Box::leak(forge_widgets::tr!("builtin.picker.hotkey").into_boxed_str())
+        }
+        PickerKind::Expression => {
+            Box::leak(forge_widgets::tr!("builtin.picker.expression").into_boxed_str())
+        }
+        PickerKind::MidiPort => {
+            Box::leak(forge_widgets::tr!("builtin.picker.midi_port").into_boxed_str())
+        }
     };
 
     picker_modal(

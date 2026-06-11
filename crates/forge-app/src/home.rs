@@ -63,7 +63,7 @@ pub fn update(state: &mut HomeStats, rt: &RuntimeView, msg: HomeMsg) -> Task<Mes
 
 fn home_inline_button<'a>(
     icon: Icon,
-    label: &'a str,
+    label: String,
     on_press: Message,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
@@ -136,16 +136,21 @@ fn home_hero<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
 
     let title_col = column![
         text("Forge").size(22.0).color(palette.text_primary),
-        text("Open-source stream automation, forged for streamers")
+        text(forge_widgets::tr!("home_hero_tagline"))
             .size(FONT_SM)
             .color(palette.text_muted),
     ]
     .spacing(spf(Spacing::Xxs));
 
-    let import_btn = home_inline_button(Icon::Download, "Import", Message::Noop, palette);
+    let import_btn = home_inline_button(
+        Icon::Download,
+        forge_widgets::tr!("home_hero_import"),
+        Message::Noop,
+        palette,
+    );
     let new_action_btn = home_inline_button(
         Icon::Plus,
-        "New action",
+        forge_widgets::tr!("home_hero_new_action"),
         Message::Navigate(Screen::Actions),
         palette,
     );
@@ -200,11 +205,11 @@ fn home_jump_cards<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, M
         BigJumpCardProps {
             icon: Icon::MessageCircle,
             icon_color: palette.brand,
-            section_label: "AUDIENCE",
-            title: "Chat",
+            section_label: forge_widgets::tr!("home_card_audience_section"),
+            title: forge_widgets::tr!("home_card_audience_title"),
             stat: chat_count.to_string(),
-            stat_label: "viewers tracked".to_string(),
-            hint: "Talk to your audience and see who's watching",
+            stat_label: forge_widgets::tr!("home_card_audience_stat_label"),
+            hint: forge_widgets::tr!("home_card_audience_hint"),
             on_press: Message::Navigate(Screen::LiveChat),
             warn: false,
         },
@@ -215,11 +220,15 @@ fn home_jump_cards<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, M
         BigJumpCardProps {
             icon: Icon::Bolt,
             icon_color: palette.warning,
-            section_label: "AUTOMATION",
-            title: "Actions",
+            section_label: forge_widgets::tr!("home_card_automation_section"),
+            title: forge_widgets::tr!("home_card_automation_title"),
             stat: actions_count.to_string(),
-            stat_label: format!("actions · {triggers_fired} fired today"),
-            hint: "Set up triggers, commands and timers",
+            stat_label: forge_widgets::tr!(
+                "home_card_automation_stat_label",
+                count = actions_count as i64,
+                fired = triggers_fired as i64
+            ),
+            hint: forge_widgets::tr!("home_card_automation_hint"),
             on_press: Message::Navigate(Screen::Actions),
             warn: false,
         },
@@ -230,11 +239,11 @@ fn home_jump_cards<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, M
         BigJumpCardProps {
             icon: Icon::Plug,
             icon_color: palette.success,
-            section_label: "CONNECTIONS",
-            title: "Connections",
+            section_label: forge_widgets::tr!("home_card_connections_section"),
+            title: forge_widgets::tr!("home_card_connections_title"),
             stat: format!("{connected_integrations}/{total_integrations}"),
-            stat_label: "connected".to_string(),
-            hint: "Manage platforms, apps and modules",
+            stat_label: forge_widgets::tr!("home_card_connections_stat_label"),
+            hint: forge_widgets::tr!("home_card_connections_hint"),
             on_press: Message::Navigate(Screen::Platforms),
             warn: connections_warn,
         },
@@ -277,7 +286,7 @@ fn home_stream_health<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a
 
     let live_badge = row![
         live_dot,
-        text("LIVE")
+        text(forge_widgets::tr!("home_health_live"))
             .size(FONT_XS)
             .color(success)
             .font(font(FontRole::Monospace)),
@@ -287,13 +296,15 @@ fn home_stream_health<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a
 
     let header_left = row![
         header_icon,
-        text("Stream health").size(FONT_SM).color(text_primary),
+        text(forge_widgets::tr!("home_health_title"))
+            .size(FONT_SM)
+            .color(text_primary),
         live_badge,
     ]
     .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
-    let header_right = text("last 60s · auto-refresh")
+    let header_right = text(forge_widgets::tr!("home_health_refresh_hint"))
         .size(FONT_XS)
         .color(text_faint)
         .font(font(FontRole::Monospace));
@@ -305,8 +316,9 @@ fn home_stream_health<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a
     ]
     .align_y(Alignment::Center);
 
+    let throughput_label = forge_widgets::tr!("home_health_throughput_label");
     let sparkline_col = column![
-        text("THROUGHPUT · ev/s")
+        text(throughput_label)
             .size(FONT_XS)
             .color(text_faint)
             .font(font(FontRole::Monospace)),
@@ -316,7 +328,7 @@ fn home_stream_health<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a
     .width(Length::FillPortion(14));
 
     let health_stat =
-        |label: &'a str, value: String, unit: Option<&'a str>| -> Element<'a, Message> {
+        |label: String, value: String, unit: Option<&'static str>| -> Element<'a, Message> {
             let val_el: Element<'a, Message> = if let Some(u) = unit {
                 row![
                     text(value)
@@ -371,10 +383,22 @@ fn home_stream_health<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a
 
     let stats_row = row![
         sparkline_col,
-        health_stat("BITRATE · OBS", "\u{2014}".to_owned(), Some("kbps")),
-        health_stat("DROPPED · OBS", dropped_val, None),
-        health_stat("FPS", fps_val, None),
-        health_stat("CPU", cpu_val, Some("%")),
+        health_stat(
+            forge_widgets::tr!("home_health_bitrate_label"),
+            "\u{2014}".to_owned(),
+            Some("kbps")
+        ),
+        health_stat(
+            forge_widgets::tr!("home_health_dropped_label"),
+            dropped_val,
+            None
+        ),
+        health_stat(forge_widgets::tr!("home_health_fps_label"), fps_val, None),
+        health_stat(
+            forge_widgets::tr!("home_health_cpu_label"),
+            cpu_val,
+            Some("%")
+        ),
     ]
     .spacing(spf(Spacing::Sm))
     .align_y(Alignment::End);
@@ -427,7 +451,11 @@ fn home_connection_cell<'a>(
         });
 
     let status_color = if ok { success } else { text_faint };
-    let status_str = if ok { "connected" } else { "offline" };
+    let status_str = if ok {
+        forge_widgets::tr!("home_conn_connected")
+    } else {
+        forge_widgets::tr!("home_conn_offline")
+    };
 
     let label_col = column![
         text(label).size(FONT_XS).color(text_primary),
@@ -494,9 +522,16 @@ fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
     let connected: u8 = u8::from(twitch_ok) + u8::from(obs_ok);
     let disconnected: u8 = 6u8.saturating_sub(connected);
 
+    let connections_summary = forge_widgets::tr!(
+        "home_connections_summary",
+        active = connected as i64,
+        disconnected = disconnected as i64
+    );
     let header_icon = tabler_icon(Icon::PlugConnected, 14.0, palette.success);
-    let header_title = text("Builtin").size(FONT_SM).color(palette.text_primary);
-    let header_sub = text(format!("{connected} active · {disconnected} disconnected"))
+    let header_title = text(forge_widgets::tr!("home_connections_title"))
+        .size(FONT_SM)
+        .color(palette.text_primary);
+    let header_sub = text(connections_summary)
         .size(FONT_XS)
         .color(palette.text_faint);
 
@@ -739,7 +774,7 @@ fn home_recent_events_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
 
     let live_label = row![
         live_dot,
-        text("LIVE")
+        text(forge_widgets::tr!("home_health_live"))
             .size(FONT_XS)
             .color(text_faint)
             .font(font(FontRole::Monospace)),
@@ -748,7 +783,9 @@ fn home_recent_events_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
     .align_y(Alignment::Center);
 
     let header = row![
-        text("Recent events").size(FONT_SM).color(text_primary),
+        text(forge_widgets::tr!("home_events_title"))
+            .size(FONT_SM)
+            .color(text_primary),
         iced::widget::Space::new().width(Length::Fill),
         live_label,
     ]
@@ -757,7 +794,10 @@ fn home_recent_events_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
     let recent: Vec<&forge_events::Event> = app.ui.event_feed.events.iter().rev().take(5).collect();
 
     let body: Element<'a, Message> = if recent.is_empty() {
-        text("No events yet").size(FONT_XS).color(text_muted).into()
+        text(forge_widgets::tr!("home_events_empty"))
+            .size(FONT_XS)
+            .color(text_muted)
+            .into()
     } else {
         let count = recent.len();
         let mut col = column![].spacing(0.0);
@@ -783,7 +823,7 @@ fn home_recent_events_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
 }
 
 fn home_glance_row<'a>(
-    label: &'a str,
+    label: String,
     value: String,
     color: iced::Color,
     last: bool,
@@ -852,19 +892,33 @@ fn home_glance_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, 
         .globals_count
         .map_or_else(|| "\u{2014}".to_string(), |n| n.to_string());
 
-    let header = text("At a glance").size(FONT_SM).color(text_primary);
+    let header = text(forge_widgets::tr!("home_glance_title"))
+        .size(FONT_SM)
+        .color(text_primary);
 
     let content = column![
         header,
-        home_glance_row("Actions", actions_val, palette.brand, false, palette),
         home_glance_row(
-            "Fired this session",
+            forge_widgets::tr!("home_glance_actions"),
+            actions_val,
+            palette.brand,
+            false,
+            palette
+        ),
+        home_glance_row(
+            forge_widgets::tr!("home_glance_fired"),
             fired_val,
             palette.success,
             false,
             palette
         ),
-        home_glance_row("Globals", globals_val, palette.warning, true, palette),
+        home_glance_row(
+            forge_widgets::tr!("home_glance_globals"),
+            globals_val,
+            palette.warning,
+            true,
+            palette
+        ),
     ]
     .spacing(0.0);
 
@@ -886,7 +940,7 @@ fn home_glance_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, 
 pub(crate) fn home_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
     use iced::widget::{column, container};
 
-    let page_header = simple_page_header(&[("Home", true)], palette);
+    let page_header = simple_page_header(&[(forge_widgets::tr!("nav_home"), true)], palette);
 
     let hero = home_hero(palette);
     let jump_cards = home_jump_cards(app, palette);

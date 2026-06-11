@@ -7,14 +7,14 @@ use iced::{Background, Border, Element, Length};
 use crate::message::Message;
 
 pub(crate) fn simple_page_header<'a>(
-    crumbs: &[(&'a str, bool)],
+    crumbs: &[(String, bool)],
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     page_header_with_actions(crumbs, None, palette)
 }
 
 pub(crate) fn page_header_with_actions<'a>(
-    crumbs: &[(&'a str, bool)],
+    crumbs: &[(String, bool)],
     right: Option<Element<'a, Message>>,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
@@ -30,7 +30,7 @@ pub(crate) fn page_header_with_actions<'a>(
         } else {
             p.text_muted
         };
-        crumb_row = crumb_row.push(text(label.to_string()).size(FONT_SM).color(color));
+        crumb_row = crumb_row.push(text(label.clone()).size(FONT_SM).color(color));
     }
 
     let inner: Element<'a, Message> = if let Some(right_el) = right {

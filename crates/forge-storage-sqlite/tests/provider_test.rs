@@ -101,3 +101,24 @@ async fn export_writes_a_non_empty_file() {
     let _ = std::fs::remove_file(source_path.with_extension("sqlite-shm"));
     let _ = std::fs::remove_file(&export_path);
 }
+
+#[tokio::test]
+async fn shutdown_closes_the_pool_so_later_queries_fail_instead_of_hanging() {
+    use forge_storage::SettingsRepo;
+
+    let backend = SqliteBackend::open_with_key("sqlite::memory:", TEST_KEY)
+        .await
+        .expect("open");
+    backend
+        .set_string("theme", "catppuccin_mocha")
+        .await
+        .expect("write before shutdown succeeds");
+
+    backend.shutdown().await;
+
+    let result = backend.get_string("theme").await;
+    assert!(
+        result.is_err(),
+        "queries after shutdown must error, not hang"
+    );
+}

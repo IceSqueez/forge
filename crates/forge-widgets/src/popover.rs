@@ -13,7 +13,7 @@ use iced::{
 
 use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
-use crate::tokens::{Density, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spacing};
+use crate::tokens::{FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spf};
 
 pub enum MenuItem<Msg> {
     Item {
@@ -59,7 +59,7 @@ pub fn actionable_count<Msg>(items: &[MenuItem<Msg>]) -> usize {
 }
 
 fn divider_el<'a, Msg: 'a>(palette: &'a ForgePalette) -> Element<'a, Msg> {
-    let xs = spacing(Spacing::Xs, Density::Cozy) as f32;
+    let xs = spf(Spacing::Xs);
     let border_color = palette.border_regular;
     container(
         container(iced::widget::Space::new().width(Length::Fill))
@@ -80,8 +80,8 @@ fn divider_el<'a, Msg: 'a>(palette: &'a ForgePalette) -> Element<'a, Msg> {
 }
 
 fn header_el<'a, Msg: 'a>(label: String, palette: &'a ForgePalette) -> Element<'a, Msg> {
-    let xs = spacing(Spacing::Xs, Density::Cozy) as f32;
-    let sm = spacing(Spacing::Sm, Density::Cozy) as f32;
+    let xs = spf(Spacing::Xs);
+    let sm = spf(Spacing::Sm);
     container(
         text(label)
             .size(FONT_XS)
@@ -106,8 +106,8 @@ fn item_el<'a, Msg: Clone + 'a>(
     disabled: bool,
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
-    let xs = spacing(Spacing::Xs, Density::Cozy) as f32;
-    let sm = spacing(Spacing::Sm, Density::Cozy) as f32;
+    let xs = spf(Spacing::Xs);
+    let sm = spf(Spacing::Sm);
 
     let text_color = if disabled {
         palette.text_faint
@@ -192,7 +192,7 @@ fn panel_el<'a, Msg: Clone + 'a>(
     items: Vec<MenuItem<Msg>>,
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
-    let xs = spacing(Spacing::Xs, Density::Cozy) as f32;
+    let xs = spf(Spacing::Xs);
     let elevated = palette.elevated;
     let border_color = palette.border_input;
 
@@ -563,7 +563,7 @@ pub fn row_actions<'a, Msg: Clone + 'a>(
     hovered: bool,
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
-    let xs = spacing(Spacing::Xs, Density::Cozy) as f32;
+    let xs = spf(Spacing::Xs);
     let surface_overlay = palette.surface_overlay;
     let primary = palette.text_primary;
 

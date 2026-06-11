@@ -166,9 +166,9 @@ fn control_strip_view<'a>(
     gap_md: f32,
 ) -> Element<'a, Message> {
     let pause_label = if state.paused {
-        "Resume"
+        forge_widgets::tr!("tts_dash_resume_btn")
     } else {
-        "Pause queue"
+        forge_widgets::tr!("tts_dash_pause_btn")
     };
     let btn_bg = if state.paused {
         palette.success
@@ -184,7 +184,7 @@ fn control_strip_view<'a>(
     let pause_btn = button(
         row![
             tabler_icon(pause_icon, 13.0, palette.shell),
-            text(pause_label).size(FONT_SM),
+            text(pause_label.clone()).size(FONT_SM),
         ]
         .align_y(Alignment::Center)
         .spacing(gap_sm),
@@ -201,7 +201,7 @@ fn control_strip_view<'a>(
     })
     .padding([sp(Spacing::Xxs), sp(Spacing::Sm)]);
 
-    let skip_btn = button(text("Skip").size(FONT_SM))
+    let skip_btn = button(text(forge_widgets::tr!("tts_dash_skip_btn")).size(FONT_SM))
         .on_press(Message::Tts(TtsMsg::Dashboard(TtsDashMsg::SkipCurrent)))
         .style(move |_, _| button::Style {
             background: Some(Background::Color(palette.surface_overlay)),
@@ -215,7 +215,7 @@ fn control_strip_view<'a>(
         })
         .padding([sp(Spacing::Xxs), sp(Spacing::Sm)]);
 
-    let stop_btn = button(text("Stop all").size(FONT_SM))
+    let stop_btn = button(text(forge_widgets::tr!("tts_dash_stop_all_btn")).size(FONT_SM))
         .on_press(Message::Tts(TtsMsg::Dashboard(TtsDashMsg::StopAll)))
         .style(move |_, _| button::Style {
             background: Some(Background::Color(palette.surface_overlay)),
@@ -253,25 +253,28 @@ fn control_strip_view<'a>(
         .align_y(Alignment::Center)
         .spacing(gap_sm);
 
-    let test_input = text_input("Type to test a voice...", &state.test_input)
-        .on_input(|s| Message::Tts(TtsMsg::Dashboard(TtsDashMsg::TestInputChanged(s))))
-        .on_submit(Message::Tts(TtsMsg::Dashboard(TtsDashMsg::SpeakTest)))
-        .size(FONT_SM)
-        .width(180)
-        .style(move |_, _| text_input::Style {
-            background: Background::Color(palette.shell),
-            border: Border {
-                color: palette.border_regular,
-                width: BORDER_THIN,
-                radius: radius(Radius::Sm).into(),
-            },
-            icon: palette.text_muted,
-            placeholder: palette.text_muted,
-            value: palette.text_primary,
-            selection: palette.brand,
-        });
+    let test_input = text_input(
+        &forge_widgets::tr!("tts_dash_test_placeholder"),
+        &state.test_input,
+    )
+    .on_input(|s| Message::Tts(TtsMsg::Dashboard(TtsDashMsg::TestInputChanged(s))))
+    .on_submit(Message::Tts(TtsMsg::Dashboard(TtsDashMsg::SpeakTest)))
+    .size(FONT_SM)
+    .width(180)
+    .style(move |_, _| text_input::Style {
+        background: Background::Color(palette.shell),
+        border: Border {
+            color: palette.border_regular,
+            width: BORDER_THIN,
+            radius: radius(Radius::Sm).into(),
+        },
+        icon: palette.text_muted,
+        placeholder: palette.text_muted,
+        value: palette.text_primary,
+        selection: palette.brand,
+    });
 
-    let speak_btn = button(text("Speak").size(FONT_SM))
+    let speak_btn = button(text(forge_widgets::tr!("tts_dash_speak_btn")).size(FONT_SM))
         .on_press(Message::Tts(TtsMsg::Dashboard(TtsDashMsg::SpeakTest)))
         .style(move |_, _| button::Style {
             background: Some(Background::Color(palette.brand)),
@@ -313,7 +316,7 @@ fn now_speaking_view<'a>(
     palette: &'a ForgePalette,
     gap_sm: f32,
 ) -> Element<'a, Message> {
-    let header = text("NOW SPEAKING")
+    let header = text(forge_widgets::tr!("tts_dash_now_speaking_header"))
         .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
@@ -346,9 +349,14 @@ fn now_speaking_view<'a>(
         .spacing(gap_sm)
         .into()
     } else {
-        column![header, text("—").size(FONT_SM).color(palette.text_muted),]
-            .spacing(gap_sm)
-            .into()
+        column![
+            header,
+            text(forge_widgets::tr!("tts_dash_no_speaking"))
+                .size(FONT_SM)
+                .color(palette.text_muted),
+        ]
+        .spacing(gap_sm)
+        .into()
     };
 
     container(body)
@@ -374,7 +382,9 @@ fn queue_section_view<'a>(
     let count = state.queue.len();
     let header = container(
         row![
-            text("Up next").size(FONT_SM).color(palette.text_primary),
+            text(forge_widgets::tr!("tts_dash_queue_header"))
+                .size(FONT_SM)
+                .color(palette.text_primary),
             container(
                 text(format!("{count}"))
                     .size(FONT_SM)
@@ -407,7 +417,7 @@ fn queue_section_view<'a>(
 
     let items: Element<'a, Message> = if state.queue.is_empty() {
         container(
-            text("Queue is empty")
+            text(forge_widgets::tr!("tts_dash_queue_empty"))
                 .size(FONT_SM)
                 .color(palette.text_muted),
         )
@@ -445,7 +455,7 @@ fn queue_item_row<'a>(
         let bits_label = if let Some(b) = item.bits_amount {
             format!("BITS {b}")
         } else {
-            "HIGH".to_string()
+            forge_widgets::tr!("tts_dash_priority_high")
         };
         container(
             text(bits_label)
@@ -518,13 +528,13 @@ fn right_pane_view<'a>(
     gap_sm: f32,
     gap_lg: f32,
 ) -> Element<'a, Message> {
-    let session_header = text("SESSION")
+    let session_header = text(forge_widgets::tr!("tts_dash_session_header"))
         .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
     fn stat_row<'b>(
-        label: &'static str,
+        label: String,
         value: String,
         value_color: Color,
         palette: &'b ForgePalette,
@@ -566,36 +576,48 @@ fn right_pane_view<'a>(
     let stats_col = column![
         session_header,
         stat_row(
-            "Spoken",
+            forge_widgets::tr!("tts_dash_stat_spoken"),
             state.stats.spoken.to_string(),
             palette.brand,
             palette,
             true
         ),
         stat_row(
-            "Skipped",
+            forge_widgets::tr!("tts_dash_stat_skipped"),
             state.stats.skipped.to_string(),
             palette.warning,
             palette,
             true
         ),
         stat_row(
-            "Filtered",
+            forge_widgets::tr!("tts_dash_stat_filtered"),
             state.stats.filtered.to_string(),
             palette.random,
             palette,
             true
         ),
-        stat_row("Avg latency", latency_str, palette.success, palette, false),
+        stat_row(
+            forge_widgets::tr!("tts_dash_stat_avg_latency"),
+            latency_str,
+            palette.success,
+            palette,
+            false
+        ),
     ]
     .spacing(gap_sm);
 
-    let engines_header = text("ENGINES")
+    let engines_header = text(forge_widgets::tr!("tts_dash_engines_header"))
         .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
-    let piper_card = engine_card("Piper", "local · ready", palette.success, palette, gap_sm);
+    let piper_card = engine_card(
+        "Piper",
+        forge_widgets::tr!("tts_dash_engine_local_ready"),
+        palette.success,
+        palette,
+        gap_sm,
+    );
     let engines_col = column![engines_header, piper_card].spacing(gap_sm);
 
     container(
@@ -622,7 +644,7 @@ fn right_pane_view<'a>(
 
 fn engine_card<'a>(
     name: &'a str,
-    meta: &'a str,
+    meta: String,
     status_color: Color,
     palette: &'a ForgePalette,
     _gap_sm: f32,

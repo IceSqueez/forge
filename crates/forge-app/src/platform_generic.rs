@@ -15,9 +15,9 @@ use crate::local_callback_flow::LocalCallbackFlowMsg;
 pub struct GenericPlatform {
     pub name: &'static str,
     pub letter: &'static str,
-    pub status_badge: &'static str,
-    pub description: &'static str,
-    pub features: &'static [&'static str],
+    pub status_badge: String,
+    pub description: String,
+    pub features: Vec<String>,
     pub kind: PlatformKind,
     pub connect_platform: Option<PlatformId>,
     pub status: PlatformStatus,
@@ -40,13 +40,13 @@ pub fn registry(id: &BuiltinId, palette: &ForgePalette) -> Option<(Color, Generi
             GenericPlatform {
                 name: "YouTube",
                 letter: "Y",
-                status_badge: "Not connected",
-                description: "Live chat, super chats, channel memberships, subscribers.",
-                features: &[
-                    "Live chat with sentiment markers",
-                    "Super Chat alerts with bits-equivalent tiers",
-                    "Channel memberships join/upgrade/cancel events",
-                    "Subscriber milestone triggers",
+                status_badge: forge_widgets::tr!("common_status_not_connected"),
+                description: forge_widgets::tr!("youtube_description"),
+                features: vec![
+                    forge_widgets::tr!("youtube_feature_live_chat"),
+                    forge_widgets::tr!("youtube_feature_super_chat"),
+                    forge_widgets::tr!("youtube_feature_memberships"),
+                    forge_widgets::tr!("youtube_feature_subscribers"),
                 ],
                 kind: PlatformKind::Platform,
                 connect_platform: Some(PlatformId::YouTube),
@@ -58,13 +58,13 @@ pub fn registry(id: &BuiltinId, palette: &ForgePalette) -> Option<(Color, Generi
             GenericPlatform {
                 name: "Kick",
                 letter: "K",
-                status_badge: "Not connected",
-                description: "Chat, subs, hosts — hybrid: official OAuth API for send, community Pusher WS for receive. Not affiliated with Kick.com.",
-                features: &[
-                    "Live chat (receive + send via OAuth)",
-                    "Subscription and gifted-sub events",
-                    "Host and ban events",
-                    "Message-deleted and reply events",
+                status_badge: forge_widgets::tr!("common_status_not_connected"),
+                description: forge_widgets::tr!("kick_description"),
+                features: vec![
+                    forge_widgets::tr!("kick_feature_live_chat"),
+                    forge_widgets::tr!("kick_feature_subs"),
+                    forge_widgets::tr!("kick_feature_hosts_bans"),
+                    forge_widgets::tr!("kick_feature_deleted_replies"),
                 ],
                 kind: PlatformKind::Platform,
                 connect_platform: Some(PlatformId::Kick),
@@ -76,12 +76,12 @@ pub fn registry(id: &BuiltinId, palette: &ForgePalette) -> Option<(Color, Generi
             GenericPlatform {
                 name: "VTube Studio",
                 letter: "V",
-                status_badge: "Coming in beta-6",
-                description: "Vtuber avatar control: hotkeys, expressions, item triggers.",
-                features: &[
-                    "Trigger hotkeys from chat events",
-                    "Switch expressions and outfits",
-                    "Spawn item drops on bits/subs",
+                status_badge: forge_widgets::tr!("common_status_coming_soon"),
+                description: forge_widgets::tr!("vtube_description"),
+                features: vec![
+                    forge_widgets::tr!("vtube_feature_hotkeys"),
+                    forge_widgets::tr!("vtube_feature_expressions"),
+                    forge_widgets::tr!("vtube_feature_item_drops"),
                 ],
                 kind: PlatformKind::StreamApp,
                 connect_platform: None,
@@ -171,8 +171,8 @@ pub fn platform_generic_view<'a>(
         });
 
     let features_label_text = match info.status {
-        PlatformStatus::Available => "WHAT YOU CAN DO ONCE CONNECTED",
-        PlatformStatus::Coming => "WHAT YOU'LL BE ABLE TO DO",
+        PlatformStatus::Available => forge_widgets::tr!("platform_generic.features.available"),
+        PlatformStatus::Coming => forge_widgets::tr!("platform_generic.features.coming"),
     };
     let features_label = text(features_label_text)
         .size(FONT_XS)
@@ -182,11 +182,11 @@ pub fn platform_generic_view<'a>(
     let mut features_col = column![features_label]
         .spacing(spf(Spacing::Xs))
         .padding([sp(Spacing::Sm), 0]);
-    for feature in info.features {
+    for feature in &info.features {
         let check_icon = tabler_icon(Icon::CircleCheck, 14.0, p.text_faint);
         let feature_row = row![
             check_icon,
-            text(*feature).size(FONT_SM).color(p.text_secondary),
+            text(feature.clone()).size(FONT_SM).color(p.text_secondary),
         ]
         .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Center);
@@ -194,12 +194,12 @@ pub fn platform_generic_view<'a>(
     }
 
     let footer_kind_label = match info.kind {
-        PlatformKind::Platform => "Streaming platform",
-        PlatformKind::StreamApp => "Stream app",
+        PlatformKind::Platform => forge_widgets::tr!("platform_generic.kind.platform"),
+        PlatformKind::StreamApp => forge_widgets::tr!("platform_generic.kind.stream_app"),
     };
     let footer_status_label = match info.status {
-        PlatformStatus::Available => "available — click Connect to authorize",
-        PlatformStatus::Coming => "not yet implemented",
+        PlatformStatus::Available => forge_widgets::tr!("platform_generic.status.available"),
+        PlatformStatus::Coming => forge_widgets::tr!("platform_generic.status.coming"),
     };
     let footer = container(
         text(format!(
@@ -227,7 +227,9 @@ pub fn platform_generic_view<'a>(
         let connect_btn = button(
             row![
                 tabler_icon(Icon::Lock, 14.0, p.shell),
-                text("Connect").size(FONT_SM).color(p.shell),
+                text(forge_widgets::tr!("platform_generic.connect_btn"))
+                    .size(FONT_SM)
+                    .color(p.shell),
             ]
             .spacing(spf(Spacing::Xs))
             .align_y(Alignment::Center),
@@ -259,14 +261,14 @@ pub fn platform_generic_view<'a>(
     body_parts.push(footer.into());
 
     let parent_label = match info.kind {
-        PlatformKind::Platform => "Platforms",
-        PlatformKind::StreamApp => "Stream apps",
+        PlatformKind::Platform => forge_widgets::tr!("platform_generic.parent.platforms"),
+        PlatformKind::StreamApp => forge_widgets::tr!("platform_generic.parent.stream_apps"),
     };
 
     let body = column(body_parts).spacing(spf(Spacing::Sm));
 
     let page_header = crate::page_chrome::simple_page_header(
-        &[(parent_label, false), (info.name, true)],
+        &[(parent_label, false), (info.name.to_owned(), true)],
         palette,
     );
 

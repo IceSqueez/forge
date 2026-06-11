@@ -134,13 +134,7 @@ impl EventFeedState {
         let found = self.events.iter().rev().find(|e| e.id == id).cloned();
         if let Some(ev) = found {
             let ts = ev.timestamp;
-            self.selected_ts_str = format!(
-                "{:02}:{:02}:{:02}.{:03}",
-                ts.hour(),
-                ts.minute(),
-                ts.second(),
-                ts.millisecond()
-            );
+            self.selected_ts_str = forge_widgets::fmt_feed_time(&ts);
             let id_s = id.to_string();
             self.selected_id_str = format!("ev_{}", &id_s[..id_s.len().min(4)]);
             self.selected_action_name = ev.payload["action_name"].as_str().map(str::to_owned);
@@ -200,13 +194,7 @@ pub fn matches_filter(event: &Event, filter: EventFilter) -> bool {
 }
 
 fn format_timestamp(ts: &time::OffsetDateTime) -> String {
-    format!(
-        "{:02}:{:02}:{:02}.{:03}",
-        ts.hour(),
-        ts.minute(),
-        ts.second(),
-        ts.millisecond()
-    )
+    forge_widgets::fmt_feed_time(ts)
 }
 
 pub(crate) fn format_summary(event: &Event) -> String {
@@ -425,7 +413,7 @@ pub fn update(
 }
 
 fn toolbar_action_btn<'a>(
-    label: &'a str,
+    label: impl Into<String>,
     on_press: Message,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
@@ -435,7 +423,7 @@ fn toolbar_action_btn<'a>(
         ..palette.border_regular
     };
 
-    button(text(label).size(FONT_XS).color(text_color))
+    button(text(label.into()).size(FONT_XS).color(text_color))
         .on_press(on_press)
         .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
         .style(move |_theme: &iced::Theme, status| button::Style {
@@ -495,13 +483,13 @@ pub fn event_feed_view<'a>(
         }
     }
 
-    let all_label = format!("All {all_n}");
-    let chat_label = format!("Chat {chat_n}");
-    let subs_label = format!("Subs {subs_n}");
-    let bits_label = format!("Bits {bits_n}");
-    let timers_label = format!("Timers {timers_n}");
-    let obs_label = format!("OBS {obs_n}");
-    let errors_label = format!("Errors {errors_n}");
+    let all_label = forge_widgets::tr!("event_feed_filter_all", n = all_n as i64);
+    let chat_label = forge_widgets::tr!("event_feed_filter_chat", n = chat_n as i64);
+    let subs_label = forge_widgets::tr!("event_feed_filter_subs", n = subs_n as i64);
+    let bits_label = forge_widgets::tr!("event_feed_filter_bits", n = bits_n as i64);
+    let timers_label = forge_widgets::tr!("event_feed_filter_timers", n = timers_n as i64);
+    let obs_label = forge_widgets::tr!("event_feed_filter_obs", n = obs_n as i64);
+    let errors_label = forge_widgets::tr!("event_feed_filter_errors", n = errors_n as i64);
 
     let chips = row![
         category_chip(
@@ -563,15 +551,23 @@ pub fn event_feed_view<'a>(
         },
     );
 
-    let pause_label = if state.paused { "Resume" } else { "Pause" };
+    let pause_label = if state.paused {
+        forge_widgets::tr!("event_feed_resume")
+    } else {
+        forge_widgets::tr!("event_feed_pause")
+    };
     let pause_btn = toolbar_action_btn(
         pause_label,
         Message::EventFeed(EventFeedMsg::PauseToggled),
         palette,
     );
-    let clear_btn = toolbar_action_btn("Clear", Message::EventFeed(EventFeedMsg::Cleared), palette);
+    let clear_btn = toolbar_action_btn(
+        forge_widgets::tr!("event_feed_clear"),
+        Message::EventFeed(EventFeedMsg::Cleared),
+        palette,
+    );
     let export_btn = toolbar_action_btn(
-        "Export",
+        forge_widgets::tr!("event_feed_export"),
         Message::EventFeed(EventFeedMsg::ExportRequested),
         palette,
     );
@@ -620,17 +616,14 @@ pub fn event_feed_view<'a>(
 
     let empty_list = row_elements.is_empty();
 
+    let empty_label = if matches!(filter, EventFilter::All) {
+        forge_widgets::tr!("event_feed_no_events")
+    } else {
+        forge_widgets::tr!("event_feed_no_filter_match")
+    };
     let list_content = if empty_list {
-        column![
-            text(if matches!(filter, EventFilter::All) {
-                "No events yet \u{2014} system activity appears here in real time."
-            } else {
-                "No events match the active filter."
-            })
-            .size(FONT_SM)
-            .color(palette.text_faint)
-        ]
-        .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
+        column![text(empty_label).size(FONT_SM).color(palette.text_faint)]
+            .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
     } else {
         column(row_elements)
     };
@@ -690,11 +683,11 @@ pub fn event_feed_view<'a>(
         })
         .into()
     } else {
-        let inspector_header = text("Event inspector")
+        let inspector_header = text(forge_widgets::tr!("event_feed_inspector_title"))
             .size(FONT_SM)
             .color(palette.text_primary);
 
-        let placeholder = text("Select an event to inspect its payload.")
+        let placeholder = text(forge_widgets::tr!("event_feed_inspector_hint"))
             .size(FONT_XS)
             .color(palette.text_faint)
             .font(mono);
@@ -736,20 +729,26 @@ pub fn event_feed_view<'a>(
         });
 
     let auto_scroll_label = if state.auto_scroll {
-        "Auto-scroll on"
+        forge_widgets::tr!("event_feed_auto_scroll_on")
     } else {
-        "Auto-scroll off"
+        forge_widgets::tr!("event_feed_auto_scroll_off")
     };
 
     let footer_right = row![
-        text(format!("Buffer: {buf_count:>5} / 10,000"))
-            .size(FONT_XS)
-            .color(palette.text_faint)
-            .font(mono),
-        text(format!("{:.1} ev/s", rate))
-            .size(FONT_XS)
-            .color(palette.text_faint)
-            .font(mono),
+        text(forge_widgets::tr!(
+            "event_feed_buffer",
+            count = buf_count as i64
+        ))
+        .size(FONT_XS)
+        .color(palette.text_faint)
+        .font(mono),
+        text({
+            let rate_str = format!("{:.1}", rate);
+            forge_widgets::tr!("event_feed_rate", rate = rate_str.as_str())
+        })
+        .size(FONT_XS)
+        .color(palette.text_faint)
+        .font(mono),
         container(
             row![
                 auto_scroll_dot,
@@ -767,7 +766,7 @@ pub fn event_feed_view<'a>(
 
     let footer = container(
         row![
-            text("Streaming \u{b7} WebSocket :8081")
+            text(forge_widgets::tr!("event_feed_streaming_status"))
                 .size(FONT_XS)
                 .color(palette.text_faint)
                 .font(mono),
@@ -789,7 +788,13 @@ pub fn event_feed_view<'a>(
     });
 
     let page_header = crate::page_chrome::page_header_with_actions(
-        &[("Automation", false), ("Event Feed", true)],
+        &[
+            (
+                forge_widgets::tr!("event_feed_breadcrumb_automation"),
+                false,
+            ),
+            (forge_widgets::tr!("event_feed_breadcrumb_feed"), true),
+        ],
         Some(right_side.into()),
         palette,
     );
@@ -837,6 +842,7 @@ mod tests {
             scheduler: None,
             obs_client: None,
             vtube_client: None,
+            vtube_sink: forge_vtube::SwitchableVTubeSink::new(),
             discord_client: None,
             midi_client: None,
             hotkey_client: None,

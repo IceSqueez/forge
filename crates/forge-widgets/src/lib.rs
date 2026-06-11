@@ -17,6 +17,7 @@ pub mod code_editor;
 pub mod console;
 pub mod data;
 pub mod events;
+pub mod font_catalog;
 pub mod hover_popover;
 pub mod icons;
 pub mod inputs;
@@ -76,12 +77,16 @@ pub use events::{
     EventInspectorParams, EventRowData, causation_chip, color_for_source, event_inspector,
     event_row_observability, json_viewer, replay_button, source_badge, source_label,
 };
+pub use font_catalog::{FontFamily, enumerate_font_families};
 pub use hover_popover::{HoverTarget, format_signature, hover_popover};
 pub use icons::{Icon, tabler_icon};
-pub use inputs::{input_padding, search_input, select, text_input_field};
-pub use key_capture::{KeyCapture, key_capture};
+pub use inputs::{input_padding, search_input, select, select_owned, text_input_field};
+pub use key_capture::{KeyCapture, chord_from_key, key_capture};
 pub use layout::{app_footer, page_shell, title_bar, toolbar};
-pub use locale::{ArgsBuilder, install_bundle, tr_lookup};
+pub use locale::{
+    ArgsBuilder, fmt_feed_time, fmt_number, fmt_relative_time, fmt_short_date, install_bundle,
+    set_locale_id, tr_lookup,
+};
 pub use navigation::{NavChild, NavItem, SIDEBAR_WIDTH, Sidebar, sidebar};
 pub use output_device_picker::{DeviceLabel, output_device_picker};
 pub use palette::{CATPPUCCIN_MOCHA, ForgePalette, LATTE, TOKYO_NIGHT};
@@ -116,6 +121,7 @@ pub use tag_list_input::{TagListInputMessage, TagListInputState, tag_list_input}
 pub use theme::{catppuccin_mocha, latte, palette_for_theme, tokyo_night_storm};
 pub use toast::{Toast, ToastAction, ToastKind, ToastQueue, toast_viewport};
 pub use tokens::{
-    Density, FontRole, Radius, Spacing, ThemeId, font, load_fonts, radius, sp, spacing, spf,
+    DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FontRole, Radius, Spacing, ThemeId, font,
+    install_density, install_font_override, load_fonts, radius, sp, spacing, spf,
 };
 pub use volume_slider::volume_slider;

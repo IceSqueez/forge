@@ -17,10 +17,10 @@ pub enum BindBadge {
 }
 
 pub struct BindAddressCardParams<'a> {
-    pub title: &'a str,
+    pub title: String,
     pub tech_label: &'a str,
     pub badge: BindBadge,
-    pub description: &'a str,
+    pub description: String,
     pub selected: bool,
 }
 
@@ -38,10 +38,10 @@ fn badge_icon(badge: BindBadge) -> Icon {
     }
 }
 
-fn badge_label(badge: BindBadge) -> &'static str {
+fn badge_label(badge: BindBadge) -> String {
     match badge {
-        BindBadge::Recommended => "Recommended",
-        BindBadge::RequiresConfirmation => "Requires confirmation",
+        BindBadge::Recommended => crate::tr!("widget.bind_badge.recommended"),
+        BindBadge::RequiresConfirmation => crate::tr!("widget.bind_badge.requires_confirmation"),
     }
 }
 

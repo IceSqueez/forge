@@ -8,7 +8,7 @@ use crate::builtin::{card_container, horizontal_divider};
 use crate::{
     icons::{Icon, tabler_icon},
     palette::ForgePalette,
-    tokens::{BORDER_THIN, Density, FONT_SM, FONT_XS, Radius, Spacing, radius, spacing},
+    tokens::{BORDER_THIN, FONT_SM, FONT_XS, Radius, Spacing, radius, sp, spf},
 };
 
 pub fn builtin_quick_actions_grid<'a, Msg: Clone + 'a>(
@@ -38,7 +38,7 @@ pub fn builtin_quick_actions_grid_with_hint<'a, Msg: Clone + 'a>(
         actions
     };
 
-    let gap = spacing(Spacing::Xs, Density::Cozy) as f32;
+    let gap = spf(Spacing::Xs);
     let mut btn_row: Row<'a, Msg> = Row::new().spacing(gap);
     for (i, action) in capped.iter().enumerate() {
         let msg = if action.enabled {
@@ -53,10 +53,7 @@ pub fn builtin_quick_actions_grid_with_hint<'a, Msg: Clone + 'a>(
     }
 
     let grid_container = container(btn_row)
-        .padding([
-            spacing(Spacing::Sm, Density::Cozy),
-            spacing(Spacing::Md, Density::Cozy),
-        ])
+        .padding([sp(Spacing::Sm), sp(Spacing::Md)])
         .width(Length::Fill);
 
     card_container(
@@ -81,7 +78,7 @@ fn quick_actions_section_header<'a, Msg: 'a>(
         .color(palette.text_primary);
 
     let left: Element<'a, Msg> = Row::new()
-        .spacing(spacing(Spacing::Xs, Density::Cozy) as f32)
+        .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Center)
         .push(icon_elem)
         .push(title_elem)
@@ -96,10 +93,7 @@ fn quick_actions_section_header<'a, Msg: 'a>(
     }
 
     container(outer)
-        .padding([
-            spacing(Spacing::Sm, Density::Cozy),
-            spacing(Spacing::Md, Density::Cozy),
-        ])
+        .padding([sp(Spacing::Sm), sp(Spacing::Md)])
         .width(Length::Fill)
         .into()
 }
@@ -148,7 +142,7 @@ fn quick_action_btn<'a, Msg: Clone + 'a>(
         .into();
 
     let mut content_row: Row<'a, Msg> = Row::new()
-        .spacing(spacing(Spacing::Xs, Density::Cozy) as f32)
+        .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Center)
         .push(icon_elem)
         .push(label_elem);
@@ -164,10 +158,7 @@ fn quick_action_btn<'a, Msg: Clone + 'a>(
     }
 
     let mut btn = iced::widget::button(container(content_row).width(Length::Fill))
-        .padding([
-            spacing(Spacing::Xs, Density::Cozy),
-            spacing(Spacing::Sm, Density::Cozy),
-        ])
+        .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
         .width(Length::Fill)
         .style(move |_: &iced::Theme, status| {
             use iced::widget::button::Status;

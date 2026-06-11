@@ -438,4 +438,8 @@ impl DataProvider for SqliteBackend {
 
         Ok(())
     }
+
+    async fn shutdown(&self) {
+        self.pool.close().await;
+    }
 }

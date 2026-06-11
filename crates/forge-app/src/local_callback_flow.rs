@@ -78,7 +78,7 @@ pub fn update(
                     let Some((cid, csec)) = forge_platform_youtube::client_credentials() else {
                         state.phase = LocalCallbackFlowPhase::Failed;
                         state.error =
-                            Some("YouTube OAuth client credentials are not configured".to_owned());
+                            Some(forge_widgets::tr!("auth_error_credentials_missing_youtube"));
                         return Task::none();
                     };
                     let handle = Arc::new(tokio::sync::Mutex::new(Some(
@@ -93,7 +93,7 @@ pub fn update(
                     let Some(cid) = forge_platform_kick::client_credentials() else {
                         state.phase = LocalCallbackFlowPhase::Failed;
                         state.error =
-                            Some("Kick OAuth client credentials are not configured".to_owned());
+                            Some(forge_widgets::tr!("auth_error_credentials_missing_kick"));
                         return Task::none();
                     };
                     let handle = Arc::new(tokio::sync::Mutex::new(Some(
@@ -341,7 +341,7 @@ fn platform_header_card<'a>(
         });
 
     let title = text(name).size(FONT_SM).color(palette.text_primary);
-    let subtitle = text("Connect to enable live chat and events")
+    let subtitle = text(forge_widgets::tr!("oauth.header.subtitle"))
         .size(FONT_XS)
         .color(palette.text_muted);
     let title_col = column![title, subtitle].spacing(spf(Spacing::Xxs));
@@ -360,21 +360,20 @@ fn platform_header_card<'a>(
 fn flow_intro<'a>(name: &'a str, palette: &'a ForgePalette) -> Element<'a, Message> {
     let title_row = row![
         tabler_icon(Icon::Lock, 14.0, palette.brand),
-        text(format!("Authorize Forge on {name}"))
-            .size(FONT_SM)
-            .color(palette.text_primary),
+        text(forge_widgets::tr!(
+            "oauth.auth.title",
+            name = name.to_owned()
+        ))
+        .size(FONT_SM)
+        .color(palette.text_primary),
     ]
     .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
-    let subtitle = text(
-        "This platform uses device code authorization. \
-         You will see a code below — enter it on the platform's site \
-         and we will detect when you are done. We never see your password.",
-    )
-    .size(FONT_XS)
-    .color(palette.text_muted)
-    .wrapping(iced::widget::text::Wrapping::Word);
+    let subtitle = text(forge_widgets::tr!("oauth.auth.subtitle"))
+        .size(FONT_XS)
+        .color(palette.text_muted)
+        .wrapping(iced::widget::text::Wrapping::Word);
 
     container(column![title_row, subtitle].spacing(spf(Spacing::Xxs)))
         .width(Length::Fill)
@@ -384,11 +383,11 @@ fn flow_intro<'a>(name: &'a str, palette: &'a ForgePalette) -> Element<'a, Messa
 }
 
 fn primary_btn<'a>(
-    label: &'a str,
+    label: impl Into<String>,
     msg: Message,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    button(text(label).size(FONT_SM).color(palette.shell))
+    button(text(label.into()).size(FONT_SM).color(palette.shell))
         .on_press(msg)
         .padding([sp(Spacing::Xs), sp(Spacing::Md)])
         .style(move |_theme: &Theme, _status| button::Style {
@@ -405,28 +404,36 @@ fn primary_btn<'a>(
         .into()
 }
 
-fn ghost_btn<'a>(label: &'a str, msg: Message, palette: &'a ForgePalette) -> Element<'a, Message> {
-    button(text(label).size(FONT_XS).color(palette.text_secondary))
-        .on_press(msg)
-        .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
-        .style(move |_theme: &Theme, _status| button::Style {
-            background: Some(Background::Color(Color::TRANSPARENT)),
-            text_color: palette.text_secondary,
-            border: Border {
-                color: palette.border_regular,
-                width: 0.5,
-                radius: 6.0.into(),
-            },
-            shadow: Shadow::default(),
-            snap: false,
-        })
-        .into()
+fn ghost_btn<'a>(
+    label: impl Into<String>,
+    msg: Message,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    button(
+        text(label.into())
+            .size(FONT_XS)
+            .color(palette.text_secondary),
+    )
+    .on_press(msg)
+    .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
+    .style(move |_theme: &Theme, _status| button::Style {
+        background: Some(Background::Color(Color::TRANSPARENT)),
+        text_color: palette.text_secondary,
+        border: Border {
+            color: palette.border_regular,
+            width: 0.5,
+            radius: 6.0.into(),
+        },
+        shadow: Shadow::default(),
+        snap: false,
+    })
+    .into()
 }
 
 fn idle_card<'a>(name: &'a str, palette: &'a ForgePalette) -> Element<'a, Message> {
     let intro = flow_intro(name, palette);
     let cta = primary_btn(
-        "Connect",
+        forge_widgets::tr!("oauth.btn.connect"),
         Message::LocalCallbackFlow(LocalCallbackFlowMsg::ConnectPressed),
         palette,
     );
@@ -444,7 +451,7 @@ fn idle_card<'a>(name: &'a str, palette: &'a ForgePalette) -> Element<'a, Messag
 fn starting_card<'a>(name: &'a str, palette: &'a ForgePalette) -> Element<'a, Message> {
     let intro = flow_intro(name, palette);
     let body = container(
-        text("Requesting authorization code…")
+        text(forge_widgets::tr!("oauth.requesting"))
             .size(FONT_SM)
             .color(palette.text_muted),
     )
@@ -495,7 +502,7 @@ fn step_circle<'a>(n: u8, active: bool, palette: &'a ForgePalette) -> Element<'a
 
 fn step_open_url<'a>(verification_url: &'a str, palette: &'a ForgePalette) -> Element<'a, Message> {
     let circle = step_circle(1, false, palette);
-    let title = text("Open this URL in any browser")
+    let title = text(forge_widgets::tr!("oauth.step1.title"))
         .size(FONT_SM)
         .color(palette.text_primary);
 
@@ -519,7 +526,9 @@ fn step_open_url<'a>(verification_url: &'a str, palette: &'a ForgePalette) -> El
 
     let open_btn_content = row![
         tabler_icon(Icon::ExternalLink, 13.0, palette.brand),
-        text("Open").size(FONT_SM).color(palette.brand),
+        text(forge_widgets::tr!("oauth.step1.open"))
+            .size(FONT_SM)
+            .color(palette.brand),
     ]
     .spacing(spf(Spacing::Xxs))
     .align_y(Alignment::Center);
@@ -553,10 +562,10 @@ fn step_open_url<'a>(verification_url: &'a str, palette: &'a ForgePalette) -> El
 
 fn step_wait_for_browser<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     let circle = step_circle(2, true, palette);
-    let title = text("Approve in your browser")
+    let title = text(forge_widgets::tr!("oauth.step2.title"))
         .size(FONT_SM)
         .color(palette.text_primary);
-    let detail = text("forge is listening on a local port for the OAuth callback. The window will refresh once you approve.")
+    let detail = text(forge_widgets::tr!("oauth.step2.detail"))
         .size(FONT_XS)
         .color(palette.text_muted)
         .wrapping(iced::widget::text::Wrapping::Word);
@@ -582,17 +591,17 @@ fn polling_banner<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
             ..container::Style::default()
         });
 
-    let primary = text("Waiting for you to authorize on the platform…")
+    let primary = text(forge_widgets::tr!("oauth.polling.primary"))
         .size(FONT_SM)
         .color(palette.text_primary);
-    let secondary = text("polling every 5s")
+    let secondary = text(forge_widgets::tr!("oauth.polling.secondary"))
         .size(FONT_XS)
         .color(palette.text_faint)
         .font(font(FontRole::Monospace));
     let text_col = column![primary, secondary].spacing(spf(Spacing::Xxs));
 
     let cancel = ghost_btn(
-        "Cancel",
+        forge_widgets::tr!("oauth.btn.cancel"),
         Message::LocalCallbackFlow(LocalCallbackFlowMsg::CancelPressed),
         palette,
     );
@@ -643,15 +652,18 @@ fn polling_card<'a>(
 
 fn authorized_card<'a>(name: &'a str, palette: &'a ForgePalette) -> Element<'a, Message> {
     let icon = tabler_icon(Icon::CircleCheck, 28.0, palette.success);
-    let title = text(format!("Connected to {name}!"))
-        .size(FONT_SM)
-        .color(palette.text_primary);
-    let subtitle = text("Authorization complete.")
+    let title = text(forge_widgets::tr!(
+        "oauth.authorized.title",
+        name = name.to_owned()
+    ))
+    .size(FONT_SM)
+    .color(palette.text_primary);
+    let subtitle = text(forge_widgets::tr!("oauth.authorized.subtitle"))
         .size(FONT_XS)
         .color(palette.text_muted);
 
     let return_btn = primary_btn(
-        "Return to Platforms",
+        forge_widgets::tr!("oauth.btn.return"),
         Message::LocalCallbackFlow(LocalCallbackFlowMsg::CancelPressed),
         palette,
     );
@@ -673,7 +685,7 @@ fn authorized_card<'a>(name: &'a str, palette: &'a ForgePalette) -> Element<'a, 
 
 fn failed_card<'a>(error: &'a str, palette: &'a ForgePalette) -> Element<'a, Message> {
     let icon = tabler_icon(Icon::AlertTriangle, 20.0, palette.random);
-    let title = text("Authorization failed")
+    let title = text(forge_widgets::tr!("oauth.failed.title"))
         .size(FONT_SM)
         .color(palette.text_primary);
     let error_text = text(error)
@@ -682,12 +694,12 @@ fn failed_card<'a>(error: &'a str, palette: &'a ForgePalette) -> Element<'a, Mes
         .wrapping(iced::widget::text::Wrapping::Word);
 
     let retry = primary_btn(
-        "Retry",
+        forge_widgets::tr!("oauth.btn.retry"),
         Message::LocalCallbackFlow(LocalCallbackFlowMsg::RetryPressed),
         palette,
     );
     let cancel = ghost_btn(
-        "Cancel",
+        forge_widgets::tr!("oauth.btn.cancel"),
         Message::LocalCallbackFlow(LocalCallbackFlowMsg::CancelPressed),
         palette,
     );
@@ -718,8 +730,13 @@ pub fn view<'a>(
     let name = platform_display_name(state.platform);
     let dot_color = platform_dot_color(state.platform, palette);
 
-    let page_header =
-        crate::page_chrome::simple_page_header(&[("Platforms", false), (name, true)], palette);
+    let page_header = crate::page_chrome::simple_page_header(
+        &[
+            (forge_widgets::tr!("platforms.breadcrumb"), false),
+            (name.to_owned(), true),
+        ],
+        palette,
+    );
 
     let header_card = platform_header_card(name, dot_color, palette);
 
@@ -731,10 +748,10 @@ pub fn view<'a>(
             polling_card(name, url, palette)
         }
         LocalCallbackFlowPhase::Authorized => authorized_card(name, palette),
-        LocalCallbackFlowPhase::Failed => {
-            let err = state.error.as_deref().unwrap_or("Unknown error");
-            failed_card(err, palette)
-        }
+        LocalCallbackFlowPhase::Failed => failed_card(
+            state.error.as_deref().unwrap_or("auth_error_unknown"),
+            palette,
+        ),
     };
 
     let body = container(column![header_card, phase_card].spacing(spf(Spacing::Sm)))
@@ -786,6 +803,7 @@ mod tests {
             scheduler: None,
             obs_client: None,
             vtube_client: None,
+            vtube_sink: forge_vtube::SwitchableVTubeSink::new(),
             discord_client: None,
             midi_client: None,
             hotkey_client: None,

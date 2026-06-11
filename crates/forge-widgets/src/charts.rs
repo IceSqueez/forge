@@ -4,7 +4,7 @@ use iced::{
 };
 
 use crate::palette::ForgePalette;
-use crate::tokens::{Density, FONT_XS, FontRole, Radius, Spacing, font, radius, spacing};
+use crate::tokens::{FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf};
 
 const RING_LEN: usize = 60;
 const CANVAS_HEIGHT: f32 = 80.0;
@@ -135,7 +135,7 @@ pub fn throughput_sparkline<'a, Msg: 'a>(
     ]
     .align_y(Alignment::Center);
 
-    let inner = column![header, chart_canvas].spacing(spacing(Spacing::Sm, Density::Cozy) as f32);
+    let inner = column![header, chart_canvas].spacing(spf(Spacing::Sm));
 
     container(inner)
         .style(move |_theme: &iced::Theme| container::Style {
@@ -147,9 +147,6 @@ pub fn throughput_sparkline<'a, Msg: 'a>(
             },
             ..container::Style::default()
         })
-        .padding(Padding::from([
-            spacing(Spacing::Md, Density::Cozy),
-            spacing(Spacing::Md, Density::Cozy),
-        ]))
+        .padding(Padding::from([sp(Spacing::Md), sp(Spacing::Md)]))
         .into()
 }

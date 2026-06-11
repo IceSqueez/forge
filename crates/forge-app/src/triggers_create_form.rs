@@ -298,8 +298,7 @@ fn kind_picker_view<'a>(
             || desc.label().to_lowercase().contains(&search_lower)
             || desc.id().to_lowercase().contains(&search_lower);
         if matches {
-            let cat_label =
-                crate::actions_trigger_picker::category_display_label(desc.category()).to_owned();
+            let cat_label = crate::actions_trigger_picker::category_display_label(desc.category());
             groups.entry(cat_label).or_default().push(desc);
         }
     }
@@ -318,7 +317,7 @@ fn kind_picker_view<'a>(
 
     let list_el: Element<'_, Message> = if list_rows.is_empty() {
         container(
-            text("No matching trigger kinds")
+            text(forge_widgets::tr!("triggers_create_no_results"))
                 .size(FONT_SM)
                 .color(p.text_muted)
                 .font(font(FontRole::Body)),
@@ -340,12 +339,12 @@ fn kind_picker_view<'a>(
 
     let header = container(
         column![
-            text("Select trigger kind")
+            text(forge_widgets::tr!("triggers_create_select_kind"))
                 .size(FONT_SM)
                 .color(p.text_primary)
                 .font(font(FontRole::Body)),
             search_input(
-                "Search kinds…",
+                forge_widgets::tr!("triggers_create_search_placeholder"),
                 &form.search,
                 |s| {
                     Message::TriggersRegistry(TriggersRegistryMsg::CreateFormMsg(
@@ -364,7 +363,7 @@ fn kind_picker_view<'a>(
         row![
             Space::new().width(Length::Fill),
             secondary_button(
-                "Cancel",
+                forge_widgets::tr!("triggers_create_cancel"),
                 Message::TriggersRegistry(TriggersRegistryMsg::CreateFormMsg(
                     CreateInstanceFormMsg::Cancelled,
                 )),
@@ -484,7 +483,7 @@ fn form_view<'a>(
     let back_btn = button(
         row![
             tabler_icon::<Message>(Icon::ArrowBackUp, 14.0, p.text_secondary),
-            text("Back")
+            text(forge_widgets::tr!("triggers_create_back"))
                 .size(FONT_SM)
                 .color(p.text_secondary)
                 .font(font(FontRole::Body)),
@@ -504,10 +503,11 @@ fn form_view<'a>(
         snap: false,
     });
 
+    let new_instance_title = forge_widgets::tr!("triggers_create_new_instance", kind = kind_label);
     let header = container(
         column![
             back_btn,
-            text(format!("New {kind_label} instance"))
+            text(new_instance_title)
                 .size(FONT_SM)
                 .color(p.text_primary)
                 .font(font(FontRole::Body)),
@@ -518,7 +518,7 @@ fn form_view<'a>(
     .padding([sp(Spacing::Sm), sp(Spacing::Md)]);
 
     let name_input = text_input_field(
-        "Instance name (required)",
+        forge_widgets::tr!("triggers_create_name_placeholder"),
         form.name.as_str(),
         |s| {
             Message::TriggersRegistry(TriggersRegistryMsg::CreateFormMsg(
@@ -528,9 +528,16 @@ fn form_view<'a>(
         palette,
     );
 
-    let name_section = column![section_header("NAME", None, palette), name_input]
-        .spacing(spf(Spacing::Xs))
-        .padding([0, sp(Spacing::Md)]);
+    let name_section = column![
+        section_header(
+            forge_widgets::tr!("triggers_create_section_name"),
+            None,
+            palette
+        ),
+        name_input
+    ]
+    .spacing(spf(Spacing::Xs))
+    .padding([0, sp(Spacing::Md)]);
 
     let config_fields: Vec<FormField> = rt
         .trigger_registry
@@ -547,9 +554,13 @@ fn form_view<'a>(
         Space::new().width(0).height(0).into()
     } else {
         column(
-            std::iter::once(section_header("CONFIGURATION", None, palette))
-                .chain(field_rows)
-                .collect::<Vec<_>>(),
+            std::iter::once(section_header(
+                forge_widgets::tr!("triggers_create_section_config"),
+                None,
+                palette,
+            ))
+            .chain(field_rows)
+            .collect::<Vec<_>>(),
         )
         .padding([0, sp(Spacing::Md)])
         .into()
@@ -586,9 +597,10 @@ fn form_view<'a>(
 
     let can_create = !form.name.is_empty() && !form.saving;
 
+    let create_lbl = forge_widgets::tr!("triggers_create_btn");
     let create_el: Element<'_, Message> = if can_create {
         primary_button(
-            "Create",
+            create_lbl.clone(),
             Message::TriggersRegistry(TriggersRegistryMsg::CreateFormMsg(
                 CreateInstanceFormMsg::SubmitRequested,
             )),
@@ -596,7 +608,7 @@ fn form_view<'a>(
         )
     } else {
         container(
-            text("Create")
+            text(create_lbl)
                 .size(FONT_SM)
                 .color(Color { a: 0.5, ..p.shell })
                 .font(font(FontRole::Body)),
@@ -624,7 +636,7 @@ fn form_view<'a>(
     let footer = container(
         row![
             secondary_button(
-                "Cancel",
+                forge_widgets::tr!("triggers_create_cancel"),
                 Message::TriggersRegistry(TriggersRegistryMsg::CreateFormMsg(
                     CreateInstanceFormMsg::Cancelled,
                 )),
@@ -745,8 +757,8 @@ fn render_field<'a>(
             container(toggle(
                 palette,
                 ToggleProps {
-                    label,
-                    description: "",
+                    label: label.to_string(),
+                    description: String::new(),
                     value: checked,
                     on_toggle: Message::TriggersRegistry(TriggersRegistryMsg::CreateFormMsg(
                         CreateInstanceFormMsg::FieldChanged(k, Variant::Bool(!checked)),
@@ -841,8 +853,8 @@ fn render_field<'a>(
             let toggle_el = toggle(
                 palette,
                 ToggleProps {
-                    label,
-                    description: "",
+                    label: label.to_string(),
+                    description: String::new(),
                     value: is_enabled,
                     on_toggle: Message::TriggersRegistry(TriggersRegistryMsg::CreateFormMsg(
                         CreateInstanceFormMsg::FieldChanged(k, Variant::Bool(!is_enabled)),
@@ -902,7 +914,7 @@ fn platform_color(p: PlatformId, palette: &ForgePalette) -> Color {
 
 fn scope_display_text(scope: &PlatformScope) -> String {
     match scope {
-        PlatformScope::Any => "any platform".to_owned(),
+        PlatformScope::Any => forge_widgets::tr!("triggers_create_scope_any"),
         PlatformScope::Only(set) => {
             let names: Vec<&str> = set.iter().map(|p| platform_name_str(*p)).collect();
             names.join(", ")
@@ -911,7 +923,7 @@ fn scope_display_text(scope: &PlatformScope) -> String {
 }
 
 fn scope_mode_pill<'a>(
-    label: &'a str,
+    label: impl Into<std::borrow::Cow<'a, str>>,
     active: bool,
     p: ForgePalette,
     on_press: Message,
@@ -927,7 +939,7 @@ fn scope_mode_pill<'a>(
         p.text_secondary
     };
     button(
-        text(label)
+        text(label.into())
             .size(FONT_XS)
             .color(text_color)
             .font(font(FontRole::Body)),
@@ -1002,13 +1014,19 @@ fn render_platform_section<'a>(
                 },
                 ..container::Style::default()
             });
-            let preview = text(format!("Will fire on: {}", platform_name_str(pid)))
+            let will_fire_str =
+                forge_widgets::tr!("triggers_create_will_fire", scope = platform_name_str(pid));
+            let preview = text(will_fire_str)
                 .size(FONT_XS)
                 .color(p.text_faint)
                 .font(font(FontRole::Body));
             column![
                 Space::new().height(spf(Spacing::Xs)),
-                section_header("PLATFORM", None, palette),
+                section_header(
+                    forge_widgets::tr!("triggers_create_section_platform"),
+                    None,
+                    palette
+                ),
                 container(badge).padding([sp(Spacing::Xxs), sp(Spacing::Md)]),
                 container(preview).padding([2, sp(Spacing::Md)]),
             ]
@@ -1024,7 +1042,7 @@ fn render_platform_section<'a>(
                 form.custom_expanded || matches!(scope, PlatformScope::Only(s) if s.len() > 1);
 
             let any_pill = scope_mode_pill(
-                "Any",
+                forge_widgets::tr!("triggers_create_scope_any"),
                 any_active,
                 p,
                 Message::TriggersRegistry(TriggersRegistryMsg::CreateFormMsg(
@@ -1055,7 +1073,7 @@ fn render_platform_section<'a>(
                     .collect();
 
             let custom_pill = scope_mode_pill(
-                "Custom\u{2026}",
+                forge_widgets::tr!("triggers_create_scope_custom"),
                 custom_active,
                 p,
                 Message::TriggersRegistry(TriggersRegistryMsg::CreateFormMsg(
@@ -1104,8 +1122,12 @@ fn render_platform_section<'a>(
                 Space::new().width(0).height(0).into()
             };
 
+            let will_fire_scope_str = forge_widgets::tr!(
+                "triggers_create_will_fire",
+                scope = scope_display_text(scope)
+            );
             let preview = container(
-                text(format!("Will fire on: {}", scope_display_text(scope)))
+                text(will_fire_scope_str)
                     .size(FONT_XS)
                     .color(p.text_faint)
                     .font(font(FontRole::Body)),
@@ -1114,7 +1136,11 @@ fn render_platform_section<'a>(
 
             column![
                 Space::new().height(spf(Spacing::Xs)),
-                section_header("PLATFORM", None, palette),
+                section_header(
+                    forge_widgets::tr!("triggers_create_section_platform"),
+                    None,
+                    palette
+                ),
                 pill_row,
                 expanded_el,
                 preview,
@@ -1161,6 +1187,7 @@ mod tests {
             scheduler: None,
             obs_client: None,
             vtube_client: None,
+            vtube_sink: forge_vtube::SwitchableVTubeSink::new(),
             discord_client: None,
             midi_client: None,
             hotkey_client: None,

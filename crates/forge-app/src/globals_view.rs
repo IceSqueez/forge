@@ -299,19 +299,23 @@ fn globals_main_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a,
     let session_count = total - persisted_count;
 
     let table_content: Element<'_, Message> = if app.ui.globals.loading {
-        container(text("Loading...").size(FONT_SM).color(palette.text_muted))
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(Alignment::Center)
-            .align_y(Alignment::Center)
-            .into()
+        container(
+            text(forge_widgets::tr!("globals_loading"))
+                .size(FONT_SM)
+                .color(palette.text_muted),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center)
+        .into()
     } else {
         let visible_entries: Vec<&GlobalEntry> = app.ui.globals.filtered_entries().collect();
 
         if visible_entries.is_empty() {
             container(empty_state(
-                "No globals here",
-                "Adjust the filter or search, or create one with + New variable.",
+                forge_widgets::tr!("globals_empty_title"),
+                forge_widgets::tr!("globals_empty_desc"),
                 None::<(&str, Message)>,
                 palette,
             ))
@@ -377,29 +381,33 @@ fn globals_page_header<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'
     let crumbs_left = row![
         tabler_icon::<Message>(Icon::Home, 13.0, p.text_faint),
         tabler_icon::<Message>(Icon::ChevronRight, 11.0, p.text_faint),
-        text("Automation").size(FONT_SM).color(p.text_muted),
+        text(forge_widgets::tr!("globals_breadcrumb_automation"))
+            .size(FONT_SM)
+            .color(p.text_muted),
         tabler_icon::<Message>(Icon::ChevronRight, 11.0, p.text_faint),
-        text("Globals").size(FONT_SM).color(p.text_primary),
+        text(forge_widgets::tr!("globals_breadcrumb_globals"))
+            .size(FONT_SM)
+            .color(p.text_primary),
     ]
     .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
     let chip_all = filter_chip(
-        "All",
+        forge_widgets::tr!("globals_filter_all"),
         p.brand,
         app.ui.globals.filter == GlobalsFilter::All,
         Message::Globals(GlobalsMsg::FilterSelected(GlobalsFilter::All)),
         palette,
     );
     let chip_persisted = filter_chip(
-        "Persisted",
+        forge_widgets::tr!("globals_filter_persisted"),
         p.success,
         app.ui.globals.filter == GlobalsFilter::Persisted,
         Message::Globals(GlobalsMsg::FilterSelected(GlobalsFilter::Persisted)),
         palette,
     );
     let chip_session = filter_chip(
-        "Session",
+        forge_widgets::tr!("globals_filter_session"),
         p.warning,
         app.ui.globals.filter == GlobalsFilter::Session,
         Message::Globals(GlobalsMsg::FilterSelected(GlobalsFilter::Session)),
@@ -416,7 +424,7 @@ fn globals_page_header<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'
         });
 
     let search = container(search_input(
-        "Search variables...",
+        forge_widgets::tr!("globals_search_placeholder"),
         &app.ui.globals.search,
         |s| Message::Globals(GlobalsMsg::SearchChanged(s)),
         palette,
@@ -424,12 +432,12 @@ fn globals_page_header<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'
     .width(Length::Fixed(180.0));
 
     let export_btn = secondary_button(
-        "Export JSON",
+        forge_widgets::tr!("globals_export_btn"),
         Message::Globals(GlobalsMsg::ExportRequested),
         palette,
     );
     let new_btn = primary_button_small(
-        "+ New variable",
+        forge_widgets::tr!("globals_new_btn"),
         Message::Globals(GlobalsMsg::OpenCreateModal),
         palette,
     );
@@ -457,7 +465,7 @@ fn globals_page_header<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'
 }
 
 fn filter_chip<'a>(
-    label: &'a str,
+    label: impl Into<String>,
     dot_color: Color,
     active: bool,
     on_press: Message,
@@ -487,7 +495,7 @@ fn filter_chip<'a>(
             ..container::Style::default()
         });
 
-    let inner = row![dot, text(label).size(FONT_XS).color(text_color)]
+    let inner = row![dot, text(label.into()).size(FONT_XS).color(text_color)]
         .spacing(spf(Spacing::Xxs))
         .align_y(Alignment::Center);
 

@@ -62,23 +62,23 @@ fn synthesize_from_chat(
     let avatar_color = viewer_hash_color(username, palette);
 
     let sub = if role == Some(BadgeKind::Broadcaster) {
-        "\u{221e}".into()
+        "\u{221e}".to_owned()
     } else if role == Some(BadgeKind::Subscriber) {
-        "Yes".into()
+        "Yes".to_owned()
     } else {
-        "No".into()
+        "No".to_owned()
     };
 
     Some(ViewerSummary {
         username: username.to_owned(),
         role,
         message_count: count as u64,
-        last_seen_label: "now".into(),
+        last_seen_label: "now".to_owned(),
         avatar_letter,
         avatar_color,
-        watch_time: "0m".into(),
+        watch_time: "0m".to_owned(),
         sub,
-        follow: "Yes".into(),
+        follow: "Yes".to_owned(),
     })
 }
 
@@ -336,7 +336,11 @@ fn drawer_header<'a>(state: &'a LiveChatState, palette: &'a ForgePalette) -> Ele
         .filter(|u| drawer_matches(u, &search_lower))
         .count();
 
-    let count_label = format!("{total_count} active \u{b7} {shown_count} shown");
+    let count_label = forge_widgets::tr!(
+        "chat_drawer_active_count",
+        total = total_count as i64,
+        shown = shown_count as i64
+    );
 
     let count_row = text(count_label)
         .font(font(FontRole::Monospace))
@@ -344,7 +348,7 @@ fn drawer_header<'a>(state: &'a LiveChatState, palette: &'a ForgePalette) -> Ele
         .color(p.text_faint);
 
     let search_box = search_input(
-        "Search viewers...",
+        forge_widgets::tr!("chat_drawer_search_placeholder"),
         &state.drawer_search,
         |s| Message::LiveChat(LiveChatMsg::DrawerSearchChanged(s)),
         palette,
@@ -390,7 +394,7 @@ fn selected_viewer_detail<'a>(
 
     let Some(summary) = effective_summary(state, viewers, palette) else {
         let placeholder = container(
-            text("Click a username in chat to see details")
+            text(forge_widgets::tr!("chat_drawer_click_hint"))
                 .font(font(FontRole::Body))
                 .size(FONT_XS)
                 .color(p.text_faint),
@@ -413,7 +417,10 @@ fn selected_viewer_detail<'a>(
         .size(FONT_SM)
         .color(p.text_primary);
 
-    let last_label = format!("Last seen {}", summary.last_seen_label);
+    let last_label = forge_widgets::tr!(
+        "chat_drawer_last_seen",
+        when = summary.last_seen_label.as_str()
+    );
     let last_el = text(last_label)
         .font(font(FontRole::Monospace))
         .size(FONT_XS)
@@ -453,13 +460,33 @@ fn selected_viewer_detail<'a>(
 
     let stat_grid = column![
         row![
-            viewer_stat("WATCH TIME", &summary.watch_time, watch_color, palette),
-            viewer_stat("MESSAGES", &msg_str, p.text_primary, palette),
+            viewer_stat(
+                &forge_widgets::tr!("chat_stat_watch_time"),
+                &summary.watch_time,
+                watch_color,
+                palette
+            ),
+            viewer_stat(
+                &forge_widgets::tr!("chat_stat_messages"),
+                &msg_str,
+                p.text_primary,
+                palette
+            ),
         ]
         .spacing(spf(Spacing::Xs)),
         row![
-            viewer_stat("SUB", &summary.sub, sub_color, palette),
-            viewer_stat("FOLLOW", &summary.follow, follow_color, palette),
+            viewer_stat(
+                &forge_widgets::tr!("chat_stat_sub"),
+                &summary.sub,
+                sub_color,
+                palette
+            ),
+            viewer_stat(
+                &forge_widgets::tr!("chat_stat_follow"),
+                &summary.follow,
+                follow_color,
+                palette
+            ),
         ]
         .spacing(spf(Spacing::Xs)),
     ]
@@ -492,7 +519,9 @@ fn selected_viewer_detail<'a>(
         container(
             row![
                 tabler_icon(Icon::Bolt, 11.0, p.text_muted),
-                text("Shoutout").font(font(FontRole::Body)).size(FONT_XS),
+                text(forge_widgets::tr!("chat_drawer_shoutout"))
+                    .font(font(FontRole::Body))
+                    .size(FONT_XS),
             ]
             .spacing(spf(Spacing::Xxs))
             .align_y(iced::Alignment::Center),
@@ -509,7 +538,9 @@ fn selected_viewer_detail<'a>(
         container(
             row![
                 tabler_icon(Icon::MessageCircle, 11.0, p.text_muted),
-                text("Whisper").font(font(FontRole::Body)).size(FONT_XS),
+                text(forge_widgets::tr!("chat_drawer_whisper"))
+                    .font(font(FontRole::Body))
+                    .size(FONT_XS),
             ]
             .spacing(spf(Spacing::Xxs))
             .align_y(iced::Alignment::Center),
@@ -524,7 +555,7 @@ fn selected_viewer_detail<'a>(
 
     let menu_items: Vec<MenuItem<Message>> = vec![
         MenuItem::Item {
-            label: "Shoutout".into(),
+            label: forge_widgets::tr!("chat_drawer_shoutout"),
             on_press: Message::Noop,
             icon: Some(Icon::Flag),
             shortcut: None,
@@ -532,7 +563,7 @@ fn selected_viewer_detail<'a>(
             disabled: false,
         },
         MenuItem::Item {
-            label: "Whisper".into(),
+            label: forge_widgets::tr!("chat_drawer_whisper"),
             on_press: Message::Noop,
             icon: Some(Icon::MessageCircle),
             shortcut: None,
@@ -540,7 +571,7 @@ fn selected_viewer_detail<'a>(
             disabled: false,
         },
         MenuItem::Item {
-            label: "Set TTS voice\u{2026}".into(),
+            label: forge_widgets::tr!("chat_drawer_set_tts_voice"),
             on_press: Message::Noop,
             icon: None,
             shortcut: None,
@@ -549,7 +580,7 @@ fn selected_viewer_detail<'a>(
         },
         MenuItem::Divider,
         MenuItem::Item {
-            label: "Block from TTS".into(),
+            label: forge_widgets::tr!("chat_drawer_block_tts"),
             on_press: Message::Noop,
             icon: None,
             shortcut: None,
@@ -557,7 +588,7 @@ fn selected_viewer_detail<'a>(
             disabled: false,
         },
         MenuItem::Item {
-            label: "Timeout 10 min".into(),
+            label: forge_widgets::tr!("chat_drawer_timeout"),
             on_press: Message::Noop,
             icon: None,
             shortcut: None,
@@ -565,7 +596,7 @@ fn selected_viewer_detail<'a>(
             disabled: false,
         },
         MenuItem::Item {
-            label: "Ban from channel".into(),
+            label: forge_widgets::tr!("chat_drawer_ban"),
             on_press: Message::Noop,
             icon: None,
             shortcut: None,
@@ -734,7 +765,10 @@ fn viewer_list<'a>(
         .filter(|u| drawer_matches(u, &search_lower))
         .collect();
 
-    let section_label = format!("ACTIVE NOW \u{b7} {}", unique_usernames.len());
+    let section_label = forge_widgets::tr!(
+        "chat_drawer_section_active",
+        count = unique_usernames.len() as i64
+    );
 
     let section_header = container(
         text(section_label)
@@ -767,7 +801,7 @@ fn viewer_list<'a>(
         column![
             Space::new().height(8.0_f32),
             container(
-                text("No chat participants match the search")
+                text(forge_widgets::tr!("chat_drawer_no_matches"))
                     .font(font(FontRole::Body))
                     .size(FONT_XS)
                     .color(p.text_faint),

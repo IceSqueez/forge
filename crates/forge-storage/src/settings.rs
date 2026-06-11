@@ -31,6 +31,7 @@ pub mod reserved_keys {
     pub const SCRIPT_OP_LIMIT_KEY: &str = "script.op_limit";
     pub const SCRIPT_TIMEOUT_MS_KEY: &str = "script.timeout_ms";
     pub const LANGUAGE: &str = "app.language";
+    pub const KEYBOARD_SHORTCUTS: &str = "app.keyboard_shortcuts";
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -71,6 +72,47 @@ impl FromStr for Language {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Density {
+    Compact,
+    #[default]
+    Cozy,
+    Spacious,
+}
+
+impl fmt::Display for Density {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Density::Compact => f.write_str("compact"),
+            Density::Cozy => f.write_str("cozy"),
+            Density::Spacious => f.write_str("spacious"),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct UnknownDensity(pub String);
+
+impl fmt::Display for UnknownDensity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "unknown density: {}", self.0)
+    }
+}
+
+impl FromStr for Density {
+    type Err = UnknownDensity;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "compact" => Ok(Density::Compact),
+            "cozy" => Ok(Density::Cozy),
+            "spacious" => Ok(Density::Spacious),
+            other => Err(UnknownDensity(other.to_owned())),
+        }
+    }
+}
+
 #[cfg_attr(feature = "test-mocks", mockall::automock)]
 #[async_trait]
 pub trait SettingsRepo: Send + Sync {
@@ -93,12 +135,57 @@ pub trait SettingsRepo: Send + Sync {
         self.set_string(reserved_keys::LANGUAGE, &lang.to_string())
             .await
     }
+
+    /// Absent or corrupt key silently returns `Density::Cozy` (default).
+    async fn density(&self) -> Result<Density, StorageError> {
+        match self.get_string(reserved_keys::DENSITY).await? {
+            Some(s) => Ok(s.parse().unwrap_or_default()),
+            None => Ok(Density::default()),
+        }
+    }
+
+    async fn set_density(&self, density: Density) -> Result<(), StorageError> {
+        self.set_string(reserved_keys::DENSITY, &density.to_string())
+            .await
+    }
+
+    /// Returns stored font family name for interface (body) text, or None if unset (bundled default applies).
+    async fn font_body(&self) -> Result<Option<String>, StorageError> {
+        self.get_string(reserved_keys::FONT_BODY).await
+    }
+
+    /// Sets interface (body) font family name, or passes None to unset and use bundled default.
+    async fn set_font_body(&self, name: Option<String>) -> Result<(), StorageError> {
+        match name {
+            Some(family) => self.set_string(reserved_keys::FONT_BODY, &family).await,
+            None => {
+                self.delete(reserved_keys::FONT_BODY).await?;
+                Ok(())
+            }
+        }
+    }
+
+    /// Returns stored font family name for monospace (code) text, or None if unset (bundled default applies).
+    async fn font_mono(&self) -> Result<Option<String>, StorageError> {
+        self.get_string(reserved_keys::FONT_MONO).await
+    }
+
+    /// Sets monospace (code) font family name, or passes None to unset and use bundled default.
+    async fn set_font_mono(&self, name: Option<String>) -> Result<(), StorageError> {
+        match name {
+            Some(family) => self.set_string(reserved_keys::FONT_MONO, &family).await,
+            None => {
+                self.delete(reserved_keys::FONT_MONO).await?;
+                Ok(())
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::Language;
+    use super::{Density, Language};
 
     fn _trait_is_dyn_safe(_: &dyn super::SettingsRepo) {}
 
@@ -115,6 +202,24 @@ mod tests {
     fn language_from_str_rejects_non_canonical_codes_preserving_input() {
         for bad in ["EN", "En", "fr", "", " en", "en "] {
             let err = bad.parse::<Language>().unwrap_err();
+            assert_eq!(err.0, bad);
+        }
+    }
+
+    #[test]
+    fn density_round_trips_through_display_and_from_str() {
+        // Cozy is the product default — display strings are the persisted format.
+        assert_eq!(Density::default(), Density::Cozy);
+        for density in [Density::Compact, Density::Cozy, Density::Spacious] {
+            let s = density.to_string();
+            assert_eq!(s.parse::<Density>().unwrap(), density);
+        }
+    }
+
+    #[test]
+    fn density_from_str_rejects_non_canonical_values_preserving_input() {
+        for bad in ["Cozy", "COMPACT", "dense", "", " cozy"] {
+            let err = bad.parse::<Density>().unwrap_err();
             assert_eq!(err.0, bad);
         }
     }

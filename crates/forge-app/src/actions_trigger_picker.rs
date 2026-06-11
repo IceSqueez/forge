@@ -69,30 +69,30 @@ pub enum TriggerPickerMsg {
     Cancelled,
 }
 
-pub(crate) fn category_display_label(cat: RegistryCategory) -> &'static str {
+pub(crate) fn category_display_label(cat: RegistryCategory) -> String {
     match cat {
-        RegistryCategory::Chat => "Chat",
-        RegistryCategory::Subscriptions => "Subscriptions",
-        RegistryCategory::Bits => "Bits",
-        RegistryCategory::Raids => "Raids",
-        RegistryCategory::ChannelPoints => "Channel Points",
-        RegistryCategory::Polls => "Polls",
-        RegistryCategory::Predictions => "Predictions",
-        RegistryCategory::Hype => "Hype Train",
-        RegistryCategory::Charity => "Charity",
-        RegistryCategory::Goals => "Goals",
-        RegistryCategory::Clips => "Clips",
-        RegistryCategory::Streams => "Streams",
-        RegistryCategory::Users => "Users",
-        RegistryCategory::Obs => "Scenes",
-        RegistryCategory::VTube => "VTube Studio",
-        RegistryCategory::Discord => "Discord",
-        RegistryCategory::Midi => "MIDI",
-        RegistryCategory::Hotkey => "Hotkeys",
-        RegistryCategory::Core => "Core",
-        RegistryCategory::Server => "Server Events",
-        RegistryCategory::Timer => "Timers",
-        RegistryCategory::Ungrouped => "Other",
+        RegistryCategory::Chat => forge_widgets::tr!("trigger_cat_chat"),
+        RegistryCategory::Subscriptions => forge_widgets::tr!("trigger_cat_subscriptions"),
+        RegistryCategory::Bits => forge_widgets::tr!("trigger_cat_bits"),
+        RegistryCategory::Raids => forge_widgets::tr!("trigger_cat_raids"),
+        RegistryCategory::ChannelPoints => forge_widgets::tr!("trigger_cat_channel_points"),
+        RegistryCategory::Polls => forge_widgets::tr!("trigger_cat_polls"),
+        RegistryCategory::Predictions => forge_widgets::tr!("trigger_cat_predictions"),
+        RegistryCategory::Hype => forge_widgets::tr!("trigger_cat_hype"),
+        RegistryCategory::Charity => forge_widgets::tr!("trigger_cat_charity"),
+        RegistryCategory::Goals => forge_widgets::tr!("trigger_cat_goals"),
+        RegistryCategory::Clips => forge_widgets::tr!("trigger_cat_clips"),
+        RegistryCategory::Streams => forge_widgets::tr!("trigger_cat_streams"),
+        RegistryCategory::Users => forge_widgets::tr!("trigger_cat_users"),
+        RegistryCategory::Obs => forge_widgets::tr!("trigger_cat_obs"),
+        RegistryCategory::VTube => "VTube Studio".to_owned(),
+        RegistryCategory::Discord => "Discord".to_owned(),
+        RegistryCategory::Midi => "MIDI".to_owned(),
+        RegistryCategory::Hotkey => forge_widgets::tr!("trigger_cat_hotkey"),
+        RegistryCategory::Core => forge_widgets::tr!("trigger_cat_core"),
+        RegistryCategory::Server => forge_widgets::tr!("trigger_cat_server"),
+        RegistryCategory::Timer => forge_widgets::tr!("trigger_cat_timer"),
+        RegistryCategory::Ungrouped => forge_widgets::tr!("trigger_cat_other"),
     }
 }
 
@@ -239,7 +239,7 @@ pub fn view<'a>(
 
     if picker.is_loading {
         let loading_body = container(
-            text("Loading triggers\u{2026}")
+            text(forge_widgets::tr!("actions_picker_loading"))
                 .size(FONT_SM)
                 .color(p.text_muted),
         )
@@ -247,7 +247,11 @@ pub fn view<'a>(
         .height(Length::Fill)
         .padding([sp(Spacing::Lg), sp(Spacing::Lg)]);
 
-        let cancel_btn = forge_widgets::secondary_button("Cancel", on_cancel.clone(), palette);
+        let cancel_btn = forge_widgets::secondary_button(
+            forge_widgets::tr!("actions_picker_cancel"),
+            on_cancel.clone(),
+            palette,
+        );
         let footer_bar = container(
             row![iced::widget::Space::new().width(Length::Fill), cancel_btn]
                 .align_y(Alignment::Center),
@@ -272,7 +276,7 @@ pub fn view<'a>(
             .palette(palette)
             .width(forge_widgets::SheetWidth::new(560.0, 400.0, 800.0))
             .header(forge_widgets::SheetHeader {
-                title: std::borrow::Cow::Borrowed("Add trigger"),
+                title: std::borrow::Cow::Owned(forge_widgets::tr!("actions_picker_title")),
                 subtitle: None,
                 on_close: Some(on_cancel.clone()),
             })
@@ -386,14 +390,14 @@ pub fn view<'a>(
 
     if picker.level1.is_none() {
         subgroup_col = subgroup_col.push(
-            text("Select a platform")
+            text(forge_widgets::tr!("actions_picker_select_platform"))
                 .size(FONT_XS)
                 .color(p.text_faint)
                 .font(mono),
         );
     } else if subgroups.is_empty() {
         subgroup_col = subgroup_col.push(
-            text("No triggers available")
+            text(forge_widgets::tr!("actions_picker_no_triggers"))
                 .size(FONT_XS)
                 .color(p.text_faint)
                 .font(mono),
@@ -461,14 +465,14 @@ pub fn view<'a>(
 
     if picker.level1.is_none() {
         trigger_list = trigger_list.push(
-            text("Select a platform to browse triggers.")
+            text(forge_widgets::tr!("actions_picker_select_hint"))
                 .size(FONT_XS)
                 .color(p.text_faint)
                 .font(mono),
         );
     } else if visible_entries.is_empty() {
         trigger_list = trigger_list.push(
-            text("No triggers available for this selection.")
+            text(forge_widgets::tr!("actions_picker_no_triggers_selection"))
                 .size(FONT_XS)
                 .color(p.text_faint)
                 .font(mono),
@@ -482,7 +486,7 @@ pub fn view<'a>(
                     .size(FONT_SM)
                     .color(p.text_primary),
                 iced::widget::Space::new().width(Length::Fill),
-                text("(default)")
+                text(forge_widgets::tr!("actions_picker_default_label"))
                     .size(FONT_XS)
                     .color(p.text_faint)
                     .font(mono),
@@ -587,7 +591,11 @@ pub fn view<'a>(
     .spacing(0)
     .height(Length::Fill);
 
-    let cancel_btn = forge_widgets::secondary_button("Cancel", on_cancel.clone(), palette);
+    let cancel_btn = forge_widgets::secondary_button(
+        forge_widgets::tr!("actions_picker_cancel"),
+        on_cancel.clone(),
+        palette,
+    );
 
     let footer_bar = container(
         row![iced::widget::Space::new().width(Length::Fill), cancel_btn].align_y(Alignment::Center),
@@ -616,7 +624,7 @@ pub fn view<'a>(
         .palette(palette)
         .width(forge_widgets::SheetWidth::new(560.0, 400.0, 800.0))
         .header(forge_widgets::SheetHeader {
-            title: std::borrow::Cow::Borrowed("Add trigger"),
+            title: std::borrow::Cow::Owned(forge_widgets::tr!("actions_picker_title")),
             subtitle: None,
             on_close: Some(on_cancel.clone()),
         })

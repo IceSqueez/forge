@@ -12,8 +12,7 @@ use crate::{
     icons::{Icon, tabler_icon},
     palette::ForgePalette,
     tokens::{
-        BORDER_THIN, Density, FONT_LG, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius,
-        sp, spacing,
+        BORDER_THIN, FONT_LG, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
     },
 };
 
@@ -21,7 +20,7 @@ pub fn builtin_content_renderer<'a, Msg: 'a>(
     sections: &'a [DetailSection],
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
-    let gap = spacing(Spacing::Lg, Density::Cozy) as f32;
+    let gap = spf(Spacing::Lg);
     sections
         .iter()
         .fold(
@@ -81,7 +80,7 @@ pub(crate) fn render_two_column_lists<'a, Msg: 'a>(
     right: &'a ContentList,
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
-    let gap = spacing(Spacing::Md, Density::Cozy) as f32;
+    let gap = spf(Spacing::Md);
     Row::new()
         .spacing(gap)
         .push(container(content_list_panel(left, palette)).width(Length::FillPortion(10)))
@@ -174,7 +173,7 @@ pub(crate) fn render_warning_banner<'a, Msg: 'a>(
         .color(palette.text_muted);
 
     let mut text_col = Column::new()
-        .spacing(spacing(Spacing::Xs, Density::Cozy) as f32)
+        .spacing(spf(Spacing::Xs))
         .push(title_elem)
         .push(body_elem);
 
@@ -188,16 +187,13 @@ pub(crate) fn render_warning_banner<'a, Msg: 'a>(
     }
 
     let inner = Row::new()
-        .spacing(spacing(Spacing::Md, Density::Cozy) as f32)
+        .spacing(spf(Spacing::Md))
         .align_y(Alignment::Start)
         .push(icon_elem)
         .push(container(text_col).width(Length::Fill));
 
     container(inner)
-        .padding([
-            spacing(Spacing::Sm, Density::Cozy),
-            spacing(Spacing::Md, Density::Cozy),
-        ])
+        .padding([sp(Spacing::Sm), sp(Spacing::Md)])
         .width(Length::Fill)
         .style(move |_: &iced::Theme| container::Style {
             background: Some(iced::Background::Color(bg)),
@@ -221,7 +217,7 @@ pub(crate) fn render_subscription_list<'a, Msg: 'a>(
     let bg = palette.elevated;
     let border_color = palette.border_regular;
     let r = radius(Radius::Md);
-    let count_str = format!("{} active", items.len());
+    let count_str = crate::tr!("widget.builtin.active_count", count = items.len() as i64);
 
     let header = panel_header_row(icon.as_str(), title, Some(&count_str), palette);
     let divider = horizontal_divider(border_color);
@@ -284,31 +280,23 @@ pub(crate) fn render_info_card<'a, Msg: 'a>(
 
     let fields_grid: Element<'a, Msg> = fields
         .chunks(2)
-        .fold(
-            Column::new().spacing(spacing(Spacing::Md, Density::Cozy) as f32),
-            |col, chunk| {
-                let mut row = Row::new().spacing(spacing(Spacing::Md, Density::Cozy) as f32);
-                for field in chunk {
-                    row = row.push(info_field_cell(field, palette));
-                }
-                col.push(row)
-            },
-        )
+        .fold(Column::new().spacing(spf(Spacing::Md)), |col, chunk| {
+            let mut row = Row::new().spacing(spf(Spacing::Md));
+            for field in chunk {
+                row = row.push(info_field_cell(field, palette));
+            }
+            col.push(row)
+        })
         .into();
 
-    let mut content_col = Column::new()
-        .spacing(spacing(Spacing::Md, Density::Cozy) as f32)
-        .push(fields_grid);
+    let mut content_col = Column::new().spacing(spf(Spacing::Md)).push(fields_grid);
 
     if let Some(bar) = health_bar {
         content_col = content_col.push(health_bar_section(bar, palette));
     }
 
     let content_padded = container(content_col)
-        .padding([
-            spacing(Spacing::Md, Density::Cozy),
-            spacing(Spacing::Md, Density::Cozy),
-        ])
+        .padding([sp(Spacing::Md), sp(Spacing::Md)])
         .width(Length::Fill);
 
     card_container(
@@ -431,7 +419,7 @@ fn content_list_item_row<'a, Msg: 'a>(
     };
 
     let mut trailing: Row<'a, Msg> = Row::new()
-        .spacing(spacing(Spacing::Xs, Density::Cozy) as f32)
+        .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Center);
 
     if item.active
@@ -445,7 +433,7 @@ fn content_list_item_row<'a, Msg: 'a>(
     }
 
     let content: Element<'a, Msg> = Row::new()
-        .spacing(spacing(Spacing::Sm, Density::Cozy) as f32)
+        .spacing(spf(Spacing::Sm))
         .align_y(Alignment::Center)
         .push(icon_elem)
         .push(container(name_elem).width(Length::Fill))
@@ -475,7 +463,7 @@ fn key_value_row_elem<'a, Msg: 'a>(
         .color(palette.text_primary);
 
     let mut row = Row::new()
-        .spacing(spacing(Spacing::Sm, Density::Cozy) as f32)
+        .spacing(spf(Spacing::Sm))
         .align_y(Alignment::Center)
         .push(icon_elem)
         .push(container(name_elem).width(Length::Fill));
@@ -515,12 +503,15 @@ fn active_item_row_elem<'a, Msg: 'a>(
         .color(text_color);
 
     let mut row = Row::new()
-        .spacing(spacing(Spacing::Sm, Density::Cozy) as f32)
+        .spacing(spf(Spacing::Sm))
         .align_y(Alignment::Center)
         .push(container(name_elem).width(Length::Fill));
 
     if item.active {
-        row = row.push(active_badge("ACTIVE", palette));
+        row = row.push(active_badge(
+            &crate::tr!("widget.builtin.active_badge"),
+            palette,
+        ));
     } else if let Some(mode) = &item.mode_label {
         row = row.push(text(mode.clone()).size(FONT_XS).color(palette.text_faint));
     }
@@ -545,7 +536,7 @@ fn subscription_row_elem<'a, Msg: 'a>(
         .color(palette.text_primary);
 
     let mut row = Row::new()
-        .spacing(spacing(Spacing::Sm, Density::Cozy) as f32)
+        .spacing(spf(Spacing::Sm))
         .align_y(Alignment::Center)
         .push(dot)
         .push(container(name_elem).width(Length::Fill));
@@ -562,11 +553,7 @@ fn subscription_row_elem<'a, Msg: 'a>(
     let trailing: Element<'a, Msg> = if let Some(err) = &item.error_label {
         text(err.clone()).size(FONT_XS).color(palette.random).into()
     } else if let Some(count) = item.event_count {
-        let label = if count == 1 {
-            format!("{count} event")
-        } else {
-            format!("{count} events")
-        };
+        let label = crate::tr!("widget.builtin.event_count", count = count as i64);
         text(label).size(FONT_XS).color(palette.text_muted).into()
     } else {
         Space::new().into()
@@ -585,7 +572,7 @@ fn scope_row_elem<'a, Msg: 'a>(scope: &str, palette: &'a ForgePalette) -> Elemen
 
     plain_row_wrapper(
         Row::new()
-            .spacing(spacing(Spacing::Sm, Density::Cozy) as f32)
+            .spacing(spf(Spacing::Sm))
             .align_y(Alignment::Center)
             .push(check)
             .push(container(scope_text).width(Length::Fill))
@@ -618,7 +605,7 @@ fn info_field_cell<'a, Msg: 'a>(
 
     container(
         Column::new()
-            .spacing(spacing(Spacing::Xs, Density::Cozy) as f32)
+            .spacing(spf(Spacing::Xs))
             .push(label_elem)
             .push(value_elem),
     )
@@ -669,13 +656,13 @@ fn health_bar_section<'a, Msg: 'a>(
                 ..container::Style::default()
             });
 
-    let health_label = text("STREAM HEALTH")
+    let health_label = text(crate::tr!("widget.builtin.stream_health"))
         .font(font(FontRole::Monospace))
         .size(FONT_XS)
         .color(palette.text_muted);
 
     let bar_row = Row::new()
-        .spacing(spacing(Spacing::Sm, Density::Cozy) as f32)
+        .spacing(spf(Spacing::Sm))
         .align_y(Alignment::Center)
         .push(container(bar_track).width(Length::Fill))
         .push(
@@ -686,7 +673,7 @@ fn health_bar_section<'a, Msg: 'a>(
         );
 
     Column::new()
-        .spacing(spacing(Spacing::Xs, Density::Cozy) as f32)
+        .spacing(spf(Spacing::Xs))
         .push(health_label)
         .push(bar_row)
         .into()
@@ -698,7 +685,7 @@ fn stat_column_cell<'a, Msg: 'a>(
 ) -> Element<'a, Msg> {
     container(
         Column::new()
-            .spacing(spacing(Spacing::Xs, Density::Cozy) as f32)
+            .spacing(spf(Spacing::Xs))
             .push(
                 text(col.label.to_uppercase())
                     .font(font(FontRole::Monospace))
@@ -718,10 +705,7 @@ fn stat_column_cell<'a, Msg: 'a>(
                     .color(palette.success),
             ),
     )
-    .padding([
-        spacing(Spacing::Sm, Density::Cozy),
-        spacing(Spacing::Md, Density::Cozy),
-    ])
+    .padding([sp(Spacing::Sm), sp(Spacing::Md)])
     .width(Length::Fill)
     .into()
 }
@@ -735,7 +719,7 @@ fn panel_header_row<'a, Msg: 'a>(
     let icon_elem = tabler_icon(Icon::from_name(icon_str), FONT_SM, palette.text_secondary);
 
     let left = Row::new()
-        .spacing(spacing(Spacing::Xs, Density::Cozy) as f32)
+        .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Center)
         .push(icon_elem)
         .push(
@@ -758,10 +742,7 @@ fn panel_header_row<'a, Msg: 'a>(
     }
 
     container(outer)
-        .padding([
-            spacing(Spacing::Sm, Density::Cozy),
-            spacing(Spacing::Md, Density::Cozy),
-        ])
+        .padding([sp(Spacing::Sm), sp(Spacing::Md)])
         .width(Length::Fill)
         .into()
 }
@@ -789,10 +770,7 @@ fn scopes_list_header<'a, Msg: 'a>(
             )
             .push(count_elem),
     )
-    .padding([
-        spacing(Spacing::Sm, Density::Cozy),
-        spacing(Spacing::Md, Density::Cozy),
-    ])
+    .padding([sp(Spacing::Sm), sp(Spacing::Md)])
     .width(Length::Fill)
     .into()
 }
@@ -820,7 +798,11 @@ fn info_card_header<'a, Msg: 'a>(
                 .spacing(5.0)
                 .align_y(Alignment::Center)
                 .push(dot)
-                .push(text("LIVE").size(FONT_XS).color(success)),
+                .push(
+                    text(crate::tr!("widget.builtin.live_badge"))
+                        .size(FONT_XS)
+                        .color(success),
+                ),
         )
         .padding([0, sp(Spacing::Xs)])
         .style(move |_: &iced::Theme| container::Style {
@@ -835,10 +817,7 @@ fn info_card_header<'a, Msg: 'a>(
     }
 
     container(row)
-        .padding([
-            spacing(Spacing::Sm, Density::Cozy),
-            spacing(Spacing::Md, Density::Cozy),
-        ])
+        .padding([sp(Spacing::Sm), sp(Spacing::Md)])
         .width(Length::Fill)
         .into()
 }
@@ -851,7 +830,7 @@ fn list_footer_bar<'a, Msg: 'a>(
     let border_col = palette.border_regular;
 
     let mut row = Row::new()
-        .spacing(spacing(Spacing::Sm, Density::Cozy) as f32)
+        .spacing(spf(Spacing::Sm))
         .align_y(Alignment::Center);
 
     if let Some(cta) = &footer.cta_label {
@@ -871,10 +850,7 @@ fn list_footer_bar<'a, Msg: 'a>(
     }
 
     container(row)
-        .padding([
-            spacing(Spacing::Xs, Density::Cozy),
-            spacing(Spacing::Md, Density::Cozy),
-        ])
+        .padding([sp(Spacing::Xs), sp(Spacing::Md)])
         .width(Length::Fill)
         .style(move |_: &iced::Theme| container::Style {
             background: Some(iced::Background::Color(shell_bg)),
@@ -904,10 +880,7 @@ fn active_row_wrapper<'a, Msg: 'a>(
         });
 
     let padded = container(content)
-        .padding([
-            spacing(Spacing::Xs, Density::Cozy),
-            spacing(Spacing::Md, Density::Cozy),
-        ])
+        .padding([sp(Spacing::Xs), sp(Spacing::Md)])
         .width(Length::Fill);
 
     container(Row::new().push(strip).push(padded))
@@ -921,10 +894,7 @@ fn active_row_wrapper<'a, Msg: 'a>(
 
 fn plain_row_wrapper<'a, Msg: 'a>(content: Element<'a, Msg>, bg: Color) -> Element<'a, Msg> {
     container(content)
-        .padding([
-            spacing(Spacing::Xs, Density::Cozy),
-            spacing(Spacing::Md, Density::Cozy),
-        ])
+        .padding([sp(Spacing::Xs), sp(Spacing::Md)])
         .width(Length::Fill)
         .style(move |_: &iced::Theme| container::Style {
             background: Some(iced::Background::Color(bg)),

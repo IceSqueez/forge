@@ -20,24 +20,26 @@ use crate::Message;
 use crate::runtime_view::RuntimeView;
 use crate::server_screen::ServerScreenMsg;
 
-static LAN_BIND_BULLETS: [BulletItem<'static>; 4] = [
-    BulletItem {
-        kind: BulletKind::Check,
-        text: "Phone / tablet / second PC can connect to overlays and the WS API",
-    },
-    BulletItem {
-        kind: BulletKind::Warning,
-        text: "Anyone on your network can read all events and send chat messages if they know your bearer token",
-    },
-    BulletItem {
-        kind: BulletKind::Warning,
-        text: "If you're on public Wi-Fi (café, conference, hotel), do not enable this",
-    },
-    BulletItem {
-        kind: BulletKind::Info,
-        text: "Your firewall must also allow the configured port for this to work",
-    },
-];
+fn lan_bind_bullets() -> Vec<BulletItem> {
+    vec![
+        BulletItem {
+            kind: BulletKind::Check,
+            text: forge_widgets::tr!("settings_ws_lan_bullet_phone"),
+        },
+        BulletItem {
+            kind: BulletKind::Warning,
+            text: forge_widgets::tr!("settings_ws_lan_bullet_token_warning"),
+        },
+        BulletItem {
+            kind: BulletKind::Warning,
+            text: forge_widgets::tr!("settings_ws_lan_bullet_public_wifi"),
+        },
+        BulletItem {
+            kind: BulletKind::Info,
+            text: forge_widgets::tr!("settings_ws_lan_bullet_firewall"),
+        },
+    ]
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BindAddressChoice {
@@ -342,8 +344,8 @@ fn auth_divider<'a>(border_color: Color) -> Element<'a, Message> {
 fn auth_toggle_row<'a>(
     icon: Icon,
     icon_color: Color,
-    label: &'a str,
-    sublabel: &'a str,
+    label: String,
+    sublabel: String,
     value: bool,
     on_toggle: Message,
     palette: &'a ForgePalette,
@@ -463,7 +465,9 @@ fn overlay_path_display<'a>(root: &'a Path, palette: &'a ForgePalette) -> Elemen
     let browse_btn = button(
         row![
             tabler_icon(Icon::FolderOpen, 12.0, text_sec),
-            text("Browse").size(FONT_SM).color(text_sec),
+            text(forge_widgets::tr!("settings_ws_browse_btn"))
+                .size(FONT_SM)
+                .color(text_sec),
         ]
         .spacing(spf(Spacing::Xxs))
         .align_y(Alignment::Center),
@@ -490,7 +494,7 @@ fn overlay_path_display<'a>(root: &'a Path, palette: &'a ForgePalette) -> Elemen
         .into()
 }
 
-fn section_label<'a>(label: &'a str, palette: &'a ForgePalette) -> Element<'a, Message> {
+fn section_label<'a>(label: String, palette: &ForgePalette) -> Element<'a, Message> {
     text(label)
         .size(FONT_SM)
         .color(palette.text_primary)
@@ -510,25 +514,33 @@ pub fn settings_websocket_view<'a>(
     let p = palette;
 
     let save_indicator: Element<'a, Message> = if let Some(ref err) = state.save_error {
-        text(format!("Save failed: {err}"))
-            .size(FONT_SM)
-            .color(p.random)
-            .into()
+        text(forge_widgets::tr!(
+            "settings_ws_save_failed",
+            error = err.as_str()
+        ))
+        .size(FONT_SM)
+        .color(p.random)
+        .into()
     } else if state.all_changes_saved {
         row![
             tabler_icon(Icon::CircleCheck, 13.0, p.success),
-            text("All changes saved").size(FONT_SM).color(p.success),
+            text(forge_widgets::tr!("settings_ws_all_saved"))
+                .size(FONT_SM)
+                .color(p.success),
         ]
         .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Center)
         .into()
     } else {
-        text("Saving…").size(FONT_SM).color(p.text_faint).into()
+        text(forge_widgets::tr!("settings_ws_saving"))
+            .size(FONT_SM)
+            .color(p.text_faint)
+            .into()
     };
 
     let header_row = row![
         tabler_icon(Icon::Server, 20.0, p.brand),
-        text("WebSocket server")
+        text(forge_widgets::tr!("settings_ws_title"))
             .size(FONT_LG)
             .color(p.text_primary)
             .font(iced::Font {
@@ -541,15 +553,15 @@ pub fn settings_websocket_view<'a>(
     .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
-    let subtitle = text("Configure how overlays and third-party tools connect to Forge.")
+    let subtitle = text(forge_widgets::tr!("settings_ws_subtitle"))
         .size(FONT_SM)
         .color(p.text_muted);
 
     let enable_toggle = toggle(
         p,
         ToggleProps {
-            label: "Enable server",
-            description: "Starts on app launch, hosts overlays, accepts WS clients",
+            label: forge_widgets::tr!("settings_ws_enable_label"),
+            description: forge_widgets::tr!("settings_ws_enable_description"),
             value: state.enable_server,
             on_toggle: Message::SettingsWebSocket(SettingsWebSocketMsg::ToggleEnable(
                 !state.enable_server,
@@ -559,10 +571,10 @@ pub fn settings_websocket_view<'a>(
 
     let localhost_card = bind_address_card(
         BindAddressCardParams {
-            title: "Localhost only",
+            title: forge_widgets::tr!("settings_ws_bind_localhost_title"),
             tech_label: "127.0.0.1",
             badge: BindBadge::Recommended,
-            description: "Only apps on this machine can connect. Browser sources in OBS and local Stream Deck plugins work normally. Safe default.",
+            description: forge_widgets::tr!("settings_ws_bind_localhost_description"),
             selected: state.bind_address_radio == BindAddressChoice::Localhost,
         },
         Message::SettingsWebSocket(SettingsWebSocketMsg::SelectLocalhost),
@@ -571,10 +583,10 @@ pub fn settings_websocket_view<'a>(
 
     let lan_card = bind_address_card(
         BindAddressCardParams {
-            title: "All interfaces (LAN)",
+            title: forge_widgets::tr!("settings_ws_bind_lan_title"),
             tech_label: "0.0.0.0",
             badge: BindBadge::RequiresConfirmation,
-            description: "Lets other devices on your network (phone, tablet, second PC) connect to Forge. Exposes the server to anyone on the same Wi-Fi or LAN.",
+            description: forge_widgets::tr!("settings_ws_bind_lan_description"),
             selected: state.bind_address_radio == BindAddressChoice::Lan,
         },
         Message::SettingsWebSocket(SettingsWebSocketMsg::SelectLan),
@@ -582,8 +594,8 @@ pub fn settings_websocket_view<'a>(
     );
 
     let mut bind_col = column![
-        section_label("Bind address", p),
-        text("Which interface the server listens on")
+        section_label(forge_widgets::tr!("settings_ws_bind_section_title"), p),
+        text(forge_widgets::tr!("settings_ws_bind_section_subtitle"))
             .size(FONT_SM)
             .color(p.text_muted),
         localhost_card,
@@ -593,7 +605,7 @@ pub fn settings_websocket_view<'a>(
 
     if state.bind_address_radio == BindAddressChoice::Lan {
         bind_col = bind_col.push(
-            text("Restart server to apply bind address change.")
+            text(forge_widgets::tr!("settings_ws_bind_lan_restart_warning"))
                 .size(FONT_SM)
                 .color(p.warning),
         );
@@ -612,8 +624,8 @@ pub fn settings_websocket_view<'a>(
 
     let port_col = container(
         column![
-            section_label("Port", p),
-            text("Default 8081 · range 1024–65535")
+            section_label(forge_widgets::tr!("settings_ws_port_section_title"), p),
+            text(forge_widgets::tr!("settings_ws_port_subtitle"))
                 .size(FONT_SM)
                 .color(p.text_muted),
             port_field,
@@ -623,10 +635,10 @@ pub fn settings_websocket_view<'a>(
     .width(Length::FillPortion(5));
 
     let token_desc_row = row![
-        text("Clients send this in ")
+        text(forge_widgets::tr!("settings_ws_token_clients_send"))
             .size(FONT_SM)
             .color(p.text_muted),
-        text("Authorization: Bearer …")
+        text(" Authorization: Bearer …")
             .font(font(FontRole::Monospace))
             .size(FONT_SM)
             .color(p.text_primary),
@@ -644,7 +656,7 @@ pub fn settings_websocket_view<'a>(
 
     let token_col = container(
         column![
-            section_label("Bearer token", p),
+            section_label(forge_widgets::tr!("settings_ws_token_section_title"), p),
             token_desc_row,
             token_widget
         ]
@@ -655,15 +667,15 @@ pub fn settings_websocket_view<'a>(
     let port_token_row = row![port_col, token_col].spacing(spf(Spacing::Sm));
 
     let auth_section = column![
-        section_label("Authentication", p),
-        text("Which clients need to authenticate")
+        section_label(forge_widgets::tr!("settings_ws_auth_section_title"), p),
+        text(forge_widgets::tr!("settings_ws_auth_section_subtitle"))
             .size(FONT_SM)
             .color(p.text_muted),
         auth_toggle_row(
             Icon::Lock,
             p.success,
-            "Require token for WebSocket clients",
-            "Reject WS handshake without valid bearer token",
+            forge_widgets::tr!("settings_ws_auth_require_ws_label"),
+            forge_widgets::tr!("settings_ws_auth_require_ws_sublabel"),
             state.require_ws_token,
             Message::SettingsWebSocket(SettingsWebSocketMsg::RequireWsToken(
                 !state.require_ws_token,
@@ -674,8 +686,8 @@ pub fn settings_websocket_view<'a>(
         auth_toggle_row(
             Icon::Globe,
             p.info,
-            "Require token for HTTP overlay files",
-            "Browser sources need ?token=… in URL",
+            forge_widgets::tr!("settings_ws_auth_require_http_label"),
+            forge_widgets::tr!("settings_ws_auth_require_http_sublabel"),
             state.require_http_overlay_token,
             Message::SettingsWebSocket(SettingsWebSocketMsg::RequireHttpOverlayToken(
                 !state.require_http_overlay_token,
@@ -686,8 +698,8 @@ pub fn settings_websocket_view<'a>(
         auth_toggle_row(
             Icon::AlertTriangle,
             p.warning,
-            "Allow CORS from any origin",
-            "Disable to restrict to overlay browser sources only",
+            forge_widgets::tr!("settings_ws_auth_cors_label"),
+            forge_widgets::tr!("settings_ws_auth_cors_sublabel"),
             state.cors_any_origin,
             Message::SettingsWebSocket(SettingsWebSocketMsg::CorsAnyOrigin(!state.cors_any_origin)),
             p,
@@ -696,8 +708,10 @@ pub fn settings_websocket_view<'a>(
     .spacing(0);
 
     let overlay_desc_row = row![
-        text("Folder served at ").size(FONT_SM).color(p.text_muted),
-        text("http://<bind>/")
+        text(forge_widgets::tr!("settings_ws_overlay_folder_prefix"))
+            .size(FONT_SM)
+            .color(p.text_muted),
+        text(" http://<bind>/")
             .font(font(FontRole::Monospace))
             .size(FONT_SM)
             .color(p.text_primary),
@@ -705,7 +719,7 @@ pub fn settings_websocket_view<'a>(
     .align_y(Alignment::Center);
 
     let overlay_section = column![
-        section_label("Overlay host root", p),
+        section_label(forge_widgets::tr!("settings_ws_overlay_section_title"), p),
         overlay_desc_row,
         overlay_path_display(state.overlay_root.as_path(), p),
     ]
@@ -734,12 +748,12 @@ pub fn settings_websocket_view<'a>(
     if state.lan_bind_modal_visible {
         let modal = type_to_confirm_modal(
             TypeToConfirmModalParams {
-                title: "Expose Forge to your network?",
-                explanation: "You're switching from 127.0.0.1 (localhost only) to 0.0.0.0 (all network interfaces). Other devices on your LAN — and anyone on the same Wi-Fi — will be able to reach the Forge server.",
-                bullets: &LAN_BIND_BULLETS,
+                title: forge_widgets::tr!("settings_ws_lan_modal_title"),
+                explanation: forge_widgets::tr!("settings_ws_lan_modal_explanation"),
+                bullets: lan_bind_bullets(),
                 confirmation_phrase: "expose to LAN",
                 current_input: &state.lan_bind_input,
-                confirm_label: "Expose to LAN",
+                confirm_label: forge_widgets::tr!("settings_ws_lan_modal_confirm_label"),
             },
             |s| Message::SettingsWebSocket(SettingsWebSocketMsg::LanBindInputChanged(s)),
             Message::SettingsWebSocket(SettingsWebSocketMsg::LanBindCancelled),
@@ -790,6 +804,7 @@ mod tests {
             scheduler: None,
             obs_client: None,
             vtube_client: None,
+            vtube_sink: forge_vtube::SwitchableVTubeSink::new(),
             discord_client: None,
             midi_client: None,
             hotkey_client: None,

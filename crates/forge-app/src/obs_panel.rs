@@ -161,7 +161,7 @@ pub fn update(state: &mut ObsPanelState, rt: &RuntimeView, msg: ObsPanelMsg) -> 
             let port = match state.form.port_text.parse::<u16>() {
                 Ok(p) => p,
                 Err(_) => {
-                    state.test_status = TestStatus::Failure("port must be a number 1-65535".into());
+                    state.test_status = TestStatus::Failure(forge_widgets::tr!("obs.port.invalid"));
                     return Task::none();
                 }
             };
@@ -188,7 +188,7 @@ pub fn update(state: &mut ObsPanelState, rt: &RuntimeView, msg: ObsPanelMsg) -> 
             let port = match state.form.port_text.parse::<u16>() {
                 Ok(p) => p,
                 Err(_) => {
-                    state.test_status = TestStatus::Failure("port must be a number 1-65535".into());
+                    state.test_status = TestStatus::Failure(forge_widgets::tr!("obs.port.invalid"));
                     return Task::none();
                 }
             };
@@ -230,7 +230,10 @@ pub fn obs_disconnected_view<'a>(
     let tip = obs_tip_card(palette);
 
     let page_header = crate::page_chrome::simple_page_header(
-        &[("Stream apps", false), ("OBS Studio", true)],
+        &[
+            (forge_widgets::tr!("obs.breadcrumb.stream_apps"), false),
+            ("OBS Studio".to_owned(), true),
+        ],
         palette,
     );
 
@@ -263,7 +266,7 @@ fn obs_header_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
 
     let title_col = column![
         text("OBS Studio").size(FONT_SM).color(palette.text_primary),
-        text("Connect to control scenes, sources, audio, filters, and recording")
+        text(forge_widgets::tr!("obs.header.subtitle"))
             .size(FONT_SM)
             .color(palette.text_muted),
     ]
@@ -283,7 +286,7 @@ fn obs_header_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
 fn obs_instructions_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     let title = row![
         tabler_icon(Icon::InfoCircle, 14.0, palette.info),
-        text("Before you start")
+        text(forge_widgets::tr!("obs.instructions.title"))
             .size(FONT_SM)
             .color(palette.text_primary),
     ]
@@ -302,38 +305,27 @@ fn obs_instructions_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> 
             ..container::Style::default()
         });
 
-    let lead =
-        text("In OBS Studio, enable the built-in WebSocket server, then copy the settings here.")
-            .size(FONT_XS)
-            .color(palette.text_muted)
-            .wrapping(iced::widget::text::Wrapping::Word);
+    let lead = text(forge_widgets::tr!("obs.instructions.lead"))
+        .size(FONT_XS)
+        .color(palette.text_muted)
+        .wrapping(iced::widget::text::Wrapping::Word);
 
     let steps = column![
-        instruction_step(
-            1,
-            "In OBS: Tools → WebSocket Server Settings",
-            true,
-            palette
-        ),
-        instruction_step(2, "Check 'Enable WebSocket server'", true, palette),
-        instruction_step(3, "Note the port (default 4455)", true, palette),
-        instruction_step(
-            4,
-            "Click 'Show Connect Info' to reveal password",
-            false,
-            palette
-        ),
+        instruction_step(1, forge_widgets::tr!("obs.step1"), true, palette),
+        instruction_step(2, forge_widgets::tr!("obs.step2"), true, palette),
+        instruction_step(3, forge_widgets::tr!("obs.step3"), true, palette),
+        instruction_step(4, forge_widgets::tr!("obs.step4"), false, palette),
     ]
     .spacing(0);
 
     let requirements = container(
         column![
-            text("REQUIREMENTS")
+            text(forge_widgets::tr!("obs.requirements.header"))
                 .size(FONT_XS)
                 .color(palette.text_muted)
                 .font(font(FontRole::Monospace)),
-            check_row("OBS Studio 28+ (WebSocket v5 built-in)", palette),
-            check_row("Running on the same machine or LAN-reachable", palette),
+            check_row(forge_widgets::tr!("obs.req.version"), palette),
+            check_row(forge_widgets::tr!("obs.req.network"), palette),
         ]
         .spacing(spf(Spacing::Xxs)),
     )
@@ -361,7 +353,7 @@ fn obs_instructions_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> 
 
 fn instruction_step<'a>(
     n: u8,
-    body: &'a str,
+    body: impl Into<String>,
     has_border: bool,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
@@ -370,7 +362,7 @@ fn instruction_step<'a>(
             .size(FONT_XS)
             .color(palette.brand)
             .font(font(FontRole::Monospace)),
-        text(body)
+        text(body.into())
             .size(FONT_XS)
             .color(palette.text_primary)
             .wrapping(iced::widget::text::Wrapping::Word),
@@ -394,10 +386,10 @@ fn instruction_step<'a>(
         .into()
 }
 
-fn check_row<'a>(label: &'a str, palette: &'a ForgePalette) -> Element<'a, Message> {
+fn check_row<'a>(label: impl Into<String>, palette: &'a ForgePalette) -> Element<'a, Message> {
     row![
         tabler_icon(Icon::CircleCheck, 11.0, palette.success),
-        text(label)
+        text(label.into())
             .size(FONT_XS)
             .color(palette.text_secondary)
             .wrapping(iced::widget::text::Wrapping::Word),
@@ -410,7 +402,7 @@ fn check_row<'a>(label: &'a str, palette: &'a ForgePalette) -> Element<'a, Messa
 fn obs_form_card<'a>(state: &'a ObsPanelState, palette: &'a ForgePalette) -> Element<'a, Message> {
     let title = row![
         tabler_icon(Icon::Bolt, 14.0, palette.success),
-        text("Connection settings")
+        text(forge_widgets::tr!("obs.form.title"))
             .size(FONT_SM)
             .color(palette.text_primary),
     ]
@@ -433,13 +425,21 @@ fn obs_form_card<'a>(state: &'a ObsPanelState, palette: &'a ForgePalette) -> Ele
         .on_input(|s| Message::ObsPanel(ObsPanelMsg::HostChanged(s)))
         .size(FONT_SM)
         .padding([sp(Spacing::Xs), sp(Spacing::Sm)]);
-    let host_field = labeled_field("HOST", host_input.into(), palette);
+    let host_field = labeled_field(
+        forge_widgets::tr!("obs.field.host"),
+        host_input.into(),
+        palette,
+    );
 
     let port_input = text_input("4455", &state.form.port_text)
         .on_input(|s| Message::ObsPanel(ObsPanelMsg::PortChanged(s)))
         .size(FONT_SM)
         .padding([sp(Spacing::Xs), sp(Spacing::Sm)]);
-    let port_field = labeled_field("PORT", port_input.into(), palette);
+    let port_field = labeled_field(
+        forge_widgets::tr!("obs.field.port"),
+        port_input.into(),
+        palette,
+    );
 
     let host_port = row![
         container(host_field).width(Length::FillPortion(8)),
@@ -453,8 +453,8 @@ fn obs_form_card<'a>(state: &'a ObsPanelState, palette: &'a ForgePalette) -> Ele
         toggle_row(
             Icon::Refresh,
             palette.info,
-            "Auto-reconnect on disconnect",
-            "Retry with exponential backoff",
+            forge_widgets::tr!("obs.toggle.reconnect.title"),
+            forge_widgets::tr!("obs.toggle.reconnect.subtitle"),
             state.form.auto_reconnect,
             ObsPanelMsg::ToggleAutoReconnect,
             true,
@@ -463,8 +463,8 @@ fn obs_form_card<'a>(state: &'a ObsPanelState, palette: &'a ForgePalette) -> Ele
         toggle_row(
             Icon::Bolt,
             palette.warning,
-            "Connect on app launch",
-            "Start connecting when Forge opens",
+            forge_widgets::tr!("obs.toggle.launch.title"),
+            forge_widgets::tr!("obs.toggle.launch.subtitle"),
             state.form.connect_on_launch,
             ObsPanelMsg::ToggleConnectOnLaunch,
             false,
@@ -477,13 +477,13 @@ fn obs_form_card<'a>(state: &'a ObsPanelState, palette: &'a ForgePalette) -> Ele
 
     let buttons = row![
         secondary_button(
-            "Test connection",
+            forge_widgets::tr!("obs.btn.test"),
             Message::ObsPanel(ObsPanelMsg::TestRequested),
             !state.connecting,
             palette,
         ),
         primary_button(
-            "Connect",
+            forge_widgets::tr!("obs.btn.connect"),
             Message::ObsPanel(ObsPanelMsg::ConnectRequested),
             !state.connecting,
             palette,
@@ -506,12 +506,12 @@ fn obs_form_card<'a>(state: &'a ObsPanelState, palette: &'a ForgePalette) -> Ele
 }
 
 fn labeled_field<'a>(
-    label: &'a str,
+    label: impl Into<String>,
     field: Element<'a, Message>,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     column![
-        text(label)
+        text(label.into())
             .size(FONT_XS)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace)),
@@ -522,15 +522,15 @@ fn labeled_field<'a>(
 }
 
 fn password_row<'a>(state: &'a ObsPanelState, palette: &'a ForgePalette) -> Element<'a, Message> {
+    let pw_label = forge_widgets::tr!("obs.field.password");
+    let pw_keychain = forge_widgets::tr!("obs.field.keychain");
     let label = row![
-        text("PASSWORD")
+        text(pw_label)
             .size(FONT_XS)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace)),
         iced::widget::Space::new().width(Length::Fill),
-        text("stored in OS keychain")
-            .size(FONT_XS)
-            .color(palette.text_faint),
+        text(pw_keychain).size(FONT_XS).color(palette.text_faint),
     ]
     .align_y(Alignment::Center);
 
@@ -573,8 +573,8 @@ fn password_row<'a>(state: &'a ObsPanelState, palette: &'a ForgePalette) -> Elem
 fn toggle_row<'a>(
     icon: Icon,
     icon_color: Color,
-    title: &'a str,
-    subtitle: &'a str,
+    title: impl Into<String>,
+    subtitle: impl Into<String>,
     on: bool,
     msg: ObsPanelMsg,
     has_border: bool,
@@ -582,8 +582,10 @@ fn toggle_row<'a>(
 ) -> Element<'a, Message> {
     let icon_el = tabler_icon(icon, 13.0, icon_color);
     let text_col = column![
-        text(title).size(FONT_SM).color(palette.text_primary),
-        text(subtitle).size(FONT_XS).color(palette.text_faint),
+        text(title.into()).size(FONT_SM).color(palette.text_primary),
+        text(subtitle.into())
+            .size(FONT_XS)
+            .color(palette.text_faint),
     ]
     .spacing(spf(Spacing::Xxs));
     let left = row![icon_el, text_col]
@@ -654,14 +656,14 @@ fn test_status_preview<'a>(
         TestStatus::Running => banner_card(
             Icon::Refresh,
             palette.info,
-            "Testing connection…",
+            forge_widgets::tr!("obs.test.running"),
             None,
             palette,
         ),
         TestStatus::Success(info) => banner_card(
             Icon::CircleCheck,
             palette.success,
-            "Test successful",
+            forge_widgets::tr!("obs.test.success"),
             Some(format!(
                 "obs-websocket v{} · {} scenes · {}ms RTT",
                 info.obs_websocket_version, info.scene_count, info.rtt_ms
@@ -671,7 +673,7 @@ fn test_status_preview<'a>(
         TestStatus::Failure(msg) => banner_card(
             Icon::AlertTriangle,
             palette.random,
-            "Test failed",
+            forge_widgets::tr!("obs.test.failed"),
             Some(msg.clone()),
             palette,
         ),
@@ -681,12 +683,12 @@ fn test_status_preview<'a>(
 fn banner_card<'a>(
     icon: Icon,
     accent: Color,
-    title: &'a str,
+    title: impl Into<String>,
     detail: Option<String>,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let icon_el = tabler_icon(icon, 13.0, accent);
-    let mut text_col = column![text(title).size(FONT_SM).color(palette.text_primary)];
+    let mut text_col = column![text(title.into()).size(FONT_SM).color(palette.text_primary)];
     if let Some(d) = detail {
         text_col = text_col.push(
             text(d)
@@ -717,13 +719,10 @@ fn banner_card<'a>(
 
 fn obs_tip_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     let icon = tabler_icon(Icon::InfoCircle, 14.0, palette.warning);
-    let body = text(
-        "Running OBS on a different PC? Set host to that machine's IP. Make sure OBS WebSocket is \
-         configured to bind to 0.0.0.0 instead of localhost, and the port is open in firewall.",
-    )
-    .size(FONT_XS)
-    .color(palette.text_muted)
-    .wrapping(iced::widget::text::Wrapping::Word);
+    let body = text(forge_widgets::tr!("obs.tip"))
+        .size(FONT_XS)
+        .color(palette.text_muted)
+        .wrapping(iced::widget::text::Wrapping::Word);
 
     container(
         row![icon, body]
@@ -737,13 +736,13 @@ fn obs_tip_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
 }
 
 fn primary_button<'a>(
-    label: &'a str,
+    label: impl Into<String>,
     msg: Message,
     enabled: bool,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let mut b = button(
-        text(label)
+        text(label.into())
             .size(FONT_SM)
             .color(palette.shell)
             .align_x(Alignment::Center),
@@ -768,13 +767,13 @@ fn primary_button<'a>(
 }
 
 fn secondary_button<'a>(
-    label: &'a str,
+    label: impl Into<String>,
     msg: Message,
     enabled: bool,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let mut b = button(
-        text(label)
+        text(label.into())
             .size(FONT_SM)
             .color(palette.text_secondary)
             .align_x(Alignment::Center),

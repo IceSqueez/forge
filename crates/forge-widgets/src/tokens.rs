@@ -1,4 +1,27 @@
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
+
 use iced::{Font, font};
+
+pub const DEFAULT_BODY_FAMILY: &str = "Inter";
+pub const DEFAULT_MONO_FAMILY: &str = "JetBrains Mono";
+
+thread_local! {
+    static ACTIVE_DENSITY: Cell<Density> = const { Cell::new(Density::Cozy) };
+    static BODY_FAMILY_OVERRIDE: Cell<Option<&'static str>> = const { Cell::new(None) };
+    static MONO_FAMILY_OVERRIDE: Cell<Option<&'static str>> = const { Cell::new(None) };
+    static LEAKED_FAMILY_NAMES: RefCell<HashMap<String, &'static str>> = RefCell::new(HashMap::new());
+}
+
+/// Replaces the active density for this thread. Per-thread, like the locale bundle — iced's
+/// view loop runs on the main thread, so installing once there covers every token call site.
+pub fn install_density(density: Density) {
+    ACTIVE_DENSITY.with(|cell| cell.set(density));
+}
+
+fn active_density() -> Density {
+    ACTIVE_DENSITY.with(Cell::get)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ThemeId {
@@ -49,11 +72,11 @@ pub fn spacing(s: Spacing, d: Density) -> u16 {
 }
 
 pub fn sp(token: Spacing) -> u16 {
-    spacing(token, Density::Cozy)
+    spacing(token, active_density())
 }
 
 pub fn spf(token: Spacing) -> f32 {
-    f32::from(spacing(token, Density::Cozy))
+    f32::from(spacing(token, active_density()))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,12 +128,45 @@ pub enum FontRole {
     Monospace,
 }
 
+/// Replaces the active family for one role on this thread; `None` restores the bundled default.
+pub fn install_font_override(role: FontRole, family: Option<&str>) {
+    let name = family.map(leak_family_name);
+    match role {
+        FontRole::Body => BODY_FAMILY_OVERRIDE.with(|cell| cell.set(name)),
+        FontRole::Monospace => MONO_FAMILY_OVERRIDE.with(|cell| cell.set(name)),
+    }
+}
+
+// Why: iced font families are `&'static str`; the cache bounds the leak to one
+// allocation per distinct family name per thread.
+fn leak_family_name(name: &str) -> &'static str {
+    LEAKED_FAMILY_NAMES.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        match cache.get(name) {
+            Some(leaked) => leaked,
+            None => {
+                let leaked: &'static str = Box::leak(name.to_owned().into_boxed_str());
+                cache.insert(name.to_owned(), leaked);
+                leaked
+            }
+        }
+    })
+}
+
 /// Caller must invoke `load_fonts()` at startup; otherwise iced falls back to system fonts.
 pub fn font(role: FontRole) -> Font {
     match role {
-        FontRole::Body => Font::with_name("Inter"),
+        FontRole::Body => Font::with_name(
+            BODY_FAMILY_OVERRIDE
+                .with(Cell::get)
+                .unwrap_or(DEFAULT_BODY_FAMILY),
+        ),
         FontRole::Monospace => Font {
-            family: font::Family::Name("JetBrains Mono"),
+            family: font::Family::Name(
+                MONO_FAMILY_OVERRIDE
+                    .with(Cell::get)
+                    .unwrap_or(DEFAULT_MONO_FAMILY),
+            ),
             weight: font::Weight::Normal,
             stretch: font::Stretch::Normal,
             style: font::Style::Normal,
@@ -133,9 +189,52 @@ mod tests {
 
     #[test]
     fn spacing_density_orders_compact_lt_cozy_lt_spacious() {
-        for s in [Spacing::Xs, Spacing::Sm, Spacing::Md, Spacing::Lg] {
+        for s in [
+            Spacing::Xxs,
+            Spacing::Xs,
+            Spacing::Sm,
+            Spacing::Md,
+            Spacing::Lg,
+        ] {
             assert!(spacing(s, Density::Compact) < spacing(s, Density::Cozy));
             assert!(spacing(s, Density::Cozy) < spacing(s, Density::Spacious));
         }
+    }
+
+    #[test]
+    fn spacing_none_stays_zero_for_every_density() {
+        for d in [Density::Compact, Density::Cozy, Density::Spacious] {
+            assert_eq!(spacing(Spacing::None, d), 0);
+        }
+    }
+
+    #[test]
+    fn install_density_rescales_ambient_spacing_tokens() {
+        // Fresh test thread starts at the Cozy default.
+        assert_eq!(sp(Spacing::Md), 16);
+        install_density(Density::Compact);
+        assert_eq!(sp(Spacing::Md), 14); // 16 * 0.85 rounds, not truncates
+        assert_eq!(spf(Spacing::Md), 14.0);
+        install_density(Density::Spacious);
+        assert_eq!(sp(Spacing::Md), 19);
+    }
+
+    #[test]
+    fn font_override_replaces_family_and_none_restores_default() {
+        assert_eq!(font(FontRole::Body), Font::with_name(DEFAULT_BODY_FAMILY));
+        install_font_override(FontRole::Body, Some("Custom Sans"));
+        assert_eq!(font(FontRole::Body), Font::with_name("Custom Sans"));
+        install_font_override(FontRole::Body, None);
+        assert_eq!(font(FontRole::Body), Font::with_name(DEFAULT_BODY_FAMILY));
+    }
+
+    #[test]
+    fn font_override_roles_do_not_cross_contaminate() {
+        install_font_override(FontRole::Monospace, Some("Custom Mono"));
+        assert_eq!(font(FontRole::Body), Font::with_name(DEFAULT_BODY_FAMILY));
+        assert_eq!(
+            font(FontRole::Monospace).family,
+            font::Family::Name("Custom Mono")
+        );
     }
 }

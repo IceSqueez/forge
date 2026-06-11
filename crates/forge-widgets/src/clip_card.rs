@@ -5,9 +5,7 @@ use iced::{
 
 use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
-use crate::tokens::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spacing, spf,
-};
+use crate::tokens::{BORDER_THIN, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spf};
 
 pub struct ClipCardData {
     pub name: String,
@@ -90,7 +88,7 @@ pub fn clip_card<'a, Msg: 'a + Clone>(
         .style(chip_style(palette.surface_overlay, palette.border_regular));
 
         row![duration_chip, hk_chip]
-            .spacing(f32::from(spacing(Spacing::Xs, Density::Cozy)))
+            .spacing(spf(Spacing::Xs))
             .into()
     } else {
         duration_chip.into()
@@ -111,14 +109,13 @@ pub fn clip_card<'a, Msg: 'a + Clone>(
             })
             .font(font(FontRole::Monospace)),
     ]
-    .spacing(f32::from(spacing(Spacing::Xs, Density::Cozy)));
+    .spacing(spf(Spacing::Xs));
 
     let play_btn = action_btn(Icon::PlayerPlay, palette.success, on_play, palette);
     let edit_btn = action_btn(Icon::InfoCircle, palette.info, on_edit, palette);
     let delete_btn = action_btn(Icon::X, palette.random, on_delete, palette);
 
-    let action_row = row![play_btn, edit_btn, delete_btn]
-        .spacing(f32::from(spacing(Spacing::Xs, Density::Cozy)));
+    let action_row = row![play_btn, edit_btn, delete_btn].spacing(spf(Spacing::Xs));
 
     let separator = container(iced::widget::Space::new())
         .width(Length::Fill)
@@ -135,10 +132,10 @@ pub fn clip_card<'a, Msg: 'a + Clone>(
         separator,
         row![iced::widget::Space::new().width(Length::Fill), action_row].align_y(Alignment::Center),
     ]
-    .spacing(f32::from(spacing(Spacing::Sm, Density::Cozy)));
+    .spacing(spf(Spacing::Sm));
 
     container(content)
-        .padding(f32::from(spacing(Spacing::Md, Density::Cozy)))
+        .padding(spf(Spacing::Md))
         .width(Length::Fill)
         .style(move |_| container::Style {
             background: Some(Background::Color(p.elevated)),

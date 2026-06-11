@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use iced::{
     Alignment, Background, Border, Color, Element, Length, Padding,
     widget::{Space, button, column, container, row, stack, text},
@@ -45,15 +47,15 @@ pub struct TriggerCardProps<'a, Msg> {
 
 #[derive(Debug, Clone)]
 pub struct ModalProps<'a, Msg> {
-    pub title: &'a str,
+    pub title: Cow<'a, str>,
     pub on_close: Msg,
     pub kbd_hint: Option<&'a str>,
 }
 
 #[derive(Debug, Clone)]
-pub struct ToggleProps<'a, Msg> {
-    pub label: &'a str,
-    pub description: &'a str,
+pub struct ToggleProps<Msg> {
+    pub label: String,
+    pub description: String,
     pub value: bool,
     pub on_toggle: Msg,
 }
@@ -420,7 +422,7 @@ pub fn modal<'a, Msg: Clone + 'a>(
 
 pub fn toggle<'a, Msg: Clone + 'a>(
     palette: &'a ForgePalette,
-    props: ToggleProps<'a, Msg>,
+    props: ToggleProps<Msg>,
 ) -> Element<'a, Msg> {
     let track_bg = toggle_thumb_bg(props.value, palette);
     let thumb_color = palette.text_primary;

@@ -78,11 +78,11 @@ pub fn tts_triggers_view<'a>(
     let gap_md = spf(Spacing::Sm);
 
     let header_group = column![
-        text("WHAT GETS SPOKEN")
+        text(forge_widgets::tr!("tts_triggers_header"))
             .size(FONT_XS)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace)),
-        text("Enable sources and set who can trigger them")
+        text(forge_widgets::tr!("tts_triggers_hint"))
             .size(FONT_SM)
             .color(palette.text_muted),
     ]
@@ -216,10 +216,10 @@ fn trigger_card_command<'a>(
             .align_x(iced::alignment::Horizontal::Center)
             .align_y(iced::alignment::Vertical::Center),
         column![
-            text("Chat command")
+            text(forge_widgets::tr!("tts_triggers_cmd_title"))
                 .size(FONT_SM)
                 .color(palette.text_primary),
-            text("!tts <message>")
+            text(forge_widgets::tr!("tts_triggers_cmd_subtitle"))
                 .size(FONT_XS)
                 .color(palette.text_muted)
                 .font(font(FontRole::Monospace)),
@@ -238,14 +238,26 @@ fn trigger_card_command<'a>(
     .spacing(gap_sm);
 
     let chips = row![
-        role_chip("Subscribers", palette.success, palette),
-        role_chip("VIPs", palette.brand, palette),
-        role_chip("Mods", palette.warning, palette),
+        role_chip(
+            Box::leak(forge_widgets::tr!("tts_triggers_role_subscribers").into_boxed_str()),
+            palette.success,
+            palette
+        ),
+        role_chip(
+            Box::leak(forge_widgets::tr!("tts_triggers_role_vips").into_boxed_str()),
+            palette.brand,
+            palette
+        ),
+        role_chip(
+            Box::leak(forge_widgets::tr!("tts_triggers_role_mods").into_boxed_str()),
+            palette.warning,
+            palette
+        ),
     ]
     .spacing(gap_sm)
     .wrap();
 
-    let meta = text("cooldown 8s \u{b7} max 250 chars")
+    let meta = text(forge_widgets::tr!("tts_triggers_cmd_meta"))
         .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
@@ -285,10 +297,10 @@ fn trigger_card_channel_points<'a>(
             .align_x(iced::alignment::Horizontal::Center)
             .align_y(iced::alignment::Vertical::Center),
         column![
-            text("Channel point reward")
+            text(forge_widgets::tr!("tts_triggers_points_title"))
                 .size(FONT_SM)
                 .color(palette.text_primary),
-            text("\"Speak my message\" \u{b7} 500 pts")
+            text(forge_widgets::tr!("tts_triggers_points_subtitle"))
                 .size(FONT_XS)
                 .color(palette.text_muted),
         ]
@@ -305,11 +317,15 @@ fn trigger_card_channel_points<'a>(
     .align_y(Alignment::Center)
     .spacing(gap_sm);
 
-    let chips = row![role_chip("Everyone", palette.text_primary, palette)]
-        .spacing(gap_sm)
-        .wrap();
+    let chips = row![role_chip(
+        Box::leak(forge_widgets::tr!("tts_triggers_role_everyone").into_boxed_str()),
+        palette.text_primary,
+        palette
+    )]
+    .spacing(gap_sm)
+    .wrap();
 
-    let meta = text("no cooldown \u{b7} priority queue")
+    let meta = text(forge_widgets::tr!("tts_triggers_points_meta"))
         .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
@@ -349,10 +365,10 @@ fn trigger_card_bits<'a>(
             .align_x(iced::alignment::Horizontal::Center)
             .align_y(iced::alignment::Vertical::Center),
         column![
-            text("Bits / cheers")
+            text(forge_widgets::tr!("tts_triggers_bits_title"))
                 .size(FONT_SM)
                 .color(palette.text_primary),
-            text("Speak cheer message")
+            text(forge_widgets::tr!("tts_triggers_bits_subtitle"))
                 .size(FONT_XS)
                 .color(palette.text_muted),
         ]
@@ -370,7 +386,9 @@ fn trigger_card_bits<'a>(
     .spacing(gap_sm);
 
     let min_bits = row![
-        text("Minimum").size(FONT_XS).color(palette.text_muted),
+        text(forge_widgets::tr!("tts_triggers_bits_min_label"))
+            .size(FONT_XS)
+            .color(palette.text_muted),
         container(
             text("100 bits")
                 .size(FONT_SM)
@@ -391,7 +409,7 @@ fn trigger_card_bits<'a>(
     .align_y(Alignment::Center)
     .spacing(gap_sm);
 
-    let meta = text("louder = longer message")
+    let meta = text(forge_widgets::tr!("tts_triggers_bits_meta"))
         .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
@@ -431,10 +449,10 @@ fn trigger_card_subs<'a>(
             .align_x(iced::alignment::Horizontal::Center)
             .align_y(iced::alignment::Vertical::Center),
         column![
-            text("Sub messages")
+            text(forge_widgets::tr!("tts_triggers_subs_title"))
                 .size(FONT_SM)
                 .color(palette.text_primary),
-            text("Speak resub / gift messages")
+            text(forge_widgets::tr!("tts_triggers_subs_subtitle"))
                 .size(FONT_XS)
                 .color(palette.text_muted),
         ]
@@ -454,7 +472,7 @@ fn trigger_card_subs<'a>(
     let disabled_note: Element<'a, Message> = if state.sub_messages_enabled {
         Space::new().into()
     } else {
-        text("Disabled \u{2014} toggle to enable")
+        text(forge_widgets::tr!("tts_triggers_subs_disabled"))
             .size(FONT_XS)
             .color(palette.text_muted)
             .into()
@@ -512,13 +530,13 @@ fn format_card<'a>(
     palette: &'a ForgePalette,
     gap_sm: f32,
 ) -> Element<'a, Message> {
-    let header = text("MESSAGE FORMAT")
+    let header = text(forge_widgets::tr!("tts_triggers_format_header"))
         .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
     let username_row = format_row_toggle(
-        "Read username before message",
+        Box::leak(forge_widgets::tr!("tts_triggers_format_read_username").into_boxed_str()),
         state.read_username,
         Message::Tts(TtsMsg::Triggers(TtsTriggersMsg::ReadUsernameToggled(
             !state.read_username,
@@ -527,7 +545,7 @@ fn format_card<'a>(
     );
 
     let template_section = column![
-        text("TEMPLATE")
+        text(forge_widgets::tr!("tts_triggers_format_template_header"))
             .size(FONT_XS)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace)),
@@ -553,7 +571,7 @@ fn format_card<'a>(
     .spacing(spf(Spacing::Xxs));
 
     let emotes_row = format_row_toggle(
-        "Speak emotes as words",
+        Box::leak(forge_widgets::tr!("tts_triggers_format_speak_emotes").into_boxed_str()),
         state.speak_emotes,
         Message::Tts(TtsMsg::Triggers(TtsTriggersMsg::SpeakEmotesToggled(
             !state.speak_emotes,
@@ -627,14 +645,14 @@ fn queue_behavior_card<'a>(
     palette: &'a ForgePalette,
     gap_sm: f32,
 ) -> Element<'a, Message> {
-    let header = text("QUEUE BEHAVIOR")
+    let header = text(forge_widgets::tr!("tts_triggers_queue_header"))
         .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
     let skip_row = container(
         row![
-            text("Bits & points skip the line")
+            text(forge_widgets::tr!("tts_triggers_queue_bits_skip"))
                 .size(FONT_SM)
                 .color(palette.text_primary)
                 .width(Length::Fill),
@@ -655,9 +673,17 @@ fn queue_behavior_card<'a>(
         column![
             header,
             divider_line(palette),
-            queue_value_row("Max queue length", "20", palette),
+            queue_value_row(
+                Box::leak(forge_widgets::tr!("tts_triggers_queue_max_length").into_boxed_str()),
+                "20",
+                palette
+            ),
             divider_line(palette),
-            queue_value_row("Per-user limit in queue", "2", palette),
+            queue_value_row(
+                Box::leak(forge_widgets::tr!("tts_triggers_queue_per_user_limit").into_boxed_str()),
+                "2",
+                palette
+            ),
             divider_line(palette),
             skip_row,
         ]

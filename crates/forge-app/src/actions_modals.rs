@@ -21,7 +21,7 @@ pub(crate) fn add_action_modal_view<'a>(
         .font(forge_widgets::font(forge_widgets::FontRole::Monospace));
 
     let name_input = forge_widgets::text_input_field(
-        "My automation",
+        forge_widgets::tr!("actions_name_placeholder"),
         &form.name,
         |v| {
             Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
@@ -36,13 +36,17 @@ pub(crate) fn add_action_modal_view<'a>(
         .align_y(iced::alignment::Vertical::Center);
 
     let name_block = column![
-        forge_widgets::section_header("NAME", None, palette),
+        forge_widgets::section_header(
+            forge_widgets::tr!("actions_modal_section_name"),
+            None,
+            palette
+        ),
         name_row,
     ]
     .spacing(spf(Spacing::Xs));
 
     let group_input = forge_widgets::text_input_field(
-        "Examples",
+        forge_widgets::tr!("actions_group_placeholder"),
         &form.group,
         |v| {
             Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
@@ -53,7 +57,11 @@ pub(crate) fn add_action_modal_view<'a>(
     );
 
     let group_block = column![
-        forge_widgets::section_header("GROUP", None, palette),
+        forge_widgets::section_header(
+            forge_widgets::tr!("actions_modal_section_group"),
+            None,
+            palette
+        ),
         group_input,
     ]
     .spacing(spf(Spacing::Xs));
@@ -92,7 +100,11 @@ pub(crate) fn add_action_modal_view<'a>(
     .into();
 
     let queue_block = column![
-        forge_widgets::section_header("QUEUE", None, palette),
+        forge_widgets::section_header(
+            forge_widgets::tr!("actions_modal_section_queue"),
+            None,
+            palette
+        ),
         queue_select,
     ]
     .spacing(spf(Spacing::Xs));
@@ -100,7 +112,7 @@ pub(crate) fn add_action_modal_view<'a>(
     let two_col = row![group_block, queue_block].spacing(spf(Spacing::Sm));
 
     let desc_input = forge_widgets::text_input_field(
-        "Plays a sound, shows overlay alert...",
+        forge_widgets::tr!("actions_description_placeholder"),
         &form.description,
         |v| {
             Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
@@ -111,7 +123,11 @@ pub(crate) fn add_action_modal_view<'a>(
     );
 
     let desc_block = column![
-        forge_widgets::section_header("DESCRIPTION", None, palette),
+        forge_widgets::section_header(
+            forge_widgets::tr!("actions_modal_section_description"),
+            None,
+            palette
+        ),
         desc_input,
     ]
     .spacing(spf(Spacing::Xs));
@@ -119,8 +135,8 @@ pub(crate) fn add_action_modal_view<'a>(
     let enabled_toggle = forge_widgets::toggle(
         palette,
         ToggleProps {
-            label: "Enabled",
-            description: "Action runs when a trigger fires.",
+            label: forge_widgets::tr!("actions_modal_enabled_label"),
+            description: forge_widgets::tr!("actions_modal_enabled_desc"),
             value: form.enabled,
             on_toggle: Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
                 AddActionMsg::EnabledToggled(!form.enabled),
@@ -131,8 +147,8 @@ pub(crate) fn add_action_modal_view<'a>(
     let concurrent_toggle = forge_widgets::toggle(
         palette,
         ToggleProps {
-            label: "Concurrent execution",
-            description: "Allow parallel runs in this queue.",
+            label: forge_widgets::tr!("actions_modal_concurrent_label"),
+            description: forge_widgets::tr!("actions_modal_concurrent_desc"),
             value: form.concurrent,
             on_toggle: Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
                 AddActionMsg::ConcurrentToggled(!form.concurrent),
@@ -143,8 +159,8 @@ pub(crate) fn add_action_modal_view<'a>(
     let bypass_toggle = forge_widgets::toggle(
         palette,
         ToggleProps {
-            label: "Bypass queue pause",
-            description: "Always run even if queue is paused.",
+            label: forge_widgets::tr!("actions_modal_bypass_label"),
+            description: forge_widgets::tr!("actions_modal_bypass_desc"),
             value: form.bypass_pause,
             on_toggle: Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
                 AddActionMsg::BypassPauseToggled(!form.bypass_pause),
@@ -155,8 +171,8 @@ pub(crate) fn add_action_modal_view<'a>(
     let random_pick_toggle = forge_widgets::toggle(
         palette,
         ToggleProps {
-            label: "Random pick",
-            description: "Run ONE random sub-action per trigger instead of all.",
+            label: forge_widgets::tr!("actions_modal_random_pick_label"),
+            description: forge_widgets::tr!("actions_modal_random_pick_desc"),
             value: form.random_pick,
             on_toggle: Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
                 AddActionMsg::RandomPickToggled(!form.random_pick),
@@ -164,7 +180,11 @@ pub(crate) fn add_action_modal_view<'a>(
         },
     );
 
-    let behavior_header = forge_widgets::section_header("BEHAVIOR", None, palette);
+    let behavior_header = forge_widgets::section_header(
+        forge_widgets::tr!("actions_modal_section_behavior"),
+        None,
+        palette,
+    );
 
     let mut body_col = column![
         name_block,
@@ -188,7 +208,7 @@ pub(crate) fn add_action_modal_view<'a>(
     }
 
     let cancel_btn = forge_widgets::secondary_button(
-        "Cancel",
+        forge_widgets::tr!("actions_modal_cancel_btn"),
         Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
             AddActionMsg::Cancel,
         ))),
@@ -199,16 +219,24 @@ pub(crate) fn add_action_modal_view<'a>(
         AddActionMsg::Submit,
     )));
     let create_btn = if form.is_valid() && !form.saving {
-        forge_widgets::primary_button("Create action", create_on_press, palette)
+        forge_widgets::primary_button(
+            forge_widgets::tr!("actions_modal_create_btn"),
+            create_on_press,
+            palette,
+        )
     } else {
-        forge_widgets::secondary_button("Create action", Message::Noop, palette)
+        forge_widgets::secondary_button(
+            forge_widgets::tr!("actions_modal_create_btn"),
+            Message::Noop,
+            palette,
+        )
     };
 
     let footer_buttons = row![cancel_btn, create_btn].spacing(spf(Spacing::Xs));
 
     let footer: Element<'_, Message> = iced::widget::container(
         row![
-            text("ESC to cancel")
+            text(forge_widgets::tr!("actions_esc_hint"))
                 .size(FONT_XS)
                 .color(palette.text_faint)
                 .font(forge_widgets::font(forge_widgets::FontRole::Monospace)),
@@ -223,7 +251,7 @@ pub(crate) fn add_action_modal_view<'a>(
     forge_widgets::modal(
         palette,
         ModalProps {
-            title: "New action",
+            title: std::borrow::Cow::Owned(forge_widgets::tr!("actions_modal_new_action_title")),
             on_close: Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
                 AddActionMsg::Cancel,
             ))),
@@ -262,9 +290,18 @@ pub(crate) fn add_sub_action_modal_view<'a>(
     use iced::Length;
     use iced::widget::{column, row, text};
 
+    let lbl_send_chat = forge_widgets::tr!("actions_sub_chip_send_chat");
+    let lbl_set_global = forge_widgets::tr!("actions_sub_chip_set_global");
+    let lbl_delay = forge_widgets::tr!("actions_sub_chip_delay");
+    let lbl_log = forge_widgets::tr!("actions_sub_chip_log");
+    let lbl_play_sound = forge_widgets::tr!("actions_sub_chip_play_sound");
+    let lbl_speak = forge_widgets::tr!("actions_sub_chip_speak");
+    let lbl_read_file = forge_widgets::tr!("actions_sub_chip_read_file");
+    let lbl_random_int = forge_widgets::tr!("actions_sub_chip_random_int");
+
     let chip_send_chat = forge_widgets::category_chip(
         palette,
-        "Send chat",
+        &lbl_send_chat,
         palette.brand,
         form.kind == SubActionKindChoice::SendChat,
         Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
@@ -273,7 +310,7 @@ pub(crate) fn add_sub_action_modal_view<'a>(
     );
     let chip_set_global = forge_widgets::category_chip(
         palette,
-        "Set global",
+        &lbl_set_global,
         palette.warning,
         form.kind == SubActionKindChoice::SetGlobal,
         Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
@@ -282,7 +319,7 @@ pub(crate) fn add_sub_action_modal_view<'a>(
     );
     let chip_delay = forge_widgets::category_chip(
         palette,
-        "Delay",
+        &lbl_delay,
         palette.info,
         form.kind == SubActionKindChoice::Delay,
         Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
@@ -291,7 +328,7 @@ pub(crate) fn add_sub_action_modal_view<'a>(
     );
     let chip_log = forge_widgets::category_chip(
         palette,
-        "Log",
+        &lbl_log,
         palette.text_muted,
         form.kind == SubActionKindChoice::Log,
         Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
@@ -300,7 +337,7 @@ pub(crate) fn add_sub_action_modal_view<'a>(
     );
     let chip_play_sound = forge_widgets::category_chip(
         palette,
-        "Play sound",
+        &lbl_play_sound,
         palette.success,
         form.kind == SubActionKindChoice::PlaySound,
         Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
@@ -309,7 +346,7 @@ pub(crate) fn add_sub_action_modal_view<'a>(
     );
     let chip_speak = forge_widgets::category_chip(
         palette,
-        "Speak",
+        &lbl_speak,
         palette.info,
         form.kind == SubActionKindChoice::Speak,
         Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
@@ -318,7 +355,7 @@ pub(crate) fn add_sub_action_modal_view<'a>(
     );
     let chip_read_file = forge_widgets::category_chip(
         palette,
-        "Read file",
+        &lbl_read_file,
         palette.random,
         form.kind == SubActionKindChoice::ReadFile,
         Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
@@ -327,7 +364,7 @@ pub(crate) fn add_sub_action_modal_view<'a>(
     );
     let chip_random_int = forge_widgets::category_chip(
         palette,
-        "Random int",
+        &lbl_random_int,
         palette.warning,
         form.kind == SubActionKindChoice::RandomInt,
         Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
@@ -358,12 +395,16 @@ pub(crate) fn add_sub_action_modal_view<'a>(
                 },
                 palette,
             );
-            let helper = text("Variables: %user%, %message%, %args%")
+            let helper = text(forge_widgets::tr!("actions_sub_helper_variables"))
                 .size(FONT_XS)
                 .color(palette.warning)
                 .font(forge_widgets::font(forge_widgets::FontRole::Monospace));
             let msg_block = column![
-                forge_widgets::section_header("MESSAGE", None, palette),
+                forge_widgets::section_header(
+                    forge_widgets::tr!("actions_sub_section_message"),
+                    None,
+                    palette
+                ),
                 msg_input,
                 helper,
             ]
@@ -400,7 +441,11 @@ pub(crate) fn add_sub_action_modal_view<'a>(
                 })
                 .into();
             let target_block = column![
-                forge_widgets::section_header("TARGET PLATFORM", None, palette),
+                forge_widgets::section_header(
+                    forge_widgets::tr!("actions_sub_section_target_platform"),
+                    None,
+                    palette
+                ),
                 target_select,
             ]
             .spacing(spf(Spacing::Xs));
@@ -421,7 +466,11 @@ pub(crate) fn add_sub_action_modal_view<'a>(
                 palette,
             );
             let name_block = column![
-                forge_widgets::section_header("VARIABLE NAME", None, palette),
+                forge_widgets::section_header(
+                    forge_widgets::tr!("actions_sub_section_variable_name"),
+                    None,
+                    palette
+                ),
                 name_input,
             ]
             .spacing(spf(Spacing::Xs));
@@ -436,12 +485,16 @@ pub(crate) fn add_sub_action_modal_view<'a>(
                 },
                 palette,
             );
-            let helper = text("Supports variable interpolation")
+            let helper = text(forge_widgets::tr!("actions_sub_helper_interpolation"))
                 .size(FONT_XS)
                 .color(palette.warning)
                 .font(forge_widgets::font(forge_widgets::FontRole::Monospace));
             let val_block = column![
-                forge_widgets::section_header("VALUE", None, palette),
+                forge_widgets::section_header(
+                    forge_widgets::tr!("actions_sub_section_value"),
+                    None,
+                    palette
+                ),
                 val_input,
                 helper,
             ]
@@ -463,7 +516,11 @@ pub(crate) fn add_sub_action_modal_view<'a>(
                 palette,
             );
             column![
-                forge_widgets::section_header("MILLISECONDS", None, palette),
+                forge_widgets::section_header(
+                    forge_widgets::tr!("actions_sub_section_milliseconds"),
+                    None,
+                    palette
+                ),
                 ms_input,
             ]
             .spacing(spf(Spacing::Xs))
@@ -507,13 +564,17 @@ pub(crate) fn add_sub_action_modal_view<'a>(
                 })
                 .into();
             let level_block = column![
-                forge_widgets::section_header("LEVEL", None, palette),
+                forge_widgets::section_header(
+                    forge_widgets::tr!("actions_sub_section_level"),
+                    None,
+                    palette
+                ),
                 level_select,
             ]
             .spacing(spf(Spacing::Xs));
 
             let msg_input = forge_widgets::text_input_field(
-                "Action started",
+                forge_widgets::tr!("actions_log_message_placeholder"),
                 &form.config.log_message,
                 |v| {
                     Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
@@ -523,7 +584,11 @@ pub(crate) fn add_sub_action_modal_view<'a>(
                 palette,
             );
             let msg_block = column![
-                forge_widgets::section_header("MESSAGE", None, palette),
+                forge_widgets::section_header(
+                    forge_widgets::tr!("actions_sub_section_message"),
+                    None,
+                    palette
+                ),
                 msg_input,
             ]
             .spacing(spf(Spacing::Xs));
@@ -534,12 +599,19 @@ pub(crate) fn add_sub_action_modal_view<'a>(
         }
         SubActionKindChoice::PlaySound => {
             if form.available_clips.is_empty() {
-                let hint = text("No clips yet \u{2014} add one in the Soundboard screen first.")
+                let hint = text(forge_widgets::tr!("actions_sub_no_clips"))
                     .size(FONT_SM)
                     .color(palette.text_muted);
-                column![forge_widgets::section_header("CLIP", None, palette), hint]
-                    .spacing(spf(Spacing::Xs))
-                    .into()
+                column![
+                    forge_widgets::section_header(
+                        forge_widgets::tr!("actions_sub_section_clip"),
+                        None,
+                        palette
+                    ),
+                    hint
+                ]
+                .spacing(spf(Spacing::Xs))
+                .into()
             } else {
                 let p = *palette;
                 let clip_names: Vec<String> = form
@@ -587,7 +659,11 @@ pub(crate) fn add_sub_action_modal_view<'a>(
                     })
                     .into();
                 column![
-                    forge_widgets::section_header("CLIP", None, palette),
+                    forge_widgets::section_header(
+                        forge_widgets::tr!("actions_sub_section_clip"),
+                        None,
+                        palette
+                    ),
                     clip_select
                 ]
                 .spacing(spf(Spacing::Xs))
@@ -597,9 +673,13 @@ pub(crate) fn add_sub_action_modal_view<'a>(
         SubActionKindChoice::Speak => {
             use iced::widget::column;
             let text_block = column![
-                forge_widgets::section_header("TEXT", None, palette),
+                forge_widgets::section_header(
+                    forge_widgets::tr!("actions_sub_section_text"),
+                    None,
+                    palette
+                ),
                 forge_widgets::inputs::text_input_field(
-                    "Text to speak…",
+                    forge_widgets::tr!("actions_speak_text_placeholder"),
                     &form.config.speak_text,
                     |v| Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
                         AddSubActionMsg::SpeakTextChanged(v)
@@ -608,10 +688,11 @@ pub(crate) fn add_sub_action_modal_view<'a>(
                 ),
             ]
             .spacing(spf(Spacing::Xs));
+            let voice_override_lbl = forge_widgets::tr!("actions_sub_section_voice_override");
             let voice_block = column![
-                forge_widgets::section_header("VOICE OVERRIDE (optional)", None, palette),
+                forge_widgets::section_header(voice_override_lbl, None, palette),
                 forge_widgets::inputs::text_input_field(
-                    "Leave blank to use alias resolver",
+                    forge_widgets::tr!("actions_sub_voice_hint"),
                     &form.config.speak_voice_override,
                     |v| Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
                         AddSubActionMsg::SpeakVoiceOverrideChanged(v)
@@ -627,7 +708,11 @@ pub(crate) fn add_sub_action_modal_view<'a>(
         SubActionKindChoice::ReadFile => {
             use iced::widget::column;
             let path_block = column![
-                forge_widgets::section_header("PATH (relative to assets sandbox)", None, palette),
+                forge_widgets::section_header(
+                    forge_widgets::tr!("actions_sub_section_path"),
+                    None,
+                    palette
+                ),
                 forge_widgets::inputs::text_input_field(
                     "greetings/welcome.txt",
                     &form.config.read_file_path,
@@ -636,14 +721,18 @@ pub(crate) fn add_sub_action_modal_view<'a>(
                     ))),
                     palette,
                 ),
-                text("Sandboxed under data_dir/assets/ · no ../ traversal · max 1 MiB")
+                text(forge_widgets::tr!("actions_sub_path_hint"))
                     .size(FONT_XS)
                     .color(palette.text_muted)
                     .font(forge_widgets::font(forge_widgets::FontRole::Monospace)),
             ]
             .spacing(spf(Spacing::Xxs));
             let target_block = column![
-                forge_widgets::section_header("TARGET VARIABLE", None, palette),
+                forge_widgets::section_header(
+                    forge_widgets::tr!("actions_sub_section_target_var"),
+                    None,
+                    palette
+                ),
                 forge_widgets::inputs::text_input_field(
                     "welcome_text",
                     &form.config.read_file_target_var,
@@ -661,7 +750,11 @@ pub(crate) fn add_sub_action_modal_view<'a>(
         SubActionKindChoice::RandomInt => {
             use iced::widget::column;
             let min_block = column![
-                forge_widgets::section_header("MIN", None, palette),
+                forge_widgets::section_header(
+                    forge_widgets::tr!("actions_sub_section_min"),
+                    None,
+                    palette
+                ),
                 forge_widgets::inputs::text_input_field(
                     "1",
                     &form.config.random_int_min,
@@ -673,7 +766,11 @@ pub(crate) fn add_sub_action_modal_view<'a>(
             ]
             .spacing(spf(Spacing::Xs));
             let max_block = column![
-                forge_widgets::section_header("MAX", None, palette),
+                forge_widgets::section_header(
+                    forge_widgets::tr!("actions_sub_section_max"),
+                    None,
+                    palette
+                ),
                 forge_widgets::inputs::text_input_field(
                     "100",
                     &form.config.random_int_max,
@@ -685,7 +782,11 @@ pub(crate) fn add_sub_action_modal_view<'a>(
             ]
             .spacing(spf(Spacing::Xs));
             let target_block = column![
-                forge_widgets::section_header("TARGET VARIABLE", None, palette),
+                forge_widgets::section_header(
+                    forge_widgets::tr!("actions_sub_section_target_var"),
+                    None,
+                    palette
+                ),
                 forge_widgets::inputs::text_input_field(
                     "dice_roll",
                     &form.config.random_int_target_var,
@@ -716,14 +817,19 @@ pub(crate) fn add_sub_action_modal_view<'a>(
         ));
     }
 
-    let (btn_label, title_label) = if form.editing_index.is_some() {
-        ("Save changes", "Edit step")
+    let btn_label = if form.editing_index.is_some() {
+        forge_widgets::tr!("actions_sub_modal_save_btn")
     } else {
-        ("Add step", "Add step")
+        forge_widgets::tr!("actions_sub_modal_add_btn")
+    };
+    let title_label = if form.editing_index.is_some() {
+        forge_widgets::tr!("actions_sub_modal_edit_title")
+    } else {
+        forge_widgets::tr!("actions_sub_modal_add_title")
     };
 
     let cancel_btn = forge_widgets::secondary_button(
-        "Cancel",
+        forge_widgets::tr!("actions_sub_modal_cancel_btn"),
         Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
             AddSubActionMsg::Cancel,
         ))),
@@ -734,16 +840,16 @@ pub(crate) fn add_sub_action_modal_view<'a>(
         AddSubActionMsg::Submit,
     )));
     let add_btn = if form.is_valid() && !form.saving {
-        forge_widgets::primary_button(btn_label, add_on_press, palette)
+        forge_widgets::primary_button(btn_label.clone(), add_on_press, palette)
     } else {
-        forge_widgets::secondary_button(btn_label, Message::Noop, palette)
+        forge_widgets::secondary_button(btn_label.clone(), Message::Noop, palette)
     };
 
     let footer_buttons = row![cancel_btn, add_btn].spacing(spf(Spacing::Xs));
 
     let footer: iced::Element<'_, Message> = iced::widget::container(
         row![
-            text("ESC to cancel")
+            text(forge_widgets::tr!("actions_esc_hint"))
                 .size(FONT_XS)
                 .color(palette.text_faint)
                 .font(forge_widgets::font(forge_widgets::FontRole::Monospace)),
@@ -784,7 +890,7 @@ pub(crate) fn add_sub_action_modal_view<'a>(
         .palette(palette)
         .width(forge_widgets::SheetWidth::new(480.0, 360.0, 720.0))
         .header(forge_widgets::SheetHeader {
-            title: std::borrow::Cow::Borrowed(title_label),
+            title: std::borrow::Cow::Owned(title_label),
             subtitle: None,
             on_close: Some(on_cancel.clone()),
         })

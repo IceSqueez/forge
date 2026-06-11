@@ -13,47 +13,47 @@ use crate::tokens::{
 
 pub const SIDEBAR_WIDTH: u16 = 200;
 
-pub struct Sidebar<'a, Msg> {
-    pub items: Vec<NavItem<'a, Msg>>,
-    pub bottom_items: Vec<NavItem<'a, Msg>>,
+pub struct Sidebar<Msg> {
+    pub items: Vec<NavItem<Msg>>,
+    pub bottom_items: Vec<NavItem<Msg>>,
 }
 
-pub enum NavItem<'a, Msg> {
-    Section(&'a str),
-    MiniLabel(&'a str),
+pub enum NavItem<Msg> {
+    Section(String),
+    MiniLabel(String),
     Leaf {
         icon: Icon,
-        label: &'a str,
+        label: String,
         active: bool,
         on_press: Msg,
     },
     FlatLink {
         dot_color: Color,
-        label: &'a str,
+        label: String,
         active: bool,
         on_press: Msg,
     },
     Group {
         icon: Icon,
-        label: &'a str,
+        label: String,
         active: bool,
         expanded: bool,
         on_toggle: Msg,
-        children: Vec<NavChild<'a, Msg>>,
+        children: Vec<NavChild<Msg>>,
     },
     Divider,
 }
 
-pub struct NavChild<'a, Msg> {
+pub struct NavChild<Msg> {
     pub dot_color: Color,
-    pub label: &'a str,
+    pub label: String,
     pub active: bool,
     pub on_press: Msg,
 }
 
 pub fn sidebar<'a, Msg: 'a + Clone>(
     palette: &'a ForgePalette,
-    props: Sidebar<'a, Msg>,
+    props: Sidebar<Msg>,
 ) -> Element<'a, Msg> {
     let bg = palette.shell;
     let border_color = palette.border_regular;
@@ -91,7 +91,7 @@ pub fn sidebar<'a, Msg: 'a + Clone>(
 }
 
 fn render_nav_item<'a, Msg: 'a + Clone>(
-    item: NavItem<'a, Msg>,
+    item: NavItem<Msg>,
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
     match item {
@@ -139,7 +139,7 @@ fn render_nav_item<'a, Msg: 'a + Clone>(
     }
 }
 
-fn nav_section_label<'a, Msg: 'a>(label: &'a str, palette: &ForgePalette) -> Element<'a, Msg> {
+fn nav_section_label<'a, Msg: 'a>(label: String, palette: &ForgePalette) -> Element<'a, Msg> {
     let color = palette.text_faint;
     container(
         text(label)
@@ -157,7 +157,7 @@ fn nav_section_label<'a, Msg: 'a>(label: &'a str, palette: &ForgePalette) -> Ele
     .into()
 }
 
-fn nav_mini_label<'a, Msg: 'a>(label: &'a str, palette: &ForgePalette) -> Element<'a, Msg> {
+fn nav_mini_label<'a, Msg: 'a>(label: String, palette: &ForgePalette) -> Element<'a, Msg> {
     container(
         text(label.to_ascii_uppercase())
             .size(FONT_XS)
@@ -176,7 +176,7 @@ fn nav_mini_label<'a, Msg: 'a>(label: &'a str, palette: &ForgePalette) -> Elemen
 
 fn nav_flat_link<'a, Msg: 'a + Clone>(
     dot_color: Color,
-    label: &'a str,
+    label: String,
     active: bool,
     on_press: Msg,
     palette: &ForgePalette,
@@ -242,7 +242,7 @@ fn nav_flat_link<'a, Msg: 'a + Clone>(
 
 fn nav_leaf<'a, Msg: 'a + Clone>(
     icon: Icon,
-    label: &'a str,
+    label: String,
     active: bool,
     on_press: Msg,
     palette: &ForgePalette,
@@ -311,7 +311,7 @@ fn nav_leaf<'a, Msg: 'a + Clone>(
 
 fn nav_group_header<'a, Msg: 'a + Clone>(
     icon: Icon,
-    label: &'a str,
+    label: String,
     highlighted: bool,
     expanded: bool,
     on_toggle: Msg,
@@ -376,7 +376,7 @@ fn nav_group_header<'a, Msg: 'a + Clone>(
 }
 
 fn nav_child_row<'a, Msg: 'a + Clone>(
-    child: NavChild<'a, Msg>,
+    child: NavChild<Msg>,
     palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let text_color = if child.active {

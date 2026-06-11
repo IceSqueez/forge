@@ -1,5 +1,10 @@
+use std::sync::Arc;
+
+use forge_events::EventPublisher;
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use serde::{Deserialize, Serialize};
+
+use crate::{VTubeClient, VTubeConfig};
 
 pub const VTUBE_CREDENTIAL_ID: &str = "vtube:default";
 
@@ -38,6 +43,27 @@ pub async fn load(creds: &dyn CredentialsRepo) -> Result<Option<VTubeCredentials
     };
     let parsed: VTubeCredentials = serde_json::from_str(&json)?;
     Ok(Some(parsed))
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum VTubeConnectError {
+    #[error(transparent)]
+    Storage(#[from] StorageError),
+    #[error("VTube Studio credentials not stored")]
+    NotStored,
+}
+
+pub async fn load_and_connect(
+    creds: &dyn CredentialsRepo,
+    publisher: Arc<dyn EventPublisher>,
+    creds_arc: Arc<dyn CredentialsRepo>,
+) -> Result<Arc<VTubeClient>, VTubeConnectError> {
+    load(creds).await?.ok_or(VTubeConnectError::NotStored)?;
+    Ok(Arc::new(VTubeClient::connect(
+        VTubeConfig::default(),
+        publisher,
+        creds_arc,
+    )))
 }
 
 pub async fn clear(creds: &dyn CredentialsRepo) -> Result<bool, StorageError> {

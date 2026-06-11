@@ -300,7 +300,7 @@ const EMOJIS: &[&str] = &[
 pub fn input_bar<'a, Msg: Clone + 'a>(
     palette: &ForgePalette,
     value: &'a str,
-    placeholder: &'a str,
+    placeholder: impl Into<String>,
     platform_targets: Vec<PlatformTarget<'a, Msg>>,
     on_input: impl Fn(String) -> Msg + Clone + 'a,
     on_submit: Msg,
@@ -323,7 +323,7 @@ pub fn input_bar<'a, Msg: Clone + 'a>(
         });
 
     let send_msg = on_submit.clone();
-    let input_widget = text_input(placeholder, value)
+    let input_widget = text_input(&placeholder.into(), value)
         .on_input(on_input.clone())
         .on_submit(on_submit)
         .padding([0, 0])

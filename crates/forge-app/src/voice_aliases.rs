@@ -142,19 +142,21 @@ fn strategy_banner_view<'a>(
     let segmented = container(
         row![
             strategy_btn(
-                "Deterministic by name",
+                Box::leak(
+                    forge_widgets::tr!("tts_aliases_strategy_deterministic").into_boxed_str()
+                ),
                 AssignmentStrategyChoice::DeterministicByName,
                 &state.strategy,
                 palette,
             ),
             strategy_btn(
-                "Random",
+                Box::leak(forge_widgets::tr!("tts_aliases_strategy_random").into_boxed_str()),
                 AssignmentStrategyChoice::Random,
                 &state.strategy,
                 palette
             ),
             strategy_btn(
-                "Single voice",
+                Box::leak(forge_widgets::tr!("tts_aliases_strategy_single").into_boxed_str()),
                 AssignmentStrategyChoice::SingleVoice,
                 &state.strategy,
                 palette,
@@ -175,7 +177,7 @@ fn strategy_banner_view<'a>(
 
     let inner = container(
         row![
-            text("Default assignment strategy")
+            text(forge_widgets::tr!("tts_aliases_strategy_label"))
                 .size(FONT_SM)
                 .color(palette.text_primary)
                 .width(Length::Fill),
@@ -207,7 +209,8 @@ fn toolbar_view<'a>(
     palette: &'a ForgePalette,
     gap_sm: f32,
 ) -> Element<'a, Message> {
-    let search = text_input("Search viewers...", &state.search)
+    let search_placeholder = forge_widgets::tr!("tts_aliases_search_placeholder");
+    let search = text_input(&search_placeholder, &state.search)
         .on_input(|s| Message::Tts(TtsMsg::Aliases(VoiceAliasesMsg::SearchChanged(s))))
         .size(FONT_SM)
         .width(240)
@@ -224,11 +227,14 @@ fn toolbar_view<'a>(
             selection: palette.brand,
         });
 
-    let count_text = text(format!("{} manual aliases", state.total_count))
-        .size(FONT_SM)
-        .color(palette.text_muted);
+    let count_text = text(forge_widgets::tr!(
+        "tts_aliases_count",
+        count = state.total_count as i64
+    ))
+    .size(FONT_SM)
+    .color(palette.text_muted);
 
-    let assign_btn = button(text("Assign voice").size(FONT_SM))
+    let assign_btn = button(text(forge_widgets::tr!("tts_aliases_assign_btn")).size(FONT_SM))
         .on_press(Message::Noop)
         .style(move |_, _| button::Style {
             background: Some(Background::Color(palette.brand)),
@@ -266,27 +272,27 @@ fn aliases_table_view<'a>(
 
     let header = container(
         row![
-            text("VIEWER")
+            text(forge_widgets::tr!("tts_aliases_col_viewer"))
                 .size(FONT_XS)
                 .color(palette.text_muted)
                 .font(mono)
                 .width(Length::FillPortion(14)),
-            text("VOICE")
+            text(forge_widgets::tr!("tts_aliases_col_voice"))
                 .size(FONT_XS)
                 .color(palette.text_muted)
                 .font(mono)
                 .width(Length::FillPortion(16)),
-            text("PITCH")
+            text(forge_widgets::tr!("tts_aliases_col_pitch"))
                 .size(FONT_XS)
                 .color(palette.text_muted)
                 .font(mono)
                 .width(Length::FillPortion(8)),
-            text("SPEED")
+            text(forge_widgets::tr!("tts_aliases_col_speed"))
                 .size(FONT_XS)
                 .color(palette.text_muted)
                 .font(mono)
                 .width(Length::FillPortion(8)),
-            text("ACTIONS")
+            text(forge_widgets::tr!("tts_aliases_col_actions"))
                 .size(FONT_XS)
                 .color(palette.text_muted)
                 .font(mono)
@@ -325,7 +331,7 @@ fn aliases_table_view<'a>(
 
     let rows: Element<'a, Message> = if visible.is_empty() {
         container(
-            text("No voice aliases configured")
+            text(forge_widgets::tr!("tts_aliases_empty"))
                 .size(FONT_SM)
                 .color(palette.text_muted),
         )
@@ -418,10 +424,26 @@ fn alias_row<'a>(
     .align_y(iced::alignment::Vertical::Center);
 
     let role_badge: Element<'a, Message> = match &alias.role {
-        Some(ViewerRole::Mod) => role_badge_el("MOD", palette.warning, palette),
-        Some(ViewerRole::Vip) => role_badge_el("VIP", palette.brand, palette),
-        Some(ViewerRole::Sub) => role_badge_el("SUB", palette.success, palette),
-        None if muted => role_badge_el("BLOCKED", palette.random, palette),
+        Some(ViewerRole::Mod) => role_badge_el(
+            forge_widgets::tr!("tts_aliases_role_mod"),
+            palette.warning,
+            palette,
+        ),
+        Some(ViewerRole::Vip) => role_badge_el(
+            forge_widgets::tr!("tts_aliases_role_vip"),
+            palette.brand,
+            palette,
+        ),
+        Some(ViewerRole::Sub) => role_badge_el(
+            forge_widgets::tr!("tts_aliases_role_sub"),
+            palette.success,
+            palette,
+        ),
+        None if muted => role_badge_el(
+            forge_widgets::tr!("tts_aliases_role_blocked"),
+            palette.random,
+            palette,
+        ),
         None => Space::new().into(),
     };
 
@@ -435,7 +457,7 @@ fn alias_row<'a>(
     .width(Length::FillPortion(14));
 
     let voice_col: Element<'a, Message> = if muted {
-        text("Never speak")
+        text(forge_widgets::tr!("tts_aliases_never_speak"))
             .size(FONT_SM)
             .color(palette.random)
             .font(mono)
@@ -539,7 +561,7 @@ fn alias_row<'a>(
 }
 
 fn role_badge_el<'a>(
-    label: &'static str,
+    label: String,
     color: iced::Color,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {

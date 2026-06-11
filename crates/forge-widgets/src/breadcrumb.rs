@@ -7,14 +7,14 @@ use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
 use crate::tokens::{BORDER_THIN, FONT_SM, Spacing, sp};
 
-pub struct BreadcrumbCrumb<'a, Msg> {
+pub struct BreadcrumbCrumb<Msg> {
     pub icon: Option<Icon>,
-    pub label: &'a str,
+    pub label: String,
     pub on_press: Option<Msg>,
 }
 
 pub fn breadcrumb<'a, Msg: 'a + Clone>(
-    crumbs: Vec<BreadcrumbCrumb<'a, Msg>>,
+    crumbs: Vec<BreadcrumbCrumb<Msg>>,
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
     let shell = palette.shell;

@@ -2,16 +2,14 @@ use iced::{Alignment, Border, Element, Length, widget::container};
 
 use crate::{
     palette::ForgePalette,
-    tokens::{
-        BORDER_THIN, Density, FONT_MD, FONT_XS, FontRole, Radius, Spacing, font, radius, spacing,
-    },
+    tokens::{BORDER_THIN, FONT_MD, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf},
 };
 
 pub fn builtin_health_grid<'a, Msg: 'a>(
     metrics: &[forge_platform_core::HealthMetric; 4],
     palette: &ForgePalette,
 ) -> Element<'a, Msg> {
-    let gap = spacing(Spacing::Sm, Density::Cozy) as f32;
+    let gap = spf(Spacing::Sm);
 
     iced::widget::Row::new()
         .spacing(gap)
@@ -31,8 +29,8 @@ fn health_metric_card<'a, Msg: 'a>(
     let bg = palette.elevated;
     let border_color = palette.border_regular;
     let r = radius(Radius::Md);
-    let v_pad = spacing(Spacing::Sm, Density::Cozy);
-    let h_pad = spacing(Spacing::Md, Density::Cozy);
+    let v_pad = sp(Spacing::Sm);
+    let h_pad = sp(Spacing::Md);
 
     let cap_label = iced::widget::text(metric.label.to_uppercase())
         .font(font(FontRole::Monospace))
@@ -55,7 +53,7 @@ fn health_metric_card<'a, Msg: 'a>(
                 .size(FONT_MD)
                 .color(color);
             let value_row: Element<'a, Msg> = iced::widget::row![dot, val_text]
-                .spacing(spacing(Spacing::Xs, Density::Cozy) as f32)
+                .spacing(spf(Spacing::Xs))
                 .align_y(Alignment::Center)
                 .into();
             if let Some(d) = detail {
@@ -64,7 +62,7 @@ fn health_metric_card<'a, Msg: 'a>(
                     .size(FONT_XS)
                     .color(palette.text_faint);
                 iced::widget::column![value_row, detail_text]
-                    .spacing(spacing(Spacing::Xs, Density::Cozy) as f32)
+                    .spacing(spf(Spacing::Xs))
                     .into()
             } else {
                 value_row
@@ -80,7 +78,7 @@ fn health_metric_card<'a, Msg: 'a>(
                     .size(FONT_XS)
                     .color(palette.text_faint);
                 iced::widget::column![primary_text, sub]
-                    .spacing(spacing(Spacing::Xs, Density::Cozy) as f32)
+                    .spacing(spf(Spacing::Xs))
                     .into()
             } else {
                 iced::widget::column![primary_text].into()
@@ -105,7 +103,7 @@ fn health_metric_card<'a, Msg: 'a>(
                     .size(FONT_XS)
                     .color(palette.text_faint);
                 iced::widget::column![ratio_text, hint_text]
-                    .spacing(spacing(Spacing::Xs, Density::Cozy) as f32)
+                    .spacing(spf(Spacing::Xs))
                     .into()
             } else {
                 iced::widget::column![ratio_text].into()
@@ -113,8 +111,7 @@ fn health_metric_card<'a, Msg: 'a>(
         }
     };
 
-    let inner = iced::widget::column![cap_label, value_col]
-        .spacing(spacing(Spacing::Xs, Density::Cozy) as f32);
+    let inner = iced::widget::column![cap_label, value_col].spacing(spf(Spacing::Xs));
 
     container(inner)
         .padding([v_pad, h_pad])

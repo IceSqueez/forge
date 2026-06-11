@@ -262,16 +262,23 @@ pub fn update(
             }
             Task::done(Message::Toast(ToastMsg::Fired {
                 kind: ToastKind::Info,
-                message: format!("Restart app to enable the {name} engine."),
+                message: forge_widgets::tr!("tts_cloud_saved_toast", name = name),
                 duration_ms: 6000,
             }))
         }
 
-        CloudTtsEnginesMsg::Saved(kind, Err(e)) => Task::done(Message::Toast(ToastMsg::Fired {
-            kind: ToastKind::Error,
-            message: format!("Failed to save {} credentials: {}", kind.display_name(), e),
-            duration_ms: 8000,
-        })),
+        CloudTtsEnginesMsg::Saved(kind, Err(e)) => {
+            let name = kind.display_name();
+            Task::done(Message::Toast(ToastMsg::Fired {
+                kind: ToastKind::Error,
+                message: forge_widgets::tr!(
+                    "tts_cloud_save_failed_toast",
+                    name = name,
+                    error = e.as_str()
+                ),
+                duration_ms: 8000,
+            }))
+        }
 
         CloudTtsEnginesMsg::TestPressed(kind) => match kind {
             CloudEngineKind::Azure => {
@@ -406,7 +413,7 @@ pub fn view<'a>(
     state: &'a CloudTtsEnginesState,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    let header = text("CLOUD ENGINES \u{b7} 4")
+    let header = text(forge_widgets::tr!("tts_cloud_header"))
         .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
@@ -434,30 +441,34 @@ fn azure_card<'a>(form: &'a AzureForm, palette: &'a ForgePalette) -> Element<'a,
         && !form.region.is_empty()
         && form.test_status != TestStatus::Testing;
 
-    let fields = column![
-        labeled_field(
-            "API Key",
-            text_input("Subscription key", &form.api_key)
+    let fields =
+        column![
+            labeled_field(
+                forge_widgets::tr!("tts_cloud_field_api_key"),
+                text_input(
+                    &forge_widgets::tr!("tts_cloud_field_placeholder_subscription_key"),
+                    &form.api_key
+                )
                 .secure(true)
                 .on_input(|v| Message::Tts(TtsMsg::CloudEngines(
                     CloudTtsEnginesMsg::ApiKeyChanged(CloudEngineKind::Azure, v)
                 )))
                 .size(FONT_SM)
                 .style(move |_, _| input_style(palette)),
-            palette,
-        ),
-        labeled_field(
-            "Region",
-            text_input("e.g. eastus", &form.region)
-                .on_input(|v| Message::Tts(TtsMsg::CloudEngines(
-                    CloudTtsEnginesMsg::RegionChanged(CloudEngineKind::Azure, v)
-                )))
-                .size(FONT_SM)
-                .style(move |_, _| input_style(palette)),
-            palette,
-        ),
-    ]
-    .spacing(spf(Spacing::Xs));
+                palette,
+            ),
+            labeled_field(
+                forge_widgets::tr!("tts_cloud_field_region"),
+                text_input("e.g. eastus", &form.region)
+                    .on_input(|v| Message::Tts(TtsMsg::CloudEngines(
+                        CloudTtsEnginesMsg::RegionChanged(CloudEngineKind::Azure, v)
+                    )))
+                    .size(FONT_SM)
+                    .style(move |_, _| input_style(palette)),
+                palette,
+            ),
+        ]
+        .spacing(spf(Spacing::Xs));
 
     engine_card(
         "Azure Speech",
@@ -481,7 +492,7 @@ fn elevenlabs_card<'a>(
 
     let fields =
         column![labeled_field(
-            "API Key",
+            forge_widgets::tr!("tts_cloud_field_api_key"),
             text_input("xi-api-key", &form.api_key)
                 .secure(true)
                 .on_input(|v| Message::Tts(TtsMsg::CloudEngines(
@@ -512,7 +523,7 @@ fn openai_card<'a>(form: &'a OpenAiForm, palette: &'a ForgePalette) -> Element<'
 
     let fields =
         column![labeled_field(
-            "API Key",
+            forge_widgets::tr!("tts_cloud_field_api_key"),
             text_input("sk-...", &form.api_key)
                 .secure(true)
                 .on_input(|v| Message::Tts(TtsMsg::CloudEngines(
@@ -549,7 +560,7 @@ fn polly_card<'a>(form: &'a PollyForm, palette: &'a ForgePalette) -> Element<'a,
 
     let fields = column![
         labeled_field(
-            "Access key ID",
+            forge_widgets::tr!("tts_cloud_field_access_key_id"),
             text_input("AKIA...", &form.access_key)
                 .on_input(|v| Message::Tts(TtsMsg::CloudEngines(
                     CloudTtsEnginesMsg::ApiKeyChanged(CloudEngineKind::Polly, v)
@@ -559,7 +570,7 @@ fn polly_card<'a>(form: &'a PollyForm, palette: &'a ForgePalette) -> Element<'a,
             palette,
         ),
         labeled_field(
-            "Secret key",
+            forge_widgets::tr!("tts_cloud_field_secret_key"),
             text_input("secret access key", &form.secret_key)
                 .secure(true)
                 .on_input(|v| Message::Tts(TtsMsg::CloudEngines(
@@ -570,7 +581,7 @@ fn polly_card<'a>(form: &'a PollyForm, palette: &'a ForgePalette) -> Element<'a,
             palette,
         ),
         labeled_field(
-            "Region",
+            forge_widgets::tr!("tts_cloud_field_region"),
             text_input("e.g. us-east-1", &form.region)
                 .on_input(|v| Message::Tts(TtsMsg::CloudEngines(
                     CloudTtsEnginesMsg::RegionChanged(CloudEngineKind::Polly, v)
@@ -646,7 +657,7 @@ fn engine_card<'a>(
                     })
                     .width(6)
                     .height(6),
-                text("Connection verified")
+                text(forge_widgets::tr!("tts_cloud_connection_verified"))
                     .size(FONT_XS)
                     .color(palette.success),
             ]
@@ -677,45 +688,53 @@ fn engine_card<'a>(
     };
 
     let test_label = if test_status == &TestStatus::Testing {
-        "Testing\u{2026}"
+        forge_widgets::tr!("tts_cloud_testing_btn")
     } else {
-        "Test connection"
+        forge_widgets::tr!("tts_cloud_test_connection_btn")
     };
 
     let test_btn = if can_test {
-        button(text(test_label).size(FONT_SM).color(palette.text_muted))
-            .on_press(Message::Tts(TtsMsg::CloudEngines(
-                CloudTtsEnginesMsg::TestPressed(kind),
-            )))
-            .style(move |_, _| button::Style {
-                background: None,
-                border: Border {
-                    color: palette.border_regular,
-                    width: BORDER_THIN,
-                    radius: radius(Radius::Md).into(),
-                },
-                text_color: palette.text_muted,
-                ..button::Style::default()
-            })
-            .padding([sp(Spacing::Xxs), sp(Spacing::Sm)])
+        button(
+            text(test_label.clone())
+                .size(FONT_SM)
+                .color(palette.text_muted),
+        )
+        .on_press(Message::Tts(TtsMsg::CloudEngines(
+            CloudTtsEnginesMsg::TestPressed(kind),
+        )))
+        .style(move |_, _| button::Style {
+            background: None,
+            border: Border {
+                color: palette.border_regular,
+                width: BORDER_THIN,
+                radius: radius(Radius::Md).into(),
+            },
+            text_color: palette.text_muted,
+            ..button::Style::default()
+        })
+        .padding([sp(Spacing::Xxs), sp(Spacing::Sm)])
     } else {
-        button(text(test_label).size(FONT_SM).color(palette.disabled))
-            .style(move |_, _| button::Style {
-                background: None,
-                border: Border {
-                    color: palette.disabled,
-                    width: BORDER_THIN,
-                    radius: radius(Radius::Md).into(),
-                },
-                text_color: palette.disabled,
-                ..button::Style::default()
-            })
-            .padding([sp(Spacing::Xxs), sp(Spacing::Sm)])
+        button(
+            text(test_label.clone())
+                .size(FONT_SM)
+                .color(palette.disabled),
+        )
+        .style(move |_, _| button::Style {
+            background: None,
+            border: Border {
+                color: palette.disabled,
+                width: BORDER_THIN,
+                radius: radius(Radius::Md).into(),
+            },
+            text_color: palette.disabled,
+            ..button::Style::default()
+        })
+        .padding([sp(Spacing::Xxs), sp(Spacing::Sm)])
     };
 
     let save_btn = if can_save {
         button(
-            text("Save credentials")
+            text(forge_widgets::tr!("tts_cloud_save_credentials_btn"))
                 .size(FONT_SM)
                 .color(palette.text_primary),
         )
@@ -734,7 +753,7 @@ fn engine_card<'a>(
         .padding([sp(Spacing::Xxs), sp(Spacing::Sm)])
     } else {
         button(
-            text("Save credentials")
+            text(forge_widgets::tr!("tts_cloud_save_credentials_btn"))
                 .size(FONT_SM)
                 .color(palette.disabled),
         )
@@ -784,11 +803,17 @@ fn config_status_badge<'a>(
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let (label, color) = if primary_key.is_empty() {
-        ("NOT CONFIGURED", palette.text_muted)
+        (
+            forge_widgets::tr!("tts_cloud_not_configured"),
+            palette.text_muted,
+        )
     } else if matches!(test_status, TestStatus::Err(_)) {
-        ("CONNECTION FAILED", palette.random)
+        (
+            forge_widgets::tr!("tts_cloud_connection_failed"),
+            palette.random,
+        )
     } else {
-        ("CONFIGURED", palette.success)
+        (forge_widgets::tr!("tts_cloud_configured"), palette.success)
     };
 
     container(
@@ -811,7 +836,7 @@ fn config_status_badge<'a>(
 }
 
 fn labeled_field<'a>(
-    label: &'static str,
+    label: String,
     input: iced::widget::TextInput<'a, Message>,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
@@ -894,6 +919,7 @@ mod tests {
             scheduler: None,
             obs_client: None,
             vtube_client: None,
+            vtube_sink: forge_vtube::SwitchableVTubeSink::new(),
             discord_client: None,
             midi_client: None,
             hotkey_client: None,

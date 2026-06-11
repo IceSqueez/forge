@@ -88,3 +88,51 @@ impl VTubeSink for SwitchableVTubeSink {
         client.move_model(x, y, rotation, time_in_seconds).await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Forwarding to an installed client is not unit-testable: `install` takes a
+    // concrete `Arc<VTubeClient>`, which always opens a WebSocket supervisor.
+
+    #[tokio::test]
+    async fn every_call_on_an_empty_sink_returns_not_connected() {
+        let sink = SwitchableVTubeSink::new();
+        assert!(matches!(
+            sink.trigger_hotkey("hk").await,
+            Err(VTubeError::NotConnected)
+        ));
+        assert!(matches!(
+            sink.set_expression("file.exp3.json", true).await,
+            Err(VTubeError::NotConnected)
+        ));
+        assert!(matches!(
+            sink.set_param("ParamAngleX", 0.5).await,
+            Err(VTubeError::NotConnected)
+        ));
+        assert!(matches!(
+            sink.load_model("model").await,
+            Err(VTubeError::NotConnected)
+        ));
+        assert!(matches!(
+            sink.reset_params().await,
+            Err(VTubeError::NotConnected)
+        ));
+        assert!(matches!(
+            sink.move_model(Some(0.0), None, None, 0.5).await,
+            Err(VTubeError::NotConnected)
+        ));
+    }
+
+    #[tokio::test]
+    async fn clear_on_an_empty_sink_is_idempotent() {
+        let sink = SwitchableVTubeSink::new();
+        sink.clear();
+        sink.clear();
+        assert!(matches!(
+            sink.trigger_hotkey("hk").await,
+            Err(VTubeError::NotConnected)
+        ));
+    }
+}

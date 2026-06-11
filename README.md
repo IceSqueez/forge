@@ -3,8 +3,18 @@
 Event-driven stream automation with multi-engine TTS — a single Rust desktop app for Linux, Windows, and macOS.
 
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](./LICENSE)
+[![Rust 1.96.0+](https://img.shields.io/badge/rust-1.96.0%2B-orange)](https://www.rust-lang.org/)
 [![Platforms](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-green)](#installing-releases)
+
 [![Latest Release](https://img.shields.io/github/v/release/IceSqueez/forge?include_prereleases&logo=github&label=Latest&cacheSeconds=600)](https://github.com/IceSqueez/forge/releases)
+[![Release Date](https://img.shields.io/github/release-date-pre/IceSqueez/forge?logo=github&label=Released&cacheSeconds=600)](https://github.com/IceSqueez/forge/releases)
+[![Release Workflow](https://github.com/IceSqueez/forge/actions/workflows/release.yml/badge.svg)](https://github.com/IceSqueez/forge/actions/workflows/release.yml)
+[![Nightly Workflow](https://github.com/IceSqueez/forge/actions/workflows/nightly.yml/badge.svg)](https://github.com/IceSqueez/forge/actions/workflows/nightly.yml)
+
+[![Commits Since Latest Release](https://img.shields.io/github/commits-since/IceSqueez/forge/latest?include_prereleases&logo=github&label=Commits%20since&cacheSeconds=600)](https://github.com/IceSqueez/forge/commits/main)
+[![Open Issues](https://img.shields.io/github/issues/IceSqueez/forge?logo=github&label=Issues&cacheSeconds=600)](https://github.com/IceSqueez/forge/issues)
+[![Commit Activity](https://img.shields.io/github/commit-activity/m/IceSqueez/forge?logo=github&label=Activity&cacheSeconds=600)](https://github.com/IceSqueez/forge/pulse)
+[![Total Downloads](https://img.shields.io/github/downloads/IceSqueez/forge/total?logo=github&label=Downloads&cacheSeconds=600)](https://github.com/IceSqueez/forge/releases)
 
 Connect to Twitch, YouTube, and Kick simultaneously. React to chat events with action chains that control OBS, send messages, run scripts, play sounds, and speak text through configurable TTS engines.
 
@@ -54,9 +64,9 @@ Connect to Twitch, YouTube, and Kick simultaneously. React to chat events with a
 
 Binary releases for Linux, Windows, and macOS are on [GitHub Releases](https://github.com/IceSqueez/forge/releases).
 
-- **Linux:** AppImage (universal), Flatpak, AUR (community)
-- **Windows:** Portable ZIP
-- **macOS:** Disk image (.dmg)
+- **Linux:** AppImage, `.deb` (Debian/Ubuntu), `.rpm` (Fedora/openSUSE) — x86_64
+- **Windows:** portable `.exe` + MSI installer
+- **macOS:** universal `.dmg` (Apple Silicon + Intel)
 
 ## Building from source
 
@@ -71,7 +81,7 @@ cargo build --release
 ./target/release/forge
 ```
 
-On first run, forge initializes your data directory and opens the onboarding screen.
+On first run, forge creates its data directory (XDG on Linux, AppData on Windows, Application Support on macOS) and opens to the dashboard.
 
 ## Contributing
 

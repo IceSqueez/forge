@@ -1,9 +1,14 @@
+mod add_moderator;
+mod add_vip;
 mod ban_user;
 mod clear_chat;
 mod delete_message;
 mod identity;
+mod remove_moderator;
+mod remove_vip;
 mod send_announcement;
 mod set_mode;
+mod shield_mode;
 mod timeout_user;
 mod unban_user;
 mod warn_user;
@@ -13,12 +18,17 @@ use std::sync::Arc;
 use forge_registry::{RegistryError, SubActionRegistry};
 use forge_storage::CredentialsRepo;
 
+pub use add_moderator::AddModeratorRunner;
+pub use add_vip::AddVipRunner;
 pub use ban_user::BanUserRunner;
 pub use clear_chat::ClearChatRunner;
 pub use delete_message::DeleteMessageRunner;
 pub use identity::SelfIdentity;
+pub use remove_moderator::RemoveModeratorRunner;
+pub use remove_vip::RemoveVipRunner;
 pub use send_announcement::SendAnnouncementRunner;
 pub use set_mode::SetModeRunner;
+pub use shield_mode::{ShieldModeOffRunner, ShieldModeOnRunner};
 pub use timeout_user::TimeoutUserRunner;
 pub use unban_user::UnbanUserRunner;
 pub use warn_user::WarnUserRunner;
@@ -59,7 +69,31 @@ pub fn register_twitch_sub_actions(
         Arc::clone(&transport),
         Arc::clone(&identity),
     )))?;
-    reg.register(Box::new(WarnUserRunner::new(transport, identity)))?;
+    reg.register(Box::new(WarnUserRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(AddModeratorRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(RemoveModeratorRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(AddVipRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(RemoveVipRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(ShieldModeOnRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(ShieldModeOffRunner::new(transport, identity)))?;
     Ok(())
 }
 

@@ -309,6 +309,35 @@ impl ChatSession {
             "badges": badges,
             "color": color,
         });
+
+        if let Some(bits) = event_data
+            .get("cheer")
+            .and_then(|c| c.get("bits"))
+            .and_then(|v| v.as_i64())
+        {
+            let is_anonymous = user_id.is_empty();
+            forge_payload["cheer"] = serde_json::json!({
+                "bits": bits,
+                "is_anonymous": is_anonymous,
+            });
+        }
+
+        if let (Some(login), Some(display_name)) = (
+            event_data
+                .get("source_broadcaster_user_login")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty()),
+            event_data
+                .get("source_broadcaster_user_name")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty()),
+        ) {
+            forge_payload["from_channel"] = serde_json::json!({
+                "login": login,
+                "display_name": display_name,
+            });
+        }
+
         attach_chat_payload(&mut forge_payload, chat_payload);
 
         self.config.bus.publish(Event::new(

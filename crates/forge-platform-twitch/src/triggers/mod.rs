@@ -1,6 +1,9 @@
 mod channel_raid_received;
+mod chat_arg_stack;
+mod chat_cheer_message;
 mod chat_command;
 mod chat_message;
+mod shared_chat_message;
 mod support_cheer;
 mod support_gift_sub;
 mod support_resubscriber;
@@ -9,8 +12,10 @@ mod support_subscriber;
 use forge_registry::{RegistryError, TriggerRegistry};
 
 use channel_raid_received::ChannelRaidReceivedDescriptor;
+use chat_cheer_message::ChatCheerMessageDescriptor;
 use chat_command::ChatCommandDescriptor;
 use chat_message::ChatMessageDescriptor;
+use shared_chat_message::SharedChatMessageDescriptor;
 use support_cheer::SupportCheerDescriptor;
 use support_gift_sub::SupportGiftSubDescriptor;
 use support_resubscriber::SupportResubscriberDescriptor;
@@ -19,6 +24,8 @@ use support_subscriber::SupportSubscriberDescriptor;
 pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), RegistryError> {
     reg.register(Box::new(ChatCommandDescriptor))?;
     reg.register(Box::new(ChatMessageDescriptor))?;
+    reg.register(Box::new(ChatCheerMessageDescriptor))?;
+    reg.register(Box::new(SharedChatMessageDescriptor))?;
     reg.register(Box::new(SupportSubscriberDescriptor))?;
     reg.register(Box::new(SupportResubscriberDescriptor))?;
     reg.register(Box::new(SupportGiftSubDescriptor))?;

@@ -6,7 +6,9 @@ mod delete_message;
 mod identity;
 mod remove_moderator;
 mod remove_vip;
+mod reply_chat;
 mod send_announcement;
+mod send_whisper;
 mod set_mode;
 mod shield_mode;
 mod timeout_user;
@@ -26,7 +28,9 @@ pub use delete_message::DeleteMessageRunner;
 pub use identity::SelfIdentity;
 pub use remove_moderator::RemoveModeratorRunner;
 pub use remove_vip::RemoveVipRunner;
+pub use reply_chat::ReplyChatRunner;
 pub use send_announcement::SendAnnouncementRunner;
+pub use send_whisper::SendWhisperRunner;
 pub use set_mode::SetModeRunner;
 pub use shield_mode::{ShieldModeOffRunner, ShieldModeOnRunner};
 pub use timeout_user::TimeoutUserRunner;
@@ -93,7 +97,15 @@ pub fn register_twitch_sub_actions(
         Arc::clone(&transport),
         Arc::clone(&identity),
     )))?;
-    reg.register(Box::new(ShieldModeOffRunner::new(transport, identity)))?;
+    reg.register(Box::new(ShieldModeOffRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(ReplyChatRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(SendWhisperRunner::new(transport, identity)))?;
     Ok(())
 }
 

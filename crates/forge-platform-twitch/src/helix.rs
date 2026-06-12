@@ -212,3 +212,348 @@ fn extract_retry_after(resp: &reqwest::Response) -> Option<u64> {
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.parse::<u64>().ok())
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use forge_platform_core::PlatformError;
+    use forge_runtime::NullEventLogRepo;
+    use wiremock::matchers::{header, method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    const SENTINEL: &str = "FAKE_HELIX_TOKEN_SENTINEL_qq123";
+    const CLIENT_ID: &str = "test-client-id";
+
+    struct StaticTokenSource;
+
+    #[async_trait]
+    impl HelixTokenSource for StaticTokenSource {
+        async fn access_token(&self) -> Result<OAuthToken, HelixError> {
+            Ok(OAuthToken::new(SENTINEL))
+        }
+    }
+
+    struct FailingTokenSource;
+
+    #[async_trait]
+    impl HelixTokenSource for FailingTokenSource {
+        async fn access_token(&self) -> Result<OAuthToken, HelixError> {
+            Err(HelixError::Credentials("no twitch credentials".to_owned()))
+        }
+    }
+
+    struct GrantLimiter;
+
+    #[async_trait]
+    impl RateLimiter for GrantLimiter {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+            Ok(RateLimitOutcome::Granted)
+        }
+
+        fn remaining(&self) -> u32 {
+            u32::MAX
+        }
+
+        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
+    }
+
+    struct ExhaustedLimiter;
+
+    #[async_trait]
+    impl RateLimiter for ExhaustedLimiter {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+            Ok(RateLimitOutcome::Exhausted)
+        }
+
+        fn remaining(&self) -> u32 {
+            0
+        }
+
+        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
+    }
+
+    fn transport(base_url: String) -> (HelixHttpTransport, Arc<EventBus>) {
+        transport_with(
+            base_url,
+            Arc::new(GrantLimiter),
+            Arc::new(StaticTokenSource),
+        )
+    }
+
+    fn transport_with(
+        base_url: String,
+        limiter: Arc<dyn RateLimiter>,
+        tokens: Arc<dyn HelixTokenSource>,
+    ) -> (HelixHttpTransport, Arc<EventBus>) {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let t = HelixHttpTransport::with_base_url(
+            base_url,
+            limiter,
+            Arc::clone(&bus),
+            CLIENT_ID.to_owned(),
+            tokens,
+        );
+        (t, bus)
+    }
+
+    async fn recv_request_fail(sub: &mut forge_runtime::EventSubscription) -> Event {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let event = sub.recv().await.unwrap();
+                if event.kind == "request.fail" {
+                    return event;
+                }
+            }
+        })
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn execute_sends_auth_headers_and_returns_json_on_2xx() {
+        let server = MockServer::start().await;
+        let payload = serde_json::json!({"data": [{"id": "42"}]});
+        Mock::given(method("GET"))
+            .and(path("/helix/users"))
+            .and(query_param("login", "someone"))
+            .and(header(
+                "Authorization",
+                format!("Bearer {SENTINEL}").as_str(),
+            ))
+            .and(header("Client-Id", CLIENT_ID))
+            .respond_with(ResponseTemplate::new(200).set_body_json(payload.clone()))
+            .mount(&server)
+            .await;
+        let (t, _bus) = transport(server.uri());
+
+        let value = t
+            .execute(HelixRequest::new(HelixMethod::Get, "/helix/users").query("login", "someone"))
+            .await
+            .unwrap();
+
+        assert_eq!(value, payload);
+    }
+
+    #[tokio::test]
+    async fn execute_returns_null_for_empty_success_body() {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .and(path("/helix/moderation/bans"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&server)
+            .await;
+        let (t, _bus) = transport(server.uri());
+
+        let value = t
+            .execute(HelixRequest::new(
+                HelixMethod::Delete,
+                "/helix/moderation/bans",
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(value, serde_json::Value::Null);
+    }
+
+    #[tokio::test]
+    async fn forbidden_response_yields_http_error_and_request_fail_event() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/helix/moderation/banned"))
+            .respond_with(ResponseTemplate::new(403).set_body_string(r#"{"error":"Forbidden"}"#))
+            .mount(&server)
+            .await;
+        let (t, bus) = transport(server.uri());
+        let mut sub = bus.subscribe();
+
+        let err = t
+            .execute(HelixRequest::new(
+                HelixMethod::Get,
+                "/helix/moderation/banned",
+            ))
+            .await
+            .unwrap_err();
+
+        let display = err.to_string();
+        assert!(
+            !display.contains(SENTINEL),
+            "error display must not leak the token: {display}"
+        );
+        match &err {
+            HelixError::Http { status, body } => {
+                assert_eq!(*status, 403);
+                assert!(body.contains("Forbidden"));
+            }
+            other => panic!("expected Http error, got {other:?}"),
+        }
+
+        let event = tokio::time::timeout(Duration::from_secs(2), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(event.kind, "request.fail");
+        assert_eq!(event.source, EventSource::Twitch);
+        assert_eq!(event.payload["endpoint"], "/helix/moderation/banned");
+        assert_eq!(event.payload["status_code"], 403);
+        assert!(
+            event.payload["body_snippet"]
+                .as_str()
+                .unwrap()
+                .contains("Forbidden")
+        );
+    }
+
+    #[tokio::test]
+    async fn unauthorized_response_maps_to_reauth_required() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&server)
+            .await;
+        let (t, _bus) = transport(server.uri());
+
+        let err = t
+            .execute(HelixRequest::new(HelixMethod::Get, "/helix/users"))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, HelixError::ReauthRequired));
+    }
+
+    #[tokio::test]
+    async fn too_many_requests_maps_to_rate_limited_with_retry_after_in_event() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(429).insert_header("Retry-After", "7"))
+            .mount(&server)
+            .await;
+        let (t, bus) = transport(server.uri());
+        let mut sub = bus.subscribe();
+
+        let err = t
+            .execute(HelixRequest::new(HelixMethod::Get, "/helix/users"))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, HelixError::RateLimited));
+        let event = recv_request_fail(&mut sub).await;
+        assert_eq!(event.payload["retry_after_secs"], 7);
+        assert_eq!(event.payload["status_code"], 429);
+    }
+
+    #[tokio::test]
+    async fn exhausted_local_limiter_short_circuits_without_network_call() {
+        let server = MockServer::start().await;
+        let (t, _bus) = transport_with(
+            server.uri(),
+            Arc::new(ExhaustedLimiter),
+            Arc::new(StaticTokenSource),
+        );
+
+        let err = t
+            .execute(HelixRequest::new(HelixMethod::Get, "/helix/users"))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, HelixError::RateLimited));
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "no HTTP request may be issued when the local limiter is exhausted"
+        );
+    }
+
+    #[tokio::test]
+    async fn token_source_failure_propagates_without_network_call() {
+        let server = MockServer::start().await;
+        let (t, _bus) = transport_with(
+            server.uri(),
+            Arc::new(GrantLimiter),
+            Arc::new(FailingTokenSource),
+        );
+
+        let err = t
+            .execute(HelixRequest::new(HelixMethod::Get, "/helix/users"))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, HelixError::Credentials(_)));
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "no HTTP request may be issued without an access token"
+        );
+    }
+
+    #[tokio::test]
+    async fn request_fail_event_truncates_body_snippet_to_200_chars() {
+        let long_body = "я".repeat(300); // multibyte: truncation must count chars, not bytes
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(500).set_body_string(long_body.clone()))
+            .mount(&server)
+            .await;
+        let (t, bus) = transport(server.uri());
+        let mut sub = bus.subscribe();
+
+        let err = t
+            .execute(HelixRequest::new(HelixMethod::Get, "/helix/users"))
+            .await
+            .unwrap_err();
+
+        match err {
+            HelixError::Http { status, body } => {
+                assert_eq!(status, 500);
+                assert_eq!(body.chars().count(), 300, "error keeps the full body");
+            }
+            other => panic!("expected Http error, got {other:?}"),
+        }
+        let event = recv_request_fail(&mut sub).await;
+        assert_eq!(
+            event.payload["body_snippet"]
+                .as_str()
+                .unwrap()
+                .chars()
+                .count(),
+            200
+        );
+    }
+
+    #[tokio::test]
+    async fn malformed_success_body_maps_to_transport_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("not-json"))
+            .mount(&server)
+            .await;
+        let (t, _bus) = transport(server.uri());
+
+        let err = t
+            .execute(HelixRequest::new(HelixMethod::Get, "/helix/users"))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, HelixError::Transport(_)));
+    }
+
+    #[tokio::test]
+    async fn refused_connection_yields_transport_error_without_host_or_token() {
+        // Port 1 needs root to bind, so the connection is refused immediately.
+        let (t, _bus) = transport("http://127.0.0.1:1".to_owned());
+
+        let err = t
+            .execute(HelixRequest::new(HelixMethod::Get, "/helix/users"))
+            .await
+            .unwrap_err();
+
+        let display = err.to_string();
+        assert!(matches!(err, HelixError::Transport(_)));
+        assert!(
+            !display.contains("127.0.0.1"),
+            "transport error must strip the request URL: {display}"
+        );
+        assert!(
+            !display.contains(SENTINEL),
+            "transport error must not leak the token: {display}"
+        );
+    }
+}

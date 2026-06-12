@@ -71,78 +71,26 @@ fn oauth_token_debug_does_not_expose_sentinel() {
 }
 
 #[test]
-fn expose_returns_raw_sentinel() {
-    let token = OAuthToken::new(SENTINEL);
-    assert_eq!(
-        token.expose(),
-        SENTINEL,
-        "expose() must return the raw value for callers that legitimately need it"
-    );
-}
-
-#[test]
-fn tracing_debug_field_does_not_log_sentinel() {
+fn tracing_token_field_never_logs_sentinel_at_any_level() {
     let (lines, sub) = capture_subscriber();
     let token = OAuthToken::new(SENTINEL);
 
     with_default(sub, || {
-        tracing::debug!(?token, "token field logged via debug format");
-    });
-
-    let captured = lines.lock().unwrap();
-    for line in captured.iter() {
-        assert!(
-            !line.contains(SENTINEL),
-            "tracing::debug!(?token, ...) must not emit the raw token value.\n\
-             Captured line: {line}"
-        );
-    }
-}
-
-#[test]
-fn tracing_info_field_does_not_log_sentinel() {
-    let (lines, sub) = capture_subscriber();
-    let token = OAuthToken::new(SENTINEL);
-
-    with_default(sub, || {
+        tracing::debug!(?token, "token field logged via debug");
         tracing::info!(?token, "token field logged via info");
-    });
-
-    let captured = lines.lock().unwrap();
-    for line in captured.iter() {
-        assert!(
-            !line.contains(SENTINEL),
-            "tracing::info!(?token, ...) must not emit the raw token value.\n\
-             Captured line: {line}"
-        );
-    }
-}
-
-#[test]
-fn tracing_warn_field_does_not_log_sentinel() {
-    let (lines, sub) = capture_subscriber();
-    let token = OAuthToken::new(SENTINEL);
-
-    with_default(sub, || {
         tracing::warn!(?token, "token field logged via warn");
     });
 
     let captured = lines.lock().unwrap();
+    assert!(
+        !captured.is_empty(),
+        "capture layer must have observed the log events"
+    );
     for line in captured.iter() {
         assert!(
             !line.contains(SENTINEL),
-            "tracing::warn!(?token, ...) must not emit the raw token value.\n\
+            "tracing field capture must not emit the raw token value.\n\
              Captured line: {line}"
         );
     }
-}
-
-#[test]
-fn authorization_header_value_contains_raw_token() {
-    let token = OAuthToken::new(SENTINEL);
-    let header_value = format!("Bearer {}", token.expose());
-    assert!(
-        header_value.contains(SENTINEL),
-        "Authorization header construction must use expose() to include raw token"
-    );
 }

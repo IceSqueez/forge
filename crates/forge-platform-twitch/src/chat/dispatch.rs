@@ -25,3 +25,24 @@ const NOTIFICATION_ROUTES: &[(&str, NotificationRoute)] = &[
     ("channel.cheer", ChatSession::publish_cheer_event),
     ("channel.raid", ChatSession::publish_raid_event),
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::route_for;
+
+    #[test]
+    fn route_for_resolves_every_supported_topic_and_rejects_unknown() {
+        for topic in [
+            "channel.chat.message",
+            "channel.subscribe",
+            "channel.subscription.message",
+            "channel.subscription.gift",
+            "channel.cheer",
+            "channel.raid",
+        ] {
+            assert!(route_for(topic).is_some(), "missing route for {topic}");
+        }
+        assert!(route_for("channel.follow").is_none());
+        assert!(route_for("").is_none());
+    }
+}

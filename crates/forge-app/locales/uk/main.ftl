@@ -1419,7 +1419,7 @@ widget_volume_label = ГУЧН
 
 ## Locale-aware formatting — feed time
 
-fmt_feed_time_pattern = {HH}:{MM}:{SS}.{mmm}
+fmt_feed_time_pattern = %HH%:%MM%:%SS%.%mmm%
 
 ## Locale-aware formatting — month abbreviations (uk, genitive short form for date display)
 

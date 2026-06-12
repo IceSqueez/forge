@@ -57,10 +57,10 @@ pub fn fmt_feed_time(ts: &OffsetDateTime) -> String {
         );
     }
     pattern
-        .replace("{HH}", &format!("{:02}", ts.hour()))
-        .replace("{MM}", &format!("{:02}", ts.minute()))
-        .replace("{SS}", &format!("{:02}", ts.second()))
-        .replace("{mmm}", &format!("{:03}", ts.millisecond()))
+        .replace("%HH%", &format!("{:02}", ts.hour()))
+        .replace("%MM%", &format!("{:02}", ts.minute()))
+        .replace("%SS%", &format!("{:02}", ts.second()))
+        .replace("%mmm%", &format!("{:03}", ts.millisecond()))
 }
 
 /// Formats `ts` as a short date suitable for display contexts such as "first seen" labels.

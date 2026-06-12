@@ -1,19 +1,27 @@
+mod ban_user;
 mod clear_chat;
 mod delete_message;
 mod identity;
 mod send_announcement;
 mod set_mode;
+mod timeout_user;
+mod unban_user;
+mod warn_user;
 
 use std::sync::Arc;
 
 use forge_registry::{RegistryError, SubActionRegistry};
 use forge_storage::CredentialsRepo;
 
+pub use ban_user::BanUserRunner;
 pub use clear_chat::ClearChatRunner;
 pub use delete_message::DeleteMessageRunner;
 pub use identity::SelfIdentity;
 pub use send_announcement::SendAnnouncementRunner;
 pub use set_mode::SetModeRunner;
+pub use timeout_user::TimeoutUserRunner;
+pub use unban_user::UnbanUserRunner;
+pub use warn_user::WarnUserRunner;
 
 use crate::helix::HelixTransport;
 
@@ -35,7 +43,23 @@ pub fn register_twitch_sub_actions(
         Arc::clone(&transport),
         Arc::clone(&identity),
     )))?;
-    reg.register(Box::new(SetModeRunner::new(transport, identity)))?;
+    reg.register(Box::new(SetModeRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(BanUserRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(TimeoutUserRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(UnbanUserRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(WarnUserRunner::new(transport, identity)))?;
     Ok(())
 }
 

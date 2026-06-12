@@ -283,6 +283,8 @@ mod tests {
             "twitch.moderation.remove_vip",
             "twitch.moderation.shield_mode_on",
             "twitch.moderation.shield_mode_off",
+            "twitch.chat.reply",
+            "twitch.chat.send_whisper",
         ] {
             assert!(reg.get(id).is_some(), "missing sub-action: {id}");
         }

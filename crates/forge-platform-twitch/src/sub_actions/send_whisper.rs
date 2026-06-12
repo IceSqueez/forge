@@ -160,3 +160,136 @@ impl SubActionRunner for SendWhisperRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use forge_types::{ArgStack, SubActionOutcome, Variant};
+
+    use super::*;
+    use crate::helix::HelixError;
+    use crate::sub_actions::test_support::{
+        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx, users_fixture,
+    };
+
+    fn runner_with(
+        responses: Vec<Result<serde_json::Value, HelixError>>,
+    ) -> (Arc<MockTransport>, SendWhisperRunner) {
+        let transport = Arc::new(MockTransport::returning_sequence(responses));
+        let runner = SendWhisperRunner::new(
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+        );
+        (transport, runner)
+    }
+
+    fn config(to_user_login: &str, message: &str) -> SubActionConfig {
+        BTreeMap::from([
+            (
+                "to_user_login".to_owned(),
+                Variant::String(to_user_login.to_owned()),
+            ),
+            ("message".to_owned(), Variant::String(message.to_owned())),
+        ])
+    }
+
+    #[tokio::test]
+    async fn execute_resolves_login_then_posts_whisper_with_self_as_sender() {
+        let (transport, runner) =
+            runner_with(vec![users_fixture("555"), Ok(serde_json::Value::Null)]);
+        let stack = ArgStack::new();
+
+        let (telemetry, _) = runner
+            .execute(&config("target", "hey there"), &make_ctx(&stack))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        assert_eq!(transport.call_count(), 2, "resolve then whisper");
+        assert_eq!(transport.request(0).path, "/helix/users");
+
+        let whisper = transport.last_request();
+        assert_eq!(whisper.method, HelixMethod::Post);
+        assert_eq!(whisper.path, "/helix/whispers");
+        assert!(
+            whisper
+                .query
+                .contains(&("from_user_id".to_owned(), SELF_USER_ID.to_owned())),
+            "from_user_id must be self"
+        );
+        assert!(
+            whisper
+                .query
+                .contains(&("to_user_id".to_owned(), "555".to_owned())),
+            "to_user_id must be the resolved id, not the login"
+        );
+        assert_eq!(
+            whisper.body,
+            Some(serde_json::json!({ "message": "hey there" }))
+        );
+    }
+
+    #[tokio::test]
+    async fn empty_to_user_login_after_interpolation_fails_before_any_helix_call() {
+        let (transport, runner) = runner_with(vec![users_fixture("555")]);
+        let stack = ArgStack::new().set("login".to_owned(), Variant::String(String::new()));
+
+        let (telemetry, _) = runner
+            .execute(&config("%login%", "hello"), &make_ctx(&stack))
+            .await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert_eq!(
+            transport.call_count(),
+            0,
+            "empty login must fail before any Helix call"
+        );
+    }
+
+    #[tokio::test]
+    async fn empty_message_after_interpolation_fails_before_any_helix_call() {
+        // message is checked before identity lookup and before user resolve
+        let (transport, runner) = runner_with(vec![users_fixture("555")]);
+        let stack = ArgStack::new().set("msg".to_owned(), Variant::String(String::new()));
+
+        let (telemetry, _) = runner
+            .execute(&config("target_user", "%msg%"), &make_ctx(&stack))
+            .await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert_eq!(
+            transport.call_count(),
+            0,
+            "empty message must fail before any Helix call"
+        );
+    }
+
+    #[tokio::test]
+    async fn whisper_call_http_failure_maps_to_failed_without_token_or_url() {
+        let (transport, runner) = runner_with(vec![
+            users_fixture("555"),
+            Err(HelixError::Http {
+                status: 403,
+                body: "missing whisper scope".to_owned(),
+            }),
+        ]);
+        let stack = ArgStack::new();
+
+        let (telemetry, _) = runner
+            .execute(&config("target", "hello"), &make_ctx(&stack))
+            .await;
+
+        assert_eq!(
+            transport.call_count(),
+            2,
+            "failure must come from the whisper call, not the resolve"
+        );
+        let SubActionOutcome::Failed(msg) = telemetry.outcome else {
+            panic!("expected Failed, got {:?}", telemetry.outcome);
+        };
+        assert!(msg.contains("403"), "status must surface: {msg}");
+        assert!(!msg.contains(TOKEN_SENTINEL), "token leaked: {msg}");
+        assert!(!msg.contains("api.twitch.tv"), "URL leaked: {msg}");
+    }
+}

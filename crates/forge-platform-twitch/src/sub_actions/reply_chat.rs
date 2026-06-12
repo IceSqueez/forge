@@ -163,3 +163,174 @@ impl SubActionRunner for ReplyChatRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use forge_types::{ArgStack, SubActionOutcome, Variant};
+
+    use super::*;
+    use crate::helix::HelixError;
+    use crate::sub_actions::test_support::{
+        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
+    };
+
+    fn runner_with(
+        response: Result<serde_json::Value, HelixError>,
+        creds: MockCreds,
+    ) -> (Arc<MockTransport>, ReplyChatRunner) {
+        let transport = Arc::new(MockTransport::returning(response));
+        let runner = ReplyChatRunner::new(
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            Arc::new(SelfIdentity::new(Arc::new(creds))),
+        );
+        (transport, runner)
+    }
+
+    fn config(message: &str, parent_message_id: &str) -> SubActionConfig {
+        BTreeMap::from([
+            ("message".to_owned(), Variant::String(message.to_owned())),
+            (
+                "parent_message_id".to_owned(),
+                Variant::String(parent_message_id.to_owned()),
+            ),
+        ])
+    }
+
+    #[tokio::test]
+    async fn execute_posts_reply_with_broadcaster_and_sender_both_as_self() {
+        let (transport, runner) =
+            runner_with(Ok(serde_json::Value::Null), MockCreds::with_identity());
+        let stack = ArgStack::new()
+            .set("msg".to_owned(), Variant::String("hello!".to_owned()))
+            .set(
+                "parent_id".to_owned(),
+                Variant::String("msg-abc-123".to_owned()),
+            );
+
+        let (telemetry, _) = runner
+            .execute(&config("%msg%", "%parent_id%"), &make_ctx(&stack))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let request = transport.last_request();
+        assert_eq!(request.method, HelixMethod::Post);
+        assert_eq!(request.path, "/helix/chat/messages");
+        let body = request.body.unwrap();
+        assert_eq!(body["broadcaster_id"], SELF_USER_ID);
+        assert_eq!(body["sender_id"], SELF_USER_ID);
+        assert_eq!(body["message"], "hello!");
+        assert_eq!(body["reply_parent_message_id"], "msg-abc-123");
+    }
+
+    /// Empty message and empty parent_message_id both gate on zero transport calls;
+    /// collapse into one table-driven test.
+    #[tokio::test]
+    async fn empty_interpolated_message_or_parent_id_fails_before_transport_call() {
+        // (message_template, parent_template, var_value_for_both, case_label)
+        let cases: &[(&str, &str, &str, &str)] = &[
+            (
+                "%m%",
+                "fixed-parent",
+                "",
+                "empty message after interpolation",
+            ),
+            (
+                "fixed text",
+                "%p%",
+                "",
+                "empty parent_message_id after interpolation",
+            ),
+        ];
+
+        for (msg_tpl, parent_tpl, var_val, label) in cases {
+            let (transport, runner) =
+                runner_with(Ok(serde_json::Value::Null), MockCreds::with_identity());
+            let stack = ArgStack::new()
+                .set("m".to_owned(), Variant::String((*var_val).to_owned()))
+                .set("p".to_owned(), Variant::String((*var_val).to_owned()));
+
+            let (telemetry, _) = runner
+                .execute(&config(msg_tpl, parent_tpl), &make_ctx(&stack))
+                .await;
+
+            assert!(
+                matches!(telemetry.outcome, SubActionOutcome::Failed(_)),
+                "expected Failed for case: {label}"
+            );
+            assert_eq!(
+                transport.call_count(),
+                0,
+                "transport must not be called for case: {label}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn message_limit_enforced_by_character_count_not_byte_count() {
+        // Cyrillic is 2 bytes per char; the 500-char limit must count chars.
+        for (char_count, should_send) in [(500usize, true), (501, false)] {
+            let (transport, runner) =
+                runner_with(Ok(serde_json::Value::Null), MockCreds::with_identity());
+            let stack =
+                ArgStack::new().set("msg".to_owned(), Variant::String("я".repeat(char_count)));
+
+            let (telemetry, _) = runner
+                .execute(&config("%msg%", "parent-id-fixed"), &make_ctx(&stack))
+                .await;
+
+            if should_send {
+                assert_eq!(
+                    telemetry.outcome,
+                    SubActionOutcome::Success,
+                    "{char_count}-char message must send"
+                );
+                assert_eq!(transport.call_count(), 1);
+            } else {
+                assert!(
+                    matches!(telemetry.outcome, SubActionOutcome::Failed(_)),
+                    "{char_count}-char message must fail"
+                );
+                assert_eq!(
+                    transport.call_count(),
+                    0,
+                    "over-limit message must not reach Helix"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn helix_4xx_maps_to_failed_outcome_without_token_or_url() {
+        let (_transport, runner) = runner_with(
+            Err(HelixError::Http {
+                status: 400,
+                body: "message_id not found".to_owned(),
+            }),
+            MockCreds::with_identity(),
+        );
+        let stack = ArgStack::new();
+
+        let (telemetry, _) = runner
+            .execute(&config("hello", "msg-parent-123"), &make_ctx(&stack))
+            .await;
+
+        let SubActionOutcome::Failed(msg) = telemetry.outcome else {
+            panic!("expected Failed, got {:?}", telemetry.outcome);
+        };
+        assert!(
+            msg.contains("400"),
+            "status must surface for diagnosis: {msg}"
+        );
+        assert!(
+            !msg.contains(TOKEN_SENTINEL),
+            "outcome must not leak the token: {msg}"
+        );
+        assert!(
+            !msg.contains("api.twitch.tv"),
+            "outcome must not leak the request URL: {msg}"
+        );
+    }
+}

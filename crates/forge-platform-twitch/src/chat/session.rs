@@ -12,6 +12,7 @@ use tokio::time::{Duration, Instant, sleep_until};
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{debug, info, warn};
 
+use super::dispatch;
 use super::payload;
 
 const EVENTSUB_WS_URL: &str = "wss://eventsub.wss.twitch.tv/ws";
@@ -243,25 +244,10 @@ impl ChatSession {
                 if let Some(frame_payload) = &frame.payload
                     && let Some(event_data) = &frame_payload.event
                 {
-                    match sub_type {
-                        "channel.chat.message" => self.publish_chat_message(event_data),
-                        "channel.subscribe" => {
-                            self.publish_subscribe_event(event_data, frame_msg_id);
-                        }
-                        "channel.subscription.message" => {
-                            self.publish_resubscribe_event(event_data, frame_msg_id);
-                        }
-                        "channel.subscription.gift" => {
-                            self.publish_gift_sub_event(event_data, frame_msg_id);
-                        }
-                        "channel.cheer" => {
-                            self.publish_cheer_event(event_data, frame_msg_id);
-                        }
-                        "channel.raid" => {
-                            self.publish_raid_event(event_data, frame_msg_id);
-                        }
-                        other => {
-                            debug!(subscription_type = %other, "unhandled notification subscription type");
+                    match dispatch::route_for(sub_type) {
+                        Some(route) => route(self, event_data, frame_msg_id),
+                        None => {
+                            debug!(subscription_type = %sub_type, "no route registered for notification subscription type");
                         }
                     }
                 }
@@ -275,7 +261,7 @@ impl ChatSession {
         FrameAction::Continue
     }
 
-    fn publish_chat_message(&self, event_data: &serde_json::Value) {
+    pub(super) fn publish_chat_message(&self, event_data: &serde_json::Value) {
         let channel = event_data
             .get("broadcaster_user_login")
             .and_then(|v| v.as_str())
@@ -332,7 +318,11 @@ impl ChatSession {
         ));
     }
 
-    fn publish_subscribe_event(&self, event_data: &serde_json::Value, frame_msg_id: &str) {
+    pub(super) fn publish_subscribe_event(
+        &self,
+        event_data: &serde_json::Value,
+        frame_msg_id: &str,
+    ) {
         let user_login = event_data
             .get("user_login")
             .and_then(|v| v.as_str())
@@ -375,7 +365,11 @@ impl ChatSession {
         ));
     }
 
-    fn publish_resubscribe_event(&self, event_data: &serde_json::Value, frame_msg_id: &str) {
+    pub(super) fn publish_resubscribe_event(
+        &self,
+        event_data: &serde_json::Value,
+        frame_msg_id: &str,
+    ) {
         let user_login = event_data
             .get("user_login")
             .and_then(|v| v.as_str())
@@ -435,7 +429,11 @@ impl ChatSession {
         ));
     }
 
-    fn publish_gift_sub_event(&self, event_data: &serde_json::Value, frame_msg_id: &str) {
+    pub(super) fn publish_gift_sub_event(
+        &self,
+        event_data: &serde_json::Value,
+        frame_msg_id: &str,
+    ) {
         let gifter_login = event_data
             .get("user_login")
             .and_then(|v| v.as_str())
@@ -479,7 +477,7 @@ impl ChatSession {
         ));
     }
 
-    fn publish_cheer_event(&self, event_data: &serde_json::Value, frame_msg_id: &str) {
+    pub(super) fn publish_cheer_event(&self, event_data: &serde_json::Value, frame_msg_id: &str) {
         let user_login = event_data
             .get("user_login")
             .and_then(|v| v.as_str())
@@ -524,7 +522,7 @@ impl ChatSession {
         ));
     }
 
-    fn publish_raid_event(&self, event_data: &serde_json::Value, frame_msg_id: &str) {
+    pub(super) fn publish_raid_event(&self, event_data: &serde_json::Value, frame_msg_id: &str) {
         let from_login = event_data
             .get("from_broadcaster_user_login")
             .and_then(|v| v.as_str())

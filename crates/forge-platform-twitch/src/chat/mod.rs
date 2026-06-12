@@ -1,3 +1,4 @@
+mod dispatch;
 pub mod parsers;
 pub(crate) mod payload;
 mod reconnect;

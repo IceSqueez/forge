@@ -1,9 +1,12 @@
+use std::sync::Arc;
 use std::time::SystemTime;
 
+use async_trait::async_trait;
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use forge_types::OAuthToken;
 
 use crate::auth::TwitchAuthBundle;
+use crate::helix::{HelixError, HelixTokenSource};
 
 pub const TWITCH_CREDENTIAL_ID: &str = "twitch:broadcaster";
 
@@ -78,6 +81,27 @@ pub async fn load(creds: &dyn CredentialsRepo) -> Result<Option<StoredCredential
         login,
         expires_at,
     }))
+}
+
+pub struct CredentialsTokenSource {
+    creds: Arc<dyn CredentialsRepo>,
+}
+
+impl CredentialsTokenSource {
+    pub fn new(creds: Arc<dyn CredentialsRepo>) -> Self {
+        Self { creds }
+    }
+}
+
+#[async_trait]
+impl HelixTokenSource for CredentialsTokenSource {
+    async fn access_token(&self) -> Result<OAuthToken, HelixError> {
+        let cred = load(self.creds.as_ref())
+            .await
+            .map_err(|e| HelixError::Credentials(e.to_string()))?
+            .ok_or_else(|| HelixError::Credentials("no twitch credentials stored".to_owned()))?;
+        Ok(cred.access_token)
+    }
 }
 
 #[cfg(test)]

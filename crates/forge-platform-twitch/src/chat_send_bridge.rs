@@ -9,11 +9,15 @@ use forge_events::{Event, EventSource, EventsError};
 use forge_platform_core::{PlatformError, RateLimitOutcome, RateLimiter};
 use forge_runtime::EventBus;
 use forge_storage::{CredentialId, CredentialsRepo};
-use forge_types::OAuthToken;
+use tokio::sync::OnceCell;
+
+use crate::credentials::CredentialsTokenSource;
+use crate::helix::{HelixHttpTransport, HelixTransport};
 
 pub struct ChatSendBridge {
     bus: Arc<EventBus>,
     creds: Arc<dyn CredentialsRepo>,
+    transport: OnceCell<Arc<dyn HelixTransport>>,
 }
 
 pub struct ChatSendBridgeHandle {
@@ -40,6 +44,7 @@ impl ChatSendBridge {
         let bridge = Self {
             bus: Arc::clone(&bus),
             creds,
+            transport: OnceCell::new(),
         };
         tokio::spawn(bridge.run(Arc::clone(&cancel)));
         ChatSendBridgeHandle { cancel }
@@ -100,8 +105,7 @@ impl ChatSendBridge {
     }
 
     async fn try_send(&self, message: &str) -> Result<(), String> {
-        let cid =
-            crate::auth::client_id().ok_or_else(|| "no Twitch client_id configured".to_string())?;
+        let transport = self.transport().await?;
 
         let json_str = self
             .creds
@@ -113,30 +117,33 @@ impl ChatSendBridge {
         let bundle: serde_json::Value =
             serde_json::from_str(&json_str).map_err(|e| e.to_string())?;
 
-        let token = bundle
-            .get("access_token")
-            .and_then(|v| v.as_str())
-            .ok_or("missing access_token")?
-            .to_owned();
-
         let user_id = bundle
             .get("user_id")
             .and_then(|v| v.as_str())
             .ok_or("missing user_id")?
             .to_owned();
 
-        crate::chat::send_chat(
-            &NoopRateLimiter,
-            &OAuthToken::new(token),
-            &cid,
-            &user_id,
-            &user_id,
-            message,
-            &self.bus,
-        )
-        .await
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+        crate::chat::send_chat(transport.as_ref(), &user_id, &user_id, message)
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+
+    async fn transport(&self) -> Result<Arc<dyn HelixTransport>, String> {
+        self.transport
+            .get_or_try_init(|| async {
+                let cid = crate::auth::client_id()
+                    .ok_or_else(|| "no Twitch client_id configured".to_string())?;
+                let transport: Arc<dyn HelixTransport> = Arc::new(HelixHttpTransport::new(
+                    Arc::new(NoopRateLimiter),
+                    Arc::clone(&self.bus),
+                    cid,
+                    Arc::new(CredentialsTokenSource::new(Arc::clone(&self.creds))),
+                ));
+                Ok(transport)
+            })
+            .await
+            .cloned()
     }
 }
 

@@ -5,6 +5,7 @@ pub mod builtin;
 pub mod chat;
 pub mod chat_send_bridge;
 pub mod credentials;
+pub mod helix;
 pub mod subscriptions;
 pub mod triggers;
 
@@ -19,5 +20,9 @@ pub use chat::{
     TwitchChatHandle, send_chat,
 };
 pub use chat_send_bridge::{ChatSendBridge, ChatSendBridgeHandle};
+pub use credentials::CredentialsTokenSource;
+pub use helix::{
+    HelixError, HelixHttpTransport, HelixMethod, HelixRequest, HelixTokenSource, HelixTransport,
+};
 pub use subscriptions::{SubStatus, SubscriptionRecord, SubscriptionTracker};
 pub use triggers::register_twitch_triggers;

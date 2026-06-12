@@ -1,13 +1,19 @@
+mod clear_chat;
+mod delete_message;
 mod identity;
 mod send_announcement;
+mod set_mode;
 
 use std::sync::Arc;
 
 use forge_registry::{RegistryError, SubActionRegistry};
 use forge_storage::CredentialsRepo;
 
+pub use clear_chat::ClearChatRunner;
+pub use delete_message::DeleteMessageRunner;
 pub use identity::SelfIdentity;
 pub use send_announcement::SendAnnouncementRunner;
+pub use set_mode::SetModeRunner;
 
 use crate::helix::HelixTransport;
 
@@ -17,7 +23,19 @@ pub fn register_twitch_sub_actions(
     creds: Arc<dyn CredentialsRepo>,
 ) -> Result<(), RegistryError> {
     let identity = Arc::new(SelfIdentity::new(creds));
-    reg.register(Box::new(SendAnnouncementRunner::new(transport, identity)))?;
+    reg.register(Box::new(SendAnnouncementRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(DeleteMessageRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(ClearChatRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(SetModeRunner::new(transport, identity)))?;
     Ok(())
 }
 

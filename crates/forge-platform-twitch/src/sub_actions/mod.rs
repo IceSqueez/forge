@@ -169,7 +169,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn register_twitch_sub_actions_resolves_announcement_runner() {
+    fn register_twitch_sub_actions_resolves_all_runner_ids() {
         let mut reg = SubActionRegistry::new();
 
         register_twitch_sub_actions(
@@ -179,6 +179,13 @@ mod tests {
         )
         .unwrap();
 
-        assert!(reg.get("twitch.chat.send_announcement").is_some());
+        for id in [
+            "twitch.chat.send_announcement",
+            "twitch.chat.delete_message",
+            "twitch.chat.clear",
+            "twitch.chat.set_mode",
+        ] {
+            assert!(reg.get(id).is_some(), "missing sub-action: {id}");
+        }
     }
 }

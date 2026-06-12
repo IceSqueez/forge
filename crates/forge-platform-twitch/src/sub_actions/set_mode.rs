@@ -280,3 +280,213 @@ impl SubActionRunner for SetModeRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::helix::HelixError;
+    use crate::sub_actions::test_support::{
+        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
+    };
+
+    fn runner_with(
+        response: Result<serde_json::Value, HelixError>,
+    ) -> (Arc<MockTransport>, SetModeRunner) {
+        let transport = Arc::new(MockTransport::returning(response));
+        let runner = SetModeRunner::new(
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+        );
+        (transport, runner)
+    }
+
+    fn cfg(pairs: &[(&str, Variant)]) -> SubActionConfig {
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), v.clone()))
+            .collect()
+    }
+
+    fn toggle(value: &str) -> Variant {
+        Variant::String(value.to_owned())
+    }
+
+    #[tokio::test]
+    async fn execute_patches_only_changed_modes_and_skips_all_unchanged() {
+        // expected == None means "no Helix call at all" (the unchanged skip).
+        // Exact body equality also proves unchanged keys are ABSENT from the PATCH.
+        let shipped_defaults = runner_with(Ok(serde_json::Value::Null)).1.default_config();
+        let cases: Vec<(&str, SubActionConfig, Option<serde_json::Value>)> = vec![
+            (
+                "all defaults unchanged skips the call",
+                shipped_defaults,
+                None,
+            ),
+            (
+                "emote only on",
+                cfg(&[("emote_only", toggle(ON))]),
+                Some(serde_json::json!({ "emote_mode": true })),
+            ),
+            (
+                "follower mode on carries duration",
+                cfg(&[
+                    ("follower_mode", toggle(ON)),
+                    ("follower_mode_min_minutes", Variant::Int(10)),
+                ]),
+                Some(serde_json::json!({
+                    "follower_mode": true,
+                    "follower_mode_duration": 10,
+                })),
+            ),
+            (
+                "follower mode off drops duration",
+                cfg(&[
+                    ("follower_mode", toggle(OFF)),
+                    ("follower_mode_min_minutes", Variant::Int(10)),
+                ]),
+                Some(serde_json::json!({ "follower_mode": false })),
+            ),
+            (
+                "slow mode on carries wait time",
+                cfg(&[
+                    ("slow_mode", toggle(ON)),
+                    ("slow_mode_wait_seconds", Variant::Int(30)),
+                ]),
+                Some(serde_json::json!({
+                    "slow_mode": true,
+                    "slow_mode_wait_time": 30,
+                })),
+            ),
+            (
+                "mixed toggles keep unchanged keys absent",
+                cfg(&[
+                    ("emote_only", toggle(OFF)),
+                    ("subscriber_mode", toggle(ON)),
+                    ("unique_chat_mode", toggle(UNCHANGED)),
+                    ("slow_mode_wait_seconds", Variant::Int(30)),
+                ]),
+                Some(serde_json::json!({
+                    "emote_mode": false,
+                    "subscriber_mode": true,
+                })),
+            ),
+        ];
+
+        for (label, config, expected) in cases {
+            let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
+            let stack = ArgStack::new();
+
+            let (telemetry, _) = runner.execute(&config, &make_ctx(&stack)).await;
+
+            assert_eq!(
+                telemetry.outcome,
+                SubActionOutcome::Success,
+                "case: {label}"
+            );
+            match expected {
+                None => {
+                    assert_eq!(transport.call_count(), 0, "case: {label} must skip Helix");
+                }
+                Some(body) => {
+                    let request = transport.last_request();
+                    assert_eq!(request.method, HelixMethod::Patch, "case: {label}");
+                    assert_eq!(request.path, "/helix/chat/settings", "case: {label}");
+                    assert!(
+                        request
+                            .query
+                            .contains(&("broadcaster_id".to_owned(), SELF_USER_ID.to_owned())),
+                        "case: {label}"
+                    );
+                    assert!(
+                        request
+                            .query
+                            .contains(&("moderator_id".to_owned(), SELF_USER_ID.to_owned())),
+                        "case: {label}"
+                    );
+                    assert_eq!(request.body.unwrap(), body, "case: {label}");
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn helix_http_failure_maps_to_failed_outcome_without_token() {
+        let (_transport, runner) = runner_with(Err(HelixError::Http {
+            status: 403,
+            body: "moderator scope missing".to_owned(),
+        }));
+        let stack = ArgStack::new();
+
+        let (telemetry, _) = runner
+            .execute(&cfg(&[("emote_only", toggle(ON))]), &make_ctx(&stack))
+            .await;
+
+        assert!(matches!(
+            telemetry.outcome,
+            SubActionOutcome::Failed(msg) if msg.contains("403") && !msg.contains(TOKEN_SENTINEL)
+        ));
+    }
+
+    #[test]
+    fn validate_config_rejects_bad_toggles_and_out_of_range_durations() {
+        let (_transport, runner) = runner_with(Ok(serde_json::Value::Null));
+        let cases: Vec<(&str, SubActionConfig, bool)> = vec![
+            ("all defaults", runner.default_config(), true),
+            ("empty config", BTreeMap::new(), true),
+            (
+                "unknown toggle value",
+                cfg(&[("emote_only", toggle("enabled"))]),
+                false,
+            ),
+            (
+                "non-string toggle",
+                cfg(&[("slow_mode", Variant::Bool(true))]),
+                false,
+            ),
+            (
+                "follower minutes below range",
+                cfg(&[("follower_mode_min_minutes", Variant::Int(-1))]),
+                false,
+            ),
+            (
+                "follower minutes at max",
+                cfg(&[("follower_mode_min_minutes", Variant::Int(129_600))]),
+                true,
+            ),
+            (
+                "follower minutes above max",
+                cfg(&[("follower_mode_min_minutes", Variant::Int(129_601))]),
+                false,
+            ),
+            (
+                "slow wait below min",
+                cfg(&[("slow_mode_wait_seconds", Variant::Int(2))]),
+                false,
+            ),
+            (
+                "slow wait at min",
+                cfg(&[("slow_mode_wait_seconds", Variant::Int(3))]),
+                true,
+            ),
+            (
+                "slow wait at max",
+                cfg(&[("slow_mode_wait_seconds", Variant::Int(120))]),
+                true,
+            ),
+            (
+                "slow wait above max",
+                cfg(&[("slow_mode_wait_seconds", Variant::Int(121))]),
+                false,
+            ),
+        ];
+
+        for (label, config, expect_ok) in cases {
+            assert_eq!(
+                runner.validate_config(&config).is_ok(),
+                expect_ok,
+                "case: {label}"
+            );
+        }
+    }
+}

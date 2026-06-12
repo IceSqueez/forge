@@ -158,3 +158,131 @@ impl SubActionRunner for BanUserRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use crate::helix::HelixError;
+    use crate::sub_actions::test_support::{
+        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx, users_fixture,
+    };
+
+    fn runner_with(
+        responses: Vec<Result<serde_json::Value, HelixError>>,
+    ) -> (Arc<MockTransport>, BanUserRunner) {
+        let transport = Arc::new(MockTransport::returning_sequence(responses));
+        let runner = BanUserRunner::new(
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+        );
+        (transport, runner)
+    }
+
+    fn config(target: &str, reason: &str) -> SubActionConfig {
+        BTreeMap::from([
+            (
+                "target_user_login".to_owned(),
+                Variant::String(target.to_owned()),
+            ),
+            ("reason".to_owned(), Variant::String(reason.to_owned())),
+        ])
+    }
+
+    #[tokio::test]
+    async fn execute_resolves_login_then_posts_ban_as_self_moderator() {
+        let (transport, runner) =
+            runner_with(vec![users_fixture("555"), Ok(serde_json::Value::Null)]);
+        let stack = ArgStack::new().set(
+            "user_login".to_owned(),
+            Variant::String("target".to_owned()),
+        );
+
+        let (telemetry, _) = runner
+            .execute(&config("%user_login%", "spam"), &make_ctx(&stack))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        assert_eq!(transport.call_count(), 2, "resolve then ban");
+        assert_eq!(transport.request(0).path, "/helix/users");
+        let ban = transport.last_request();
+        assert_eq!(ban.method, HelixMethod::Post);
+        assert_eq!(ban.path, "/helix/moderation/bans");
+        assert!(
+            ban.query
+                .contains(&("broadcaster_id".to_owned(), SELF_USER_ID.to_owned()))
+        );
+        assert!(
+            ban.query
+                .contains(&("moderator_id".to_owned(), SELF_USER_ID.to_owned()))
+        );
+        assert_eq!(
+            ban.body,
+            Some(serde_json::json!({ "data": { "user_id": "555", "reason": "spam" } })),
+            "body must carry the RESOLVED id, not the login"
+        );
+    }
+
+    #[tokio::test]
+    async fn empty_target_login_after_interpolation_fails_before_any_helix_call() {
+        let (transport, runner) = runner_with(vec![users_fixture("555")]);
+        let stack = ArgStack::new().set("user_login".to_owned(), Variant::String(String::new()));
+
+        let (telemetry, _) = runner
+            .execute(&config("%user_login%", "spam"), &make_ctx(&stack))
+            .await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert_eq!(
+            transport.call_count(),
+            0,
+            "empty target must fail before the resolve call"
+        );
+    }
+
+    #[tokio::test]
+    async fn empty_reason_is_omitted_from_ban_body() {
+        let (transport, runner) =
+            runner_with(vec![users_fixture("555"), Ok(serde_json::Value::Null)]);
+        let stack = ArgStack::new();
+
+        let (telemetry, _) = runner
+            .execute(&config("target", ""), &make_ctx(&stack))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        assert_eq!(
+            transport.last_request().body,
+            Some(serde_json::json!({ "data": { "user_id": "555" } })),
+            "empty reason must not produce a 'reason' key"
+        );
+    }
+
+    #[tokio::test]
+    async fn ban_call_http_failure_maps_to_failed_without_token_or_url() {
+        let (transport, runner) = runner_with(vec![
+            users_fixture("555"),
+            Err(HelixError::Http {
+                status: 403,
+                body: "moderator scope missing".to_owned(),
+            }),
+        ]);
+        let stack = ArgStack::new();
+
+        let (telemetry, _) = runner
+            .execute(&config("target", "spam"), &make_ctx(&stack))
+            .await;
+
+        assert_eq!(
+            transport.call_count(),
+            2,
+            "failure must come from the ban call, not the resolve"
+        );
+        let SubActionOutcome::Failed(msg) = telemetry.outcome else {
+            panic!("expected Failed, got {:?}", telemetry.outcome);
+        };
+        assert!(msg.contains("403"), "status must surface: {msg}");
+        assert!(!msg.contains(TOKEN_SENTINEL), "token leaked: {msg}");
+        assert!(!msg.contains("api.twitch.tv"), "URL leaked: {msg}");
+    }
+}

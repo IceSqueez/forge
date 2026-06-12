@@ -189,3 +189,116 @@ impl SubActionRunner for TimeoutUserRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::helix::HelixError;
+    use crate::sub_actions::test_support::{MockCreds, MockTransport, make_ctx, users_fixture};
+
+    fn runner_with(
+        responses: Vec<Result<serde_json::Value, HelixError>>,
+    ) -> (Arc<MockTransport>, TimeoutUserRunner) {
+        let transport = Arc::new(MockTransport::returning_sequence(responses));
+        let runner = TimeoutUserRunner::new(
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+        );
+        (transport, runner)
+    }
+
+    fn config(target: &str, reason: &str, duration: i64) -> SubActionConfig {
+        BTreeMap::from([
+            (
+                "target_user_login".to_owned(),
+                Variant::String(target.to_owned()),
+            ),
+            ("reason".to_owned(), Variant::String(reason.to_owned())),
+            ("duration_seconds".to_owned(), Variant::Int(duration)),
+        ])
+    }
+
+    #[tokio::test]
+    async fn execute_posts_timeout_with_resolved_id_and_duration_in_body() {
+        let (transport, runner) =
+            runner_with(vec![users_fixture("555"), Ok(serde_json::Value::Null)]);
+        let stack = ArgStack::new();
+
+        let (telemetry, _) = runner
+            .execute(&config("target", "calm down", 60), &make_ctx(&stack))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let request = transport.last_request();
+        assert_eq!(request.method, HelixMethod::Post);
+        assert_eq!(request.path, "/helix/moderation/bans");
+        assert_eq!(
+            request.body,
+            Some(serde_json::json!({
+                "data": { "user_id": "555", "duration": 60, "reason": "calm down" }
+            })),
+            "duration is what distinguishes a timeout from a permanent ban"
+        );
+    }
+
+    #[tokio::test]
+    async fn empty_target_login_after_interpolation_fails_before_any_helix_call() {
+        let (transport, runner) = runner_with(vec![users_fixture("555")]);
+        let stack = ArgStack::new();
+
+        let (telemetry, _) = runner.execute(&config("", "", 60), &make_ctx(&stack)).await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert_eq!(
+            transport.call_count(),
+            0,
+            "empty target must fail before the resolve call"
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_replaces_out_of_range_duration_with_default() {
+        let (transport, runner) =
+            runner_with(vec![users_fixture("555"), Ok(serde_json::Value::Null)]);
+        let stack = ArgStack::new();
+
+        let (telemetry, _) = runner
+            .execute(
+                &config("target", "", MAX_DURATION_SECONDS + 1),
+                &make_ctx(&stack),
+            )
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let body = transport.last_request().body.unwrap();
+        assert_eq!(
+            body["data"]["duration"],
+            serde_json::json!(DEFAULT_DURATION_SECONDS),
+            "out-of-range duration must never reach Helix verbatim"
+        );
+    }
+
+    #[test]
+    fn validate_config_enforces_duration_bounds_inclusive() {
+        let runner = TimeoutUserRunner::new(
+            Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)))
+                as Arc<dyn HelixTransport>,
+            Arc::new(SelfIdentity::new(Arc::new(MockCreds::empty()))),
+        );
+
+        for (duration, expected_ok) in [
+            (MIN_DURATION_SECONDS, true),
+            (MIN_DURATION_SECONDS - 1, false),
+            (MAX_DURATION_SECONDS, true),
+            (MAX_DURATION_SECONDS + 1, false),
+        ] {
+            let result = runner.validate_config(&config("target", "", duration));
+            assert_eq!(
+                result.is_ok(),
+                expected_ok,
+                "duration {duration} expected ok={expected_ok}, got {result:?}"
+            );
+        }
+    }
+}

@@ -132,3 +132,77 @@ impl SubActionRunner for UnbanUserRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::helix::HelixError;
+    use crate::sub_actions::test_support::{
+        MockCreds, MockTransport, SELF_USER_ID, make_ctx, users_fixture,
+    };
+
+    fn runner_with(
+        responses: Vec<Result<serde_json::Value, HelixError>>,
+    ) -> (Arc<MockTransport>, UnbanUserRunner) {
+        let transport = Arc::new(MockTransport::returning_sequence(responses));
+        let runner = UnbanUserRunner::new(
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+        );
+        (transport, runner)
+    }
+
+    fn config(target: &str) -> SubActionConfig {
+        BTreeMap::from([(
+            "target_user_login".to_owned(),
+            Variant::String(target.to_owned()),
+        )])
+    }
+
+    #[tokio::test]
+    async fn execute_deletes_ban_for_resolved_target_as_self_moderator() {
+        let (transport, runner) =
+            runner_with(vec![users_fixture("555"), Ok(serde_json::Value::Null)]);
+        let stack = ArgStack::new();
+
+        let (telemetry, _) = runner.execute(&config("target"), &make_ctx(&stack)).await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let request = transport.last_request();
+        assert_eq!(request.method, HelixMethod::Delete);
+        assert_eq!(request.path, "/helix/moderation/bans");
+        assert!(
+            request
+                .query
+                .contains(&("broadcaster_id".to_owned(), SELF_USER_ID.to_owned()))
+        );
+        assert!(
+            request
+                .query
+                .contains(&("moderator_id".to_owned(), SELF_USER_ID.to_owned()))
+        );
+        assert!(
+            request
+                .query
+                .contains(&("user_id".to_owned(), "555".to_owned())),
+            "user_id query must carry the RESOLVED target id"
+        );
+        assert!(request.body.is_none(), "unban sends no body");
+    }
+
+    #[tokio::test]
+    async fn empty_target_login_after_interpolation_fails_before_any_helix_call() {
+        let (transport, runner) = runner_with(vec![users_fixture("555")]);
+        let stack = ArgStack::new();
+
+        let (telemetry, _) = runner.execute(&config(""), &make_ctx(&stack)).await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert_eq!(
+            transport.call_count(),
+            0,
+            "empty target must fail before the resolve call"
+        );
+    }
+}

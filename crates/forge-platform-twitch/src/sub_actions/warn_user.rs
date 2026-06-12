@@ -169,3 +169,72 @@ impl SubActionRunner for WarnUserRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::helix::HelixError;
+    use crate::sub_actions::test_support::{MockCreds, MockTransport, make_ctx, users_fixture};
+
+    fn runner_with(
+        responses: Vec<Result<serde_json::Value, HelixError>>,
+    ) -> (Arc<MockTransport>, WarnUserRunner) {
+        let transport = Arc::new(MockTransport::returning_sequence(responses));
+        let runner = WarnUserRunner::new(
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+        );
+        (transport, runner)
+    }
+
+    fn config(target: &str, reason: &str) -> SubActionConfig {
+        BTreeMap::from([
+            (
+                "target_user_login".to_owned(),
+                Variant::String(target.to_owned()),
+            ),
+            ("reason".to_owned(), Variant::String(reason.to_owned())),
+        ])
+    }
+
+    #[tokio::test]
+    async fn execute_posts_warning_with_resolved_id_and_reason_in_body() {
+        let (transport, runner) =
+            runner_with(vec![users_fixture("555"), Ok(serde_json::Value::Null)]);
+        let stack = ArgStack::new();
+
+        let (telemetry, _) = runner
+            .execute(&config("target", "first strike"), &make_ctx(&stack))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let request = transport.last_request();
+        assert_eq!(request.method, HelixMethod::Post);
+        assert_eq!(request.path, "/helix/moderation/warnings");
+        assert_eq!(
+            request.body,
+            Some(serde_json::json!({
+                "data": { "user_id": "555", "reason": "first strike" }
+            })),
+            "body must carry the RESOLVED id and the mandatory reason"
+        );
+    }
+
+    #[tokio::test]
+    async fn empty_reason_after_interpolation_fails_before_any_helix_call() {
+        let (transport, runner) = runner_with(vec![users_fixture("555")]);
+        let stack = ArgStack::new().set("reason".to_owned(), Variant::String(String::new()));
+
+        let (telemetry, _) = runner
+            .execute(&config("target", "%reason%"), &make_ctx(&stack))
+            .await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert_eq!(
+            transport.call_count(),
+            0,
+            "missing reason must fail before the resolve call"
+        );
+    }
+}

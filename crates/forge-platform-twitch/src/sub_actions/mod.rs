@@ -66,6 +66,7 @@ pub fn register_twitch_sub_actions(
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 pub(crate) mod test_support {
+    use std::collections::VecDeque;
     use std::sync::Mutex;
 
     use async_trait::async_trait;
@@ -82,19 +83,32 @@ pub(crate) mod test_support {
 
     pub(crate) struct MockTransport {
         calls: Mutex<Vec<HelixRequest>>,
-        response: Mutex<Option<Result<serde_json::Value, HelixError>>>,
+        responses: Mutex<VecDeque<Result<serde_json::Value, HelixError>>>,
     }
 
     impl MockTransport {
         pub(crate) fn returning(response: Result<serde_json::Value, HelixError>) -> Self {
+            Self::returning_sequence(vec![response])
+        }
+
+        /// Queues responses consumed one per `execute` call (FIFO), for
+        /// runners that issue several Helix calls (e.g. resolve-then-act).
+        /// Exhausted queue yields `Ok(Null)`.
+        pub(crate) fn returning_sequence(
+            responses: Vec<Result<serde_json::Value, HelixError>>,
+        ) -> Self {
             Self {
                 calls: Mutex::new(Vec::new()),
-                response: Mutex::new(Some(response)),
+                responses: Mutex::new(responses.into()),
             }
         }
 
         pub(crate) fn call_count(&self) -> usize {
             self.calls.lock().unwrap().len()
+        }
+
+        pub(crate) fn request(&self, index: usize) -> HelixRequest {
+            self.calls.lock().unwrap()[index].clone()
         }
 
         pub(crate) fn last_request(&self) -> HelixRequest {
@@ -106,12 +120,17 @@ pub(crate) mod test_support {
     impl HelixTransport for MockTransport {
         async fn execute(&self, request: HelixRequest) -> Result<serde_json::Value, HelixError> {
             self.calls.lock().unwrap().push(request);
-            self.response
+            self.responses
                 .lock()
                 .unwrap()
-                .take()
+                .pop_front()
                 .unwrap_or(Ok(serde_json::Value::Null))
         }
+    }
+
+    /// Canned GET /helix/users payload resolving the target login to `id`.
+    pub(crate) fn users_fixture(id: &str) -> Result<serde_json::Value, HelixError> {
+        Ok(serde_json::json!({ "data": [{ "id": id, "login": "target" }] }))
     }
 
     pub(crate) struct MockCreds {
@@ -208,6 +227,10 @@ mod tests {
             "twitch.chat.delete_message",
             "twitch.chat.clear",
             "twitch.chat.set_mode",
+            "twitch.moderation.ban_user",
+            "twitch.moderation.timeout_user",
+            "twitch.moderation.unban_user",
+            "twitch.moderation.warn_user",
         ] {
             assert!(reg.get(id).is_some(), "missing sub-action: {id}");
         }

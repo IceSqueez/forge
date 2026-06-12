@@ -11,13 +11,55 @@ pub const TWITCH_AUTHORIZE_ENDPOINT: &str = "https://id.twitch.tv/oauth2/authori
 pub const TWITCH_TOKEN_ENDPOINT: &str = "https://id.twitch.tv/oauth2/token";
 
 pub const TWITCH_BROADCASTER_SCOPES: &[&str] = &[
+    // Chat I/O
     "chat:read",
     "chat:edit",
-    "channel:read:subscriptions",
-    "bits:read",
-    "moderator:read:followers",
     "user:read:chat",
     "user:write:chat",
+    "user:read:whispers",
+    "user:manage:whispers",
+    // Support / loyalty events
+    "channel:read:subscriptions",
+    "bits:read",
+    "channel:read:hype_train",
+    "channel:read:charity",
+    "channel:read:goals",
+    // Follow events
+    "moderator:read:followers",
+    // Moderation — read
+    "moderation:read",
+    "moderator:read:suspicious_users",
+    "moderator:read:automod_settings",
+    // Moderation — manage
+    "channel:moderate",
+    "moderator:manage:announcements",
+    "moderator:manage:automod",
+    "moderator:manage:automod_settings",
+    "moderator:manage:banned_users",
+    "moderator:manage:blocked_terms",
+    "moderator:manage:chat_messages",
+    "moderator:manage:chat_settings",
+    "moderator:manage:shield_mode",
+    "moderator:manage:shoutouts",
+    "moderator:manage:unban_requests",
+    "moderator:manage:warnings",
+    // Channel management
+    "channel:manage:broadcast",
+    "channel:manage:moderators",
+    "channel:manage:raids",
+    "channel:manage:vips",
+    // Channel Points
+    "channel:read:redemptions",
+    "channel:manage:redemptions",
+    // Polls / Predictions
+    "channel:manage:polls",
+    "channel:manage:predictions",
+    // Ads
+    "channel:read:ads",
+    "channel:manage:ads",
+    "channel:edit:commercial",
+    // Guest Star (beta)
+    "channel:manage:guest_star",
 ];
 
 const CALLBACK_REDIRECT_PATH: &str = "/oauth/callback";

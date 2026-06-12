@@ -16,7 +16,10 @@ use forge_hotkey::{HotkeyClient, HotkeyConfig, register_hotkey_triggers};
 use forge_midi::{MidiClient, MidiConfig, register_midi_sub_actions, register_midi_triggers};
 use forge_obs::{ObsSink, SwitchableObsSink, register_obs_sub_actions, register_obs_triggers};
 use forge_platform_core::paths;
-use forge_platform_twitch::{ChatSendBridge, ChatSendBridgeHandle, register_twitch_triggers};
+use forge_platform_twitch::{
+    ChatSendBridge, ChatSendBridgeHandle, CredentialsTokenSource, HelixHttpTransport,
+    HelixTransport, NoopRateLimiter, register_twitch_sub_actions, register_twitch_triggers,
+};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
     ActionEngineHandle, EventBus, QueueScheduler, QueueSchedulerHandle, ScriptRegistry,
@@ -439,6 +442,26 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         Arc::clone(&obs_sink) as Arc<dyn ObsSink>,
     ) {
         tracing::warn!("obs sub-action runner registration failed: {e}");
+    }
+    match forge_platform_twitch::client_id() {
+        Some(cid) => {
+            let twitch_creds: Arc<dyn forge_storage::CredentialsRepo> =
+                Arc::clone(&dp) as Arc<dyn forge_storage::CredentialsRepo>;
+            let twitch_transport: Arc<dyn HelixTransport> = Arc::new(HelixHttpTransport::new(
+                Arc::new(NoopRateLimiter),
+                Arc::clone(&bus),
+                cid,
+                Arc::new(CredentialsTokenSource::new(Arc::clone(&twitch_creds))),
+            ));
+            if let Err(e) =
+                register_twitch_sub_actions(&mut sub_action_reg, twitch_transport, twitch_creds)
+            {
+                tracing::warn!("twitch sub-action runner registration failed: {e}");
+            }
+        }
+        None => {
+            tracing::warn!("no Twitch client_id configured; twitch sub-actions unavailable");
+        }
     }
     let sub_action_reg = Arc::new(sub_action_reg);
 

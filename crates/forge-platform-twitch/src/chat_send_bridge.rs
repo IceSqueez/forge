@@ -1,18 +1,14 @@
+use forge_events::{Event, EventSource, EventsError};
+use forge_runtime::EventBus;
+use forge_storage::{CredentialId, CredentialsRepo};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
-use std::time::Duration;
-
-use async_trait::async_trait;
-use forge_events::{Event, EventSource, EventsError};
-use forge_platform_core::{PlatformError, RateLimitOutcome, RateLimiter};
-use forge_runtime::EventBus;
-use forge_storage::{CredentialId, CredentialsRepo};
 use tokio::sync::OnceCell;
 
 use crate::credentials::CredentialsTokenSource;
-use crate::helix::{HelixHttpTransport, HelixTransport};
+use crate::helix::{HelixHttpTransport, HelixTransport, NoopRateLimiter};
 
 pub struct ChatSendBridge {
     bus: Arc<EventBus>,
@@ -161,21 +157,6 @@ fn extract_message(event: &Event) -> Option<String> {
         .get("message")
         .and_then(|v| v.as_str())
         .map(ToOwned::to_owned)
-}
-
-struct NoopRateLimiter;
-
-#[async_trait]
-impl RateLimiter for NoopRateLimiter {
-    async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
-        Ok(RateLimitOutcome::Granted)
-    }
-
-    fn remaining(&self) -> u32 {
-        u32::MAX
-    }
-
-    async fn observe_remote_throttle(&self, _retry_after: Duration) {}
 }
 
 #[cfg(test)]

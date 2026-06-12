@@ -6,6 +6,7 @@ pub mod chat;
 pub mod chat_send_bridge;
 pub mod credentials;
 pub mod helix;
+pub mod sub_actions;
 pub mod subscriptions;
 pub mod triggers;
 
@@ -23,6 +24,8 @@ pub use chat_send_bridge::{ChatSendBridge, ChatSendBridgeHandle};
 pub use credentials::CredentialsTokenSource;
 pub use helix::{
     HelixError, HelixHttpTransport, HelixMethod, HelixRequest, HelixTokenSource, HelixTransport,
+    NoopRateLimiter,
 };
+pub use sub_actions::register_twitch_sub_actions;
 pub use subscriptions::{SubStatus, SubscriptionRecord, SubscriptionTracker};
 pub use triggers::register_twitch_triggers;

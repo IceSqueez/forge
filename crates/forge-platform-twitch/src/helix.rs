@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_events::{Event, EventSource};
-use forge_platform_core::{RateLimitOutcome, RateLimiter};
+use forge_platform_core::{PlatformError, RateLimitOutcome, RateLimiter};
 use forge_runtime::EventBus;
 use forge_types::OAuthToken;
 use thiserror::Error;
@@ -204,6 +204,22 @@ impl HelixTransport for HelixHttpTransport {
         }
         serde_json::from_slice(&bytes).map_err(|e| HelixError::Transport(e.to_string()))
     }
+}
+
+/// Enforces no Helix request budget; every acquire is granted immediately.
+pub struct NoopRateLimiter;
+
+#[async_trait]
+impl RateLimiter for NoopRateLimiter {
+    async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+        Ok(RateLimitOutcome::Granted)
+    }
+
+    fn remaining(&self) -> u32 {
+        u32::MAX
+    }
+
+    async fn observe_remote_throttle(&self, _retry_after: Duration) {}
 }
 
 fn extract_retry_after(resp: &reqwest::Response) -> Option<u64> {

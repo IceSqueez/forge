@@ -761,13 +761,6 @@ mod tests {
     }
 
     #[test]
-    fn ws_frame_deserializes_keepalive() {
-        let raw = r#"{"metadata":{"message_type":"session_keepalive"},"payload":{}}"#;
-        let frame: WsFrame = serde_json::from_str(raw).expect("must parse");
-        assert_eq!(frame.metadata.message_type, "session_keepalive");
-    }
-
-    #[test]
     fn ws_frame_message_id_defaults_to_empty_when_absent() {
         let raw = r#"{"metadata":{"message_type":"session_keepalive"},"payload":{}}"#;
         let frame: WsFrame = serde_json::from_str(raw).expect("must parse");
@@ -775,26 +768,28 @@ mod tests {
     }
 
     #[test]
-    fn extract_roles_from_badges_returns_set_ids() {
+    fn extract_roles_from_badges_returns_set_ids_skipping_malformed_entries() {
         let badges = serde_json::json!([
             {"set_id": "moderator", "id": "1", "info": ""},
-            {"set_id": "subscriber", "id": "3012", "info": "36"}
+            {"set_id": "subscriber", "id": "3012", "info": "36"},
+            {"id": "no-set-id"}
         ]);
         let roles = extract_roles_from_badges(Some(&badges));
         assert_eq!(roles, vec!["moderator", "subscriber"]);
     }
 
     #[test]
-    fn extract_roles_from_badges_empty_array() {
-        let badges = serde_json::json!([]);
-        let roles = extract_roles_from_badges(Some(&badges));
-        assert!(roles.is_empty());
-    }
-
-    #[test]
-    fn extract_roles_from_badges_missing_field() {
-        let roles = extract_roles_from_badges(None);
-        assert!(roles.is_empty());
+    fn extract_roles_from_badges_yields_empty_for_missing_or_non_array_badges() {
+        for badges in [
+            None,
+            Some(serde_json::json!([])),
+            Some(serde_json::json!("not-an-array")),
+        ] {
+            assert!(
+                extract_roles_from_badges(badges.as_ref()).is_empty(),
+                "expected empty roles for {badges:?}"
+            );
+        }
     }
 
     #[tokio::test]
@@ -835,6 +830,111 @@ mod tests {
         assert_eq!(roles[1].as_str(), Some("vip"));
         let badges = ev.payload["badges"].as_array().unwrap();
         assert_eq!(badges[0].as_str(), Some("moderator"));
+    }
+
+    #[tokio::test]
+    async fn publish_chat_message_surfaces_cheer_and_derives_anonymity_from_empty_chatter_id() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        for (chatter_id, expected_anonymous) in [("67890", false), ("", true)] {
+            let event_data = serde_json::json!({
+                "broadcaster_user_login": "streamer",
+                "chatter_user_id": chatter_id,
+                "chatter_user_login": "viewer",
+                "message": {"text": "cheer100 gg"},
+                "cheer": {"bits": 100},
+                "badges": []
+            });
+            session.publish_chat_message(&event_data);
+
+            let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+                .await
+                .expect("timeout")
+                .expect("recv error");
+
+            assert_eq!(ev.payload["cheer"]["bits"].as_i64(), Some(100));
+            assert_eq!(
+                ev.payload["cheer"]["is_anonymous"].as_bool(),
+                Some(expected_anonymous),
+                "chatter_user_id: {chatter_id:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn publish_chat_message_surfaces_from_channel_for_shared_chat_source() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "broadcaster_user_login": "host",
+            "chatter_user_id": "42",
+            "chatter_user_login": "guest_viewer",
+            "message": {"text": "hello from elsewhere"},
+            "source_broadcaster_user_login": "other_chan",
+            "source_broadcaster_user_name": "OtherChan",
+            "badges": []
+        });
+        session.publish_chat_message(&event_data);
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .expect("timeout")
+            .expect("recv error");
+
+        assert_eq!(
+            ev.payload["from_channel"]["login"].as_str(),
+            Some("other_chan")
+        );
+        assert_eq!(
+            ev.payload["from_channel"]["display_name"].as_str(),
+            Some("OtherChan")
+        );
+    }
+
+    #[tokio::test]
+    async fn publish_chat_message_omits_cheer_and_from_channel_when_not_applicable() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let plain = serde_json::json!({
+            "broadcaster_user_login": "streamer",
+            "chatter_user_id": "1",
+            "chatter_user_login": "viewer",
+            "message": {"text": "plain"},
+            "badges": []
+        });
+        let empty_source = serde_json::json!({
+            "broadcaster_user_login": "streamer",
+            "chatter_user_id": "1",
+            "chatter_user_login": "viewer",
+            "message": {"text": "plain"},
+            "source_broadcaster_user_login": "",
+            "source_broadcaster_user_name": "",
+            "badges": []
+        });
+
+        for (name, event_data) in [
+            ("keys absent", plain),
+            ("empty source fields", empty_source),
+        ] {
+            session.publish_chat_message(&event_data);
+
+            let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+                .await
+                .expect("timeout")
+                .expect("recv error");
+
+            assert!(ev.payload.get("cheer").is_none(), "cheer present: {name}");
+            assert!(
+                ev.payload.get("from_channel").is_none(),
+                "from_channel present: {name}"
+            );
+        }
     }
 
     #[tokio::test]

@@ -192,20 +192,13 @@ mod tests {
     }
 
     #[test]
-    fn build_arg_stack_extracts_message_and_user() {
-        let event = chat_event("!quote hello");
-        let stack = ChatCommandDescriptor.build_arg_stack(&event);
+    fn build_arg_stack_includes_base_chat_args() {
+        // Full base-arg extraction is covered in chat_arg_stack tests;
+        // this only guards the delegation.
+        let stack = ChatCommandDescriptor.build_arg_stack(&chat_event("!quote hello"));
         assert_eq!(
             stack.get("message_text"),
             Some(&Variant::String("!quote hello".to_owned()))
-        );
-        assert_eq!(
-            stack.get("user_login"),
-            Some(&Variant::String("viewer".to_owned()))
-        );
-        assert_eq!(
-            stack.get("channel"),
-            Some(&Variant::String("streamer".to_owned()))
         );
     }
 }

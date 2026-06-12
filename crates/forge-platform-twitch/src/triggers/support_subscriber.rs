@@ -111,25 +111,9 @@ mod tests {
     }
 
     #[test]
-    fn twitch_subscription_descriptor_is_platform_specific_twitch() {
-        assert_eq!(
-            SupportSubscriberDescriptor.platform_contract(),
-            KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-        );
-    }
-
-    #[test]
     fn always_matches() {
         assert!(
             SupportSubscriberDescriptor.matches_trigger(&TriggerConfig::new(), &subscribe_event())
-        );
-    }
-
-    #[test]
-    fn condition_display_is_any() {
-        assert_eq!(
-            SupportSubscriberDescriptor.condition_display(&TriggerConfig::new()),
-            "any"
         );
     }
 

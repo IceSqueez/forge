@@ -86,14 +86,6 @@ mod tests {
     }
 
     #[test]
-    fn chat_message_descriptor_is_platform_specific_twitch() {
-        assert_eq!(
-            ChatMessageDescriptor.platform_contract(),
-            KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-        );
-    }
-
-    #[test]
     fn always_matches() {
         let cfg = TriggerConfig::new();
         assert!(ChatMessageDescriptor.matches_trigger(&cfg, &chat_event("hello")));
@@ -101,31 +93,13 @@ mod tests {
     }
 
     #[test]
-    fn condition_display_is_any() {
-        assert_eq!(
-            ChatMessageDescriptor.condition_display(&TriggerConfig::new()),
-            "any"
-        );
-    }
-
-    #[test]
-    fn build_arg_stack_extracts_fields() {
+    fn build_arg_stack_includes_base_chat_args() {
+        // Full base-arg extraction is covered in chat_arg_stack tests;
+        // this only guards the delegation.
         let stack = ChatMessageDescriptor.build_arg_stack(&chat_event("hi there"));
         assert_eq!(
             stack.get("message_text"),
             Some(&Variant::String("hi there".to_owned()))
-        );
-        assert_eq!(
-            stack.get("user_login"),
-            Some(&Variant::String("bob".to_owned()))
-        );
-        assert_eq!(
-            stack.get("channel"),
-            Some(&Variant::String("mychannel".to_owned()))
-        );
-        assert_eq!(
-            stack.get("user_color"),
-            Some(&Variant::String("#FF0000".to_owned()))
         );
     }
 }

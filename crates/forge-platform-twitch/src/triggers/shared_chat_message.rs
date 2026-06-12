@@ -93,3 +93,71 @@ impl TriggerKindDescriptor for SharedChatMessageDescriptor {
             )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn chat_event(from_channel: Option<serde_json::Value>) -> Event {
+        let mut payload = serde_json::json!({
+            "channel": "host",
+            "user": { "login": "guest_viewer", "id": "42", "roles": [] },
+            "message": "hi from over there",
+            "badges": [],
+            "color": ""
+        });
+        if let Some(fc) = from_channel {
+            payload["from_channel"] = fc;
+        }
+        Event::new(EventSource::Twitch, "chat.message", payload)
+    }
+
+    #[test]
+    fn matches_trigger_requires_non_empty_from_channel_login() {
+        let cases = [
+            (
+                "from_channel with login",
+                Some(serde_json::json!({ "login": "other", "display_name": "Other" })),
+                true,
+            ),
+            ("no from_channel key", None, false),
+            (
+                "empty login",
+                Some(serde_json::json!({ "login": "", "display_name": "Other" })),
+                false,
+            ),
+            (
+                "login key missing",
+                Some(serde_json::json!({ "display_name": "Other" })),
+                false,
+            ),
+        ];
+        for (name, fc, expected) in cases {
+            assert_eq!(
+                SharedChatMessageDescriptor.matches_trigger(&TriggerConfig::new(), &chat_event(fc)),
+                expected,
+                "case: {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn build_arg_stack_adds_from_channel_args_to_base_chat_args() {
+        let event = chat_event(Some(
+            serde_json::json!({ "login": "other_chan", "display_name": "OtherChan" }),
+        ));
+        let stack = SharedChatMessageDescriptor.build_arg_stack(&event);
+        assert_eq!(
+            stack.get("chat.from_channel.login"),
+            Some(&Variant::String("other_chan".to_owned()))
+        );
+        assert_eq!(
+            stack.get("chat.from_channel.display_name"),
+            Some(&Variant::String("OtherChan".to_owned()))
+        );
+        assert_eq!(
+            stack.get("message_text"),
+            Some(&Variant::String("hi from over there".to_owned()))
+        );
+    }
+}

@@ -55,6 +55,8 @@ mod tests {
         let ids = [
             "twitch.chat.command",
             "twitch.chat.message",
+            "twitch.chat.cheer_message",
+            "twitch.shared_chat.message_received",
             "twitch.support.subscriber",
             "twitch.support.resubscriber",
             "twitch.support.gift_sub",

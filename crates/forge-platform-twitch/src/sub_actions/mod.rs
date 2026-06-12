@@ -265,6 +265,12 @@ mod tests {
             "twitch.moderation.timeout_user",
             "twitch.moderation.unban_user",
             "twitch.moderation.warn_user",
+            "twitch.moderation.add_moderator",
+            "twitch.moderation.remove_moderator",
+            "twitch.moderation.add_vip",
+            "twitch.moderation.remove_vip",
+            "twitch.moderation.shield_mode_on",
+            "twitch.moderation.shield_mode_off",
         ] {
             assert!(reg.get(id).is_some(), "missing sub-action: {id}");
         }

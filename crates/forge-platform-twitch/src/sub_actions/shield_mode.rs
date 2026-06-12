@@ -187,3 +187,112 @@ impl SubActionRunner for ShieldModeOffRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use forge_types::{ArgStack, SubActionOutcome};
+
+    use super::*;
+    use crate::helix::HelixMethod;
+    use crate::sub_actions::test_support::{MockCreds, MockTransport, SELF_USER_ID, make_ctx};
+
+    // ── table-driven: on/off each issue exactly one POST to shield_mode ───────
+
+    #[tokio::test]
+    async fn shield_mode_on_and_off_each_post_with_correct_is_active_flag() {
+        struct Case {
+            label: &'static str,
+            runner: Box<dyn SubActionRunner>,
+            transport: Arc<MockTransport>,
+            expected_is_active: bool,
+        }
+
+        fn make_transport() -> Arc<MockTransport> {
+            Arc::new(MockTransport::returning_sequence(vec![Ok(
+                serde_json::Value::Null,
+            )]))
+        }
+
+        fn identity() -> Arc<SelfIdentity> {
+            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity())))
+        }
+
+        let t_on = make_transport();
+        let t_off = make_transport();
+
+        let cases: Vec<Case> = vec![
+            Case {
+                label: "shield_mode_on",
+                runner: Box::new(ShieldModeOnRunner::new(
+                    Arc::clone(&t_on) as Arc<dyn HelixTransport>,
+                    identity(),
+                )),
+                transport: t_on,
+                expected_is_active: true,
+            },
+            Case {
+                label: "shield_mode_off",
+                runner: Box::new(ShieldModeOffRunner::new(
+                    Arc::clone(&t_off) as Arc<dyn HelixTransport>,
+                    identity(),
+                )),
+                transport: t_off,
+                expected_is_active: false,
+            },
+        ];
+
+        let stack = ArgStack::new();
+        let ctx = make_ctx(&stack);
+        let empty_config = BTreeMap::new();
+
+        for case in cases {
+            let (telemetry, _) = case.runner.execute(&empty_config, &ctx).await;
+
+            assert_eq!(
+                telemetry.outcome,
+                SubActionOutcome::Success,
+                "{}: expected Success",
+                case.label
+            );
+            assert_eq!(
+                case.transport.call_count(),
+                1,
+                "{}: shield_mode must issue exactly one Helix call (no resolve step)",
+                case.label
+            );
+            let req = case.transport.last_request();
+            assert_eq!(
+                req.method,
+                HelixMethod::Post,
+                "{}: must POST to shield_mode",
+                case.label
+            );
+            assert_eq!(
+                req.path, "/helix/moderation/shield_mode",
+                "{}: wrong endpoint",
+                case.label
+            );
+            assert!(
+                req.query
+                    .contains(&("broadcaster_id".to_owned(), SELF_USER_ID.to_owned())),
+                "{}: broadcaster_id must equal self id",
+                case.label
+            );
+            assert!(
+                req.query
+                    .contains(&("moderator_id".to_owned(), SELF_USER_ID.to_owned())),
+                "{}: moderator_id must equal self id",
+                case.label
+            );
+            assert_eq!(
+                req.body,
+                Some(serde_json::json!({ "is_active": case.expected_is_active })),
+                "{}: body must carry the correct is_active value",
+                case.label
+            );
+        }
+    }
+}

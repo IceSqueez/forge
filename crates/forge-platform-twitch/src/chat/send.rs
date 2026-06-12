@@ -51,7 +51,8 @@ pub async fn send_chat(
     sender_id: &str,
     message: &str,
 ) -> Result<SentMessageId, ChatSendError> {
-    if message.len() > MAX_MESSAGE_LEN {
+    // Twitch limit is by character count, not bytes; multibyte chars (e.g. Cyrillic) must pass.
+    if message.chars().count() > MAX_MESSAGE_LEN {
         return Err(ChatSendError::MessageTooLong);
     }
 

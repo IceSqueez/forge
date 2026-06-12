@@ -558,6 +558,7 @@ trigger_cat_chat = Chat
 trigger_cat_subscriptions = Subscriptions
 trigger_cat_bits = Bits
 trigger_cat_raids = Raids
+trigger_cat_moderation = Moderation
 trigger_cat_channel_points = Channel Points
 trigger_cat_polls = Polls
 trigger_cat_predictions = Predictions

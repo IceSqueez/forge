@@ -560,6 +560,7 @@ trigger_cat_chat = Чат
 trigger_cat_subscriptions = Підписки
 trigger_cat_bits = Бітси
 trigger_cat_raids = Рейди
+trigger_cat_moderation = Модерація
 trigger_cat_channel_points = Бали каналу
 trigger_cat_polls = Опитування
 trigger_cat_predictions = Прогнози

@@ -75,6 +75,7 @@ pub(crate) fn category_display_label(cat: RegistryCategory) -> String {
         RegistryCategory::Subscriptions => forge_widgets::tr!("trigger_cat_subscriptions"),
         RegistryCategory::Bits => forge_widgets::tr!("trigger_cat_bits"),
         RegistryCategory::Raids => forge_widgets::tr!("trigger_cat_raids"),
+        RegistryCategory::Moderation => forge_widgets::tr!("trigger_cat_moderation"),
         RegistryCategory::ChannelPoints => forge_widgets::tr!("trigger_cat_channel_points"),
         RegistryCategory::Polls => forge_widgets::tr!("trigger_cat_polls"),
         RegistryCategory::Predictions => forge_widgets::tr!("trigger_cat_predictions"),

@@ -4,6 +4,7 @@ pub enum TriggerCategory {
     Subscriptions,
     Bits,
     Raids,
+    Moderation,
     ChannelPoints,
     Polls,
     Predictions,
@@ -27,6 +28,9 @@ pub enum TriggerCategory {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SubActionCategory {
     Chat,
+    Moderation,
+    ChannelPoints,
+    PollsPredictions,
     Globals,
     Logic,
     Delay,

@@ -201,4 +201,30 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn fmt_feed_time_pattern_resolves_literal_tokens_not_fluent_references() {
+        // Regression: commit eb19280 fixed fmt_feed_time_pattern from {HH}:{MM}:{SS}.{mmm}
+        // (which Fluent interprets as message references) to %HH%:%MM%:%SS%.%mmm% (literal
+        // tokens for forge-widgets::fmt_feed_time to substitute). This test ensures the bundle
+        // returns the literal pattern with no Fluent placeable interpretation.
+        for lang in [Language::En, Language::Uk] {
+            install_language(lang);
+            let pattern = tr_lookup("fmt_feed_time_pattern", None);
+            assert_eq!(
+                pattern, "%HH%:%MM%:%SS%.%mmm%",
+                "{lang:?} pattern was not literal: {pattern:?}"
+            );
+            // If {HH} form is reintroduced, Fluent will still try to resolve the references.
+            // Ensure no braces leaked into the resolved pattern.
+            assert!(
+                !pattern.contains('{'),
+                "{lang:?} pattern contains '{{': {pattern:?}"
+            );
+            assert!(
+                !pattern.contains('}'),
+                "{lang:?} pattern contains '}}': {pattern:?}"
+            );
+        }
+    }
 }

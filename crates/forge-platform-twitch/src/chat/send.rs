@@ -211,4 +211,41 @@ mod tests {
 
         assert!(matches!(err, ChatSendError::Http(_)));
     }
+
+    #[tokio::test]
+    async fn message_limit_enforced_by_character_count_not_byte_count() {
+        for (char_count, should_send) in [
+            (500, true),  // 500 chars Cyrillic = 1000 bytes; exactly at limit (by char count)
+            (501, false), // 501 chars Cyrillic = 1002 bytes; over limit (by char count)
+        ] {
+            let message = "я".repeat(char_count); // Cyrillic 'ya' is 2 bytes per char
+            let transport = MockTransport::returning(Ok(sent_fixture()));
+
+            let result = send_chat(&transport, "100", "100", &message).await;
+
+            if should_send {
+                assert!(
+                    result.is_ok(),
+                    "{char_count}-char message should be sent (bytes={}, chars={})",
+                    message.len(),
+                    message.chars().count()
+                );
+                assert_eq!(
+                    transport.call_count(),
+                    1,
+                    "{char_count}-char message must invoke transport"
+                );
+            } else {
+                assert!(
+                    matches!(result, Err(ChatSendError::MessageTooLong)),
+                    "{char_count}-char message should be rejected with MessageTooLong"
+                );
+                assert_eq!(
+                    transport.call_count(),
+                    0,
+                    "{char_count}-char message must not invoke transport"
+                );
+            }
+        }
+    }
 }

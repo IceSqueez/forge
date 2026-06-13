@@ -21,6 +21,7 @@ mod start_raid;
 mod timeout_user;
 mod unban_user;
 mod update_category;
+mod update_reward;
 mod update_tags;
 mod update_title;
 mod warn_user;
@@ -53,6 +54,7 @@ pub use start_raid::StartRaidRunner;
 pub use timeout_user::TimeoutUserRunner;
 pub use unban_user::UnbanUserRunner;
 pub use update_category::UpdateCategoryRunner;
+pub use update_reward::UpdateRewardRunner;
 pub use update_tags::UpdateTagsRunner;
 pub use update_title::UpdateTitleRunner;
 pub use warn_user::WarnUserRunner;
@@ -165,7 +167,11 @@ pub fn register_twitch_sub_actions(
         Arc::clone(&transport),
         Arc::clone(&identity),
     )))?;
-    reg.register(Box::new(CreateRewardRunner::new(transport, identity)))?;
+    reg.register(Box::new(CreateRewardRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(UpdateRewardRunner::new(transport, identity)))?;
     Ok(())
 }
 

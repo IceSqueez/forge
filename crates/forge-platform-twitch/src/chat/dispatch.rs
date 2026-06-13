@@ -150,6 +150,18 @@ const NOTIFICATION_ROUTES: &[(&str, NotificationRoute)] = &[
         "channel.chat_settings.update",
         ChatSession::publish_chat_settings_update_event,
     ),
+    (
+        "channel.guest_star_session.begin",
+        ChatSession::publish_guest_star_session_begin_event,
+    ),
+    (
+        "channel.guest_star_session.end",
+        ChatSession::publish_guest_star_session_end_event,
+    ),
+    (
+        "channel.guest_star_settings.update",
+        ChatSession::publish_guest_star_settings_event,
+    ),
 ];
 
 #[cfg(test)]

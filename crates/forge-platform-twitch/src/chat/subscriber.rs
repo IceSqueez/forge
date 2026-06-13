@@ -283,6 +283,21 @@ const TOPICS: &[TopicSpec] = &[
         version: "1",
         condition_fn: condition_chat,
     },
+    TopicSpec {
+        kind: "channel.guest_star_session.begin",
+        version: "beta",
+        condition_fn: condition_broadcaster,
+    },
+    TopicSpec {
+        kind: "channel.guest_star_session.end",
+        version: "beta",
+        condition_fn: condition_broadcaster,
+    },
+    TopicSpec {
+        kind: "channel.guest_star_settings.update",
+        version: "beta",
+        condition_fn: condition_broadcaster,
+    },
 ];
 
 pub(crate) async fn subscribe_all(

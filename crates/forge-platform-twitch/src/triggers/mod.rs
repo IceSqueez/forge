@@ -19,6 +19,9 @@ mod chat_settings_updated;
 mod goal_ended;
 mod goal_progress;
 mod goal_started;
+mod guest_star_session_began;
+mod guest_star_session_ended;
+mod guest_star_settings_updated;
 mod hype_train_ended;
 mod hype_train_progress;
 mod hype_train_started;
@@ -71,6 +74,9 @@ use chat_settings_updated::ChatSettingsUpdatedDescriptor;
 use goal_ended::GoalEndedDescriptor;
 use goal_progress::GoalProgressDescriptor;
 use goal_started::GoalStartedDescriptor;
+use guest_star_session_began::GuestStarSessionBeganDescriptor;
+use guest_star_session_ended::GuestStarSessionEndedDescriptor;
+use guest_star_settings_updated::GuestStarSettingsUpdatedDescriptor;
 use hype_train_ended::HypeTrainEndedDescriptor;
 use hype_train_progress::HypeTrainProgressDescriptor;
 use hype_train_started::HypeTrainStartedDescriptor;
@@ -151,6 +157,9 @@ pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), Registr
     reg.register(Box::new(RedemptionUpdatedDescriptor))?;
     reg.register(Box::new(AutomodMessageHeldDescriptor))?;
     reg.register(Box::new(ChatSettingsUpdatedDescriptor))?;
+    reg.register(Box::new(GuestStarSessionBeganDescriptor))?;
+    reg.register(Box::new(GuestStarSessionEndedDescriptor))?;
+    reg.register(Box::new(GuestStarSettingsUpdatedDescriptor))?;
     Ok(())
 }
 

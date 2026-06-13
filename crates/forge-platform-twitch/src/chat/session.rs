@@ -2360,6 +2360,111 @@ impl ChatSession {
         ));
     }
 
+    pub(super) fn publish_guest_star_session_begin_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let session_id = event_data
+            .get("session_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
+        let started_at = event_data
+            .get("started_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
+
+        info!(session_id = %session_id, "guest star session began");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.guest_star_session.begin",
+            serde_json::json!({
+                "session": {
+                    "id": session_id,
+                    "started_at": started_at,
+                },
+            }),
+        ));
+    }
+
+    pub(super) fn publish_guest_star_session_end_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let session_id = event_data
+            .get("session_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
+        let started_at = event_data
+            .get("started_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
+        let ended_at = event_data
+            .get("ended_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
+
+        info!(session_id = %session_id, "guest star session ended");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.guest_star_session.end",
+            serde_json::json!({
+                "session": {
+                    "id": session_id,
+                    "started_at": started_at,
+                    "ended_at": ended_at,
+                },
+            }),
+        ));
+    }
+
+    pub(super) fn publish_guest_star_settings_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let slot_count = event_data
+            .get("slot_count")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let group_layout = event_data
+            .get("group_layout")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
+        let is_moderator_send_live_enabled = event_data
+            .get("is_moderator_send_live_enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let is_browser_source_audio_enabled = event_data
+            .get("is_browser_source_audio_enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        info!(slot_count, group_layout = %group_layout, "guest star settings updated");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.guest_star_settings.update",
+            serde_json::json!({
+                "settings": {
+                    "slot_count": slot_count,
+                    "group_layout": group_layout,
+                    "is_moderator_send_live_enabled": is_moderator_send_live_enabled,
+                    "is_browser_source_audio_enabled": is_browser_source_audio_enabled,
+                },
+            }),
+        ));
+    }
+
     fn set_state(&self, state: ChatConnectionState) {
         let _ = self.state_tx.send(state);
     }

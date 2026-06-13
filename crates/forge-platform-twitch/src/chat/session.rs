@@ -4774,6 +4774,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn publish_guest_star_guest_update_event_nests_guest_star_and_guest_with_state() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "session_id": "sess-7",
+            "slot_id": "3",
+            "state": "live",
+            "guest_user_id": "guest-42",
+            "guest_user_login": "guest_login",
+            "guest_user_name": "GuestName",
+        });
+        session.publish_guest_star_guest_update_event(&event_data, "meta-gs-guest");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.guest_star_guest.update");
+        assert_eq!(ev.source, EventSource::Twitch);
+        assert_eq!(
+            ev.payload["guest_star"]["session_id"].as_str(),
+            Some("sess-7")
+        );
+        assert_eq!(ev.payload["guest_star"]["slot_id"].as_str(), Some("3"));
+        assert_eq!(ev.payload["guest_star"]["state"].as_str(), Some("live"));
+        assert_eq!(ev.payload["guest"]["id"].as_str(), Some("guest-42"));
+        assert_eq!(ev.payload["guest"]["login"].as_str(), Some("guest_login"));
+        assert_eq!(
+            ev.payload["guest"]["display_name"].as_str(),
+            Some("GuestName")
+        );
+    }
+
+    #[tokio::test]
     async fn publish_automod_settings_update_event_nests_moderator_and_overall_level() {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let session = make_session(&bus);

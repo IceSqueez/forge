@@ -143,3 +143,91 @@ impl TriggerKindDescriptor for GuestStarGuestUpdatedDescriptor {
             .set("guest.id".to_owned(), Variant::String(guest_id))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn update_event(state: &str) -> Event {
+        Event::new(
+            EventSource::Twitch,
+            "channel.guest_star_guest.update",
+            serde_json::json!({
+                "guest_star": {
+                    "session_id": "sess-7",
+                    "slot_id": "3",
+                    "state": state,
+                },
+                "guest": {
+                    "id": "guest-42",
+                    "login": "guest_login",
+                    "display_name": "GuestName",
+                },
+            }),
+        )
+    }
+
+    fn config_with_filter(filter: &str) -> TriggerConfig {
+        let mut cfg = TriggerConfig::new();
+        cfg.insert(
+            "state_filter".to_owned(),
+            Variant::String(filter.to_owned()),
+        );
+        cfg
+    }
+
+    #[test]
+    fn event_filter_targets_guest_update_kind_from_twitch() {
+        let filter = GuestStarGuestUpdatedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.guest_star_guest.update")
+        );
+    }
+
+    #[test]
+    fn state_filter_fires_only_on_exact_state_match_empty_meaning_any() {
+        let event = update_event("live");
+        for (filter, expected) in [("", true), ("live", true), ("removed", false)] {
+            let cfg = config_with_filter(filter);
+            assert_eq!(
+                GuestStarGuestUpdatedDescriptor.matches_trigger(&cfg, &event),
+                expected,
+                "filter {filter:?} against event state \"live\""
+            );
+        }
+    }
+
+    #[test]
+    fn missing_state_filter_config_defaults_to_any_and_fires() {
+        let event = update_event("removed");
+        let cfg = TriggerConfig::new();
+        assert!(GuestStarGuestUpdatedDescriptor.matches_trigger(&cfg, &event));
+    }
+
+    #[test]
+    fn build_arg_stack_exposes_guest_star_and_guest_chaining_vars() {
+        let stack = GuestStarGuestUpdatedDescriptor.build_arg_stack(&update_event("live"));
+        assert_eq!(
+            stack.get("guest_star.session_id"),
+            Some(&Variant::String("sess-7".to_owned()))
+        );
+        assert_eq!(
+            stack.get("guest_star.slot_id"),
+            Some(&Variant::String("3".to_owned()))
+        );
+        assert_eq!(
+            stack.get("guest_star.state"),
+            Some(&Variant::String("live".to_owned()))
+        );
+        assert_eq!(
+            stack.get("guest.login"),
+            Some(&Variant::String("guest_login".to_owned()))
+        );
+        assert_eq!(
+            stack.get("guest.id"),
+            Some(&Variant::String("guest-42".to_owned()))
+        );
+    }
+}

@@ -142,6 +142,14 @@ const NOTIFICATION_ROUTES: &[(&str, NotificationRoute)] = &[
         "channel.channel_points_custom_reward_redemption.update",
         ChatSession::publish_redemption_update_event,
     ),
+    (
+        "channel.automod.message.hold",
+        ChatSession::publish_automod_hold_event,
+    ),
+    (
+        "channel.chat_settings.update",
+        ChatSession::publish_chat_settings_update_event,
+    ),
 ];
 
 #[cfg(test)]

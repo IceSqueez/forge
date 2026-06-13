@@ -2235,6 +2235,131 @@ impl ChatSession {
         ));
     }
 
+    pub(super) fn publish_automod_hold_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let user_id = event_data
+            .get("user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_login = event_data
+            .get("user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_name = event_data
+            .get("user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let automod = event_data.get("automod");
+        // message_id is forwarded in the payload so downstream sub-actions
+        // (approve_message / deny_message) can reference it via %automod.message_id%.
+        let message_id = automod
+            .and_then(|a| a.get("message_id"))
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let category = automod
+            .and_then(|a| a.get("category"))
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let level = automod
+            .and_then(|a| a.get("level"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let held_at = automod
+            .and_then(|a| a.get("held_at"))
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let message_text = event_data
+            .get("message")
+            .and_then(|m| m.get("text"))
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(user_login = %user_login, category = %category, level, "automod hold received");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.automod.message.hold",
+            serde_json::json!({
+                "automod": {
+                    "message_id": message_id,
+                    "category": category,
+                    "level": level,
+                    "held_at": held_at,
+                },
+                "user": {
+                    "id": user_id,
+                    "login": user_login,
+                    "display_name": user_name,
+                },
+                "message_text": message_text,
+            }),
+        ));
+    }
+
+    pub(super) fn publish_chat_settings_update_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let emote_mode = event_data
+            .get("emote_mode")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let follower_mode = event_data
+            .get("follower_mode")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let follower_mode_duration_minutes = event_data
+            .get("follower_mode_duration_minutes")
+            .and_then(|v| v.as_i64());
+        let slow_mode = event_data
+            .get("slow_mode")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let slow_mode_wait_time_seconds = event_data
+            .get("slow_mode_wait_time_seconds")
+            .and_then(|v| v.as_i64());
+        let subscriber_mode = event_data
+            .get("subscriber_mode")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let unique_chat_mode = event_data
+            .get("unique_chat_mode")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        info!(
+            emote_mode,
+            follower_mode, slow_mode, subscriber_mode, unique_chat_mode, "chat settings updated"
+        );
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.chat_settings.update",
+            serde_json::json!({
+                "settings": {
+                    "emote_mode": emote_mode,
+                    "follower_mode": follower_mode,
+                    "follower_mode_duration_minutes": follower_mode_duration_minutes,
+                    "slow_mode": slow_mode,
+                    "slow_mode_wait_time_seconds": slow_mode_wait_time_seconds,
+                    "subscriber_mode": subscriber_mode,
+                    "unique_chat_mode": unique_chat_mode,
+                },
+            }),
+        ));
+    }
+
     fn set_state(&self, state: ChatConnectionState) {
         let _ = self.state_tx.send(state);
     }

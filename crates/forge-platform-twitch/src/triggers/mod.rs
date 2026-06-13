@@ -1,3 +1,4 @@
+mod automod_message_held;
 mod channel_ban;
 mod channel_follow;
 mod channel_points_redemption;
@@ -14,6 +15,7 @@ mod chat_cleared;
 mod chat_command;
 mod chat_message;
 mod chat_message_deleted;
+mod chat_settings_updated;
 mod goal_ended;
 mod goal_progress;
 mod goal_started;
@@ -49,6 +51,7 @@ mod warning_acknowledged;
 
 use forge_registry::{RegistryError, TriggerRegistry};
 
+use automod_message_held::AutomodMessageHeldDescriptor;
 use channel_ban::ChannelBanDescriptor;
 use channel_follow::ChannelFollowDescriptor;
 use channel_points_redemption::ChannelPointsRedemptionDescriptor;
@@ -64,6 +67,7 @@ use chat_cleared::ChatClearedDescriptor;
 use chat_command::ChatCommandDescriptor;
 use chat_message::ChatMessageDescriptor;
 use chat_message_deleted::ChatMessageDeletedDescriptor;
+use chat_settings_updated::ChatSettingsUpdatedDescriptor;
 use goal_ended::GoalEndedDescriptor;
 use goal_progress::GoalProgressDescriptor;
 use goal_started::GoalStartedDescriptor;
@@ -145,6 +149,8 @@ pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), Registr
     reg.register(Box::new(RewardUpdatedDescriptor))?;
     reg.register(Box::new(RewardRemovedDescriptor))?;
     reg.register(Box::new(RedemptionUpdatedDescriptor))?;
+    reg.register(Box::new(AutomodMessageHeldDescriptor))?;
+    reg.register(Box::new(ChatSettingsUpdatedDescriptor))?;
     Ok(())
 }
 

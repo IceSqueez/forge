@@ -273,6 +273,16 @@ const TOPICS: &[TopicSpec] = &[
         version: "1",
         condition_fn: condition_broadcaster,
     },
+    TopicSpec {
+        kind: "channel.automod.message.hold",
+        version: "1",
+        condition_fn: condition_chat,
+    },
+    TopicSpec {
+        kind: "channel.chat_settings.update",
+        version: "1",
+        condition_fn: condition_chat,
+    },
 ];
 
 pub(crate) async fn subscribe_all(

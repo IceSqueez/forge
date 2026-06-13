@@ -88,6 +88,10 @@ mod tests {
             "channel.hype_train.begin",
             "channel.hype_train.progress",
             "channel.hype_train.end",
+            "channel.charity_campaign.donate",
+            "channel.charity_campaign.start",
+            "channel.charity_campaign.progress",
+            "channel.charity_campaign.stop",
         ] {
             assert!(route_for(topic).is_some(), "missing route for {topic}");
         }

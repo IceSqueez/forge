@@ -2003,4 +2003,68 @@ mod tests {
             Some("2026-06-13T19:10:00Z")
         );
     }
+
+    #[tokio::test]
+    async fn charity_donation_event_flattens_amount_object_to_cents_and_currency() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        // Helix delivers amount as an object {value, decimal_places, currency};
+        // value is in minor units. The forge payload must flatten it to a scalar
+        // amount_cents int plus a currency_code string.
+        let event_data = serde_json::json!({
+            "campaign_id": "camp-1",
+            "charity_name": "Helping Hands",
+            "amount": { "value": 2500, "decimal_places": 2, "currency": "USD" },
+            "user_login": "giver",
+            "user_name": "Giver"
+        });
+        session.publish_charity_donation_event(&event_data, "meta-donate-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.charity_campaign.donate");
+        assert_eq!(ev.payload["charity"]["amount_cents"].as_i64(), Some(2500));
+        assert_eq!(ev.payload["charity"]["currency_code"].as_str(), Some("USD"));
+        assert_eq!(
+            ev.payload["charity"]["name"].as_str(),
+            Some("Helping Hands")
+        );
+        assert_eq!(ev.payload["user"]["login"].as_str(), Some("giver"));
+    }
+
+    #[tokio::test]
+    async fn charity_start_event_flattens_current_and_target_amount_objects() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "id": "camp-9",
+            "charity_name": "Rivers Fund",
+            "current_amount": { "value": 12000, "decimal_places": 2, "currency": "EUR" },
+            "target_amount": { "value": 50000, "decimal_places": 2, "currency": "EUR" }
+        });
+        session.publish_charity_start_event(&event_data, "meta-start-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.charity_campaign.start");
+        assert_eq!(
+            ev.payload["charity"]["current_amount_cents"].as_i64(),
+            Some(12000)
+        );
+        assert_eq!(
+            ev.payload["charity"]["target_amount_cents"].as_i64(),
+            Some(50000)
+        );
+        assert_eq!(ev.payload["charity"]["currency_code"].as_str(), Some("EUR"));
+    }
 }

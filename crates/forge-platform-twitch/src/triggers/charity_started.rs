@@ -106,3 +106,78 @@ pub(super) fn build_charity_lifecycle_arg_stack(event: &Event) -> ArgStack {
             Variant::String(currency_code),
         )
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    fn lifecycle_event() -> Event {
+        Event::new(
+            EventSource::Twitch,
+            "channel.charity_campaign.start",
+            serde_json::json!({
+                "charity": {
+                    "id": "camp-9",
+                    "name": "Rivers Fund",
+                    "current_amount_cents": 12_000,
+                    "target_amount_cents": 50_000,
+                    "currency_code": "EUR",
+                },
+            }),
+        )
+    }
+
+    #[test]
+    fn event_filter_targets_start_topic_on_twitch_source() {
+        let filter = CharityStartedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.charity_campaign.start")
+        );
+    }
+
+    #[test]
+    fn lifecycle_arg_stack_maps_current_and_target_as_int_and_strings() {
+        let stack = build_charity_lifecycle_arg_stack(&lifecycle_event());
+        assert_eq!(
+            stack.get("charity.current_amount_cents"),
+            Some(&Variant::Int(12_000))
+        );
+        assert_eq!(
+            stack.get("charity.target_amount_cents"),
+            Some(&Variant::Int(50_000))
+        );
+        assert_eq!(
+            stack.get("charity.id"),
+            Some(&Variant::String("camp-9".to_owned()))
+        );
+        assert_eq!(
+            stack.get("charity.name"),
+            Some(&Variant::String("Rivers Fund".to_owned()))
+        );
+        assert_eq!(
+            stack.get("charity.currency_code"),
+            Some(&Variant::String("EUR".to_owned()))
+        );
+    }
+
+    #[test]
+    fn lifecycle_arg_stack_defaults_missing_amounts_to_zero_int() {
+        let event = Event::new(
+            EventSource::Twitch,
+            "channel.charity_campaign.start",
+            serde_json::json!({ "charity": { "id": "camp-x" } }),
+        );
+        let stack = build_charity_lifecycle_arg_stack(&event);
+        assert_eq!(
+            stack.get("charity.current_amount_cents"),
+            Some(&Variant::Int(0))
+        );
+        assert_eq!(
+            stack.get("charity.target_amount_cents"),
+            Some(&Variant::Int(0))
+        );
+    }
+}

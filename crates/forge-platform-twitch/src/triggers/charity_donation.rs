@@ -149,3 +149,86 @@ impl TriggerKindDescriptor for CharityDonationDescriptor {
             )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    fn donation_event(amount_cents: i64) -> Event {
+        Event::new(
+            EventSource::Twitch,
+            "channel.charity_campaign.donate",
+            serde_json::json!({
+                "charity": {
+                    "id": "camp-1",
+                    "name": "Helping Hands",
+                    "amount_cents": amount_cents,
+                    "currency_code": "USD",
+                },
+                "user": { "login": "giver", "display_name": "Giver" },
+            }),
+        )
+    }
+
+    fn config_min(min_amount_cents: i64) -> TriggerConfig {
+        let mut cfg = TriggerConfig::new();
+        cfg.insert(
+            "min_amount_cents".to_owned(),
+            Variant::Int(min_amount_cents),
+        );
+        cfg
+    }
+
+    #[test]
+    fn event_filter_targets_donate_topic_on_twitch_source() {
+        let filter = CharityDonationDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.charity_campaign.donate")
+        );
+    }
+
+    #[test]
+    fn min_amount_cents_filter_compares_at_and_around_boundary() {
+        // Event carries a 500-cent donation. min uses inclusive >= comparison.
+        for (min, expected) in [
+            (config_min(0), true),        // floor accepts any amount
+            (config_min(500), true),      // boundary: equal passes (>=)
+            (config_min(501), false),     // one over boundary rejects
+            (TriggerConfig::new(), true), // missing config falls back to 0
+        ] {
+            assert_eq!(
+                CharityDonationDescriptor.matches_trigger(&min, &donation_event(500)),
+                expected,
+            );
+        }
+    }
+
+    #[test]
+    fn build_arg_stack_maps_amount_as_int_and_string_fields() {
+        let stack = CharityDonationDescriptor.build_arg_stack(&donation_event(2500));
+        assert_eq!(stack.get("charity.amount_cents"), Some(&Variant::Int(2500)));
+        assert_eq!(
+            stack.get("charity.id"),
+            Some(&Variant::String("camp-1".to_owned()))
+        );
+        assert_eq!(
+            stack.get("charity.name"),
+            Some(&Variant::String("Helping Hands".to_owned()))
+        );
+        assert_eq!(
+            stack.get("charity.currency_code"),
+            Some(&Variant::String("USD".to_owned()))
+        );
+        assert_eq!(
+            stack.get("charity.user.login"),
+            Some(&Variant::String("giver".to_owned()))
+        );
+        assert_eq!(
+            stack.get("charity.user.display_name"),
+            Some(&Variant::String("Giver".to_owned()))
+        );
+    }
+}

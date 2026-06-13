@@ -110,6 +110,10 @@ mod tests {
             "twitch.support.hype_train_started",
             "twitch.support.hype_train_progress",
             "twitch.support.hype_train_ended",
+            "twitch.support.charity_donation",
+            "twitch.support.charity_started",
+            "twitch.support.charity_progress",
+            "twitch.support.charity_stopped",
         ];
 
         for id in ids {

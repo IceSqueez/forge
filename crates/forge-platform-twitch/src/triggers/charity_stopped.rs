@@ -64,3 +64,18 @@ impl TriggerKindDescriptor for CharityStoppedDescriptor {
         build_charity_lifecycle_arg_stack(event)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn event_filter_targets_stop_topic_on_twitch_source() {
+        let filter = CharityStoppedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.charity_campaign.stop")
+        );
+    }
+}

@@ -361,6 +361,7 @@ mod tests {
             "twitch.channel.run_ad",
             "twitch.channel.snooze_ad",
             "twitch.channel_points.create_reward",
+            "twitch.channel_points.update_reward",
         ] {
             assert!(reg.get(id).is_some(), "missing sub-action: {id}");
         }

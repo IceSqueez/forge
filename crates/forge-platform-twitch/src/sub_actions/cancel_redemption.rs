@@ -83,3 +83,42 @@ impl SubActionRunner for CancelRedemptionRunner {
         .await
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use forge_types::{ArgStack, SubActionOutcome, Variant};
+
+    use super::*;
+    use crate::sub_actions::fulfill_redemption::redemption_default_config;
+    use crate::sub_actions::test_support::{MockCreds, MockTransport, make_ctx};
+
+    // The ONE behavior cancel_redemption owns: its body status is "CANCELED"
+    // (American single-L spelling). Fails if a second L slips in. The shared
+    // query/validation/leak path is covered by fulfill_redemption's tests.
+    #[tokio::test]
+    async fn cancel_sends_status_canceled_single_l() {
+        let transport = Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)));
+        let runner = CancelRedemptionRunner::new(
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+        );
+        let stack = ArgStack::new()
+            .set(
+                "redemption.id".to_owned(),
+                Variant::String("rd5".to_owned()),
+            )
+            .set("reward.id".to_owned(), Variant::String("rw7".to_owned()));
+
+        let (telemetry, _) = runner
+            .execute(&redemption_default_config(), &make_ctx(&stack))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        assert_eq!(
+            transport.request(0).body,
+            Some(serde_json::json!({ "status": "CANCELED" })),
+            "cancel must send CANCELED (single L), not CANCELLED"
+        );
+    }
+}

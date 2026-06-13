@@ -49,8 +49,8 @@ pub use create_reward::CreateRewardRunner;
 pub use delete_message::DeleteMessageRunner;
 pub use delete_reward::DeleteRewardRunner;
 pub use disable_reward::DisableRewardRunner;
-pub use fulfill_redemption::FulfillRedemptionRunner;
 pub use enable_reward::EnableRewardRunner;
+pub use fulfill_redemption::FulfillRedemptionRunner;
 pub use identity::SelfIdentity;
 pub use pause_reward::PauseRewardRunner;
 pub use remove_moderator::RemoveModeratorRunner;
@@ -408,6 +408,9 @@ mod tests {
             "twitch.channel_points.disable_reward",
             "twitch.channel_points.pause_reward",
             "twitch.channel_points.resume_reward",
+            "twitch.channel_points.delete_reward",
+            "twitch.channel_points.fulfill_redemption",
+            "twitch.channel_points.cancel_redemption",
         ] {
             assert!(reg.get(id).is_some(), "missing sub-action: {id}");
         }

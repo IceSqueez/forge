@@ -4419,4 +4419,89 @@ mod tests {
             Some(true)
         );
     }
+
+    #[tokio::test]
+    async fn publish_automod_settings_update_event_nests_moderator_and_overall_level() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "moderator_user_id": "mod-42",
+            "moderator_user_login": "mod_login",
+            "moderator_user_name": "ModLogin",
+            "overall_level": 3
+        });
+        session.publish_automod_settings_update_event(&event_data, "meta-automod-settings");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.automod.settings.update");
+        assert_eq!(ev.source, EventSource::Twitch);
+        assert_eq!(ev.payload["moderator"]["login"].as_str(), Some("mod_login"));
+        assert_eq!(ev.payload["overall_level"].as_i64(), Some(3));
+    }
+
+    #[tokio::test]
+    async fn publish_automod_terms_update_event_carries_action_and_terms_array() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "moderator_user_login": "mod_login",
+            "action": "add_blocked",
+            "terms": ["badword", "anotherword"]
+        });
+        session.publish_automod_terms_update_event(&event_data, "meta-automod-terms");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.automod.terms.update");
+        assert_eq!(ev.payload["action"].as_str(), Some("add_blocked"));
+        assert_eq!(ev.payload["terms"][0].as_str(), Some("badword"));
+    }
+
+    #[tokio::test]
+    async fn publish_automod_message_update_event_passes_status_through_and_flattens_text() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        // Twitch nests the held text under message.text and reports the moderator
+        // decision under a Title-Case status; both must reach the forge payload
+        // unchanged so status_filter and downstream sub-actions can read them.
+        let event_data = serde_json::json!({
+            "user_id": "777",
+            "user_login": "viewer_one",
+            "user_name": "ViewerOne",
+            "moderator_user_login": "mod_login",
+            "message_id": "msg-77",
+            "message": {"text": "borderline message"},
+            "status": "Approved",
+            "category": "harassment",
+            "level": 4
+        });
+        session.publish_automod_message_update_event(&event_data, "meta-automod-msg");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.automod.message.update");
+        assert_eq!(ev.payload["automod"]["status"].as_str(), Some("Approved"));
+        assert_eq!(ev.payload["automod"]["message_id"].as_str(), Some("msg-77"));
+        assert_eq!(
+            ev.payload["message_text"].as_str(),
+            Some("borderline message")
+        );
+        assert_eq!(ev.payload["moderator"]["login"].as_str(), Some("mod_login"));
+    }
 }

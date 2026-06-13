@@ -146,3 +146,99 @@ impl TriggerKindDescriptor for AutomodMessageUpdatedDescriptor {
             )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Twitch sends the decision status in Title Case ("Approved"); the filter
+    // option is stored lowercase ("approved"). matches_trigger must compare
+    // case-insensitively.
+    fn message_event(status: &str) -> Event {
+        Event::new(
+            EventSource::Twitch,
+            "channel.automod.message.update",
+            serde_json::json!({
+                "automod": {
+                    "message_id": "msg-77",
+                    "status": status,
+                    "category": "harassment",
+                    "level": 4,
+                },
+                "user": {
+                    "id": "777",
+                    "login": "viewer_one",
+                    "display_name": "ViewerOne",
+                },
+                "moderator": { "login": "mod_login" },
+                "message_text": "borderline message",
+            }),
+        )
+    }
+
+    fn config_with_filter(filter: &str) -> TriggerConfig {
+        let mut cfg = TriggerConfig::new();
+        cfg.insert(
+            "status_filter".to_owned(),
+            Variant::String(filter.to_owned()),
+        );
+        cfg
+    }
+
+    #[test]
+    fn event_filter_targets_automod_message_update_kind_from_twitch() {
+        let filter = AutomodMessageUpdatedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.automod.message.update")
+        );
+    }
+
+    #[test]
+    fn status_filter_matches_title_case_payload_case_insensitively() {
+        let event = message_event("Approved");
+        for (filter, expected) in [
+            ("any", true),
+            ("approved", true),
+            ("denied", false),
+            ("expired", false),
+        ] {
+            let cfg = config_with_filter(filter);
+            assert_eq!(
+                AutomodMessageUpdatedDescriptor.matches_trigger(&cfg, &event),
+                expected,
+                "filter {filter:?} against Title-Case status \"Approved\""
+            );
+        }
+    }
+
+    #[test]
+    fn missing_status_filter_config_defaults_to_any_and_fires() {
+        let event = message_event("Denied");
+        let cfg = TriggerConfig::new();
+        assert!(AutomodMessageUpdatedDescriptor.matches_trigger(&cfg, &event));
+    }
+
+    #[test]
+    fn build_arg_stack_exposes_status_and_message_id_chaining_vars() {
+        let stack = AutomodMessageUpdatedDescriptor.build_arg_stack(&message_event("Approved"));
+        assert_eq!(
+            stack.get("automod.message_id"),
+            Some(&Variant::String("msg-77".to_owned()))
+        );
+        // status is forwarded verbatim (Title Case preserved) for downstream use.
+        assert_eq!(
+            stack.get("automod.status"),
+            Some(&Variant::String("Approved".to_owned()))
+        );
+        assert_eq!(
+            stack.get("user_login"),
+            Some(&Variant::String("viewer_one".to_owned()))
+        );
+        assert_eq!(
+            stack.get("moderator_login"),
+            Some(&Variant::String("mod_login".to_owned()))
+        );
+    }
+}

@@ -89,3 +89,48 @@ impl TriggerKindDescriptor for AutomodSettingsUpdatedDescriptor {
             )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn settings_event() -> Event {
+        Event::new(
+            EventSource::Twitch,
+            "channel.automod.settings.update",
+            serde_json::json!({
+                "moderator": {
+                    "id": "mod-42",
+                    "login": "mod_login",
+                    "display_name": "ModLogin",
+                },
+                "overall_level": 3,
+            }),
+        )
+    }
+
+    #[test]
+    fn event_filter_targets_automod_settings_update_kind_from_twitch() {
+        let filter = AutomodSettingsUpdatedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.automod.settings.update")
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_marshals_overall_level_as_int_and_exposes_moderator() {
+        let stack = AutomodSettingsUpdatedDescriptor.build_arg_stack(&settings_event());
+        assert_eq!(
+            stack.get("moderator_login"),
+            Some(&Variant::String("mod_login".to_owned()))
+        );
+        assert_eq!(
+            stack.get("moderator_id"),
+            Some(&Variant::String("mod-42".to_owned()))
+        );
+        // overall_level marshals as Int, not String.
+        assert_eq!(stack.get("automod.overall_level"), Some(&Variant::Int(3)));
+    }
+}

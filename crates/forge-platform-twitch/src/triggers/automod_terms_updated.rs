@@ -81,3 +81,49 @@ impl TriggerKindDescriptor for AutomodTermsUpdatedDescriptor {
             .set("automod.action".to_owned(), Variant::String(action))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn terms_event() -> Event {
+        Event::new(
+            EventSource::Twitch,
+            "channel.automod.terms.update",
+            serde_json::json!({
+                "moderator": {
+                    "id": "mod-7",
+                    "login": "mod_login",
+                    "display_name": "ModLogin",
+                },
+                "action": "add_blocked",
+                "terms": ["badword"],
+            }),
+        )
+    }
+
+    #[test]
+    fn event_filter_targets_automod_terms_update_kind_from_twitch() {
+        let filter = AutomodTermsUpdatedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.automod.terms.update")
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_reads_top_level_action_into_automod_action_var() {
+        let stack = AutomodTermsUpdatedDescriptor.build_arg_stack(&terms_event());
+        assert_eq!(
+            stack.get("moderator_login"),
+            Some(&Variant::String("mod_login".to_owned()))
+        );
+        // action lives at the payload top level; it is surfaced under the
+        // automod.action chaining var.
+        assert_eq!(
+            stack.get("automod.action"),
+            Some(&Variant::String("add_blocked".to_owned()))
+        );
+    }
+}

@@ -231,6 +231,9 @@ mod tests {
             "channel.guest_star_session.begin",
             "channel.guest_star_session.end",
             "channel.guest_star_settings.update",
+            "channel.automod.settings.update",
+            "channel.automod.terms.update",
+            "channel.automod.message.update",
         ] {
             assert!(route_for(topic).is_some(), "missing route for {topic}");
         }

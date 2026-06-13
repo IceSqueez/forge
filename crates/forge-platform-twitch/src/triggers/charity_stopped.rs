@@ -1,0 +1,66 @@
+use forge_events::{Event, EventSource};
+use forge_registry::{
+    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+};
+use forge_types::{ArgStack, PlatformId, TriggerConfig};
+
+use super::charity_started::build_charity_lifecycle_arg_stack;
+
+pub(crate) struct CharityStoppedDescriptor;
+
+impl TriggerKindDescriptor for CharityStoppedDescriptor {
+    fn id(&self) -> &str {
+        "twitch.support.charity_stopped"
+    }
+
+    fn category(&self) -> TriggerCategory {
+        TriggerCategory::Bits
+    }
+
+    fn label(&self) -> &str {
+        "Charity campaign stopped"
+    }
+
+    fn summary(&self) -> &str {
+        "Fires when the broadcaster ends a charity campaign"
+    }
+
+    fn search_text(&self) -> &str {
+        "twitch charity campaign stop end finish"
+    }
+
+    fn icon_name(&self) -> &str {
+        "heart"
+    }
+
+    fn platform_contract(&self) -> KindPlatformContract {
+        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
+    }
+
+    fn default_config(&self) -> TriggerConfig {
+        TriggerConfig::new()
+    }
+
+    fn config_fields(&self) -> Vec<FormField> {
+        vec![]
+    }
+
+    fn condition_display(&self, _config: &TriggerConfig) -> String {
+        "any".to_owned()
+    }
+
+    fn event_filter(&self) -> EventFilter {
+        EventFilter {
+            source: Some(EventSource::Twitch),
+            kind_prefix: Some("channel.charity_campaign.stop".to_owned()),
+        }
+    }
+
+    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
+        true
+    }
+
+    fn build_arg_stack(&self, event: &Event) -> ArgStack {
+        build_charity_lifecycle_arg_stack(event)
+    }
+}

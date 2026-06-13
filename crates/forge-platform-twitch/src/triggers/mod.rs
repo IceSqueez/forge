@@ -1,6 +1,10 @@
 mod channel_follow;
 mod channel_points_redemption;
 mod channel_raid_received;
+mod charity_donation;
+mod charity_progress;
+mod charity_started;
+mod charity_stopped;
 mod chat_arg_stack;
 mod chat_cheer_message;
 mod chat_cleared;
@@ -23,6 +27,10 @@ use forge_registry::{RegistryError, TriggerRegistry};
 use channel_follow::ChannelFollowDescriptor;
 use channel_points_redemption::ChannelPointsRedemptionDescriptor;
 use channel_raid_received::ChannelRaidReceivedDescriptor;
+use charity_donation::CharityDonationDescriptor;
+use charity_progress::CharityProgressDescriptor;
+use charity_started::CharityStartedDescriptor;
+use charity_stopped::CharityStoppedDescriptor;
 use chat_cheer_message::ChatCheerMessageDescriptor;
 use chat_cleared::ChatClearedDescriptor;
 use chat_command::ChatCommandDescriptor;
@@ -58,6 +66,10 @@ pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), Registr
     reg.register(Box::new(HypeTrainStartedDescriptor))?;
     reg.register(Box::new(HypeTrainProgressDescriptor))?;
     reg.register(Box::new(HypeTrainEndedDescriptor))?;
+    reg.register(Box::new(CharityDonationDescriptor))?;
+    reg.register(Box::new(CharityStartedDescriptor))?;
+    reg.register(Box::new(CharityProgressDescriptor))?;
+    reg.register(Box::new(CharityStoppedDescriptor))?;
     Ok(())
 }
 

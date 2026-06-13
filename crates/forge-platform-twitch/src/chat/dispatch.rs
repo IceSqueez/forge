@@ -48,6 +48,22 @@ const NOTIFICATION_ROUTES: &[(&str, NotificationRoute)] = &[
         "channel.hype_train.end",
         ChatSession::publish_hype_train_end_event,
     ),
+    (
+        "channel.charity_campaign.donate",
+        ChatSession::publish_charity_donation_event,
+    ),
+    (
+        "channel.charity_campaign.start",
+        ChatSession::publish_charity_start_event,
+    ),
+    (
+        "channel.charity_campaign.progress",
+        ChatSession::publish_charity_progress_event,
+    ),
+    (
+        "channel.charity_campaign.stop",
+        ChatSession::publish_charity_stop_event,
+    ),
 ];
 
 #[cfg(test)]

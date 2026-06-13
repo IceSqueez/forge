@@ -1032,6 +1032,125 @@ impl ChatSession {
         ));
     }
 
+    pub(super) fn publish_charity_donation_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let campaign_id = event_data
+            .get("campaign_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let charity_name = event_data
+            .get("charity_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let charity_description = event_data
+            .get("charity_description")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let charity_website = event_data
+            .get("charity_website")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        // amount is an object {value, decimal_places, currency}; value is in minor units (e.g. cents).
+        let amount_obj = event_data.get("amount");
+        let amount_cents = amount_obj
+            .and_then(|a| a.get("value"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let currency_code = amount_obj
+            .and_then(|a| a.get("currency"))
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_id = event_data
+            .get("user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_login = event_data
+            .get("user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_display_name = event_data
+            .get("user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(user_login = %user_login, amount_cents = amount_cents, "charity donation received");
+
+        let forge_payload = serde_json::json!({
+            "charity": {
+                "id": campaign_id,
+                "name": charity_name,
+                "description": charity_description,
+                "website": charity_website,
+                "amount_cents": amount_cents,
+                "currency_code": currency_code,
+            },
+            "user": {
+                "id": user_id,
+                "login": user_login,
+                "display_name": user_display_name,
+            },
+        });
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.charity_campaign.donate",
+            forge_payload,
+        ));
+    }
+
+    pub(super) fn publish_charity_start_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let forge_payload = build_charity_lifecycle_payload(event_data);
+        info!("charity campaign started");
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.charity_campaign.start",
+            forge_payload,
+        ));
+    }
+
+    pub(super) fn publish_charity_progress_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let forge_payload = build_charity_lifecycle_payload(event_data);
+        info!("charity campaign progress update received");
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.charity_campaign.progress",
+            forge_payload,
+        ));
+    }
+
+    pub(super) fn publish_charity_stop_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let forge_payload = build_charity_lifecycle_payload(event_data);
+        info!("charity campaign stopped");
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.charity_campaign.stop",
+            forge_payload,
+        ));
+    }
+
     fn set_state(&self, state: ChatConnectionState) {
         let _ = self.state_tx.send(state);
     }
@@ -1064,6 +1183,47 @@ impl ChatSession {
             Ok(()) | Err(oneshot::error::TryRecvError::Closed)
         )
     }
+}
+
+// start/progress/stop share the same payload shape: campaign id/name/amounts.
+// amount fields (current_amount, target_amount) are objects {value, decimal_places, currency};
+// value is in minor units (e.g. cents).
+fn build_charity_lifecycle_payload(event_data: &serde_json::Value) -> serde_json::Value {
+    let campaign_id = event_data
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_owned();
+    let charity_name = event_data
+        .get("charity_name")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_owned();
+    let current_obj = event_data.get("current_amount");
+    let current_amount_cents = current_obj
+        .and_then(|a| a.get("value"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+    let target_obj = event_data.get("target_amount");
+    let target_amount_cents = target_obj
+        .and_then(|a| a.get("value"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+    let currency_code = current_obj
+        .and_then(|a| a.get("currency"))
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_owned();
+
+    serde_json::json!({
+        "charity": {
+            "id": campaign_id,
+            "name": charity_name,
+            "current_amount_cents": current_amount_cents,
+            "target_amount_cents": target_amount_cents,
+            "currency_code": currency_code,
+        },
+    })
 }
 
 fn attach_chat_payload(forge_payload: &mut serde_json::Value, chat: ChatPayload) {

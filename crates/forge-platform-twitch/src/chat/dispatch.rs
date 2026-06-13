@@ -258,6 +258,9 @@ mod tests {
             "channel.shared_chat.begin",
             "channel.shared_chat.update",
             "channel.shared_chat.end",
+            "channel.update",
+            "channel.ad_break.begin",
+            "channel.channel_points_automatic_reward_redemption.add",
         ] {
             assert!(route_for(topic).is_some(), "missing route for {topic}");
         }

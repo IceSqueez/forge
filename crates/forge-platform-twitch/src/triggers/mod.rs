@@ -267,6 +267,9 @@ mod tests {
             "twitch.shared_chat.session_began",
             "twitch.shared_chat.session_updated",
             "twitch.shared_chat.session_ended",
+            "twitch.channel.update",
+            "twitch.stream.ad_break_started",
+            "twitch.channel_points.automatic_reward_redeemed",
         ];
 
         for id in ids {

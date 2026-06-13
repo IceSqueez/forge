@@ -4866,4 +4866,107 @@ mod tests {
         assert_eq!(ev.payload["host"]["id"].as_str(), Some("300"));
         assert_eq!(ev.payload["host"]["login"].as_str(), Some("host_c"));
     }
+
+    #[tokio::test]
+    async fn channel_update_event_publishes_nested_channel_fields() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "title": "New title",
+            "language": "en",
+            "category_id": "509658",
+            "category_name": "Just Chatting"
+        });
+        session.publish_channel_update_event(&event_data, "meta-update-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.update");
+        assert_eq!(ev.source, EventSource::Twitch);
+        assert_eq!(ev.payload["channel"]["title"].as_str(), Some("New title"));
+        assert_eq!(ev.payload["channel"]["language"].as_str(), Some("en"));
+        assert_eq!(
+            ev.payload["channel"]["category_id"].as_str(),
+            Some("509658")
+        );
+        assert_eq!(
+            ev.payload["channel"]["category_name"].as_str(),
+            Some("Just Chatting")
+        );
+    }
+
+    #[tokio::test]
+    async fn ad_break_begin_event_publishes_typed_duration_and_nested_requester() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "duration_seconds": 90,
+            "started_at": "2026-06-13T10:00:00Z",
+            "is_automatic": true,
+            "requester_user_login": "broadcaster_one"
+        });
+        session.publish_ad_break_begin_event(&event_data, "meta-ad-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.ad_break.begin");
+        assert_eq!(
+            ev.payload["ad_break"]["duration_seconds"].as_i64(),
+            Some(90)
+        );
+        assert_eq!(ev.payload["ad_break"]["is_automatic"].as_bool(), Some(true));
+        assert_eq!(
+            ev.payload["ad_break"]["started_at"].as_str(),
+            Some("2026-06-13T10:00:00Z")
+        );
+        assert_eq!(
+            ev.payload["requester"]["login"].as_str(),
+            Some("broadcaster_one")
+        );
+    }
+
+    #[tokio::test]
+    async fn automatic_reward_event_publishes_typed_cost_and_nested_user() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "id": "redeem-1",
+            "redeemed_at": "2026-06-13T11:00:00Z",
+            "user_id": "42",
+            "user_login": "viewer_one",
+            "user_name": "ViewerOne",
+            "reward": { "type": "send_highlighted_message", "cost": 300 }
+        });
+        session.publish_automatic_reward_event(&event_data, "meta-auto-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            ev.kind,
+            "channel.channel_points_automatic_reward_redemption"
+        );
+        assert_eq!(ev.payload["reward"]["cost"].as_i64(), Some(300));
+        assert_eq!(
+            ev.payload["reward"]["type"].as_str(),
+            Some("send_highlighted_message")
+        );
+        assert_eq!(ev.payload["redemption"]["id"].as_str(), Some("redeem-1"));
+        assert_eq!(ev.payload["user"]["login"].as_str(), Some("viewer_one"));
+        assert_eq!(ev.payload["user"]["id"].as_str(), Some("42"));
+    }
 }

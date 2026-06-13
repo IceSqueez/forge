@@ -100,3 +100,69 @@ impl TriggerKindDescriptor for AdBreakStartedDescriptor {
             )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ad_break_event() -> Event {
+        let payload = serde_json::json!({
+            "ad_break": {
+                "duration_seconds": 90,
+                "is_automatic": true,
+                "started_at": "2026-06-13T10:00:00Z",
+            },
+            "requester": { "login": "broadcaster_one" },
+        });
+        Event::new(EventSource::Twitch, "channel.ad_break.begin", payload)
+    }
+
+    #[test]
+    fn event_filter_targets_ad_break_begin_topic_from_twitch() {
+        let filter = AdBreakStartedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.ad_break.begin")
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_types_duration_as_int_and_is_automatic_as_bool() {
+        let stack = AdBreakStartedDescriptor.build_arg_stack(&ad_break_event());
+        assert_eq!(
+            stack.get("ad_break.duration_seconds"),
+            Some(&Variant::Int(90))
+        );
+        assert_eq!(
+            stack.get("ad_break.is_automatic"),
+            Some(&Variant::Bool(true))
+        );
+        assert_eq!(
+            stack.get("ad_break.started_at"),
+            Some(&Variant::String("2026-06-13T10:00:00Z".to_owned()))
+        );
+        assert_eq!(
+            stack.get("requester_login"),
+            Some(&Variant::String("broadcaster_one".to_owned()))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_defaults_missing_numeric_and_bool_fields() {
+        let event = Event::new(
+            EventSource::Twitch,
+            "channel.ad_break.begin",
+            serde_json::json!({}),
+        );
+        let stack = AdBreakStartedDescriptor.build_arg_stack(&event);
+        assert_eq!(
+            stack.get("ad_break.duration_seconds"),
+            Some(&Variant::Int(0))
+        );
+        assert_eq!(
+            stack.get("ad_break.is_automatic"),
+            Some(&Variant::Bool(false))
+        );
+    }
+}

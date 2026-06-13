@@ -96,3 +96,64 @@ impl TriggerKindDescriptor for AutomaticRewardRedeemedDescriptor {
             .set("reward.cost".to_owned(), Variant::Int(reward_cost))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn automatic_reward_event() -> Event {
+        let payload = serde_json::json!({
+            "redemption": { "id": "redeem-1" },
+            "user": { "id": "42", "login": "viewer_one" },
+            "reward": { "type": "send_highlighted_message", "cost": 300 },
+        });
+        Event::new(
+            EventSource::Twitch,
+            "channel.channel_points_automatic_reward_redemption",
+            payload,
+        )
+    }
+
+    #[test]
+    fn event_filter_targets_automatic_reward_topic_from_twitch() {
+        let filter = AutomaticRewardRedeemedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.channel_points_automatic_reward_redemption")
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_types_reward_cost_as_int_and_maps_identity_fields() {
+        let stack = AutomaticRewardRedeemedDescriptor.build_arg_stack(&automatic_reward_event());
+        assert_eq!(stack.get("reward.cost"), Some(&Variant::Int(300)));
+        assert_eq!(
+            stack.get("reward.type"),
+            Some(&Variant::String("send_highlighted_message".to_owned()))
+        );
+        assert_eq!(
+            stack.get("redemption.id"),
+            Some(&Variant::String("redeem-1".to_owned()))
+        );
+        assert_eq!(
+            stack.get("user_login"),
+            Some(&Variant::String("viewer_one".to_owned()))
+        );
+        assert_eq!(
+            stack.get("user_id"),
+            Some(&Variant::String("42".to_owned()))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_defaults_missing_cost_to_zero() {
+        let event = Event::new(
+            EventSource::Twitch,
+            "channel.channel_points_automatic_reward_redemption",
+            serde_json::json!({}),
+        );
+        let stack = AutomaticRewardRedeemedDescriptor.build_arg_stack(&event);
+        assert_eq!(stack.get("reward.cost"), Some(&Variant::Int(0)));
+    }
+}

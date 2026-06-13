@@ -95,3 +95,62 @@ impl TriggerKindDescriptor for ChannelUpdatedDescriptor {
             .set("channel.language".to_owned(), Variant::String(language))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn channel_update_event() -> Event {
+        let payload = serde_json::json!({
+            "channel": {
+                "title": "New title",
+                "language": "en",
+                "category_id": "509658",
+                "category_name": "Just Chatting",
+            },
+        });
+        Event::new(EventSource::Twitch, "channel.update", payload)
+    }
+
+    #[test]
+    fn event_filter_targets_channel_update_topic_from_twitch() {
+        let filter = ChannelUpdatedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(filter.kind_prefix.as_deref(), Some("channel.update"));
+    }
+
+    #[test]
+    fn build_arg_stack_maps_channel_fields_from_nested_payload() {
+        let stack = ChannelUpdatedDescriptor.build_arg_stack(&channel_update_event());
+        assert_eq!(
+            stack.get("channel.title"),
+            Some(&Variant::String("New title".to_owned()))
+        );
+        assert_eq!(
+            stack.get("channel.category_id"),
+            Some(&Variant::String("509658".to_owned()))
+        );
+        assert_eq!(
+            stack.get("channel.category_name"),
+            Some(&Variant::String("Just Chatting".to_owned()))
+        );
+        assert_eq!(
+            stack.get("channel.language"),
+            Some(&Variant::String("en".to_owned()))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_defaults_missing_fields_to_empty_strings() {
+        let event = Event::new(EventSource::Twitch, "channel.update", serde_json::json!({}));
+        let stack = ChannelUpdatedDescriptor.build_arg_stack(&event);
+        assert_eq!(
+            stack.get("channel.title"),
+            Some(&Variant::String(String::new()))
+        );
+        assert_eq!(
+            stack.get("channel.language"),
+            Some(&Variant::String(String::new()))
+        );
+    }
+}

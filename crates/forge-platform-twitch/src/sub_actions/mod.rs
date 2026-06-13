@@ -2,12 +2,15 @@ mod add_moderator;
 mod add_vip;
 mod ban_user;
 mod cancel_raid;
+mod cancel_redemption;
 mod clear_chat;
 mod create_marker;
 mod create_reward;
 mod delete_message;
+mod delete_reward;
 mod disable_reward;
 mod enable_reward;
+mod fulfill_redemption;
 mod identity;
 mod pause_reward;
 mod remove_moderator;
@@ -39,11 +42,14 @@ pub use add_moderator::AddModeratorRunner;
 pub use add_vip::AddVipRunner;
 pub use ban_user::BanUserRunner;
 pub use cancel_raid::CancelRaidRunner;
+pub use cancel_redemption::CancelRedemptionRunner;
 pub use clear_chat::ClearChatRunner;
 pub use create_marker::CreateMarkerRunner;
 pub use create_reward::CreateRewardRunner;
 pub use delete_message::DeleteMessageRunner;
+pub use delete_reward::DeleteRewardRunner;
 pub use disable_reward::DisableRewardRunner;
+pub use fulfill_redemption::FulfillRedemptionRunner;
 pub use enable_reward::EnableRewardRunner;
 pub use identity::SelfIdentity;
 pub use pause_reward::PauseRewardRunner;
@@ -195,7 +201,19 @@ pub fn register_twitch_sub_actions(
         Arc::clone(&transport),
         Arc::clone(&identity),
     )))?;
-    reg.register(Box::new(ResumeRewardRunner::new(transport, identity)))?;
+    reg.register(Box::new(ResumeRewardRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(DeleteRewardRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(FulfillRedemptionRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(CancelRedemptionRunner::new(transport, identity)))?;
     Ok(())
 }
 

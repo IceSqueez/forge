@@ -1609,6 +1609,120 @@ impl ChatSession {
         ));
     }
 
+    pub(super) fn publish_poll_begin_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let poll_id = event_data
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let title = event_data
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let started_at = event_data
+            .get("started_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let ends_at = event_data
+            .get("ends_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(poll_id = %poll_id, title = %title, "poll began");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.poll.begin",
+            serde_json::json!({
+                "poll": {
+                    "id": poll_id,
+                    "title": title,
+                    "started_at": started_at,
+                    "ends_at": ends_at,
+                },
+            }),
+        ));
+    }
+
+    pub(super) fn publish_poll_progress_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let poll_id = event_data
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let title = event_data
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(poll_id = %poll_id, title = %title, "poll progress");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.poll.progress",
+            serde_json::json!({
+                "poll": {
+                    "id": poll_id,
+                    "title": title,
+                },
+            }),
+        ));
+    }
+
+    pub(super) fn publish_poll_end_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let poll_id = event_data
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let title = event_data
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let status = event_data
+            .get("status")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let ended_at = event_data
+            .get("ended_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(poll_id = %poll_id, status = %status, "poll ended");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.poll.end",
+            serde_json::json!({
+                "poll": {
+                    "id": poll_id,
+                    "title": title,
+                    "status": status,
+                    "ended_at": ended_at,
+                },
+            }),
+        ));
+    }
+
     fn set_state(&self, state: ChatConnectionState) {
         let _ = self.state_tx.send(state);
     }

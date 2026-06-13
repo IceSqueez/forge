@@ -203,6 +203,21 @@ const TOPICS: &[TopicSpec] = &[
         version: "1",
         condition_fn: condition_broadcaster,
     },
+    TopicSpec {
+        kind: "channel.poll.begin",
+        version: "1",
+        condition_fn: condition_broadcaster,
+    },
+    TopicSpec {
+        kind: "channel.poll.progress",
+        version: "1",
+        condition_fn: condition_broadcaster,
+    },
+    TopicSpec {
+        kind: "channel.poll.end",
+        version: "1",
+        condition_fn: condition_broadcaster,
+    },
 ];
 
 pub(crate) async fn subscribe_all(

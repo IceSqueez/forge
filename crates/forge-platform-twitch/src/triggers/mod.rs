@@ -19,6 +19,9 @@ mod hype_train_progress;
 mod hype_train_started;
 mod moderator_added;
 mod moderator_removed;
+mod poll_ended;
+mod poll_progress;
+mod poll_started;
 mod shared_chat_message;
 mod shield_mode_ended;
 mod shield_mode_started;
@@ -55,6 +58,9 @@ use hype_train_progress::HypeTrainProgressDescriptor;
 use hype_train_started::HypeTrainStartedDescriptor;
 use moderator_added::ModeratorAddedDescriptor;
 use moderator_removed::ModeratorRemovedDescriptor;
+use poll_ended::PollEndedDescriptor;
+use poll_progress::PollProgressDescriptor;
+use poll_started::PollStartedDescriptor;
 use shared_chat_message::SharedChatMessageDescriptor;
 use shield_mode_ended::ShieldModeEndedDescriptor;
 use shield_mode_started::ShieldModeStartedDescriptor;
@@ -103,6 +109,9 @@ pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), Registr
     reg.register(Box::new(ShoutoutReceivedDescriptor))?;
     reg.register(Box::new(SuspiciousUserMessageDescriptor))?;
     reg.register(Box::new(WarningAcknowledgedDescriptor))?;
+    reg.register(Box::new(PollStartedDescriptor))?;
+    reg.register(Box::new(PollProgressDescriptor))?;
+    reg.register(Box::new(PollEndedDescriptor))?;
     Ok(())
 }
 

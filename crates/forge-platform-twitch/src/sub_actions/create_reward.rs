@@ -428,3 +428,332 @@ impl SubActionRunner for CreateRewardRunner {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::helix::HelixError;
+    use crate::sub_actions::test_support::{
+        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
+    };
+
+    fn reward_payload() -> serde_json::Value {
+        serde_json::json!({
+            "data": [{ "id": "reward-abc", "title": "ignored" }]
+        })
+    }
+
+    fn runner_with(
+        response: Result<serde_json::Value, HelixError>,
+    ) -> (Arc<MockTransport>, CreateRewardRunner) {
+        let transport = Arc::new(MockTransport::returning(response));
+        let runner = CreateRewardRunner::new(
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+        );
+        (transport, runner)
+    }
+
+    /// Full valid config, with every key the runner reads from. Individual
+    /// tests override specific keys to exercise one mapping branch at a time.
+    fn full_cfg() -> SubActionConfig {
+        BTreeMap::from([
+            ("title".to_owned(), Variant::String("My Reward".to_owned())),
+            ("cost".to_owned(), Variant::Int(500)),
+            ("prompt".to_owned(), Variant::String(String::new())),
+            ("is_enabled".to_owned(), Variant::Bool(true)),
+            ("requires_user_input".to_owned(), Variant::Bool(false)),
+            (
+                "should_redemptions_skip_request_queue".to_owned(),
+                Variant::Bool(false),
+            ),
+            ("max_per_stream".to_owned(), Variant::Int(0)),
+            ("max_per_user_per_stream".to_owned(), Variant::Int(0)),
+            ("global_cooldown_seconds".to_owned(), Variant::Int(0)),
+            (
+                "background_color_hex".to_owned(),
+                Variant::String(String::new()),
+            ),
+        ])
+    }
+
+    /// Executes `full_cfg` (optionally mutated) and returns the JSON body the
+    /// runner posted, asserting the call reached Helix.
+    async fn body_for(config: SubActionConfig) -> serde_json::Value {
+        let (transport, runner) = runner_with(Ok(reward_payload()));
+        let stack = ArgStack::new();
+        let (telemetry, _) = runner.execute(&config, &make_ctx(&stack)).await;
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        transport.request(0).body.unwrap()
+    }
+
+    #[tokio::test]
+    async fn execute_posts_to_custom_rewards_and_pushes_reward_id() {
+        let (transport, runner) = runner_with(Ok(reward_payload()));
+        let stack = ArgStack::new();
+
+        let (telemetry, output) = runner.execute(&full_cfg(), &make_ctx(&stack)).await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let request = transport.request(0);
+        assert_eq!(request.method, HelixMethod::Post);
+        assert_eq!(request.path, "/helix/channel_points/custom_rewards");
+        assert!(
+            request
+                .query
+                .contains(&("broadcaster_id".to_owned(), SELF_USER_ID.to_owned()))
+        );
+        assert_eq!(
+            output.unwrap().get("reward.id"),
+            Some(&Variant::String("reward-abc".to_owned()))
+        );
+    }
+
+    // Regression: Twitch's Create Custom Reward endpoint rejects `is_paused`
+    // (it was removed from the Create body). The runner must never emit it.
+    #[tokio::test]
+    async fn body_never_contains_is_paused() {
+        let body = body_for(full_cfg()).await;
+        assert!(
+            body.get("is_paused").is_none(),
+            "is_paused must not be sent on create: {body}"
+        );
+    }
+
+    // The runner renames config keys to Twitch's body keys. Assert the body
+    // carries Twitch's names and NOT the config-side names.
+    #[tokio::test]
+    async fn body_uses_twitch_key_names_not_config_names() {
+        let mut cfg = full_cfg();
+        cfg.insert("requires_user_input".to_owned(), Variant::Bool(true));
+        cfg.insert("prompt".to_owned(), Variant::String("ask".to_owned()));
+        cfg.insert(
+            "background_color_hex".to_owned(),
+            Variant::String("#9147FF".to_owned()),
+        );
+        let body = body_for(cfg).await;
+
+        assert!(body.get("is_user_input_required").is_some());
+        assert!(body.get("requires_user_input").is_none());
+        assert!(body.get("background_color").is_some());
+        assert!(body.get("background_color_hex").is_none());
+    }
+
+    #[tokio::test]
+    async fn body_carries_title_cost_and_skip_queue_flag() {
+        let mut cfg = full_cfg();
+        cfg.insert(
+            "should_redemptions_skip_request_queue".to_owned(),
+            Variant::Bool(true),
+        );
+        let body = body_for(cfg).await;
+
+        assert_eq!(body.get("title"), Some(&serde_json::json!("My Reward")));
+        assert_eq!(body.get("cost"), Some(&serde_json::json!(500)));
+        assert_eq!(
+            body.get("should_redemptions_skip_request_queue"),
+            Some(&serde_json::json!(true))
+        );
+    }
+
+    #[tokio::test]
+    async fn prompt_included_only_when_user_input_required_and_non_empty() {
+        for (label, requires, prompt, expect_prompt) in [
+            ("required + text", true, "answer me", true),
+            ("required + empty", true, "", false),
+            ("not required + text", false, "answer me", false),
+            ("not required + empty", false, "", false),
+        ] {
+            let mut cfg = full_cfg();
+            cfg.insert("requires_user_input".to_owned(), Variant::Bool(requires));
+            cfg.insert("prompt".to_owned(), Variant::String(prompt.to_owned()));
+            let body = body_for(cfg).await;
+
+            assert_eq!(
+                body.get("prompt") == Some(&serde_json::json!(prompt)),
+                expect_prompt,
+                "case: {label}"
+            );
+            if !expect_prompt {
+                assert!(body.get("prompt").is_none(), "case: {label}");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn background_color_included_only_when_non_empty() {
+        for (label, hex, expect_key) in [("set", "#9147FF", true), ("empty", "", false)] {
+            let mut cfg = full_cfg();
+            cfg.insert(
+                "background_color_hex".to_owned(),
+                Variant::String(hex.to_owned()),
+            );
+            let body = body_for(cfg).await;
+
+            match expect_key {
+                true => assert_eq!(
+                    body.get("background_color"),
+                    Some(&serde_json::json!(hex)),
+                    "case: {label}"
+                ),
+                false => assert!(body.get("background_color").is_none(), "case: {label}"),
+            }
+        }
+    }
+
+    // Each of the three "max"-style settings pairs an enable flag with the
+    // value: 0 => flag false + value key absent; >0 => flag true + value present.
+    #[tokio::test]
+    async fn paired_limit_flags_track_their_values() {
+        // (config key == body value key for all three; only the flag key differs)
+        for (key, flag_key) in [
+            ("max_per_stream", "is_max_per_stream_enabled"),
+            (
+                "max_per_user_per_stream",
+                "is_max_per_user_per_stream_enabled",
+            ),
+            ("global_cooldown_seconds", "is_global_cooldown_enabled"),
+        ] {
+            // Disabled (0): flag false, value key absent.
+            let mut zero = full_cfg();
+            zero.insert(key.to_owned(), Variant::Int(0));
+            let body = body_for(zero).await;
+            assert_eq!(
+                body.get(flag_key),
+                Some(&serde_json::json!(false)),
+                "{key}=0 flag"
+            );
+            assert!(body.get(key).is_none(), "{key}=0 value must be absent");
+
+            // Enabled (>0): flag true, value present.
+            let mut set = full_cfg();
+            set.insert(key.to_owned(), Variant::Int(7));
+            let body = body_for(set).await;
+            assert_eq!(
+                body.get(flag_key),
+                Some(&serde_json::json!(true)),
+                "{key}=7 flag"
+            );
+            assert_eq!(body.get(key), Some(&serde_json::json!(7)), "{key}=7 value");
+        }
+    }
+
+    #[tokio::test]
+    async fn missing_data_array_maps_to_failed() {
+        let (_transport, runner) = runner_with(Ok(serde_json::json!({ "data": [] })));
+        let stack = ArgStack::new();
+
+        let (telemetry, output) = runner.execute(&full_cfg(), &make_ctx(&stack)).await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert!(output.is_none());
+    }
+
+    #[tokio::test]
+    async fn helix_failure_maps_to_failed_outcome_without_token() {
+        let (_transport, runner) = runner_with(Err(HelixError::Http {
+            status: 400,
+            body: "invalid background_color".to_owned(),
+        }));
+        let stack = ArgStack::new();
+
+        let (telemetry, output) = runner.execute(&full_cfg(), &make_ctx(&stack)).await;
+
+        assert!(output.is_none());
+        assert!(matches!(
+            telemetry.outcome,
+            SubActionOutcome::Failed(msg) if msg.contains("400") && !msg.contains(TOKEN_SENTINEL)
+        ));
+    }
+
+    #[test]
+    fn validate_config_enforces_field_constraints() {
+        let (_transport, runner) = runner_with(Ok(serde_json::Value::Null));
+
+        let with = |edits: &[(&str, Variant)]| -> SubActionConfig {
+            let mut c = full_cfg();
+            for (k, v) in edits {
+                c.insert((*k).to_owned(), v.clone());
+            }
+            c
+        };
+
+        let cases: Vec<(&str, SubActionConfig, bool)> = vec![
+            ("valid full config", full_cfg(), true),
+            (
+                "empty title",
+                with(&[("title", Variant::String(String::new()))]),
+                false,
+            ),
+            (
+                "title at 45 chars",
+                with(&[("title", Variant::String("t".repeat(45)))]),
+                true,
+            ),
+            (
+                "title over 45 chars",
+                with(&[("title", Variant::String("t".repeat(46)))]),
+                false,
+            ),
+            ("cost zero", with(&[("cost", Variant::Int(0))]), false),
+            (
+                "cost non-int",
+                with(&[("cost", Variant::String("5".to_owned()))]),
+                false,
+            ),
+            (
+                "prompt at 200 chars",
+                with(&[("prompt", Variant::String("p".repeat(200)))]),
+                true,
+            ),
+            (
+                "prompt over 200 chars",
+                with(&[("prompt", Variant::String("p".repeat(201)))]),
+                false,
+            ),
+            (
+                "color empty is allowed",
+                with(&[("background_color_hex", Variant::String(String::new()))]),
+                true,
+            ),
+            (
+                "color valid hex",
+                with(&[(
+                    "background_color_hex",
+                    Variant::String("#9147FF".to_owned()),
+                )]),
+                true,
+            ),
+            (
+                "color missing hash",
+                with(&[(
+                    "background_color_hex",
+                    Variant::String("9147FF0".to_owned()),
+                )]),
+                false,
+            ),
+            (
+                "color too short",
+                with(&[("background_color_hex", Variant::String("#9147F".to_owned()))]),
+                false,
+            ),
+            (
+                "color non-hex digit",
+                with(&[(
+                    "background_color_hex",
+                    Variant::String("#9147FZ".to_owned()),
+                )]),
+                false,
+            ),
+        ];
+
+        for (label, config, expect_ok) in cases {
+            assert_eq!(
+                runner.validate_config(&config).is_ok(),
+                expect_ok,
+                "case: {label}"
+            );
+        }
+    }
+}

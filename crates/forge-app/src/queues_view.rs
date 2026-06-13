@@ -30,7 +30,6 @@ pub struct QueueSummary {
     pub pending: u32,
     pub in_flight: u32,
     pub running_now: Vec<String>,
-    pub description: Option<String>,
     pub paused_at: Option<OffsetDateTime>,
 }
 
@@ -187,7 +186,6 @@ pub async fn load_queues(
             // Queue concurrency is not yet a persisted column; derive from blocking flag.
             let concurrency: u32 = if q.blocking { 1 } else { 8 };
 
-            let description = default_description(&q.name);
             let paused = paused_ids.contains(&q.id);
 
             QueueSummary {
@@ -200,7 +198,6 @@ pub async fn load_queues(
                 pending: 0,
                 in_flight: 0,
                 running_now: vec![],
-                description,
                 paused_at: None,
             }
         })
@@ -387,10 +384,9 @@ fn queue_card_header<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Elem
     let dots = tabler_icon(Icon::DotsVertical, 14.0, dots_color);
 
     let desc_color = palette.text_secondary;
-    let desc = if let Some(d) = &q.description {
-        text(d.clone()).size(FONT_XS).color(desc_color)
-    } else {
-        text("").size(FONT_XS).color(desc_color)
+    let desc = match default_description(&q.name) {
+        Some(d) => text(d).size(FONT_XS).color(desc_color),
+        None => text("").size(FONT_XS).color(desc_color),
     };
 
     let name_row = row![name, badge]

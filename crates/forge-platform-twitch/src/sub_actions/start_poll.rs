@@ -343,3 +343,299 @@ impl SubActionRunner for StartPollRunner {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::helix::HelixError;
+    use crate::sub_actions::test_support::{
+        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
+    };
+
+    fn poll_payload() -> serde_json::Value {
+        serde_json::json!({ "data": [{ "id": "poll-xyz", "title": "ignored" }] })
+    }
+
+    fn runner_with(
+        response: Result<serde_json::Value, HelixError>,
+    ) -> (Arc<MockTransport>, StartPollRunner) {
+        let transport = Arc::new(MockTransport::returning(response));
+        let runner = StartPollRunner::new(
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+        );
+        (transport, runner)
+    }
+
+    /// Full valid config; tests override single keys to isolate one branch.
+    fn full_cfg() -> SubActionConfig {
+        BTreeMap::from([
+            ("title".to_owned(), Variant::String("Best map?".to_owned())),
+            (
+                "choices".to_owned(),
+                Variant::String("Dust\nNuke".to_owned()),
+            ),
+            ("duration_seconds".to_owned(), Variant::Int(120)),
+            (
+                "channel_points_voting_enabled".to_owned(),
+                Variant::Bool(false),
+            ),
+            ("channel_points_per_vote".to_owned(), Variant::Int(0)),
+        ])
+    }
+
+    /// Executes (optionally mutated) config and returns the posted body,
+    /// asserting the call succeeded and reached Helix.
+    async fn body_for(config: SubActionConfig) -> serde_json::Value {
+        let (transport, runner) = runner_with(Ok(poll_payload()));
+        let stack = ArgStack::new();
+        let (telemetry, _) = runner.execute(&config, &make_ctx(&stack)).await;
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        transport.request(0).body.unwrap()
+    }
+
+    #[tokio::test]
+    async fn execute_posts_to_polls_with_broadcaster_in_query_and_pushes_poll_id() {
+        let (transport, runner) = runner_with(Ok(poll_payload()));
+        let stack = ArgStack::new();
+
+        let (telemetry, output) = runner.execute(&full_cfg(), &make_ctx(&stack)).await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let request = transport.request(0);
+        assert_eq!(request.method, HelixMethod::Post);
+        assert_eq!(request.path, "/helix/polls");
+        // broadcaster_id is the caller's own id and lives in the QUERY, not the body.
+        assert!(
+            request
+                .query
+                .contains(&("broadcaster_id".to_owned(), SELF_USER_ID.to_owned()))
+        );
+        assert!(request.body.unwrap().get("broadcaster_id").is_none());
+        // Success output exposes poll.id for chaining into End Poll.
+        assert_eq!(
+            output.unwrap().get("poll.id"),
+            Some(&Variant::String("poll-xyz".to_owned()))
+        );
+    }
+
+    // CRITICAL: Twitch's Create Poll endpoint requires `choices` as an array of
+    // objects `[{"title": "A"}]`. A flat string array `["A"]` returns HTTP 400.
+    #[tokio::test]
+    async fn choices_are_title_objects_not_bare_strings() {
+        let body = body_for(full_cfg()).await;
+        assert_eq!(
+            body.get("choices"),
+            Some(&serde_json::json!([{ "title": "Dust" }, { "title": "Nuke" }]))
+        );
+    }
+
+    // Twitch removed bits voting; the body must never carry those keys.
+    #[tokio::test]
+    async fn body_never_contains_bits_voting_fields() {
+        let mut cfg = full_cfg();
+        cfg.insert(
+            "channel_points_voting_enabled".to_owned(),
+            Variant::Bool(true),
+        );
+        cfg.insert("channel_points_per_vote".to_owned(), Variant::Int(500));
+        let body = body_for(cfg).await;
+        assert!(body.get("bits_voting_enabled").is_none(), "body: {body}");
+        assert!(body.get("bits_per_vote").is_none(), "body: {body}");
+    }
+
+    #[tokio::test]
+    async fn body_uses_duration_key_with_integer_seconds() {
+        let mut cfg = full_cfg();
+        cfg.insert("duration_seconds".to_owned(), Variant::Int(300));
+        let body = body_for(cfg).await;
+        // Twitch's body key is `duration` (not `duration_seconds`), an integer.
+        assert_eq!(body.get("duration"), Some(&serde_json::json!(300)));
+        assert!(body.get("duration_seconds").is_none());
+    }
+
+    // The channel-points pair: disabled => neither key; enabled+value => both;
+    // enabled+zero => flag present, value absent.
+    #[tokio::test]
+    async fn channel_points_fields_track_enable_flag_and_value() {
+        // Disabled: no flag (or false) AND no per-vote value.
+        let body = body_for(full_cfg()).await;
+        assert_ne!(
+            body.get("channel_points_voting_enabled"),
+            Some(&serde_json::json!(true)),
+            "voting must not be enabled: {body}"
+        );
+        assert!(
+            body.get("channel_points_per_vote").is_none(),
+            "per-vote absent when disabled: {body}"
+        );
+
+        // Enabled with a positive per-vote: both keys present.
+        let mut on = full_cfg();
+        on.insert(
+            "channel_points_voting_enabled".to_owned(),
+            Variant::Bool(true),
+        );
+        on.insert("channel_points_per_vote".to_owned(), Variant::Int(500));
+        let body = body_for(on).await;
+        assert_eq!(
+            body.get("channel_points_voting_enabled"),
+            Some(&serde_json::json!(true))
+        );
+        assert_eq!(
+            body.get("channel_points_per_vote"),
+            Some(&serde_json::json!(500))
+        );
+
+        // Enabled with zero per-vote: flag present, value omitted (Twitch default).
+        let mut on_zero = full_cfg();
+        on_zero.insert(
+            "channel_points_voting_enabled".to_owned(),
+            Variant::Bool(true),
+        );
+        on_zero.insert("channel_points_per_vote".to_owned(), Variant::Int(0));
+        let body = body_for(on_zero).await;
+        assert_eq!(
+            body.get("channel_points_voting_enabled"),
+            Some(&serde_json::json!(true))
+        );
+        assert!(
+            body.get("channel_points_per_vote").is_none(),
+            "per-vote absent when zero: {body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn title_and_choices_are_interpolated_from_arg_stack() {
+        let (transport, runner) = runner_with(Ok(poll_payload()));
+        let stack = ArgStack::new()
+            .set("q".to_owned(), Variant::String("Pick one".to_owned()))
+            .set("a".to_owned(), Variant::String("Alpha".to_owned()));
+        let mut cfg = full_cfg();
+        cfg.insert("title".to_owned(), Variant::String("%q%".to_owned()));
+        cfg.insert(
+            "choices".to_owned(),
+            Variant::String("%a%\nBeta".to_owned()),
+        );
+
+        let (telemetry, _) = runner.execute(&cfg, &make_ctx(&stack)).await;
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let body = transport.request(0).body.unwrap();
+        assert_eq!(body.get("title"), Some(&serde_json::json!("Pick one")));
+        assert_eq!(
+            body.get("choices"),
+            Some(&serde_json::json!([{ "title": "Alpha" }, { "title": "Beta" }]))
+        );
+    }
+
+    #[tokio::test]
+    async fn empty_data_array_yields_failed_and_no_output() {
+        let (_, runner) = runner_with(Ok(serde_json::json!({ "data": [] })));
+        let stack = ArgStack::new();
+        let (telemetry, output) = runner.execute(&full_cfg(), &make_ctx(&stack)).await;
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert!(output.is_none());
+    }
+
+    #[tokio::test]
+    async fn missing_identity_fails_without_calling_helix() {
+        let transport = Arc::new(MockTransport::returning(Ok(poll_payload())));
+        let runner = StartPollRunner::new(
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            Arc::new(SelfIdentity::new(Arc::new(MockCreds::empty()))),
+        );
+        let stack = ArgStack::new();
+        let (telemetry, output) = runner.execute(&full_cfg(), &make_ctx(&stack)).await;
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert!(output.is_none());
+        assert_eq!(transport.call_count(), 0);
+    }
+
+    // The token sits in the same creds bundle the runner reads; a transport
+    // failure must surface a typed error whose message never leaks it.
+    #[tokio::test]
+    async fn http_failure_outcome_does_not_leak_token() {
+        let (_, runner) = runner_with(Err(HelixError::Http {
+            status: 400,
+            body: "invalid choices".to_owned(),
+        }));
+        let stack = ArgStack::new();
+        let (telemetry, _) = runner.execute(&full_cfg(), &make_ctx(&stack)).await;
+        let SubActionOutcome::Failed(msg) = telemetry.outcome else {
+            unreachable!("expected Failed outcome on HTTP error");
+        };
+        assert!(!msg.contains(TOKEN_SENTINEL));
+    }
+
+    #[test]
+    fn validate_config_enforces_field_constraints() {
+        let runner = StartPollRunner::new(
+            Arc::new(MockTransport::returning(Ok(serde_json::Value::Null))),
+            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+        );
+
+        let valid = full_cfg();
+        let cfg_with = |key: &str, value: Variant| {
+            let mut c = valid.clone();
+            c.insert(key.to_owned(), value);
+            c
+        };
+
+        // (label, config, expect_ok)
+        let cases = [
+            ("baseline valid", valid.clone(), true),
+            (
+                "empty title",
+                cfg_with("title", Variant::String(String::new())),
+                false,
+            ),
+            (
+                "title over 60 chars",
+                cfg_with("title", Variant::String("x".repeat(61))),
+                false,
+            ),
+            (
+                "title at 60 chars",
+                cfg_with("title", Variant::String("x".repeat(60))),
+                true,
+            ),
+            (
+                "single choice",
+                cfg_with("choices", Variant::String("Only".to_owned())),
+                false,
+            ),
+            (
+                "six choices",
+                cfg_with("choices", Variant::String("a\nb\nc\nd\ne\nf".to_owned())),
+                false,
+            ),
+            (
+                "choice over 25 chars",
+                cfg_with(
+                    "choices",
+                    Variant::String(format!("{}\nOk", "y".repeat(26))),
+                ),
+                false,
+            ),
+            (
+                "duration below minimum",
+                cfg_with("duration_seconds", Variant::Int(14)),
+                false,
+            ),
+            (
+                "duration above maximum",
+                cfg_with("duration_seconds", Variant::Int(1801)),
+                false,
+            ),
+        ];
+
+        for (label, cfg, expect_ok) in cases {
+            assert_eq!(
+                runner.validate_config(&cfg).is_ok(),
+                expect_ok,
+                "case: {label}"
+            );
+        }
+    }
+}

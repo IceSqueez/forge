@@ -423,6 +423,8 @@ mod tests {
             "twitch.channel_points.delete_reward",
             "twitch.channel_points.fulfill_redemption",
             "twitch.channel_points.cancel_redemption",
+            "twitch.poll.start",
+            "twitch.poll.end",
         ] {
             assert!(reg.get(id).is_some(), "missing sub-action: {id}");
         }

@@ -220,6 +220,8 @@ mod tests {
             "twitch.channel_points.reward_updated",
             "twitch.channel_points.reward_removed",
             "twitch.channel_points.redemption_updated",
+            "twitch.automod.message_held",
+            "twitch.channel.chat_settings_updated",
         ];
 
         for id in ids {

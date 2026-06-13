@@ -109,3 +109,56 @@ impl TriggerKindDescriptor for AutomodMessageHeldDescriptor {
             .set("message_text".to_owned(), Variant::String(message_text))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn hold_event() -> Event {
+        Event::new(
+            EventSource::Twitch,
+            "channel.automod.message.hold",
+            serde_json::json!({
+                "automod": {
+                    "message_id": "hold-abc-123",
+                    "category": "harassment",
+                    "level": 3,
+                    "held_at": "2026-06-13T20:00:00Z",
+                },
+                "user": {
+                    "id": "777",
+                    "login": "viewer_one",
+                    "display_name": "ViewerOne",
+                },
+                "message_text": "borderline message",
+            }),
+        )
+    }
+
+    #[test]
+    fn event_filter_targets_automod_hold_kind_from_twitch() {
+        let filter = AutomodMessageHeldDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.automod.message.hold")
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_exposes_message_id_chaining_var_and_typed_level() {
+        let stack = AutomodMessageHeldDescriptor.build_arg_stack(&hold_event());
+        // automod.message_id is the chaining var feeding approve/deny sub-actions.
+        assert_eq!(
+            stack.get("automod.message_id"),
+            Some(&Variant::String("hold-abc-123".to_owned()))
+        );
+        // level marshals as Int, not String.
+        assert_eq!(stack.get("automod.level"), Some(&Variant::Int(3)));
+        // message_text is read from the already-flattened payload field.
+        assert_eq!(
+            stack.get("message_text"),
+            Some(&Variant::String("borderline message".to_owned()))
+        );
+    }
+}

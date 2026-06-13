@@ -3992,4 +3992,80 @@ mod tests {
             Some("2026-06-13T19:00:00Z")
         );
     }
+
+    #[tokio::test]
+    async fn automod_hold_event_flattens_message_text_and_carries_message_id() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        // Helix nests the held message under message.text; the forge payload
+        // lifts it to a flat message_text and forwards automod.message_id so
+        // downstream approve/deny sub-actions can reference it.
+        let event_data = serde_json::json!({
+            "user_id": "777",
+            "user_login": "viewer_one",
+            "user_name": "ViewerOne",
+            "message": {"text": "borderline message"},
+            "automod": {
+                "message_id": "hold-abc-123",
+                "category": "harassment",
+                "level": 3,
+                "held_at": "2026-06-13T20:00:00Z"
+            }
+        });
+        session.publish_automod_hold_event(&event_data, "meta-automod-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.automod.message.hold");
+        assert_eq!(ev.source, EventSource::Twitch);
+        assert_eq!(
+            ev.payload["message_text"].as_str(),
+            Some("borderline message")
+        );
+        assert_eq!(
+            ev.payload["automod"]["message_id"].as_str(),
+            Some("hold-abc-123")
+        );
+        assert_eq!(ev.payload["automod"]["level"].as_i64(), Some(3));
+        assert_eq!(ev.payload["user"]["login"].as_str(), Some("viewer_one"));
+    }
+
+    #[tokio::test]
+    async fn chat_settings_update_event_passes_through_bool_and_int_modes() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "emote_mode": true,
+            "follower_mode": false,
+            "follower_mode_duration_minutes": 10,
+            "slow_mode": true,
+            "slow_mode_wait_time_seconds": 30,
+            "subscriber_mode": false,
+            "unique_chat_mode": true
+        });
+        session.publish_chat_settings_update_event(&event_data, "meta-chatset-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.chat_settings.update");
+        let settings = &ev.payload["settings"];
+        assert_eq!(settings["emote_mode"].as_bool(), Some(true));
+        assert_eq!(settings["slow_mode"].as_bool(), Some(true));
+        assert_eq!(settings["unique_chat_mode"].as_bool(), Some(true));
+        assert_eq!(settings["slow_mode_wait_time_seconds"].as_i64(), Some(30));
+        assert_eq!(
+            settings["follower_mode_duration_minutes"].as_i64(),
+            Some(10)
+        );
+    }
 }

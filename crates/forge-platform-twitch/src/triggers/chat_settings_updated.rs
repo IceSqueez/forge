@@ -115,3 +115,65 @@ impl TriggerKindDescriptor for ChatSettingsUpdatedDescriptor {
             )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn settings_event() -> Event {
+        Event::new(
+            EventSource::Twitch,
+            "channel.chat_settings.update",
+            serde_json::json!({
+                "settings": {
+                    "emote_mode": true,
+                    "follower_mode": false,
+                    "slow_mode": true,
+                    "subscriber_mode": false,
+                    "unique_chat_mode": true,
+                    "slow_mode_wait_time_seconds": 30,
+                    "follower_mode_duration_minutes": 10,
+                },
+            }),
+        )
+    }
+
+    #[test]
+    fn event_filter_targets_chat_settings_update_kind_from_twitch() {
+        let filter = ChatSettingsUpdatedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.chat_settings.update")
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_marshals_mode_flags_as_bool_and_durations_as_int() {
+        // A copy-paste regression that stringified these would be a real bug:
+        // downstream scripts compare %settings.slow_mode% as a Bool and do
+        // arithmetic on the *_seconds / *_minutes Ints.
+        let stack = ChatSettingsUpdatedDescriptor.build_arg_stack(&settings_event());
+        for (key, expected) in [
+            ("settings.emote_mode", true),
+            ("settings.follower_mode", false),
+            ("settings.slow_mode", true),
+            ("settings.subscriber_mode", false),
+            ("settings.unique_chat_mode", true),
+        ] {
+            assert_eq!(
+                stack.get(key),
+                Some(&Variant::Bool(expected)),
+                "bool var: {key}"
+            );
+        }
+        assert_eq!(
+            stack.get("settings.slow_mode_wait_time_seconds"),
+            Some(&Variant::Int(30))
+        );
+        assert_eq!(
+            stack.get("settings.follower_mode_duration_minutes"),
+            Some(&Variant::Int(10))
+        );
+    }
+}

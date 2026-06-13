@@ -36,6 +36,7 @@ mod start_prediction;
 mod start_raid;
 mod timeout_user;
 mod unban_user;
+mod update_automod_settings;
 mod update_category;
 mod update_reward;
 mod update_tags;
@@ -85,6 +86,7 @@ pub use start_prediction::StartPredictionRunner;
 pub use start_raid::StartRaidRunner;
 pub use timeout_user::TimeoutUserRunner;
 pub use unban_user::UnbanUserRunner;
+pub use update_automod_settings::UpdateAutomodSettingsRunner;
 pub use update_category::UpdateCategoryRunner;
 pub use update_reward::UpdateRewardRunner;
 pub use update_tags::UpdateTagsRunner;
@@ -267,7 +269,13 @@ pub fn register_twitch_sub_actions(
         Arc::clone(&transport),
         Arc::clone(&identity),
     )))?;
-    reg.register(Box::new(DenyAutomodMessageRunner::new(transport, identity)))?;
+    reg.register(Box::new(DenyAutomodMessageRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(UpdateAutomodSettingsRunner::new(
+        transport, identity,
+    )))?;
     Ok(())
 }
 

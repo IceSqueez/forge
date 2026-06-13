@@ -195,6 +195,9 @@ mod tests {
             "twitch.prediction.progress",
             "twitch.prediction.locked",
             "twitch.prediction.ended",
+            "twitch.goal.started",
+            "twitch.goal.progress",
+            "twitch.goal.ended",
         ];
 
         for id in ids {

@@ -102,3 +102,52 @@ impl TriggerKindDescriptor for GoalStartedDescriptor {
             .set("goal.started_at".to_owned(), Variant::String(started_at))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn goal_begin_event() -> Event {
+        let payload = serde_json::json!({
+            "goal": {
+                "id": "goal-1",
+                "type": "follower",
+                "description": "Road to 1k",
+                "current_amount": 250,
+                "target_amount": 1000,
+                "started_at": "2026-06-13T18:00:00Z",
+            },
+        });
+        Event::new(EventSource::Twitch, "channel.goal.begin", payload)
+    }
+
+    #[test]
+    fn event_filter_targets_goal_begin_topic_from_twitch() {
+        let filter = GoalStartedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(filter.kind_prefix.as_deref(), Some("channel.goal.begin"));
+    }
+
+    #[test]
+    fn build_arg_stack_maps_amounts_as_int_and_metadata_as_string() {
+        let stack = GoalStartedDescriptor.build_arg_stack(&goal_begin_event());
+        assert_eq!(
+            stack.get("goal.id"),
+            Some(&Variant::String("goal-1".to_owned()))
+        );
+        assert_eq!(
+            stack.get("goal.type"),
+            Some(&Variant::String("follower".to_owned()))
+        );
+        assert_eq!(
+            stack.get("goal.description"),
+            Some(&Variant::String("Road to 1k".to_owned()))
+        );
+        assert_eq!(stack.get("goal.current_amount"), Some(&Variant::Int(250)));
+        assert_eq!(stack.get("goal.target_amount"), Some(&Variant::Int(1000)));
+        assert_eq!(
+            stack.get("goal.started_at"),
+            Some(&Variant::String("2026-06-13T18:00:00Z".to_owned()))
+        );
+    }
+}

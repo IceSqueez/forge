@@ -101,3 +101,51 @@ impl TriggerKindDescriptor for GoalEndedDescriptor {
             .set("goal.ended_at".to_owned(), Variant::String(ended_at))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn goal_end_event(is_achieved: bool) -> Event {
+        let payload = serde_json::json!({
+            "goal": {
+                "id": "goal-3",
+                "type": "follower",
+                "current_amount": 1000,
+                "target_amount": 1000,
+                "is_achieved": is_achieved,
+                "ended_at": "2026-06-13T19:00:00Z",
+            },
+        });
+        Event::new(EventSource::Twitch, "channel.goal.end", payload)
+    }
+
+    #[test]
+    fn event_filter_targets_goal_end_topic_from_twitch() {
+        let filter = GoalEndedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(filter.kind_prefix.as_deref(), Some("channel.goal.end"));
+    }
+
+    #[test]
+    fn build_arg_stack_maps_amounts_as_int_and_is_achieved_as_bool() {
+        let stack = GoalEndedDescriptor.build_arg_stack(&goal_end_event(true));
+        assert_eq!(
+            stack.get("goal.id"),
+            Some(&Variant::String("goal-3".to_owned()))
+        );
+        assert_eq!(stack.get("goal.current_amount"), Some(&Variant::Int(1000)));
+        assert_eq!(stack.get("goal.target_amount"), Some(&Variant::Int(1000)));
+        assert_eq!(stack.get("goal.is_achieved"), Some(&Variant::Bool(true)));
+        assert_eq!(
+            stack.get("goal.ended_at"),
+            Some(&Variant::String("2026-06-13T19:00:00Z".to_owned()))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_preserves_unachieved_goal_as_bool_false() {
+        let stack = GoalEndedDescriptor.build_arg_stack(&goal_end_event(false));
+        assert_eq!(stack.get("goal.is_achieved"), Some(&Variant::Bool(false)));
+    }
+}

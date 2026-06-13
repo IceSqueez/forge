@@ -3500,4 +3500,91 @@ mod tests {
             Some("2026-06-13T18:10:00Z")
         );
     }
+
+    #[tokio::test]
+    async fn goal_begin_event_nests_goal_with_amounts_and_description() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "id": "goal-1",
+            "type": "follower",
+            "description": "Road to 1k",
+            "current_amount": 250,
+            "target_amount": 1000,
+            "started_at": "2026-06-13T18:00:00Z"
+        });
+        session.publish_goal_begin_event(&event_data, "meta-goal-begin-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.goal.begin");
+        assert_eq!(ev.source, EventSource::Twitch);
+        assert_eq!(ev.payload["goal"]["id"].as_str(), Some("goal-1"));
+        assert_eq!(
+            ev.payload["goal"]["description"].as_str(),
+            Some("Road to 1k")
+        );
+        assert_eq!(ev.payload["goal"]["current_amount"].as_i64(), Some(250));
+        assert_eq!(ev.payload["goal"]["target_amount"].as_i64(), Some(1000));
+    }
+
+    #[tokio::test]
+    async fn goal_progress_event_nests_goal_with_current_and_target_amounts() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "id": "goal-2",
+            "type": "subscription",
+            "current_amount": 42,
+            "target_amount": 100
+        });
+        session.publish_goal_progress_event(&event_data, "meta-goal-progress-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.goal.progress");
+        assert_eq!(ev.payload["goal"]["id"].as_str(), Some("goal-2"));
+        assert_eq!(ev.payload["goal"]["current_amount"].as_i64(), Some(42));
+        assert_eq!(ev.payload["goal"]["target_amount"].as_i64(), Some(100));
+    }
+
+    #[tokio::test]
+    async fn goal_end_event_passes_is_achieved_flag_through_to_goal_payload() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "id": "goal-3",
+            "type": "follower",
+            "current_amount": 1000,
+            "target_amount": 1000,
+            "is_achieved": true,
+            "ended_at": "2026-06-13T19:00:00Z"
+        });
+        session.publish_goal_end_event(&event_data, "meta-goal-end-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.goal.end");
+        assert_eq!(ev.payload["goal"]["id"].as_str(), Some("goal-3"));
+        assert_eq!(ev.payload["goal"]["is_achieved"].as_bool(), Some(true));
+        assert_eq!(
+            ev.payload["goal"]["ended_at"].as_str(),
+            Some("2026-06-13T19:00:00Z")
+        );
+    }
 }

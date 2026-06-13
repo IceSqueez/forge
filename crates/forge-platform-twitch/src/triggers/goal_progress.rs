@@ -90,3 +90,42 @@ impl TriggerKindDescriptor for GoalProgressDescriptor {
             .set("goal.target_amount".to_owned(), Variant::Int(target_amount))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn goal_progress_event() -> Event {
+        let payload = serde_json::json!({
+            "goal": {
+                "id": "goal-2",
+                "type": "subscription",
+                "current_amount": 42,
+                "target_amount": 100,
+            },
+        });
+        Event::new(EventSource::Twitch, "channel.goal.progress", payload)
+    }
+
+    #[test]
+    fn event_filter_targets_goal_progress_topic_from_twitch() {
+        let filter = GoalProgressDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(filter.kind_prefix.as_deref(), Some("channel.goal.progress"));
+    }
+
+    #[test]
+    fn build_arg_stack_maps_progress_amounts_as_int() {
+        let stack = GoalProgressDescriptor.build_arg_stack(&goal_progress_event());
+        assert_eq!(
+            stack.get("goal.id"),
+            Some(&Variant::String("goal-2".to_owned()))
+        );
+        assert_eq!(
+            stack.get("goal.type"),
+            Some(&Variant::String("subscription".to_owned()))
+        );
+        assert_eq!(stack.get("goal.current_amount"), Some(&Variant::Int(42)));
+        assert_eq!(stack.get("goal.target_amount"), Some(&Variant::Int(100)));
+    }
+}

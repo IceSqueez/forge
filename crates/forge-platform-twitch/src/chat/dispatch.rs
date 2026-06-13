@@ -171,6 +171,9 @@ mod tests {
             "channel.prediction.progress",
             "channel.prediction.lock",
             "channel.prediction.end",
+            "channel.goal.begin",
+            "channel.goal.progress",
+            "channel.goal.end",
         ] {
             assert!(route_for(topic).is_some(), "missing route for {topic}");
         }

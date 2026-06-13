@@ -516,6 +516,9 @@ mod tests {
             "twitch.automod.update_settings",
             "twitch.automod.add_blocked_term",
             "twitch.automod.remove_blocked_term",
+            "twitch.guest_star.invite",
+            "twitch.guest_star.assign_slot",
+            "twitch.guest_star.remove_guest",
         ] {
             assert!(reg.get(id).is_some(), "missing sub-action: {id}");
         }

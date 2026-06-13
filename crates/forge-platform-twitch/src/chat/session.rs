@@ -2465,6 +2465,84 @@ impl ChatSession {
         ));
     }
 
+    pub(super) fn publish_guest_star_guest_update_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let session_id = event_data
+            .get("session_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
+        let slot_id = event_data
+            .get("slot_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
+        let state = event_data
+            .get("state")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
+        let guest_user_id = event_data
+            .get("guest_user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
+        let guest_user_login = event_data
+            .get("guest_user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
+        let guest_user_name = event_data
+            .get("guest_user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
+        let host_video_enabled = event_data
+            .get("host_video_enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let host_audio_enabled = event_data
+            .get("host_audio_enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let host_volume = event_data
+            .get("host_volume")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+
+        info!(
+            session_id = %session_id,
+            guest_user_login = %guest_user_login,
+            state = %state,
+            "guest star guest update"
+        );
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.guest_star_guest.update",
+            serde_json::json!({
+                "guest_star": {
+                    "session_id": session_id,
+                    "slot_id": slot_id,
+                    "state": state,
+                },
+                "guest": {
+                    "id": guest_user_id,
+                    "login": guest_user_login,
+                    "display_name": guest_user_name,
+                },
+                "host": {
+                    "video_enabled": host_video_enabled,
+                    "audio_enabled": host_audio_enabled,
+                    "volume": host_volume,
+                },
+            }),
+        ));
+    }
+
     pub(super) fn publish_automod_settings_update_event(
         &self,
         event_data: &serde_json::Value,

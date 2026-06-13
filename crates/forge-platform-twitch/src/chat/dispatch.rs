@@ -163,6 +163,10 @@ const NOTIFICATION_ROUTES: &[(&str, NotificationRoute)] = &[
         ChatSession::publish_guest_star_settings_event,
     ),
     (
+        "channel.guest_star_guest.update",
+        ChatSession::publish_guest_star_guest_update_event,
+    ),
+    (
         "channel.automod.settings.update",
         ChatSession::publish_automod_settings_update_event,
     ),

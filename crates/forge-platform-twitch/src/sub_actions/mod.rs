@@ -472,6 +472,8 @@ mod tests {
             "twitch.prediction.cancel",
             "twitch.prediction.resolve",
             "twitch.goal.get_current",
+            "twitch.automod.approve_message",
+            "twitch.automod.deny_message",
         ] {
             assert!(reg.get(id).is_some(), "missing sub-action: {id}");
         }

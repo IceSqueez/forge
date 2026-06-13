@@ -81,3 +81,46 @@ impl SubActionRunner for DenyAutomodMessageRunner {
         .await
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::helix::{HelixMethod, HelixTransport};
+    use crate::sub_actions::approve_automod_message::automod_default_config;
+    use crate::sub_actions::test_support::{MockCreds, MockTransport, SELF_USER_ID, make_ctx};
+    use forge_types::{SubActionOutcome, Variant};
+
+    // Distinct-action contract: deny_message POSTs action "DENY" (the one field that
+    // differs from approve). The shared body shape, interpolation, validation and
+    // failure paths are covered once in approve_automod_message.rs; this asserts only
+    // that this runner flips the action while still carrying self user_id and msg_id.
+    #[tokio::test]
+    async fn deny_posts_deny_action_with_user_id_and_msg_id() {
+        let transport = Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)));
+        let runner = DenyAutomodMessageRunner::new(
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+        );
+        let stack = ArgStack::new().set(
+            "automod.message_id".to_owned(),
+            Variant::String("msg42".to_owned()),
+        );
+
+        let (telemetry, _) = runner
+            .execute(&automod_default_config(), &make_ctx(&stack))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let request = transport.request(0);
+        assert_eq!(request.method, HelixMethod::Post);
+        assert_eq!(
+            request.body,
+            Some(serde_json::json!({
+                "user_id": SELF_USER_ID,
+                "msg_id": "msg42",
+                "action": "DENY",
+            })),
+        );
+    }
+}

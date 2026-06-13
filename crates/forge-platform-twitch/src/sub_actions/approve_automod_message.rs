@@ -178,3 +178,153 @@ impl SubActionRunner for ApproveAutomodMessageRunner {
         .await
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::helix::{HelixError, HelixMethod, HelixTransport};
+    use crate::sub_actions::test_support::{
+        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
+    };
+
+    fn approve_runner_with(
+        response: Result<serde_json::Value, HelixError>,
+    ) -> (Arc<MockTransport>, ApproveAutomodMessageRunner) {
+        let transport = Arc::new(MockTransport::returning(response));
+        let runner = ApproveAutomodMessageRunner::new(
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+        );
+        (transport, runner)
+    }
+
+    fn config_with_message_id(value: &str) -> SubActionConfig {
+        BTreeMap::from([("message_id".to_owned(), Variant::String(value.to_owned()))])
+    }
+
+    // Distinct-body contract for approve_message: POST the automod/message endpoint
+    // with NO query params and a body of exactly user_id(self) / msg_id(resolved) /
+    // action "ALLOW". The self-as-user_id placement in the BODY (not query) is the
+    // moderation-auth contract Twitch verifies; deny re-uses this shape and asserts
+    // only its own "DENY" action in-file.
+    #[tokio::test]
+    async fn approve_posts_allow_with_self_user_id_in_body_and_no_query() {
+        let (transport, runner) = approve_runner_with(Ok(serde_json::Value::Null));
+        let stack = ArgStack::new().set(
+            "automod.message_id".to_owned(),
+            Variant::String("msg77".to_owned()),
+        );
+
+        let (telemetry, out) = runner
+            .execute(&automod_default_config(), &make_ctx(&stack))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        assert!(out.is_none(), "automod runners never push an ArgStack");
+        let request = transport.request(0);
+        assert_eq!(request.method, HelixMethod::Post);
+        assert_eq!(request.path, "/helix/moderation/automod/message");
+        assert!(
+            request.query.is_empty(),
+            "automod fields go in the body, not the query: {:?}",
+            request.query
+        );
+        assert_eq!(
+            request.body,
+            Some(serde_json::json!({
+                "user_id": SELF_USER_ID,
+                "msg_id": "msg77",
+                "action": "ALLOW",
+            })),
+        );
+    }
+
+    // SHARED behavior (asserted ONCE via the representative runner): the message_id
+    // template resolves through the ArgStack. Default config holds %automod.message_id%,
+    // so the body msg_id must equal the stack-resolved value, not the literal template.
+    #[tokio::test]
+    async fn message_id_template_interpolates_from_stack() {
+        let (transport, runner) = approve_runner_with(Ok(serde_json::Value::Null));
+        let stack = ArgStack::new().set(
+            "automod.message_id".to_owned(),
+            Variant::String("resolved9".to_owned()),
+        );
+
+        let _ = runner
+            .execute(&automod_default_config(), &make_ctx(&stack))
+            .await;
+
+        assert_eq!(
+            transport.request(0).body.unwrap()["msg_id"],
+            serde_json::json!("resolved9"),
+            "msg_id must interpolate, not pass %automod.message_id% verbatim",
+        );
+    }
+
+    // SHARED behavior: an empty message_id after interpolation fails BEFORE any Helix
+    // call (no message targeted). An explicitly empty template is the deterministic case.
+    #[tokio::test]
+    async fn empty_message_id_fails_without_helix_call() {
+        let (transport, runner) = approve_runner_with(Ok(serde_json::Value::Null));
+
+        let (telemetry, _) = runner
+            .execute(&config_with_message_id(""), &make_ctx(&ArgStack::new()))
+            .await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert_eq!(
+            transport.call_count(),
+            0,
+            "empty message_id must short-circuit before POST",
+        );
+    }
+
+    // SHARED behavior: validate_config gates on a non-empty message_id String.
+    #[tokio::test]
+    async fn validate_config_requires_non_empty_message_id() {
+        let (_transport, runner) = approve_runner_with(Ok(serde_json::Value::Null));
+
+        let cases: Vec<(&str, SubActionConfig, bool)> = vec![
+            ("present non-empty", config_with_message_id("m1"), true),
+            ("empty string", config_with_message_id(""), false),
+            ("missing key", BTreeMap::new(), false),
+            (
+                "wrong type",
+                BTreeMap::from([("message_id".to_owned(), Variant::Int(7))]),
+                false,
+            ),
+        ];
+
+        for (label, config, expect_ok) in cases {
+            assert_eq!(
+                runner.validate_config(&config).is_ok(),
+                expect_ok,
+                "case: {label}",
+            );
+        }
+    }
+
+    // SHARED behavior: a Helix failure surfaces as Failed carrying the status, and
+    // the sentinel token never leaks into the outcome message.
+    #[tokio::test]
+    async fn helix_failure_maps_to_failed_with_status_and_no_token() {
+        let (_transport, runner) = approve_runner_with(Err(HelixError::Http {
+            status: 403,
+            body: "forbidden".to_owned(),
+        }));
+        let stack = ArgStack::new().set(
+            "automod.message_id".to_owned(),
+            Variant::String("msg77".to_owned()),
+        );
+
+        let (telemetry, _) = runner
+            .execute(&automod_default_config(), &make_ctx(&stack))
+            .await;
+
+        assert!(matches!(
+            telemetry.outcome,
+            SubActionOutcome::Failed(msg) if msg.contains("403") && !msg.contains(TOKEN_SENTINEL)
+        ));
+    }
+}

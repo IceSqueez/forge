@@ -14,6 +14,9 @@ mod chat_cleared;
 mod chat_command;
 mod chat_message;
 mod chat_message_deleted;
+mod goal_ended;
+mod goal_progress;
+mod goal_started;
 mod hype_train_ended;
 mod hype_train_progress;
 mod hype_train_started;
@@ -57,6 +60,9 @@ use chat_cleared::ChatClearedDescriptor;
 use chat_command::ChatCommandDescriptor;
 use chat_message::ChatMessageDescriptor;
 use chat_message_deleted::ChatMessageDeletedDescriptor;
+use goal_ended::GoalEndedDescriptor;
+use goal_progress::GoalProgressDescriptor;
+use goal_started::GoalStartedDescriptor;
 use hype_train_ended::HypeTrainEndedDescriptor;
 use hype_train_progress::HypeTrainProgressDescriptor;
 use hype_train_started::HypeTrainStartedDescriptor;
@@ -124,6 +130,9 @@ pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), Registr
     reg.register(Box::new(PredictionProgressDescriptor))?;
     reg.register(Box::new(PredictionLockedDescriptor))?;
     reg.register(Box::new(PredictionEndedDescriptor))?;
+    reg.register(Box::new(GoalStartedDescriptor))?;
+    reg.register(Box::new(GoalProgressDescriptor))?;
+    reg.register(Box::new(GoalEndedDescriptor))?;
     Ok(())
 }
 

@@ -1879,6 +1879,149 @@ impl ChatSession {
         ));
     }
 
+    pub(super) fn publish_goal_begin_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let goal_id = event_data
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let goal_type = event_data
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let description = event_data
+            .get("description")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let current_amount = event_data
+            .get("current_amount")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let target_amount = event_data
+            .get("target_amount")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let started_at = event_data
+            .get("started_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(goal_id = %goal_id, goal_type = %goal_type, "goal begun");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.goal.begin",
+            serde_json::json!({
+                "goal": {
+                    "id": goal_id,
+                    "type": goal_type,
+                    "description": description,
+                    "current_amount": current_amount,
+                    "target_amount": target_amount,
+                    "started_at": started_at,
+                },
+            }),
+        ));
+    }
+
+    pub(super) fn publish_goal_progress_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let goal_id = event_data
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let goal_type = event_data
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let current_amount = event_data
+            .get("current_amount")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let target_amount = event_data
+            .get("target_amount")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+
+        info!(goal_id = %goal_id, current_amount = current_amount, "goal progress");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.goal.progress",
+            serde_json::json!({
+                "goal": {
+                    "id": goal_id,
+                    "type": goal_type,
+                    "current_amount": current_amount,
+                    "target_amount": target_amount,
+                },
+            }),
+        ));
+    }
+
+    pub(super) fn publish_goal_end_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let goal_id = event_data
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let goal_type = event_data
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let current_amount = event_data
+            .get("current_amount")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let target_amount = event_data
+            .get("target_amount")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let is_achieved = event_data
+            .get("is_achieved")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let ended_at = event_data
+            .get("ended_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(goal_id = %goal_id, is_achieved = is_achieved, "goal ended");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.goal.end",
+            serde_json::json!({
+                "goal": {
+                    "id": goal_id,
+                    "type": goal_type,
+                    "current_amount": current_amount,
+                    "target_amount": target_amount,
+                    "is_achieved": is_achieved,
+                    "ended_at": ended_at,
+                },
+            }),
+        ));
+    }
+
     fn set_state(&self, state: ChatConnectionState) {
         let _ = self.state_tx.send(state);
     }

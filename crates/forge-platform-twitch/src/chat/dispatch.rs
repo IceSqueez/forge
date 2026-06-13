@@ -120,6 +120,12 @@ const NOTIFICATION_ROUTES: &[(&str, NotificationRoute)] = &[
         "channel.prediction.end",
         ChatSession::publish_prediction_end_event,
     ),
+    ("channel.goal.begin", ChatSession::publish_goal_begin_event),
+    (
+        "channel.goal.progress",
+        ChatSession::publish_goal_progress_event,
+    ),
+    ("channel.goal.end", ChatSession::publish_goal_end_event),
 ];
 
 #[cfg(test)]

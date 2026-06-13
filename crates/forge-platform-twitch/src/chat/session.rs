@@ -1151,6 +1151,129 @@ impl ChatSession {
         ));
     }
 
+    // channel.ban carries both permanent bans and timeouts; is_permanent distinguishes them.
+    pub(super) fn publish_ban_event(&self, event_data: &serde_json::Value, _frame_msg_id: &str) {
+        let user_id = event_data
+            .get("user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_login = event_data
+            .get("user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_display_name = event_data
+            .get("user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let moderator_login = event_data
+            .get("moderator_user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let moderator_display_name = event_data
+            .get("moderator_user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let reason = event_data
+            .get("reason")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let banned_at = event_data
+            .get("banned_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let ends_at = event_data
+            .get("ends_at")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_owned());
+        let is_permanent = event_data
+            .get("is_permanent")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        info!(
+            user_login = %user_login,
+            is_permanent = is_permanent,
+            "ban event received"
+        );
+
+        let forge_payload = serde_json::json!({
+            "user": {
+                "id": user_id,
+                "login": user_login,
+                "display_name": user_display_name,
+            },
+            "moderator": {
+                "login": moderator_login,
+                "display_name": moderator_display_name,
+            },
+            "reason": reason,
+            "banned_at": banned_at,
+            "ends_at": ends_at,
+            "is_permanent": is_permanent,
+        });
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.ban",
+            forge_payload,
+        ));
+    }
+
+    pub(super) fn publish_unban_event(&self, event_data: &serde_json::Value, _frame_msg_id: &str) {
+        let user_id = event_data
+            .get("user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_login = event_data
+            .get("user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_display_name = event_data
+            .get("user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let moderator_login = event_data
+            .get("moderator_user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let moderator_display_name = event_data
+            .get("moderator_user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(user_login = %user_login, "unban event received");
+
+        let forge_payload = serde_json::json!({
+            "user": {
+                "id": user_id,
+                "login": user_login,
+                "display_name": user_display_name,
+            },
+            "moderator": {
+                "login": moderator_login,
+                "display_name": moderator_display_name,
+            },
+        });
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.unban",
+            forge_payload,
+        ));
+    }
+
     fn set_state(&self, state: ChatConnectionState) {
         let _ = self.state_tx.send(state);
     }
@@ -2066,5 +2189,100 @@ mod tests {
             Some(50000)
         );
         assert_eq!(ev.payload["charity"]["currency_code"].as_str(), Some("EUR"));
+    }
+
+    #[tokio::test]
+    async fn ban_event_nests_user_and_moderator_and_passes_is_permanent_through() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "user_id": "777",
+            "user_login": "viewer_one",
+            "user_name": "ViewerOne",
+            "moderator_user_login": "mod_jane",
+            "moderator_user_name": "ModJane",
+            "reason": "spamming",
+            "banned_at": "2026-06-13T10:00:00Z",
+            "ends_at": serde_json::Value::Null,
+            "is_permanent": true
+        });
+        session.publish_ban_event(&event_data, "meta-ban-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.ban");
+        assert_eq!(ev.source, EventSource::Twitch);
+        // is_permanent is the field the ban/timeout descriptors branch on; it must
+        // survive the IRC->forge payload mapping verbatim.
+        assert_eq!(ev.payload["is_permanent"].as_bool(), Some(true));
+        assert_eq!(ev.payload["user"]["id"].as_str(), Some("777"));
+        assert_eq!(ev.payload["user"]["login"].as_str(), Some("viewer_one"));
+        assert_eq!(
+            ev.payload["user"]["display_name"].as_str(),
+            Some("ViewerOne")
+        );
+        assert_eq!(ev.payload["moderator"]["login"].as_str(), Some("mod_jane"));
+        assert_eq!(ev.payload["reason"].as_str(), Some("spamming"));
+    }
+
+    #[tokio::test]
+    async fn timeout_ban_event_carries_ends_at_with_is_permanent_false() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "user_login": "viewer_one",
+            "user_name": "ViewerOne",
+            "moderator_user_login": "mod_jane",
+            "banned_at": "2026-06-13T10:00:00Z",
+            "ends_at": "2026-06-13T10:10:00Z",
+            "is_permanent": false
+        });
+        session.publish_ban_event(&event_data, "meta-ban-002");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.payload["is_permanent"].as_bool(), Some(false));
+        assert_eq!(ev.payload["ends_at"].as_str(), Some("2026-06-13T10:10:00Z"));
+    }
+
+    #[tokio::test]
+    async fn unban_event_nests_user_and_moderator_only() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "user_id": "777",
+            "user_login": "viewer_one",
+            "user_name": "ViewerOne",
+            "moderator_user_login": "mod_jane",
+            "moderator_user_name": "ModJane"
+        });
+        session.publish_unban_event(&event_data, "meta-unban-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.unban");
+        assert_eq!(ev.payload["user"]["login"].as_str(), Some("viewer_one"));
+        assert_eq!(
+            ev.payload["moderator"]["display_name"].as_str(),
+            Some("ModJane")
+        );
+        // An unban payload carries no ban metadata.
+        assert!(ev.payload.get("reason").is_none());
+        assert!(ev.payload.get("is_permanent").is_none());
     }
 }

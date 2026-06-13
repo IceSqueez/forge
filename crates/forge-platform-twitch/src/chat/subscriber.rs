@@ -153,6 +153,16 @@ const TOPICS: &[TopicSpec] = &[
         version: "1",
         condition_fn: condition_broadcaster,
     },
+    TopicSpec {
+        kind: "channel.ban",
+        version: "1",
+        condition_fn: condition_broadcaster,
+    },
+    TopicSpec {
+        kind: "channel.unban",
+        version: "1",
+        condition_fn: condition_broadcaster,
+    },
 ];
 
 pub(crate) async fn subscribe_all(

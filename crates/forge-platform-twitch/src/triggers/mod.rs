@@ -1,6 +1,9 @@
+mod channel_ban;
 mod channel_follow;
 mod channel_points_redemption;
 mod channel_raid_received;
+mod channel_timeout;
+mod channel_unban;
 mod charity_donation;
 mod charity_progress;
 mod charity_started;
@@ -24,9 +27,12 @@ mod support_subscriber;
 
 use forge_registry::{RegistryError, TriggerRegistry};
 
+use channel_ban::ChannelBanDescriptor;
 use channel_follow::ChannelFollowDescriptor;
 use channel_points_redemption::ChannelPointsRedemptionDescriptor;
 use channel_raid_received::ChannelRaidReceivedDescriptor;
+use channel_timeout::ChannelTimeoutDescriptor;
+use channel_unban::ChannelUnbanDescriptor;
 use charity_donation::CharityDonationDescriptor;
 use charity_progress::CharityProgressDescriptor;
 use charity_started::CharityStartedDescriptor;
@@ -48,6 +54,9 @@ use support_resubscriber::SupportResubscriberDescriptor;
 use support_subscriber::SupportSubscriberDescriptor;
 
 pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), RegistryError> {
+    reg.register(Box::new(ChannelBanDescriptor))?;
+    reg.register(Box::new(ChannelTimeoutDescriptor))?;
+    reg.register(Box::new(ChannelUnbanDescriptor))?;
     reg.register(Box::new(ChatCommandDescriptor))?;
     reg.register(Box::new(ChatMessageDescriptor))?;
     reg.register(Box::new(ChatCheerMessageDescriptor))?;
@@ -92,6 +101,9 @@ mod tests {
         register_twitch_triggers(&mut reg).unwrap();
 
         let ids = [
+            "twitch.channel.ban",
+            "twitch.channel.timeout",
+            "twitch.channel.unban",
             "twitch.chat.command",
             "twitch.chat.message",
             "twitch.chat.cheer_message",

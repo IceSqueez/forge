@@ -64,6 +64,8 @@ const NOTIFICATION_ROUTES: &[(&str, NotificationRoute)] = &[
         "channel.charity_campaign.stop",
         ChatSession::publish_charity_stop_event,
     ),
+    ("channel.ban", ChatSession::publish_ban_event),
+    ("channel.unban", ChatSession::publish_unban_event),
 ];
 
 #[cfg(test)]
@@ -92,10 +94,12 @@ mod tests {
             "channel.charity_campaign.start",
             "channel.charity_campaign.progress",
             "channel.charity_campaign.stop",
+            "channel.ban",
+            "channel.unban",
         ] {
             assert!(route_for(topic).is_some(), "missing route for {topic}");
         }
-        for unknown in ["channel.ban", "stream", ""] {
+        for unknown in ["channel.guest", "stream", ""] {
             assert!(
                 route_for(unknown).is_none(),
                 "unexpected route for {unknown}"

@@ -4630,4 +4630,91 @@ mod tests {
         );
         assert_eq!(ev.payload["moderator"]["login"].as_str(), Some("mod_login"));
     }
+
+    #[tokio::test]
+    async fn publish_shared_chat_begin_remaps_flat_host_fields_into_nested_payload() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "session_id": "sess-begin",
+            "host_broadcaster_user_id": "100",
+            "host_broadcaster_user_login": "host_chan",
+            "host_broadcaster_user_name": "HostChan",
+        });
+        session.publish_shared_chat_begin_event(&event_data, "meta-shared-begin");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.shared_chat.begin");
+        assert_eq!(
+            ev.payload["shared_chat"]["session_id"].as_str(),
+            Some("sess-begin")
+        );
+        assert_eq!(ev.payload["host"]["id"].as_str(), Some("100"));
+        assert_eq!(ev.payload["host"]["login"].as_str(), Some("host_chan"));
+        assert_eq!(
+            ev.payload["host"]["display_name"].as_str(),
+            Some("HostChan")
+        );
+    }
+
+    #[tokio::test]
+    async fn publish_shared_chat_update_remaps_flat_host_fields_into_nested_payload() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "session_id": "sess-update",
+            "host_broadcaster_user_id": "200",
+            "host_broadcaster_user_login": "host_b",
+            "host_broadcaster_user_name": "HostB",
+        });
+        session.publish_shared_chat_update_event(&event_data, "meta-shared-update");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.shared_chat.update");
+        assert_eq!(
+            ev.payload["shared_chat"]["session_id"].as_str(),
+            Some("sess-update")
+        );
+        assert_eq!(ev.payload["host"]["login"].as_str(), Some("host_b"));
+    }
+
+    #[tokio::test]
+    async fn publish_shared_chat_end_remaps_flat_host_fields_into_nested_payload() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "session_id": "sess-end",
+            "host_broadcaster_user_id": "300",
+            "host_broadcaster_user_login": "host_c",
+            "host_broadcaster_user_name": "HostC",
+        });
+        session.publish_shared_chat_end_event(&event_data, "meta-shared-end");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.shared_chat.end");
+        assert_eq!(
+            ev.payload["shared_chat"]["session_id"].as_str(),
+            Some("sess-end")
+        );
+        assert_eq!(ev.payload["host"]["id"].as_str(), Some("300"));
+        assert_eq!(ev.payload["host"]["login"].as_str(), Some("host_c"));
+    }
 }

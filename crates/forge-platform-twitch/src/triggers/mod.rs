@@ -255,6 +255,9 @@ mod tests {
             "twitch.guest_star.session_began",
             "twitch.guest_star.session_ended",
             "twitch.guest_star.settings_updated",
+            "twitch.shared_chat.session_began",
+            "twitch.shared_chat.session_updated",
+            "twitch.shared_chat.session_ended",
         ];
 
         for id in ids {

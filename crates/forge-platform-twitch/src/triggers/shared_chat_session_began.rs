@@ -87,3 +87,46 @@ impl TriggerKindDescriptor for SharedChatSessionBeganDescriptor {
             .set("host_id".to_owned(), Variant::String(host_id))
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::panic)]
+mod tests {
+    use super::*;
+    use forge_events::Event;
+
+    fn str_var(stack: &ArgStack, key: &str) -> String {
+        match stack.get(key) {
+            Some(Variant::String(s)) => s.clone(),
+            other => panic!("expected String at {key}, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_arg_stack_extracts_session_id_and_host_from_nested_payload() {
+        let event = Event::new(
+            EventSource::Twitch,
+            "channel.shared_chat.begin",
+            serde_json::json!({
+                "shared_chat": { "session_id": "sess-abc" },
+                "host": { "id": "100", "login": "host_chan", "display_name": "Host" },
+            }),
+        );
+        let stack = SharedChatSessionBeganDescriptor.build_arg_stack(&event);
+        assert_eq!(str_var(&stack, "shared_chat.session_id"), "sess-abc");
+        assert_eq!(str_var(&stack, "host_login"), "host_chan");
+        assert_eq!(str_var(&stack, "host_id"), "100");
+    }
+
+    #[test]
+    fn build_arg_stack_yields_empty_strings_when_payload_objects_absent() {
+        let event = Event::new(
+            EventSource::Twitch,
+            "channel.shared_chat.begin",
+            serde_json::json!({}),
+        );
+        let stack = SharedChatSessionBeganDescriptor.build_arg_stack(&event);
+        assert_eq!(str_var(&stack, "shared_chat.session_id"), "");
+        assert_eq!(str_var(&stack, "host_login"), "");
+        assert_eq!(str_var(&stack, "host_id"), "");
+    }
+}

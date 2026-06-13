@@ -246,6 +246,9 @@ mod tests {
             "channel.automod.settings.update",
             "channel.automod.terms.update",
             "channel.automod.message.update",
+            "channel.shared_chat.begin",
+            "channel.shared_chat.update",
+            "channel.shared_chat.end",
         ] {
             assert!(route_for(topic).is_some(), "missing route for {topic}");
         }

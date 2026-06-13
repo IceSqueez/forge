@@ -81,3 +81,46 @@ impl TriggerKindDescriptor for SharedChatSessionUpdatedDescriptor {
             .set("host_login".to_owned(), Variant::String(host_login))
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::panic)]
+mod tests {
+    use super::*;
+    use forge_events::Event;
+
+    fn str_var(stack: &ArgStack, key: &str) -> String {
+        match stack.get(key) {
+            Some(Variant::String(s)) => s.clone(),
+            other => panic!("expected String at {key}, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_arg_stack_extracts_session_id_and_host_login_from_nested_payload() {
+        let event = Event::new(
+            EventSource::Twitch,
+            "channel.shared_chat.update",
+            serde_json::json!({
+                "shared_chat": { "session_id": "sess-upd" },
+                "host": { "id": "200", "login": "host_b", "display_name": "HostB" },
+            }),
+        );
+        let stack = SharedChatSessionUpdatedDescriptor.build_arg_stack(&event);
+        assert_eq!(str_var(&stack, "shared_chat.session_id"), "sess-upd");
+        assert_eq!(str_var(&stack, "host_login"), "host_b");
+    }
+
+    #[test]
+    fn build_arg_stack_does_not_bind_host_id() {
+        let event = Event::new(
+            EventSource::Twitch,
+            "channel.shared_chat.update",
+            serde_json::json!({
+                "shared_chat": { "session_id": "sess-upd" },
+                "host": { "id": "200", "login": "host_b" },
+            }),
+        );
+        let stack = SharedChatSessionUpdatedDescriptor.build_arg_stack(&event);
+        assert!(stack.get("host_id").is_none());
+    }
+}

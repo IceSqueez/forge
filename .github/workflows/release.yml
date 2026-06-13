@@ -60,7 +60,7 @@ jobs:
         uses: orhun/git-cliff-action@v4
         with:
           config: cliff.toml
-          args: --latest --strip header
+          args: ${{ steps.prev_tag.outputs.range }}HEAD --strip header
         env:
           OUTPUT: RELEASE_NOTES.md
 

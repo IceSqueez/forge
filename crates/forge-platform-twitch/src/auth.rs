@@ -45,6 +45,7 @@ pub const TWITCH_BROADCASTER_SCOPES: &[&str] = &[
     "moderator:manage:warnings",
     // Channel management
     "channel:manage:broadcast",
+    "user:manage:broadcast",
     "channel:manage:moderators",
     "channel:manage:raids",
     "channel:manage:vips",

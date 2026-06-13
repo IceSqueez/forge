@@ -2,6 +2,7 @@ mod add_moderator;
 mod add_vip;
 mod ban_user;
 mod clear_chat;
+mod create_marker;
 mod delete_message;
 mod identity;
 mod remove_moderator;
@@ -13,6 +14,9 @@ mod set_mode;
 mod shield_mode;
 mod timeout_user;
 mod unban_user;
+mod update_category;
+mod update_tags;
+mod update_title;
 mod warn_user;
 
 use std::sync::Arc;
@@ -24,6 +28,7 @@ pub use add_moderator::AddModeratorRunner;
 pub use add_vip::AddVipRunner;
 pub use ban_user::BanUserRunner;
 pub use clear_chat::ClearChatRunner;
+pub use create_marker::CreateMarkerRunner;
 pub use delete_message::DeleteMessageRunner;
 pub use identity::SelfIdentity;
 pub use remove_moderator::RemoveModeratorRunner;
@@ -35,6 +40,9 @@ pub use set_mode::SetModeRunner;
 pub use shield_mode::{ShieldModeOffRunner, ShieldModeOnRunner};
 pub use timeout_user::TimeoutUserRunner;
 pub use unban_user::UnbanUserRunner;
+pub use update_category::UpdateCategoryRunner;
+pub use update_tags::UpdateTagsRunner;
+pub use update_title::UpdateTitleRunner;
 pub use warn_user::WarnUserRunner;
 
 use crate::helix::HelixTransport;
@@ -105,7 +113,23 @@ pub fn register_twitch_sub_actions(
         Arc::clone(&transport),
         Arc::clone(&identity),
     )))?;
-    reg.register(Box::new(SendWhisperRunner::new(transport, identity)))?;
+    reg.register(Box::new(SendWhisperRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(UpdateTitleRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(UpdateCategoryRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(UpdateTagsRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(CreateMarkerRunner::new(transport, identity)))?;
     Ok(())
 }
 

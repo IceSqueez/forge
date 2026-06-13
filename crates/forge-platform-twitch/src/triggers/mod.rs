@@ -154,6 +154,10 @@ mod tests {
             "twitch.channel.moderator_removed",
             "twitch.channel.shield_mode_started",
             "twitch.channel.shield_mode_ended",
+            "twitch.channel.shoutout_sent",
+            "twitch.channel.shoutout_received",
+            "twitch.channel.suspicious_user_message",
+            "twitch.channel.warning_acknowledged",
         ];
 
         for id in ids {

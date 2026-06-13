@@ -96,3 +96,45 @@ impl TriggerKindDescriptor for ShoutoutSentDescriptor {
             .set("started_at".to_owned(), Variant::String(started_at))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn shoutout_sent_event() -> Event {
+        let payload = serde_json::json!({
+            "to_broadcaster": { "id": "555", "login": "other_chan", "display_name": "OtherChan" },
+            "viewer_count": 42,
+            "started_at": "2026-06-13T18:00:00Z",
+        });
+        Event::new(EventSource::Twitch, "channel.shoutout.create", payload)
+    }
+
+    #[test]
+    fn event_filter_targets_shoutout_create_topic_from_twitch() {
+        let filter = ShoutoutSentDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.shoutout.create")
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_maps_target_fields_and_types_viewer_count_as_int() {
+        let stack = ShoutoutSentDescriptor.build_arg_stack(&shoutout_sent_event());
+        assert_eq!(
+            stack.get("to_broadcaster_login"),
+            Some(&Variant::String("other_chan".to_owned()))
+        );
+        assert_eq!(
+            stack.get("to_broadcaster_id"),
+            Some(&Variant::String("555".to_owned()))
+        );
+        assert_eq!(stack.get("viewer_count"), Some(&Variant::Int(42)));
+        assert_eq!(
+            stack.get("started_at"),
+            Some(&Variant::String("2026-06-13T18:00:00Z".to_owned()))
+        );
+    }
+}

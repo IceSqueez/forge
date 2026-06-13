@@ -94,3 +94,52 @@ impl TriggerKindDescriptor for SuspiciousUserMessageDescriptor {
             .set("message_text".to_owned(), Variant::String(message_text))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn suspicious_user_event() -> Event {
+        let payload = serde_json::json!({
+            "user": { "id": "321", "login": "shady_one", "display_name": "ShadyOne" },
+            "low_trust_status": "active_monitoring",
+            "message_text": "is this a scam link",
+        });
+        Event::new(
+            EventSource::Twitch,
+            "channel.suspicious_user.message",
+            payload,
+        )
+    }
+
+    #[test]
+    fn event_filter_targets_suspicious_user_message_topic_from_twitch() {
+        let filter = SuspiciousUserMessageDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.suspicious_user.message")
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_maps_user_low_trust_and_message_fields() {
+        let stack = SuspiciousUserMessageDescriptor.build_arg_stack(&suspicious_user_event());
+        assert_eq!(
+            stack.get("user_login"),
+            Some(&Variant::String("shady_one".to_owned()))
+        );
+        assert_eq!(
+            stack.get("user_id"),
+            Some(&Variant::String("321".to_owned()))
+        );
+        assert_eq!(
+            stack.get("low_trust_status"),
+            Some(&Variant::String("active_monitoring".to_owned()))
+        );
+        assert_eq!(
+            stack.get("message_text"),
+            Some(&Variant::String("is this a scam link".to_owned()))
+        );
+    }
+}

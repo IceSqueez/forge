@@ -2735,4 +2735,146 @@ mod tests {
             Some("2026-06-13T19:00:00Z")
         );
     }
+
+    #[tokio::test]
+    async fn shoutout_create_event_nests_target_broadcaster_and_lifts_viewer_count() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "to_broadcaster_user_id": "555",
+            "to_broadcaster_user_login": "other_chan",
+            "to_broadcaster_user_name": "OtherChan",
+            "viewer_count": 42,
+            "started_at": "2026-06-13T18:00:00Z"
+        });
+        session.publish_shoutout_create_event(&event_data, "meta-shoutout-create-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.shoutout.create");
+        assert_eq!(ev.source, EventSource::Twitch);
+        assert_eq!(ev.payload["to_broadcaster"]["id"].as_str(), Some("555"));
+        assert_eq!(
+            ev.payload["to_broadcaster"]["login"].as_str(),
+            Some("other_chan")
+        );
+        assert_eq!(
+            ev.payload["to_broadcaster"]["display_name"].as_str(),
+            Some("OtherChan")
+        );
+        assert_eq!(ev.payload["viewer_count"].as_i64(), Some(42));
+        assert_eq!(
+            ev.payload["started_at"].as_str(),
+            Some("2026-06-13T18:00:00Z")
+        );
+    }
+
+    #[tokio::test]
+    async fn shoutout_receive_event_nests_source_broadcaster_and_lifts_viewer_count() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "from_broadcaster_user_id": "999",
+            "from_broadcaster_user_login": "raider_chan",
+            "from_broadcaster_user_name": "RaiderChan",
+            "viewer_count": 7,
+            "started_at": "2026-06-13T19:30:00Z"
+        });
+        session.publish_shoutout_receive_event(&event_data, "meta-shoutout-receive-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.shoutout.receive");
+        assert_eq!(ev.payload["from_broadcaster"]["id"].as_str(), Some("999"));
+        assert_eq!(
+            ev.payload["from_broadcaster"]["login"].as_str(),
+            Some("raider_chan")
+        );
+        assert_eq!(
+            ev.payload["from_broadcaster"]["display_name"].as_str(),
+            Some("RaiderChan")
+        );
+        assert_eq!(ev.payload["viewer_count"].as_i64(), Some(7));
+        assert_eq!(
+            ev.payload["started_at"].as_str(),
+            Some("2026-06-13T19:30:00Z")
+        );
+    }
+
+    #[tokio::test]
+    async fn suspicious_user_event_flattens_nested_message_text_to_root_message_text() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        // Helix delivers the message under a nested {"message": {"text": ...}}
+        // object; forge flattens it to a root-level "message_text" field.
+        let event_data = serde_json::json!({
+            "user_id": "321",
+            "user_login": "shady_one",
+            "user_name": "ShadyOne",
+            "low_trust_status": "active_monitoring",
+            "message": { "text": "is this a scam link" }
+        });
+        session.publish_suspicious_user_event(&event_data, "meta-suspicious-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.suspicious_user.message");
+        assert_eq!(ev.payload["user"]["id"].as_str(), Some("321"));
+        assert_eq!(ev.payload["user"]["login"].as_str(), Some("shady_one"));
+        assert_eq!(
+            ev.payload["user"]["display_name"].as_str(),
+            Some("ShadyOne")
+        );
+        assert_eq!(
+            ev.payload["low_trust_status"].as_str(),
+            Some("active_monitoring")
+        );
+        assert_eq!(
+            ev.payload["message_text"].as_str(),
+            Some("is this a scam link")
+        );
+    }
+
+    #[tokio::test]
+    async fn warning_acknowledge_event_nests_user_under_user_key() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "user_id": "654",
+            "user_login": "warned_user",
+            "user_name": "WarnedUser"
+        });
+        session.publish_warning_acknowledge_event(&event_data, "meta-warning-ack-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.warning.acknowledge");
+        assert_eq!(ev.source, EventSource::Twitch);
+        assert_eq!(ev.payload["user"]["id"].as_str(), Some("654"));
+        assert_eq!(ev.payload["user"]["login"].as_str(), Some("warned_user"));
+        assert_eq!(
+            ev.payload["user"]["display_name"].as_str(),
+            Some("WarnedUser")
+        );
+    }
 }

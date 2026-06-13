@@ -83,3 +83,42 @@ impl TriggerKindDescriptor for WarningAcknowledgedDescriptor {
             .set("user_name".to_owned(), Variant::String(user_name))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn warning_acknowledged_event() -> Event {
+        let payload = serde_json::json!({
+            "user": { "id": "654", "login": "warned_user", "display_name": "WarnedUser" },
+        });
+        Event::new(EventSource::Twitch, "channel.warning.acknowledge", payload)
+    }
+
+    #[test]
+    fn event_filter_targets_warning_acknowledge_topic_from_twitch() {
+        let filter = WarningAcknowledgedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.warning.acknowledge")
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_maps_user_fields_from_nested_payload() {
+        let stack = WarningAcknowledgedDescriptor.build_arg_stack(&warning_acknowledged_event());
+        assert_eq!(
+            stack.get("user_login"),
+            Some(&Variant::String("warned_user".to_owned()))
+        );
+        assert_eq!(
+            stack.get("user_id"),
+            Some(&Variant::String("654".to_owned()))
+        );
+        assert_eq!(
+            stack.get("user_name"),
+            Some(&Variant::String("WarnedUser".to_owned()))
+        );
+    }
+}

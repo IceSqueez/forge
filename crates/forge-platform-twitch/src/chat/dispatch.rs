@@ -132,6 +132,10 @@ mod tests {
             "channel.moderator.remove",
             "channel.shield_mode.begin",
             "channel.shield_mode.end",
+            "channel.shoutout.create",
+            "channel.shoutout.receive",
+            "channel.suspicious_user.message",
+            "channel.warning.acknowledge",
         ] {
             assert!(route_for(topic).is_some(), "missing route for {topic}");
         }

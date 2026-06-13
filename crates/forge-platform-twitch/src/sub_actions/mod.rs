@@ -4,6 +4,7 @@ mod ban_user;
 mod cancel_raid;
 mod clear_chat;
 mod create_marker;
+mod create_reward;
 mod delete_message;
 mod identity;
 mod remove_moderator;
@@ -35,6 +36,7 @@ pub use ban_user::BanUserRunner;
 pub use cancel_raid::CancelRaidRunner;
 pub use clear_chat::ClearChatRunner;
 pub use create_marker::CreateMarkerRunner;
+pub use create_reward::CreateRewardRunner;
 pub use delete_message::DeleteMessageRunner;
 pub use identity::SelfIdentity;
 pub use remove_moderator::RemoveModeratorRunner;
@@ -159,7 +161,11 @@ pub fn register_twitch_sub_actions(
         Arc::clone(&transport),
         Arc::clone(&identity),
     )))?;
-    reg.register(Box::new(SnoozeAdRunner::new(transport, identity)))?;
+    reg.register(Box::new(SnoozeAdRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(CreateRewardRunner::new(transport, identity)))?;
     Ok(())
 }
 

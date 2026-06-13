@@ -603,6 +603,99 @@ impl ChatSession {
         ));
     }
 
+    pub(super) fn publish_reward_redemption_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let redemption_id = event_data
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let redemption_status = event_data
+            .get("status")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_input = event_data
+            .get("user_input")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let redeemed_at = event_data
+            .get("redeemed_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_id = event_data
+            .get("user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_login = event_data
+            .get("user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_name = event_data
+            .get("user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let reward_id = event_data
+            .get("reward")
+            .and_then(|r| r.get("id"))
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let reward_title = event_data
+            .get("reward")
+            .and_then(|r| r.get("title"))
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let reward_cost = event_data
+            .get("reward")
+            .and_then(|r| r.get("cost"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let reward_prompt = event_data
+            .get("reward")
+            .and_then(|r| r.get("prompt"))
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(user_login = %user_login, reward_title = %reward_title, "channel point reward redemption received");
+
+        let forge_payload = serde_json::json!({
+            "redemption": {
+                "id": redemption_id,
+                "status": redemption_status,
+                "user_input": user_input,
+                "redeemed_at": redeemed_at,
+            },
+            "user": {
+                "id": user_id,
+                "login": user_login,
+                "display_name": user_name,
+            },
+            "reward": {
+                "id": reward_id,
+                "title": reward_title,
+                "cost": reward_cost,
+                "prompt": reward_prompt,
+            },
+        });
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.channel_points_redemption",
+            forge_payload,
+        ));
+    }
+
     pub(super) fn publish_follow_event(&self, event_data: &serde_json::Value, _frame_msg_id: &str) {
         let user_login = event_data
             .get("user_login")

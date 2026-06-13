@@ -27,6 +27,10 @@ const NOTIFICATION_ROUTES: &[(&str, NotificationRoute)] = &[
     ("channel.follow", ChatSession::publish_follow_event),
     ("stream.online", ChatSession::publish_stream_online_event),
     ("stream.offline", ChatSession::publish_stream_offline_event),
+    (
+        "channel.channel_points_custom_reward_redemption.add",
+        ChatSession::publish_reward_redemption_event,
+    ),
 ];
 
 #[cfg(test)]

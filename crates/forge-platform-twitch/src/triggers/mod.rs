@@ -1,4 +1,5 @@
 mod channel_follow;
+mod channel_points_redemption;
 mod channel_raid_received;
 mod chat_arg_stack;
 mod chat_cheer_message;
@@ -15,6 +16,7 @@ mod support_subscriber;
 use forge_registry::{RegistryError, TriggerRegistry};
 
 use channel_follow::ChannelFollowDescriptor;
+use channel_points_redemption::ChannelPointsRedemptionDescriptor;
 use channel_raid_received::ChannelRaidReceivedDescriptor;
 use chat_cheer_message::ChatCheerMessageDescriptor;
 use chat_command::ChatCommandDescriptor;
@@ -38,6 +40,7 @@ pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), Registr
     reg.register(Box::new(SupportCheerDescriptor))?;
     reg.register(Box::new(ChannelRaidReceivedDescriptor))?;
     reg.register(Box::new(ChannelFollowDescriptor))?;
+    reg.register(Box::new(ChannelPointsRedemptionDescriptor))?;
     reg.register(Box::new(StreamOnlineDescriptor))?;
     reg.register(Box::new(StreamOfflineDescriptor))?;
     Ok(())

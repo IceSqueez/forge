@@ -603,6 +603,116 @@ impl ChatSession {
         ));
     }
 
+    pub(super) fn publish_follow_event(&self, event_data: &serde_json::Value, _frame_msg_id: &str) {
+        let user_login = event_data
+            .get("user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_id = event_data
+            .get("user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_name = event_data
+            .get("user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let followed_at = event_data
+            .get("followed_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(user_login = %user_login, "follow event received");
+
+        let forge_payload = serde_json::json!({
+            "followed_at": followed_at,
+            "user": { "id": user_id, "login": user_login, "display_name": user_name },
+        });
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.follow",
+            forge_payload,
+        ));
+    }
+
+    pub(super) fn publish_stream_online_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let stream_id = event_data
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let stream_type = event_data
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let started_at = event_data
+            .get("started_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let broadcaster_login = event_data
+            .get("broadcaster_user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let broadcaster_id = event_data
+            .get("broadcaster_user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(broadcaster_login = %broadcaster_login, "stream online event received");
+
+        let forge_payload = serde_json::json!({
+            "stream": { "id": stream_id, "type": stream_type, "started_at": started_at },
+            "broadcaster": { "id": broadcaster_id, "login": broadcaster_login },
+        });
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "stream.online",
+            forge_payload,
+        ));
+    }
+
+    pub(super) fn publish_stream_offline_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let broadcaster_login = event_data
+            .get("broadcaster_user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let broadcaster_id = event_data
+            .get("broadcaster_user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(broadcaster_login = %broadcaster_login, "stream offline event received");
+
+        let forge_payload = serde_json::json!({
+            "broadcaster": { "id": broadcaster_id, "login": broadcaster_login },
+        });
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "stream.offline",
+            forge_payload,
+        ));
+    }
+
     fn set_state(&self, state: ChatConnectionState) {
         let _ = self.state_tx.send(state);
     }
@@ -1127,5 +1237,97 @@ mod tests {
             ),
             "expected Raid {{ viewer_count: 500 }}"
         );
+    }
+
+    #[tokio::test]
+    async fn follow_event_publishes_nested_user_and_followed_at() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "user_id": "42",
+            "user_login": "new_follower",
+            "user_name": "NewFollower",
+            "followed_at": "2026-06-13T10:00:00Z"
+        });
+        session.publish_follow_event(&event_data, "meta-follow-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.follow");
+        assert_eq!(ev.source, EventSource::Twitch);
+        assert_eq!(ev.payload["user"]["login"].as_str(), Some("new_follower"));
+        assert_eq!(ev.payload["user"]["id"].as_str(), Some("42"));
+        assert_eq!(
+            ev.payload["user"]["display_name"].as_str(),
+            Some("NewFollower")
+        );
+        assert_eq!(
+            ev.payload["followed_at"].as_str(),
+            Some("2026-06-13T10:00:00Z")
+        );
+    }
+
+    #[tokio::test]
+    async fn stream_online_event_publishes_nested_stream_and_broadcaster() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "id": "stream-1",
+            "type": "live",
+            "started_at": "2026-06-13T09:00:00Z",
+            "broadcaster_user_id": "100",
+            "broadcaster_user_login": "host_chan"
+        });
+        session.publish_stream_online_event(&event_data, "meta-online-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "stream.online");
+        assert_eq!(ev.payload["stream"]["id"].as_str(), Some("stream-1"));
+        assert_eq!(ev.payload["stream"]["type"].as_str(), Some("live"));
+        assert_eq!(
+            ev.payload["stream"]["started_at"].as_str(),
+            Some("2026-06-13T09:00:00Z")
+        );
+        assert_eq!(
+            ev.payload["broadcaster"]["login"].as_str(),
+            Some("host_chan")
+        );
+        assert_eq!(ev.payload["broadcaster"]["id"].as_str(), Some("100"));
+    }
+
+    #[tokio::test]
+    async fn stream_offline_event_publishes_nested_broadcaster() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "broadcaster_user_id": "100",
+            "broadcaster_user_login": "host_chan"
+        });
+        session.publish_stream_offline_event(&event_data, "meta-offline-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "stream.offline");
+        assert_eq!(
+            ev.payload["broadcaster"]["login"].as_str(),
+            Some("host_chan")
+        );
+        assert_eq!(ev.payload["broadcaster"]["id"].as_str(), Some("100"));
     }
 }

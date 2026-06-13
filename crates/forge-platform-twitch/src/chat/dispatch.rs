@@ -24,6 +24,9 @@ const NOTIFICATION_ROUTES: &[(&str, NotificationRoute)] = &[
     ),
     ("channel.cheer", ChatSession::publish_cheer_event),
     ("channel.raid", ChatSession::publish_raid_event),
+    ("channel.follow", ChatSession::publish_follow_event),
+    ("stream.online", ChatSession::publish_stream_online_event),
+    ("stream.offline", ChatSession::publish_stream_offline_event),
 ];
 
 #[cfg(test)]
@@ -39,10 +42,17 @@ mod tests {
             "channel.subscription.gift",
             "channel.cheer",
             "channel.raid",
+            "channel.follow",
+            "stream.online",
+            "stream.offline",
         ] {
             assert!(route_for(topic).is_some(), "missing route for {topic}");
         }
-        assert!(route_for("channel.follow").is_none());
-        assert!(route_for("").is_none());
+        for unknown in ["channel.ban", "stream", ""] {
+            assert!(
+                route_for(unknown).is_none(),
+                "unexpected route for {unknown}"
+            );
+        }
     }
 }

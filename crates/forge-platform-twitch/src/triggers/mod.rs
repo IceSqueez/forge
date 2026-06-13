@@ -1,9 +1,12 @@
+mod channel_follow;
 mod channel_raid_received;
 mod chat_arg_stack;
 mod chat_cheer_message;
 mod chat_command;
 mod chat_message;
 mod shared_chat_message;
+mod stream_offline;
+mod stream_online;
 mod support_cheer;
 mod support_gift_sub;
 mod support_resubscriber;
@@ -11,11 +14,14 @@ mod support_subscriber;
 
 use forge_registry::{RegistryError, TriggerRegistry};
 
+use channel_follow::ChannelFollowDescriptor;
 use channel_raid_received::ChannelRaidReceivedDescriptor;
 use chat_cheer_message::ChatCheerMessageDescriptor;
 use chat_command::ChatCommandDescriptor;
 use chat_message::ChatMessageDescriptor;
 use shared_chat_message::SharedChatMessageDescriptor;
+use stream_offline::StreamOfflineDescriptor;
+use stream_online::StreamOnlineDescriptor;
 use support_cheer::SupportCheerDescriptor;
 use support_gift_sub::SupportGiftSubDescriptor;
 use support_resubscriber::SupportResubscriberDescriptor;
@@ -31,6 +37,9 @@ pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), Registr
     reg.register(Box::new(SupportGiftSubDescriptor))?;
     reg.register(Box::new(SupportCheerDescriptor))?;
     reg.register(Box::new(ChannelRaidReceivedDescriptor))?;
+    reg.register(Box::new(ChannelFollowDescriptor))?;
+    reg.register(Box::new(StreamOnlineDescriptor))?;
+    reg.register(Box::new(StreamOfflineDescriptor))?;
     Ok(())
 }
 
@@ -62,6 +71,9 @@ mod tests {
             "twitch.support.gift_sub",
             "twitch.support.cheer",
             "twitch.channel.raid_received",
+            "twitch.channel.follow",
+            "twitch.stream.online",
+            "twitch.stream.offline",
         ];
 
         for id in ids {

@@ -10,6 +10,7 @@ mod delete_message;
 mod delete_reward;
 mod disable_reward;
 mod enable_reward;
+mod end_poll;
 mod fulfill_redemption;
 mod identity;
 mod pause_reward;
@@ -24,6 +25,7 @@ mod send_whisper;
 mod set_mode;
 mod shield_mode;
 mod snooze_ad;
+mod start_poll;
 mod start_raid;
 mod timeout_user;
 mod unban_user;
@@ -50,6 +52,7 @@ pub use delete_message::DeleteMessageRunner;
 pub use delete_reward::DeleteRewardRunner;
 pub use disable_reward::DisableRewardRunner;
 pub use enable_reward::EnableRewardRunner;
+pub use end_poll::EndPollRunner;
 pub use fulfill_redemption::FulfillRedemptionRunner;
 pub use identity::SelfIdentity;
 pub use pause_reward::PauseRewardRunner;
@@ -64,6 +67,7 @@ pub use send_whisper::SendWhisperRunner;
 pub use set_mode::SetModeRunner;
 pub use shield_mode::{ShieldModeOffRunner, ShieldModeOnRunner};
 pub use snooze_ad::SnoozeAdRunner;
+pub use start_poll::StartPollRunner;
 pub use start_raid::StartRaidRunner;
 pub use timeout_user::TimeoutUserRunner;
 pub use unban_user::UnbanUserRunner;
@@ -213,7 +217,15 @@ pub fn register_twitch_sub_actions(
         Arc::clone(&transport),
         Arc::clone(&identity),
     )))?;
-    reg.register(Box::new(CancelRedemptionRunner::new(transport, identity)))?;
+    reg.register(Box::new(CancelRedemptionRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(StartPollRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(EndPollRunner::new(transport, identity)))?;
     Ok(())
 }
 

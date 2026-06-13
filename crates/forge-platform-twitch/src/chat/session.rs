@@ -4173,4 +4173,88 @@ mod tests {
             Some(10)
         );
     }
+
+    #[tokio::test]
+    async fn publish_guest_star_session_begin_event_nests_session_under_session_key() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "session_id": "sess-99",
+            "started_at": "2026-06-13T20:00:00Z"
+        });
+        session.publish_guest_star_session_begin_event(&event_data, "meta-gs-begin");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.guest_star_session.begin");
+        assert_eq!(ev.source, EventSource::Twitch);
+        assert_eq!(ev.payload["session"]["id"].as_str(), Some("sess-99"));
+        assert_eq!(
+            ev.payload["session"]["started_at"].as_str(),
+            Some("2026-06-13T20:00:00Z")
+        );
+    }
+
+    #[tokio::test]
+    async fn publish_guest_star_session_end_event_carries_ended_at() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "session_id": "sess-99",
+            "started_at": "2026-06-13T20:00:00Z",
+            "ended_at": "2026-06-13T21:00:00Z"
+        });
+        session.publish_guest_star_session_end_event(&event_data, "meta-gs-end");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.guest_star_session.end");
+        assert_eq!(ev.payload["session"]["id"].as_str(), Some("sess-99"));
+        assert_eq!(
+            ev.payload["session"]["ended_at"].as_str(),
+            Some("2026-06-13T21:00:00Z")
+        );
+    }
+
+    #[tokio::test]
+    async fn publish_guest_star_settings_event_preserves_int_and_bool_field_types() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "slot_count": 6,
+            "group_layout": "SCREENSHARE_LAYOUT",
+            "is_moderator_send_live_enabled": true,
+            "is_browser_source_audio_enabled": false
+        });
+        session.publish_guest_star_settings_event(&event_data, "meta-gs-settings");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.guest_star_settings.update");
+        let settings = &ev.payload["settings"];
+        assert_eq!(settings["slot_count"].as_i64(), Some(6));
+        assert_eq!(
+            settings["group_layout"].as_str(),
+            Some("SCREENSHARE_LAYOUT")
+        );
+        assert_eq!(
+            settings["is_moderator_send_live_enabled"].as_bool(),
+            Some(true)
+        );
+    }
 }

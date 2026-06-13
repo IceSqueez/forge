@@ -81,3 +81,41 @@ impl TriggerKindDescriptor for GuestStarSessionEndedDescriptor {
             .set("guest_star.ended_at".to_owned(), Variant::String(ended_at))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn end_event() -> Event {
+        Event::new(
+            EventSource::Twitch,
+            "channel.guest_star_session.end",
+            serde_json::json!({
+                "session": { "id": "sess-42", "ended_at": "2026-06-13T21:00:00Z" },
+            }),
+        )
+    }
+
+    #[test]
+    fn event_filter_targets_session_end_kind_from_twitch() {
+        let filter = GuestStarSessionEndedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.guest_star_session.end")
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_exposes_session_id_chaining_var_and_ended_at() {
+        let stack = GuestStarSessionEndedDescriptor.build_arg_stack(&end_event());
+        assert_eq!(
+            stack.get("guest_star.session_id"),
+            Some(&Variant::String("sess-42".to_owned()))
+        );
+        assert_eq!(
+            stack.get("guest_star.ended_at"),
+            Some(&Variant::String("2026-06-13T21:00:00Z".to_owned()))
+        );
+    }
+}

@@ -216,6 +216,9 @@ mod tests {
             "channel.channel_points_custom_reward_redemption.update",
             "channel.automod.message.hold",
             "channel.chat_settings.update",
+            "channel.guest_star_session.begin",
+            "channel.guest_star_session.end",
+            "channel.guest_star_settings.update",
         ] {
             assert!(route_for(topic).is_some(), "missing route for {topic}");
         }

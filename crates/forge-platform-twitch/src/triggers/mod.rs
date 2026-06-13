@@ -231,6 +231,9 @@ mod tests {
             "twitch.channel_points.redemption_updated",
             "twitch.automod.message_held",
             "twitch.channel.chat_settings_updated",
+            "twitch.guest_star.session_began",
+            "twitch.guest_star.session_ended",
+            "twitch.guest_star.settings_updated",
         ];
 
         for id in ids {

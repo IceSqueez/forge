@@ -87,3 +87,48 @@ impl TriggerKindDescriptor for GuestStarSettingsUpdatedDescriptor {
             )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn settings_event() -> Event {
+        Event::new(
+            EventSource::Twitch,
+            "channel.guest_star_settings.update",
+            serde_json::json!({
+                "settings": {
+                    "slot_count": 5,
+                    "group_layout": "TILED_LAYOUT",
+                    "is_moderator_send_live_enabled": true,
+                },
+            }),
+        )
+    }
+
+    #[test]
+    fn event_filter_targets_settings_update_kind_from_twitch() {
+        let filter = GuestStarSettingsUpdatedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.guest_star_settings.update")
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_marshals_slot_count_as_int_and_moderator_flag_as_bool() {
+        // A copy-paste stringify regression would be a real bug: downstream scripts
+        // do arithmetic on %guest_star.slot_count% (Int) and branch on the Bool flag.
+        let stack = GuestStarSettingsUpdatedDescriptor.build_arg_stack(&settings_event());
+        assert_eq!(stack.get("guest_star.slot_count"), Some(&Variant::Int(5)));
+        assert_eq!(
+            stack.get("guest_star.group_layout"),
+            Some(&Variant::String("TILED_LAYOUT".to_owned()))
+        );
+        assert_eq!(
+            stack.get("guest_star.is_moderator_send_live_enabled"),
+            Some(&Variant::Bool(true))
+        );
+    }
+}

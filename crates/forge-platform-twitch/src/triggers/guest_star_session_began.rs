@@ -84,3 +84,55 @@ impl TriggerKindDescriptor for GuestStarSessionBeganDescriptor {
             )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn begin_event() -> Event {
+        Event::new(
+            EventSource::Twitch,
+            "channel.guest_star_session.begin",
+            serde_json::json!({
+                "session": { "id": "sess-42", "started_at": "2026-06-13T20:00:00Z" },
+            }),
+        )
+    }
+
+    #[test]
+    fn event_filter_targets_session_begin_kind_from_twitch() {
+        let filter = GuestStarSessionBeganDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.guest_star_session.begin")
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_exposes_session_id_chaining_var_and_started_at() {
+        let stack = GuestStarSessionBeganDescriptor.build_arg_stack(&begin_event());
+        assert_eq!(
+            stack.get("guest_star.session_id"),
+            Some(&Variant::String("sess-42".to_owned()))
+        );
+        assert_eq!(
+            stack.get("guest_star.started_at"),
+            Some(&Variant::String("2026-06-13T20:00:00Z".to_owned()))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_defaults_session_id_to_empty_when_session_object_absent() {
+        let event = Event::new(
+            EventSource::Twitch,
+            "channel.guest_star_session.begin",
+            serde_json::json!({}),
+        );
+        let stack = GuestStarSessionBeganDescriptor.build_arg_stack(&event);
+        assert_eq!(
+            stack.get("guest_star.session_id"),
+            Some(&Variant::String(String::new()))
+        );
+    }
+}

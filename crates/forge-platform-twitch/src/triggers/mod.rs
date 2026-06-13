@@ -182,6 +182,10 @@ mod tests {
             "twitch.poll.started",
             "twitch.poll.progress",
             "twitch.poll.ended",
+            "twitch.prediction.started",
+            "twitch.prediction.progress",
+            "twitch.prediction.locked",
+            "twitch.prediction.ended",
         ];
 
         for id in ids {

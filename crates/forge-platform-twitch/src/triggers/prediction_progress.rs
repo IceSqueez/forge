@@ -77,3 +77,41 @@ impl TriggerKindDescriptor for PredictionProgressDescriptor {
             .set("prediction.title".to_owned(), Variant::String(title))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn prediction_progress_event() -> Event {
+        let payload = serde_json::json!({
+            "prediction": {
+                "id": "pred-2",
+                "title": "Next round outcome",
+            },
+        });
+        Event::new(EventSource::Twitch, "channel.prediction.progress", payload)
+    }
+
+    #[test]
+    fn event_filter_targets_prediction_progress_topic_from_twitch() {
+        let filter = PredictionProgressDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.prediction.progress")
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_maps_prediction_id_and_title_only() {
+        let stack = PredictionProgressDescriptor.build_arg_stack(&prediction_progress_event());
+        assert_eq!(
+            stack.get("prediction.id"),
+            Some(&Variant::String("pred-2".to_owned()))
+        );
+        assert_eq!(
+            stack.get("prediction.title"),
+            Some(&Variant::String("Next round outcome".to_owned()))
+        );
+    }
+}

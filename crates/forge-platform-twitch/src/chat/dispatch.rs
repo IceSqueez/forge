@@ -161,6 +161,10 @@ mod tests {
             "channel.poll.begin",
             "channel.poll.progress",
             "channel.poll.end",
+            "channel.prediction.begin",
+            "channel.prediction.progress",
+            "channel.prediction.lock",
+            "channel.prediction.end",
         ] {
             assert!(route_for(topic).is_some(), "missing route for {topic}");
         }

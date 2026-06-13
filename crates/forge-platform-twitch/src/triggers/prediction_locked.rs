@@ -86,3 +86,46 @@ impl TriggerKindDescriptor for PredictionLockedDescriptor {
             )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn prediction_lock_event() -> Event {
+        let payload = serde_json::json!({
+            "prediction": {
+                "id": "pred-3",
+                "title": "Final score?",
+                "locked_at": "2026-06-13T18:05:00Z",
+            },
+        });
+        Event::new(EventSource::Twitch, "channel.prediction.lock", payload)
+    }
+
+    #[test]
+    fn event_filter_targets_prediction_lock_topic_from_twitch() {
+        let filter = PredictionLockedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.prediction.lock")
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_maps_prediction_id_title_and_locked_at() {
+        let stack = PredictionLockedDescriptor.build_arg_stack(&prediction_lock_event());
+        assert_eq!(
+            stack.get("prediction.id"),
+            Some(&Variant::String("pred-3".to_owned()))
+        );
+        assert_eq!(
+            stack.get("prediction.title"),
+            Some(&Variant::String("Final score?".to_owned()))
+        );
+        assert_eq!(
+            stack.get("prediction.locked_at"),
+            Some(&Variant::String("2026-06-13T18:05:00Z".to_owned()))
+        );
+    }
+}

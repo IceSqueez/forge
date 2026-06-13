@@ -98,3 +98,48 @@ impl TriggerKindDescriptor for PredictionEndedDescriptor {
             .set("prediction.ended_at".to_owned(), Variant::String(ended_at))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn prediction_end_event() -> Event {
+        let payload = serde_json::json!({
+            "prediction": {
+                "id": "pred-4",
+                "title": "Who wins?",
+                "winning_outcome_id": "outcome-42",
+                "status": "resolved",
+                "ended_at": "2026-06-13T18:10:00Z",
+            },
+        });
+        Event::new(EventSource::Twitch, "channel.prediction.end", payload)
+    }
+
+    #[test]
+    fn event_filter_targets_prediction_end_topic_from_twitch() {
+        let filter = PredictionEndedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.prediction.end")
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_carries_winning_outcome_and_status_fields() {
+        let stack = PredictionEndedDescriptor.build_arg_stack(&prediction_end_event());
+        assert_eq!(
+            stack.get("prediction.winning_outcome_id"),
+            Some(&Variant::String("outcome-42".to_owned()))
+        );
+        assert_eq!(
+            stack.get("prediction.status"),
+            Some(&Variant::String("resolved".to_owned()))
+        );
+        assert_eq!(
+            stack.get("prediction.ended_at"),
+            Some(&Variant::String("2026-06-13T18:10:00Z".to_owned()))
+        );
+    }
+}

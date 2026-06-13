@@ -92,3 +92,51 @@ impl TriggerKindDescriptor for PredictionStartedDescriptor {
             .set("prediction.locks_at".to_owned(), Variant::String(locks_at))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn prediction_begin_event() -> Event {
+        let payload = serde_json::json!({
+            "prediction": {
+                "id": "pred-1",
+                "title": "Will we win?",
+                "started_at": "2026-06-13T18:00:00Z",
+                "locks_at": "2026-06-13T18:02:00Z",
+            },
+        });
+        Event::new(EventSource::Twitch, "channel.prediction.begin", payload)
+    }
+
+    #[test]
+    fn event_filter_targets_prediction_begin_topic_from_twitch() {
+        let filter = PredictionStartedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.prediction.begin")
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_maps_prediction_id_title_and_timing_fields() {
+        let stack = PredictionStartedDescriptor.build_arg_stack(&prediction_begin_event());
+        assert_eq!(
+            stack.get("prediction.id"),
+            Some(&Variant::String("pred-1".to_owned()))
+        );
+        assert_eq!(
+            stack.get("prediction.title"),
+            Some(&Variant::String("Will we win?".to_owned()))
+        );
+        assert_eq!(
+            stack.get("prediction.started_at"),
+            Some(&Variant::String("2026-06-13T18:00:00Z".to_owned()))
+        );
+        assert_eq!(
+            stack.get("prediction.locks_at"),
+            Some(&Variant::String("2026-06-13T18:02:00Z".to_owned()))
+        );
+    }
+}

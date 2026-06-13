@@ -3231,4 +3231,130 @@ mod tests {
             Some("2026-06-13T18:10:00Z")
         );
     }
+
+    #[tokio::test]
+    async fn prediction_begin_event_nests_prediction_with_title_and_timing() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "id": "pred-1",
+            "title": "Will we win?",
+            "started_at": "2026-06-13T18:00:00Z",
+            "locks_at": "2026-06-13T18:02:00Z"
+        });
+        session.publish_prediction_begin_event(&event_data, "meta-pred-begin-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.prediction.begin");
+        assert_eq!(ev.source, EventSource::Twitch);
+        assert_eq!(ev.payload["prediction"]["id"].as_str(), Some("pred-1"));
+        assert_eq!(
+            ev.payload["prediction"]["title"].as_str(),
+            Some("Will we win?")
+        );
+        assert_eq!(
+            ev.payload["prediction"]["started_at"].as_str(),
+            Some("2026-06-13T18:00:00Z")
+        );
+        assert_eq!(
+            ev.payload["prediction"]["locks_at"].as_str(),
+            Some("2026-06-13T18:02:00Z")
+        );
+    }
+
+    #[tokio::test]
+    async fn prediction_progress_event_nests_prediction_with_id_and_title_only() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "id": "pred-2",
+            "title": "Next round outcome"
+        });
+        session.publish_prediction_progress_event(&event_data, "meta-pred-progress-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.prediction.progress");
+        assert_eq!(ev.payload["prediction"]["id"].as_str(), Some("pred-2"));
+        assert_eq!(
+            ev.payload["prediction"]["title"].as_str(),
+            Some("Next round outcome")
+        );
+    }
+
+    #[tokio::test]
+    async fn prediction_lock_event_passes_locked_at_through_to_prediction_payload() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "id": "pred-3",
+            "title": "Final score?",
+            "locked_at": "2026-06-13T18:05:00Z"
+        });
+        session.publish_prediction_lock_event(&event_data, "meta-pred-lock-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.prediction.lock");
+        assert_eq!(ev.payload["prediction"]["id"].as_str(), Some("pred-3"));
+        assert_eq!(
+            ev.payload["prediction"]["title"].as_str(),
+            Some("Final score?")
+        );
+        assert_eq!(
+            ev.payload["prediction"]["locked_at"].as_str(),
+            Some("2026-06-13T18:05:00Z")
+        );
+    }
+
+    #[tokio::test]
+    async fn prediction_end_event_passes_winning_outcome_and_status_through() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "id": "pred-4",
+            "title": "Who wins?",
+            "winning_outcome_id": "outcome-42",
+            "status": "resolved",
+            "ended_at": "2026-06-13T18:10:00Z"
+        });
+        session.publish_prediction_end_event(&event_data, "meta-pred-end-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.prediction.end");
+        assert_eq!(
+            ev.payload["prediction"]["winning_outcome_id"].as_str(),
+            Some("outcome-42")
+        );
+        assert_eq!(
+            ev.payload["prediction"]["status"].as_str(),
+            Some("resolved")
+        );
+        assert_eq!(
+            ev.payload["prediction"]["ended_at"].as_str(),
+            Some("2026-06-13T18:10:00Z")
+        );
+    }
 }

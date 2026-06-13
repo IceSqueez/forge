@@ -2909,6 +2909,73 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn reward_add_event_publishes_nested_reward_payload_shape() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "id": "reward-7",
+            "title": "Hydrate",
+            "cost": 500,
+            "prompt": "Make the streamer drink water",
+            "is_enabled": true
+        });
+        session.publish_reward_add_event(&event_data, "meta-reward-add-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.channel_points_custom_reward.add");
+        assert_eq!(ev.source, EventSource::Twitch);
+        assert_eq!(ev.payload["reward"]["id"].as_str(), Some("reward-7"));
+        assert_eq!(ev.payload["reward"]["title"].as_str(), Some("Hydrate"));
+        assert_eq!(ev.payload["reward"]["cost"].as_i64(), Some(500));
+        assert_eq!(ev.payload["reward"]["is_enabled"].as_bool(), Some(true));
+    }
+
+    #[tokio::test]
+    async fn redemption_update_event_passes_through_status_into_redemption_payload() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "id": "redemption-42",
+            "status": "fulfilled",
+            "user_input": "play my song",
+            "redeemed_at": "2026-06-13T10:00:00Z",
+            "user_id": "777",
+            "user_login": "viewer_one",
+            "user_name": "ViewerOne",
+            "reward": {
+                "id": "r1",
+                "title": "Song Request",
+                "cost": 500
+            }
+        });
+        session.publish_redemption_update_event(&event_data, "meta-redemption-update-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.channel_points_redemption_update");
+        assert_eq!(ev.source, EventSource::Twitch);
+        // status is the field the descriptor's status_filter gates on, so it must
+        // survive the flat-event -> nested-redemption remap intact.
+        assert_eq!(
+            ev.payload["redemption"]["status"].as_str(),
+            Some("fulfilled")
+        );
+        assert_eq!(ev.payload["user"]["login"].as_str(), Some("viewer_one"));
+        assert_eq!(ev.payload["reward"]["id"].as_str(), Some("r1"));
+    }
+
+    #[tokio::test]
     async fn message_delete_event_publishes_nested_target_user_payload() {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let session = make_session(&bus);

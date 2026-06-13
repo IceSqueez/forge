@@ -93,3 +93,56 @@ impl TriggerKindDescriptor for RewardUpdatedDescriptor {
             .set("reward.is_enabled".to_owned(), Variant::Bool(is_enabled))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_events::Event;
+
+    use super::*;
+
+    fn reward_event() -> Event {
+        Event::new(
+            EventSource::Twitch,
+            "channel.channel_points_custom_reward.update",
+            serde_json::json!({
+                "reward": {
+                    "id": "reward-7",
+                    "title": "Hydrate",
+                    "cost": 750,
+                    "prompt": "Updated prompt",
+                    "is_enabled": false,
+                },
+            }),
+        )
+    }
+
+    #[test]
+    fn event_filter_targets_reward_update_kind_from_twitch() {
+        let filter = RewardUpdatedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.channel_points_custom_reward.update")
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_marshals_cost_as_int_and_is_enabled_as_bool() {
+        let stack = RewardUpdatedDescriptor.build_arg_stack(&reward_event());
+        assert_eq!(
+            stack.get("reward.id"),
+            Some(&Variant::String("reward-7".to_owned()))
+        );
+        assert_eq!(
+            stack.get("reward.title"),
+            Some(&Variant::String("Hydrate".to_owned()))
+        );
+        assert_eq!(stack.get("reward.cost"), Some(&Variant::Int(750)));
+        assert_eq!(
+            stack.get("reward.prompt"),
+            Some(&Variant::String("Updated prompt".to_owned()))
+        );
+        // disabled reward must surface is_enabled = false, not the empty-default true.
+        assert_eq!(stack.get("reward.is_enabled"), Some(&Variant::Bool(false)));
+    }
+}

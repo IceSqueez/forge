@@ -190,6 +190,10 @@ mod tests {
             "channel.goal.begin",
             "channel.goal.progress",
             "channel.goal.end",
+            "channel.channel_points_custom_reward.add",
+            "channel.channel_points_custom_reward.update",
+            "channel.channel_points_custom_reward.remove",
+            "channel.channel_points_custom_reward_redemption.update",
         ] {
             assert!(route_for(topic).is_some(), "missing route for {topic}");
         }

@@ -210,6 +210,10 @@ mod tests {
             "twitch.goal.started",
             "twitch.goal.progress",
             "twitch.goal.ended",
+            "twitch.channel_points.reward_added",
+            "twitch.channel_points.reward_updated",
+            "twitch.channel_points.reward_removed",
+            "twitch.channel_points.redemption_updated",
         ];
 
         for id in ids {

@@ -154,3 +154,117 @@ impl TriggerKindDescriptor for RedemptionUpdatedDescriptor {
             .set("reward.title".to_owned(), Variant::String(reward_title))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config_with_filter(filter: &str) -> TriggerConfig {
+        let mut cfg = TriggerConfig::new();
+        cfg.insert(
+            "status_filter".to_owned(),
+            Variant::String(filter.to_owned()),
+        );
+        cfg
+    }
+
+    fn fulfilled_event() -> Event {
+        Event::new(
+            EventSource::Twitch,
+            "channel.channel_points_redemption_update",
+            serde_json::json!({
+                "redemption": {
+                    "id": "redemption-42",
+                    "status": "fulfilled",
+                    "user_input": "play my song",
+                },
+                "user": {
+                    "id": "777",
+                    "login": "viewer_one",
+                    "display_name": "ViewerOne",
+                },
+                "reward": {
+                    "id": "r1",
+                    "title": "Song Request",
+                    "cost": 500,
+                },
+            }),
+        )
+    }
+
+    #[test]
+    fn event_filter_targets_redemption_update_kind_from_twitch() {
+        let filter = RedemptionUpdatedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.channel_points_redemption_update")
+        );
+    }
+
+    #[test]
+    fn matches_trigger_gates_fulfilled_event_by_status_filter() {
+        // Event status is "fulfilled". Each row exercises the status_filter gate:
+        // "any" fires unconditionally; a concrete filter fires only on an exact
+        // status match. The default config (no override) behaves like "any".
+        let event = fulfilled_event();
+        let cases = [
+            ("any fires", config_with_filter("any"), true),
+            (
+                "matching status fires",
+                config_with_filter("fulfilled"),
+                true,
+            ),
+            (
+                "non-matching status suppressed",
+                config_with_filter("canceled"),
+                false,
+            ),
+            (
+                "default config fires (any)",
+                RedemptionUpdatedDescriptor.default_config(),
+                true,
+            ),
+        ];
+        for (name, cfg, expected) in cases {
+            assert_eq!(
+                RedemptionUpdatedDescriptor.matches_trigger(&cfg, &event),
+                expected,
+                "case: {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn build_arg_stack_exposes_redemption_user_and_reward_vars() {
+        let stack = RedemptionUpdatedDescriptor.build_arg_stack(&fulfilled_event());
+        assert_eq!(
+            stack.get("redemption.id"),
+            Some(&Variant::String("redemption-42".to_owned()))
+        );
+        assert_eq!(
+            stack.get("redemption.status"),
+            Some(&Variant::String("fulfilled".to_owned()))
+        );
+        assert_eq!(
+            stack.get("user_login"),
+            Some(&Variant::String("viewer_one".to_owned()))
+        );
+        assert_eq!(
+            stack.get("user_id"),
+            Some(&Variant::String("777".to_owned()))
+        );
+        assert_eq!(
+            stack.get("user_input"),
+            Some(&Variant::String("play my song".to_owned()))
+        );
+        assert_eq!(
+            stack.get("reward.id"),
+            Some(&Variant::String("r1".to_owned()))
+        );
+        assert_eq!(
+            stack.get("reward.title"),
+            Some(&Variant::String("Song Request".to_owned()))
+        );
+    }
+}

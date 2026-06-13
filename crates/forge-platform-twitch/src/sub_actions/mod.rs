@@ -26,6 +26,7 @@ mod set_mode;
 mod shield_mode;
 mod snooze_ad;
 mod start_poll;
+mod start_prediction;
 mod start_raid;
 mod timeout_user;
 mod unban_user;
@@ -68,6 +69,7 @@ pub use set_mode::SetModeRunner;
 pub use shield_mode::{ShieldModeOffRunner, ShieldModeOnRunner};
 pub use snooze_ad::SnoozeAdRunner;
 pub use start_poll::StartPollRunner;
+pub use start_prediction::StartPredictionRunner;
 pub use start_raid::StartRaidRunner;
 pub use timeout_user::TimeoutUserRunner;
 pub use unban_user::UnbanUserRunner;
@@ -225,7 +227,11 @@ pub fn register_twitch_sub_actions(
         Arc::clone(&transport),
         Arc::clone(&identity),
     )))?;
-    reg.register(Box::new(EndPollRunner::new(transport, identity)))?;
+    reg.register(Box::new(EndPollRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(StartPredictionRunner::new(transport, identity)))?;
     Ok(())
 }
 

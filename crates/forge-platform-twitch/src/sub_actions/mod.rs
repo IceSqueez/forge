@@ -1,3 +1,4 @@
+mod add_blocked_term;
 mod add_moderator;
 mod add_vip;
 mod approve_automod_message;
@@ -19,6 +20,7 @@ mod get_current_goal;
 mod identity;
 mod lock_prediction;
 mod pause_reward;
+mod remove_blocked_term;
 mod remove_moderator;
 mod remove_vip;
 mod reply_chat;
@@ -48,6 +50,7 @@ use std::sync::Arc;
 use forge_registry::{RegistryError, SubActionRegistry};
 use forge_storage::CredentialsRepo;
 
+pub use add_blocked_term::AddBlockedTermRunner;
 pub use add_moderator::AddModeratorRunner;
 pub use add_vip::AddVipRunner;
 pub use approve_automod_message::ApproveAutomodMessageRunner;
@@ -69,6 +72,7 @@ pub use get_current_goal::GetCurrentGoalRunner;
 pub use identity::SelfIdentity;
 pub use lock_prediction::LockPredictionRunner;
 pub use pause_reward::PauseRewardRunner;
+pub use remove_blocked_term::RemoveBlockedTermRunner;
 pub use remove_moderator::RemoveModeratorRunner;
 pub use remove_vip::RemoveVipRunner;
 pub use reply_chat::ReplyChatRunner;
@@ -274,8 +278,14 @@ pub fn register_twitch_sub_actions(
         Arc::clone(&identity),
     )))?;
     reg.register(Box::new(UpdateAutomodSettingsRunner::new(
-        transport, identity,
+        Arc::clone(&transport),
+        Arc::clone(&identity),
     )))?;
+    reg.register(Box::new(AddBlockedTermRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(RemoveBlockedTermRunner::new(transport, identity)))?;
     Ok(())
 }
 

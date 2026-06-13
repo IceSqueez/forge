@@ -13,6 +13,7 @@ mod disable_reward;
 mod enable_reward;
 mod end_poll;
 mod fulfill_redemption;
+mod get_current_goal;
 mod identity;
 mod lock_prediction;
 mod pause_reward;
@@ -59,6 +60,7 @@ pub use disable_reward::DisableRewardRunner;
 pub use enable_reward::EnableRewardRunner;
 pub use end_poll::EndPollRunner;
 pub use fulfill_redemption::FulfillRedemptionRunner;
+pub use get_current_goal::GetCurrentGoalRunner;
 pub use identity::SelfIdentity;
 pub use lock_prediction::LockPredictionRunner;
 pub use pause_reward::PauseRewardRunner;
@@ -249,7 +251,11 @@ pub fn register_twitch_sub_actions(
         Arc::clone(&transport),
         Arc::clone(&identity),
     )))?;
-    reg.register(Box::new(ResolvePredictionRunner::new(transport, identity)))?;
+    reg.register(Box::new(ResolvePredictionRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(GetCurrentGoalRunner::new(transport, identity)))?;
     Ok(())
 }
 

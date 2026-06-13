@@ -96,3 +96,50 @@ impl TriggerKindDescriptor for HypeTrainEndedDescriptor {
             )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn end_event() -> Event {
+        let payload = serde_json::json!({
+            "hype": {
+                "id": "ht-9",
+                "level": 5,
+                "total": 9001,
+                "ended_at": "2026-06-13T18:10:00Z",
+                "cooldown_ends_at": "2026-06-13T19:10:00Z",
+            }
+        });
+        Event::new(EventSource::Twitch, "channel.hype_train.end", payload)
+    }
+
+    #[test]
+    fn event_filter_targets_hype_train_end_on_twitch() {
+        let filter = HypeTrainEndedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.hype_train.end")
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_maps_all_vars_with_int_level_and_total() {
+        let stack = HypeTrainEndedDescriptor.build_arg_stack(&end_event());
+        assert_eq!(
+            stack.get("hype.id"),
+            Some(&Variant::String("ht-9".to_owned()))
+        );
+        assert_eq!(stack.get("hype.level"), Some(&Variant::Int(5)));
+        assert_eq!(stack.get("hype.total"), Some(&Variant::Int(9001)));
+        assert_eq!(
+            stack.get("hype.ended_at"),
+            Some(&Variant::String("2026-06-13T18:10:00Z".to_owned()))
+        );
+        assert_eq!(
+            stack.get("hype.cooldown_ends_at"),
+            Some(&Variant::String("2026-06-13T19:10:00Z".to_owned()))
+        );
+    }
+}

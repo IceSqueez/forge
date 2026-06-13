@@ -103,3 +103,54 @@ impl TriggerKindDescriptor for HypeTrainStartedDescriptor {
             .set("hype.expires_at".to_owned(), Variant::String(expires_at))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn begin_event() -> Event {
+        let payload = serde_json::json!({
+            "hype": {
+                "id": "ht-1",
+                "level": 3,
+                "goal": 1000,
+                "progress": 450,
+                "total": 450,
+                "started_at": "2026-06-13T18:00:00Z",
+                "expires_at": "2026-06-13T18:05:00Z",
+            }
+        });
+        Event::new(EventSource::Twitch, "channel.hype_train.begin", payload)
+    }
+
+    #[test]
+    fn event_filter_targets_hype_train_begin_on_twitch() {
+        let filter = HypeTrainStartedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.hype_train.begin")
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_maps_all_vars_with_int_progress_fields() {
+        let stack = HypeTrainStartedDescriptor.build_arg_stack(&begin_event());
+        assert_eq!(
+            stack.get("hype.id"),
+            Some(&Variant::String("ht-1".to_owned()))
+        );
+        assert_eq!(stack.get("hype.level"), Some(&Variant::Int(3)));
+        assert_eq!(stack.get("hype.goal"), Some(&Variant::Int(1000)));
+        assert_eq!(stack.get("hype.progress"), Some(&Variant::Int(450)));
+        assert_eq!(stack.get("hype.total"), Some(&Variant::Int(450)));
+        assert_eq!(
+            stack.get("hype.started_at"),
+            Some(&Variant::String("2026-06-13T18:00:00Z".to_owned()))
+        );
+        assert_eq!(
+            stack.get("hype.expires_at"),
+            Some(&Variant::String("2026-06-13T18:05:00Z".to_owned()))
+        );
+    }
+}

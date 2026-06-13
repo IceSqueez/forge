@@ -126,3 +126,77 @@ impl TriggerKindDescriptor for HypeTrainProgressDescriptor {
             .set("hype.total".to_owned(), Variant::Int(total))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn progress_event(level: i64) -> Event {
+        let payload = serde_json::json!({
+            "hype": {
+                "id": "ht-3",
+                "level": level,
+                "goal": 1000,
+                "progress": 600,
+                "total": 600,
+            }
+        });
+        Event::new(EventSource::Twitch, "channel.hype_train.progress", payload)
+    }
+
+    fn config_with_min_level(min: i64) -> TriggerConfig {
+        let mut cfg = TriggerConfig::new();
+        cfg.insert("min_level".to_owned(), Variant::Int(min));
+        cfg
+    }
+
+    #[test]
+    fn event_filter_targets_hype_train_progress_on_twitch() {
+        let filter = HypeTrainProgressDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.hype_train.progress")
+        );
+    }
+
+    #[test]
+    fn matches_trigger_fires_only_when_level_at_or_above_min_level() {
+        // event level is fixed at 3; min_level filter is `level >= min_level`.
+        let cases = [
+            ("min below event level", config_with_min_level(1), true),
+            (
+                "min equals event level (boundary, >=)",
+                config_with_min_level(3),
+                true,
+            ),
+            ("min one above event level", config_with_min_level(4), false),
+        ];
+        for (name, cfg, expected) in cases {
+            assert_eq!(
+                HypeTrainProgressDescriptor.matches_trigger(&cfg, &progress_event(3)),
+                expected,
+                "case: {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn matches_trigger_uses_default_min_level_of_one_when_config_absent() {
+        let cfg = HypeTrainProgressDescriptor.default_config();
+        assert!(HypeTrainProgressDescriptor.matches_trigger(&cfg, &progress_event(3)));
+    }
+
+    #[test]
+    fn build_arg_stack_maps_all_vars_with_int_progress_fields() {
+        let stack = HypeTrainProgressDescriptor.build_arg_stack(&progress_event(3));
+        assert_eq!(
+            stack.get("hype.id"),
+            Some(&Variant::String("ht-3".to_owned()))
+        );
+        assert_eq!(stack.get("hype.level"), Some(&Variant::Int(3)));
+        assert_eq!(stack.get("hype.goal"), Some(&Variant::Int(1000)));
+        assert_eq!(stack.get("hype.progress"), Some(&Variant::Int(600)));
+        assert_eq!(stack.get("hype.total"), Some(&Variant::Int(600)));
+    }
+}

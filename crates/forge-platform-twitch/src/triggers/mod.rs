@@ -95,6 +95,9 @@ mod tests {
             "twitch.channel_points.redemption",
             "twitch.stream.online",
             "twitch.stream.offline",
+            "twitch.support.hype_train_started",
+            "twitch.support.hype_train_progress",
+            "twitch.support.hype_train_ended",
         ];
 
         for id in ids {

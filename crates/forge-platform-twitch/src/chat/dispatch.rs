@@ -69,6 +69,9 @@ mod tests {
             "channel.channel_points_custom_reward_redemption.add",
             "channel.chat.message_delete",
             "channel.chat.clear",
+            "channel.hype_train.begin",
+            "channel.hype_train.progress",
+            "channel.hype_train.end",
         ] {
             assert!(route_for(topic).is_some(), "missing route for {topic}");
         }

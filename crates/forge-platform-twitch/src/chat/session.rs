@@ -1749,4 +1749,98 @@ mod tests {
         );
         assert_eq!(ev.payload["broadcaster"]["id"].as_str(), Some("100"));
     }
+
+    #[tokio::test]
+    async fn hype_train_begin_event_nests_numeric_fields_under_hype() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "id": "ht-1",
+            "level": 2,
+            "total": 350,
+            "goal": 1000,
+            "progress": 350,
+            "started_at": "2026-06-13T18:00:00Z",
+            "expires_at": "2026-06-13T18:05:00Z"
+        });
+        session.publish_hype_train_begin_event(&event_data, "meta-begin-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.hype_train.begin");
+        assert_eq!(ev.payload["hype"]["id"].as_str(), Some("ht-1"));
+        assert_eq!(ev.payload["hype"]["level"].as_i64(), Some(2));
+        assert_eq!(ev.payload["hype"]["goal"].as_i64(), Some(1000));
+        assert_eq!(ev.payload["hype"]["progress"].as_i64(), Some(350));
+        assert_eq!(ev.payload["hype"]["total"].as_i64(), Some(350));
+        assert_eq!(
+            ev.payload["hype"]["expires_at"].as_str(),
+            Some("2026-06-13T18:05:00Z")
+        );
+    }
+
+    #[tokio::test]
+    async fn hype_train_progress_event_nests_numeric_fields_under_hype() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "id": "ht-2",
+            "level": 4,
+            "total": 800,
+            "goal": 1000,
+            "progress": 800
+        });
+        session.publish_hype_train_progress_event(&event_data, "meta-progress-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.hype_train.progress");
+        assert_eq!(ev.payload["hype"]["id"].as_str(), Some("ht-2"));
+        assert_eq!(ev.payload["hype"]["level"].as_i64(), Some(4));
+        assert_eq!(ev.payload["hype"]["progress"].as_i64(), Some(800));
+        assert_eq!(ev.payload["hype"]["total"].as_i64(), Some(800));
+    }
+
+    #[tokio::test]
+    async fn hype_train_end_event_carries_cooldown_under_hype() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "id": "ht-3",
+            "level": 5,
+            "total": 9001,
+            "ended_at": "2026-06-13T18:10:00Z",
+            "cooldown_ends_at": "2026-06-13T19:10:00Z"
+        });
+        session.publish_hype_train_end_event(&event_data, "meta-end-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.hype_train.end");
+        assert_eq!(ev.payload["hype"]["level"].as_i64(), Some(5));
+        assert_eq!(ev.payload["hype"]["total"].as_i64(), Some(9001));
+        assert_eq!(
+            ev.payload["hype"]["ended_at"].as_str(),
+            Some("2026-06-13T18:10:00Z")
+        );
+        assert_eq!(
+            ev.payload["hype"]["cooldown_ends_at"].as_str(),
+            Some("2026-06-13T19:10:00Z")
+        );
+    }
 }

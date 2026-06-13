@@ -164,3 +164,134 @@ async fn delete_blocked_term(
         Err(e) => SubActionOutcome::Failed(format!("{kind_id}: {e}")),
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::helix::HelixError;
+    use crate::sub_actions::test_support::{
+        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
+    };
+
+    fn runner_with(
+        response: Result<serde_json::Value, HelixError>,
+    ) -> (Arc<MockTransport>, RemoveBlockedTermRunner) {
+        let transport = Arc::new(MockTransport::returning(response));
+        let runner = RemoveBlockedTermRunner::new(
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+        );
+        (transport, runner)
+    }
+
+    fn cfg(term_id: &str) -> SubActionConfig {
+        BTreeMap::from([("term_id".to_owned(), Variant::String(term_id.to_owned()))])
+    }
+
+    // Default config chains %blocked_term.id% from add_blocked_term output, so the
+    // default path must resolve that global into the DELETE `id` query param.
+    #[tokio::test]
+    async fn execute_issues_bodyless_delete_with_self_and_resolved_id() {
+        let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
+        let stack = ArgStack::new().set(
+            "blocked_term.id".to_owned(),
+            Variant::String("bt99".to_owned()),
+        );
+
+        let (telemetry, out) = runner
+            .execute(&remove_blocked_term_default_config(), &make_ctx(&stack))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        assert!(
+            out.is_none(),
+            "remove_blocked_term never pushes an ArgStack"
+        );
+        let request = transport.request(0);
+        assert_eq!(request.method, HelixMethod::Delete);
+        assert_eq!(request.path, "/helix/moderation/blocked_terms");
+        assert!(
+            request
+                .query
+                .contains(&("broadcaster_id".to_owned(), SELF_USER_ID.to_owned())),
+            "missing broadcaster_id=self: {:?}",
+            request.query
+        );
+        assert!(
+            request
+                .query
+                .contains(&("moderator_id".to_owned(), SELF_USER_ID.to_owned())),
+            "missing moderator_id=self: {:?}",
+            request.query
+        );
+        assert!(
+            request
+                .query
+                .contains(&("id".to_owned(), "bt99".to_owned())),
+            "id must be the interpolated term_id: {:?}",
+            request.query
+        );
+        assert_eq!(request.body, None, "DELETE blocked_terms carries no body");
+    }
+
+    #[tokio::test]
+    async fn empty_interpolated_term_id_fails_without_helix_call() {
+        let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
+        // %blocked_term.id% resolves to an empty string → short-circuit before DELETE.
+        let stack =
+            ArgStack::new().set("blocked_term.id".to_owned(), Variant::String(String::new()));
+        let (telemetry, _) = runner
+            .execute(&remove_blocked_term_default_config(), &make_ctx(&stack))
+            .await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert_eq!(
+            transport.call_count(),
+            0,
+            "empty term_id must short-circuit before DELETE"
+        );
+    }
+
+    #[tokio::test]
+    async fn helix_failure_maps_to_failed_without_token() {
+        let (_transport, runner) = runner_with(Err(HelixError::Http {
+            status: 404,
+            body: "term not found".to_owned(),
+        }));
+        let stack = ArgStack::new().set(
+            "blocked_term.id".to_owned(),
+            Variant::String("bt99".to_owned()),
+        );
+
+        let (telemetry, _) = runner
+            .execute(&remove_blocked_term_default_config(), &make_ctx(&stack))
+            .await;
+
+        assert!(matches!(
+            telemetry.outcome,
+            SubActionOutcome::Failed(msg) if msg.contains("404") && !msg.contains(TOKEN_SENTINEL)
+        ));
+    }
+
+    #[test]
+    fn validate_config_requires_non_empty_term_id() {
+        let (_transport, runner) = runner_with(Ok(serde_json::Value::Null));
+        let cases: Vec<(&str, SubActionConfig, bool)> = vec![
+            (
+                "default %blocked_term.id%",
+                remove_blocked_term_default_config(),
+                true,
+            ),
+            ("empty string", cfg(""), false),
+            ("missing key", BTreeMap::new(), false),
+        ];
+        for (label, config, expect_ok) in cases {
+            assert_eq!(
+                runner.validate_config(&config).is_ok(),
+                expect_ok,
+                "case: {label}"
+            );
+        }
+    }
+}

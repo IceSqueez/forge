@@ -493,6 +493,8 @@ mod tests {
             "twitch.automod.approve_message",
             "twitch.automod.deny_message",
             "twitch.automod.update_settings",
+            "twitch.automod.add_blocked_term",
+            "twitch.automod.remove_blocked_term",
         ] {
             assert!(reg.get(id).is_some(), "missing sub-action: {id}");
         }

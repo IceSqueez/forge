@@ -459,6 +459,7 @@ mod tests {
             "twitch.prediction.lock",
             "twitch.prediction.cancel",
             "twitch.prediction.resolve",
+            "twitch.goal.get_current",
         ] {
             assert!(reg.get(id).is_some(), "missing sub-action: {id}");
         }

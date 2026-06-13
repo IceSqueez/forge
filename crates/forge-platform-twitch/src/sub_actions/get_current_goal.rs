@@ -194,3 +194,191 @@ impl SubActionRunner for GetCurrentGoalRunner {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::helix::HelixError;
+    use crate::sub_actions::test_support::{
+        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
+    };
+
+    fn goal_payload(current: i64, target: i64) -> serde_json::Value {
+        serde_json::json!({
+            "data": [{
+                "id": "goal-1",
+                "type": "follower",
+                "current_amount": current,
+                "target_amount": target,
+                "description": "ignored",
+            }]
+        })
+    }
+
+    fn runner_with(
+        response: Result<serde_json::Value, HelixError>,
+        creds: MockCreds,
+    ) -> (Arc<MockTransport>, GetCurrentGoalRunner) {
+        let transport = Arc::new(MockTransport::returning(response));
+        let runner = GetCurrentGoalRunner::new(
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            Arc::new(SelfIdentity::new(Arc::new(creds))),
+        );
+        (transport, runner)
+    }
+
+    #[tokio::test]
+    async fn execute_gets_goals_and_pushes_all_outputs() {
+        let (transport, runner) =
+            runner_with(Ok(goal_payload(80, 100)), MockCreds::with_identity());
+        let stack = ArgStack::new();
+
+        let (telemetry, output) = runner.execute(&BTreeMap::new(), &make_ctx(&stack)).await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let request = transport.request(0);
+        assert_eq!(request.method, HelixMethod::Get);
+        assert_eq!(request.path, "/helix/goals");
+        assert!(
+            request
+                .query
+                .contains(&("broadcaster_id".to_owned(), SELF_USER_ID.to_owned()))
+        );
+
+        let out = output.unwrap();
+        assert_eq!(out.get("goal.exists"), Some(&Variant::Bool(true)));
+        assert_eq!(
+            out.get("goal.id"),
+            Some(&Variant::String("goal-1".to_owned()))
+        );
+        assert_eq!(
+            out.get("goal.type"),
+            Some(&Variant::String("follower".to_owned()))
+        );
+        assert_eq!(out.get("goal.current_amount"), Some(&Variant::Int(80)));
+        assert_eq!(out.get("goal.target_amount"), Some(&Variant::Int(100)));
+        assert_eq!(out.get("goal.is_achieved"), Some(&Variant::Bool(false)));
+    }
+
+    #[tokio::test]
+    async fn is_achieved_is_current_greater_or_equal_target() {
+        for (label, current, target, expected) in [
+            ("below target", 80, 100, false),
+            ("exactly at target", 100, 100, true),
+            ("above target", 101, 100, true),
+        ] {
+            let (_transport, runner) = runner_with(
+                Ok(goal_payload(current, target)),
+                MockCreds::with_identity(),
+            );
+            let stack = ArgStack::new();
+
+            let (_telemetry, output) = runner.execute(&BTreeMap::new(), &make_ctx(&stack)).await;
+
+            assert_eq!(
+                output.unwrap().get("goal.is_achieved"),
+                Some(&Variant::Bool(expected)),
+                "case: {label}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn empty_data_sets_exists_false_and_omits_goal_fields() {
+        let (_transport, runner) = runner_with(
+            Ok(serde_json::json!({ "data": [] })),
+            MockCreds::with_identity(),
+        );
+        let stack = ArgStack::new();
+
+        let (telemetry, output) = runner.execute(&BTreeMap::new(), &make_ctx(&stack)).await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let out = output.unwrap();
+        assert_eq!(out.get("goal.exists"), Some(&Variant::Bool(false)));
+        for absent in [
+            "goal.id",
+            "goal.type",
+            "goal.current_amount",
+            "goal.target_amount",
+            "goal.is_achieved",
+        ] {
+            assert!(out.get(absent).is_none(), "{absent} must be absent");
+        }
+    }
+
+    #[tokio::test]
+    async fn missing_required_goal_field_maps_to_failed() {
+        // Each required field, individually omitted from an otherwise-valid goal.
+        let bases: [(&str, serde_json::Value); 4] = [
+            (
+                "id",
+                serde_json::json!({ "type": "follower", "current_amount": 1, "target_amount": 2 }),
+            ),
+            (
+                "type",
+                serde_json::json!({ "id": "g", "current_amount": 1, "target_amount": 2 }),
+            ),
+            (
+                "current_amount",
+                serde_json::json!({ "id": "g", "type": "follower", "target_amount": 2 }),
+            ),
+            (
+                "target_amount",
+                serde_json::json!({ "id": "g", "type": "follower", "current_amount": 1 }),
+            ),
+        ];
+        for (missing, goal) in bases {
+            let (_transport, runner) = runner_with(
+                Ok(serde_json::json!({ "data": [goal] })),
+                MockCreds::with_identity(),
+            );
+            let stack = ArgStack::new();
+
+            let (telemetry, output) = runner.execute(&BTreeMap::new(), &make_ctx(&stack)).await;
+
+            assert!(
+                matches!(telemetry.outcome, SubActionOutcome::Failed(_)),
+                "missing {missing} must fail"
+            );
+            assert!(output.is_none(), "missing {missing} must yield no outputs");
+        }
+    }
+
+    #[tokio::test]
+    async fn helix_failure_maps_to_failed_without_leaking_token() {
+        let (_transport, runner) = runner_with(
+            Err(HelixError::Http {
+                status: 401,
+                body: "unauthorized".to_owned(),
+            }),
+            MockCreds::with_identity(),
+        );
+        let stack = ArgStack::new();
+
+        let (telemetry, output) = runner.execute(&BTreeMap::new(), &make_ctx(&stack)).await;
+
+        assert!(output.is_none());
+        assert!(matches!(
+            telemetry.outcome,
+            SubActionOutcome::Failed(msg) if msg.contains("401") && !msg.contains(TOKEN_SENTINEL)
+        ));
+    }
+
+    #[tokio::test]
+    async fn missing_identity_maps_to_failed_without_calling_helix() {
+        let (transport, runner) = runner_with(Ok(goal_payload(80, 100)), MockCreds::empty());
+        let stack = ArgStack::new();
+
+        let (telemetry, output) = runner.execute(&BTreeMap::new(), &make_ctx(&stack)).await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert!(output.is_none());
+        assert_eq!(
+            transport.call_count(),
+            0,
+            "must not reach Helix without identity"
+        );
+    }
+}

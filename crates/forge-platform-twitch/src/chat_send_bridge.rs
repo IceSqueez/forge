@@ -1,4 +1,5 @@
 use forge_events::{Event, EventSource, EventsError};
+use forge_platform_core::RateLimiter;
 use forge_runtime::EventBus;
 use forge_storage::{CredentialId, CredentialsRepo};
 use std::sync::{
@@ -8,11 +9,15 @@ use std::sync::{
 use tokio::sync::OnceCell;
 
 use crate::credentials::CredentialsTokenSource;
-use crate::helix::{HelixHttpTransport, HelixTransport, NoopRateLimiter};
+use crate::helix::{HelixHttpTransport, HelixTransport};
 
 pub struct ChatSendBridge {
     bus: Arc<EventBus>,
     creds: Arc<dyn CredentialsRepo>,
+    /// Shared with the main Helix transport: Twitch's Helix budget is per
+    /// client-id and global, so chat-send and every other Helix call must draw
+    /// from the same bucket or we would double-count the budget.
+    rate_limiter: Arc<dyn RateLimiter>,
     transport: OnceCell<Arc<dyn HelixTransport>>,
 }
 
@@ -35,11 +40,16 @@ impl Clone for ChatSendBridgeHandle {
 }
 
 impl ChatSendBridge {
-    pub fn spawn(bus: Arc<EventBus>, creds: Arc<dyn CredentialsRepo>) -> ChatSendBridgeHandle {
+    pub fn spawn(
+        bus: Arc<EventBus>,
+        creds: Arc<dyn CredentialsRepo>,
+        rate_limiter: Arc<dyn RateLimiter>,
+    ) -> ChatSendBridgeHandle {
         let cancel = Arc::new(AtomicBool::new(false));
         let bridge = Self {
             bus: Arc::clone(&bus),
             creds,
+            rate_limiter,
             transport: OnceCell::new(),
         };
         tokio::spawn(bridge.run(Arc::clone(&cancel)));
@@ -131,7 +141,7 @@ impl ChatSendBridge {
                 let cid = crate::auth::client_id()
                     .ok_or_else(|| "no Twitch client_id configured".to_string())?;
                 let transport: Arc<dyn HelixTransport> = Arc::new(HelixHttpTransport::new(
-                    Arc::new(NoopRateLimiter),
+                    Arc::clone(&self.rate_limiter),
                     Arc::clone(&self.bus),
                     cid,
                     Arc::new(CredentialsTokenSource::new(Arc::clone(&self.creds))),
@@ -218,7 +228,14 @@ mod tests {
         );
 
         let mut test_sub = bus.subscribe();
-        ChatSendBridge::spawn(Arc::clone(&bus), backend as Arc<dyn CredentialsRepo>);
+        ChatSendBridge::spawn(
+            Arc::clone(&bus),
+            backend as Arc<dyn CredentialsRepo>,
+            Arc::new(forge_platform_core::TokenBucketRateLimiter::new(
+                800,
+                Duration::from_secs(60),
+            )),
+        );
         tokio::task::yield_now().await;
 
         bus.publish(make_request_event("twitch", "hello"));
@@ -257,7 +274,14 @@ mod tests {
         );
 
         let mut test_sub = bus.subscribe();
-        ChatSendBridge::spawn(Arc::clone(&bus), backend as Arc<dyn CredentialsRepo>);
+        ChatSendBridge::spawn(
+            Arc::clone(&bus),
+            backend as Arc<dyn CredentialsRepo>,
+            Arc::new(forge_platform_core::TokenBucketRateLimiter::new(
+                800,
+                Duration::from_secs(60),
+            )),
+        );
         tokio::task::yield_now().await;
 
         let request = make_request_event("twitch", "hi");
@@ -296,7 +320,14 @@ mod tests {
         );
 
         let mut test_sub = bus.subscribe();
-        ChatSendBridge::spawn(Arc::clone(&bus), backend as Arc<dyn CredentialsRepo>);
+        ChatSendBridge::spawn(
+            Arc::clone(&bus),
+            backend as Arc<dyn CredentialsRepo>,
+            Arc::new(forge_platform_core::TokenBucketRateLimiter::new(
+                800,
+                Duration::from_secs(60),
+            )),
+        );
         tokio::task::yield_now().await;
 
         bus.publish(make_request_event("youtube", "hi"));

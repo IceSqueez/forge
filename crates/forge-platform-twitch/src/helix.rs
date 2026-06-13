@@ -11,6 +11,14 @@ use thiserror::Error;
 const HELIX_BASE_URL: &str = "https://api.twitch.tv";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 const BODY_SNIPPET_MAX_CHARS: usize = 200;
+/// Upper bound on a single throttle sleep and on the cumulative wait across
+/// retries: we would rather surface `RateLimited` to the caller than block a
+/// request for minutes when the budget is deeply exhausted.
+const MAX_THROTTLE_WAIT: Duration = Duration::from_secs(10);
+/// Bound on acquire attempts so a misbehaving limiter cannot spin forever.
+const MAX_ACQUIRE_ATTEMPTS: u32 = 3;
+/// Used when a 429 omits `Retry-After`; a conservative default back-off.
+const DEFAULT_RETRY_AFTER_SECS: u64 = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HelixMethod {
@@ -141,13 +149,30 @@ impl HelixHttpTransport {
 #[async_trait]
 impl HelixTransport for HelixHttpTransport {
     async fn execute(&self, request: HelixRequest) -> Result<serde_json::Value, HelixError> {
-        let outcome = self
-            .rate_limiter
-            .acquire(1)
-            .await
-            .map_err(|_| HelixError::RateLimited)?;
-        if matches!(outcome, RateLimitOutcome::Exhausted) {
-            return Err(HelixError::RateLimited);
+        // Acquire one point, sleeping over short throttles. The cumulative wait
+        // is bounded by MAX_THROTTLE_WAIT so the caller never blocks for long;
+        // beyond that we report RateLimited and let the caller decide.
+        let mut waited = Duration::ZERO;
+        let mut attempts = 0;
+        loop {
+            let outcome = self
+                .rate_limiter
+                .acquire(1)
+                .await
+                .map_err(|_| HelixError::RateLimited)?;
+            match outcome {
+                RateLimitOutcome::Granted => break,
+                RateLimitOutcome::Throttled { wait_for } => {
+                    attempts += 1;
+                    if attempts >= MAX_ACQUIRE_ATTEMPTS || waited >= MAX_THROTTLE_WAIT {
+                        return Err(HelixError::RateLimited);
+                    }
+                    let sleep_for = wait_for.min(MAX_THROTTLE_WAIT);
+                    tokio::time::sleep(sleep_for).await;
+                    waited += sleep_for;
+                }
+                RateLimitOutcome::Exhausted => return Err(HelixError::RateLimited),
+            }
         }
 
         let token = self.tokens.access_token().await?;
@@ -187,6 +212,12 @@ impl HelixTransport for HelixHttpTransport {
                 return Err(HelixError::ReauthRequired);
             }
             if status == 429 {
+                // Feed the server's back-off into the shared bucket so every
+                // transport sharing this limiter stops hammering Helix.
+                let cooldown = retry_after.unwrap_or(DEFAULT_RETRY_AFTER_SECS);
+                self.rate_limiter
+                    .observe_remote_throttle(Duration::from_secs(cooldown))
+                    .await;
                 return Err(HelixError::RateLimited);
             }
             return Err(HelixError::Http {

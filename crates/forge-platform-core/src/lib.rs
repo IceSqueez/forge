@@ -18,4 +18,4 @@ pub use builtin::{
 pub use capabilities::PlatformCapabilities;
 pub use chat::{ChatPlatform, ConnectionState};
 pub use error::PlatformError;
-pub use rate_limit::{RateLimitOutcome, RateLimiter};
+pub use rate_limit::{RateLimitOutcome, RateLimiter, TokenBucketRateLimiter};

@@ -18,7 +18,7 @@ use forge_obs::{ObsSink, SwitchableObsSink, register_obs_sub_actions, register_o
 use forge_platform_core::paths;
 use forge_platform_twitch::{
     ChatSendBridge, ChatSendBridgeHandle, CredentialsTokenSource, HelixHttpTransport,
-    HelixTransport, NoopRateLimiter, register_twitch_sub_actions, register_twitch_triggers,
+    HelixTransport, register_twitch_sub_actions, register_twitch_triggers,
 };
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
@@ -443,12 +443,18 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
     ) {
         tracing::warn!("obs sub-action runner registration failed: {e}");
     }
+    // One bucket for the whole Twitch Helix budget (800 points / 60s, per
+    // client-id and global). Shared with the chat-send bridge below so the two
+    // transports draw from the same budget instead of each getting a full one.
+    let twitch_rate_limiter: Arc<dyn forge_platform_core::RateLimiter> = Arc::new(
+        forge_platform_core::TokenBucketRateLimiter::new(800, std::time::Duration::from_secs(60)),
+    );
     match forge_platform_twitch::client_id() {
         Some(cid) => {
             let twitch_creds: Arc<dyn forge_storage::CredentialsRepo> =
                 Arc::clone(&dp) as Arc<dyn forge_storage::CredentialsRepo>;
             let twitch_transport: Arc<dyn HelixTransport> = Arc::new(HelixHttpTransport::new(
-                Arc::new(NoopRateLimiter),
+                Arc::clone(&twitch_rate_limiter),
                 Arc::clone(&bus),
                 cid,
                 Arc::new(CredentialsTokenSource::new(Arc::clone(&twitch_creds))),
@@ -514,6 +520,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
     let chat_send_bridge = ChatSendBridge::spawn(
         Arc::clone(&bus),
         Arc::clone(&dp) as Arc<dyn CredentialsRepo>,
+        Arc::clone(&twitch_rate_limiter),
     );
 
     if let Some((yt_id, yt_secret)) = forge_platform_youtube::client_credentials() {

@@ -346,6 +346,8 @@ mod tests {
             "twitch.channel.send_shoutout",
             "twitch.channel.start_raid",
             "twitch.channel.cancel_raid",
+            "twitch.channel.run_ad",
+            "twitch.channel.snooze_ad",
         ] {
             assert!(reg.get(id).is_some(), "missing sub-action: {id}");
         }

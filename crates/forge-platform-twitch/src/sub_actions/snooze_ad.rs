@@ -100,3 +100,61 @@ impl SubActionRunner for SnoozeAdRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::helix::HelixError;
+    use crate::sub_actions::test_support::{
+        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
+    };
+    use forge_types::ArgStack;
+
+    fn runner_with(
+        response: Result<serde_json::Value, HelixError>,
+    ) -> (Arc<MockTransport>, SnoozeAdRunner) {
+        let transport = Arc::new(MockTransport::returning(response));
+        let runner = SnoozeAdRunner::new(
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+        );
+        (transport, runner)
+    }
+
+    #[tokio::test]
+    async fn execute_posts_self_broadcaster_in_query_with_no_body() {
+        let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
+        let stack = ArgStack::new();
+
+        let (telemetry, output) = runner.execute(&BTreeMap::new(), &make_ctx(&stack)).await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        assert!(output.is_none());
+        let request = transport.request(0);
+        assert_eq!(request.method, HelixMethod::Post);
+        assert_eq!(request.path, "/helix/channels/ads/schedule/snooze");
+        assert!(
+            request
+                .query
+                .contains(&("broadcaster_id".to_owned(), SELF_USER_ID.to_owned()))
+        );
+        assert!(request.body.is_none(), "snooze must send no JSON body");
+    }
+
+    #[tokio::test]
+    async fn helix_failure_maps_to_failed_outcome_without_token() {
+        let (_transport, runner) = runner_with(Err(HelixError::Http {
+            status: 429,
+            body: "no snoozes remaining".to_owned(),
+        }));
+        let stack = ArgStack::new();
+
+        let (telemetry, _) = runner.execute(&BTreeMap::new(), &make_ctx(&stack)).await;
+
+        assert!(matches!(
+            telemetry.outcome,
+            SubActionOutcome::Failed(msg) if msg.contains("429") && !msg.contains(TOKEN_SENTINEL)
+        ));
+    }
+}

@@ -131,3 +131,131 @@ impl SubActionRunner for RunAdRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::helix::HelixError;
+    use crate::sub_actions::test_support::{
+        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
+    };
+
+    fn runner_with(
+        response: Result<serde_json::Value, HelixError>,
+    ) -> (Arc<MockTransport>, RunAdRunner) {
+        let transport = Arc::new(MockTransport::returning(response));
+        let runner = RunAdRunner::new(
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+        );
+        (transport, runner)
+    }
+
+    fn cfg(duration: Variant) -> SubActionConfig {
+        BTreeMap::from([("duration_seconds".to_owned(), duration)])
+    }
+
+    #[tokio::test]
+    async fn execute_posts_self_broadcaster_and_integer_length_in_body() {
+        // Regression: the FormField::Select value arrives as Variant::String("90"),
+        // but the Helix body's `length` must be the JSON number 90 (not "90"), and
+        // broadcaster_id belongs in the BODY, not the query string.
+        let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
+        let stack = ArgStack::new();
+
+        let (telemetry, output) = runner
+            .execute(&cfg(Variant::String("90".to_owned())), &make_ctx(&stack))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        assert!(output.is_none());
+        let request = transport.request(0);
+        assert_eq!(request.method, HelixMethod::Post);
+        assert_eq!(request.path, "/helix/channels/commercial");
+        assert!(
+            request.query.is_empty(),
+            "broadcaster_id must not be a query param"
+        );
+        assert_eq!(
+            request.body.unwrap(),
+            serde_json::json!({ "broadcaster_id": SELF_USER_ID, "length": 90 })
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_falls_back_to_length_60_when_config_is_invalid() {
+        // Variant::Int violates the String convention; production must ignore it and
+        // send the default length 60 rather than parsing or rejecting at execute time.
+        for (label, bad) in [
+            ("variant int", cfg(Variant::Int(90))),
+            ("unlisted duration", cfg(Variant::String("45".to_owned()))),
+            ("missing key", BTreeMap::new()),
+        ] {
+            let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
+            let stack = ArgStack::new();
+
+            let (telemetry, _) = runner.execute(&bad, &make_ctx(&stack)).await;
+
+            assert_eq!(
+                telemetry.outcome,
+                SubActionOutcome::Success,
+                "case: {label}"
+            );
+            assert_eq!(
+                transport.request(0).body.unwrap(),
+                serde_json::json!({ "broadcaster_id": SELF_USER_ID, "length": 60 }),
+                "case: {label}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_config_accepts_allowed_strings_and_rejects_everything_else() {
+        let (_transport, runner) = runner_with(Ok(serde_json::Value::Null));
+        let cases: Vec<(&str, SubActionConfig, bool)> = vec![
+            ("30", cfg(Variant::String("30".to_owned())), true),
+            ("60", cfg(Variant::String("60".to_owned())), true),
+            ("90", cfg(Variant::String("90".to_owned())), true),
+            ("120", cfg(Variant::String("120".to_owned())), true),
+            ("150", cfg(Variant::String("150".to_owned())), true),
+            ("180", cfg(Variant::String("180".to_owned())), true),
+            (
+                "unlisted string",
+                cfg(Variant::String("45".to_owned())),
+                false,
+            ),
+            // Proves the String convention is enforced: an integer 90 is NOT a valid
+            // duration even though "90" is — the form stores Select values as strings.
+            ("variant int", cfg(Variant::Int(90)), false),
+            ("empty string", cfg(Variant::String(String::new())), false),
+            ("missing key", BTreeMap::new(), false),
+        ];
+
+        for (label, config, expect_ok) in cases {
+            assert_eq!(
+                runner.validate_config(&config).is_ok(),
+                expect_ok,
+                "case: {label}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn helix_failure_maps_to_failed_outcome_without_token() {
+        let (_transport, runner) = runner_with(Err(HelixError::Http {
+            status: 401,
+            body: "token expired".to_owned(),
+        }));
+        let stack = ArgStack::new();
+
+        let (telemetry, _) = runner
+            .execute(&cfg(Variant::String("60".to_owned())), &make_ctx(&stack))
+            .await;
+
+        assert!(matches!(
+            telemetry.outcome,
+            SubActionOutcome::Failed(msg) if msg.contains("401") && !msg.contains(TOKEN_SENTINEL)
+        ));
+    }
+}

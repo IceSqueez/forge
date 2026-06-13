@@ -219,3 +219,142 @@ impl SubActionRunner for LockPredictionRunner {
         .await
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use forge_types::SubActionOutcome;
+
+    use super::*;
+    use crate::helix::HelixError;
+    use crate::sub_actions::test_support::{
+        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
+    };
+
+    fn lock_runner_with(
+        response: Result<serde_json::Value, HelixError>,
+    ) -> (Arc<MockTransport>, LockPredictionRunner) {
+        let transport = Arc::new(MockTransport::returning(response));
+        let runner = LockPredictionRunner::new(
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+        );
+        (transport, runner)
+    }
+
+    fn prediction_stack() -> ArgStack {
+        ArgStack::new().set(
+            "prediction.id".to_owned(),
+            Variant::String("pr42".to_owned()),
+        )
+    }
+
+    // SHARED (asserted ONCE via lock as representative for the prediction helper):
+    // PATCH /helix/predictions, broadcaster_id=self in QUERY, body carries the
+    // interpolated id and the runner's status with NO winning_outcome_id key.
+    #[tokio::test]
+    async fn lock_patches_predictions_with_broadcaster_query_and_locked_body() {
+        let (transport, runner) = lock_runner_with(Ok(serde_json::Value::Null));
+
+        let (telemetry, out) = runner
+            .execute(&prediction_default_config(), &make_ctx(&prediction_stack()))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        assert!(out.is_none(), "prediction runners never push an ArgStack");
+        let request = transport.request(0);
+        assert_eq!(request.method, HelixMethod::Patch);
+        assert_eq!(request.path, "/helix/predictions");
+        assert!(
+            request
+                .query
+                .contains(&("broadcaster_id".to_owned(), SELF_USER_ID.to_owned())),
+            "broadcaster_id must be self in the query, not the body: {:?}",
+            request.query
+        );
+        assert_eq!(
+            request.body,
+            Some(serde_json::json!({ "id": "pr42", "status": "LOCKED" })),
+            "lock body must be id+LOCKED with no winning_outcome_id key"
+        );
+    }
+
+    // SHARED: prediction_id resolves through the default %prediction.id% template.
+    #[tokio::test]
+    async fn prediction_id_interpolates_from_template() {
+        let (transport, runner) = lock_runner_with(Ok(serde_json::Value::Null));
+        let stack = ArgStack::new().set(
+            "prediction.id".to_owned(),
+            Variant::String("xyz9".to_owned()),
+        );
+
+        let _ = runner
+            .execute(&prediction_default_config(), &make_ctx(&stack))
+            .await;
+
+        let body = transport.request(0).body.unwrap();
+        assert_eq!(
+            body.get("id").and_then(|v| v.as_str()),
+            Some("xyz9"),
+            "id must interpolate from %prediction.id%, not be sent verbatim"
+        );
+    }
+
+    // SHARED: empty prediction_id short-circuits before any Helix call.
+    #[tokio::test]
+    async fn empty_prediction_id_fails_without_helix_call() {
+        let (transport, runner) = lock_runner_with(Ok(serde_json::Value::Null));
+        let cfg = BTreeMap::from([("prediction_id".to_owned(), Variant::String(String::new()))]);
+
+        let (telemetry, _) = runner.execute(&cfg, &make_ctx(&ArgStack::new())).await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert_eq!(
+            transport.call_count(),
+            0,
+            "empty prediction_id must short-circuit before PATCH"
+        );
+    }
+
+    // SHARED: validate_config gates on prediction_id being a non-empty String.
+    #[test]
+    fn validate_config_rejects_empty_or_missing_prediction_id() {
+        let (_transport, runner) = lock_runner_with(Ok(serde_json::Value::Null));
+
+        let cases: Vec<(&str, SubActionConfig, bool)> = vec![
+            ("present", prediction_default_config(), true),
+            (
+                "empty prediction_id",
+                BTreeMap::from([("prediction_id".to_owned(), Variant::String(String::new()))]),
+                false,
+            ),
+            ("missing prediction_id", BTreeMap::new(), false),
+        ];
+
+        for (label, config, expect_ok) in cases {
+            assert_eq!(
+                runner.validate_config(&config).is_ok(),
+                expect_ok,
+                "case: {label}"
+            );
+        }
+    }
+
+    // SHARED: a Helix failure maps to Failed without leaking the sentinel token.
+    #[tokio::test]
+    async fn helix_failure_maps_to_failed_without_token() {
+        let (_transport, runner) = lock_runner_with(Err(HelixError::Http {
+            status: 401,
+            body: "unauthorized".to_owned(),
+        }));
+
+        let (telemetry, _) = runner
+            .execute(&prediction_default_config(), &make_ctx(&prediction_stack()))
+            .await;
+
+        assert!(matches!(
+            telemetry.outcome,
+            SubActionOutcome::Failed(msg) if !msg.contains(TOKEN_SENTINEL)
+        ));
+    }
+}

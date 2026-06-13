@@ -450,6 +450,9 @@ mod tests {
             "twitch.poll.start",
             "twitch.poll.end",
             "twitch.prediction.start",
+            "twitch.prediction.lock",
+            "twitch.prediction.cancel",
+            "twitch.prediction.resolve",
         ] {
             assert!(reg.get(id).is_some(), "missing sub-action: {id}");
         }

@@ -84,3 +84,40 @@ impl SubActionRunner for CancelPredictionRunner {
         .await
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use forge_types::{ArgStack, SubActionOutcome, Variant};
+
+    use super::*;
+    use crate::sub_actions::lock_prediction::prediction_default_config;
+    use crate::sub_actions::test_support::{MockCreds, MockTransport, make_ctx};
+
+    // The ONE behavior cancel owns: body status "CANCELED" (American single-L) and
+    // NO winning_outcome_id key. Fails if "CANCELLED" double-L slips in, or if the
+    // resolve-only winning_outcome_id leaks into cancel. Shared path: lock's tests.
+    #[tokio::test]
+    async fn cancel_sends_canceled_body_without_winning_outcome_id() {
+        let transport = Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)));
+        let runner = CancelPredictionRunner::new(
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+        );
+        let stack = ArgStack::new().set(
+            "prediction.id".to_owned(),
+            Variant::String("pr42".to_owned()),
+        );
+
+        let (telemetry, _) = runner
+            .execute(&prediction_default_config(), &make_ctx(&stack))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        assert_eq!(
+            transport.request(0).body,
+            Some(serde_json::json!({ "id": "pr42", "status": "CANCELED" })),
+            "cancel must send CANCELED (single L) with no winning_outcome_id key"
+        );
+    }
+}

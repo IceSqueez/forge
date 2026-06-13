@@ -128,7 +128,7 @@ impl SubActionRunner for StartPollRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::Twitch
+        SubActionCategory::PollsPredictions
     }
 
     fn label(&self) -> &str {

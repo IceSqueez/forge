@@ -174,7 +174,7 @@ impl SubActionRunner for UpdateRewardRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::Twitch
+        SubActionCategory::ChannelPoints
     }
 
     fn label(&self) -> &str {

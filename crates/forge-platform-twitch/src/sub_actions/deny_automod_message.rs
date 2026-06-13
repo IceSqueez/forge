@@ -34,7 +34,7 @@ impl SubActionRunner for DenyAutomodMessageRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::Twitch
+        SubActionCategory::Moderation
     }
 
     fn label(&self) -> &str {

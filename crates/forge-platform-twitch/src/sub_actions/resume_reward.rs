@@ -34,7 +34,7 @@ impl SubActionRunner for ResumeRewardRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::Twitch
+        SubActionCategory::ChannelPoints
     }
 
     fn label(&self) -> &str {

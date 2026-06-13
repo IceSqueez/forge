@@ -35,7 +35,7 @@ impl SubActionRunner for CancelRedemptionRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::Twitch
+        SubActionCategory::ChannelPoints
     }
 
     fn label(&self) -> &str {

@@ -34,7 +34,7 @@ impl SubActionRunner for DisableRewardRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::Twitch
+        SubActionCategory::ChannelPoints
     }
 
     fn label(&self) -> &str {

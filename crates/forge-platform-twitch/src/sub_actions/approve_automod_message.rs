@@ -131,7 +131,7 @@ impl SubActionRunner for ApproveAutomodMessageRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::Twitch
+        SubActionCategory::Moderation
     }
 
     fn label(&self) -> &str {

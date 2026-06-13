@@ -187,3 +187,164 @@ impl SubActionRunner for CreateMarkerRunner {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::helix::HelixError;
+    use crate::sub_actions::test_support::{
+        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
+    };
+
+    fn marker_payload() -> serde_json::Value {
+        serde_json::json!({
+            "data": [{
+                "id": "123",
+                "position_seconds": 244,
+                "created_at": "2026-06-13T12:00:00Z",
+                "description": "ignored"
+            }]
+        })
+    }
+
+    fn runner_with(
+        response: Result<serde_json::Value, HelixError>,
+    ) -> (Arc<MockTransport>, CreateMarkerRunner) {
+        let transport = Arc::new(MockTransport::returning(response));
+        let runner = CreateMarkerRunner::new(
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+        );
+        (transport, runner)
+    }
+
+    fn cfg(description: &str) -> SubActionConfig {
+        BTreeMap::from([(
+            "description".to_owned(),
+            Variant::String(description.to_owned()),
+        )])
+    }
+
+    #[tokio::test]
+    async fn execute_posts_marker_with_description_and_pushes_outputs() {
+        let (transport, runner) = runner_with(Ok(marker_payload()));
+        let stack = ArgStack::new();
+
+        let (telemetry, output) = runner
+            .execute(&cfg("clutch moment"), &make_ctx(&stack))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let request = transport.request(0);
+        assert_eq!(request.method, HelixMethod::Post);
+        assert_eq!(request.path, "/helix/streams/markers");
+        assert!(
+            request
+                .query
+                .contains(&("broadcaster_id".to_owned(), SELF_USER_ID.to_owned()))
+        );
+        assert_eq!(
+            request.body.unwrap(),
+            serde_json::json!({ "description": "clutch moment" })
+        );
+
+        let out = output.unwrap();
+        assert_eq!(
+            out.get("marker.id"),
+            Some(&Variant::String("123".to_owned()))
+        );
+        assert_eq!(out.get("marker.position_seconds"), Some(&Variant::Int(244)));
+        assert_eq!(
+            out.get("marker.created_at"),
+            Some(&Variant::String("2026-06-13T12:00:00Z".to_owned()))
+        );
+    }
+
+    #[tokio::test]
+    async fn empty_description_omits_body_field() {
+        let (transport, runner) = runner_with(Ok(marker_payload()));
+        let stack = ArgStack::new();
+
+        let (telemetry, _) = runner.execute(&cfg(""), &make_ctx(&stack)).await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        // Optional description: empty must produce an empty object, not "description":"".
+        assert_eq!(transport.request(0).body.unwrap(), serde_json::json!({}));
+    }
+
+    #[tokio::test]
+    async fn missing_data_array_maps_to_failed() {
+        let (_transport, runner) = runner_with(Ok(serde_json::json!({ "data": [] })));
+        let stack = ArgStack::new();
+
+        let (telemetry, output) = runner.execute(&cfg("x"), &make_ctx(&stack)).await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert!(output.is_none());
+    }
+
+    #[tokio::test]
+    async fn description_boundary_at_140_sends_over_140_fails() {
+        for (label, len, expect_call) in [("exactly 140", 140, true), ("141 chars", 141, false)] {
+            let (transport, runner) = runner_with(Ok(marker_payload()));
+            let stack = ArgStack::new();
+            let desc = "d".repeat(len);
+
+            let (telemetry, _) = runner.execute(&cfg(&desc), &make_ctx(&stack)).await;
+
+            match expect_call {
+                true => {
+                    assert_eq!(
+                        telemetry.outcome,
+                        SubActionOutcome::Success,
+                        "case: {label}"
+                    );
+                    assert_eq!(transport.call_count(), 1, "case: {label}");
+                }
+                false => {
+                    assert!(
+                        matches!(telemetry.outcome, SubActionOutcome::Failed(_)),
+                        "case: {label}"
+                    );
+                    assert_eq!(transport.call_count(), 0, "case: {label} must skip Helix");
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn helix_failure_maps_to_failed_outcome_without_token() {
+        let (_transport, runner) = runner_with(Err(HelixError::Http {
+            status: 404,
+            body: "stream offline".to_owned(),
+        }));
+        let stack = ArgStack::new();
+
+        let (telemetry, output) = runner.execute(&cfg("x"), &make_ctx(&stack)).await;
+
+        assert!(output.is_none());
+        assert!(matches!(
+            telemetry.outcome,
+            SubActionOutcome::Failed(msg) if msg.contains("404") && !msg.contains(TOKEN_SENTINEL)
+        ));
+    }
+
+    #[test]
+    fn validate_config_rejects_only_oversize_description() {
+        let (_transport, runner) = runner_with(Ok(serde_json::Value::Null));
+        let cases: Vec<(&str, SubActionConfig, bool)> = vec![
+            ("no description", BTreeMap::new(), true),
+            ("empty description", cfg(""), true),
+            ("at 140 chars", cfg(&"x".repeat(140)), true),
+            ("over 140 chars", cfg(&"x".repeat(141)), false),
+        ];
+        for (label, config, expect_ok) in cases {
+            assert_eq!(
+                runner.validate_config(&config).is_ok(),
+                expect_ok,
+                "case: {label}"
+            );
+        }
+    }
+}

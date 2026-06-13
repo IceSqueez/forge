@@ -134,3 +134,133 @@ impl SubActionRunner for UpdateCategoryRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::helix::HelixError;
+    use crate::sub_actions::test_support::{
+        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
+    };
+
+    fn runner_with(
+        response: Result<serde_json::Value, HelixError>,
+    ) -> (Arc<MockTransport>, UpdateCategoryRunner) {
+        let transport = Arc::new(MockTransport::returning(response));
+        let runner = UpdateCategoryRunner::new(
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+        );
+        (transport, runner)
+    }
+
+    fn cfg(pairs: &[(&str, &str)]) -> SubActionConfig {
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), Variant::String((*v).to_owned())))
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn execute_sends_game_id_and_omits_display_name() {
+        let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
+        let stack = ArgStack::new();
+
+        let (telemetry, output) = runner
+            .execute(
+                &cfg(&[
+                    ("category_id", "509658"),
+                    ("category_name", "Just Chatting"),
+                ]),
+                &make_ctx(&stack),
+            )
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        assert!(output.is_none());
+        let request = transport.request(0);
+        assert_eq!(request.method, HelixMethod::Patch);
+        assert_eq!(request.path, "/helix/channels");
+        assert!(
+            request
+                .query
+                .contains(&("broadcaster_id".to_owned(), SELF_USER_ID.to_owned()))
+        );
+        // Body carries game_id ONLY — category_name is display-only and must not leak.
+        let body = request.body.unwrap();
+        assert_eq!(body, serde_json::json!({ "game_id": "509658" }));
+        assert!(body.get("category_name").is_none());
+        assert!(!body.to_string().contains("Just Chatting"));
+    }
+
+    #[tokio::test]
+    async fn execute_interpolates_category_id_from_stack() {
+        let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
+        let stack = ArgStack::new().set("gid".to_owned(), Variant::String("12345".to_owned()));
+
+        let (telemetry, _) = runner
+            .execute(&cfg(&[("category_id", "%gid%")]), &make_ctx(&stack))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        assert_eq!(
+            transport.request(0).body.unwrap(),
+            serde_json::json!({ "game_id": "12345" })
+        );
+    }
+
+    #[tokio::test]
+    async fn empty_category_id_fails_without_helix_call() {
+        let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
+        let stack = ArgStack::new();
+
+        let (telemetry, _) = runner
+            .execute(&cfg(&[("category_id", "")]), &make_ctx(&stack))
+            .await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert_eq!(transport.call_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn helix_failure_maps_to_failed_outcome_without_token() {
+        let (_transport, runner) = runner_with(Err(HelixError::Http {
+            status: 400,
+            body: "invalid game_id".to_owned(),
+        }));
+        let stack = ArgStack::new();
+
+        let (telemetry, _) = runner
+            .execute(&cfg(&[("category_id", "509658")]), &make_ctx(&stack))
+            .await;
+
+        assert!(matches!(
+            telemetry.outcome,
+            SubActionOutcome::Failed(msg) if msg.contains("400") && !msg.contains(TOKEN_SENTINEL)
+        ));
+    }
+
+    #[test]
+    fn validate_config_requires_non_empty_category_id() {
+        let (_transport, runner) = runner_with(Ok(serde_json::Value::Null));
+        let cases: Vec<(&str, SubActionConfig, bool)> = vec![
+            ("valid id", cfg(&[("category_id", "509658")]), true),
+            ("empty id", cfg(&[("category_id", "")]), false),
+            ("missing id", BTreeMap::new(), false),
+            (
+                "non-string id",
+                BTreeMap::from([("category_id".to_owned(), Variant::Int(509658))]),
+                false,
+            ),
+        ];
+
+        for (label, config, expect_ok) in cases {
+            assert_eq!(
+                runner.validate_config(&config).is_ok(),
+                expect_ok,
+                "case: {label}"
+            );
+        }
+    }
+}

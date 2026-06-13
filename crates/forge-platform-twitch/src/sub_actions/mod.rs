@@ -309,6 +309,10 @@ mod tests {
             "twitch.moderation.shield_mode_off",
             "twitch.chat.reply",
             "twitch.chat.send_whisper",
+            "twitch.channel.update_title",
+            "twitch.channel.update_category",
+            "twitch.channel.update_tags",
+            "twitch.channel.create_marker",
         ] {
             assert!(reg.get(id).is_some(), "missing sub-action: {id}");
         }

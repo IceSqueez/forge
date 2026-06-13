@@ -36,6 +36,18 @@ const NOTIFICATION_ROUTES: &[(&str, NotificationRoute)] = &[
         ChatSession::publish_message_delete_event,
     ),
     ("channel.chat.clear", ChatSession::publish_chat_clear_event),
+    (
+        "channel.hype_train.begin",
+        ChatSession::publish_hype_train_begin_event,
+    ),
+    (
+        "channel.hype_train.progress",
+        ChatSession::publish_hype_train_progress_event,
+    ),
+    (
+        "channel.hype_train.end",
+        ChatSession::publish_hype_train_end_event,
+    ),
 ];
 
 #[cfg(test)]

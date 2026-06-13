@@ -886,6 +886,152 @@ impl ChatSession {
         ));
     }
 
+    pub(super) fn publish_hype_train_begin_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let id = event_data
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let level = event_data
+            .get("level")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let total = event_data
+            .get("total")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let goal = event_data.get("goal").and_then(|v| v.as_i64()).unwrap_or(0);
+        let progress = event_data
+            .get("progress")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let started_at = event_data
+            .get("started_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let expires_at = event_data
+            .get("expires_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(level = level, total = total, "hype train began");
+
+        let forge_payload = serde_json::json!({
+            "hype": {
+                "id": id,
+                "level": level,
+                "total": total,
+                "goal": goal,
+                "progress": progress,
+                "started_at": started_at,
+                "expires_at": expires_at,
+            },
+        });
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.hype_train.begin",
+            forge_payload,
+        ));
+    }
+
+    pub(super) fn publish_hype_train_progress_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let id = event_data
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let level = event_data
+            .get("level")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let total = event_data
+            .get("total")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let goal = event_data.get("goal").and_then(|v| v.as_i64()).unwrap_or(0);
+        let progress = event_data
+            .get("progress")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+
+        info!(level = level, progress = progress, "hype train progressed");
+
+        let forge_payload = serde_json::json!({
+            "hype": {
+                "id": id,
+                "level": level,
+                "total": total,
+                "goal": goal,
+                "progress": progress,
+            },
+        });
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.hype_train.progress",
+            forge_payload,
+        ));
+    }
+
+    pub(super) fn publish_hype_train_end_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let id = event_data
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let level = event_data
+            .get("level")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let total = event_data
+            .get("total")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let ended_at = event_data
+            .get("ended_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let cooldown_ends_at = event_data
+            .get("cooldown_ends_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(level = level, total = total, "hype train ended");
+
+        let forge_payload = serde_json::json!({
+            "hype": {
+                "id": id,
+                "level": level,
+                "total": total,
+                "ended_at": ended_at,
+                "cooldown_ends_at": cooldown_ends_at,
+            },
+        });
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.hype_train.end",
+            forge_payload,
+        ));
+    }
+
     fn set_state(&self, state: ChatConnectionState) {
         let _ = self.state_tx.send(state);
     }

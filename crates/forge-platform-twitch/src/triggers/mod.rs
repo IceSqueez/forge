@@ -7,6 +7,9 @@ mod chat_cleared;
 mod chat_command;
 mod chat_message;
 mod chat_message_deleted;
+mod hype_train_ended;
+mod hype_train_progress;
+mod hype_train_started;
 mod shared_chat_message;
 mod stream_offline;
 mod stream_online;
@@ -25,6 +28,9 @@ use chat_cleared::ChatClearedDescriptor;
 use chat_command::ChatCommandDescriptor;
 use chat_message::ChatMessageDescriptor;
 use chat_message_deleted::ChatMessageDeletedDescriptor;
+use hype_train_ended::HypeTrainEndedDescriptor;
+use hype_train_progress::HypeTrainProgressDescriptor;
+use hype_train_started::HypeTrainStartedDescriptor;
 use shared_chat_message::SharedChatMessageDescriptor;
 use stream_offline::StreamOfflineDescriptor;
 use stream_online::StreamOnlineDescriptor;
@@ -49,6 +55,9 @@ pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), Registr
     reg.register(Box::new(ChannelPointsRedemptionDescriptor))?;
     reg.register(Box::new(StreamOnlineDescriptor))?;
     reg.register(Box::new(StreamOfflineDescriptor))?;
+    reg.register(Box::new(HypeTrainStartedDescriptor))?;
+    reg.register(Box::new(HypeTrainProgressDescriptor))?;
+    reg.register(Box::new(HypeTrainEndedDescriptor))?;
     Ok(())
 }
 

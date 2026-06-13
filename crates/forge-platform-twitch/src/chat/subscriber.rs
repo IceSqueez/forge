@@ -118,6 +118,21 @@ const TOPICS: &[TopicSpec] = &[
         version: "1",
         condition_fn: condition_chat,
     },
+    TopicSpec {
+        kind: "channel.hype_train.begin",
+        version: "1",
+        condition_fn: condition_broadcaster,
+    },
+    TopicSpec {
+        kind: "channel.hype_train.progress",
+        version: "1",
+        condition_fn: condition_broadcaster,
+    },
+    TopicSpec {
+        kind: "channel.hype_train.end",
+        version: "1",
+        condition_fn: condition_broadcaster,
+    },
 ];
 
 pub(crate) async fn subscribe_all(

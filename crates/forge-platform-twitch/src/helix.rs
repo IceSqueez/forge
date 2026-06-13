@@ -320,6 +320,85 @@ mod tests {
         async fn observe_remote_throttle(&self, _retry_after: Duration) {}
     }
 
+    /// Throttles the first `throttle_count` acquires (each with `wait_for`),
+    /// then grants. Lets us drive the transport's throttle-sleep loop on the
+    /// paused tokio clock without any wall-clock dependence.
+    struct ThrottleThenGrantLimiter {
+        wait_for: Duration,
+        throttle_count: u32,
+        seen: std::sync::atomic::AtomicU32,
+    }
+
+    #[async_trait]
+    impl RateLimiter for ThrottleThenGrantLimiter {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+            let n = self.seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if n < self.throttle_count {
+                Ok(RateLimitOutcome::Throttled {
+                    wait_for: self.wait_for,
+                })
+            } else {
+                Ok(RateLimitOutcome::Granted)
+            }
+        }
+
+        fn remaining(&self) -> u32 {
+            u32::MAX
+        }
+
+        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
+    }
+
+    /// Always throttles, so the transport must give up after its bounded
+    /// acquire attempts rather than spin forever.
+    struct AlwaysThrottleLimiter {
+        wait_for: Duration,
+    }
+
+    #[async_trait]
+    impl RateLimiter for AlwaysThrottleLimiter {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+            Ok(RateLimitOutcome::Throttled {
+                wait_for: self.wait_for,
+            })
+        }
+
+        fn remaining(&self) -> u32 {
+            0
+        }
+
+        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
+    }
+
+    /// Records every `observe_remote_throttle` invocation and its argument, so
+    /// a test can prove the 429 path fed the server's back-off into the bucket.
+    struct RecordingLimiter {
+        observed: std::sync::Mutex<Vec<Duration>>,
+    }
+
+    impl RecordingLimiter {
+        fn new() -> Self {
+            Self {
+                observed: std::sync::Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl RateLimiter for RecordingLimiter {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+            Ok(RateLimitOutcome::Granted)
+        }
+
+        fn remaining(&self) -> u32 {
+            u32::MAX
+        }
+
+        async fn observe_remote_throttle(&self, retry_after: Duration) {
+            self.observed.lock().unwrap().push(retry_after);
+        }
+    }
+
     fn transport(base_url: String) -> (HelixHttpTransport, Arc<EventBus>) {
         transport_with(
             base_url,
@@ -601,6 +680,86 @@ mod tests {
         assert!(
             !display.contains(SENTINEL),
             "transport error must not leak the token: {display}"
+        );
+    }
+
+    #[tokio::test]
+    async fn transient_throttle_is_slept_off_then_request_succeeds() {
+        let server = MockServer::start().await;
+        let payload = serde_json::json!({"data": []});
+        Mock::given(method("GET"))
+            .and(path("/helix/users"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(payload.clone()))
+            .mount(&server)
+            .await;
+        // One throttle then grant. A zero `wait_for` makes the loop's
+        // `sleep(ZERO)` return on the next poll with no real elapsed time, so
+        // the test exercises the retry path without any wall-clock dependence.
+        let limiter = Arc::new(ThrottleThenGrantLimiter {
+            wait_for: Duration::ZERO,
+            throttle_count: 1,
+            seen: std::sync::atomic::AtomicU32::new(0),
+        });
+        let (t, _bus) = transport_with(server.uri(), limiter.clone(), Arc::new(StaticTokenSource));
+
+        let value = t
+            .execute(HelixRequest::new(HelixMethod::Get, "/helix/users"))
+            .await
+            .unwrap();
+
+        assert_eq!(value, payload);
+        assert_eq!(
+            limiter.seen.load(std::sync::atomic::Ordering::SeqCst),
+            2,
+            "limiter must be polled twice: one throttle, one grant"
+        );
+    }
+
+    #[tokio::test]
+    async fn persistent_throttle_gives_up_with_rate_limited() {
+        let server = MockServer::start().await;
+        // No HTTP request should ever be issued; the loop exits after the
+        // bounded attempt count. A zero `wait_for` keeps each retry's
+        // `sleep(ZERO)` instantaneous, so termination is by attempt count, not
+        // by elapsed time.
+        let limiter = Arc::new(AlwaysThrottleLimiter {
+            wait_for: Duration::ZERO,
+        });
+        let (t, _bus) = transport_with(server.uri(), limiter, Arc::new(StaticTokenSource));
+
+        let err = t
+            .execute(HelixRequest::new(HelixMethod::Get, "/helix/users"))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, HelixError::RateLimited));
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "a request stuck in the throttle loop must not reach the network"
+        );
+    }
+
+    #[tokio::test]
+    async fn too_many_requests_feeds_retry_after_into_limiter() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(429).insert_header("Retry-After", "11"))
+            .mount(&server)
+            .await;
+        let limiter = Arc::new(RecordingLimiter::new());
+        let (t, _bus) = transport_with(server.uri(), limiter.clone(), Arc::new(StaticTokenSource));
+
+        let err = t
+            .execute(HelixRequest::new(HelixMethod::Get, "/helix/users"))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, HelixError::RateLimited));
+        let observed = limiter.observed.lock().unwrap();
+        assert_eq!(
+            observed.as_slice(),
+            &[Duration::from_secs(11)],
+            "the parsed Retry-After must be pushed into the shared bucket exactly once"
         );
     }
 }

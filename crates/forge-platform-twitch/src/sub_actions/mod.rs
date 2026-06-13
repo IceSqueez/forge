@@ -19,8 +19,10 @@ mod fulfill_redemption;
 mod get_current_goal;
 mod guest_star;
 mod guest_star_assign_slot;
+mod guest_star_end_session;
 mod guest_star_invite;
 mod guest_star_remove_guest;
+mod guest_star_update_slot;
 mod identity;
 mod lock_prediction;
 mod pause_reward;
@@ -74,8 +76,10 @@ pub use end_poll::EndPollRunner;
 pub use fulfill_redemption::FulfillRedemptionRunner;
 pub use get_current_goal::GetCurrentGoalRunner;
 pub use guest_star_assign_slot::GuestStarAssignSlotRunner;
+pub use guest_star_end_session::GuestStarEndSessionRunner;
 pub use guest_star_invite::GuestStarInviteRunner;
 pub use guest_star_remove_guest::GuestStarRemoveGuestRunner;
+pub use guest_star_update_slot::GuestStarUpdateSlotRunner;
 pub use identity::SelfIdentity;
 pub use lock_prediction::LockPredictionRunner;
 pub use pause_reward::PauseRewardRunner;
@@ -305,6 +309,14 @@ pub fn register_twitch_sub_actions(
         Arc::clone(&identity),
     )))?;
     reg.register(Box::new(GuestStarRemoveGuestRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(GuestStarUpdateSlotRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(GuestStarEndSessionRunner::new(
         transport, identity,
     )))?;
     Ok(())

@@ -246,3 +246,286 @@ impl SubActionRunner for GuestStarUpdateSlotRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::helix::HelixError;
+    use crate::sub_actions::test_support::{
+        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
+    };
+
+    fn runner_with(
+        response: Result<serde_json::Value, HelixError>,
+    ) -> (Arc<MockTransport>, GuestStarUpdateSlotRunner) {
+        let transport = Arc::new(MockTransport::returning(response));
+        let runner = GuestStarUpdateSlotRunner::new(
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+        );
+        (transport, runner)
+    }
+
+    /// A literal session_id + slot_id plus the caller's chosen audio/video/volume
+    /// edits. Bodies are then inspected one branch at a time.
+    fn cfg(session: &str, slot: &str, edits: &[(&str, Variant)]) -> SubActionConfig {
+        let mut c = BTreeMap::from([
+            ("session_id".to_owned(), Variant::String(session.to_owned())),
+            ("slot_id".to_owned(), Variant::String(slot.to_owned())),
+        ]);
+        for (k, v) in edits {
+            c.insert((*k).to_owned(), v.clone());
+        }
+        c
+    }
+
+    fn select(v: &str) -> Variant {
+        Variant::String(v.to_owned())
+    }
+
+    // #1 Happy: every field opted in. ONE PATCH; query carries broadcaster_id,
+    // moderator_id (both self), the resolved session_id + slot_id; the body is
+    // EXACTLY the three mapped keys with their typed values.
+    #[tokio::test]
+    async fn all_fields_opted_patches_full_body_with_self_query_params() {
+        let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
+        let stack = ArgStack::new();
+        let config = cfg(
+            "SESSION-7",
+            "2",
+            &[
+                ("audio_enabled", select(ON)),
+                ("video_enabled", select(OFF)),
+                ("volume", Variant::Int(50)),
+            ],
+        );
+
+        let (telemetry, out) = runner.execute(&config, &make_ctx(&stack)).await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        assert!(out.is_none());
+        assert_eq!(transport.call_count(), 1);
+
+        let request = transport.request(0);
+        assert_eq!(request.method, HelixMethod::Patch);
+        assert_eq!(request.path, "/helix/guest_star/slot_settings");
+        assert!(
+            request
+                .query
+                .contains(&("broadcaster_id".to_owned(), SELF_USER_ID.to_owned())),
+            "broadcaster must be self: {:?}",
+            request.query
+        );
+        assert!(
+            request
+                .query
+                .contains(&("moderator_id".to_owned(), SELF_USER_ID.to_owned())),
+            "moderator must be self: {:?}",
+            request.query
+        );
+        assert!(
+            request
+                .query
+                .contains(&("session_id".to_owned(), "SESSION-7".to_owned())),
+            "session_id missing from query: {:?}",
+            request.query
+        );
+        assert!(
+            request
+                .query
+                .contains(&("slot_id".to_owned(), "2".to_owned())),
+            "slot_id missing from query: {:?}",
+            request.query
+        );
+        assert_eq!(
+            request.body.unwrap(),
+            serde_json::json!({
+                "is_audio_enabled": true,
+                "is_video_enabled": false,
+                "volume": 50,
+            }),
+        );
+    }
+
+    // #2 Partial: only audio opted in. video "unchanged" and a gate-Bool volume
+    // contribute NOTHING; the body holds the single audio key.
+    #[tokio::test]
+    async fn only_audio_opted_yields_single_key_body() {
+        let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
+        let stack = ArgStack::new();
+        let config = cfg(
+            "SESSION-7",
+            "2",
+            &[
+                ("audio_enabled", select(ON)),
+                ("video_enabled", select(UNCHANGED)),
+                ("volume", Variant::Bool(true)),
+            ],
+        );
+
+        let (telemetry, _) = runner.execute(&config, &make_ctx(&stack)).await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        assert_eq!(
+            transport.request(0).body.unwrap(),
+            serde_json::json!({ "is_audio_enabled": true }),
+        );
+    }
+
+    // #3 No-op short-circuit: nothing opted in (both unchanged, volume unset).
+    // Success WITHOUT any Helix call — the runner must not spend a rate token on
+    // an empty PATCH.
+    #[tokio::test]
+    async fn no_opted_fields_succeeds_without_helix_call() {
+        let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
+        let stack = ArgStack::new();
+        let config = cfg(
+            "SESSION-7",
+            "2",
+            &[
+                ("audio_enabled", select(UNCHANGED)),
+                ("video_enabled", select(UNCHANGED)),
+            ],
+        );
+
+        let (telemetry, _) = runner.execute(&config, &make_ctx(&stack)).await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        assert_eq!(
+            transport.call_count(),
+            0,
+            "empty body must short-circuit before Helix"
+        );
+    }
+
+    // #4 Optional volume gate: a Bool at the volume key is the "toggled-on but no
+    // value" gate marker — it must be OMITTED. Only a real Int includes volume.
+    // (Paired with #2 this is the high-value Optional-marshaling guard.)
+    #[tokio::test]
+    async fn volume_gate_bool_is_omitted_only_int_is_sent() {
+        let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
+        let stack = ArgStack::new();
+        // Bool at volume alone => body empty => short-circuit, no call.
+        let gated = cfg("SESSION-7", "2", &[("volume", Variant::Bool(true))]);
+        let (telemetry, _) = runner.execute(&gated, &make_ctx(&stack)).await;
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        assert_eq!(
+            transport.call_count(),
+            0,
+            "gate-Bool volume contributes no key, so the PATCH is skipped"
+        );
+
+        // A real Int does include the volume key.
+        let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
+        let typed = cfg("SESSION-7", "2", &[("volume", Variant::Int(33))]);
+        let (telemetry, _) = runner.execute(&typed, &make_ctx(&stack)).await;
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        assert_eq!(
+            transport.request(0).body.unwrap(),
+            serde_json::json!({ "volume": 33 }),
+        );
+    }
+
+    // #5 Empty resolved ids fail before any Helix call.
+    #[tokio::test]
+    async fn empty_session_id_fails_before_helix_call() {
+        let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
+        let stack = ArgStack::new();
+        let config = cfg("", "2", &[("audio_enabled", select(ON))]);
+
+        let (telemetry, _) = runner.execute(&config, &make_ctx(&stack)).await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert_eq!(transport.call_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn empty_slot_id_fails_before_helix_call() {
+        let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
+        let stack = ArgStack::new();
+        let config = cfg("SESSION-7", "", &[("audio_enabled", select(ON))]);
+
+        let (telemetry, _) = runner.execute(&config, &make_ctx(&stack)).await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert_eq!(transport.call_count(), 0);
+    }
+
+    // #6 validate_config: session_id + slot_id required; tri-state values
+    // constrained to unchanged/on/off; volume in range only when set.
+    #[test]
+    fn validate_config_enforces_required_fields_tristate_and_volume_range() {
+        let (_t, runner) = runner_with(Ok(serde_json::Value::Null));
+
+        // Accept cases.
+        assert!(
+            runner
+                .validate_config(&cfg("%guest_star.session_id%", "1", &[]))
+                .is_ok(),
+            "session + slot with no edits is valid"
+        );
+        assert!(
+            runner
+                .validate_config(&cfg(
+                    "s",
+                    "1",
+                    &[
+                        ("audio_enabled", select(ON)),
+                        ("video_enabled", select(OFF)),
+                        ("volume", Variant::Int(0)),
+                    ],
+                ))
+                .is_ok(),
+            "boundary volume 0 with on/off toggles is valid"
+        );
+        assert!(
+            runner
+                .validate_config(&cfg("s", "1", &[("volume", Variant::Int(100))]))
+                .is_ok(),
+            "boundary volume 100 is valid"
+        );
+
+        // Reject cases — one rejection contract per row.
+        for (label, config) in [
+            ("empty session_id", cfg("", "1", &[])),
+            ("empty slot_id", cfg("s", "", &[])),
+            (
+                "tri-state out of set",
+                cfg("s", "1", &[("audio_enabled", select("maybe"))]),
+            ),
+            (
+                "volume below range",
+                cfg("s", "1", &[("volume", Variant::Int(-1))]),
+            ),
+            (
+                "volume above range",
+                cfg("s", "1", &[("volume", Variant::Int(101))]),
+            ),
+        ] {
+            assert!(
+                runner.validate_config(&config).is_err(),
+                "expected rejection: {label}"
+            );
+        }
+    }
+
+    // #9 (slot variant) token-leak: a Helix failure surfaces as Failed and the
+    // sentinel token never appears in the outcome message.
+    #[tokio::test]
+    async fn helix_failure_maps_to_failed_without_token() {
+        let (_transport, runner) = runner_with(Err(HelixError::Http {
+            status: 400,
+            body: "bad slot".to_owned(),
+        }));
+        let stack = ArgStack::new();
+        let config = cfg("SESSION-7", "2", &[("audio_enabled", select(ON))]);
+
+        let (telemetry, _) = runner.execute(&config, &make_ctx(&stack)).await;
+
+        assert!(matches!(
+            telemetry.outcome,
+            SubActionOutcome::Failed(msg) if msg.contains("400") && !msg.contains(TOKEN_SENTINEL)
+        ));
+    }
+}

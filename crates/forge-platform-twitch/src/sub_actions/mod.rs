@@ -531,6 +531,8 @@ mod tests {
             "twitch.guest_star.invite",
             "twitch.guest_star.assign_slot",
             "twitch.guest_star.remove_guest",
+            "twitch.guest_star.update_slot",
+            "twitch.guest_star.end_session",
         ] {
             assert!(reg.get(id).is_some(), "missing sub-action: {id}");
         }

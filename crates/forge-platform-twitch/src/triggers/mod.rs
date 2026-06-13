@@ -17,7 +17,11 @@ mod chat_message_deleted;
 mod hype_train_ended;
 mod hype_train_progress;
 mod hype_train_started;
+mod moderator_added;
+mod moderator_removed;
 mod shared_chat_message;
+mod shield_mode_ended;
+mod shield_mode_started;
 mod stream_offline;
 mod stream_online;
 mod support_cheer;
@@ -45,7 +49,11 @@ use chat_message_deleted::ChatMessageDeletedDescriptor;
 use hype_train_ended::HypeTrainEndedDescriptor;
 use hype_train_progress::HypeTrainProgressDescriptor;
 use hype_train_started::HypeTrainStartedDescriptor;
+use moderator_added::ModeratorAddedDescriptor;
+use moderator_removed::ModeratorRemovedDescriptor;
 use shared_chat_message::SharedChatMessageDescriptor;
+use shield_mode_ended::ShieldModeEndedDescriptor;
+use shield_mode_started::ShieldModeStartedDescriptor;
 use stream_offline::StreamOfflineDescriptor;
 use stream_online::StreamOnlineDescriptor;
 use support_cheer::SupportCheerDescriptor;
@@ -79,6 +87,10 @@ pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), Registr
     reg.register(Box::new(CharityStartedDescriptor))?;
     reg.register(Box::new(CharityProgressDescriptor))?;
     reg.register(Box::new(CharityStoppedDescriptor))?;
+    reg.register(Box::new(ModeratorAddedDescriptor))?;
+    reg.register(Box::new(ModeratorRemovedDescriptor))?;
+    reg.register(Box::new(ShieldModeStartedDescriptor))?;
+    reg.register(Box::new(ShieldModeEndedDescriptor))?;
     Ok(())
 }
 

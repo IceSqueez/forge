@@ -66,6 +66,22 @@ const NOTIFICATION_ROUTES: &[(&str, NotificationRoute)] = &[
     ),
     ("channel.ban", ChatSession::publish_ban_event),
     ("channel.unban", ChatSession::publish_unban_event),
+    (
+        "channel.moderator.add",
+        ChatSession::publish_moderator_add_event,
+    ),
+    (
+        "channel.moderator.remove",
+        ChatSession::publish_moderator_remove_event,
+    ),
+    (
+        "channel.shield_mode.begin",
+        ChatSession::publish_shield_mode_begin_event,
+    ),
+    (
+        "channel.shield_mode.end",
+        ChatSession::publish_shield_mode_end_event,
+    ),
 ];
 
 #[cfg(test)]

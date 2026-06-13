@@ -1274,6 +1274,162 @@ impl ChatSession {
         ));
     }
 
+    pub(super) fn publish_moderator_add_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let user_id = event_data
+            .get("user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_login = event_data
+            .get("user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_display_name = event_data
+            .get("user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(user_login = %user_login, "moderator added");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.moderator.add",
+            serde_json::json!({
+                "user": {
+                    "id": user_id,
+                    "login": user_login,
+                    "display_name": user_display_name,
+                },
+            }),
+        ));
+    }
+
+    pub(super) fn publish_moderator_remove_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let user_id = event_data
+            .get("user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_login = event_data
+            .get("user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_display_name = event_data
+            .get("user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(user_login = %user_login, "moderator removed");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.moderator.remove",
+            serde_json::json!({
+                "user": {
+                    "id": user_id,
+                    "login": user_login,
+                    "display_name": user_display_name,
+                },
+            }),
+        ));
+    }
+
+    pub(super) fn publish_shield_mode_begin_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let moderator_id = event_data
+            .get("moderator_user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let moderator_login = event_data
+            .get("moderator_user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let moderator_display_name = event_data
+            .get("moderator_user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let started_at = event_data
+            .get("started_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(moderator_login = %moderator_login, "shield mode started");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.shield_mode.begin",
+            serde_json::json!({
+                "moderator": {
+                    "id": moderator_id,
+                    "login": moderator_login,
+                    "display_name": moderator_display_name,
+                },
+                "started_at": started_at,
+            }),
+        ));
+    }
+
+    pub(super) fn publish_shield_mode_end_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let moderator_id = event_data
+            .get("moderator_user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let moderator_login = event_data
+            .get("moderator_user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let moderator_display_name = event_data
+            .get("moderator_user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let ended_at = event_data
+            .get("ended_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(moderator_login = %moderator_login, "shield mode ended");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.shield_mode.end",
+            serde_json::json!({
+                "moderator": {
+                    "id": moderator_id,
+                    "login": moderator_login,
+                    "display_name": moderator_display_name,
+                },
+                "ended_at": ended_at,
+            }),
+        ));
+    }
+
     fn set_state(&self, state: ChatConnectionState) {
         let _ = self.state_tx.send(state);
     }

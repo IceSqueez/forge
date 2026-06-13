@@ -42,6 +42,9 @@ mod reward_added;
 mod reward_removed;
 mod reward_updated;
 mod shared_chat_message;
+mod shared_chat_session_began;
+mod shared_chat_session_ended;
+mod shared_chat_session_updated;
 mod shield_mode_ended;
 mod shield_mode_started;
 mod shoutout_received;
@@ -100,6 +103,9 @@ use reward_added::RewardAddedDescriptor;
 use reward_removed::RewardRemovedDescriptor;
 use reward_updated::RewardUpdatedDescriptor;
 use shared_chat_message::SharedChatMessageDescriptor;
+use shared_chat_session_began::SharedChatSessionBeganDescriptor;
+use shared_chat_session_ended::SharedChatSessionEndedDescriptor;
+use shared_chat_session_updated::SharedChatSessionUpdatedDescriptor;
 use shield_mode_ended::ShieldModeEndedDescriptor;
 use shield_mode_started::ShieldModeStartedDescriptor;
 use shoutout_received::ShoutoutReceivedDescriptor;
@@ -169,6 +175,9 @@ pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), Registr
     reg.register(Box::new(GuestStarSessionBeganDescriptor))?;
     reg.register(Box::new(GuestStarSessionEndedDescriptor))?;
     reg.register(Box::new(GuestStarSettingsUpdatedDescriptor))?;
+    reg.register(Box::new(SharedChatSessionBeganDescriptor))?;
+    reg.register(Box::new(SharedChatSessionUpdatedDescriptor))?;
+    reg.register(Box::new(SharedChatSessionEndedDescriptor))?;
     Ok(())
 }
 

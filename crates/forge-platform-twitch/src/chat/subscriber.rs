@@ -313,6 +313,21 @@ const TOPICS: &[TopicSpec] = &[
         version: "1",
         condition_fn: condition_chat,
     },
+    TopicSpec {
+        kind: "channel.shared_chat.begin",
+        version: "1",
+        condition_fn: condition_broadcaster,
+    },
+    TopicSpec {
+        kind: "channel.shared_chat.update",
+        version: "1",
+        condition_fn: condition_broadcaster,
+    },
+    TopicSpec {
+        kind: "channel.shared_chat.end",
+        version: "1",
+        condition_fn: condition_broadcaster,
+    },
 ];
 
 pub(crate) async fn subscribe_all(

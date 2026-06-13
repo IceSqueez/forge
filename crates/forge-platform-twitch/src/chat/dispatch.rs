@@ -174,6 +174,18 @@ const NOTIFICATION_ROUTES: &[(&str, NotificationRoute)] = &[
         "channel.automod.message.update",
         ChatSession::publish_automod_message_update_event,
     ),
+    (
+        "channel.shared_chat.begin",
+        ChatSession::publish_shared_chat_begin_event,
+    ),
+    (
+        "channel.shared_chat.update",
+        ChatSession::publish_shared_chat_update_event,
+    ),
+    (
+        "channel.shared_chat.end",
+        ChatSession::publish_shared_chat_end_event,
+    ),
 ];
 
 #[cfg(test)]

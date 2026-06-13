@@ -2627,6 +2627,132 @@ impl ChatSession {
         ));
     }
 
+    pub(super) fn publish_shared_chat_begin_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let session_id = event_data
+            .get("session_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let host_id = event_data
+            .get("host_broadcaster_user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let host_login = event_data
+            .get("host_broadcaster_user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let host_name = event_data
+            .get("host_broadcaster_user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(session_id = %session_id, host_login = %host_login, "shared chat session began");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.shared_chat.begin",
+            serde_json::json!({
+                "shared_chat": { "session_id": session_id },
+                "host": {
+                    "id": host_id,
+                    "login": host_login,
+                    "display_name": host_name,
+                },
+            }),
+        ));
+    }
+
+    pub(super) fn publish_shared_chat_update_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let session_id = event_data
+            .get("session_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let host_id = event_data
+            .get("host_broadcaster_user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let host_login = event_data
+            .get("host_broadcaster_user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let host_name = event_data
+            .get("host_broadcaster_user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(session_id = %session_id, host_login = %host_login, "shared chat session updated");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.shared_chat.update",
+            serde_json::json!({
+                "shared_chat": { "session_id": session_id },
+                "host": {
+                    "id": host_id,
+                    "login": host_login,
+                    "display_name": host_name,
+                },
+            }),
+        ));
+    }
+
+    pub(super) fn publish_shared_chat_end_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let session_id = event_data
+            .get("session_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let host_id = event_data
+            .get("host_broadcaster_user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let host_login = event_data
+            .get("host_broadcaster_user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let host_name = event_data
+            .get("host_broadcaster_user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(session_id = %session_id, host_login = %host_login, "shared chat session ended");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.shared_chat.end",
+            serde_json::json!({
+                "shared_chat": { "session_id": session_id },
+                "host": {
+                    "id": host_id,
+                    "login": host_login,
+                    "display_name": host_name,
+                },
+            }),
+        ));
+    }
+
     fn set_state(&self, state: ChatConnectionState) {
         let _ = self.state_tx.send(state);
     }

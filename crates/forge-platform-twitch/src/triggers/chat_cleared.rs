@@ -82,3 +82,57 @@ impl TriggerKindDescriptor for ChatClearedDescriptor {
             .set("broadcaster_id".to_owned(), Variant::String(broadcaster_id))
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    fn chat_clear_event() -> Event {
+        Event::new(
+            EventSource::Twitch,
+            "channel.chat.clear",
+            serde_json::json!({
+                "broadcaster": { "id": "100", "login": "host_channel" }
+            }),
+        )
+    }
+
+    #[test]
+    fn event_filter_gates_on_chat_clear_kind_prefix() {
+        let filter = ChatClearedDescriptor.event_filter();
+        assert_eq!(filter.kind_prefix.as_deref(), Some("channel.chat.clear"));
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+    }
+
+    #[test]
+    fn build_arg_stack_maps_broadcaster_from_nested_payload() {
+        let stack = ChatClearedDescriptor.build_arg_stack(&chat_clear_event());
+        assert_eq!(
+            stack.get("broadcaster_login"),
+            Some(&Variant::String("host_channel".to_owned()))
+        );
+        assert_eq!(
+            stack.get("broadcaster_id"),
+            Some(&Variant::String("100".to_owned()))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_defaults_to_empty_strings_when_broadcaster_absent() {
+        let event = Event::new(
+            EventSource::Twitch,
+            "channel.chat.clear",
+            serde_json::json!({}),
+        );
+        let stack = ChatClearedDescriptor.build_arg_stack(&event);
+        assert_eq!(
+            stack.get("broadcaster_login"),
+            Some(&Variant::String(String::new()))
+        );
+        assert_eq!(
+            stack.get("broadcaster_id"),
+            Some(&Variant::String(String::new()))
+        );
+    }
+}

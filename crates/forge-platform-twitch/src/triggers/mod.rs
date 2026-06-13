@@ -74,6 +74,8 @@ mod tests {
             "twitch.chat.command",
             "twitch.chat.message",
             "twitch.chat.cheer_message",
+            "twitch.chat.message_deleted",
+            "twitch.chat.cleared",
             "twitch.shared_chat.message_received",
             "twitch.support.subscriber",
             "twitch.support.resubscriber",

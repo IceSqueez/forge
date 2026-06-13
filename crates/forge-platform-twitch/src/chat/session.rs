@@ -1519,6 +1519,67 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn message_delete_event_publishes_nested_target_user_payload() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "broadcaster_user_id": "100",
+            "broadcaster_user_login": "host_chan",
+            "target_user_id": "9001",
+            "target_user_login": "spammer_user",
+            "target_user_name": "SpammerUser",
+            "message_id": "msg-abc-123"
+        });
+        session.publish_message_delete_event(&event_data, "meta-delete-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.chat.message_delete");
+        assert_eq!(ev.source, EventSource::Twitch);
+        assert_eq!(ev.payload["message_id"].as_str(), Some("msg-abc-123"));
+        assert_eq!(ev.payload["target_user"]["id"].as_str(), Some("9001"));
+        assert_eq!(
+            ev.payload["target_user"]["login"].as_str(),
+            Some("spammer_user")
+        );
+        assert_eq!(
+            ev.payload["target_user"]["display_name"].as_str(),
+            Some("SpammerUser")
+        );
+    }
+
+    #[tokio::test]
+    async fn chat_clear_event_publishes_nested_broadcaster_payload() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "broadcaster_user_id": "100",
+            "broadcaster_user_login": "host_chan"
+        });
+        session.publish_chat_clear_event(&event_data, "meta-clear-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.chat.clear");
+        assert_eq!(ev.source, EventSource::Twitch);
+        assert_eq!(ev.payload["broadcaster"]["id"].as_str(), Some("100"));
+        assert_eq!(
+            ev.payload["broadcaster"]["login"].as_str(),
+            Some("host_chan")
+        );
+    }
+
+    #[tokio::test]
     async fn stream_offline_event_publishes_nested_broadcaster() {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let session = make_session(&bus);

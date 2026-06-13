@@ -55,6 +55,8 @@ mod tests {
             "stream.online",
             "stream.offline",
             "channel.channel_points_custom_reward_redemption.add",
+            "channel.chat.message_delete",
+            "channel.chat.clear",
         ] {
             assert!(route_for(topic).is_some(), "missing route for {topic}");
         }

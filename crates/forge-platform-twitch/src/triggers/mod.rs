@@ -75,6 +75,7 @@ mod tests {
             "twitch.support.cheer",
             "twitch.channel.raid_received",
             "twitch.channel.follow",
+            "twitch.channel_points.redemption",
             "twitch.stream.online",
             "twitch.stream.offline",
         ];

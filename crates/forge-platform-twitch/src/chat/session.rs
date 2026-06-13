@@ -1400,6 +1400,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn reward_redemption_event_publishes_documented_payload_shape() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "id": "redemption-42",
+            "status": "unfulfilled",
+            "user_input": "play my song",
+            "redeemed_at": "2026-06-13T10:00:00Z",
+            "user_id": "777",
+            "user_login": "viewer_one",
+            "user_name": "ViewerOne",
+            "reward": {
+                "id": "r1",
+                "title": "Hydrate",
+                "cost": 500,
+                "prompt": "Make the streamer drink water"
+            }
+        });
+        session.publish_reward_redemption_event(&event_data, "meta-redemption-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.channel_points_redemption");
+        assert_eq!(ev.source, EventSource::Twitch);
+        assert_eq!(
+            ev.payload["redemption"]["id"].as_str(),
+            Some("redemption-42")
+        );
+        assert_eq!(ev.payload["reward"]["id"].as_str(), Some("r1"));
+        assert_eq!(ev.payload["reward"]["title"].as_str(), Some("Hydrate"));
+        assert_eq!(ev.payload["reward"]["cost"].as_i64(), Some(500));
+    }
+
+    #[tokio::test]
     async fn stream_offline_event_publishes_nested_broadcaster() {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let session = make_session(&bus);

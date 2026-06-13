@@ -49,6 +49,7 @@ mod tests {
             "channel.follow",
             "stream.online",
             "stream.offline",
+            "channel.channel_points_custom_reward_redemption.add",
         ] {
             assert!(route_for(topic).is_some(), "missing route for {topic}");
         }

@@ -235,3 +235,131 @@ impl TriggerKindDescriptor for ChannelPointsRedemptionDescriptor {
             .set("reward.prompt".to_owned(), Variant::String(reward_prompt))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn redemption_config(reward_id: &str, reward_title: &str) -> TriggerConfig {
+        let mut cfg = TriggerConfig::new();
+        cfg.insert(
+            "reward_id".to_owned(),
+            Variant::String(reward_id.to_owned()),
+        );
+        cfg.insert(
+            "reward_title".to_owned(),
+            Variant::String(reward_title.to_owned()),
+        );
+        cfg
+    }
+
+    fn redemption_event() -> Event {
+        let payload = serde_json::json!({
+            "redemption": {
+                "id": "redemption-42",
+                "status": "unfulfilled",
+                "user_input": "play my song",
+                "redeemed_at": "2026-06-13T10:00:00Z",
+            },
+            "user": {
+                "id": "777",
+                "login": "viewer_one",
+                "display_name": "ViewerOne",
+            },
+            "reward": {
+                "id": "r1",
+                "title": "Hydrate",
+                "cost": 500,
+                "prompt": "Make the streamer drink water",
+            },
+        });
+        Event::new(
+            EventSource::Twitch,
+            "channel.channel_points_redemption",
+            payload,
+        )
+    }
+
+    #[test]
+    fn event_filter_targets_redemption_kind_from_twitch() {
+        let filter = ChannelPointsRedemptionDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.channel_points_redemption")
+        );
+    }
+
+    #[test]
+    fn matches_trigger_applies_reward_id_then_title_precedence() {
+        // Event reward is { id: "r1", title: "Hydrate" }. Each row exercises the
+        // filter precedence: reward_id wins when set; reward_title is consulted
+        // only when reward_id is blank; both blank matches any reward.
+        let cases = [
+            ("both blank matches any", "", "", true),
+            ("reward_id hit", "r1", "", true),
+            ("reward_id miss", "rX", "", false),
+            ("reward_title hit when id blank", "", "Hydrate", true),
+            ("reward_title miss when id blank", "", "Other", false),
+            ("reward_id precedence over title", "r1", "Other", true),
+        ];
+        for (name, reward_id, reward_title, expected) in cases {
+            let cfg = redemption_config(reward_id, reward_title);
+            assert_eq!(
+                ChannelPointsRedemptionDescriptor.matches_trigger(&cfg, &redemption_event()),
+                expected,
+                "case: {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn build_arg_stack_exposes_all_redemption_user_and_reward_vars() {
+        let stack = ChannelPointsRedemptionDescriptor.build_arg_stack(&redemption_event());
+        // redemption.id is the chaining var that feeds %redemption.id% into the
+        // fulfill/cancel sub-actions, so it must survive intact.
+        assert_eq!(
+            stack.get("redemption.id"),
+            Some(&Variant::String("redemption-42".to_owned()))
+        );
+        assert_eq!(
+            stack.get("redemption.status"),
+            Some(&Variant::String("unfulfilled".to_owned()))
+        );
+        assert_eq!(
+            stack.get("user_input"),
+            Some(&Variant::String("play my song".to_owned()))
+        );
+        assert_eq!(
+            stack.get("redeemed_at"),
+            Some(&Variant::String("2026-06-13T10:00:00Z".to_owned()))
+        );
+        assert_eq!(
+            stack.get("user_id"),
+            Some(&Variant::String("777".to_owned()))
+        );
+        assert_eq!(
+            stack.get("user_login"),
+            Some(&Variant::String("viewer_one".to_owned()))
+        );
+        assert_eq!(
+            stack.get("user_name"),
+            Some(&Variant::String("ViewerOne".to_owned()))
+        );
+        assert_eq!(
+            stack.get("reward.id"),
+            Some(&Variant::String("r1".to_owned()))
+        );
+        assert_eq!(
+            stack.get("reward.title"),
+            Some(&Variant::String("Hydrate".to_owned()))
+        );
+        // reward.cost must marshal as Int, not String, so numeric comparisons in
+        // downstream actions work.
+        assert_eq!(stack.get("reward.cost"), Some(&Variant::Int(500)));
+        assert_eq!(
+            stack.get("reward.prompt"),
+            Some(&Variant::String("Make the streamer drink water".to_owned()))
+        );
+    }
+}

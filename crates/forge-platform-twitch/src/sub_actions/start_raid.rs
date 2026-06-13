@@ -129,3 +129,137 @@ impl SubActionRunner for StartRaidRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use crate::helix::HelixError;
+    use crate::sub_actions::test_support::{
+        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx, users_fixture,
+    };
+
+    fn runner_with(
+        responses: Vec<Result<serde_json::Value, HelixError>>,
+    ) -> (Arc<MockTransport>, StartRaidRunner) {
+        let transport = Arc::new(MockTransport::returning_sequence(responses));
+        let runner = StartRaidRunner::new(
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+        );
+        (transport, runner)
+    }
+
+    fn config(login: &str) -> SubActionConfig {
+        BTreeMap::from([(
+            "to_broadcaster_login".to_owned(),
+            Variant::String(login.to_owned()),
+        )])
+    }
+
+    #[tokio::test]
+    async fn execute_resolves_login_then_posts_raid_from_self_to_resolved_id() {
+        let (transport, runner) =
+            runner_with(vec![users_fixture("555"), Ok(serde_json::Value::Null)]);
+        let stack = ArgStack::new().set(
+            "user_login".to_owned(),
+            Variant::String("target".to_owned()),
+        );
+
+        let (telemetry, _) = runner
+            .execute(&config("%user_login%"), &make_ctx(&stack))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        assert_eq!(transport.call_count(), 2, "resolve then raid");
+
+        let resolve = transport.request(0);
+        assert_eq!(resolve.method, HelixMethod::Get);
+        assert_eq!(resolve.path, "/helix/users");
+        assert!(
+            resolve
+                .query
+                .contains(&("login".to_owned(), "target".to_owned())),
+            "resolve must look up the interpolated login: {:?}",
+            resolve.query
+        );
+
+        let act = transport.last_request();
+        assert_eq!(act.method, HelixMethod::Post);
+        assert_eq!(act.path, "/helix/raids");
+        assert!(
+            act.query
+                .contains(&("from_broadcaster_id".to_owned(), SELF_USER_ID.to_owned())),
+            "from must be self: {:?}",
+            act.query
+        );
+        assert!(
+            act.query
+                .contains(&("to_broadcaster_id".to_owned(), "555".to_owned())),
+            "to must be the RESOLVED id, not the login: {:?}",
+            act.query
+        );
+        assert_eq!(act.body, None, "raid carries no JSON body");
+    }
+
+    #[tokio::test]
+    async fn empty_login_after_interpolation_fails_before_any_helix_call() {
+        let (transport, runner) = runner_with(vec![users_fixture("555")]);
+        let stack = ArgStack::new().set("user_login".to_owned(), Variant::String(String::new()));
+
+        let (telemetry, _) = runner
+            .execute(&config("%user_login%"), &make_ctx(&stack))
+            .await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert_eq!(
+            transport.call_count(),
+            0,
+            "empty login must fail before the resolve call"
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_failure_skips_the_raid_call() {
+        let (transport, runner) = runner_with(vec![Err(HelixError::Http {
+            status: 404,
+            body: "user not found".to_owned(),
+        })]);
+        let stack = ArgStack::new();
+
+        let (telemetry, _) = runner.execute(&config("ghost"), &make_ctx(&stack)).await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert_eq!(
+            transport.call_count(),
+            1,
+            "resolve failure must not issue the raid POST"
+        );
+    }
+
+    #[tokio::test]
+    async fn raid_http_failure_maps_to_failed_without_token_or_url() {
+        let (transport, runner) = runner_with(vec![
+            users_fixture("555"),
+            Err(HelixError::Http {
+                status: 409,
+                body: "raid already pending".to_owned(),
+            }),
+        ]);
+        let stack = ArgStack::new();
+
+        let (telemetry, _) = runner.execute(&config("target"), &make_ctx(&stack)).await;
+
+        assert_eq!(
+            transport.call_count(),
+            2,
+            "failure must come from the raid call, not the resolve"
+        );
+        let SubActionOutcome::Failed(msg) = telemetry.outcome else {
+            panic!("expected Failed, got {:?}", telemetry.outcome);
+        };
+        assert!(msg.contains("409"), "status must surface: {msg}");
+        assert!(!msg.contains(TOKEN_SENTINEL), "token leaked: {msg}");
+        assert!(!msg.contains("api.twitch.tv"), "URL leaked: {msg}");
+    }
+}

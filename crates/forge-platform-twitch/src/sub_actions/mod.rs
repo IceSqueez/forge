@@ -331,6 +331,9 @@ mod tests {
             "twitch.channel.update_category",
             "twitch.channel.update_tags",
             "twitch.channel.create_marker",
+            "twitch.channel.send_shoutout",
+            "twitch.channel.start_raid",
+            "twitch.channel.cancel_raid",
         ] {
             assert!(reg.get(id).is_some(), "missing sub-action: {id}");
         }

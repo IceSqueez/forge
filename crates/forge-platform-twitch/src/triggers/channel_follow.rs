@@ -12,7 +12,7 @@ impl TriggerKindDescriptor for ChannelFollowDescriptor {
     }
 
     fn category(&self) -> TriggerCategory {
-        TriggerCategory::Ungrouped
+        TriggerCategory::Users
     }
 
     fn label(&self) -> &str {

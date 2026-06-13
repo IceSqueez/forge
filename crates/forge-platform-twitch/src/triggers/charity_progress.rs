@@ -14,7 +14,7 @@ impl TriggerKindDescriptor for CharityProgressDescriptor {
     }
 
     fn category(&self) -> TriggerCategory {
-        TriggerCategory::Bits
+        TriggerCategory::Charity
     }
 
     fn label(&self) -> &str {

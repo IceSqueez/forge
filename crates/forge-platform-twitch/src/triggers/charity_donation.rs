@@ -12,7 +12,7 @@ impl TriggerKindDescriptor for CharityDonationDescriptor {
     }
 
     fn category(&self) -> TriggerCategory {
-        TriggerCategory::Bits
+        TriggerCategory::Charity
     }
 
     fn label(&self) -> &str {

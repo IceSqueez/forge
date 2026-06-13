@@ -12,7 +12,7 @@ impl TriggerKindDescriptor for ChannelPointsRedemptionDescriptor {
     }
 
     fn category(&self) -> TriggerCategory {
-        TriggerCategory::Ungrouped
+        TriggerCategory::ChannelPoints
     }
 
     fn label(&self) -> &str {

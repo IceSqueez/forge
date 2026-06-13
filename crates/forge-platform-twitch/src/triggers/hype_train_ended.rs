@@ -12,7 +12,7 @@ impl TriggerKindDescriptor for HypeTrainEndedDescriptor {
     }
 
     fn category(&self) -> TriggerCategory {
-        TriggerCategory::Bits
+        TriggerCategory::Hype
     }
 
     fn label(&self) -> &str {

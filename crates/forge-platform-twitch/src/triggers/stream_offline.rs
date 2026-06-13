@@ -12,7 +12,7 @@ impl TriggerKindDescriptor for StreamOfflineDescriptor {
     }
 
     fn category(&self) -> TriggerCategory {
-        TriggerCategory::Ungrouped
+        TriggerCategory::Streams
     }
 
     fn label(&self) -> &str {

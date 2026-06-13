@@ -104,6 +104,22 @@ const NOTIFICATION_ROUTES: &[(&str, NotificationRoute)] = &[
         ChatSession::publish_poll_progress_event,
     ),
     ("channel.poll.end", ChatSession::publish_poll_end_event),
+    (
+        "channel.prediction.begin",
+        ChatSession::publish_prediction_begin_event,
+    ),
+    (
+        "channel.prediction.progress",
+        ChatSession::publish_prediction_progress_event,
+    ),
+    (
+        "channel.prediction.lock",
+        ChatSession::publish_prediction_lock_event,
+    ),
+    (
+        "channel.prediction.end",
+        ChatSession::publish_prediction_end_event,
+    ),
 ];
 
 #[cfg(test)]

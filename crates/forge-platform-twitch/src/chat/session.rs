@@ -1723,6 +1723,162 @@ impl ChatSession {
         ));
     }
 
+    pub(super) fn publish_prediction_begin_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let prediction_id = event_data
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let title = event_data
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let started_at = event_data
+            .get("started_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let locks_at = event_data
+            .get("locks_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(prediction_id = %prediction_id, title = %title, "prediction began");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.prediction.begin",
+            serde_json::json!({
+                "prediction": {
+                    "id": prediction_id,
+                    "title": title,
+                    "started_at": started_at,
+                    "locks_at": locks_at,
+                },
+            }),
+        ));
+    }
+
+    pub(super) fn publish_prediction_progress_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let prediction_id = event_data
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let title = event_data
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(prediction_id = %prediction_id, title = %title, "prediction progress");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.prediction.progress",
+            serde_json::json!({
+                "prediction": {
+                    "id": prediction_id,
+                    "title": title,
+                },
+            }),
+        ));
+    }
+
+    pub(super) fn publish_prediction_lock_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let prediction_id = event_data
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let title = event_data
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let locked_at = event_data
+            .get("locked_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(prediction_id = %prediction_id, title = %title, "prediction locked");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.prediction.lock",
+            serde_json::json!({
+                "prediction": {
+                    "id": prediction_id,
+                    "title": title,
+                    "locked_at": locked_at,
+                },
+            }),
+        ));
+    }
+
+    pub(super) fn publish_prediction_end_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let prediction_id = event_data
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let title = event_data
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let winning_outcome_id = event_data
+            .get("winning_outcome_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let status = event_data
+            .get("status")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let ended_at = event_data
+            .get("ended_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(prediction_id = %prediction_id, status = %status, "prediction ended");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.prediction.end",
+            serde_json::json!({
+                "prediction": {
+                    "id": prediction_id,
+                    "title": title,
+                    "winning_outcome_id": winning_outcome_id,
+                    "status": status,
+                    "ended_at": ended_at,
+                },
+            }),
+        ));
+    }
+
     fn set_state(&self, state: ChatConnectionState) {
         let _ = self.state_tx.send(state);
     }

@@ -22,6 +22,10 @@ mod moderator_removed;
 mod poll_ended;
 mod poll_progress;
 mod poll_started;
+mod prediction_ended;
+mod prediction_locked;
+mod prediction_progress;
+mod prediction_started;
 mod shared_chat_message;
 mod shield_mode_ended;
 mod shield_mode_started;
@@ -61,6 +65,10 @@ use moderator_removed::ModeratorRemovedDescriptor;
 use poll_ended::PollEndedDescriptor;
 use poll_progress::PollProgressDescriptor;
 use poll_started::PollStartedDescriptor;
+use prediction_ended::PredictionEndedDescriptor;
+use prediction_locked::PredictionLockedDescriptor;
+use prediction_progress::PredictionProgressDescriptor;
+use prediction_started::PredictionStartedDescriptor;
 use shared_chat_message::SharedChatMessageDescriptor;
 use shield_mode_ended::ShieldModeEndedDescriptor;
 use shield_mode_started::ShieldModeStartedDescriptor;
@@ -112,6 +120,10 @@ pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), Registr
     reg.register(Box::new(PollStartedDescriptor))?;
     reg.register(Box::new(PollProgressDescriptor))?;
     reg.register(Box::new(PollEndedDescriptor))?;
+    reg.register(Box::new(PredictionStartedDescriptor))?;
+    reg.register(Box::new(PredictionProgressDescriptor))?;
+    reg.register(Box::new(PredictionLockedDescriptor))?;
+    reg.register(Box::new(PredictionEndedDescriptor))?;
     Ok(())
 }
 

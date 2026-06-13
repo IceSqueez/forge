@@ -9,11 +9,13 @@ mod identity;
 mod remove_moderator;
 mod remove_vip;
 mod reply_chat;
+mod run_ad;
 mod send_announcement;
 mod send_shoutout;
 mod send_whisper;
 mod set_mode;
 mod shield_mode;
+mod snooze_ad;
 mod start_raid;
 mod timeout_user;
 mod unban_user;
@@ -38,11 +40,13 @@ pub use identity::SelfIdentity;
 pub use remove_moderator::RemoveModeratorRunner;
 pub use remove_vip::RemoveVipRunner;
 pub use reply_chat::ReplyChatRunner;
+pub use run_ad::RunAdRunner;
 pub use send_announcement::SendAnnouncementRunner;
 pub use send_shoutout::SendShoutoutRunner;
 pub use send_whisper::SendWhisperRunner;
 pub use set_mode::SetModeRunner;
 pub use shield_mode::{ShieldModeOffRunner, ShieldModeOnRunner};
+pub use snooze_ad::SnoozeAdRunner;
 pub use start_raid::StartRaidRunner;
 pub use timeout_user::TimeoutUserRunner;
 pub use unban_user::UnbanUserRunner;
@@ -147,7 +151,15 @@ pub fn register_twitch_sub_actions(
         Arc::clone(&transport),
         Arc::clone(&identity),
     )))?;
-    reg.register(Box::new(CancelRaidRunner::new(transport, identity)))?;
+    reg.register(Box::new(CancelRaidRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(RunAdRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(SnoozeAdRunner::new(transport, identity)))?;
     Ok(())
 }
 

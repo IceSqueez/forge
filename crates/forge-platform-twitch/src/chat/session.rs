@@ -1430,6 +1430,185 @@ impl ChatSession {
         ));
     }
 
+    pub(super) fn publish_shoutout_create_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let to_id = event_data
+            .get("to_broadcaster_user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let to_login = event_data
+            .get("to_broadcaster_user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let to_display_name = event_data
+            .get("to_broadcaster_user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let viewer_count = event_data
+            .get("viewer_count")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let started_at = event_data
+            .get("started_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(to_broadcaster_login = %to_login, viewer_count, "shoutout sent");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.shoutout.create",
+            serde_json::json!({
+                "to_broadcaster": {
+                    "id": to_id,
+                    "login": to_login,
+                    "display_name": to_display_name,
+                },
+                "viewer_count": viewer_count,
+                "started_at": started_at,
+            }),
+        ));
+    }
+
+    pub(super) fn publish_shoutout_receive_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let from_id = event_data
+            .get("from_broadcaster_user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let from_login = event_data
+            .get("from_broadcaster_user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let from_display_name = event_data
+            .get("from_broadcaster_user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let viewer_count = event_data
+            .get("viewer_count")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let started_at = event_data
+            .get("started_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(from_broadcaster_login = %from_login, viewer_count, "shoutout received");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.shoutout.receive",
+            serde_json::json!({
+                "from_broadcaster": {
+                    "id": from_id,
+                    "login": from_login,
+                    "display_name": from_display_name,
+                },
+                "viewer_count": viewer_count,
+                "started_at": started_at,
+            }),
+        ));
+    }
+
+    pub(super) fn publish_suspicious_user_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let user_id = event_data
+            .get("user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_login = event_data
+            .get("user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_display_name = event_data
+            .get("user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let low_trust_status = event_data
+            .get("low_trust_status")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let message_text = event_data
+            .get("message")
+            .and_then(|m| m.get("text"))
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(user_login = %user_login, low_trust_status = %low_trust_status, "suspicious user message");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.suspicious_user.message",
+            serde_json::json!({
+                "user": {
+                    "id": user_id,
+                    "login": user_login,
+                    "display_name": user_display_name,
+                },
+                "low_trust_status": low_trust_status,
+                "message_text": message_text,
+            }),
+        ));
+    }
+
+    pub(super) fn publish_warning_acknowledge_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let user_id = event_data
+            .get("user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_login = event_data
+            .get("user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_display_name = event_data
+            .get("user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(user_login = %user_login, "warning acknowledged");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.warning.acknowledge",
+            serde_json::json!({
+                "user": {
+                    "id": user_id,
+                    "login": user_login,
+                    "display_name": user_display_name,
+                },
+            }),
+        ));
+    }
+
     fn set_state(&self, state: ChatConnectionState) {
         let _ = self.state_tx.send(state);
     }

@@ -22,12 +22,16 @@ mod moderator_removed;
 mod shared_chat_message;
 mod shield_mode_ended;
 mod shield_mode_started;
+mod shoutout_received;
+mod shoutout_sent;
 mod stream_offline;
 mod stream_online;
 mod support_cheer;
 mod support_gift_sub;
 mod support_resubscriber;
 mod support_subscriber;
+mod suspicious_user_message;
+mod warning_acknowledged;
 
 use forge_registry::{RegistryError, TriggerRegistry};
 
@@ -54,12 +58,16 @@ use moderator_removed::ModeratorRemovedDescriptor;
 use shared_chat_message::SharedChatMessageDescriptor;
 use shield_mode_ended::ShieldModeEndedDescriptor;
 use shield_mode_started::ShieldModeStartedDescriptor;
+use shoutout_received::ShoutoutReceivedDescriptor;
+use shoutout_sent::ShoutoutSentDescriptor;
 use stream_offline::StreamOfflineDescriptor;
 use stream_online::StreamOnlineDescriptor;
 use support_cheer::SupportCheerDescriptor;
 use support_gift_sub::SupportGiftSubDescriptor;
 use support_resubscriber::SupportResubscriberDescriptor;
 use support_subscriber::SupportSubscriberDescriptor;
+use suspicious_user_message::SuspiciousUserMessageDescriptor;
+use warning_acknowledged::WarningAcknowledgedDescriptor;
 
 pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), RegistryError> {
     reg.register(Box::new(ChannelBanDescriptor))?;
@@ -91,6 +99,10 @@ pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), Registr
     reg.register(Box::new(ModeratorRemovedDescriptor))?;
     reg.register(Box::new(ShieldModeStartedDescriptor))?;
     reg.register(Box::new(ShieldModeEndedDescriptor))?;
+    reg.register(Box::new(ShoutoutSentDescriptor))?;
+    reg.register(Box::new(ShoutoutReceivedDescriptor))?;
+    reg.register(Box::new(SuspiciousUserMessageDescriptor))?;
+    reg.register(Box::new(WarningAcknowledgedDescriptor))?;
     Ok(())
 }
 

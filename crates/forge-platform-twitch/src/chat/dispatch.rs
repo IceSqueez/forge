@@ -82,6 +82,22 @@ const NOTIFICATION_ROUTES: &[(&str, NotificationRoute)] = &[
         "channel.shield_mode.end",
         ChatSession::publish_shield_mode_end_event,
     ),
+    (
+        "channel.shoutout.create",
+        ChatSession::publish_shoutout_create_event,
+    ),
+    (
+        "channel.shoutout.receive",
+        ChatSession::publish_shoutout_receive_event,
+    ),
+    (
+        "channel.suspicious_user.message",
+        ChatSession::publish_suspicious_user_event,
+    ),
+    (
+        "channel.warning.acknowledge",
+        ChatSession::publish_warning_acknowledge_event,
+    ),
 ];
 
 #[cfg(test)]

@@ -482,6 +482,7 @@ mod tests {
             "twitch.goal.get_current",
             "twitch.automod.approve_message",
             "twitch.automod.deny_message",
+            "twitch.automod.update_settings",
         ] {
             assert!(reg.get(id).is_some(), "missing sub-action: {id}");
         }

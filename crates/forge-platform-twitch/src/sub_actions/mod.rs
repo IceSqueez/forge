@@ -1,6 +1,7 @@
 mod add_moderator;
 mod add_vip;
 mod ban_user;
+mod cancel_prediction;
 mod cancel_raid;
 mod cancel_redemption;
 mod clear_chat;
@@ -13,10 +14,12 @@ mod enable_reward;
 mod end_poll;
 mod fulfill_redemption;
 mod identity;
+mod lock_prediction;
 mod pause_reward;
 mod remove_moderator;
 mod remove_vip;
 mod reply_chat;
+mod resolve_prediction;
 mod resume_reward;
 mod run_ad;
 mod send_announcement;
@@ -44,6 +47,7 @@ use forge_storage::CredentialsRepo;
 pub use add_moderator::AddModeratorRunner;
 pub use add_vip::AddVipRunner;
 pub use ban_user::BanUserRunner;
+pub use cancel_prediction::CancelPredictionRunner;
 pub use cancel_raid::CancelRaidRunner;
 pub use cancel_redemption::CancelRedemptionRunner;
 pub use clear_chat::ClearChatRunner;
@@ -56,10 +60,12 @@ pub use enable_reward::EnableRewardRunner;
 pub use end_poll::EndPollRunner;
 pub use fulfill_redemption::FulfillRedemptionRunner;
 pub use identity::SelfIdentity;
+pub use lock_prediction::LockPredictionRunner;
 pub use pause_reward::PauseRewardRunner;
 pub use remove_moderator::RemoveModeratorRunner;
 pub use remove_vip::RemoveVipRunner;
 pub use reply_chat::ReplyChatRunner;
+pub use resolve_prediction::ResolvePredictionRunner;
 pub use resume_reward::ResumeRewardRunner;
 pub use run_ad::RunAdRunner;
 pub use send_announcement::SendAnnouncementRunner;
@@ -231,7 +237,19 @@ pub fn register_twitch_sub_actions(
         Arc::clone(&transport),
         Arc::clone(&identity),
     )))?;
-    reg.register(Box::new(StartPredictionRunner::new(transport, identity)))?;
+    reg.register(Box::new(StartPredictionRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(LockPredictionRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(CancelPredictionRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(ResolvePredictionRunner::new(transport, identity)))?;
     Ok(())
 }
 

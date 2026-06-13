@@ -431,6 +431,7 @@ mod tests {
             "twitch.channel_points.cancel_redemption",
             "twitch.poll.start",
             "twitch.poll.end",
+            "twitch.prediction.start",
         ] {
             assert!(reg.get(id).is_some(), "missing sub-action: {id}");
         }

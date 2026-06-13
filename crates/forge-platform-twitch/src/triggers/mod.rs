@@ -1,4 +1,7 @@
 mod automod_message_held;
+mod automod_message_updated;
+mod automod_settings_updated;
+mod automod_terms_updated;
 mod channel_ban;
 mod channel_follow;
 mod channel_points_redemption;
@@ -55,6 +58,9 @@ mod warning_acknowledged;
 use forge_registry::{RegistryError, TriggerRegistry};
 
 use automod_message_held::AutomodMessageHeldDescriptor;
+use automod_message_updated::AutomodMessageUpdatedDescriptor;
+use automod_settings_updated::AutomodSettingsUpdatedDescriptor;
+use automod_terms_updated::AutomodTermsUpdatedDescriptor;
 use channel_ban::ChannelBanDescriptor;
 use channel_follow::ChannelFollowDescriptor;
 use channel_points_redemption::ChannelPointsRedemptionDescriptor;
@@ -156,6 +162,9 @@ pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), Registr
     reg.register(Box::new(RewardRemovedDescriptor))?;
     reg.register(Box::new(RedemptionUpdatedDescriptor))?;
     reg.register(Box::new(AutomodMessageHeldDescriptor))?;
+    reg.register(Box::new(AutomodSettingsUpdatedDescriptor))?;
+    reg.register(Box::new(AutomodTermsUpdatedDescriptor))?;
+    reg.register(Box::new(AutomodMessageUpdatedDescriptor))?;
     reg.register(Box::new(ChatSettingsUpdatedDescriptor))?;
     reg.register(Box::new(GuestStarSessionBeganDescriptor))?;
     reg.register(Box::new(GuestStarSessionEndedDescriptor))?;

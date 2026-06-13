@@ -2465,6 +2465,168 @@ impl ChatSession {
         ));
     }
 
+    pub(super) fn publish_automod_settings_update_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let moderator_id = event_data
+            .get("moderator_user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let moderator_login = event_data
+            .get("moderator_user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let moderator_name = event_data
+            .get("moderator_user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let overall_level = event_data.get("overall_level").and_then(|v| v.as_i64());
+
+        info!(moderator_login = %moderator_login, "automod settings updated");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.automod.settings.update",
+            serde_json::json!({
+                "moderator": {
+                    "id": moderator_id,
+                    "login": moderator_login,
+                    "display_name": moderator_name,
+                },
+                "overall_level": overall_level,
+            }),
+        ));
+    }
+
+    pub(super) fn publish_automod_terms_update_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let moderator_id = event_data
+            .get("moderator_user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let moderator_login = event_data
+            .get("moderator_user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let moderator_name = event_data
+            .get("moderator_user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let action = event_data
+            .get("action")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let terms: Vec<serde_json::Value> = event_data
+            .get("terms")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        info!(moderator_login = %moderator_login, action = %action, "automod terms updated");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.automod.terms.update",
+            serde_json::json!({
+                "moderator": {
+                    "id": moderator_id,
+                    "login": moderator_login,
+                    "display_name": moderator_name,
+                },
+                "action": action,
+                "terms": terms,
+            }),
+        ));
+    }
+
+    pub(super) fn publish_automod_message_update_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let user_id = event_data
+            .get("user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_login = event_data
+            .get("user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_name = event_data
+            .get("user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let moderator_login = event_data
+            .get("moderator_user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let message_id = event_data
+            .get("message_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let message_text = event_data
+            .get("message")
+            .and_then(|m| m.get("text"))
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let status = event_data
+            .get("status")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let category = event_data
+            .get("category")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let level = event_data
+            .get("level")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+
+        info!(user_login = %user_login, status = %status, category = %category, "automod message updated");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.automod.message.update",
+            serde_json::json!({
+                "automod": {
+                    "message_id": message_id,
+                    "status": status,
+                    "category": category,
+                    "level": level,
+                },
+                "user": {
+                    "id": user_id,
+                    "login": user_login,
+                    "display_name": user_name,
+                },
+                "moderator": {
+                    "login": moderator_login,
+                },
+                "message_text": message_text,
+            }),
+        ));
+    }
+
     fn set_state(&self, state: ChatConnectionState) {
         let _ = self.state_tx.send(state);
     }

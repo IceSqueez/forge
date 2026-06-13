@@ -83,3 +83,39 @@ impl TriggerKindDescriptor for ModeratorAddedDescriptor {
             .set("user_name".to_owned(), Variant::String(user_name))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn moderator_add_event() -> Event {
+        let payload = serde_json::json!({
+            "user": { "id": "777", "login": "viewer_one", "display_name": "ViewerOne" },
+        });
+        Event::new(EventSource::Twitch, "channel.moderator.add", payload)
+    }
+
+    #[test]
+    fn event_filter_targets_moderator_add_topic_from_twitch() {
+        let filter = ModeratorAddedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(filter.kind_prefix.as_deref(), Some("channel.moderator.add"));
+    }
+
+    #[test]
+    fn build_arg_stack_maps_user_fields_from_nested_payload() {
+        let stack = ModeratorAddedDescriptor.build_arg_stack(&moderator_add_event());
+        assert_eq!(
+            stack.get("user_login"),
+            Some(&Variant::String("viewer_one".to_owned()))
+        );
+        assert_eq!(
+            stack.get("user_id"),
+            Some(&Variant::String("777".to_owned()))
+        );
+        assert_eq!(
+            stack.get("user_name"),
+            Some(&Variant::String("ViewerOne".to_owned()))
+        );
+    }
+}

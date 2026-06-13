@@ -83,3 +83,42 @@ impl TriggerKindDescriptor for ModeratorRemovedDescriptor {
             .set("user_name".to_owned(), Variant::String(user_name))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn moderator_remove_event() -> Event {
+        let payload = serde_json::json!({
+            "user": { "id": "888", "login": "ex_mod", "display_name": "ExMod" },
+        });
+        Event::new(EventSource::Twitch, "channel.moderator.remove", payload)
+    }
+
+    #[test]
+    fn event_filter_targets_moderator_remove_topic_from_twitch() {
+        let filter = ModeratorRemovedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.moderator.remove")
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_maps_user_fields_from_nested_payload() {
+        let stack = ModeratorRemovedDescriptor.build_arg_stack(&moderator_remove_event());
+        assert_eq!(
+            stack.get("user_login"),
+            Some(&Variant::String("ex_mod".to_owned()))
+        );
+        assert_eq!(
+            stack.get("user_id"),
+            Some(&Variant::String("888".to_owned()))
+        );
+        assert_eq!(
+            stack.get("user_name"),
+            Some(&Variant::String("ExMod".to_owned()))
+        );
+    }
+}

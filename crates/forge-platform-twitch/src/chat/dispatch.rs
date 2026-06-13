@@ -112,6 +112,10 @@ mod tests {
             "channel.charity_campaign.stop",
             "channel.ban",
             "channel.unban",
+            "channel.moderator.add",
+            "channel.moderator.remove",
+            "channel.shield_mode.begin",
+            "channel.shield_mode.end",
         ] {
             assert!(route_for(topic).is_some(), "missing route for {topic}");
         }

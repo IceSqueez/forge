@@ -2441,4 +2441,119 @@ mod tests {
         assert!(ev.payload.get("reason").is_none());
         assert!(ev.payload.get("is_permanent").is_none());
     }
+
+    #[tokio::test]
+    async fn moderator_add_event_nests_user_under_user_key() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "user_id": "777",
+            "user_login": "viewer_one",
+            "user_name": "ViewerOne"
+        });
+        session.publish_moderator_add_event(&event_data, "meta-modadd-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.moderator.add");
+        assert_eq!(ev.source, EventSource::Twitch);
+        assert_eq!(ev.payload["user"]["id"].as_str(), Some("777"));
+        assert_eq!(ev.payload["user"]["login"].as_str(), Some("viewer_one"));
+        assert_eq!(
+            ev.payload["user"]["display_name"].as_str(),
+            Some("ViewerOne")
+        );
+    }
+
+    #[tokio::test]
+    async fn moderator_remove_event_nests_user_under_user_key() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "user_id": "888",
+            "user_login": "ex_mod",
+            "user_name": "ExMod"
+        });
+        session.publish_moderator_remove_event(&event_data, "meta-modremove-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.moderator.remove");
+        assert_eq!(ev.payload["user"]["id"].as_str(), Some("888"));
+        assert_eq!(ev.payload["user"]["login"].as_str(), Some("ex_mod"));
+        assert_eq!(ev.payload["user"]["display_name"].as_str(), Some("ExMod"));
+    }
+
+    #[tokio::test]
+    async fn shield_mode_begin_event_nests_moderator_and_carries_started_at() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        // Helix delivers the moderator as flat moderator_user_* fields; the forge
+        // payload nests them under "moderator" and lifts started_at to the root.
+        let event_data = serde_json::json!({
+            "moderator_user_id": "42",
+            "moderator_user_login": "mod_jane",
+            "moderator_user_name": "ModJane",
+            "started_at": "2026-06-13T18:00:00Z"
+        });
+        session.publish_shield_mode_begin_event(&event_data, "meta-shieldbegin-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.shield_mode.begin");
+        assert_eq!(ev.source, EventSource::Twitch);
+        assert_eq!(ev.payload["moderator"]["id"].as_str(), Some("42"));
+        assert_eq!(ev.payload["moderator"]["login"].as_str(), Some("mod_jane"));
+        assert_eq!(
+            ev.payload["moderator"]["display_name"].as_str(),
+            Some("ModJane")
+        );
+        assert_eq!(
+            ev.payload["started_at"].as_str(),
+            Some("2026-06-13T18:00:00Z")
+        );
+    }
+
+    #[tokio::test]
+    async fn shield_mode_end_event_nests_moderator_and_carries_ended_at() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "moderator_user_id": "42",
+            "moderator_user_login": "mod_jane",
+            "moderator_user_name": "ModJane",
+            "ended_at": "2026-06-13T19:00:00Z"
+        });
+        session.publish_shield_mode_end_event(&event_data, "meta-shieldend-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.shield_mode.end");
+        assert_eq!(ev.payload["moderator"]["id"].as_str(), Some("42"));
+        assert_eq!(ev.payload["moderator"]["login"].as_str(), Some("mod_jane"));
+        assert_eq!(
+            ev.payload["ended_at"].as_str(),
+            Some("2026-06-13T19:00:00Z")
+        );
+    }
 }

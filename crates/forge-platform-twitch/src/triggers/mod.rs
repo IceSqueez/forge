@@ -138,6 +138,10 @@ mod tests {
             "twitch.support.charity_started",
             "twitch.support.charity_progress",
             "twitch.support.charity_stopped",
+            "twitch.channel.moderator_added",
+            "twitch.channel.moderator_removed",
+            "twitch.channel.shield_mode_started",
+            "twitch.channel.shield_mode_ended",
         ];
 
         for id in ids {

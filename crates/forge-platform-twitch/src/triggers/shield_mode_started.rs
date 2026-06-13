@@ -87,3 +87,44 @@ impl TriggerKindDescriptor for ShieldModeStartedDescriptor {
             .set("started_at".to_owned(), Variant::String(started_at))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn shield_begin_event() -> Event {
+        let payload = serde_json::json!({
+            "moderator": { "id": "42", "login": "mod_jane", "display_name": "ModJane" },
+            "started_at": "2026-06-13T18:00:00Z",
+        });
+        Event::new(EventSource::Twitch, "channel.shield_mode.begin", payload)
+    }
+
+    #[test]
+    fn event_filter_targets_shield_mode_begin_topic_from_twitch() {
+        let filter = ShieldModeStartedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.shield_mode.begin")
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_maps_moderator_fields_and_started_at() {
+        let stack = ShieldModeStartedDescriptor.build_arg_stack(&shield_begin_event());
+        assert_eq!(
+            stack.get("moderator_login"),
+            Some(&Variant::String("mod_jane".to_owned()))
+        );
+        assert_eq!(
+            stack.get("moderator_id"),
+            Some(&Variant::String("42".to_owned()))
+        );
+        // started_at is read from the payload root, not nested under moderator.
+        assert_eq!(
+            stack.get("started_at"),
+            Some(&Variant::String("2026-06-13T18:00:00Z".to_owned()))
+        );
+    }
+}

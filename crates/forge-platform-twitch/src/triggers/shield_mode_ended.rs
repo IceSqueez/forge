@@ -87,3 +87,44 @@ impl TriggerKindDescriptor for ShieldModeEndedDescriptor {
             .set("ended_at".to_owned(), Variant::String(ended_at))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn shield_end_event() -> Event {
+        let payload = serde_json::json!({
+            "moderator": { "id": "42", "login": "mod_jane", "display_name": "ModJane" },
+            "ended_at": "2026-06-13T19:00:00Z",
+        });
+        Event::new(EventSource::Twitch, "channel.shield_mode.end", payload)
+    }
+
+    #[test]
+    fn event_filter_targets_shield_mode_end_topic_from_twitch() {
+        let filter = ShieldModeEndedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.shield_mode.end")
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_maps_moderator_fields_and_ended_at() {
+        let stack = ShieldModeEndedDescriptor.build_arg_stack(&shield_end_event());
+        assert_eq!(
+            stack.get("moderator_login"),
+            Some(&Variant::String("mod_jane".to_owned()))
+        );
+        assert_eq!(
+            stack.get("moderator_id"),
+            Some(&Variant::String("42".to_owned()))
+        );
+        // ended_at is read from the payload root, not nested under moderator.
+        assert_eq!(
+            stack.get("ended_at"),
+            Some(&Variant::String("2026-06-13T19:00:00Z".to_owned()))
+        );
+    }
+}

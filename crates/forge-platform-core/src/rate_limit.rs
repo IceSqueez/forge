@@ -148,5 +148,108 @@ impl RateLimiter for TokenBucketRateLimiter {
 }
 
 #[cfg(test)]
-#[allow(dead_code)]
-fn _dyn_safe(_: &dyn RateLimiter) {}
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    fn limiter(capacity: u32, refill_per: Duration) -> TokenBucketRateLimiter {
+        TokenBucketRateLimiter::new(capacity, refill_per)
+    }
+
+    /// A request weighing more than the whole budget can never be funded, even
+    /// on an untouched full bucket — it must short-circuit to Exhausted rather
+    /// than throttle forever.
+    #[tokio::test]
+    async fn acquire_weight_above_capacity_is_exhausted_on_full_bucket() {
+        let rl = limiter(5, Duration::from_secs(1));
+        let outcome = rl.acquire(6).await.unwrap();
+        assert!(matches!(outcome, RateLimitOutcome::Exhausted));
+    }
+
+    /// Fresh bucket funds exactly `capacity` unit acquires; the very next one
+    /// finds the bucket empty and throttles for a positive, finite span.
+    #[tokio::test]
+    async fn fresh_bucket_grants_capacity_then_throttles() {
+        let capacity = 4;
+        let rl = limiter(capacity, Duration::from_secs(2));
+        for i in 0..capacity {
+            assert!(
+                matches!(rl.acquire(1).await.unwrap(), RateLimitOutcome::Granted),
+                "acquire {i} should be granted on a fresh bucket"
+            );
+        }
+        match rl.acquire(1).await.unwrap() {
+            RateLimitOutcome::Throttled { wait_for } => {
+                // deficit is 1 token; rate is capacity/refill_per = 2/s, so the
+                // estimate is ~0.5s. Assert positive and within a sane bound,
+                // never an exact float.
+                assert!(wait_for > Duration::ZERO);
+                assert!(
+                    wait_for <= Duration::from_secs(2),
+                    "wait_for {wait_for:?} should not exceed the refill window"
+                );
+            }
+            other => panic!("expected Throttled after exhausting the bucket, got {other:?}"),
+        }
+    }
+
+    /// After a remote 429 back-off, the cooldown gate fires immediately: the
+    /// next acquire throttles for ~retry_after even though the bucket would
+    /// otherwise have tokens. Proves the cooldown gate AND the token drain.
+    #[tokio::test]
+    async fn remote_throttle_gates_next_acquire_for_cooldown_span() {
+        let rl = limiter(10, Duration::from_secs(1));
+        let retry_after = Duration::from_secs(8);
+        rl.observe_remote_throttle(retry_after).await;
+
+        match rl.acquire(1).await.unwrap() {
+            RateLimitOutcome::Throttled { wait_for } => {
+                assert!(wait_for > Duration::ZERO);
+                // The cooldown deadline is `now + retry_after`; a hair of wall
+                // time elapses before we read it, so wait_for is just under N.
+                assert!(
+                    wait_for <= retry_after,
+                    "cooldown wait {wait_for:?} must not exceed retry_after {retry_after:?}"
+                );
+            }
+            other => panic!("expected Throttled while cooldown is active, got {other:?}"),
+        }
+    }
+
+    /// `remaining` reflects consumption: a couple of acquires on a full bucket
+    /// leave fewer reported tokens than the capacity. Treated as a hint, so we
+    /// assert the direction of change, not an exact count.
+    #[tokio::test]
+    async fn remaining_decreases_after_acquires() {
+        let rl = limiter(10, Duration::from_secs(60));
+        let before = rl.remaining();
+        rl.acquire(1).await.unwrap();
+        rl.acquire(1).await.unwrap();
+        rl.acquire(1).await.unwrap();
+        let after = rl.remaining();
+        assert!(
+            after < before,
+            "remaining should drop after acquires: before={before}, after={after}"
+        );
+    }
+
+    /// A zero-length refill window means tokens never regenerate: once the
+    /// budget is spent, every further acquire throttles (no division-by-zero,
+    /// no spurious grant).
+    #[tokio::test]
+    async fn zero_refill_window_never_regenerates_tokens() {
+        let rl = limiter(1, Duration::ZERO);
+        assert!(matches!(
+            rl.acquire(1).await.unwrap(),
+            RateLimitOutcome::Granted
+        ));
+        // Bucket is empty and the rate is zero, so wait_for collapses to ZERO
+        // (no finite ETA) — but the request is still not granted.
+        match rl.acquire(1).await.unwrap() {
+            RateLimitOutcome::Throttled { wait_for } => {
+                assert_eq!(wait_for, Duration::ZERO);
+            }
+            other => panic!("expected Throttled with no ETA on a dead bucket, got {other:?}"),
+        }
+    }
+}

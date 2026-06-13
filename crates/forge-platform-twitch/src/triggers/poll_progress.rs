@@ -77,3 +77,38 @@ impl TriggerKindDescriptor for PollProgressDescriptor {
             .set("poll.title".to_owned(), Variant::String(title))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn poll_progress_event() -> Event {
+        let payload = serde_json::json!({
+            "poll": {
+                "id": "poll-2",
+                "title": "Next game?",
+            },
+        });
+        Event::new(EventSource::Twitch, "channel.poll.progress", payload)
+    }
+
+    #[test]
+    fn event_filter_targets_poll_progress_topic_from_twitch() {
+        let filter = PollProgressDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(filter.kind_prefix.as_deref(), Some("channel.poll.progress"));
+    }
+
+    #[test]
+    fn build_arg_stack_maps_poll_id_and_title() {
+        let stack = PollProgressDescriptor.build_arg_stack(&poll_progress_event());
+        assert_eq!(
+            stack.get("poll.id"),
+            Some(&Variant::String("poll-2".to_owned()))
+        );
+        assert_eq!(
+            stack.get("poll.title"),
+            Some(&Variant::String("Next game?".to_owned()))
+        );
+    }
+}

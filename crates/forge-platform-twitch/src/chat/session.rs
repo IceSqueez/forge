@@ -2991,4 +2991,88 @@ mod tests {
             Some("WarnedUser")
         );
     }
+
+    #[tokio::test]
+    async fn poll_begin_event_nests_poll_with_title_and_timing() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "id": "poll-1",
+            "title": "Best emote?",
+            "started_at": "2026-06-13T18:00:00Z",
+            "ends_at": "2026-06-13T18:05:00Z"
+        });
+        session.publish_poll_begin_event(&event_data, "meta-poll-begin-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.poll.begin");
+        assert_eq!(ev.source, EventSource::Twitch);
+        assert_eq!(ev.payload["poll"]["id"].as_str(), Some("poll-1"));
+        assert_eq!(ev.payload["poll"]["title"].as_str(), Some("Best emote?"));
+        assert_eq!(
+            ev.payload["poll"]["started_at"].as_str(),
+            Some("2026-06-13T18:00:00Z")
+        );
+        assert_eq!(
+            ev.payload["poll"]["ends_at"].as_str(),
+            Some("2026-06-13T18:05:00Z")
+        );
+    }
+
+    #[tokio::test]
+    async fn poll_progress_event_nests_poll_with_id_and_title_only() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "id": "poll-2",
+            "title": "Next game?"
+        });
+        session.publish_poll_progress_event(&event_data, "meta-poll-progress-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.poll.progress");
+        assert_eq!(ev.payload["poll"]["id"].as_str(), Some("poll-2"));
+        assert_eq!(ev.payload["poll"]["title"].as_str(), Some("Next game?"));
+    }
+
+    #[tokio::test]
+    async fn poll_end_event_passes_status_through_to_poll_payload() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "id": "poll-3",
+            "title": "Map vote",
+            "status": "completed",
+            "ended_at": "2026-06-13T18:10:00Z"
+        });
+        session.publish_poll_end_event(&event_data, "meta-poll-end-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "channel.poll.end");
+        assert_eq!(ev.payload["poll"]["id"].as_str(), Some("poll-3"));
+        assert_eq!(ev.payload["poll"]["title"].as_str(), Some("Map vote"));
+        assert_eq!(ev.payload["poll"]["status"].as_str(), Some("completed"));
+        assert_eq!(
+            ev.payload["poll"]["ended_at"].as_str(),
+            Some("2026-06-13T18:10:00Z")
+        );
+    }
 }

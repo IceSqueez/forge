@@ -89,3 +89,48 @@ impl TriggerKindDescriptor for PollEndedDescriptor {
             .set("poll.ended_at".to_owned(), Variant::String(ended_at))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn poll_end_event() -> Event {
+        let payload = serde_json::json!({
+            "poll": {
+                "id": "poll-3",
+                "title": "Map vote",
+                "status": "completed",
+                "ended_at": "2026-06-13T18:10:00Z",
+            },
+        });
+        Event::new(EventSource::Twitch, "channel.poll.end", payload)
+    }
+
+    #[test]
+    fn event_filter_targets_poll_end_topic_from_twitch() {
+        let filter = PollEndedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(filter.kind_prefix.as_deref(), Some("channel.poll.end"));
+    }
+
+    #[test]
+    fn build_arg_stack_maps_status_and_ended_at_alongside_id_and_title() {
+        let stack = PollEndedDescriptor.build_arg_stack(&poll_end_event());
+        assert_eq!(
+            stack.get("poll.id"),
+            Some(&Variant::String("poll-3".to_owned()))
+        );
+        assert_eq!(
+            stack.get("poll.title"),
+            Some(&Variant::String("Map vote".to_owned()))
+        );
+        assert_eq!(
+            stack.get("poll.status"),
+            Some(&Variant::String("completed".to_owned()))
+        );
+        assert_eq!(
+            stack.get("poll.ended_at"),
+            Some(&Variant::String("2026-06-13T18:10:00Z".to_owned()))
+        );
+    }
+}

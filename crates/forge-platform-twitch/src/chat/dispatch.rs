@@ -142,6 +142,9 @@ mod tests {
             "channel.shoutout.receive",
             "channel.suspicious_user.message",
             "channel.warning.acknowledge",
+            "channel.poll.begin",
+            "channel.poll.progress",
+            "channel.poll.end",
         ] {
             assert!(route_for(topic).is_some(), "missing route for {topic}");
         }

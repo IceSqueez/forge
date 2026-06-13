@@ -167,6 +167,9 @@ mod tests {
             "twitch.channel.shoutout_received",
             "twitch.channel.suspicious_user_message",
             "twitch.channel.warning_acknowledged",
+            "twitch.poll.started",
+            "twitch.poll.progress",
+            "twitch.poll.ended",
         ];
 
         for id in ids {

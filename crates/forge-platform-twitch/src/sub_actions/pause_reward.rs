@@ -80,3 +80,39 @@ impl SubActionRunner for PauseRewardRunner {
         .await
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::helix::{HelixMethod, HelixTransport};
+    use crate::sub_actions::identity::SelfIdentity;
+    use crate::sub_actions::test_support::{MockCreds, MockTransport, SELF_USER_ID, make_ctx};
+    use forge_types::{SubActionOutcome, Variant};
+
+    // Distinct-body contract: pause_reward PATCHes exactly {"is_paused": true}.
+    // Shared paths are covered once in enable_reward.rs.
+    #[tokio::test]
+    async fn pause_patches_is_paused_true() {
+        let transport = Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)));
+        let runner = PauseRewardRunner::new(
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+        );
+        let stack = ArgStack::new().set("reward.id".to_owned(), Variant::String("rw2".to_owned()));
+
+        let (telemetry, _) = runner.execute(&default_config(), &make_ctx(&stack)).await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let request = transport.request(0);
+        assert_eq!(request.method, HelixMethod::Patch);
+        assert_eq!(request.path, "/helix/channel_points/custom_rewards");
+        assert!(
+            request
+                .query
+                .contains(&("broadcaster_id".to_owned(), SELF_USER_ID.to_owned()))
+        );
+        assert!(request.query.contains(&("id".to_owned(), "rw2".to_owned())));
+        assert_eq!(request.body, Some(serde_json::json!({ "is_paused": true })));
+    }
+}

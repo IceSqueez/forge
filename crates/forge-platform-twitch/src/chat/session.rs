@@ -2753,6 +2753,155 @@ impl ChatSession {
         ));
     }
 
+    pub(super) fn publish_channel_update_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let title = event_data
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let language = event_data
+            .get("language")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let category_id = event_data
+            .get("category_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let category_name = event_data
+            .get("category_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(title = %title, category_name = %category_name, "channel update event received");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.update",
+            serde_json::json!({
+                "channel": {
+                    "title": title,
+                    "language": language,
+                    "category_id": category_id,
+                    "category_name": category_name,
+                },
+            }),
+        ));
+    }
+
+    pub(super) fn publish_ad_break_begin_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let duration_seconds = event_data
+            .get("duration_seconds")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let started_at = event_data
+            .get("started_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let is_automatic = event_data
+            .get("is_automatic")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let requester_login = event_data
+            .get("requester_user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(duration_seconds, requester_login = %requester_login, "ad break begin event received");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.ad_break.begin",
+            serde_json::json!({
+                "ad_break": {
+                    "duration_seconds": duration_seconds,
+                    "is_automatic": is_automatic,
+                    "started_at": started_at,
+                },
+                "requester": {
+                    "login": requester_login,
+                },
+            }),
+        ));
+    }
+
+    pub(super) fn publish_automatic_reward_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let redemption_id = event_data
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let redeemed_at = event_data
+            .get("redeemed_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_id = event_data
+            .get("user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_login = event_data
+            .get("user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_name = event_data
+            .get("user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let reward_type = event_data
+            .get("reward")
+            .and_then(|r| r.get("type"))
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let reward_cost = event_data
+            .get("reward")
+            .and_then(|r| r.get("cost"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+
+        info!(user_login = %user_login, reward_type = %reward_type, "automatic channel point reward redeemed");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.channel_points_automatic_reward_redemption",
+            serde_json::json!({
+                "redemption": {
+                    "id": redemption_id,
+                    "redeemed_at": redeemed_at,
+                },
+                "user": {
+                    "id": user_id,
+                    "login": user_login,
+                    "display_name": user_name,
+                },
+                "reward": {
+                    "type": reward_type,
+                    "cost": reward_cost,
+                },
+            }),
+        ));
+    }
+
     fn set_state(&self, state: ChatConnectionState) {
         let _ = self.state_tx.send(state);
     }

@@ -186,6 +186,15 @@ const NOTIFICATION_ROUTES: &[(&str, NotificationRoute)] = &[
         "channel.shared_chat.end",
         ChatSession::publish_shared_chat_end_event,
     ),
+    ("channel.update", ChatSession::publish_channel_update_event),
+    (
+        "channel.ad_break.begin",
+        ChatSession::publish_ad_break_begin_event,
+    ),
+    (
+        "channel.channel_points_automatic_reward_redemption.add",
+        ChatSession::publish_automatic_reward_event,
+    ),
 ];
 
 #[cfg(test)]

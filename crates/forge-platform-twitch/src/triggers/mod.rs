@@ -1,3 +1,5 @@
+mod ad_break_started;
+mod automatic_reward_redeemed;
 mod automod_message_held;
 mod automod_message_updated;
 mod automod_settings_updated;
@@ -8,6 +10,7 @@ mod channel_points_redemption;
 mod channel_raid_received;
 mod channel_timeout;
 mod channel_unban;
+mod channel_updated;
 mod charity_donation;
 mod charity_progress;
 mod charity_started;
@@ -60,6 +63,8 @@ mod warning_acknowledged;
 
 use forge_registry::{RegistryError, TriggerRegistry};
 
+use ad_break_started::AdBreakStartedDescriptor;
+use automatic_reward_redeemed::AutomaticRewardRedeemedDescriptor;
 use automod_message_held::AutomodMessageHeldDescriptor;
 use automod_message_updated::AutomodMessageUpdatedDescriptor;
 use automod_settings_updated::AutomodSettingsUpdatedDescriptor;
@@ -70,6 +75,7 @@ use channel_points_redemption::ChannelPointsRedemptionDescriptor;
 use channel_raid_received::ChannelRaidReceivedDescriptor;
 use channel_timeout::ChannelTimeoutDescriptor;
 use channel_unban::ChannelUnbanDescriptor;
+use channel_updated::ChannelUpdatedDescriptor;
 use charity_donation::CharityDonationDescriptor;
 use charity_progress::CharityProgressDescriptor;
 use charity_started::CharityStartedDescriptor;
@@ -178,6 +184,9 @@ pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), Registr
     reg.register(Box::new(SharedChatSessionBeganDescriptor))?;
     reg.register(Box::new(SharedChatSessionUpdatedDescriptor))?;
     reg.register(Box::new(SharedChatSessionEndedDescriptor))?;
+    reg.register(Box::new(ChannelUpdatedDescriptor))?;
+    reg.register(Box::new(AdBreakStartedDescriptor))?;
+    reg.register(Box::new(AutomaticRewardRedeemedDescriptor))?;
     Ok(())
 }
 

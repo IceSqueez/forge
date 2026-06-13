@@ -126,6 +126,22 @@ const NOTIFICATION_ROUTES: &[(&str, NotificationRoute)] = &[
         ChatSession::publish_goal_progress_event,
     ),
     ("channel.goal.end", ChatSession::publish_goal_end_event),
+    (
+        "channel.channel_points_custom_reward.add",
+        ChatSession::publish_reward_add_event,
+    ),
+    (
+        "channel.channel_points_custom_reward.update",
+        ChatSession::publish_reward_update_event,
+    ),
+    (
+        "channel.channel_points_custom_reward.remove",
+        ChatSession::publish_reward_remove_event,
+    ),
+    (
+        "channel.channel_points_custom_reward_redemption.update",
+        ChatSession::publish_redemption_update_event,
+    ),
 ];
 
 #[cfg(test)]

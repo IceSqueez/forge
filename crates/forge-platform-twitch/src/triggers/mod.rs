@@ -29,6 +29,10 @@ mod prediction_ended;
 mod prediction_locked;
 mod prediction_progress;
 mod prediction_started;
+mod redemption_updated;
+mod reward_added;
+mod reward_removed;
+mod reward_updated;
 mod shared_chat_message;
 mod shield_mode_ended;
 mod shield_mode_started;
@@ -75,6 +79,10 @@ use prediction_ended::PredictionEndedDescriptor;
 use prediction_locked::PredictionLockedDescriptor;
 use prediction_progress::PredictionProgressDescriptor;
 use prediction_started::PredictionStartedDescriptor;
+use redemption_updated::RedemptionUpdatedDescriptor;
+use reward_added::RewardAddedDescriptor;
+use reward_removed::RewardRemovedDescriptor;
+use reward_updated::RewardUpdatedDescriptor;
 use shared_chat_message::SharedChatMessageDescriptor;
 use shield_mode_ended::ShieldModeEndedDescriptor;
 use shield_mode_started::ShieldModeStartedDescriptor;
@@ -133,6 +141,10 @@ pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), Registr
     reg.register(Box::new(GoalStartedDescriptor))?;
     reg.register(Box::new(GoalProgressDescriptor))?;
     reg.register(Box::new(GoalEndedDescriptor))?;
+    reg.register(Box::new(RewardAddedDescriptor))?;
+    reg.register(Box::new(RewardUpdatedDescriptor))?;
+    reg.register(Box::new(RewardRemovedDescriptor))?;
+    reg.register(Box::new(RedemptionUpdatedDescriptor))?;
     Ok(())
 }
 

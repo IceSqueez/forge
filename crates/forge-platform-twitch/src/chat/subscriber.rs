@@ -253,6 +253,26 @@ const TOPICS: &[TopicSpec] = &[
         version: "1",
         condition_fn: condition_broadcaster,
     },
+    TopicSpec {
+        kind: "channel.channel_points_custom_reward.add",
+        version: "1",
+        condition_fn: condition_broadcaster,
+    },
+    TopicSpec {
+        kind: "channel.channel_points_custom_reward.update",
+        version: "1",
+        condition_fn: condition_broadcaster,
+    },
+    TopicSpec {
+        kind: "channel.channel_points_custom_reward.remove",
+        version: "1",
+        condition_fn: condition_broadcaster,
+    },
+    TopicSpec {
+        kind: "channel.channel_points_custom_reward_redemption.update",
+        version: "1",
+        condition_fn: condition_broadcaster,
+    },
 ];
 
 pub(crate) async fn subscribe_all(

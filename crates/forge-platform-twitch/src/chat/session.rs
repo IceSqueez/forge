@@ -2022,6 +2022,219 @@ impl ChatSession {
         ));
     }
 
+    pub(super) fn publish_reward_add_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let reward_id = event_data
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let title = event_data
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let cost = event_data.get("cost").and_then(|v| v.as_i64()).unwrap_or(0);
+        let prompt = event_data
+            .get("prompt")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let is_enabled = event_data
+            .get("is_enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        info!(reward_id = %reward_id, title = %title, "channel point reward added");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.channel_points_custom_reward.add",
+            serde_json::json!({
+                "reward": {
+                    "id": reward_id,
+                    "title": title,
+                    "cost": cost,
+                    "prompt": prompt,
+                    "is_enabled": is_enabled,
+                },
+            }),
+        ));
+    }
+
+    pub(super) fn publish_reward_update_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let reward_id = event_data
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let title = event_data
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let cost = event_data.get("cost").and_then(|v| v.as_i64()).unwrap_or(0);
+        let prompt = event_data
+            .get("prompt")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let is_enabled = event_data
+            .get("is_enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        info!(reward_id = %reward_id, title = %title, "channel point reward updated");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.channel_points_custom_reward.update",
+            serde_json::json!({
+                "reward": {
+                    "id": reward_id,
+                    "title": title,
+                    "cost": cost,
+                    "prompt": prompt,
+                    "is_enabled": is_enabled,
+                },
+            }),
+        ));
+    }
+
+    pub(super) fn publish_reward_remove_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let reward_id = event_data
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let title = event_data
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let cost = event_data.get("cost").and_then(|v| v.as_i64()).unwrap_or(0);
+        let prompt = event_data
+            .get("prompt")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let is_enabled = event_data
+            .get("is_enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        info!(reward_id = %reward_id, title = %title, "channel point reward removed");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.channel_points_custom_reward.remove",
+            serde_json::json!({
+                "reward": {
+                    "id": reward_id,
+                    "title": title,
+                    "cost": cost,
+                    "prompt": prompt,
+                    "is_enabled": is_enabled,
+                },
+            }),
+        ));
+    }
+
+    pub(super) fn publish_redemption_update_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let redemption_id = event_data
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_id = event_data
+            .get("user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_login = event_data
+            .get("user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_name = event_data
+            .get("user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_input = event_data
+            .get("user_input")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let status = event_data
+            .get("status")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let redeemed_at = event_data
+            .get("redeemed_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let reward_id = event_data
+            .get("reward")
+            .and_then(|r| r.get("id"))
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let reward_title = event_data
+            .get("reward")
+            .and_then(|r| r.get("title"))
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let reward_cost = event_data
+            .get("reward")
+            .and_then(|r| r.get("cost"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+
+        info!(user_login = %user_login, status = %status, "channel point redemption updated");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.channel_points_redemption_update",
+            serde_json::json!({
+                "redemption": {
+                    "id": redemption_id,
+                    "status": status,
+                    "user_input": user_input,
+                    "redeemed_at": redeemed_at,
+                },
+                "user": {
+                    "id": user_id,
+                    "login": user_login,
+                    "display_name": user_name,
+                },
+                "reward": {
+                    "id": reward_id,
+                    "title": reward_title,
+                    "cost": reward_cost,
+                },
+            }),
+        ));
+    }
+
     fn set_state(&self, state: ChatConnectionState) {
         let _ = self.state_tx.send(state);
     }

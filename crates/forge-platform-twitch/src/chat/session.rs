@@ -696,6 +696,86 @@ impl ChatSession {
         ));
     }
 
+    pub(super) fn publish_message_delete_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let message_id = event_data
+            .get("message_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let target_user_id = event_data
+            .get("target_user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let target_user_login = event_data
+            .get("target_user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let target_user_name = event_data
+            .get("target_user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        // The channel.chat.message_delete event carries no deleted text and no
+        // moderator identity — Twitch does not include those fields in this topic.
+        info!(target_user_login = %target_user_login, message_id = %message_id, "chat message deleted");
+
+        let forge_payload = serde_json::json!({
+            "message_id": message_id,
+            "target_user": {
+                "id": target_user_id,
+                "login": target_user_login,
+                "display_name": target_user_name,
+            },
+        });
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.chat.message_delete",
+            forge_payload,
+        ));
+    }
+
+    pub(super) fn publish_chat_clear_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let broadcaster_id = event_data
+            .get("broadcaster_user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let broadcaster_login = event_data
+            .get("broadcaster_user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        // The channel.chat.clear event carries no moderator identity — Twitch
+        // does not include that field in this topic.
+        info!(broadcaster_login = %broadcaster_login, "chat cleared");
+
+        let forge_payload = serde_json::json!({
+            "broadcaster": {
+                "id": broadcaster_id,
+                "login": broadcaster_login,
+            },
+        });
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.chat.clear",
+            forge_payload,
+        ));
+    }
+
     pub(super) fn publish_follow_event(&self, event_data: &serde_json::Value, _frame_msg_id: &str) {
         let user_login = event_data
             .get("user_login")

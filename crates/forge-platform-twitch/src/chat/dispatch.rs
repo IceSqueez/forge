@@ -31,6 +31,11 @@ const NOTIFICATION_ROUTES: &[(&str, NotificationRoute)] = &[
         "channel.channel_points_custom_reward_redemption.add",
         ChatSession::publish_reward_redemption_event,
     ),
+    (
+        "channel.chat.message_delete",
+        ChatSession::publish_message_delete_event,
+    ),
+    ("channel.chat.clear", ChatSession::publish_chat_clear_event),
 ];
 
 #[cfg(test)]

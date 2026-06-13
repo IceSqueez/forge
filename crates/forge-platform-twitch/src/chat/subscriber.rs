@@ -108,6 +108,16 @@ const TOPICS: &[TopicSpec] = &[
         version: "1",
         condition_fn: condition_broadcaster,
     },
+    TopicSpec {
+        kind: "channel.chat.message_delete",
+        version: "1",
+        condition_fn: condition_chat,
+    },
+    TopicSpec {
+        kind: "channel.chat.clear",
+        version: "1",
+        condition_fn: condition_chat,
+    },
 ];
 
 pub(crate) async fn subscribe_all(

@@ -1,6 +1,7 @@
 mod add_moderator;
 mod add_vip;
 mod ban_user;
+mod cancel_raid;
 mod clear_chat;
 mod create_marker;
 mod delete_message;
@@ -9,9 +10,11 @@ mod remove_moderator;
 mod remove_vip;
 mod reply_chat;
 mod send_announcement;
+mod send_shoutout;
 mod send_whisper;
 mod set_mode;
 mod shield_mode;
+mod start_raid;
 mod timeout_user;
 mod unban_user;
 mod update_category;
@@ -27,6 +30,7 @@ use forge_storage::CredentialsRepo;
 pub use add_moderator::AddModeratorRunner;
 pub use add_vip::AddVipRunner;
 pub use ban_user::BanUserRunner;
+pub use cancel_raid::CancelRaidRunner;
 pub use clear_chat::ClearChatRunner;
 pub use create_marker::CreateMarkerRunner;
 pub use delete_message::DeleteMessageRunner;
@@ -35,9 +39,11 @@ pub use remove_moderator::RemoveModeratorRunner;
 pub use remove_vip::RemoveVipRunner;
 pub use reply_chat::ReplyChatRunner;
 pub use send_announcement::SendAnnouncementRunner;
+pub use send_shoutout::SendShoutoutRunner;
 pub use send_whisper::SendWhisperRunner;
 pub use set_mode::SetModeRunner;
 pub use shield_mode::{ShieldModeOffRunner, ShieldModeOnRunner};
+pub use start_raid::StartRaidRunner;
 pub use timeout_user::TimeoutUserRunner;
 pub use unban_user::UnbanUserRunner;
 pub use update_category::UpdateCategoryRunner;
@@ -129,7 +135,19 @@ pub fn register_twitch_sub_actions(
         Arc::clone(&transport),
         Arc::clone(&identity),
     )))?;
-    reg.register(Box::new(CreateMarkerRunner::new(transport, identity)))?;
+    reg.register(Box::new(CreateMarkerRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(SendShoutoutRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(StartRaidRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(CancelRaidRunner::new(transport, identity)))?;
     Ok(())
 }
 

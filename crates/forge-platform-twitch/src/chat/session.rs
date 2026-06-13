@@ -578,20 +578,49 @@ impl ChatSession {
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
+        let to_login = event_data
+            .get("to_broadcaster_user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let to_id = event_data
+            .get("to_broadcaster_user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let to_display = event_data
+            .get("to_broadcaster_user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
         let viewer_count = event_data
             .get("viewers")
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
 
-        info!(from_login = %from_login, viewer_count = viewer_count, "raid event received");
+        // One channel.raid topic carries both received and sent raids (two condition
+        // subscriptions). The to-broadcaster being self means the raid landed here.
+        let direction = if to_id == self.config.broadcaster_id {
+            "received"
+        } else {
+            "sent"
+        };
+
+        info!(from_login = %from_login, viewer_count = viewer_count, direction, "raid event received");
 
         let chat_payload = payload::build_raid_chat_payload(event_data, frame_msg_id);
         let mut forge_payload = serde_json::json!({
+            "direction": direction,
             "viewer_count": viewer_count,
             "from_broadcaster": {
                 "id": from_id,
                 "login": from_login,
                 "display_name": from_display,
+            },
+            "to_broadcaster": {
+                "id": to_id,
+                "login": to_login,
+                "display_name": to_display,
             },
         });
         attach_chat_payload(&mut forge_payload, chat_payload);
@@ -3519,7 +3548,7 @@ mod tests {
             "from_broadcaster_user_id": "666",
             "from_broadcaster_user_login": "big_streamer",
             "from_broadcaster_user_name": "BigStreamer",
-            "to_broadcaster_user_id": "777",
+            "to_broadcaster_user_id": "bcast",
             "viewers": 500u64
         });
         session.publish_raid_event(&event_data, "meta-raid-001");
@@ -3545,6 +3574,63 @@ mod tests {
             ),
             "expected Raid {{ viewer_count: 500 }}"
         );
+    }
+
+    // Both received and sent raids arrive on the same channel.raid topic; the runtime
+    // distinguishes them by the `direction` field this fn computes from whether the
+    // to-broadcaster is self. make_session sets broadcaster_id == "bcast".
+    #[tokio::test]
+    async fn raid_to_self_is_tagged_received_with_nested_to_broadcaster() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "from_broadcaster_user_id": "666",
+            "from_broadcaster_user_login": "big_streamer",
+            "to_broadcaster_user_id": "bcast",
+            "to_broadcaster_user_login": "me",
+            "to_broadcaster_user_name": "Me",
+            "viewers": 12u64
+        });
+        session.publish_raid_event(&event_data, "meta-raid-recv");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.payload["direction"].as_str(), Some("received"));
+        assert_eq!(ev.payload["to_broadcaster"]["id"].as_str(), Some("bcast"));
+        assert_eq!(ev.payload["to_broadcaster"]["login"].as_str(), Some("me"));
+        assert_eq!(
+            ev.payload["to_broadcaster"]["display_name"].as_str(),
+            Some("Me")
+        );
+    }
+
+    #[tokio::test]
+    async fn raid_to_another_broadcaster_is_tagged_sent() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "from_broadcaster_user_id": "bcast",
+            "from_broadcaster_user_login": "me",
+            "to_broadcaster_user_id": "999",
+            "to_broadcaster_user_login": "target_chan",
+            "viewers": 12u64
+        });
+        session.publish_raid_event(&event_data, "meta-raid-sent");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.payload["direction"].as_str(), Some("sent"));
+        assert_eq!(ev.payload["to_broadcaster"]["id"].as_str(), Some("999"));
     }
 
     #[tokio::test]

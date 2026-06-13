@@ -41,6 +41,7 @@ mod prediction_ended;
 mod prediction_locked;
 mod prediction_progress;
 mod prediction_started;
+mod raid_sent;
 mod redemption_updated;
 mod reward_added;
 mod reward_removed;
@@ -106,6 +107,7 @@ use prediction_ended::PredictionEndedDescriptor;
 use prediction_locked::PredictionLockedDescriptor;
 use prediction_progress::PredictionProgressDescriptor;
 use prediction_started::PredictionStartedDescriptor;
+use raid_sent::RaidSentDescriptor;
 use redemption_updated::RedemptionUpdatedDescriptor;
 use reward_added::RewardAddedDescriptor;
 use reward_removed::RewardRemovedDescriptor;
@@ -142,6 +144,7 @@ pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), Registr
     reg.register(Box::new(SupportGiftSubDescriptor))?;
     reg.register(Box::new(SupportCheerDescriptor))?;
     reg.register(Box::new(ChannelRaidReceivedDescriptor))?;
+    reg.register(Box::new(RaidSentDescriptor))?;
     reg.register(Box::new(ChannelFollowDescriptor))?;
     reg.register(Box::new(ChannelPointsRedemptionDescriptor))?;
     reg.register(Box::new(StreamOnlineDescriptor))?;
@@ -226,6 +229,7 @@ mod tests {
             "twitch.support.gift_sub",
             "twitch.support.cheer",
             "twitch.channel.raid_received",
+            "twitch.channel.raid_sent",
             "twitch.channel.follow",
             "twitch.channel_points.redemption",
             "twitch.stream.online",

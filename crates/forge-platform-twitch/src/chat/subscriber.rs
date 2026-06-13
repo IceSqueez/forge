@@ -57,6 +57,10 @@ fn condition_raid(broadcaster_id: &str, _user_id: &str) -> serde_json::Value {
     serde_json::json!({ "to_broadcaster_user_id": broadcaster_id })
 }
 
+fn condition_raid_sent(broadcaster_id: &str, _user_id: &str) -> serde_json::Value {
+    serde_json::json!({ "from_broadcaster_user_id": broadcaster_id })
+}
+
 const TOPICS: &[TopicSpec] = &[
     TopicSpec {
         kind: "channel.chat.message",
@@ -92,6 +96,15 @@ const TOPICS: &[TopicSpec] = &[
         kind: "channel.raid",
         version: "1",
         condition_fn: condition_raid,
+    },
+    // channel.raid accepts from_broadcaster_user_id OR to_broadcaster_user_id but
+    // not both, so raids the broadcaster sends need a separate subscription. Both
+    // share kind "channel.raid" and route through the same dispatch entry; the
+    // direction is recomputed downstream from the broadcaster id in the payload.
+    TopicSpec {
+        kind: "channel.raid",
+        version: "1",
+        condition_fn: condition_raid_sent,
     },
     TopicSpec {
         kind: "stream.online",

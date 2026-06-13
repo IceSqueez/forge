@@ -26,7 +26,7 @@ impl TriggerKindDescriptor for ChatCheerMessageDescriptor {
     }
 
     fn search_text(&self) -> &str {
-        "twitch cheer bits chat message anonymous min max"
+        "twitch cheer bits chat message min max"
     }
 
     fn icon_name(&self) -> &str {
@@ -41,7 +41,6 @@ impl TriggerKindDescriptor for ChatCheerMessageDescriptor {
         let mut cfg = TriggerConfig::new();
         cfg.insert("min_bits".to_owned(), Variant::Int(1));
         cfg.insert("max_bits".to_owned(), Variant::Int(-1));
-        cfg.insert("anonymous_allowed".to_owned(), Variant::Bool(true));
         cfg
     }
 
@@ -58,10 +57,6 @@ impl TriggerKindDescriptor for ChatCheerMessageDescriptor {
                 label: "Maximum bits (-1 = unlimited)",
                 min: -1,
                 max: i64::MAX,
-            },
-            FormField::Toggle {
-                key: "anonymous_allowed",
-                label: "Allow anonymous cheers",
             },
         ]
     }
@@ -132,27 +127,6 @@ impl TriggerKindDescriptor for ChatCheerMessageDescriptor {
                 }
             })
             .unwrap_or(-1);
-        let anonymous_allowed = config
-            .get("anonymous_allowed")
-            .and_then(|v| {
-                if let Variant::Bool(b) = v {
-                    Some(*b)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(true);
-
-        let is_anonymous = event
-            .payload
-            .get("cheer")
-            .and_then(|c| c.get("is_anonymous"))
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-
-        if !anonymous_allowed && is_anonymous {
-            return false;
-        }
 
         if bits < min {
             return false;
@@ -172,16 +146,8 @@ impl TriggerKindDescriptor for ChatCheerMessageDescriptor {
             .and_then(|c| c.get("bits"))
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
-        let is_anonymous = event
-            .payload
-            .get("cheer")
-            .and_then(|c| c.get("is_anonymous"))
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
 
-        base_chat_args(event)
-            .set("cheer.bits".to_owned(), Variant::Int(bits))
-            .set("cheer.is_anonymous".to_owned(), Variant::Bool(is_anonymous))
+        base_chat_args(event).set("cheer.bits".to_owned(), Variant::Int(bits))
     }
 }
 
@@ -189,18 +155,14 @@ impl TriggerKindDescriptor for ChatCheerMessageDescriptor {
 mod tests {
     use super::*;
 
-    fn cheer_config(min_bits: i64, max_bits: i64, anonymous_allowed: bool) -> TriggerConfig {
+    fn cheer_config(min_bits: i64, max_bits: i64) -> TriggerConfig {
         let mut cfg = TriggerConfig::new();
         cfg.insert("min_bits".to_owned(), Variant::Int(min_bits));
         cfg.insert("max_bits".to_owned(), Variant::Int(max_bits));
-        cfg.insert(
-            "anonymous_allowed".to_owned(),
-            Variant::Bool(anonymous_allowed),
-        );
         cfg
     }
 
-    fn chat_event(cheer: Option<(i64, bool)>) -> Event {
+    fn chat_event(cheer_bits: Option<i64>) -> Event {
         let mut payload = serde_json::json!({
             "channel": "streamer",
             "user": { "login": "viewer", "id": "123", "roles": [] },
@@ -208,73 +170,25 @@ mod tests {
             "badges": [],
             "color": "#FF0000"
         });
-        if let Some((bits, is_anonymous)) = cheer {
-            payload["cheer"] = serde_json::json!({ "bits": bits, "is_anonymous": is_anonymous });
+        if let Some(bits) = cheer_bits {
+            payload["cheer"] = serde_json::json!({ "bits": bits });
         }
         Event::new(EventSource::Twitch, "chat.message", payload)
     }
 
     #[test]
-    fn matches_trigger_filters_on_bits_range_and_anonymity() {
+    fn matches_trigger_filters_on_bits_range() {
         let cases = [
-            (
-                "bits within open range",
-                Some((100, false)),
-                (1, -1, true),
-                true,
-            ),
-            ("no cheer object", None, (1, -1, true), false),
-            (
-                "bits one below min",
-                Some((99, false)),
-                (100, -1, true),
-                false,
-            ),
-            (
-                "bits at min boundary",
-                Some((100, false)),
-                (100, -1, true),
-                true,
-            ),
-            (
-                "bits at max boundary",
-                Some((500, false)),
-                (1, 500, true),
-                true,
-            ),
-            (
-                "bits one above max",
-                Some((501, false)),
-                (1, 500, true),
-                false,
-            ),
-            (
-                "max -1 lifts upper bound",
-                Some((1_000_000, false)),
-                (1, -1, true),
-                true,
-            ),
-            (
-                "anonymous blocked when disallowed",
-                Some((100, true)),
-                (1, -1, false),
-                false,
-            ),
-            (
-                "anonymous passes when allowed",
-                Some((100, true)),
-                (1, -1, true),
-                true,
-            ),
-            (
-                "named cheer unaffected by anonymous gate",
-                Some((100, false)),
-                (1, -1, false),
-                true,
-            ),
+            ("bits within open range", Some(100), (1, -1), true),
+            ("no cheer object", None, (1, -1), false),
+            ("bits one below min", Some(99), (100, -1), false),
+            ("bits at min boundary", Some(100), (100, -1), true),
+            ("bits at max boundary", Some(500), (1, 500), true),
+            ("bits one above max", Some(501), (1, 500), false),
+            ("max -1 lifts upper bound", Some(1_000_000), (1, -1), true),
         ];
-        for (name, cheer, (min, max, anon_allowed), expected) in cases {
-            let cfg = cheer_config(min, max, anon_allowed);
+        for (name, cheer, (min, max), expected) in cases {
+            let cfg = cheer_config(min, max);
             assert_eq!(
                 ChatCheerMessageDescriptor.matches_trigger(&cfg, &chat_event(cheer)),
                 expected,
@@ -285,9 +199,8 @@ mod tests {
 
     #[test]
     fn build_arg_stack_adds_cheer_args_to_base_chat_args() {
-        let stack = ChatCheerMessageDescriptor.build_arg_stack(&chat_event(Some((250, true))));
+        let stack = ChatCheerMessageDescriptor.build_arg_stack(&chat_event(Some(250)));
         assert_eq!(stack.get("cheer.bits"), Some(&Variant::Int(250)));
-        assert_eq!(stack.get("cheer.is_anonymous"), Some(&Variant::Bool(true)));
         assert_eq!(
             stack.get("message_text"),
             Some(&Variant::String("cheer100 hi".to_owned()))

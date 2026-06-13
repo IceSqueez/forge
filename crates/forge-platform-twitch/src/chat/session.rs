@@ -315,23 +315,34 @@ impl ChatSession {
             .and_then(|c| c.get("bits"))
             .and_then(|v| v.as_i64())
         {
-            let is_anonymous = user_id.is_empty();
-            forge_payload["cheer"] = serde_json::json!({
-                "bits": bits,
-                "is_anonymous": is_anonymous,
-            });
+            // channel.chat.message cheer object carries only {bits}; no anonymity signal.
+            forge_payload["cheer"] = serde_json::json!({ "bits": bits });
         }
 
-        if let (Some(login), Some(display_name)) = (
-            event_data
-                .get("source_broadcaster_user_login")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty()),
-            event_data
-                .get("source_broadcaster_user_name")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty()),
-        ) {
+        let broadcaster_id = event_data
+            .get("broadcaster_user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        let source_id = event_data
+            .get("source_broadcaster_user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        // In a shared-chat session Twitch echoes source_broadcaster_* on every message including
+        // the host's own. Surface from_channel only when the message originates from a different
+        // channel (source present and not the host).
+        if !source_id.is_empty()
+            && source_id != broadcaster_id
+            && let (Some(login), Some(display_name)) = (
+                event_data
+                    .get("source_broadcaster_user_login")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty()),
+                event_data
+                    .get("source_broadcaster_user_name")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty()),
+            )
+        {
             forge_payload["from_channel"] = serde_json::json!({
                 "login": login,
                 "display_name": display_name,
@@ -833,34 +844,31 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn publish_chat_message_surfaces_cheer_and_derives_anonymity_from_empty_chatter_id() {
+    async fn publish_chat_message_surfaces_cheer_bits_without_anonymity_signal() {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
-        for (chatter_id, expected_anonymous) in [("67890", false), ("", true)] {
-            let event_data = serde_json::json!({
-                "broadcaster_user_login": "streamer",
-                "chatter_user_id": chatter_id,
-                "chatter_user_login": "viewer",
-                "message": {"text": "cheer100 gg"},
-                "cheer": {"bits": 100},
-                "badges": []
-            });
-            session.publish_chat_message(&event_data);
+        let event_data = serde_json::json!({
+            "broadcaster_user_login": "streamer",
+            "chatter_user_id": "67890",
+            "chatter_user_login": "viewer",
+            "message": {"text": "cheer100 gg"},
+            "cheer": {"bits": 100},
+            "badges": []
+        });
+        session.publish_chat_message(&event_data);
 
-            let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
-                .await
-                .expect("timeout")
-                .expect("recv error");
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .expect("timeout")
+            .expect("recv error");
 
-            assert_eq!(ev.payload["cheer"]["bits"].as_i64(), Some(100));
-            assert_eq!(
-                ev.payload["cheer"]["is_anonymous"].as_bool(),
-                Some(expected_anonymous),
-                "chatter_user_id: {chatter_id:?}"
-            );
-        }
+        assert_eq!(ev.payload["cheer"]["bits"].as_i64(), Some(100));
+        assert!(
+            ev.payload["cheer"].get("is_anonymous").is_none(),
+            "channel.chat.message cheer carries no anonymity signal"
+        );
     }
 
     #[tokio::test]
@@ -871,9 +879,11 @@ mod tests {
 
         let event_data = serde_json::json!({
             "broadcaster_user_login": "host",
+            "broadcaster_user_id": "100",
             "chatter_user_id": "42",
             "chatter_user_login": "guest_viewer",
             "message": {"text": "hello from elsewhere"},
+            "source_broadcaster_user_id": "200",
             "source_broadcaster_user_login": "other_chan",
             "source_broadcaster_user_name": "OtherChan",
             "badges": []
@@ -896,6 +906,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn publish_chat_message_omits_from_channel_for_own_channel_shared_chat_echo() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        // Shared-chat session echoes source_broadcaster_* on the host's own messages;
+        // when source id == broadcaster id, from_channel must NOT surface.
+        let event_data = serde_json::json!({
+            "broadcaster_user_login": "host",
+            "broadcaster_user_id": "100",
+            "chatter_user_id": "42",
+            "chatter_user_login": "host_viewer",
+            "message": {"text": "my own channel"},
+            "source_broadcaster_user_id": "100",
+            "source_broadcaster_user_login": "host",
+            "source_broadcaster_user_name": "Host",
+            "badges": []
+        });
+        session.publish_chat_message(&event_data);
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .expect("timeout")
+            .expect("recv error");
+
+        assert!(
+            ev.payload.get("from_channel").is_none(),
+            "own-channel echo must not surface from_channel"
+        );
+    }
+
+    #[tokio::test]
     async fn publish_chat_message_omits_cheer_and_from_channel_when_not_applicable() {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let session = make_session(&bus);
@@ -910,18 +952,17 @@ mod tests {
         });
         let empty_source = serde_json::json!({
             "broadcaster_user_login": "streamer",
+            "broadcaster_user_id": "100",
             "chatter_user_id": "1",
             "chatter_user_login": "viewer",
             "message": {"text": "plain"},
+            "source_broadcaster_user_id": "",
             "source_broadcaster_user_login": "",
             "source_broadcaster_user_name": "",
             "badges": []
         });
 
-        for (name, event_data) in [
-            ("keys absent", plain),
-            ("empty source fields", empty_source),
-        ] {
+        for (name, event_data) in [("keys absent", plain), ("empty source id", empty_source)] {
             session.publish_chat_message(&event_data);
 
             let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())

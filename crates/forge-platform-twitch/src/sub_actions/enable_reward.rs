@@ -71,7 +71,10 @@ pub(crate) fn config_fields() -> Vec<FormField> {
     }]
 }
 
-pub(crate) fn validate_reward_id(kind_id: &str, config: &SubActionConfig) -> Result<(), RegistryError> {
+pub(crate) fn validate_reward_id(
+    kind_id: &str,
+    config: &SubActionConfig,
+) -> Result<(), RegistryError> {
     match config.get("reward_id") {
         Some(Variant::String(s)) if !s.is_empty() => Ok(()),
         _ => Err(RegistryError::UnknownKindId(format!(
@@ -234,8 +237,10 @@ mod tests {
     #[tokio::test]
     async fn reward_id_template_interpolates_from_stack() {
         let (transport, runner) = enable_runner_with(Ok(serde_json::Value::Null));
-        let stack =
-            ArgStack::new().set("reward.id".to_owned(), Variant::String("resolved42".to_owned()));
+        let stack = ArgStack::new().set(
+            "reward.id".to_owned(),
+            Variant::String("resolved42".to_owned()),
+        );
 
         let _ = runner.execute(&default_config(), &make_ctx(&stack)).await;
 

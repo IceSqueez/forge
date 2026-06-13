@@ -5,7 +5,9 @@ use forge_registry::runner::SubActionConfig;
 use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionTelemetry};
 
-use super::enable_reward::{config_fields, default_config, execute_bool_runner, validate_reward_id};
+use super::enable_reward::{
+    config_fields, default_config, execute_bool_runner, validate_reward_id,
+};
 use super::identity::SelfIdentity;
 use crate::helix::HelixTransport;
 

@@ -1,5 +1,6 @@
 mod add_moderator;
 mod add_vip;
+mod approve_automod_message;
 mod ban_user;
 mod cancel_prediction;
 mod cancel_raid;
@@ -9,6 +10,7 @@ mod create_marker;
 mod create_reward;
 mod delete_message;
 mod delete_reward;
+mod deny_automod_message;
 mod disable_reward;
 mod enable_reward;
 mod end_poll;
@@ -47,6 +49,7 @@ use forge_storage::CredentialsRepo;
 
 pub use add_moderator::AddModeratorRunner;
 pub use add_vip::AddVipRunner;
+pub use approve_automod_message::ApproveAutomodMessageRunner;
 pub use ban_user::BanUserRunner;
 pub use cancel_prediction::CancelPredictionRunner;
 pub use cancel_raid::CancelRaidRunner;
@@ -56,6 +59,7 @@ pub use create_marker::CreateMarkerRunner;
 pub use create_reward::CreateRewardRunner;
 pub use delete_message::DeleteMessageRunner;
 pub use delete_reward::DeleteRewardRunner;
+pub use deny_automod_message::DenyAutomodMessageRunner;
 pub use disable_reward::DisableRewardRunner;
 pub use enable_reward::EnableRewardRunner;
 pub use end_poll::EndPollRunner;
@@ -255,7 +259,15 @@ pub fn register_twitch_sub_actions(
         Arc::clone(&transport),
         Arc::clone(&identity),
     )))?;
-    reg.register(Box::new(GetCurrentGoalRunner::new(transport, identity)))?;
+    reg.register(Box::new(GetCurrentGoalRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(ApproveAutomodMessageRunner::new(
+        Arc::clone(&transport),
+        Arc::clone(&identity),
+    )))?;
+    reg.register(Box::new(DenyAutomodMessageRunner::new(transport, identity)))?;
     Ok(())
 }
 

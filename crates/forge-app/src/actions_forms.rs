@@ -178,3 +178,139 @@ pub enum RemoveSubActionMsg {
     Requested(ActionId, usize),
     Removed(Result<(), String>),
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::sync::Arc;
+
+    use forge_registry::SubActionRunner;
+    use forge_runtime::audio_runners::PlaySoundRunner;
+    use forge_runtime::sound_player::{SoundPlayer, SoundPlayerError};
+    use forge_types::{ClipId, OutputDevice};
+
+    use super::*;
+
+    struct NoopPlayer;
+
+    #[async_trait::async_trait]
+    impl SoundPlayer for NoopPlayer {
+        async fn play(
+            &self,
+            _clip_id: ClipId,
+            _override_device: Option<OutputDevice>,
+        ) -> Result<(), SoundPlayerError> {
+            Ok(())
+        }
+    }
+
+    fn step_with_config(kind_id: &str, config: BTreeMap<String, Variant>) -> SubActionStep {
+        SubActionStep {
+            kind_id: kind_id.to_owned(),
+            config,
+            enabled: true,
+            label: None,
+        }
+    }
+
+    #[test]
+    fn build_step_returns_none_while_no_kind_is_selected() {
+        let form = AddSubActionForm::new(ActionId::new());
+        assert!(form.build_step().is_none());
+    }
+
+    #[test]
+    fn build_step_carries_the_override_buffer_as_the_step_config() {
+        let mut form = AddSubActionForm::new(ActionId::new());
+        form.selected_kind_id = Some("twitch.chat.send_message".to_owned());
+        form.overrides_buffer
+            .insert("message".to_owned(), Variant::String("hello".to_owned()));
+
+        let step = form.build_step().unwrap();
+        assert_eq!(step.kind_id, "twitch.chat.send_message");
+        assert_eq!(
+            step.config.get("message"),
+            Some(&Variant::String("hello".to_owned()))
+        );
+    }
+
+    #[test]
+    fn seed_from_default_then_edited_field_overlays_while_untouched_field_keeps_default() {
+        let mut form = AddSubActionForm::new(ActionId::new());
+        form.selected_kind_id = Some("soundboard.sound.play".to_owned());
+        let mut defaults = BTreeMap::new();
+        defaults.insert("clip_id".to_owned(), Variant::String(String::new()));
+        defaults.insert("volume".to_owned(), Variant::Int(100));
+        form.seed_from_default(defaults);
+
+        // User overrides only clip_id; volume is left untouched.
+        form.overrides_buffer
+            .insert("clip_id".to_owned(), Variant::String("clip-7".to_owned()));
+
+        let step = form.build_step().unwrap();
+        assert_eq!(
+            step.config.get("clip_id"),
+            Some(&Variant::String("clip-7".to_owned()))
+        );
+        assert_eq!(step.config.get("volume"), Some(&Variant::Int(100)));
+    }
+
+    #[test]
+    fn populate_then_build_reproduces_a_twitch_step_config() {
+        let mut config = BTreeMap::new();
+        config.insert(
+            "message".to_owned(),
+            Variant::String("gg %user%".to_owned()),
+        );
+        config.insert("reply_to".to_owned(), Variant::String(String::new()));
+        let original = step_with_config("twitch.chat.send_message", config);
+
+        let mut form = AddSubActionForm::new(ActionId::new());
+        form.populate_from_step(&original);
+
+        assert_eq!(form.step, SubActionFormStep::FillForm);
+        let rebuilt = form.build_step().unwrap();
+        assert_eq!(rebuilt.kind_id, original.kind_id);
+        assert_eq!(rebuilt.config, original.config);
+    }
+
+    #[test]
+    fn populate_then_build_reproduces_a_builtin_step_config() {
+        let mut config = BTreeMap::new();
+        config.insert("clip_id".to_owned(), Variant::String("clip-42".to_owned()));
+        let original = step_with_config("soundboard.sound.play", config);
+
+        let mut form = AddSubActionForm::new(ActionId::new());
+        form.populate_from_step(&original);
+
+        let rebuilt = form.build_step().unwrap();
+        assert_eq!(rebuilt.kind_id, original.kind_id);
+        assert_eq!(rebuilt.config, original.config);
+    }
+
+    #[test]
+    fn real_runner_rejects_the_seeded_empty_required_config() {
+        // The Submit path runs `runner.validate_config(&form.overrides_buffer)`.
+        // A freshly seeded PlaySound form has an empty clip_id and must fail.
+        let runner = PlaySoundRunner::new(Arc::new(NoopPlayer));
+        let mut form = AddSubActionForm::new(ActionId::new());
+        form.selected_kind_id = Some(runner.id().to_owned());
+        form.seed_from_default(runner.default_config());
+
+        assert!(runner.validate_config(&form.overrides_buffer).is_err());
+    }
+
+    #[test]
+    fn real_runner_accepts_a_filled_required_config() {
+        let runner = PlaySoundRunner::new(Arc::new(NoopPlayer));
+        let mut form = AddSubActionForm::new(ActionId::new());
+        form.selected_kind_id = Some(runner.id().to_owned());
+        form.seed_from_default(runner.default_config());
+        form.overrides_buffer.insert(
+            "clip_id".to_owned(),
+            Variant::String(ClipId::new().to_string()),
+        );
+
+        assert!(runner.validate_config(&form.overrides_buffer).is_ok());
+    }
+}

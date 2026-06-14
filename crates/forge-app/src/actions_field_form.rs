@@ -273,3 +273,104 @@ pub fn apply_field_edit(
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    fn buffers() -> (BTreeMap<String, String>, BTreeMap<String, Variant>) {
+        (BTreeMap::new(), BTreeMap::new())
+    }
+
+    #[test]
+    fn set_writes_both_the_display_text_and_the_typed_override() {
+        let (mut text, mut overrides) = buffers();
+        apply_field_edit(
+            &mut text,
+            &mut overrides,
+            FieldEditMsg::Set("msg".into(), Variant::String("hi".into())),
+        );
+        assert_eq!(text.get("msg").map(String::as_str), Some("hi"));
+        assert_eq!(overrides.get("msg"), Some(&Variant::String("hi".into())));
+    }
+
+    #[test]
+    fn int_input_with_valid_digits_sets_int_override_and_keeps_raw_text() {
+        let (mut text, mut overrides) = buffers();
+        apply_field_edit(
+            &mut text,
+            &mut overrides,
+            FieldEditMsg::IntInput("n".into(), "42".into()),
+        );
+        assert_eq!(text.get("n").map(String::as_str), Some("42"));
+        assert_eq!(overrides.get("n"), Some(&Variant::Int(42)));
+    }
+
+    #[test]
+    fn int_input_with_non_numeric_keeps_raw_text_but_preserves_prior_numeric_override() {
+        let (mut text, mut overrides) = buffers();
+        apply_field_edit(
+            &mut text,
+            &mut overrides,
+            FieldEditMsg::IntInput("n".into(), "7".into()),
+        );
+        // User backspaces into an invalid intermediate state ("7a").
+        apply_field_edit(
+            &mut text,
+            &mut overrides,
+            FieldEditMsg::IntInput("n".into(), "7a".into()),
+        );
+        // Lenient-parse contract: raw text stays visible...
+        assert_eq!(text.get("n").map(String::as_str), Some("7a"));
+        // ...but the last successfully-parsed numeric value is NOT clobbered.
+        assert_eq!(overrides.get("n"), Some(&Variant::Int(7)));
+    }
+
+    #[test]
+    fn int_input_with_non_numeric_and_no_prior_value_leaves_override_unset() {
+        let (mut text, mut overrides) = buffers();
+        apply_field_edit(
+            &mut text,
+            &mut overrides,
+            FieldEditMsg::IntInput("n".into(), "abc".into()),
+        );
+        assert_eq!(text.get("n").map(String::as_str), Some("abc"));
+        assert!(!overrides.contains_key("n"));
+    }
+
+    #[test]
+    fn clear_removes_the_key_from_both_buffers() {
+        let (mut text, mut overrides) = buffers();
+        apply_field_edit(
+            &mut text,
+            &mut overrides,
+            FieldEditMsg::Set("k".into(), Variant::Bool(true)),
+        );
+        apply_field_edit(&mut text, &mut overrides, FieldEditMsg::Clear("k".into()));
+        assert!(!text.contains_key("k"));
+        assert!(!overrides.contains_key("k"));
+    }
+
+    #[test]
+    fn variant_to_display_str_renders_scalar_variants() {
+        assert_eq!(variant_to_display_str(&Variant::Int(7)), "7");
+        assert_eq!(variant_to_display_str(&Variant::Bool(true)), "true");
+        assert_eq!(variant_to_display_str(&Variant::String("x".into())), "x");
+        // Float renders through its own Display, not a fixed precision.
+        assert_eq!(variant_to_display_str(&Variant::Float(1.5)), "1.5");
+    }
+
+    #[test]
+    fn variant_to_display_str_collapses_collections_to_empty_string() {
+        // Contract: Array/Object are not text-editable in the field form, so
+        // they intentionally render blank rather than a Debug dump.
+        assert_eq!(
+            variant_to_display_str(&Variant::Array(vec![Variant::Int(1)])),
+            ""
+        );
+        let mut obj = BTreeMap::new();
+        obj.insert("a".to_owned(), Variant::Int(1));
+        assert_eq!(variant_to_display_str(&Variant::Object(obj)), "");
+    }
+}

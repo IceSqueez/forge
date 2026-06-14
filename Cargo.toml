@@ -73,8 +73,6 @@ sqlx = { version = "0.9", features = [
 
 aes-gcm = { version = "0.10" }
 directories = { version = "6.0" }
-keyring = { version = "4.0" }
-keyring-core = { version = "1.0" }
 rand = { version = "0.10" }
 tempfile = { version = "3.27" }
 mockall = { version = "0.14" }

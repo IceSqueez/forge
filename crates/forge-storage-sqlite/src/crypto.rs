@@ -6,67 +6,35 @@ use crate::error::SqliteStorageError;
 
 const NONCE_LEN: usize = 12;
 
+// File-canonical key avoids secret-service session-collection amnesia: the OS keyring on Linux
+// often stores entries in a *session* collection that is wiped on logout, so a later boot mints a
+// different key and all previously-encrypted credentials become permanently unreadable.
 pub fn load_or_create_key() -> Result<[u8; 32], SqliteStorageError> {
-    if let Ok(path) = std::env::var("FORGE_CREDENTIAL_KEY_FILE") {
-        return load_or_create_file_key(&std::path::PathBuf::from(path));
-    }
-
-    match try_keyring_key() {
-        Ok(key) => Ok(key),
-        Err(_) => {
-            let path = forge_platform_core::paths::data_dir().join("credentials-key");
-            load_or_create_file_key(&path)
-        }
-    }
-}
-
-fn try_keyring_key() -> Result<[u8; 32], SqliteStorageError> {
-    // Registers the OS-native backend; fails on headless Linux / WSL / CI without secret service.
-    keyring::use_native_store(false).map_err(|e| SqliteStorageError::Keyring {
-        reason: e.to_string(),
-    })?;
-
-    let entry = keyring_core::Entry::new("forge", "credentials-key").map_err(|e| {
-        SqliteStorageError::Keyring {
-            reason: e.to_string(),
-        }
-    })?;
-
-    match entry.get_password() {
-        Ok(hex) => hex_to_key(&hex),
-        Err(keyring_core::Error::NoEntry) => {
-            let key = generate_key();
-            let hex = key_to_hex(&key);
-            entry
-                .set_password(&hex)
-                .map_err(|e| SqliteStorageError::Keyring {
-                    reason: e.to_string(),
-                })?;
-            Ok(key)
-        }
-        Err(e) => Err(SqliteStorageError::Keyring {
-            reason: e.to_string(),
-        }),
-    }
+    let path = if let Ok(p) = std::env::var("FORGE_CREDENTIAL_KEY_FILE") {
+        std::path::PathBuf::from(p)
+    } else {
+        forge_platform_core::paths::data_dir().join("credentials-key")
+    };
+    load_or_create_file_key(&path)
 }
 
 fn load_or_create_file_key(path: &std::path::Path) -> Result<[u8; 32], SqliteStorageError> {
     use std::io::{Read, Write};
 
     if path.exists() {
-        let mut file = std::fs::File::open(path).map_err(|e| SqliteStorageError::Keyring {
+        let mut file = std::fs::File::open(path).map_err(|e| SqliteStorageError::KeyFile {
             reason: e.to_string(),
         })?;
         let mut hex = String::new();
         file.read_to_string(&mut hex)
-            .map_err(|e| SqliteStorageError::Keyring {
+            .map_err(|e| SqliteStorageError::KeyFile {
                 reason: e.to_string(),
             })?;
         return hex_to_key(hex.trim());
     }
 
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| SqliteStorageError::Keyring {
+        std::fs::create_dir_all(parent).map_err(|e| SqliteStorageError::KeyFile {
             reason: e.to_string(),
         })?;
     }
@@ -83,20 +51,20 @@ fn load_or_create_file_key(path: &std::path::Path) -> Result<[u8; 32], SqliteSto
                 .create_new(true)
                 .mode(0o600)
                 .open(path)
-                .map_err(|e| SqliteStorageError::Keyring {
+                .map_err(|e| SqliteStorageError::KeyFile {
                     reason: e.to_string(),
                 })?
         }
         #[cfg(not(unix))]
         {
-            std::fs::File::create_new(path).map_err(|e| SqliteStorageError::Keyring {
+            std::fs::File::create_new(path).map_err(|e| SqliteStorageError::KeyFile {
                 reason: e.to_string(),
             })?
         }
     };
 
     file.write_all(hex.as_bytes())
-        .map_err(|e| SqliteStorageError::Keyring {
+        .map_err(|e| SqliteStorageError::KeyFile {
             reason: e.to_string(),
         })?;
 
@@ -156,17 +124,17 @@ fn key_to_hex(key: &[u8; 32]) -> String {
 fn hex_to_key(hex: &str) -> Result<[u8; 32], SqliteStorageError> {
     let hex = hex.trim();
     if hex.len() != 64 {
-        return Err(SqliteStorageError::Keyring {
+        return Err(SqliteStorageError::KeyFile {
             reason: format!("key file corrupt: expected 64 hex chars, got {}", hex.len()),
         });
     }
 
     let mut key = [0u8; 32];
     for (i, chunk) in hex.as_bytes().chunks(2).enumerate() {
-        let byte_str = std::str::from_utf8(chunk).map_err(|e| SqliteStorageError::Keyring {
+        let byte_str = std::str::from_utf8(chunk).map_err(|e| SqliteStorageError::KeyFile {
             reason: e.to_string(),
         })?;
-        key[i] = u8::from_str_radix(byte_str, 16).map_err(|e| SqliteStorageError::Keyring {
+        key[i] = u8::from_str_radix(byte_str, 16).map_err(|e| SqliteStorageError::KeyFile {
             reason: e.to_string(),
         })?;
     }

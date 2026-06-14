@@ -9,8 +9,8 @@ pub enum SqliteStorageError {
     #[error("crypto error: {reason}")]
     Crypto { reason: String },
 
-    #[error("keyring error: {reason}")]
-    Keyring { reason: String },
+    #[error("key file error: {reason}")]
+    KeyFile { reason: String },
 
     #[error("decode error: {0}")]
     Decode(String),
@@ -26,7 +26,7 @@ impl From<SqliteStorageError> for forge_storage::StorageError {
                 reason: inner.to_string(),
             },
             SqliteStorageError::Crypto { reason } => Self::Connection { reason },
-            SqliteStorageError::Keyring { reason } => Self::Connection { reason },
+            SqliteStorageError::KeyFile { reason } => Self::Connection { reason },
             SqliteStorageError::Decode(msg) => Self::Parse(msg),
         }
     }

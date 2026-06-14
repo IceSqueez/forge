@@ -24,8 +24,6 @@ tokio = { workspace = true }
 sqlx = { workspace = true }
 aes-gcm = { workspace = true }
 sha2 = { workspace = true }
-keyring = { workspace = true }
-keyring-core = { workspace = true }
 rand = { workspace = true }
 time = { workspace = true }
 tracing = { workspace = true }

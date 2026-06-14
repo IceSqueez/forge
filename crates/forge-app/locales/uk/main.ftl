@@ -646,7 +646,7 @@ tts_engines_default_badge = ТИПОВИЙ
 ## TTS Engines — секції
 
 tts_engines_section_engine = РУШІЙ
-tts_engines_credentials_notice = Облікові дані зберігаються в системному сховищі ключів, ніколи у файлах конфігурації
+tts_engines_credentials_notice = Облікові дані зберігаються зашифрованими в локальній базі, ніколи у файлах конфігурації
 tts_engines_no_credentials = ЛОКАЛЬНИЙ — облікові дані не потрібні
 tts_engines_section_params = ПАРАМЕТРИ ГОЛОСУ ЗА ЗАМОВЧУВАННЯМ
 tts_engines_param_pitch = Висота тону
@@ -1014,7 +1014,7 @@ obs_form_title = Налаштування підключення
 obs_field_host = ХОСТ
 obs_field_port = ПОРТ
 obs_field_password = ПАРОЛЬ
-obs_field_keychain = зберігається в ОС-сховищі ключів
+obs_field_keychain = зберігається зашифровано в локальній базі
 obs_toggle_reconnect_title = Авто-перепідключення при відключенні
 obs_toggle_reconnect_subtitle = Повторні спроби з експоненційним відступом
 obs_toggle_launch_title = Підключатися при запуску

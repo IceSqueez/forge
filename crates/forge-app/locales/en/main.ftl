@@ -644,7 +644,7 @@ tts_engines_default_badge = DEFAULT
 ## TTS Engines — sections
 
 tts_engines_section_engine = ENGINE
-tts_engines_credentials_notice = Credentials stored in system keyring, never in config files
+tts_engines_credentials_notice = Credentials stored encrypted in the local database, never in config files
 tts_engines_no_credentials = LOCAL — no credentials
 tts_engines_section_params = DEFAULT VOICE PARAMETERS
 tts_engines_param_pitch = Pitch
@@ -1006,7 +1006,7 @@ obs_form_title = Connection settings
 obs_field_host = HOST
 obs_field_port = PORT
 obs_field_password = PASSWORD
-obs_field_keychain = stored in OS keychain
+obs_field_keychain = stored encrypted in the local database
 obs_toggle_reconnect_title = Auto-reconnect on disconnect
 obs_toggle_reconnect_subtitle = Retry with exponential backoff
 obs_toggle_launch_title = Connect on app launch

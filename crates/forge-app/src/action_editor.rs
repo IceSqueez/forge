@@ -5,8 +5,9 @@ use iced::Task;
 
 use crate::actions::{
     ActionDetail, AddActionForm, AddActionMsg, AddSubActionForm, AddSubActionMsg,
-    RemoveSubActionMsg, SubActionKindChoice,
+    RemoveSubActionMsg, SubActionFormStep,
 };
+use crate::actions_field_form::{FieldEditMsg, apply_field_edit};
 use crate::message::{ActionEditorMsg, ActionsMsg, Message, MoveSubActionMsg};
 use crate::runtime_view::RuntimeView;
 
@@ -167,14 +168,13 @@ pub fn add_action_update(
     }
 }
 
-fn log_level_id(level: &forge_types::LogLevel) -> &'static str {
-    match level {
-        forge_types::LogLevel::Trace => "trace",
-        forge_types::LogLevel::Debug => "debug",
-        forge_types::LogLevel::Info => "info",
-        forge_types::LogLevel::Warn => "warn",
-        forge_types::LogLevel::Error => "error",
-    }
+fn load_clips_task(rt: &RuntimeView) -> Task<Message> {
+    let service = Arc::clone(&rt.actions);
+    Task::perform(async move { service.list_clip_options().await }, |clips| {
+        Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+            AddSubActionMsg::ClipsLoaded(clips),
+        )))
+    })
 }
 
 pub fn add_sub_action_update(
@@ -186,12 +186,7 @@ pub fn add_sub_action_update(
     match msg {
         AddSubActionMsg::OpenRequested(action_id) => {
             *state = Some(AddSubActionForm::new(action_id));
-            let service = Arc::clone(&rt.actions);
-            Task::perform(async move { service.list_clip_options().await }, |clips| {
-                Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
-                    AddSubActionMsg::ClipsLoaded(clips),
-                )))
-            })
+            load_clips_task(rt)
         }
         AddSubActionMsg::EditRequested(action_id, index) => {
             let mut form = AddSubActionForm::new(action_id);
@@ -203,114 +198,67 @@ pub fn add_sub_action_update(
                 form.populate_from_step(step);
             }
             *state = Some(form);
-            let service = Arc::clone(&rt.actions);
-            Task::perform(async move { service.list_clip_options().await }, |clips| {
-                Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
-                    AddSubActionMsg::ClipsLoaded(clips),
-                )))
-            })
+            load_clips_task(rt)
         }
-        AddSubActionMsg::KindSelected(kind) => {
+        AddSubActionMsg::KindSelected(kind_id) => {
             if let Some(f) = state.as_mut() {
-                f.kind = kind;
+                let default_config = rt
+                    .sub_action_registry
+                    .get(&kind_id)
+                    .map(|r| r.default_config())
+                    .unwrap_or_default();
+                f.selected_kind_id = Some(kind_id);
+                f.seed_from_default(default_config);
+                f.step = SubActionFormStep::FillForm;
                 f.error = None;
             }
             Task::none()
         }
-        AddSubActionMsg::SendChatMessageChanged(v) => {
+        AddSubActionMsg::BackToKindPicker => {
             if let Some(f) = state.as_mut() {
-                f.config.send_chat_message = v;
-            }
-            Task::none()
-        }
-        AddSubActionMsg::SendChatTargetChanged(v) => {
-            if let Some(f) = state.as_mut() {
-                f.config.send_chat_target = v;
-            }
-            Task::none()
-        }
-        AddSubActionMsg::SetGlobalNameChanged(v) => {
-            if let Some(f) = state.as_mut() {
-                f.config.set_global_name = v;
-            }
-            Task::none()
-        }
-        AddSubActionMsg::SetGlobalValueChanged(v) => {
-            if let Some(f) = state.as_mut() {
-                f.config.set_global_value = v;
-            }
-            Task::none()
-        }
-        AddSubActionMsg::DelayMsChanged(v) => {
-            if let Some(f) = state.as_mut() {
-                f.config.delay_ms = v;
-            }
-            Task::none()
-        }
-        AddSubActionMsg::LogLevelSelected(level) => {
-            if let Some(f) = state.as_mut() {
-                f.config.log_level = level;
-            }
-            Task::none()
-        }
-        AddSubActionMsg::LogMessageChanged(v) => {
-            if let Some(f) = state.as_mut() {
-                f.config.log_message = v;
-            }
-            Task::none()
-        }
-        AddSubActionMsg::PlaySoundClipSelected(clip_id) => {
-            if let Some(f) = state.as_mut() {
-                f.config.play_sound_clip_id = Some(clip_id);
+                f.step = SubActionFormStep::PickKind;
+                f.selected_kind_id = None;
+                f.overrides_buffer.clear();
+                f.text_buffer.clear();
                 f.error = None;
             }
             Task::none()
         }
-        AddSubActionMsg::SpeakTextChanged(v) => {
+        AddSubActionMsg::SearchChanged(s) => {
             if let Some(f) = state.as_mut() {
-                f.config.speak_text = v;
+                f.search = s;
+            }
+            Task::none()
+        }
+        AddSubActionMsg::FieldChanged(key, variant) => {
+            if let Some(f) = state.as_mut() {
+                apply_field_edit(
+                    &mut f.text_buffer,
+                    &mut f.overrides_buffer,
+                    FieldEditMsg::Set(key, variant),
+                );
                 f.error = None;
             }
             Task::none()
         }
-        AddSubActionMsg::SpeakVoiceOverrideChanged(v) => {
+        AddSubActionMsg::IntInputChanged(key, raw) => {
             if let Some(f) = state.as_mut() {
-                f.config.speak_voice_override = v;
-            }
-            Task::none()
-        }
-        AddSubActionMsg::ReadFilePathChanged(v) => {
-            if let Some(f) = state.as_mut() {
-                f.config.read_file_path = v;
+                apply_field_edit(
+                    &mut f.text_buffer,
+                    &mut f.overrides_buffer,
+                    FieldEditMsg::IntInput(key, raw),
+                );
                 f.error = None;
             }
             Task::none()
         }
-        AddSubActionMsg::ReadFileTargetVarChanged(v) => {
+        AddSubActionMsg::FieldCleared(key) => {
             if let Some(f) = state.as_mut() {
-                f.config.read_file_target_var = v;
-                f.error = None;
-            }
-            Task::none()
-        }
-        AddSubActionMsg::RandomIntMinChanged(v) => {
-            if let Some(f) = state.as_mut() {
-                f.config.random_int_min = v;
-                f.error = None;
-            }
-            Task::none()
-        }
-        AddSubActionMsg::RandomIntMaxChanged(v) => {
-            if let Some(f) = state.as_mut() {
-                f.config.random_int_max = v;
-                f.error = None;
-            }
-            Task::none()
-        }
-        AddSubActionMsg::RandomIntTargetVarChanged(v) => {
-            if let Some(f) = state.as_mut() {
-                f.config.random_int_target_var = v;
-                f.error = None;
+                apply_field_edit(
+                    &mut f.text_buffer,
+                    &mut f.overrides_buffer,
+                    FieldEditMsg::Clear(key),
+                );
             }
             Task::none()
         }
@@ -328,172 +276,19 @@ pub fn add_sub_action_update(
             let Some(form) = state.as_ref() else {
                 return Task::none();
             };
-            if !form.is_valid() {
-                let error_msg = match form.kind {
-                    SubActionKindChoice::SendChat => {
-                        forge_widgets::tr!("action_editor_error_message_required")
-                    }
-                    SubActionKindChoice::SetGlobal => {
-                        forge_widgets::tr!("action_editor_error_var_required")
-                    }
-                    SubActionKindChoice::Delay => {
-                        forge_widgets::tr!("action_editor_error_delay_invalid")
-                    }
-                    SubActionKindChoice::Log => {
-                        forge_widgets::tr!("action_editor_error_log_required")
-                    }
-                    SubActionKindChoice::PlaySound => {
-                        forge_widgets::tr!("action_editor_error_clip_required")
-                    }
-                    SubActionKindChoice::Speak => {
-                        forge_widgets::tr!("action_editor_error_speak_required")
-                    }
-                    SubActionKindChoice::ReadFile => {
-                        forge_widgets::tr!("action_editor_error_file_required")
-                    }
-                    SubActionKindChoice::RandomInt => {
-                        forge_widgets::tr!("action_editor_error_random_invalid")
-                    }
-                };
+            let Some(kind_id) = form.selected_kind_id.clone() else {
+                return Task::none();
+            };
+            if let Some(runner) = rt.sub_action_registry.get(&kind_id)
+                && let Err(e) = runner.validate_config(&form.overrides_buffer)
+            {
                 if let Some(f) = state.as_mut() {
-                    f.error = Some(error_msg);
+                    f.error = Some(e.to_string());
                 }
                 return Task::none();
             }
-            use forge_types::{SubActionStep, Variant};
-            use std::collections::BTreeMap;
-            let step = match form.kind {
-                SubActionKindChoice::SendChat => SubActionStep {
-                    kind_id: "twitch.chat.send_message".to_owned(),
-                    config: BTreeMap::from([
-                        (
-                            "message".to_owned(),
-                            Variant::String(form.config.send_chat_message.clone()),
-                        ),
-                        (
-                            "target".to_owned(),
-                            Variant::String(form.config.send_chat_target.clone()),
-                        ),
-                    ]),
-                    enabled: true,
-                    label: None,
-                },
-                SubActionKindChoice::SetGlobal => SubActionStep {
-                    kind_id: "core.globals.set".to_owned(),
-                    config: BTreeMap::from([
-                        (
-                            "name".to_owned(),
-                            Variant::String(form.config.set_global_name.clone()),
-                        ),
-                        (
-                            "value".to_owned(),
-                            Variant::String(form.config.set_global_value.clone()),
-                        ),
-                    ]),
-                    enabled: true,
-                    label: None,
-                },
-                SubActionKindChoice::Delay => {
-                    let ms = form.config.delay_ms.trim().parse::<i64>().unwrap_or(0);
-                    SubActionStep {
-                        kind_id: "core.logic.wait".to_owned(),
-                        config: BTreeMap::from([("ms".to_owned(), Variant::Int(ms))]),
-                        enabled: true,
-                        label: None,
-                    }
-                }
-                SubActionKindChoice::Log => SubActionStep {
-                    kind_id: "core.log.write".to_owned(),
-                    config: BTreeMap::from([
-                        (
-                            "level".to_owned(),
-                            Variant::String(log_level_id(&form.config.log_level).to_owned()),
-                        ),
-                        (
-                            "message".to_owned(),
-                            Variant::String(form.config.log_message.clone()),
-                        ),
-                    ]),
-                    enabled: true,
-                    label: None,
-                },
-                SubActionKindChoice::PlaySound => SubActionStep {
-                    kind_id: "soundboard.sound.play".to_owned(),
-                    config: BTreeMap::from([(
-                        "clip_id".to_owned(),
-                        Variant::String(
-                            form.config
-                                .play_sound_clip_id
-                                .unwrap_or_default()
-                                .to_string(),
-                        ),
-                    )]),
-                    enabled: true,
-                    label: None,
-                },
-                SubActionKindChoice::Speak => {
-                    let mut config = BTreeMap::new();
-                    config.insert(
-                        "text".to_owned(),
-                        Variant::String(form.config.speak_text.clone()),
-                    );
-                    if !form.config.speak_voice_override.trim().is_empty() {
-                        config.insert(
-                            "voice_id_override".to_owned(),
-                            Variant::String(form.config.speak_voice_override.trim().to_owned()),
-                        );
-                    }
-                    SubActionStep {
-                        kind_id: "tts.speak.text".to_owned(),
-                        config,
-                        enabled: true,
-                        label: None,
-                    }
-                }
-                SubActionKindChoice::ReadFile => SubActionStep {
-                    kind_id: "core.file.read".to_owned(),
-                    config: BTreeMap::from([
-                        (
-                            "path".to_owned(),
-                            Variant::String(form.config.read_file_path.trim().to_owned()),
-                        ),
-                        (
-                            "target_var".to_owned(),
-                            Variant::String(form.config.read_file_target_var.trim().to_owned()),
-                        ),
-                    ]),
-                    enabled: true,
-                    label: None,
-                },
-                SubActionKindChoice::RandomInt => {
-                    let min = form
-                        .config
-                        .random_int_min
-                        .trim()
-                        .parse::<i64>()
-                        .unwrap_or(0);
-                    let max = form
-                        .config
-                        .random_int_max
-                        .trim()
-                        .parse::<i64>()
-                        .unwrap_or(0);
-                    SubActionStep {
-                        kind_id: "core.random.int".to_owned(),
-                        config: BTreeMap::from([
-                            ("min".to_owned(), Variant::Int(min)),
-                            ("max".to_owned(), Variant::Int(max)),
-                            (
-                                "target_var".to_owned(),
-                                Variant::String(
-                                    form.config.random_int_target_var.trim().to_owned(),
-                                ),
-                            ),
-                        ]),
-                        enabled: true,
-                        label: None,
-                    }
-                }
+            let Some(step) = form.build_step() else {
+                return Task::none();
             };
             let action_id = form.for_action_id;
             let editing_index = form.editing_index;

@@ -15,7 +15,7 @@ pub use forge_runtime::actions::{ActionDetail, ActionSummary};
 
 pub use crate::actions_forms::{
     AddActionForm, AddActionMsg, AddSubActionForm, AddSubActionMsg, RemoveSubActionMsg,
-    SubActionConfigForm, SubActionKindChoice,
+    SubActionFormStep,
 };
 pub use crate::actions_telemetry::{action_stat, format_relative_time, telemetry_grid};
 pub use crate::actions_trigger_kinds::{
@@ -808,81 +808,6 @@ mod tests {
 
         let detail = make_service(dp).load_detail(action.id).await.unwrap();
         assert_eq!(detail.trigger_instances.len(), 1);
-    }
-
-    #[test]
-    fn add_sub_action_form_validates_required_config_per_kind() {
-        let make = |kind: SubActionKindChoice, mutate: fn(&mut AddSubActionForm)| {
-            let mut form = AddSubActionForm::new(ActionId::new());
-            form.kind = kind;
-            mutate(&mut form);
-            form
-        };
-
-        // SendChat: requires non-empty message.
-        assert!(
-            !make(SubActionKindChoice::SendChat, |f| {
-                f.config.send_chat_message.clear()
-            })
-            .is_valid()
-        );
-        assert!(
-            make(SubActionKindChoice::SendChat, |f| {
-                f.config.send_chat_message = "Hello %user%!".into()
-            })
-            .is_valid()
-        );
-
-        // SetGlobal: requires non-empty name.
-        assert!(
-            !make(SubActionKindChoice::SetGlobal, |f| {
-                f.config.set_global_name.clear()
-            })
-            .is_valid()
-        );
-        assert!(
-            make(SubActionKindChoice::SetGlobal, |f| {
-                f.config.set_global_name = "counter".into()
-            })
-            .is_valid()
-        );
-
-        // Delay: requires numeric ms.
-        assert!(
-            !make(SubActionKindChoice::Delay, |f| {
-                f.config.delay_ms = "abc".into()
-            })
-            .is_valid()
-        );
-        assert!(
-            make(SubActionKindChoice::Delay, |f| {
-                f.config.delay_ms = "500".into()
-            })
-            .is_valid()
-        );
-
-        // Log: requires non-empty message.
-        assert!(
-            !make(SubActionKindChoice::Log, |f| {
-                f.config.log_message.clear()
-            })
-            .is_valid()
-        );
-        assert!(
-            make(SubActionKindChoice::Log, |f| {
-                f.config.log_message = "action started".into()
-            })
-            .is_valid()
-        );
-
-        // PlaySound: requires clip_id.
-        assert!(!make(SubActionKindChoice::PlaySound, |_| {}).is_valid());
-        assert!(
-            make(SubActionKindChoice::PlaySound, |f| {
-                f.config.play_sound_clip_id = Some(forge_types::ClipId::new())
-            })
-            .is_valid()
-        );
     }
 
     #[tokio::test]

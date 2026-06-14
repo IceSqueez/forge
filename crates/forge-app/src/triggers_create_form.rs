@@ -9,10 +9,10 @@ use iced::{
 };
 
 use forge_widgets::{
-    ForgePalette, Radius, Spacing, ToastKind, ToggleProps, category_chip,
+    ForgePalette, Radius, Spacing, ToastKind, category_chip,
     icons::{Icon, tabler_icon},
     primary_button, radius, search_input, secondary_button, section_header, sp, spf,
-    text_input_field, toggle,
+    text_input_field,
     tokens::{BORDER_THIN, FONT_SM, FONT_XS, FontRole, font},
 };
 
@@ -113,7 +113,10 @@ pub fn update(
                 .unwrap_or_default();
             let mut text_buf: BTreeMap<String, String> = BTreeMap::new();
             for (k, v) in &default_config {
-                text_buf.insert(k.clone(), variant_to_display_str(v));
+                text_buf.insert(
+                    k.clone(),
+                    crate::actions_field_form::variant_to_display_str(v),
+                );
             }
             form.selected_kind_id = Some(kind_id);
             form.overrides_buffer = default_config;
@@ -139,21 +142,27 @@ pub fn update(
             Task::none()
         }
         CreateInstanceFormMsg::FieldChanged(key, variant) => {
-            form.text_buffer
-                .insert(key.clone(), variant_to_display_str(&variant));
-            form.overrides_buffer.insert(key, variant);
+            crate::actions_field_form::apply_field_edit(
+                &mut form.text_buffer,
+                &mut form.overrides_buffer,
+                crate::actions_field_form::FieldEditMsg::Set(key, variant),
+            );
             Task::none()
         }
         CreateInstanceFormMsg::IntInputChanged(key, raw) => {
-            form.text_buffer.insert(key.clone(), raw.clone());
-            if let Ok(n) = raw.parse::<i64>() {
-                form.overrides_buffer.insert(key, Variant::Int(n));
-            }
+            crate::actions_field_form::apply_field_edit(
+                &mut form.text_buffer,
+                &mut form.overrides_buffer,
+                crate::actions_field_form::FieldEditMsg::IntInput(key, raw),
+            );
             Task::none()
         }
         CreateInstanceFormMsg::FieldCleared(key) => {
-            form.overrides_buffer.remove(&key);
-            form.text_buffer.remove(&key);
+            crate::actions_field_form::apply_field_edit(
+                &mut form.text_buffer,
+                &mut form.overrides_buffer,
+                crate::actions_field_form::FieldEditMsg::Clear(key),
+            );
             Task::none()
         }
         CreateInstanceFormMsg::SubmitRequested => {
@@ -545,9 +554,25 @@ fn form_view<'a>(
         .map(|d| d.config_fields())
         .unwrap_or_default();
 
+    let buffers = crate::actions_field_form::FieldBuffers {
+        text: &form.text_buffer,
+        overrides: &form.overrides_buffer,
+    };
+    let options = crate::actions_field_form::DynamicOptions::new();
+    let on_edit = |edit: crate::actions_field_form::FieldEditMsg| {
+        use crate::actions_field_form::FieldEditMsg;
+        let m = match edit {
+            FieldEditMsg::Set(k, v) => CreateInstanceFormMsg::FieldChanged(k, v),
+            FieldEditMsg::IntInput(k, raw) => CreateInstanceFormMsg::IntInputChanged(k, raw),
+            FieldEditMsg::Clear(k) => CreateInstanceFormMsg::FieldCleared(k),
+        };
+        Message::TriggersRegistry(TriggersRegistryMsg::CreateFormMsg(m))
+    };
     let field_rows: Vec<Element<'_, Message>> = config_fields
         .iter()
-        .map(|field| render_field(field, form, palette))
+        .map(|field| {
+            crate::actions_field_form::render_field(field, &buffers, &options, palette, on_edit)
+        })
         .collect();
 
     let fields_section: Element<'_, Message> = if field_rows.is_empty() {
@@ -669,210 +694,6 @@ fn form_view<'a>(
     .into()
 }
 
-fn render_field<'a>(
-    field: &FormField,
-    form: &'a CreateInstanceFormState,
-    palette: &'a ForgePalette,
-) -> Element<'a, Message> {
-    let p = *palette;
-    let field_row_padding = [sp(Spacing::Xxs), 0u16];
-
-    match field {
-        FormField::Text {
-            key,
-            label,
-            placeholder,
-        } => {
-            let display = form.text_buffer.get(*key).map(|s| s.as_str()).unwrap_or("");
-            let k = key.to_string();
-            column![
-                text(*label)
-                    .size(FONT_XS)
-                    .color(p.text_secondary)
-                    .font(font(FontRole::Body)),
-                text_input_field(
-                    *placeholder,
-                    display,
-                    move |v| {
-                        Message::TriggersRegistry(TriggersRegistryMsg::CreateFormMsg(
-                            CreateInstanceFormMsg::FieldChanged(k.clone(), Variant::String(v)),
-                        ))
-                    },
-                    palette
-                ),
-            ]
-            .spacing(spf(Spacing::Xxs))
-            .padding(field_row_padding)
-            .into()
-        }
-        FormField::TextArea { key, label } => {
-            let display = form.text_buffer.get(*key).map(|s| s.as_str()).unwrap_or("");
-            let k = key.to_string();
-            column![
-                text(*label)
-                    .size(FONT_XS)
-                    .color(p.text_secondary)
-                    .font(font(FontRole::Body)),
-                text_input_field(
-                    "",
-                    display,
-                    move |v| {
-                        Message::TriggersRegistry(TriggersRegistryMsg::CreateFormMsg(
-                            CreateInstanceFormMsg::FieldChanged(k.clone(), Variant::String(v)),
-                        ))
-                    },
-                    palette
-                ),
-            ]
-            .spacing(spf(Spacing::Xxs))
-            .padding(field_row_padding)
-            .into()
-        }
-        FormField::Integer { key, label, .. } => {
-            let display = form.text_buffer.get(*key).map(|s| s.as_str()).unwrap_or("");
-            let k = key.to_string();
-            column![
-                text(*label)
-                    .size(FONT_XS)
-                    .color(p.text_secondary)
-                    .font(font(FontRole::Body)),
-                text_input_field(
-                    "0",
-                    display,
-                    move |v| {
-                        Message::TriggersRegistry(TriggersRegistryMsg::CreateFormMsg(
-                            CreateInstanceFormMsg::IntInputChanged(k.clone(), v),
-                        ))
-                    },
-                    palette
-                ),
-            ]
-            .spacing(spf(Spacing::Xxs))
-            .padding(field_row_padding)
-            .into()
-        }
-        FormField::Toggle { key, label } => {
-            let checked = matches!(form.overrides_buffer.get(*key), Some(Variant::Bool(true)));
-            let k = key.to_string();
-            container(toggle(
-                palette,
-                ToggleProps {
-                    label: label.to_string(),
-                    description: String::new(),
-                    value: checked,
-                    on_toggle: Message::TriggersRegistry(TriggersRegistryMsg::CreateFormMsg(
-                        CreateInstanceFormMsg::FieldChanged(k, Variant::Bool(!checked)),
-                    )),
-                },
-            ))
-            .padding(field_row_padding)
-            .into()
-        }
-        FormField::Select {
-            key,
-            label,
-            options,
-        } => {
-            let opts: Vec<String> = options.iter().map(|s| s.to_string()).collect();
-            let current: Option<String> = form.overrides_buffer.get(*key).and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.clone())
-                } else {
-                    None
-                }
-            });
-            let k = key.to_string();
-            let p_sel = p;
-            let picker = iced::widget::pick_list(opts, current, move |s: String| {
-                Message::TriggersRegistry(TriggersRegistryMsg::CreateFormMsg(
-                    CreateInstanceFormMsg::FieldChanged(k.clone(), Variant::String(s)),
-                ))
-            })
-            .padding(forge_widgets::input_padding())
-            .width(Length::Fill)
-            .style(move |_theme, status| {
-                use iced::widget::pick_list;
-                let border_color = match status {
-                    pick_list::Status::Opened { .. } => p_sel.border_active,
-                    _ => p_sel.border_input,
-                };
-                pick_list::Style {
-                    text_color: p_sel.text_primary,
-                    placeholder_color: p_sel.text_muted,
-                    handle_color: p_sel.text_muted,
-                    background: Background::Color(p_sel.shell),
-                    border: Border {
-                        color: border_color,
-                        width: BORDER_THIN,
-                        radius: radius(Radius::Md).into(),
-                    },
-                }
-            });
-            column![
-                text(*label)
-                    .size(FONT_XS)
-                    .color(p.text_secondary)
-                    .font(font(FontRole::Body)),
-                picker,
-            ]
-            .spacing(spf(Spacing::Xxs))
-            .padding(field_row_padding)
-            .into()
-        }
-        FormField::DynamicSelect {
-            key,
-            label,
-            options_key,
-        } => {
-            let display = form.text_buffer.get(*key).map(|s| s.as_str()).unwrap_or("");
-            let k = key.to_string();
-            let placeholder = format!("Enter value  ({options_key})");
-            column![
-                text(*label)
-                    .size(FONT_XS)
-                    .color(p.text_secondary)
-                    .font(font(FontRole::Body)),
-                text_input_field(
-                    placeholder,
-                    display,
-                    move |v| {
-                        Message::TriggersRegistry(TriggersRegistryMsg::CreateFormMsg(
-                            CreateInstanceFormMsg::FieldChanged(k.clone(), Variant::String(v)),
-                        ))
-                    },
-                    palette
-                ),
-            ]
-            .spacing(spf(Spacing::Xxs))
-            .padding(field_row_padding)
-            .into()
-        }
-        FormField::Optional { key, label, inner } => {
-            let is_enabled = matches!(form.overrides_buffer.get(*key), Some(Variant::Bool(true)));
-            let k = key.to_string();
-            let toggle_el = toggle(
-                palette,
-                ToggleProps {
-                    label: label.to_string(),
-                    description: String::new(),
-                    value: is_enabled,
-                    on_toggle: Message::TriggersRegistry(TriggersRegistryMsg::CreateFormMsg(
-                        CreateInstanceFormMsg::FieldChanged(k, Variant::Bool(!is_enabled)),
-                    )),
-                },
-            );
-            if is_enabled {
-                column![toggle_el, render_field(inner, form, palette)]
-                    .spacing(spf(Spacing::Xs))
-                    .padding(field_row_padding)
-                    .into()
-            } else {
-                container(toggle_el).padding(field_row_padding).into()
-            }
-        }
-    }
-}
-
 fn kind_dot_color(kind_id: &str, palette: &ForgePalette) -> Color {
     if kind_id.starts_with("twitch.") {
         palette.brand
@@ -882,17 +703,6 @@ fn kind_dot_color(kind_id: &str, palette: &ForgePalette) -> Color {
         palette.warning
     } else {
         palette.info
-    }
-}
-
-fn variant_to_display_str(v: &Variant) -> String {
-    match v {
-        Variant::Int(n) => n.to_string(),
-        Variant::Float(f) => f.to_string(),
-        Variant::Bool(b) => b.to_string(),
-        Variant::String(s) => s.clone(),
-        Variant::Datetime(dt) => dt.to_string(),
-        Variant::Array(_) | Variant::Object(_) => String::new(),
     }
 }
 

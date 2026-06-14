@@ -532,7 +532,7 @@ pub fn theme_callback(app: &App) -> Theme {
 mod tests {
     use super::*;
     use crate::SettingsSection;
-    use crate::actions::{AddActionMsg, AddSubActionMsg, SubActionKindChoice};
+    use crate::actions::{AddActionMsg, AddSubActionMsg};
     use crate::message::{ActionEditorMsg, HomeMsg, HomeStatsData};
 
     use forge_storage_sqlite::SqliteBackend;
@@ -1109,66 +1109,6 @@ mod tests {
     }
 
     #[test]
-    fn kind_selected_updates_form() {
-        use forge_types::ActionId;
-        let mut app = App::default();
-        app.ui.actions.add_sub_action_modal =
-            Some(crate::actions::AddSubActionForm::new(ActionId::new()));
-        let _ = update(
-            &mut app,
-            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
-                AddSubActionMsg::KindSelected(SubActionKindChoice::Delay),
-            ))),
-        );
-        assert_eq!(
-            app.ui.actions.add_sub_action_modal.as_ref().unwrap().kind,
-            SubActionKindChoice::Delay,
-        );
-    }
-
-    #[test]
-    fn send_chat_message_changed_updates_form() {
-        use forge_types::ActionId;
-        let mut app = App::default();
-        app.ui.actions.add_sub_action_modal =
-            Some(crate::actions::AddSubActionForm::new(ActionId::new()));
-        let _ = update(
-            &mut app,
-            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
-                AddSubActionMsg::SendChatMessageChanged("Hello %user%!".to_string()),
-            ))),
-        );
-        assert_eq!(
-            app.ui
-                .actions
-                .add_sub_action_modal
-                .as_ref()
-                .unwrap()
-                .config
-                .send_chat_message,
-            "Hello %user%!"
-        );
-    }
-
-    #[test]
-    fn submit_invalid_delay_sets_error_on_form() {
-        use forge_types::ActionId;
-        let mut app = App::default();
-        let mut form = crate::actions::AddSubActionForm::new(ActionId::new());
-        form.kind = SubActionKindChoice::Delay;
-        form.config.delay_ms = "not_a_number".to_string();
-        app.ui.actions.add_sub_action_modal = Some(form);
-        let _ = update(
-            &mut app,
-            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
-                AddSubActionMsg::Submit,
-            ))),
-        );
-        let f = app.ui.actions.add_sub_action_modal.as_ref().unwrap();
-        assert!(f.error.is_some());
-    }
-
-    #[test]
     fn add_sub_action_saved_ok_closes_modal() {
         use forge_types::ActionId;
         let mut app = App::default();
@@ -1223,49 +1163,6 @@ mod tests {
             .available_clips;
         assert_eq!(clips.len(), 1);
         assert_eq!(clips[0].1, "Airhorn");
-    }
-
-    #[test]
-    fn play_sound_clip_selected_updates_config() {
-        use forge_types::{ActionId, ClipId};
-        let mut app = App::default();
-        let mut form = crate::actions::AddSubActionForm::new(ActionId::new());
-        form.kind = SubActionKindChoice::PlaySound;
-        app.ui.actions.add_sub_action_modal = Some(form);
-        let clip_id = ClipId::new();
-        let _ = update(
-            &mut app,
-            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
-                AddSubActionMsg::PlaySoundClipSelected(clip_id),
-            ))),
-        );
-        assert_eq!(
-            app.ui
-                .actions
-                .add_sub_action_modal
-                .as_ref()
-                .unwrap()
-                .config
-                .play_sound_clip_id,
-            Some(clip_id)
-        );
-    }
-
-    #[test]
-    fn submit_play_sound_without_clip_sets_error() {
-        use forge_types::ActionId;
-        let mut app = App::default();
-        let mut form = crate::actions::AddSubActionForm::new(ActionId::new());
-        form.kind = SubActionKindChoice::PlaySound;
-        app.ui.actions.add_sub_action_modal = Some(form);
-        let _ = update(
-            &mut app,
-            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
-                AddSubActionMsg::Submit,
-            ))),
-        );
-        let f = app.ui.actions.add_sub_action_modal.as_ref().unwrap();
-        assert!(f.error.is_some());
     }
 
     #[test]

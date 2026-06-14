@@ -1,6 +1,7 @@
 pub mod action_editor;
 pub mod action_editor_view;
 pub mod actions;
+pub mod actions_field_form;
 pub mod actions_forms;
 pub mod actions_modals;
 pub mod actions_telemetry;
@@ -61,7 +62,7 @@ pub mod voice_aliases;
 
 pub use actions::{
     ActionDetail, ActionSummary, ActionsGroup, ActionsState, AddActionForm, AddActionMsg,
-    AddSubActionForm, AddSubActionMsg, RemoveSubActionMsg, SubActionKindChoice, TriggerCategory,
+    AddSubActionForm, AddSubActionMsg, RemoveSubActionMsg, TriggerCategory,
 };
 pub use app::{App, SidebarExpandState, UiState};
 pub use boot::load_obs_and_connect;

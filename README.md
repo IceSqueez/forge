@@ -21,13 +21,15 @@ Connect to Twitch, YouTube, and Kick simultaneously. React to chat events with a
 ## Features
 
 ### Chat platforms
-- **Twitch** — EventSub chat, subs, bits, raids, follows; send-chat sub-action
+- **Twitch**
+  - EventSub triggers: chat (commands, messages, cheers), shared-chat, subs/resubs/gift-subs, follows, raids (received & sent), channel-point redemptions (custom & automatic) & reward CRUD, polls, predictions, hype train, charity, goals, moderation (ban/timeout/unban, mod add/remove, shield mode, suspicious users, warning acknowledged), shoutouts (sent & received), guest-star, ad break, automod, stream on/off, channel & chat-settings updates
+  - Sub-actions: send chat/reply/announcement/whisper, ban/timeout/unban/warn, mod & VIP management, shoutout, start/cancel raid, run/snooze ad, poll & prediction lifecycle, reward CRUD & redemption fulfillment, automod approve/deny/terms, update title/category/tags, stream marker, get current goal, guest-star & shield-mode control, chat clear & message delete
 - **YouTube** — Live chat polling, Super Chat/Sticker, new member, member milestone; send-chat sub-action
 - **Kick** — Live chat, subs, hosts, bans (community implementation)
 
 ### Actions & automation
 - Action editor with trigger configuration and sub-action chains
-- Sub-actions: send chat, delay, set/get/increment globals, run script, play sound, speak text, read file, random int
+- Sub-actions: send chat, delay, set/get/increment globals, run script, play sound, speak text, read file, random int; Twitch sub-actions selectable in the same editor (see Twitch above)
 - Command parser for chat-triggered actions
 - Queue scheduling: Sequential or RandomPick execution
 

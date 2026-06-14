@@ -391,7 +391,6 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             &mut app.rt,
             sub,
         ),
-        Message::TwitchReauthRequested => boot::handle_twitch_reauth_requested(app),
         Message::ObsPanel(sub) => crate::obs_panel::update(&mut app.ui.obs_panel, &app.rt, sub),
         Message::Soundboard(sub) => crate::soundboard::update(&mut app.ui.soundboard, &app.rt, sub),
         Message::SettingsAudio(sub) => {

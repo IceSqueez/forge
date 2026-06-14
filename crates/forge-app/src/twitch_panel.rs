@@ -10,7 +10,7 @@ use forge_platform_core::{
 use forge_platform_twitch::{
     TWITCH_BROADCASTER_SCOPES, TwitchAuthFlow, TwitchIntegrationBundle, UserInfo,
 };
-use forge_storage::CredentialsRepo;
+use forge_storage::{CredentialId, CredentialsRepo};
 use forge_types::OAuthToken;
 use forge_widgets::ForgePalette;
 use forge_widgets::icons::{Icon, tabler_icon};
@@ -183,6 +183,23 @@ pub fn update(
             *state = TwitchPanelState::Error(e);
             Task::none()
         }
+        TwitchPanelMsg::ReauthRequested => {
+            if let Some(handle) = rt.twitch_chat_handle.take() {
+                handle.shutdown();
+            }
+            *builtin_detail = None;
+            rt.twitch_login = None;
+            rt.twitch_reauth_required = false;
+            let backend = Arc::clone(&rt.backend);
+            Task::perform(
+                async move {
+                    let id = CredentialId::new("twitch:broadcaster");
+                    let creds: &dyn CredentialsRepo = &*backend;
+                    let _ = creds.delete(&id).await;
+                },
+                |()| Message::Noop,
+            )
+        }
     }
 }
 
@@ -207,6 +224,7 @@ pub enum TwitchPanelMsg {
     OpenAuthUrl,
     DeviceCodeReceived(Result<LoopbackData, String>),
     AuthCompleted(Result<TwitchAuthOutcome, String>),
+    ReauthRequested,
 }
 
 pub fn twitch_reauth_banner<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
@@ -225,7 +243,7 @@ pub fn twitch_reauth_banner<'a>(palette: &'a ForgePalette) -> Element<'a, Messag
             .size(FONT_XS)
             .color(palette.shell),
     )
-    .on_press(Message::TwitchReauthRequested)
+    .on_press(Message::TwitchPanel(TwitchPanelMsg::ReauthRequested))
     .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
     .style(move |_theme: &Theme, _status| button::Style {
         background: Some(Background::Color(palette.warning)),

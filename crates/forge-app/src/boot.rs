@@ -6,7 +6,7 @@ use forge_platform_core::{
 };
 use forge_platform_twitch::{SubscriptionTracker, TwitchChat, TwitchIntegrationBundle};
 use forge_runtime::EventBus;
-use forge_storage::{CredentialId, CredentialsRepo};
+use forge_storage::CredentialsRepo;
 use iced::Task;
 
 use crate::app::App;
@@ -349,24 +349,6 @@ pub(crate) fn handle_server_stop_command(app: &App) -> Task<Message> {
     Task::perform(
         async move { subsystem.stop().await.map_err(|e| e.to_string()) },
         |r| Message::ServerSubsystem(ServerSubsystemMsg::StopResult(r)),
-    )
-}
-
-pub(crate) fn handle_twitch_reauth_requested(app: &mut App) -> Task<Message> {
-    if let Some(handle) = app.rt.twitch_chat_handle.take() {
-        handle.shutdown();
-    }
-    app.ui.builtin_detail = None;
-    app.rt.twitch_login = None;
-    app.rt.twitch_reauth_required = false;
-    let backend = Arc::clone(&app.rt.backend);
-    Task::perform(
-        async move {
-            let id = CredentialId::new("twitch:broadcaster");
-            let creds: &dyn CredentialsRepo = &*backend;
-            let _ = creds.delete(&id).await;
-        },
-        |()| Message::Noop,
     )
 }
 

@@ -10,6 +10,8 @@ use crate::quota_state::{QuotaState, today_pacific};
 
 const DEFAULT_API_BASE: &str = "https://www.googleapis.com/youtube/v3";
 const BAN_COST: u32 = 50;
+const MODERATOR_COST: u32 = 50;
+const MODERATOR_LIST_COST: u32 = 1;
 
 type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
 
@@ -107,6 +109,159 @@ impl YoutubeModeration {
             return Ok(());
         }
         Err(self.map_failure(resp).await)
+    }
+
+    pub async fn add_moderator(&self, channel_id: &str) -> Result<(), PlatformError> {
+        let live_chat_id = self
+            .live_chat_id
+            .get()
+            .ok_or_else(|| PlatformError::Unsupported {
+                feature: "moderation — no active YouTube broadcast".to_owned(),
+            })?;
+
+        {
+            let today = today_pacific();
+            let mut qt = self.quota.lock().await;
+            qt.charge(MODERATOR_COST, today)?;
+        }
+
+        let token = (self.access_token_source)().await?;
+        let url = format!("{}/liveChat/moderators", self.api_base);
+        let payload = serde_json::json!({
+            "snippet": {
+                "liveChatId": live_chat_id,
+                "moderatorDetails": { "channelId": channel_id },
+            }
+        });
+
+        let resp = self
+            .client
+            .post(&url)
+            .bearer_auth(&token)
+            .query(&[("part", "snippet")])
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| PlatformError::Network {
+                reason: e.without_url().to_string(),
+            })?;
+
+        let status = resp.status().as_u16();
+        if status == 200 || status == 201 {
+            return Ok(());
+        }
+        Err(self.map_failure(resp).await)
+    }
+
+    pub async fn remove_moderator(&self, channel_id: &str) -> Result<(), PlatformError> {
+        let moderator_id = self.resolve_moderator_id(channel_id).await?;
+
+        {
+            let today = today_pacific();
+            let mut qt = self.quota.lock().await;
+            qt.charge(MODERATOR_COST, today)?;
+        }
+
+        let token = (self.access_token_source)().await?;
+        let url = format!("{}/liveChat/moderators", self.api_base);
+
+        let resp = self
+            .client
+            .delete(&url)
+            .bearer_auth(&token)
+            .query(&[("id", moderator_id.as_str())])
+            .send()
+            .await
+            .map_err(|e| PlatformError::Network {
+                reason: e.without_url().to_string(),
+            })?;
+
+        let status = resp.status().as_u16();
+        if status == 200 || status == 204 {
+            return Ok(());
+        }
+        Err(self.map_failure(resp).await)
+    }
+
+    /// Resolves the `liveChatModerators` resource id whose moderator channel id
+    /// matches `channel_id` by paging the moderator list for the active broadcast.
+    async fn resolve_moderator_id(&self, channel_id: &str) -> Result<String, PlatformError> {
+        let live_chat_id = self
+            .live_chat_id
+            .get()
+            .ok_or_else(|| PlatformError::Unsupported {
+                feature: "moderation — no active YouTube broadcast".to_owned(),
+            })?;
+
+        let url = format!("{}/liveChat/moderators", self.api_base);
+        let mut page_token: Option<String> = None;
+
+        loop {
+            {
+                let today = today_pacific();
+                let mut qt = self.quota.lock().await;
+                qt.charge(MODERATOR_LIST_COST, today)?;
+            }
+
+            let token = (self.access_token_source)().await?;
+            let mut query: Vec<(&str, String)> = vec![
+                ("part", "snippet".to_owned()),
+                ("liveChatId", live_chat_id.clone()),
+                ("maxResults", "50".to_owned()),
+            ];
+            if let Some(ref pt) = page_token {
+                query.push(("pageToken", pt.clone()));
+            }
+
+            let resp = self
+                .client
+                .get(&url)
+                .bearer_auth(&token)
+                .query(&query)
+                .send()
+                .await
+                .map_err(|e| PlatformError::Network {
+                    reason: e.without_url().to_string(),
+                })?;
+
+            let status = resp.status().as_u16();
+            if status != 200 {
+                return Err(self.map_failure(resp).await);
+            }
+
+            let body: serde_json::Value =
+                resp.json().await.map_err(|e| PlatformError::Network {
+                    reason: e.without_url().to_string(),
+                })?;
+
+            if let Some(items) = body.get("items").and_then(|v| v.as_array()) {
+                for item in items {
+                    let matches = item
+                        .pointer("/snippet/moderatorDetails/channelId")
+                        .and_then(|v| v.as_str())
+                        == Some(channel_id);
+                    if matches {
+                        let id = item
+                            .get("id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or_default()
+                            .to_owned();
+                        return Ok(id);
+                    }
+                }
+            }
+
+            page_token = body
+                .get("nextPageToken")
+                .and_then(|v| v.as_str())
+                .map(str::to_owned);
+            if page_token.is_none() {
+                return Err(PlatformError::Unsupported {
+                    feature: "remove moderator — target channel is not a moderator of this chat"
+                        .to_owned(),
+                });
+            }
+        }
     }
 
     async fn insert_ban(

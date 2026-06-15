@@ -108,3 +108,76 @@ impl TriggerKindDescriptor for UnbanRequestResolvedDescriptor {
             )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn event_filter_targets_unban_request_resolve_topic_from_twitch() {
+        let filter = UnbanRequestResolvedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.unban_request.resolve")
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_maps_all_resolve_fields_from_publisher_payload() {
+        // Payload shape mirrors `publish_unban_request_resolve_event`: the
+        // `status` field surfaces as `unban.resolution`, and moderator data
+        // lives under a nested `moderator` object.
+        let payload = serde_json::json!({
+            "id": "req-42",
+            "user": { "login": "banned_viewer" },
+            "status": "approved",
+            "moderator": { "login": "mod_alice" },
+            "resolution_text": "appeal accepted",
+        });
+        let event = Event::new(
+            EventSource::Twitch,
+            "channel.unban_request.resolve",
+            payload,
+        );
+        let stack = UnbanRequestResolvedDescriptor.build_arg_stack(&event);
+
+        for (key, expected) in [
+            ("unban.request_id", "req-42"),
+            ("unban.target.login", "banned_viewer"),
+            ("unban.resolution", "approved"),
+            ("unban.moderator.login", "mod_alice"),
+            ("unban.resolution_text", "appeal accepted"),
+        ] {
+            assert_eq!(
+                stack.get(key),
+                Some(&Variant::String(expected.to_owned())),
+                "wrong value for {key}"
+            );
+        }
+    }
+
+    #[test]
+    fn build_arg_stack_uses_empty_strings_when_resolve_payload_is_empty() {
+        let event = Event::new(
+            EventSource::Twitch,
+            "channel.unban_request.resolve",
+            serde_json::json!({}),
+        );
+        let stack = UnbanRequestResolvedDescriptor.build_arg_stack(&event);
+
+        for key in [
+            "unban.request_id",
+            "unban.target.login",
+            "unban.resolution",
+            "unban.moderator.login",
+            "unban.resolution_text",
+        ] {
+            assert_eq!(
+                stack.get(key),
+                Some(&Variant::String(String::new())),
+                "expected empty string for {key}"
+            );
+        }
+    }
+}

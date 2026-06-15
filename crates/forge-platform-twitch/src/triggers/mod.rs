@@ -255,6 +255,8 @@ mod tests {
             "twitch.support.charity_stopped",
             "twitch.channel.moderator_added",
             "twitch.channel.moderator_removed",
+            "twitch.channel.unban_request_created",
+            "twitch.channel.unban_request_resolved",
             "twitch.channel.shield_mode_started",
             "twitch.channel.shield_mode_ended",
             "twitch.channel.shoutout_sent",

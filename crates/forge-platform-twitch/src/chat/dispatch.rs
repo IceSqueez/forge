@@ -241,6 +241,8 @@ mod tests {
             "channel.unban",
             "channel.moderator.add",
             "channel.moderator.remove",
+            "channel.unban_request.create",
+            "channel.unban_request.resolve",
             "channel.vip.add",
             "channel.vip.remove",
             "channel.shield_mode.begin",

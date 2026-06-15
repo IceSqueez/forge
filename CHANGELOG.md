@@ -1,6 +1,141 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-beta.12] - 2026-06-15
+### ⚠️ BREAKING CHANGES
+- **twitch**: stored Twitch tokens lack new scopes; reauth at next connect
+- **twitch**: create-marker needs new user:manage:broadcast OAuth scope
+
+### ⚙️ Miscellaneous Tasks
+- *(deps)* Bump actions/cache from 4 to 5 (#27)
+
+### 🎨 Styling
+- *(twitch)* Apply rustfmt to reward toggle runners
+
+### 🐛 Bug Fixes
+- *(twitch)* Count chat-message length in chars not bytes
+- *(i18n)* Render feed-time pattern as literal text not Fluent refs
+- *(twitch)* Correct cheer and shared-chat fields in chat events
+- *(twitch)* Categorize sub-actions by domain not platform
+- *(twitch)* Categorize follow, stream, points, hype, charity triggers
+- *(app)* Resolve queue descriptions on the render thread
+- *(ci)* Build release notes from prev-tag range not --latest
+- *(storage)* Persist credential key in file not OS keyring
+- *(ui)* Align credential notice with local encryption
+- *(actions)* Drive sub-action picker from the runner registry
+
+### 📚 Documentation
+- *(readme)* Expand twitch trigger and sub-action coverage
+
+### 🚀 Features
+- *(twitch)* Route EventSub notifications by subscription type
+- *(registry)* Add moderation and channel-points trigger categories
+- *(twitch)* Route Helix calls through shared mockable transport
+- *(twitch)* Add Helix sub-action path with chat announcement runner
+- *(twitch)* Add cheer-message and shared-chat-message triggers
+- *(twitch)* [**breaking**] Request full-tier OAuth scopes for runners and triggers
+- *(twitch)* Add delete-message, clear, and set-mode sub-actions
+- *(twitch)* Add ban, timeout, unban, and warn sub-actions
+- *(twitch)* Add moderator, VIP, and shield-mode sub-actions
+- *(twitch)* Add chat reply and whisper sub-actions
+- *(twitch)* [**breaking**] Add channel-info and stream-marker sub-actions
+- *(twitch)* Add shoutout and raid sub-actions
+- *(twitch)* Add run-ad and snooze-ad sub-actions
+- *(twitch)* Add create-reward channel-points sub-action
+- *(twitch)* Add update-reward channel-points sub-action
+- *(twitch)* Add reward enable, disable, pause, resume sub-actions
+- *(twitch)* Add delete-reward and redemption-status sub-actions
+- *(twitch)* Enforce Helix rate-limit budget with shared token bucket
+- *(twitch)* Add poll start and end sub-actions
+- *(twitch)* Add prediction start sub-action
+- *(twitch)* Add prediction lock, cancel, and resolve sub-actions
+- *(twitch)* Add get-current-goal sub-action
+- *(twitch)* Add automod approve and deny message sub-actions
+- *(twitch)* Add automod update-settings sub-action
+- *(twitch)* Add automod blocked-term add and remove sub-actions
+- *(twitch)* Add guest-star invite, assign, and remove sub-actions
+- *(twitch)* Add guest-star update-slot and end-session sub-actions
+- *(twitch)* Wire follow and stream online/offline triggers
+- *(twitch)* Wire channel-points redemption trigger
+- *(twitch)* Wire chat message-deleted and cleared triggers
+- *(twitch)* Wire hype train begin/progress/end triggers
+- *(twitch)* Wire charity donation and campaign lifecycle triggers
+- *(twitch)* Wire ban, timeout, and unban triggers
+- *(twitch)* Wire moderator add/remove and shield mode triggers
+- *(twitch)* Wire shoutout, suspicious-user, and warning triggers
+- *(twitch)* Wire poll begin/progress/end triggers
+- *(twitch)* Wire prediction begin/progress/lock/end triggers
+- *(twitch)* Wire goal begin/progress/end triggers
+- *(twitch)* Wire reward CRUD and redemption-updated triggers
+- *(twitch)* Wire automod message-held and chat-settings triggers
+- *(twitch)* Wire guest-star session and settings triggers
+- *(twitch)* Wire automod settings/terms/message-updated triggers
+- *(twitch)* Wire shared-chat session begin/end/update triggers
+- *(twitch)* Wire channel-update, ad-break, auto-reward triggers
+- *(twitch)* Wire guest-star guest-updated trigger
+- *(twitch)* Wire raid-sent trigger with direction discriminator
+- *(twitch)* Wire vip add and remove triggers
+- *(twitch)* Wire unban-request create and resolve triggers
+- *(twitch)* Wire whisper-received trigger with text filters
+- *(twitch)* Wire guest-star slot-updated trigger
+- *(twitch)* Wire warning-sent trigger
+- *(twitch)* Wire user-update account trigger
+
+### 🚜 Refactor
+- *(ui)* Fold twitch reauth into panel message
+
+### 🧪 Testing
+- *(twitch)* Cover Helix transport seam, chat send, and dispatch table
+- *(twitch)* Add regression for multibyte message length limit
+- *(twitch)* Cover announcement runner execution, limits, and registration
+- *(twitch)* Cover cheer and shared-chat triggers with payload surfacing
+- *(twitch)* Cover moderation runners request shape and mode matrix
+- *(twitch)* Cover user-moderation runners resolve-then-act flow
+- *(twitch)* Cover moderation-roles runners and shield mode
+- *(twitch)* Cover reply-chat and send-whisper runners
+- *(i18n)* Add regression for fmt_feed_time_pattern literal resolution
+- *(twitch)* Cover channel-info and stream-marker runners
+- *(twitch)* Cover shoutout and raid sub-action runners
+- *(twitch)* Cover run-ad body shape and snooze-ad runners
+- *(twitch)* Cover create-reward runner body mapping and validation
+- *(twitch)* Cover update-reward partial-update runner
+- *(twitch)* Cover reward enable/disable/pause/resume runners
+- *(twitch)* Cover delete-reward and redemption-status runners
+- *(ratelimit)* Cover token-bucket grant, throttle, and cooldown
+- *(twitch)* Cover helix throttle loop and 429 backoff feed
+- *(twitch)* Cover poll start and end runners
+- *(twitch)* Cover prediction.start runner and validation
+- *(twitch)* Cover prediction lock/cancel/resolve runners
+- *(twitch)* Cover get-current-goal outputs and is_achieved derivation
+- *(twitch)* Cover automod approve and deny message runners
+- *(twitch)* Cover automod update-settings merge and overall modes
+- *(twitch)* Cover add/remove blocked-term runners
+- *(twitch)* Cover guest-star invite/assign-slot/remove runners
+- *(twitch)* Cover guest-star update-slot and end-session runners
+- *(twitch)* Cover channel-points redemption trigger filter and publish
+- *(twitch)* Cover chat message-deleted and cleared triggers
+- *(twitch)* Cover hype train begin/progress/end triggers
+- *(twitch)* Cover charity donation filter and campaign lifecycle publish
+- *(twitch)* Cover moderator add/remove and shield mode triggers
+- *(twitch)* Cover shoutout, suspicious-user, and warning triggers
+- *(twitch)* Cover poll begin/progress/end triggers and publishers
+- *(twitch)* Cover prediction begin/progress/lock/end triggers
+- *(twitch)* Cover goal begin/progress/end triggers
+- *(twitch)* Cover reward CRUD and redemption status-filter triggers
+- *(twitch)* Cover automod-hold and chat-settings triggers
+- *(twitch)* Cover guest-star session and settings triggers
+- *(twitch)* Cover automod settings/terms/message-updated triggers
+- *(twitch)* Cover shared-chat session trigger arg-stacks and publishers
+- *(twitch)* Cover channel-update, ad-break, auto-reward triggers
+- *(twitch)* Cover guest-star guest-updated trigger and publish
+- *(actions)* Cover generic sub-action form round-trip
+- *(twitch)* Cover vip add/remove arg-stack and dispatch routing
+- *(twitch)* Cover unban-request arg stacks and dispatch routing
+- *(twitch)* Cover whisper-received trigger filter logic
+- *(twitch)* Cover guest-star slot-updated arg stack
+- *(twitch)* Cover warning-sent arg-stack and chat-rules marshaling
+- *(twitch)* Cover user-update arg stack and PII guard
+
 ## [0.1.0-beta.11] - 2026-06-11
 ### ⚠️ BREAKING CHANGES
 - **trovo**: EventSource/PlatformId/ChatSource lose Trovo variant
@@ -9,6 +144,7 @@ All notable changes to this project will be documented in this file.
 - *(workspace)* Drop tautological and useless tests
 - *(trovo)* [**breaking**] Remove integration after upstream decommissions streaming
 - *(workspace)* Sync lockfile with widgets dev-dependency
+- Release
 
 ### 🐛 Bug Fixes
 - *(storage)* Drop invalid action_history filter from trovo migration
@@ -19,11 +155,15 @@ All notable changes to this project will be documented in this file.
 - *(app)* Localize missed quick-actions, console and audio labels
 - *(vtube)* Recover switchable sink locks from poisoned state
 - *(obs)* Register sub-actions via switchable sink for lazy boot
+- *(widgets)* Keep tr-miss key referenced in release builds
+- *(discord)* Guard health age-out against Instant underflow
+- *(vtube)* Guard health age-out against Instant underflow
 
 ### 📚 Documentation
 - Refresh README audit and document
 - Restore OBS action coverage in README feature list
 - Fix install artifacts, restore badges, drop onboarding claim
+- *(release)* Release v0.1.0-beta.11
 
 ### 🚀 Features
 - *(storage)* Add Language enum with persistence

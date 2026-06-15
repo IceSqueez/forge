@@ -104,3 +104,58 @@ impl SubActionRunner for UnbanUserRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use futures::future::BoxFuture;
+    use tokio::sync::Mutex;
+
+    use super::*;
+    use crate::live_chat_id::LiveChatIdHandle;
+    use crate::quota_state::QuotaState;
+
+    fn runner() -> UnbanUserRunner {
+        let source: Arc<
+            dyn Fn() -> BoxFuture<'static, Result<String, forge_platform_core::PlatformError>>
+                + Send
+                + Sync,
+        > = Arc::new(|| Box::pin(async { Ok(String::new()) }));
+        let moderation = YoutubeModeration::new(
+            source,
+            LiveChatIdHandle::new(),
+            Arc::new(Mutex::new(QuotaState::default())),
+        );
+        UnbanUserRunner::new(Arc::new(moderation))
+    }
+
+    #[test]
+    fn validate_config_requires_a_non_empty_channel_id() {
+        let runner = runner();
+        let cases: Vec<(&str, SubActionConfig, bool)> = vec![
+            (
+                "non-empty channel id",
+                BTreeMap::from([("channel_id".to_owned(), Variant::String("UC1".to_owned()))]),
+                true,
+            ),
+            (
+                "empty channel id",
+                BTreeMap::from([("channel_id".to_owned(), Variant::String(String::new()))]),
+                false,
+            ),
+            ("missing channel id", BTreeMap::new(), false),
+            (
+                "non-string channel id",
+                BTreeMap::from([("channel_id".to_owned(), Variant::Int(7))]),
+                false,
+            ),
+        ];
+        for (label, cfg, expect_ok) in cases {
+            assert_eq!(
+                runner.validate_config(&cfg).is_ok(),
+                expect_ok,
+                "case: {label}"
+            );
+        }
+    }
+}

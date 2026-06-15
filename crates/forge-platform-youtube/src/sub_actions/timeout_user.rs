@@ -130,3 +130,80 @@ impl SubActionRunner for TimeoutUserRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use futures::future::BoxFuture;
+    use tokio::sync::Mutex;
+
+    use super::*;
+    use crate::live_chat_id::LiveChatIdHandle;
+    use crate::quota_state::QuotaState;
+
+    fn runner() -> TimeoutUserRunner {
+        let source: Arc<
+            dyn Fn() -> BoxFuture<'static, Result<String, forge_platform_core::PlatformError>>
+                + Send
+                + Sync,
+        > = Arc::new(|| Box::pin(async { Ok(String::new()) }));
+        let moderation = YoutubeModeration::new(
+            source,
+            LiveChatIdHandle::new(),
+            Arc::new(Mutex::new(QuotaState::default())),
+        );
+        TimeoutUserRunner::new(Arc::new(moderation))
+    }
+
+    fn config(channel: Variant, duration: Variant) -> SubActionConfig {
+        BTreeMap::from([
+            ("channel_id".to_owned(), channel),
+            ("duration_seconds".to_owned(), duration),
+        ])
+    }
+
+    #[test]
+    fn validate_config_requires_a_non_empty_channel_id() {
+        let runner = runner();
+        let valid_duration = Variant::Int(300);
+        let cases: Vec<(&str, Variant, bool)> = vec![
+            ("non-empty", Variant::String("UC1".to_owned()), true),
+            ("empty", Variant::String(String::new()), false),
+            ("non-string", Variant::Int(7), false),
+        ];
+        for (label, channel, expect_ok) in cases {
+            assert_eq!(
+                runner
+                    .validate_config(&config(channel, valid_duration.clone()))
+                    .is_ok(),
+                expect_ok,
+                "channel case: {label}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_config_bounds_duration_to_one_through_86400_inclusive() {
+        let runner = runner();
+        let channel = Variant::String("UC1".to_owned());
+        // Boundaries and ±1 around each edge of 1..=86400.
+        let cases: Vec<(&str, Variant, bool)> = vec![
+            ("below min (0)", Variant::Int(0), false),
+            ("min (1)", Variant::Int(1), true),
+            ("max (86400)", Variant::Int(86_400), true),
+            ("above max (86401)", Variant::Int(86_401), false),
+            ("negative", Variant::Int(-1), false),
+            ("non-integer", Variant::String("300".to_owned()), false),
+            ("missing", Variant::Bool(false), false),
+        ];
+        for (label, duration, expect_ok) in cases {
+            assert_eq!(
+                runner
+                    .validate_config(&config(channel.clone(), duration))
+                    .is_ok(),
+                expect_ok,
+                "duration case: {label}"
+            );
+        }
+    }
+}

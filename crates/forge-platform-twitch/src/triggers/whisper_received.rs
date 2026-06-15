@@ -190,3 +190,180 @@ impl TriggerKindDescriptor for WhisperReceivedDescriptor {
             .set("user.color".to_owned(), Variant::String(user_color))
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    fn config(pairs: &[(&str, Variant)]) -> TriggerConfig {
+        let mut cfg = TriggerConfig::new();
+        for (key, value) in pairs {
+            cfg.insert((*key).to_owned(), value.clone());
+        }
+        cfg
+    }
+
+    fn whisper_event(from_login: &str, text: &str) -> Event {
+        Event::new(
+            EventSource::Twitch,
+            "user.whisper.message",
+            serde_json::json!({
+                "user": {
+                    "id": "42",
+                    "login": from_login,
+                    "display_name": "BobX",
+                    "color": "#00FF00"
+                },
+                "whisper": { "text": text },
+                "whisper_thread_id": "thread-7"
+            }),
+        )
+    }
+
+    #[test]
+    fn empty_config_matches_any_whisper() {
+        let cfg = TriggerConfig::new();
+        assert!(WhisperReceivedDescriptor.matches_trigger(&cfg, &whisper_event("bobx", "hi")));
+    }
+
+    #[test]
+    fn from_user_filter_is_case_insensitive() {
+        let cfg = config(&[("from_user", Variant::String("BobX".to_owned()))]);
+        assert!(WhisperReceivedDescriptor.matches_trigger(&cfg, &whisper_event("bobx", "hi")));
+    }
+
+    #[test]
+    fn from_user_filter_rejects_other_sender() {
+        let cfg = config(&[("from_user", Variant::String("bobx".to_owned()))]);
+        assert!(!WhisperReceivedDescriptor.matches_trigger(&cfg, &whisper_event("alice", "hi")));
+    }
+
+    #[test]
+    fn match_text_substring_present_matches() {
+        let cfg = config(&[("match_text", Variant::String("secret".to_owned()))]);
+        assert!(
+            WhisperReceivedDescriptor
+                .matches_trigger(&cfg, &whisper_event("bobx", "the secret code"))
+        );
+    }
+
+    #[test]
+    fn match_text_substring_absent_rejects() {
+        let cfg = config(&[("match_text", Variant::String("secret".to_owned()))]);
+        assert!(
+            !WhisperReceivedDescriptor
+                .matches_trigger(&cfg, &whisper_event("bobx", "nothing here"))
+        );
+    }
+
+    #[test]
+    fn regex_match_text_matches_when_pattern_hits() {
+        let cfg = config(&[
+            ("match_text", Variant::String(r"^!play\s+\d+$".to_owned())),
+            ("match_is_regex", Variant::Bool(true)),
+        ]);
+        assert!(
+            WhisperReceivedDescriptor.matches_trigger(&cfg, &whisper_event("bobx", "!play 42"))
+        );
+    }
+
+    #[test]
+    fn regex_match_text_rejects_when_pattern_misses() {
+        let cfg = config(&[
+            ("match_text", Variant::String(r"^!play\s+\d+$".to_owned())),
+            ("match_is_regex", Variant::Bool(true)),
+        ]);
+        assert!(
+            !WhisperReceivedDescriptor.matches_trigger(&cfg, &whisper_event("bobx", "!play later"))
+        );
+    }
+
+    #[test]
+    fn invalid_regex_does_not_panic_and_rejects() {
+        // Key safety case: a malformed pattern from user config must not panic
+        // the matcher; an uncompilable regex matches nothing.
+        let cfg = config(&[
+            ("match_text", Variant::String("[".to_owned())),
+            ("match_is_regex", Variant::Bool(true)),
+        ]);
+        assert!(
+            !WhisperReceivedDescriptor.matches_trigger(&cfg, &whisper_event("bobx", "[bracket"))
+        );
+    }
+
+    #[test]
+    fn combined_from_user_and_match_text_both_must_pass() {
+        let cfg = config(&[
+            ("from_user", Variant::String("bobx".to_owned())),
+            ("match_text", Variant::String("hello".to_owned())),
+        ]);
+        // sender matches, text matches → true
+        assert!(
+            WhisperReceivedDescriptor.matches_trigger(&cfg, &whisper_event("bobx", "well hello"))
+        );
+        // sender matches but text does not → false
+        assert!(
+            !WhisperReceivedDescriptor.matches_trigger(&cfg, &whisper_event("bobx", "goodbye"))
+        );
+        // text matches but sender does not → false
+        assert!(
+            !WhisperReceivedDescriptor.matches_trigger(&cfg, &whisper_event("alice", "well hello"))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_extracts_whisper_and_user_fields() {
+        let stack =
+            WhisperReceivedDescriptor.build_arg_stack(&whisper_event("bobx", "the message"));
+        assert_eq!(
+            stack.get("whisper.text"),
+            Some(&Variant::String("the message".to_owned()))
+        );
+        assert_eq!(
+            stack.get("whisper.thread_id"),
+            Some(&Variant::String("thread-7".to_owned()))
+        );
+        assert_eq!(
+            stack.get("user.id"),
+            Some(&Variant::String("42".to_owned()))
+        );
+        assert_eq!(
+            stack.get("user.login"),
+            Some(&Variant::String("bobx".to_owned()))
+        );
+        assert_eq!(
+            stack.get("user.display_name"),
+            Some(&Variant::String("BobX".to_owned()))
+        );
+        assert_eq!(
+            stack.get("user.color"),
+            Some(&Variant::String("#00FF00".to_owned()))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_on_empty_payload_yields_empty_strings() {
+        let event = Event::new(
+            EventSource::Twitch,
+            "user.whisper.message",
+            serde_json::json!({}),
+        );
+        let stack = WhisperReceivedDescriptor.build_arg_stack(&event);
+        assert_eq!(
+            stack.get("whisper.text"),
+            Some(&Variant::String(String::new()))
+        );
+        assert_eq!(
+            stack.get("user.login"),
+            Some(&Variant::String(String::new()))
+        );
+    }
+
+    #[test]
+    fn event_filter_targets_twitch_whisper_topic() {
+        let filter = WhisperReceivedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(filter.kind_prefix.as_deref(), Some("user.whisper.message"));
+    }
+}

@@ -295,6 +295,7 @@ mod tests {
             "twitch.channel.update",
             "twitch.stream.ad_break_started",
             "twitch.channel_points.automatic_reward_redeemed",
+            "twitch.chat.whisper",
         ];
 
         for id in ids {

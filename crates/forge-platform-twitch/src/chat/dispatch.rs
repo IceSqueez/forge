@@ -260,6 +260,7 @@ mod tests {
             "channel.shoutout.receive",
             "channel.suspicious_user.message",
             "channel.warning.acknowledge",
+            "channel.warning.send",
             "channel.poll.begin",
             "channel.poll.progress",
             "channel.poll.end",

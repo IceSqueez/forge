@@ -123,3 +123,134 @@ impl TriggerKindDescriptor for WarningSentDescriptor {
             .set("warning.chat_rules_cited".to_owned(), chat_rules_cited)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn warning_send_event(payload: serde_json::Value) -> Event {
+        Event::new(EventSource::Twitch, "channel.warning.send", payload)
+    }
+
+    fn full_payload() -> serde_json::Value {
+        serde_json::json!({
+            "user": { "id": "999", "login": "rulebreaker", "display_name": "RuleBreaker" },
+            "moderator": { "login": "mod_jane" },
+            "reason": "spamming links",
+            "chat_rules_cited": ["No spam", "Be kind"],
+        })
+    }
+
+    #[test]
+    fn event_filter_targets_warning_send_topic_from_twitch() {
+        let filter = WarningSentDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(filter.kind_prefix.as_deref(), Some("channel.warning.send"));
+    }
+
+    #[test]
+    fn build_arg_stack_surfaces_target_and_moderator_scalar_fields() {
+        let stack = WarningSentDescriptor.build_arg_stack(&warning_send_event(full_payload()));
+        assert_eq!(
+            stack.get("warning.target.id"),
+            Some(&Variant::String("999".to_owned()))
+        );
+        assert_eq!(
+            stack.get("warning.target.login"),
+            Some(&Variant::String("rulebreaker".to_owned()))
+        );
+        assert_eq!(
+            stack.get("warning.target.display_name"),
+            Some(&Variant::String("RuleBreaker".to_owned()))
+        );
+        assert_eq!(
+            stack.get("warning.moderator.login"),
+            Some(&Variant::String("mod_jane".to_owned()))
+        );
+        assert_eq!(
+            stack.get("warning.reason"),
+            Some(&Variant::String("spamming links".to_owned()))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_marshals_chat_rules_json_array_into_variant_array() {
+        let stack = WarningSentDescriptor.build_arg_stack(&warning_send_event(full_payload()));
+        assert_eq!(
+            stack.get("warning.chat_rules_cited"),
+            Some(&Variant::Array(vec![
+                Variant::String("No spam".to_owned()),
+                Variant::String("Be kind".to_owned()),
+            ]))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_yields_empty_array_when_chat_rules_cited_missing() {
+        let payload = serde_json::json!({
+            "user": { "id": "1", "login": "u", "display_name": "U" },
+            "moderator": { "login": "m" },
+            "reason": "r",
+        });
+        let stack = WarningSentDescriptor.build_arg_stack(&warning_send_event(payload));
+        assert_eq!(
+            stack.get("warning.chat_rules_cited"),
+            Some(&Variant::Array(vec![]))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_yields_empty_array_when_chat_rules_cited_is_not_an_array() {
+        let payload = serde_json::json!({
+            "user": { "id": "1", "login": "u", "display_name": "U" },
+            "moderator": { "login": "m" },
+            "reason": "r",
+            "chat_rules_cited": "No spam",
+        });
+        let stack = WarningSentDescriptor.build_arg_stack(&warning_send_event(payload));
+        assert_eq!(
+            stack.get("warning.chat_rules_cited"),
+            Some(&Variant::Array(vec![]))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_drops_non_string_chat_rule_entries() {
+        // Why: marshaling filters with serde_json::Value::as_str, so non-string
+        // array entries (numbers, nested objects) are silently dropped rather
+        // than surfaced or rejected. This pins the observed behavior so a future
+        // change toward stringify-or-reject is a deliberate, reviewed decision.
+        let payload = serde_json::json!({
+            "user": { "id": "1", "login": "u", "display_name": "U" },
+            "moderator": { "login": "m" },
+            "reason": "r",
+            "chat_rules_cited": ["Keep it civil", 42, { "id": "rule-3" }, "No doxxing"],
+        });
+        let stack = WarningSentDescriptor.build_arg_stack(&warning_send_event(payload));
+        assert_eq!(
+            stack.get("warning.chat_rules_cited"),
+            Some(&Variant::Array(vec![
+                Variant::String("Keep it civil".to_owned()),
+                Variant::String("No doxxing".to_owned()),
+            ]))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_on_empty_payload_yields_empty_strings_and_empty_array() {
+        let stack =
+            WarningSentDescriptor.build_arg_stack(&warning_send_event(serde_json::json!({})));
+        assert_eq!(
+            stack.get("warning.target.id"),
+            Some(&Variant::String(String::new()))
+        );
+        assert_eq!(
+            stack.get("warning.moderator.login"),
+            Some(&Variant::String(String::new()))
+        );
+        assert_eq!(
+            stack.get("warning.chat_rules_cited"),
+            Some(&Variant::Array(vec![]))
+        );
+    }
+}

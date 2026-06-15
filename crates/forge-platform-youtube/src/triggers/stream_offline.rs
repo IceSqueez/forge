@@ -8,7 +8,7 @@ pub(crate) struct ChannelBroadcastEndedDescriptor;
 
 impl TriggerKindDescriptor for ChannelBroadcastEndedDescriptor {
     fn id(&self) -> &str {
-        "youtube.channel.live_broadcast_ended"
+        "youtube.stream.offline"
     }
 
     fn category(&self) -> TriggerCategory {
@@ -24,7 +24,7 @@ impl TriggerKindDescriptor for ChannelBroadcastEndedDescriptor {
     }
 
     fn search_text(&self) -> &str {
-        "youtube live broadcast ended stream offline channel"
+        "youtube live stream offline broadcast ended channel"
     }
 
     fn icon_name(&self) -> &str {
@@ -50,7 +50,7 @@ impl TriggerKindDescriptor for ChannelBroadcastEndedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::YouTube),
-            kind_prefix: Some("youtube.channel.live_broadcast_ended".to_owned()),
+            kind_prefix: Some("youtube.stream.offline".to_owned()),
         }
     }
 
@@ -78,7 +78,7 @@ mod tests {
     fn broadcast_ended_event() -> Event {
         Event::new(
             EventSource::YouTube,
-            "youtube.channel.live_broadcast_ended",
+            "youtube.stream.offline",
             serde_json::json!({
                 "broadcast_id": "broadcast_xyz"
             }),

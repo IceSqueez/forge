@@ -4,11 +4,11 @@ use forge_registry::{
 };
 use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
 
-pub(crate) struct SupportMemberMilestoneDescriptor;
+pub(crate) struct SupportNewMemberDescriptor;
 
-impl TriggerKindDescriptor for SupportMemberMilestoneDescriptor {
+impl TriggerKindDescriptor for SupportNewMemberDescriptor {
     fn id(&self) -> &str {
-        "youtube.support.member_milestone"
+        "youtube.channel.member"
     }
 
     fn category(&self) -> TriggerCategory {
@@ -16,19 +16,19 @@ impl TriggerKindDescriptor for SupportMemberMilestoneDescriptor {
     }
 
     fn label(&self) -> &str {
-        "Member milestone"
+        "New member"
     }
 
     fn summary(&self) -> &str {
-        "Fires when a YouTube channel member reaches a membership milestone"
+        "Fires when a viewer joins as a new YouTube channel member"
     }
 
     fn search_text(&self) -> &str {
-        "youtube member milestone anniversary months subscription streak"
+        "youtube new member join sponsor subscription level"
     }
 
     fn icon_name(&self) -> &str {
-        "award"
+        "user-plus"
     }
 
     fn platform_contract(&self) -> KindPlatformContract {
@@ -50,7 +50,7 @@ impl TriggerKindDescriptor for SupportMemberMilestoneDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::YouTube),
-            kind_prefix: Some("youtube.support.member_milestone".to_owned()),
+            kind_prefix: Some("youtube.channel.member".to_owned()),
         }
     }
 
@@ -65,14 +65,9 @@ impl TriggerKindDescriptor for SupportMemberMilestoneDescriptor {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
-        let member_month = event
+        let member_level_name = event
             .payload
-            .get("member_month")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let message_text = event
-            .payload
-            .get("message_text")
+            .get("member_level_name")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
@@ -82,8 +77,10 @@ impl TriggerKindDescriptor for SupportMemberMilestoneDescriptor {
                 "user_display_name".to_owned(),
                 Variant::String(user_display_name),
             )
-            .set("member_month".to_owned(), Variant::Int(member_month))
-            .set("message_text".to_owned(), Variant::String(message_text))
+            .set(
+                "member_level_name".to_owned(),
+                Variant::String(member_level_name),
+            )
     }
 }
 
@@ -92,14 +89,13 @@ impl TriggerKindDescriptor for SupportMemberMilestoneDescriptor {
 mod tests {
     use super::*;
 
-    fn milestone_event() -> Event {
+    fn new_member_event() -> Event {
         Event::new(
             EventSource::YouTube,
-            "youtube.support.member_milestone",
+            "youtube.channel.member",
             serde_json::json!({
-                "user_display_name": "LongTimeFan",
-                "member_month": 12,
-                "message_text": "One year!"
+                "user_display_name": "NewSponsor",
+                "member_level_name": "Bronze"
             }),
         )
     }
@@ -107,22 +103,20 @@ mod tests {
     #[test]
     fn always_matches() {
         assert!(
-            SupportMemberMilestoneDescriptor
-                .matches_trigger(&TriggerConfig::new(), &milestone_event())
+            SupportNewMemberDescriptor.matches_trigger(&TriggerConfig::new(), &new_member_event())
         );
     }
 
     #[test]
-    fn build_arg_stack_extracts_milestone_fields() {
-        let stack = SupportMemberMilestoneDescriptor.build_arg_stack(&milestone_event());
+    fn build_arg_stack_extracts_member_fields() {
+        let stack = SupportNewMemberDescriptor.build_arg_stack(&new_member_event());
         assert_eq!(
             stack.get("user_display_name"),
-            Some(&Variant::String("LongTimeFan".to_owned()))
+            Some(&Variant::String("NewSponsor".to_owned()))
         );
-        assert_eq!(stack.get("member_month"), Some(&Variant::Int(12)));
         assert_eq!(
-            stack.get("message_text"),
-            Some(&Variant::String("One year!".to_owned()))
+            stack.get("member_level_name"),
+            Some(&Variant::String("Bronze".to_owned()))
         );
     }
 }

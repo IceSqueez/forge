@@ -334,7 +334,7 @@ impl YoutubeChatPoller {
             "chatEndedEvent" => {
                 let event = Event::new(
                     EventSource::YouTube,
-                    "youtube.channel.live_broadcast_ended",
+                    "youtube.stream.offline",
                     serde_json::json!({ "broadcast_id": id }),
                 );
                 Some(event)
@@ -446,7 +446,7 @@ impl YoutubeChatPoller {
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
                 Some(Event::new(
                     EventSource::YouTube,
-                    "youtube.support.super_chat",
+                    "youtube.chat.super_chat",
                     payload,
                 ))
             }
@@ -500,7 +500,7 @@ impl YoutubeChatPoller {
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
                 Some(Event::new(
                     EventSource::YouTube,
-                    "youtube.support.super_sticker",
+                    "youtube.chat.super_sticker",
                     payload,
                 ))
             }
@@ -537,7 +537,7 @@ impl YoutubeChatPoller {
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
                 Some(Event::new(
                     EventSource::YouTube,
-                    "youtube.support.new_member",
+                    "youtube.channel.member",
                     payload,
                 ))
             }
@@ -591,7 +591,7 @@ impl YoutubeChatPoller {
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
                 Some(Event::new(
                     EventSource::YouTube,
-                    "youtube.support.member_milestone",
+                    "youtube.channel.member_milestone",
                     payload,
                 ))
             }
@@ -985,7 +985,7 @@ mod tests {
         cancel.cancel();
         handle.await.unwrap().unwrap();
 
-        assert_eq!(event.kind, "youtube.support.super_chat");
+        assert_eq!(event.kind, "youtube.chat.super_chat");
 
         let chat: ChatPayload =
             serde_json::from_value(event.payload[ChatPayload::KEY].clone()).unwrap();

@@ -4,11 +4,11 @@ use forge_registry::{
 };
 use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
 
-pub(crate) struct SupportSuperChatDescriptor;
+pub(crate) struct SupportSuperStickerDescriptor;
 
-impl TriggerKindDescriptor for SupportSuperChatDescriptor {
+impl TriggerKindDescriptor for SupportSuperStickerDescriptor {
     fn id(&self) -> &str {
-        "youtube.support.super_chat"
+        "youtube.chat.super_sticker"
     }
 
     fn category(&self) -> TriggerCategory {
@@ -16,19 +16,19 @@ impl TriggerKindDescriptor for SupportSuperChatDescriptor {
     }
 
     fn label(&self) -> &str {
-        "Super Chat"
+        "Super Sticker"
     }
 
     fn summary(&self) -> &str {
-        "Fires when a viewer sends a Super Chat in YouTube live chat"
+        "Fires when a viewer sends a Super Sticker in YouTube live chat"
     }
 
     fn search_text(&self) -> &str {
-        "youtube super chat donation money amount currency support"
+        "youtube super sticker donation amount currency support"
     }
 
     fn icon_name(&self) -> &str {
-        "currency-dollar"
+        "star"
     }
 
     fn platform_contract(&self) -> KindPlatformContract {
@@ -50,7 +50,7 @@ impl TriggerKindDescriptor for SupportSuperChatDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::YouTube),
-            kind_prefix: Some("youtube.support.super_chat".to_owned()),
+            kind_prefix: Some("youtube.chat.super_sticker".to_owned()),
         }
     }
 
@@ -65,6 +65,12 @@ impl TriggerKindDescriptor for SupportSuperChatDescriptor {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
+        let sticker_id = event
+            .payload
+            .get("sticker_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
         let amount_micros = event
             .payload
             .get("amount_micros")
@@ -76,21 +82,15 @@ impl TriggerKindDescriptor for SupportSuperChatDescriptor {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
-        let message_text = event
-            .payload
-            .get("message_text")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
 
         ArgStack::new()
             .set(
                 "user_display_name".to_owned(),
                 Variant::String(user_display_name),
             )
+            .set("sticker_id".to_owned(), Variant::String(sticker_id))
             .set("amount_micros".to_owned(), Variant::Int(amount_micros))
             .set("currency".to_owned(), Variant::String(currency))
-            .set("message_text".to_owned(), Variant::String(message_text))
     }
 }
 
@@ -99,15 +99,15 @@ impl TriggerKindDescriptor for SupportSuperChatDescriptor {
 mod tests {
     use super::*;
 
-    fn super_chat_event() -> Event {
+    fn super_sticker_event() -> Event {
         Event::new(
             EventSource::YouTube,
-            "youtube.support.super_chat",
+            "youtube.chat.super_sticker",
             serde_json::json!({
-                "user_display_name": "BigFan",
-                "amount_micros": 5000000,
-                "currency": "USD",
-                "message_text": "Great stream!"
+                "user_display_name": "StickerFan",
+                "sticker_id": "sticker_abc_123",
+                "amount_micros": 2000000,
+                "currency": "EUR"
             }),
         )
     }
@@ -115,25 +115,26 @@ mod tests {
     #[test]
     fn always_matches() {
         assert!(
-            SupportSuperChatDescriptor.matches_trigger(&TriggerConfig::new(), &super_chat_event())
+            SupportSuperStickerDescriptor
+                .matches_trigger(&TriggerConfig::new(), &super_sticker_event())
         );
     }
 
     #[test]
-    fn build_arg_stack_extracts_super_chat_fields() {
-        let stack = SupportSuperChatDescriptor.build_arg_stack(&super_chat_event());
+    fn build_arg_stack_extracts_sticker_fields() {
+        let stack = SupportSuperStickerDescriptor.build_arg_stack(&super_sticker_event());
         assert_eq!(
             stack.get("user_display_name"),
-            Some(&Variant::String("BigFan".to_owned()))
+            Some(&Variant::String("StickerFan".to_owned()))
         );
-        assert_eq!(stack.get("amount_micros"), Some(&Variant::Int(5_000_000)));
+        assert_eq!(
+            stack.get("sticker_id"),
+            Some(&Variant::String("sticker_abc_123".to_owned()))
+        );
+        assert_eq!(stack.get("amount_micros"), Some(&Variant::Int(2_000_000)));
         assert_eq!(
             stack.get("currency"),
-            Some(&Variant::String("USD".to_owned()))
-        );
-        assert_eq!(
-            stack.get("message_text"),
-            Some(&Variant::String("Great stream!".to_owned()))
+            Some(&Variant::String("EUR".to_owned()))
         );
     }
 }

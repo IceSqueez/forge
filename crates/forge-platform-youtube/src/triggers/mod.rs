@@ -1,10 +1,10 @@
-pub(crate) mod channel_broadcast_ended;
-pub(crate) mod channel_broadcast_started;
+pub(crate) mod channel_member;
+pub(crate) mod channel_member_milestone;
 pub(crate) mod chat_command;
 pub(crate) mod chat_message;
+pub(crate) mod chat_super_chat;
+pub(crate) mod chat_super_sticker;
 pub(crate) mod moderation_ban;
 pub(crate) mod moderation_timeout;
-pub(crate) mod support_member_milestone;
-pub(crate) mod support_new_member;
-pub(crate) mod support_super_chat;
-pub(crate) mod support_super_sticker;
+pub(crate) mod stream_offline;
+pub(crate) mod stream_online;

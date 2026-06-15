@@ -1,15 +1,15 @@
 use forge_registry::{RegistryError, TriggerRegistry};
 
-use crate::triggers::channel_broadcast_ended::ChannelBroadcastEndedDescriptor;
-use crate::triggers::channel_broadcast_started::ChannelBroadcastStartedDescriptor;
+use crate::triggers::channel_member::SupportNewMemberDescriptor;
+use crate::triggers::channel_member_milestone::SupportMemberMilestoneDescriptor;
 use crate::triggers::chat_command::ChatCommandDescriptor;
 use crate::triggers::chat_message::ChatMessageDescriptor;
+use crate::triggers::chat_super_chat::SupportSuperChatDescriptor;
+use crate::triggers::chat_super_sticker::SupportSuperStickerDescriptor;
 use crate::triggers::moderation_ban::ModerationBanDescriptor;
 use crate::triggers::moderation_timeout::ModerationTimeoutDescriptor;
-use crate::triggers::support_member_milestone::SupportMemberMilestoneDescriptor;
-use crate::triggers::support_new_member::SupportNewMemberDescriptor;
-use crate::triggers::support_super_chat::SupportSuperChatDescriptor;
-use crate::triggers::support_super_sticker::SupportSuperStickerDescriptor;
+use crate::triggers::stream_offline::ChannelBroadcastEndedDescriptor;
+use crate::triggers::stream_online::ChannelBroadcastStartedDescriptor;
 
 pub fn register_youtube_triggers(registry: &mut TriggerRegistry) -> Result<(), RegistryError> {
     registry.register(Box::new(ChatMessageDescriptor))?;
@@ -53,14 +53,14 @@ mod tests {
         let ids = [
             "youtube.chat.message",
             "youtube.chat.command",
-            "youtube.support.super_chat",
-            "youtube.support.super_sticker",
-            "youtube.support.new_member",
-            "youtube.support.member_milestone",
+            "youtube.chat.super_chat",
+            "youtube.chat.super_sticker",
+            "youtube.channel.member",
+            "youtube.channel.member_milestone",
             "youtube.moderation.timeout",
             "youtube.moderation.ban",
-            "youtube.channel.live_broadcast_started",
-            "youtube.channel.live_broadcast_ended",
+            "youtube.stream.online",
+            "youtube.stream.offline",
         ];
 
         for id in ids {

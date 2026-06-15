@@ -4,31 +4,31 @@ use forge_registry::{
 };
 use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
 
-pub(crate) struct SupportNewMemberDescriptor;
+pub(crate) struct ChannelBroadcastStartedDescriptor;
 
-impl TriggerKindDescriptor for SupportNewMemberDescriptor {
+impl TriggerKindDescriptor for ChannelBroadcastStartedDescriptor {
     fn id(&self) -> &str {
-        "youtube.support.new_member"
+        "youtube.stream.online"
     }
 
     fn category(&self) -> TriggerCategory {
-        TriggerCategory::Subscriptions
+        TriggerCategory::Streams
     }
 
     fn label(&self) -> &str {
-        "New member"
+        "Live broadcast started"
     }
 
     fn summary(&self) -> &str {
-        "Fires when a viewer joins as a new YouTube channel member"
+        "Fires when a YouTube live broadcast becomes active"
     }
 
     fn search_text(&self) -> &str {
-        "youtube new member join sponsor subscription level"
+        "youtube live stream online broadcast started channel"
     }
 
     fn icon_name(&self) -> &str {
-        "user-plus"
+        "radio"
     }
 
     fn platform_contract(&self) -> KindPlatformContract {
@@ -50,7 +50,7 @@ impl TriggerKindDescriptor for SupportNewMemberDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::YouTube),
-            kind_prefix: Some("youtube.support.new_member".to_owned()),
+            kind_prefix: Some("youtube.stream.online".to_owned()),
         }
     }
 
@@ -59,28 +59,25 @@ impl TriggerKindDescriptor for SupportNewMemberDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let user_display_name = event
+        let broadcast_title = event
             .payload
-            .get("user_display_name")
+            .get("broadcast_title")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
-        let member_level_name = event
+        let broadcast_id = event
             .payload
-            .get("member_level_name")
+            .get("broadcast_id")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
 
         ArgStack::new()
             .set(
-                "user_display_name".to_owned(),
-                Variant::String(user_display_name),
+                "broadcast_title".to_owned(),
+                Variant::String(broadcast_title),
             )
-            .set(
-                "member_level_name".to_owned(),
-                Variant::String(member_level_name),
-            )
+            .set("broadcast_id".to_owned(), Variant::String(broadcast_id))
     }
 }
 
@@ -89,13 +86,13 @@ impl TriggerKindDescriptor for SupportNewMemberDescriptor {
 mod tests {
     use super::*;
 
-    fn new_member_event() -> Event {
+    fn broadcast_started_event() -> Event {
         Event::new(
             EventSource::YouTube,
-            "youtube.support.new_member",
+            "youtube.stream.online",
             serde_json::json!({
-                "user_display_name": "NewSponsor",
-                "member_level_name": "Bronze"
+                "broadcast_title": "Sunday Stream",
+                "broadcast_id": "broadcast_xyz"
             }),
         )
     }
@@ -103,20 +100,21 @@ mod tests {
     #[test]
     fn always_matches() {
         assert!(
-            SupportNewMemberDescriptor.matches_trigger(&TriggerConfig::new(), &new_member_event())
+            ChannelBroadcastStartedDescriptor
+                .matches_trigger(&TriggerConfig::new(), &broadcast_started_event())
         );
     }
 
     #[test]
-    fn build_arg_stack_extracts_member_fields() {
-        let stack = SupportNewMemberDescriptor.build_arg_stack(&new_member_event());
+    fn build_arg_stack_extracts_broadcast_fields() {
+        let stack = ChannelBroadcastStartedDescriptor.build_arg_stack(&broadcast_started_event());
         assert_eq!(
-            stack.get("user_display_name"),
-            Some(&Variant::String("NewSponsor".to_owned()))
+            stack.get("broadcast_title"),
+            Some(&Variant::String("Sunday Stream".to_owned()))
         );
         assert_eq!(
-            stack.get("member_level_name"),
-            Some(&Variant::String("Bronze".to_owned()))
+            stack.get("broadcast_id"),
+            Some(&Variant::String("broadcast_xyz".to_owned()))
         );
     }
 }

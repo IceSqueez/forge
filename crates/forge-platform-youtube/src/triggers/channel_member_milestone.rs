@@ -4,31 +4,31 @@ use forge_registry::{
 };
 use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
 
-pub(crate) struct SupportSuperStickerDescriptor;
+pub(crate) struct SupportMemberMilestoneDescriptor;
 
-impl TriggerKindDescriptor for SupportSuperStickerDescriptor {
+impl TriggerKindDescriptor for SupportMemberMilestoneDescriptor {
     fn id(&self) -> &str {
-        "youtube.support.super_sticker"
+        "youtube.channel.member_milestone"
     }
 
     fn category(&self) -> TriggerCategory {
-        TriggerCategory::Bits
+        TriggerCategory::Subscriptions
     }
 
     fn label(&self) -> &str {
-        "Super Sticker"
+        "Member milestone"
     }
 
     fn summary(&self) -> &str {
-        "Fires when a viewer sends a Super Sticker in YouTube live chat"
+        "Fires when a YouTube channel member reaches a membership milestone"
     }
 
     fn search_text(&self) -> &str {
-        "youtube super sticker donation amount currency support"
+        "youtube member milestone anniversary months subscription streak"
     }
 
     fn icon_name(&self) -> &str {
-        "star"
+        "award"
     }
 
     fn platform_contract(&self) -> KindPlatformContract {
@@ -50,7 +50,7 @@ impl TriggerKindDescriptor for SupportSuperStickerDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::YouTube),
-            kind_prefix: Some("youtube.support.super_sticker".to_owned()),
+            kind_prefix: Some("youtube.channel.member_milestone".to_owned()),
         }
     }
 
@@ -65,20 +65,14 @@ impl TriggerKindDescriptor for SupportSuperStickerDescriptor {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
-        let sticker_id = event
+        let member_month = event
             .payload
-            .get("sticker_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let amount_micros = event
-            .payload
-            .get("amount_micros")
+            .get("member_month")
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
-        let currency = event
+        let message_text = event
             .payload
-            .get("currency")
+            .get("message_text")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
@@ -88,9 +82,8 @@ impl TriggerKindDescriptor for SupportSuperStickerDescriptor {
                 "user_display_name".to_owned(),
                 Variant::String(user_display_name),
             )
-            .set("sticker_id".to_owned(), Variant::String(sticker_id))
-            .set("amount_micros".to_owned(), Variant::Int(amount_micros))
-            .set("currency".to_owned(), Variant::String(currency))
+            .set("member_month".to_owned(), Variant::Int(member_month))
+            .set("message_text".to_owned(), Variant::String(message_text))
     }
 }
 
@@ -99,15 +92,14 @@ impl TriggerKindDescriptor for SupportSuperStickerDescriptor {
 mod tests {
     use super::*;
 
-    fn super_sticker_event() -> Event {
+    fn milestone_event() -> Event {
         Event::new(
             EventSource::YouTube,
-            "youtube.support.super_sticker",
+            "youtube.channel.member_milestone",
             serde_json::json!({
-                "user_display_name": "StickerFan",
-                "sticker_id": "sticker_abc_123",
-                "amount_micros": 2000000,
-                "currency": "EUR"
+                "user_display_name": "LongTimeFan",
+                "member_month": 12,
+                "message_text": "One year!"
             }),
         )
     }
@@ -115,26 +107,22 @@ mod tests {
     #[test]
     fn always_matches() {
         assert!(
-            SupportSuperStickerDescriptor
-                .matches_trigger(&TriggerConfig::new(), &super_sticker_event())
+            SupportMemberMilestoneDescriptor
+                .matches_trigger(&TriggerConfig::new(), &milestone_event())
         );
     }
 
     #[test]
-    fn build_arg_stack_extracts_sticker_fields() {
-        let stack = SupportSuperStickerDescriptor.build_arg_stack(&super_sticker_event());
+    fn build_arg_stack_extracts_milestone_fields() {
+        let stack = SupportMemberMilestoneDescriptor.build_arg_stack(&milestone_event());
         assert_eq!(
             stack.get("user_display_name"),
-            Some(&Variant::String("StickerFan".to_owned()))
+            Some(&Variant::String("LongTimeFan".to_owned()))
         );
+        assert_eq!(stack.get("member_month"), Some(&Variant::Int(12)));
         assert_eq!(
-            stack.get("sticker_id"),
-            Some(&Variant::String("sticker_abc_123".to_owned()))
-        );
-        assert_eq!(stack.get("amount_micros"), Some(&Variant::Int(2_000_000)));
-        assert_eq!(
-            stack.get("currency"),
-            Some(&Variant::String("EUR".to_owned()))
+            stack.get("message_text"),
+            Some(&Variant::String("One year!".to_owned()))
         );
     }
 }

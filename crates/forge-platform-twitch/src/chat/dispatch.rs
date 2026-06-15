@@ -293,6 +293,7 @@ mod tests {
             "channel.ad_break.begin",
             "channel.channel_points_automatic_reward_redemption.add",
             "user.whisper.message",
+            "user.update",
         ] {
             assert!(route_for(topic).is_some(), "missing route for {topic}");
         }

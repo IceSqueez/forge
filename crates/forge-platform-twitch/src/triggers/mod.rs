@@ -67,6 +67,7 @@ mod unban_request_resolved;
 mod vip_added;
 mod vip_removed;
 mod warning_acknowledged;
+mod warning_sent;
 mod whisper_received;
 
 use forge_registry::{RegistryError, TriggerRegistry};
@@ -139,6 +140,7 @@ use unban_request_resolved::UnbanRequestResolvedDescriptor;
 use vip_added::VipAddedDescriptor;
 use vip_removed::VipRemovedDescriptor;
 use warning_acknowledged::WarningAcknowledgedDescriptor;
+use warning_sent::WarningSentDescriptor;
 use whisper_received::WhisperReceivedDescriptor;
 
 pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), RegistryError> {
@@ -180,6 +182,7 @@ pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), Registr
     reg.register(Box::new(ShoutoutReceivedDescriptor))?;
     reg.register(Box::new(SuspiciousUserMessageDescriptor))?;
     reg.register(Box::new(WarningAcknowledgedDescriptor))?;
+    reg.register(Box::new(WarningSentDescriptor))?;
     reg.register(Box::new(PollStartedDescriptor))?;
     reg.register(Box::new(PollProgressDescriptor))?;
     reg.register(Box::new(PollEndedDescriptor))?;

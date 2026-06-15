@@ -108,6 +108,10 @@ const NOTIFICATION_ROUTES: &[(&str, NotificationRoute)] = &[
         "channel.warning.acknowledge",
         ChatSession::publish_warning_acknowledge_event,
     ),
+    (
+        "channel.warning.send",
+        ChatSession::publish_warning_send_event,
+    ),
     ("channel.poll.begin", ChatSession::publish_poll_begin_event),
     (
         "channel.poll.progress",

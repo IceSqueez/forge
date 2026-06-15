@@ -241,6 +241,11 @@ const TOPICS: &[TopicSpec] = &[
         condition_fn: condition_broadcaster,
     },
     TopicSpec {
+        kind: "channel.warning.send",
+        version: "1",
+        condition_fn: condition_broadcaster,
+    },
+    TopicSpec {
         kind: "channel.poll.begin",
         version: "1",
         condition_fn: condition_broadcaster,

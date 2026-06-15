@@ -1832,6 +1832,62 @@ impl ChatSession {
         ));
     }
 
+    pub(super) fn publish_warning_send_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let user_id = event_data
+            .get("user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_login = event_data
+            .get("user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_display_name = event_data
+            .get("user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let moderator_login = event_data
+            .get("moderator_user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let reason = event_data
+            .get("reason")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let chat_rules_cited: Vec<serde_json::Value> = event_data
+            .get("chat_rules_cited")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        info!(user_login = %user_login, moderator_login = %moderator_login, "warning sent");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.warning.send",
+            serde_json::json!({
+                "user": {
+                    "id": user_id,
+                    "login": user_login,
+                    "display_name": user_display_name,
+                },
+                "moderator": {
+                    "login": moderator_login,
+                },
+                "reason": reason,
+                "chat_rules_cited": chat_rules_cited,
+            }),
+        ));
+    }
+
     pub(super) fn publish_poll_begin_event(
         &self,
         event_data: &serde_json::Value,

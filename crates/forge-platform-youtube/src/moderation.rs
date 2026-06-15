@@ -355,7 +355,7 @@ impl YoutubeModeration {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use serde_json::json;
-    use wiremock::matchers::{method, path, query_param};
+    use wiremock::matchers::{method, path, query_param, query_param_is_missing};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
@@ -363,6 +363,8 @@ mod tests {
 
     const TOKEN_SENTINEL: &str = "yt-secret-token";
     const BAN_RESOURCE_ID: &str = "ban-resource-7";
+    const MODERATOR_RESOURCE_ID: &str = "mod-resource-9";
+    const TARGET_CHANNEL: &str = "UC-target";
 
     fn token_source() -> TokenSource {
         Arc::new(|| Box::pin(async { Ok(TOKEN_SENTINEL.to_owned()) }))
@@ -520,6 +522,272 @@ mod tests {
             quota.lock().await.used_today,
             BAN_COST,
             "a successful insert must charge the documented ban cost"
+        );
+    }
+
+    // --- add_moderator ---------------------------------------------------
+
+    #[tokio::test]
+    async fn add_moderator_inserts_with_target_channel_id_in_snippet() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/liveChat/moderators"))
+            .and(query_param("part", "snippet"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!({"id": MODERATOR_RESOURCE_ID})),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (moderation, _quota) = moderation_on(&server);
+
+        moderation.add_moderator(TARGET_CHANNEL).await.unwrap();
+
+        let req = &server.received_requests().await.unwrap()[0];
+        let body: serde_json::Value = serde_json::from_slice(&req.body).unwrap();
+        assert_eq!(
+            body["snippet"]["moderatorDetails"]["channelId"],
+            TARGET_CHANNEL
+        );
+    }
+
+    #[tokio::test]
+    async fn add_moderator_charges_fifty_quota_units() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/liveChat/moderators"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!({"id": MODERATOR_RESOURCE_ID})),
+            )
+            .mount(&server)
+            .await;
+        let (moderation, quota) = moderation_on(&server);
+
+        moderation.add_moderator(TARGET_CHANNEL).await.unwrap();
+
+        assert_eq!(quota.lock().await.used_today, MODERATOR_COST);
+    }
+
+    #[tokio::test]
+    async fn add_moderator_forbidden_response_fails_without_leaking_token_or_url() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/liveChat/moderators"))
+            .respond_with(ResponseTemplate::new(403).set_body_string("forbidden by policy"))
+            .mount(&server)
+            .await;
+        let (moderation, _quota) = moderation_on(&server);
+
+        let err = moderation.add_moderator(TARGET_CHANNEL).await.unwrap_err();
+        let msg = err.to_string();
+
+        assert!(!msg.contains(TOKEN_SENTINEL), "leaked bearer token: {msg}");
+        assert!(!msg.contains(&server.uri()), "leaked request URL: {msg}");
+        assert!(
+            !msg.to_lowercase().contains("googleapis"),
+            "leaked API host: {msg}"
+        );
+    }
+
+    // --- remove_moderator ------------------------------------------------
+
+    /// Mounts a single-page `list` whose only item carries `channel_id`, plus a
+    /// DELETE handler scoped to `resource_id`. Lets a remove resolve in one page.
+    async fn mount_list_single_page(server: &MockServer, channel_id: &str, resource_id: &str) {
+        Mock::given(method("GET"))
+            .and(path("/liveChat/moderators"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "items": [{
+                    "id": resource_id,
+                    "snippet": { "moderatorDetails": { "channelId": channel_id } },
+                }],
+            })))
+            .mount(server)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn remove_moderator_deletes_the_resolved_moderator_resource_id() {
+        let server = MockServer::start().await;
+        mount_list_single_page(&server, TARGET_CHANNEL, MODERATOR_RESOURCE_ID).await;
+        Mock::given(method("DELETE"))
+            .and(path("/liveChat/moderators"))
+            .and(query_param("id", MODERATOR_RESOURCE_ID))
+            .respond_with(ResponseTemplate::new(204))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (moderation, _quota) = moderation_on(&server);
+
+        moderation.remove_moderator(TARGET_CHANNEL).await.unwrap();
+
+        let delete = server
+            .received_requests()
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|r| r.method == wiremock::http::Method::DELETE)
+            .expect("a DELETE must reach the server");
+        assert!(
+            delete
+                .url
+                .query_pairs()
+                .any(|(k, v)| k == "id" && v == MODERATOR_RESOURCE_ID),
+            "delete must target the resolved moderator resource id"
+        );
+    }
+
+    #[tokio::test]
+    async fn remove_moderator_follows_page_token_to_resolve_target_on_second_page() {
+        let server = MockServer::start().await;
+        // First list page: target absent, a nextPageToken steers to page two.
+        Mock::given(method("GET"))
+            .and(path("/liveChat/moderators"))
+            .and(query_param_is_missing("pageToken"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "items": [{
+                    "id": "mod-other",
+                    "snippet": { "moderatorDetails": { "channelId": "UC-someone-else" } },
+                }],
+                "nextPageToken": "PAGE2",
+            })))
+            .mount(&server)
+            .await;
+        // Second list page (reached only via pageToken=PAGE2): target present.
+        Mock::given(method("GET"))
+            .and(path("/liveChat/moderators"))
+            .and(query_param("pageToken", "PAGE2"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "items": [{
+                    "id": MODERATOR_RESOURCE_ID,
+                    "snippet": { "moderatorDetails": { "channelId": TARGET_CHANNEL } },
+                }],
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("DELETE"))
+            .and(path("/liveChat/moderators"))
+            .and(query_param("id", MODERATOR_RESOURCE_ID))
+            .respond_with(ResponseTemplate::new(204))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (moderation, _quota) = moderation_on(&server);
+
+        moderation.remove_moderator(TARGET_CHANNEL).await.unwrap();
+
+        let delete = server
+            .received_requests()
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|r| r.method == wiremock::http::Method::DELETE)
+            .expect("a DELETE must reach the server");
+        assert!(
+            delete
+                .url
+                .query_pairs()
+                .any(|(k, v)| k == "id" && v == MODERATOR_RESOURCE_ID),
+            "delete must target the id resolved on the paged-to second page"
+        );
+    }
+
+    #[tokio::test]
+    async fn remove_moderator_when_target_is_not_a_moderator_fails_and_sends_no_delete() {
+        let server = MockServer::start().await;
+        // Two exhausted pages, neither containing the target.
+        Mock::given(method("GET"))
+            .and(path("/liveChat/moderators"))
+            .and(query_param_is_missing("pageToken"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "items": [{
+                    "id": "mod-a",
+                    "snippet": { "moderatorDetails": { "channelId": "UC-a" } },
+                }],
+                "nextPageToken": "PAGE2",
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/liveChat/moderators"))
+            .and(query_param("pageToken", "PAGE2"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "items": [{
+                    "id": "mod-b",
+                    "snippet": { "moderatorDetails": { "channelId": "UC-b" } },
+                }],
+            })))
+            .mount(&server)
+            .await;
+        // DELETE handler present so a stray delete would be observable.
+        Mock::given(method("DELETE"))
+            .and(path("/liveChat/moderators"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&server)
+            .await;
+        let (moderation, _quota) = moderation_on(&server);
+
+        let err = moderation
+            .remove_moderator(TARGET_CHANNEL)
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(err, PlatformError::Unsupported { .. }),
+            "expected Unsupported, got {err:?}"
+        );
+        assert!(
+            server
+                .received_requests()
+                .await
+                .unwrap()
+                .iter()
+                .all(|r| r.method != wiremock::http::Method::DELETE),
+            "a non-moderator must not trigger a DELETE"
+        );
+    }
+
+    #[tokio::test]
+    async fn remove_moderator_charges_one_unit_per_list_page_plus_fifty_for_delete() {
+        let server = MockServer::start().await;
+        mount_list_single_page(&server, TARGET_CHANNEL, MODERATOR_RESOURCE_ID).await;
+        Mock::given(method("DELETE"))
+            .and(path("/liveChat/moderators"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&server)
+            .await;
+        let (moderation, quota) = moderation_on(&server);
+
+        moderation.remove_moderator(TARGET_CHANNEL).await.unwrap();
+
+        // One list page (1u) + the delete (50u).
+        assert_eq!(
+            quota.lock().await.used_today,
+            MODERATOR_LIST_COST + MODERATOR_COST,
+        );
+    }
+
+    #[tokio::test]
+    async fn remove_moderator_list_forbidden_fails_without_leaking_token_or_url() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/liveChat/moderators"))
+            .respond_with(ResponseTemplate::new(403).set_body_string("forbidden by policy"))
+            .mount(&server)
+            .await;
+        let (moderation, _quota) = moderation_on(&server);
+
+        let err = moderation
+            .remove_moderator(TARGET_CHANNEL)
+            .await
+            .unwrap_err();
+        let msg = err.to_string();
+
+        assert!(!msg.contains(TOKEN_SENTINEL), "leaked bearer token: {msg}");
+        assert!(!msg.contains(&server.uri()), "leaked request URL: {msg}");
+        assert!(
+            !msg.to_lowercase().contains("googleapis"),
+            "leaked API host: {msg}"
         );
     }
 }

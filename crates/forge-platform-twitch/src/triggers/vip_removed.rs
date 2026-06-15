@@ -83,3 +83,53 @@ impl TriggerKindDescriptor for VipRemovedDescriptor {
             .set("user_name".to_owned(), Variant::String(user_name))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn event_filter_targets_vip_remove_topic_from_twitch() {
+        let filter = VipRemovedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(filter.kind_prefix.as_deref(), Some("channel.vip.remove"));
+    }
+
+    #[test]
+    fn build_arg_stack_maps_user_fields_from_nested_payload() {
+        let payload = serde_json::json!({
+            "user": { "id": "555", "login": "former_vip", "display_name": "FormerVip" },
+        });
+        let event = Event::new(EventSource::Twitch, "channel.vip.remove", payload);
+        let stack = VipRemovedDescriptor.build_arg_stack(&event);
+        assert_eq!(
+            stack.get("user_id"),
+            Some(&Variant::String("555".to_owned()))
+        );
+        assert_eq!(
+            stack.get("user_login"),
+            Some(&Variant::String("former_vip".to_owned()))
+        );
+        assert_eq!(
+            stack.get("user_name"),
+            Some(&Variant::String("FormerVip".to_owned()))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_yields_empty_strings_when_user_object_absent() {
+        let event = Event::new(
+            EventSource::Twitch,
+            "channel.vip.remove",
+            serde_json::json!({}),
+        );
+        let stack = VipRemovedDescriptor.build_arg_stack(&event);
+        for key in ["user_id", "user_login", "user_name"] {
+            assert_eq!(
+                stack.get(key),
+                Some(&Variant::String(String::new())),
+                "{key}"
+            );
+        }
+    }
+}

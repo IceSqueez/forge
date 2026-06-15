@@ -233,6 +233,8 @@ mod tests {
             "channel.unban",
             "channel.moderator.add",
             "channel.moderator.remove",
+            "channel.vip.add",
+            "channel.vip.remove",
             "channel.shield_mode.begin",
             "channel.shield_mode.end",
             "channel.shoutout.create",

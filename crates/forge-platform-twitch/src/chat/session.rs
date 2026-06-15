@@ -1447,6 +1447,128 @@ impl ChatSession {
         ));
     }
 
+    pub(super) fn publish_unban_request_create_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let request_id = event_data
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_login = event_data
+            .get("user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_id = event_data
+            .get("user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_display_name = event_data
+            .get("user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let reason_text = event_data
+            .get("text")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(user_login = %user_login, "unban request created");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.unban_request.create",
+            serde_json::json!({
+                "id": request_id,
+                "user": {
+                    "id": user_id,
+                    "login": user_login,
+                    "display_name": user_display_name,
+                },
+                "reason_text": reason_text,
+            }),
+        ));
+    }
+
+    pub(super) fn publish_unban_request_resolve_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let request_id = event_data
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_login = event_data
+            .get("user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_id = event_data
+            .get("user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_display_name = event_data
+            .get("user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let status = event_data
+            .get("status")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let moderator_login = event_data
+            .get("moderator_user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let moderator_id = event_data
+            .get("moderator_user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let moderator_display_name = event_data
+            .get("moderator_user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let resolution_text = event_data
+            .get("resolution_text")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(user_login = %user_login, status = %status, "unban request resolved");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.unban_request.resolve",
+            serde_json::json!({
+                "id": request_id,
+                "user": {
+                    "id": user_id,
+                    "login": user_login,
+                    "display_name": user_display_name,
+                },
+                "status": status,
+                "moderator": {
+                    "id": moderator_id,
+                    "login": moderator_login,
+                    "display_name": moderator_display_name,
+                },
+                "resolution_text": resolution_text,
+            }),
+        ));
+    }
+
     pub(super) fn publish_shield_mode_begin_event(
         &self,
         event_data: &serde_json::Value,

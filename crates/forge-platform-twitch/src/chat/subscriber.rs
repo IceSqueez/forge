@@ -197,6 +197,16 @@ const TOPICS: &[TopicSpec] = &[
         condition_fn: condition_broadcaster,
     },
     TopicSpec {
+        kind: "channel.unban_request.create",
+        version: "1",
+        condition_fn: condition_follow,
+    },
+    TopicSpec {
+        kind: "channel.unban_request.resolve",
+        version: "1",
+        condition_fn: condition_follow,
+    },
+    TopicSpec {
         kind: "channel.shield_mode.begin",
         version: "1",
         condition_fn: condition_broadcaster,

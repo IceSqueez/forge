@@ -502,9 +502,20 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
                     Arc::clone(&yt_quota),
                 ));
 
+                let manager_for_mod = Arc::clone(&manager);
+                let yt_moderation = Arc::new(forge_platform_youtube::YoutubeModeration::new(
+                    Arc::new(move || {
+                        let m = Arc::clone(&manager_for_mod);
+                        Box::pin(async move { m.get_valid_access_token().await })
+                    }),
+                    yt_live_chat_id.clone(),
+                    Arc::clone(&yt_quota),
+                ));
+
                 if let Err(e) = forge_platform_youtube::register_youtube_sub_actions(
                     &mut sub_action_reg,
                     Arc::clone(&yt_send),
+                    Arc::clone(&yt_moderation),
                 ) {
                     tracing::warn!("youtube sub-action runner registration failed: {e}");
                 }

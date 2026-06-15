@@ -5,6 +5,7 @@ pub mod credentials;
 pub mod credentials_manager;
 pub mod dedup_window;
 pub mod live_chat_id;
+pub mod moderation;
 pub mod quota_state;
 pub mod send_chat;
 pub mod sub_actions;
@@ -20,6 +21,10 @@ pub use chat_poller::YoutubeChatPoller;
 pub use credentials::{CREDENTIAL_KEY, QUOTA_KEY, YoutubeCredentials, YoutubeQuotaState};
 pub use credentials_manager::YoutubeCredentialsManager;
 pub use live_chat_id::LiveChatIdHandle;
+pub use moderation::YoutubeModeration;
 pub use quota_state::QuotaState;
 pub use send_chat::YoutubeSendChat;
-pub use sub_actions::{SendMessageRunner, register_youtube_sub_actions};
+pub use sub_actions::{
+    BanUserRunner, SendMessageRunner, TimeoutUserRunner, UnbanUserRunner,
+    register_youtube_sub_actions,
+};

@@ -3363,6 +3363,48 @@ impl ChatSession {
         ));
     }
 
+    pub(super) fn publish_user_update_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let user_id = event_data
+            .get("user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_login = event_data
+            .get("user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_name = event_data
+            .get("user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let description = event_data
+            .get("description")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(user_login = %user_login, "user profile updated");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "user.update",
+            serde_json::json!({
+                "user": {
+                    "id": user_id,
+                    "login": user_login,
+                    "display_name": user_name,
+                    "description": description,
+                },
+            }),
+        ));
+    }
+
     fn set_state(&self, state: ChatConnectionState) {
         let _ = self.state_tx.send(state);
     }

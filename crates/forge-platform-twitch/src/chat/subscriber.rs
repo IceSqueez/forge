@@ -400,6 +400,11 @@ const TOPICS: &[TopicSpec] = &[
         version: "1",
         condition_fn: condition_user,
     },
+    TopicSpec {
+        kind: "user.update",
+        version: "1",
+        condition_fn: condition_user,
+    },
 ];
 
 pub(crate) async fn subscribe_all(

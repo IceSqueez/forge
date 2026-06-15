@@ -218,6 +218,7 @@ const NOTIFICATION_ROUTES: &[(&str, NotificationRoute)] = &[
         ChatSession::publish_automatic_reward_event,
     ),
     ("user.whisper.message", ChatSession::publish_whisper_event),
+    ("user.update", ChatSession::publish_user_update_event),
 ];
 
 #[cfg(test)]

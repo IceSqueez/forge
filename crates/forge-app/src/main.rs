@@ -469,60 +469,6 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
             tracing::warn!("no Twitch client_id configured; twitch sub-actions unavailable");
         }
     }
-    let sub_action_reg = Arc::new(sub_action_reg);
-
-    let mut trigger_reg = TriggerRegistry::new();
-    if let Err(e) = register_core_triggers(&mut trigger_reg) {
-        tracing::warn!("core trigger descriptor registration failed: {e}");
-    }
-    if let Err(e) = register_twitch_triggers(&mut trigger_reg) {
-        tracing::warn!("twitch trigger descriptor registration failed: {e}");
-    }
-    if let Err(e) = register_obs_triggers(&mut trigger_reg) {
-        tracing::warn!("obs trigger descriptor registration failed: {e}");
-    }
-    if let Err(e) = register_midi_triggers(&mut trigger_reg) {
-        tracing::warn!("midi trigger descriptor registration failed: {e}");
-    }
-    if let Err(e) = register_hotkey_triggers(&mut trigger_reg) {
-        tracing::warn!("hotkey trigger descriptor registration failed: {e}");
-    }
-    if let Err(e) = forge_platform_youtube::register_youtube_triggers(&mut trigger_reg) {
-        tracing::warn!("youtube trigger descriptor registration failed: {e}");
-    }
-    if let Err(e) = forge_platform_kick::register_kick_triggers(&mut trigger_reg) {
-        tracing::warn!("kick trigger descriptor registration failed: {e}");
-    }
-    let trigger_reg = Arc::new(trigger_reg);
-    let trigger_instance_repo = dp.trigger_instance_repo();
-    for descriptor in trigger_reg.all() {
-        let kind_id = descriptor.id();
-        let name = descriptor.label();
-        if let Err(e) = rt.block_on(trigger_instance_repo.upsert_default(kind_id, name)) {
-            tracing::warn!("upsert_default failed for kind_id={kind_id}: {e}");
-        }
-    }
-
-    let engine = spawn_action_engine(
-        Arc::clone(&bus),
-        dp.action_repo(),
-        dp.history_repo(),
-        Arc::clone(&sub_action_reg),
-    );
-    let scheduler = QueueScheduler::spawn(engine.clone(), Arc::clone(&bus), queues);
-    let trigger_evaluator = spawn_trigger_evaluator(
-        Arc::clone(&bus),
-        Arc::clone(&trigger_reg),
-        dp.action_repo(),
-        dp.trigger_instance_repo(),
-        scheduler.clone(),
-    );
-    let chat_send_bridge = ChatSendBridge::spawn(
-        Arc::clone(&bus),
-        Arc::clone(&dp) as Arc<dyn CredentialsRepo>,
-        Arc::clone(&twitch_rate_limiter),
-    );
-
     if let Some((yt_id, yt_secret)) = forge_platform_youtube::client_credentials() {
         let google = forge_platform_youtube::GoogleAuthFlow::new(yt_id, yt_secret);
         let yt_creds: Arc<dyn CredentialsRepo> = Arc::clone(&dp) as Arc<dyn CredentialsRepo>;
@@ -555,6 +501,13 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
                     yt_live_chat_id.clone(),
                     Arc::clone(&yt_quota),
                 ));
+
+                if let Err(e) = forge_platform_youtube::register_youtube_sub_actions(
+                    &mut sub_action_reg,
+                    Arc::clone(&yt_send),
+                ) {
+                    tracing::warn!("youtube sub-action runner registration failed: {e}");
+                }
 
                 let cancel = tokio_util::sync::CancellationToken::new();
                 let manager_for_poll = Arc::clone(&manager);
@@ -638,6 +591,60 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
             }
         }
     }
+
+    let sub_action_reg = Arc::new(sub_action_reg);
+
+    let mut trigger_reg = TriggerRegistry::new();
+    if let Err(e) = register_core_triggers(&mut trigger_reg) {
+        tracing::warn!("core trigger descriptor registration failed: {e}");
+    }
+    if let Err(e) = register_twitch_triggers(&mut trigger_reg) {
+        tracing::warn!("twitch trigger descriptor registration failed: {e}");
+    }
+    if let Err(e) = register_obs_triggers(&mut trigger_reg) {
+        tracing::warn!("obs trigger descriptor registration failed: {e}");
+    }
+    if let Err(e) = register_midi_triggers(&mut trigger_reg) {
+        tracing::warn!("midi trigger descriptor registration failed: {e}");
+    }
+    if let Err(e) = register_hotkey_triggers(&mut trigger_reg) {
+        tracing::warn!("hotkey trigger descriptor registration failed: {e}");
+    }
+    if let Err(e) = forge_platform_youtube::register_youtube_triggers(&mut trigger_reg) {
+        tracing::warn!("youtube trigger descriptor registration failed: {e}");
+    }
+    if let Err(e) = forge_platform_kick::register_kick_triggers(&mut trigger_reg) {
+        tracing::warn!("kick trigger descriptor registration failed: {e}");
+    }
+    let trigger_reg = Arc::new(trigger_reg);
+    let trigger_instance_repo = dp.trigger_instance_repo();
+    for descriptor in trigger_reg.all() {
+        let kind_id = descriptor.id();
+        let name = descriptor.label();
+        if let Err(e) = rt.block_on(trigger_instance_repo.upsert_default(kind_id, name)) {
+            tracing::warn!("upsert_default failed for kind_id={kind_id}: {e}");
+        }
+    }
+
+    let engine = spawn_action_engine(
+        Arc::clone(&bus),
+        dp.action_repo(),
+        dp.history_repo(),
+        Arc::clone(&sub_action_reg),
+    );
+    let scheduler = QueueScheduler::spawn(engine.clone(), Arc::clone(&bus), queues);
+    let trigger_evaluator = spawn_trigger_evaluator(
+        Arc::clone(&bus),
+        Arc::clone(&trigger_reg),
+        dp.action_repo(),
+        dp.trigger_instance_repo(),
+        scheduler.clone(),
+    );
+    let chat_send_bridge = ChatSendBridge::spawn(
+        Arc::clone(&bus),
+        Arc::clone(&dp) as Arc<dyn CredentialsRepo>,
+        Arc::clone(&twitch_rate_limiter),
+    );
 
     if let Some(kick_client_id) = forge_platform_kick::client_credentials() {
         let kk_creds: Arc<dyn CredentialsRepo> = Arc::clone(&dp) as Arc<dyn CredentialsRepo>;

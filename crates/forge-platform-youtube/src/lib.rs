@@ -7,6 +7,7 @@ pub mod dedup_window;
 pub mod live_chat_id;
 pub mod quota_state;
 pub mod send_chat;
+pub mod sub_actions;
 pub mod triggers;
 
 pub use auth::{
@@ -21,3 +22,4 @@ pub use credentials_manager::YoutubeCredentialsManager;
 pub use live_chat_id::LiveChatIdHandle;
 pub use quota_state::QuotaState;
 pub use send_chat::YoutubeSendChat;
+pub use sub_actions::{SendMessageRunner, register_youtube_sub_actions};

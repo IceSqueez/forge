@@ -2,12 +2,11 @@ use forge_registry::{RegistryError, TriggerRegistry};
 
 use crate::triggers::channel_member::SupportNewMemberDescriptor;
 use crate::triggers::channel_member_milestone::SupportMemberMilestoneDescriptor;
+use crate::triggers::channel_user_banned::ChannelUserBannedDescriptor;
 use crate::triggers::chat_command::ChatCommandDescriptor;
 use crate::triggers::chat_message::ChatMessageDescriptor;
 use crate::triggers::chat_super_chat::SupportSuperChatDescriptor;
 use crate::triggers::chat_super_sticker::SupportSuperStickerDescriptor;
-use crate::triggers::moderation_ban::ModerationBanDescriptor;
-use crate::triggers::moderation_timeout::ModerationTimeoutDescriptor;
 use crate::triggers::stream_offline::ChannelBroadcastEndedDescriptor;
 use crate::triggers::stream_online::ChannelBroadcastStartedDescriptor;
 
@@ -18,8 +17,7 @@ pub fn register_youtube_triggers(registry: &mut TriggerRegistry) -> Result<(), R
     registry.register(Box::new(SupportSuperStickerDescriptor))?;
     registry.register(Box::new(SupportNewMemberDescriptor))?;
     registry.register(Box::new(SupportMemberMilestoneDescriptor))?;
-    registry.register(Box::new(ModerationTimeoutDescriptor))?;
-    registry.register(Box::new(ModerationBanDescriptor))?;
+    registry.register(Box::new(ChannelUserBannedDescriptor))?;
     registry.register(Box::new(ChannelBroadcastStartedDescriptor))?;
     registry.register(Box::new(ChannelBroadcastEndedDescriptor))?;
     Ok(())
@@ -31,10 +29,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn register_adds_all_ten_descriptors() {
+    fn register_does_not_drop_descriptors_to_collisions() {
         let mut reg = TriggerRegistry::new();
         register_youtube_triggers(&mut reg).unwrap();
-        assert_eq!(reg.all().count(), 10);
+        // Each register() call must land a distinct kind id; a colliding id would
+        // be silently lost (or error), making the registered count < the call count.
+        let registered = reg.all().count();
+        let unique_ids: std::collections::HashSet<_> =
+            reg.all().map(|d| d.id().to_owned()).collect();
+        assert_eq!(
+            registered,
+            unique_ids.len(),
+            "duplicate kind ids registered: {registered} descriptors but {} unique ids",
+            unique_ids.len()
+        );
     }
 
     #[test]
@@ -57,8 +65,7 @@ mod tests {
             "youtube.chat.super_sticker",
             "youtube.channel.member",
             "youtube.channel.member_milestone",
-            "youtube.moderation.timeout",
-            "youtube.moderation.ban",
+            "youtube.channel.user_banned",
             "youtube.stream.online",
             "youtube.stream.offline",
         ];

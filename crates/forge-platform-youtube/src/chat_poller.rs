@@ -604,6 +604,12 @@ impl YoutubeChatPoller {
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_owned();
+                let channel_id = banned_details
+                    .and_then(|d| d.get("bannedUserDetails"))
+                    .and_then(|u| u.get("channelId"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_owned();
                 let ban_duration_secs: u64 = banned_details
                     .and_then(|d| d.get("banDurationSeconds"))
                     .and_then(|v| {
@@ -612,10 +618,11 @@ impl YoutubeChatPoller {
                     })
                     .unwrap_or(0);
 
-                let kind = if ban_duration_secs > 0 {
-                    "youtube.moderation.timeout"
+                let is_temporary = ban_duration_secs > 0;
+                let ban_type = if is_temporary {
+                    "temporary"
                 } else {
-                    "youtube.moderation.ban"
+                    "permanent"
                 };
 
                 let chat_payload = ChatPayload {
@@ -627,21 +634,24 @@ impl YoutubeChatPoller {
                     is_event: true,
                     event_detail: None,
                     moderation: ModerationMarks {
-                        timed_out: ban_duration_secs > 0,
-                        banned: ban_duration_secs == 0,
+                        timed_out: is_temporary,
+                        banned: !is_temporary,
                         deleted: false,
                     },
                 };
 
                 let mut payload = serde_json::json!({
-                    "user_display_name": display_name,
+                    "ban.target.display_name": display_name,
+                    "ban.target.channel_id": channel_id,
+                    "ban.type": ban_type,
+                    "ban.duration_seconds": ban_duration_secs as i64,
                 });
-                if ban_duration_secs > 0 {
-                    payload["ban_duration_seconds"] =
-                        serde_json::Value::Number(ban_duration_secs.into());
-                }
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
-                Some(Event::new(EventSource::YouTube, kind, payload))
+                Some(Event::new(
+                    EventSource::YouTube,
+                    "youtube.channel.user_banned",
+                    payload,
+                ))
             }
 
             _ => None,
@@ -1004,6 +1014,80 @@ mod tests {
             }
             other => panic!("expected SuperChat, got {other:?}"),
         }
+    }
+
+    fn banned_item(
+        id: &str,
+        display_name: &str,
+        duration_secs: serde_json::Value,
+    ) -> serde_json::Value {
+        json!({
+            "id": id,
+            "snippet": {
+                "type": "userBannedEvent",
+                "userBannedDetails": {
+                    "bannedUserDetails": {
+                        "displayName": display_name,
+                        "channelId": "UCbanned"
+                    },
+                    "banDurationSeconds": duration_secs
+                }
+            }
+        })
+    }
+
+    async fn first_banned_event(server: &MockServer) -> Event {
+        let (poller, mut rx) = make_poller_with_receiver(server);
+        let cancel = CancellationToken::new();
+        let cancel_clone = cancel.clone();
+        let handle = tokio::spawn(async move { poller.run(cancel_clone).await });
+
+        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        cancel.cancel();
+        handle.await.unwrap().unwrap();
+        event
+    }
+
+    #[tokio::test]
+    async fn user_banned_with_duration_emits_temporary_ban() {
+        let server = MockServer::start().await;
+        mount_broadcast_mock(&server, broadcast_response("chat-ban-temp")).await;
+        mount_chat_mock(
+            &server,
+            chat_response(json!([banned_item("ban-1", "Troll", json!(600))]), 3000),
+        )
+        .await;
+
+        let event = first_banned_event(&server).await;
+
+        assert_eq!(event.kind, "youtube.channel.user_banned");
+        assert_eq!(event.payload["ban.type"].as_str().unwrap(), "temporary");
+        assert_eq!(event.payload["ban.duration_seconds"].as_i64().unwrap(), 600);
+        assert_eq!(
+            event.payload["ban.target.display_name"].as_str().unwrap(),
+            "Troll"
+        );
+    }
+
+    #[tokio::test]
+    async fn user_banned_without_duration_emits_permanent_ban() {
+        let server = MockServer::start().await;
+        mount_broadcast_mock(&server, broadcast_response("chat-ban-perm")).await;
+        mount_chat_mock(
+            &server,
+            chat_response(json!([banned_item("ban-2", "Spammer", json!(0))]), 3000),
+        )
+        .await;
+
+        let event = first_banned_event(&server).await;
+
+        assert_eq!(event.kind, "youtube.channel.user_banned");
+        assert_eq!(event.payload["ban.type"].as_str().unwrap(), "permanent");
+        assert_eq!(event.payload["ban.duration_seconds"].as_i64().unwrap(), 0);
     }
 
     #[test]

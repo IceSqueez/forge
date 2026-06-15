@@ -1,10 +1,9 @@
 pub(crate) mod channel_member;
 pub(crate) mod channel_member_milestone;
+pub(crate) mod channel_user_banned;
 pub(crate) mod chat_command;
 pub(crate) mod chat_message;
 pub(crate) mod chat_super_chat;
 pub(crate) mod chat_super_sticker;
-pub(crate) mod moderation_ban;
-pub(crate) mod moderation_timeout;
 pub(crate) mod stream_offline;
 pub(crate) mod stream_online;

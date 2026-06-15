@@ -275,6 +275,7 @@ mod tests {
             "channel.guest_star_session.begin",
             "channel.guest_star_session.end",
             "channel.guest_star_settings.update",
+            "channel.guest_star_slot.update",
             "channel.guest_star_guest.update",
             "channel.automod.settings.update",
             "channel.automod.terms.update",

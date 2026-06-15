@@ -291,6 +291,7 @@ mod tests {
             "twitch.guest_star.session_began",
             "twitch.guest_star.session_ended",
             "twitch.guest_star.settings_updated",
+            "twitch.guest_star.slot_updated",
             "twitch.guest_star.guest_updated",
             "twitch.shared_chat.session_began",
             "twitch.shared_chat.session_updated",

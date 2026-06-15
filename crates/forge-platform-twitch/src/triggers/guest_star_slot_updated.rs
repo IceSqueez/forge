@@ -99,3 +99,118 @@ impl TriggerKindDescriptor for GuestStarSlotUpdatedDescriptor {
             .set("slot.volume".to_owned(), Variant::Int(volume))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn slot_event() -> Event {
+        // session_id is read from the payload root; the rest nest under `slot`.
+        Event::new(
+            EventSource::Twitch,
+            "channel.guest_star_slot.update",
+            serde_json::json!({
+                "session_id": "sess-77",
+                "slot": {
+                    "slot_id": "2",
+                    "host_video_enabled": true,
+                    "host_audio_enabled": false,
+                    "volume": 80,
+                },
+            }),
+        )
+    }
+
+    #[test]
+    fn event_filter_targets_slot_update_kind_from_twitch() {
+        let filter = GuestStarSlotUpdatedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::Twitch));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("channel.guest_star_slot.update")
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_reads_session_from_root_and_slot_fields_from_nested_object() {
+        // Guards the top-level-vs-nested split: session.id comes from the payload
+        // root, every slot.* var from the `slot` sub-object. A flattened read of
+        // either side would surface empty/default values here.
+        let stack = GuestStarSlotUpdatedDescriptor.build_arg_stack(&slot_event());
+        assert_eq!(
+            stack.get("session.id"),
+            Some(&Variant::String("sess-77".to_owned()))
+        );
+        assert_eq!(stack.get("slot.id"), Some(&Variant::String("2".to_owned())));
+        assert_eq!(
+            stack.get("slot.host_video_enabled"),
+            Some(&Variant::Bool(true))
+        );
+        assert_eq!(
+            stack.get("slot.host_audio_enabled"),
+            Some(&Variant::Bool(false))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_marshals_integer_volume_as_int_variant() {
+        // Downstream scripts do arithmetic / comparisons on %slot.volume%; a
+        // stringify regression (String("80")) would silently break those.
+        let stack = GuestStarSlotUpdatedDescriptor.build_arg_stack(&slot_event());
+        assert_eq!(stack.get("slot.volume"), Some(&Variant::Int(80)));
+    }
+
+    #[test]
+    fn build_arg_stack_degrades_fractional_volume_to_zero_without_panicking() {
+        // serde_json's as_i64() yields None for a non-integral number, so a
+        // fractional volume falls back to 0 rather than truncating or panicking.
+        let event = Event::new(
+            EventSource::Twitch,
+            "channel.guest_star_slot.update",
+            serde_json::json!({
+                "session_id": "sess-9",
+                "slot": { "slot_id": "1", "volume": 42.5 },
+            }),
+        );
+        let stack = GuestStarSlotUpdatedDescriptor.build_arg_stack(&event);
+        assert_eq!(stack.get("slot.volume"), Some(&Variant::Int(0)));
+    }
+
+    #[test]
+    fn build_arg_stack_degrades_non_numeric_volume_to_zero_without_panicking() {
+        let event = Event::new(
+            EventSource::Twitch,
+            "channel.guest_star_slot.update",
+            serde_json::json!({
+                "session_id": "sess-9",
+                "slot": { "slot_id": "1", "volume": "loud" },
+            }),
+        );
+        let stack = GuestStarSlotUpdatedDescriptor.build_arg_stack(&event);
+        assert_eq!(stack.get("slot.volume"), Some(&Variant::Int(0)));
+    }
+
+    #[test]
+    fn build_arg_stack_on_empty_payload_yields_safe_defaults() {
+        let event = Event::new(
+            EventSource::Twitch,
+            "channel.guest_star_slot.update",
+            serde_json::json!({}),
+        );
+        let stack = GuestStarSlotUpdatedDescriptor.build_arg_stack(&event);
+        assert_eq!(
+            stack.get("session.id"),
+            Some(&Variant::String(String::new()))
+        );
+        assert_eq!(stack.get("slot.id"), Some(&Variant::String(String::new())));
+        assert_eq!(
+            stack.get("slot.host_video_enabled"),
+            Some(&Variant::Bool(false))
+        );
+        assert_eq!(
+            stack.get("slot.host_audio_enabled"),
+            Some(&Variant::Bool(false))
+        );
+        assert_eq!(stack.get("slot.volume"), Some(&Variant::Int(0)));
+    }
+}

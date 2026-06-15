@@ -187,6 +187,16 @@ const TOPICS: &[TopicSpec] = &[
         condition_fn: condition_broadcaster,
     },
     TopicSpec {
+        kind: "channel.vip.add",
+        version: "1",
+        condition_fn: condition_broadcaster,
+    },
+    TopicSpec {
+        kind: "channel.vip.remove",
+        version: "1",
+        condition_fn: condition_broadcaster,
+    },
+    TopicSpec {
         kind: "channel.shield_mode.begin",
         version: "1",
         condition_fn: condition_broadcaster,

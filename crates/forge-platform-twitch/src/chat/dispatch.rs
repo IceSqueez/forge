@@ -74,6 +74,8 @@ const NOTIFICATION_ROUTES: &[(&str, NotificationRoute)] = &[
         "channel.moderator.remove",
         ChatSession::publish_moderator_remove_event,
     ),
+    ("channel.vip.add", ChatSession::publish_vip_add_event),
+    ("channel.vip.remove", ChatSession::publish_vip_remove_event),
     (
         "channel.shield_mode.begin",
         ChatSession::publish_shield_mode_begin_event,

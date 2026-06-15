@@ -1375,6 +1375,78 @@ impl ChatSession {
         ));
     }
 
+    pub(super) fn publish_vip_add_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let user_id = event_data
+            .get("user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_login = event_data
+            .get("user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_display_name = event_data
+            .get("user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(user_login = %user_login, "vip added");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.vip.add",
+            serde_json::json!({
+                "user": {
+                    "id": user_id,
+                    "login": user_login,
+                    "display_name": user_display_name,
+                },
+            }),
+        ));
+    }
+
+    pub(super) fn publish_vip_remove_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let user_id = event_data
+            .get("user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_login = event_data
+            .get("user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let user_display_name = event_data
+            .get("user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(user_login = %user_login, "vip removed");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.vip.remove",
+            serde_json::json!({
+                "user": {
+                    "id": user_id,
+                    "login": user_login,
+                    "display_name": user_display_name,
+                },
+            }),
+        ));
+    }
+
     pub(super) fn publish_shield_mode_begin_event(
         &self,
         event_data: &serde_json::Value,

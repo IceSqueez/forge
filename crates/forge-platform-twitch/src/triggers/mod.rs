@@ -61,6 +61,8 @@ mod support_gift_sub;
 mod support_resubscriber;
 mod support_subscriber;
 mod suspicious_user_message;
+mod vip_added;
+mod vip_removed;
 mod warning_acknowledged;
 
 use forge_registry::{RegistryError, TriggerRegistry};
@@ -127,6 +129,8 @@ use support_gift_sub::SupportGiftSubDescriptor;
 use support_resubscriber::SupportResubscriberDescriptor;
 use support_subscriber::SupportSubscriberDescriptor;
 use suspicious_user_message::SuspiciousUserMessageDescriptor;
+use vip_added::VipAddedDescriptor;
+use vip_removed::VipRemovedDescriptor;
 use warning_acknowledged::WarningAcknowledgedDescriptor;
 
 pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), RegistryError> {
@@ -158,6 +162,8 @@ pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), Registr
     reg.register(Box::new(CharityStoppedDescriptor))?;
     reg.register(Box::new(ModeratorAddedDescriptor))?;
     reg.register(Box::new(ModeratorRemovedDescriptor))?;
+    reg.register(Box::new(VipAddedDescriptor))?;
+    reg.register(Box::new(VipRemovedDescriptor))?;
     reg.register(Box::new(ShieldModeStartedDescriptor))?;
     reg.register(Box::new(ShieldModeEndedDescriptor))?;
     reg.register(Box::new(ShoutoutSentDescriptor))?;

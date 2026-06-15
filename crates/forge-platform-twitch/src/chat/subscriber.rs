@@ -341,6 +341,11 @@ const TOPICS: &[TopicSpec] = &[
         condition_fn: condition_broadcaster,
     },
     TopicSpec {
+        kind: "channel.guest_star_slot.update",
+        version: "beta",
+        condition_fn: condition_broadcaster,
+    },
+    TopicSpec {
         kind: "channel.automod.settings.update",
         version: "1",
         condition_fn: condition_chat,

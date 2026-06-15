@@ -2766,6 +2766,58 @@ impl ChatSession {
         ));
     }
 
+    pub(super) fn publish_guest_star_slot_update_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let session_id = event_data
+            .get("session_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
+        let slot_id = event_data
+            .get("slot_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
+        let host_video_enabled = event_data
+            .get("host_video_enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let host_audio_enabled = event_data
+            .get("host_audio_enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let volume = event_data
+            .get("volume")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+
+        info!(
+            session_id = %session_id,
+            slot_id = %slot_id,
+            host_video_enabled,
+            host_audio_enabled,
+            volume,
+            "guest star slot update"
+        );
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "channel.guest_star_slot.update",
+            serde_json::json!({
+                "session_id": session_id,
+                "slot": {
+                    "slot_id": slot_id,
+                    "host_video_enabled": host_video_enabled,
+                    "host_audio_enabled": host_audio_enabled,
+                    "volume": volume,
+                },
+            }),
+        ));
+    }
+
     pub(super) fn publish_automod_settings_update_event(
         &self,
         event_data: &serde_json::Value,

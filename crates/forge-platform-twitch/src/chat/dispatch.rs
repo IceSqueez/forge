@@ -209,6 +209,7 @@ const NOTIFICATION_ROUTES: &[(&str, NotificationRoute)] = &[
         "channel.channel_points_automatic_reward_redemption.add",
         ChatSession::publish_automatic_reward_event,
     ),
+    ("user.whisper.message", ChatSession::publish_whisper_event),
 ];
 
 #[cfg(test)]

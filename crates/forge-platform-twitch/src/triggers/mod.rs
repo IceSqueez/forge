@@ -66,6 +66,7 @@ mod unban_request_resolved;
 mod vip_added;
 mod vip_removed;
 mod warning_acknowledged;
+mod whisper_received;
 
 use forge_registry::{RegistryError, TriggerRegistry};
 
@@ -136,6 +137,7 @@ use unban_request_resolved::UnbanRequestResolvedDescriptor;
 use vip_added::VipAddedDescriptor;
 use vip_removed::VipRemovedDescriptor;
 use warning_acknowledged::WarningAcknowledgedDescriptor;
+use whisper_received::WhisperReceivedDescriptor;
 
 pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), RegistryError> {
     reg.register(Box::new(ChannelBanDescriptor))?;
@@ -205,6 +207,7 @@ pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), Registr
     reg.register(Box::new(ChannelUpdatedDescriptor))?;
     reg.register(Box::new(AdBreakStartedDescriptor))?;
     reg.register(Box::new(AutomaticRewardRedeemedDescriptor))?;
+    reg.register(Box::new(WhisperReceivedDescriptor))?;
     Ok(())
 }
 

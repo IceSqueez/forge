@@ -3203,6 +3203,58 @@ impl ChatSession {
         ));
     }
 
+    pub(super) fn publish_whisper_event(
+        &self,
+        event_data: &serde_json::Value,
+        _frame_msg_id: &str,
+    ) {
+        let from_user_id = event_data
+            .get("from_user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let from_user_login = event_data
+            .get("from_user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let from_user_name = event_data
+            .get("from_user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let whisper_id = event_data
+            .get("whisper_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let whisper_text = event_data
+            .get("whisper")
+            .and_then(|w| w.get("text"))
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+
+        info!(user_login = %from_user_login, "whisper received");
+
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "user.whisper.message",
+            serde_json::json!({
+                "user": {
+                    "id": from_user_id,
+                    "login": from_user_login,
+                    "display_name": from_user_name,
+                    "color": "",
+                },
+                "whisper": {
+                    "text": whisper_text,
+                },
+                "whisper_thread_id": whisper_id,
+            }),
+        ));
+    }
+
     fn set_state(&self, state: ChatConnectionState) {
         let _ = self.state_tx.send(state);
     }

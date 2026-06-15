@@ -61,6 +61,10 @@ fn condition_raid_sent(broadcaster_id: &str, _user_id: &str) -> serde_json::Valu
     serde_json::json!({ "from_broadcaster_user_id": broadcaster_id })
 }
 
+fn condition_user(_broadcaster_id: &str, user_id: &str) -> serde_json::Value {
+    serde_json::json!({ "user_id": user_id })
+}
+
 const TOPICS: &[TopicSpec] = &[
     TopicSpec {
         kind: "channel.chat.message",
@@ -380,6 +384,11 @@ const TOPICS: &[TopicSpec] = &[
         kind: "channel.channel_points_automatic_reward_redemption.add",
         version: "1",
         condition_fn: condition_broadcaster,
+    },
+    TopicSpec {
+        kind: "user.whisper.message",
+        version: "1",
+        condition_fn: condition_user,
     },
 ];
 

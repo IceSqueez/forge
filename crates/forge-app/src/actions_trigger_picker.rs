@@ -40,6 +40,7 @@ pub struct CustomInstanceChip {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PlatformGroup {
     Twitch,
+    YouTube,
     Obs,
     Script,
     Core,
@@ -130,6 +131,8 @@ pub fn build_picker_entries(
 fn platform_group_for(kind_id: &str) -> PlatformGroup {
     if kind_id.starts_with("twitch.") {
         PlatformGroup::Twitch
+    } else if kind_id.starts_with("youtube.") {
+        PlatformGroup::YouTube
     } else if kind_id.starts_with("obs.") {
         PlatformGroup::Obs
     } else if kind_id.starts_with("script.") {
@@ -287,18 +290,21 @@ pub fn view<'a>(
 
     let all_groups = [
         PlatformGroup::Twitch,
+        PlatformGroup::YouTube,
         PlatformGroup::Obs,
         PlatformGroup::Script,
         PlatformGroup::Core,
     ];
     let platform_group_label = |g: PlatformGroup| match g {
         PlatformGroup::Twitch => "Twitch",
+        PlatformGroup::YouTube => "YouTube",
         PlatformGroup::Obs => "OBS",
         PlatformGroup::Script => "Script",
         PlatformGroup::Core => "Core",
     };
     let platform_group_color = |g: PlatformGroup| match g {
         PlatformGroup::Twitch => p.brand,
+        PlatformGroup::YouTube => p.platform_youtube,
         PlatformGroup::Obs => p.text_secondary,
         PlatformGroup::Script => p.warning,
         PlatformGroup::Core => p.info,

@@ -675,6 +675,135 @@ impl YoutubeChatPoller {
                 ))
             }
 
+            "messageDeletedEvent" => {
+                let deleted_message_id = snippet
+                    .get("messageDeletedDetails")
+                    .and_then(|d| d.get("deletedMessageId"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_owned();
+
+                let moderator_channel_id = author_details
+                    .and_then(|ad| ad.get("channelId"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_owned();
+
+                let chat_payload = ChatPayload {
+                    platform_msg_id: id.clone(),
+                    author: extract_author(author_details),
+                    author_color: None,
+                    segments: vec![],
+                    badges: extract_badges(author_details),
+                    is_event: true,
+                    event_detail: None,
+                    moderation: ModerationMarks {
+                        timed_out: false,
+                        banned: false,
+                        deleted: true,
+                    },
+                };
+
+                let mut payload = serde_json::json!({
+                    "chat.message_id": deleted_message_id,
+                    "chat.target_user.channel_id": "",
+                    "chat.moderator.channel_id": moderator_channel_id,
+                });
+                payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
+                Some(Event::new(
+                    EventSource::YouTube,
+                    "youtube.chat.message_deleted",
+                    payload,
+                ))
+            }
+
+            "membershipGiftingEvent" => {
+                let details = snippet.get("membershipGiftingDetails");
+                let count = details
+                    .and_then(|d| d.get("giftMembershipsCount"))
+                    .and_then(|v| {
+                        v.as_i64()
+                            .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+                    })
+                    .unwrap_or(0);
+                let level_name = details
+                    .and_then(|d| d.get("giftMembershipsLevelName"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_owned();
+
+                let gifter_channel_id = author_details
+                    .and_then(|ad| ad.get("channelId"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_owned();
+                let gifter_display_name = extract_author(author_details);
+
+                let chat_payload = ChatPayload {
+                    platform_msg_id: id.clone(),
+                    author: gifter_display_name.clone(),
+                    author_color: None,
+                    segments: vec![],
+                    badges: extract_badges(author_details),
+                    is_event: true,
+                    event_detail: None,
+                    moderation: ModerationMarks::default(),
+                };
+
+                let mut payload = serde_json::json!({
+                    "gift.count": count,
+                    "gift.level_name": level_name,
+                    "gifter.channel_id": gifter_channel_id,
+                    "gifter.display_name": gifter_display_name,
+                });
+                payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
+                Some(Event::new(
+                    EventSource::YouTube,
+                    "youtube.channel.member_gift",
+                    payload,
+                ))
+            }
+
+            "giftMembershipReceivedEvent" => {
+                let level_name = snippet
+                    .get("giftMembershipReceivedDetails")
+                    .and_then(|d| d.get("memberLevelName"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_owned();
+
+                let recipient_channel_id = author_details
+                    .and_then(|ad| ad.get("channelId"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_owned();
+                let recipient_display_name = extract_author(author_details);
+
+                let chat_payload = ChatPayload {
+                    platform_msg_id: id.clone(),
+                    author: recipient_display_name.clone(),
+                    author_color: None,
+                    segments: vec![],
+                    badges: extract_badges(author_details),
+                    is_event: true,
+                    event_detail: None,
+                    moderation: ModerationMarks::default(),
+                };
+
+                let mut payload = serde_json::json!({
+                    "gift.level_name": level_name,
+                    "gifter.display_name": "",
+                    "recipient.channel_id": recipient_channel_id,
+                    "recipient.display_name": recipient_display_name,
+                });
+                payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
+                Some(Event::new(
+                    EventSource::YouTube,
+                    "youtube.channel.member_gift_received",
+                    payload,
+                ))
+            }
+
             _ => None,
         }
     }

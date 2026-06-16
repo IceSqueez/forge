@@ -5,5 +5,8 @@ pub(crate) mod chat_command;
 pub(crate) mod chat_message;
 pub(crate) mod chat_super_chat;
 pub(crate) mod chat_super_sticker;
+pub(crate) mod member_gift;
+pub(crate) mod member_gift_received;
+pub(crate) mod message_deleted;
 pub(crate) mod stream_offline;
 pub(crate) mod stream_online;

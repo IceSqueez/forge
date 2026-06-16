@@ -7,6 +7,9 @@ use crate::triggers::chat_command::ChatCommandDescriptor;
 use crate::triggers::chat_message::ChatMessageDescriptor;
 use crate::triggers::chat_super_chat::SupportSuperChatDescriptor;
 use crate::triggers::chat_super_sticker::SupportSuperStickerDescriptor;
+use crate::triggers::member_gift::ChannelMemberGiftDescriptor;
+use crate::triggers::member_gift_received::ChannelMemberGiftReceivedDescriptor;
+use crate::triggers::message_deleted::ChatMessageDeletedDescriptor;
 use crate::triggers::stream_offline::ChannelBroadcastEndedDescriptor;
 use crate::triggers::stream_online::ChannelBroadcastStartedDescriptor;
 
@@ -18,6 +21,9 @@ pub fn register_youtube_triggers(registry: &mut TriggerRegistry) -> Result<(), R
     registry.register(Box::new(SupportNewMemberDescriptor))?;
     registry.register(Box::new(SupportMemberMilestoneDescriptor))?;
     registry.register(Box::new(ChannelUserBannedDescriptor))?;
+    registry.register(Box::new(ChatMessageDeletedDescriptor))?;
+    registry.register(Box::new(ChannelMemberGiftDescriptor))?;
+    registry.register(Box::new(ChannelMemberGiftReceivedDescriptor))?;
     registry.register(Box::new(ChannelBroadcastStartedDescriptor))?;
     registry.register(Box::new(ChannelBroadcastEndedDescriptor))?;
     Ok(())

@@ -1,3 +1,4 @@
+pub mod active_broadcast_id;
 pub mod auth;
 pub mod builtin;
 pub mod chat_poller;
@@ -8,9 +9,11 @@ pub mod live_chat_id;
 pub mod moderation;
 pub mod quota_state;
 pub mod send_chat;
+pub mod stream_metadata;
 pub mod sub_actions;
 pub mod triggers;
 
+pub use active_broadcast_id::ActiveBroadcastIdHandle;
 pub use auth::{
     GOOGLE_AUTHORIZE_ENDPOINT, GOOGLE_TOKEN_ENDPOINT, GoogleAuthFlow, LoopbackCode,
     YOUTUBE_BROADCASTER_SCOPES, YoutubeAuthBundle, YoutubeAuthError, client_credentials,
@@ -24,7 +27,8 @@ pub use live_chat_id::LiveChatIdHandle;
 pub use moderation::YoutubeModeration;
 pub use quota_state::QuotaState;
 pub use send_chat::YoutubeSendChat;
+pub use stream_metadata::YoutubeStreamMetadata;
 pub use sub_actions::{
-    BanUserRunner, SendMessageRunner, TimeoutUserRunner, UnbanUserRunner,
-    register_youtube_sub_actions,
+    BanUserRunner, SendMessageRunner, TimeoutUserRunner, UnbanUserRunner, UpdateCategoryRunner,
+    UpdateDescriptionRunner, UpdatePrivacyRunner, UpdateTitleRunner, register_youtube_sub_actions,
 };

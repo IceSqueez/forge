@@ -9,6 +9,7 @@ use tokio::sync::Mutex;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_util::sync::CancellationToken;
 
+use crate::active_broadcast_id::ActiveBroadcastIdHandle;
 use crate::dedup_window::{DEDUP_WINDOW_SIZE, DedupWindow};
 use crate::live_chat_id::LiveChatIdHandle;
 use crate::quota_state::{BROADCAST_COST, CHAT_POLL_COST, QuotaState, today_pacific};
@@ -33,6 +34,7 @@ pub struct YoutubeChatPoller {
     api_base: String,
     quota_tracker: Arc<Mutex<QuotaState>>,
     live_chat_id: LiveChatIdHandle,
+    active_broadcast_id: ActiveBroadcastIdHandle,
 }
 
 impl YoutubeChatPoller {
@@ -43,6 +45,7 @@ impl YoutubeChatPoller {
         bus_sender: UnboundedSender<Event>,
         channel_id: String,
         live_chat_id: LiveChatIdHandle,
+        active_broadcast_id: ActiveBroadcastIdHandle,
         quota_tracker: Arc<Mutex<QuotaState>>,
     ) -> Self {
         Self {
@@ -53,6 +56,7 @@ impl YoutubeChatPoller {
             api_base: DEFAULT_API_BASE.to_owned(),
             quota_tracker,
             live_chat_id,
+            active_broadcast_id,
         }
     }
 
@@ -96,10 +100,11 @@ impl YoutubeChatPoller {
                 }
             };
 
-            let live_chat_id = match self.fetch_live_chat_id(&token).await {
-                Ok(Some(id)) => id,
+            let (live_chat_id, broadcast_id) = match self.fetch_live_chat_id(&token).await {
+                Ok(Some(ids)) => ids,
                 Ok(None) => {
                     self.live_chat_id.set(None);
+                    self.active_broadcast_id.set(None);
                     let event = Event::new(
                         EventSource::YouTube,
                         "youtube.channel.no_active_broadcast",
@@ -116,6 +121,7 @@ impl YoutubeChatPoller {
                 }
                 Err(e) => {
                     self.live_chat_id.set(None);
+                    self.active_broadcast_id.set(None);
                     tracing::warn!("broadcast resolution failed: {e}");
                     tokio::select! {
                         () = tokio::time::sleep(Duration::from_secs(BROADCAST_CADENCE_SECS)) => {}
@@ -126,6 +132,7 @@ impl YoutubeChatPoller {
             };
 
             self.live_chat_id.set(Some(live_chat_id.clone()));
+            self.active_broadcast_id.set(Some(broadcast_id));
 
             let mut next_page_token: Option<String> = None;
             let broadcast_resolved_at = tokio::time::Instant::now();
@@ -209,10 +216,17 @@ impl YoutubeChatPoller {
             }
 
             self.live_chat_id.set(None);
+            self.active_broadcast_id.set(None);
         }
     }
 
-    async fn fetch_live_chat_id(&self, token: &str) -> Result<Option<String>, PlatformError> {
+    /// Resolves the active broadcast in one `liveBroadcasts.list` call, returning
+    /// both its `liveChatId` (for polling) and its resource `id` (the video id used
+    /// by `videos.update`) — same request, no extra quota.
+    async fn fetch_live_chat_id(
+        &self,
+        token: &str,
+    ) -> Result<Option<(String, String)>, PlatformError> {
         let url = format!("{}/liveBroadcasts", self.api_base);
         let resp = self
             .client
@@ -239,16 +253,23 @@ impl YoutubeChatPoller {
             reason: e.to_string(),
         })?;
 
-        let id = body
+        let item = body
             .get("items")
             .and_then(|v| v.as_array())
-            .and_then(|arr| arr.first())
+            .and_then(|arr| arr.first());
+
+        let live_chat_id = item
             .and_then(|item| item.get("snippet"))
             .and_then(|snippet| snippet.get("liveChatId"))
-            .and_then(|v| v.as_str())
-            .map(ToOwned::to_owned);
+            .and_then(|v| v.as_str());
+        let broadcast_id = item
+            .and_then(|item| item.get("id"))
+            .and_then(|v| v.as_str());
 
-        Ok(id)
+        Ok(match (live_chat_id, broadcast_id) {
+            (Some(lc), Some(b)) => Some((lc.to_owned(), b.to_owned())),
+            _ => None,
+        })
     }
 
     async fn fetch_chat_messages(
@@ -806,6 +827,7 @@ mod tests {
             tx.clone(),
             "UCtest".to_owned(),
             LiveChatIdHandle::new(),
+            ActiveBroadcastIdHandle::new(),
             make_quota(),
         )
         .with_api_base(server.uri());
@@ -824,6 +846,7 @@ mod tests {
             tx,
             "UCtest".to_owned(),
             LiveChatIdHandle::new(),
+            ActiveBroadcastIdHandle::new(),
             make_quota(),
         )
         .with_api_base(server.uri());
@@ -844,6 +867,7 @@ mod tests {
             tx,
             "UCtest".to_owned(),
             handle.clone(),
+            ActiveBroadcastIdHandle::new(),
             make_quota(),
         )
         .with_api_base(server.uri());
@@ -861,6 +885,7 @@ mod tests {
             tx,
             "UCtest".to_owned(),
             LiveChatIdHandle::new(),
+            ActiveBroadcastIdHandle::new(),
             make_quota(),
         )
         .with_api_base(server.uri());
@@ -1164,6 +1189,7 @@ mod tests {
             tx,
             "UCtest".to_owned(),
             LiveChatIdHandle::new(),
+            ActiveBroadcastIdHandle::new(),
             make_quota(),
         )
         .with_api_base(server.uri());
@@ -1277,6 +1303,7 @@ mod tests {
             tx,
             "UCtest".to_owned(),
             handle.clone(),
+            ActiveBroadcastIdHandle::new(),
             make_quota(),
         )
         .with_api_base(server.uri());

@@ -488,6 +488,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
                 });
 
                 let yt_live_chat_id = forge_platform_youtube::LiveChatIdHandle::new();
+                let yt_active_broadcast = forge_platform_youtube::ActiveBroadcastIdHandle::new();
                 let yt_quota = Arc::new(tokio::sync::Mutex::new(
                     forge_platform_youtube::QuotaState::default(),
                 ));
@@ -512,10 +513,21 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
                     Arc::clone(&yt_quota),
                 ));
 
+                let manager_for_meta = Arc::clone(&manager);
+                let yt_metadata = Arc::new(forge_platform_youtube::YoutubeStreamMetadata::new(
+                    Arc::new(move || {
+                        let m = Arc::clone(&manager_for_meta);
+                        Box::pin(async move { m.get_valid_access_token().await })
+                    }),
+                    yt_active_broadcast.clone(),
+                    Arc::clone(&yt_quota),
+                ));
+
                 if let Err(e) = forge_platform_youtube::register_youtube_sub_actions(
                     &mut sub_action_reg,
                     Arc::clone(&yt_send),
                     Arc::clone(&yt_moderation),
+                    Arc::clone(&yt_metadata),
                 ) {
                     tracing::warn!("youtube sub-action runner registration failed: {e}");
                 }
@@ -530,6 +542,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
                     yt_tx,
                     channel_id,
                     yt_live_chat_id,
+                    yt_active_broadcast,
                     yt_quota,
                 );
                 tokio::spawn(async move {

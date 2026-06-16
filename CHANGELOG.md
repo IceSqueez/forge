@@ -1,6 +1,46 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-beta.13] - 2026-06-16
+### ⚙️ Miscellaneous Tasks
+- *(deps)* Bump tower-http from 0.6.11 to 0.7.0 (#28)
+- *(deps)* Bump fluent from 0.16.1 to 0.17.0 (#29)
+- *(deps)* Bump regex from 1.12.3 to 1.12.4 (#30)
+- *(deps)* Bump cpal from 0.18.0 to 0.18.1 (#32)
+- *(deps)* Bump fluent-langneg from 0.13.1 to 0.14.2 (#31)
+
+### 🐛 Bug Fixes
+- *(deps)* Pin fluent-langneg to 0.13 to match fluent stack
+- *(ui)* Show youtube triggers in their own picker group
+
+### 📚 Documentation
+- *(readme)* Expand youtube trigger and sub-action coverage
+
+### 🚀 Features
+- *(storage)* Migrate youtube trigger kind_ids to canonical scheme
+- *(youtube)* Add chat send-message sub-action runner
+- *(youtube)* Add ban, timeout, and unban sub-action runners
+- *(youtube)* Add moderator add and remove sub-action runners
+- *(youtube)* Add chat delete-message sub-action runner
+- *(youtube)* Add stream metadata update sub-action runners
+- *(youtube)* Add message-deleted and membership-gift triggers
+- *(youtube)* Add stream title-changed trigger
+
+### 🚜 Refactor
+- *(youtube)* Rename trigger ids to catalog-canonical scheme
+- *(youtube)* Consolidate ban and timeout into user_banned trigger
+
+### 🧪 Testing
+- *(storage)* Cover youtube kind_id rename migration
+- *(youtube)* Cover chat send-message sub-action runner
+- *(youtube)* Cover ban, timeout, and unban moderation runners
+- *(youtube)* Cover moderator add and remove runners
+- *(youtube)* Cover chat delete-message sub-action runner
+- *(youtube)* Cover stream metadata update runners and merge contract
+- *(youtube)* Cover message-deleted and membership-gift triggers
+- *(youtube)* Cover stream title-changed trigger
+- *(ui)* Cover youtube trigger group in picker dispatch
+
 ## [0.1.0-beta.12] - 2026-06-15
 ### ⚠️ BREAKING CHANGES
 - **twitch**: stored Twitch tokens lack new scopes; reauth at next connect
@@ -8,6 +48,7 @@ All notable changes to this project will be documented in this file.
 
 ### ⚙️ Miscellaneous Tasks
 - *(deps)* Bump actions/cache from 4 to 5 (#27)
+- Release
 
 ### 🎨 Styling
 - *(twitch)* Apply rustfmt to reward toggle runners
@@ -26,6 +67,7 @@ All notable changes to this project will be documented in this file.
 
 ### 📚 Documentation
 - *(readme)* Expand twitch trigger and sub-action coverage
+- *(release)* Release v0.1.0-beta.12
 
 ### 🚀 Features
 - *(twitch)* Route EventSub notifications by subscription type

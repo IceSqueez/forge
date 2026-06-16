@@ -24,7 +24,9 @@ Connect to Twitch, YouTube, and Kick simultaneously. React to chat events with a
 - **Twitch**
   - EventSub triggers: chat (commands, messages, cheers), shared-chat, subs/resubs/gift-subs, follows, raids (received & sent), channel-point redemptions (custom & automatic) & reward CRUD, polls, predictions, hype train, charity, goals, moderation (ban/timeout/unban, mod add/remove, shield mode, suspicious users, warning acknowledged), shoutouts (sent & received), guest-star, ad break, automod, stream on/off, channel & chat-settings updates
   - Sub-actions: send chat/reply/announcement/whisper, ban/timeout/unban/warn, mod & VIP management, shoutout, start/cancel raid, run/snooze ad, poll & prediction lifecycle, reward CRUD & redemption fulfillment, automod approve/deny/terms, update title/category/tags, stream marker, get current goal, guest-star & shield-mode control, chat clear & message delete
-- **YouTube** — Live chat polling, Super Chat/Sticker, new member, member milestone; send-chat sub-action
+- **YouTube** (live-chat polling)
+  - Triggers: chat message, chat command, Super Chat, Super Sticker, message deleted, new member, member milestone, membership gift (mass) & gift received, stream online/offline, stream title changed, user banned/timed-out
+  - Sub-actions: send/delete chat message, ban/timeout/unban user, add/remove moderator, update stream title/description/category/privacy
 - **Kick** — Live chat, subs, hosts, bans (community implementation)
 
 ### Actions & automation

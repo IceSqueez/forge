@@ -348,6 +348,87 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn delete_issues_delete_with_id_query_and_charges_delete_cost() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("DELETE"))
+            .and(path("/liveChat/messages"))
+            .and(wiremock::matchers::query_param("id", "msg-xyz"))
+            .respond_with(ResponseTemplate::new(204))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let quota = Arc::new(Mutex::new(QuotaState::default()));
+        let (sender, _handle) = make_sender_with_quota(&server, Arc::clone(&quota));
+
+        sender.delete("msg-xyz").await.unwrap();
+
+        let qt = quota.lock().await;
+        assert_eq!(
+            qt.used_today, DELETE_COST,
+            "delete must charge exactly {DELETE_COST} quota units"
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_returns_quota_exhausted_without_issuing_http_call() {
+        let server = MockServer::start().await;
+
+        // Mounted with expect(0): if delete reaches the transport the test fails.
+        Mock::given(method("DELETE"))
+            .and(path("/liveChat/messages"))
+            .respond_with(ResponseTemplate::new(204))
+            .expect(0)
+            .mount(&server)
+            .await;
+
+        let qt_arc = Arc::new(Mutex::new(QuotaState::default()));
+        let today = today_pacific();
+        {
+            let mut qt = qt_arc.lock().await;
+            qt.used_today = 9999;
+            qt.peak_seen = 9999;
+            qt.last_reset_date = today;
+        }
+        let (sender, _handle) = make_sender_with_quota(&server, qt_arc);
+
+        let err = sender.delete("msg-blocked").await.unwrap_err();
+        assert!(
+            matches!(err, PlatformError::QuotaExhausted),
+            "expected QuotaExhausted at limit, got: {err}"
+        );
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "quota exhaustion must short-circuit before any HTTP call"
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_error_does_not_leak_bearer_token_or_url() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("DELETE"))
+            .and(path("/liveChat/messages"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("liveChatMessage not found"))
+            .mount(&server)
+            .await;
+
+        let (sender, _handle) = make_sender(&server);
+
+        let err = sender.delete("missing-id").await.unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            !msg.contains("test-token"),
+            "error must not leak the bearer token: {msg}"
+        );
+        assert!(
+            !msg.contains(&server.uri()),
+            "error must not leak the full request URL: {msg}"
+        );
+    }
+
+    #[tokio::test]
     async fn send_uses_default_retry_after_when_header_absent() {
         let server = MockServer::start().await;
 

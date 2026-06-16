@@ -107,3 +107,121 @@ impl SubActionRunner for DeleteMessageRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use forge_events::{Event, EventPublisher};
+    use forge_types::EventId;
+    use futures::future::BoxFuture;
+    use tokio::sync::Mutex;
+    use wiremock::matchers::{method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::*;
+    use crate::live_chat_id::LiveChatIdHandle;
+    use crate::quota_state::QuotaState;
+
+    struct NoopPublisher;
+    impl EventPublisher for NoopPublisher {
+        fn publish(&self, _: Event) {}
+    }
+
+    fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
+        RunContext {
+            arg_stack: stack,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher: &NoopPublisher,
+        }
+    }
+
+    fn token_source() -> Arc<
+        dyn Fn() -> BoxFuture<'static, Result<String, forge_platform_core::PlatformError>>
+            + Send
+            + Sync,
+    > {
+        Arc::new(|| Box::pin(async { Ok("yt-token".to_owned()) }))
+    }
+
+    fn runner_on(server: &MockServer) -> DeleteMessageRunner {
+        let handle = LiveChatIdHandle::new();
+        let quota = Arc::new(Mutex::new(QuotaState::default()));
+        let sender =
+            YoutubeSendChat::new(token_source(), handle, quota).with_api_base(server.uri());
+        DeleteMessageRunner::new(Arc::new(sender))
+    }
+
+    fn config(message_id: &str) -> SubActionConfig {
+        BTreeMap::from([(
+            "message_id".to_owned(),
+            Variant::String(message_id.to_owned()),
+        )])
+    }
+
+    #[tokio::test]
+    async fn execute_interpolates_message_id_before_delete() {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .and(path("/liveChat/messages"))
+            .and(query_param("id", "abc-123"))
+            .respond_with(ResponseTemplate::new(204))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let runner = runner_on(&server);
+        let stack = ArgStack::new().set("mid".to_owned(), Variant::String("abc-123".to_owned()));
+
+        let (telemetry, _) = runner.execute(&config("%mid%"), &make_ctx(&stack)).await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+    }
+
+    #[tokio::test]
+    async fn empty_message_id_after_interpolation_fails_without_delete() {
+        let server = MockServer::start().await;
+        // No mock mounted; assert via received_requests the transport is untouched.
+        let runner = runner_on(&server);
+        let stack = ArgStack::new().set("mid".to_owned(), Variant::String(String::new()));
+
+        let (telemetry, _) = runner.execute(&config("%mid%"), &make_ctx(&stack)).await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "empty message_id must not reach the delete transport"
+        );
+    }
+
+    #[test]
+    fn validate_config_rejects_empty_or_non_string_id_and_accepts_valid() {
+        let runner = DeleteMessageRunner::new(Arc::new(
+            YoutubeSendChat::new(
+                token_source(),
+                LiveChatIdHandle::new(),
+                Arc::new(Mutex::new(QuotaState::default())),
+            )
+            .with_api_base("http://127.0.0.1:0".to_owned()),
+        ));
+
+        let cases: Vec<(&str, SubActionConfig, bool)> = vec![
+            ("non-empty id", config("msg-1"), true),
+            ("empty id", config(""), false),
+            ("missing id", BTreeMap::new(), false),
+            (
+                "non-string id",
+                BTreeMap::from([("message_id".to_owned(), Variant::Int(7))]),
+                false,
+            ),
+        ];
+
+        for (label, cfg, expect_ok) in cases {
+            assert_eq!(
+                runner.validate_config(&cfg).is_ok(),
+                expect_ok,
+                "case: {label}"
+            );
+        }
+    }
+}

@@ -1,5 +1,6 @@
 mod add_moderator;
 mod ban_user;
+mod delete_message;
 mod remove_moderator;
 mod send_message;
 mod timeout_user;
@@ -11,6 +12,7 @@ use forge_registry::{RegistryError, SubActionRegistry};
 
 pub use add_moderator::AddModeratorRunner;
 pub use ban_user::BanUserRunner;
+pub use delete_message::DeleteMessageRunner;
 pub use remove_moderator::RemoveModeratorRunner;
 pub use send_message::SendMessageRunner;
 pub use timeout_user::TimeoutUserRunner;
@@ -24,7 +26,8 @@ pub fn register_youtube_sub_actions(
     sender: Arc<YoutubeSendChat>,
     moderation: Arc<YoutubeModeration>,
 ) -> Result<(), RegistryError> {
-    reg.register(Box::new(SendMessageRunner::new(sender)))?;
+    reg.register(Box::new(SendMessageRunner::new(Arc::clone(&sender))))?;
+    reg.register(Box::new(DeleteMessageRunner::new(sender)))?;
     reg.register(Box::new(BanUserRunner::new(Arc::clone(&moderation))))?;
     reg.register(Box::new(TimeoutUserRunner::new(Arc::clone(&moderation))))?;
     reg.register(Box::new(UnbanUserRunner::new(Arc::clone(&moderation))))?;

@@ -9,6 +9,7 @@ use crate::quota_state::{QuotaState, today_pacific};
 
 const DEFAULT_API_BASE: &str = "https://www.googleapis.com/youtube/v3";
 const SEND_COST: u32 = 50;
+const DELETE_COST: u32 = 50;
 
 pub struct YoutubeSendChat {
     client: reqwest::Client,
@@ -40,6 +41,62 @@ impl YoutubeSendChat {
     pub(crate) fn with_api_base(mut self, api_base: String) -> Self {
         self.api_base = api_base;
         self
+    }
+
+    /// Charges quota and issues `DELETE /liveChat/messages?id={message_id}`.
+    ///
+    /// The caller supplies the raw message resource id (not a live-chat id); no
+    /// active broadcast is required — the resource id is self-contained.
+    pub async fn delete(&self, message_id: &str) -> Result<(), PlatformError> {
+        {
+            let today = today_pacific();
+            let mut qt = self.quota.lock().await;
+            qt.charge(DELETE_COST, today)?;
+        }
+
+        let token = (self.access_token_source)().await?;
+
+        let url = format!("{}/liveChat/messages", self.api_base);
+        let resp = self
+            .client
+            .delete(&url)
+            .bearer_auth(&token)
+            .query(&[("id", message_id)])
+            .send()
+            .await
+            .map_err(|e| PlatformError::Network {
+                reason: e.without_url().to_string(),
+            })?;
+
+        let status = resp.status().as_u16();
+        if status == 200 || status == 204 {
+            return Ok(());
+        }
+
+        let retry_after_secs = resp
+            .headers()
+            .get("retry-after")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(30);
+
+        let body_text = resp.text().await.unwrap_or_default();
+
+        match status {
+            429 => Err(PlatformError::RateLimited { retry_after_secs }),
+            403 if body_text.contains("quotaExceeded") => Err(PlatformError::QuotaExhausted),
+            403 if body_text.contains("insufficientPermissions")
+                || body_text.contains("operationNotSupported") =>
+            {
+                Err(PlatformError::Auth {
+                    reason: "chat write scope missing".to_owned(),
+                })
+            }
+            _ => Err(PlatformError::Http {
+                status,
+                body: body_text,
+            }),
+        }
     }
 
     pub async fn send(&self, body: &str) -> Result<(), PlatformError> {

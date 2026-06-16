@@ -1553,4 +1553,247 @@ mod tests {
 
         assert!(cleared);
     }
+
+    fn message_deleted_item(
+        id: &str,
+        deleted_message_id: &str,
+        moderator_channel_id: &str,
+    ) -> serde_json::Value {
+        json!({
+            "id": id,
+            "snippet": {
+                "type": "messageDeletedEvent",
+                "messageDeletedDetails": {
+                    "deletedMessageId": deleted_message_id
+                }
+            },
+            "authorDetails": {
+                "displayName": "ModName",
+                "channelId": moderator_channel_id,
+                "isChatOwner": false,
+                "isChatModerator": true,
+                "isChatSponsor": false
+            }
+        })
+    }
+
+    fn membership_gifting_item(
+        id: &str,
+        count: serde_json::Value,
+        level_name: &str,
+        gifter_display_name: &str,
+        gifter_channel_id: &str,
+    ) -> serde_json::Value {
+        json!({
+            "id": id,
+            "snippet": {
+                "type": "membershipGiftingEvent",
+                "membershipGiftingDetails": {
+                    "giftMembershipsCount": count,
+                    "giftMembershipsLevelName": level_name
+                }
+            },
+            "authorDetails": {
+                "displayName": gifter_display_name,
+                "channelId": gifter_channel_id,
+                "isChatOwner": false,
+                "isChatModerator": false,
+                "isChatSponsor": true
+            }
+        })
+    }
+
+    fn gift_received_item(
+        id: &str,
+        level_name: &str,
+        recipient_display_name: &str,
+        recipient_channel_id: &str,
+    ) -> serde_json::Value {
+        json!({
+            "id": id,
+            "snippet": {
+                "type": "giftMembershipReceivedEvent",
+                "giftMembershipReceivedDetails": {
+                    "memberLevelName": level_name
+                }
+            },
+            "authorDetails": {
+                "displayName": recipient_display_name,
+                "channelId": recipient_channel_id,
+                "isChatOwner": false,
+                "isChatModerator": false,
+                "isChatSponsor": true
+            }
+        })
+    }
+
+    async fn first_event_from(server: &MockServer) -> Event {
+        let (poller, mut rx) = make_poller_with_receiver(server);
+        let cancel = CancellationToken::new();
+        let cancel_clone = cancel.clone();
+        let handle = tokio::spawn(async move { poller.run(cancel_clone).await });
+
+        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        cancel.cancel();
+        handle.await.unwrap().unwrap();
+        event
+    }
+
+    #[tokio::test]
+    async fn message_deleted_event_emits_with_moderator_and_empty_target_user() {
+        let server = MockServer::start().await;
+        mount_broadcast_mock(&server, broadcast_response("chat-del")).await;
+        mount_chat_mock(
+            &server,
+            chat_response(
+                json!([message_deleted_item("del-1", "removed-msg-99", "UCmod")]),
+                3000,
+            ),
+        )
+        .await;
+
+        let event = first_event_from(&server).await;
+
+        assert_eq!(event.kind, "youtube.chat.message_deleted");
+        assert_eq!(event.source, EventSource::YouTube);
+        assert_eq!(
+            event.payload["chat.message_id"].as_str().unwrap(),
+            "removed-msg-99"
+        );
+        assert_eq!(
+            event.payload["chat.moderator.channel_id"].as_str().unwrap(),
+            "UCmod"
+        );
+        // The live-chat API does not report the deleted message's author; the
+        // field must stay empty so a future fabrication is noticed.
+        assert_eq!(
+            event.payload["chat.target_user.channel_id"]
+                .as_str()
+                .unwrap(),
+            ""
+        );
+    }
+
+    #[tokio::test]
+    async fn message_deleted_event_sets_chat_payload_deleted_moderation_mark() {
+        let server = MockServer::start().await;
+        mount_broadcast_mock(&server, broadcast_response("chat-del-mark")).await;
+        mount_chat_mock(
+            &server,
+            chat_response(
+                json!([message_deleted_item("del-2", "removed-msg-1", "UCmod")]),
+                3000,
+            ),
+        )
+        .await;
+
+        let event = first_event_from(&server).await;
+
+        let chat: ChatPayload =
+            serde_json::from_value(event.payload[ChatPayload::KEY].clone()).unwrap();
+        assert!(chat.moderation.deleted);
+        assert!(!chat.moderation.banned);
+        assert!(!chat.moderation.timed_out);
+    }
+
+    #[tokio::test]
+    async fn membership_gifting_event_emits_count_level_and_gifter() {
+        let server = MockServer::start().await;
+        mount_broadcast_mock(&server, broadcast_response("chat-gift")).await;
+        mount_chat_mock(
+            &server,
+            chat_response(
+                json!([membership_gifting_item(
+                    "gift-1",
+                    json!(5),
+                    "Diamond",
+                    "Generous",
+                    "UCgifter"
+                )]),
+                3000,
+            ),
+        )
+        .await;
+
+        let event = first_event_from(&server).await;
+
+        assert_eq!(event.kind, "youtube.channel.member_gift");
+        assert_eq!(event.payload["gift.count"].as_i64().unwrap(), 5);
+        assert_eq!(
+            event.payload["gift.level_name"].as_str().unwrap(),
+            "Diamond"
+        );
+        assert_eq!(
+            event.payload["gifter.channel_id"].as_str().unwrap(),
+            "UCgifter"
+        );
+        assert_eq!(
+            event.payload["gifter.display_name"].as_str().unwrap(),
+            "Generous"
+        );
+    }
+
+    #[tokio::test]
+    async fn membership_gifting_event_parses_string_count_into_int() {
+        // Why: the YouTube API renders integer counters as JSON strings; the
+        // parse arm must coerce "12" into a numeric gift.count, not 0.
+        let server = MockServer::start().await;
+        mount_broadcast_mock(&server, broadcast_response("chat-gift-str")).await;
+        mount_chat_mock(
+            &server,
+            chat_response(
+                json!([membership_gifting_item(
+                    "gift-2",
+                    json!("12"),
+                    "Gold",
+                    "Patron",
+                    "UCpatron"
+                )]),
+                3000,
+            ),
+        )
+        .await;
+
+        let event = first_event_from(&server).await;
+
+        assert_eq!(event.payload["gift.count"].as_i64().unwrap(), 12);
+    }
+
+    #[tokio::test]
+    async fn gift_membership_received_event_emits_recipient_with_empty_gifter() {
+        let server = MockServer::start().await;
+        mount_broadcast_mock(&server, broadcast_response("chat-gift-recv")).await;
+        mount_chat_mock(
+            &server,
+            chat_response(
+                json!([gift_received_item(
+                    "recv-1",
+                    "Gold",
+                    "LuckyViewer",
+                    "UCrecipient"
+                )]),
+                3000,
+            ),
+        )
+        .await;
+
+        let event = first_event_from(&server).await;
+
+        assert_eq!(event.kind, "youtube.channel.member_gift_received");
+        assert_eq!(event.payload["gift.level_name"].as_str().unwrap(), "Gold");
+        assert_eq!(
+            event.payload["recipient.channel_id"].as_str().unwrap(),
+            "UCrecipient"
+        );
+        assert_eq!(
+            event.payload["recipient.display_name"].as_str().unwrap(),
+            "LuckyViewer"
+        );
+        // The received-event snippet carries no gifter identity; field stays empty.
+        assert_eq!(event.payload["gifter.display_name"].as_str().unwrap(), "");
+    }
 }

@@ -90,3 +90,87 @@ impl TriggerKindDescriptor for ChatMessageDeletedDescriptor {
             )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn deleted_event(payload: serde_json::Value) -> Event {
+        Event::new(
+            EventSource::YouTube,
+            "youtube.chat.message_deleted",
+            payload,
+        )
+    }
+
+    #[test]
+    fn build_arg_stack_surfaces_message_id_and_moderator() {
+        let event = deleted_event(json!({
+            "chat.message_id": "msg-removed-1",
+            "chat.target_user.channel_id": "",
+            "chat.moderator.channel_id": "UCmod",
+        }));
+
+        let stack = ChatMessageDeletedDescriptor.build_arg_stack(&event);
+
+        assert_eq!(
+            stack.get("chat.message_id"),
+            Some(&Variant::String("msg-removed-1".to_owned()))
+        );
+        assert_eq!(
+            stack.get("chat.moderator.channel_id"),
+            Some(&Variant::String("UCmod".to_owned()))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_passes_through_unsourced_target_user_as_empty() {
+        // Why: the YouTube live-chat API never reports the deleted message's
+        // author. The empty string must survive into the arg stack so a future
+        // change that fabricates a value here is caught.
+        let event = deleted_event(json!({
+            "chat.message_id": "msg-removed-2",
+            "chat.target_user.channel_id": "",
+            "chat.moderator.channel_id": "UCmod",
+        }));
+
+        let stack = ChatMessageDeletedDescriptor.build_arg_stack(&event);
+
+        assert_eq!(
+            stack.get("chat.target_user.channel_id"),
+            Some(&Variant::String(String::new()))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_on_empty_payload_defaults_every_key_to_empty() {
+        let event = deleted_event(json!({}));
+
+        let stack = ChatMessageDeletedDescriptor.build_arg_stack(&event);
+
+        assert_eq!(
+            stack.get("chat.message_id"),
+            Some(&Variant::String(String::new()))
+        );
+        assert_eq!(
+            stack.get("chat.target_user.channel_id"),
+            Some(&Variant::String(String::new()))
+        );
+        assert_eq!(
+            stack.get("chat.moderator.channel_id"),
+            Some(&Variant::String(String::new()))
+        );
+    }
+
+    #[test]
+    fn event_filter_targets_message_deleted_kind_on_youtube() {
+        let filter = ChatMessageDeletedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::YouTube));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("youtube.chat.message_deleted")
+        );
+    }
+}

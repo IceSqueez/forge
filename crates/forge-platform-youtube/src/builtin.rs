@@ -72,6 +72,9 @@ mod tests {
             "youtube.channel.member",
             "youtube.channel.member_milestone",
             "youtube.channel.user_banned",
+            "youtube.chat.message_deleted",
+            "youtube.channel.member_gift",
+            "youtube.channel.member_gift_received",
             "youtube.stream.online",
             "youtube.stream.offline",
         ];

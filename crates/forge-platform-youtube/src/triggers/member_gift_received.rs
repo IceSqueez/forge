@@ -100,3 +100,97 @@ impl TriggerKindDescriptor for ChannelMemberGiftReceivedDescriptor {
             )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn received_event(payload: serde_json::Value) -> Event {
+        Event::new(
+            EventSource::YouTube,
+            "youtube.channel.member_gift_received",
+            payload,
+        )
+    }
+
+    #[test]
+    fn build_arg_stack_surfaces_level_and_recipient() {
+        let event = received_event(json!({
+            "gift.level_name": "Gold",
+            "gifter.display_name": "",
+            "recipient.channel_id": "UCrecipient",
+            "recipient.display_name": "LuckyViewer",
+        }));
+
+        let stack = ChannelMemberGiftReceivedDescriptor.build_arg_stack(&event);
+
+        assert_eq!(
+            stack.get("gift.level_name"),
+            Some(&Variant::String("Gold".to_owned()))
+        );
+        assert_eq!(
+            stack.get("recipient.channel_id"),
+            Some(&Variant::String("UCrecipient".to_owned()))
+        );
+        assert_eq!(
+            stack.get("recipient.display_name"),
+            Some(&Variant::String("LuckyViewer".to_owned()))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_passes_through_unsourced_gifter_name_as_empty() {
+        // Why: the giftMembershipReceivedEvent snippet carries no gifter
+        // identity, so this field is intentionally empty. Pin it so a future
+        // change that fabricates a gifter name is caught.
+        let event = received_event(json!({
+            "gift.level_name": "Gold",
+            "gifter.display_name": "",
+            "recipient.channel_id": "UCrecipient",
+            "recipient.display_name": "LuckyViewer",
+        }));
+
+        let stack = ChannelMemberGiftReceivedDescriptor.build_arg_stack(&event);
+
+        assert_eq!(
+            stack.get("gifter.display_name"),
+            Some(&Variant::String(String::new()))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_on_empty_payload_defaults_every_key_to_empty() {
+        let event = received_event(json!({}));
+
+        let stack = ChannelMemberGiftReceivedDescriptor.build_arg_stack(&event);
+
+        assert_eq!(
+            stack.get("gift.level_name"),
+            Some(&Variant::String(String::new()))
+        );
+        assert_eq!(
+            stack.get("gifter.display_name"),
+            Some(&Variant::String(String::new()))
+        );
+        assert_eq!(
+            stack.get("recipient.channel_id"),
+            Some(&Variant::String(String::new()))
+        );
+        assert_eq!(
+            stack.get("recipient.display_name"),
+            Some(&Variant::String(String::new()))
+        );
+    }
+
+    #[test]
+    fn event_filter_targets_member_gift_received_kind_on_youtube() {
+        let filter = ChannelMemberGiftReceivedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::YouTube));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("youtube.channel.member_gift_received")
+        );
+    }
+}

@@ -96,3 +96,71 @@ impl TriggerKindDescriptor for ChannelMemberGiftDescriptor {
             )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn gift_event(payload: serde_json::Value) -> Event {
+        Event::new(EventSource::YouTube, "youtube.channel.member_gift", payload)
+    }
+
+    #[test]
+    fn build_arg_stack_surfaces_count_level_and_gifter() {
+        let event = gift_event(json!({
+            "gift.count": 5_i64,
+            "gift.level_name": "Diamond",
+            "gifter.channel_id": "UCgifter",
+            "gifter.display_name": "Generous",
+        }));
+
+        let stack = ChannelMemberGiftDescriptor.build_arg_stack(&event);
+
+        assert_eq!(stack.get("gift.count"), Some(&Variant::Int(5)));
+        assert_eq!(
+            stack.get("gift.level_name"),
+            Some(&Variant::String("Diamond".to_owned()))
+        );
+        assert_eq!(
+            stack.get("gifter.channel_id"),
+            Some(&Variant::String("UCgifter".to_owned()))
+        );
+        assert_eq!(
+            stack.get("gifter.display_name"),
+            Some(&Variant::String("Generous".to_owned()))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_on_empty_payload_defaults_count_to_zero_and_strings_empty() {
+        let event = gift_event(json!({}));
+
+        let stack = ChannelMemberGiftDescriptor.build_arg_stack(&event);
+
+        assert_eq!(stack.get("gift.count"), Some(&Variant::Int(0)));
+        assert_eq!(
+            stack.get("gift.level_name"),
+            Some(&Variant::String(String::new()))
+        );
+        assert_eq!(
+            stack.get("gifter.channel_id"),
+            Some(&Variant::String(String::new()))
+        );
+        assert_eq!(
+            stack.get("gifter.display_name"),
+            Some(&Variant::String(String::new()))
+        );
+    }
+
+    #[test]
+    fn event_filter_targets_member_gift_kind_on_youtube() {
+        let filter = ChannelMemberGiftDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::YouTube));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("youtube.channel.member_gift")
+        );
+    }
+}

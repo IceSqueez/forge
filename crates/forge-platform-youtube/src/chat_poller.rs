@@ -68,6 +68,7 @@ impl YoutubeChatPoller {
 
     pub async fn run(self, cancel: CancellationToken) -> Result<(), PlatformError> {
         let mut dedup = DedupWindow::new(DEDUP_WINDOW_SIZE);
+        let mut last_seen_title: Option<String> = None;
 
         'outer: loop {
             if cancel.is_cancelled() {
@@ -100,11 +101,17 @@ impl YoutubeChatPoller {
                 }
             };
 
-            let (live_chat_id, broadcast_id) = match self.fetch_live_chat_id(&token).await {
+            let (live_chat_id, broadcast_id, current_title) = match self
+                .fetch_live_chat_id(&token)
+                .await
+            {
                 Ok(Some(ids)) => ids,
                 Ok(None) => {
                     self.live_chat_id.set(None);
                     self.active_broadcast_id.set(None);
+                    // A later go-live with a different title is a fresh session, not
+                    // an edit; resetting prevents the next resolution mis-firing.
+                    last_seen_title = None;
                     let event = Event::new(
                         EventSource::YouTube,
                         "youtube.channel.no_active_broadcast",
@@ -122,6 +129,7 @@ impl YoutubeChatPoller {
                 Err(e) => {
                     self.live_chat_id.set(None);
                     self.active_broadcast_id.set(None);
+                    last_seen_title = None;
                     tracing::warn!("broadcast resolution failed: {e}");
                     tokio::select! {
                         () = tokio::time::sleep(Duration::from_secs(BROADCAST_CADENCE_SECS)) => {}
@@ -130,6 +138,24 @@ impl YoutubeChatPoller {
                     continue 'outer;
                 }
             };
+
+            if let Some(prev) = last_seen_title.as_deref()
+                && prev != current_title
+                && self
+                    .bus_sender
+                    .send(Event::new(
+                        EventSource::YouTube,
+                        "youtube.stream.title_changed",
+                        serde_json::json!({
+                            "stream.title_old": prev,
+                            "stream.title_new": current_title,
+                        }),
+                    ))
+                    .is_err()
+            {
+                return Ok(());
+            }
+            last_seen_title = Some(current_title);
 
             self.live_chat_id.set(Some(live_chat_id.clone()));
             self.active_broadcast_id.set(Some(broadcast_id));
@@ -221,12 +247,13 @@ impl YoutubeChatPoller {
     }
 
     /// Resolves the active broadcast in one `liveBroadcasts.list` call, returning
-    /// both its `liveChatId` (for polling) and its resource `id` (the video id used
-    /// by `videos.update`) — same request, no extra quota.
+    /// its `liveChatId` (for polling), its resource `id` (the video id used by
+    /// `videos.update`), and its current `snippet.title` — same request, no extra
+    /// quota.
     async fn fetch_live_chat_id(
         &self,
         token: &str,
-    ) -> Result<Option<(String, String)>, PlatformError> {
+    ) -> Result<Option<(String, String, String)>, PlatformError> {
         let url = format!("{}/liveBroadcasts", self.api_base);
         let resp = self
             .client
@@ -265,9 +292,14 @@ impl YoutubeChatPoller {
         let broadcast_id = item
             .and_then(|item| item.get("id"))
             .and_then(|v| v.as_str());
+        let title = item
+            .and_then(|item| item.get("snippet"))
+            .and_then(|snippet| snippet.get("title"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
 
         Ok(match (live_chat_id, broadcast_id) {
-            (Some(lc), Some(b)) => Some((lc.to_owned(), b.to_owned())),
+            (Some(lc), Some(b)) => Some((lc.to_owned(), b.to_owned(), title.to_owned())),
             _ => None,
         })
     }

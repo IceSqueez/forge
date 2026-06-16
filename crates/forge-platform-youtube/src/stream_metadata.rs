@@ -189,3 +189,285 @@ impl YoutubeStreamMetadata {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::*;
+    use forge_platform_core::PlatformError;
+    use futures::future::BoxFuture;
+    use serde_json::{Value, json};
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    const TOKEN_SENTINEL: &str = "test-token";
+
+    fn token_source()
+    -> Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync> {
+        Arc::new(|| Box::pin(async { Ok(TOKEN_SENTINEL.to_owned()) }))
+    }
+
+    /// Builds a metadata client pointed at a wiremock server, with the active
+    /// broadcast id resolved so the fetch-merge-write path is reachable.
+    fn metadata_on(server: &MockServer) -> (YoutubeStreamMetadata, Arc<Mutex<QuotaState>>) {
+        let handle = ActiveBroadcastIdHandle::new();
+        handle.set(Some("vid-1".to_owned()));
+        let quota = Arc::new(Mutex::new(QuotaState::default()));
+        let meta = YoutubeStreamMetadata::new(token_source(), handle, Arc::clone(&quota))
+            .with_api_base(server.uri());
+        (meta, quota)
+    }
+
+    /// A resource whose snippet+status carry distinct pre-existing values in every
+    /// slot, so a merge that clobbers a non-target field is caught.
+    fn current_resource() -> Value {
+        json!({
+            "items": [{
+                "id": "vid-1",
+                "snippet": {
+                    "title": "OLD TITLE",
+                    "description": "OLD DESC",
+                    "categoryId": "20"
+                },
+                "status": {
+                    "privacyStatus": "private"
+                }
+            }]
+        })
+    }
+
+    async fn mount_fetch(server: &MockServer) {
+        Mock::given(method("GET"))
+            .and(path("/videos"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(current_resource()))
+            .mount(server)
+            .await;
+    }
+
+    async fn mount_update_ok(server: &MockServer) {
+        Mock::given(method("PUT"))
+            .and(path("/videos"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!({"kind": "youtube#video"})),
+            )
+            .mount(server)
+            .await;
+    }
+
+    /// Returns the JSON body of the single PUT the server received.
+    async fn put_body(server: &MockServer) -> Value {
+        let reqs = server.received_requests().await.unwrap();
+        let put = reqs
+            .iter()
+            .find(|r| r.method.as_str() == "PUT")
+            .expect("a PUT must have been issued");
+        serde_json::from_slice(&put.body).unwrap()
+    }
+
+    #[tokio::test]
+    async fn set_title_merges_new_title_and_preserves_other_snippet_and_status_fields() {
+        let server = MockServer::start().await;
+        mount_fetch(&server).await;
+        mount_update_ok(&server).await;
+        let (meta, _quota) = metadata_on(&server);
+
+        meta.set_title("NEW TITLE").await.unwrap();
+
+        let body = put_body(&server).await;
+        assert_eq!(body["snippet"]["title"], "NEW TITLE");
+        // Untouched fields must survive the merge (videos.update clears omitted parts).
+        assert_eq!(body["snippet"]["description"], "OLD DESC");
+        assert_eq!(body["snippet"]["categoryId"], "20");
+        assert_eq!(body["status"]["privacyStatus"], "private");
+    }
+
+    #[tokio::test]
+    async fn set_description_merges_into_snippet_and_preserves_other_fields() {
+        let server = MockServer::start().await;
+        mount_fetch(&server).await;
+        mount_update_ok(&server).await;
+        let (meta, _quota) = metadata_on(&server);
+
+        meta.set_description("NEW DESC").await.unwrap();
+
+        let body = put_body(&server).await;
+        assert_eq!(body["snippet"]["description"], "NEW DESC");
+        assert_eq!(body["snippet"]["title"], "OLD TITLE");
+        assert_eq!(body["snippet"]["categoryId"], "20");
+        assert_eq!(body["status"]["privacyStatus"], "private");
+    }
+
+    #[tokio::test]
+    async fn set_category_merges_category_id_into_snippet_and_preserves_other_fields() {
+        let server = MockServer::start().await;
+        mount_fetch(&server).await;
+        mount_update_ok(&server).await;
+        let (meta, _quota) = metadata_on(&server);
+
+        meta.set_category("24").await.unwrap();
+
+        let body = put_body(&server).await;
+        assert_eq!(body["snippet"]["categoryId"], "24");
+        assert_eq!(body["snippet"]["title"], "OLD TITLE");
+        assert_eq!(body["snippet"]["description"], "OLD DESC");
+        assert_eq!(body["status"]["privacyStatus"], "private");
+    }
+
+    #[tokio::test]
+    async fn set_privacy_merges_into_status_and_preserves_snippet_fields() {
+        let server = MockServer::start().await;
+        mount_fetch(&server).await;
+        mount_update_ok(&server).await;
+        let (meta, _quota) = metadata_on(&server);
+
+        meta.set_privacy("public").await.unwrap();
+
+        let body = put_body(&server).await;
+        // Target lives under `status`, never under `snippet`.
+        assert_eq!(body["status"]["privacyStatus"], "public");
+        assert_eq!(body["snippet"]["title"], "OLD TITLE");
+        assert_eq!(body["snippet"]["description"], "OLD DESC");
+        assert_eq!(body["snippet"]["categoryId"], "20");
+    }
+
+    #[tokio::test]
+    async fn successful_update_charges_fetch_plus_update_quota() {
+        let server = MockServer::start().await;
+        mount_fetch(&server).await;
+        mount_update_ok(&server).await;
+        let (meta, quota) = metadata_on(&server);
+
+        meta.set_title("anything").await.unwrap();
+
+        let qt = quota.lock().await;
+        assert_eq!(
+            qt.used_today,
+            FETCH_COST + UPDATE_COST,
+            "must charge fetch ({FETCH_COST}) + update ({UPDATE_COST}) = 51 units"
+        );
+    }
+
+    #[tokio::test]
+    async fn no_active_broadcast_returns_unsupported_without_any_http_call() {
+        let server = MockServer::start().await;
+        // No mocks mounted: any HTTP call would surface as an unmatched request.
+        let handle = ActiveBroadcastIdHandle::new(); // left at None
+        let quota = Arc::new(Mutex::new(QuotaState::default()));
+        let meta = YoutubeStreamMetadata::new(token_source(), handle, Arc::clone(&quota))
+            .with_api_base(server.uri());
+
+        let err = meta.set_title("x").await.unwrap_err();
+
+        assert!(
+            matches!(err, PlatformError::Unsupported { .. }),
+            "expected Unsupported when no active broadcast, got: {err}"
+        );
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "no active broadcast must short-circuit before the GET"
+        );
+        let qt = quota.lock().await;
+        assert_eq!(qt.used_today, 0, "no broadcast must not charge quota");
+    }
+
+    #[tokio::test]
+    async fn quota_exhausted_returns_without_issuing_http() {
+        let server = MockServer::start().await;
+        let handle = ActiveBroadcastIdHandle::new();
+        handle.set(Some("vid-1".to_owned()));
+
+        let quota = Arc::new(Mutex::new(QuotaState::default()));
+        let today = today_pacific();
+        {
+            let mut qt = quota.lock().await;
+            qt.used_today = 10_000;
+            qt.peak_seen = 10_000;
+            qt.last_reset_date = today;
+        }
+        let meta = YoutubeStreamMetadata::new(token_source(), handle, Arc::clone(&quota))
+            .with_api_base(server.uri());
+
+        let err = meta.set_title("x").await.unwrap_err();
+
+        assert!(
+            matches!(err, PlatformError::QuotaExhausted),
+            "expected QuotaExhausted at cap, got: {err}"
+        );
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "quota exhaustion must short-circuit before any HTTP call"
+        );
+    }
+
+    async fn update_failure_for(status: u16, body: &str) -> PlatformError {
+        let server = MockServer::start().await;
+        mount_fetch(&server).await;
+        Mock::given(method("PUT"))
+            .and(path("/videos"))
+            .respond_with(ResponseTemplate::new(status).set_body_string(body))
+            .mount(&server)
+            .await;
+        let (meta, _quota) = metadata_on(&server);
+        meta.set_title("x").await.unwrap_err()
+    }
+
+    #[tokio::test]
+    async fn put_403_quota_exceeded_maps_to_quota_exhausted() {
+        let err =
+            update_failure_for(403, r#"{"error":{"errors":[{"reason":"quotaExceeded"}]}}"#).await;
+        assert!(matches!(err, PlatformError::QuotaExhausted), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn put_403_insufficient_permissions_maps_to_auth() {
+        let err = update_failure_for(
+            403,
+            r#"{"error":{"errors":[{"reason":"insufficientPermissions"}]}}"#,
+        )
+        .await;
+        assert!(matches!(err, PlatformError::Auth { .. }), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn put_429_maps_to_rate_limited() {
+        let err = update_failure_for(429, "too many requests").await;
+        assert!(
+            matches!(err, PlatformError::RateLimited { .. }),
+            "got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn put_500_maps_to_http() {
+        let err = update_failure_for(500, "internal error").await;
+        assert!(
+            matches!(err, PlatformError::Http { status: 500, .. }),
+            "got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn update_error_does_not_leak_bearer_token_or_url() {
+        let server = MockServer::start().await;
+        mount_fetch(&server).await;
+        Mock::given(method("PUT"))
+            .and(path("/videos"))
+            .respond_with(ResponseTemplate::new(403).set_body_string("forbidden"))
+            .mount(&server)
+            .await;
+        let (meta, _quota) = metadata_on(&server);
+
+        let err = meta.set_title("x").await.unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            !msg.contains(TOKEN_SENTINEL),
+            "error must not leak the bearer token: {msg}"
+        );
+        assert!(
+            !msg.contains(&server.uri()),
+            "error must not leak the request URL: {msg}"
+        );
+    }
+}

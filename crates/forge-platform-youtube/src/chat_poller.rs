@@ -1261,6 +1261,102 @@ mod tests {
         assert!(result.is_ok(), "run() must return Ok(()) on cancellation");
     }
 
+    #[allow(clippy::type_complexity)]
+    fn make_poller_with_both_handles(
+        server: &MockServer,
+    ) -> (
+        YoutubeChatPoller,
+        LiveChatIdHandle,
+        ActiveBroadcastIdHandle,
+        tokio::sync::mpsc::UnboundedReceiver<Event>,
+    ) {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let live = LiveChatIdHandle::new();
+        let broadcast = ActiveBroadcastIdHandle::new();
+        let poller = YoutubeChatPoller::new(
+            token_source(),
+            tx,
+            "UCtest".to_owned(),
+            live.clone(),
+            broadcast.clone(),
+            make_quota(),
+        )
+        .with_api_base(server.uri());
+        (poller, live, broadcast, rx)
+    }
+
+    #[tokio::test]
+    async fn active_broadcast_sets_broadcast_id_to_items_first_id_alongside_live_chat_id() {
+        let server = MockServer::start().await;
+        // broadcast_response always carries `items[0].id == "broadcast-1"`.
+        mount_broadcast_mock(&server, broadcast_response("lc-active-xyz")).await;
+        mount_chat_mock(&server, chat_response(json!([]), 3000)).await;
+
+        let (poller, live, broadcast, _rx) = make_poller_with_both_handles(&server);
+        let cancel = CancellationToken::new();
+        let cancel_clone = cancel.clone();
+        let join = tokio::spawn(async move { poller.run(cancel_clone).await });
+
+        let (lc, bc) = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if let (Some(lc), Some(bc)) = (live.get(), broadcast.get()) {
+                    return (lc, bc);
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("both handles were not set within timeout");
+
+        cancel.cancel();
+        join.await.unwrap().unwrap();
+
+        assert_eq!(lc, "lc-active-xyz");
+        assert_eq!(bc, "broadcast-1");
+    }
+
+    #[tokio::test]
+    async fn no_active_broadcast_clears_both_live_chat_and_broadcast_handles() {
+        let server = MockServer::start().await;
+        mount_broadcast_mock(&server, empty_broadcast_response()).await;
+
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let live = LiveChatIdHandle::new();
+        live.set(Some("stale-lc".to_owned()));
+        let broadcast = ActiveBroadcastIdHandle::new();
+        broadcast.set(Some("stale-bc".to_owned()));
+
+        let poller = YoutubeChatPoller::new(
+            token_source(),
+            tx,
+            "UCtest".to_owned(),
+            live.clone(),
+            broadcast.clone(),
+            make_quota(),
+        )
+        .with_api_base(server.uri());
+
+        let cancel = CancellationToken::new();
+        let cancel_clone = cancel.clone();
+        let join = tokio::spawn(async move { poller.run(cancel_clone).await });
+
+        let cleared = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if live.get().is_none() && broadcast.get().is_none() {
+                    return true;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("handles were not both cleared within timeout");
+
+        cancel.cancel();
+        join.await.unwrap().unwrap();
+
+        assert!(cleared);
+    }
+
     #[tokio::test]
     async fn poller_updates_live_chat_id_handle_when_broadcast_active() {
         let server = MockServer::start().await;

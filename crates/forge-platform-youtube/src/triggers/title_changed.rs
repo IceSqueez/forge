@@ -77,3 +77,65 @@ impl TriggerKindDescriptor for ChannelBroadcastTitleChangedDescriptor {
             .set("stream.title_new".to_owned(), Variant::String(title_new))
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    fn title_changed_event(old: &str, new: &str) -> Event {
+        Event::new(
+            EventSource::YouTube,
+            "youtube.stream.title_changed",
+            serde_json::json!({
+                "stream.title_old": old,
+                "stream.title_new": new,
+            }),
+        )
+    }
+
+    #[test]
+    fn build_arg_stack_maps_old_and_new_title() {
+        let stack = ChannelBroadcastTitleChangedDescriptor
+            .build_arg_stack(&title_changed_event("Morning Coding", "Afternoon Coding"));
+        assert_eq!(
+            stack.get("stream.title_old"),
+            Some(&Variant::String("Morning Coding".to_owned()))
+        );
+        assert_eq!(
+            stack.get("stream.title_new"),
+            Some(&Variant::String("Afternoon Coding".to_owned()))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_defaults_missing_payload_fields_to_empty() {
+        let event = Event::new(
+            EventSource::YouTube,
+            "youtube.stream.title_changed",
+            serde_json::json!({}),
+        );
+        let stack = ChannelBroadcastTitleChangedDescriptor.build_arg_stack(&event);
+        assert_eq!(
+            stack.get("stream.title_old"),
+            Some(&Variant::String(String::new()))
+        );
+        assert_eq!(
+            stack.get("stream.title_new"),
+            Some(&Variant::String(String::new()))
+        );
+    }
+
+    #[test]
+    fn event_filter_targets_own_kind_on_youtube_source() {
+        // Contract: the filter must route the exact kind this descriptor handles,
+        // from the YouTube source. A copy-paste drift pointing kind_prefix at a
+        // sibling trigger would silently never match this descriptor's events.
+        let filter = ChannelBroadcastTitleChangedDescriptor.event_filter();
+        assert_eq!(filter.source, Some(EventSource::YouTube));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some(ChannelBroadcastTitleChangedDescriptor.id())
+        );
+    }
+}

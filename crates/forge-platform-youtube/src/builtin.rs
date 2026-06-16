@@ -79,6 +79,7 @@ mod tests {
             "youtube.channel.member_gift_received",
             "youtube.stream.online",
             "youtube.stream.offline",
+            "youtube.stream.title_changed",
         ];
 
         for id in ids {

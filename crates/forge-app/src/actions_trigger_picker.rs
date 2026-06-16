@@ -744,6 +744,7 @@ mod tests {
     fn platform_group_for_dispatches_by_kind_prefix() {
         for (kind, expected) in [
             ("twitch.chat.command", PlatformGroup::Twitch),
+            ("youtube.chat.message_deleted", PlatformGroup::YouTube),
             ("obs.scenes.current_changed", PlatformGroup::Obs),
             ("script.event.custom", PlatformGroup::Script),
             ("core.logic.wait", PlatformGroup::Core),

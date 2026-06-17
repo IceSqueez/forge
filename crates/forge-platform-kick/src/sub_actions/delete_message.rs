@@ -121,3 +121,119 @@ impl SubActionRunner for DeleteMessageRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use forge_events::{Event, EventPublisher};
+    use forge_platform_core::{RateLimitOutcome, RateLimiter};
+    use forge_types::EventId;
+    use std::time::Duration;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    struct NoopPublisher;
+    impl EventPublisher for NoopPublisher {
+        fn publish(&self, _: Event) {}
+    }
+
+    struct GrantLimiter;
+    #[async_trait]
+    impl RateLimiter for GrantLimiter {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+            Ok(RateLimitOutcome::Granted)
+        }
+        fn remaining(&self) -> u32 {
+            120
+        }
+        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
+    }
+
+    fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
+        RunContext {
+            arg_stack: stack,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher: &NoopPublisher,
+        }
+    }
+
+    fn token_source()
+    -> Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync> {
+        Arc::new(|| Box::pin(async { Ok("tok".to_owned()) }))
+    }
+
+    fn runner_on(server: &MockServer) -> DeleteMessageRunner {
+        let client = KickSendChat::new(Arc::new(GrantLimiter))
+            .with_delete_base(format!("{}/chat", server.uri()));
+        DeleteMessageRunner::new(Arc::new(client), token_source())
+    }
+
+    fn config(message_id: &str) -> SubActionConfig {
+        BTreeMap::from([(
+            "message_id".to_owned(),
+            Variant::String(message_id.to_owned()),
+        )])
+    }
+
+    #[tokio::test]
+    async fn execute_deletes_interpolated_id_and_reports_success() {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .and(path("/chat/abc-123"))
+            .respond_with(ResponseTemplate::new(204))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let runner = runner_on(&server);
+        let stack = ArgStack::new().set("mid".to_owned(), Variant::String("abc-123".to_owned()));
+
+        let (telemetry, _) = runner.execute(&config("%mid%"), &make_ctx(&stack)).await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+    }
+
+    #[tokio::test]
+    async fn empty_message_id_after_interpolation_fails_without_request() {
+        let server = MockServer::start().await;
+        let runner = runner_on(&server);
+        let stack = ArgStack::new().set("mid".to_owned(), Variant::String(String::new()));
+
+        let (telemetry, _) = runner.execute(&config("%mid%"), &make_ctx(&stack)).await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "empty message_id must not reach the delete transport"
+        );
+    }
+
+    #[test]
+    fn validate_config_accepts_non_empty_and_rejects_empty_missing_non_string() {
+        let runner = DeleteMessageRunner::new(
+            Arc::new(KickSendChat::new(Arc::new(GrantLimiter))),
+            token_source(),
+        );
+
+        let cases: Vec<(&str, SubActionConfig, bool)> = vec![
+            ("non-empty", config("msg-1"), true),
+            ("empty", config(""), false),
+            ("missing", BTreeMap::new(), false),
+            (
+                "non-string",
+                BTreeMap::from([("message_id".to_owned(), Variant::Int(7))]),
+                false,
+            ),
+        ];
+
+        for (label, cfg, expect_ok) in cases {
+            assert_eq!(
+                runner.validate_config(&cfg).is_ok(),
+                expect_ok,
+                "case: {label}"
+            );
+        }
+    }
+}

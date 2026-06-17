@@ -293,13 +293,22 @@ mod tests {
         assert_eq!(authorize_url, KICK_AUTHORIZE_ENDPOINT);
         assert_eq!(token_endpoint, KICK_TOKEN_ENDPOINT);
         assert_eq!(redirect_path, CALLBACK_REDIRECT_PATH);
-        assert_eq!(
-            scopes,
-            KICK_SCOPES
-                .iter()
-                .map(|s| (*s).to_owned())
-                .collect::<Vec<_>>()
-        );
+        // Why: a silently-dropped write scope breaks moderation / rewards / chat-send
+        // features at runtime with an opaque 403. Pin each by literal string so an
+        // accidental removal from KICK_SCOPES fails here, not in production.
+        for required in [
+            "chat:write",
+            "moderation:ban",
+            "moderation:chat_message:manage",
+            "channel:write",
+            "channel:rewards:read",
+            "channel:rewards:write",
+        ] {
+            assert!(
+                scopes.iter().any(|s| s == required),
+                "requested scopes must contain {required}"
+            );
+        }
     }
 
     #[test]

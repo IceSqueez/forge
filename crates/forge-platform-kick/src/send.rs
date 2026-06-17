@@ -29,7 +29,6 @@ impl KickSendChat {
     }
 
     #[cfg(test)]
-    #[allow(dead_code)]
     pub(crate) fn with_delete_base(mut self, base: String) -> Self {
         self.delete_base = base;
         self
@@ -272,5 +271,93 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(err, PlatformError::Http { status: 500, .. }));
+    }
+
+    fn grant_deleter(server: &MockServer) -> KickSendChat {
+        KickSendChat::new(Arc::new(GrantLimiter)).with_delete_base(format!("{}/chat", server.uri()))
+    }
+
+    #[tokio::test]
+    async fn delete_targets_message_id_path_and_succeeds_on_204() {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .and(path("/chat/msg-77"))
+            .respond_with(ResponseTemplate::new(204))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        grant_deleter(&server)
+            .delete("msg-77", "tok")
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn delete_returns_auth_error_on_401() {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .and(path("/chat/msg-1"))
+            .respond_with(ResponseTemplate::new(401).set_body_string("unauthorized"))
+            .mount(&server)
+            .await;
+
+        let err = grant_deleter(&server)
+            .delete("msg-1", "bad")
+            .await
+            .unwrap_err();
+        assert!(matches!(err, PlatformError::Auth { .. }));
+    }
+
+    #[tokio::test]
+    async fn delete_returns_auth_error_on_403() {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .and(path("/chat/msg-1"))
+            .respond_with(ResponseTemplate::new(403).set_body_string("forbidden"))
+            .mount(&server)
+            .await;
+
+        let err = grant_deleter(&server)
+            .delete("msg-1", "tok")
+            .await
+            .unwrap_err();
+        assert!(matches!(err, PlatformError::Auth { .. }));
+    }
+
+    #[tokio::test]
+    async fn delete_returns_rate_limited_on_429() {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .and(path("/chat/msg-1"))
+            .respond_with(
+                ResponseTemplate::new(429)
+                    .append_header("retry-after", "12")
+                    .set_body_string("slow down"),
+            )
+            .mount(&server)
+            .await;
+
+        let err = grant_deleter(&server)
+            .delete("msg-1", "tok")
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            PlatformError::RateLimited {
+                retry_after_secs: 12
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn delete_returns_rate_limit_exhausted_without_reaching_server() {
+        let server = MockServer::start().await;
+        let sender = KickSendChat::new(Arc::new(ExhaustedLimiter))
+            .with_delete_base(format!("{}/chat", server.uri()));
+
+        let err = sender.delete("msg-1", "tok").await.unwrap_err();
+        assert!(matches!(err, PlatformError::RateLimitExhausted));
+        assert!(server.received_requests().await.unwrap().is_empty());
     }
 }

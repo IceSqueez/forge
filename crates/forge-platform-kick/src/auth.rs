@@ -10,7 +10,16 @@ pub const KICK_AUTHORIZE_ENDPOINT: &str = "https://id.kick.com/oauth/authorize";
 pub const KICK_TOKEN_ENDPOINT: &str = "https://id.kick.com/oauth/token";
 pub const KICK_USERS_ENDPOINT: &str = "https://api.kick.com/public/v1/users";
 
-const KICK_SCOPES: &[&str] = &["user:read", "channel:read", "chat:write"];
+const KICK_SCOPES: &[&str] = &[
+    "user:read",
+    "channel:read",
+    "channel:write",
+    "channel:rewards:read",
+    "channel:rewards:write",
+    "chat:write",
+    "moderation:chat_message:manage",
+    "moderation:ban",
+];
 const CALLBACK_REDIRECT_PATH: &str = "/oauth/callback";
 
 pub fn kick_auth_flow() -> AuthFlow {

@@ -8,11 +8,11 @@ pub const KICK_COMMUNITY_NOTE: &str = "Chat receive uses the unofficial Pusher W
 pub fn kick_capabilities() -> PlatformCapabilities {
     PlatformCapabilities {
         can_send_chat: true,
-        can_moderate: false,
+        can_moderate: true,
         can_subscribe_events: false,
         can_polls: false,
         can_predictions: false,
-        can_channel_points: false,
+        can_channel_points: true,
         limited: false,
         limited_reason: None,
     }

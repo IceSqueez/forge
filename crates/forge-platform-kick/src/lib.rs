@@ -9,6 +9,7 @@ pub mod credentials_manager;
 pub mod error;
 pub mod moderation;
 pub(crate) mod reconnect;
+pub mod rewards;
 pub mod send;
 pub mod sub_actions;
 pub mod triggers;
@@ -24,8 +25,10 @@ pub use chat::{KickChat, KickChatHandle};
 pub use credentials::{CREDENTIAL_KEY, KickCredentials};
 pub use credentials_manager::KickCredentialsManager;
 pub use moderation::KickModeration;
+pub use rewards::{CreateRewardParams, KickRewards, UpdateRewardParams};
 pub use send::KickSendChat;
 pub use sub_actions::{
-    BanUserRunner, DeleteMessageRunner, KickSubActionDeps, SendMessageRunner, TimeoutUserRunner,
-    UnbanUserRunner, UpdateInfoRunner, register_kick_sub_actions,
+    BanUserRunner, CreateRewardRunner, DeleteMessageRunner, DeleteRewardRunner, KickSubActionDeps,
+    SendMessageRunner, TimeoutUserRunner, UnbanUserRunner, UpdateInfoRunner, UpdateRewardRunner,
+    register_kick_sub_actions,
 };

@@ -1,9 +1,12 @@
 mod ban_user;
+mod create_reward;
 mod delete_message;
+mod delete_reward;
 mod send_message;
 mod timeout_user;
 mod unban_user;
 mod update_info;
+mod update_reward;
 
 use std::sync::Arc;
 
@@ -12,14 +15,18 @@ use forge_registry::{RegistryError, SubActionRegistry};
 use futures::future::BoxFuture;
 
 pub use ban_user::BanUserRunner;
+pub use create_reward::CreateRewardRunner;
 pub use delete_message::DeleteMessageRunner;
+pub use delete_reward::DeleteRewardRunner;
 pub use send_message::SendMessageRunner;
 pub use timeout_user::TimeoutUserRunner;
 pub use unban_user::UnbanUserRunner;
 pub use update_info::UpdateInfoRunner;
+pub use update_reward::UpdateRewardRunner;
 
 use crate::channel::KickChannel;
 use crate::moderation::KickModeration;
+use crate::rewards::KickRewards;
 use crate::send::KickSendChat;
 
 pub struct KickSubActionDeps {
@@ -29,6 +36,7 @@ pub struct KickSubActionDeps {
     pub broadcaster_user_id: u64,
     pub moderation: Arc<KickModeration>,
     pub channel: Arc<KickChannel>,
+    pub rewards: Arc<KickRewards>,
 }
 
 pub fn register_kick_sub_actions(
@@ -41,6 +49,7 @@ pub fn register_kick_sub_actions(
         broadcaster_user_id,
         moderation,
         channel,
+        rewards,
     } = deps;
     reg.register(Box::new(SendMessageRunner::new(
         Arc::clone(&client),
@@ -66,6 +75,18 @@ pub fn register_kick_sub_actions(
         Arc::clone(&token_source),
         broadcaster_user_id,
     )))?;
-    reg.register(Box::new(UpdateInfoRunner::new(channel, token_source)))?;
+    reg.register(Box::new(UpdateInfoRunner::new(
+        Arc::clone(&channel),
+        Arc::clone(&token_source),
+    )))?;
+    reg.register(Box::new(CreateRewardRunner::new(
+        Arc::clone(&rewards),
+        Arc::clone(&token_source),
+    )))?;
+    reg.register(Box::new(UpdateRewardRunner::new(
+        Arc::clone(&rewards),
+        Arc::clone(&token_source),
+    )))?;
+    reg.register(Box::new(DeleteRewardRunner::new(rewards, token_source)))?;
     Ok(())
 }

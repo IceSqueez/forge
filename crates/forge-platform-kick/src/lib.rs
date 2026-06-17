@@ -28,7 +28,8 @@ pub use moderation::KickModeration;
 pub use rewards::{CreateRewardParams, KickRewards, UpdateRewardParams};
 pub use send::KickSendChat;
 pub use sub_actions::{
-    BanUserRunner, CreateRewardRunner, DeleteMessageRunner, DeleteRewardRunner, KickSubActionDeps,
-    SendMessageRunner, TimeoutUserRunner, UnbanUserRunner, UpdateInfoRunner, UpdateRewardRunner,
+    AcceptRedemptionRunner, BanUserRunner, CreateRewardRunner, DeleteMessageRunner,
+    DeleteRewardRunner, KickSubActionDeps, RejectRedemptionRunner, SendMessageRunner,
+    TimeoutUserRunner, UnbanUserRunner, UpdateInfoRunner, UpdateRewardRunner,
     register_kick_sub_actions,
 };

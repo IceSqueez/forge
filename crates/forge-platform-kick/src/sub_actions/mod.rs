@@ -1,7 +1,9 @@
+mod accept_redemption;
 mod ban_user;
 mod create_reward;
 mod delete_message;
 mod delete_reward;
+mod reject_redemption;
 mod send_message;
 mod timeout_user;
 mod unban_user;
@@ -14,10 +16,12 @@ use forge_platform_core::PlatformError;
 use forge_registry::{RegistryError, SubActionRegistry};
 use futures::future::BoxFuture;
 
+pub use accept_redemption::AcceptRedemptionRunner;
 pub use ban_user::BanUserRunner;
 pub use create_reward::CreateRewardRunner;
 pub use delete_message::DeleteMessageRunner;
 pub use delete_reward::DeleteRewardRunner;
+pub use reject_redemption::RejectRedemptionRunner;
 pub use send_message::SendMessageRunner;
 pub use timeout_user::TimeoutUserRunner;
 pub use unban_user::UnbanUserRunner;
@@ -87,6 +91,14 @@ pub fn register_kick_sub_actions(
         Arc::clone(&rewards),
         Arc::clone(&token_source),
     )))?;
-    reg.register(Box::new(DeleteRewardRunner::new(rewards, token_source)))?;
+    reg.register(Box::new(DeleteRewardRunner::new(
+        Arc::clone(&rewards),
+        Arc::clone(&token_source),
+    )))?;
+    reg.register(Box::new(AcceptRedemptionRunner::new(
+        Arc::clone(&rewards),
+        Arc::clone(&token_source),
+    )))?;
+    reg.register(Box::new(RejectRedemptionRunner::new(rewards, token_source)))?;
     Ok(())
 }

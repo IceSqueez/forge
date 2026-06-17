@@ -4,6 +4,7 @@ use forge_platform_core::{PlatformError, RateLimitOutcome, RateLimiter};
 use serde::{Deserialize, Serialize};
 
 const REWARDS_ENDPOINT: &str = "https://api.kick.com/public/v1/channels/rewards";
+const MAX_REDEMPTION_BATCH: usize = 25;
 
 pub struct KickRewards {
     client: reqwest::Client,
@@ -66,6 +67,11 @@ struct UpdateBody {
     is_user_input_required: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     should_redemptions_skip_request_queue: Option<bool>,
+}
+
+#[derive(Serialize)]
+struct RedemptionBatchBody<'a> {
+    ids: &'a [String],
 }
 
 #[derive(Deserialize)]
@@ -182,6 +188,94 @@ impl KickRewards {
             .client
             .delete(&url)
             .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
+            .send()
+            .await
+            .map_err(|e| PlatformError::Network {
+                reason: e.without_url().to_string(),
+            })?;
+
+        let status = response.status().as_u16();
+        if (200..300).contains(&status) {
+            return Ok(());
+        }
+
+        map_rewards_error(status, response).await
+    }
+
+    pub async fn accept_redemptions(
+        &self,
+        ids: &[String],
+        token: &str,
+    ) -> Result<(), PlatformError> {
+        if ids.is_empty() {
+            return Err(PlatformError::Http {
+                status: 0,
+                body: "accept_redemptions: ids list is empty".to_owned(),
+            });
+        }
+        if ids.len() > MAX_REDEMPTION_BATCH {
+            return Err(PlatformError::Http {
+                status: 0,
+                body: format!(
+                    "accept_redemptions: {} ids exceeds the maximum of {MAX_REDEMPTION_BATCH}",
+                    ids.len()
+                ),
+            });
+        }
+
+        self.acquire_slot().await?;
+
+        let url = format!("{}/redemptions/accept", self.rewards_endpoint);
+        let body = RedemptionBatchBody { ids };
+        let response = self
+            .client
+            .post(&url)
+            .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| PlatformError::Network {
+                reason: e.without_url().to_string(),
+            })?;
+
+        let status = response.status().as_u16();
+        if (200..300).contains(&status) {
+            return Ok(());
+        }
+
+        map_rewards_error(status, response).await
+    }
+
+    pub async fn reject_redemptions(
+        &self,
+        ids: &[String],
+        token: &str,
+    ) -> Result<(), PlatformError> {
+        if ids.is_empty() {
+            return Err(PlatformError::Http {
+                status: 0,
+                body: "reject_redemptions: ids list is empty".to_owned(),
+            });
+        }
+        if ids.len() > MAX_REDEMPTION_BATCH {
+            return Err(PlatformError::Http {
+                status: 0,
+                body: format!(
+                    "reject_redemptions: {} ids exceeds the maximum of {MAX_REDEMPTION_BATCH}",
+                    ids.len()
+                ),
+            });
+        }
+
+        self.acquire_slot().await?;
+
+        let url = format!("{}/redemptions/reject", self.rewards_endpoint);
+        let body = RedemptionBatchBody { ids };
+        let response = self
+            .client
+            .post(&url)
+            .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
+            .json(&body)
             .send()
             .await
             .map_err(|e| PlatformError::Network {

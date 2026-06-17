@@ -31,7 +31,6 @@ impl KickChannel {
     }
 
     #[cfg(test)]
-    #[allow(dead_code)]
     pub(crate) fn with_api_base(mut self, base: String) -> Self {
         self.channels_endpoint = format!("{base}/channels");
         self
@@ -106,5 +105,178 @@ async fn map_channel_response(response: reqwest::Response) -> Result<(), Platfor
         400 | 422 => Err(PlatformError::Http { status, body }),
         429 => Err(PlatformError::RateLimited { retry_after_secs }),
         _ => Err(PlatformError::Http { status, body }),
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use forge_platform_core::RateLimitOutcome;
+    use std::time::Duration;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    struct GrantLimiter;
+    #[async_trait::async_trait]
+    impl RateLimiter for GrantLimiter {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+            Ok(RateLimitOutcome::Granted)
+        }
+        fn remaining(&self) -> u32 {
+            120
+        }
+        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
+    }
+
+    struct ExhaustedLimiter;
+    #[async_trait::async_trait]
+    impl RateLimiter for ExhaustedLimiter {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+            Ok(RateLimitOutcome::Exhausted)
+        }
+        fn remaining(&self) -> u32 {
+            0
+        }
+        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
+    }
+
+    fn channel_on(server: &MockServer) -> KickChannel {
+        KickChannel::new(Arc::new(GrantLimiter)).with_api_base(server.uri())
+    }
+
+    async fn last_body(server: &MockServer) -> serde_json::Value {
+        let reqs = server.received_requests().await.unwrap();
+        let body = reqs.last().unwrap().body.clone();
+        serde_json::from_slice(&body).unwrap()
+    }
+
+    #[tokio::test]
+    async fn partial_update_with_only_title_omits_unset_keys_from_body() {
+        let server = MockServer::start().await;
+        Mock::given(method("PATCH"))
+            .and(path("/channels"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = channel_on(&server)
+            .update_info("tok", Some("New Title".to_owned()), None, None)
+            .await;
+        assert!(result.is_ok());
+
+        let body = last_body(&server).await;
+        assert_eq!(body["stream_title"], "New Title");
+        assert!(
+            body.get("category_id").is_none(),
+            "unset category_id must be skipped from the body"
+        );
+        assert!(
+            body.get("custom_tags").is_none(),
+            "unset tags must be skipped from the body"
+        );
+    }
+
+    #[tokio::test]
+    async fn full_update_carries_title_category_and_tags() {
+        let server = MockServer::start().await;
+        Mock::given(method("PATCH"))
+            .and(path("/channels"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = channel_on(&server)
+            .update_info(
+                "tok",
+                Some("Title".to_owned()),
+                Some(42),
+                Some(vec!["speedrun".to_owned(), "rust".to_owned()]),
+            )
+            .await;
+        assert!(result.is_ok());
+
+        let body = last_body(&server).await;
+        assert_eq!(body["stream_title"], "Title");
+        assert_eq!(body["category_id"], 42);
+        assert_eq!(body["custom_tags"], serde_json::json!(["speedrun", "rust"]));
+    }
+
+    #[tokio::test]
+    async fn auth_status_maps_to_auth_error() {
+        for status in [401_u16, 403] {
+            let server = MockServer::start().await;
+            Mock::given(method("PATCH"))
+                .respond_with(ResponseTemplate::new(status))
+                .mount(&server)
+                .await;
+
+            let err = channel_on(&server)
+                .update_info("tok", Some("t".to_owned()), None, None)
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(err, PlatformError::Auth { .. }),
+                "status {status} must map to Auth, got {err:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn unprocessable_entity_maps_to_http_error_with_status() {
+        let server = MockServer::start().await;
+        Mock::given(method("PATCH"))
+            .respond_with(ResponseTemplate::new(422))
+            .mount(&server)
+            .await;
+
+        let err = channel_on(&server)
+            .update_info("tok", Some("t".to_owned()), None, None)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, PlatformError::Http { status: 422, .. }));
+    }
+
+    #[tokio::test]
+    async fn rate_limited_status_maps_to_rate_limited_with_parsed_retry_after() {
+        let server = MockServer::start().await;
+        Mock::given(method("PATCH"))
+            .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "57"))
+            .mount(&server)
+            .await;
+
+        let err = channel_on(&server)
+            .update_info("tok", Some("t".to_owned()), None, None)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            PlatformError::RateLimited {
+                retry_after_secs: 57
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn limiter_exhaustion_returns_rate_limit_exhausted_without_reaching_server() {
+        let server = MockServer::start().await;
+        Mock::given(method("PATCH"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        let client = KickChannel::new(Arc::new(ExhaustedLimiter)).with_api_base(server.uri());
+        let err = client
+            .update_info("tok", Some("t".to_owned()), None, None)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, PlatformError::RateLimitExhausted));
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "an exhausted limiter must short-circuit before any HTTP call"
+        );
     }
 }

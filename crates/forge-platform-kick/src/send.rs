@@ -3,11 +3,13 @@ use std::sync::Arc;
 use forge_platform_core::{PlatformError, RateLimitOutcome, RateLimiter};
 
 const SEND_ENDPOINT: &str = "https://api.kick.com/public/v1/chat";
+const DELETE_BASE: &str = "https://api.kick.com/public/v1/chat";
 
 pub struct KickSendChat {
     client: reqwest::Client,
     limiter: Arc<dyn RateLimiter>,
     send_endpoint: String,
+    delete_base: String,
 }
 
 impl KickSendChat {
@@ -16,12 +18,20 @@ impl KickSendChat {
             client: reqwest::Client::new(),
             limiter,
             send_endpoint: SEND_ENDPOINT.to_owned(),
+            delete_base: DELETE_BASE.to_owned(),
         }
     }
 
     #[cfg(test)]
     pub(crate) fn with_send_endpoint(mut self, url: String) -> Self {
         self.send_endpoint = url;
+        self
+    }
+
+    #[cfg(test)]
+    #[allow(dead_code)]
+    pub(crate) fn with_delete_base(mut self, base: String) -> Self {
+        self.delete_base = base;
         self
     }
 
@@ -53,7 +63,7 @@ impl KickSendChat {
             .send()
             .await
             .map_err(|e| PlatformError::Network {
-                reason: e.to_string(),
+                reason: e.without_url().to_string(),
             })?;
 
         let status = response.status().as_u16();
@@ -73,6 +83,54 @@ impl KickSendChat {
         match status {
             401 => Err(PlatformError::Auth {
                 reason: "send-chat token rejected (401)".to_owned(),
+            }),
+            429 => Err(PlatformError::RateLimited { retry_after_secs }),
+            _ => Err(PlatformError::Http { status, body }),
+        }
+    }
+
+    pub async fn delete(&self, message_id: &str, token: &str) -> Result<(), PlatformError> {
+        let outcome = self
+            .limiter
+            .acquire(1)
+            .await
+            .map_err(|_| PlatformError::RateLimitExhausted)?;
+
+        if matches!(outcome, RateLimitOutcome::Exhausted) {
+            return Err(PlatformError::RateLimitExhausted);
+        }
+
+        let url = format!("{}/{}", self.delete_base, message_id);
+        let response = self
+            .client
+            .delete(&url)
+            .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
+            .send()
+            .await
+            .map_err(|e| PlatformError::Network {
+                reason: e.without_url().to_string(),
+            })?;
+
+        let status = response.status().as_u16();
+        if status == 204 {
+            return Ok(());
+        }
+
+        let retry_after_secs = response
+            .headers()
+            .get("retry-after")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(30);
+
+        let body = response.text().await.unwrap_or_default();
+
+        match status {
+            401 => Err(PlatformError::Auth {
+                reason: "delete-chat-message token rejected (401)".to_owned(),
+            }),
+            403 => Err(PlatformError::Auth {
+                reason: "delete-chat-message forbidden (403); check moderation:chat_message:manage scope".to_owned(),
             }),
             429 => Err(PlatformError::RateLimited { retry_after_secs }),
             _ => Err(PlatformError::Http { status, body }),

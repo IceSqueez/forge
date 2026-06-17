@@ -2074,6 +2074,7 @@ dependencies = [
  "forge-registry",
  "forge-storage",
  "forge-types",
+ "futures",
  "futures-core",
  "futures-util",
  "rand 0.10.1",

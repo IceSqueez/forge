@@ -8,6 +8,7 @@ pub mod credentials_manager;
 pub mod error;
 pub(crate) mod reconnect;
 pub mod send;
+pub mod sub_actions;
 pub mod triggers;
 
 pub use auth::{
@@ -20,3 +21,4 @@ pub use chat::{KickChat, KickChatHandle};
 pub use credentials::{CREDENTIAL_KEY, KickCredentials};
 pub use credentials_manager::KickCredentialsManager;
 pub use send::KickSendChat;
+pub use sub_actions::{DeleteMessageRunner, SendMessageRunner, register_kick_sub_actions};

@@ -272,3 +272,172 @@ impl SubActionRunner for UpdateRewardRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use forge_events::{Event, EventPublisher};
+    use forge_platform_core::{RateLimitOutcome, RateLimiter};
+    use forge_types::EventId;
+    use std::time::Duration;
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    struct NoopPublisher;
+    impl EventPublisher for NoopPublisher {
+        fn publish(&self, _: Event) {}
+    }
+
+    struct GrantLimiter;
+    #[async_trait]
+    impl RateLimiter for GrantLimiter {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+            Ok(RateLimitOutcome::Granted)
+        }
+        fn remaining(&self) -> u32 {
+            120
+        }
+        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
+    }
+
+    fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
+        RunContext {
+            arg_stack: stack,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher: &NoopPublisher,
+        }
+    }
+
+    fn token_source()
+    -> Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync> {
+        Arc::new(|| Box::pin(async { Ok("tok".to_owned()) }))
+    }
+
+    fn runner_on(server: &MockServer) -> UpdateRewardRunner {
+        let client = KickRewards::new(Arc::new(GrantLimiter)).with_api_base(server.uri());
+        UpdateRewardRunner::new(Arc::new(client), token_source())
+    }
+
+    fn runner_offline() -> UpdateRewardRunner {
+        let client = KickRewards::new(Arc::new(GrantLimiter));
+        UpdateRewardRunner::new(Arc::new(client), token_source())
+    }
+
+    fn config(reward_id: &str, title: &str, cost: &str, description: &str) -> SubActionConfig {
+        BTreeMap::from([
+            (
+                "reward_id".to_owned(),
+                Variant::String(reward_id.to_owned()),
+            ),
+            ("title".to_owned(), Variant::String(title.to_owned())),
+            ("cost".to_owned(), Variant::String(cost.to_owned())),
+            (
+                "description".to_owned(),
+                Variant::String(description.to_owned()),
+            ),
+        ])
+    }
+
+    #[tokio::test]
+    async fn execute_with_reward_id_and_one_field_reaches_server_and_succeeds() {
+        let server = MockServer::start().await;
+        Mock::given(method("PATCH"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let runner = runner_on(&server);
+        let (telemetry, _) = runner
+            .execute(
+                &config("rw_1", "New Title", "", ""),
+                &make_ctx(&ArgStack::new()),
+            )
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+    }
+
+    #[tokio::test]
+    async fn empty_reward_id_after_interpolation_fails_without_request() {
+        let server = MockServer::start().await;
+        Mock::given(method("PATCH"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        let runner = runner_on(&server);
+        let stack = ArgStack::new().set("id".to_owned(), Variant::String(String::new()));
+        let (telemetry, _) = runner
+            .execute(&config("%id%", "New", "", ""), &make_ctx(&stack))
+            .await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "an empty resolved reward_id must not reach the transport"
+        );
+    }
+
+    #[tokio::test]
+    async fn non_numeric_cost_fails_without_request() {
+        let server = MockServer::start().await;
+        Mock::given(method("PATCH"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        let runner = runner_on(&server);
+        let (telemetry, _) = runner
+            .execute(&config("rw_1", "", "lots", ""), &make_ctx(&ArgStack::new()))
+            .await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "a non-numeric cost must fail before any HTTP call"
+        );
+    }
+
+    #[tokio::test]
+    async fn all_updatable_fields_empty_after_interpolation_fails_without_request() {
+        let server = MockServer::start().await;
+        Mock::given(method("PATCH"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        let runner = runner_on(&server);
+        let stack = ArgStack::new().set("e".to_owned(), Variant::String(String::new()));
+        let (telemetry, _) = runner
+            .execute(&config("rw_1", "%e%", "%e%", "%e%"), &make_ctx(&stack))
+            .await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "an all-empty resolved update must not reach the transport"
+        );
+    }
+
+    #[test]
+    fn validate_config_requires_reward_id_and_at_least_one_updatable_field() {
+        let runner = runner_offline();
+        let cases: Vec<(&str, SubActionConfig, bool)> = vec![
+            ("no reward_id", config("", "New", "", ""), false),
+            ("reward_id but no fields", config("rw_1", "", "", ""), false),
+            ("reward_id + title", config("rw_1", "New", "", ""), true),
+            ("reward_id + cost", config("rw_1", "", "500", ""), true),
+            ("reward_id + description", config("rw_1", "", "", "d"), true),
+        ];
+        for (label, cfg, expect_ok) in cases {
+            assert_eq!(
+                runner.validate_config(&cfg).is_ok(),
+                expect_ok,
+                "case: {label}"
+            );
+        }
+    }
+}

@@ -129,3 +129,106 @@ impl SubActionRunner for DeleteRewardRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use forge_events::{Event, EventPublisher};
+    use forge_platform_core::{RateLimitOutcome, RateLimiter};
+    use forge_types::EventId;
+    use std::time::Duration;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    struct NoopPublisher;
+    impl EventPublisher for NoopPublisher {
+        fn publish(&self, _: Event) {}
+    }
+
+    struct GrantLimiter;
+    #[async_trait]
+    impl RateLimiter for GrantLimiter {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+            Ok(RateLimitOutcome::Granted)
+        }
+        fn remaining(&self) -> u32 {
+            120
+        }
+        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
+    }
+
+    fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
+        RunContext {
+            arg_stack: stack,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher: &NoopPublisher,
+        }
+    }
+
+    fn token_source()
+    -> Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync> {
+        Arc::new(|| Box::pin(async { Ok("tok".to_owned()) }))
+    }
+
+    fn runner_on(server: &MockServer) -> DeleteRewardRunner {
+        let client = KickRewards::new(Arc::new(GrantLimiter)).with_api_base(server.uri());
+        DeleteRewardRunner::new(Arc::new(client), token_source())
+    }
+
+    fn runner_offline() -> DeleteRewardRunner {
+        let client = KickRewards::new(Arc::new(GrantLimiter));
+        DeleteRewardRunner::new(Arc::new(client), token_source())
+    }
+
+    fn config(reward_id: &str) -> SubActionConfig {
+        BTreeMap::from([(
+            "reward_id".to_owned(),
+            Variant::String(reward_id.to_owned()),
+        )])
+    }
+
+    #[tokio::test]
+    async fn execute_with_interpolated_reward_id_reaches_delete_and_succeeds() {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .and(path("/channels/rewards/rw_7"))
+            .respond_with(ResponseTemplate::new(204))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let runner = runner_on(&server);
+        let stack = ArgStack::new().set("rid".to_owned(), Variant::String("rw_7".to_owned()));
+        let (telemetry, _) = runner.execute(&config("%rid%"), &make_ctx(&stack)).await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+    }
+
+    #[tokio::test]
+    async fn empty_reward_id_after_interpolation_fails_without_request() {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&server)
+            .await;
+
+        let runner = runner_on(&server);
+        let stack = ArgStack::new().set("rid".to_owned(), Variant::String(String::new()));
+        let (telemetry, _) = runner.execute(&config("%rid%"), &make_ctx(&stack)).await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "an empty resolved reward_id must not reach the transport"
+        );
+    }
+
+    #[test]
+    fn validate_config_requires_non_empty_reward_id() {
+        let runner = runner_offline();
+        assert!(runner.validate_config(&config("rw_1")).is_ok());
+        assert!(runner.validate_config(&config("")).is_err());
+    }
+}

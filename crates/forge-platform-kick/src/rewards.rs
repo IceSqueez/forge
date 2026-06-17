@@ -89,7 +89,6 @@ impl KickRewards {
     }
 
     #[cfg(test)]
-    #[allow(dead_code)]
     pub(crate) fn with_api_base(mut self, base: String) -> Self {
         self.rewards_endpoint = format!("{base}/channels/rewards");
         self
@@ -237,5 +236,254 @@ async fn map_rewards_error<T>(
         400 | 422 => Err(PlatformError::Http { status, body }),
         429 => Err(PlatformError::RateLimited { retry_after_secs }),
         _ => Err(PlatformError::Http { status, body }),
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    struct GrantLimiter;
+    #[async_trait::async_trait]
+    impl RateLimiter for GrantLimiter {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+            Ok(RateLimitOutcome::Granted)
+        }
+        fn remaining(&self) -> u32 {
+            120
+        }
+        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
+    }
+
+    struct ExhaustedLimiter;
+    #[async_trait::async_trait]
+    impl RateLimiter for ExhaustedLimiter {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+            Ok(RateLimitOutcome::Exhausted)
+        }
+        fn remaining(&self) -> u32 {
+            0
+        }
+        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
+    }
+
+    fn rewards_on(server: &MockServer) -> KickRewards {
+        KickRewards::new(Arc::new(GrantLimiter)).with_api_base(server.uri())
+    }
+
+    async fn last_body(server: &MockServer) -> serde_json::Value {
+        let reqs = server.received_requests().await.unwrap();
+        let body = reqs.last().unwrap().body.clone();
+        serde_json::from_slice(&body).unwrap()
+    }
+
+    fn minimal_create() -> CreateRewardParams {
+        CreateRewardParams {
+            title: "Hydrate".to_owned(),
+            cost: 500,
+            description: None,
+            background_color: None,
+            is_enabled: None,
+            is_user_input_required: None,
+            should_redemptions_skip_request_queue: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn create_posts_to_rewards_endpoint_with_only_required_fields() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/channels/rewards"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"id": "x"})))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = rewards_on(&server).create(minimal_create(), "tok").await;
+        assert!(result.is_ok());
+
+        let body = last_body(&server).await;
+        assert_eq!(body["title"], "Hydrate");
+        assert_eq!(body["cost"], 500);
+        for omitted in [
+            "description",
+            "background_color",
+            "is_enabled",
+            "is_user_input_required",
+            "should_redemptions_skip_request_queue",
+        ] {
+            assert!(
+                body.get(omitted).is_none(),
+                "unset optional field {omitted} must be skipped from the body"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn create_returns_id_from_top_level_id_field() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/channels/rewards"))
+            .respond_with(
+                ResponseTemplate::new(201).set_body_json(serde_json::json!({"id": "rw_1"})),
+            )
+            .mount(&server)
+            .await;
+
+        let id = rewards_on(&server).create(minimal_create(), "tok").await;
+        assert_eq!(id.unwrap(), Some("rw_1".to_owned()));
+    }
+
+    #[tokio::test]
+    async fn create_returns_id_from_nested_data_id_when_top_level_absent() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/channels/rewards"))
+            .respond_with(
+                ResponseTemplate::new(201)
+                    .set_body_json(serde_json::json!({"data": {"id": "rw_2"}})),
+            )
+            .mount(&server)
+            .await;
+
+        let id = rewards_on(&server).create(minimal_create(), "tok").await;
+        assert_eq!(id.unwrap(), Some("rw_2".to_owned()));
+    }
+
+    #[tokio::test]
+    async fn create_returns_none_when_success_body_carries_no_id() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/channels/rewards"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+            .mount(&server)
+            .await;
+
+        let id = rewards_on(&server).create(minimal_create(), "tok").await;
+        assert_eq!(id.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn update_patches_reward_by_id_with_only_provided_fields() {
+        let server = MockServer::start().await;
+        Mock::given(method("PATCH"))
+            .and(path("/channels/rewards/rw_9"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let params = UpdateRewardParams {
+            title: Some("New".to_owned()),
+            cost: None,
+            description: None,
+            background_color: None,
+            is_enabled: None,
+            is_paused: None,
+            is_user_input_required: None,
+            should_redemptions_skip_request_queue: None,
+        };
+        let result = rewards_on(&server).update("rw_9", params, "tok").await;
+        assert!(result.is_ok());
+
+        let body = last_body(&server).await;
+        assert_eq!(body["title"], "New");
+        for omitted in ["cost", "description", "is_paused", "is_enabled"] {
+            assert!(
+                body.get(omitted).is_none(),
+                "unset update field {omitted} must be skipped from the body"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn delete_issues_delete_to_reward_by_id() {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .and(path("/channels/rewards/rw_9"))
+            .respond_with(ResponseTemplate::new(204))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = rewards_on(&server).delete("rw_9", "tok").await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn auth_statuses_map_to_auth_error() {
+        for status in [401_u16, 403] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .respond_with(ResponseTemplate::new(status))
+                .mount(&server)
+                .await;
+
+            let err = rewards_on(&server)
+                .create(minimal_create(), "tok")
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(err, PlatformError::Auth { .. }),
+                "status {status} must map to Auth, got {err:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn unprocessable_entity_maps_to_http_error_with_status() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(422))
+            .mount(&server)
+            .await;
+
+        let err = rewards_on(&server)
+            .create(minimal_create(), "tok")
+            .await
+            .unwrap_err();
+        assert!(matches!(err, PlatformError::Http { status: 422, .. }));
+    }
+
+    #[tokio::test]
+    async fn rate_limited_status_maps_to_rate_limited_with_parsed_retry_after() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "57"))
+            .mount(&server)
+            .await;
+
+        let err = rewards_on(&server)
+            .create(minimal_create(), "tok")
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            PlatformError::RateLimited {
+                retry_after_secs: 57
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn limiter_exhaustion_returns_rate_limit_exhausted_without_reaching_server() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        let client = KickRewards::new(Arc::new(ExhaustedLimiter)).with_api_base(server.uri());
+        let err = client.create(minimal_create(), "tok").await.unwrap_err();
+
+        assert!(matches!(err, PlatformError::RateLimitExhausted));
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "an exhausted limiter must short-circuit before any HTTP call"
+        );
     }
 }

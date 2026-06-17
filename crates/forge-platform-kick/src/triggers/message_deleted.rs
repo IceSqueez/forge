@@ -8,7 +8,7 @@ pub(crate) struct MessageDeletedDescriptor;
 
 impl TriggerKindDescriptor for MessageDeletedDescriptor {
     fn id(&self) -> &str {
-        "kick.message_deleted"
+        "kick.chat.message_deleted"
     }
 
     fn category(&self) -> TriggerCategory {
@@ -50,7 +50,7 @@ impl TriggerKindDescriptor for MessageDeletedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Kick),
-            kind_prefix: Some("kick.message_deleted".to_owned()),
+            kind_prefix: Some("kick.chat.message_deleted".to_owned()),
         }
     }
 
@@ -88,7 +88,7 @@ mod tests {
     fn delete_event() -> Event {
         Event::new(
             EventSource::Kick,
-            "kick.message_deleted",
+            "kick.chat.message_deleted",
             serde_json::json!({
                 "message": { "id": "msg-uuid-999" },
                 "deleted_by": { "id": 5 }

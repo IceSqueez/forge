@@ -245,12 +245,12 @@ mod tests {
         let mut reg = TriggerRegistry::new();
         register_kick_triggers(&mut reg).unwrap();
         for id in [
-            "kick.chat",
-            "kick.sub",
-            "kick.sub_gift",
-            "kick.ban",
-            "kick.message_deleted",
-            "kick.host",
+            "kick.chat.message",
+            "kick.channel.subscriber",
+            "kick.channel.subscription_gift",
+            "kick.channel.banned",
+            "kick.chat.message_deleted",
+            "kick.channel.host_received",
         ] {
             assert!(reg.get(id).is_some(), "missing kind id: {id}");
         }

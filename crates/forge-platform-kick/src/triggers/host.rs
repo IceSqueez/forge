@@ -8,7 +8,7 @@ pub(crate) struct HostDescriptor;
 
 impl TriggerKindDescriptor for HostDescriptor {
     fn id(&self) -> &str {
-        "kick.host"
+        "kick.channel.host_received"
     }
 
     fn category(&self) -> TriggerCategory {
@@ -50,7 +50,7 @@ impl TriggerKindDescriptor for HostDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Kick),
-            kind_prefix: Some("kick.host".to_owned()),
+            kind_prefix: Some("kick.channel.host_received".to_owned()),
         }
     }
 
@@ -86,7 +86,7 @@ mod tests {
     fn host_event() -> Event {
         Event::new(
             EventSource::Kick,
-            "kick.host",
+            "kick.channel.host_received",
             serde_json::json!({
                 "host_username": "hosting_channel",
                 "number_viewers": 250

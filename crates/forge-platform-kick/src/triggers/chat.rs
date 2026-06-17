@@ -8,7 +8,7 @@ pub(crate) struct ChatDescriptor;
 
 impl TriggerKindDescriptor for ChatDescriptor {
     fn id(&self) -> &str {
-        "kick.chat"
+        "kick.chat.message"
     }
 
     fn category(&self) -> TriggerCategory {
@@ -50,7 +50,7 @@ impl TriggerKindDescriptor for ChatDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Kick),
-            kind_prefix: Some("kick.chat".to_owned()),
+            kind_prefix: Some("kick.chat.message".to_owned()),
         }
     }
 
@@ -117,7 +117,7 @@ mod tests {
     fn chat_event() -> Event {
         Event::new(
             EventSource::Kick,
-            "kick.chat",
+            "kick.chat.message",
             serde_json::json!({
                 "id": "msg-1",
                 "chatroom_id": 100,

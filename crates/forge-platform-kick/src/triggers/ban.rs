@@ -8,7 +8,7 @@ pub(crate) struct BanDescriptor;
 
 impl TriggerKindDescriptor for BanDescriptor {
     fn id(&self) -> &str {
-        "kick.ban"
+        "kick.channel.banned"
     }
 
     fn category(&self) -> TriggerCategory {
@@ -50,7 +50,7 @@ impl TriggerKindDescriptor for BanDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Kick),
-            kind_prefix: Some("kick.ban".to_owned()),
+            kind_prefix: Some("kick.channel.banned".to_owned()),
         }
     }
 
@@ -102,7 +102,7 @@ mod tests {
     fn ban_event() -> Event {
         Event::new(
             EventSource::Kick,
-            "kick.ban",
+            "kick.channel.banned",
             serde_json::json!({
                 "user": { "id": 77, "username": "bad_actor" },
                 "banned_by": { "id": 2, "username": "mod" },

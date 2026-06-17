@@ -288,12 +288,12 @@ async fn handle_ws_text(raw: &str, event_tx: &mpsc::Sender<Event>) {
 
 pub(crate) fn build_event(event_name: &str, payload: serde_json::Value) -> Option<Event> {
     let kind = match event_name {
-        "App\\Events\\ChatMessageEvent" => "kick.chat",
-        "App\\Events\\MessageDeletedEvent" => "kick.message_deleted",
-        "App\\Events\\UserBannedEvent" => "kick.ban",
-        "App\\Events\\SubscriptionEvent" => "kick.sub",
-        "App\\Events\\GiftedSubscriptionsEvent" => "kick.sub_gift",
-        "App\\Events\\StreamHostEvent" => "kick.host",
+        "App\\Events\\ChatMessageEvent" => "kick.chat.message",
+        "App\\Events\\MessageDeletedEvent" => "kick.chat.message_deleted",
+        "App\\Events\\UserBannedEvent" => "kick.channel.banned",
+        "App\\Events\\SubscriptionEvent" => "kick.channel.subscriber",
+        "App\\Events\\GiftedSubscriptionsEvent" => "kick.channel.subscription_gift",
+        "App\\Events\\StreamHostEvent" => "kick.channel.host_received",
         other => {
             debug!(event = %other, "unhandled Kick Pusher event");
             return None;
@@ -338,32 +338,32 @@ mod tests {
             (
                 "App\\Events\\ChatMessageEvent",
                 chat_payload(),
-                Some("kick.chat"),
+                Some("kick.chat.message"),
             ),
             (
                 "App\\Events\\MessageDeletedEvent",
                 serde_json::json!({"message_id": "abc", "deleted_by": 5}),
-                Some("kick.message_deleted"),
+                Some("kick.chat.message_deleted"),
             ),
             (
                 "App\\Events\\UserBannedEvent",
                 serde_json::json!({"user": {"id": 1, "username": "bad_user"}, "banned_by": {"id": 2}}),
-                Some("kick.ban"),
+                Some("kick.channel.banned"),
             ),
             (
                 "App\\Events\\SubscriptionEvent",
                 serde_json::json!({"user_ids": [1], "username": "sub_user", "months": 1}),
-                Some("kick.sub"),
+                Some("kick.channel.subscriber"),
             ),
             (
                 "App\\Events\\GiftedSubscriptionsEvent",
                 serde_json::json!({"gifted_usernames": ["a", "b"], "gifter_username": "g"}),
-                Some("kick.sub_gift"),
+                Some("kick.channel.subscription_gift"),
             ),
             (
                 "App\\Events\\StreamHostEvent",
                 serde_json::json!({"host_username": "host_channel", "number_viewers": 150}),
-                Some("kick.host"),
+                Some("kick.channel.host_received"),
             ),
             ("App\\Events\\Unknown", serde_json::Value::Null, None),
             ("pusher:pong", serde_json::Value::Null, None),
@@ -393,7 +393,7 @@ mod tests {
         handle_ws_text(&frame.to_string(), &tx).await;
 
         let event = rx.recv().await.unwrap();
-        assert_eq!(event.kind, "kick.chat");
+        assert_eq!(event.kind, "kick.chat.message");
         assert_eq!(event.source, EventSource::Kick);
     }
 

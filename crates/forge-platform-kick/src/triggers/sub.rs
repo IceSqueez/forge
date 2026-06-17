@@ -8,7 +8,7 @@ pub(crate) struct SubDescriptor;
 
 impl TriggerKindDescriptor for SubDescriptor {
     fn id(&self) -> &str {
-        "kick.sub"
+        "kick.channel.subscriber"
     }
 
     fn category(&self) -> TriggerCategory {
@@ -50,7 +50,7 @@ impl TriggerKindDescriptor for SubDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Kick),
-            kind_prefix: Some("kick.sub".to_owned()),
+            kind_prefix: Some("kick.channel.subscriber".to_owned()),
         }
     }
 
@@ -104,7 +104,7 @@ mod tests {
     fn sub_event() -> Event {
         Event::new(
             EventSource::Kick,
-            "kick.sub",
+            "kick.channel.subscriber",
             serde_json::json!({
                 "user_ids": [123],
                 "username": "new_subscriber",

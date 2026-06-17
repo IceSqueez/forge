@@ -6,6 +6,7 @@ pub mod chat;
 pub mod credentials;
 pub mod credentials_manager;
 pub mod error;
+pub mod moderation;
 pub(crate) mod reconnect;
 pub mod send;
 pub mod sub_actions;
@@ -20,5 +21,9 @@ pub use channel_info::{ChannelInfoFetcher, KickChannelInfo};
 pub use chat::{KickChat, KickChatHandle};
 pub use credentials::{CREDENTIAL_KEY, KickCredentials};
 pub use credentials_manager::KickCredentialsManager;
+pub use moderation::KickModeration;
 pub use send::KickSendChat;
-pub use sub_actions::{DeleteMessageRunner, SendMessageRunner, register_kick_sub_actions};
+pub use sub_actions::{
+    BanUserRunner, DeleteMessageRunner, SendMessageRunner, TimeoutUserRunner, UnbanUserRunner,
+    register_kick_sub_actions,
+};

@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod builtin;
 pub mod capabilities;
+pub mod channel;
 pub mod channel_info;
 pub mod chat;
 pub mod credentials;
@@ -17,6 +18,7 @@ pub use auth::{
 };
 pub use builtin::{KickIntegrationBundle, register_kick_triggers};
 pub use capabilities::kick_capabilities;
+pub use channel::KickChannel;
 pub use channel_info::{ChannelInfoFetcher, KickChannelInfo};
 pub use chat::{KickChat, KickChatHandle};
 pub use credentials::{CREDENTIAL_KEY, KickCredentials};
@@ -24,6 +26,6 @@ pub use credentials_manager::KickCredentialsManager;
 pub use moderation::KickModeration;
 pub use send::KickSendChat;
 pub use sub_actions::{
-    BanUserRunner, DeleteMessageRunner, SendMessageRunner, TimeoutUserRunner, UnbanUserRunner,
-    register_kick_sub_actions,
+    BanUserRunner, DeleteMessageRunner, KickSubActionDeps, SendMessageRunner, TimeoutUserRunner,
+    UnbanUserRunner, UpdateInfoRunner, register_kick_sub_actions,
 };

@@ -160,3 +160,135 @@ impl SubActionRunner for TimeoutUserRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use forge_events::{Event, EventPublisher};
+    use forge_platform_core::{RateLimitOutcome, RateLimiter};
+    use forge_types::EventId;
+    use std::time::Duration;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    struct NoopPublisher;
+    impl EventPublisher for NoopPublisher {
+        fn publish(&self, _: Event) {}
+    }
+
+    struct GrantLimiter;
+    #[async_trait]
+    impl RateLimiter for GrantLimiter {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+            Ok(RateLimitOutcome::Granted)
+        }
+        fn remaining(&self) -> u32 {
+            120
+        }
+        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
+    }
+
+    fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
+        RunContext {
+            arg_stack: stack,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher: &NoopPublisher,
+        }
+    }
+
+    fn token_source()
+    -> Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync> {
+        Arc::new(|| Box::pin(async { Ok("tok".to_owned()) }))
+    }
+
+    fn runner_on(server: &MockServer) -> TimeoutUserRunner {
+        let client = KickModeration::new(Arc::new(GrantLimiter)).with_api_base(server.uri());
+        TimeoutUserRunner::new(Arc::new(client), token_source(), 42)
+    }
+
+    fn config(user_id: &str, duration_minutes: i64) -> SubActionConfig {
+        BTreeMap::from([
+            ("user_id".to_owned(), Variant::String(user_id.to_owned())),
+            (
+                "duration_minutes".to_owned(),
+                Variant::Int(duration_minutes),
+            ),
+        ])
+    }
+
+    #[tokio::test]
+    async fn execute_times_out_numeric_id_sending_duration_in_body() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/moderation/bans"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let runner = runner_on(&server);
+        let stack = ArgStack::new().set("uid".to_owned(), Variant::String("777".to_owned()));
+
+        let (telemetry, _) = runner.execute(&config("%uid%", 5), &make_ctx(&stack)).await;
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+
+        let reqs = server.received_requests().await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&reqs[0].body).unwrap();
+        assert_eq!(
+            body["duration"], 5,
+            "timeout must forward duration_minutes; this is the signal distinguishing it from a permanent ban"
+        );
+    }
+
+    #[tokio::test]
+    async fn non_numeric_user_id_fails_without_request() {
+        let server = MockServer::start().await;
+        let runner = runner_on(&server);
+        let stack = ArgStack::new().set("uid".to_owned(), Variant::String("alice".to_owned()));
+
+        let (telemetry, _) = runner.execute(&config("%uid%", 5), &make_ctx(&stack)).await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "a non-numeric user id must be rejected before any HTTP call"
+        );
+    }
+
+    #[test]
+    fn validate_config_enforces_user_id_and_duration_bounds() {
+        let runner = TimeoutUserRunner::new(
+            Arc::new(KickModeration::new(Arc::new(GrantLimiter))),
+            token_source(),
+            42,
+        );
+
+        let missing_user: SubActionConfig =
+            BTreeMap::from([("duration_minutes".to_owned(), Variant::Int(5))]);
+        let non_string_user: SubActionConfig = BTreeMap::from([
+            ("user_id".to_owned(), Variant::Int(7)),
+            ("duration_minutes".to_owned(), Variant::Int(5)),
+        ]);
+
+        let cases: Vec<(&str, SubActionConfig, bool)> = vec![
+            ("valid in-range", config("777", 5), true),
+            ("duration lower bound", config("777", 1), true),
+            ("duration upper bound", config("777", 10080), true),
+            ("duration zero rejected", config("777", 0), false),
+            ("duration over max rejected", config("777", 10081), false),
+            ("empty user_id", config("", 5), false),
+            ("missing user_id", missing_user, false),
+            ("non-string user_id", non_string_user, false),
+        ];
+
+        for (label, cfg, expect_ok) in cases {
+            assert_eq!(
+                runner.validate_config(&cfg).is_ok(),
+                expect_ok,
+                "case: {label}"
+            );
+        }
+    }
+}

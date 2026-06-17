@@ -152,3 +152,152 @@ impl SubActionRunner for RejectRedemptionRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use forge_events::{Event, EventPublisher};
+    use forge_platform_core::{RateLimitOutcome, RateLimiter};
+    use forge_types::EventId;
+    use std::time::Duration;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    struct NoopPublisher;
+    impl EventPublisher for NoopPublisher {
+        fn publish(&self, _: Event) {}
+    }
+
+    struct GrantLimiter;
+    #[async_trait]
+    impl RateLimiter for GrantLimiter {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+            Ok(RateLimitOutcome::Granted)
+        }
+        fn remaining(&self) -> u32 {
+            120
+        }
+        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
+    }
+
+    fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
+        RunContext {
+            arg_stack: stack,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher: &NoopPublisher,
+        }
+    }
+
+    fn token_source()
+    -> Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync> {
+        Arc::new(|| Box::pin(async { Ok("tok".to_owned()) }))
+    }
+
+    fn runner_on(server: &MockServer) -> RejectRedemptionRunner {
+        let client = KickRewards::new(Arc::new(GrantLimiter)).with_api_base(server.uri());
+        RejectRedemptionRunner::new(Arc::new(client), token_source())
+    }
+
+    fn runner_offline() -> RejectRedemptionRunner {
+        let client = KickRewards::new(Arc::new(GrantLimiter));
+        RejectRedemptionRunner::new(Arc::new(client), token_source())
+    }
+
+    fn config(ids: &str) -> SubActionConfig {
+        BTreeMap::from([("redemption_ids".to_owned(), Variant::String(ids.to_owned()))])
+    }
+
+    async fn last_body(server: &MockServer) -> serde_json::Value {
+        let reqs = server.received_requests().await.unwrap();
+        serde_json::from_slice(&reqs.last().unwrap().body).unwrap()
+    }
+
+    #[tokio::test]
+    async fn execute_with_single_interpolated_id_reaches_reject_endpoint() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/channels/rewards/redemptions/reject"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let stack = ArgStack::new().set(
+            "redemption_id".to_owned(),
+            Variant::String("rd_7".to_owned()),
+        );
+        let (telemetry, _) = runner_on(&server)
+            .execute(&config("%redemption_id%"), &make_ctx(&stack))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+    }
+
+    #[tokio::test]
+    async fn execute_with_comma_separated_batch_sends_all_parsed_ids() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/channels/rewards/redemptions/reject"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let (telemetry, _) = runner_on(&server)
+            .execute(&config("a, b, c"), &make_ctx(&ArgStack::new()))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let body = last_body(&server).await;
+        assert_eq!(body["ids"], serde_json::json!(["a", "b", "c"]));
+    }
+
+    #[tokio::test]
+    async fn execute_empty_after_interpolation_fails_without_request() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        let stack = ArgStack::new().set("x".to_owned(), Variant::String(String::new()));
+        let (telemetry, _) = runner_on(&server)
+            .execute(&config("%x%"), &make_ctx(&stack))
+            .await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "empty resolved redemption_ids must not reach the transport"
+        );
+    }
+
+    #[test]
+    fn validate_config_enforces_presence_and_batch_limit() {
+        let runner = runner_offline();
+        let twenty_five = (0..25)
+            .map(|i| format!("r{i}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let twenty_six = (0..26)
+            .map(|i| format!("r{i}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let cases: Vec<(&str, String, bool)> = vec![
+            ("empty", String::new(), false),
+            ("whitespace", "   ".to_owned(), false),
+            ("single id", "rd_1".to_owned(), true),
+            ("25 ids at limit", twenty_five, true),
+            ("26 ids over limit", twenty_six, false),
+        ];
+        for (label, ids, expect_ok) in cases {
+            assert_eq!(
+                runner.validate_config(&config(&ids)).is_ok(),
+                expect_ok,
+                "case: {label}"
+            );
+        }
+    }
+}

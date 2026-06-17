@@ -580,4 +580,143 @@ mod tests {
             "an exhausted limiter must short-circuit before any HTTP call"
         );
     }
+
+    fn ids(n: usize) -> Vec<String> {
+        (0..n).map(|i| format!("rd_{i}")).collect()
+    }
+
+    #[tokio::test]
+    async fn accept_redemptions_posts_ids_array_to_accept_endpoint() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/channels/rewards/redemptions/accept"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let batch = vec!["rd_a".to_owned(), "rd_b".to_owned()];
+        let result = rewards_on(&server).accept_redemptions(&batch, "tok").await;
+        assert!(result.is_ok());
+
+        let body = last_body(&server).await;
+        assert_eq!(body["ids"], serde_json::json!(["rd_a", "rd_b"]));
+    }
+
+    #[tokio::test]
+    async fn reject_redemptions_posts_ids_array_to_reject_endpoint() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/channels/rewards/redemptions/reject"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let batch = vec!["rd_a".to_owned(), "rd_b".to_owned()];
+        let result = rewards_on(&server).reject_redemptions(&batch, "tok").await;
+        assert!(result.is_ok());
+
+        let body = last_body(&server).await;
+        assert_eq!(body["ids"], serde_json::json!(["rd_a", "rd_b"]));
+    }
+
+    #[tokio::test]
+    async fn accept_redemptions_empty_ids_errors_without_reaching_server() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        let err = rewards_on(&server)
+            .accept_redemptions(&[], "tok")
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, PlatformError::Http { status: 0, .. }));
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "the client-side empty guard must short-circuit before any HTTP call"
+        );
+    }
+
+    #[tokio::test]
+    async fn accept_redemptions_at_batch_limit_reaches_server() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/channels/rewards/redemptions/accept"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = rewards_on(&server)
+            .accept_redemptions(&ids(MAX_REDEMPTION_BATCH), "tok")
+            .await;
+        assert!(result.is_ok(), "{MAX_REDEMPTION_BATCH} ids is at the limit");
+    }
+
+    #[tokio::test]
+    async fn accept_redemptions_one_over_batch_limit_errors_without_reaching_server() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        let err = rewards_on(&server)
+            .accept_redemptions(&ids(MAX_REDEMPTION_BATCH + 1), "tok")
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, PlatformError::Http { status: 0, .. }));
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "the oversize-batch guard must short-circuit before any HTTP call"
+        );
+    }
+
+    #[tokio::test]
+    async fn accept_redemptions_maps_auth_and_rate_limited_statuses() {
+        for (status, expect_auth) in [(401_u16, true), (429, false)] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .respond_with(ResponseTemplate::new(status))
+                .mount(&server)
+                .await;
+
+            let err = rewards_on(&server)
+                .accept_redemptions(&ids(1), "tok")
+                .await
+                .unwrap_err();
+
+            if expect_auth {
+                assert!(matches!(err, PlatformError::Auth { .. }), "status {status}");
+            } else {
+                assert!(
+                    matches!(err, PlatformError::RateLimited { .. }),
+                    "status {status}"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn accept_redemptions_limiter_exhaustion_short_circuits_after_guards() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        let client = KickRewards::new(Arc::new(ExhaustedLimiter)).with_api_base(server.uri());
+        let err = client.accept_redemptions(&ids(1), "tok").await.unwrap_err();
+
+        assert!(matches!(err, PlatformError::RateLimitExhausted));
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "an exhausted limiter must short-circuit before any HTTP call"
+        );
+    }
 }

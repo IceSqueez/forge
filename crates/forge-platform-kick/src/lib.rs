@@ -8,6 +8,7 @@ pub mod credentials;
 pub mod credentials_manager;
 pub mod error;
 pub mod moderation;
+pub mod poller;
 pub(crate) mod reconnect;
 pub mod rewards;
 pub mod send;
@@ -25,6 +26,7 @@ pub use chat::{KickChat, KickChatHandle};
 pub use credentials::{CREDENTIAL_KEY, KickCredentials};
 pub use credentials_manager::KickCredentialsManager;
 pub use moderation::KickModeration;
+pub use poller::{KickPollerHandle, spawn_kick_poller};
 pub use rewards::{CreateRewardParams, KickRewards, RedemptionRecord, UpdateRewardParams};
 pub use send::KickSendChat;
 pub use sub_actions::{

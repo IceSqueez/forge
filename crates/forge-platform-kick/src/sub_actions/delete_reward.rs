@@ -67,7 +67,7 @@ impl SubActionRunner for DeleteRewardRunner {
         vec![FormField::Text {
             key: "reward_id",
             label: "Reward ID",
-            placeholder: "%reward.id%",
+            placeholder: "%reward_id%",
         }]
     }
 

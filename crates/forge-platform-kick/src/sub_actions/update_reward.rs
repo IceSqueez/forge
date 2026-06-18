@@ -73,7 +73,7 @@ impl SubActionRunner for UpdateRewardRunner {
             FormField::Text {
                 key: "reward_id",
                 label: "Reward ID",
-                placeholder: "%reward.id%",
+                placeholder: "%reward_id%",
             },
             FormField::Text {
                 key: "title",

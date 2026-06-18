@@ -1,6 +1,48 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-beta.14] - 2026-06-18
+### 🐛 Bug Fixes
+- *(ui)* Group kick triggers under a kick picker section
+- *(ui)* Color youtube and kick sub-action category pills
+- *(kick)* Keep chat receive loop alive after connect
+- *(kick)* Expose message_id and repair delete-message default
+- *(kick)* Point reward-id hints at the resolvable arg
+- *(kick)* Dedupe redemptions against the live pending set
+
+### 📚 Documentation
+- *(readme)* Describe kick official write tier and triggers
+
+### 🚀 Features
+- *(storage)* Migrate kick trigger kind_ids to canonical scheme
+- *(kick)* Open write tier — full oauth scopes + moderation/rewards caps
+- *(kick)* Add chat send + delete sub-action runners
+- *(kick)* Add ban/timeout/unban moderation sub-action runners
+- *(kick)* Add channel update-info sub-action runner
+- *(kick)* Add channel-reward create/update/delete sub-action runners
+- *(kick)* Add redemption accept/reject sub-action runners
+- *(kick)* Add chat.command trigger descriptor
+- *(kick)* Add livestream status, metadata, redemption triggers
+- *(kick)* Add channel and redemption GET poll read methods
+- *(kick)* Add livestream and redemption poll loop task
+- *(app)* Wire kick sub-actions and poll loop into runtime
+
+### 🚜 Refactor
+- *(kick)* Rename trigger ids to catalog-canonical scheme
+- *(kick)* Run poll loop detached without shutdown handle
+
+### 🧪 Testing
+- *(storage)* Cover kick kind_id rename data migration
+- *(kick)* Cover chat send/delete runners + write scopes
+- *(kick)* Cover ban/timeout/unban moderation runners and client
+- *(kick)* Cover channel update-info runner and transport
+- *(kick)* Cover reward CRUD client and runner guards
+- *(kick)* Cover redemption accept/reject batching and guards
+- *(kick)* Cover chat-command trigger prefix match and arg split
+- *(kick)* Cover poll-trigger arg-stack nested field extraction
+- *(kick)* Cover channel and redemption GET poll read methods
+- *(kick)* Cover poller dedupe, channel diff, and emit gating
+
 ## [0.1.0-beta.13] - 2026-06-16
 ### ⚙️ Miscellaneous Tasks
 - *(deps)* Bump tower-http from 0.6.11 to 0.7.0 (#28)
@@ -8,6 +50,7 @@ All notable changes to this project will be documented in this file.
 - *(deps)* Bump regex from 1.12.3 to 1.12.4 (#30)
 - *(deps)* Bump cpal from 0.18.0 to 0.18.1 (#32)
 - *(deps)* Bump fluent-langneg from 0.13.1 to 0.14.2 (#31)
+- Release
 
 ### 🐛 Bug Fixes
 - *(deps)* Pin fluent-langneg to 0.13 to match fluent stack
@@ -15,6 +58,7 @@ All notable changes to this project will be documented in this file.
 
 ### 📚 Documentation
 - *(readme)* Expand youtube trigger and sub-action coverage
+- *(release)* Release v0.1.0-beta.13
 
 ### 🚀 Features
 - *(storage)* Migrate youtube trigger kind_ids to canonical scheme

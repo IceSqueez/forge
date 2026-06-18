@@ -18,7 +18,10 @@ use crate::triggers::ban::BanDescriptor;
 use crate::triggers::chat::ChatDescriptor;
 use crate::triggers::chat_command::ChatCommandDescriptor;
 use crate::triggers::host::HostDescriptor;
+use crate::triggers::livestream_metadata::LivestreamMetadataDescriptor;
+use crate::triggers::livestream_status::LivestreamStatusDescriptor;
 use crate::triggers::message_deleted::MessageDeletedDescriptor;
+use crate::triggers::reward_redeemed::RewardRedeemedDescriptor;
 use crate::triggers::sub::SubDescriptor;
 use crate::triggers::sub_gift::SubGiftDescriptor;
 
@@ -30,6 +33,9 @@ pub fn register_kick_triggers(registry: &mut TriggerRegistry) -> Result<(), Regi
     registry.register(Box::new(BanDescriptor))?;
     registry.register(Box::new(MessageDeletedDescriptor))?;
     registry.register(Box::new(HostDescriptor))?;
+    registry.register(Box::new(LivestreamStatusDescriptor))?;
+    registry.register(Box::new(LivestreamMetadataDescriptor))?;
+    registry.register(Box::new(RewardRedeemedDescriptor))?;
     Ok(())
 }
 
@@ -231,7 +237,7 @@ mod tests {
     fn register_adds_all_trigger_descriptors() {
         let mut reg = TriggerRegistry::new();
         register_kick_triggers(&mut reg).unwrap();
-        assert_eq!(reg.all().count(), 7);
+        assert_eq!(reg.all().count(), 10);
     }
 
     #[test]
@@ -254,6 +260,9 @@ mod tests {
             "kick.channel.banned",
             "kick.chat.message_deleted",
             "kick.channel.host_received",
+            "kick.channel.livestream_status",
+            "kick.channel.livestream_metadata",
+            "kick.channel.reward_redeemed",
         ] {
             assert!(reg.get(id).is_some(), "missing kind id: {id}");
         }

@@ -27,7 +27,9 @@ Connect to Twitch, YouTube, and Kick simultaneously. React to chat events with a
 - **YouTube** (live-chat polling)
   - Triggers: chat message, chat command, Super Chat, Super Sticker, message deleted, new member, member milestone, membership gift (mass) & gift received, stream online/offline, stream title changed, user banned/timed-out
   - Sub-actions: send/delete chat message, ban/timeout/unban user, add/remove moderator, update stream title/description/category/privacy
-- **Kick** — Live chat, subs, hosts, bans (community implementation)
+- **Kick** (official API for writes & polled reads; chat receive over a community WebSocket)
+  - Triggers: chat message, chat command, message deleted, new subscriber, subscription gift, host received, ban, livestream status, livestream metadata, reward redeemed
+  - Sub-actions: send/delete chat message, ban/timeout/unban user, update channel title/category/tags, reward create/update/delete, redemption accept/reject
 
 ### Actions & automation
 - Action editor with trigger configuration and sub-action chains

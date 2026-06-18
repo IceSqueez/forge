@@ -16,6 +16,7 @@ use tokio_stream::wrappers::BroadcastStream;
 use crate::capabilities::KICK_COMMUNITY_NOTE;
 use crate::triggers::ban::BanDescriptor;
 use crate::triggers::chat::ChatDescriptor;
+use crate::triggers::chat_command::ChatCommandDescriptor;
 use crate::triggers::host::HostDescriptor;
 use crate::triggers::message_deleted::MessageDeletedDescriptor;
 use crate::triggers::sub::SubDescriptor;
@@ -23,6 +24,7 @@ use crate::triggers::sub_gift::SubGiftDescriptor;
 
 pub fn register_kick_triggers(registry: &mut TriggerRegistry) -> Result<(), RegistryError> {
     registry.register(Box::new(ChatDescriptor))?;
+    registry.register(Box::new(ChatCommandDescriptor))?;
     registry.register(Box::new(SubDescriptor))?;
     registry.register(Box::new(SubGiftDescriptor))?;
     registry.register(Box::new(BanDescriptor))?;
@@ -226,10 +228,10 @@ mod tests {
     use forge_types::PlatformId;
 
     #[test]
-    fn register_adds_all_six_descriptors() {
+    fn register_adds_all_trigger_descriptors() {
         let mut reg = TriggerRegistry::new();
         register_kick_triggers(&mut reg).unwrap();
-        assert_eq!(reg.all().count(), 6);
+        assert_eq!(reg.all().count(), 7);
     }
 
     #[test]
@@ -246,6 +248,7 @@ mod tests {
         register_kick_triggers(&mut reg).unwrap();
         for id in [
             "kick.chat.message",
+            "kick.chat.command",
             "kick.channel.subscriber",
             "kick.channel.subscription_gift",
             "kick.channel.banned",

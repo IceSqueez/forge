@@ -673,13 +673,20 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
                 let bus_chat = Arc::clone(&bus);
                 tokio::spawn(async move {
                     let chat = forge_platform_kick::KickChat::new(slug_for_chat, http_for_chat);
-                    if let Err(e) = chat.connect(kk_tx).await {
-                        tracing::warn!(error = %e, "kick chat connect failed");
-                        bus_chat.publish(forge_events::Event::new(
-                            forge_events::EventSource::Kick,
-                            "platform.connection.changed",
-                            serde_json::json!({"state": "error", "reason": e.to_string()}),
-                        ));
+                    match chat.connect(kk_tx).await {
+                        Ok(_handle) => {
+                            // Hold the handle for this task's lifetime; dropping it would
+                            // resolve the chat loop's close_rx and shut receive down at once.
+                            std::future::pending::<()>().await;
+                        }
+                        Err(e) => {
+                            tracing::warn!(error = %e, "kick chat connect failed");
+                            bus_chat.publish(forge_events::Event::new(
+                                forge_events::EventSource::Kick,
+                                "platform.connection.changed",
+                                serde_json::json!({"state": "error", "reason": e.to_string()}),
+                            ));
+                        }
                     }
                 });
 

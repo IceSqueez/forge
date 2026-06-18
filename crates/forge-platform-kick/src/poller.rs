@@ -5,7 +5,7 @@ use std::time::Duration;
 use forge_events::{Event, EventSource};
 use forge_platform_core::PlatformError;
 use futures::future::BoxFuture;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 use tracing::warn;
 
 use crate::channel::{ChannelSnapshot, KickChannel};
@@ -21,19 +21,13 @@ const REWARD_REDEEMED_KIND: &str = "kick.channel.reward_redeemed";
 
 type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
 
-pub struct KickPollerHandle {
-    pub close_tx: oneshot::Sender<()>,
-}
-
 pub fn spawn_kick_poller(
     channel: Arc<KickChannel>,
     rewards: Arc<KickRewards>,
     token_source: TokenSource,
     event_tx: mpsc::Sender<Event>,
-) -> KickPollerHandle {
-    let (close_tx, close_rx) = oneshot::channel();
-    tokio::spawn(run_loop(channel, rewards, token_source, event_tx, close_rx));
-    KickPollerHandle { close_tx }
+) {
+    tokio::spawn(run_loop(channel, rewards, token_source, event_tx));
 }
 
 struct ChannelDelta {
@@ -192,7 +186,6 @@ async fn run_loop(
     rewards: Arc<KickRewards>,
     token_source: TokenSource,
     event_tx: mpsc::Sender<Event>,
-    mut close_rx: oneshot::Receiver<()>,
 ) {
     let mut channel_interval = tokio::time::interval(CHANNEL_POLL_INTERVAL);
     let mut redemption_interval = tokio::time::interval(REDEMPTION_POLL_INTERVAL);
@@ -202,7 +195,6 @@ async fn run_loop(
 
     loop {
         tokio::select! {
-            _ = &mut close_rx => break,
             _ = channel_interval.tick() => {
                 if poll_channel(&channel, &token_source, &event_tx, &mut last_snapshot)
                     .await

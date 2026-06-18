@@ -26,7 +26,7 @@ pub use chat::{KickChat, KickChatHandle};
 pub use credentials::{CREDENTIAL_KEY, KickCredentials};
 pub use credentials_manager::KickCredentialsManager;
 pub use moderation::KickModeration;
-pub use poller::{KickPollerHandle, spawn_kick_poller};
+pub use poller::spawn_kick_poller;
 pub use rewards::{CreateRewardParams, KickRewards, RedemptionRecord, UpdateRewardParams};
 pub use send::KickSendChat;
 pub use sub_actions::{

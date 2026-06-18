@@ -41,6 +41,7 @@ pub struct CustomInstanceChip {
 pub enum PlatformGroup {
     Twitch,
     YouTube,
+    Kick,
     Obs,
     Script,
     Core,
@@ -133,6 +134,8 @@ fn platform_group_for(kind_id: &str) -> PlatformGroup {
         PlatformGroup::Twitch
     } else if kind_id.starts_with("youtube.") {
         PlatformGroup::YouTube
+    } else if kind_id.starts_with("kick.") {
+        PlatformGroup::Kick
     } else if kind_id.starts_with("obs.") {
         PlatformGroup::Obs
     } else if kind_id.starts_with("script.") {
@@ -291,6 +294,7 @@ pub fn view<'a>(
     let all_groups = [
         PlatformGroup::Twitch,
         PlatformGroup::YouTube,
+        PlatformGroup::Kick,
         PlatformGroup::Obs,
         PlatformGroup::Script,
         PlatformGroup::Core,
@@ -298,6 +302,7 @@ pub fn view<'a>(
     let platform_group_label = |g: PlatformGroup| match g {
         PlatformGroup::Twitch => "Twitch",
         PlatformGroup::YouTube => "YouTube",
+        PlatformGroup::Kick => "Kick",
         PlatformGroup::Obs => "OBS",
         PlatformGroup::Script => "Script",
         PlatformGroup::Core => "Core",
@@ -305,6 +310,7 @@ pub fn view<'a>(
     let platform_group_color = |g: PlatformGroup| match g {
         PlatformGroup::Twitch => p.brand,
         PlatformGroup::YouTube => p.platform_youtube,
+        PlatformGroup::Kick => p.platform_kick,
         PlatformGroup::Obs => p.text_secondary,
         PlatformGroup::Script => p.warning,
         PlatformGroup::Core => p.info,

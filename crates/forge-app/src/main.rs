@@ -616,8 +616,6 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         }
     }
 
-    let sub_action_reg = Arc::new(sub_action_reg);
-
     let mut trigger_reg = TriggerRegistry::new();
     if let Err(e) = register_core_triggers(&mut trigger_reg) {
         tracing::warn!("core trigger descriptor registration failed: {e}");
@@ -650,26 +648,6 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         }
     }
 
-    let engine = spawn_action_engine(
-        Arc::clone(&bus),
-        dp.action_repo(),
-        dp.history_repo(),
-        Arc::clone(&sub_action_reg),
-    );
-    let scheduler = QueueScheduler::spawn(engine.clone(), Arc::clone(&bus), queues);
-    let trigger_evaluator = spawn_trigger_evaluator(
-        Arc::clone(&bus),
-        Arc::clone(&trigger_reg),
-        dp.action_repo(),
-        dp.trigger_instance_repo(),
-        scheduler.clone(),
-    );
-    let chat_send_bridge = ChatSendBridge::spawn(
-        Arc::clone(&bus),
-        Arc::clone(&dp) as Arc<dyn CredentialsRepo>,
-        Arc::clone(&twitch_rate_limiter),
-    );
-
     if let Some(kick_client_id) = forge_platform_kick::client_credentials() {
         let kk_creds: Arc<dyn CredentialsRepo> = Arc::clone(&dp) as Arc<dyn CredentialsRepo>;
         let kk_http = reqwest::Client::new();
@@ -688,6 +666,8 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
                     }
                 });
 
+                let poller_tx = kk_tx.clone();
+
                 let slug_for_chat = creds.username.clone();
                 let http_for_chat = kk_http.clone();
                 let bus_chat = Arc::clone(&bus);
@@ -705,9 +685,54 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
 
                 let limiter: Arc<dyn forge_platform_core::RateLimiter> = Arc::new(KickNoopLimiter);
                 let sender = Arc::new(forge_platform_kick::KickSendChat::new(limiter));
+                let broadcaster_user_id = creds.user_id;
+
+                let kick_rate_limiter: Arc<dyn forge_platform_core::RateLimiter> =
+                    Arc::new(forge_platform_core::TokenBucketRateLimiter::new(
+                        60,
+                        std::time::Duration::from_secs(60),
+                    ));
+                let moderation = Arc::new(forge_platform_kick::KickModeration::new(Arc::clone(
+                    &kick_rate_limiter,
+                )));
+                let channel = Arc::new(forge_platform_kick::KickChannel::new(Arc::clone(
+                    &kick_rate_limiter,
+                )));
+                let rewards = Arc::new(forge_platform_kick::KickRewards::new(Arc::clone(
+                    &kick_rate_limiter,
+                )));
+
+                let manager_for_subactions = Arc::clone(&manager);
+                if let Err(e) = forge_platform_kick::register_kick_sub_actions(
+                    &mut sub_action_reg,
+                    forge_platform_kick::KickSubActionDeps {
+                        client: Arc::clone(&sender),
+                        token_source: Arc::new(move || {
+                            let m = Arc::clone(&manager_for_subactions);
+                            Box::pin(async move { m.get_valid_access_token().await })
+                        }),
+                        broadcaster_user_id,
+                        moderation,
+                        channel: Arc::clone(&channel),
+                        rewards: Arc::clone(&rewards),
+                    },
+                ) {
+                    tracing::warn!("kick sub-action runner registration failed: {e}");
+                }
+
+                let manager_for_poller = Arc::clone(&manager);
+                forge_platform_kick::spawn_kick_poller(
+                    channel,
+                    rewards,
+                    Arc::new(move || {
+                        let m = Arc::clone(&manager_for_poller);
+                        Box::pin(async move { m.get_valid_access_token().await })
+                    }),
+                    poller_tx,
+                );
+
                 let manager_for_send = Arc::clone(&manager);
                 let bus_kk_send = Arc::clone(&bus);
-                let broadcaster_user_id = creds.user_id;
                 tokio::spawn(async move {
                     let mut sub = bus_kk_send.subscribe();
                     loop {
@@ -778,6 +803,27 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
             }
         }
     }
+
+    let sub_action_reg = Arc::new(sub_action_reg);
+    let engine = spawn_action_engine(
+        Arc::clone(&bus),
+        dp.action_repo(),
+        dp.history_repo(),
+        Arc::clone(&sub_action_reg),
+    );
+    let scheduler = QueueScheduler::spawn(engine.clone(), Arc::clone(&bus), queues);
+    let trigger_evaluator = spawn_trigger_evaluator(
+        Arc::clone(&bus),
+        Arc::clone(&trigger_reg),
+        dp.action_repo(),
+        dp.trigger_instance_repo(),
+        scheduler.clone(),
+    );
+    let chat_send_bridge = ChatSendBridge::spawn(
+        Arc::clone(&bus),
+        Arc::clone(&dp) as Arc<dyn CredentialsRepo>,
+        Arc::clone(&twitch_rate_limiter),
+    );
 
     Some(RuntimeHandles {
         registry,

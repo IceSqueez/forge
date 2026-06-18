@@ -105,3 +105,75 @@ impl TriggerKindDescriptor for RewardRedeemedDescriptor {
             .set("user_input".to_owned(), Variant::String(user_input))
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_arg_stack_extracts_nested_reward_and_redeemer_fields() {
+        let event = Event::new(
+            EventSource::Kick,
+            "kick.channel.reward_redeemed",
+            serde_json::json!({
+                "id": "rdm-1",
+                "reward": { "id": "rwd-2", "title": "Hydrate" },
+                "redeemer": { "user_id": 123, "username": "v" },
+                "user_input": "text"
+            }),
+        );
+
+        let stack = RewardRedeemedDescriptor.build_arg_stack(&event);
+
+        // redemption_id is the top-level id, NOT reward.id — guards the path swap.
+        assert_eq!(
+            stack.get("redemption_id"),
+            Some(&Variant::String("rdm-1".to_owned()))
+        );
+        assert_eq!(
+            stack.get("reward_id"),
+            Some(&Variant::String("rwd-2".to_owned()))
+        );
+        assert_eq!(
+            stack.get("reward_title"),
+            Some(&Variant::String("Hydrate".to_owned()))
+        );
+        // user_id comes from redeemer.user_id (u64), NOT reward.id — guards swap.
+        assert_eq!(
+            stack.get("user_id"),
+            Some(&Variant::String("123".to_owned()))
+        );
+        assert_eq!(
+            stack.get("username"),
+            Some(&Variant::String("v".to_owned()))
+        );
+        assert_eq!(
+            stack.get("user_input"),
+            Some(&Variant::String("text".to_owned()))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_leaves_redeemer_fields_empty_when_object_absent() {
+        let event = Event::new(
+            EventSource::Kick,
+            "kick.channel.reward_redeemed",
+            serde_json::json!({
+                "id": "rdm-9",
+                "reward": { "id": "rwd-9", "title": "Anonymous reward" },
+                "user_input": ""
+            }),
+        );
+
+        let stack = RewardRedeemedDescriptor.build_arg_stack(&event);
+
+        assert_eq!(stack.get("user_id"), Some(&Variant::String(String::new())));
+        assert_eq!(stack.get("username"), Some(&Variant::String(String::new())));
+        // Sibling reward fields stay populated — guards over-broad nested guard.
+        assert_eq!(
+            stack.get("reward_id"),
+            Some(&Variant::String("rwd-9".to_owned()))
+        );
+    }
+}

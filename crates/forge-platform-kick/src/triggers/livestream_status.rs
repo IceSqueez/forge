@@ -90,3 +90,62 @@ impl TriggerKindDescriptor for LivestreamStatusDescriptor {
             .set("category_name".to_owned(), Variant::String(category_name))
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_arg_stack_extracts_status_fields_with_nested_category() {
+        let event = Event::new(
+            EventSource::Kick,
+            "kick.channel.livestream_status",
+            serde_json::json!({
+                "is_live": true,
+                "stream_title": "Late night coding",
+                "category": { "id": 42, "name": "Just Chatting" }
+            }),
+        );
+
+        let stack = LivestreamStatusDescriptor.build_arg_stack(&event);
+
+        assert_eq!(stack.get("is_live"), Some(&Variant::Bool(true)));
+        assert_eq!(
+            stack.get("stream_title"),
+            Some(&Variant::String("Late night coding".to_owned()))
+        );
+        assert_eq!(
+            stack.get("category_id"),
+            Some(&Variant::String("42".to_owned()))
+        );
+        assert_eq!(
+            stack.get("category_name"),
+            Some(&Variant::String("Just Chatting".to_owned()))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_leaves_category_fields_empty_when_object_absent() {
+        let event = Event::new(
+            EventSource::Kick,
+            "kick.channel.livestream_status",
+            serde_json::json!({
+                "is_live": false,
+                "stream_title": "Offline"
+            }),
+        );
+
+        let stack = LivestreamStatusDescriptor.build_arg_stack(&event);
+
+        assert_eq!(stack.get("is_live"), Some(&Variant::Bool(false)));
+        assert_eq!(
+            stack.get("category_id"),
+            Some(&Variant::String(String::new()))
+        );
+        assert_eq!(
+            stack.get("category_name"),
+            Some(&Variant::String(String::new()))
+        );
+    }
+}

@@ -83,3 +83,62 @@ impl TriggerKindDescriptor for LivestreamMetadataDescriptor {
             .set("category_name".to_owned(), Variant::String(category_name))
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_arg_stack_extracts_metadata_fields_with_nested_category() {
+        let event = Event::new(
+            EventSource::Kick,
+            "kick.channel.livestream_metadata",
+            serde_json::json!({
+                "stream_title": "New title",
+                "category": { "id": 7, "name": "Software & Game Dev" }
+            }),
+        );
+
+        let stack = LivestreamMetadataDescriptor.build_arg_stack(&event);
+
+        assert_eq!(
+            stack.get("stream_title"),
+            Some(&Variant::String("New title".to_owned()))
+        );
+        assert_eq!(
+            stack.get("category_id"),
+            Some(&Variant::String("7".to_owned()))
+        );
+        assert_eq!(
+            stack.get("category_name"),
+            Some(&Variant::String("Software & Game Dev".to_owned()))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_leaves_category_fields_empty_when_object_absent() {
+        let event = Event::new(
+            EventSource::Kick,
+            "kick.channel.livestream_metadata",
+            serde_json::json!({
+                "stream_title": "Title only"
+            }),
+        );
+
+        let stack = LivestreamMetadataDescriptor.build_arg_stack(&event);
+
+        assert_eq!(
+            stack.get("stream_title"),
+            Some(&Variant::String("Title only".to_owned()))
+        );
+        assert_eq!(
+            stack.get("category_id"),
+            Some(&Variant::String(String::new()))
+        );
+        assert_eq!(
+            stack.get("category_name"),
+            Some(&Variant::String(String::new()))
+        );
+    }
+}

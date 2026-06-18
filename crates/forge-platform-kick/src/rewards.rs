@@ -422,7 +422,7 @@ async fn map_rewards_error<T>(
 mod tests {
     use super::*;
     use std::time::Duration;
-    use wiremock::matchers::{method, path};
+    use wiremock::matchers::{method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     struct GrantLimiter;
@@ -802,5 +802,111 @@ mod tests {
             server.received_requests().await.unwrap().is_empty(),
             "an exhausted limiter must short-circuit before any HTTP call"
         );
+    }
+
+    #[tokio::test]
+    async fn list_pending_redemptions_queries_redemptions_endpoint_with_pending_status() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/channels/rewards/redemptions"))
+            .and(query_param("status", "pending"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": []
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = rewards_on(&server).list_pending_redemptions("tok").await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn list_pending_redemptions_maps_each_nested_path_onto_records() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/channels/rewards/redemptions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": [
+                    {
+                        "id": "rd_1",
+                        "reward": { "id": "rw_1", "title": "Hydrate" },
+                        "redeemer": { "user_id": 100, "username": "alice" },
+                        "user_input": "stay healthy"
+                    },
+                    {
+                        "id": "rd_2",
+                        "reward": { "id": "rw_2", "title": "Stretch" },
+                        "redeemer": { "user_id": 200, "username": "bob" },
+                        "user_input": "do it"
+                    }
+                ]
+            })))
+            .mount(&server)
+            .await;
+
+        let records = rewards_on(&server)
+            .list_pending_redemptions("tok")
+            .await
+            .unwrap();
+        assert_eq!(records.len(), 2);
+
+        assert_eq!(records[0].id, "rd_1");
+        assert_eq!(records[0].reward_id, "rw_1");
+        assert_eq!(records[0].reward_title, "Hydrate");
+        assert_eq!(records[0].redeemer_user_id, 100);
+        assert_eq!(records[0].redeemer_username, "alice");
+        assert_eq!(records[0].user_input, "stay healthy");
+
+        assert_eq!(records[1].id, "rd_2");
+        assert_eq!(records[1].reward_id, "rw_2");
+        assert_eq!(records[1].reward_title, "Stretch");
+        assert_eq!(records[1].redeemer_user_id, 200);
+        assert_eq!(records[1].redeemer_username, "bob");
+        assert_eq!(records[1].user_input, "do it");
+    }
+
+    #[tokio::test]
+    async fn list_pending_redemptions_empty_data_returns_empty_vec() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/channels/rewards/redemptions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": []
+            })))
+            .mount(&server)
+            .await;
+
+        let records = rewards_on(&server)
+            .list_pending_redemptions("tok")
+            .await
+            .unwrap();
+        assert!(records.is_empty());
+    }
+
+    #[tokio::test]
+    async fn list_pending_redemptions_missing_redeemer_defaults_while_reward_stays_populated() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/channels/rewards/redemptions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": [{
+                    "id": "rd_1",
+                    "reward": { "id": "rw_1", "title": "Hydrate" },
+                    "user_input": "no redeemer block"
+                }]
+            })))
+            .mount(&server)
+            .await;
+
+        let records = rewards_on(&server)
+            .list_pending_redemptions("tok")
+            .await
+            .unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].redeemer_user_id, 0);
+        assert_eq!(records[0].redeemer_username, "");
+        assert_eq!(records[0].reward_id, "rw_1");
+        assert_eq!(records[0].reward_title, "Hydrate");
     }
 }

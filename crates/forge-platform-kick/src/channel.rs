@@ -357,4 +357,60 @@ mod tests {
             "an exhausted limiter must short-circuit before any HTTP call"
         );
     }
+
+    #[tokio::test]
+    async fn get_channel_maps_first_data_element_onto_snapshot_fields() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/channels"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": [{
+                    "is_live": true,
+                    "stream_title": "Speedrun Night",
+                    "category": { "id": 77, "name": "Just Chatting" }
+                }]
+            })))
+            .mount(&server)
+            .await;
+
+        let snapshot = channel_on(&server).get_channel("tok").await.unwrap();
+        assert!(snapshot.is_live);
+        assert_eq!(snapshot.stream_title, "Speedrun Night");
+        assert_eq!(snapshot.category_id, 77);
+        assert_eq!(snapshot.category_name, "Just Chatting");
+    }
+
+    #[tokio::test]
+    async fn get_channel_empty_data_maps_to_http_status_zero_no_data_guard() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/channels"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": []
+            })))
+            .mount(&server)
+            .await;
+
+        let result = channel_on(&server).get_channel("tok").await;
+        assert!(matches!(result, Err(PlatformError::Http { status: 0, .. })));
+    }
+
+    #[tokio::test]
+    async fn get_channel_missing_category_defaults_to_zero_id_and_empty_name() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/channels"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": [{
+                    "is_live": false,
+                    "stream_title": "Offline"
+                }]
+            })))
+            .mount(&server)
+            .await;
+
+        let snapshot = channel_on(&server).get_channel("tok").await.unwrap();
+        assert_eq!(snapshot.category_id, 0);
+        assert_eq!(snapshot.category_name, "");
+    }
 }

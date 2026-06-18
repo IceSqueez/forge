@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use forge_platform_core::{PlatformError, RateLimitOutcome, RateLimiter};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 const CHANNELS_ENDPOINT: &str = "https://api.kick.com/public/v1/channels";
 
@@ -9,6 +9,13 @@ pub struct KickChannel {
     client: reqwest::Client,
     limiter: Arc<dyn RateLimiter>,
     channels_endpoint: String,
+}
+
+pub struct ChannelSnapshot {
+    pub is_live: bool,
+    pub stream_title: String,
+    pub category_id: u64,
+    pub category_name: String,
 }
 
 #[derive(Serialize)]
@@ -19,6 +26,30 @@ struct UpdateBody {
     category_id: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     custom_tags: Option<Vec<String>>,
+}
+
+#[derive(Deserialize)]
+struct ChannelsEnvelope {
+    #[serde(default)]
+    data: Vec<ChannelData>,
+}
+
+#[derive(Deserialize, Default)]
+struct ChannelData {
+    #[serde(default)]
+    is_live: bool,
+    #[serde(default)]
+    stream_title: String,
+    #[serde(default)]
+    category: CategoryData,
+}
+
+#[derive(Deserialize, Default)]
+struct CategoryData {
+    #[serde(default)]
+    id: u64,
+    #[serde(default)]
+    name: String,
 }
 
 impl KickChannel {
@@ -65,6 +96,46 @@ impl KickChannel {
         map_channel_response(response).await
     }
 
+    pub async fn get_channel(&self, token: &str) -> Result<ChannelSnapshot, PlatformError> {
+        self.acquire_slot().await?;
+
+        let response = self
+            .client
+            .get(&self.channels_endpoint)
+            .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
+            .send()
+            .await
+            .map_err(|e| PlatformError::Network {
+                reason: e.without_url().to_string(),
+            })?;
+
+        let status = response.status().as_u16();
+        if !(200..300).contains(&status) {
+            return map_channel_error(status, response).await;
+        }
+
+        let envelope: ChannelsEnvelope =
+            response.json().await.map_err(|e| PlatformError::Network {
+                reason: e.without_url().to_string(),
+            })?;
+
+        let channel = envelope
+            .data
+            .into_iter()
+            .next()
+            .ok_or_else(|| PlatformError::Http {
+                status: 0,
+                body: "channels GET returned no data".to_owned(),
+            })?;
+
+        Ok(ChannelSnapshot {
+            is_live: channel.is_live,
+            stream_title: channel.stream_title,
+            category_id: channel.category.id,
+            category_name: channel.category.name,
+        })
+    }
+
     async fn acquire_slot(&self) -> Result<(), PlatformError> {
         let outcome = self
             .limiter
@@ -86,6 +157,13 @@ async fn map_channel_response(response: reqwest::Response) -> Result<(), Platfor
         return Ok(());
     }
 
+    map_channel_error(status, response).await
+}
+
+async fn map_channel_error<T>(
+    status: u16,
+    response: reqwest::Response,
+) -> Result<T, PlatformError> {
     let retry_after_secs = response
         .headers()
         .get("retry-after")
@@ -97,10 +175,10 @@ async fn map_channel_response(response: reqwest::Response) -> Result<(), Platfor
 
     match status {
         401 => Err(PlatformError::Auth {
-            reason: "channel update token rejected (401)".to_owned(),
+            reason: "channel token rejected (401)".to_owned(),
         }),
         403 => Err(PlatformError::Auth {
-            reason: "channel update forbidden (403); check channel:write scope".to_owned(),
+            reason: "channel forbidden (403); check channel scope".to_owned(),
         }),
         400 | 422 => Err(PlatformError::Http { status, body }),
         429 => Err(PlatformError::RateLimited { retry_after_secs }),

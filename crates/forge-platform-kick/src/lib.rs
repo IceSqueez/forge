@@ -19,13 +19,13 @@ pub use auth::{
 };
 pub use builtin::{KickIntegrationBundle, register_kick_triggers};
 pub use capabilities::kick_capabilities;
-pub use channel::KickChannel;
+pub use channel::{ChannelSnapshot, KickChannel};
 pub use channel_info::{ChannelInfoFetcher, KickChannelInfo};
 pub use chat::{KickChat, KickChatHandle};
 pub use credentials::{CREDENTIAL_KEY, KickCredentials};
 pub use credentials_manager::KickCredentialsManager;
 pub use moderation::KickModeration;
-pub use rewards::{CreateRewardParams, KickRewards, UpdateRewardParams};
+pub use rewards::{CreateRewardParams, KickRewards, RedemptionRecord, UpdateRewardParams};
 pub use send::KickSendChat;
 pub use sub_actions::{
     AcceptRedemptionRunner, BanUserRunner, CreateRewardRunner, DeleteMessageRunner,

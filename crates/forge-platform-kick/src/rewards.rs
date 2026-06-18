@@ -85,6 +85,49 @@ struct RewardData {
     id: Option<String>,
 }
 
+pub struct RedemptionRecord {
+    pub id: String,
+    pub reward_id: String,
+    pub reward_title: String,
+    pub redeemer_user_id: u64,
+    pub redeemer_username: String,
+    pub user_input: String,
+}
+
+#[derive(Deserialize)]
+struct RedemptionsEnvelope {
+    #[serde(default)]
+    data: Vec<RedemptionData>,
+}
+
+#[derive(Deserialize, Default)]
+struct RedemptionData {
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    reward: RewardRef,
+    #[serde(default)]
+    redeemer: RedeemerRef,
+    #[serde(default)]
+    user_input: String,
+}
+
+#[derive(Deserialize, Default)]
+struct RewardRef {
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    title: String,
+}
+
+#[derive(Deserialize, Default)]
+struct RedeemerRef {
+    #[serde(default)]
+    user_id: u64,
+    #[serde(default)]
+    username: String,
+}
+
 impl KickRewards {
     pub fn new(limiter: Arc<dyn RateLimiter>) -> Self {
         Self {
@@ -288,6 +331,47 @@ impl KickRewards {
         }
 
         map_rewards_error(status, response).await
+    }
+
+    pub async fn list_pending_redemptions(
+        &self,
+        token: &str,
+    ) -> Result<Vec<RedemptionRecord>, PlatformError> {
+        self.acquire_slot().await?;
+
+        let url = format!("{}/redemptions?status=pending", self.rewards_endpoint);
+        let response = self
+            .client
+            .get(&url)
+            .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
+            .send()
+            .await
+            .map_err(|e| PlatformError::Network {
+                reason: e.without_url().to_string(),
+            })?;
+
+        let status = response.status().as_u16();
+        if !(200..300).contains(&status) {
+            return map_rewards_error(status, response).await;
+        }
+
+        let envelope: RedemptionsEnvelope =
+            response.json().await.map_err(|e| PlatformError::Network {
+                reason: e.without_url().to_string(),
+            })?;
+
+        Ok(envelope
+            .data
+            .into_iter()
+            .map(|d| RedemptionRecord {
+                id: d.id,
+                reward_id: d.reward.id,
+                reward_title: d.reward.title,
+                redeemer_user_id: d.redeemer.user_id,
+                redeemer_username: d.redeemer.username,
+                user_input: d.user_input,
+            })
+            .collect())
     }
 
     async fn acquire_slot(&self) -> Result<(), PlatformError> {

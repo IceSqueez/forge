@@ -1,4 +1,4 @@
-use std::collections::{HashSet, VecDeque};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -13,7 +13,6 @@ use crate::rewards::{KickRewards, RedemptionRecord};
 
 const CHANNEL_POLL_INTERVAL: Duration = Duration::from_secs(30);
 const REDEMPTION_POLL_INTERVAL: Duration = Duration::from_secs(12);
-const SEEN_REDEMPTIONS_CAP: usize = 1000;
 
 const LIVESTREAM_STATUS_KIND: &str = "kick.channel.livestream_status";
 const LIVESTREAM_METADATA_KIND: &str = "kick.channel.livestream_metadata";
@@ -65,36 +64,6 @@ fn redemption_payload(record: &RedemptionRecord) -> serde_json::Value {
         "redeemer": { "user_id": record.redeemer_user_id, "username": record.redeemer_username },
         "user_input": record.user_input,
     })
-}
-
-struct SeenRedemptions {
-    seen: HashSet<String>,
-    order: VecDeque<String>,
-    cap: usize,
-}
-
-impl SeenRedemptions {
-    fn new(cap: usize) -> Self {
-        Self {
-            seen: HashSet::new(),
-            order: VecDeque::new(),
-            cap,
-        }
-    }
-
-    fn mark_new(&mut self, id: &str) -> bool {
-        if self.seen.contains(id) {
-            return false;
-        }
-        self.seen.insert(id.to_owned());
-        self.order.push_back(id.to_owned());
-        if self.order.len() > self.cap
-            && let Some(evicted) = self.order.pop_front()
-        {
-            self.seen.remove(&evicted);
-        }
-        true
-    }
 }
 
 async fn resolve_token(token_source: &TokenSource) -> Option<String> {
@@ -153,7 +122,7 @@ async fn poll_redemptions(
     rewards: &KickRewards,
     token_source: &TokenSource,
     event_tx: &mpsc::Sender<Event>,
-    seen: &mut SeenRedemptions,
+    seen: &mut HashSet<String>,
     seeded: &mut bool,
 ) -> Result<(), ()> {
     let Some(token) = resolve_token(token_source).await else {
@@ -172,11 +141,14 @@ async fn poll_redemptions(
     // restart does not replay redemptions that were already pending.
     let emit_allowed = *seeded;
     for record in &records {
-        let is_new = seen.mark_new(&record.id);
-        if is_new && emit_allowed {
+        if seen.insert(record.id.clone()) && emit_allowed {
             emit(event_tx, REWARD_REDEEMED_KIND, redemption_payload(record)).await?;
         }
     }
+    // Forget ids no longer pending (accepted/rejected) so `seen` stays bounded by
+    // the live pending set and a still-pending id is never evicted and re-emitted.
+    let current: HashSet<&str> = records.iter().map(|r| r.id.as_str()).collect();
+    seen.retain(|id| current.contains(id.as_str()));
     *seeded = true;
     Ok(())
 }
@@ -190,7 +162,7 @@ async fn run_loop(
     let mut channel_interval = tokio::time::interval(CHANNEL_POLL_INTERVAL);
     let mut redemption_interval = tokio::time::interval(REDEMPTION_POLL_INTERVAL);
     let mut last_snapshot: Option<ChannelSnapshot> = None;
-    let mut seen = SeenRedemptions::new(SEEN_REDEMPTIONS_CAP);
+    let mut seen: HashSet<String> = HashSet::new();
     let mut redemptions_seeded = false;
 
     loop {
@@ -304,31 +276,6 @@ mod tests {
                 "category": { "id": category_id, "name": category_name }
             }]
         })
-    }
-
-    // --- SeenRedemptions::mark_new ---
-
-    #[test]
-    fn mark_new_is_true_on_first_sighting_and_false_on_repeat() {
-        let mut seen = SeenRedemptions::new(8);
-        assert!(seen.mark_new("rd_1"), "first sighting is new");
-        assert!(
-            !seen.mark_new("rd_1"),
-            "second sighting of same id is not new"
-        );
-    }
-
-    #[test]
-    fn mark_new_evicts_oldest_when_over_cap_and_keeps_recent() {
-        let mut seen = SeenRedemptions::new(2);
-        assert!(seen.mark_new("a"));
-        assert!(seen.mark_new("b"));
-        // Inserting a 3rd distinct id pushes capacity past cap, evicting "a".
-        assert!(seen.mark_new("c"));
-        // "c" is still resident (cap not yet exceeded by it) -> repeat is not new.
-        assert!(!seen.mark_new("c"), "still-resident id must stay deduped");
-        // "a" was evicted by inserting "c" -> it is insertable again (treated as new).
-        assert!(seen.mark_new("a"), "oldest id should have been evicted");
     }
 
     // --- diff_channel ---
@@ -552,7 +499,7 @@ mod tests {
 
         let rewards = rewards_on(&server);
         let (tx, mut rx) = mpsc::channel(4);
-        let mut seen = SeenRedemptions::new(8);
+        let mut seen: HashSet<String> = HashSet::new();
         let mut seeded = false;
 
         poll_redemptions(&rewards, &ok_token(), &tx, &mut seen, &mut seeded)
@@ -561,9 +508,9 @@ mod tests {
 
         assert!(rx.try_recv().is_err(), "the seeding poll must emit nothing");
         assert!(seeded, "a successful first poll flips the seeded flag");
-        // The ids were marked: re-marking returns false.
-        assert!(!seen.mark_new("rd_1"));
-        assert!(!seen.mark_new("rd_2"));
+        // The pending ids were recorded so a later poll treats them as already seen.
+        assert!(seen.contains("rd_1"));
+        assert!(seen.contains("rd_2"));
     }
 
     #[tokio::test]
@@ -584,8 +531,8 @@ mod tests {
 
         let rewards = rewards_on(&server);
         let (tx, mut rx) = mpsc::channel(4);
-        let mut seen = SeenRedemptions::new(8);
-        seen.mark_new("rd_1"); // previously observed
+        let mut seen: HashSet<String> = HashSet::new();
+        seen.insert("rd_1".to_owned()); // previously observed
         let mut seeded = true;
 
         poll_redemptions(&rewards, &ok_token(), &tx, &mut seen, &mut seeded)
@@ -615,7 +562,7 @@ mod tests {
 
         let rewards = rewards_on(&server);
         let (tx, mut rx) = mpsc::channel(4);
-        let mut seen = SeenRedemptions::new(8);
+        let mut seen: HashSet<String> = HashSet::new();
         let mut seeded = true;
 
         let result = poll_redemptions(&rewards, &err_token(), &tx, &mut seen, &mut seeded).await;
@@ -625,5 +572,79 @@ mod tests {
             "a token error is non-fatal for the poll loop"
         );
         assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn poll_redemptions_never_re_emits_still_pending_id_and_prunes_resolved() {
+        // Regression: a still-pending id must never be re-emitted across polls,
+        // and ids that leave the pending set must be forgotten so `seen` tracks
+        // the live pending set rather than growing unbounded.
+        fn pending(ids: &[&str]) -> serde_json::Value {
+            let data: Vec<serde_json::Value> = ids
+                .iter()
+                .map(|id| serde_json::json!({ "id": id, "reward": { "id": "rw_1", "title": "Hydrate" } }))
+                .collect();
+            serde_json::json!({ "data": data })
+        }
+
+        let server = MockServer::start().await;
+        // Three ordered single-shot mounts; the first unconsumed match wins,
+        // so successive polls observe [a,b] -> [a,b,c] -> [a].
+        Mock::given(method("GET"))
+            .and(path("/channels/rewards/redemptions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(pending(&["a", "b"])))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/channels/rewards/redemptions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(pending(&["a", "b", "c"])))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/channels/rewards/redemptions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(pending(&["a"])))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+
+        let rewards = rewards_on(&server);
+        let (tx, mut rx) = mpsc::channel(8);
+        let mut seen: HashSet<String> = HashSet::new();
+        let mut seeded = false;
+
+        // Poll 1: [a,b] with seeded=false -> seeds silently, emits nothing.
+        poll_redemptions(&rewards, &ok_token(), &tx, &mut seen, &mut seeded)
+            .await
+            .unwrap();
+        assert!(rx.try_recv().is_err(), "the seeding poll must emit nothing");
+
+        // Poll 2: [a,b,c] -> only c is new; a and b must not re-emit.
+        poll_redemptions(&rewards, &ok_token(), &tx, &mut seen, &mut seeded)
+            .await
+            .unwrap();
+        let event = rx.try_recv().unwrap();
+        assert_eq!(event.kind, REWARD_REDEEMED_KIND);
+        assert_eq!(event.payload["id"], "c");
+        assert!(
+            rx.try_recv().is_err(),
+            "still-pending a and b must never be re-emitted"
+        );
+
+        // Poll 3: [a] (b,c resolved) -> emits nothing; resolved ids pruned.
+        poll_redemptions(&rewards, &ok_token(), &tx, &mut seen, &mut seeded)
+            .await
+            .unwrap();
+        assert!(
+            rx.try_recv().is_err(),
+            "a is still pending and already seen, so nothing emits"
+        );
+        let remaining: HashSet<String> = seen;
+        assert_eq!(
+            remaining,
+            HashSet::from(["a".to_owned()]),
+            "resolved ids b and c must be pruned, leaving only the live pending id"
+        );
     }
 }

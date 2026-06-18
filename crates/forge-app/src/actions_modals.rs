@@ -295,6 +295,8 @@ fn sub_category_label(cat: SubActionCategory) -> String {
 fn sub_category_color(cat: SubActionCategory, palette: &ForgePalette) -> iced::Color {
     match cat {
         SubActionCategory::Chat | SubActionCategory::Twitch => palette.brand,
+        SubActionCategory::YouTube => palette.platform_youtube,
+        SubActionCategory::Kick => palette.platform_kick,
         SubActionCategory::Globals | SubActionCategory::ChannelPoints => palette.warning,
         SubActionCategory::Scripts => palette.warning,
         SubActionCategory::Files | SubActionCategory::Http => palette.random,

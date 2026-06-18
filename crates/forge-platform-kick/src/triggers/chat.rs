@@ -73,6 +73,7 @@ impl TriggerKindDescriptor for ChatDescriptor {
             .unwrap_or("")
             .to_owned();
 
+        let message_id = str_field(&event.payload, "id");
         let content = str_field(&event.payload, "content");
         let reply_to_id = event
             .payload
@@ -84,6 +85,7 @@ impl TriggerKindDescriptor for ChatDescriptor {
             .to_owned();
 
         ArgStack::new()
+            .set("message_id".to_owned(), Variant::String(message_id))
             .set("sender_id".to_owned(), Variant::String(sender_id))
             .set("username".to_owned(), Variant::String(username))
             .set("display_name".to_owned(), Variant::String(slug))
@@ -142,6 +144,10 @@ mod tests {
     #[test]
     fn build_arg_stack_extracts_fields() {
         let stack = ChatDescriptor.build_arg_stack(&chat_event());
+        assert_eq!(
+            stack.get("message_id"),
+            Some(&Variant::String("msg-1".to_owned()))
+        );
         assert_eq!(
             stack.get("sender_id"),
             Some(&Variant::String("42".to_owned()))

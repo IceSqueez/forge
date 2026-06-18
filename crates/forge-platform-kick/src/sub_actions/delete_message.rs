@@ -62,7 +62,7 @@ impl SubActionRunner for DeleteMessageRunner {
     fn default_config(&self) -> SubActionConfig {
         BTreeMap::from([(
             "message_id".to_owned(),
-            Variant::String("%chat.message_id%".to_owned()),
+            Variant::String("%message_id%".to_owned()),
         )])
     }
 
@@ -70,7 +70,7 @@ impl SubActionRunner for DeleteMessageRunner {
         vec![FormField::Text {
             key: "message_id",
             label: "Message ID",
-            placeholder: "%chat.message_id%",
+            placeholder: "%message_id%",
         }]
     }
 
@@ -207,6 +207,21 @@ mod tests {
         assert!(
             server.received_requests().await.unwrap().is_empty(),
             "empty message_id must not reach the delete transport"
+        );
+    }
+
+    #[test]
+    fn default_config_message_id_matches_chat_trigger_arg_stack_key() {
+        // Why: the default placeholder must name the SAME key the Kick chat
+        // triggers push onto the arg stack (`message_id`). A namespaced token
+        // like `%chat.message_id%` never resolves, leaving the runner dead.
+        let runner = DeleteMessageRunner::new(
+            Arc::new(KickSendChat::new(Arc::new(GrantLimiter))),
+            token_source(),
+        );
+        assert_eq!(
+            runner.default_config().get("message_id"),
+            Some(&Variant::String("%message_id%".to_owned()))
         );
     }
 

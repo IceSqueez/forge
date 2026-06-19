@@ -80,3 +80,83 @@ impl TriggerKindDescriptor for SourceSceneItemLockChangedDescriptor {
         stack
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use forge_registry::TriggerKindDescriptor;
+    use forge_types::TriggerConfig;
+    use serde_json::json;
+
+    fn lock_event(payload: serde_json::Value) -> Event {
+        Event::new(EventSource::Obs, "source.scene_item_lock_changed", payload)
+    }
+
+    #[test]
+    fn matches_trigger_fires_on_exact_lock_kind() {
+        let cfg = TriggerConfig::new();
+        let event = lock_event(json!({}));
+        assert!(SourceSceneItemLockChangedDescriptor.matches_trigger(&cfg, &event));
+    }
+
+    // The descriptor shares the `source.` event-filter prefix with the visibility and
+    // input descriptors; `matches_trigger` must discriminate on the FULL kind, not the
+    // prefix, or a lock action would fire on a sibling visibility/input event.
+    #[test]
+    fn matches_trigger_rejects_sibling_source_kinds() {
+        let cfg = TriggerConfig::new();
+        for sibling in ["source.visibility.changed", "source.input_created"] {
+            let event = Event::new(EventSource::Obs, sibling, json!({}));
+            assert!(
+                !SourceSceneItemLockChangedDescriptor.matches_trigger(&cfg, &event),
+                "must not fire on sibling kind {sibling}",
+            );
+        }
+    }
+
+    #[test]
+    fn matches_trigger_rejects_non_source_kind() {
+        let cfg = TriggerConfig::new();
+        let event = Event::new(EventSource::Obs, "scene.changed", json!({}));
+        assert!(!SourceSceneItemLockChangedDescriptor.matches_trigger(&cfg, &event));
+    }
+
+    #[test]
+    fn build_arg_stack_extracts_scene_source_and_locked_flag() {
+        let event = lock_event(json!({ "scene": "Main", "source": "Cam", "is_locked": true }));
+        let stack = SourceSceneItemLockChangedDescriptor.build_arg_stack(&event);
+        assert_eq!(
+            stack.get("obs.scene.name"),
+            Some(&Variant::String("Main".to_owned())),
+        );
+        assert_eq!(
+            stack.get("obs.source.name"),
+            Some(&Variant::String("Cam".to_owned())),
+        );
+        assert_eq!(
+            stack.get("obs.source.is_locked"),
+            Some(&Variant::Bool(true)),
+        );
+    }
+
+    // An `is_locked: false` payload (unlock) must map to `Variant::Bool(false)` — not be
+    // dropped or coerced — so actions can distinguish unlock from lock.
+    #[test]
+    fn build_arg_stack_preserves_false_locked_flag() {
+        let event = lock_event(json!({ "scene": "Main", "source": "Cam", "is_locked": false }));
+        let stack = SourceSceneItemLockChangedDescriptor.build_arg_stack(&event);
+        assert_eq!(
+            stack.get("obs.source.is_locked"),
+            Some(&Variant::Bool(false)),
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_omits_keys_when_payload_fields_absent() {
+        let stack = SourceSceneItemLockChangedDescriptor.build_arg_stack(&lock_event(json!({})));
+        assert!(stack.get("obs.scene.name").is_none());
+        assert!(stack.get("obs.source.name").is_none());
+        assert!(stack.get("obs.source.is_locked").is_none());
+    }
+}

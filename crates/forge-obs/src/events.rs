@@ -420,6 +420,21 @@ mod tests {
         assert_eq!(ev.payload["scene"], "BRB");
     }
 
+    // The emitted kind `source.scene_item_lock_changed` is the contract the
+    // SourceSceneItemLockChangedDescriptor matches on; both lock states must round-trip
+    // through `is_locked` as a JSON bool (not be dropped) for unlock to be distinguishable.
+    #[test]
+    fn map_scene_item_lock_emits_obs_source_event_for_both_states() {
+        for locked in [true, false] {
+            let ev = map_scene_item_lock("Gameplay", "Game Capture", locked);
+            assert_eq!(ev.source, EventSource::Obs);
+            assert_eq!(ev.kind, "source.scene_item_lock_changed");
+            assert_eq!(ev.payload["scene"], "Gameplay");
+            assert_eq!(ev.payload["source"], "Game Capture");
+            assert_eq!(ev.payload["is_locked"], locked);
+        }
+    }
+
     #[test]
     fn resolve_source_name_finds_match_by_scene_and_id() {
         let mut cache = HashMap::new();

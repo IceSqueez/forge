@@ -136,3 +136,68 @@ impl SubActionRunner for SetVolumeRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::runners::test_support::{MockSink, make_ctx};
+
+    fn runner() -> SetVolumeRunner {
+        SetVolumeRunner::new(Arc::new(MockSink))
+    }
+
+    #[test]
+    fn validate_config_accepts_numeric_string_db() {
+        let config = BTreeMap::from([
+            ("source".to_owned(), Variant::String("Mic".to_owned())),
+            ("volume_db".to_owned(), Variant::String("-6.0".to_owned())),
+        ]);
+        assert!(runner().validate_config(&config).is_ok());
+    }
+
+    #[test]
+    fn validate_config_accepts_float_and_int_db() {
+        for db in [Variant::Float(-3.0), Variant::Int(0)] {
+            let config = BTreeMap::from([
+                ("source".to_owned(), Variant::String("Mic".to_owned())),
+                ("volume_db".to_owned(), db),
+            ]);
+            assert!(runner().validate_config(&config).is_ok());
+        }
+    }
+
+    #[test]
+    fn validate_config_rejects_missing_source() {
+        let config = BTreeMap::from([("volume_db".to_owned(), Variant::String("0".to_owned()))]);
+        assert!(runner().validate_config(&config).is_err());
+    }
+
+    #[test]
+    fn validate_config_rejects_non_numeric_db_string() {
+        let config = BTreeMap::from([
+            ("source".to_owned(), Variant::String("Mic".to_owned())),
+            ("volume_db".to_owned(), Variant::String("loud".to_owned())),
+        ]);
+        assert!(runner().validate_config(&config).is_err());
+    }
+
+    #[test]
+    fn validate_config_rejects_missing_db() {
+        let config = BTreeMap::from([("source".to_owned(), Variant::String("Mic".to_owned()))]);
+        assert!(runner().validate_config(&config).is_err());
+    }
+
+    #[tokio::test]
+    async fn execute_reports_success_with_correct_kind() {
+        let stack = ArgStack::new();
+        let config = BTreeMap::from([
+            ("source".to_owned(), Variant::String("Mic".to_owned())),
+            ("volume_db".to_owned(), Variant::String("-6.0".to_owned())),
+        ]);
+        let (tel, extra) = runner().execute(&config, &make_ctx(&stack)).await;
+        assert_eq!(tel.outcome, SubActionOutcome::Success);
+        assert_eq!(tel.kind, "obs.audio.set_volume");
+        assert!(extra.is_none());
+    }
+}

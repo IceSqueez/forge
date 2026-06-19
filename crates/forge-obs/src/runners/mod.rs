@@ -11,6 +11,9 @@ mod stream_start;
 mod stream_stop;
 mod switch_current;
 
+#[cfg(test)]
+mod test_support;
+
 use std::sync::Arc;
 
 use forge_registry::{RegistryError, SubActionRegistry};
@@ -52,43 +55,8 @@ pub fn register_obs_sub_actions(
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use std::collections::BTreeMap;
-
-    use async_trait::async_trait;
-    use forge_types::Variant;
-
     use super::*;
-    use crate::ObsError;
-
-    struct MockSink;
-
-    #[async_trait]
-    impl ObsSink for MockSink {
-        async fn set_scene(&self, _: &str) -> Result<(), ObsError> {
-            Ok(())
-        }
-        async fn set_source_visible(&self, _: &str, _: &str, _: bool) -> Result<(), ObsError> {
-            Ok(())
-        }
-        async fn set_input_mute(&self, _: &str, _: bool) -> Result<(), ObsError> {
-            Ok(())
-        }
-        async fn start_record(&self) -> Result<(), ObsError> {
-            Ok(())
-        }
-        async fn stop_record(&self) -> Result<(), ObsError> {
-            Ok(())
-        }
-        async fn start_stream(&self) -> Result<(), ObsError> {
-            Ok(())
-        }
-        async fn stop_stream(&self) -> Result<(), ObsError> {
-            Ok(())
-        }
-        async fn raw_request(&self, _: &str, _: &Variant) -> Result<Variant, ObsError> {
-            Ok(Variant::Object(BTreeMap::new()))
-        }
-    }
+    use crate::runners::test_support::MockSink;
 
     #[test]
     fn all_expected_runner_ids_are_present() {
@@ -96,8 +64,12 @@ mod tests {
         register_obs_sub_actions(&mut reg, Arc::new(MockSink)).unwrap();
         for id in &[
             "obs.scenes.switch_current",
+            "obs.scenes.set_preview",
+            "obs.scenes.set_transition",
             "obs.sources.set_visible",
+            "obs.sources.set_input_settings",
             "obs.audio.set_mute",
+            "obs.audio.set_volume",
             "obs.record.start",
             "obs.record.stop",
             "obs.stream.start",

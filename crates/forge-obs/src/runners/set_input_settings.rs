@@ -151,3 +151,72 @@ impl SubActionRunner for SetInputSettingsRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::runners::test_support::{MockSink, make_ctx};
+
+    fn runner() -> SetInputSettingsRunner {
+        SetInputSettingsRunner::new(Arc::new(MockSink))
+    }
+
+    #[test]
+    fn validate_config_accepts_valid_json_object() {
+        let config = BTreeMap::from([
+            ("source".to_owned(), Variant::String("Webcam".to_owned())),
+            (
+                "settings_json".to_owned(),
+                Variant::String(r#"{"width":1920}"#.to_owned()),
+            ),
+            ("overlay".to_owned(), Variant::Bool(true)),
+        ]);
+        assert!(runner().validate_config(&config).is_ok());
+    }
+
+    #[test]
+    fn validate_config_rejects_missing_source() {
+        let config =
+            BTreeMap::from([("settings_json".to_owned(), Variant::String("{}".to_owned()))]);
+        assert!(runner().validate_config(&config).is_err());
+    }
+
+    #[test]
+    fn validate_config_rejects_malformed_json() {
+        let config = BTreeMap::from([
+            ("source".to_owned(), Variant::String("Webcam".to_owned())),
+            (
+                "settings_json".to_owned(),
+                Variant::String("{not valid".to_owned()),
+            ),
+        ]);
+        assert!(runner().validate_config(&config).is_err());
+    }
+
+    #[test]
+    fn validate_config_rejects_non_string_settings() {
+        let config = BTreeMap::from([
+            ("source".to_owned(), Variant::String("Webcam".to_owned())),
+            ("settings_json".to_owned(), Variant::Int(0)),
+        ]);
+        assert!(runner().validate_config(&config).is_err());
+    }
+
+    #[tokio::test]
+    async fn execute_reports_success_with_correct_kind() {
+        let stack = ArgStack::new();
+        let config = BTreeMap::from([
+            ("source".to_owned(), Variant::String("Webcam".to_owned())),
+            (
+                "settings_json".to_owned(),
+                Variant::String(r#"{"width":1920}"#.to_owned()),
+            ),
+            ("overlay".to_owned(), Variant::Bool(true)),
+        ]);
+        let (tel, extra) = runner().execute(&config, &make_ctx(&stack)).await;
+        assert_eq!(tel.outcome, SubActionOutcome::Success);
+        assert_eq!(tel.kind, "obs.sources.set_input_settings");
+        assert!(extra.is_none());
+    }
+}

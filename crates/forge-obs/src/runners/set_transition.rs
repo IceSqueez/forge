@@ -106,3 +106,42 @@ impl SubActionRunner for SetTransitionRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::runners::test_support::{MockSink, make_ctx};
+
+    #[test]
+    fn validate_config_accepts_transition_string() {
+        let runner = SetTransitionRunner::new(Arc::new(MockSink));
+        let config =
+            BTreeMap::from([("transition".to_owned(), Variant::String("Fade".to_owned()))]);
+        assert!(runner.validate_config(&config).is_ok());
+    }
+
+    #[test]
+    fn validate_config_rejects_missing_transition() {
+        let runner = SetTransitionRunner::new(Arc::new(MockSink));
+        assert!(runner.validate_config(&BTreeMap::new()).is_err());
+    }
+
+    #[test]
+    fn validate_config_rejects_non_string_transition() {
+        let runner = SetTransitionRunner::new(Arc::new(MockSink));
+        let config = BTreeMap::from([("transition".to_owned(), Variant::Bool(true))]);
+        assert!(runner.validate_config(&config).is_err());
+    }
+
+    #[tokio::test]
+    async fn execute_reports_success_with_correct_kind() {
+        let runner = SetTransitionRunner::new(Arc::new(MockSink));
+        let stack = ArgStack::new();
+        let config = BTreeMap::from([("transition".to_owned(), Variant::String("Cut".to_owned()))]);
+        let (tel, extra) = runner.execute(&config, &make_ctx(&stack)).await;
+        assert_eq!(tel.outcome, SubActionOutcome::Success);
+        assert_eq!(tel.kind, "obs.scenes.set_transition");
+        assert!(extra.is_none());
+    }
+}

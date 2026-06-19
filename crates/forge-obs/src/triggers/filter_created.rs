@@ -73,3 +73,39 @@ impl TriggerKindDescriptor for FilterCreatedDescriptor {
         stack
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    // Source/filter-name extraction and kind discrimination are covered in `filter_removed`
+    // (where the shared helper lives). Here we cover only the extra `obs.filter.kind` field
+    // this descriptor layers on top of the shared stack.
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn arg_stack_extracts_filter_kind() {
+        let event = Event::new(
+            EventSource::Obs,
+            "filter.created",
+            json!({ "filter_kind": "noise_suppress_filter" }),
+        );
+        assert_eq!(
+            FilterCreatedDescriptor
+                .build_arg_stack(&event)
+                .get("obs.filter.kind"),
+            Some(&Variant::String("noise_suppress_filter".to_owned())),
+        );
+    }
+
+    #[test]
+    fn arg_stack_omits_filter_kind_when_payload_field_absent() {
+        let event = Event::new(EventSource::Obs, "filter.created", json!({}));
+        assert!(
+            FilterCreatedDescriptor
+                .build_arg_stack(&event)
+                .get("obs.filter.kind")
+                .is_none()
+        );
+    }
+}

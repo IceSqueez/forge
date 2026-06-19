@@ -70,3 +70,41 @@ impl TriggerKindDescriptor for FilterEnabledChangedDescriptor {
         stack
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    // Source/filter-name extraction and kind discrimination are covered in `filter_removed`.
+    // Here we cover only the extra `obs.filter.is_enabled` Bool this descriptor adds —
+    // crucially that `false` is PRESERVED, not dropped as if the field were absent.
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn arg_stack_preserves_is_enabled_both_true_and_false() {
+        for flag in [true, false] {
+            let event = Event::new(
+                EventSource::Obs,
+                "filter.enabled_changed",
+                json!({ "is_enabled": flag }),
+            );
+            assert_eq!(
+                FilterEnabledChangedDescriptor
+                    .build_arg_stack(&event)
+                    .get("obs.filter.is_enabled"),
+                Some(&Variant::Bool(flag)),
+            );
+        }
+    }
+
+    #[test]
+    fn arg_stack_omits_is_enabled_when_payload_field_absent() {
+        let event = Event::new(EventSource::Obs, "filter.enabled_changed", json!({}));
+        assert!(
+            FilterEnabledChangedDescriptor
+                .build_arg_stack(&event)
+                .get("obs.filter.is_enabled")
+                .is_none()
+        );
+    }
+}

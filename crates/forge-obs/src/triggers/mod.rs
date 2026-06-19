@@ -153,6 +153,9 @@ mod tests {
             "obs.transition.started",
             "obs.transition.ended",
             "obs.transition.video_ended",
+            "obs.filters.created",
+            "obs.filters.removed",
+            "obs.filters.enabled_changed",
         ] {
             assert!(reg.get(id).is_some(), "missing trigger: {id}");
         }

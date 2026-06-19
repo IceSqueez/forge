@@ -185,6 +185,26 @@ pub(crate) fn map_obs_event(
             "transition.video_ended",
             json!({ "transition_name": id.name }),
         )),
+        obws::events::Event::InputMuteStateChanged { id, muted } => Some(Event::new(
+            EventSource::Obs,
+            "audio.source_mute_changed",
+            json!({ "source_name": id.name, "is_muted": muted }),
+        )),
+        obws::events::Event::InputVolumeChanged { id, mul, db } => Some(Event::new(
+            EventSource::Obs,
+            "audio.source_volume_changed",
+            json!({ "source_name": id.name, "volume_db": db, "volume_multiplier": mul }),
+        )),
+        obws::events::Event::InputAudioBalanceChanged { id, audio_balance } => Some(Event::new(
+            EventSource::Obs,
+            "audio.source_balance_changed",
+            json!({ "source_name": id.name, "balance": audio_balance }),
+        )),
+        obws::events::Event::InputAudioSyncOffsetChanged { id, offset } => Some(Event::new(
+            EventSource::Obs,
+            "audio.source_sync_offset_changed",
+            json!({ "source_name": id.name, "sync_offset_ms": offset.whole_milliseconds() }),
+        )),
         _ => None,
     }
 }

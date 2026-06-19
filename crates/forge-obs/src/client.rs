@@ -519,7 +519,14 @@ fn required_event_subscriptions() -> obws::requests::EventSubscription {
     // SCENES: program / preview / scene-list. CONFIG: scene-collection lifecycle.
     // OUTPUTS: stream + record state (health metrics). SCENE_ITEMS: source visibility.
     // TRANSITIONS: SceneTransitionStarted/Ended/VideoEnded. UI: StudioModeStateChanged.
-    Sub::SCENES | Sub::CONFIG | Sub::OUTPUTS | Sub::SCENE_ITEMS | Sub::TRANSITIONS | Sub::UI
+    // INPUTS: mute / volume / balance / sync-offset. INPUT_VOLUME_METERS deliberately excluded.
+    Sub::SCENES
+        | Sub::CONFIG
+        | Sub::OUTPUTS
+        | Sub::SCENE_ITEMS
+        | Sub::TRANSITIONS
+        | Sub::UI
+        | Sub::INPUTS
 }
 
 fn map_obws_error(e: obws::error::Error) -> ObsError {

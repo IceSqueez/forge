@@ -1,3 +1,7 @@
+mod audio_source_balance_changed;
+mod audio_source_mute_changed;
+mod audio_source_sync_offset_changed;
+mod audio_source_volume_changed;
 mod record_file_changed;
 mod record_paused;
 mod record_resumed;
@@ -22,6 +26,10 @@ mod transition_ended;
 mod transition_started;
 mod transition_video_ended;
 
+pub use audio_source_balance_changed::AudioSourceBalanceChangedDescriptor;
+pub use audio_source_mute_changed::AudioSourceMuteChangedDescriptor;
+pub use audio_source_sync_offset_changed::AudioSourceSyncOffsetChangedDescriptor;
+pub use audio_source_volume_changed::AudioSourceVolumeChangedDescriptor;
 pub use record_file_changed::RecordFileChangedDescriptor;
 pub use record_paused::RecordPausedDescriptor;
 pub use record_resumed::RecordResumedDescriptor;
@@ -50,6 +58,10 @@ use forge_registry::{RegistryError, TriggerRegistry};
 
 pub fn register_obs_triggers(reg: &mut TriggerRegistry) -> Result<(), RegistryError> {
     reg.register(Box::new(SceneCurrentChangedDescriptor))?;
+    reg.register(Box::new(AudioSourceMuteChangedDescriptor))?;
+    reg.register(Box::new(AudioSourceVolumeChangedDescriptor))?;
+    reg.register(Box::new(AudioSourceBalanceChangedDescriptor))?;
+    reg.register(Box::new(AudioSourceSyncOffsetChangedDescriptor))?;
     reg.register(Box::new(ScenePreviewChangedDescriptor))?;
     reg.register(Box::new(SceneListChangedDescriptor))?;
     reg.register(Box::new(SceneCollectionChangingDescriptor))?;

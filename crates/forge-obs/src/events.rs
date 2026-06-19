@@ -127,6 +127,38 @@ pub(crate) fn map_obs_event(
                 json!({ "all_names": names }),
             ))
         }
+        obws::events::Event::SceneCreated { id, .. } => Some(Event::new(
+            EventSource::Obs,
+            "scene.created",
+            json!({ "scene_name": id.name }),
+        )),
+        obws::events::Event::SceneRemoved { id, .. } => Some(Event::new(
+            EventSource::Obs,
+            "scene.removed",
+            json!({ "scene_name": id.name }),
+        )),
+        obws::events::Event::SceneNameChanged {
+            old_name, new_name, ..
+        } => Some(Event::new(
+            EventSource::Obs,
+            "scene.renamed",
+            json!({ "scene_name_old": old_name, "scene_name_new": new_name }),
+        )),
+        obws::events::Event::CurrentProfileChanged { name } => Some(Event::new(
+            EventSource::Obs,
+            "profile.current_changed",
+            json!({ "profile_name": name }),
+        )),
+        obws::events::Event::ProfileListChanged { profiles } => Some(Event::new(
+            EventSource::Obs,
+            "profile.list_changed",
+            json!({ "all_names": profiles }),
+        )),
+        obws::events::Event::SceneCollectionListChanged { collections } => Some(Event::new(
+            EventSource::Obs,
+            "collection.list_changed",
+            json!({ "all_names": collections }),
+        )),
         obws::events::Event::CurrentSceneCollectionChanging { name } => Some(Event::new(
             EventSource::Obs,
             "collection.changing",

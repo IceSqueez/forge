@@ -433,6 +433,27 @@ fn handle_obs_event(
             ));
         }
     }
+
+    if let obws::events::Event::SceneItemLockStateChanged {
+        scene,
+        item_id,
+        locked,
+        ..
+    } = ev
+    {
+        let source_name = item_cache
+            .lock()
+            .ok()
+            .and_then(|guard| crate::events::resolve_source_name(&guard, &scene.name, *item_id));
+
+        if let Some(name) = source_name {
+            publisher.publish(crate::events::map_scene_item_lock(
+                &scene.name,
+                &name,
+                *locked,
+            ));
+        }
+    }
 }
 
 async fn snapshot_catalog(client: &obws::Client, catalog_state: &RwLock<ObsCatalog>) {

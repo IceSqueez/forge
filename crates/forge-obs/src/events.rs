@@ -238,6 +238,14 @@ pub(crate) fn map_scene_item_visibility(scene: &str, source: &str, enabled: bool
     )
 }
 
+pub(crate) fn map_scene_item_lock(scene: &str, source: &str, locked: bool) -> Event {
+    Event::new(
+        EventSource::Obs,
+        "source.scene_item_lock_changed",
+        json!({ "scene": scene, "source": source, "is_locked": locked }),
+    )
+}
+
 pub(crate) fn resolve_source_name(
     cache: &HashMap<(String, String), i64>,
     scene: &str,

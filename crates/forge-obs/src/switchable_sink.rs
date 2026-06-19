@@ -96,6 +96,31 @@ impl ObsSink for SwitchableObsSink {
         let client = self.get()?;
         client.raw_request(request_type, payload).await
     }
+
+    async fn set_preview_scene(&self, scene: &str) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.set_preview_scene(scene).await
+    }
+
+    async fn set_current_scene_transition(&self, name: &str) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.set_current_scene_transition(name).await
+    }
+
+    async fn set_input_volume_db(&self, input: &str, db: f64) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.set_input_volume_db(input, db).await
+    }
+
+    async fn set_input_settings(
+        &self,
+        input: &str,
+        settings: &Variant,
+        overlay: bool,
+    ) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.set_input_settings(input, settings, overlay).await
+    }
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use forge_types::{EventId, Variant};
-use obws::requests::inputs::InputId;
+use obws::requests::inputs::{InputId, SetSettings, Volume};
 use obws::requests::scene_items::{Id, SetEnabled};
 use obws::requests::scenes::SceneId;
 
@@ -156,6 +156,64 @@ impl ObsSink for ObsClient {
         Err(ObsError::Protocol(
             "raw_request not supported by obws 0.15".to_owned(),
         ))
+    }
+
+    async fn set_preview_scene(&self, scene: &str) -> Result<(), ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        client
+            .scenes()
+            .set_current_preview_scene(SceneId::Name(scene))
+            .await
+            .map_err(|e| map_request_error("SetCurrentPreviewScene", e))
+    }
+
+    async fn set_current_scene_transition(&self, name: &str) -> Result<(), ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        client
+            .transitions()
+            .set_current(name)
+            .await
+            .map_err(|e| map_request_error("SetCurrentSceneTransition", e))
+    }
+
+    async fn set_input_volume_db(&self, input: &str, db: f64) -> Result<(), ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        client
+            .inputs()
+            .set_volume(InputId::Name(input), Volume::Db(db as f32))
+            .await
+            .map_err(|e| map_request_error("SetInputVolume", e))
+    }
+
+    async fn set_input_settings(
+        &self,
+        input: &str,
+        settings: &Variant,
+        overlay: bool,
+    ) -> Result<(), ObsError> {
+        let json_settings = settings.to_json();
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        client
+            .inputs()
+            .set_settings(SetSettings {
+                input: InputId::Name(input),
+                settings: &json_settings,
+                overlay: Some(overlay),
+            })
+            .await
+            .map_err(|e| map_request_error("SetInputSettings", e))
     }
 }
 

@@ -26,4 +26,17 @@ pub trait ObsSink: Send + Sync {
 
     async fn raw_request(&self, request_type: &str, payload: &Variant)
     -> Result<Variant, ObsError>;
+
+    async fn set_preview_scene(&self, scene: &str) -> Result<(), ObsError>;
+
+    async fn set_current_scene_transition(&self, name: &str) -> Result<(), ObsError>;
+
+    async fn set_input_volume_db(&self, input: &str, db: f64) -> Result<(), ObsError>;
+
+    async fn set_input_settings(
+        &self,
+        input: &str,
+        settings: &Variant,
+        overlay: bool,
+    ) -> Result<(), ObsError>;
 }

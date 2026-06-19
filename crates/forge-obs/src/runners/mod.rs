@@ -1,8 +1,12 @@
 mod raw_request;
 mod record_start;
 mod record_stop;
+mod set_input_settings;
 mod set_mute;
+mod set_preview_scene;
+mod set_transition;
 mod set_visible;
+mod set_volume;
 mod stream_start;
 mod stream_stop;
 mod switch_current;
@@ -14,8 +18,12 @@ use forge_registry::{RegistryError, SubActionRegistry};
 pub use raw_request::RawRequestRunner;
 pub use record_start::RecordStartRunner;
 pub use record_stop::RecordStopRunner;
+pub use set_input_settings::SetInputSettingsRunner;
 pub use set_mute::SetMuteRunner;
+pub use set_preview_scene::SetPreviewSceneRunner;
+pub use set_transition::SetTransitionRunner;
 pub use set_visible::SetVisibleRunner;
+pub use set_volume::SetVolumeRunner;
 pub use stream_start::StreamStartRunner;
 pub use stream_stop::StreamStopRunner;
 pub use switch_current::SwitchCurrentSceneRunner;
@@ -33,6 +41,10 @@ pub fn register_obs_sub_actions(
     reg.register(Box::new(RecordStopRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(StreamStartRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(StreamStopRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(SetPreviewSceneRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(SetTransitionRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(SetVolumeRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(SetInputSettingsRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(RawRequestRunner::new(sink)))?;
     Ok(())
 }

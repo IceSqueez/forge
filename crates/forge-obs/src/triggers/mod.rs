@@ -103,6 +103,11 @@ mod tests {
             "obs.record.resumed",
             "obs.record.file_changed",
             "obs.record.status_changed",
+            "obs.studio.enabled",
+            "obs.studio.disabled",
+            "obs.transition.started",
+            "obs.transition.ended",
+            "obs.transition.video_ended",
         ] {
             assert!(reg.get(id).is_some(), "missing trigger: {id}");
         }

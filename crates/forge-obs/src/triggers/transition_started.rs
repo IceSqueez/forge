@@ -79,3 +79,71 @@ pub(crate) fn build_transition_arg_stack(event: &Event) -> ArgStack {
     }
     stack
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    // The three transition descriptors share one `TriggerKindDescriptor` shape and
+    // the `build_transition_arg_stack` helper, so their 1:1 kind discrimination
+    // contract is tested together here.
+    use super::super::{
+        TransitionEndedDescriptor, TransitionStartedDescriptor, TransitionVideoEndedDescriptor,
+    };
+    use super::*;
+    use forge_registry::TriggerKindDescriptor;
+    use serde_json::json;
+
+    const ALL_TRANSITION_KINDS: [&str; 3] = [
+        "transition.started",
+        "transition.ended",
+        "transition.video_ended",
+    ];
+
+    fn transition_event(kind: &str, name: &str) -> Event {
+        Event::new(EventSource::Obs, kind, json!({ "transition_name": name }))
+    }
+
+    /// Each transition descriptor must fire on exactly its own kind and reject the
+    /// other two. `video_ended` is a distinct moment (stinger playback complete) from
+    /// `ended` (cut point) — mixing them would fire stinger-end actions early.
+    #[test]
+    fn each_transition_descriptor_matches_only_its_own_kind() {
+        let cfg = BTreeMap::new();
+        let descriptors: [(&str, &dyn TriggerKindDescriptor); 3] = [
+            ("transition.started", &TransitionStartedDescriptor),
+            ("transition.ended", &TransitionEndedDescriptor),
+            ("transition.video_ended", &TransitionVideoEndedDescriptor),
+        ];
+        for (own_kind, descriptor) in descriptors {
+            for kind in ALL_TRANSITION_KINDS {
+                assert_eq!(
+                    descriptor.matches_trigger(&cfg, &transition_event(kind, "Fade")),
+                    kind == own_kind,
+                    "descriptor for {own_kind} given {kind}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn transition_descriptor_rejects_non_transition_kind() {
+        let event = Event::new(EventSource::Obs, "scene.changed", json!({}));
+        assert!(!TransitionStartedDescriptor.matches_trigger(&BTreeMap::new(), &event));
+    }
+
+    #[test]
+    fn build_arg_stack_extracts_transition_name() {
+        let stack = build_transition_arg_stack(&transition_event("transition.started", "Stinger"));
+        assert_eq!(
+            stack.get("obs.transition.name"),
+            Some(&Variant::String("Stinger".to_owned())),
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_omits_name_when_payload_field_absent() {
+        let event = Event::new(EventSource::Obs, "transition.ended", json!({}));
+        let stack = build_transition_arg_stack(&event);
+        assert!(stack.get("obs.transition.name").is_none());
+    }
+}

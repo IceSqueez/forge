@@ -8,6 +8,26 @@ use serde_json::json;
 use crate::catalog::ObsCatalog;
 use crate::health::HealthSnapshot;
 
+pub(crate) fn make_connection_connected() -> Event {
+    Event::new(EventSource::Obs, "connection.connected", json!({}))
+}
+
+pub(crate) fn make_connection_disconnected(reason: &str) -> Event {
+    Event::new(
+        EventSource::Obs,
+        "connection.disconnected",
+        json!({ "reason": reason }),
+    )
+}
+
+pub(crate) fn make_connection_auth_failed(message: &str) -> Event {
+    Event::new(
+        EventSource::Obs,
+        "connection.auth_failed",
+        json!({ "error_message": message }),
+    )
+}
+
 pub(crate) fn make_scene_changed_event(
     from_scene: Option<&str>,
     to_scene: &str,

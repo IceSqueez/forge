@@ -294,6 +294,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
 
                 state.store(STATE_CONNECTED, Ordering::Release);
                 tracing::info!(host = %host, port, "connected to OBS");
+                publisher.publish(crate::events::make_connection_connected());
 
                 match events {
                     Ok(mut stream) => loop {
@@ -308,6 +309,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                                 match item {
                                     None => {
                                         tracing::info!(host = %host, port, "OBS connection lost; reconnecting");
+                                        publisher.publish(crate::events::make_connection_disconnected("connection_lost"));
                                         break;
                                     }
                                     Some(ev) => {
@@ -343,6 +345,9 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
 
             Err(ObsError::Authentication) => {
                 tracing::warn!(host = %host, port, "OBS authentication rejected");
+                publisher.publish(crate::events::make_connection_auth_failed(
+                    "authentication rejected",
+                ));
                 state.store(STATE_DISCONNECTED, Ordering::Release);
                 return;
             }

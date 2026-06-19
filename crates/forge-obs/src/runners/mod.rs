@@ -84,8 +84,12 @@ mod tests {
             "obs.audio.set_volume",
             "obs.record.start",
             "obs.record.stop",
+            "obs.record.pause",
+            "obs.record.resume",
+            "obs.record.toggle_pause",
             "obs.stream.start",
             "obs.stream.stop",
+            "obs.stream.send_caption",
             "obs.misc.raw_request",
         ] {
             assert!(reg.get(id).is_some(), "missing runner: {id}");

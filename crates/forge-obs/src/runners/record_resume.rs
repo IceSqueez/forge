@@ -83,3 +83,20 @@ impl SubActionRunner for RecordResumeRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::runners::test_support::{MockSink, make_ctx};
+
+    #[tokio::test]
+    async fn execute_reports_success_with_correct_kind() {
+        let stack = ArgStack::new();
+        let runner = RecordResumeRunner::new(Arc::new(MockSink));
+        let (tel, extra) = runner.execute(&BTreeMap::new(), &make_ctx(&stack)).await;
+        assert_eq!(tel.outcome, SubActionOutcome::Success);
+        assert_eq!(tel.kind, "obs.record.resume");
+        assert!(extra.is_none());
+    }
+}

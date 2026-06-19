@@ -71,3 +71,54 @@ impl TriggerKindDescriptor for SceneRemovedDescriptor {
         stack
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use forge_registry::TriggerKindDescriptor;
+    use serde_json::json;
+
+    #[test]
+    fn matches_only_scene_removed_kind_within_scene_family() {
+        let d = SceneRemovedDescriptor;
+        let cfg = BTreeMap::new();
+        assert!(d.matches_trigger(
+            &cfg,
+            &Event::new(EventSource::Obs, "scene.removed", json!({})),
+        ));
+        for sibling in [
+            "scene.created",
+            "scene.renamed",
+            "scene.changed",
+            "scene.preview_changed",
+            "scene.list_changed",
+        ] {
+            assert!(
+                !d.matches_trigger(&cfg, &Event::new(EventSource::Obs, sibling, json!({}))),
+                "scene.removed wrongly matched sibling kind {sibling}",
+            );
+        }
+    }
+
+    #[test]
+    fn arg_stack_binds_scene_name_as_string() {
+        let event = Event::new(
+            EventSource::Obs,
+            "scene.removed",
+            json!({ "scene_name": "Intro" }),
+        );
+        let stack = SceneRemovedDescriptor.build_arg_stack(&event);
+        assert_eq!(
+            stack.get("obs.scene.name"),
+            Some(&Variant::String("Intro".to_owned())),
+        );
+    }
+
+    #[test]
+    fn arg_stack_omits_name_when_payload_field_absent() {
+        let event = Event::new(EventSource::Obs, "scene.removed", json!({}));
+        let stack = SceneRemovedDescriptor.build_arg_stack(&event);
+        assert!(stack.get("obs.scene.name").is_none());
+    }
+}

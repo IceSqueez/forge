@@ -71,3 +71,56 @@ impl TriggerKindDescriptor for SceneCreatedDescriptor {
         stack
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use forge_registry::TriggerKindDescriptor;
+    use serde_json::json;
+
+    /// The `scene.` prefix is shared by six kinds. `scene.created` must fire on its own
+    /// kind and reject every sibling under the same prefix.
+    #[test]
+    fn matches_only_scene_created_kind_within_scene_family() {
+        let d = SceneCreatedDescriptor;
+        let cfg = BTreeMap::new();
+        assert!(d.matches_trigger(
+            &cfg,
+            &Event::new(EventSource::Obs, "scene.created", json!({})),
+        ));
+        for sibling in [
+            "scene.removed",
+            "scene.renamed",
+            "scene.changed",
+            "scene.preview_changed",
+            "scene.list_changed",
+        ] {
+            assert!(
+                !d.matches_trigger(&cfg, &Event::new(EventSource::Obs, sibling, json!({}))),
+                "scene.created wrongly matched sibling kind {sibling}",
+            );
+        }
+    }
+
+    #[test]
+    fn arg_stack_binds_scene_name_as_string() {
+        let event = Event::new(
+            EventSource::Obs,
+            "scene.created",
+            json!({ "scene_name": "BRB" }),
+        );
+        let stack = SceneCreatedDescriptor.build_arg_stack(&event);
+        assert_eq!(
+            stack.get("obs.scene.name"),
+            Some(&Variant::String("BRB".to_owned())),
+        );
+    }
+
+    #[test]
+    fn arg_stack_omits_name_when_payload_field_absent() {
+        let event = Event::new(EventSource::Obs, "scene.created", json!({}));
+        let stack = SceneCreatedDescriptor.build_arg_stack(&event);
+        assert!(stack.get("obs.scene.name").is_none());
+    }
+}

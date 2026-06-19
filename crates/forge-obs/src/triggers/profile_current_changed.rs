@@ -71,3 +71,46 @@ impl TriggerKindDescriptor for ProfileCurrentChangedDescriptor {
         stack
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use forge_registry::TriggerKindDescriptor;
+    use serde_json::json;
+
+    #[test]
+    fn matches_current_changed_and_rejects_list_changed_under_profile_prefix() {
+        let d = ProfileCurrentChangedDescriptor;
+        let cfg = BTreeMap::new();
+        assert!(d.matches_trigger(
+            &cfg,
+            &Event::new(EventSource::Obs, "profile.current_changed", json!({})),
+        ));
+        assert!(!d.matches_trigger(
+            &cfg,
+            &Event::new(EventSource::Obs, "profile.list_changed", json!({})),
+        ));
+    }
+
+    #[test]
+    fn arg_stack_binds_profile_name_as_string() {
+        let event = Event::new(
+            EventSource::Obs,
+            "profile.current_changed",
+            json!({ "profile_name": "Streaming" }),
+        );
+        let stack = ProfileCurrentChangedDescriptor.build_arg_stack(&event);
+        assert_eq!(
+            stack.get("obs.profile.name"),
+            Some(&Variant::String("Streaming".to_owned())),
+        );
+    }
+
+    #[test]
+    fn arg_stack_omits_name_when_payload_field_absent() {
+        let event = Event::new(EventSource::Obs, "profile.current_changed", json!({}));
+        let stack = ProfileCurrentChangedDescriptor.build_arg_stack(&event);
+        assert!(stack.get("obs.profile.name").is_none());
+    }
+}

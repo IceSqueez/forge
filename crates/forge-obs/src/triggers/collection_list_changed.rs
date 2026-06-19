@@ -76,3 +76,69 @@ impl TriggerKindDescriptor for CollectionListChangedDescriptor {
         stack
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use forge_registry::TriggerKindDescriptor;
+    use serde_json::json;
+
+    #[test]
+    fn matches_list_changed_and_rejects_sibling_collection_kinds() {
+        let d = CollectionListChangedDescriptor;
+        let cfg = BTreeMap::new();
+        assert!(d.matches_trigger(
+            &cfg,
+            &Event::new(EventSource::Obs, "collection.list_changed", json!({})),
+        ));
+        for sibling in ["collection.changing", "collection.changed"] {
+            assert!(
+                !d.matches_trigger(&cfg, &Event::new(EventSource::Obs, sibling, json!({}))),
+                "collection.list_changed wrongly matched sibling kind {sibling}",
+            );
+        }
+    }
+
+    #[test]
+    fn arg_stack_collects_all_names_into_string_array() {
+        let event = Event::new(
+            EventSource::Obs,
+            "collection.list_changed",
+            json!({ "all_names": ["Main", "Alt"] }),
+        );
+        let stack = CollectionListChangedDescriptor.build_arg_stack(&event);
+        assert_eq!(
+            stack.get("obs.collection.all_names"),
+            Some(&Variant::Array(vec![
+                Variant::String("Main".to_owned()),
+                Variant::String("Alt".to_owned()),
+            ])),
+        );
+    }
+
+    /// Non-string array elements are filtered out by `as_str` rather than crashing.
+    #[test]
+    fn arg_stack_skips_non_string_array_elements() {
+        let event = Event::new(
+            EventSource::Obs,
+            "collection.list_changed",
+            json!({ "all_names": ["Main", 7, null, "Alt"] }),
+        );
+        let stack = CollectionListChangedDescriptor.build_arg_stack(&event);
+        assert_eq!(
+            stack.get("obs.collection.all_names"),
+            Some(&Variant::Array(vec![
+                Variant::String("Main".to_owned()),
+                Variant::String("Alt".to_owned()),
+            ])),
+        );
+    }
+
+    #[test]
+    fn arg_stack_omits_key_when_all_names_absent() {
+        let event = Event::new(EventSource::Obs, "collection.list_changed", json!({}));
+        let stack = CollectionListChangedDescriptor.build_arg_stack(&event);
+        assert!(stack.get("obs.collection.all_names").is_none());
+    }
+}

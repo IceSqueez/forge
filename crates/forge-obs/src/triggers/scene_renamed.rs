@@ -77,3 +77,68 @@ impl TriggerKindDescriptor for SceneRenamedDescriptor {
         stack
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use forge_registry::TriggerKindDescriptor;
+    use serde_json::json;
+
+    #[test]
+    fn matches_only_scene_renamed_kind_within_scene_family() {
+        let d = SceneRenamedDescriptor;
+        let cfg = BTreeMap::new();
+        assert!(d.matches_trigger(
+            &cfg,
+            &Event::new(EventSource::Obs, "scene.renamed", json!({})),
+        ));
+        for sibling in [
+            "scene.created",
+            "scene.removed",
+            "scene.changed",
+            "scene.preview_changed",
+            "scene.list_changed",
+        ] {
+            assert!(
+                !d.matches_trigger(&cfg, &Event::new(EventSource::Obs, sibling, json!({}))),
+                "scene.renamed wrongly matched sibling kind {sibling}",
+            );
+        }
+    }
+
+    /// Rename reads two distinct payload fields into two distinct arg keys; a swapped
+    /// field-to-key wiring would surface here.
+    #[test]
+    fn arg_stack_binds_old_and_new_names_to_distinct_keys() {
+        let event = Event::new(
+            EventSource::Obs,
+            "scene.renamed",
+            json!({ "scene_name_old": "Old", "scene_name_new": "New" }),
+        );
+        let stack = SceneRenamedDescriptor.build_arg_stack(&event);
+        assert_eq!(
+            stack.get("obs.scene.name_old"),
+            Some(&Variant::String("Old".to_owned())),
+        );
+        assert_eq!(
+            stack.get("obs.scene.name_new"),
+            Some(&Variant::String("New".to_owned())),
+        );
+    }
+
+    #[test]
+    fn arg_stack_binds_only_present_name_field() {
+        let event = Event::new(
+            EventSource::Obs,
+            "scene.renamed",
+            json!({ "scene_name_new": "New" }),
+        );
+        let stack = SceneRenamedDescriptor.build_arg_stack(&event);
+        assert!(stack.get("obs.scene.name_old").is_none());
+        assert_eq!(
+            stack.get("obs.scene.name_new"),
+            Some(&Variant::String("New".to_owned())),
+        );
+    }
+}

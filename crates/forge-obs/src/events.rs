@@ -205,6 +205,27 @@ pub(crate) fn map_obs_event(
             "audio.source_sync_offset_changed",
             json!({ "source_name": id.name, "sync_offset_ms": offset.whole_milliseconds() }),
         )),
+        obws::events::Event::InputCreated {
+            id,
+            unversioned_kind,
+            ..
+        } => Some(Event::new(
+            EventSource::Obs,
+            "source.input_created",
+            json!({ "source_name": id.name, "source_kind": unversioned_kind }),
+        )),
+        obws::events::Event::InputRemoved { id } => Some(Event::new(
+            EventSource::Obs,
+            "source.input_removed",
+            json!({ "source_name": id.name }),
+        )),
+        obws::events::Event::InputNameChanged {
+            old_name, new_name, ..
+        } => Some(Event::new(
+            EventSource::Obs,
+            "source.input_renamed",
+            json!({ "source_name_old": old_name, "source_name_new": new_name }),
+        )),
         _ => None,
     }
 }

@@ -541,6 +541,7 @@ fn required_event_subscriptions() -> obws::requests::EventSubscription {
     // OUTPUTS: stream + record state (health metrics). SCENE_ITEMS: source visibility.
     // TRANSITIONS: SceneTransitionStarted/Ended/VideoEnded. UI: StudioModeStateChanged.
     // INPUTS: mute / volume / balance / sync-offset. INPUT_VOLUME_METERS deliberately excluded.
+    // FILTERS: SourceFilterCreated / SourceFilterRemoved / SourceFilterEnableStateChanged.
     Sub::SCENES
         | Sub::CONFIG
         | Sub::OUTPUTS
@@ -548,6 +549,7 @@ fn required_event_subscriptions() -> obws::requests::EventSubscription {
         | Sub::TRANSITIONS
         | Sub::UI
         | Sub::INPUTS
+        | Sub::FILTERS
 }
 
 fn map_obws_error(e: obws::error::Error) -> ObsError {

@@ -2,6 +2,9 @@ mod audio_source_balance_changed;
 mod audio_source_mute_changed;
 mod audio_source_sync_offset_changed;
 mod audio_source_volume_changed;
+mod filter_created;
+mod filter_enabled_changed;
+mod filter_removed;
 mod record_file_changed;
 mod record_paused;
 mod record_resumed;
@@ -35,6 +38,9 @@ pub use audio_source_balance_changed::AudioSourceBalanceChangedDescriptor;
 pub use audio_source_mute_changed::AudioSourceMuteChangedDescriptor;
 pub use audio_source_sync_offset_changed::AudioSourceSyncOffsetChangedDescriptor;
 pub use audio_source_volume_changed::AudioSourceVolumeChangedDescriptor;
+pub use filter_created::FilterCreatedDescriptor;
+pub use filter_enabled_changed::FilterEnabledChangedDescriptor;
+pub use filter_removed::FilterRemovedDescriptor;
 pub use record_file_changed::RecordFileChangedDescriptor;
 pub use record_paused::RecordPausedDescriptor;
 pub use record_resumed::RecordResumedDescriptor;
@@ -99,6 +105,9 @@ pub fn register_obs_triggers(reg: &mut TriggerRegistry) -> Result<(), RegistryEr
     reg.register(Box::new(TransitionStartedDescriptor))?;
     reg.register(Box::new(TransitionEndedDescriptor))?;
     reg.register(Box::new(TransitionVideoEndedDescriptor))?;
+    reg.register(Box::new(FilterCreatedDescriptor))?;
+    reg.register(Box::new(FilterRemovedDescriptor))?;
+    reg.register(Box::new(FilterEnabledChangedDescriptor))?;
     Ok(())
 }
 

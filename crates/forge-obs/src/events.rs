@@ -226,6 +226,30 @@ pub(crate) fn map_obs_event(
             "source.input_renamed",
             json!({ "source_name_old": old_name, "source_name_new": new_name }),
         )),
+        obws::events::Event::SourceFilterCreated {
+            source,
+            filter,
+            kind,
+            ..
+        } => Some(Event::new(
+            EventSource::Obs,
+            "filter.created",
+            json!({ "source_name": source, "filter_name": filter, "filter_kind": kind }),
+        )),
+        obws::events::Event::SourceFilterRemoved { source, filter } => Some(Event::new(
+            EventSource::Obs,
+            "filter.removed",
+            json!({ "source_name": source, "filter_name": filter }),
+        )),
+        obws::events::Event::SourceFilterEnableStateChanged {
+            source,
+            filter,
+            enabled,
+        } => Some(Event::new(
+            EventSource::Obs,
+            "filter.enabled_changed",
+            json!({ "source_name": source, "filter_name": filter, "is_enabled": enabled }),
+        )),
         _ => None,
     }
 }

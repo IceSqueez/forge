@@ -39,6 +39,9 @@ mod studio_enabled;
 mod transition_ended;
 mod transition_started;
 mod transition_video_ended;
+mod virtualcam_started;
+mod virtualcam_status_changed;
+mod virtualcam_stopped;
 
 pub use audio_source_balance_changed::AudioSourceBalanceChangedDescriptor;
 pub use audio_source_mute_changed::AudioSourceMuteChangedDescriptor;
@@ -81,6 +84,9 @@ pub use studio_enabled::StudioEnabledDescriptor;
 pub use transition_ended::TransitionEndedDescriptor;
 pub use transition_started::TransitionStartedDescriptor;
 pub use transition_video_ended::TransitionVideoEndedDescriptor;
+pub use virtualcam_started::VirtualcamStartedDescriptor;
+pub use virtualcam_status_changed::VirtualcamStatusChangedDescriptor;
+pub use virtualcam_stopped::VirtualcamStoppedDescriptor;
 
 use forge_registry::{RegistryError, TriggerRegistry};
 
@@ -126,6 +132,9 @@ pub fn register_obs_triggers(reg: &mut TriggerRegistry) -> Result<(), RegistryEr
     reg.register(Box::new(FilterCreatedDescriptor))?;
     reg.register(Box::new(FilterRemovedDescriptor))?;
     reg.register(Box::new(FilterEnabledChangedDescriptor))?;
+    reg.register(Box::new(VirtualcamStartedDescriptor))?;
+    reg.register(Box::new(VirtualcamStoppedDescriptor))?;
+    reg.register(Box::new(VirtualcamStatusChangedDescriptor))?;
     Ok(())
 }
 

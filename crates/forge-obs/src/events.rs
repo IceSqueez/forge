@@ -67,6 +67,37 @@ pub(crate) fn make_record_state_event(
     )
 }
 
+pub(crate) fn make_virtualcam_event(active: bool, state: &obws::events::OutputState) -> Event {
+    use obws::events::OutputState;
+    let kind = match state {
+        OutputState::Starting => "virtualcam.starting",
+        OutputState::Started => "virtualcam.started",
+        OutputState::Stopping => "virtualcam.stopping",
+        OutputState::Stopped => "virtualcam.stopped",
+        _ => {
+            if active {
+                "virtualcam.started"
+            } else {
+                "virtualcam.stopped"
+            }
+        }
+    };
+    let state_str = match state {
+        OutputState::Starting => "starting",
+        OutputState::Started => "started",
+        OutputState::Stopping => "stopping",
+        OutputState::Stopped => "stopped",
+        OutputState::Paused => "paused",
+        OutputState::Resumed => "resumed",
+        _ => "unknown",
+    };
+    Event::new(
+        EventSource::Obs,
+        kind,
+        json!({ "output_state": state_str, "is_active": active }),
+    )
+}
+
 pub(crate) fn make_stream_event(active: bool, state: &obws::events::OutputState) -> Event {
     use obws::events::OutputState;
     let kind = match state {
@@ -189,6 +220,9 @@ pub(crate) fn map_obs_event(
         )),
         obws::events::Event::StreamStateChanged { active, state } => {
             Some(make_stream_event(*active, state))
+        }
+        obws::events::Event::VirtualcamStateChanged { active, state } => {
+            Some(make_virtualcam_event(*active, state))
         }
         obws::events::Event::StudioModeStateChanged { enabled } => {
             let kind = if *enabled {

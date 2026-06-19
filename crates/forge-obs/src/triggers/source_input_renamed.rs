@@ -85,3 +85,56 @@ impl TriggerKindDescriptor for SourceInputRenamedDescriptor {
         stack
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    // 1:1 kind discrimination across the `source.` family is covered in
+    // `source_input_created`. Here we test only this descriptor's typed arg-stack
+    // extraction, whose two independent keys (`name_old` / `name_new`) are extracted
+    // independently.
+    use super::*;
+    use forge_registry::TriggerKindDescriptor;
+    use serde_json::json;
+
+    #[test]
+    fn input_renamed_arg_stack_extracts_old_and_new_names() {
+        let event = Event::new(
+            EventSource::Obs,
+            "source.input_renamed",
+            json!({ "source_name_old": "Cam", "source_name_new": "Webcam" }),
+        );
+        let stack = SourceInputRenamedDescriptor.build_arg_stack(&event);
+        assert_eq!(
+            stack.get("obs.source.name_old"),
+            Some(&Variant::String("Cam".to_owned())),
+        );
+        assert_eq!(
+            stack.get("obs.source.name_new"),
+            Some(&Variant::String("Webcam".to_owned())),
+        );
+    }
+
+    #[test]
+    fn input_renamed_arg_stack_extracts_each_name_independently() {
+        let event = Event::new(
+            EventSource::Obs,
+            "source.input_renamed",
+            json!({ "source_name_new": "Webcam" }),
+        );
+        let stack = SourceInputRenamedDescriptor.build_arg_stack(&event);
+        assert!(stack.get("obs.source.name_old").is_none());
+        assert_eq!(
+            stack.get("obs.source.name_new"),
+            Some(&Variant::String("Webcam".to_owned())),
+        );
+    }
+
+    #[test]
+    fn input_renamed_arg_stack_omits_both_keys_when_payload_empty() {
+        let event = Event::new(EventSource::Obs, "source.input_renamed", json!({}));
+        let stack = SourceInputRenamedDescriptor.build_arg_stack(&event);
+        assert!(stack.get("obs.source.name_old").is_none());
+        assert!(stack.get("obs.source.name_new").is_none());
+    }
+}

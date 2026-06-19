@@ -71,3 +71,35 @@ impl TriggerKindDescriptor for SourceInputRemovedDescriptor {
         stack
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    // 1:1 kind discrimination across the `source.` family (incl. the input/visibility
+    // prefix collision) is covered in `source_input_created`. Here we test only this
+    // descriptor's typed arg-stack extraction.
+    use super::*;
+    use forge_registry::TriggerKindDescriptor;
+    use serde_json::json;
+
+    #[test]
+    fn input_removed_arg_stack_extracts_source_name() {
+        let event = Event::new(
+            EventSource::Obs,
+            "source.input_removed",
+            json!({ "source_name": "Webcam" }),
+        );
+        let stack = SourceInputRemovedDescriptor.build_arg_stack(&event);
+        assert_eq!(
+            stack.get("obs.source.name"),
+            Some(&Variant::String("Webcam".to_owned())),
+        );
+    }
+
+    #[test]
+    fn input_removed_arg_stack_omits_name_when_payload_field_absent() {
+        let event = Event::new(EventSource::Obs, "source.input_removed", json!({}));
+        let stack = SourceInputRemovedDescriptor.build_arg_stack(&event);
+        assert!(stack.get("obs.source.name").is_none());
+    }
+}

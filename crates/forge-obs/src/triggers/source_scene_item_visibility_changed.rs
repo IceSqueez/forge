@@ -80,3 +80,63 @@ impl TriggerKindDescriptor for SourceSceneItemVisibilityChangedDescriptor {
         stack
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    // 1:1 kind discrimination across the `source.` family (incl. the input/visibility
+    // prefix collision) is covered in `source_input_created`. Here we test only this
+    // descriptor's typed arg-stack extraction, which renames three distinct payload keys
+    // (`scene` / `source` / `visible`) and is the only `source.` descriptor producing a
+    // `Variant::Bool`.
+    use super::*;
+    use forge_registry::TriggerKindDescriptor;
+    use serde_json::json;
+
+    #[test]
+    fn visibility_arg_stack_extracts_scene_source_and_enabled_flag() {
+        let event = Event::new(
+            EventSource::Obs,
+            "source.visibility.changed",
+            json!({ "scene": "Main", "source": "Cam", "visible": true }),
+        );
+        let stack = SourceSceneItemVisibilityChangedDescriptor.build_arg_stack(&event);
+        assert_eq!(
+            stack.get("obs.scene.name"),
+            Some(&Variant::String("Main".to_owned())),
+        );
+        assert_eq!(
+            stack.get("obs.source.name"),
+            Some(&Variant::String("Cam".to_owned())),
+        );
+        assert_eq!(
+            stack.get("obs.source.is_enabled"),
+            Some(&Variant::Bool(true)),
+        );
+    }
+
+    /// A `visible: false` payload must map to `Variant::Bool(false)` — not be dropped or
+    /// coerced — so actions can distinguish hide from show.
+    #[test]
+    fn visibility_arg_stack_preserves_false_enabled_flag() {
+        let event = Event::new(
+            EventSource::Obs,
+            "source.visibility.changed",
+            json!({ "scene": "Main", "source": "Cam", "visible": false }),
+        );
+        let stack = SourceSceneItemVisibilityChangedDescriptor.build_arg_stack(&event);
+        assert_eq!(
+            stack.get("obs.source.is_enabled"),
+            Some(&Variant::Bool(false)),
+        );
+    }
+
+    #[test]
+    fn visibility_arg_stack_omits_keys_when_payload_fields_absent() {
+        let event = Event::new(EventSource::Obs, "source.visibility.changed", json!({}));
+        let stack = SourceSceneItemVisibilityChangedDescriptor.build_arg_stack(&event);
+        assert!(stack.get("obs.scene.name").is_none());
+        assert!(stack.get("obs.source.name").is_none());
+        assert!(stack.get("obs.source.is_enabled").is_none());
+    }
+}

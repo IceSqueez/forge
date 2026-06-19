@@ -51,6 +51,11 @@ mod tests {
             "obs.scenes.list_changed",
             "obs.collection.changing",
             "obs.collection.current_changed",
+            "obs.stream.starting",
+            "obs.stream.started",
+            "obs.stream.stopping",
+            "obs.stream.stopped",
+            "obs.stream.status_changed",
         ] {
             assert!(reg.get(id).is_some(), "missing trigger: {id}");
         }

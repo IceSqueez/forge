@@ -221,6 +221,13 @@ mod tests {
     // the defining crate, so map_obs_event / apply_catalog_update / apply_health_update
     // can't be unit-tested. The payload-builder helpers make_scene_changed_event and
     // make_record_event are tested here directly.
+    //
+    // COVERAGE GAP: make_stream_event takes &obws::events::OutputState, which is ALSO
+    // #[non_exhaustive] (obws 0.15.0 src/events.rs). Its variants cannot be constructed
+    // in this crate, so the kind/state-string mapping (Starting..Resumed + the active-based
+    // fallback arm) has no constructible fixture and is left untested per the no-real-OBS
+    // rule. The downstream contract IS covered: the streaming.* trigger descriptors assert
+    // kind-discrimination and the build_stream_arg_stack output_state/is_active extraction.
 
     #[test]
     fn make_scene_changed_event_emits_from_and_to_fields() {

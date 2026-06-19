@@ -71,3 +71,48 @@ impl TriggerKindDescriptor for ConnectionAuthFailedDescriptor {
         stack
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn matches_only_auth_failed_among_connection_lifecycle() {
+        let d = ConnectionAuthFailedDescriptor;
+        for (kind, expected) in [
+            ("connection.auth_failed", true),
+            ("connection.connected", false),
+            ("connection.disconnected", false),
+        ] {
+            let event = Event::new(EventSource::Obs, kind, json!({}));
+            assert_eq!(
+                d.matches_trigger(&BTreeMap::new(), &event),
+                expected,
+                "kind {kind}"
+            );
+        }
+    }
+
+    #[test]
+    fn build_arg_stack_extracts_error_message() {
+        let d = ConnectionAuthFailedDescriptor;
+        let event = Event::new(
+            EventSource::Obs,
+            "connection.auth_failed",
+            json!({ "error_message": "authentication rejected" }),
+        );
+        assert_eq!(
+            d.build_arg_stack(&event).get("obs.error_message"),
+            Some(&Variant::String("authentication rejected".to_owned()))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_omits_error_message_when_missing() {
+        let d = ConnectionAuthFailedDescriptor;
+        let event = Event::new(EventSource::Obs, "connection.auth_failed", json!({}));
+        assert_eq!(d.build_arg_stack(&event).get("obs.error_message"), None);
+    }
+}

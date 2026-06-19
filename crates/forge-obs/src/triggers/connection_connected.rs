@@ -64,3 +64,34 @@ impl TriggerKindDescriptor for ConnectionConnectedDescriptor {
         ArgStack::new()
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn matches_only_connected_among_connection_lifecycle() {
+        let d = ConnectionConnectedDescriptor;
+        for (kind, expected) in [
+            ("connection.connected", true),
+            ("connection.disconnected", false),
+            ("connection.auth_failed", false),
+        ] {
+            let event = Event::new(EventSource::Obs, kind, json!({}));
+            assert_eq!(
+                d.matches_trigger(&BTreeMap::new(), &event),
+                expected,
+                "kind {kind}"
+            );
+        }
+    }
+
+    #[test]
+    fn does_not_match_foreign_kind() {
+        let d = ConnectionConnectedDescriptor;
+        let event = Event::new(EventSource::Obs, "scene.changed", json!({}));
+        assert!(!d.matches_trigger(&BTreeMap::new(), &event));
+    }
+}

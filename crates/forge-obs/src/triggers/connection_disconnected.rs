@@ -68,3 +68,48 @@ impl TriggerKindDescriptor for ConnectionDisconnectedDescriptor {
         stack
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn matches_only_disconnected_among_connection_lifecycle() {
+        let d = ConnectionDisconnectedDescriptor;
+        for (kind, expected) in [
+            ("connection.disconnected", true),
+            ("connection.connected", false),
+            ("connection.auth_failed", false),
+        ] {
+            let event = Event::new(EventSource::Obs, kind, json!({}));
+            assert_eq!(
+                d.matches_trigger(&BTreeMap::new(), &event),
+                expected,
+                "kind {kind}"
+            );
+        }
+    }
+
+    #[test]
+    fn build_arg_stack_extracts_reason() {
+        let d = ConnectionDisconnectedDescriptor;
+        let event = Event::new(
+            EventSource::Obs,
+            "connection.disconnected",
+            json!({ "reason": "connection reset by peer" }),
+        );
+        assert_eq!(
+            d.build_arg_stack(&event).get("obs.reason"),
+            Some(&Variant::String("connection reset by peer".to_owned()))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_omits_reason_when_missing() {
+        let d = ConnectionDisconnectedDescriptor;
+        let event = Event::new(EventSource::Obs, "connection.disconnected", json!({}));
+        assert_eq!(d.build_arg_stack(&event).get("obs.reason"), None);
+    }
+}

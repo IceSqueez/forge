@@ -78,3 +78,93 @@ pub(crate) fn build_virtualcam_arg_stack(event: &Event) -> ArgStack {
     }
     stack
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn omnibus_matches_every_virtualcam_lifecycle_kind() {
+        let d = VirtualcamStatusChangedDescriptor;
+        for kind in [
+            "virtualcam.starting",
+            "virtualcam.started",
+            "virtualcam.stopping",
+            "virtualcam.stopped",
+        ] {
+            let event = Event::new(EventSource::Obs, kind, json!({}));
+            assert!(
+                d.matches_trigger(&BTreeMap::new(), &event),
+                "should match {kind}"
+            );
+        }
+    }
+
+    #[test]
+    fn omnibus_rejects_non_virtualcam_kinds() {
+        let d = VirtualcamStatusChangedDescriptor;
+        for kind in ["streaming.started", "recording.stopped", "scene.changed"] {
+            let event = Event::new(EventSource::Obs, kind, json!({}));
+            assert!(
+                !d.matches_trigger(&BTreeMap::new(), &event),
+                "should reject {kind}"
+            );
+        }
+    }
+
+    #[test]
+    fn build_arg_stack_extracts_output_state_and_is_active() {
+        let event = Event::new(
+            EventSource::Obs,
+            "virtualcam.started",
+            json!({ "output_state": "started", "is_active": true }),
+        );
+        let stack = build_virtualcam_arg_stack(&event);
+        assert_eq!(
+            stack.get("obs.virtualcam.output_state"),
+            Some(&Variant::String("started".to_owned()))
+        );
+        assert_eq!(
+            stack.get("obs.virtualcam.is_active"),
+            Some(&Variant::Bool(true))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_extracts_is_active_false() {
+        let event = Event::new(
+            EventSource::Obs,
+            "virtualcam.stopped",
+            json!({ "output_state": "stopped", "is_active": false }),
+        );
+        assert_eq!(
+            build_virtualcam_arg_stack(&event).get("obs.virtualcam.is_active"),
+            Some(&Variant::Bool(false))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_omits_keys_when_payload_empty() {
+        let event = Event::new(EventSource::Obs, "virtualcam.started", json!({}));
+        let stack = build_virtualcam_arg_stack(&event);
+        assert_eq!(stack.get("obs.virtualcam.output_state"), None);
+        assert_eq!(stack.get("obs.virtualcam.is_active"), None);
+    }
+
+    #[test]
+    fn build_arg_stack_omits_is_active_when_wrong_json_type() {
+        let event = Event::new(
+            EventSource::Obs,
+            "virtualcam.started",
+            json!({ "output_state": "started", "is_active": "true" }),
+        );
+        let stack = build_virtualcam_arg_stack(&event);
+        assert_eq!(
+            stack.get("obs.virtualcam.output_state"),
+            Some(&Variant::String("started".to_owned()))
+        );
+        assert_eq!(stack.get("obs.virtualcam.is_active"), None);
+    }
+}

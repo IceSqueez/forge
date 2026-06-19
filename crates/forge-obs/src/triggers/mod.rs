@@ -198,6 +198,12 @@ mod tests {
             "obs.filters.created",
             "obs.filters.removed",
             "obs.filters.enabled_changed",
+            "obs.virtualcam.started",
+            "obs.virtualcam.stopped",
+            "obs.virtualcam.state_changed",
+            "obs.connection.connected",
+            "obs.connection.disconnected",
+            "obs.connection.auth_failed",
         ] {
             assert!(reg.get(id).is_some(), "missing trigger: {id}");
         }

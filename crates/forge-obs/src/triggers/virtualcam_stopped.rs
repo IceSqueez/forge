@@ -66,3 +66,35 @@ impl TriggerKindDescriptor for VirtualcamStoppedDescriptor {
         build_virtualcam_arg_stack(event)
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn matches_only_stopped_kind_among_virtualcam_lifecycle() {
+        let d = VirtualcamStoppedDescriptor;
+        for (kind, expected) in [
+            ("virtualcam.stopped", true),
+            ("virtualcam.started", false),
+            ("virtualcam.starting", false),
+            ("virtualcam.stopping", false),
+        ] {
+            let event = Event::new(EventSource::Obs, kind, json!({}));
+            assert_eq!(
+                d.matches_trigger(&BTreeMap::new(), &event),
+                expected,
+                "kind {kind}"
+            );
+        }
+    }
+
+    #[test]
+    fn does_not_match_foreign_source_kind() {
+        let d = VirtualcamStoppedDescriptor;
+        let event = Event::new(EventSource::Obs, "recording.stopped", json!({}));
+        assert!(!d.matches_trigger(&BTreeMap::new(), &event));
+    }
+}

@@ -514,6 +514,50 @@ mod tests {
     }
 
     #[test]
+    fn make_connection_connected_emits_obs_kind_with_empty_payload() {
+        let ev = make_connection_connected();
+        assert_eq!(ev.source, EventSource::Obs);
+        assert_eq!(ev.kind, "connection.connected");
+        assert_eq!(ev.payload, json!({}));
+    }
+
+    #[test]
+    fn make_connection_disconnected_carries_reason() {
+        let ev = make_connection_disconnected("connection reset by peer");
+        assert_eq!(ev.source, EventSource::Obs);
+        assert_eq!(ev.kind, "connection.disconnected");
+        assert_eq!(ev.payload["reason"], "connection reset by peer");
+    }
+
+    #[test]
+    fn make_connection_disconnected_payload_has_no_disconnect_code_key() {
+        let ev = make_connection_disconnected("closed");
+        assert!(ev.payload.get("disconnect_code").is_none());
+    }
+
+    #[test]
+    fn make_connection_auth_failed_carries_error_message() {
+        let ev = make_connection_auth_failed("authentication rejected");
+        assert_eq!(ev.source, EventSource::Obs);
+        assert_eq!(ev.kind, "connection.auth_failed");
+        assert_eq!(ev.payload["error_message"], "authentication rejected");
+    }
+
+    // Security regression: the auth-failure message is a fixed string and must never echo
+    // the OBS WebSocket password the user typed. Guard against a future change that
+    // interpolates the credential into the surfaced message.
+    #[test]
+    fn make_connection_auth_failed_message_carries_nothing_password_like() {
+        let ev = make_connection_auth_failed("authentication rejected");
+        let lowered = ev.payload["error_message"]
+            .as_str()
+            .unwrap_or_default()
+            .to_lowercase();
+        assert!(!lowered.contains("password"));
+        assert!(!lowered.contains("secret"));
+    }
+
+    #[test]
     fn map_scene_item_visibility_emits_obs_source_event() {
         let ev = map_scene_item_visibility("Gameplay", "Game Capture", true);
         assert_eq!(ev.source, EventSource::Obs);

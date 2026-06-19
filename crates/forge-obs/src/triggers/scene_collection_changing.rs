@@ -71,3 +71,53 @@ impl TriggerKindDescriptor for SceneCollectionChangingDescriptor {
         stack
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn matches_collection_changing_kind() {
+        let d = SceneCollectionChangingDescriptor;
+        let event = Event::new(
+            EventSource::Obs,
+            "collection.changing",
+            json!({ "name": "Stream" }),
+        );
+        assert!(d.matches_trigger(&BTreeMap::new(), &event));
+    }
+
+    #[test]
+    fn does_not_match_collection_changed_kind() {
+        let d = SceneCollectionChangingDescriptor;
+        let event = Event::new(
+            EventSource::Obs,
+            "collection.changed",
+            json!({ "name": "Stream" }),
+        );
+        assert!(!d.matches_trigger(&BTreeMap::new(), &event));
+    }
+
+    #[test]
+    fn build_arg_stack_maps_name_to_collection() {
+        let d = SceneCollectionChangingDescriptor;
+        let event = Event::new(
+            EventSource::Obs,
+            "collection.changing",
+            json!({ "name": "Stream" }),
+        );
+        assert_eq!(
+            d.build_arg_stack(&event).get("obs.collection"),
+            Some(&Variant::String("Stream".to_owned()))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_omits_collection_when_name_missing() {
+        let d = SceneCollectionChangingDescriptor;
+        let event = Event::new(EventSource::Obs, "collection.changing", json!({}));
+        assert_eq!(d.build_arg_stack(&event).get("obs.collection"), None);
+    }
+}

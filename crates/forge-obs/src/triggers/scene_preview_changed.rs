@@ -93,3 +93,84 @@ impl TriggerKindDescriptor for ScenePreviewChangedDescriptor {
         stack
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn preview_event(old: &str, new: &str) -> Event {
+        Event::new(
+            EventSource::Obs,
+            "scene.preview_changed",
+            json!({ "name_old": old, "name_new": new }),
+        )
+    }
+
+    fn named_config(scene: &str) -> TriggerConfig {
+        BTreeMap::from([("scene".to_owned(), Variant::String(scene.to_owned()))])
+    }
+
+    #[test]
+    fn matches_preview_changed_kind_with_empty_config() {
+        let d = ScenePreviewChangedDescriptor;
+        assert!(d.matches_trigger(&BTreeMap::new(), &preview_event("Menu", "Gameplay")));
+    }
+
+    #[test]
+    fn matches_when_config_scene_equals_new_preview() {
+        let d = ScenePreviewChangedDescriptor;
+        assert!(d.matches_trigger(
+            &named_config("Gameplay"),
+            &preview_event("Menu", "Gameplay")
+        ));
+    }
+
+    #[test]
+    fn does_not_match_when_config_scene_differs_from_new_preview() {
+        let d = ScenePreviewChangedDescriptor;
+        assert!(!d.matches_trigger(&named_config("BRB"), &preview_event("Menu", "Gameplay")));
+    }
+
+    #[test]
+    fn does_not_match_program_scene_changed_kind() {
+        let d = ScenePreviewChangedDescriptor;
+        let event = Event::new(
+            EventSource::Obs,
+            "scene.changed",
+            json!({ "name_new": "Gameplay" }),
+        );
+        assert!(!d.matches_trigger(&BTreeMap::new(), &event));
+    }
+
+    #[test]
+    fn build_arg_stack_maps_new_to_scene_and_old_to_previous() {
+        let d = ScenePreviewChangedDescriptor;
+        let stack = d.build_arg_stack(&preview_event("Menu", "Gameplay"));
+        assert_eq!(
+            stack.get("obs.scene"),
+            Some(&Variant::String("Gameplay".to_owned()))
+        );
+        assert_eq!(
+            stack.get("obs.previous_scene"),
+            Some(&Variant::String("Menu".to_owned()))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_omits_previous_scene_when_name_old_missing() {
+        let d = ScenePreviewChangedDescriptor;
+        let event = Event::new(
+            EventSource::Obs,
+            "scene.preview_changed",
+            json!({ "name_new": "Gameplay" }),
+        );
+        let stack = d.build_arg_stack(&event);
+        assert_eq!(
+            stack.get("obs.scene"),
+            Some(&Variant::String("Gameplay".to_owned()))
+        );
+        assert_eq!(stack.get("obs.previous_scene"), None);
+    }
+}

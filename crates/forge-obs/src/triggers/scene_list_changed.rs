@@ -73,3 +73,72 @@ impl TriggerKindDescriptor for SceneListChangedDescriptor {
         stack
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn matches_list_changed_kind() {
+        let d = SceneListChangedDescriptor;
+        let event = Event::new(
+            EventSource::Obs,
+            "scene.list_changed",
+            json!({ "all_names": ["Menu", "Gameplay"] }),
+        );
+        assert!(d.matches_trigger(&BTreeMap::new(), &event));
+    }
+
+    #[test]
+    fn does_not_match_other_scene_kind() {
+        let d = SceneListChangedDescriptor;
+        let event = Event::new(EventSource::Obs, "scene.changed", json!({}));
+        assert!(!d.matches_trigger(&BTreeMap::new(), &event));
+    }
+
+    #[test]
+    fn build_arg_stack_collects_all_names_into_string_array() {
+        let d = SceneListChangedDescriptor;
+        let event = Event::new(
+            EventSource::Obs,
+            "scene.list_changed",
+            json!({ "all_names": ["Menu", "Gameplay", "BRB"] }),
+        );
+        let stack = d.build_arg_stack(&event);
+        assert_eq!(
+            stack.get("obs.scene_names"),
+            Some(&Variant::Array(vec![
+                Variant::String("Menu".to_owned()),
+                Variant::String("Gameplay".to_owned()),
+                Variant::String("BRB".to_owned()),
+            ]))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_skips_non_string_array_entries() {
+        let d = SceneListChangedDescriptor;
+        let event = Event::new(
+            EventSource::Obs,
+            "scene.list_changed",
+            json!({ "all_names": ["Menu", 7, "Gameplay"] }),
+        );
+        let stack = d.build_arg_stack(&event);
+        assert_eq!(
+            stack.get("obs.scene_names"),
+            Some(&Variant::Array(vec![
+                Variant::String("Menu".to_owned()),
+                Variant::String("Gameplay".to_owned()),
+            ]))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_omits_key_when_all_names_missing() {
+        let d = SceneListChangedDescriptor;
+        let event = Event::new(EventSource::Obs, "scene.list_changed", json!({}));
+        assert_eq!(d.build_arg_stack(&event).get("obs.scene_names"), None);
+    }
+}

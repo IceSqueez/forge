@@ -27,10 +27,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn registered_descriptor_id_is_correct() {
+    fn all_expected_trigger_ids_are_registered() {
         let mut reg = TriggerRegistry::new();
         register_obs_triggers(&mut reg).unwrap();
-        assert!(reg.get("obs.scenes.current_changed").is_some());
+        for id in [
+            "obs.scenes.current_changed",
+            "obs.scenes.preview_changed",
+            "obs.scenes.list_changed",
+            "obs.collection.changing",
+            "obs.collection.current_changed",
+        ] {
+            assert!(reg.get(id).is_some(), "missing trigger: {id}");
+        }
     }
 
     #[test]

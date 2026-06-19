@@ -32,6 +32,41 @@ pub(crate) fn make_record_event(active: bool, path: Option<&str>) -> Event {
     Event::new(EventSource::Obs, kind, json!({ "output_path": path }))
 }
 
+pub(crate) fn make_stream_event(active: bool, state: &obws::events::OutputState) -> Event {
+    use obws::events::OutputState;
+    let kind = match state {
+        OutputState::Starting => "streaming.starting",
+        OutputState::Started => "streaming.started",
+        OutputState::Stopping => "streaming.stopping",
+        OutputState::Stopped => "streaming.stopped",
+        OutputState::Reconnecting => "streaming.reconnecting",
+        OutputState::Reconnected => "streaming.reconnected",
+        _ => {
+            if active {
+                "streaming.started"
+            } else {
+                "streaming.stopped"
+            }
+        }
+    };
+    let state_str = match state {
+        OutputState::Starting => "starting",
+        OutputState::Started => "started",
+        OutputState::Stopping => "stopping",
+        OutputState::Stopped => "stopped",
+        OutputState::Reconnecting => "reconnecting",
+        OutputState::Reconnected => "reconnected",
+        OutputState::Paused => "paused",
+        OutputState::Resumed => "resumed",
+        _ => "unknown",
+    };
+    Event::new(
+        EventSource::Obs,
+        kind,
+        json!({ "output_state": state_str, "is_active": active }),
+    )
+}
+
 pub(crate) fn map_obs_event(
     ev: &obws::events::Event,
     from_scene: Option<&str>,
@@ -70,13 +105,8 @@ pub(crate) fn map_obs_event(
         obws::events::Event::RecordStateChanged { active, path, .. } => {
             Some(make_record_event(*active, path.as_deref()))
         }
-        obws::events::Event::StreamStateChanged { active, .. } => {
-            let kind = if *active {
-                "streaming.started"
-            } else {
-                "streaming.stopped"
-            };
-            Some(Event::new(EventSource::Obs, kind, json!({})))
+        obws::events::Event::StreamStateChanged { active, state } => {
+            Some(make_stream_event(*active, state))
         }
         _ => None,
     }

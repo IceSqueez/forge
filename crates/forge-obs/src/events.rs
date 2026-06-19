@@ -32,6 +32,41 @@ pub(crate) fn make_record_event(active: bool, path: Option<&str>) -> Event {
     Event::new(EventSource::Obs, kind, json!({ "output_path": path }))
 }
 
+pub(crate) fn make_record_state_event(
+    active: bool,
+    state: &obws::events::OutputState,
+    path: Option<&str>,
+) -> Event {
+    use obws::events::OutputState;
+    let kind = match state {
+        OutputState::Starting => "recording.starting",
+        OutputState::Stopping => "recording.stopping",
+        OutputState::Paused => "recording.paused",
+        OutputState::Resumed => "recording.resumed",
+        _ => {
+            if active {
+                "recording.started"
+            } else {
+                "recording.stopped"
+            }
+        }
+    };
+    let state_str = match state {
+        OutputState::Starting => "starting",
+        OutputState::Started => "started",
+        OutputState::Stopping => "stopping",
+        OutputState::Stopped => "stopped",
+        OutputState::Paused => "paused",
+        OutputState::Resumed => "resumed",
+        _ => "unknown",
+    };
+    Event::new(
+        EventSource::Obs,
+        kind,
+        json!({ "output_state": state_str, "is_active": active, "output_path": path }),
+    )
+}
+
 pub(crate) fn make_stream_event(active: bool, state: &obws::events::OutputState) -> Event {
     use obws::events::OutputState;
     let kind = match state {
@@ -102,9 +137,24 @@ pub(crate) fn map_obs_event(
             "collection.changed",
             json!({ "name": name }),
         )),
-        obws::events::Event::RecordStateChanged { active, path, .. } => {
-            Some(make_record_event(*active, path.as_deref()))
+        obws::events::Event::RecordStateChanged {
+            active,
+            state,
+            path,
+        } => {
+            use obws::events::OutputState;
+            match state {
+                OutputState::Started | OutputState::Stopped => {
+                    Some(make_record_event(*active, path.as_deref()))
+                }
+                _ => Some(make_record_state_event(*active, state, path.as_deref())),
+            }
         }
+        obws::events::Event::RecordFileChanged { path } => Some(Event::new(
+            EventSource::Obs,
+            "recording.file_changed",
+            json!({ "output_path_new": path }),
+        )),
         obws::events::Event::StreamStateChanged { active, state } => {
             Some(make_stream_event(*active, state))
         }

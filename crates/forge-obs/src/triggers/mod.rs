@@ -1,3 +1,11 @@
+mod record_file_changed;
+mod record_paused;
+mod record_resumed;
+mod record_started;
+mod record_starting;
+mod record_status_changed;
+mod record_stopped;
+mod record_stopping;
 mod scene_collection_changed;
 mod scene_collection_changing;
 mod scene_current_changed;
@@ -9,6 +17,14 @@ mod stream_status_changed;
 mod stream_stopped;
 mod stream_stopping;
 
+pub use record_file_changed::RecordFileChangedDescriptor;
+pub use record_paused::RecordPausedDescriptor;
+pub use record_resumed::RecordResumedDescriptor;
+pub use record_started::RecordStartedDescriptor;
+pub use record_starting::RecordStartingDescriptor;
+pub use record_status_changed::RecordStatusChangedDescriptor;
+pub use record_stopped::RecordStoppedDescriptor;
+pub use record_stopping::RecordStoppingDescriptor;
 pub use scene_collection_changed::SceneCollectionChangedDescriptor;
 pub use scene_collection_changing::SceneCollectionChangingDescriptor;
 pub use scene_current_changed::SceneCurrentChangedDescriptor;
@@ -33,6 +49,14 @@ pub fn register_obs_triggers(reg: &mut TriggerRegistry) -> Result<(), RegistryEr
     reg.register(Box::new(StreamStoppingDescriptor))?;
     reg.register(Box::new(StreamStoppedDescriptor))?;
     reg.register(Box::new(StreamStatusChangedDescriptor))?;
+    reg.register(Box::new(RecordStartingDescriptor))?;
+    reg.register(Box::new(RecordStartedDescriptor))?;
+    reg.register(Box::new(RecordStoppingDescriptor))?;
+    reg.register(Box::new(RecordStoppedDescriptor))?;
+    reg.register(Box::new(RecordPausedDescriptor))?;
+    reg.register(Box::new(RecordResumedDescriptor))?;
+    reg.register(Box::new(RecordFileChangedDescriptor))?;
+    reg.register(Box::new(RecordStatusChangedDescriptor))?;
     Ok(())
 }
 

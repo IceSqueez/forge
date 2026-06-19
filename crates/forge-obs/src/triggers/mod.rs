@@ -1,11 +1,23 @@
+mod scene_collection_changed;
+mod scene_collection_changing;
 mod scene_current_changed;
+mod scene_list_changed;
+mod scene_preview_changed;
 
+pub use scene_collection_changed::SceneCollectionChangedDescriptor;
+pub use scene_collection_changing::SceneCollectionChangingDescriptor;
 pub use scene_current_changed::SceneCurrentChangedDescriptor;
+pub use scene_list_changed::SceneListChangedDescriptor;
+pub use scene_preview_changed::ScenePreviewChangedDescriptor;
 
 use forge_registry::{RegistryError, TriggerRegistry};
 
 pub fn register_obs_triggers(reg: &mut TriggerRegistry) -> Result<(), RegistryError> {
     reg.register(Box::new(SceneCurrentChangedDescriptor))?;
+    reg.register(Box::new(ScenePreviewChangedDescriptor))?;
+    reg.register(Box::new(SceneListChangedDescriptor))?;
+    reg.register(Box::new(SceneCollectionChangingDescriptor))?;
+    reg.register(Box::new(SceneCollectionChangedDescriptor))?;
     Ok(())
 }
 

@@ -41,6 +41,32 @@ pub(crate) fn map_obs_event(
         obws::events::Event::CurrentProgramSceneChanged { id } => {
             Some(make_scene_changed_event(from_scene, &id.name, cause))
         }
+        obws::events::Event::CurrentPreviewSceneChanged { id } => Some(Event::new(
+            EventSource::Obs,
+            "scene.preview_changed",
+            json!({
+                "name_old": from_scene.unwrap_or(""),
+                "name_new": id.name,
+            }),
+        )),
+        obws::events::Event::SceneListChanged { scenes } => {
+            let names: Vec<&str> = scenes.iter().map(|s| s.name.as_str()).collect();
+            Some(Event::new(
+                EventSource::Obs,
+                "scene.list_changed",
+                json!({ "all_names": names }),
+            ))
+        }
+        obws::events::Event::CurrentSceneCollectionChanging { name } => Some(Event::new(
+            EventSource::Obs,
+            "collection.changing",
+            json!({ "name": name }),
+        )),
+        obws::events::Event::CurrentSceneCollectionChanged { name } => Some(Event::new(
+            EventSource::Obs,
+            "collection.changed",
+            json!({ "name": name }),
+        )),
         obws::events::Event::RecordStateChanged { active, path, .. } => {
             Some(make_record_event(*active, path.as_deref()))
         }
@@ -80,6 +106,9 @@ pub(crate) fn apply_catalog_update(ev: &obws::events::Event, catalog: &mut ObsCa
     match ev {
         obws::events::Event::CurrentProgramSceneChanged { id } => {
             catalog.current_scene = Some(id.name.clone());
+        }
+        obws::events::Event::CurrentPreviewSceneChanged { id } => {
+            catalog.current_preview_scene = Some(id.name.clone());
         }
         obws::events::Event::SceneListChanged { scenes } => {
             catalog.scenes = scenes.iter().map(|s| s.name.clone()).collect();

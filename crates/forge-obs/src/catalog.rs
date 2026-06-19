@@ -11,6 +11,7 @@ use crate::source::SourceInfo;
 pub(crate) struct ObsCatalog {
     pub scenes: Vec<String>,
     pub current_scene: Option<String>,
+    pub current_preview_scene: Option<String>,
     pub sources: HashMap<String, Vec<SourceInfo>>,
     pub audio_inputs: Vec<String>,
 }

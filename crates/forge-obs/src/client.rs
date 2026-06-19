@@ -259,7 +259,17 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
         state.store(conn_state, Ordering::Release);
         tracing::debug!(host = %host, port, attempt, "attempting OBS connection");
 
-        match obws::Client::connect(&host, port, password.as_deref())
+        let connect_config = obws::client::ConnectConfig {
+            host: host.as_str(),
+            port,
+            password: password.as_deref(),
+            event_subscriptions: Some(required_event_subscriptions()),
+            broadcast_capacity: obws::client::DEFAULT_BROADCAST_CAPACITY,
+            connect_timeout: obws::client::DEFAULT_CONNECT_TIMEOUT,
+            dangerous: None,
+        };
+
+        match obws::Client::connect_with_config(connect_config)
             .await
             .map_err(map_obws_error)
         {
@@ -355,12 +365,18 @@ fn handle_obs_event(
     last_set_scene_event_id: &RwLock<Option<EventId>>,
 ) {
     let is_scene_change = matches!(ev, obws::events::Event::CurrentProgramSceneChanged { .. });
+    let is_preview_change = matches!(ev, obws::events::Event::CurrentPreviewSceneChanged { .. });
 
     let from_scene = if is_scene_change {
         catalog_state
             .read()
             .ok()
             .and_then(|g| g.current_scene.clone())
+    } else if is_preview_change {
+        catalog_state
+            .read()
+            .ok()
+            .and_then(|g| g.current_preview_scene.clone())
     } else {
         None
     };
@@ -492,6 +508,17 @@ fn parse_endpoint(endpoint: &str) -> Result<(String, u16), ObsError> {
         }
         None => Ok((without_scheme.to_owned(), 4455)),
     }
+}
+
+/// Event categories the registered OBS trigger / health descriptors need. The union excludes
+/// every high-volume opt-in category (volume meters, input active/show state, scene-item
+/// transform) so the bus is never flooded by a continuous stream. The `EventSubscription`
+/// type never crosses the crate boundary.
+fn required_event_subscriptions() -> obws::requests::EventSubscription {
+    use obws::requests::EventSubscription as Sub;
+    // SCENES: program / preview / scene-list. CONFIG: scene-collection lifecycle.
+    // OUTPUTS: stream + record state (health metrics). SCENE_ITEMS: source visibility.
+    Sub::SCENES | Sub::CONFIG | Sub::OUTPUTS | Sub::SCENE_ITEMS
 }
 
 fn map_obws_error(e: obws::error::Error) -> ObsError {

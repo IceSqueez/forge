@@ -100,3 +100,44 @@ impl TriggerKindDescriptor for AudioSourceVolumeChangedDescriptor {
         stack
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use forge_registry::TriggerKindDescriptor;
+    use serde_json::json;
+
+    /// Volume carries two float metrics: dB level and linear multiplier. Both must land
+    /// as `Variant::Float` under their canonical arg keys.
+    #[test]
+    fn volume_arg_stack_extracts_name_db_and_multiplier_as_floats() {
+        let event = Event::new(
+            EventSource::Obs,
+            "audio.source_volume_changed",
+            json!({ "source_name": "Mic", "volume_db": -12.5, "volume_multiplier": 0.25 }),
+        );
+        let stack = AudioSourceVolumeChangedDescriptor.build_arg_stack(&event);
+        assert_eq!(
+            stack.get("obs.source.name"),
+            Some(&Variant::String("Mic".to_owned())),
+        );
+        assert_eq!(
+            stack.get("obs.source.volume_db"),
+            Some(&Variant::Float(-12.5)),
+        );
+        assert_eq!(
+            stack.get("obs.source.volume_multiplier"),
+            Some(&Variant::Float(0.25)),
+        );
+    }
+
+    #[test]
+    fn volume_arg_stack_omits_keys_when_payload_fields_absent() {
+        let event = Event::new(EventSource::Obs, "audio.source_volume_changed", json!({}));
+        let stack = AudioSourceVolumeChangedDescriptor.build_arg_stack(&event);
+        assert!(stack.get("obs.source.name").is_none());
+        assert!(stack.get("obs.source.volume_db").is_none());
+        assert!(stack.get("obs.source.volume_multiplier").is_none());
+    }
+}

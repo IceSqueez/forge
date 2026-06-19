@@ -90,3 +90,34 @@ impl TriggerKindDescriptor for AudioSourceBalanceChangedDescriptor {
         stack
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use forge_registry::TriggerKindDescriptor;
+    use serde_json::json;
+
+    #[test]
+    fn balance_arg_stack_extracts_name_and_balance_as_float() {
+        let event = Event::new(
+            EventSource::Obs,
+            "audio.source_balance_changed",
+            json!({ "source_name": "Mic", "balance": 0.75 }),
+        );
+        let stack = AudioSourceBalanceChangedDescriptor.build_arg_stack(&event);
+        assert_eq!(
+            stack.get("obs.source.name"),
+            Some(&Variant::String("Mic".to_owned())),
+        );
+        assert_eq!(stack.get("obs.source.balance"), Some(&Variant::Float(0.75)));
+    }
+
+    #[test]
+    fn balance_arg_stack_omits_keys_when_payload_fields_absent() {
+        let event = Event::new(EventSource::Obs, "audio.source_balance_changed", json!({}));
+        let stack = AudioSourceBalanceChangedDescriptor.build_arg_stack(&event);
+        assert!(stack.get("obs.source.name").is_none());
+        assert!(stack.get("obs.source.balance").is_none());
+    }
+}

@@ -97,6 +97,10 @@ mod tests {
         let mut reg = TriggerRegistry::new();
         register_obs_triggers(&mut reg).unwrap();
         for id in [
+            "obs.audio.source_mute_changed",
+            "obs.audio.source_volume_changed",
+            "obs.audio.source_balance_changed",
+            "obs.audio.source_sync_offset_changed",
             "obs.scenes.current_changed",
             "obs.scenes.preview_changed",
             "obs.scenes.list_changed",

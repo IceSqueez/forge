@@ -90,3 +90,43 @@ impl TriggerKindDescriptor for AudioSourceSyncOffsetChangedDescriptor {
         stack
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use forge_registry::TriggerKindDescriptor;
+    use serde_json::json;
+
+    /// Sync offset is an integer millisecond delay and must land as `Variant::Int`,
+    /// not coerced to a float.
+    #[test]
+    fn sync_offset_arg_stack_extracts_name_and_offset_as_int() {
+        let event = Event::new(
+            EventSource::Obs,
+            "audio.source_sync_offset_changed",
+            json!({ "source_name": "Mic", "sync_offset_ms": -120 }),
+        );
+        let stack = AudioSourceSyncOffsetChangedDescriptor.build_arg_stack(&event);
+        assert_eq!(
+            stack.get("obs.source.name"),
+            Some(&Variant::String("Mic".to_owned())),
+        );
+        assert_eq!(
+            stack.get("obs.source.sync_offset_ms"),
+            Some(&Variant::Int(-120)),
+        );
+    }
+
+    #[test]
+    fn sync_offset_arg_stack_omits_keys_when_payload_fields_absent() {
+        let event = Event::new(
+            EventSource::Obs,
+            "audio.source_sync_offset_changed",
+            json!({}),
+        );
+        let stack = AudioSourceSyncOffsetChangedDescriptor.build_arg_stack(&event);
+        assert!(stack.get("obs.source.name").is_none());
+        assert!(stack.get("obs.source.sync_offset_ms").is_none());
+    }
+}

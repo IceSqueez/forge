@@ -121,6 +121,26 @@ impl ObsSink for SwitchableObsSink {
         let client = self.get()?;
         client.set_input_settings(input, settings, overlay).await
     }
+
+    async fn pause_record(&self) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.pause_record().await
+    }
+
+    async fn resume_record(&self) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.resume_record().await
+    }
+
+    async fn toggle_record_pause(&self) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.toggle_record_pause().await
+    }
+
+    async fn send_stream_caption(&self, text: &str) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.send_stream_caption(text).await
+    }
 }
 
 #[cfg(test)]

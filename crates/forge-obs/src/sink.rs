@@ -39,4 +39,12 @@ pub trait ObsSink: Send + Sync {
         settings: &Variant,
         overlay: bool,
     ) -> Result<(), ObsError>;
+
+    async fn pause_record(&self) -> Result<(), ObsError>;
+
+    async fn resume_record(&self) -> Result<(), ObsError>;
+
+    async fn toggle_record_pause(&self) -> Result<(), ObsError>;
+
+    async fn send_stream_caption(&self, text: &str) -> Result<(), ObsError>;
 }

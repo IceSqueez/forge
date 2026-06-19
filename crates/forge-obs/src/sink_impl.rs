@@ -215,6 +215,55 @@ impl ObsSink for ObsClient {
             .await
             .map_err(|e| map_request_error("SetInputSettings", e))
     }
+
+    async fn pause_record(&self) -> Result<(), ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        client
+            .recording()
+            .pause()
+            .await
+            .map_err(|e| map_request_error("PauseRecord", e))
+    }
+
+    async fn resume_record(&self) -> Result<(), ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        client
+            .recording()
+            .resume()
+            .await
+            .map_err(|e| map_request_error("ResumeRecord", e))
+    }
+
+    async fn toggle_record_pause(&self) -> Result<(), ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        client
+            .recording()
+            .toggle_pause()
+            .await
+            .map(|_| ())
+            .map_err(|e| map_request_error("ToggleRecordPause", e))
+    }
+
+    async fn send_stream_caption(&self, text: &str) -> Result<(), ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        client
+            .streaming()
+            .send_caption(text)
+            .await
+            .map_err(|e| map_request_error("SendStreamCaption", e))
+    }
 }
 
 fn map_request_error(request_type: &str, e: obws::error::Error) -> ObsError {

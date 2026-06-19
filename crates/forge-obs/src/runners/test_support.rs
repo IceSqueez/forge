@@ -54,6 +54,18 @@ impl ObsSink for MockSink {
     async fn set_input_settings(&self, _: &str, _: &Variant, _: bool) -> Result<(), ObsError> {
         Ok(())
     }
+    async fn pause_record(&self) -> Result<(), ObsError> {
+        Ok(())
+    }
+    async fn resume_record(&self) -> Result<(), ObsError> {
+        Ok(())
+    }
+    async fn toggle_record_pause(&self) -> Result<(), ObsError> {
+        Ok(())
+    }
+    async fn send_stream_caption(&self, _: &str) -> Result<(), ObsError> {
+        Ok(())
+    }
 }
 
 struct NoopPublisher;

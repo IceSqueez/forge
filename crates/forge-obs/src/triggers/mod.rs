@@ -80,6 +80,14 @@ mod tests {
             "obs.stream.stopping",
             "obs.stream.stopped",
             "obs.stream.status_changed",
+            "obs.record.starting",
+            "obs.record.started",
+            "obs.record.stopping",
+            "obs.record.stopped",
+            "obs.record.paused",
+            "obs.record.resumed",
+            "obs.record.file_changed",
+            "obs.record.status_changed",
         ] {
             assert!(reg.get(id).is_some(), "missing trigger: {id}");
         }

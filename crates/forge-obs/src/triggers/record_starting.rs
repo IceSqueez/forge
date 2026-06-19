@@ -84,3 +84,166 @@ pub(crate) fn build_record_arg_stack(event: &Event) -> ArgStack {
     }
     stack
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    // The recording lifecycle descriptors share the `TriggerKindDescriptor` shape and
+    // `build_record_arg_stack`, so their discrimination contract is tested together here
+    // rather than re-stating each descriptor's `id()` literal.
+    use super::super::{
+        RecordFileChangedDescriptor, RecordPausedDescriptor, RecordResumedDescriptor,
+        RecordStartedDescriptor, RecordStartingDescriptor, RecordStatusChangedDescriptor,
+        RecordStoppedDescriptor, RecordStoppingDescriptor,
+    };
+    use super::*;
+    use forge_registry::TriggerKindDescriptor;
+    use serde_json::json;
+
+    /// The six lifecycle kinds the omnibus descriptor treats as status transitions.
+    /// `recording.file_changed` is deliberately NOT here — it is a file-split event,
+    /// not a state transition.
+    const ALL_LIFECYCLE_KINDS: [&str; 6] = [
+        "recording.starting",
+        "recording.started",
+        "recording.stopping",
+        "recording.stopped",
+        "recording.paused",
+        "recording.resumed",
+    ];
+
+    fn record_event(kind: &str) -> Event {
+        Event::new(
+            EventSource::Obs,
+            kind,
+            json!({ "output_state": "x", "is_active": true, "output_path": "/tmp/a.mkv" }),
+        )
+    }
+
+    /// Each lifecycle descriptor must fire on exactly its own kind and reject every
+    /// sibling. A descriptor that matched a sibling would mis-fire user actions.
+    #[test]
+    fn each_specific_descriptor_matches_only_its_own_kind() {
+        let descriptors: [(&str, &dyn TriggerKindDescriptor); 6] = [
+            ("recording.starting", &RecordStartingDescriptor),
+            ("recording.started", &RecordStartedDescriptor),
+            ("recording.stopping", &RecordStoppingDescriptor),
+            ("recording.stopped", &RecordStoppedDescriptor),
+            ("recording.paused", &RecordPausedDescriptor),
+            ("recording.resumed", &RecordResumedDescriptor),
+        ];
+        let cfg = BTreeMap::new();
+        for (own_kind, descriptor) in descriptors {
+            for kind in ALL_LIFECYCLE_KINDS {
+                assert_eq!(
+                    descriptor.matches_trigger(&cfg, &record_event(kind)),
+                    kind == own_kind,
+                    "descriptor for {own_kind} given {kind}",
+                );
+            }
+            // A lifecycle descriptor must also reject the file-split kind.
+            assert!(
+                !descriptor.matches_trigger(&cfg, &record_event("recording.file_changed")),
+                "descriptor for {own_kind} wrongly matched recording.file_changed",
+            );
+        }
+    }
+
+    /// The omnibus descriptor matches all SIX lifecycle kinds.
+    #[test]
+    fn omnibus_matches_every_lifecycle_kind() {
+        let cfg = BTreeMap::new();
+        for kind in ALL_LIFECYCLE_KINDS {
+            assert!(
+                RecordStatusChangedDescriptor.matches_trigger(&cfg, &record_event(kind)),
+                "omnibus should match {kind}",
+            );
+        }
+    }
+
+    /// Load-bearing exclusion: `recording.file_changed` is a file-split event, NOT a
+    /// lifecycle state transition, so the status-changed omnibus must reject it even
+    /// though it shares the `recording.` prefix.
+    #[test]
+    fn omnibus_rejects_file_changed() {
+        assert!(
+            !RecordStatusChangedDescriptor
+                .matches_trigger(&BTreeMap::new(), &record_event("recording.file_changed")),
+        );
+    }
+
+    #[test]
+    fn omnibus_rejects_non_recording_kind() {
+        let event = Event::new(EventSource::Obs, "scene.changed", json!({}));
+        assert!(!RecordStatusChangedDescriptor.matches_trigger(&BTreeMap::new(), &event));
+    }
+
+    /// The file-changed descriptor is the inverse of the omnibus: it fires on the
+    /// file-split kind only and rejects every lifecycle kind.
+    #[test]
+    fn file_changed_descriptor_matches_only_file_changed() {
+        let cfg = BTreeMap::new();
+        assert!(
+            RecordFileChangedDescriptor
+                .matches_trigger(&cfg, &record_event("recording.file_changed")),
+        );
+        for kind in ALL_LIFECYCLE_KINDS {
+            assert!(
+                !RecordFileChangedDescriptor.matches_trigger(&cfg, &record_event(kind)),
+                "file_changed descriptor wrongly matched {kind}",
+            );
+        }
+    }
+
+    #[test]
+    fn build_arg_stack_extracts_state_active_and_path() {
+        let event = Event::new(
+            EventSource::Obs,
+            "recording.started",
+            json!({ "output_state": "started", "is_active": true, "output_path": "/rec/a.mkv" }),
+        );
+        let stack = build_record_arg_stack(&event);
+        assert_eq!(
+            stack.get("obs.record.output_state"),
+            Some(&Variant::String("started".to_owned())),
+        );
+        assert_eq!(
+            stack.get("obs.record.is_active"),
+            Some(&Variant::Bool(true))
+        );
+        assert_eq!(
+            stack.get("obs.record.output_path"),
+            Some(&Variant::String("/rec/a.mkv".to_owned())),
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_omits_keys_when_payload_fields_absent() {
+        let event = Event::new(EventSource::Obs, "recording.started", json!({}));
+        let stack = build_record_arg_stack(&event);
+        assert!(stack.get("obs.record.output_state").is_none());
+        assert!(stack.get("obs.record.is_active").is_none());
+        assert!(stack.get("obs.record.output_path").is_none());
+    }
+
+    #[test]
+    fn file_changed_arg_stack_sets_new_output_path() {
+        let event = Event::new(
+            EventSource::Obs,
+            "recording.file_changed",
+            json!({ "output_path_new": "/rec/part2.mkv" }),
+        );
+        let stack = RecordFileChangedDescriptor.build_arg_stack(&event);
+        assert_eq!(
+            stack.get("obs.record.output_path_new"),
+            Some(&Variant::String("/rec/part2.mkv".to_owned())),
+        );
+    }
+
+    #[test]
+    fn file_changed_arg_stack_omits_path_when_absent() {
+        let event = Event::new(EventSource::Obs, "recording.file_changed", json!({}));
+        let stack = RecordFileChangedDescriptor.build_arg_stack(&event);
+        assert!(stack.get("obs.record.output_path_new").is_none());
+    }
+}

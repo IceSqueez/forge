@@ -158,6 +158,33 @@ pub(crate) fn map_obs_event(
         obws::events::Event::StreamStateChanged { active, state } => {
             Some(make_stream_event(*active, state))
         }
+        obws::events::Event::StudioModeStateChanged { enabled } => {
+            let kind = if *enabled {
+                "studio.enabled"
+            } else {
+                "studio.disabled"
+            };
+            Some(Event::new(
+                EventSource::Obs,
+                kind,
+                json!({ "enabled": enabled }),
+            ))
+        }
+        obws::events::Event::SceneTransitionStarted { id } => Some(Event::new(
+            EventSource::Obs,
+            "transition.started",
+            json!({ "transition_name": id.name }),
+        )),
+        obws::events::Event::SceneTransitionEnded { id } => Some(Event::new(
+            EventSource::Obs,
+            "transition.ended",
+            json!({ "transition_name": id.name }),
+        )),
+        obws::events::Event::SceneTransitionVideoEnded { id } => Some(Event::new(
+            EventSource::Obs,
+            "transition.video_ended",
+            json!({ "transition_name": id.name }),
+        )),
         _ => None,
     }
 }

@@ -16,6 +16,11 @@ mod stream_starting;
 mod stream_status_changed;
 mod stream_stopped;
 mod stream_stopping;
+mod studio_disabled;
+mod studio_enabled;
+mod transition_ended;
+mod transition_started;
+mod transition_video_ended;
 
 pub use record_file_changed::RecordFileChangedDescriptor;
 pub use record_paused::RecordPausedDescriptor;
@@ -35,6 +40,11 @@ pub use stream_starting::StreamStartingDescriptor;
 pub use stream_status_changed::StreamStatusChangedDescriptor;
 pub use stream_stopped::StreamStoppedDescriptor;
 pub use stream_stopping::StreamStoppingDescriptor;
+pub use studio_disabled::StudioDisabledDescriptor;
+pub use studio_enabled::StudioEnabledDescriptor;
+pub use transition_ended::TransitionEndedDescriptor;
+pub use transition_started::TransitionStartedDescriptor;
+pub use transition_video_ended::TransitionVideoEndedDescriptor;
 
 use forge_registry::{RegistryError, TriggerRegistry};
 
@@ -57,6 +67,11 @@ pub fn register_obs_triggers(reg: &mut TriggerRegistry) -> Result<(), RegistryEr
     reg.register(Box::new(RecordResumedDescriptor))?;
     reg.register(Box::new(RecordFileChangedDescriptor))?;
     reg.register(Box::new(RecordStatusChangedDescriptor))?;
+    reg.register(Box::new(StudioEnabledDescriptor))?;
+    reg.register(Box::new(StudioDisabledDescriptor))?;
+    reg.register(Box::new(TransitionStartedDescriptor))?;
+    reg.register(Box::new(TransitionEndedDescriptor))?;
+    reg.register(Box::new(TransitionVideoEndedDescriptor))?;
     Ok(())
 }
 

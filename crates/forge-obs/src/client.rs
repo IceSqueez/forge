@@ -518,7 +518,8 @@ fn required_event_subscriptions() -> obws::requests::EventSubscription {
     use obws::requests::EventSubscription as Sub;
     // SCENES: program / preview / scene-list. CONFIG: scene-collection lifecycle.
     // OUTPUTS: stream + record state (health metrics). SCENE_ITEMS: source visibility.
-    Sub::SCENES | Sub::CONFIG | Sub::OUTPUTS | Sub::SCENE_ITEMS
+    // TRANSITIONS: SceneTransitionStarted/Ended/VideoEnded. UI: StudioModeStateChanged.
+    Sub::SCENES | Sub::CONFIG | Sub::OUTPUTS | Sub::SCENE_ITEMS | Sub::TRANSITIONS | Sub::UI
 }
 
 fn map_obws_error(e: obws::error::Error) -> ObsError {

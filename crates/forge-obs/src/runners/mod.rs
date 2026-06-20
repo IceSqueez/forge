@@ -110,6 +110,11 @@ mod tests {
         let mut reg = SubActionRegistry::new();
         register_obs_sub_actions(&mut reg, Arc::new(MockSink)).unwrap();
         for id in &[
+            "obs.scenes.get_list",
+            "obs.sources.get_list",
+            "obs.record.get_status",
+            "obs.stream.get_status",
+            "obs.sources.get_input_settings",
             "obs.scenes.switch_current",
             "obs.scenes.set_preview",
             "obs.scenes.set_transition",

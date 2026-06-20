@@ -122,3 +122,45 @@ impl SubActionRunner for QueryInputSettingsRunner {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::runners::test_support::{MockSink, make_ctx};
+
+    fn runner() -> QueryInputSettingsRunner {
+        QueryInputSettingsRunner::new(Arc::new(MockSink))
+    }
+
+    #[tokio::test]
+    async fn execute_populates_kind_and_settings_object_from_sink() {
+        let config = BTreeMap::from([("source".to_owned(), Variant::String("Caption".to_owned()))]);
+        let empty = ArgStack::new();
+        let (telemetry, stack) = runner().execute(&config, &make_ctx(&empty)).await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
+        let stack = stack.unwrap();
+        assert_eq!(
+            stack.get("obs.input.kind"),
+            Some(&Variant::String("text_ft2_source_v2".to_owned())),
+        );
+        let expected_settings = Variant::Object(BTreeMap::from([(
+            "text".to_owned(),
+            Variant::String("hello".to_owned()),
+        )]));
+        assert_eq!(stack.get("obs.input.settings"), Some(&expected_settings));
+    }
+
+    #[test]
+    fn validate_config_rejects_empty_source() {
+        let config = BTreeMap::from([("source".to_owned(), Variant::String(String::new()))]);
+        assert!(runner().validate_config(&config).is_err());
+    }
+
+    #[test]
+    fn validate_config_accepts_non_empty_source() {
+        let config = BTreeMap::from([("source".to_owned(), Variant::String("Webcam".to_owned()))]);
+        assert!(runner().validate_config(&config).is_ok());
+    }
+}

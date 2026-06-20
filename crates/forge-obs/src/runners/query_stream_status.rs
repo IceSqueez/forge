@@ -101,3 +101,28 @@ impl SubActionRunner for QueryStreamStatusRunner {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::runners::test_support::{MockSink, make_ctx};
+
+    #[tokio::test]
+    async fn execute_populates_stream_active_and_duration_from_sink() {
+        let runner = QueryStreamStatusRunner::new(Arc::new(MockSink));
+        let empty = ArgStack::new();
+        let (telemetry, stack) = runner.execute(&BTreeMap::new(), &make_ctx(&empty)).await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
+        let stack = stack.unwrap();
+        assert_eq!(
+            stack.get("obs.stream.is_active"),
+            Some(&Variant::Bool(true))
+        );
+        assert_eq!(
+            stack.get("obs.stream.duration_ms"),
+            Some(&Variant::Int(45_000)),
+        );
+    }
+}

@@ -98,3 +98,27 @@ impl SubActionRunner for QueryInputListRunner {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::runners::test_support::{MockSink, make_ctx};
+
+    #[tokio::test]
+    async fn execute_populates_input_names_from_sink() {
+        let runner = QueryInputListRunner::new(Arc::new(MockSink));
+        let empty = ArgStack::new();
+        let (telemetry, stack) = runner.execute(&BTreeMap::new(), &make_ctx(&empty)).await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
+        let stack = stack.unwrap();
+        assert_eq!(
+            stack.get("obs.sources.all_names"),
+            Some(&Variant::Array(vec![
+                Variant::String("Mic".to_owned()),
+                Variant::String("Desktop Audio".to_owned()),
+            ])),
+        );
+    }
+}

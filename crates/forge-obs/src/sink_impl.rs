@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use async_trait::async_trait;
 use forge_types::{EventId, Variant};
 use obws::requests::inputs::{InputId, SetSettings, Volume};
@@ -323,6 +325,107 @@ impl ObsSink for ObsClient {
             .trigger()
             .await
             .map_err(|e| map_request_error("TriggerStudioModeTransition", e))
+    }
+
+    async fn get_scene_list(&self) -> Result<Variant, ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        let scenes = client
+            .scenes()
+            .list()
+            .await
+            .map_err(|e| map_request_error("GetSceneList", e))?;
+        let all_names: Vec<Variant> = scenes
+            .scenes
+            .iter()
+            .map(|s| Variant::String(s.id.name.clone()))
+            .collect();
+        let current = scenes
+            .current_program_scene
+            .map(|id| id.name)
+            .unwrap_or_default();
+        let mut obj = BTreeMap::new();
+        obj.insert("all_names".to_owned(), Variant::Array(all_names));
+        obj.insert("current".to_owned(), Variant::String(current));
+        Ok(Variant::Object(obj))
+    }
+
+    async fn get_input_list(&self) -> Result<Variant, ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        let inputs = client
+            .inputs()
+            .list(None)
+            .await
+            .map_err(|e| map_request_error("GetInputList", e))?;
+        let all_names: Vec<Variant> = inputs
+            .iter()
+            .map(|i| Variant::String(i.id.name.clone()))
+            .collect();
+        let mut obj = BTreeMap::new();
+        obj.insert("all_names".to_owned(), Variant::Array(all_names));
+        Ok(Variant::Object(obj))
+    }
+
+    async fn get_record_status(&self) -> Result<Variant, ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        let status = client
+            .recording()
+            .status()
+            .await
+            .map_err(|e| map_request_error("GetRecordStatus", e))?;
+        let mut obj = BTreeMap::new();
+        obj.insert("is_active".to_owned(), Variant::Bool(status.active));
+        obj.insert("is_paused".to_owned(), Variant::Bool(status.paused));
+        obj.insert(
+            "duration_ms".to_owned(),
+            Variant::Int(status.duration.whole_milliseconds() as i64),
+        );
+        Ok(Variant::Object(obj))
+    }
+
+    async fn get_stream_status(&self) -> Result<Variant, ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        let status = client
+            .streaming()
+            .status()
+            .await
+            .map_err(|e| map_request_error("GetStreamStatus", e))?;
+        let mut obj = BTreeMap::new();
+        obj.insert("is_active".to_owned(), Variant::Bool(status.active));
+        obj.insert(
+            "duration_ms".to_owned(),
+            Variant::Int(status.duration.whole_milliseconds() as i64),
+        );
+        Ok(Variant::Object(obj))
+    }
+
+    async fn get_input_settings(&self, input: &str) -> Result<Variant, ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        let result = client
+            .inputs()
+            .settings::<serde_json::Value>(InputId::Name(input))
+            .await
+            .map_err(|e| map_request_error("GetInputSettings", e))?;
+        let settings_variant = serde_json::from_value::<Variant>(result.settings)
+            .unwrap_or(Variant::Object(BTreeMap::new()));
+        let mut obj = BTreeMap::new();
+        obj.insert("settings".to_owned(), settings_variant);
+        obj.insert("kind".to_owned(), Variant::String(result.kind));
+        Ok(Variant::Object(obj))
     }
 }
 

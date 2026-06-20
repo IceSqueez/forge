@@ -1,3 +1,8 @@
+mod query_input_list;
+mod query_input_settings;
+mod query_record_status;
+mod query_scene_list;
+mod query_stream_status;
 mod raw_request;
 mod record_pause;
 mod record_resume;
@@ -28,6 +33,11 @@ use std::sync::Arc;
 
 use forge_registry::{RegistryError, SubActionRegistry};
 
+pub use query_input_list::QueryInputListRunner;
+pub use query_input_settings::QueryInputSettingsRunner;
+pub use query_record_status::QueryRecordStatusRunner;
+pub use query_scene_list::QuerySceneListRunner;
+pub use query_stream_status::QueryStreamStatusRunner;
 pub use raw_request::RawRequestRunner;
 pub use record_pause::RecordPauseRunner;
 pub use record_resume::RecordResumeRunner;
@@ -57,6 +67,11 @@ pub fn register_obs_sub_actions(
     reg: &mut SubActionRegistry,
     sink: Arc<dyn ObsSink>,
 ) -> Result<(), RegistryError> {
+    reg.register(Box::new(QueryInputListRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(QueryInputSettingsRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(QueryRecordStatusRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(QuerySceneListRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(QueryStreamStatusRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(SwitchCurrentSceneRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(SetVisibleRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(SetMuteRunner::new(Arc::clone(&sink))))?;

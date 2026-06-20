@@ -57,4 +57,14 @@ pub trait ObsSink: Send + Sync {
     async fn set_studio_mode(&self, enabled: bool) -> Result<(), ObsError>;
 
     async fn trigger_studio_transition(&self) -> Result<(), ObsError>;
+
+    async fn get_scene_list(&self) -> Result<Variant, ObsError>;
+
+    async fn get_input_list(&self) -> Result<Variant, ObsError>;
+
+    async fn get_record_status(&self) -> Result<Variant, ObsError>;
+
+    async fn get_stream_status(&self) -> Result<Variant, ObsError>;
+
+    async fn get_input_settings(&self, input: &str) -> Result<Variant, ObsError>;
 }

@@ -81,6 +81,53 @@ impl ObsSink for MockSink {
     async fn trigger_studio_transition(&self) -> Result<(), ObsError> {
         Ok(())
     }
+    async fn get_scene_list(&self) -> Result<Variant, ObsError> {
+        let mut obj = BTreeMap::new();
+        obj.insert(
+            "all_names".to_owned(),
+            Variant::Array(vec![
+                Variant::String("Intro".to_owned()),
+                Variant::String("Gameplay".to_owned()),
+            ]),
+        );
+        obj.insert("current".to_owned(), Variant::String("Gameplay".to_owned()));
+        Ok(Variant::Object(obj))
+    }
+    async fn get_input_list(&self) -> Result<Variant, ObsError> {
+        let mut obj = BTreeMap::new();
+        obj.insert(
+            "all_names".to_owned(),
+            Variant::Array(vec![
+                Variant::String("Mic".to_owned()),
+                Variant::String("Desktop Audio".to_owned()),
+            ]),
+        );
+        Ok(Variant::Object(obj))
+    }
+    async fn get_record_status(&self) -> Result<Variant, ObsError> {
+        let mut obj = BTreeMap::new();
+        obj.insert("is_active".to_owned(), Variant::Bool(true));
+        obj.insert("is_paused".to_owned(), Variant::Bool(false));
+        obj.insert("duration_ms".to_owned(), Variant::Int(12_000));
+        Ok(Variant::Object(obj))
+    }
+    async fn get_stream_status(&self) -> Result<Variant, ObsError> {
+        let mut obj = BTreeMap::new();
+        obj.insert("is_active".to_owned(), Variant::Bool(true));
+        obj.insert("duration_ms".to_owned(), Variant::Int(45_000));
+        Ok(Variant::Object(obj))
+    }
+    async fn get_input_settings(&self, _: &str) -> Result<Variant, ObsError> {
+        let mut settings = BTreeMap::new();
+        settings.insert("text".to_owned(), Variant::String("hello".to_owned()));
+        let mut obj = BTreeMap::new();
+        obj.insert(
+            "kind".to_owned(),
+            Variant::String("text_ft2_source_v2".to_owned()),
+        );
+        obj.insert("settings".to_owned(), Variant::Object(settings));
+        Ok(Variant::Object(obj))
+    }
 }
 
 struct NoopPublisher;

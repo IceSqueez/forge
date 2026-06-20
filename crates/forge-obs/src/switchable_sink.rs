@@ -166,6 +166,31 @@ impl ObsSink for SwitchableObsSink {
         let client = self.get()?;
         client.trigger_studio_transition().await
     }
+
+    async fn get_scene_list(&self) -> Result<Variant, ObsError> {
+        let client = self.get()?;
+        client.get_scene_list().await
+    }
+
+    async fn get_input_list(&self) -> Result<Variant, ObsError> {
+        let client = self.get()?;
+        client.get_input_list().await
+    }
+
+    async fn get_record_status(&self) -> Result<Variant, ObsError> {
+        let client = self.get()?;
+        client.get_record_status().await
+    }
+
+    async fn get_stream_status(&self) -> Result<Variant, ObsError> {
+        let client = self.get()?;
+        client.get_stream_status().await
+    }
+
+    async fn get_input_settings(&self, input: &str) -> Result<Variant, ObsError> {
+        let client = self.get()?;
+        client.get_input_settings(input).await
+    }
 }
 
 #[cfg(test)]

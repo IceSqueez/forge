@@ -83,3 +83,20 @@ impl SubActionRunner for ReplayStopRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::runners::test_support::{MockSink, make_ctx};
+
+    #[tokio::test]
+    async fn execute_reports_success_with_correct_kind() {
+        let stack = ArgStack::new();
+        let runner = ReplayStopRunner::new(Arc::new(MockSink));
+        let (tel, extra) = runner.execute(&BTreeMap::new(), &make_ctx(&stack)).await;
+        assert_eq!(tel.outcome, SubActionOutcome::Success);
+        assert_eq!(tel.kind, "obs.replay.stop");
+        assert!(extra.is_none());
+    }
+}

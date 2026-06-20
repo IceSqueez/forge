@@ -110,6 +110,12 @@ mod tests {
             "obs.stream.start",
             "obs.stream.stop",
             "obs.stream.send_caption",
+            "obs.replay.start",
+            "obs.replay.stop",
+            "obs.replay.save",
+            "obs.studio.enable",
+            "obs.studio.disable",
+            "obs.studio.trigger_transition",
             "obs.misc.raw_request",
         ] {
             assert!(reg.get(id).is_some(), "missing runner: {id}");

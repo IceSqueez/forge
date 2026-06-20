@@ -4,6 +4,9 @@ mod record_resume;
 mod record_start;
 mod record_stop;
 mod record_toggle_pause;
+mod replay_save;
+mod replay_start;
+mod replay_stop;
 mod set_input_settings;
 mod set_mute;
 mod set_preview_scene;
@@ -13,6 +16,9 @@ mod set_volume;
 mod stream_send_caption;
 mod stream_start;
 mod stream_stop;
+mod studio_disable;
+mod studio_enable;
+mod studio_trigger_transition;
 mod switch_current;
 
 #[cfg(test)]
@@ -28,6 +34,9 @@ pub use record_resume::RecordResumeRunner;
 pub use record_start::RecordStartRunner;
 pub use record_stop::RecordStopRunner;
 pub use record_toggle_pause::RecordTogglePauseRunner;
+pub use replay_save::ReplaySaveRunner;
+pub use replay_start::ReplayStartRunner;
+pub use replay_stop::ReplayStopRunner;
 pub use set_input_settings::SetInputSettingsRunner;
 pub use set_mute::SetMuteRunner;
 pub use set_preview_scene::SetPreviewSceneRunner;
@@ -37,6 +46,9 @@ pub use set_volume::SetVolumeRunner;
 pub use stream_send_caption::StreamSendCaptionRunner;
 pub use stream_start::StreamStartRunner;
 pub use stream_stop::StreamStopRunner;
+pub use studio_disable::StudioDisableRunner;
+pub use studio_enable::StudioEnableRunner;
+pub use studio_trigger_transition::StudioTriggerTransitionRunner;
 pub use switch_current::SwitchCurrentSceneRunner;
 
 use crate::ObsSink;
@@ -60,6 +72,14 @@ pub fn register_obs_sub_actions(
     reg.register(Box::new(SetTransitionRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(SetVolumeRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(SetInputSettingsRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(ReplayStartRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(ReplayStopRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(ReplaySaveRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(StudioEnableRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(StudioDisableRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(StudioTriggerTransitionRunner::new(Arc::clone(
+        &sink,
+    ))))?;
     reg.register(Box::new(RawRequestRunner::new(sink)))?;
     Ok(())
 }

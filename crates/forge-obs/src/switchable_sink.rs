@@ -141,6 +141,31 @@ impl ObsSink for SwitchableObsSink {
         let client = self.get()?;
         client.send_stream_caption(text).await
     }
+
+    async fn start_replay_buffer(&self) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.start_replay_buffer().await
+    }
+
+    async fn stop_replay_buffer(&self) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.stop_replay_buffer().await
+    }
+
+    async fn save_replay_buffer(&self) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.save_replay_buffer().await
+    }
+
+    async fn set_studio_mode(&self, enabled: bool) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.set_studio_mode(enabled).await
+    }
+
+    async fn trigger_studio_transition(&self) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.trigger_studio_transition().await
+    }
 }
 
 #[cfg(test)]

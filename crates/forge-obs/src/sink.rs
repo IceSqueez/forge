@@ -47,4 +47,14 @@ pub trait ObsSink: Send + Sync {
     async fn toggle_record_pause(&self) -> Result<(), ObsError>;
 
     async fn send_stream_caption(&self, text: &str) -> Result<(), ObsError>;
+
+    async fn start_replay_buffer(&self) -> Result<(), ObsError>;
+
+    async fn stop_replay_buffer(&self) -> Result<(), ObsError>;
+
+    async fn save_replay_buffer(&self) -> Result<(), ObsError>;
+
+    async fn set_studio_mode(&self, enabled: bool) -> Result<(), ObsError>;
+
+    async fn trigger_studio_transition(&self) -> Result<(), ObsError>;
 }

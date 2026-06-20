@@ -66,6 +66,21 @@ impl ObsSink for MockSink {
     async fn send_stream_caption(&self, _: &str) -> Result<(), ObsError> {
         Ok(())
     }
+    async fn start_replay_buffer(&self) -> Result<(), ObsError> {
+        Ok(())
+    }
+    async fn stop_replay_buffer(&self) -> Result<(), ObsError> {
+        Ok(())
+    }
+    async fn save_replay_buffer(&self) -> Result<(), ObsError> {
+        Ok(())
+    }
+    async fn set_studio_mode(&self, _: bool) -> Result<(), ObsError> {
+        Ok(())
+    }
+    async fn trigger_studio_transition(&self) -> Result<(), ObsError> {
+        Ok(())
+    }
 }
 
 struct NoopPublisher;

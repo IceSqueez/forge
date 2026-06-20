@@ -264,6 +264,66 @@ impl ObsSink for ObsClient {
             .await
             .map_err(|e| map_request_error("SendStreamCaption", e))
     }
+
+    async fn start_replay_buffer(&self) -> Result<(), ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        client
+            .replay_buffer()
+            .start()
+            .await
+            .map_err(|e| map_request_error("StartReplayBuffer", e))
+    }
+
+    async fn stop_replay_buffer(&self) -> Result<(), ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        client
+            .replay_buffer()
+            .stop()
+            .await
+            .map_err(|e| map_request_error("StopReplayBuffer", e))
+    }
+
+    async fn save_replay_buffer(&self) -> Result<(), ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        client
+            .replay_buffer()
+            .save()
+            .await
+            .map_err(|e| map_request_error("SaveReplayBuffer", e))
+    }
+
+    async fn set_studio_mode(&self, enabled: bool) -> Result<(), ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        client
+            .ui()
+            .set_studio_mode_enabled(enabled)
+            .await
+            .map_err(|e| map_request_error("SetStudioModeEnabled", e))
+    }
+
+    async fn trigger_studio_transition(&self) -> Result<(), ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        client
+            .transitions()
+            .trigger()
+            .await
+            .map_err(|e| map_request_error("TriggerStudioModeTransition", e))
+    }
 }
 
 fn map_request_error(request_type: &str, e: obws::error::Error) -> ObsError {

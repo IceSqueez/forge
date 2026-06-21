@@ -19,7 +19,8 @@ pub(crate) async fn subscribe_all(ws: &mut VtsWs) -> Result<(), VTubeError> {
         "ModelConfigChangedEvent",
         "HotkeyTriggeredEvent",
         "ExpressionActivationEvent",
-        "FaceFoundEvent",
+        "TrackingStatusChangedEvent",
+        "ItemEvent",
     ] {
         let req = new_request(
             "EventSubscriptionRequest",
@@ -80,6 +81,44 @@ pub(crate) fn dispatch_vts_event(env: &RawEnvelope, publisher: &dyn EventPublish
                 "expression.state_changed",
                 json!({ "expression_name": expression_name, "active": active }),
             ));
+        }
+        "TrackingStatusChangedEvent" => {
+            let face_found = env.data["faceFound"].as_bool().unwrap_or(false);
+            let left_hand_found = env.data["leftHandFound"].as_bool().unwrap_or(false);
+            let right_hand_found = env.data["rightHandFound"].as_bool().unwrap_or(false);
+            let kind = if face_found {
+                "tracking.face_found"
+            } else {
+                "tracking.face_lost"
+            };
+            publisher.publish(Event::new(
+                EventSource::VTube,
+                kind,
+                json!({
+                    "left_hand_found": left_hand_found,
+                    "right_hand_found": right_hand_found,
+                }),
+            ));
+        }
+        "ItemEvent" => {
+            let item_event_type = env.data["itemEventType"].as_str().unwrap_or("");
+            let kind = match item_event_type {
+                "Added" => Some("item.added"),
+                "Removed" => Some("item.removed"),
+                _ => None,
+            };
+            if let Some(kind) = kind {
+                let item_instance_id = env.data["itemInstanceID"].as_str().unwrap_or("").to_owned();
+                let item_file_name = env.data["itemFileName"].as_str().unwrap_or("").to_owned();
+                publisher.publish(Event::new(
+                    EventSource::VTube,
+                    kind,
+                    json!({
+                        "item_instance_id": item_instance_id,
+                        "item_file_name": item_file_name,
+                    }),
+                ));
+            }
         }
         _ => {}
     }

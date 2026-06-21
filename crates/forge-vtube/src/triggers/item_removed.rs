@@ -81,3 +81,55 @@ impl TriggerKindDescriptor for ItemRemovedDescriptor {
         stack
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn event(kind: &str, payload: serde_json::Value) -> Event {
+        Event::new(EventSource::VTube, kind, payload)
+    }
+
+    #[test]
+    fn matches_only_the_exact_removed_kind() {
+        let d = ItemRemovedDescriptor;
+        let cfg = TriggerConfig::new();
+        assert!(d.matches_trigger(&cfg, &event("item.removed", json!({}))));
+        // Sibling under the same `item.` prefix must not match.
+        assert!(!d.matches_trigger(&cfg, &event("item.added", json!({}))));
+        // Foreign kind.
+        assert!(!d.matches_trigger(&cfg, &event("model.loaded", json!({}))));
+    }
+
+    #[test]
+    fn build_arg_stack_maps_present_payload_keys() {
+        let d = ItemRemovedDescriptor;
+        let stack = d.build_arg_stack(&event(
+            "item.removed",
+            json!({ "item_instance_id": "inst-7", "item_file_name": "hat.png" }),
+        ));
+        assert_eq!(
+            stack.get("vtube.item.instance_id"),
+            Some(&Variant::String("inst-7".to_owned()))
+        );
+        assert_eq!(
+            stack.get("vtube.item.file_name"),
+            Some(&Variant::String("hat.png".to_owned()))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_omits_missing_payload_keys() {
+        let d = ItemRemovedDescriptor;
+        let stack = d.build_arg_stack(&event(
+            "item.removed",
+            json!({ "item_file_name": "hat.png" }),
+        ));
+        assert!(stack.get("vtube.item.instance_id").is_none());
+        assert_eq!(
+            stack.get("vtube.item.file_name"),
+            Some(&Variant::String("hat.png".to_owned()))
+        );
+    }
+}

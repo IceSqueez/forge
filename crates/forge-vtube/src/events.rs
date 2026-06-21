@@ -220,6 +220,113 @@ mod tests {
     }
 
     #[test]
+    fn tracking_status_with_face_found_emits_face_found_with_hand_bools() {
+        let publisher = MockPublisher::new();
+        let env = make_envelope(
+            "TrackingStatusChangedEvent",
+            serde_json::json!({
+                "faceFound": true,
+                "leftHandFound": true,
+                "rightHandFound": false
+            }),
+        );
+
+        dispatch_vts_event(&env, &*Arc::clone(&publisher) as &dyn EventPublisher);
+
+        let events = publisher.events.lock().unwrap();
+        let ev = events
+            .iter()
+            .find(|e| e.kind == "tracking.face_found")
+            .unwrap();
+        assert_eq!(ev.source, EventSource::VTube);
+        assert_eq!(ev.payload["left_hand_found"], true);
+        assert_eq!(ev.payload["right_hand_found"], false);
+    }
+
+    #[test]
+    fn tracking_status_without_face_found_emits_face_lost() {
+        let publisher = MockPublisher::new();
+        let env = make_envelope(
+            "TrackingStatusChangedEvent",
+            serde_json::json!({
+                "faceFound": false,
+                "leftHandFound": false,
+                "rightHandFound": true
+            }),
+        );
+
+        dispatch_vts_event(&env, &*Arc::clone(&publisher) as &dyn EventPublisher);
+
+        let events = publisher.events.lock().unwrap();
+        let ev = events
+            .iter()
+            .find(|e| e.kind == "tracking.face_lost")
+            .unwrap();
+        assert_eq!(ev.payload["left_hand_found"], false);
+        assert_eq!(ev.payload["right_hand_found"], true);
+    }
+
+    #[test]
+    fn item_event_added_emits_item_added() {
+        let publisher = MockPublisher::new();
+        let env = make_envelope(
+            "ItemEvent",
+            serde_json::json!({
+                "itemEventType": "Added",
+                "itemInstanceID": "inst-1",
+                "itemFileName": "crown.png"
+            }),
+        );
+
+        dispatch_vts_event(&env, &*Arc::clone(&publisher) as &dyn EventPublisher);
+
+        let events = publisher.events.lock().unwrap();
+        let ev = events.iter().find(|e| e.kind == "item.added").unwrap();
+        assert_eq!(ev.payload["item_instance_id"], "inst-1");
+        assert_eq!(ev.payload["item_file_name"], "crown.png");
+    }
+
+    #[test]
+    fn item_event_removed_emits_item_removed() {
+        let publisher = MockPublisher::new();
+        let env = make_envelope(
+            "ItemEvent",
+            serde_json::json!({
+                "itemEventType": "Removed",
+                "itemInstanceID": "inst-1",
+                "itemFileName": "crown.png"
+            }),
+        );
+
+        dispatch_vts_event(&env, &*Arc::clone(&publisher) as &dyn EventPublisher);
+
+        let events = publisher.events.lock().unwrap();
+        let ev = events.iter().find(|e| e.kind == "item.removed").unwrap();
+        assert_eq!(ev.payload["item_instance_id"], "inst-1");
+        assert_eq!(ev.payload["item_file_name"], "crown.png");
+    }
+
+    #[test]
+    fn item_event_with_unknown_type_produces_no_bus_event() {
+        let publisher = MockPublisher::new();
+        let env = make_envelope(
+            "ItemEvent",
+            serde_json::json!({
+                "itemEventType": "DroppedPinned",
+                "itemInstanceID": "inst-1",
+                "itemFileName": "crown.png"
+            }),
+        );
+
+        dispatch_vts_event(&env, &*Arc::clone(&publisher) as &dyn EventPublisher);
+
+        assert!(
+            publisher.events.lock().unwrap().is_empty(),
+            "an unrecognised itemEventType must fall through without emitting"
+        );
+    }
+
+    #[test]
     fn raw_envelope_serde_roundtrip() {
         let raw = r#"{
             "requestID": "req-001",

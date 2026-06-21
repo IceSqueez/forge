@@ -48,6 +48,10 @@ mod tests {
             "vtube.model.config_changed",
             "vtube.hotkey.triggered",
             "vtube.expression.state_changed",
+            "vtube.tracking.face_found",
+            "vtube.tracking.face_lost",
+            "vtube.item.added",
+            "vtube.item.removed",
         ] {
             assert!(reg.get(id).is_some(), "missing trigger: {id}");
         }

@@ -20,7 +20,7 @@ impl QuickActions for DiscordClient {
                 icon: SectionIcon::new("message"),
                 enabled,
                 subaction_template: SubActionStep {
-                    kind_id: "discord.post_text".to_owned(),
+                    kind_id: "discord.webhook.send_message".to_owned(),
                     config: BTreeMap::from([
                         (
                             "webhook_name".to_owned(),
@@ -38,7 +38,7 @@ impl QuickActions for DiscordClient {
                 icon: SectionIcon::new("layout-cards"),
                 enabled,
                 subaction_template: SubActionStep {
-                    kind_id: "discord.post_embed".to_owned(),
+                    kind_id: "discord.webhook.send_embed".to_owned(),
                     config: BTreeMap::from([
                         (
                             "webhook_name".to_owned(),
@@ -60,7 +60,7 @@ impl QuickActions for DiscordClient {
                 icon: SectionIcon::new("pencil"),
                 enabled,
                 subaction_template: SubActionStep {
-                    kind_id: "discord.edit_message".to_owned(),
+                    kind_id: "discord.webhook.update_message".to_owned(),
                     config: BTreeMap::from([
                         (
                             "webhook_name".to_owned(),
@@ -79,7 +79,7 @@ impl QuickActions for DiscordClient {
                 icon: SectionIcon::new("send"),
                 enabled,
                 subaction_template: SubActionStep {
-                    kind_id: "discord.post_text".to_owned(),
+                    kind_id: "discord.webhook.send_message".to_owned(),
                     config: BTreeMap::from([
                         ("webhook_name".to_owned(), Variant::String(first_webhook)),
                         (
@@ -144,7 +144,10 @@ mod tests {
         }
         let actions = c.actions();
         let test_action = actions.iter().find(|a| a.label == "Test Webhook").unwrap();
-        assert_eq!(test_action.subaction_template.kind_id, "discord.post_text");
+        assert_eq!(
+            test_action.subaction_template.kind_id,
+            "discord.webhook.send_message"
+        );
         assert_eq!(
             test_action.subaction_template.config.get("content"),
             Some(&Variant::String("forge test post".to_owned()))

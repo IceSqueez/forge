@@ -24,7 +24,7 @@ impl PostEmbedRunner {
 #[async_trait]
 impl SubActionRunner for PostEmbedRunner {
     fn id(&self) -> &str {
-        "discord.post_embed"
+        "discord.webhook.send_embed"
     }
 
     fn category(&self) -> SubActionCategory {
@@ -82,7 +82,7 @@ impl SubActionRunner for PostEmbedRunner {
             Ok(())
         } else {
             Err(RegistryError::UnknownKindId(
-                "discord.post_embed: 'webhook_name' must be a string".to_owned(),
+                "discord.webhook.send_embed: 'webhook_name' must be a string".to_owned(),
             ))
         }
     }
@@ -118,7 +118,7 @@ impl SubActionRunner for PostEmbedRunner {
         if !has_content {
             return (
                 SubActionTelemetry {
-                    kind: "discord.post_embed".to_owned(),
+                    kind: "discord.webhook.send_embed".to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,
                     outcome: SubActionOutcome::Failed("embed has no content".to_owned()),
@@ -148,7 +148,7 @@ impl SubActionRunner for PostEmbedRunner {
 
         (
             SubActionTelemetry {
-                kind: "discord.post_embed".to_owned(),
+                kind: "discord.webhook.send_embed".to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

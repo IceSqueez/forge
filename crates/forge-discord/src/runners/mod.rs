@@ -77,9 +77,9 @@ mod tests {
         reg.register(Box::new(EditMessageRunner::new(Arc::clone(&sink))))
             .unwrap();
         for id in &[
-            "discord.post_text",
-            "discord.post_embed",
-            "discord.edit_message",
+            "discord.webhook.send_message",
+            "discord.webhook.send_embed",
+            "discord.webhook.update_message",
         ] {
             assert!(reg.get(id).is_some(), "missing runner: {id}");
         }

@@ -268,6 +268,20 @@ mod tests {
             *self.captured_duration.lock().unwrap() = Some(time_in_seconds);
             Ok(())
         }
+        #[allow(clippy::too_many_arguments)]
+        async fn move_item(
+            &self,
+            _: &str,
+            _: Option<f64>,
+            _: Option<f64>,
+            _: Option<f64>,
+            _: Option<f64>,
+            _: Option<i64>,
+            _: f64,
+            _: &str,
+        ) -> Result<(), VTubeError> {
+            Ok(())
+        }
     }
 
     #[tokio::test]

@@ -1,5 +1,6 @@
 mod expression_set;
 mod hotkey_trigger;
+mod item_move;
 mod model_load;
 mod model_move;
 mod param_set;
@@ -13,6 +14,7 @@ use forge_registry::{RegistryError, SubActionRegistry};
 
 pub use expression_set::ExpressionSetRunner;
 pub use hotkey_trigger::HotkeyTriggerRunner;
+pub use item_move::ItemMoveRunner;
 pub use model_load::ModelLoadRunner;
 pub use model_move::ModelMoveRunner;
 pub use param_set::ParamSetRunner;
@@ -29,7 +31,8 @@ pub fn register_vtube_sub_actions(
     reg.register(Box::new(ParamSetRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(ModelLoadRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(ParamsResetRunner::new(Arc::clone(&sink))))?;
-    reg.register(Box::new(ModelMoveRunner::new(sink)))?;
+    reg.register(Box::new(ModelMoveRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(ItemMoveRunner::new(sink)))?;
     Ok(())
 }
 

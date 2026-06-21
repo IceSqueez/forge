@@ -76,7 +76,40 @@ impl VTubeSink for VTubeClient {
         let resp = self.send_json_request("MoveModelRequest", data).await?;
         check_response(&resp)
     }
+
+    async fn move_item(
+        &self,
+        item_instance_id: &str,
+        x: Option<f64>,
+        y: Option<f64>,
+        size: Option<f64>,
+        rotation: Option<f64>,
+        order: Option<i64>,
+        time_in_seconds: f64,
+        fade_mode: &str,
+    ) -> Result<(), VTubeError> {
+        let data = json!({
+            "itemsToMove": [{
+                "itemInstanceID": item_instance_id,
+                "timeInSeconds": time_in_seconds,
+                "fadeMode": fade_mode,
+                "positionX": x.unwrap_or(ITEM_IGNORE_SENTINEL),
+                "positionY": y.unwrap_or(ITEM_IGNORE_SENTINEL),
+                "size": size.unwrap_or(ITEM_IGNORE_SENTINEL),
+                "rotation": rotation.unwrap_or(ITEM_IGNORE_SENTINEL),
+                "order": order.unwrap_or(ITEM_IGNORE_SENTINEL_ORDER),
+                "setFlip": false,
+                "flip": false,
+                "userCanStop": false
+            }]
+        });
+        let resp = self.send_json_request("ItemMoveRequest", data).await?;
+        check_response(&resp)
+    }
 }
+
+const ITEM_IGNORE_SENTINEL: f64 = -1000.0;
+const ITEM_IGNORE_SENTINEL_ORDER: i64 = -1000;
 
 fn check_response(data: &serde_json::Value) -> Result<(), VTubeError> {
     if let Some(error_id) = data.get("errorID").and_then(|v| v.as_i64()) {

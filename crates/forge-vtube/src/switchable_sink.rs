@@ -82,6 +82,32 @@ impl VTubeSink for SwitchableVTubeSink {
         let client = self.get()?;
         client.move_model(x, y, rotation, time_in_seconds).await
     }
+
+    async fn move_item(
+        &self,
+        item_instance_id: &str,
+        x: Option<f64>,
+        y: Option<f64>,
+        size: Option<f64>,
+        rotation: Option<f64>,
+        order: Option<i64>,
+        time_in_seconds: f64,
+        fade_mode: &str,
+    ) -> Result<(), VTubeError> {
+        let client = self.get()?;
+        client
+            .move_item(
+                item_instance_id,
+                x,
+                y,
+                size,
+                rotation,
+                order,
+                time_in_seconds,
+                fade_mode,
+            )
+            .await
+    }
 }
 
 #[cfg(test)]

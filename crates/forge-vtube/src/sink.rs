@@ -21,4 +21,17 @@ pub trait VTubeSink: Send + Sync {
         rotation: Option<f64>,
         time_in_seconds: f64,
     ) -> Result<(), VTubeError>;
+
+    #[allow(clippy::too_many_arguments)]
+    async fn move_item(
+        &self,
+        item_instance_id: &str,
+        x: Option<f64>,
+        y: Option<f64>,
+        size: Option<f64>,
+        rotation: Option<f64>,
+        order: Option<i64>,
+        time_in_seconds: f64,
+        fade_mode: &str,
+    ) -> Result<(), VTubeError>;
 }

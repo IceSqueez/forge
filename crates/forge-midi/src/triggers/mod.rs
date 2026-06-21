@@ -42,6 +42,8 @@ mod tests {
             "midi.input.control_change",
             "midi.input.pitch_bend",
             "midi.input.program_change",
+            "midi.device.connected",
+            "midi.device.disconnected",
         ] {
             assert!(reg.get(id).is_some(), "missing trigger: {id}");
         }

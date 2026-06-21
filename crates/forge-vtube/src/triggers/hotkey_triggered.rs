@@ -74,3 +74,49 @@ impl TriggerKindDescriptor for HotkeyTriggeredDescriptor {
         stack
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn event(kind: &str, payload: serde_json::Value) -> Event {
+        Event::new(EventSource::VTube, kind, payload)
+    }
+
+    #[test]
+    fn matches_only_the_exact_triggered_kind() {
+        let d = HotkeyTriggeredDescriptor;
+        let cfg = TriggerConfig::new();
+        assert!(d.matches_trigger(&cfg, &event("hotkey.triggered", json!({}))));
+        assert!(!d.matches_trigger(&cfg, &event("model.loaded", json!({}))));
+    }
+
+    #[test]
+    fn build_arg_stack_maps_present_payload_keys() {
+        let d = HotkeyTriggeredDescriptor;
+        let stack = d.build_arg_stack(&event(
+            "hotkey.triggered",
+            json!({ "hotkey_name": "Wave", "hotkey_id": "hk-7" }),
+        ));
+        assert_eq!(
+            stack.get("vtube.hotkey.name"),
+            Some(&Variant::String("Wave".to_owned()))
+        );
+        assert_eq!(
+            stack.get("vtube.hotkey.id"),
+            Some(&Variant::String("hk-7".to_owned()))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_omits_missing_payload_keys() {
+        let d = HotkeyTriggeredDescriptor;
+        let stack = d.build_arg_stack(&event("hotkey.triggered", json!({ "hotkey_id": "hk-7" })));
+        assert!(stack.get("vtube.hotkey.name").is_none());
+        assert_eq!(
+            stack.get("vtube.hotkey.id"),
+            Some(&Variant::String("hk-7".to_owned()))
+        );
+    }
+}

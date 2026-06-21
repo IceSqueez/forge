@@ -74,3 +74,52 @@ impl TriggerKindDescriptor for ModelLoadedDescriptor {
         stack
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn event(kind: &str, payload: serde_json::Value) -> Event {
+        Event::new(EventSource::VTube, kind, payload)
+    }
+
+    #[test]
+    fn matches_only_the_exact_loaded_kind() {
+        let d = ModelLoadedDescriptor;
+        let cfg = TriggerConfig::new();
+        assert!(d.matches_trigger(&cfg, &event("model.loaded", json!({}))));
+        // Sibling under the same `model.` prefix must not match.
+        assert!(!d.matches_trigger(&cfg, &event("model.unloaded", json!({}))));
+        // Foreign kind.
+        assert!(!d.matches_trigger(&cfg, &event("hotkey.triggered", json!({}))));
+    }
+
+    #[test]
+    fn build_arg_stack_maps_present_payload_keys() {
+        let d = ModelLoadedDescriptor;
+        let stack = d.build_arg_stack(&event(
+            "model.loaded",
+            json!({ "model_name": "Aria", "model_id": "m-42" }),
+        ));
+        assert_eq!(
+            stack.get("vtube.model.name"),
+            Some(&Variant::String("Aria".to_owned()))
+        );
+        assert_eq!(
+            stack.get("vtube.model.id"),
+            Some(&Variant::String("m-42".to_owned()))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_omits_missing_payload_keys() {
+        let d = ModelLoadedDescriptor;
+        let stack = d.build_arg_stack(&event("model.loaded", json!({ "model_name": "Aria" })));
+        assert_eq!(
+            stack.get("vtube.model.name"),
+            Some(&Variant::String("Aria".to_owned()))
+        );
+        assert!(stack.get("vtube.model.id").is_none());
+    }
+}

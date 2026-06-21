@@ -20,3 +20,24 @@ pub fn register_vtube_triggers(reg: &mut TriggerRegistry) -> Result<(), Registry
     reg.register(Box::new(ExpressionStateChangedDescriptor))?;
     Ok(())
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn all_expected_trigger_ids_are_registered() {
+        let mut reg = TriggerRegistry::new();
+        register_vtube_triggers(&mut reg).expect("registration must succeed");
+        for id in [
+            "vtube.model.loaded",
+            "vtube.model.unloaded",
+            "vtube.model.config_changed",
+            "vtube.hotkey.triggered",
+            "vtube.expression.state_changed",
+        ] {
+            assert!(reg.get(id).is_some(), "missing trigger: {id}");
+        }
+    }
+}

@@ -71,3 +71,42 @@ impl TriggerKindDescriptor for ModelConfigChangedDescriptor {
         stack
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn event(kind: &str, payload: serde_json::Value) -> Event {
+        Event::new(EventSource::VTube, kind, payload)
+    }
+
+    #[test]
+    fn matches_only_the_exact_config_changed_kind() {
+        let d = ModelConfigChangedDescriptor;
+        let cfg = TriggerConfig::new();
+        assert!(d.matches_trigger(&cfg, &event("model.config_changed", json!({}))));
+        assert!(!d.matches_trigger(&cfg, &event("model.loaded", json!({}))));
+        assert!(!d.matches_trigger(&cfg, &event("hotkey.triggered", json!({}))));
+    }
+
+    #[test]
+    fn build_arg_stack_maps_present_model_name() {
+        let d = ModelConfigChangedDescriptor;
+        let stack = d.build_arg_stack(&event(
+            "model.config_changed",
+            json!({ "model_name": "Aria" }),
+        ));
+        assert_eq!(
+            stack.get("vtube.model.name"),
+            Some(&Variant::String("Aria".to_owned()))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_omits_missing_model_name() {
+        let d = ModelConfigChangedDescriptor;
+        let stack = d.build_arg_stack(&event("model.config_changed", json!({})));
+        assert!(stack.get("vtube.model.name").is_none());
+    }
+}

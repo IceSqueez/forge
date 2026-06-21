@@ -78,3 +78,62 @@ impl TriggerKindDescriptor for ExpressionStateChangedDescriptor {
         stack
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn event(kind: &str, payload: serde_json::Value) -> Event {
+        Event::new(EventSource::VTube, kind, payload)
+    }
+
+    #[test]
+    fn matches_only_the_exact_state_changed_kind() {
+        let d = ExpressionStateChangedDescriptor;
+        let cfg = TriggerConfig::new();
+        assert!(d.matches_trigger(&cfg, &event("expression.state_changed", json!({}))));
+        // Sibling under the same `expression.` prefix must not match.
+        assert!(!d.matches_trigger(&cfg, &event("expression.other", json!({}))));
+        assert!(!d.matches_trigger(&cfg, &event("hotkey.triggered", json!({}))));
+    }
+
+    #[test]
+    fn build_arg_stack_maps_name_and_bool_active() {
+        let d = ExpressionStateChangedDescriptor;
+        let stack = d.build_arg_stack(&event(
+            "expression.state_changed",
+            json!({ "expression_name": "Smile", "active": true }),
+        ));
+        assert_eq!(
+            stack.get("vtube.expression.name"),
+            Some(&Variant::String("Smile".to_owned()))
+        );
+        assert_eq!(
+            stack.get("vtube.expression.active"),
+            Some(&Variant::Bool(true))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_preserves_active_false() {
+        // Boundary: `false` is a present value, not an absent key.
+        let d = ExpressionStateChangedDescriptor;
+        let stack = d.build_arg_stack(&event(
+            "expression.state_changed",
+            json!({ "active": false }),
+        ));
+        assert_eq!(
+            stack.get("vtube.expression.active"),
+            Some(&Variant::Bool(false))
+        );
+    }
+
+    #[test]
+    fn build_arg_stack_omits_missing_keys() {
+        let d = ExpressionStateChangedDescriptor;
+        let stack = d.build_arg_stack(&event("expression.state_changed", json!({})));
+        assert!(stack.get("vtube.expression.name").is_none());
+        assert!(stack.get("vtube.expression.active").is_none());
+    }
+}

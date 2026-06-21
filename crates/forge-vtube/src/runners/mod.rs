@@ -69,6 +69,11 @@ mod tests {
             "vtube.params.reset",
             "vtube.model.move",
             "vtube.item.move",
+            "vtube.lookup.current_model",
+            "vtube.lookup.hotkeys",
+            "vtube.lookup.expressions",
+            "vtube.lookup.parameters",
+            "vtube.lookup.items",
         ] {
             assert!(reg.get(id).is_some(), "missing runner: {id}");
         }

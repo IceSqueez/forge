@@ -50,6 +50,22 @@ pub(crate) fn decode_midi_bytes(data: &[u8]) -> Result<Option<MidiEvent>, MidiEr
                 channel,
             }))
         }
+        0xC0 => {
+            if data.len() < 2 {
+                return Ok(None);
+            }
+            Ok(Some(MidiEvent::ProgramChange {
+                program: data[1],
+                channel,
+            }))
+        }
+        0xE0 => {
+            if data.len() < 3 {
+                return Ok(None);
+            }
+            let value = (u16::from(data[2]) << 7) | u16::from(data[1]);
+            Ok(Some(MidiEvent::PitchBend { value, channel }))
+        }
         _ => Ok(None),
     }
 }
@@ -142,7 +158,7 @@ mod tests {
 
     #[test]
     fn unsupported_status_byte_returns_none() {
-        let result = decode_midi_bytes(&[0xC0, 10]).unwrap();
+        let result = decode_midi_bytes(&[0xD0, 64]).unwrap();
         assert_eq!(result, None);
     }
 

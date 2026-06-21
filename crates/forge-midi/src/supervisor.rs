@@ -258,6 +258,22 @@ fn emit_midi_event(client: &Arc<MidiClient>, port_name: &str, event: MidiEvent) 
                 "port": port_name,
             }),
         ),
+        MidiEvent::PitchBend { value, channel } => (
+            "midi.input.pitch_bend",
+            serde_json::json!({
+                "value": value,
+                "channel": channel,
+                "port": port_name,
+            }),
+        ),
+        MidiEvent::ProgramChange { program, channel } => (
+            "midi.input.program_change",
+            serde_json::json!({
+                "program": program,
+                "channel": channel,
+                "port": port_name,
+            }),
+        ),
     };
 
     client

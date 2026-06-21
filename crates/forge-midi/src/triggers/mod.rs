@@ -1,10 +1,14 @@
 mod cc;
 mod note_off;
 mod note_on;
+mod pitch_bend;
+mod program_change;
 
 pub use cc::MidiCcDescriptor;
 pub use note_off::MidiNoteOffDescriptor;
 pub use note_on::MidiNoteOnDescriptor;
+pub use pitch_bend::MidiPitchBendDescriptor;
+pub use program_change::MidiProgramChangeDescriptor;
 
 use forge_registry::{RegistryError, TriggerRegistry};
 
@@ -12,6 +16,8 @@ pub fn register_midi_triggers(reg: &mut TriggerRegistry) -> Result<(), RegistryE
     reg.register(Box::new(MidiNoteOnDescriptor))?;
     reg.register(Box::new(MidiNoteOffDescriptor))?;
     reg.register(Box::new(MidiCcDescriptor))?;
+    reg.register(Box::new(MidiPitchBendDescriptor))?;
+    reg.register(Box::new(MidiProgramChangeDescriptor))?;
     Ok(())
 }
 

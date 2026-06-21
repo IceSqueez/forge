@@ -1290,7 +1290,7 @@ mod tests {
 
     #[test]
     #[allow(clippy::expect_used)]
-    fn vtube_all_six_sub_action_runners_register_successfully() {
+    fn vtube_sub_action_runners_register_via_boot_path() {
         use forge_registry::SubActionRegistry;
         use forge_vtube::{VTubeSink, register_vtube_sub_actions};
 
@@ -1305,7 +1305,6 @@ mod tests {
         let mut reg = SubActionRegistry::new();
         register_vtube_sub_actions(&mut reg, client as Arc<dyn VTubeSink>)
             .expect("registration succeeds with a fresh registry");
-        assert_eq!(reg.all().count(), 6);
         for id in &[
             "vtube.hotkey.trigger",
             "vtube.expression.set",
@@ -1313,6 +1312,12 @@ mod tests {
             "vtube.model.load",
             "vtube.params.reset",
             "vtube.model.move",
+            "vtube.item.move",
+            "vtube.lookup.current_model",
+            "vtube.lookup.hotkeys",
+            "vtube.lookup.expressions",
+            "vtube.lookup.parameters",
+            "vtube.lookup.items",
         ] {
             assert!(reg.get(id).is_some(), "missing runner: {id}");
         }

@@ -110,69 +110,24 @@ impl SubActionRunner for HotkeyTriggerRunner {
 mod tests {
     use super::*;
     use crate::error::VTubeError;
-    use forge_events::{Event, EventPublisher};
-    use forge_types::EventId;
-
-    struct MockSink;
-
-    #[async_trait]
-    impl VTubeSink for MockSink {
-        async fn trigger_hotkey(&self, _: &str) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn set_expression(&self, _: &str, _: bool) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn set_param(&self, _: &str, _: f64) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn load_model(&self, _: &str) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn reset_params(&self) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn move_model(
-            &self,
-            _: Option<f64>,
-            _: Option<f64>,
-            _: Option<f64>,
-            _: f64,
-        ) -> Result<(), VTubeError> {
-            Ok(())
-        }
-    }
-
-    struct NoopPublisher;
-    impl EventPublisher for NoopPublisher {
-        fn publish(&self, _: Event) {}
-    }
-
-    fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
-        RunContext {
-            arg_stack: stack,
-            index: 0,
-            parent_event_id: EventId::new(),
-            publisher: &NoopPublisher,
-        }
-    }
+    use crate::runners::test_support::{MockSink, make_ctx};
 
     #[test]
     fn validate_config_accepts_hotkey_string() {
-        let runner = HotkeyTriggerRunner::new(Arc::new(MockSink));
+        let runner = HotkeyTriggerRunner::new(Arc::new(MockSink::new()));
         let config = BTreeMap::from([("hotkey_id".to_owned(), Variant::String("hk-1".to_owned()))]);
         assert!(runner.validate_config(&config).is_ok());
     }
 
     #[test]
     fn validate_config_rejects_missing_hotkey_id() {
-        let runner = HotkeyTriggerRunner::new(Arc::new(MockSink));
+        let runner = HotkeyTriggerRunner::new(Arc::new(MockSink::new()));
         assert!(runner.validate_config(&BTreeMap::new()).is_err());
     }
 
     #[tokio::test]
     async fn execute_interpolates_hotkey_id() {
-        let runner = HotkeyTriggerRunner::new(Arc::new(MockSink));
+        let runner = HotkeyTriggerRunner::new(Arc::new(MockSink::new()));
         let stack = ArgStack::new().set("id".to_owned(), Variant::String("hk-abc".to_owned()));
         let config = BTreeMap::from([("hotkey_id".to_owned(), Variant::String("%id%".to_owned()))]);
         let ctx = make_ctx(&stack);
@@ -183,7 +138,7 @@ mod tests {
 
     #[tokio::test]
     async fn execute_returns_success_on_mock_sink() {
-        let runner = HotkeyTriggerRunner::new(Arc::new(MockSink));
+        let runner = HotkeyTriggerRunner::new(Arc::new(MockSink::new()));
         let stack = ArgStack::new();
         let config =
             BTreeMap::from([("hotkey_id".to_owned(), Variant::String("hk-xyz".to_owned()))]);
@@ -255,37 +210,7 @@ mod tests {
 
     #[tokio::test]
     async fn execute_propagates_sink_error_as_failed_outcome() {
-        struct ErrorSink;
-
-        #[async_trait]
-        impl VTubeSink for ErrorSink {
-            async fn trigger_hotkey(&self, _: &str) -> Result<(), VTubeError> {
-                Err(VTubeError::NotConnected)
-            }
-            async fn set_expression(&self, _: &str, _: bool) -> Result<(), VTubeError> {
-                Ok(())
-            }
-            async fn set_param(&self, _: &str, _: f64) -> Result<(), VTubeError> {
-                Ok(())
-            }
-            async fn load_model(&self, _: &str) -> Result<(), VTubeError> {
-                Ok(())
-            }
-            async fn reset_params(&self) -> Result<(), VTubeError> {
-                Ok(())
-            }
-            async fn move_model(
-                &self,
-                _: Option<f64>,
-                _: Option<f64>,
-                _: Option<f64>,
-                _: f64,
-            ) -> Result<(), VTubeError> {
-                Ok(())
-            }
-        }
-
-        let runner = HotkeyTriggerRunner::new(Arc::new(ErrorSink));
+        let runner = HotkeyTriggerRunner::new(Arc::new(MockSink::failing()));
         let stack = ArgStack::new();
         let config =
             BTreeMap::from([("hotkey_id".to_owned(), Variant::String("hk-bad".to_owned()))]);

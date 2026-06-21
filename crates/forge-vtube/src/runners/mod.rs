@@ -4,6 +4,8 @@ mod model_load;
 mod model_move;
 mod param_set;
 mod params_reset;
+#[cfg(test)]
+mod test_support;
 
 use std::sync::Arc;
 
@@ -35,43 +37,12 @@ pub fn register_vtube_sub_actions(
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::error::VTubeError;
-    use async_trait::async_trait;
-
-    struct MockSink;
-
-    #[async_trait]
-    impl VTubeSink for MockSink {
-        async fn trigger_hotkey(&self, _: &str) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn set_expression(&self, _: &str, _: bool) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn set_param(&self, _: &str, _: f64) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn load_model(&self, _: &str) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn reset_params(&self) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn move_model(
-            &self,
-            _: Option<f64>,
-            _: Option<f64>,
-            _: Option<f64>,
-            _: f64,
-        ) -> Result<(), VTubeError> {
-            Ok(())
-        }
-    }
+    use crate::runners::test_support::MockSink;
 
     #[test]
     fn all_expected_runner_ids_are_present() {
         let mut reg = SubActionRegistry::new();
-        register_vtube_sub_actions(&mut reg, Arc::new(MockSink)).unwrap();
+        register_vtube_sub_actions(&mut reg, Arc::new(MockSink::new())).unwrap();
         for id in &[
             "vtube.hotkey.trigger",
             "vtube.expression.set",
@@ -87,8 +58,8 @@ mod tests {
     #[test]
     fn duplicate_registration_returns_error() {
         let mut reg = SubActionRegistry::new();
-        register_vtube_sub_actions(&mut reg, Arc::new(MockSink)).unwrap();
-        let result = register_vtube_sub_actions(&mut reg, Arc::new(MockSink));
+        register_vtube_sub_actions(&mut reg, Arc::new(MockSink::new())).unwrap();
+        let result = register_vtube_sub_actions(&mut reg, Arc::new(MockSink::new()));
         assert!(result.is_err());
     }
 }

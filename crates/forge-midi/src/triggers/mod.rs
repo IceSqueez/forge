@@ -24,7 +24,11 @@ mod tests {
     fn all_trigger_ids_are_present() {
         let mut reg = TriggerRegistry::new();
         register_midi_triggers(&mut reg).unwrap();
-        for id in &["midi.event.note_on", "midi.event.note_off", "midi.event.cc"] {
+        for id in &[
+            "midi.input.note_on",
+            "midi.input.note_off",
+            "midi.input.control_change",
+        ] {
             assert!(reg.get(id).is_some(), "missing trigger: {id}");
         }
     }

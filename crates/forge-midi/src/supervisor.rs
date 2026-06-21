@@ -224,7 +224,7 @@ fn emit_midi_event(client: &Arc<MidiClient>, port_name: &str, event: MidiEvent) 
             velocity,
             channel,
         } => (
-            "midi.event.note_on",
+            "midi.input.note_on",
             serde_json::json!({
                 "note": note,
                 "velocity": velocity,
@@ -237,7 +237,7 @@ fn emit_midi_event(client: &Arc<MidiClient>, port_name: &str, event: MidiEvent) 
             velocity,
             channel,
         } => (
-            "midi.event.note_off",
+            "midi.input.note_off",
             serde_json::json!({
                 "note": note,
                 "velocity": velocity,
@@ -250,7 +250,7 @@ fn emit_midi_event(client: &Arc<MidiClient>, port_name: &str, event: MidiEvent) 
             value,
             channel,
         } => (
-            "midi.event.cc",
+            "midi.input.control_change",
             serde_json::json!({
                 "controller": controller,
                 "value": value,
@@ -488,8 +488,8 @@ mod tests {
             tokio::task::yield_now().await;
         }
 
-        assert!(publisher.has_kind("midi.event.note_on"));
-        let ev = publisher.find_kind("midi.event.note_on").unwrap();
+        assert!(publisher.has_kind("midi.input.note_on"));
+        let ev = publisher.find_kind("midi.input.note_on").unwrap();
         assert_eq!(ev.payload["note"], 60);
         assert_eq!(ev.payload["velocity"], 127);
         assert_eq!(ev.payload["channel"], 0);
@@ -507,8 +507,8 @@ mod tests {
             tokio::task::yield_now().await;
         }
 
-        assert!(publisher.has_kind("midi.event.note_off"));
-        let ev = publisher.find_kind("midi.event.note_off").unwrap();
+        assert!(publisher.has_kind("midi.input.note_off"));
+        let ev = publisher.find_kind("midi.input.note_off").unwrap();
         assert_eq!(ev.payload["note"], 48);
         assert_eq!(ev.payload["port"], "Piano");
     }
@@ -524,8 +524,8 @@ mod tests {
             tokio::task::yield_now().await;
         }
 
-        assert!(publisher.has_kind("midi.event.cc"));
-        let ev = publisher.find_kind("midi.event.cc").unwrap();
+        assert!(publisher.has_kind("midi.input.control_change"));
+        let ev = publisher.find_kind("midi.input.control_change").unwrap();
         assert_eq!(ev.payload["controller"], 7);
         assert_eq!(ev.payload["value"], 100);
         assert_eq!(ev.payload["channel"], 1);
@@ -543,9 +543,9 @@ mod tests {
             tokio::task::yield_now().await;
         }
 
-        assert!(!publisher.has_kind("midi.event.note_on"));
-        assert!(!publisher.has_kind("midi.event.note_off"));
-        assert!(!publisher.has_kind("midi.event.cc"));
+        assert!(!publisher.has_kind("midi.input.note_on"));
+        assert!(!publisher.has_kind("midi.input.note_off"));
+        assert!(!publisher.has_kind("midi.input.control_change"));
     }
 
     #[tokio::test]
@@ -560,11 +560,11 @@ mod tests {
         }
 
         assert!(
-            !publisher.has_kind("midi.event.note_on"),
+            !publisher.has_kind("midi.input.note_on"),
             "velocity-0 must become note_off"
         );
-        assert!(publisher.has_kind("midi.event.note_off"));
-        let ev = publisher.find_kind("midi.event.note_off").unwrap();
+        assert!(publisher.has_kind("midi.input.note_off"));
+        let ev = publisher.find_kind("midi.input.note_off").unwrap();
         assert_eq!(ev.payload["note"], 60);
     }
 

@@ -1,6 +1,8 @@
+mod delete_message;
 mod edit_message;
 mod post_embed;
 mod post_text;
+mod send_file;
 
 use std::sync::Arc;
 
@@ -9,9 +11,11 @@ use forge_registry::{RegistryError, SubActionRegistry};
 use crate::client::DiscordClient;
 use crate::sink::DiscordSink;
 
+pub use delete_message::DeleteMessageRunner;
 pub use edit_message::EditMessageRunner;
 pub use post_embed::PostEmbedRunner;
 pub use post_text::PostTextRunner;
+pub use send_file::SendFileRunner;
 
 pub fn register_discord_sub_actions(
     reg: &mut SubActionRegistry,
@@ -21,6 +25,8 @@ pub fn register_discord_sub_actions(
     reg.register(Box::new(PostTextRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(PostEmbedRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(EditMessageRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(SendFileRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(DeleteMessageRunner::new(Arc::clone(&sink))))?;
     Ok(())
 }
 
@@ -49,6 +55,18 @@ mod tests {
             _: Option<&str>,
             _: Option<DiscordEmbed>,
         ) -> Result<(), DiscordError> {
+            Ok(())
+        }
+        async fn send_file(
+            &self,
+            _: &str,
+            _: Option<&str>,
+            _: &str,
+            _: &[u8],
+        ) -> Result<String, DiscordError> {
+            Ok(String::new())
+        }
+        async fn delete_message(&self, _: &str, _: &str) -> Result<(), DiscordError> {
             Ok(())
         }
     }

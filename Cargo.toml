@@ -96,6 +96,7 @@ reqwest = { version = "0.13", features = [
   "rustls",
   "query",
   "form",
+  "multipart",
 ], default-features = false }
 
 twitch_api = { version = "0.8", features = [

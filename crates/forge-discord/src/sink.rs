@@ -20,4 +20,18 @@ pub trait DiscordSink: Send + Sync {
         content: Option<&str>,
         embed: Option<DiscordEmbed>,
     ) -> Result<(), DiscordError>;
+
+    async fn send_file(
+        &self,
+        webhook_name: &str,
+        content: Option<&str>,
+        file_name: &str,
+        file_bytes: &[u8],
+    ) -> Result<String, DiscordError>;
+
+    async fn delete_message(
+        &self,
+        webhook_name: &str,
+        message_id: &str,
+    ) -> Result<(), DiscordError>;
 }

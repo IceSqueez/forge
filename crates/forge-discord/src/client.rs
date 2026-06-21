@@ -154,6 +154,193 @@ impl DiscordClient {
         self.execute_patch(&edit_url, body, webhook_name).await
     }
 
+    pub async fn send_file(
+        &self,
+        webhook_name: &str,
+        content: Option<&str>,
+        file_name: &str,
+        file_bytes: &[u8],
+    ) -> Result<String, DiscordError> {
+        let cred = self.load_webhook(webhook_name).await?;
+
+        let mut payload = serde_json::Map::new();
+        if let Some(c) = content {
+            payload.insert(
+                "content".to_owned(),
+                serde_json::Value::String(c.to_owned()),
+            );
+        }
+        let payload_json = serde_json::Value::Object(payload).to_string();
+
+        self.check_pre_send(webhook_name)?;
+        let post_url = format!("{}?wait=true", cred.url);
+
+        let build_form = |payload_json: &str, file_name: &str, bytes: &[u8]| {
+            let file_part =
+                reqwest::multipart::Part::bytes(bytes.to_vec()).file_name(file_name.to_owned());
+            reqwest::multipart::Form::new()
+                .text("payload_json", payload_json.to_owned())
+                .part("files[0]", file_part)
+        };
+
+        let start = std::time::Instant::now();
+        let resp = self
+            .http
+            .post(&post_url)
+            .multipart(build_form(&payload_json, file_name, file_bytes))
+            .send()
+            .await
+            .map_err(|e| DiscordError::Connect(e.without_url().to_string()))?;
+
+        let status = resp.status();
+        if status.as_u16() == 429 {
+            let retry_after = parse_retry_after(resp.headers());
+            let is_global = is_global_rate_limit(resp.headers());
+            let wait = Duration::from_secs_f64(retry_after.unwrap_or(1.0));
+
+            self.record_429(webhook_name, wait, is_global);
+            publish_ratelimit_hit(
+                self.publisher.as_ref(),
+                webhook_name,
+                retry_after.unwrap_or(1.0),
+            );
+
+            tokio::time::sleep(wait).await;
+
+            let retry_start = std::time::Instant::now();
+            let retry_resp = self
+                .http
+                .post(&post_url)
+                .multipart(build_form(&payload_json, file_name, file_bytes))
+                .send()
+                .await
+                .map_err(|e| DiscordError::Connect(e.without_url().to_string()))?;
+
+            if retry_resp.status().as_u16() == 429 {
+                let ra = parse_retry_after(retry_resp.headers()).unwrap_or(1.0);
+                let err = DiscordError::RateLimited {
+                    retry_after_secs: ra,
+                };
+                self.apply_send_result(
+                    webhook_name,
+                    retry_start.elapsed().as_millis() as u64,
+                    false,
+                    None,
+                    0,
+                );
+                publish_failed(self.publisher.as_ref(), webhook_name, &err.to_string());
+                return Err(err);
+            }
+
+            let latency = retry_start.elapsed().as_millis() as u64;
+            return self
+                .handle_post_response(retry_resp, webhook_name, latency, 0)
+                .await;
+        }
+
+        let latency = start.elapsed().as_millis() as u64;
+        self.handle_post_response(resp, webhook_name, latency, 0)
+            .await
+    }
+
+    pub async fn delete_message(
+        &self,
+        webhook_name: &str,
+        message_id: &str,
+    ) -> Result<(), DiscordError> {
+        let cred = self.load_webhook(webhook_name).await?;
+        let delete_url = format!("{}/messages/{message_id}", cred.url);
+        self.execute_delete(&delete_url, webhook_name).await
+    }
+
+    async fn execute_delete(&self, url: &str, webhook_name: &str) -> Result<(), DiscordError> {
+        self.check_pre_send(webhook_name)?;
+        let start = std::time::Instant::now();
+        let resp = self
+            .http
+            .delete(url)
+            .send()
+            .await
+            .map_err(|e| DiscordError::Connect(e.without_url().to_string()))?;
+
+        let status = resp.status();
+        if status.as_u16() == 429 {
+            let retry_after = parse_retry_after(resp.headers());
+            let is_global = is_global_rate_limit(resp.headers());
+            let wait = Duration::from_secs_f64(retry_after.unwrap_or(1.0));
+
+            self.record_429(webhook_name, wait, is_global);
+            publish_ratelimit_hit(
+                self.publisher.as_ref(),
+                webhook_name,
+                retry_after.unwrap_or(1.0),
+            );
+
+            tokio::time::sleep(wait).await;
+
+            let retry_resp = self
+                .http
+                .delete(url)
+                .send()
+                .await
+                .map_err(|e| DiscordError::Connect(e.without_url().to_string()))?;
+
+            if retry_resp.status().as_u16() == 429 {
+                let ra = parse_retry_after(retry_resp.headers()).unwrap_or(1.0);
+                let err = DiscordError::RateLimited {
+                    retry_after_secs: ra,
+                };
+                self.apply_send_result(
+                    webhook_name,
+                    start.elapsed().as_millis() as u64,
+                    false,
+                    None,
+                    0,
+                );
+                publish_failed(self.publisher.as_ref(), webhook_name, &err.to_string());
+                return Err(err);
+            }
+
+            return self
+                .handle_delete_response(
+                    retry_resp,
+                    webhook_name,
+                    start.elapsed().as_millis() as u64,
+                )
+                .await;
+        }
+
+        let latency = start.elapsed().as_millis() as u64;
+        self.handle_delete_response(resp, webhook_name, latency)
+            .await
+    }
+
+    async fn handle_delete_response(
+        &self,
+        resp: reqwest::Response,
+        webhook_name: &str,
+        latency_ms: u64,
+    ) -> Result<(), DiscordError> {
+        let status = resp.status();
+        let (rl_limit, rl_remaining, rl_reset) = parse_bucket_headers(resp.headers());
+        self.update_bucket(webhook_name, rl_limit, rl_remaining, rl_reset);
+
+        if status.is_success() {
+            self.apply_send_result(webhook_name, latency_ms, true, None, 0);
+            Ok(())
+        } else {
+            let code = status.as_u16();
+            let body_text = resp.text().await.unwrap_or_default();
+            let err = DiscordError::BadResponse {
+                status: code,
+                body: body_text,
+            };
+            self.apply_send_result(webhook_name, latency_ms, false, None, 0);
+            publish_failed(self.publisher.as_ref(), webhook_name, &err.to_string());
+            Err(err)
+        }
+    }
+
     async fn execute_post(
         &self,
         url: &str,
@@ -503,6 +690,25 @@ impl DiscordSink for DiscordClient {
     ) -> Result<(), DiscordError> {
         self.edit_message(webhook_name, message_id, content, embed)
             .await
+    }
+
+    async fn send_file(
+        &self,
+        webhook_name: &str,
+        content: Option<&str>,
+        file_name: &str,
+        file_bytes: &[u8],
+    ) -> Result<String, DiscordError> {
+        self.send_file(webhook_name, content, file_name, file_bytes)
+            .await
+    }
+
+    async fn delete_message(
+        &self,
+        webhook_name: &str,
+        message_id: &str,
+    ) -> Result<(), DiscordError> {
+        self.delete_message(webhook_name, message_id).await
     }
 }
 

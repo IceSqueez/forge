@@ -385,6 +385,21 @@ mod tests {
             *self.last_fade_mode.lock().unwrap() = Some(fade_mode.to_owned());
             Ok(())
         }
+        async fn get_current_model(&self) -> Result<Variant, VTubeError> {
+            Ok(Variant::Object(BTreeMap::new()))
+        }
+        async fn get_hotkeys(&self) -> Result<Variant, VTubeError> {
+            Ok(Variant::Object(BTreeMap::new()))
+        }
+        async fn get_expressions(&self) -> Result<Variant, VTubeError> {
+            Ok(Variant::Object(BTreeMap::new()))
+        }
+        async fn get_parameters(&self) -> Result<Variant, VTubeError> {
+            Ok(Variant::Object(BTreeMap::new()))
+        }
+        async fn get_items(&self) -> Result<Variant, VTubeError> {
+            Ok(Variant::Object(BTreeMap::new()))
+        }
     }
 
     #[tokio::test]

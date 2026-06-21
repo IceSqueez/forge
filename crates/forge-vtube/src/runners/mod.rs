@@ -1,6 +1,11 @@
 mod expression_set;
 mod hotkey_trigger;
 mod item_move;
+mod lookup_current_model;
+mod lookup_expressions;
+mod lookup_hotkeys;
+mod lookup_items;
+mod lookup_parameters;
 mod model_load;
 mod model_move;
 mod param_set;
@@ -15,6 +20,11 @@ use forge_registry::{RegistryError, SubActionRegistry};
 pub use expression_set::ExpressionSetRunner;
 pub use hotkey_trigger::HotkeyTriggerRunner;
 pub use item_move::ItemMoveRunner;
+pub use lookup_current_model::LookupCurrentModelRunner;
+pub use lookup_expressions::LookupExpressionsRunner;
+pub use lookup_hotkeys::LookupHotkeysRunner;
+pub use lookup_items::LookupItemsRunner;
+pub use lookup_parameters::LookupParametersRunner;
 pub use model_load::ModelLoadRunner;
 pub use model_move::ModelMoveRunner;
 pub use param_set::ParamSetRunner;
@@ -32,7 +42,12 @@ pub fn register_vtube_sub_actions(
     reg.register(Box::new(ModelLoadRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(ParamsResetRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(ModelMoveRunner::new(Arc::clone(&sink))))?;
-    reg.register(Box::new(ItemMoveRunner::new(sink)))?;
+    reg.register(Box::new(ItemMoveRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(LookupCurrentModelRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(LookupHotkeysRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(LookupExpressionsRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(LookupParametersRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(LookupItemsRunner::new(sink)))?;
     Ok(())
 }
 

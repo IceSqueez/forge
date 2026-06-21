@@ -4,12 +4,13 @@
 //! Keeping one copy here stops the seven-way drift that recurs whenever the
 //! `VTubeSink` trait gains a method.
 
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher};
 use forge_registry::RunContext;
-use forge_types::{ArgStack, EventId};
+use forge_types::{ArgStack, EventId, Variant};
 
 use crate::error::VTubeError;
 use crate::sink::VTubeSink;
@@ -53,6 +54,18 @@ impl MockSink {
             Ok(())
         }
     }
+
+    /// Records the invocation and returns the given lookup payload, or an error
+    /// in `failing` mode. Lookup payloads carry representative populated data so
+    /// runner tests can assert real arg-stack extraction.
+    fn record_lookup(&self, data: Variant) -> Result<Variant, VTubeError> {
+        self.called.store(true, Ordering::Release);
+        if self.fail {
+            Err(VTubeError::NotConnected)
+        } else {
+            Ok(data)
+        }
+    }
 }
 
 #[async_trait]
@@ -94,6 +107,73 @@ impl VTubeSink for MockSink {
         _: &str,
     ) -> Result<(), VTubeError> {
         self.record()
+    }
+    async fn get_current_model(&self) -> Result<Variant, VTubeError> {
+        self.record_lookup(Variant::Object(BTreeMap::from([
+            ("name".to_owned(), Variant::String("MyAvatar".to_owned())),
+            ("id".to_owned(), Variant::String("model-abc".to_owned())),
+            ("loaded".to_owned(), Variant::Bool(true)),
+        ])))
+    }
+    async fn get_hotkeys(&self) -> Result<Variant, VTubeError> {
+        self.record_lookup(Variant::Object(BTreeMap::from([
+            (
+                "names".to_owned(),
+                Variant::Array(vec![
+                    Variant::String("Wave".to_owned()),
+                    Variant::String("Blush".to_owned()),
+                ]),
+            ),
+            (
+                "ids".to_owned(),
+                Variant::Array(vec![
+                    Variant::String("hk-1".to_owned()),
+                    Variant::String("hk-2".to_owned()),
+                ]),
+            ),
+            ("count".to_owned(), Variant::Int(2)),
+        ])))
+    }
+    async fn get_expressions(&self) -> Result<Variant, VTubeError> {
+        self.record_lookup(Variant::Object(BTreeMap::from([
+            (
+                "names".to_owned(),
+                Variant::Array(vec![
+                    Variant::String("Smile.exp3.json".to_owned()),
+                    Variant::String("Angry.exp3.json".to_owned()),
+                ]),
+            ),
+            (
+                "active".to_owned(),
+                Variant::Array(vec![Variant::Bool(true), Variant::Bool(false)]),
+            ),
+            ("count".to_owned(), Variant::Int(2)),
+        ])))
+    }
+    async fn get_parameters(&self) -> Result<Variant, VTubeError> {
+        self.record_lookup(Variant::Object(BTreeMap::from([
+            (
+                "names".to_owned(),
+                Variant::Array(vec![
+                    Variant::String("FaceAngleX".to_owned()),
+                    Variant::String("MouthOpen".to_owned()),
+                ]),
+            ),
+            ("count".to_owned(), Variant::Int(2)),
+        ])))
+    }
+    async fn get_items(&self) -> Result<Variant, VTubeError> {
+        self.record_lookup(Variant::Object(BTreeMap::from([
+            (
+                "instance_ids".to_owned(),
+                Variant::Array(vec![Variant::String("inst-1".to_owned())]),
+            ),
+            (
+                "file_names".to_owned(),
+                Variant::Array(vec![Variant::String("crown.png".to_owned())]),
+            ),
+            ("count".to_owned(), Variant::Int(1)),
+        ])))
     }
 }
 

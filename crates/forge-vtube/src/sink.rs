@@ -1,5 +1,7 @@
 use async_trait::async_trait;
 
+use forge_types::Variant;
+
 use crate::error::VTubeError;
 
 #[async_trait]
@@ -34,4 +36,14 @@ pub trait VTubeSink: Send + Sync {
         time_in_seconds: f64,
         fade_mode: &str,
     ) -> Result<(), VTubeError>;
+
+    async fn get_current_model(&self) -> Result<Variant, VTubeError>;
+
+    async fn get_hotkeys(&self) -> Result<Variant, VTubeError>;
+
+    async fn get_expressions(&self) -> Result<Variant, VTubeError>;
+
+    async fn get_parameters(&self) -> Result<Variant, VTubeError>;
+
+    async fn get_items(&self) -> Result<Variant, VTubeError>;
 }

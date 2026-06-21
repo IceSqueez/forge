@@ -36,7 +36,10 @@ use forge_tts_nsspeech::NsSpeechEngineFactory;
 use forge_tts_piper::{PiperEngine, PiperEngineFactory};
 use forge_tts_sapi::SapiEngineFactory;
 use forge_voice::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults, VoiceAliasResolver};
-use forge_vtube::{SwitchableVTubeSink, VTubeClient, VTubeSink, register_vtube_sub_actions};
+use forge_vtube::{
+    SwitchableVTubeSink, VTubeClient, VTubeSink, register_vtube_sub_actions,
+    register_vtube_triggers,
+};
 
 struct KickNoopLimiter;
 
@@ -631,6 +634,9 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
     }
     if let Err(e) = register_hotkey_triggers(&mut trigger_reg) {
         tracing::warn!("hotkey trigger descriptor registration failed: {e}");
+    }
+    if let Err(e) = register_vtube_triggers(&mut trigger_reg) {
+        tracing::warn!("vtube trigger descriptor registration failed: {e}");
     }
     if let Err(e) = forge_platform_youtube::register_youtube_triggers(&mut trigger_reg) {
         tracing::warn!("youtube trigger descriptor registration failed: {e}");

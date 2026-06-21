@@ -34,6 +34,8 @@ mod tests {
             "midi.input.note_on",
             "midi.input.note_off",
             "midi.input.control_change",
+            "midi.input.pitch_bend",
+            "midi.input.program_change",
         ] {
             assert!(reg.get(id).is_some(), "missing trigger: {id}");
         }

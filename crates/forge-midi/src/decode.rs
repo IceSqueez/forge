@@ -163,6 +163,90 @@ mod tests {
     }
 
     #[test]
+    fn pitch_bend_full_down_decodes_to_zero() {
+        let result = decode_midi_bytes(&[0xE0, 0x00, 0x00]).unwrap();
+        assert_eq!(
+            result,
+            Some(MidiEvent::PitchBend {
+                value: 0,
+                channel: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn pitch_bend_center_decodes_to_8192() {
+        let result = decode_midi_bytes(&[0xE0, 0x00, 0x40]).unwrap();
+        assert_eq!(
+            result,
+            Some(MidiEvent::PitchBend {
+                value: 8192,
+                channel: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn pitch_bend_full_up_decodes_to_16383() {
+        let result = decode_midi_bytes(&[0xE0, 0x7F, 0x7F]).unwrap();
+        assert_eq!(
+            result,
+            Some(MidiEvent::PitchBend {
+                value: 16383,
+                channel: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn pitch_bend_extracts_channel() {
+        let result = decode_midi_bytes(&[0xE5, 0x00, 0x40]).unwrap();
+        assert_eq!(
+            result,
+            Some(MidiEvent::PitchBend {
+                value: 8192,
+                channel: 5,
+            })
+        );
+    }
+
+    #[test]
+    fn pitch_bend_truncated_returns_none() {
+        let result = decode_midi_bytes(&[0xE0, 0x00]).unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn program_change_decodes_program() {
+        let result = decode_midi_bytes(&[0xC0, 10]).unwrap();
+        assert_eq!(
+            result,
+            Some(MidiEvent::ProgramChange {
+                program: 10,
+                channel: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn program_change_extracts_channel() {
+        let result = decode_midi_bytes(&[0xC3, 10]).unwrap();
+        assert_eq!(
+            result,
+            Some(MidiEvent::ProgramChange {
+                program: 10,
+                channel: 3,
+            })
+        );
+    }
+
+    #[test]
+    fn program_change_truncated_returns_none() {
+        let result = decode_midi_bytes(&[0xC0]).unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
     fn data_byte_without_high_bit_returns_error() {
         let result = decode_midi_bytes(&[0x40, 60, 127]);
         assert!(matches!(result, Err(MidiError::InvalidStatusByte(0x40))));

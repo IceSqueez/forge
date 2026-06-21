@@ -144,3 +144,145 @@ impl SubActionRunner for DeleteMessageRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::embed::DiscordEmbed;
+    use crate::error::DiscordError;
+    use forge_events::{Event, EventPublisher};
+    use forge_types::EventId;
+    use std::sync::Mutex;
+
+    struct CapturingSink {
+        deleted_id: Mutex<Option<String>>,
+        should_fail: bool,
+    }
+
+    impl CapturingSink {
+        fn ok() -> Arc<Self> {
+            Arc::new(Self {
+                deleted_id: Mutex::new(None),
+                should_fail: false,
+            })
+        }
+
+        fn failing() -> Arc<Self> {
+            Arc::new(Self {
+                deleted_id: Mutex::new(None),
+                should_fail: true,
+            })
+        }
+
+        fn deleted_id(&self) -> Option<String> {
+            self.deleted_id.lock().unwrap().take()
+        }
+    }
+
+    #[async_trait]
+    impl DiscordSink for CapturingSink {
+        async fn post_text(&self, _: &str, _: &str) -> Result<String, DiscordError> {
+            Ok(String::new())
+        }
+        async fn post_embed(&self, _: &str, _: DiscordEmbed) -> Result<String, DiscordError> {
+            Ok(String::new())
+        }
+        async fn edit_message(
+            &self,
+            _: &str,
+            _: &str,
+            _: Option<&str>,
+            _: Option<DiscordEmbed>,
+        ) -> Result<(), DiscordError> {
+            Ok(())
+        }
+        async fn send_file(
+            &self,
+            _: &str,
+            _: Option<&str>,
+            _: &str,
+            _: &[u8],
+        ) -> Result<String, DiscordError> {
+            Ok(String::new())
+        }
+        async fn delete_message(
+            &self,
+            _webhook_name: &str,
+            message_id: &str,
+        ) -> Result<(), DiscordError> {
+            *self.deleted_id.lock().unwrap() = Some(message_id.to_owned());
+            if self.should_fail {
+                Err(DiscordError::BadResponse {
+                    status: 404,
+                    body: "unknown message".to_owned(),
+                })
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    struct NoopPublisher;
+    impl EventPublisher for NoopPublisher {
+        fn publish(&self, _: Event) {}
+    }
+
+    fn config(message_id: &str) -> SubActionConfig {
+        BTreeMap::from([
+            (
+                "webhook_name".to_owned(),
+                Variant::String("alerts".to_owned()),
+            ),
+            (
+                "message_id".to_owned(),
+                Variant::String(message_id.to_owned()),
+            ),
+        ])
+    }
+
+    fn ctx<'a>(stack: &'a ArgStack, publisher: &'a NoopPublisher) -> RunContext<'a> {
+        RunContext {
+            arg_stack: stack,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher,
+        }
+    }
+
+    #[tokio::test]
+    async fn empty_message_id_fails_without_calling_sink() {
+        let sink = CapturingSink::ok();
+        let runner = DeleteMessageRunner::new(Arc::clone(&sink) as Arc<dyn DiscordSink>);
+        let stack = ArgStack::new();
+        let publisher = NoopPublisher;
+        let (telemetry, _) = runner.execute(&config(""), &ctx(&stack, &publisher)).await;
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert!(sink.deleted_id().is_none(), "sink must not run on empty id");
+    }
+
+    #[tokio::test]
+    async fn interpolated_message_id_reaches_sink() {
+        let sink = CapturingSink::ok();
+        let runner = DeleteMessageRunner::new(Arc::clone(&sink) as Arc<dyn DiscordSink>);
+        let stack = ArgStack::new().set("msg".to_owned(), Variant::String("987654321".to_owned()));
+        let publisher = NoopPublisher;
+        let (telemetry, _) = runner
+            .execute(&config("%msg%"), &ctx(&stack, &publisher))
+            .await;
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
+        assert_eq!(sink.deleted_id().as_deref(), Some("987654321"));
+    }
+
+    #[tokio::test]
+    async fn sink_error_yields_failed_outcome() {
+        let sink = CapturingSink::failing();
+        let runner = DeleteMessageRunner::new(Arc::clone(&sink) as Arc<dyn DiscordSink>);
+        let stack = ArgStack::new();
+        let publisher = NoopPublisher;
+        let (telemetry, _) = runner
+            .execute(&config("123"), &ctx(&stack, &publisher))
+            .await;
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+    }
+}

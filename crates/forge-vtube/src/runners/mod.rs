@@ -53,6 +53,7 @@ mod tests {
             "vtube.model.load",
             "vtube.params.reset",
             "vtube.model.move",
+            "vtube.item.move",
         ] {
             assert!(reg.get(id).is_some(), "missing runner: {id}");
         }

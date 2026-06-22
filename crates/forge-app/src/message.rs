@@ -415,6 +415,8 @@ pub enum TtsFiltersMsg {
     PreviewInputChanged(String),
     BlocklistModeChanged(crate::tts_filters::BlocklistModeChoice),
     AddRuleClicked,
+    SpeakPreview,
+    SpeakPreviewResult(Result<(), String>),
 }
 
 #[derive(Debug, Clone)]

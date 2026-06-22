@@ -641,6 +641,7 @@ tts_dash_skip_btn = Пропустити
 tts_dash_stop_all_btn = Зупинити все
 tts_dash_test_placeholder = Введіть текст для тестування…
 tts_dash_speak_btn = Озвучити
+tts_dash_test_speaker_name = Тест
 
 ## TTS Dashboard — зараз говорить
 
@@ -738,6 +739,7 @@ tts_filters_preview_input_placeholder = Введіть повідомлення 
 tts_filters_preview_empty = Введіть повідомлення вище для перегляду
 tts_filters_preview_output_label = ПІДСУМКОВИЙ РЕЗУЛЬТАТ
 tts_filters_speak_preview_btn = Озвучити перегляд
+tts_filters_preview_speaker_name = Перегляд
 tts_filters_preview_tip = Введіть будь-яке повідомлення вище, щоб побачити, як фільтри перетворюють його в реальному часі
 
 ## TTS Triggers — заголовок

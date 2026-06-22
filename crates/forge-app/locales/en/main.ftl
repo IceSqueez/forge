@@ -639,6 +639,7 @@ tts_dash_skip_btn = Skip
 tts_dash_stop_all_btn = Stop all
 tts_dash_test_placeholder = Type to test a voice…
 tts_dash_speak_btn = Speak
+tts_dash_test_speaker_name = Test
 
 ## TTS Dashboard — now speaking
 
@@ -732,6 +733,7 @@ tts_filters_preview_input_placeholder = Type a message to preview…
 tts_filters_preview_empty = Enter a message above to preview
 tts_filters_preview_output_label = FINAL OUTPUT
 tts_filters_speak_preview_btn = Speak preview
+tts_filters_preview_speaker_name = Preview
 tts_filters_preview_tip = Type any message above to see how filters transform it in real time
 
 ## TTS Triggers — header

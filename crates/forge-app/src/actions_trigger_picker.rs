@@ -54,7 +54,6 @@ pub enum PlatformGroup {
 #[derive(Clone, Debug)]
 pub struct TriggerSubGroup {
     pub label: String,
-    pub kind_id_prefix: String,
 }
 
 impl PartialEq for TriggerSubGroup {
@@ -108,18 +107,18 @@ pub fn sub_group_label_for(kind_id: &str) -> String {
         return forge_widgets::tr!("trigger_cat_other");
     };
     match segment {
-        "scenes" => "Scenes".to_owned(),
-        "sources" => "Sources".to_owned(),
-        "audio" => "Audio".to_owned(),
-        "filters" => "Filters".to_owned(),
-        "stream" => "Streaming".to_owned(),
-        "record" => "Recording".to_owned(),
-        "studio" => "Studio Mode".to_owned(),
-        "transition" => "Transitions".to_owned(),
-        "virtualcam" => "Virtual Camera".to_owned(),
-        "connection" => "Connection".to_owned(),
-        "collection" => "Scene Collections".to_owned(),
-        "profile" => "Profiles".to_owned(),
+        "scenes" => forge_widgets::tr!("trigger_subgroup_scenes"),
+        "sources" => forge_widgets::tr!("trigger_subgroup_sources"),
+        "audio" => forge_widgets::tr!("trigger_subgroup_audio"),
+        "filters" => forge_widgets::tr!("trigger_subgroup_filters"),
+        "stream" => forge_widgets::tr!("trigger_subgroup_streaming"),
+        "record" => forge_widgets::tr!("trigger_subgroup_recording"),
+        "studio" => forge_widgets::tr!("trigger_subgroup_studio_mode"),
+        "transition" => forge_widgets::tr!("trigger_subgroup_transitions"),
+        "virtualcam" => forge_widgets::tr!("trigger_subgroup_virtual_camera"),
+        "connection" => forge_widgets::tr!("trigger_subgroup_connection"),
+        "collection" => forge_widgets::tr!("trigger_subgroup_scene_collections"),
+        "profile" => forge_widgets::tr!("trigger_subgroup_profiles"),
         other => title_case_segment(other),
     }
 }
@@ -494,10 +493,7 @@ pub fn view<'a>(
             };
             let btn = iced::widget::button(text(label.clone()).size(FONT_SM).color(text_color))
                 .on_press(Message::Actions(ActionsMsg::TriggerPickerMsg(
-                    TriggerPickerMsg::Level2Selected(TriggerSubGroup {
-                        label: label_clone,
-                        kind_id_prefix: String::new(),
-                    }),
+                    TriggerPickerMsg::Level2Selected(TriggerSubGroup { label: label_clone }),
                 )))
                 .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
                 .width(Length::Fill)
@@ -826,12 +822,30 @@ mod tests {
     #[test]
     fn sub_group_label_for_maps_obs_segments_to_human_labels() {
         for (kind, expected) in [
-            ("obs.scenes.current_changed", "Scenes"),
-            ("obs.audio.input_muted", "Audio"),
-            ("obs.stream.started", "Streaming"),
-            ("obs.record.started", "Recording"),
-            ("obs.studio.mode_toggled", "Studio Mode"),
-            ("obs.virtualcam.started", "Virtual Camera"),
+            (
+                "obs.scenes.current_changed",
+                forge_widgets::tr!("trigger_subgroup_scenes"),
+            ),
+            (
+                "obs.audio.input_muted",
+                forge_widgets::tr!("trigger_subgroup_audio"),
+            ),
+            (
+                "obs.stream.started",
+                forge_widgets::tr!("trigger_subgroup_streaming"),
+            ),
+            (
+                "obs.record.started",
+                forge_widgets::tr!("trigger_subgroup_recording"),
+            ),
+            (
+                "obs.studio.mode_toggled",
+                forge_widgets::tr!("trigger_subgroup_studio_mode"),
+            ),
+            (
+                "obs.virtualcam.started",
+                forge_widgets::tr!("trigger_subgroup_virtual_camera"),
+            ),
         ] {
             assert_eq!(sub_group_label_for(kind), expected, "kind={kind}");
         }

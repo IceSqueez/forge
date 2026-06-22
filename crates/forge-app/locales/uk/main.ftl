@@ -483,7 +483,13 @@ triggers_breadcrumb_triggers = Тригери
 triggers_open_create_btn = + Створити
 triggers_search_placeholder = Пошук тригерів…
 triggers_filter_twitch = Twitch
+triggers_filter_youtube = YouTube
+triggers_filter_kick = Kick
 triggers_filter_obs = OBS
+triggers_filter_vtube = VTube Studio
+triggers_filter_midi = MIDI
+triggers_filter_hotkey = Гарячі клавіші
+triggers_filter_discord = Discord
 triggers_filter_script = Скрипт
 triggers_filter_all = Всі
 triggers_usage_all = Всі
@@ -588,6 +594,18 @@ trigger_cat_core = Ядро
 trigger_cat_server = Події сервера
 trigger_cat_timer = Таймери
 trigger_cat_other = Інше
+trigger_subgroup_scenes = Сцени
+trigger_subgroup_sources = Джерела
+trigger_subgroup_audio = Аудіо
+trigger_subgroup_filters = Фільтри
+trigger_subgroup_streaming = Трансляція
+trigger_subgroup_recording = Запис
+trigger_subgroup_studio_mode = Студійний режим
+trigger_subgroup_transitions = Переходи
+trigger_subgroup_virtual_camera = Віртуальна камера
+trigger_subgroup_connection = З'єднання
+trigger_subgroup_scene_collections = Колекції сцен
+trigger_subgroup_profiles = Профілі
 
 ## Actions modals — placeholder literals
 

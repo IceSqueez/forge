@@ -481,7 +481,13 @@ triggers_breadcrumb_triggers = Triggers
 triggers_open_create_btn = + Create
 triggers_search_placeholder = Search triggers…
 triggers_filter_twitch = Twitch
+triggers_filter_youtube = YouTube
+triggers_filter_kick = Kick
 triggers_filter_obs = OBS
+triggers_filter_vtube = VTube Studio
+triggers_filter_midi = MIDI
+triggers_filter_hotkey = Hotkey
+triggers_filter_discord = Discord
 triggers_filter_script = Script
 triggers_filter_all = All
 triggers_usage_all = All
@@ -586,6 +592,18 @@ trigger_cat_core = Core
 trigger_cat_server = Server Events
 trigger_cat_timer = Timers
 trigger_cat_other = Other
+trigger_subgroup_scenes = Scenes
+trigger_subgroup_sources = Sources
+trigger_subgroup_audio = Audio
+trigger_subgroup_filters = Filters
+trigger_subgroup_streaming = Streaming
+trigger_subgroup_recording = Recording
+trigger_subgroup_studio_mode = Studio Mode
+trigger_subgroup_transitions = Transitions
+trigger_subgroup_virtual_camera = Virtual Camera
+trigger_subgroup_connection = Connection
+trigger_subgroup_scene_collections = Scene Collections
+trigger_subgroup_profiles = Profiles
 
 ## Actions modals — placeholder literals
 

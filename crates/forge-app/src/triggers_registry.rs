@@ -511,52 +511,46 @@ fn registry_header<'a>(
     ))
     .width(Length::Fixed(200.0));
 
-    let twitch_active = state
-        .platform_filter
-        .as_deref()
-        .is_some_and(|x| x == "twitch.");
-    let obs_active = state
-        .platform_filter
-        .as_deref()
-        .is_some_and(|x| x == "obs.");
-    let script_active = state
-        .platform_filter
-        .as_deref()
-        .is_some_and(|x| x == "script.");
+    let is_filter = |prefix: &str| {
+        state
+            .platform_filter
+            .as_deref()
+            .is_some_and(|x| x == prefix)
+    };
     let all_active = state.platform_filter.is_none();
 
     let lbl_filter_all = forge_widgets::tr!("triggers_filter_all");
     let lbl_filter_twitch = forge_widgets::tr!("triggers_filter_twitch");
+    let lbl_filter_youtube = forge_widgets::tr!("triggers_filter_youtube");
+    let lbl_filter_kick = forge_widgets::tr!("triggers_filter_kick");
     let lbl_filter_obs = forge_widgets::tr!("triggers_filter_obs");
+    let lbl_filter_vtube = forge_widgets::tr!("triggers_filter_vtube");
+    let lbl_filter_midi = forge_widgets::tr!("triggers_filter_midi");
+    let lbl_filter_hotkey = forge_widgets::tr!("triggers_filter_hotkey");
+    let lbl_filter_discord = forge_widgets::tr!("triggers_filter_discord");
     let lbl_filter_script = forge_widgets::tr!("triggers_filter_script");
 
-    let chip_twitch = category_chip(
-        palette,
-        lbl_filter_twitch.as_str(),
-        p.brand,
-        twitch_active,
-        Message::TriggersRegistry(TriggersRegistryMsg::PlatformFilterChanged(Some(
-            "twitch.".to_owned(),
-        ))),
-    );
-    let chip_obs = category_chip(
-        palette,
-        lbl_filter_obs.as_str(),
-        p.success,
-        obs_active,
-        Message::TriggersRegistry(TriggersRegistryMsg::PlatformFilterChanged(Some(
-            "obs.".to_owned(),
-        ))),
-    );
-    let chip_script = category_chip(
-        palette,
-        lbl_filter_script.as_str(),
-        p.warning,
-        script_active,
-        Message::TriggersRegistry(TriggersRegistryMsg::PlatformFilterChanged(Some(
-            "script.".to_owned(),
-        ))),
-    );
+    let chip = |label: &str, color: Color, prefix: &'static str| {
+        category_chip(
+            palette,
+            label,
+            color,
+            is_filter(prefix),
+            Message::TriggersRegistry(TriggersRegistryMsg::PlatformFilterChanged(Some(
+                prefix.to_owned(),
+            ))),
+        )
+    };
+
+    let chip_twitch = chip(lbl_filter_twitch.as_str(), p.brand, "twitch.");
+    let chip_youtube = chip(lbl_filter_youtube.as_str(), p.platform_youtube, "youtube.");
+    let chip_kick = chip(lbl_filter_kick.as_str(), p.platform_kick, "kick.");
+    let chip_obs = chip(lbl_filter_obs.as_str(), p.success, "obs.");
+    let chip_vtube = chip(lbl_filter_vtube.as_str(), p.accent_teal, "vtube.");
+    let chip_midi = chip(lbl_filter_midi.as_str(), p.random, "midi.");
+    let chip_hotkey = chip(lbl_filter_hotkey.as_str(), p.warning, "hotkey.");
+    let chip_discord = chip(lbl_filter_discord.as_str(), p.info, "discord.");
+    let chip_script = chip(lbl_filter_script.as_str(), p.warning, "script.");
     let chip_all = category_chip(
         palette,
         lbl_filter_all.as_str(),
@@ -565,9 +559,15 @@ fn registry_header<'a>(
         Message::TriggersRegistry(TriggersRegistryMsg::PlatformFilterChanged(None)),
     );
 
-    let platform_chips = row![chip_twitch, chip_obs, chip_script, chip_all]
-        .spacing(spf(Spacing::Xxs))
-        .align_y(Alignment::Center);
+    let platform_chips = column![
+        row![chip_twitch, chip_youtube, chip_kick, chip_obs, chip_vtube]
+            .spacing(spf(Spacing::Xxs))
+            .align_y(Alignment::Center),
+        row![chip_midi, chip_hotkey, chip_discord, chip_script, chip_all]
+            .spacing(spf(Spacing::Xxs))
+            .align_y(Alignment::Center),
+    ]
+    .spacing(spf(Spacing::Xxs));
 
     let usage_all_active = state.usage_filter == UsageFilter::All;
     let usage_used_active = state.usage_filter == UsageFilter::Used;

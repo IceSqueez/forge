@@ -1503,3 +1503,8 @@ fmt_relative_days = { $count ->
     [many] { $count } д тому
    *[other] { $count } д тому
 }
+
+## Storage error screen
+storage_error_title = Не вдалося відкрити базу даних
+storage_error_data_safe = Ваші дані на диску не було змінено. Застосунок працює на тимчасовому сховищі, тож зміни, зроблені зараз, буде втрачено після перезапуску.
+storage_error_report = Про цю помилку варто повідомити.

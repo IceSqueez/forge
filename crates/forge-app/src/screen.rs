@@ -48,4 +48,5 @@ pub enum Screen {
     Server,
     Logs,
     Settings(SettingsSection),
+    Error(String),
 }

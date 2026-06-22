@@ -1469,3 +1469,8 @@ fmt_relative_days = { $count ->
     [one] { $count }d ago
    *[other] { $count }d ago
 }
+
+## Storage error screen
+storage_error_title = Database could not be opened
+storage_error_data_safe = Your on-disk data was not modified. The app is running on temporary storage, so changes made now will be lost on restart.
+storage_error_report = This is a bug worth reporting.

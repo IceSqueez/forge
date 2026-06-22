@@ -43,6 +43,7 @@ pub(crate) fn breadcrumb_icon_for(screen: &Screen) -> Icon {
         Screen::Soundboard => Icon::Music,
         Screen::ScriptEditor | Screen::ScriptingApiDocs => Icon::Terminal,
         Screen::Server | Screen::Logs => Icon::Settings,
+        Screen::Error(_) => Icon::AlertTriangle,
     }
 }
 
@@ -66,6 +67,7 @@ pub(crate) fn screen_label(screen: &Screen) -> String {
         Screen::ScriptingApiDocs => forge_widgets::tr!("nav_api_reference"),
         Screen::Server => forge_widgets::tr!("nav_server"),
         Screen::Logs => forge_widgets::tr!("nav_logs"),
+        Screen::Error(_) => forge_widgets::tr!("storage_error_title"),
     }
 }
 

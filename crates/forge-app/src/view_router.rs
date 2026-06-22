@@ -125,6 +125,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         }
         Screen::Soundboard => soundboard_view(&app.ui.soundboard, palette),
         Screen::Tts(section) => crate::tts_view::tts_section_view(app, section, palette),
+        Screen::Error(reason) => crate::storage_error::storage_error_view(reason, palette),
         other => navigation::coming_soon_view(format!("{other:?}"), palette),
     };
 
@@ -146,6 +147,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
             | Screen::ScriptEditor
             | Screen::Soundboard
             | Screen::Tts(_)
+            | Screen::Error(_)
     );
     let content: Element<'_, Message> = if screen_uses_own_header {
         iced::widget::column![screen_content]

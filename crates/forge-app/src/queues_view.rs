@@ -1090,3 +1090,197 @@ fn queue_card_buttons<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
         .width(Length::Fill)
         .into()
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use forge_runtime::{EventBus, NullEventLogRepo, ScriptRegistry};
+    use forge_storage::CredentialsRepo;
+    use forge_storage_sqlite::SqliteBackend;
+
+    use crate::server_subsystem::ServerSubsystem;
+
+    fn test_rt() -> RuntimeView {
+        let tokio_rt = tokio::runtime::Runtime::new().unwrap();
+        let backend = Arc::new(
+            tokio_rt
+                .block_on(SqliteBackend::open_with_key("sqlite::memory:", [0xab; 32]))
+                .unwrap(),
+        );
+        let server_subsystem = Arc::new(ServerSubsystem::new(
+            Arc::clone(&backend) as Arc<dyn CredentialsRepo>
+        ));
+        let backend: Arc<dyn forge_storage::DataProvider> = backend;
+        RuntimeView {
+            actions: Arc::new(forge_runtime::actions::ActionsService::new(
+                backend.action_repo(),
+                backend.queue_repo(),
+                backend.history_repo(),
+                backend.trigger_instance_repo(),
+                backend.soundboard_clips_repo(),
+            )),
+            backend,
+            bus: EventBus::new(Arc::new(NullEventLogRepo)),
+            script_registry: Arc::new(ScriptRegistry::new()),
+            server_subsystem,
+            action_engine: None,
+            scheduler: None,
+            obs_client: None,
+            vtube_client: None,
+            vtube_sink: forge_vtube::SwitchableVTubeSink::new(),
+            obs_sink: forge_obs::SwitchableObsSink::new(),
+            discord_client: None,
+            midi_client: None,
+            hotkey_client: None,
+            speak_queue: None,
+            sound_player: None,
+            twitch_chat_handle: None,
+            chat_send_bridge: None,
+            twitch_flow: None,
+            youtube_flow: None,
+            kick_flow: None,
+            tts_engine_ids: Vec::new(),
+            twitch_login: None,
+            twitch_token_expires: None,
+            twitch_reauth_required: false,
+            sub_action_registry: Arc::new(forge_registry::SubActionRegistry::new()),
+            trigger_registry: Arc::new(forge_registry::TriggerRegistry::new()),
+        }
+    }
+
+    #[test]
+    fn new_queue_opens_blank_form() {
+        let rt = test_rt();
+        let mut state = QueuesState::new();
+        let _ = update(&mut state, &rt, QueuesMsg::NewQueue);
+        let form = state.new_queue_form.expect("form should open");
+        assert!(form.name.is_empty());
+        assert!(!form.blocking);
+        assert!(!form.saving);
+    }
+
+    #[test]
+    fn name_changed_writes_typed_text_into_open_form() {
+        let rt = test_rt();
+        let mut state = QueuesState {
+            new_queue_form: Some(NewQueueForm::default()),
+            ..QueuesState::new()
+        };
+        let _ = update(
+            &mut state,
+            &rt,
+            QueuesMsg::NewQueueNameChanged("Alerts".to_owned()),
+        );
+        assert_eq!(state.new_queue_form.unwrap().name, "Alerts");
+    }
+
+    #[test]
+    fn name_changed_with_no_open_form_is_noop() {
+        let rt = test_rt();
+        let mut state = QueuesState::new();
+        let _ = update(
+            &mut state,
+            &rt,
+            QueuesMsg::NewQueueNameChanged("ignored".to_owned()),
+        );
+        assert!(state.new_queue_form.is_none());
+    }
+
+    #[test]
+    fn blocking_toggle_flips_then_flips_back() {
+        let rt = test_rt();
+        let mut state = QueuesState {
+            new_queue_form: Some(NewQueueForm::default()),
+            ..QueuesState::new()
+        };
+        let _ = update(&mut state, &rt, QueuesMsg::NewQueueBlockingToggled);
+        assert!(state.new_queue_form.as_ref().unwrap().blocking);
+        let _ = update(&mut state, &rt, QueuesMsg::NewQueueBlockingToggled);
+        assert!(!state.new_queue_form.unwrap().blocking);
+    }
+
+    #[test]
+    fn cancel_discards_open_form() {
+        let rt = test_rt();
+        let mut state = QueuesState {
+            new_queue_form: Some(NewQueueForm {
+                name: "half typed".to_owned(),
+                ..NewQueueForm::default()
+            }),
+            ..QueuesState::new()
+        };
+        let _ = update(&mut state, &rt, QueuesMsg::NewQueueCancel);
+        assert!(state.new_queue_form.is_none());
+    }
+
+    #[test]
+    fn submit_with_blank_name_keeps_form_open_and_does_not_save() {
+        let rt = test_rt();
+        for blank in ["", "   ", "\t\n"] {
+            let mut state = QueuesState {
+                new_queue_form: Some(NewQueueForm {
+                    name: blank.to_owned(),
+                    ..NewQueueForm::default()
+                }),
+                ..QueuesState::new()
+            };
+            let _ = update(&mut state, &rt, QueuesMsg::NewQueueSubmit);
+            let form = state
+                .new_queue_form
+                .as_ref()
+                .unwrap_or_else(|| panic!("form should stay open for {blank:?}"));
+            assert!(!form.saving, "must not enter saving for {blank:?}");
+        }
+    }
+
+    #[test]
+    fn submit_with_nonblank_name_enters_saving_with_form_still_open() {
+        let rt = test_rt();
+        let mut state = QueuesState {
+            new_queue_form: Some(NewQueueForm {
+                name: "Background".to_owned(),
+                ..NewQueueForm::default()
+            }),
+            ..QueuesState::new()
+        };
+        let _ = update(&mut state, &rt, QueuesMsg::NewQueueSubmit);
+        let form = state.new_queue_form.expect("form stays open while saving");
+        assert!(form.saving);
+    }
+
+    #[test]
+    fn submit_result_ok_closes_form() {
+        let rt = test_rt();
+        let mut state = QueuesState {
+            new_queue_form: Some(NewQueueForm {
+                name: "Background".to_owned(),
+                saving: true,
+                ..NewQueueForm::default()
+            }),
+            ..QueuesState::new()
+        };
+        let _ = update(&mut state, &rt, QueuesMsg::NewQueueSubmitResult(Ok(())));
+        assert!(state.new_queue_form.is_none());
+    }
+
+    #[test]
+    fn submit_result_err_reopens_for_retry_by_clearing_saving() {
+        let rt = test_rt();
+        let mut state = QueuesState {
+            new_queue_form: Some(NewQueueForm {
+                name: "Background".to_owned(),
+                saving: true,
+                ..NewQueueForm::default()
+            }),
+            ..QueuesState::new()
+        };
+        let _ = update(
+            &mut state,
+            &rt,
+            QueuesMsg::NewQueueSubmitResult(Err("db down".to_owned())),
+        );
+        let form = state.new_queue_form.expect("form stays open after error");
+        assert!(!form.saving);
+    }
+}

@@ -50,28 +50,30 @@ async fn kind_id_of(pool: &SqlitePool, id: &str) -> Option<String> {
 }
 
 #[tokio::test]
-async fn default_rows_with_old_ids_are_deleted() {
-    // Every old id, seeded as a default row, must be removed so boot re-seeds
-    // the canonical default.
-    let old_ids = [
-        "midi.event.note_on",
-        "midi.event.note_off",
-        "midi.event.control_change",
-        "hotkey.triggered",
+async fn default_rows_with_old_ids_are_renamed_in_place() {
+    // Default rows must be UPDATEd in place (not deleted): action_trigger_instances
+    // has an ON DELETE RESTRICT FK to trigger_instances, so deleting a default that
+    // an action is attached to would abort the whole migration. Boot's
+    // upsert_default later normalizes the surviving default's name/config.
+    let renames = [
+        ("midi.event.note_on", "midi.input.note_on"),
+        ("midi.event.note_off", "midi.input.note_off"),
+        ("midi.event.control_change", "midi.input.control_change"),
+        ("hotkey.triggered", "hotkey.global.pressed"),
     ];
 
     let pool = fresh_pool().await;
-    for (i, old) in old_ids.iter().enumerate() {
+    for (i, (old, _new)) in renames.iter().enumerate() {
         seed(&pool, &format!("def-{i}"), old, 0).await;
     }
 
     run_migration(&pool).await;
 
-    for (i, old) in old_ids.iter().enumerate() {
+    for (i, (old, new)) in renames.iter().enumerate() {
         assert_eq!(
-            kind_id_of(&pool, &format!("def-{i}")).await,
-            None,
-            "default row for {old} must be deleted",
+            kind_id_of(&pool, &format!("def-{i}")).await.as_deref(),
+            Some(*new),
+            "default row for {old} must be renamed in place to {new}",
         );
     }
 }

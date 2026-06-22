@@ -2,7 +2,7 @@
 
 //! Regression coverage for the Kick `kind_id` rewrite data migration.
 //!
-//! The migration is pure DML (DELETE/UPDATE on `trigger_instances` keyed by
+//! The migration is pure DML (in-place UPDATE on `trigger_instances` keyed by
 //! `kind_id`), so it is safe to re-run against rows seeded after the schema is
 //! in place. Each test applies the full schema, seeds legacy rows, then runs
 //! the REAL migration SQL (loaded verbatim from the file, never a copy) so the
@@ -48,16 +48,16 @@ async fn kind_id_of(pool: &SqlitePool, id: &str) -> Option<String> {
 }
 
 #[tokio::test]
-async fn default_row_with_old_kick_id_is_deleted() {
+async fn default_row_with_old_kick_id_is_renamed_in_place() {
     let pool = fresh_pool().await;
     seed(&pool, "def-chat", "kick.chat", 0).await;
 
     run_migration(&pool).await;
 
     assert_eq!(
-        kind_id_of(&pool, "def-chat").await,
-        None,
-        "default (user_defined=0) row for an old Kick id must be deleted so boot re-seeds the canonical default"
+        kind_id_of(&pool, "def-chat").await.as_deref(),
+        Some("kick.chat.message"),
+        "default (user_defined=0) row must be renamed in place — deleting it would abort the migration via the action_trigger_instances ON DELETE RESTRICT FK"
     );
 }
 

@@ -912,6 +912,16 @@ queues_drain_btn = Спустошити
 queues_pause_btn = Пауза
 queues_resume_btn = Продовжити
 
+## Черги — модальне вікно нової черги
+
+queues_create_title = Нова черга
+queues_create_name_label = Назва
+queues_create_name_placeholder = Назва черги (обовʼязково)
+queues_create_blocking_label = Послідовне виконання
+queues_create_blocking_desc = Виконувати по одній дії; наступні чекають своєї черги
+queues_create_btn = Створити
+queues_create_cancel = Скасувати
+
 ## Черги — метрики картки
 
 queues_metric_concurrency = ПАРАЛЕЛІЗМ

@@ -323,6 +323,11 @@ pub enum QueuesMsg {
     DrainQueue(forge_types::QueueId),
     PauseAll,
     NewQueue,
+    NewQueueNameChanged(String),
+    NewQueueBlockingToggled,
+    NewQueueSubmit,
+    NewQueueSubmitResult(Result<(), String>),
+    NewQueueCancel,
     PauseResult(Result<(), String>),
     ResumeResult(Result<(), String>),
 }

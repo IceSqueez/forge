@@ -904,6 +904,16 @@ queues_drain_btn = Drain
 queues_pause_btn = Pause
 queues_resume_btn = Resume
 
+## Queues — new queue modal
+
+queues_create_title = New queue
+queues_create_name_label = Name
+queues_create_name_placeholder = Queue name (required)
+queues_create_blocking_label = Serial execution
+queues_create_blocking_desc = Run one action at a time; later actions wait their turn
+queues_create_btn = Create
+queues_create_cancel = Cancel
+
 ## Queues — card metrics
 
 queues_metric_concurrency = CONCURRENCY

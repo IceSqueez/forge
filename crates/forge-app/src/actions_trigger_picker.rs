@@ -811,10 +811,48 @@ mod tests {
             ("twitch.chat.command", PlatformGroup::Twitch),
             ("youtube.chat.message_deleted", PlatformGroup::YouTube),
             ("obs.scenes.current_changed", PlatformGroup::Obs),
+            ("vtube.model.loaded", PlatformGroup::VTube),
+            ("midi.input.note_on", PlatformGroup::Midi),
+            ("hotkey.global.pressed", PlatformGroup::Hotkey),
+            ("discord.webhook.send_message", PlatformGroup::Discord),
             ("script.event.custom", PlatformGroup::Script),
-            ("core.logic.wait", PlatformGroup::Core),
+            ("core.timer.tick", PlatformGroup::Core),
+            ("random.thing", PlatformGroup::Core),
         ] {
             assert_eq!(platform_group_for(kind), expected, "kind={kind}");
         }
+    }
+
+    #[test]
+    fn sub_group_label_for_maps_obs_segments_to_human_labels() {
+        for (kind, expected) in [
+            ("obs.scenes.current_changed", "Scenes"),
+            ("obs.audio.input_muted", "Audio"),
+            ("obs.stream.started", "Streaming"),
+            ("obs.record.started", "Recording"),
+            ("obs.studio.mode_toggled", "Studio Mode"),
+            ("obs.virtualcam.started", "Virtual Camera"),
+        ] {
+            assert_eq!(sub_group_label_for(kind), expected, "kind={kind}");
+        }
+    }
+
+    #[test]
+    fn sub_group_label_for_title_cases_unmapped_segment() {
+        for (kind, expected) in [
+            ("vtube.model.loaded", "Model"),
+            ("midi.input.note_on", "Input"),
+            ("platform.some_thing.fired", "Some Thing"),
+        ] {
+            assert_eq!(sub_group_label_for(kind), expected, "kind={kind}");
+        }
+    }
+
+    #[test]
+    fn sub_group_label_for_single_segment_returns_other_fallback() {
+        assert_eq!(
+            sub_group_label_for("standalone"),
+            forge_widgets::tr!("trigger_cat_other"),
+        );
     }
 }

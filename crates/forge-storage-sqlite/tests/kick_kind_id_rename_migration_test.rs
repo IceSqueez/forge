@@ -47,6 +47,38 @@ async fn kind_id_of(pool: &SqlitePool, id: &str) -> Option<String> {
         .expect("fetch kind_id")
 }
 
+/// Attach an action to `trigger_instance_id` via `action_trigger_instances`,
+/// reproducing the real FK edge (`trigger_instance_id` -> `trigger_instances(id)`
+/// ON DELETE RESTRICT). The action's `queue_id` uses the Default queue sentinel
+/// seeded by migration 0002. Returns nothing; presence is asserted by the caller.
+async fn link_action_to_trigger(pool: &SqlitePool, action_id: &str, trigger_instance_id: &str) {
+    sqlx::query("INSERT INTO actions (id, name, queue_id) VALUES (?, 'seed-action', ?)")
+        .bind(action_id)
+        .bind("00000000000000000000000000")
+        .execute(pool)
+        .await
+        .expect("seed action");
+    sqlx::query(
+        "INSERT INTO action_trigger_instances (action_id, trigger_instance_id, position) \
+         VALUES (?, ?, 0)",
+    )
+    .bind(action_id)
+    .bind(trigger_instance_id)
+    .execute(pool)
+    .await
+    .expect("link action to trigger_instance");
+}
+
+async fn link_count_for(pool: &SqlitePool, trigger_instance_id: &str) -> i64 {
+    sqlx::query_scalar(
+        "SELECT COUNT(*) FROM action_trigger_instances WHERE trigger_instance_id = ?",
+    )
+    .bind(trigger_instance_id)
+    .fetch_one(pool)
+    .await
+    .expect("count links")
+}
+
 #[tokio::test]
 async fn default_row_with_old_kick_id_is_renamed_in_place() {
     let pool = fresh_pool().await;
@@ -58,6 +90,33 @@ async fn default_row_with_old_kick_id_is_renamed_in_place() {
         kind_id_of(&pool, "def-chat").await.as_deref(),
         Some("kick.chat.message"),
         "default (user_defined=0) row must be renamed in place — deleting it would abort the migration via the action_trigger_instances ON DELETE RESTRICT FK"
+    );
+}
+
+#[tokio::test]
+async fn fk_linked_default_row_survives_migration_and_keeps_its_action_link() {
+    // THE regression for 7cef527: a default (user_defined=0) trigger with an
+    // action attached via action_trigger_instances. The pre-fix migration
+    // DELETEd default rows, which the ON DELETE RESTRICT FK aborts with
+    // SQLITE_CONSTRAINT_FOREIGNKEY (1811) — the whole migration fails and the
+    // database never opens. The in-place UPDATE never deletes the referenced
+    // row, so the link survives. This test fails against the DELETE migration
+    // (run_migration panics on the FK abort) and passes against the UPDATE.
+    let pool = fresh_pool().await;
+    seed(&pool, "def-sub-gift", "kick.sub_gift", 0).await;
+    link_action_to_trigger(&pool, "act-sub-gift", "def-sub-gift").await;
+
+    run_migration(&pool).await;
+
+    assert_eq!(
+        kind_id_of(&pool, "def-sub-gift").await.as_deref(),
+        Some("kick.channel.subscription_gift"),
+        "the FK-referenced default row must be renamed in place, not deleted",
+    );
+    assert_eq!(
+        link_count_for(&pool, "def-sub-gift").await,
+        1,
+        "the action_trigger_instances link must still point at the same row id",
     );
 }
 

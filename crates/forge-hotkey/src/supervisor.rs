@@ -28,7 +28,7 @@ pub(crate) async fn run_supervisor(
 
         client.publisher.publish(Event::new(
             EventSource::Hotkey,
-            "hotkey.triggered",
+            "hotkey.global.pressed",
             serde_json::json!({
                 "combo": combo_str,
                 "id": id_u32,

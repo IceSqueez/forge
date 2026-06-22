@@ -693,7 +693,7 @@ async fn load_bindings(
     let combo_to_action: std::collections::HashMap<String, (ActionId, String)> = {
         let mut map = std::collections::HashMap::new();
         for instance in &instances {
-            if instance.kind_id != "hotkey.triggered" {
+            if instance.kind_id != "hotkey.global.pressed" {
                 continue;
             }
             let Some(Variant::String(combo)) = instance.overrides.get("combo") else {
@@ -752,7 +752,7 @@ async fn do_bind(
 
     let instance = TriggerInstance {
         id: TriggerInstanceId::new(),
-        kind_id: "hotkey.triggered".to_owned(),
+        kind_id: "hotkey.global.pressed".to_owned(),
         name: combo_str.clone(),
         overrides,
         enabled: true,

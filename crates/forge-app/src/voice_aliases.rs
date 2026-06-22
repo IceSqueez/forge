@@ -1173,3 +1173,305 @@ fn avatar_color_for(name: &str, palette: &ForgePalette) -> iced::Color {
     ];
     colors[(hash as usize) % colors.len()]
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use forge_runtime::{EventBus, NullEventLogRepo, ScriptRegistry};
+    use forge_storage::CredentialsRepo;
+    use forge_storage_sqlite::SqliteBackend;
+
+    use crate::server_subsystem::ServerSubsystem;
+
+    fn test_rt() -> RuntimeView {
+        let tokio_rt = tokio::runtime::Runtime::new().unwrap();
+        let backend = Arc::new(
+            tokio_rt
+                .block_on(SqliteBackend::open_with_key("sqlite::memory:", [0xab; 32]))
+                .unwrap(),
+        );
+        let server_subsystem = Arc::new(ServerSubsystem::new(
+            Arc::clone(&backend) as Arc<dyn CredentialsRepo>
+        ));
+        let backend: Arc<dyn forge_storage::DataProvider> = backend;
+        RuntimeView {
+            actions: Arc::new(forge_runtime::actions::ActionsService::new(
+                backend.action_repo(),
+                backend.queue_repo(),
+                backend.history_repo(),
+                backend.trigger_instance_repo(),
+                backend.soundboard_clips_repo(),
+            )),
+            backend,
+            bus: EventBus::new(Arc::new(NullEventLogRepo)),
+            script_registry: Arc::new(ScriptRegistry::new()),
+            server_subsystem,
+            action_engine: None,
+            scheduler: None,
+            obs_client: None,
+            vtube_client: None,
+            vtube_sink: forge_vtube::SwitchableVTubeSink::new(),
+            obs_sink: forge_obs::SwitchableObsSink::new(),
+            discord_client: None,
+            midi_client: None,
+            hotkey_client: None,
+            speak_queue: None,
+            sound_player: None,
+            twitch_chat_handle: None,
+            chat_send_bridge: None,
+            twitch_flow: None,
+            youtube_flow: None,
+            kick_flow: None,
+            tts_engine_ids: Vec::new(),
+            twitch_login: None,
+            twitch_token_expires: None,
+            twitch_reauth_required: false,
+            sub_action_registry: Arc::new(forge_registry::SubActionRegistry::new()),
+            trigger_registry: Arc::new(forge_registry::TriggerRegistry::new()),
+        }
+    }
+
+    fn sample_row(viewer: &str) -> VoiceAliasRow {
+        VoiceAliasRow {
+            id: AliasId("alias-1".to_owned()),
+            viewer_id: format!("{viewer}-id"),
+            viewer_name: viewer.to_owned(),
+            engine_id: "piper".to_owned(),
+            voice_id: "en_US-amy".to_owned(),
+            engine_label: "Piper".to_owned(),
+            voice_label: "en_US-amy".to_owned(),
+            pitch_semitones: Some(2.0),
+            rate_multiplier: Some(1.5),
+            blocked: false,
+            role: None,
+        }
+    }
+
+    fn dispatch(state: &mut VoiceAliasesState, rt: &RuntimeView, msg: VoiceAliasesMsg) {
+        let _ = update(state, rt, msg);
+    }
+
+    #[test]
+    fn assign_opens_an_empty_create_form() {
+        let rt = test_rt();
+        let mut state = VoiceAliasesState::new();
+        dispatch(&mut state, &rt, VoiceAliasesMsg::Assign);
+        let form = state.form.expect("assign should open a form");
+        assert!(form.editing.is_none(), "create form must not target an id");
+        assert!(form.viewer.is_empty());
+        assert!(form.engine.is_empty());
+        assert!(form.voice.is_empty());
+    }
+
+    #[test]
+    fn edit_prefills_form_from_the_selected_row() {
+        let rt = test_rt();
+        let mut state = VoiceAliasesState::new();
+        state.aliases = vec![sample_row("Nora")];
+        dispatch(&mut state, &rt, VoiceAliasesMsg::Edit(0));
+        let form = state.form.expect("edit should open a form");
+        assert_eq!(form.editing, Some(AliasId("alias-1".to_owned())));
+        assert_eq!(form.viewer, "Nora");
+        assert_eq!(form.engine, "piper");
+        assert_eq!(form.voice, "en_US-amy");
+        assert_eq!(form.pitch, "2");
+        assert_eq!(form.rate, "1.5");
+    }
+
+    #[test]
+    fn edit_with_out_of_range_index_opens_no_form() {
+        let rt = test_rt();
+        let mut state = VoiceAliasesState::new();
+        dispatch(&mut state, &rt, VoiceAliasesMsg::Edit(7));
+        assert!(state.form.is_none());
+    }
+
+    #[test]
+    fn form_field_messages_write_into_their_own_fields() {
+        let rt = test_rt();
+        let mut state = VoiceAliasesState::new();
+        state.form = Some(AliasForm::default());
+
+        dispatch(
+            &mut state,
+            &rt,
+            VoiceAliasesMsg::FormViewerChanged("Zed".to_owned()),
+        );
+        dispatch(
+            &mut state,
+            &rt,
+            VoiceAliasesMsg::FormEngineChanged("espeak".to_owned()),
+        );
+        dispatch(
+            &mut state,
+            &rt,
+            VoiceAliasesMsg::FormVoiceChanged("en-uk".to_owned()),
+        );
+        dispatch(
+            &mut state,
+            &rt,
+            VoiceAliasesMsg::FormPitchChanged("-3".to_owned()),
+        );
+        dispatch(
+            &mut state,
+            &rt,
+            VoiceAliasesMsg::FormRateChanged("0.9".to_owned()),
+        );
+
+        let form = state.form.expect("form stays open");
+        assert_eq!(form.viewer, "Zed");
+        assert_eq!(form.engine, "espeak");
+        assert_eq!(form.voice, "en-uk");
+        assert_eq!(form.pitch, "-3");
+        assert_eq!(form.rate, "0.9");
+    }
+
+    #[test]
+    fn form_field_messages_with_no_open_form_are_noops() {
+        let rt = test_rt();
+        let mut state = VoiceAliasesState::new();
+        dispatch(
+            &mut state,
+            &rt,
+            VoiceAliasesMsg::FormViewerChanged("dropped".to_owned()),
+        );
+        assert!(state.form.is_none());
+    }
+
+    #[test]
+    fn form_cancel_closes_the_form() {
+        let rt = test_rt();
+        let mut state = VoiceAliasesState::new();
+        state.form = Some(AliasForm {
+            viewer: "half typed".to_owned(),
+            ..AliasForm::default()
+        });
+        dispatch(&mut state, &rt, VoiceAliasesMsg::FormCancel);
+        assert!(state.form.is_none());
+    }
+
+    #[test]
+    fn submit_with_blank_viewer_keeps_form_open_without_saving() {
+        let rt = test_rt();
+        for blank in ["", "   ", "\t\n"] {
+            let mut state = VoiceAliasesState::new();
+            state.form = Some(AliasForm {
+                viewer: blank.to_owned(),
+                ..AliasForm::default()
+            });
+            dispatch(&mut state, &rt, VoiceAliasesMsg::FormSubmit);
+            let form = state
+                .form
+                .as_ref()
+                .unwrap_or_else(|| panic!("form should stay open for {blank:?}"));
+            assert!(!form.saving, "blank {blank:?} must not enter saving");
+        }
+    }
+
+    #[test]
+    fn submit_with_nonblank_viewer_enters_saving() {
+        let rt = test_rt();
+        let mut state = VoiceAliasesState::new();
+        state.form = Some(AliasForm {
+            viewer: "Mara".to_owned(),
+            ..AliasForm::default()
+        });
+        dispatch(&mut state, &rt, VoiceAliasesMsg::FormSubmit);
+        let form = state.form.expect("form stays open while saving");
+        assert!(form.saving);
+    }
+
+    #[test]
+    fn submit_result_ok_closes_the_form() {
+        let rt = test_rt();
+        let mut state = VoiceAliasesState::new();
+        state.form = Some(AliasForm {
+            viewer: "Mara".to_owned(),
+            saving: true,
+            ..AliasForm::default()
+        });
+        dispatch(&mut state, &rt, VoiceAliasesMsg::FormSubmitResult(Ok(())));
+        assert!(state.form.is_none());
+    }
+
+    #[test]
+    fn submit_result_err_clears_saving_for_retry() {
+        let rt = test_rt();
+        let mut state = VoiceAliasesState::new();
+        state.form = Some(AliasForm {
+            viewer: "Mara".to_owned(),
+            saving: true,
+            ..AliasForm::default()
+        });
+        dispatch(
+            &mut state,
+            &rt,
+            VoiceAliasesMsg::FormSubmitResult(Err("db down".to_owned())),
+        );
+        let form = state.form.expect("form stays open after error");
+        assert!(!form.saving);
+    }
+
+    #[test]
+    fn delete_requested_arms_the_confirm_gate_without_deleting() {
+        let rt = test_rt();
+        let mut state = VoiceAliasesState::new();
+        state.aliases = vec![sample_row("Nora")];
+        dispatch(&mut state, &rt, VoiceAliasesMsg::DeleteRequested(0));
+        assert_eq!(state.pending_delete, Some(0));
+        // The row is still present: arming the gate must not remove anything.
+        assert_eq!(state.aliases.len(), 1);
+    }
+
+    #[test]
+    fn delete_cancel_clears_the_pending_gate() {
+        let rt = test_rt();
+        let mut state = VoiceAliasesState::new();
+        state.pending_delete = Some(2);
+        dispatch(&mut state, &rt, VoiceAliasesMsg::DeleteCancel);
+        assert!(state.pending_delete.is_none());
+    }
+
+    #[test]
+    fn delete_confirm_consumes_the_pending_index() {
+        let rt = test_rt();
+        let mut state = VoiceAliasesState::new();
+        state.aliases = vec![sample_row("Nora")];
+        state.pending_delete = Some(0);
+        dispatch(&mut state, &rt, VoiceAliasesMsg::DeleteConfirm);
+        assert!(
+            state.pending_delete.is_none(),
+            "confirm must take the pending index so the gate cannot re-fire"
+        );
+    }
+
+    #[test]
+    fn play_preview_on_blocked_alias_is_a_noop() {
+        let rt = test_rt();
+        let mut state = VoiceAliasesState::new();
+        let mut blocked = sample_row("Nora");
+        blocked.blocked = true;
+        state.aliases = vec![blocked];
+        // No speak queue, blocked alias: must return without enqueue and without panic.
+        dispatch(&mut state, &rt, VoiceAliasesMsg::PlayPreview(0));
+        assert!(state.form.is_none());
+    }
+
+    #[test]
+    fn play_preview_without_speak_queue_is_graceful() {
+        let rt = test_rt();
+        assert!(rt.speak_queue.is_none(), "fixture has no speak queue");
+        let mut state = VoiceAliasesState::new();
+        state.aliases = vec![sample_row("Nora")];
+        // Valid alias but no queue handle: must not panic.
+        dispatch(&mut state, &rt, VoiceAliasesMsg::PlayPreview(0));
+    }
+
+    #[test]
+    fn play_preview_with_out_of_range_index_is_a_noop() {
+        let rt = test_rt();
+        let mut state = VoiceAliasesState::new();
+        dispatch(&mut state, &rt, VoiceAliasesMsg::PlayPreview(9));
+    }
+}

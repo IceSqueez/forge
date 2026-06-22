@@ -43,6 +43,10 @@ pub enum PlatformGroup {
     YouTube,
     Kick,
     Obs,
+    VTube,
+    Midi,
+    Hotkey,
+    Discord,
     Script,
     Core,
 }
@@ -99,6 +103,41 @@ pub(crate) fn category_display_label(cat: RegistryCategory) -> String {
     }
 }
 
+pub fn sub_group_label_for(kind_id: &str) -> String {
+    let Some(segment) = kind_id.split('.').nth(1) else {
+        return forge_widgets::tr!("trigger_cat_other");
+    };
+    match segment {
+        "scenes" => "Scenes".to_owned(),
+        "sources" => "Sources".to_owned(),
+        "audio" => "Audio".to_owned(),
+        "filters" => "Filters".to_owned(),
+        "stream" => "Streaming".to_owned(),
+        "record" => "Recording".to_owned(),
+        "studio" => "Studio Mode".to_owned(),
+        "transition" => "Transitions".to_owned(),
+        "virtualcam" => "Virtual Camera".to_owned(),
+        "connection" => "Connection".to_owned(),
+        "collection" => "Scene Collections".to_owned(),
+        "profile" => "Profiles".to_owned(),
+        other => title_case_segment(other),
+    }
+}
+
+fn title_case_segment(segment: &str) -> String {
+    segment
+        .split('_')
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 pub fn build_picker_entries(
     descriptor_infos: Vec<(String, String, String)>,
     all_instances: Vec<TriggerInstance>,
@@ -138,6 +177,14 @@ fn platform_group_for(kind_id: &str) -> PlatformGroup {
         PlatformGroup::Kick
     } else if kind_id.starts_with("obs.") {
         PlatformGroup::Obs
+    } else if kind_id.starts_with("vtube.") {
+        PlatformGroup::VTube
+    } else if kind_id.starts_with("midi.") {
+        PlatformGroup::Midi
+    } else if kind_id.starts_with("hotkey.") {
+        PlatformGroup::Hotkey
+    } else if kind_id.starts_with("discord.") {
+        PlatformGroup::Discord
     } else if kind_id.starts_with("script.") {
         PlatformGroup::Script
     } else {
@@ -296,6 +343,10 @@ pub fn view<'a>(
         PlatformGroup::YouTube,
         PlatformGroup::Kick,
         PlatformGroup::Obs,
+        PlatformGroup::VTube,
+        PlatformGroup::Midi,
+        PlatformGroup::Hotkey,
+        PlatformGroup::Discord,
         PlatformGroup::Script,
         PlatformGroup::Core,
     ];
@@ -304,6 +355,10 @@ pub fn view<'a>(
         PlatformGroup::YouTube => "YouTube",
         PlatformGroup::Kick => "Kick",
         PlatformGroup::Obs => "OBS",
+        PlatformGroup::VTube => "VTube Studio",
+        PlatformGroup::Midi => "MIDI",
+        PlatformGroup::Hotkey => "Hotkey",
+        PlatformGroup::Discord => "Discord",
         PlatformGroup::Script => "Script",
         PlatformGroup::Core => "Core",
     };
@@ -312,6 +367,10 @@ pub fn view<'a>(
         PlatformGroup::YouTube => p.platform_youtube,
         PlatformGroup::Kick => p.platform_kick,
         PlatformGroup::Obs => p.text_secondary,
+        PlatformGroup::VTube => p.accent_teal,
+        PlatformGroup::Midi => p.random,
+        PlatformGroup::Hotkey => p.warning,
+        PlatformGroup::Discord => p.info,
         PlatformGroup::Script => p.warning,
         PlatformGroup::Core => p.info,
     };

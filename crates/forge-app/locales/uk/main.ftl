@@ -857,6 +857,32 @@ tts_aliases_role_vip = VIP
 tts_aliases_role_sub = САБ
 tts_aliases_role_blocked = БЛОК
 
+## Голосові аліаси — модалка призначення/редагування
+
+tts_aliases_form_title_assign = Призначити голос
+tts_aliases_form_title_edit = Редагувати голосовий аліас
+tts_aliases_form_viewer_label = ГЛЯДАЧ
+tts_aliases_form_viewer_placeholder = Імʼя глядача
+tts_aliases_form_engine_label = ДВИГУН
+tts_aliases_form_engine_placeholder = Оберіть двигун
+tts_aliases_form_voice_label = ГОЛОС
+tts_aliases_form_voice_placeholder = Ідентифікатор голосу
+tts_aliases_form_pitch_label = ТОН (пт)
+tts_aliases_form_pitch_placeholder = 0
+tts_aliases_form_rate_label = ТЕМП (x)
+tts_aliases_form_rate_placeholder = 1.0
+tts_aliases_form_create = Створити
+
+## Голосові аліаси — підтвердження видалення
+
+tts_aliases_delete_title = Видалити голосовий аліас?
+tts_aliases_delete_body = Прибрати закріплений голос для { $viewer }?
+common_delete = Видалити
+
+## Голосові аліаси — попереднє прослуховування
+
+tts_aliases_preview_text = Це попереднє прослуховування голосу.
+
 ## Звукова панель — хлібні крихти
 
 soundboard_breadcrumb_builtin = Вбудоване

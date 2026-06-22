@@ -391,6 +391,23 @@ pub enum TtsEnginesMsg {
 pub enum VoiceAliasesMsg {
     SearchChanged(String),
     StrategyChanged(crate::voice_aliases::AssignmentStrategyChoice),
+    LoadRequested,
+    AliasesLoaded(Result<Vec<crate::voice_aliases::VoiceAliasRow>, String>),
+    PlayPreview(usize),
+    Assign,
+    Edit(usize),
+    FormViewerChanged(String),
+    FormEngineChanged(String),
+    FormVoiceChanged(String),
+    FormPitchChanged(String),
+    FormRateChanged(String),
+    FormCancel,
+    FormSubmit,
+    FormSubmitResult(Result<(), String>),
+    DeleteRequested(usize),
+    DeleteConfirm,
+    DeleteCancel,
+    DeleteResult(Result<(), String>),
 }
 
 #[derive(Debug, Clone)]

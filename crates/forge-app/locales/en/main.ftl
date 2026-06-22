@@ -849,6 +849,32 @@ tts_aliases_role_vip = VIP
 tts_aliases_role_sub = SUB
 tts_aliases_role_blocked = BLOCKED
 
+## Voice Aliases — assign/edit modal
+
+tts_aliases_form_title_assign = Assign a voice
+tts_aliases_form_title_edit = Edit voice alias
+tts_aliases_form_viewer_label = VIEWER
+tts_aliases_form_viewer_placeholder = Viewer name
+tts_aliases_form_engine_label = ENGINE
+tts_aliases_form_engine_placeholder = Select engine
+tts_aliases_form_voice_label = VOICE
+tts_aliases_form_voice_placeholder = Voice id
+tts_aliases_form_pitch_label = PITCH (st)
+tts_aliases_form_pitch_placeholder = 0
+tts_aliases_form_rate_label = RATE (x)
+tts_aliases_form_rate_placeholder = 1.0
+tts_aliases_form_create = Create
+
+## Voice Aliases — delete confirm
+
+tts_aliases_delete_title = Delete voice alias?
+tts_aliases_delete_body = Remove the pinned voice for { $viewer }?
+common_delete = Delete
+
+## Voice Aliases — preview
+
+tts_aliases_preview_text = This is a voice preview.
+
 ## Soundboard — breadcrumb
 
 soundboard_breadcrumb_builtin = Builtin

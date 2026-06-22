@@ -208,6 +208,7 @@ pub(crate) fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Side
 pub(crate) fn handle_navigate(app: &mut App, screen: Screen) -> Task<Message> {
     let is_actions = matches!(screen, Screen::Actions);
     let is_queues = matches!(screen, Screen::Queues);
+    let is_tts_aliases = matches!(screen, Screen::Tts(TtsSection::Aliases));
     let is_triggers_registry = matches!(screen, Screen::TriggersRegistry);
     let is_live_chat = matches!(screen, Screen::LiveChat);
     let is_hub = matches!(screen, Screen::Home);
@@ -232,6 +233,10 @@ pub(crate) fn handle_navigate(app: &mut App, screen: Screen) -> Task<Message> {
         ))
     } else if is_queues {
         Task::done(Message::Queues(QueuesMsg::LoadRequested))
+    } else if is_tts_aliases {
+        Task::done(Message::Tts(crate::message::TtsMsg::Aliases(
+            crate::message::VoiceAliasesMsg::LoadRequested,
+        )))
     } else if is_live_chat {
         Task::batch([
             Task::done(Message::Viewers(ViewersMsg::LoadRequested)),

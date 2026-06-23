@@ -941,6 +941,7 @@ queues_create_blocking_label = Serial execution
 queues_create_blocking_desc = Run one action at a time; later actions wait their turn
 queues_create_btn = Create
 queues_create_cancel = Cancel
+queues_edit_title = Configure queue
 
 ## Queues — card metrics
 

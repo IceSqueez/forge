@@ -40,10 +40,19 @@ pub struct NewQueueForm {
     pub saving: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct EditQueueForm {
+    pub id: QueueId,
+    pub name: String,
+    pub blocking: bool,
+    pub saving: bool,
+}
+
 pub struct QueuesState {
     pub queues: Vec<QueueSummary>,
     pub loading: bool,
     pub new_queue_form: Option<NewQueueForm>,
+    pub edit_queue_form: Option<EditQueueForm>,
 }
 
 impl QueuesState {
@@ -52,6 +61,7 @@ impl QueuesState {
             queues: vec![],
             loading: false,
             new_queue_form: None,
+            edit_queue_form: None,
         }
     }
 }
@@ -154,13 +164,17 @@ pub fn update(state: &mut QueuesState, rt: &RuntimeView, msg: QueuesMsg) -> Task
             Task::none()
         }
         QueuesMsg::NewQueueNameChanged(name) => {
-            if let Some(form) = state.new_queue_form.as_mut() {
+            if let Some(form) = state.edit_queue_form.as_mut() {
+                form.name = name;
+            } else if let Some(form) = state.new_queue_form.as_mut() {
                 form.name = name;
             }
             Task::none()
         }
         QueuesMsg::NewQueueBlockingToggled => {
-            if let Some(form) = state.new_queue_form.as_mut() {
+            if let Some(form) = state.edit_queue_form.as_mut() {
+                form.blocking = !form.blocking;
+            } else if let Some(form) = state.new_queue_form.as_mut() {
                 form.blocking = !form.blocking;
             }
             Task::none()
@@ -198,6 +212,50 @@ pub fn update(state: &mut QueuesState, rt: &RuntimeView, msg: QueuesMsg) -> Task
                 form.saving = false;
             }
             tracing::warn!(error = %e, "create queue failed");
+            Task::none()
+        }
+        QueuesMsg::ConfigureQueue(id, name, blocking) => {
+            state.edit_queue_form = Some(EditQueueForm {
+                id,
+                name,
+                blocking,
+                saving: false,
+            });
+            Task::none()
+        }
+        QueuesMsg::EditQueueSubmit => {
+            let Some(form) = state.edit_queue_form.as_mut() else {
+                return Task::none();
+            };
+            let name = form.name.trim().to_string();
+            if name.is_empty() {
+                return Task::none();
+            }
+            form.saving = true;
+            let queue = Queue {
+                id: form.id,
+                name,
+                blocking: form.blocking,
+            };
+            let repo = rt.backend.queue_repo();
+            Task::perform(
+                async move { repo.save(&queue).await.map_err(|e| e.to_string()) },
+                |r| Message::Queues(QueuesMsg::EditQueueSubmitResult(r)),
+            )
+        }
+        QueuesMsg::EditQueueSubmitResult(Ok(())) => {
+            state.edit_queue_form = None;
+            Task::done(Message::Queues(QueuesMsg::LoadRequested))
+        }
+        QueuesMsg::EditQueueSubmitResult(Err(e)) => {
+            if let Some(form) = state.edit_queue_form.as_mut() {
+                form.saving = false;
+            }
+            tracing::warn!(error = %e, "edit queue failed");
+            Task::none()
+        }
+        QueuesMsg::EditQueueCancel => {
+            state.edit_queue_form = None;
             Task::none()
         }
         QueuesMsg::PauseResult(Ok(())) => Task::none(),
@@ -302,9 +360,12 @@ pub fn queues_view<'a>(state: &'a QueuesState, palette: &'a ForgePalette) -> Ele
         .width(Length::Fill)
         .height(Length::Fill);
 
-    match &state.new_queue_form {
-        Some(form) => stack![page, new_queue_modal(form, palette)].into(),
-        None => page.into(),
+    if let Some(form) = &state.edit_queue_form {
+        stack![page, edit_queue_modal(form, palette)].into()
+    } else if let Some(form) = &state.new_queue_form {
+        stack![page, new_queue_modal(form, palette)].into()
+    } else {
+        page.into()
     }
 }
 
@@ -409,6 +470,155 @@ fn new_queue_modal<'a>(form: &'a NewQueueForm, palette: &'a ForgePalette) -> Ele
             ),
             Space::new().width(Length::Fill),
             create_el,
+        ]
+        .align_y(Alignment::Center),
+    )
+    .width(Length::Fill)
+    .padding([sp(Spacing::Xs), sp(Spacing::Md)])
+    .style(move |_: &iced::Theme| iced::widget::container::Style {
+        border: Border {
+            color: p.border_regular,
+            width: BORDER_THIN,
+            radius: 0.0.into(),
+        },
+        ..iced::widget::container::Style::default()
+    });
+
+    let inner = column![
+        title,
+        rule::horizontal(1.0).style(divider_style),
+        name_section,
+        blocking_section,
+        rule::horizontal(1.0).style(divider_style),
+        footer,
+    ]
+    .width(Length::Fill);
+
+    let card = container(inner)
+        .max_width(440)
+        .style(move |_: &iced::Theme| iced::widget::container::Style {
+            background: Some(Background::Color(p.elevated)),
+            border: Border {
+                color: p.border_regular,
+                width: BORDER_THIN,
+                radius: radius(Radius::Lg).into(),
+            },
+            ..iced::widget::container::Style::default()
+        });
+
+    let centered = container(card)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center);
+
+    stack![backdrop, centered].into()
+}
+
+fn edit_queue_modal<'a>(
+    form: &'a EditQueueForm,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    let p = *palette;
+
+    let backdrop = button(Space::new().width(Length::Fill).height(Length::Fill))
+        .on_press(Message::Queues(QueuesMsg::EditQueueCancel))
+        .padding(0)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .style(|_: &iced::Theme, _status| iced::widget::button::Style {
+            background: Some(Background::Color(Color {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.5,
+            })),
+            border: Border::default(),
+            text_color: Color::TRANSPARENT,
+            shadow: iced::Shadow::default(),
+            snap: false,
+        });
+
+    let title = container(
+        text(forge_widgets::tr!("queues_edit_title"))
+            .size(FONT_SM)
+            .color(p.text_primary)
+            .font(font(FontRole::Body)),
+    )
+    .width(Length::Fill)
+    .padding([sp(Spacing::Sm), sp(Spacing::Md)]);
+
+    let name_section = column![
+        section_header(
+            forge_widgets::tr!("queues_create_name_label"),
+            None,
+            palette
+        ),
+        text_input_field(
+            forge_widgets::tr!("queues_create_name_placeholder"),
+            form.name.as_str(),
+            |s| Message::Queues(QueuesMsg::NewQueueNameChanged(s)),
+            palette,
+        ),
+    ]
+    .spacing(spf(Spacing::Xs))
+    .padding([0, sp(Spacing::Md)]);
+
+    let blocking_section = container(toggle(
+        palette,
+        ToggleProps {
+            label: forge_widgets::tr!("queues_create_blocking_label"),
+            description: forge_widgets::tr!("queues_create_blocking_desc"),
+            value: form.blocking,
+            on_toggle: Message::Queues(QueuesMsg::NewQueueBlockingToggled),
+        },
+    ))
+    .padding([sp(Spacing::Sm), sp(Spacing::Md)]);
+
+    let divider_style = move |_: &iced::Theme| rule::Style {
+        color: p.border_regular,
+        radius: 0.0.into(),
+        fill_mode: rule::FillMode::Full,
+        snap: true,
+    };
+
+    let can_save = !form.name.trim().is_empty() && !form.saving;
+    let save_lbl = forge_widgets::tr!("common_save");
+    let save_el: Element<'_, Message> = if can_save {
+        primary_button(
+            save_lbl,
+            Message::Queues(QueuesMsg::EditQueueSubmit),
+            palette,
+        )
+    } else {
+        container(
+            text(save_lbl)
+                .size(FONT_SM)
+                .color(Color { a: 0.5, ..p.shell })
+                .font(font(FontRole::Body)),
+        )
+        .padding([sp(Spacing::Sm), sp(Spacing::Md)])
+        .style(move |_: &iced::Theme| iced::widget::container::Style {
+            background: Some(Background::Color(Color { a: 0.4, ..p.brand })),
+            border: Border {
+                radius: radius(Radius::Md).into(),
+                color: Color::TRANSPARENT,
+                width: 0.0,
+            },
+            ..iced::widget::container::Style::default()
+        })
+        .into()
+    };
+
+    let footer = container(
+        row![
+            secondary_button(
+                forge_widgets::tr!("queues_create_cancel"),
+                Message::Queues(QueuesMsg::EditQueueCancel),
+                palette,
+            ),
+            Space::new().width(Length::Fill),
+            save_el,
         ]
         .align_y(Alignment::Center),
     )
@@ -1058,6 +1268,8 @@ fn queue_card_buttons<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
     )
     .into();
 
+    let cfg_name = q.name.clone();
+    let cfg_blocking = q.blocking;
     let cfg_icon = tabler_icon(Icon::Settings, 12.0, muted);
     let cfg_label = text(forge_widgets::tr!("queues_configure_btn"))
         .size(FONT_SM)
@@ -1067,7 +1279,11 @@ fn queue_card_buttons<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Ele
             .spacing(spf(Spacing::Xxs))
             .align_y(iced::Alignment::Center),
     )
-    .on_press(Message::Noop)
+    .on_press(Message::Queues(QueuesMsg::ConfigureQueue(
+        id,
+        cfg_name,
+        cfg_blocking,
+    )))
     .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
     .width(Length::FillPortion(1))
     .style(

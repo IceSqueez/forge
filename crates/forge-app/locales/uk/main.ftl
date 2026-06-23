@@ -949,6 +949,7 @@ queues_create_blocking_label = Послідовне виконання
 queues_create_blocking_desc = Виконувати по одній дії; наступні чекають своєї черги
 queues_create_btn = Створити
 queues_create_cancel = Скасувати
+queues_edit_title = Налаштування черги
 
 ## Черги — метрики картки
 

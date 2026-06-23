@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod client;
 pub mod content;
+mod control;
 pub mod credentials;
 pub mod error;
 pub mod events;

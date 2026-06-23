@@ -33,7 +33,7 @@ async fn old_sub_action_spec_json_is_converted_to_sub_action_step() {
             .await
             .expect("fetch action");
 
-    assert_eq!(version, 1);
+    assert_eq!(version, 2);
 
     let steps: Vec<SubActionStep> = serde_json::from_str(&sub_actions_json).expect("parse steps");
     assert_eq!(steps.len(), 2);
@@ -84,7 +84,7 @@ async fn migration_is_idempotent_on_second_call() {
             .await
             .expect("fetch action");
 
-    assert_eq!(version, 1);
+    assert_eq!(version, 2);
 
     let steps: Vec<SubActionStep> = serde_json::from_str(&sub_actions_json).expect("parse steps");
     assert_eq!(steps.len(), 1);

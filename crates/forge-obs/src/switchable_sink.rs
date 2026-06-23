@@ -96,6 +96,101 @@ impl ObsSink for SwitchableObsSink {
         let client = self.get()?;
         client.raw_request(request_type, payload).await
     }
+
+    async fn set_preview_scene(&self, scene: &str) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.set_preview_scene(scene).await
+    }
+
+    async fn set_current_scene_transition(&self, name: &str) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.set_current_scene_transition(name).await
+    }
+
+    async fn set_input_volume_db(&self, input: &str, db: f64) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.set_input_volume_db(input, db).await
+    }
+
+    async fn set_input_settings(
+        &self,
+        input: &str,
+        settings: &Variant,
+        overlay: bool,
+    ) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.set_input_settings(input, settings, overlay).await
+    }
+
+    async fn pause_record(&self) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.pause_record().await
+    }
+
+    async fn resume_record(&self) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.resume_record().await
+    }
+
+    async fn toggle_record_pause(&self) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.toggle_record_pause().await
+    }
+
+    async fn send_stream_caption(&self, text: &str) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.send_stream_caption(text).await
+    }
+
+    async fn start_replay_buffer(&self) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.start_replay_buffer().await
+    }
+
+    async fn stop_replay_buffer(&self) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.stop_replay_buffer().await
+    }
+
+    async fn save_replay_buffer(&self) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.save_replay_buffer().await
+    }
+
+    async fn set_studio_mode(&self, enabled: bool) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.set_studio_mode(enabled).await
+    }
+
+    async fn trigger_studio_transition(&self) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.trigger_studio_transition().await
+    }
+
+    async fn get_scene_list(&self) -> Result<Variant, ObsError> {
+        let client = self.get()?;
+        client.get_scene_list().await
+    }
+
+    async fn get_input_list(&self) -> Result<Variant, ObsError> {
+        let client = self.get()?;
+        client.get_input_list().await
+    }
+
+    async fn get_record_status(&self) -> Result<Variant, ObsError> {
+        let client = self.get()?;
+        client.get_record_status().await
+    }
+
+    async fn get_stream_status(&self) -> Result<Variant, ObsError> {
+        let client = self.get()?;
+        client.get_stream_status().await
+    }
+
+    async fn get_input_settings(&self, input: &str) -> Result<Variant, ObsError> {
+        let client = self.get()?;
+        client.get_input_settings(input).await
+    }
 }
 
 #[cfg(test)]

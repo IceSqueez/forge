@@ -15,10 +15,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn hotkey_triggered_id_present() {
+    fn hotkey_pressed_id_present() {
         let mut reg = TriggerRegistry::new();
         register_hotkey_triggers(&mut reg).unwrap();
-        assert!(reg.get("hotkey.triggered").is_some());
+        assert!(reg.get("hotkey.global.pressed").is_some());
     }
 
     #[test]

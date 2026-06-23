@@ -323,6 +323,15 @@ pub enum QueuesMsg {
     DrainQueue(forge_types::QueueId),
     PauseAll,
     NewQueue,
+    NewQueueNameChanged(String),
+    NewQueueBlockingToggled,
+    NewQueueSubmit,
+    NewQueueSubmitResult(Result<(), String>),
+    NewQueueCancel,
+    ConfigureQueue(forge_types::QueueId, String, bool),
+    EditQueueSubmit,
+    EditQueueSubmitResult(Result<(), String>),
+    EditQueueCancel,
     PauseResult(Result<(), String>),
     ResumeResult(Result<(), String>),
 }
@@ -386,6 +395,23 @@ pub enum TtsEnginesMsg {
 pub enum VoiceAliasesMsg {
     SearchChanged(String),
     StrategyChanged(crate::voice_aliases::AssignmentStrategyChoice),
+    LoadRequested,
+    AliasesLoaded(Result<Vec<crate::voice_aliases::VoiceAliasRow>, String>),
+    PlayPreview(usize),
+    Assign,
+    Edit(usize),
+    FormViewerChanged(String),
+    FormEngineChanged(String),
+    FormVoiceChanged(String),
+    FormPitchChanged(String),
+    FormRateChanged(String),
+    FormCancel,
+    FormSubmit,
+    FormSubmitResult(Result<(), String>),
+    DeleteRequested(usize),
+    DeleteConfirm,
+    DeleteCancel,
+    DeleteResult(Result<(), String>),
 }
 
 #[derive(Debug, Clone)]
@@ -393,6 +419,8 @@ pub enum TtsFiltersMsg {
     PreviewInputChanged(String),
     BlocklistModeChanged(crate::tts_filters::BlocklistModeChoice),
     AddRuleClicked,
+    SpeakPreview,
+    SpeakPreviewResult(Result<(), String>),
 }
 
 #[derive(Debug, Clone)]
@@ -483,6 +511,11 @@ pub enum LiveChatMsg {
     LoadDrawerWidth,
     DrawerWidthLoaded(Option<f32>),
     SheetResized(f32),
+    ShoutoutViewer,
+    WhisperOpen,
+    WhisperMessageChanged(String),
+    WhisperSend,
+    WhisperCancel,
 }
 
 #[derive(Debug, Clone)]

@@ -36,7 +36,10 @@ use forge_tts_nsspeech::NsSpeechEngineFactory;
 use forge_tts_piper::{PiperEngine, PiperEngineFactory};
 use forge_tts_sapi::SapiEngineFactory;
 use forge_voice::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults, VoiceAliasResolver};
-use forge_vtube::{SwitchableVTubeSink, VTubeClient, VTubeSink, register_vtube_sub_actions};
+use forge_vtube::{
+    SwitchableVTubeSink, VTubeClient, VTubeSink, register_vtube_sub_actions,
+    register_vtube_triggers,
+};
 
 struct KickNoopLimiter;
 
@@ -166,41 +169,44 @@ fn init_tracing() -> Option<tracing_appender::non_blocking::WorkerGuard> {
     guard
 }
 
-fn boot_storage() -> (Arc<dyn DataProvider>, bool) {
+fn boot_storage() -> (Arc<dyn DataProvider>, Option<String>) {
     let db_path = default_db_path();
 
     if let Some(parent) = db_path.parent()
         && let Err(e) = std::fs::create_dir_all(parent)
     {
-        tracing::error!("failed to create data directory: {e}");
-        return open_memory_backend();
+        let reason = format!("failed to create data directory {}: {e}", parent.display());
+        tracing::error!("{reason}");
+        return open_memory_backend(reason);
     }
 
     let url = format!("sqlite://{}?mode=rwc", db_path.display());
     let rt = match tokio::runtime::Runtime::new() {
         Ok(rt) => rt,
         Err(e) => {
-            tracing::error!("failed to create tokio runtime for storage init: {e}");
-            return open_memory_backend();
+            let reason = format!("failed to create tokio runtime for storage init: {e}");
+            tracing::error!("{reason}");
+            return open_memory_backend(reason);
         }
     };
 
     match rt.block_on(SqliteBackend::open(&url)) {
-        Ok(backend) => (Arc::new(backend) as Arc<dyn DataProvider>, false),
+        Ok(backend) => (Arc::new(backend) as Arc<dyn DataProvider>, None),
         Err(e) => {
-            tracing::error!("failed to open database at {}: {e}", db_path.display());
-            open_memory_backend()
+            let reason = format!("{e}");
+            tracing::error!("failed to open database at {}: {reason}", db_path.display());
+            open_memory_backend(reason)
         }
     }
 }
 
 #[allow(clippy::expect_used)]
-fn open_memory_backend() -> (Arc<dyn DataProvider>, bool) {
+fn open_memory_backend(reason: String) -> (Arc<dyn DataProvider>, Option<String>) {
     let rt = tokio::runtime::Runtime::new().expect("tokio runtime required for in-memory storage");
     let backend = rt
         .block_on(SqliteBackend::open("sqlite::memory:"))
         .expect("in-memory SQLite must always open");
-    (Arc::new(backend) as Arc<dyn DataProvider>, true)
+    (Arc::new(backend) as Arc<dyn DataProvider>, Some(reason))
 }
 
 struct RuntimeHandles {
@@ -632,6 +638,9 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
     if let Err(e) = register_hotkey_triggers(&mut trigger_reg) {
         tracing::warn!("hotkey trigger descriptor registration failed: {e}");
     }
+    if let Err(e) = register_vtube_triggers(&mut trigger_reg) {
+        tracing::warn!("vtube trigger descriptor registration failed: {e}");
+    }
     if let Err(e) = forge_platform_youtube::register_youtube_triggers(&mut trigger_reg) {
         tracing::warn!("youtube trigger descriptor registration failed: {e}");
     }
@@ -864,12 +873,18 @@ fn main() -> iced::Result {
     };
     let _runtime_guard = runtime.enter();
 
-    let (backend, storage_offline) = boot_storage();
+    let (backend, storage_failure) = boot_storage();
+    let storage_offline = storage_failure.is_some();
     let boot_language = boot_locale(&runtime, Arc::clone(&backend));
     let boot_density = boot_density(&runtime, Arc::clone(&backend));
     let boot_font_settings = boot_fonts(&runtime, Arc::clone(&backend));
     let boot_shortcut_overrides = boot_shortcuts(&runtime, Arc::clone(&backend));
-    let initial_screen = Screen::Home;
+    // A real DB-open failure must be unmissable: open on the error screen so the user
+    // never silently runs against throwaway in-memory storage.
+    let initial_screen = match storage_failure {
+        Some(reason) => Screen::Error(reason),
+        None => Screen::Home,
+    };
 
     let event_log = backend.event_log_repo();
     let bus = EventBus::new(event_log);

@@ -1,5 +1,7 @@
 use async_trait::async_trait;
 
+use forge_types::Variant;
+
 use crate::error::VTubeError;
 
 #[async_trait]
@@ -21,4 +23,27 @@ pub trait VTubeSink: Send + Sync {
         rotation: Option<f64>,
         time_in_seconds: f64,
     ) -> Result<(), VTubeError>;
+
+    #[allow(clippy::too_many_arguments)]
+    async fn move_item(
+        &self,
+        item_instance_id: &str,
+        x: Option<f64>,
+        y: Option<f64>,
+        size: Option<f64>,
+        rotation: Option<f64>,
+        order: Option<i64>,
+        time_in_seconds: f64,
+        fade_mode: &str,
+    ) -> Result<(), VTubeError>;
+
+    async fn get_current_model(&self) -> Result<Variant, VTubeError>;
+
+    async fn get_hotkeys(&self) -> Result<Variant, VTubeError>;
+
+    async fn get_expressions(&self) -> Result<Variant, VTubeError>;
+
+    async fn get_parameters(&self) -> Result<Variant, VTubeError>;
+
+    async fn get_items(&self) -> Result<Variant, VTubeError>;
 }

@@ -105,6 +105,8 @@ pub enum SettingsWebSocketMsg {
     RequireHttpOverlayToken(bool),
     CorsAnyOrigin(bool),
     OverlayRootChanged(PathBuf),
+    BrowseOverlayFolder,
+    OverlayFolderPicked(Option<PathBuf>),
     LanBindInputChanged(String),
     LanBindCancelled,
     LanBindConfirmed,
@@ -276,6 +278,19 @@ pub fn update(
                 |r| Message::SettingsWebSocket(SettingsWebSocketMsg::SaveStatus(r)),
             )
         }
+        SettingsWebSocketMsg::BrowseOverlayFolder => Task::perform(
+            async move {
+                rfd::AsyncFileDialog::new()
+                    .pick_folder()
+                    .await
+                    .map(|h| h.path().to_path_buf())
+            },
+            |p| Message::SettingsWebSocket(SettingsWebSocketMsg::OverlayFolderPicked(p)),
+        ),
+        SettingsWebSocketMsg::OverlayFolderPicked(Some(path)) => {
+            update(state, rt, SettingsWebSocketMsg::OverlayRootChanged(path))
+        }
+        SettingsWebSocketMsg::OverlayFolderPicked(None) => Task::none(),
         SettingsWebSocketMsg::LanBindInputChanged(s) => {
             state.lan_bind_input = s;
             Task::none()
@@ -472,7 +487,9 @@ fn overlay_path_display<'a>(root: &'a Path, palette: &'a ForgePalette) -> Elemen
         .spacing(spf(Spacing::Xxs))
         .align_y(Alignment::Center),
     )
-    .on_press(Message::Noop)
+    .on_press(Message::SettingsWebSocket(
+        SettingsWebSocketMsg::BrowseOverlayFolder,
+    ))
     .padding([7_u16, 12_u16])
     .style(
         move |_: &iced::Theme, _status| iced::widget::button::Style {
@@ -811,7 +828,7 @@ mod tests {
             hotkey_client: None,
             speak_queue: None,
             sound_player: None,
-            twitch_chat_handle: None,
+            twitch_builtin: None,
             chat_send_bridge: None,
             twitch_flow: None,
             youtube_flow: None,

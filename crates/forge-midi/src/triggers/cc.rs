@@ -10,7 +10,7 @@ pub struct MidiCcDescriptor;
 
 impl TriggerKindDescriptor for MidiCcDescriptor {
     fn id(&self) -> &str {
-        "midi.event.cc"
+        "midi.input.control_change"
     }
 
     fn category(&self) -> TriggerCategory {
@@ -92,12 +92,12 @@ impl TriggerKindDescriptor for MidiCcDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Midi),
-            kind_prefix: Some("midi.event.".to_owned()),
+            kind_prefix: Some("midi.input.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        if event.kind != "midi.event.cc" {
+        if event.kind != "midi.input.control_change" {
             return false;
         }
         if let Some(Variant::Int(c)) = config.get("controller") {
@@ -151,7 +151,7 @@ mod tests {
     fn cc_event(controller: u8, value: u8, channel: u8) -> Event {
         Event::new(
             EventSource::Midi,
-            "midi.event.cc",
+            "midi.input.control_change",
             json!({ "controller": controller, "value": value, "channel": channel, "port": "Pad" }),
         )
     }
@@ -195,7 +195,7 @@ mod tests {
         let d = MidiCcDescriptor;
         let ev = Event::new(
             EventSource::Midi,
-            "midi.event.note_on",
+            "midi.input.note_on",
             json!({ "note": 60, "velocity": 100, "channel": 0, "port": "Pad" }),
         );
         assert!(!d.matches_trigger(&BTreeMap::new(), &ev));

@@ -140,37 +140,7 @@ impl SubActionRunner for SetVisibleRunner {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::ObsError;
-
-    struct MockSink;
-
-    #[async_trait]
-    impl ObsSink for MockSink {
-        async fn set_scene(&self, _: &str) -> Result<(), ObsError> {
-            Ok(())
-        }
-        async fn set_source_visible(&self, _: &str, _: &str, _: bool) -> Result<(), ObsError> {
-            Ok(())
-        }
-        async fn set_input_mute(&self, _: &str, _: bool) -> Result<(), ObsError> {
-            Ok(())
-        }
-        async fn start_record(&self) -> Result<(), ObsError> {
-            Ok(())
-        }
-        async fn stop_record(&self) -> Result<(), ObsError> {
-            Ok(())
-        }
-        async fn start_stream(&self) -> Result<(), ObsError> {
-            Ok(())
-        }
-        async fn stop_stream(&self) -> Result<(), ObsError> {
-            Ok(())
-        }
-        async fn raw_request(&self, _: &str, _: &Variant) -> Result<Variant, ObsError> {
-            Ok(Variant::Object(BTreeMap::new()))
-        }
-    }
+    use crate::runners::test_support::MockSink;
 
     #[test]
     fn validate_config_accepts_valid_config() {

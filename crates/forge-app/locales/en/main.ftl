@@ -481,7 +481,13 @@ triggers_breadcrumb_triggers = Triggers
 triggers_open_create_btn = + Create
 triggers_search_placeholder = Search triggers…
 triggers_filter_twitch = Twitch
+triggers_filter_youtube = YouTube
+triggers_filter_kick = Kick
 triggers_filter_obs = OBS
+triggers_filter_vtube = VTube Studio
+triggers_filter_midi = MIDI
+triggers_filter_hotkey = Hotkey
+triggers_filter_discord = Discord
 triggers_filter_script = Script
 triggers_filter_all = All
 triggers_usage_all = All
@@ -586,6 +592,18 @@ trigger_cat_core = Core
 trigger_cat_server = Server Events
 trigger_cat_timer = Timers
 trigger_cat_other = Other
+trigger_subgroup_scenes = Scenes
+trigger_subgroup_sources = Sources
+trigger_subgroup_audio = Audio
+trigger_subgroup_filters = Filters
+trigger_subgroup_streaming = Streaming
+trigger_subgroup_recording = Recording
+trigger_subgroup_studio_mode = Studio Mode
+trigger_subgroup_transitions = Transitions
+trigger_subgroup_virtual_camera = Virtual Camera
+trigger_subgroup_connection = Connection
+trigger_subgroup_scene_collections = Scene Collections
+trigger_subgroup_profiles = Profiles
 
 ## Actions modals — placeholder literals
 
@@ -621,6 +639,7 @@ tts_dash_skip_btn = Skip
 tts_dash_stop_all_btn = Stop all
 tts_dash_test_placeholder = Type to test a voice…
 tts_dash_speak_btn = Speak
+tts_dash_test_speaker_name = Test
 
 ## TTS Dashboard — now speaking
 
@@ -714,6 +733,7 @@ tts_filters_preview_input_placeholder = Type a message to preview…
 tts_filters_preview_empty = Enter a message above to preview
 tts_filters_preview_output_label = FINAL OUTPUT
 tts_filters_speak_preview_btn = Speak preview
+tts_filters_preview_speaker_name = Preview
 tts_filters_preview_tip = Type any message above to see how filters transform it in real time
 
 ## TTS Triggers — header
@@ -831,6 +851,32 @@ tts_aliases_role_vip = VIP
 tts_aliases_role_sub = SUB
 tts_aliases_role_blocked = BLOCKED
 
+## Voice Aliases — assign/edit modal
+
+tts_aliases_form_title_assign = Assign a voice
+tts_aliases_form_title_edit = Edit voice alias
+tts_aliases_form_viewer_label = VIEWER
+tts_aliases_form_viewer_placeholder = Viewer name
+tts_aliases_form_engine_label = ENGINE
+tts_aliases_form_engine_placeholder = Select engine
+tts_aliases_form_voice_label = VOICE
+tts_aliases_form_voice_placeholder = Voice id
+tts_aliases_form_pitch_label = PITCH (st)
+tts_aliases_form_pitch_placeholder = 0
+tts_aliases_form_rate_label = RATE (x)
+tts_aliases_form_rate_placeholder = 1.0
+tts_aliases_form_create = Create
+
+## Voice Aliases — delete confirm
+
+tts_aliases_delete_title = Delete voice alias?
+tts_aliases_delete_body = Remove the pinned voice for { $viewer }?
+common_delete = Delete
+
+## Voice Aliases — preview
+
+tts_aliases_preview_text = This is a voice preview.
+
 ## Soundboard — breadcrumb
 
 soundboard_breadcrumb_builtin = Builtin
@@ -885,6 +931,17 @@ queues_configure_btn = Configure
 queues_drain_btn = Drain
 queues_pause_btn = Pause
 queues_resume_btn = Resume
+
+## Queues — new queue modal
+
+queues_create_title = New queue
+queues_create_name_label = Name
+queues_create_name_placeholder = Queue name (required)
+queues_create_blocking_label = Serial execution
+queues_create_blocking_desc = Run one action at a time; later actions wait their turn
+queues_create_btn = Create
+queues_create_cancel = Cancel
+queues_edit_title = Configure queue
 
 ## Queues — card metrics
 
@@ -1167,6 +1224,9 @@ chat_drawer_click_hint = Click a username in chat to see details
 chat_drawer_last_seen = Last seen { $when }
 chat_drawer_shoutout = Shoutout
 chat_drawer_whisper = Whisper
+chat_drawer_whisper_title = Whisper to { $recipient }
+chat_drawer_whisper_placeholder = Type a message…
+chat_drawer_whisper_send = Send
 chat_drawer_set_tts_voice = Set TTS voice…
 chat_drawer_block_tts = Block from TTS
 chat_drawer_timeout = Timeout 10 min
@@ -1441,3 +1501,8 @@ fmt_relative_days = { $count ->
     [one] { $count }d ago
    *[other] { $count }d ago
 }
+
+## Storage error screen
+storage_error_title = Database could not be opened
+storage_error_data_safe = Your on-disk data was not modified. The app is running on temporary storage, so changes made now will be lost on restart.
+storage_error_report = This is a bug worth reporting.

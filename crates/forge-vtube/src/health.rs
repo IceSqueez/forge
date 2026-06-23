@@ -34,8 +34,8 @@ pub(crate) fn update_from_event(
     tx: &broadcast::Sender<HealthDelta>,
 ) {
     match env.message_type.as_str() {
-        "FaceFoundEvent" => {
-            let found = env.data["found"].as_bool().unwrap_or(false);
+        "TrackingStatusChangedEvent" => {
+            let found = env.data["faceFound"].as_bool().unwrap_or(false);
             let mut changed = false;
             if let Ok(mut s) = snap.write()
                 && s.tracking_active != found
@@ -323,7 +323,10 @@ mod tests {
         let (tx, snap) = make_health_channel();
         let mut rx = tx.subscribe();
 
-        let env = make_envelope("FaceFoundEvent", serde_json::json!({ "found": true }));
+        let env = make_envelope(
+            "TrackingStatusChangedEvent",
+            serde_json::json!({ "faceFound": true }),
+        );
         update_from_event(&env, &snap, &tx);
 
         let delta = rx.try_recv().unwrap();
@@ -362,7 +365,10 @@ mod tests {
         let (tx, snap) = make_health_channel();
         let mut rx = tx.subscribe();
 
-        let env = make_envelope("FaceFoundEvent", serde_json::json!({ "found": false }));
+        let env = make_envelope(
+            "TrackingStatusChangedEvent",
+            serde_json::json!({ "faceFound": false }),
+        );
         update_from_event(&env, &snap, &tx);
         assert!(
             rx.try_recv().is_err(),

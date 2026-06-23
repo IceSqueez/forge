@@ -4,6 +4,8 @@ use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
 
+use forge_types::Variant;
+
 use crate::client::VTubeClient;
 use crate::error::VTubeError;
 use crate::sink::VTubeSink;
@@ -81,6 +83,57 @@ impl VTubeSink for SwitchableVTubeSink {
     ) -> Result<(), VTubeError> {
         let client = self.get()?;
         client.move_model(x, y, rotation, time_in_seconds).await
+    }
+
+    async fn move_item(
+        &self,
+        item_instance_id: &str,
+        x: Option<f64>,
+        y: Option<f64>,
+        size: Option<f64>,
+        rotation: Option<f64>,
+        order: Option<i64>,
+        time_in_seconds: f64,
+        fade_mode: &str,
+    ) -> Result<(), VTubeError> {
+        let client = self.get()?;
+        client
+            .move_item(
+                item_instance_id,
+                x,
+                y,
+                size,
+                rotation,
+                order,
+                time_in_seconds,
+                fade_mode,
+            )
+            .await
+    }
+
+    async fn get_current_model(&self) -> Result<Variant, VTubeError> {
+        let client = self.get()?;
+        client.get_current_model().await
+    }
+
+    async fn get_hotkeys(&self) -> Result<Variant, VTubeError> {
+        let client = self.get()?;
+        client.get_hotkeys().await
+    }
+
+    async fn get_expressions(&self) -> Result<Variant, VTubeError> {
+        let client = self.get()?;
+        client.get_expressions().await
+    }
+
+    async fn get_parameters(&self) -> Result<Variant, VTubeError> {
+        let client = self.get()?;
+        client.get_parameters().await
+    }
+
+    async fn get_items(&self) -> Result<Variant, VTubeError> {
+        let client = self.get()?;
+        client.get_items().await
     }
 }
 

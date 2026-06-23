@@ -382,8 +382,8 @@ mod tests {
             tokio::task::yield_now().await;
         }
 
-        assert!(publisher.has_kind("hotkey.triggered"));
-        let ev = publisher.find_kind("hotkey.triggered").unwrap();
+        assert!(publisher.has_kind("hotkey.global.pressed"));
+        let ev = publisher.find_kind("hotkey.global.pressed").unwrap();
         assert_eq!(ev.payload["combo"], "Ctrl+F1");
     }
 

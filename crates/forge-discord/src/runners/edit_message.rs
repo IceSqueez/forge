@@ -24,7 +24,7 @@ impl EditMessageRunner {
 #[async_trait]
 impl SubActionRunner for EditMessageRunner {
     fn id(&self) -> &str {
-        "discord.edit_message"
+        "discord.webhook.update_message"
     }
 
     fn category(&self) -> SubActionCategory {
@@ -81,7 +81,8 @@ impl SubActionRunner for EditMessageRunner {
             Ok(())
         } else {
             Err(RegistryError::UnknownKindId(
-                "discord.edit_message: 'webhook_name' and 'message_id' must be strings".to_owned(),
+                "discord.webhook.update_message: 'webhook_name' and 'message_id' must be strings"
+                    .to_owned(),
             ))
         }
     }
@@ -146,7 +147,7 @@ impl SubActionRunner for EditMessageRunner {
         if !has_any {
             return (
                 SubActionTelemetry {
-                    kind: "discord.edit_message".to_owned(),
+                    kind: "discord.webhook.update_message".to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,
                     outcome: SubActionOutcome::Failed("edit has no content or embed".to_owned()),
@@ -172,7 +173,7 @@ impl SubActionRunner for EditMessageRunner {
 
         (
             SubActionTelemetry {
-                kind: "discord.edit_message".to_owned(),
+                kind: "discord.webhook.update_message".to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

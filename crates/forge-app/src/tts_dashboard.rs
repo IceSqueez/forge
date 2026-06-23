@@ -1,4 +1,4 @@
-use forge_speak_queue::SpeakEvent;
+use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakEvent, SpeakRequest};
 use forge_widgets::ForgePalette;
 use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::tokens::{
@@ -106,18 +106,37 @@ impl TtsDashState {
     }
 }
 
-pub fn update(state: &mut TtsDashState, _rt: &RuntimeView, msg: TtsDashMsg) -> Task<Message> {
+pub fn update(state: &mut TtsDashState, rt: &RuntimeView, msg: TtsDashMsg) -> Task<Message> {
     match msg {
         TtsDashMsg::SpeakEventReceived(event) => {
             state.apply_event(event);
             Task::none()
         }
-        TtsDashMsg::PauseQueue => Task::none(),
-        TtsDashMsg::SkipCurrent => Task::none(),
+        TtsDashMsg::PauseQueue => {
+            let Some(handle) = rt.speak_queue.clone() else {
+                return Task::none();
+            };
+            let cmd = if state.paused {
+                SpeakCommand::Resume
+            } else {
+                SpeakCommand::Pause
+            };
+            state.paused = !state.paused;
+            send_command(handle, cmd)
+        }
+        TtsDashMsg::SkipCurrent => {
+            let Some(handle) = rt.speak_queue.clone() else {
+                return Task::none();
+            };
+            send_command(handle, SpeakCommand::Skip)
+        }
         TtsDashMsg::StopAll => {
             state.queue.clear();
             state.now_speaking = None;
-            Task::none()
+            let Some(handle) = rt.speak_queue.clone() else {
+                return Task::none();
+            };
+            send_command(handle, SpeakCommand::Clear)
         }
         TtsDashMsg::VolumeChanged(v) => {
             state.volume = v;
@@ -127,13 +146,45 @@ pub fn update(state: &mut TtsDashState, _rt: &RuntimeView, msg: TtsDashMsg) -> T
             state.test_input = s;
             Task::none()
         }
-        TtsDashMsg::SpeakTest => Task::none(),
+        TtsDashMsg::SpeakTest => {
+            let text = state.test_input.trim();
+            if text.is_empty() {
+                return Task::none();
+            }
+            let Some(handle) = rt.speak_queue.clone() else {
+                return Task::none();
+            };
+            let text = text.to_owned();
+            send_command(handle, SpeakCommand::Enqueue(test_speak_request(text)))
+        }
         TtsDashMsg::CommandResult(r) => {
             if let Err(e) = r {
                 state.command_error = Some(e);
             }
             Task::none()
         }
+    }
+}
+
+fn send_command(
+    handle: std::sync::Arc<forge_speak_queue::SpeakQueueHandle>,
+    cmd: SpeakCommand,
+) -> Task<Message> {
+    Task::perform(
+        async move { handle.send(cmd).await.map_err(|e| e.to_string()) },
+        |r| Message::Tts(TtsMsg::Dashboard(TtsDashMsg::CommandResult(r))),
+    )
+}
+
+fn test_speak_request(text: String) -> SpeakRequest {
+    SpeakRequest {
+        request_id: RequestId::new(),
+        viewer_id: String::new(),
+        viewer_name: forge_widgets::tr!("tts_dash_test_speaker_name"),
+        text,
+        priority: Priority::Normal,
+        alias_override: None,
+        source_event_id: forge_types::EventId::new(),
     }
 }
 

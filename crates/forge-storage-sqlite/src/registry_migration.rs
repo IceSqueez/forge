@@ -6,7 +6,60 @@ use crate::error::SqliteStorageError;
 
 pub async fn migrate_registry_format(pool: &sqlx::SqlitePool) -> Result<(), SqliteStorageError> {
     migrate_actions(pool).await?;
+    migrate_discord_sub_action_ids(pool).await?;
     Ok(())
+}
+
+const DISCORD_KIND_ID_REMAP: &[(&str, &str)] = &[
+    ("discord.post_text", "discord.webhook.send_message"),
+    ("discord.post_embed", "discord.webhook.send_embed"),
+    ("discord.edit_message", "discord.webhook.update_message"),
+];
+
+async fn migrate_discord_sub_action_ids(pool: &sqlx::SqlitePool) -> Result<(), SqliteStorageError> {
+    type Row = (String, String);
+
+    let rows: Vec<Row> =
+        sqlx::query_as("SELECT id, sub_actions FROM actions WHERE format_version = 1")
+            .fetch_all(pool)
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+    if rows.is_empty() {
+        return Ok(());
+    }
+
+    let mut tx = pool.begin().await.map_err(SqliteStorageError::Sqlx)?;
+
+    for (id, sub_actions_json) in rows {
+        let new_sub_actions_json = remap_discord_kind_ids(&sub_actions_json)?;
+        sqlx::query("UPDATE actions SET sub_actions = ?, format_version = 2 WHERE id = ?")
+            .bind(&new_sub_actions_json)
+            .bind(&id)
+            .execute(&mut *tx)
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+    }
+
+    tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
+    Ok(())
+}
+
+fn remap_discord_kind_ids(sub_actions_json: &str) -> Result<String, SqliteStorageError> {
+    let mut steps: Vec<SubActionStep> = serde_json::from_str(sub_actions_json)
+        .map_err(|e| SqliteStorageError::Decode(format!("sub_actions parse: {e}")))?;
+
+    for step in &mut steps {
+        if let Some((_, new_id)) = DISCORD_KIND_ID_REMAP
+            .iter()
+            .find(|(old_id, _)| *old_id == step.kind_id)
+        {
+            step.kind_id = (*new_id).to_owned();
+        }
+    }
+
+    serde_json::to_string(&steps)
+        .map_err(|e| SqliteStorageError::Decode(format!("sub_actions serialize: {e}")))
 }
 
 async fn migrate_actions(pool: &sqlx::SqlitePool) -> Result<(), SqliteStorageError> {

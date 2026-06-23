@@ -7,10 +7,7 @@ use forge_widgets::tokens::{FONT_LG, FONT_SM, FONT_XS, Spacing, sp, spf};
 use iced::{Alignment, Background, Border, Element, Length, Padding};
 
 use crate::Screen;
-use crate::actions::{
-    ActionsGroup, AddSubActionMsg, RemoveSubActionMsg, TriggerCategory, category_of,
-    trigger_label_of,
-};
+use crate::actions::{ActionsGroup, AddSubActionMsg, RemoveSubActionMsg};
 use crate::app::App;
 use crate::message::{ActionEditorMsg, ActionsMsg, Message, MoveSubActionMsg};
 
@@ -105,46 +102,6 @@ fn sub_action_summary(step: &forge_types::SubActionStep) -> (&'static str, Strin
             forge_widgets::tr!("action_editor_kind_sub_action"),
             step.kind_id.clone(),
         ),
-    }
-}
-
-fn trigger_icon_name(category: &TriggerCategory) -> &'static str {
-    match category {
-        TriggerCategory::Chat => "chat",
-        TriggerCategory::Subscriptions => "people",
-        TriggerCategory::Bits => "bolt",
-        TriggerCategory::Raids => "broadcast",
-        TriggerCategory::Obs => "device-desktop",
-        TriggerCategory::Server => "server",
-        TriggerCategory::Timer => "clock",
-        TriggerCategory::Ungrouped | TriggerCategory::All => "bolt",
-    }
-}
-
-fn kind_condition_text(kind_id: &str, config: &forge_types::TriggerConfig) -> String {
-    match kind_id {
-        "twitch.chat.command" => forge_widgets::tr!("actions_summary_twitch_chat_command"),
-        "twitch.chat.message" => forge_widgets::tr!("actions_summary_twitch_chat_message"),
-        "twitch.support.subscriber" => forge_widgets::tr!("actions_summary_twitch_subscriber"),
-        "twitch.support.resubscriber" => forge_widgets::tr!("actions_summary_twitch_resubscriber"),
-        "twitch.support.gift_sub" => forge_widgets::tr!("actions_summary_twitch_gift_sub"),
-        "twitch.support.cheer" => forge_widgets::tr!("actions_summary_twitch_cheer"),
-        "twitch.channel.raid_received" => forge_widgets::tr!("actions_summary_twitch_raid"),
-        "obs.scenes.current_changed" => {
-            if let Some(forge_types::Variant::String(s)) = config.get("scene") {
-                format!("scene = {s}")
-            } else {
-                forge_widgets::tr!("actions_summary_obs_scene_changed")
-            }
-        }
-        "script.event.custom" => {
-            if let Some(forge_types::Variant::String(s)) = config.get("name") {
-                format!("event = {s}")
-            } else {
-                forge_widgets::tr!("actions_summary_server_custom_event")
-            }
-        }
-        _ => String::new(),
     }
 }
 
@@ -617,8 +574,8 @@ fn detail_pane<'a>(
         );
     } else {
         for instance in &detail.trigger_instances {
-            let cat = category_of(&instance.kind_id);
-            let icon_name = trigger_icon_name(&cat);
+            let descriptor = app.rt.trigger_registry.get(&instance.kind_id);
+            let icon_name = descriptor.map(|d| d.icon_name()).unwrap_or("bolt");
             let icon_box = container(tabler_icon(Icon::from_name(icon_name), 14.0, p.brand))
                 .width(26.0)
                 .height(26.0)
@@ -633,8 +590,12 @@ fn detail_pane<'a>(
                     ..iced::widget::container::Style::default()
                 });
 
-            let kind_label = trigger_label_of(&instance.kind_id);
-            let condition_str = kind_condition_text(&instance.kind_id, &instance.overrides);
+            let kind_label = descriptor
+                .map(|d| d.label().to_owned())
+                .unwrap_or_else(|| instance.kind_id.clone());
+            let condition_str = descriptor
+                .map(|d| d.condition_display(&instance.overrides))
+                .unwrap_or_default();
             let pill_label_str = if instance.user_defined {
                 forge_widgets::tr!("action_editor_pill_custom")
             } else {
@@ -656,7 +617,7 @@ fn detail_pane<'a>(
             .align_y(Alignment::Center)
             .into();
             let secondary_str = if condition_str.is_empty() {
-                kind_label.to_owned()
+                kind_label.clone()
             } else {
                 format!("{kind_label} \u{00b7} {condition_str}")
             };

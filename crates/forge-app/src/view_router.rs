@@ -76,7 +76,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Screen::EventFeed => event_feed_view(&app.ui.event_feed, palette),
         Screen::Server => server_screen_view(&app.ui.server_screen, palette),
         Screen::BuiltinDetail(id) => {
-            if id.as_str() == "twitch" && app.rt.twitch_chat_handle.is_none() {
+            if id.as_str() == "twitch" && app.rt.twitch_builtin.is_none() {
                 crate::twitch_panel::twitch_disconnected_view(&app.ui.twitch_panel, palette)
             } else if id.as_str() == "obs" && app.rt.obs_client.is_none() {
                 crate::obs_panel::obs_disconnected_view(&app.ui.obs_panel, palette)
@@ -125,6 +125,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         }
         Screen::Soundboard => soundboard_view(&app.ui.soundboard, palette),
         Screen::Tts(section) => crate::tts_view::tts_section_view(app, section, palette),
+        Screen::Error(reason) => crate::storage_error::storage_error_view(reason, palette),
         other => navigation::coming_soon_view(format!("{other:?}"), palette),
     };
 
@@ -146,6 +147,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
             | Screen::ScriptEditor
             | Screen::Soundboard
             | Screen::Tts(_)
+            | Screen::Error(_)
     );
     let content: Element<'_, Message> = if screen_uses_own_header {
         iced::widget::column![screen_content]

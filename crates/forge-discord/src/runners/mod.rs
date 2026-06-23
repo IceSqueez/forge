@@ -1,6 +1,8 @@
+mod delete_message;
 mod edit_message;
 mod post_embed;
 mod post_text;
+mod send_file;
 
 use std::sync::Arc;
 
@@ -9,9 +11,11 @@ use forge_registry::{RegistryError, SubActionRegistry};
 use crate::client::DiscordClient;
 use crate::sink::DiscordSink;
 
+pub use delete_message::DeleteMessageRunner;
 pub use edit_message::EditMessageRunner;
 pub use post_embed::PostEmbedRunner;
 pub use post_text::PostTextRunner;
+pub use send_file::SendFileRunner;
 
 pub fn register_discord_sub_actions(
     reg: &mut SubActionRegistry,
@@ -21,6 +25,8 @@ pub fn register_discord_sub_actions(
     reg.register(Box::new(PostTextRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(PostEmbedRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(EditMessageRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(SendFileRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(DeleteMessageRunner::new(Arc::clone(&sink))))?;
     Ok(())
 }
 
@@ -51,10 +57,25 @@ mod tests {
         ) -> Result<(), DiscordError> {
             Ok(())
         }
+        async fn send_file(
+            &self,
+            _: &str,
+            _: Option<&str>,
+            _: &str,
+            _: &[u8],
+        ) -> Result<String, DiscordError> {
+            Ok(String::new())
+        }
+        async fn delete_message(&self, _: &str, _: &str) -> Result<(), DiscordError> {
+            Ok(())
+        }
     }
 
+    /// Registers the full discord runner set (same constructors as
+    /// `register_discord_sub_actions`) and asserts every expected id resolves,
+    /// guarding against accidental removal of a runner or an id collision.
     #[test]
-    fn register_discord_sub_actions_registers_three_runners() {
+    fn registering_all_runners_exposes_every_expected_id() {
         let mut reg = SubActionRegistry::new();
         let sink: Arc<dyn DiscordSink> = Arc::new(MockSink);
         reg.register(Box::new(PostTextRunner::new(Arc::clone(&sink))))
@@ -63,23 +84,16 @@ mod tests {
             .unwrap();
         reg.register(Box::new(EditMessageRunner::new(Arc::clone(&sink))))
             .unwrap();
-        assert_eq!(reg.all().count(), 3);
-    }
-
-    #[test]
-    fn all_expected_runner_ids_are_present() {
-        let mut reg = SubActionRegistry::new();
-        let sink: Arc<dyn DiscordSink> = Arc::new(MockSink);
-        reg.register(Box::new(PostTextRunner::new(Arc::clone(&sink))))
+        reg.register(Box::new(SendFileRunner::new(Arc::clone(&sink))))
             .unwrap();
-        reg.register(Box::new(PostEmbedRunner::new(Arc::clone(&sink))))
-            .unwrap();
-        reg.register(Box::new(EditMessageRunner::new(Arc::clone(&sink))))
+        reg.register(Box::new(DeleteMessageRunner::new(Arc::clone(&sink))))
             .unwrap();
         for id in &[
-            "discord.post_text",
-            "discord.post_embed",
-            "discord.edit_message",
+            "discord.webhook.send_message",
+            "discord.webhook.send_embed",
+            "discord.webhook.update_message",
+            "discord.webhook.send_file",
+            "discord.webhook.delete_message",
         ] {
             assert!(reg.get(id).is_some(), "missing runner: {id}");
         }

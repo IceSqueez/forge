@@ -2,6 +2,7 @@ use std::fmt;
 use std::pin::Pin;
 use std::time::Duration;
 
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 use forge_types::SubActionStep;
@@ -313,6 +314,47 @@ pub trait BuiltinContent: Send + Sync {
 
 pub trait QuickActions: Send + Sync {
     fn actions(&self) -> Vec<QuickAction>;
+}
+
+/// Why a lifecycle verb did not complete. The variants are coarse and carry no
+/// transport detail on purpose: a bearer, refresh token, or full request URL
+/// must never reach the UI or any log sink, so the underlying transport error
+/// is collapsed here instead of being propagated.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ControlFailure {
+    NotConnected,
+    Unauthorized,
+    Unsupported,
+    Transport,
+}
+
+impl fmt::Display for ControlFailure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let reason = match self {
+            Self::NotConnected => "not connected",
+            Self::Unauthorized => "authorization expired or revoked",
+            Self::Unsupported => "operation not supported by this integration",
+            Self::Transport => "connection transport error",
+        };
+        f.write_str(reason)
+    }
+}
+
+impl std::error::Error for ControlFailure {}
+
+/// Whether a dispatched lifecycle verb was accepted. The steady connection
+/// state that follows is observed through `BuiltinStatus::connection()` and the
+/// health stream, not returned here.
+pub type ControlOutcome = Result<(), ControlFailure>;
+
+#[async_trait]
+pub trait BuiltinControl: Send + Sync {
+    async fn reconnect(&self) -> ControlOutcome;
+    async fn disconnect(&self) -> ControlOutcome;
+    /// Renews credentials via the OAuth refresh grant while keeping the live
+    /// session open. The renewed token stays inside the implementation; only
+    /// accept/reject crosses this boundary.
+    async fn refresh_token(&self) -> ControlOutcome;
 }
 
 #[cfg(test)]

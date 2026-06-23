@@ -15,6 +15,8 @@ use crate::health::{HealthSnapshot, make_health_channel, spawn_health_task};
 use crate::protocol::new_request;
 use crate::request::PendingRequest;
 
+pub(crate) type ReqTxSlot = Arc<tokio::sync::Mutex<mpsc::UnboundedSender<PendingRequest>>>;
+
 pub(crate) const STATE_DISCONNECTED: u8 = 0;
 pub(crate) const STATE_CONNECTING: u8 = 1;
 pub(crate) const STATE_CONNECTED: u8 = 2;
@@ -40,12 +42,14 @@ pub struct VTubeClient {
     pub(crate) config: VTubeConfig,
     pub(crate) vtube_id: BuiltinId,
     pub(crate) state: Arc<AtomicU8>,
-    auth_state: Arc<RwLock<AuthState>>,
-    shutdown: Arc<Notify>,
-    supervisor: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
+    pub(crate) auth_state: Arc<RwLock<AuthState>>,
+    // Wrapped so reconnect can swap the Notify without a race against the
+    // supervisor's own clone of the Arc.
+    pub(crate) shutdown: Arc<tokio::sync::Mutex<Arc<Notify>>>,
+    pub(crate) supervisor: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
     pub(crate) connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
     pub(crate) vtube_version: Arc<OnceLock<String>>,
-    pub(crate) req_tx: mpsc::UnboundedSender<PendingRequest>,
+    pub(crate) req_tx: ReqTxSlot,
     pub(crate) health_state: Arc<RwLock<HealthSnapshot>>,
     pub(crate) health_tx: broadcast::Sender<HealthDelta>,
     pub(crate) api_call_tx: mpsc::UnboundedSender<()>,
@@ -53,6 +57,10 @@ pub struct VTubeClient {
     pub(crate) content_state: Arc<RwLock<crate::content::ContentSnapshot>>,
     pub(crate) content_notifier: crate::content::ContentNotifier,
     content_task: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
+    // Stored so reconnect can re-establish a session without reaching back
+    // through the credential store.  Never logged or surfaced.
+    pub(crate) reconnect_publisher: Arc<dyn EventPublisher>,
+    pub(crate) reconnect_creds: Arc<dyn CredentialsRepo>,
 }
 
 impl VTubeClient {
@@ -63,7 +71,8 @@ impl VTubeClient {
     ) -> Self {
         let state = Arc::new(AtomicU8::new(STATE_CONNECTING));
         let auth_state = Arc::new(RwLock::new(AuthState::Cold));
-        let shutdown = Arc::new(Notify::new());
+        let notify = Arc::new(Notify::new());
+        let shutdown = Arc::new(tokio::sync::Mutex::new(Arc::clone(&notify)));
         let connected_at = Arc::new(RwLock::new(None::<OffsetDateTime>));
         let vtube_version = Arc::new(OnceLock::<String>::new());
         let (health_tx, health_state) = make_health_channel();
@@ -89,10 +98,10 @@ impl VTubeClient {
             endpoint: cfg.endpoint.clone(),
             state: Arc::clone(&state),
             auth_state: Arc::clone(&auth_state),
-            shutdown: Arc::clone(&shutdown),
+            shutdown: Arc::clone(&notify),
             connected_at: Arc::clone(&connected_at),
-            publisher,
-            creds,
+            publisher: Arc::clone(&publisher),
+            creds: Arc::clone(&creds),
             req_rx,
             health_state: Arc::clone(&health_state),
             health_tx: health_tx.clone(),
@@ -109,7 +118,7 @@ impl VTubeClient {
             supervisor: Arc::new(std::sync::Mutex::new(Some(handle))),
             connected_at,
             vtube_version,
-            req_tx,
+            req_tx: Arc::new(tokio::sync::Mutex::new(req_tx)),
             health_state,
             health_tx,
             api_call_tx,
@@ -117,6 +126,8 @@ impl VTubeClient {
             content_state,
             content_notifier,
             content_task: Arc::new(std::sync::Mutex::new(Some(content_handle))),
+            reconnect_publisher: publisher,
+            reconnect_creds: creds,
         }
     }
 
@@ -149,13 +160,16 @@ impl VTubeClient {
         let request_id = req.request_id.clone();
         let payload = serde_json::to_string(&req).map_err(VTubeError::Json)?;
         let (respond_to, rx) = tokio::sync::oneshot::channel();
-        self.req_tx
-            .send(PendingRequest {
+        // Lock is held only for the synchronous .send() — not across any .await.
+        {
+            let tx = self.req_tx.lock().await;
+            tx.send(PendingRequest {
                 request_id,
                 payload,
                 respond_to,
             })
             .map_err(|_| VTubeError::NotConnected)?;
+        }
         self.api_call_tx.send(()).ok();
         rx.await.map_err(|_| VTubeError::NotConnected)
     }
@@ -166,7 +180,8 @@ impl VTubeClient {
                 h.abort();
             }
         }
-        self.shutdown.notify_one();
+        let notify = self.shutdown.lock().await.clone();
+        notify.notify_one();
         let handle = self.supervisor.lock().ok().and_then(|mut g| g.take());
         if let Some(h) = handle {
             let _ = h.await;
@@ -178,6 +193,8 @@ impl VTubeClient {
         let (health_tx, health_state) = make_health_channel();
         let (req_tx, _) = mpsc::unbounded_channel::<PendingRequest>();
         let (api_call_tx, _) = mpsc::unbounded_channel::<()>();
+        let publisher = tests::MockPublisher::new().publisher();
+        let creds = tests::MockCreds::new().creds();
         Self {
             config: VTubeConfig {
                 endpoint: endpoint.into(),
@@ -185,11 +202,11 @@ impl VTubeClient {
             vtube_id: BuiltinId::new("vtube"),
             state: Arc::new(AtomicU8::new(STATE_DISCONNECTED)),
             auth_state: Arc::new(RwLock::new(AuthState::Cold)),
-            shutdown: Arc::new(Notify::new()),
+            shutdown: Arc::new(tokio::sync::Mutex::new(Arc::new(Notify::new()))),
             supervisor: Arc::new(std::sync::Mutex::new(None)),
             connected_at: Arc::new(RwLock::new(None)),
             vtube_version: Arc::new(OnceLock::new()),
-            req_tx,
+            req_tx: Arc::new(tokio::sync::Mutex::new(req_tx)),
             health_state,
             health_tx,
             api_call_tx,
@@ -197,6 +214,8 @@ impl VTubeClient {
             content_state: Arc::new(RwLock::new(crate::content::ContentSnapshot::default())),
             content_notifier: crate::content::ContentNotifier::noop(),
             content_task: Arc::new(std::sync::Mutex::new(None)),
+            reconnect_publisher: publisher,
+            reconnect_creds: creds,
         }
     }
 }
@@ -210,7 +229,9 @@ impl Drop for VTubeClient {
                 h.abort();
             }
         }
-        self.shutdown.notify_one();
+        if let Ok(notify) = self.shutdown.try_lock() {
+            notify.notify_one();
+        }
     }
 }
 

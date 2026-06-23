@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use forge_events::EventSource;
@@ -159,6 +160,7 @@ pub enum ServerScreenMsg {
     RestartServer,
     StopServer,
     OpenOverlayFolder,
+    OpenOverlayFolderResult(Result<(), String>),
     SelectOverlayFile(usize),
     DisconnectClient(usize),
     ServerInfoArrived(ServerInfoSnapshot),
@@ -168,7 +170,7 @@ pub enum ServerScreenMsg {
 
 pub fn update(
     state: &mut ServerScreenState,
-    _rt: &RuntimeView,
+    rt: &RuntimeView,
     msg: ServerScreenMsg,
 ) -> Task<Message> {
     match msg {
@@ -193,8 +195,31 @@ pub fn update(
             );
             Task::none()
         }
-        ServerScreenMsg::RestartServer | ServerScreenMsg::StopServer => Task::none(),
-        ServerScreenMsg::OpenOverlayFolder => Task::none(),
+        ServerScreenMsg::RestartServer => Task::none(),
+        ServerScreenMsg::StopServer => Task::none(),
+        ServerScreenMsg::OpenOverlayFolder => {
+            let subsystem = Arc::clone(&rt.server_subsystem);
+            Task::perform(
+                async move {
+                    let Some(path) = subsystem.overlay_root().await else {
+                        return Ok(());
+                    };
+                    tokio::task::spawn_blocking(move || {
+                        open::that(&*path).map_err(|e| e.to_string())
+                    })
+                    .await
+                    .map_err(|e| e.to_string())
+                    .and_then(|r| r)
+                },
+                |r| Message::Server(ServerScreenMsg::OpenOverlayFolderResult(r)),
+            )
+        }
+        ServerScreenMsg::OpenOverlayFolderResult(result) => {
+            if let Err(e) = result {
+                tracing::warn!(error = %e, "failed to open overlay folder");
+            }
+            Task::none()
+        }
         ServerScreenMsg::SelectOverlayFile(idx) => {
             state.selected_overlay_file = Some(idx);
             Task::none()

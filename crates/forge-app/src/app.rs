@@ -201,7 +201,7 @@ impl App {
                 hotkey_client: None,
                 speak_queue: None,
                 sound_player,
-                twitch_chat_handle: None,
+                twitch_builtin: None,
                 chat_send_bridge: None,
                 twitch_flow: None,
                 youtube_flow: None,
@@ -269,7 +269,7 @@ impl Default for App {
                 hotkey_client: None,
                 speak_queue: None,
                 sound_player: None,
-                twitch_chat_handle: None,
+                twitch_builtin: None,
                 chat_send_bridge: None,
                 twitch_flow: None,
                 youtube_flow: None,
@@ -493,11 +493,10 @@ pub(crate) fn format_uptime(elapsed: std::time::Duration) -> String {
 
 pub(crate) fn subsystem_connectivity(app: &App) -> (u8, u8) {
     let mut connected: u8 = 0;
-    let twitch_live = app
-        .rt
-        .twitch_chat_handle
-        .as_ref()
-        .is_some_and(|h| matches!(h.connection_state(), ChatConnectionState::Connected));
+    let twitch_live =
+        app.rt.twitch_builtin.as_ref().is_some_and(|b| {
+            matches!(*b.state_receiver().borrow(), ChatConnectionState::Connected)
+        });
     if twitch_live {
         connected += 2;
     }
@@ -691,7 +690,7 @@ mod tests {
                 hotkey_client: None,
                 speak_queue: None,
                 sound_player: None,
-                twitch_chat_handle: None,
+                twitch_builtin: None,
                 chat_send_bridge: None,
                 twitch_flow: None,
                 youtube_flow: None,
@@ -1030,7 +1029,7 @@ mod tests {
                 hotkey_client: None,
                 speak_queue: None,
                 sound_player: None,
-                twitch_chat_handle: None,
+                twitch_builtin: None,
                 chat_send_bridge: None,
                 twitch_flow: None,
                 youtube_flow: None,
@@ -1290,7 +1289,7 @@ mod tests {
 
     #[test]
     #[allow(clippy::expect_used)]
-    fn vtube_all_six_sub_action_runners_register_successfully() {
+    fn vtube_sub_action_runners_register_via_boot_path() {
         use forge_registry::SubActionRegistry;
         use forge_vtube::{VTubeSink, register_vtube_sub_actions};
 
@@ -1305,7 +1304,6 @@ mod tests {
         let mut reg = SubActionRegistry::new();
         register_vtube_sub_actions(&mut reg, client as Arc<dyn VTubeSink>)
             .expect("registration succeeds with a fresh registry");
-        assert_eq!(reg.all().count(), 6);
         for id in &[
             "vtube.hotkey.trigger",
             "vtube.expression.set",
@@ -1313,6 +1311,12 @@ mod tests {
             "vtube.model.load",
             "vtube.params.reset",
             "vtube.model.move",
+            "vtube.item.move",
+            "vtube.lookup.current_model",
+            "vtube.lookup.hotkeys",
+            "vtube.lookup.expressions",
+            "vtube.lookup.parameters",
+            "vtube.lookup.items",
         ] {
             assert!(reg.get(id).is_some(), "missing runner: {id}");
         }

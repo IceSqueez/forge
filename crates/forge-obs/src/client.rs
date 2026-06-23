@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::Duration;
 
+use async_trait::async_trait;
 use futures_util::StreamExt;
 use rand::RngExt;
 use time::OffsetDateTime;
@@ -11,7 +12,8 @@ use tokio::task::JoinHandle;
 
 use forge_events::EventPublisher;
 use forge_platform_core::{
-    BuiltinId, BuiltinStatus, CapabilityFlags, ConnectionState, HeaderAction, HealthDelta,
+    BuiltinControl, BuiltinId, BuiltinStatus, CapabilityFlags, ConnectionState, ControlFailure,
+    ControlOutcome, HeaderAction, HealthDelta,
 };
 use forge_types::EventId;
 
@@ -31,7 +33,10 @@ pub struct ObsClient {
     pub(crate) last_set_scene_event_id: Arc<RwLock<Option<EventId>>>,
     endpoint: String,
     state: Arc<AtomicU8>,
-    shutdown: Arc<Notify>,
+    // Wrapped in an async Mutex so reconnect can swap out the Notify for the
+    // new supervisor cycle without a data race against the running supervisor's
+    // own clone of the Arc.
+    shutdown: Arc<tokio::sync::Mutex<Arc<Notify>>>,
     supervisor: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
     connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
     obs_id: BuiltinId,
@@ -39,6 +44,12 @@ pub struct ObsClient {
     pub(crate) health_state: Arc<RwLock<HealthSnapshot>>,
     pub(crate) health_tx: broadcast::Sender<HealthDelta>,
     pub(crate) catalog_state: Arc<RwLock<ObsCatalog>>,
+    reconnect_host: String,
+    reconnect_port: u16,
+    // Stored so reconnect can re-establish an authenticated session without
+    // reaching back through the credential store.  Never logged or surfaced.
+    reconnect_password: Arc<Option<String>>,
+    reconnect_publisher: Arc<dyn EventPublisher>,
 }
 
 impl ObsClient {
@@ -51,7 +62,8 @@ impl ObsClient {
 
         let inner = Arc::new(tokio::sync::RwLock::new(None::<obws::Client>));
         let state = Arc::new(AtomicU8::new(STATE_CONNECTING));
-        let shutdown = Arc::new(Notify::new());
+        let notify = Arc::new(Notify::new());
+        let shutdown = Arc::new(tokio::sync::Mutex::new(Arc::clone(&notify)));
         let connected_at = Arc::new(RwLock::new(None::<OffsetDateTime>));
         let obs_version = Arc::new(OnceLock::new());
         let item_cache = Arc::new(Mutex::new(HashMap::<(String, String), i64>::new()));
@@ -60,20 +72,27 @@ impl ObsClient {
         let catalog_state = Arc::new(RwLock::new(ObsCatalog::default()));
         let last_set_scene_event_id = Arc::new(RwLock::new(None::<EventId>));
 
+        let stored_password = password.map(str::to_owned);
+
         let ctx = SupervisorContext {
             inner: Arc::clone(&inner),
             state: Arc::clone(&state),
-            shutdown: Arc::clone(&shutdown),
+            shutdown: Arc::clone(&notify),
             connected_at: Arc::clone(&connected_at),
             obs_version: Arc::clone(&obs_version),
             catalog_state: Arc::clone(&catalog_state),
             health_state: Arc::clone(&health_state),
             health_tx: health_tx.clone(),
-            publisher,
+            publisher: Arc::clone(&publisher),
             item_cache: Arc::clone(&item_cache),
             last_set_scene_event_id: Arc::clone(&last_set_scene_event_id),
         };
-        let handle = tokio::spawn(run_supervisor(host, port, password.map(str::to_owned), ctx));
+        let handle = tokio::spawn(run_supervisor(
+            host.clone(),
+            port,
+            stored_password.clone(),
+            ctx,
+        ));
 
         Ok(Self {
             inner,
@@ -89,6 +108,10 @@ impl ObsClient {
             catalog_state,
             scene_item_id_cache: item_cache,
             last_set_scene_event_id,
+            reconnect_host: host,
+            reconnect_port: port,
+            reconnect_password: Arc::new(stored_password),
+            reconnect_publisher: publisher,
         })
     }
 
@@ -117,7 +140,8 @@ impl ObsClient {
     }
 
     pub async fn shutdown(&self) {
-        self.shutdown.notify_one();
+        let notify = self.shutdown.lock().await.clone();
+        notify.notify_one();
         let handle = self.supervisor.lock().ok().and_then(|mut g| g.take());
         if let Some(h) = handle {
             let _ = h.await;
@@ -126,12 +150,13 @@ impl ObsClient {
 
     #[cfg(test)]
     pub fn new_for_test(endpoint: String) -> Self {
+        let (host, port) = parse_endpoint(&endpoint).unwrap_or(("localhost".to_owned(), 4455));
         let (health_tx, health_state) = make_health_channel();
         Self {
             inner: Arc::new(tokio::sync::RwLock::new(None)),
             endpoint,
             state: Arc::new(AtomicU8::new(STATE_DISCONNECTED)),
-            shutdown: Arc::new(Notify::new()),
+            shutdown: Arc::new(tokio::sync::Mutex::new(Arc::new(Notify::new()))),
             supervisor: Arc::new(std::sync::Mutex::new(None)),
             connected_at: Arc::new(RwLock::new(None)),
             obs_id: BuiltinId::new("obs"),
@@ -141,6 +166,10 @@ impl ObsClient {
             catalog_state: Arc::new(RwLock::new(ObsCatalog::default())),
             scene_item_id_cache: Arc::new(Mutex::new(HashMap::new())),
             last_set_scene_event_id: Arc::new(RwLock::new(None)),
+            reconnect_host: host,
+            reconnect_port: port,
+            reconnect_password: Arc::new(None),
+            reconnect_publisher: Arc::new(crate::runners::test_support::NoopPublisher),
         }
     }
 }
@@ -192,6 +221,73 @@ impl BuiltinStatus for ObsClient {
             HeaderAction::Disconnect,
             HeaderAction::Settings,
         ]
+    }
+}
+
+#[async_trait]
+impl BuiltinControl for ObsClient {
+    async fn reconnect(&self) -> ControlOutcome {
+        // Shut down the running supervisor before spawning a replacement.
+        // Locking `shutdown` serialises concurrent reconnect/disconnect calls
+        // so only one supervisor replacement runs at a time.
+        let mut slot = self.shutdown.lock().await;
+        let old_notify = slot.clone();
+        old_notify.notify_one();
+        let handle = self.supervisor.lock().ok().and_then(|mut g| g.take());
+        if let Some(h) = handle {
+            let _ = h.await;
+        }
+
+        let new_notify = Arc::new(Notify::new());
+        *slot = Arc::clone(&new_notify);
+        drop(slot);
+
+        self.state.store(STATE_CONNECTING, Ordering::Release);
+        if let Ok(mut g) = self.connected_at.write() {
+            *g = None;
+        }
+
+        let ctx = SupervisorContext {
+            inner: Arc::clone(&self.inner),
+            state: Arc::clone(&self.state),
+            shutdown: new_notify,
+            connected_at: Arc::clone(&self.connected_at),
+            obs_version: Arc::clone(&self.obs_version),
+            catalog_state: Arc::clone(&self.catalog_state),
+            health_state: Arc::clone(&self.health_state),
+            health_tx: self.health_tx.clone(),
+            publisher: Arc::clone(&self.reconnect_publisher),
+            item_cache: Arc::clone(&self.scene_item_id_cache),
+            last_set_scene_event_id: Arc::clone(&self.last_set_scene_event_id),
+        };
+        let password = (*self.reconnect_password).clone();
+        let handle = tokio::spawn(run_supervisor(
+            self.reconnect_host.clone(),
+            self.reconnect_port,
+            password,
+            ctx,
+        ));
+        if let Ok(mut g) = self.supervisor.lock() {
+            *g = Some(handle);
+        }
+
+        Ok(())
+    }
+
+    async fn disconnect(&self) -> ControlOutcome {
+        let slot = self.shutdown.lock().await;
+        let notify = slot.clone();
+        drop(slot);
+        notify.notify_one();
+        let handle = self.supervisor.lock().ok().and_then(|mut g| g.take());
+        if let Some(h) = handle {
+            let _ = h.await;
+        }
+        Ok(())
+    }
+
+    async fn refresh_token(&self) -> ControlOutcome {
+        Err(ControlFailure::Unsupported)
     }
 }
 
@@ -259,7 +355,17 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
         state.store(conn_state, Ordering::Release);
         tracing::debug!(host = %host, port, attempt, "attempting OBS connection");
 
-        match obws::Client::connect(&host, port, password.as_deref())
+        let connect_config = obws::client::ConnectConfig {
+            host: host.as_str(),
+            port,
+            password: password.as_deref(),
+            event_subscriptions: Some(required_event_subscriptions()),
+            broadcast_capacity: obws::client::DEFAULT_BROADCAST_CAPACITY,
+            connect_timeout: obws::client::DEFAULT_CONNECT_TIMEOUT,
+            dangerous: None,
+        };
+
+        match obws::Client::connect_with_config(connect_config)
             .await
             .map_err(map_obws_error)
         {
@@ -284,6 +390,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
 
                 state.store(STATE_CONNECTED, Ordering::Release);
                 tracing::info!(host = %host, port, "connected to OBS");
+                publisher.publish(crate::events::make_connection_connected());
 
                 match events {
                     Ok(mut stream) => loop {
@@ -298,6 +405,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                                 match item {
                                     None => {
                                         tracing::info!(host = %host, port, "OBS connection lost; reconnecting");
+                                        publisher.publish(crate::events::make_connection_disconnected("connection_lost"));
                                         break;
                                     }
                                     Some(ev) => {
@@ -333,6 +441,9 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
 
             Err(ObsError::Authentication) => {
                 tracing::warn!(host = %host, port, "OBS authentication rejected");
+                publisher.publish(crate::events::make_connection_auth_failed(
+                    "authentication rejected",
+                ));
                 state.store(STATE_DISCONNECTED, Ordering::Release);
                 return;
             }
@@ -355,12 +466,18 @@ fn handle_obs_event(
     last_set_scene_event_id: &RwLock<Option<EventId>>,
 ) {
     let is_scene_change = matches!(ev, obws::events::Event::CurrentProgramSceneChanged { .. });
+    let is_preview_change = matches!(ev, obws::events::Event::CurrentPreviewSceneChanged { .. });
 
     let from_scene = if is_scene_change {
         catalog_state
             .read()
             .ok()
             .and_then(|g| g.current_scene.clone())
+    } else if is_preview_change {
+        catalog_state
+            .read()
+            .ok()
+            .and_then(|g| g.current_preview_scene.clone())
     } else {
         None
     };
@@ -414,6 +531,27 @@ fn handle_obs_event(
                 &scene.name,
                 &name,
                 *enabled,
+            ));
+        }
+    }
+
+    if let obws::events::Event::SceneItemLockStateChanged {
+        scene,
+        item_id,
+        locked,
+        ..
+    } = ev
+    {
+        let source_name = item_cache
+            .lock()
+            .ok()
+            .and_then(|guard| crate::events::resolve_source_name(&guard, &scene.name, *item_id));
+
+        if let Some(name) = source_name {
+            publisher.publish(crate::events::map_scene_item_lock(
+                &scene.name,
+                &name,
+                *locked,
             ));
         }
     }
@@ -492,6 +630,27 @@ fn parse_endpoint(endpoint: &str) -> Result<(String, u16), ObsError> {
         }
         None => Ok((without_scheme.to_owned(), 4455)),
     }
+}
+
+/// Event categories the registered OBS trigger / health descriptors need. The union excludes
+/// every high-volume opt-in category (volume meters, input active/show state, scene-item
+/// transform) so the bus is never flooded by a continuous stream. The `EventSubscription`
+/// type never crosses the crate boundary.
+fn required_event_subscriptions() -> obws::requests::EventSubscription {
+    use obws::requests::EventSubscription as Sub;
+    // SCENES: program / preview / scene-list. CONFIG: scene-collection lifecycle.
+    // OUTPUTS: stream + record state (health metrics). SCENE_ITEMS: source visibility.
+    // TRANSITIONS: SceneTransitionStarted/Ended/VideoEnded. UI: StudioModeStateChanged.
+    // INPUTS: mute / volume / balance / sync-offset. INPUT_VOLUME_METERS deliberately excluded.
+    // FILTERS: SourceFilterCreated / SourceFilterRemoved / SourceFilterEnableStateChanged.
+    Sub::SCENES
+        | Sub::CONFIG
+        | Sub::OUTPUTS
+        | Sub::SCENE_ITEMS
+        | Sub::TRANSITIONS
+        | Sub::UI
+        | Sub::INPUTS
+        | Sub::FILTERS
 }
 
 fn map_obws_error(e: obws::error::Error) -> ObsError {

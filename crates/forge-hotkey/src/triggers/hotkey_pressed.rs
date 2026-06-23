@@ -10,7 +10,7 @@ pub struct HotkeyPressedDescriptor;
 
 impl TriggerKindDescriptor for HotkeyPressedDescriptor {
     fn id(&self) -> &str {
-        "hotkey.triggered"
+        "hotkey.global.pressed"
     }
 
     fn category(&self) -> TriggerCategory {
@@ -70,7 +70,7 @@ impl TriggerKindDescriptor for HotkeyPressedDescriptor {
     }
 
     fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        if event.kind != "hotkey.triggered" {
+        if event.kind != "hotkey.global.pressed" {
             return false;
         }
         if event.source != EventSource::Hotkey {
@@ -112,7 +112,7 @@ mod tests {
     fn triggered_event(combo: &str) -> Event {
         Event::new(
             EventSource::Hotkey,
-            "hotkey.triggered",
+            "hotkey.global.pressed",
             json!({ "combo": combo, "id": 1u32, "timestamp_us": 0u64 }),
         )
     }
@@ -157,7 +157,7 @@ mod tests {
     fn does_not_match_wrong_source() {
         let ev = Event::new(
             EventSource::Midi,
-            "hotkey.triggered",
+            "hotkey.global.pressed",
             json!({ "combo": "Ctrl+A" }),
         );
         assert!(!HotkeyPressedDescriptor.matches_trigger(&BTreeMap::new(), &ev));

@@ -1,0 +1,164 @@
+use std::collections::BTreeMap;
+
+use forge_events::{Event, EventSource};
+use forge_registry::{
+    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+};
+use forge_types::{ArgStack, TriggerConfig, Variant};
+
+pub struct FilterRemovedDescriptor;
+
+impl TriggerKindDescriptor for FilterRemovedDescriptor {
+    fn id(&self) -> &str {
+        "obs.filters.removed"
+    }
+
+    fn category(&self) -> TriggerCategory {
+        TriggerCategory::Obs
+    }
+
+    fn label(&self) -> &str {
+        "OBS filter removed"
+    }
+
+    fn summary(&self) -> &str {
+        "Fires when a filter is removed from an OBS source."
+    }
+
+    fn search_text(&self) -> &str {
+        "obs filter removed deleted source"
+    }
+
+    fn icon_name(&self) -> &str {
+        "filter-x"
+    }
+
+    fn platform_contract(&self) -> KindPlatformContract {
+        KindPlatformContract::Universal
+    }
+
+    fn default_config(&self) -> TriggerConfig {
+        BTreeMap::new()
+    }
+
+    fn config_fields(&self) -> Vec<FormField> {
+        vec![]
+    }
+
+    fn condition_display(&self, _config: &TriggerConfig) -> String {
+        "any filter removed".to_owned()
+    }
+
+    fn event_filter(&self) -> EventFilter {
+        EventFilter {
+            source: Some(EventSource::Obs),
+            kind_prefix: Some("filter.".to_owned()),
+        }
+    }
+
+    fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
+        event.kind == "filter.removed"
+    }
+
+    fn build_arg_stack(&self, event: &Event) -> ArgStack {
+        build_filter_source_arg_stack(event)
+    }
+}
+
+pub(crate) fn build_filter_source_arg_stack(event: &Event) -> ArgStack {
+    let mut stack = ArgStack::new();
+    if let Some(name) = event.payload.get("source_name").and_then(|v| v.as_str()) {
+        stack = stack.set(
+            "obs.source.name".to_owned(),
+            Variant::String(name.to_owned()),
+        );
+    }
+    if let Some(name) = event.payload.get("filter_name").and_then(|v| v.as_str()) {
+        stack = stack.set(
+            "obs.filter.name".to_owned(),
+            Variant::String(name.to_owned()),
+        );
+    }
+    stack
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    // The three filter descriptors share the `TriggerKindDescriptor` shape and the
+    // `build_filter_source_arg_stack` helper. Their 1:1 kind discrimination and the shared
+    // source/filter-name extraction are tested together here; each sibling file tests only
+    // the extra typed field it adds on top of the shared helper.
+    use super::super::{
+        FilterCreatedDescriptor, FilterEnabledChangedDescriptor, FilterRemovedDescriptor,
+    };
+    use super::*;
+    use forge_registry::TriggerKindDescriptor;
+    use serde_json::json;
+
+    const ALL_FILTER_KINDS: [&str; 3] =
+        ["filter.created", "filter.removed", "filter.enabled_changed"];
+
+    /// Each filter descriptor must fire on exactly its own kind and reject the other two.
+    /// A descriptor matching a sibling kind would mis-fire user actions on the wrong event.
+    #[test]
+    fn each_filter_descriptor_matches_only_its_own_kind() {
+        let cfg = BTreeMap::new();
+        let descriptors: [(&str, &dyn TriggerKindDescriptor); 3] = [
+            ("filter.created", &FilterCreatedDescriptor),
+            ("filter.removed", &FilterRemovedDescriptor),
+            ("filter.enabled_changed", &FilterEnabledChangedDescriptor),
+        ];
+        for (own_kind, descriptor) in descriptors {
+            for kind in ALL_FILTER_KINDS {
+                let event = Event::new(EventSource::Obs, kind, json!({}));
+                assert_eq!(
+                    descriptor.matches_trigger(&cfg, &event),
+                    kind == own_kind,
+                    "descriptor for {own_kind} given {kind}",
+                );
+            }
+        }
+    }
+
+    /// A non-filter kind on the same OBS source must never match any filter descriptor.
+    #[test]
+    fn filter_descriptors_reject_non_filter_kind() {
+        let cfg = BTreeMap::new();
+        let descriptors: [&dyn TriggerKindDescriptor; 3] = [
+            &FilterCreatedDescriptor,
+            &FilterRemovedDescriptor,
+            &FilterEnabledChangedDescriptor,
+        ];
+        let event = Event::new(EventSource::Obs, "scene.changed", json!({}));
+        for descriptor in descriptors {
+            assert!(!descriptor.matches_trigger(&cfg, &event));
+        }
+    }
+
+    #[test]
+    fn filter_source_arg_stack_extracts_source_and_filter_names() {
+        let event = Event::new(
+            EventSource::Obs,
+            "filter.removed",
+            json!({ "source_name": "Mic", "filter_name": "Noise Gate" }),
+        );
+        let stack = build_filter_source_arg_stack(&event);
+        assert_eq!(
+            stack.get("obs.source.name"),
+            Some(&Variant::String("Mic".to_owned())),
+        );
+        assert_eq!(
+            stack.get("obs.filter.name"),
+            Some(&Variant::String("Noise Gate".to_owned())),
+        );
+    }
+
+    #[test]
+    fn filter_source_arg_stack_omits_keys_when_payload_fields_absent() {
+        let event = Event::new(EventSource::Obs, "filter.removed", json!({}));
+        let stack = build_filter_source_arg_stack(&event);
+        assert!(stack.get("obs.source.name").is_none());
+        assert!(stack.get("obs.filter.name").is_none());
+    }
+}

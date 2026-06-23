@@ -88,70 +88,25 @@ impl SubActionRunner for ParamsResetRunner {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::error::VTubeError;
-    use forge_events::{Event, EventPublisher};
-    use forge_types::{EventId, Variant};
-
-    struct MockSink;
-
-    #[async_trait]
-    impl VTubeSink for MockSink {
-        async fn trigger_hotkey(&self, _: &str) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn set_expression(&self, _: &str, _: bool) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn set_param(&self, _: &str, _: f64) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn load_model(&self, _: &str) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn reset_params(&self) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn move_model(
-            &self,
-            _: Option<f64>,
-            _: Option<f64>,
-            _: Option<f64>,
-            _: f64,
-        ) -> Result<(), VTubeError> {
-            Ok(())
-        }
-    }
-
-    struct NoopPublisher;
-    impl EventPublisher for NoopPublisher {
-        fn publish(&self, _: Event) {}
-    }
-
-    fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
-        RunContext {
-            arg_stack: stack,
-            index: 0,
-            parent_event_id: EventId::new(),
-            publisher: &NoopPublisher,
-        }
-    }
+    use crate::runners::test_support::{MockSink, make_ctx};
+    use forge_types::Variant;
 
     #[test]
     fn validate_config_accepts_empty_config() {
-        let runner = ParamsResetRunner::new(Arc::new(MockSink));
+        let runner = ParamsResetRunner::new(Arc::new(MockSink::new()));
         assert!(runner.validate_config(&BTreeMap::new()).is_ok());
     }
 
     #[test]
     fn validate_config_accepts_any_config() {
-        let runner = ParamsResetRunner::new(Arc::new(MockSink));
+        let runner = ParamsResetRunner::new(Arc::new(MockSink::new()));
         let config = BTreeMap::from([("extra".to_owned(), Variant::Bool(true))]);
         assert!(runner.validate_config(&config).is_ok());
     }
 
     #[tokio::test]
     async fn execute_succeeds_with_no_config() {
-        let runner = ParamsResetRunner::new(Arc::new(MockSink));
+        let runner = ParamsResetRunner::new(Arc::new(MockSink::new()));
         let stack = ArgStack::new();
         let ctx = make_ctx(&stack);
         let (tel, extra) = runner.execute(&BTreeMap::new(), &ctx).await;
@@ -161,7 +116,7 @@ mod tests {
 
     #[tokio::test]
     async fn execute_returns_correct_kind() {
-        let runner = ParamsResetRunner::new(Arc::new(MockSink));
+        let runner = ParamsResetRunner::new(Arc::new(MockSink::new()));
         let stack = ArgStack::new();
         let ctx = make_ctx(&stack);
         let (tel, _) = runner.execute(&BTreeMap::new(), &ctx).await;

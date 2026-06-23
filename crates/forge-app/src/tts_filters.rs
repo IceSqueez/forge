@@ -1,3 +1,4 @@
+use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakRequest};
 use forge_tts_pipeline::{
     BlocklistMode, PipelineConfig, PipelineResult, StageAction, StageOutcome, UrlMode,
 };
@@ -97,7 +98,7 @@ impl Default for TtsFiltersState {
     }
 }
 
-pub fn update(state: &mut TtsFiltersState, _rt: &RuntimeView, msg: TtsFiltersMsg) -> Task<Message> {
+pub fn update(state: &mut TtsFiltersState, rt: &RuntimeView, msg: TtsFiltersMsg) -> Task<Message> {
     match msg {
         TtsFiltersMsg::PreviewInputChanged(s) => {
             state.preview_input = s;
@@ -110,6 +111,40 @@ pub fn update(state: &mut TtsFiltersState, _rt: &RuntimeView, msg: TtsFiltersMsg
             Task::none()
         }
         TtsFiltersMsg::AddRuleClicked => Task::none(),
+        TtsFiltersMsg::SpeakPreview => {
+            let text = state.preview_input.trim();
+            if text.is_empty() {
+                return Task::none();
+            }
+            let Some(handle) = rt.speak_queue.clone() else {
+                return Task::none();
+            };
+            let text = text.to_owned();
+            Task::perform(
+                async move {
+                    let request = SpeakRequest {
+                        request_id: RequestId::new(),
+                        viewer_id: String::new(),
+                        viewer_name: forge_widgets::tr!("tts_filters_preview_speaker_name"),
+                        text,
+                        priority: Priority::Normal,
+                        alias_override: None,
+                        source_event_id: forge_types::EventId::new(),
+                    };
+                    handle
+                        .send(SpeakCommand::Enqueue(request))
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                |r| Message::Tts(TtsMsg::Filters(TtsFiltersMsg::SpeakPreviewResult(r))),
+            )
+        }
+        TtsFiltersMsg::SpeakPreviewResult(r) => {
+            if let Err(e) = r {
+                tracing::warn!(error = %e, "filter preview speak failed");
+            }
+            Task::none()
+        }
     }
 }
 
@@ -615,7 +650,7 @@ fn preview_column_view<'a>(
     .width(Length::Fill);
 
     let speak_btn = button(text(forge_widgets::tr!("tts_filters_speak_preview_btn")).size(FONT_SM))
-        .on_press(Message::Noop)
+        .on_press(Message::Tts(TtsMsg::Filters(TtsFiltersMsg::SpeakPreview)))
         .style(move |_, _| button::Style {
             background: Some(Background::Color(palette.brand)),
             border: Border {

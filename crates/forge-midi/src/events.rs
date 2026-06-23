@@ -17,6 +17,14 @@ pub enum MidiEvent {
         value: u8,
         channel: u8,
     },
+    PitchBend {
+        value: u16,
+        channel: u8,
+    },
+    ProgramChange {
+        program: u8,
+        channel: u8,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

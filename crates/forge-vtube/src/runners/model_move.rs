@@ -141,71 +141,9 @@ impl SubActionRunner for ModelMoveRunner {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::type_complexity)]
 mod tests {
-    use std::sync::atomic::{AtomicBool, Ordering};
-
     use super::*;
     use crate::error::VTubeError;
-    use forge_events::{Event, EventPublisher};
-    use forge_types::EventId;
-
-    struct MockSink {
-        called: AtomicBool,
-    }
-
-    impl MockSink {
-        fn new() -> Self {
-            Self {
-                called: AtomicBool::new(false),
-            }
-        }
-
-        fn was_called(&self) -> bool {
-            self.called.load(Ordering::Acquire)
-        }
-    }
-
-    #[async_trait]
-    impl VTubeSink for MockSink {
-        async fn trigger_hotkey(&self, _: &str) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn set_expression(&self, _: &str, _: bool) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn set_param(&self, _: &str, _: f64) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn load_model(&self, _: &str) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn reset_params(&self) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn move_model(
-            &self,
-            _: Option<f64>,
-            _: Option<f64>,
-            _: Option<f64>,
-            _: f64,
-        ) -> Result<(), VTubeError> {
-            self.called.store(true, Ordering::Release);
-            Ok(())
-        }
-    }
-
-    struct NoopPublisher;
-    impl EventPublisher for NoopPublisher {
-        fn publish(&self, _: Event) {}
-    }
-
-    fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
-        RunContext {
-            arg_stack: stack,
-            index: 0,
-            parent_event_id: EventId::new(),
-            publisher: &NoopPublisher,
-        }
-    }
+    use crate::runners::test_support::{MockSink, make_ctx};
 
     #[tokio::test]
     async fn execute_all_none_is_noop() {
@@ -329,6 +267,35 @@ mod tests {
             *self.captured_rotation.lock().unwrap() = Some(rotation);
             *self.captured_duration.lock().unwrap() = Some(time_in_seconds);
             Ok(())
+        }
+        #[allow(clippy::too_many_arguments)]
+        async fn move_item(
+            &self,
+            _: &str,
+            _: Option<f64>,
+            _: Option<f64>,
+            _: Option<f64>,
+            _: Option<f64>,
+            _: Option<i64>,
+            _: f64,
+            _: &str,
+        ) -> Result<(), VTubeError> {
+            Ok(())
+        }
+        async fn get_current_model(&self) -> Result<Variant, VTubeError> {
+            Ok(Variant::Object(BTreeMap::new()))
+        }
+        async fn get_hotkeys(&self) -> Result<Variant, VTubeError> {
+            Ok(Variant::Object(BTreeMap::new()))
+        }
+        async fn get_expressions(&self) -> Result<Variant, VTubeError> {
+            Ok(Variant::Object(BTreeMap::new()))
+        }
+        async fn get_parameters(&self) -> Result<Variant, VTubeError> {
+            Ok(Variant::Object(BTreeMap::new()))
+        }
+        async fn get_items(&self) -> Result<Variant, VTubeError> {
+            Ok(Variant::Object(BTreeMap::new()))
         }
     }
 

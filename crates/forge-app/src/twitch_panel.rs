@@ -148,18 +148,30 @@ pub fn update(
             let login = Some(outcome.user_info.login.clone());
             rt.twitch_login = login.clone();
             let tracker = forge_platform_twitch::SubscriptionTracker::default();
+            let config = forge_platform_twitch::ChatSessionConfig {
+                client_id: outcome.client_id,
+                broadcaster_id: outcome.user_info.id.clone(),
+                user_id: outcome.user_info.id,
+            };
             let chat = forge_platform_twitch::TwitchChat::new(
                 outcome.token,
-                outcome.client_id,
-                outcome.user_info.id.clone(),
-                outcome.user_info.id,
+                config.client_id.clone(),
+                config.broadcaster_id.clone(),
+                config.user_id.clone(),
                 Arc::clone(&rt.bus),
                 Arc::clone(&tracker),
             );
             let handle = chat.start();
-            let state_rx = handle.state_receiver();
-            let (twitch_bundle, _health_tx) =
-                TwitchIntegrationBundle::new(login, state_rx, tracker);
+            let creds: Arc<dyn CredentialsRepo> =
+                Arc::clone(&rt.backend) as Arc<dyn CredentialsRepo>;
+            let (twitch_bundle, _health_tx) = TwitchIntegrationBundle::new(
+                login,
+                config,
+                Arc::clone(&rt.bus),
+                creds,
+                tracker,
+                handle,
+            );
             let id = BuiltinId::new("twitch");
             let icon = SectionIcon::new("brand-twitch");
             let status: Arc<dyn BuiltinStatus> = twitch_bundle.clone();
@@ -174,7 +186,7 @@ pub fn update(
                 content,
                 quick_actions,
             ));
-            rt.twitch_chat_handle = Some(handle);
+            rt.twitch_builtin = Some(twitch_bundle);
             *state = TwitchPanelState::Disconnected;
             Task::none()
         }
@@ -184,8 +196,10 @@ pub fn update(
             Task::none()
         }
         TwitchPanelMsg::ReauthRequested => {
-            if let Some(handle) = rt.twitch_chat_handle.take() {
-                handle.shutdown();
+            if let Some(bundle) = rt.twitch_builtin.take() {
+                tokio::spawn(async move {
+                    let _ = forge_platform_core::BuiltinControl::disconnect(bundle.as_ref()).await;
+                });
             }
             *builtin_detail = None;
             rt.twitch_login = None;

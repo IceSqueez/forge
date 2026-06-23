@@ -529,7 +529,7 @@ fn selected_viewer_detail<'a>(
         .width(Length::Fill)
         .align_x(iced::Alignment::Center),
     )
-    .on_press(Message::Noop)
+    .on_press(Message::LiveChat(LiveChatMsg::ShoutoutViewer))
     .padding([sp(Spacing::Xxs), sp(Spacing::Sm)])
     .width(Length::Fill)
     .style(btn_style);
@@ -548,7 +548,7 @@ fn selected_viewer_detail<'a>(
         .width(Length::Fill)
         .align_x(iced::Alignment::Center),
     )
-    .on_press(Message::Noop)
+    .on_press(Message::LiveChat(LiveChatMsg::WhisperOpen))
     .padding([sp(Spacing::Xxs), sp(Spacing::Sm)])
     .width(Length::Fill)
     .style(btn_style);
@@ -556,7 +556,7 @@ fn selected_viewer_detail<'a>(
     let menu_items: Vec<MenuItem<Message>> = vec![
         MenuItem::Item {
             label: forge_widgets::tr!("chat_drawer_shoutout"),
-            on_press: Message::Noop,
+            on_press: Message::LiveChat(LiveChatMsg::ShoutoutViewer),
             icon: Some(Icon::Flag),
             shortcut: None,
             color: None,
@@ -564,7 +564,7 @@ fn selected_viewer_detail<'a>(
         },
         MenuItem::Item {
             label: forge_widgets::tr!("chat_drawer_whisper"),
-            on_press: Message::Noop,
+            on_press: Message::LiveChat(LiveChatMsg::WhisperOpen),
             icon: Some(Icon::MessageCircle),
             shortcut: None,
             color: None,
@@ -818,18 +818,164 @@ fn viewer_list<'a>(
         .into()
 }
 
+fn whisper_modal<'a>(
+    form: &'a crate::live_chat::WhisperForm,
+    recipient: &str,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    use forge_widgets::{
+        FontRole, font,
+        tokens::{BORDER_THIN, FONT_SM, Radius, radius},
+    };
+    use iced::widget::{Space, button, column, container, row, text, text_input};
+    use iced::{Background, Border};
+
+    let p = *palette;
+
+    let title_str = forge_widgets::tr!("chat_drawer_whisper_title", recipient = recipient);
+    let title_el = text(title_str)
+        .font(font(FontRole::Body))
+        .size(FONT_SM)
+        .color(p.text_primary);
+
+    let input_el = text_input(
+        &forge_widgets::tr!("chat_drawer_whisper_placeholder"),
+        &form.message,
+    )
+    .on_input(|s| Message::LiveChat(LiveChatMsg::WhisperMessageChanged(s)))
+    .on_submit(Message::LiveChat(LiveChatMsg::WhisperSend))
+    .font(font(FontRole::Body))
+    .size(FONT_SM)
+    .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
+    .style(move |_t: &iced::Theme, s: text_input::Status| {
+        let focused = matches!(s, text_input::Status::Focused { .. });
+        text_input::Style {
+            background: Background::Color(p.elevated),
+            border: Border {
+                color: if focused { p.brand } else { p.border_input },
+                width: BORDER_THIN,
+                radius: radius(Radius::Sm).into(),
+            },
+            icon: p.text_faint,
+            placeholder: p.text_faint,
+            value: p.text_primary,
+            selection: p.brand,
+        }
+    });
+
+    let is_empty = form.message.trim().is_empty();
+    let send_bg = if is_empty { p.surface_overlay } else { p.brand };
+    let send_text_color = if is_empty { p.text_faint } else { p.base };
+
+    let send_btn = button(
+        text(forge_widgets::tr!("chat_drawer_whisper_send"))
+            .font(font(FontRole::Body))
+            .size(FONT_SM)
+            .color(send_text_color),
+    )
+    .padding([sp(Spacing::Xs), sp(Spacing::Md)])
+    .style(move |_t: &iced::Theme, _s: button::Status| button::Style {
+        background: Some(Background::Color(send_bg)),
+        border: Border {
+            color: p.border_regular,
+            width: BORDER_THIN,
+            radius: radius(Radius::Sm).into(),
+        },
+        text_color: send_text_color,
+        shadow: iced::Shadow::default(),
+        snap: false,
+    });
+    let send_btn = if is_empty {
+        send_btn
+    } else {
+        send_btn.on_press(Message::LiveChat(LiveChatMsg::WhisperSend))
+    };
+
+    let cancel_btn = button(
+        text(forge_widgets::tr!("common_cancel"))
+            .font(font(FontRole::Body))
+            .size(FONT_SM)
+            .color(p.text_secondary),
+    )
+    .on_press(Message::LiveChat(LiveChatMsg::WhisperCancel))
+    .padding([sp(Spacing::Xs), sp(Spacing::Md)])
+    .style(move |_t: &iced::Theme, _s: button::Status| button::Style {
+        background: Some(Background::Color(Color::TRANSPARENT)),
+        border: Border {
+            color: p.border_regular,
+            width: BORDER_THIN,
+            radius: radius(Radius::Sm).into(),
+        },
+        text_color: p.text_secondary,
+        shadow: iced::Shadow::default(),
+        snap: false,
+    });
+
+    let btn_row = row![Space::new().width(Length::Fill), cancel_btn, send_btn]
+        .spacing(spf(Spacing::Xs))
+        .align_y(iced::Alignment::Center);
+
+    let card = container(column![title_el, input_el, btn_row].spacing(spf(Spacing::Sm)))
+        .padding([sp(Spacing::Md), sp(Spacing::Md)])
+        .width(Length::Fill)
+        .style(move |_t: &iced::Theme| container::Style {
+            background: Some(Background::Color(p.elevated)),
+            border: Border {
+                color: p.border_regular,
+                width: BORDER_THIN,
+                radius: radius(Radius::Md).into(),
+            },
+            ..container::Style::default()
+        });
+
+    let backdrop = button(Space::new().width(Length::Fill).height(Length::Fill))
+        .on_press(Message::LiveChat(LiveChatMsg::WhisperCancel))
+        .style(|_t: &iced::Theme, _s: button::Status| button::Style {
+            background: Some(Background::Color(Color {
+                a: 0.5,
+                ..Color::BLACK
+            })),
+            border: Border::default(),
+            text_color: Color::TRANSPARENT,
+            shadow: iced::Shadow::default(),
+            snap: false,
+        });
+
+    let modal_layer = container(
+        container(card)
+            .width(Length::Fill)
+            .padding([sp(Spacing::Lg), sp(Spacing::Md)]),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .align_y(iced::Alignment::Start);
+
+    iced::widget::stack![backdrop, modal_layer]
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+}
+
 pub(crate) fn drawer_panel<'a>(
     state: &'a LiveChatState,
     viewers: &'a ViewersState,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    iced::widget::column![
+    let base = iced::widget::column![
         drawer_header(state, palette),
         selected_viewer_detail(state, viewers, palette),
         viewer_list(state, viewers, palette),
     ]
-    .height(Length::Fill)
-    .into()
+    .height(Length::Fill);
+
+    if let Some(form) = &state.whisper_form {
+        let recipient = state.selected_viewer.as_deref().unwrap_or("");
+        iced::widget::stack![base, whisper_modal(form, recipient, palette)]
+            .height(Length::Fill)
+            .into()
+    } else {
+        base.into()
+    }
 }
 
 #[cfg(test)]

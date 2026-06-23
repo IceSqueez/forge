@@ -43,6 +43,10 @@ pub enum PlatformGroup {
     YouTube,
     Kick,
     Obs,
+    VTube,
+    Midi,
+    Hotkey,
+    Discord,
     Script,
     Core,
 }
@@ -50,7 +54,6 @@ pub enum PlatformGroup {
 #[derive(Clone, Debug)]
 pub struct TriggerSubGroup {
     pub label: String,
-    pub kind_id_prefix: String,
 }
 
 impl PartialEq for TriggerSubGroup {
@@ -99,6 +102,41 @@ pub(crate) fn category_display_label(cat: RegistryCategory) -> String {
     }
 }
 
+pub fn sub_group_label_for(kind_id: &str) -> String {
+    let Some(segment) = kind_id.split('.').nth(1) else {
+        return forge_widgets::tr!("trigger_cat_other");
+    };
+    match segment {
+        "scenes" => forge_widgets::tr!("trigger_subgroup_scenes"),
+        "sources" => forge_widgets::tr!("trigger_subgroup_sources"),
+        "audio" => forge_widgets::tr!("trigger_subgroup_audio"),
+        "filters" => forge_widgets::tr!("trigger_subgroup_filters"),
+        "stream" => forge_widgets::tr!("trigger_subgroup_streaming"),
+        "record" => forge_widgets::tr!("trigger_subgroup_recording"),
+        "studio" => forge_widgets::tr!("trigger_subgroup_studio_mode"),
+        "transition" => forge_widgets::tr!("trigger_subgroup_transitions"),
+        "virtualcam" => forge_widgets::tr!("trigger_subgroup_virtual_camera"),
+        "connection" => forge_widgets::tr!("trigger_subgroup_connection"),
+        "collection" => forge_widgets::tr!("trigger_subgroup_scene_collections"),
+        "profile" => forge_widgets::tr!("trigger_subgroup_profiles"),
+        other => title_case_segment(other),
+    }
+}
+
+fn title_case_segment(segment: &str) -> String {
+    segment
+        .split('_')
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 pub fn build_picker_entries(
     descriptor_infos: Vec<(String, String, String)>,
     all_instances: Vec<TriggerInstance>,
@@ -138,6 +176,14 @@ fn platform_group_for(kind_id: &str) -> PlatformGroup {
         PlatformGroup::Kick
     } else if kind_id.starts_with("obs.") {
         PlatformGroup::Obs
+    } else if kind_id.starts_with("vtube.") {
+        PlatformGroup::VTube
+    } else if kind_id.starts_with("midi.") {
+        PlatformGroup::Midi
+    } else if kind_id.starts_with("hotkey.") {
+        PlatformGroup::Hotkey
+    } else if kind_id.starts_with("discord.") {
+        PlatformGroup::Discord
     } else if kind_id.starts_with("script.") {
         PlatformGroup::Script
     } else {
@@ -296,6 +342,10 @@ pub fn view<'a>(
         PlatformGroup::YouTube,
         PlatformGroup::Kick,
         PlatformGroup::Obs,
+        PlatformGroup::VTube,
+        PlatformGroup::Midi,
+        PlatformGroup::Hotkey,
+        PlatformGroup::Discord,
         PlatformGroup::Script,
         PlatformGroup::Core,
     ];
@@ -304,6 +354,10 @@ pub fn view<'a>(
         PlatformGroup::YouTube => "YouTube",
         PlatformGroup::Kick => "Kick",
         PlatformGroup::Obs => "OBS",
+        PlatformGroup::VTube => "VTube Studio",
+        PlatformGroup::Midi => "MIDI",
+        PlatformGroup::Hotkey => "Hotkey",
+        PlatformGroup::Discord => "Discord",
         PlatformGroup::Script => "Script",
         PlatformGroup::Core => "Core",
     };
@@ -312,6 +366,10 @@ pub fn view<'a>(
         PlatformGroup::YouTube => p.platform_youtube,
         PlatformGroup::Kick => p.platform_kick,
         PlatformGroup::Obs => p.text_secondary,
+        PlatformGroup::VTube => p.accent_teal,
+        PlatformGroup::Midi => p.random,
+        PlatformGroup::Hotkey => p.warning,
+        PlatformGroup::Discord => p.info,
         PlatformGroup::Script => p.warning,
         PlatformGroup::Core => p.info,
     };
@@ -435,10 +493,7 @@ pub fn view<'a>(
             };
             let btn = iced::widget::button(text(label.clone()).size(FONT_SM).color(text_color))
                 .on_press(Message::Actions(ActionsMsg::TriggerPickerMsg(
-                    TriggerPickerMsg::Level2Selected(TriggerSubGroup {
-                        label: label_clone,
-                        kind_id_prefix: String::new(),
-                    }),
+                    TriggerPickerMsg::Level2Selected(TriggerSubGroup { label: label_clone }),
                 )))
                 .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
                 .width(Length::Fill)
@@ -752,10 +807,66 @@ mod tests {
             ("twitch.chat.command", PlatformGroup::Twitch),
             ("youtube.chat.message_deleted", PlatformGroup::YouTube),
             ("obs.scenes.current_changed", PlatformGroup::Obs),
+            ("vtube.model.loaded", PlatformGroup::VTube),
+            ("midi.input.note_on", PlatformGroup::Midi),
+            ("hotkey.global.pressed", PlatformGroup::Hotkey),
+            ("discord.webhook.send_message", PlatformGroup::Discord),
             ("script.event.custom", PlatformGroup::Script),
-            ("core.logic.wait", PlatformGroup::Core),
+            ("core.timer.tick", PlatformGroup::Core),
+            ("random.thing", PlatformGroup::Core),
         ] {
             assert_eq!(platform_group_for(kind), expected, "kind={kind}");
         }
+    }
+
+    #[test]
+    fn sub_group_label_for_maps_obs_segments_to_human_labels() {
+        for (kind, expected) in [
+            (
+                "obs.scenes.current_changed",
+                forge_widgets::tr!("trigger_subgroup_scenes"),
+            ),
+            (
+                "obs.audio.input_muted",
+                forge_widgets::tr!("trigger_subgroup_audio"),
+            ),
+            (
+                "obs.stream.started",
+                forge_widgets::tr!("trigger_subgroup_streaming"),
+            ),
+            (
+                "obs.record.started",
+                forge_widgets::tr!("trigger_subgroup_recording"),
+            ),
+            (
+                "obs.studio.mode_toggled",
+                forge_widgets::tr!("trigger_subgroup_studio_mode"),
+            ),
+            (
+                "obs.virtualcam.started",
+                forge_widgets::tr!("trigger_subgroup_virtual_camera"),
+            ),
+        ] {
+            assert_eq!(sub_group_label_for(kind), expected, "kind={kind}");
+        }
+    }
+
+    #[test]
+    fn sub_group_label_for_title_cases_unmapped_segment() {
+        for (kind, expected) in [
+            ("vtube.model.loaded", "Model"),
+            ("midi.input.note_on", "Input"),
+            ("platform.some_thing.fired", "Some Thing"),
+        ] {
+            assert_eq!(sub_group_label_for(kind), expected, "kind={kind}");
+        }
+    }
+
+    #[test]
+    fn sub_group_label_for_single_segment_returns_other_fallback() {
+        assert_eq!(
+            sub_group_label_for("standalone"),
+            forge_widgets::tr!("trigger_cat_other"),
+        );
     }
 }

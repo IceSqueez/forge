@@ -133,56 +133,11 @@ impl SubActionRunner for ParamSetRunner {
 mod tests {
     use super::*;
     use crate::error::VTubeError;
-    use forge_events::{Event, EventPublisher};
-    use forge_types::EventId;
-
-    struct MockSink;
-
-    #[async_trait]
-    impl VTubeSink for MockSink {
-        async fn trigger_hotkey(&self, _: &str) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn set_expression(&self, _: &str, _: bool) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn set_param(&self, _: &str, _: f64) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn load_model(&self, _: &str) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn reset_params(&self) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn move_model(
-            &self,
-            _: Option<f64>,
-            _: Option<f64>,
-            _: Option<f64>,
-            _: f64,
-        ) -> Result<(), VTubeError> {
-            Ok(())
-        }
-    }
-
-    struct NoopPublisher;
-    impl EventPublisher for NoopPublisher {
-        fn publish(&self, _: Event) {}
-    }
-
-    fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
-        RunContext {
-            arg_stack: stack,
-            index: 0,
-            parent_event_id: EventId::new(),
-            publisher: &NoopPublisher,
-        }
-    }
+    use crate::runners::test_support::{MockSink, make_ctx};
 
     #[test]
     fn validate_config_accepts_valid_param() {
-        let runner = ParamSetRunner::new(Arc::new(MockSink));
+        let runner = ParamSetRunner::new(Arc::new(MockSink::new()));
         let config = BTreeMap::from([
             ("param_id".to_owned(), Variant::String("MyParam".to_owned())),
             ("value".to_owned(), Variant::Float(0.5)),
@@ -192,14 +147,14 @@ mod tests {
 
     #[test]
     fn validate_config_rejects_missing_param_id() {
-        let runner = ParamSetRunner::new(Arc::new(MockSink));
+        let runner = ParamSetRunner::new(Arc::new(MockSink::new()));
         let config = BTreeMap::from([("value".to_owned(), Variant::Float(1.0))]);
         assert!(runner.validate_config(&config).is_err());
     }
 
     #[tokio::test]
     async fn execute_interpolates_param_id_not_value() {
-        let runner = ParamSetRunner::new(Arc::new(MockSink));
+        let runner = ParamSetRunner::new(Arc::new(MockSink::new()));
         let stack =
             ArgStack::new().set("pid".to_owned(), Variant::String("DynamicParam".to_owned()));
         let config = BTreeMap::from([
@@ -214,7 +169,7 @@ mod tests {
 
     #[tokio::test]
     async fn execute_returns_success_on_mock_sink() {
-        let runner = ParamSetRunner::new(Arc::new(MockSink));
+        let runner = ParamSetRunner::new(Arc::new(MockSink::new()));
         let stack = ArgStack::new();
         let config = BTreeMap::from([
             ("param_id".to_owned(), Variant::String("ParamA".to_owned())),
@@ -274,6 +229,35 @@ mod tests {
         ) -> Result<(), VTubeError> {
             Ok(())
         }
+        #[allow(clippy::too_many_arguments)]
+        async fn move_item(
+            &self,
+            _: &str,
+            _: Option<f64>,
+            _: Option<f64>,
+            _: Option<f64>,
+            _: Option<f64>,
+            _: Option<i64>,
+            _: f64,
+            _: &str,
+        ) -> Result<(), VTubeError> {
+            Ok(())
+        }
+        async fn get_current_model(&self) -> Result<Variant, VTubeError> {
+            Ok(Variant::Object(BTreeMap::new()))
+        }
+        async fn get_hotkeys(&self) -> Result<Variant, VTubeError> {
+            Ok(Variant::Object(BTreeMap::new()))
+        }
+        async fn get_expressions(&self) -> Result<Variant, VTubeError> {
+            Ok(Variant::Object(BTreeMap::new()))
+        }
+        async fn get_parameters(&self) -> Result<Variant, VTubeError> {
+            Ok(Variant::Object(BTreeMap::new()))
+        }
+        async fn get_items(&self) -> Result<Variant, VTubeError> {
+            Ok(Variant::Object(BTreeMap::new()))
+        }
     }
 
     #[tokio::test]
@@ -303,7 +287,7 @@ mod tests {
 
     #[test]
     fn validate_config_rejects_non_float_value() {
-        let runner = ParamSetRunner::new(Arc::new(MockSink));
+        let runner = ParamSetRunner::new(Arc::new(MockSink::new()));
         let config = BTreeMap::from([
             ("param_id".to_owned(), Variant::String("P".to_owned())),
             (

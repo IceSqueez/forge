@@ -23,7 +23,7 @@ impl PostTextRunner {
 #[async_trait]
 impl SubActionRunner for PostTextRunner {
     fn id(&self) -> &str {
-        "discord.post_text"
+        "discord.webhook.send_message"
     }
 
     fn category(&self) -> SubActionCategory {
@@ -74,7 +74,8 @@ impl SubActionRunner for PostTextRunner {
             Ok(())
         } else {
             Err(RegistryError::UnknownKindId(
-                "discord.post_text: 'webhook_name' and 'content' must be strings".to_owned(),
+                "discord.webhook.send_message: 'webhook_name' and 'content' must be strings"
+                    .to_owned(),
             ))
         }
     }
@@ -115,7 +116,7 @@ impl SubActionRunner for PostTextRunner {
         if content.trim().is_empty() {
             return (
                 SubActionTelemetry {
-                    kind: "discord.post_text".to_owned(),
+                    kind: "discord.webhook.send_message".to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,
                     outcome: SubActionOutcome::Failed("content is empty".to_owned()),
@@ -132,7 +133,7 @@ impl SubActionRunner for PostTextRunner {
 
         (
             SubActionTelemetry {
-                kind: "discord.post_text".to_owned(),
+                kind: "discord.webhook.send_message".to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

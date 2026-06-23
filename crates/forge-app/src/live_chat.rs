@@ -1,10 +1,10 @@
-use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::sync::Arc;
 
 use forge_events::{Event, EventSource};
 use forge_types::{
-    ChatEventDetail, ChatSegment, ChatSource, EventId, ModerationMarks, PlatformId, UnifiedChatRow,
-    UserBadge,
+    ChatEventDetail, ChatSegment, ChatSource, EventId, ModerationMarks, PlatformId, SubActionStep,
+    UnifiedChatRow, UserBadge, Variant,
 };
 use iced::Task;
 use time::OffsetDateTime;
@@ -17,6 +17,42 @@ use crate::runtime_view::RuntimeView;
 pub const CHAT_LOG_MAX: usize = 2_000;
 
 pub type SendId = u64;
+
+// Inline form state for the whisper-compose overlay in the viewer drawer.
+// None = overlay closed; Some = user is composing a whisper to `selected_viewer`.
+#[derive(Debug, Clone)]
+pub struct WhisperForm {
+    pub message: String,
+}
+
+fn build_shoutout_step(login: &str) -> SubActionStep {
+    let mut config = BTreeMap::new();
+    config.insert(
+        "to_broadcaster_login".to_owned(),
+        Variant::String(login.to_owned()),
+    );
+    SubActionStep {
+        kind_id: "twitch.channel.send_shoutout".to_owned(),
+        config,
+        enabled: true,
+        label: Some(format!("Shoutout {login}")),
+    }
+}
+
+fn build_whisper_step(login: &str, message: &str) -> SubActionStep {
+    let mut config = BTreeMap::new();
+    config.insert(
+        "to_user_login".to_owned(),
+        Variant::String(login.to_owned()),
+    );
+    config.insert("message".to_owned(), Variant::String(message.to_owned()));
+    SubActionStep {
+        kind_id: "twitch.chat.send_whisper".to_owned(),
+        config,
+        enabled: true,
+        label: Some(format!("Whisper {login}")),
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum PlatformFilter {
@@ -71,6 +107,7 @@ pub struct LiveChatState {
     pub unread_count: u32,
     pub emoji_picker_open: bool,
     pub next_chat_seq: u64,
+    pub whisper_form: Option<WhisperForm>,
 }
 
 impl LiveChatState {
@@ -207,6 +244,7 @@ impl LiveChatState {
             unread_count: 0,
             emoji_picker_open: false,
             next_chat_seq: 7,
+            whisper_form: None,
         }
     }
 }
@@ -427,6 +465,75 @@ pub fn update(state: &mut LiveChatState, rt: &RuntimeView, msg: LiveChatMsg) -> 
                 |_| Message::Noop,
             )
         }
+        LiveChatMsg::ShoutoutViewer => {
+            let Some(login) = state.selected_viewer.clone() else {
+                return Task::none();
+            };
+            let step = build_shoutout_step(&login);
+            let engine = rt.action_engine.clone();
+            Task::perform(
+                async move {
+                    if let Some(e) = engine {
+                        let _ = e
+                            .execute_quick_action(
+                                step,
+                                "twitch".to_owned(),
+                                format!("Shoutout {login}"),
+                            )
+                            .await;
+                    }
+                },
+                |_| Message::Noop,
+            )
+        }
+        LiveChatMsg::WhisperOpen => {
+            if state.selected_viewer.is_some() {
+                state.whisper_form = Some(WhisperForm {
+                    message: String::new(),
+                });
+            }
+            Task::none()
+        }
+        LiveChatMsg::WhisperMessageChanged(s) => {
+            if let Some(form) = state.whisper_form.as_mut() {
+                form.message = s;
+            }
+            Task::none()
+        }
+        LiveChatMsg::WhisperSend => {
+            let Some(login) = state.selected_viewer.clone() else {
+                return Task::none();
+            };
+            let msg_text = state
+                .whisper_form
+                .as_ref()
+                .map(|f| f.message.trim().to_owned())
+                .unwrap_or_default();
+            if msg_text.is_empty() {
+                return Task::none();
+            }
+            state.whisper_form = None;
+            let step = build_whisper_step(&login, &msg_text);
+            let engine = rt.action_engine.clone();
+            Task::perform(
+                async move {
+                    if let Some(e) = engine {
+                        let _ = e
+                            .execute_quick_action(
+                                step,
+                                "twitch".to_owned(),
+                                format!("Whisper {login}"),
+                            )
+                            .await;
+                    }
+                },
+                |_| Message::Noop,
+            )
+        }
+        LiveChatMsg::WhisperCancel => {
+            state.whisper_form = None;
+            Task::none()
+        }
     }
 }
 
@@ -502,7 +609,7 @@ mod tests {
             hotkey_client: None,
             speak_queue: None,
             sound_player: None,
-            twitch_chat_handle: None,
+            twitch_builtin: None,
             chat_send_bridge: None,
             twitch_flow: None,
             youtube_flow: None,

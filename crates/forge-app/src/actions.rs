@@ -19,8 +19,7 @@ pub use crate::actions_forms::{
 };
 pub use crate::actions_telemetry::{action_stat, format_relative_time, telemetry_grid};
 pub use crate::actions_trigger_kinds::{
-    ActionsFilter, TriggerCategory, all_trigger_kind_ids, category_of, kind_label,
-    kind_search_text, kind_summary, trigger_label_of,
+    ActionsFilter, TriggerCategory, category_of, trigger_label_of,
 };
 
 #[derive(Debug, Clone)]
@@ -344,9 +343,7 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
                 .trigger_registry
                 .all()
                 .map(|d| {
-                    let sub_label =
-                        crate::actions_trigger_picker::category_display_label(d.category())
-                            .to_owned();
+                    let sub_label = crate::actions_trigger_picker::sub_group_label_for(d.id());
                     (d.id().to_owned(), d.label().to_owned(), sub_label)
                 })
                 .collect();

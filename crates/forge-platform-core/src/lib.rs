@@ -9,11 +9,12 @@ pub mod paths;
 pub mod rate_limit;
 pub use auth::AuthFlow;
 pub use builtin::{
-    ActiveRow, BadgeTone, BannerLevel, BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus,
-    CapabilityFlags, ContentList, ContentListItem, DetailSection, HeaderAction, HealthBar,
-    HealthDelta, HealthLevel, HealthMetric, HealthStream, HealthValue, InfoField, KeyValueRow,
-    ListFooter, PickerKind, QuickAction, QuickActions, RowAction, SectionIcon, StatColumn,
-    SubscriptionRow, SubscriptionStatus, TokenColor, TrailingToken,
+    ActiveRow, BadgeTone, BannerLevel, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinId,
+    BuiltinStatus, CapabilityFlags, ContentList, ContentListItem, ControlFailure, ControlOutcome,
+    DetailSection, HeaderAction, HealthBar, HealthDelta, HealthLevel, HealthMetric, HealthStream,
+    HealthValue, InfoField, KeyValueRow, ListFooter, PickerKind, QuickAction, QuickActions,
+    RowAction, SectionIcon, StatColumn, SubscriptionRow, SubscriptionStatus, TokenColor,
+    TrailingToken,
 };
 pub use capabilities::PlatformCapabilities;
 pub use chat::{ChatPlatform, ConnectionState};

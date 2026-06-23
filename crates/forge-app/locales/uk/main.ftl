@@ -483,7 +483,13 @@ triggers_breadcrumb_triggers = Тригери
 triggers_open_create_btn = + Створити
 triggers_search_placeholder = Пошук тригерів…
 triggers_filter_twitch = Twitch
+triggers_filter_youtube = YouTube
+triggers_filter_kick = Kick
 triggers_filter_obs = OBS
+triggers_filter_vtube = VTube Studio
+triggers_filter_midi = MIDI
+triggers_filter_hotkey = Гарячі клавіші
+triggers_filter_discord = Discord
 triggers_filter_script = Скрипт
 triggers_filter_all = Всі
 triggers_usage_all = Всі
@@ -588,6 +594,18 @@ trigger_cat_core = Ядро
 trigger_cat_server = Події сервера
 trigger_cat_timer = Таймери
 trigger_cat_other = Інше
+trigger_subgroup_scenes = Сцени
+trigger_subgroup_sources = Джерела
+trigger_subgroup_audio = Аудіо
+trigger_subgroup_filters = Фільтри
+trigger_subgroup_streaming = Трансляція
+trigger_subgroup_recording = Запис
+trigger_subgroup_studio_mode = Студійний режим
+trigger_subgroup_transitions = Переходи
+trigger_subgroup_virtual_camera = Віртуальна камера
+trigger_subgroup_connection = З'єднання
+trigger_subgroup_scene_collections = Колекції сцен
+trigger_subgroup_profiles = Профілі
 
 ## Actions modals — placeholder literals
 
@@ -623,6 +641,7 @@ tts_dash_skip_btn = Пропустити
 tts_dash_stop_all_btn = Зупинити все
 tts_dash_test_placeholder = Введіть текст для тестування…
 tts_dash_speak_btn = Озвучити
+tts_dash_test_speaker_name = Тест
 
 ## TTS Dashboard — зараз говорить
 
@@ -720,6 +739,7 @@ tts_filters_preview_input_placeholder = Введіть повідомлення 
 tts_filters_preview_empty = Введіть повідомлення вище для перегляду
 tts_filters_preview_output_label = ПІДСУМКОВИЙ РЕЗУЛЬТАТ
 tts_filters_speak_preview_btn = Озвучити перегляд
+tts_filters_preview_speaker_name = Перегляд
 tts_filters_preview_tip = Введіть будь-яке повідомлення вище, щоб побачити, як фільтри перетворюють його в реальному часі
 
 ## TTS Triggers — заголовок
@@ -839,6 +859,32 @@ tts_aliases_role_vip = VIP
 tts_aliases_role_sub = САБ
 tts_aliases_role_blocked = БЛОК
 
+## Голосові аліаси — модалка призначення/редагування
+
+tts_aliases_form_title_assign = Призначити голос
+tts_aliases_form_title_edit = Редагувати голосовий аліас
+tts_aliases_form_viewer_label = ГЛЯДАЧ
+tts_aliases_form_viewer_placeholder = Імʼя глядача
+tts_aliases_form_engine_label = ДВИГУН
+tts_aliases_form_engine_placeholder = Оберіть двигун
+tts_aliases_form_voice_label = ГОЛОС
+tts_aliases_form_voice_placeholder = Ідентифікатор голосу
+tts_aliases_form_pitch_label = ТОН (пт)
+tts_aliases_form_pitch_placeholder = 0
+tts_aliases_form_rate_label = ТЕМП (x)
+tts_aliases_form_rate_placeholder = 1.0
+tts_aliases_form_create = Створити
+
+## Голосові аліаси — підтвердження видалення
+
+tts_aliases_delete_title = Видалити голосовий аліас?
+tts_aliases_delete_body = Прибрати закріплений голос для { $viewer }?
+common_delete = Видалити
+
+## Голосові аліаси — попереднє прослуховування
+
+tts_aliases_preview_text = Це попереднє прослуховування голосу.
+
 ## Звукова панель — хлібні крихти
 
 soundboard_breadcrumb_builtin = Вбудоване
@@ -893,6 +939,17 @@ queues_configure_btn = Налаштувати
 queues_drain_btn = Спустошити
 queues_pause_btn = Пауза
 queues_resume_btn = Продовжити
+
+## Черги — модальне вікно нової черги
+
+queues_create_title = Нова черга
+queues_create_name_label = Назва
+queues_create_name_placeholder = Назва черги (обовʼязково)
+queues_create_blocking_label = Послідовне виконання
+queues_create_blocking_desc = Виконувати по одній дії; наступні чекають своєї черги
+queues_create_btn = Створити
+queues_create_cancel = Скасувати
+queues_edit_title = Налаштування черги
 
 ## Черги — метрики картки
 
@@ -1189,6 +1246,9 @@ chat_drawer_click_hint = Натисніть на ім'я в чаті, щоб п�
 chat_drawer_last_seen = Востаннє { $when }
 chat_drawer_shoutout = Shoutout
 chat_drawer_whisper = Whisper
+chat_drawer_whisper_title = Шепіт для { $recipient }
+chat_drawer_whisper_placeholder = Введіть повідомлення…
+chat_drawer_whisper_send = Надіслати
 chat_drawer_set_tts_voice = Встановити голос TTS…
 chat_drawer_block_tts = Заблокувати TTS
 chat_drawer_timeout = Таймаут 10 хв
@@ -1475,3 +1535,8 @@ fmt_relative_days = { $count ->
     [many] { $count } д тому
    *[other] { $count } д тому
 }
+
+## Storage error screen
+storage_error_title = Не вдалося відкрити базу даних
+storage_error_data_safe = Ваші дані на диску не було змінено. Застосунок працює на тимчасовому сховищі, тож зміни, зроблені зараз, буде втрачено після перезапуску.
+storage_error_report = Про цю помилку варто повідомити.

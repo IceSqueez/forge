@@ -1,5 +1,9 @@
+use std::collections::BTreeMap;
+
 use async_trait::async_trait;
-use serde_json::json;
+use serde_json::{Value, json};
+
+use forge_types::Variant;
 
 use crate::client::VTubeClient;
 use crate::error::VTubeError;
@@ -76,7 +80,144 @@ impl VTubeSink for VTubeClient {
         let resp = self.send_json_request("MoveModelRequest", data).await?;
         check_response(&resp)
     }
+
+    async fn move_item(
+        &self,
+        item_instance_id: &str,
+        x: Option<f64>,
+        y: Option<f64>,
+        size: Option<f64>,
+        rotation: Option<f64>,
+        order: Option<i64>,
+        time_in_seconds: f64,
+        fade_mode: &str,
+    ) -> Result<(), VTubeError> {
+        let data = json!({
+            "itemsToMove": [{
+                "itemInstanceID": item_instance_id,
+                "timeInSeconds": time_in_seconds,
+                "fadeMode": fade_mode,
+                "positionX": x.unwrap_or(ITEM_IGNORE_SENTINEL),
+                "positionY": y.unwrap_or(ITEM_IGNORE_SENTINEL),
+                "size": size.unwrap_or(ITEM_IGNORE_SENTINEL),
+                "rotation": rotation.unwrap_or(ITEM_IGNORE_SENTINEL),
+                "order": order.unwrap_or(ITEM_IGNORE_SENTINEL_ORDER),
+                "setFlip": false,
+                "flip": false,
+                "userCanStop": false
+            }]
+        });
+        let resp = self.send_json_request("ItemMoveRequest", data).await?;
+        check_response(&resp)
+    }
+
+    async fn get_current_model(&self) -> Result<Variant, VTubeError> {
+        let resp = self
+            .send_json_request("CurrentModelRequest", json!({}))
+            .await?;
+        check_response(&resp)?;
+        let mut fields = BTreeMap::new();
+        fields.insert("name".to_owned(), string_field(&resp, "modelName"));
+        fields.insert("id".to_owned(), string_field(&resp, "modelID"));
+        fields.insert(
+            "loaded".to_owned(),
+            Variant::Bool(resp["modelLoaded"].as_bool().unwrap_or(false)),
+        );
+        Ok(Variant::Object(fields))
+    }
+
+    async fn get_hotkeys(&self) -> Result<Variant, VTubeError> {
+        let resp = self
+            .send_json_request("HotkeysInCurrentModelRequest", json!({}))
+            .await?;
+        check_response(&resp)?;
+        let entries = resp["availableHotkeys"].as_array();
+        let names = string_array(entries, "name");
+        let ids = string_array(entries, "hotkeyID");
+        let count = names.len() as i64;
+        let mut fields = BTreeMap::new();
+        fields.insert("names".to_owned(), Variant::Array(names));
+        fields.insert("ids".to_owned(), Variant::Array(ids));
+        fields.insert("count".to_owned(), Variant::Int(count));
+        Ok(Variant::Object(fields))
+    }
+
+    async fn get_expressions(&self) -> Result<Variant, VTubeError> {
+        let resp = self
+            .send_json_request("ExpressionStateRequest", json!({}))
+            .await?;
+        check_response(&resp)?;
+        let entries = resp["expressions"].as_array();
+        let names = string_array(entries, "name");
+        let active = bool_array(entries, "active");
+        let count = names.len() as i64;
+        let mut fields = BTreeMap::new();
+        fields.insert("names".to_owned(), Variant::Array(names));
+        fields.insert("active".to_owned(), Variant::Array(active));
+        fields.insert("count".to_owned(), Variant::Int(count));
+        Ok(Variant::Object(fields))
+    }
+
+    async fn get_parameters(&self) -> Result<Variant, VTubeError> {
+        let resp = self
+            .send_json_request("InputParameterListRequest", json!({}))
+            .await?;
+        check_response(&resp)?;
+        let mut names = string_array(resp["defaultParameters"].as_array(), "name");
+        names.extend(string_array(resp["customParameters"].as_array(), "name"));
+        let count = names.len() as i64;
+        let mut fields = BTreeMap::new();
+        fields.insert("names".to_owned(), Variant::Array(names));
+        fields.insert("count".to_owned(), Variant::Int(count));
+        Ok(Variant::Object(fields))
+    }
+
+    async fn get_items(&self) -> Result<Variant, VTubeError> {
+        let data = json!({
+            "includeAvailableSpots": false,
+            "includeItemInstancesInScene": true,
+            "includeAvailableItemFiles": false
+        });
+        let resp = self.send_json_request("ItemListRequest", data).await?;
+        check_response(&resp)?;
+        let entries = resp["itemInstancesInScene"].as_array();
+        let instance_ids = string_array(entries, "instanceID");
+        let file_names = string_array(entries, "fileName");
+        let count = instance_ids.len() as i64;
+        let mut fields = BTreeMap::new();
+        fields.insert("instance_ids".to_owned(), Variant::Array(instance_ids));
+        fields.insert("file_names".to_owned(), Variant::Array(file_names));
+        fields.insert("count".to_owned(), Variant::Int(count));
+        Ok(Variant::Object(fields))
+    }
 }
+
+fn string_field(data: &Value, key: &str) -> Variant {
+    Variant::String(data[key].as_str().unwrap_or("").to_owned())
+}
+
+fn string_array(entries: Option<&Vec<Value>>, key: &str) -> Vec<Variant> {
+    entries
+        .map(|arr| {
+            arr.iter()
+                .map(|e| Variant::String(e[key].as_str().unwrap_or("").to_owned()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn bool_array(entries: Option<&Vec<Value>>, key: &str) -> Vec<Variant> {
+    entries
+        .map(|arr| {
+            arr.iter()
+                .map(|e| Variant::Bool(e[key].as_bool().unwrap_or(false)))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+const ITEM_IGNORE_SENTINEL: f64 = -1000.0;
+const ITEM_IGNORE_SENTINEL_ORDER: i64 = -1000;
 
 fn check_response(data: &serde_json::Value) -> Result<(), VTubeError> {
     if let Some(error_id) = data.get("errorID").and_then(|v| v.as_i64()) {

@@ -133,7 +133,10 @@ pub fn update(state: &mut TtsDashState, rt: &RuntimeView, msg: TtsDashMsg) -> Ta
         TtsDashMsg::StopAll => {
             state.queue.clear();
             state.now_speaking = None;
-            Task::none()
+            let Some(handle) = rt.speak_queue.clone() else {
+                return Task::none();
+            };
+            send_command(handle, SpeakCommand::Clear)
         }
         TtsDashMsg::VolumeChanged(v) => {
             state.volume = v;

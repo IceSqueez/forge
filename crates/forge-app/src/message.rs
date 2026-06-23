@@ -507,6 +507,11 @@ pub enum LiveChatMsg {
     LoadDrawerWidth,
     DrawerWidthLoaded(Option<f32>),
     SheetResized(f32),
+    ShoutoutViewer,
+    WhisperOpen,
+    WhisperMessageChanged(String),
+    WhisperSend,
+    WhisperCancel,
 }
 
 #[derive(Debug, Clone)]

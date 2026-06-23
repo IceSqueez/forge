@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use forge_events::Event;
 use forge_platform_core::{
     BannerLevel, BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, CapabilityFlags,
     ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthStream,
@@ -9,11 +10,13 @@ use forge_platform_core::{
 };
 use forge_registry::{RegistryError, TriggerRegistry};
 use forge_types::{SubActionStep, Variant};
-use tokio::sync::{broadcast, watch};
+use tokio::sync::{Mutex, broadcast, mpsc, watch};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 
 use crate::capabilities::KICK_COMMUNITY_NOTE;
+use crate::chat::KickChatHandle;
+use crate::credentials_manager::KickCredentialsManager;
 use crate::triggers::ban::BanDescriptor;
 use crate::triggers::chat::ChatDescriptor;
 use crate::triggers::chat_command::ChatCommandDescriptor;
@@ -44,12 +47,20 @@ pub struct KickIntegrationBundle {
     slug: String,
     state_rx: watch::Receiver<ConnectionState>,
     health_tx: broadcast::Sender<HealthDelta>,
+    handle: Mutex<Option<KickChatHandle>>,
+    credentials_manager: Arc<KickCredentialsManager>,
+    http: reqwest::Client,
+    event_tx: mpsc::Sender<Event>,
 }
 
 impl KickIntegrationBundle {
     pub fn new(
         slug: String,
         state_rx: watch::Receiver<ConnectionState>,
+        credentials_manager: Arc<KickCredentialsManager>,
+        http: reqwest::Client,
+        event_tx: mpsc::Sender<Event>,
+        initial_handle: Option<KickChatHandle>,
     ) -> (Arc<Self>, broadcast::Sender<HealthDelta>) {
         let (health_tx, _) = broadcast::channel(16);
         let bundle = Arc::new(Self {
@@ -57,12 +68,36 @@ impl KickIntegrationBundle {
             slug,
             state_rx,
             health_tx: health_tx.clone(),
+            handle: Mutex::new(initial_handle),
+            credentials_manager,
+            http,
+            event_tx,
         });
         (bundle, health_tx)
     }
 
     fn current_state(&self) -> ConnectionState {
         *self.state_rx.borrow()
+    }
+
+    pub(crate) fn handle_slot(&self) -> &Mutex<Option<KickChatHandle>> {
+        &self.handle
+    }
+
+    pub(crate) fn credentials_manager(&self) -> &Arc<KickCredentialsManager> {
+        &self.credentials_manager
+    }
+
+    pub(crate) fn http(&self) -> &reqwest::Client {
+        &self.http
+    }
+
+    pub(crate) fn slug(&self) -> &str {
+        &self.slug
+    }
+
+    pub(crate) fn event_tx(&self) -> &mpsc::Sender<Event> {
+        &self.event_tx
     }
 }
 
@@ -229,9 +264,78 @@ impl QuickActions for KickIntegrationBundle {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::*;
+    use std::collections::HashMap;
+    use std::sync::Mutex as StdMutex;
+
+    use async_trait::async_trait;
     use forge_registry::KindPlatformContract;
+    use forge_storage::{CredentialId, CredentialsRepo, StorageError};
     use forge_types::PlatformId;
+    use time::OffsetDateTime;
+
+    use super::*;
+
+    struct NullRepo(StdMutex<HashMap<String, String>>);
+
+    impl NullRepo {
+        fn empty() -> Arc<Self> {
+            Arc::new(Self(StdMutex::new(HashMap::new())))
+        }
+    }
+
+    #[async_trait]
+    impl CredentialsRepo for NullRepo {
+        async fn store(&self, id: &CredentialId, v: &str) -> Result<(), StorageError> {
+            self.0
+                .lock()
+                .unwrap()
+                .insert(id.as_str().to_owned(), v.to_owned());
+            Ok(())
+        }
+
+        async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
+            Ok(self.0.lock().unwrap().get(id.as_str()).cloned())
+        }
+
+        async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
+            Ok(self.0.lock().unwrap().remove(id.as_str()).is_some())
+        }
+
+        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn last_refresh(
+            &self,
+            _: &CredentialId,
+        ) -> Result<Option<OffsetDateTime>, StorageError> {
+            Ok(None)
+        }
+
+        async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
+            Ok(())
+        }
+    }
+
+    fn make_bundle() -> Arc<KickIntegrationBundle> {
+        let (tx, rx) = watch::channel(ConnectionState::Disconnected);
+        let mgr = Arc::new(KickCredentialsManager::new(
+            NullRepo::empty(),
+            reqwest::Client::new(),
+            "test_cid".to_owned(),
+        ));
+        let (event_tx, _event_rx) = mpsc::channel(8);
+        let (bundle, _) = KickIntegrationBundle::new(
+            "test_channel".to_owned(),
+            rx,
+            mgr,
+            reqwest::Client::new(),
+            event_tx,
+            None,
+        );
+        drop(tx);
+        bundle
+    }
 
     #[test]
     fn register_adds_all_trigger_descriptors() {
@@ -282,17 +386,23 @@ mod tests {
         }
     }
 
-    fn make_bundle() -> Arc<KickIntegrationBundle> {
-        let (tx, rx) = watch::channel(ConnectionState::Disconnected);
-        let (bundle, _) = KickIntegrationBundle::new("test_channel".to_owned(), rx);
-        drop(tx);
-        bundle
-    }
-
     #[test]
     fn bundle_send_message_action_enabled_when_connected() {
         let (tx, rx) = watch::channel(ConnectionState::Connected);
-        let (bundle, _) = KickIntegrationBundle::new("test_channel".to_owned(), rx);
+        let mgr = Arc::new(KickCredentialsManager::new(
+            NullRepo::empty(),
+            reqwest::Client::new(),
+            "test_cid".to_owned(),
+        ));
+        let (event_tx, _event_rx) = mpsc::channel(8);
+        let (bundle, _) = KickIntegrationBundle::new(
+            "test_channel".to_owned(),
+            rx,
+            mgr,
+            reqwest::Client::new(),
+            event_tx,
+            None,
+        );
         drop(tx);
         let send_action = bundle
             .actions()

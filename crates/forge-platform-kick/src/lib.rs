@@ -4,6 +4,7 @@ pub mod capabilities;
 pub mod channel;
 pub mod channel_info;
 pub mod chat;
+pub(crate) mod control;
 pub mod credentials;
 pub mod credentials_manager;
 pub mod error;

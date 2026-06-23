@@ -828,7 +828,7 @@ mod tests {
             hotkey_client: None,
             speak_queue: None,
             sound_player: None,
-            twitch_chat_handle: None,
+            twitch_builtin: None,
             chat_send_bridge: None,
             twitch_flow: None,
             youtube_flow: None,

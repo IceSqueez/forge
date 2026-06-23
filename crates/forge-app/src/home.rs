@@ -195,7 +195,7 @@ fn home_jump_cards<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, M
     let actions_count = app.ui.home.actions_count.unwrap_or(0);
     let triggers_fired = app.ui.home.triggers_fired.unwrap_or(0);
     let chat_count = app.ui.live_chat.rows.len();
-    let twitch_ok = app.rt.twitch_chat_handle.is_some();
+    let twitch_ok = app.rt.twitch_builtin.is_some();
     let obs_ok = app.rt.obs_client.is_some();
     let total_integrations: u8 = 6;
     let connected_integrations: u8 = u8::from(twitch_ok) + u8::from(obs_ok);
@@ -517,7 +517,7 @@ fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
     use iced::widget::{column, container, row, text};
     use iced::{Alignment, Background, Border};
 
-    let twitch_ok = app.rt.twitch_chat_handle.is_some();
+    let twitch_ok = app.rt.twitch_builtin.is_some();
     let obs_ok = app.rt.obs_client.is_some();
     let connected: u8 = u8::from(twitch_ok) + u8::from(obs_ok);
     let disconnected: u8 = 6u8.saturating_sub(connected);

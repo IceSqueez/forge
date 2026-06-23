@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::sync::broadcast;
-use tokio::sync::watch;
+use tokio::sync::{Mutex, watch};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 
@@ -13,11 +13,20 @@ use forge_platform_core::{
 };
 use std::collections::BTreeMap;
 
+use forge_runtime::EventBus;
+use forge_storage::CredentialsRepo;
 use forge_types::{SubActionStep, Variant};
 
 use crate::TWITCH_BROADCASTER_SCOPES;
-use crate::chat::ChatConnectionState;
+use crate::chat::{ChatConnectionState, TwitchChat, TwitchChatHandle};
 use crate::subscriptions::{SubStatus, SubscriptionTracker};
+
+/// Inputs required to (re)build a chat session for the bundle's broadcaster.
+pub struct ChatSessionConfig {
+    pub client_id: String,
+    pub broadcaster_id: String,
+    pub user_id: String,
+}
 
 pub struct TwitchIntegrationBundle {
     id: BuiltinId,
@@ -25,23 +34,90 @@ pub struct TwitchIntegrationBundle {
     state_rx: watch::Receiver<ChatConnectionState>,
     health_tx: broadcast::Sender<HealthDelta>,
     tracker: SubscriptionTracker,
+    config: ChatSessionConfig,
+    bus: Arc<EventBus>,
+    creds: Arc<dyn CredentialsRepo>,
+    // Parked here so the &self-async control verbs can take() the consume-on-shutdown
+    // handle without racing a concurrent disconnect/reconnect.
+    handle: Mutex<Option<TwitchChatHandle>>,
 }
 
 impl TwitchIntegrationBundle {
     pub fn new(
         login: Option<String>,
-        state_rx: watch::Receiver<ChatConnectionState>,
+        config: ChatSessionConfig,
+        bus: Arc<EventBus>,
+        creds: Arc<dyn CredentialsRepo>,
         tracker: SubscriptionTracker,
+        handle: TwitchChatHandle,
     ) -> (Arc<Self>, broadcast::Sender<HealthDelta>) {
         let (health_tx, _) = broadcast::channel(16);
+        let state_rx = handle.state_receiver();
         let bundle = Arc::new(Self {
             id: BuiltinId::new("twitch"),
             login,
             state_rx,
             health_tx: health_tx.clone(),
             tracker,
+            config,
+            bus,
+            creds,
+            handle: Mutex::new(Some(handle)),
         });
         (bundle, health_tx)
+    }
+
+    pub fn state_receiver(&self) -> watch::Receiver<ChatConnectionState> {
+        self.state_rx.clone()
+    }
+
+    pub(crate) fn spawn_chat(&self, token: forge_types::OAuthToken) -> TwitchChatHandle {
+        TwitchChat::new(
+            token,
+            self.config.client_id.clone(),
+            self.config.broadcaster_id.clone(),
+            self.config.user_id.clone(),
+            Arc::clone(&self.bus),
+            self.tracker.clone(),
+        )
+        .start()
+    }
+
+    pub(crate) fn credentials(&self) -> &Arc<dyn CredentialsRepo> {
+        &self.creds
+    }
+
+    pub(crate) fn config(&self) -> &ChatSessionConfig {
+        &self.config
+    }
+
+    pub(crate) fn handle_slot(&self) -> &Mutex<Option<TwitchChatHandle>> {
+        &self.handle
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_test(
+        login: Option<String>,
+        state_rx: watch::Receiver<ChatConnectionState>,
+        tracker: SubscriptionTracker,
+        creds: Arc<dyn CredentialsRepo>,
+    ) -> Arc<Self> {
+        let (health_tx, _) = broadcast::channel(16);
+        Arc::new(Self {
+            id: BuiltinId::new("twitch"),
+            login,
+            state_rx,
+            health_tx,
+            tracker,
+            config: ChatSessionConfig {
+                client_id: "test-client".to_owned(),
+                broadcaster_id: "1".to_owned(),
+                user_id: "1".to_owned(),
+            },
+            bus: EventBus::new(Arc::new(forge_runtime::NullEventLogRepo)),
+            creds,
+            handle: Mutex::new(None),
+        })
     }
 
     fn chat_connection_state(&self) -> ChatConnectionState {
@@ -317,11 +393,41 @@ impl QuickActions for TwitchIntegrationBundle {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
+    use async_trait::async_trait;
     use forge_platform_core::{BuiltinContent, BuiltinHealth, BuiltinStatus};
+    use forge_storage::{CredentialId, StorageError};
+    use time::OffsetDateTime;
     use tokio::sync::watch;
 
     use super::*;
     use crate::subscriptions::{SubStatus, SubscriptionRecord, SubscriptionTracker};
+
+    struct NullCreds;
+
+    #[async_trait]
+    impl CredentialsRepo for NullCreds {
+        async fn store(&self, _: &CredentialId, _: &str) -> Result<(), StorageError> {
+            Ok(())
+        }
+        async fn load(&self, _: &CredentialId) -> Result<Option<String>, StorageError> {
+            Ok(None)
+        }
+        async fn delete(&self, _: &CredentialId) -> Result<bool, StorageError> {
+            Ok(false)
+        }
+        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
+            Ok(Vec::new())
+        }
+        async fn last_refresh(
+            &self,
+            _: &CredentialId,
+        ) -> Result<Option<OffsetDateTime>, StorageError> {
+            Ok(None)
+        }
+        async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
+            Ok(())
+        }
+    }
 
     fn make_bundle(state: ChatConnectionState) -> Arc<TwitchIntegrationBundle> {
         make_bundle_with_tracker(state, SubscriptionTracker::default())
@@ -333,8 +439,12 @@ mod tests {
     ) -> Arc<TwitchIntegrationBundle> {
         let (tx, rx) = watch::channel(state);
         let _ = tx;
-        let (bundle, _) = TwitchIntegrationBundle::new(Some("streamer".to_owned()), rx, tracker);
-        bundle
+        TwitchIntegrationBundle::for_test(
+            Some("streamer".to_owned()),
+            rx,
+            tracker,
+            Arc::new(NullCreds),
+        )
     }
 
     #[test]

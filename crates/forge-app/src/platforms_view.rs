@@ -162,7 +162,7 @@ pub(crate) fn platforms_overview_view<'a>(
         .color(p.text_muted);
     let header = column![title, subtitle].spacing(spf(Spacing::Xxs));
 
-    let twitch_connected = app.rt.twitch_chat_handle.is_some();
+    let twitch_connected = app.rt.twitch_builtin.is_some();
 
     let twitch_card = platform_overview_card(
         "T",

@@ -76,7 +76,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Screen::EventFeed => event_feed_view(&app.ui.event_feed, palette),
         Screen::Server => server_screen_view(&app.ui.server_screen, palette),
         Screen::BuiltinDetail(id) => {
-            if id.as_str() == "twitch" && app.rt.twitch_chat_handle.is_none() {
+            if id.as_str() == "twitch" && app.rt.twitch_builtin.is_none() {
                 crate::twitch_panel::twitch_disconnected_view(&app.ui.twitch_panel, palette)
             } else if id.as_str() == "obs" && app.rt.obs_client.is_none() {
                 crate::obs_panel::obs_disconnected_view(&app.ui.obs_panel, palette)

@@ -4,7 +4,9 @@ use forge_events::EventPublisher;
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, QuickActions, SectionIcon,
 };
-use forge_platform_twitch::{SubscriptionTracker, TwitchChat, TwitchIntegrationBundle};
+use forge_platform_twitch::{
+    ChatSessionConfig, SubscriptionTracker, TwitchChat, TwitchIntegrationBundle,
+};
 use forge_runtime::EventBus;
 use forge_storage::CredentialsRepo;
 use iced::Task;
@@ -70,18 +72,30 @@ pub(crate) fn handle_twitch_boot_result(
                 Some(bundle.login.clone())
             };
             let tracker = SubscriptionTracker::default();
+            let config = ChatSessionConfig {
+                client_id: bundle.client_id,
+                broadcaster_id: bundle.user_id.clone(),
+                user_id: bundle.user_id,
+            };
             let chat = TwitchChat::new(
                 bundle.access_token,
-                bundle.client_id,
-                bundle.user_id.clone(),
-                bundle.user_id,
+                config.client_id.clone(),
+                config.broadcaster_id.clone(),
+                config.user_id.clone(),
                 Arc::clone(&app.rt.bus),
                 Arc::clone(&tracker),
             );
             let handle = chat.start();
-            let state_rx = handle.state_receiver();
-            let (twitch_bundle, _health_tx) =
-                TwitchIntegrationBundle::new(login.clone(), state_rx, tracker);
+            let creds: Arc<dyn CredentialsRepo> =
+                Arc::clone(&app.rt.backend) as Arc<dyn CredentialsRepo>;
+            let (twitch_bundle, _health_tx) = TwitchIntegrationBundle::new(
+                login.clone(),
+                config,
+                Arc::clone(&app.rt.bus),
+                creds,
+                tracker,
+                handle,
+            );
             let id = BuiltinId::new("twitch");
             let icon = SectionIcon::new("brand-twitch");
             let status: Arc<dyn BuiltinStatus> = twitch_bundle.clone();
@@ -96,7 +110,7 @@ pub(crate) fn handle_twitch_boot_result(
                 content,
                 quick_actions,
             ));
-            app.rt.twitch_chat_handle = Some(handle);
+            app.rt.twitch_builtin = Some(twitch_bundle);
             app.rt.twitch_token_expires = bundle.expires_at;
             if let Some(l) = login {
                 app.rt.twitch_login = Some(l);

@@ -6,7 +6,7 @@ use forge_hotkey::HotkeyClient;
 use forge_midi::MidiClient;
 use forge_obs::{ObsClient, SwitchableObsSink};
 use forge_platform_kick::KickAuthFlow;
-use forge_platform_twitch::{ChatSendBridgeHandle, TwitchChatHandle};
+use forge_platform_twitch::{ChatSendBridgeHandle, TwitchIntegrationBundle};
 use forge_platform_youtube::GoogleAuthFlow;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
@@ -38,7 +38,7 @@ pub struct RuntimeView {
     pub hotkey_client: Option<Arc<HotkeyClient>>,
     pub speak_queue: Option<Arc<SpeakQueueHandle>>,
     pub sound_player: Option<Arc<SoundboardPlayer>>,
-    pub twitch_chat_handle: Option<TwitchChatHandle>,
+    pub twitch_builtin: Option<Arc<TwitchIntegrationBundle>>,
     pub chat_send_bridge: Option<ChatSendBridgeHandle>,
     pub twitch_flow: Option<TwitchFlowHandle>,
     pub youtube_flow: Option<Arc<tokio::sync::Mutex<Option<GoogleAuthFlow>>>>,

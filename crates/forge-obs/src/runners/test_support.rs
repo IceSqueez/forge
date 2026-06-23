@@ -130,7 +130,7 @@ impl ObsSink for MockSink {
     }
 }
 
-struct NoopPublisher;
+pub(crate) struct NoopPublisher;
 
 impl EventPublisher for NoopPublisher {
     fn publish(&self, _: Event) {}

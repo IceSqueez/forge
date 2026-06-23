@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::Duration;
 
+use async_trait::async_trait;
 use futures_util::StreamExt;
 use rand::RngExt;
 use time::OffsetDateTime;
@@ -11,7 +12,8 @@ use tokio::task::JoinHandle;
 
 use forge_events::EventPublisher;
 use forge_platform_core::{
-    BuiltinId, BuiltinStatus, CapabilityFlags, ConnectionState, HeaderAction, HealthDelta,
+    BuiltinControl, BuiltinId, BuiltinStatus, CapabilityFlags, ConnectionState, ControlFailure,
+    ControlOutcome, HeaderAction, HealthDelta,
 };
 use forge_types::EventId;
 
@@ -31,7 +33,10 @@ pub struct ObsClient {
     pub(crate) last_set_scene_event_id: Arc<RwLock<Option<EventId>>>,
     endpoint: String,
     state: Arc<AtomicU8>,
-    shutdown: Arc<Notify>,
+    // Wrapped in an async Mutex so reconnect can swap out the Notify for the
+    // new supervisor cycle without a data race against the running supervisor's
+    // own clone of the Arc.
+    shutdown: Arc<tokio::sync::Mutex<Arc<Notify>>>,
     supervisor: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
     connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
     obs_id: BuiltinId,
@@ -39,6 +44,12 @@ pub struct ObsClient {
     pub(crate) health_state: Arc<RwLock<HealthSnapshot>>,
     pub(crate) health_tx: broadcast::Sender<HealthDelta>,
     pub(crate) catalog_state: Arc<RwLock<ObsCatalog>>,
+    reconnect_host: String,
+    reconnect_port: u16,
+    // Stored so reconnect can re-establish an authenticated session without
+    // reaching back through the credential store.  Never logged or surfaced.
+    reconnect_password: Arc<Option<String>>,
+    reconnect_publisher: Arc<dyn EventPublisher>,
 }
 
 impl ObsClient {
@@ -51,7 +62,8 @@ impl ObsClient {
 
         let inner = Arc::new(tokio::sync::RwLock::new(None::<obws::Client>));
         let state = Arc::new(AtomicU8::new(STATE_CONNECTING));
-        let shutdown = Arc::new(Notify::new());
+        let notify = Arc::new(Notify::new());
+        let shutdown = Arc::new(tokio::sync::Mutex::new(Arc::clone(&notify)));
         let connected_at = Arc::new(RwLock::new(None::<OffsetDateTime>));
         let obs_version = Arc::new(OnceLock::new());
         let item_cache = Arc::new(Mutex::new(HashMap::<(String, String), i64>::new()));
@@ -60,20 +72,27 @@ impl ObsClient {
         let catalog_state = Arc::new(RwLock::new(ObsCatalog::default()));
         let last_set_scene_event_id = Arc::new(RwLock::new(None::<EventId>));
 
+        let stored_password = password.map(str::to_owned);
+
         let ctx = SupervisorContext {
             inner: Arc::clone(&inner),
             state: Arc::clone(&state),
-            shutdown: Arc::clone(&shutdown),
+            shutdown: Arc::clone(&notify),
             connected_at: Arc::clone(&connected_at),
             obs_version: Arc::clone(&obs_version),
             catalog_state: Arc::clone(&catalog_state),
             health_state: Arc::clone(&health_state),
             health_tx: health_tx.clone(),
-            publisher,
+            publisher: Arc::clone(&publisher),
             item_cache: Arc::clone(&item_cache),
             last_set_scene_event_id: Arc::clone(&last_set_scene_event_id),
         };
-        let handle = tokio::spawn(run_supervisor(host, port, password.map(str::to_owned), ctx));
+        let handle = tokio::spawn(run_supervisor(
+            host.clone(),
+            port,
+            stored_password.clone(),
+            ctx,
+        ));
 
         Ok(Self {
             inner,
@@ -89,6 +108,10 @@ impl ObsClient {
             catalog_state,
             scene_item_id_cache: item_cache,
             last_set_scene_event_id,
+            reconnect_host: host,
+            reconnect_port: port,
+            reconnect_password: Arc::new(stored_password),
+            reconnect_publisher: publisher,
         })
     }
 
@@ -117,7 +140,8 @@ impl ObsClient {
     }
 
     pub async fn shutdown(&self) {
-        self.shutdown.notify_one();
+        let notify = self.shutdown.lock().await.clone();
+        notify.notify_one();
         let handle = self.supervisor.lock().ok().and_then(|mut g| g.take());
         if let Some(h) = handle {
             let _ = h.await;
@@ -126,12 +150,13 @@ impl ObsClient {
 
     #[cfg(test)]
     pub fn new_for_test(endpoint: String) -> Self {
+        let (host, port) = parse_endpoint(&endpoint).unwrap_or(("localhost".to_owned(), 4455));
         let (health_tx, health_state) = make_health_channel();
         Self {
             inner: Arc::new(tokio::sync::RwLock::new(None)),
             endpoint,
             state: Arc::new(AtomicU8::new(STATE_DISCONNECTED)),
-            shutdown: Arc::new(Notify::new()),
+            shutdown: Arc::new(tokio::sync::Mutex::new(Arc::new(Notify::new()))),
             supervisor: Arc::new(std::sync::Mutex::new(None)),
             connected_at: Arc::new(RwLock::new(None)),
             obs_id: BuiltinId::new("obs"),
@@ -141,6 +166,10 @@ impl ObsClient {
             catalog_state: Arc::new(RwLock::new(ObsCatalog::default())),
             scene_item_id_cache: Arc::new(Mutex::new(HashMap::new())),
             last_set_scene_event_id: Arc::new(RwLock::new(None)),
+            reconnect_host: host,
+            reconnect_port: port,
+            reconnect_password: Arc::new(None),
+            reconnect_publisher: Arc::new(crate::runners::test_support::NoopPublisher),
         }
     }
 }
@@ -192,6 +221,73 @@ impl BuiltinStatus for ObsClient {
             HeaderAction::Disconnect,
             HeaderAction::Settings,
         ]
+    }
+}
+
+#[async_trait]
+impl BuiltinControl for ObsClient {
+    async fn reconnect(&self) -> ControlOutcome {
+        // Shut down the running supervisor before spawning a replacement.
+        // Locking `shutdown` serialises concurrent reconnect/disconnect calls
+        // so only one supervisor replacement runs at a time.
+        let mut slot = self.shutdown.lock().await;
+        let old_notify = slot.clone();
+        old_notify.notify_one();
+        let handle = self.supervisor.lock().ok().and_then(|mut g| g.take());
+        if let Some(h) = handle {
+            let _ = h.await;
+        }
+
+        let new_notify = Arc::new(Notify::new());
+        *slot = Arc::clone(&new_notify);
+        drop(slot);
+
+        self.state.store(STATE_CONNECTING, Ordering::Release);
+        if let Ok(mut g) = self.connected_at.write() {
+            *g = None;
+        }
+
+        let ctx = SupervisorContext {
+            inner: Arc::clone(&self.inner),
+            state: Arc::clone(&self.state),
+            shutdown: new_notify,
+            connected_at: Arc::clone(&self.connected_at),
+            obs_version: Arc::clone(&self.obs_version),
+            catalog_state: Arc::clone(&self.catalog_state),
+            health_state: Arc::clone(&self.health_state),
+            health_tx: self.health_tx.clone(),
+            publisher: Arc::clone(&self.reconnect_publisher),
+            item_cache: Arc::clone(&self.scene_item_id_cache),
+            last_set_scene_event_id: Arc::clone(&self.last_set_scene_event_id),
+        };
+        let password = (*self.reconnect_password).clone();
+        let handle = tokio::spawn(run_supervisor(
+            self.reconnect_host.clone(),
+            self.reconnect_port,
+            password,
+            ctx,
+        ));
+        if let Ok(mut g) = self.supervisor.lock() {
+            *g = Some(handle);
+        }
+
+        Ok(())
+    }
+
+    async fn disconnect(&self) -> ControlOutcome {
+        let slot = self.shutdown.lock().await;
+        let notify = slot.clone();
+        drop(slot);
+        notify.notify_one();
+        let handle = self.supervisor.lock().ok().and_then(|mut g| g.take());
+        if let Some(h) = handle {
+            let _ = h.await;
+        }
+        Ok(())
+    }
+
+    async fn refresh_token(&self) -> ControlOutcome {
+        Err(ControlFailure::Unsupported)
     }
 }
 

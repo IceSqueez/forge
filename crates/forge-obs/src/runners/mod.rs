@@ -27,7 +27,7 @@ mod studio_trigger_transition;
 mod switch_current;
 
 #[cfg(test)]
-mod test_support;
+pub(crate) mod test_support;
 
 use std::sync::Arc;
 

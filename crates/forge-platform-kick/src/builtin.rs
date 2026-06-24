@@ -439,4 +439,47 @@ mod tests {
         let bundle = make_bundle();
         assert!(bundle.header_actions().contains(&HeaderAction::Reconnect));
     }
+
+    // Compile-time object-safety guard: the bundle must coerce into
+    // `Arc<dyn BuiltinControl>` for the generic UI lifecycle renderer.
+    #[test]
+    fn bundle_coerces_to_dyn_builtin_control() {
+        fn accepts(_: Arc<dyn forge_platform_core::BuiltinControl>) {}
+        accepts(make_bundle());
+    }
+
+    // Missing-credentials guard: both `refresh_token` and `reconnect` call
+    // `credentials_manager().load()` first. With an empty store (NullRepo) the
+    // load yields None and both must short-circuit to NotConnected before any
+    // network call (refresh grant / Pusher WS connect) is attempted.
+    #[tokio::test]
+    async fn refresh_token_without_stored_credentials_reports_not_connected() {
+        let bundle = make_bundle();
+        let outcome = forge_platform_core::BuiltinControl::refresh_token(bundle.as_ref()).await;
+        assert_eq!(
+            outcome,
+            Err(forge_platform_core::ControlFailure::NotConnected)
+        );
+    }
+
+    #[tokio::test]
+    async fn reconnect_without_stored_credentials_reports_not_connected() {
+        let bundle = make_bundle();
+        let outcome = forge_platform_core::BuiltinControl::reconnect(bundle.as_ref()).await;
+        assert_eq!(
+            outcome,
+            Err(forge_platform_core::ControlFailure::NotConnected)
+        );
+    }
+
+    // Disconnect with an empty handle slot is the reachable no-session branch.
+    #[tokio::test]
+    async fn disconnect_with_no_live_session_reports_not_connected() {
+        let bundle = make_bundle();
+        let outcome = forge_platform_core::BuiltinControl::disconnect(bundle.as_ref()).await;
+        assert_eq!(
+            outcome,
+            Err(forge_platform_core::ControlFailure::NotConnected)
+        );
+    }
 }

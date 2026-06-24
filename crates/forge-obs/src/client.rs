@@ -722,20 +722,6 @@ mod tests {
     }
 
     #[test]
-    fn compute_backoff_base_doubles_each_attempt_before_cap() {
-        for attempt in 0u32..5 {
-            let base_secs_this = 1u64 << attempt;
-            let base_secs_next = 1u64 << (attempt + 1);
-            assert_eq!(
-                base_secs_next,
-                base_secs_this * 2,
-                "base must double from attempt {attempt} to {}",
-                attempt + 1
-            );
-        }
-    }
-
-    #[test]
     fn compute_backoff_total_millis_at_least_base_secs() {
         for attempt in 0u32..=7 {
             let d = compute_backoff(attempt);
@@ -746,5 +732,27 @@ mod tests {
                 d.as_millis()
             );
         }
+    }
+
+    // Compile-time object-safety guard for the lifecycle trait.
+    #[test]
+    fn client_coerces_to_dyn_builtin_control() {
+        fn accepts(_: Arc<dyn forge_platform_core::BuiltinControl>) {}
+        accepts(Arc::new(ObsClient::new_for_test(
+            "localhost:4455".to_owned(),
+        )));
+    }
+
+    // Contract: OBS authenticates with a static password, not an OAuth refresh
+    // grant, so refresh_token must always reject as Unsupported. This is the
+    // only lifecycle verb reachable without standing up a WS supervisor.
+    #[tokio::test]
+    async fn refresh_token_is_unsupported() {
+        let client = ObsClient::new_for_test("localhost:4455".to_owned());
+        let outcome = forge_platform_core::BuiltinControl::refresh_token(&client).await;
+        assert_eq!(
+            outcome,
+            Err(forge_platform_core::ControlFailure::Unsupported)
+        );
     }
 }

@@ -679,4 +679,49 @@ mod tests {
         let actions = b.actions();
         assert!(actions.iter().all(|a| !a.enabled));
     }
+
+    // Compile-time object-safety guard: the bundle must coerce into
+    // `Arc<dyn BuiltinControl>` so the generic UI renderer can dispatch
+    // lifecycle verbs through one trait object.
+    #[test]
+    fn bundle_coerces_to_dyn_builtin_control() {
+        fn accepts(_: Arc<dyn forge_platform_core::BuiltinControl>) {}
+        let b = make_bundle(ChatConnectionState::Connected);
+        accepts(b);
+    }
+
+    // Missing-credentials guard: both `refresh_token` and `reconnect` `load()`
+    // creds up front. With a store that yields None they must report
+    // NotConnected without touching the network (NullCreds never connects).
+    #[tokio::test]
+    async fn refresh_token_without_stored_credentials_reports_not_connected() {
+        let b = make_bundle(ChatConnectionState::Disconnected);
+        let outcome = forge_platform_core::BuiltinControl::refresh_token(b.as_ref()).await;
+        assert_eq!(
+            outcome,
+            Err(forge_platform_core::ControlFailure::NotConnected)
+        );
+    }
+
+    #[tokio::test]
+    async fn reconnect_without_stored_credentials_reports_not_connected() {
+        let b = make_bundle(ChatConnectionState::Disconnected);
+        let outcome = forge_platform_core::BuiltinControl::reconnect(b.as_ref()).await;
+        assert_eq!(
+            outcome,
+            Err(forge_platform_core::ControlFailure::NotConnected)
+        );
+    }
+
+    // Disconnect with an empty handle slot is the reachable no-session branch:
+    // it must reject with NotConnected rather than silently succeed.
+    #[tokio::test]
+    async fn disconnect_with_no_live_session_reports_not_connected() {
+        let b = make_bundle(ChatConnectionState::Disconnected);
+        let outcome = forge_platform_core::BuiltinControl::disconnect(b.as_ref()).await;
+        assert_eq!(
+            outcome,
+            Err(forge_platform_core::ControlFailure::NotConnected)
+        );
+    }
 }

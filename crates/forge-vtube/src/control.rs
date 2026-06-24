@@ -81,3 +81,29 @@ impl BuiltinControl for VTubeClient {
         Err(ControlFailure::Unsupported)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use forge_platform_core::{BuiltinControl, ControlFailure};
+
+    use crate::client::VTubeClient;
+
+    // Compile-time object-safety guard for the lifecycle trait.
+    #[test]
+    fn client_coerces_to_dyn_builtin_control() {
+        fn accepts(_: Arc<dyn BuiltinControl>) {}
+        accepts(Arc::new(VTubeClient::new_for_test("ws://127.0.0.1:8001/")));
+    }
+
+    // Contract: VTube Studio authenticates with a plugin token granted per
+    // session, not an OAuth refresh grant, so refresh_token always rejects as
+    // Unsupported. The only lifecycle verb reachable without a WS supervisor.
+    #[tokio::test]
+    async fn refresh_token_is_unsupported() {
+        let client = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
+        let outcome = client.refresh_token().await;
+        assert_eq!(outcome, Err(ControlFailure::Unsupported));
+    }
+}

@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use forge_events::EventPublisher;
 use forge_platform_core::{
-    BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, QuickActions, SectionIcon,
+    BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinId, BuiltinStatus, QuickActions,
+    SectionIcon,
 };
 use forge_platform_twitch::{
     ChatSessionConfig, SubscriptionTracker, TwitchChat, TwitchIntegrationBundle,
@@ -102,6 +103,8 @@ pub(crate) fn handle_twitch_boot_result(
             let health: Arc<dyn BuiltinHealth> = twitch_bundle.clone();
             let content: Arc<dyn BuiltinContent> = twitch_bundle.clone();
             let quick_actions: Arc<dyn QuickActions> = twitch_bundle.clone();
+            let control: Option<Arc<dyn BuiltinControl>> =
+                Some(twitch_bundle.clone() as Arc<dyn BuiltinControl>);
             app.ui.builtin_detail = Some(BuiltinDetailState::new(
                 id,
                 icon,
@@ -109,6 +112,7 @@ pub(crate) fn handle_twitch_boot_result(
                 health,
                 content,
                 quick_actions,
+                control,
             ));
             app.rt.twitch_builtin = Some(twitch_bundle);
             app.rt.twitch_token_expires = bundle.expires_at;
@@ -139,6 +143,8 @@ pub(crate) fn handle_obs_boot_result(
             let health: Arc<dyn BuiltinHealth> = client.clone();
             let content: Arc<dyn BuiltinContent> = client.clone();
             let quick_actions: Arc<dyn QuickActions> = client.clone();
+            let control: Option<Arc<dyn BuiltinControl>> =
+                Some(client.clone() as Arc<dyn BuiltinControl>);
             app.ui.builtin_detail = Some(BuiltinDetailState::new(
                 id,
                 icon,
@@ -146,6 +152,7 @@ pub(crate) fn handle_obs_boot_result(
                 health,
                 content,
                 quick_actions,
+                control,
             ));
             app.rt.obs_sink.install(Arc::clone(&client));
             app.rt.obs_client = Some(client);
@@ -171,6 +178,8 @@ pub(crate) fn handle_vtube_boot_result(
             let health: Arc<dyn BuiltinHealth> = client.clone();
             let content: Arc<dyn BuiltinContent> = client.clone();
             let quick_actions: Arc<dyn QuickActions> = client.clone();
+            let control: Option<Arc<dyn BuiltinControl>> =
+                Some(client.clone() as Arc<dyn BuiltinControl>);
             app.ui.builtin_detail = Some(BuiltinDetailState::new(
                 id,
                 icon,
@@ -178,6 +187,7 @@ pub(crate) fn handle_vtube_boot_result(
                 health,
                 content,
                 quick_actions,
+                control,
             ));
             app.rt.vtube_sink.install(Arc::clone(&client));
             app.rt.vtube_client = Some(client);
@@ -210,6 +220,7 @@ pub(crate) fn handle_discord_boot_result(
                 health,
                 content,
                 quick_actions,
+                None,
             ));
             app.rt.discord_client = Some(client);
             Task::none()
@@ -241,6 +252,7 @@ pub(crate) fn handle_midi_boot_result(
                 health,
                 content,
                 quick_actions,
+                None,
             ));
             app.rt.midi_client = Some(client);
             Task::none()
@@ -272,6 +284,7 @@ pub(crate) fn handle_hotkey_boot_result(
                 health,
                 content,
                 quick_actions,
+                None,
             ));
             app.rt.hotkey_client = Some(client);
             Task::none()

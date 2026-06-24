@@ -306,6 +306,7 @@ pub enum GlobalsMsg {
 pub enum BuiltinDetailMsg {
     HealthDelta(HealthDelta),
     HeaderActionClicked(HeaderAction),
+    ControlResult(Result<(), String>),
     QuickActionClicked(usize),
     PickerSearchChanged(String),
     PickerItemsLoaded(Result<(Vec<PickerItem>, Option<String>), String>),

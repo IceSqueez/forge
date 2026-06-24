@@ -178,6 +178,8 @@ pub fn update(
             let health: Arc<dyn BuiltinHealth> = twitch_bundle.clone();
             let content: Arc<dyn BuiltinContent> = twitch_bundle.clone();
             let quick_actions: Arc<dyn QuickActions> = twitch_bundle.clone();
+            let control: Option<Arc<dyn forge_platform_core::BuiltinControl>> =
+                Some(twitch_bundle.clone() as Arc<dyn forge_platform_core::BuiltinControl>);
             *builtin_detail = Some(BuiltinDetailState::new(
                 id,
                 icon,
@@ -185,6 +187,7 @@ pub fn update(
                 health,
                 content,
                 quick_actions,
+                control,
             ));
             rt.twitch_builtin = Some(twitch_bundle);
             *state = TwitchPanelState::Disconnected;

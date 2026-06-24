@@ -3,8 +3,8 @@ use std::sync::Arc;
 use forge_events::Event;
 use forge_obs::{ObsClient, ObsSource};
 use forge_platform_core::{
-    BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, CapabilityFlags, DetailSection,
-    HeaderAction, HealthMetric, PickerKind, QuickAction, QuickActions, SectionIcon,
+    BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinId, BuiltinStatus, CapabilityFlags,
+    DetailSection, HeaderAction, HealthMetric, PickerKind, QuickAction, QuickActions, SectionIcon,
 };
 use forge_types::Variant;
 use forge_widgets::{
@@ -39,6 +39,7 @@ pub struct BuiltinDetailState {
     pub builtin_health: Arc<dyn BuiltinHealth>,
     pub builtin_content: Arc<dyn BuiltinContent>,
     pub builtin_quick_actions: Arc<dyn QuickActions>,
+    pub builtin_control: Option<Arc<dyn BuiltinControl>>,
     pub health_metrics: [HealthMetric; 4],
     pub pending_picker: Option<PendingPicker>,
     pub quick_action_toast: Option<String>,
@@ -60,6 +61,7 @@ impl BuiltinDetailState {
         builtin_health: Arc<dyn BuiltinHealth>,
         builtin_content: Arc<dyn BuiltinContent>,
         builtin_quick_actions: Arc<dyn QuickActions>,
+        builtin_control: Option<Arc<dyn BuiltinControl>>,
     ) -> Self {
         let display_name = builtin_status.display_name().to_owned();
         let version = builtin_status.version().map(ToOwned::to_owned);
@@ -75,6 +77,7 @@ impl BuiltinDetailState {
             builtin_health,
             builtin_content,
             builtin_quick_actions,
+            builtin_control,
             health_metrics,
             pending_picker: None,
             quick_action_toast: None,
@@ -126,7 +129,31 @@ pub fn update(
             }
             Task::none()
         }
-        BuiltinDetailMsg::HeaderActionClicked(_action) => Task::none(),
+        BuiltinDetailMsg::HeaderActionClicked(action) => {
+            let Some(ctrl) = state.builtin_control.clone() else {
+                return Task::none();
+            };
+            match action {
+                HeaderAction::Reconnect => Task::perform(
+                    async move { ctrl.reconnect().await.map_err(|e| e.to_string()) },
+                    |r| Message::BuiltinDetail(BuiltinDetailMsg::ControlResult(r)),
+                ),
+                HeaderAction::Disconnect => Task::perform(
+                    async move { ctrl.disconnect().await.map_err(|e| e.to_string()) },
+                    |r| Message::BuiltinDetail(BuiltinDetailMsg::ControlResult(r)),
+                ),
+                HeaderAction::RefreshToken => Task::perform(
+                    async move { ctrl.refresh_token().await.map_err(|e| e.to_string()) },
+                    |r| Message::BuiltinDetail(BuiltinDetailMsg::ControlResult(r)),
+                ),
+                HeaderAction::Settings => Task::none(),
+            }
+        }
+        BuiltinDetailMsg::ControlResult(Err(e)) => {
+            tracing::warn!(error = %e, "builtin control action failed");
+            Task::none()
+        }
+        BuiltinDetailMsg::ControlResult(Ok(())) => Task::none(),
         BuiltinDetailMsg::QuickActionClicked(idx) => {
             let Some(action) = state.quick_actions.get(idx) else {
                 return Task::none();
@@ -619,6 +646,7 @@ mod tests {
             Arc::new(TestHealth),
             Arc::new(TestContent),
             Arc::new(TestQuickActions { actions }),
+            None,
         )
     }
 

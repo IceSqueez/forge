@@ -19,7 +19,9 @@ pub use audio_runners::register_audio_sub_actions;
 pub use bridge::bus_subscription;
 pub use bus::{BusError, BusStats, EventBus, EventSubscription, NullEventLogRepo};
 pub use chat_stream::chat_stream;
-pub use queue_scheduler::{QueueScheduler, QueueSchedulerHandle, SchedulerError, SchedulerRequest};
+pub use queue_scheduler::{
+    MembershipOutcome, QueueScheduler, QueueSchedulerHandle, SchedulerError, SchedulerRequest,
+};
 pub use script_registry::{CompiledScript, ScriptRegistry, ScriptRegistryError};
 pub use sound_player::{SoundPlayer, SoundPlayerError};
 pub use speak_dispatcher::{SpeakDispatchError, SpeakDispatcher};

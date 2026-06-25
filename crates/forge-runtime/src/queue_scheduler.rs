@@ -1,6 +1,8 @@
-//! Queue registry is loaded once at scheduler spawn time. Adding or removing
-//! queues at runtime requires re-spawning the scheduler — there is no hot-reload
-//! channel from storage to the scheduler.
+//! The scheduler's queue registry is seeded at spawn and kept live thereafter
+//! through register/deregister/reconfigure commands. Dropping a slot's `sender`
+//! closes its task channel; the spawned runner then drains its buffered tasks
+//! and exits when `recv()` returns `None` — this is the membership-change drain
+//! guarantee, not a leak.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -29,6 +31,13 @@ pub enum SchedulerError {
     QueueNotFound(QueueId),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MembershipOutcome {
+    Applied,
+    AlreadyRegistered,
+    NotFound,
+}
+
 #[derive(Clone)]
 pub struct QueueSchedulerHandle {
     sender: mpsc::UnboundedSender<SchedulerCommand>,
@@ -38,6 +47,9 @@ enum SchedulerCommand {
     Enqueue(SchedulerRequest),
     Pause(QueueId, oneshot::Sender<Result<(), SchedulerError>>),
     Resume(QueueId, oneshot::Sender<Result<(), SchedulerError>>),
+    Register(Queue, oneshot::Sender<MembershipOutcome>),
+    Deregister(QueueId, oneshot::Sender<MembershipOutcome>),
+    Reconfigure(Queue, oneshot::Sender<MembershipOutcome>),
     QueryPaused(oneshot::Sender<std::collections::HashSet<QueueId>>),
     Shutdown,
 }
@@ -46,6 +58,7 @@ struct QueueSlot {
     sender: mpsc::UnboundedSender<QueueTask>,
     state: Arc<RwLock<PauseState>>,
     name: String,
+    blocking: bool,
 }
 
 struct PauseState {
@@ -81,6 +94,30 @@ impl QueueSchedulerHandle {
         rx.await.map_err(|_| SchedulerError::ChannelClosed)?
     }
 
+    pub async fn register(&self, queue: Queue) -> Result<MembershipOutcome, SchedulerError> {
+        let (tx, rx) = oneshot::channel();
+        self.sender
+            .send(SchedulerCommand::Register(queue, tx))
+            .map_err(|_| SchedulerError::ChannelClosed)?;
+        rx.await.map_err(|_| SchedulerError::ChannelClosed)
+    }
+
+    pub async fn deregister(&self, queue_id: QueueId) -> Result<MembershipOutcome, SchedulerError> {
+        let (tx, rx) = oneshot::channel();
+        self.sender
+            .send(SchedulerCommand::Deregister(queue_id, tx))
+            .map_err(|_| SchedulerError::ChannelClosed)?;
+        rx.await.map_err(|_| SchedulerError::ChannelClosed)
+    }
+
+    pub async fn reconfigure(&self, queue: Queue) -> Result<MembershipOutcome, SchedulerError> {
+        let (tx, rx) = oneshot::channel();
+        self.sender
+            .send(SchedulerCommand::Reconfigure(queue, tx))
+            .map_err(|_| SchedulerError::ChannelClosed)?;
+        rx.await.map_err(|_| SchedulerError::ChannelClosed)
+    }
+
     pub fn shutdown(self) {
         let _ = self.sender.send(SchedulerCommand::Shutdown);
     }
@@ -114,7 +151,7 @@ impl QueueScheduler {
             slots.insert(id, slot);
         }
 
-        tokio::spawn(Self::run_scheduler(cmd_rx, slots, bus));
+        tokio::spawn(Self::run_scheduler(cmd_rx, slots, bus, engine));
 
         QueueSchedulerHandle { sender: cmd_tx }
     }
@@ -123,8 +160,9 @@ impl QueueScheduler {
         let (task_tx, task_rx) = mpsc::unbounded_channel::<QueueTask>();
         let state = Arc::new(RwLock::new(PauseState { paused: false }));
         let name = queue.name.clone();
+        let blocking = queue.blocking;
 
-        if queue.blocking {
+        if blocking {
             let sem = Arc::new(Semaphore::new(1));
             tokio::spawn(Self::run_blocking(task_rx, engine, sem));
         } else {
@@ -135,6 +173,7 @@ impl QueueScheduler {
             sender: task_tx,
             state,
             name,
+            blocking,
         }
     }
 
@@ -188,8 +227,9 @@ impl QueueScheduler {
 
     async fn run_scheduler(
         mut cmd_rx: mpsc::UnboundedReceiver<SchedulerCommand>,
-        slots: HashMap<QueueId, QueueSlot>,
+        mut slots: HashMap<QueueId, QueueSlot>,
         bus: Arc<EventBus>,
+        engine: Arc<ActionEngineHandle>,
     ) {
         while let Some(cmd) = cmd_rx.recv().await {
             match cmd {
@@ -203,6 +243,40 @@ impl QueueScheduler {
                 SchedulerCommand::Resume(queue_id, reply) => {
                     let r = Self::set_paused(&queue_id, false, &slots, &bus, "queue.resumed").await;
                     let _ = reply.send(r);
+                }
+                SchedulerCommand::Register(queue, reply) => {
+                    let outcome = if slots.contains_key(&queue.id) {
+                        MembershipOutcome::AlreadyRegistered
+                    } else {
+                        let id = queue.id;
+                        let slot = Self::make_queue_slot(queue, Arc::clone(&engine));
+                        slots.insert(id, slot);
+                        MembershipOutcome::Applied
+                    };
+                    let _ = reply.send(outcome);
+                }
+                SchedulerCommand::Deregister(queue_id, reply) => {
+                    let outcome = match slots.remove(&queue_id) {
+                        Some(_) => MembershipOutcome::Applied,
+                        None => MembershipOutcome::NotFound,
+                    };
+                    let _ = reply.send(outcome);
+                }
+                SchedulerCommand::Reconfigure(queue, reply) => {
+                    let outcome = match slots.get_mut(&queue.id) {
+                        Some(slot) if slot.blocking == queue.blocking => {
+                            slot.name = queue.name;
+                            MembershipOutcome::Applied
+                        }
+                        Some(_) => {
+                            let id = queue.id;
+                            let slot = Self::make_queue_slot(queue, Arc::clone(&engine));
+                            slots.insert(id, slot);
+                            MembershipOutcome::Applied
+                        }
+                        None => MembershipOutcome::NotFound,
+                    };
+                    let _ = reply.send(outcome);
                 }
                 SchedulerCommand::QueryPaused(reply) => {
                     let mut paused = std::collections::HashSet::new();

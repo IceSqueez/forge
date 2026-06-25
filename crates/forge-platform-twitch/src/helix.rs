@@ -80,6 +80,13 @@ pub trait HelixTokenSource: Send + Sync {
     async fn access_token(&self) -> Result<OAuthToken, HelixError>;
 }
 
+/// Renews the stored token after a Helix 401; a rejected refresh token
+/// surfaces as `ReauthRequired`.
+#[async_trait]
+pub trait HelixTokenRefresher: Send + Sync {
+    async fn refresh(&self) -> Result<OAuthToken, HelixError>;
+}
+
 /// Implementations own rate-limit acquisition, auth headers, and failure
 /// telemetry: every non-2xx response publishes a `request.fail` bus event
 /// (endpoint path, status code, body snippet, retry-after) before the error
@@ -95,6 +102,7 @@ pub struct HelixHttpTransport {
     bus: Arc<EventBus>,
     client_id: String,
     tokens: Arc<dyn HelixTokenSource>,
+    refresher: Option<Arc<dyn HelixTokenRefresher>>,
     base_url: String,
 }
 
@@ -114,6 +122,13 @@ impl HelixHttpTransport {
         )
     }
 
+    /// Enables the reactive 401 path: a single refresh-then-retry per request
+    /// before falling through to `ReauthRequired`.
+    pub fn with_refresher(mut self, refresher: Arc<dyn HelixTokenRefresher>) -> Self {
+        self.refresher = Some(refresher);
+        self
+    }
+
     pub(crate) fn with_base_url(
         base_url: String,
         rate_limiter: Arc<dyn RateLimiter>,
@@ -127,6 +142,7 @@ impl HelixHttpTransport {
             bus,
             client_id,
             tokens,
+            refresher: None,
             base_url,
         }
     }
@@ -146,9 +162,15 @@ impl HelixHttpTransport {
     }
 }
 
-#[async_trait]
-impl HelixTransport for HelixHttpTransport {
-    async fn execute(&self, request: HelixRequest) -> Result<serde_json::Value, HelixError> {
+impl HelixHttpTransport {
+    /// Acquires one rate-limit point and issues the request with `token`.
+    /// Returns `Err(ReauthRequired)` on a 401 so the caller can decide whether
+    /// a refresh-then-retry is still available.
+    async fn attempt(
+        &self,
+        request: &HelixRequest,
+        token: &OAuthToken,
+    ) -> Result<serde_json::Value, HelixError> {
         // Acquire one point, sleeping over short throttles. The cumulative wait
         // is bounded by MAX_THROTTLE_WAIT so the caller never blocks for long;
         // beyond that we report RateLimited and let the caller decide.
@@ -174,8 +196,6 @@ impl HelixTransport for HelixHttpTransport {
                 RateLimitOutcome::Exhausted => return Err(HelixError::RateLimited),
             }
         }
-
-        let token = self.tokens.access_token().await?;
 
         let method = match request.method {
             HelixMethod::Get => reqwest::Method::GET,
@@ -234,6 +254,26 @@ impl HelixTransport for HelixHttpTransport {
             return Ok(serde_json::Value::Null);
         }
         serde_json::from_slice(&bytes).map_err(|e| HelixError::Transport(e.to_string()))
+    }
+}
+
+#[async_trait]
+impl HelixTransport for HelixHttpTransport {
+    async fn execute(&self, request: HelixRequest) -> Result<serde_json::Value, HelixError> {
+        let token = self.tokens.access_token().await?;
+        match self.attempt(&request, &token).await {
+            Err(HelixError::ReauthRequired) => match &self.refresher {
+                // Single bounded retry: refresh once, then re-issue. A second
+                // 401 after a successful refresh is terminal, so a token Twitch
+                // keeps rejecting cannot loop.
+                Some(refresher) => {
+                    let fresh = refresher.refresh().await?;
+                    self.attempt(&request, &fresh).await
+                }
+                None => Err(HelixError::ReauthRequired),
+            },
+            other => other,
+        }
     }
 }
 

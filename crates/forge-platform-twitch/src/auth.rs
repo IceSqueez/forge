@@ -89,13 +89,28 @@ pub struct LoopbackCode {
     pub auth_url: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TwitchAuthBundle {
     pub access_token: OAuthToken,
+    /// Absent when the grant carried no refresh token; the credential then
+    /// routes its first expiry to re-auth instead of a silent renewal.
+    pub refresh_token: Option<OAuthToken>,
     pub user_info: UserInfo,
     pub client_id: String,
     /// Absolute expiry time. `None` if the upstream token never expires.
     pub expires_at: Option<std::time::SystemTime>,
+}
+
+impl std::fmt::Debug for TwitchAuthBundle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TwitchAuthBundle")
+            .field("access_token", &self.access_token)
+            .field("refresh_token", &self.refresh_token)
+            .field("user_info", &self.user_info)
+            .field("client_id", &self.client_id)
+            .field("expires_at", &self.expires_at)
+            .finish()
+    }
 }
 
 pub struct TwitchAuthFlow {
@@ -184,10 +199,15 @@ impl TwitchAuthFlow {
         }
 
         let user_info = fetch_user_info_from_token(&user_token, &self.helix).await?;
-        let expires_at = expires_at_from_token(&user_token);
+        let expires_at = token_response
+            .expires_in
+            .filter(|secs| *secs > 0)
+            .map(|secs| std::time::SystemTime::now() + std::time::Duration::from_secs(secs))
+            .or_else(|| expires_at_from_token(&user_token));
 
         Ok(TwitchAuthBundle {
             access_token: OAuthToken::new(token_response.access_token),
+            refresh_token: token_response.refresh_token.map(OAuthToken::new),
             user_info,
             client_id: self.client_id.clone(),
             expires_at,
@@ -222,6 +242,8 @@ fn build_authorize_url(
 #[derive(Debug, Deserialize)]
 struct TokenResponse {
     access_token: String,
+    refresh_token: Option<String>,
+    expires_in: Option<u64>,
 }
 
 async fn exchange_code(

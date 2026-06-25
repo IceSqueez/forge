@@ -13,6 +13,9 @@ pub const TWITCH_CREDENTIAL_ID: &str = "twitch:broadcaster";
 #[derive(Clone)]
 pub struct StoredCredential {
     pub access_token: OAuthToken,
+    /// Absent for credentials persisted before refresh support, or when the
+    /// grant carried no refresh token: routes the first expiry to re-auth.
+    pub refresh_token: Option<OAuthToken>,
     pub user_id: String,
     pub login: String,
     pub expires_at: Option<SystemTime>,
@@ -22,6 +25,7 @@ impl std::fmt::Debug for StoredCredential {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("StoredCredential")
             .field("access_token", &self.access_token)
+            .field("refresh_token", &self.refresh_token)
             .field("user_id", &self.user_id)
             .field("login", &self.login)
             .field("expires_at", &self.expires_at)
@@ -33,15 +37,30 @@ pub async fn store(
     creds: &dyn CredentialsRepo,
     auth: &TwitchAuthBundle,
 ) -> Result<(), StorageError> {
-    let expires_at_unix: Option<i64> = auth.expires_at.and_then(|t| {
+    let stored = StoredCredential {
+        access_token: auth.access_token.clone(),
+        refresh_token: auth.refresh_token.clone(),
+        user_id: auth.user_info.id.clone(),
+        login: auth.user_info.login.clone(),
+        expires_at: auth.expires_at,
+    };
+    store_credential(creds, &stored).await
+}
+
+pub async fn store_credential(
+    creds: &dyn CredentialsRepo,
+    cred: &StoredCredential,
+) -> Result<(), StorageError> {
+    let expires_at_unix: Option<i64> = cred.expires_at.and_then(|t| {
         t.duration_since(std::time::UNIX_EPOCH)
             .ok()
             .map(|d| d.as_secs() as i64)
     });
     let bundle = serde_json::json!({
-        "access_token": auth.access_token.expose(),
-        "user_id": auth.user_info.id,
-        "login": auth.user_info.login,
+        "access_token": cred.access_token.expose(),
+        "refresh_token": cred.refresh_token.as_ref().map(OAuthToken::expose),
+        "user_id": cred.user_id,
+        "login": cred.login,
         "expires_at_unix": expires_at_unix,
     });
     creds
@@ -63,6 +82,9 @@ pub async fn load(creds: &dyn CredentialsRepo) -> Result<Option<StoredCredential
             .ok_or_else(|| StorageError::Parse("missing access_token in twitch credential".into()))?
             .to_owned(),
     );
+    let refresh_token = bundle["refresh_token"]
+        .as_str()
+        .map(|s| OAuthToken::new(s.to_owned()));
     let user_id = bundle["user_id"]
         .as_str()
         .ok_or_else(|| StorageError::Parse("missing user_id in twitch credential".into()))?
@@ -77,6 +99,7 @@ pub async fn load(creds: &dyn CredentialsRepo) -> Result<Option<StoredCredential
     });
     Ok(Some(StoredCredential {
         access_token,
+        refresh_token,
         user_id,
         login,
         expires_at,
@@ -113,6 +136,7 @@ mod tests {
     fn stored_credential_debug_does_not_expose_bearer_token() {
         let cred = StoredCredential {
             access_token: OAuthToken::new("DEADBEEF_BEARER"),
+            refresh_token: Some(OAuthToken::new("DEADBEEF_REFRESH")),
             user_id: "123".to_owned(),
             login: "user".to_owned(),
             expires_at: None,

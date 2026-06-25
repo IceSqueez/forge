@@ -1,9 +1,11 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use forge_platform_core::{BuiltinControl, ControlFailure, ControlOutcome, PlatformError};
 
-use crate::auth::fetch_user_info;
 use crate::builtin::TwitchIntegrationBundle;
 use crate::credentials::load;
+use crate::credentials_manager::TwitchCredentialsManager;
 
 #[async_trait]
 impl BuiltinControl for TwitchIntegrationBundle {
@@ -41,10 +43,17 @@ impl BuiltinControl for TwitchIntegrationBundle {
             .map_err(|_| ControlFailure::Transport)?
             .ok_or(ControlFailure::NotConnected)?;
 
-        match fetch_user_info(&stored.access_token, &self.config().client_id).await {
+        // No stored refresh token means renewal is impossible — surface the
+        // re-auth prompt rather than pretending the token was renewed.
+        let refresh_token = stored.refresh_token.ok_or(ControlFailure::Unauthorized)?;
+
+        let manager = TwitchCredentialsManager::new(
+            Arc::clone(self.credentials()),
+            self.config().client_id.clone(),
+        );
+        match manager.refresh(&refresh_token).await {
             Ok(_) => Ok(()),
-            Err(PlatformError::Auth { .. }) => Err(ControlFailure::Unauthorized),
-            Err(PlatformError::Http { status: 401, .. }) => Err(ControlFailure::Unauthorized),
+            Err(PlatformError::ReauthRequired { .. }) => Err(ControlFailure::Unauthorized),
             Err(_) => Err(ControlFailure::Transport),
         }
     }

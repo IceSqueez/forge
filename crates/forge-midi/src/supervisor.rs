@@ -342,7 +342,8 @@ fn build_event_deltas(snap: &mut MidiHealthSnapshot, is_note_on: bool) -> Vec<He
     if is_note_on && let Some(t) = snap.last_note_on_at {
         let formatted = t
             .format(
-                &time::format_description::parse("[hour]:[minute]:[second]").unwrap_or_default(),
+                &time::format_description::parse_borrowed::<2>("[hour]:[minute]:[second]")
+                    .unwrap_or_default(),
             )
             .unwrap_or_else(|_| "--:--:--".to_owned());
         deltas.push(HealthDelta {

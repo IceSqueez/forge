@@ -95,7 +95,9 @@ fn make_deps() -> QueueDeps {
     QueueDeps {
         registry: Arc::new(std::sync::RwLock::new(registry)),
         resolver: Arc::new(std::sync::RwLock::new(resolver)),
-        pipeline: Arc::new(forge_tts_pipeline::PipelineConfig::default()),
+        pipeline: forge_speak_queue::PipelineConfigHandle::new(
+            forge_tts_pipeline::PipelineConfig::default(),
+        ),
         audio_sink: Arc::new(NullSink),
         event_bus: Arc::new(NullPublisher),
     }

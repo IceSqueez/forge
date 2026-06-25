@@ -1,10 +1,14 @@
 mod actor;
+pub mod filters;
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+pub use filters::{
+    FilterMappingError, PipelineConfigHandle, build_config_lenient, build_config_strict,
+};
 pub use forge_tts_core::TtsError;
 use forge_tts_core::{EngineId, TtsRegistry, VoiceId};
 use forge_voice::{AliasId, VoiceAliasResolver};
@@ -132,7 +136,7 @@ pub struct QueueDeps {
     // std::sync::RwLock here, not tokio — guard never crosses await.
     pub registry: Arc<std::sync::RwLock<TtsRegistry>>,
     pub resolver: Arc<std::sync::RwLock<VoiceAliasResolver>>,
-    pub pipeline: Arc<forge_tts_pipeline::PipelineConfig>,
+    pub pipeline: PipelineConfigHandle,
     pub audio_sink: Arc<dyn forge_audio::AudioSink>,
     pub event_bus: Arc<dyn forge_events::EventPublisher>,
 }

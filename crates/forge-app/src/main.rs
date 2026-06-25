@@ -331,7 +331,8 @@ fn spawn_speak_queue(
         },
         SynthesisDefaults::default(),
     )));
-    let pipeline = Arc::new(forge_tts_pipeline::PipelineConfig::default());
+    let pipeline =
+        forge_speak_queue::PipelineConfigHandle::new(forge_tts_pipeline::PipelineConfig::default());
 
     let audio_sink: Arc<dyn forge_audio::AudioSink> = match default_audio_device_id() {
         Some(device_id) => {

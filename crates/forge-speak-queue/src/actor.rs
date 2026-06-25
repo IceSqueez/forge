@@ -7,7 +7,10 @@ use forge_tts_core::{EngineId, SynthesisRequest, TtsVoice, VoiceId};
 use forge_tts_pipeline::PipelineResult;
 use forge_voice::ResolveResult;
 
-use crate::{Priority, QueueConfig, QueueDeps, RequestId, SpeakCommand, SpeakEvent, SpeakRequest};
+use crate::{
+    PipelineConfigHandle, Priority, QueueConfig, QueueDeps, RequestId, SpeakCommand, SpeakEvent,
+    SpeakRequest,
+};
 
 struct SynthTaskResult {
     request_id: RequestId,
@@ -31,13 +34,15 @@ enum SynthOutcome {
 
 struct SynthTaskDeps {
     resolver: Arc<std::sync::RwLock<forge_voice::VoiceAliasResolver>>,
-    pipeline: Arc<forge_tts_pipeline::PipelineConfig>,
+    pipeline: PipelineConfigHandle,
     registry: Arc<std::sync::RwLock<forge_tts_core::TtsRegistry>>,
     voice_catalog: Arc<Vec<TtsVoice>>,
 }
 
 async fn run_synthesis(req: SpeakRequest, deps: SynthTaskDeps) -> SynthTaskResult {
-    let pipeline_result = forge_tts_pipeline::process(&req.text, &deps.pipeline);
+    // Load the current config (atomic Arc clone, read guard dropped immediately).
+    let pipeline_cfg = deps.pipeline.load();
+    let pipeline_result = forge_tts_pipeline::process(&req.text, &pipeline_cfg);
     let text_to_speak = match pipeline_result {
         PipelineResult::Speak(t) => t,
         PipelineResult::Skip { reason } => {

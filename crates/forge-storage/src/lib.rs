@@ -13,6 +13,7 @@ pub mod settings;
 pub mod soundboard;
 pub mod transit;
 pub mod trigger_instance;
+pub mod tts_filters;
 pub mod user_globals;
 pub mod viewer;
 pub mod voice_aliases;
@@ -23,7 +24,7 @@ pub use error::StorageError;
 pub use event_log::{EventLogRepo, event_log_retention_days, set_event_log_retention_days};
 pub use globals::{GlobalEntry, GlobalsRepo};
 pub use history::{ActionStats, HistoryRepo};
-pub use provider::{BundleRepo, DataProvider};
+pub use provider::{BundleRepo, DataProvider, EXPECTED_SCHEMA_VERSION};
 pub use queue::QueueRepo;
 pub use script::{ScriptRecord, ScriptRepo};
 pub use settings::{Language, SettingsRepo, UnknownLanguage, reserved_keys};
@@ -34,6 +35,9 @@ pub use transit::{
     MINIMUM_SUPPORTED_BUNDLE_VERSION, ScriptTransit, SkippedEntity, TriggerInstanceTransit,
 };
 pub use trigger_instance::TriggerInstanceRepo;
+pub use tts_filters::{
+    BlocklistMode, FilterRule, FilterRuleKind, TtsFiltersRepo, TtsPipelineSettings, UrlMode,
+};
 pub use user_globals::{UserGlobalEntry, UserGlobalsRepo};
 pub use viewer::{Viewer, ViewerPlatform, ViewerRepo};
 pub use voice_aliases::{AliasId, AssignmentStrategy, IgnoreProfile, VoiceAlias, VoiceAliasRepo};

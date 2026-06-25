@@ -7,8 +7,8 @@ use forge_storage::{
     ActionRepo, BundleExportOutcome, BundleImportOutcome, BundleRepo, CredentialId,
     CredentialsRepo, DataProvider, EventLogRepo, GlobalEntry, GlobalTransit, GlobalsRepo,
     HistoryRepo, ImportMode, QueueRepo, ScriptRecord, ScriptRepo, SettingsRepo,
-    SoundboardClipsRepo, StorageError, TriggerInstanceRepo, UserGlobalEntry, UserGlobalsRepo,
-    ViewerRepo, VoiceAliasRepo,
+    SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry,
+    UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 use forge_types::{ActionId, ScriptId, Variant};
 use time::OffsetDateTime;
@@ -19,8 +19,8 @@ use crate::retention_task::spawn_retention_task;
 use crate::{
     SqliteActionRepo, SqliteBundleRepo, SqliteCredentialsRepo, SqliteEventLogRepo,
     SqliteGlobalsRepo, SqliteHistoryRepo, SqliteQueueRepo, SqliteScriptRepo, SqliteSettingsRepo,
-    SqliteSoundboardClipsRepo, SqliteTriggerInstanceRepo, SqliteUserGlobalsRepo, SqliteViewerRepo,
-    SqliteVoiceAliasRepo, apply_migrations, connect,
+    SqliteSoundboardClipsRepo, SqliteTriggerInstanceRepo, SqliteTtsFiltersRepo,
+    SqliteUserGlobalsRepo, SqliteViewerRepo, SqliteVoiceAliasRepo, apply_migrations, connect,
 };
 
 const PRUNE_INTERVAL_PRODUCTION: Duration = Duration::from_secs(3600);
@@ -40,6 +40,7 @@ pub struct SqliteBackend {
     soundboard: Arc<SqliteSoundboardClipsRepo>,
     voice_alias: Arc<SqliteVoiceAliasRepo>,
     viewer: Arc<SqliteViewerRepo>,
+    tts_filters: Arc<SqliteTtsFiltersRepo>,
     bundle: SqliteBundleRepo,
     shutdown: Arc<Notify>,
 }
@@ -123,6 +124,7 @@ impl SqliteBackend {
             soundboard: Arc::new(SqliteSoundboardClipsRepo::new(pool.clone())),
             voice_alias: Arc::new(SqliteVoiceAliasRepo::new(pool.clone())),
             viewer: Arc::new(SqliteViewerRepo::new(pool.clone())),
+            tts_filters: Arc::new(SqliteTtsFiltersRepo::new(pool.clone())),
             bundle: SqliteBundleRepo::new(pool.clone()),
             credentials,
             shutdown,
@@ -410,6 +412,10 @@ impl DataProvider for SqliteBackend {
 
     fn viewer_repo(&self) -> Arc<dyn ViewerRepo> {
         Arc::clone(&self.viewer) as Arc<dyn ViewerRepo>
+    }
+
+    fn tts_filters_repo(&self) -> Arc<dyn TtsFiltersRepo> {
+        Arc::clone(&self.tts_filters) as Arc<dyn TtsFiltersRepo>
     }
 
     async fn schema_version(&self) -> Result<u32, StorageError> {

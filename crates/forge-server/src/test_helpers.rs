@@ -15,6 +15,7 @@ use forge_storage::script::MockScriptRepo;
 use forge_storage::settings::MockSettingsRepo;
 use forge_storage::soundboard::MockSoundboardClipsRepo;
 use forge_storage::trigger_instance::MockTriggerInstanceRepo;
+use forge_storage::tts_filters::MockTtsFiltersRepo;
 use forge_storage::user_globals::MockUserGlobalsRepo;
 use forge_storage::viewer::MockViewerRepo;
 use forge_storage::voice_aliases::MockVoiceAliasRepo;
@@ -22,7 +23,8 @@ use forge_storage::{
     ActionRepo, BundleExportOutcome, BundleImportOutcome, BundleRepo, CredentialId,
     CredentialsRepo, DataProvider, EventLogRepo, GlobalEntry, GlobalsRepo, HistoryRepo, ImportMode,
     QueueRepo, ScriptRecord, ScriptRepo, SettingsRepo, SoundboardClipsRepo, StorageError,
-    TriggerInstanceRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
+    TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo,
+    VoiceAliasRepo,
 };
 use forge_types::{ActionId, ScriptId, Variant};
 use time::OffsetDateTime;
@@ -36,6 +38,7 @@ pub struct TestDataProvider {
     pub soundboard_clips_repo: Arc<MockSoundboardClipsRepo>,
     pub voice_alias_repo: Arc<MockVoiceAliasRepo>,
     pub viewer_repo: Arc<MockViewerRepo>,
+    pub tts_filters_repo: Arc<MockTtsFiltersRepo>,
     pub globals_repo: Arc<MockGlobalsRepo>,
     pub user_globals_repo: Arc<MockUserGlobalsRepo>,
     pub settings_repo: Arc<MockSettingsRepo>,
@@ -54,6 +57,7 @@ impl TestDataProvider {
             soundboard_clips_repo: Arc::new(MockSoundboardClipsRepo::new()),
             voice_alias_repo: Arc::new(MockVoiceAliasRepo::new()),
             viewer_repo: Arc::new(MockViewerRepo::new()),
+            tts_filters_repo: Arc::new(MockTtsFiltersRepo::new()),
             globals_repo: Arc::new(MockGlobalsRepo::new()),
             user_globals_repo: Arc::new(MockUserGlobalsRepo::new()),
             settings_repo: Arc::new(MockSettingsRepo::new()),
@@ -331,6 +335,10 @@ impl DataProvider for TestDataProvider {
 
     fn viewer_repo(&self) -> Arc<dyn ViewerRepo> {
         Arc::clone(&self.viewer_repo) as Arc<dyn ViewerRepo>
+    }
+
+    fn tts_filters_repo(&self) -> Arc<dyn TtsFiltersRepo> {
+        Arc::clone(&self.tts_filters_repo) as Arc<dyn TtsFiltersRepo>
     }
 
     async fn schema_version(&self) -> Result<u32, StorageError> {

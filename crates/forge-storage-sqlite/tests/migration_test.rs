@@ -16,11 +16,12 @@ async fn all_core_tables_exist_after_migration() {
                       'queues', 'actions', 'scripts', 'event_log',
                       'soundboard_clips', 'voice_aliases', 'ignore_profile',
                       'replacement_rules', 'viewers', 'action_executions',
-                      'trigger_instances', 'action_trigger_instances')",
+                      'trigger_instances', 'action_trigger_instances',
+                      'tts_filter_rules', 'tts_pipeline_settings')",
     )
     .fetch_one(&pool)
     .await
     .expect("query sqlite_master");
 
-    assert_eq!(count, 17, "expected 17 tables after all migrations");
+    assert_eq!(count, 19, "expected 19 tables after all migrations");
 }

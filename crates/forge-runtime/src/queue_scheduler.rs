@@ -762,4 +762,302 @@ mod tests {
         );
         sched.shutdown();
     }
+
+    // ── live-membership: register ────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn register_new_queue_returns_applied_and_enables_dispatch() {
+        // Core fix verification: a queue registered post-spawn must actually
+        // receive and execute work (not emit queue_not_found skipped).
+        let dp = make_dp().await;
+        let q_id = QueueId::new();
+        let a_id = ActionId::new();
+        let queue = nonblocking(q_id);
+        let action = log_action(a_id, q_id);
+        seed(&dp, &queue, &action).await;
+
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::new(SubActionRegistry::new()),
+        );
+        // Spawn with NO initial queues — q_id is unregistered.
+        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![]);
+        let mut sub = bus.subscribe();
+
+        let outcome = sched.register(queue).await.unwrap();
+        assert_eq!(outcome, MembershipOutcome::Applied);
+
+        sched
+            .dispatch(SchedulerRequest {
+                queue_id: q_id,
+                action_id: a_id,
+                trigger_event_id: EventId::new(),
+                initial_args: ArgStack::new(),
+                bypass_pause: false,
+            })
+            .await
+            .unwrap();
+
+        // Must reach action.done, NOT action.skipped with reason=queue_not_found.
+        assert!(
+            collect_events(&mut sub, "action.done", 30, 300).await,
+            "newly registered queue must execute dispatched actions"
+        );
+        sched.shutdown();
+    }
+
+    #[tokio::test]
+    async fn register_existing_queue_returns_already_registered_and_preserves_pause() {
+        let dp = make_dp().await;
+        let q_id = QueueId::new();
+        let a_id = ActionId::new();
+        let queue = nonblocking(q_id);
+        let action = log_action(a_id, q_id);
+        seed(&dp, &queue, &action).await;
+
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::new(SubActionRegistry::new()),
+        );
+        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![nonblocking(q_id)]);
+        let mut sub = bus.subscribe();
+
+        // Pause the slot, then attempt to re-register the same id.
+        sched.pause(q_id).await.unwrap();
+        let outcome = sched.register(nonblocking(q_id)).await.unwrap();
+        assert_eq!(outcome, MembershipOutcome::AlreadyRegistered);
+
+        // Existing slot must remain paused (not replaced by a fresh unpaused slot).
+        sched
+            .dispatch(SchedulerRequest {
+                queue_id: q_id,
+                action_id: a_id,
+                trigger_event_id: EventId::new(),
+                initial_args: ArgStack::new(),
+                bypass_pause: false,
+            })
+            .await
+            .unwrap();
+
+        // Drain briefly: must see skipped (still paused), not done.
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        let mut saw_skipped = false;
+        let mut saw_done = false;
+        for _ in 0..20 {
+            match tokio::time::timeout(Duration::from_millis(30), sub.recv()).await {
+                Ok(Ok(ev)) if ev.kind == "action.skipped" => saw_skipped = true,
+                Ok(Ok(ev)) if ev.kind == "action.done" => saw_done = true,
+                Ok(Ok(_)) => {}
+                _ => break,
+            }
+        }
+        assert!(saw_skipped, "re-register must not un-pause existing slot");
+        assert!(
+            !saw_done,
+            "re-register must not replace existing paused slot"
+        );
+        sched.shutdown();
+    }
+
+    // ── live-membership: deregister ─────────────────────────────────────────
+
+    #[tokio::test]
+    async fn deregister_existing_queue_returns_applied_then_skips_dispatch() {
+        let dp = make_dp().await;
+        let q_id = QueueId::new();
+        let a_id = ActionId::new();
+        let queue = nonblocking(q_id);
+        let action = log_action(a_id, q_id);
+        seed(&dp, &queue, &action).await;
+
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::new(SubActionRegistry::new()),
+        );
+        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
+        let mut sub = bus.subscribe();
+
+        let outcome = sched.deregister(q_id).await.unwrap();
+        assert_eq!(outcome, MembershipOutcome::Applied);
+
+        sched
+            .dispatch(SchedulerRequest {
+                queue_id: q_id,
+                action_id: a_id,
+                trigger_event_id: EventId::new(),
+                initial_args: ArgStack::new(),
+                bypass_pause: false,
+            })
+            .await
+            .unwrap();
+
+        // Dispatch after deregister must hit the queue_not_found safety net.
+        assert!(
+            collect_events(&mut sub, "action.skipped", 10, 200).await,
+            "dispatch after deregister must emit action.skipped"
+        );
+        sched.shutdown();
+    }
+
+    #[tokio::test]
+    async fn deregister_unknown_queue_returns_not_found_without_panic() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let dp = make_dp().await;
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::new(SubActionRegistry::new()),
+        );
+        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![]);
+
+        let outcome = sched.deregister(QueueId::new()).await.unwrap();
+        assert_eq!(outcome, MembershipOutcome::NotFound);
+        sched.shutdown();
+    }
+
+    // ── live-membership: reconfigure ────────────────────────────────────────
+
+    #[tokio::test]
+    async fn reconfigure_rename_preserves_pause_state_and_runner() {
+        // Same `blocking` value → only `name` is updated; runner is NOT torn
+        // down and rebuilt. A paused queue must remain paused after the rename.
+        let dp = make_dp().await;
+        let q_id = QueueId::new();
+        let a_id = ActionId::new();
+        let queue = nonblocking(q_id);
+        let action = log_action(a_id, q_id);
+        seed(&dp, &queue, &action).await;
+
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::new(SubActionRegistry::new()),
+        );
+        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![nonblocking(q_id)]);
+        let mut sub = bus.subscribe();
+
+        sched.pause(q_id).await.unwrap();
+
+        // Rename only — blocking stays false.
+        let renamed = Queue {
+            id: q_id,
+            name: "renamed".to_string(),
+            blocking: false,
+        };
+        let outcome = sched.reconfigure(renamed).await.unwrap();
+        assert_eq!(outcome, MembershipOutcome::Applied);
+
+        // Dispatch: must still be skipped (pause survived rename).
+        sched
+            .dispatch(SchedulerRequest {
+                queue_id: q_id,
+                action_id: a_id,
+                trigger_event_id: EventId::new(),
+                initial_args: ArgStack::new(),
+                bypass_pause: false,
+            })
+            .await
+            .unwrap();
+
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        let mut saw_skipped = false;
+        let mut saw_done = false;
+        for _ in 0..20 {
+            match tokio::time::timeout(Duration::from_millis(30), sub.recv()).await {
+                Ok(Ok(ev)) if ev.kind == "action.skipped" => saw_skipped = true,
+                Ok(Ok(ev)) if ev.kind == "action.done" => saw_done = true,
+                Ok(Ok(_)) => {}
+                _ => break,
+            }
+        }
+        assert!(
+            saw_skipped,
+            "rename-only reconfigure must not clear pause state"
+        );
+        assert!(
+            !saw_done,
+            "rename-only reconfigure must not replace the paused slot"
+        );
+        sched.shutdown();
+    }
+
+    #[tokio::test]
+    async fn reconfigure_blocking_flip_accepts_work_after_rebuild() {
+        // blocking-flip builds a fresh slot; the queue must still accept and
+        // execute dispatched work.
+        let dp = make_dp().await;
+        let q_id = QueueId::new();
+        let a_id = ActionId::new();
+        let queue = nonblocking(q_id);
+        let action = log_action(a_id, q_id);
+        seed(&dp, &queue, &action).await;
+
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::new(SubActionRegistry::new()),
+        );
+        // Start non-blocking, flip to blocking.
+        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![nonblocking(q_id)]);
+        let mut sub = bus.subscribe();
+
+        let flipped = blocking_q(q_id);
+        let outcome = sched.reconfigure(flipped).await.unwrap();
+        assert_eq!(outcome, MembershipOutcome::Applied);
+
+        sched
+            .dispatch(SchedulerRequest {
+                queue_id: q_id,
+                action_id: a_id,
+                trigger_event_id: EventId::new(),
+                initial_args: ArgStack::new(),
+                bypass_pause: false,
+            })
+            .await
+            .unwrap();
+
+        assert!(
+            collect_events(&mut sub, "action.done", 30, 300).await,
+            "queue must execute work after blocking-flip reconfigure"
+        );
+        sched.shutdown();
+    }
+
+    #[tokio::test]
+    async fn reconfigure_unknown_queue_returns_not_found() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let dp = make_dp().await;
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::new(SubActionRegistry::new()),
+        );
+        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![]);
+
+        let outcome = sched
+            .reconfigure(Queue {
+                id: QueueId::new(),
+                name: "ghost".to_string(),
+                blocking: false,
+            })
+            .await
+            .unwrap();
+        assert_eq!(outcome, MembershipOutcome::NotFound);
+        sched.shutdown();
+    }
 }

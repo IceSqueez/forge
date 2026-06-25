@@ -134,7 +134,11 @@ impl BuiltinStatus for KickIntegrationBundle {
     }
 
     fn header_actions(&self) -> Vec<HeaderAction> {
-        vec![HeaderAction::Reconnect, HeaderAction::Disconnect]
+        vec![
+            HeaderAction::Reconnect,
+            HeaderAction::RefreshToken,
+            HeaderAction::Disconnect,
+        ]
     }
 }
 

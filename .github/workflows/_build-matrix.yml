@@ -40,7 +40,7 @@ jobs:
             asset_name: macos-universal
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1

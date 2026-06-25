@@ -1,7 +1,10 @@
-use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakRequest};
-use forge_tts_pipeline::{
-    BlocklistMode, PipelineConfig, PipelineResult, StageAction, StageOutcome, UrlMode,
+use forge_speak_queue::{
+    Priority, RequestId, SpeakCommand, SpeakRequest, build_config_lenient, build_config_strict,
 };
+use forge_storage::{
+    BlocklistMode, FilterRule, FilterRuleKind, TtsFiltersRepo, TtsPipelineSettings, UrlMode,
+};
+use forge_tts_pipeline::{PipelineResult, StageAction, StageOutcome};
 use forge_widgets::tokens::{
     BORDER_THIN, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
 };
@@ -13,28 +16,108 @@ use crate::Message;
 use crate::message::{TtsFiltersMsg, TtsMsg};
 use crate::runtime_view::RuntimeView;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BlocklistModeChoice {
-    Censor,
-    SkipMessage,
+/// Selectable rule kind in the draft editor, decoupled from the parameter-carrying
+/// `FilterRuleKind` so the picker can be chosen before the parameters exist.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DraftKind {
+    Literal,
+    Regex,
+    Blocklist,
 }
 
-pub struct ReplacementRuleRow {
-    pub is_regex: bool,
-    pub pattern: String,
-    pub replacement: String,
+impl DraftKind {
+    fn of(kind: &FilterRuleKind) -> Self {
+        match kind {
+            FilterRuleKind::Literal { .. } => DraftKind::Literal,
+            FilterRuleKind::Regex { .. } => DraftKind::Regex,
+            FilterRuleKind::Blocklist { .. } => DraftKind::Blocklist,
+        }
+    }
+}
+
+/// In-progress add/edit form. `editing` is the index into the working rule list when
+/// editing an existing rule, `None` when adding a new one.
+struct RuleDraft {
+    editing: Option<usize>,
+    kind: DraftKind,
+    name: String,
+    pattern: String,
+    replacement: String,
+    words: String,
+    blocklist_mode: BlocklistMode,
+}
+
+impl RuleDraft {
+    fn blank() -> Self {
+        Self {
+            editing: None,
+            kind: DraftKind::Literal,
+            name: String::new(),
+            pattern: String::new(),
+            replacement: String::new(),
+            words: String::new(),
+            blocklist_mode: BlocklistMode::Censor,
+        }
+    }
+
+    fn from_rule(index: usize, rule: &FilterRule) -> Self {
+        let mut draft = Self::blank();
+        draft.editing = Some(index);
+        draft.kind = DraftKind::of(&rule.kind);
+        draft.name = rule.name.clone();
+        match &rule.kind {
+            FilterRuleKind::Literal {
+                pattern,
+                replacement,
+            }
+            | FilterRuleKind::Regex {
+                pattern,
+                replacement,
+            } => {
+                draft.pattern = pattern.clone();
+                draft.replacement = replacement.clone();
+            }
+            FilterRuleKind::Blocklist { words, mode } => {
+                draft.words = words.join(", ");
+                draft.blocklist_mode = *mode;
+            }
+        }
+        draft
+    }
+
+    fn to_kind(&self) -> FilterRuleKind {
+        match self.kind {
+            DraftKind::Literal => FilterRuleKind::Literal {
+                pattern: self.pattern.clone(),
+                replacement: self.replacement.clone(),
+            },
+            DraftKind::Regex => FilterRuleKind::Regex {
+                pattern: self.pattern.clone(),
+                replacement: self.replacement.clone(),
+            },
+            DraftKind::Blocklist => FilterRuleKind::Blocklist {
+                words: self
+                    .words
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|w| !w.is_empty())
+                    .map(str::to_owned)
+                    .collect(),
+                mode: self.blocklist_mode,
+            },
+        }
+    }
 }
 
 pub struct TtsFiltersState {
     pub preview_input: String,
-    pub skip_contains_url: bool,
-    pub skip_starts_with_bang: bool,
-    pub skip_from_bots: bool,
-    pub skip_length_limit: Option<u32>,
-    pub blocklist_mode: BlocklistModeChoice,
-    pub word_blocklist: Vec<String>,
-    pub replacement_rules: Vec<ReplacementRuleRow>,
-    pub cached_preview: Option<CachedPreview>,
+    rules: Vec<FilterRule>,
+    settings: TtsPipelineSettings,
+    max_length_input: String,
+    draft: Option<RuleDraft>,
+    save_error: Option<String>,
+    dirty: bool,
+    cached_preview: Option<CachedPreview>,
 }
 
 pub struct CachedPreview {
@@ -44,40 +127,25 @@ pub struct CachedPreview {
 
 impl TtsFiltersState {
     pub fn new() -> Self {
+        let settings = TtsPipelineSettings::default();
         Self {
             preview_input: String::new(),
-            skip_contains_url: true,
-            skip_starts_with_bang: true,
-            skip_from_bots: true,
-            skip_length_limit: Some(300),
-            blocklist_mode: BlocklistModeChoice::Censor,
-            word_blocklist: Vec::new(),
-            replacement_rules: Vec::new(),
+            rules: Vec::new(),
+            max_length_input: settings
+                .max_length
+                .map(|n| n.to_string())
+                .unwrap_or_default(),
+            settings,
+            draft: None,
+            save_error: None,
+            dirty: false,
             cached_preview: None,
         }
     }
 
-    fn build_pipeline_config(&self) -> PipelineConfig {
-        let url_mode = if self.skip_contains_url {
-            UrlMode::SkipMessage
-        } else {
-            UrlMode::Passthrough
-        };
-        let blocklist_mode = match self.blocklist_mode {
-            BlocklistModeChoice::Censor => BlocklistMode::Censor,
-            BlocklistModeChoice::SkipMessage => BlocklistMode::SkipMessage,
-        };
-        let max_chars = self.skip_length_limit.unwrap_or(500) as usize;
-        PipelineConfig {
-            emote_sources: forge_tts_pipeline::EmoteSources::default(),
-            emote_tokens: forge_tts_pipeline::EmoteTokenSet {
-                tokens: std::collections::HashSet::new(),
-            },
-            url_mode,
-            replacement_rules: Vec::new(),
-            word_blocklist: self.word_blocklist.clone(),
-            blocklist_mode,
-            max_chars,
+    fn renumber(&mut self) {
+        for (i, rule) in self.rules.iter_mut().enumerate() {
+            rule.position = i as u32;
         }
     }
 
@@ -86,7 +154,7 @@ impl TtsFiltersState {
             self.cached_preview = None;
             return;
         }
-        let config = self.build_pipeline_config();
+        let config = build_config_lenient(&self.rules, &self.settings);
         let (result, stages) = forge_tts_pipeline::preview(&self.preview_input, &config);
         self.cached_preview = Some(CachedPreview { stages, result });
     }
@@ -98,19 +166,227 @@ impl Default for TtsFiltersState {
     }
 }
 
+async fn load_filters(
+    repo: std::sync::Arc<dyn TtsFiltersRepo>,
+) -> Result<(Vec<FilterRule>, TtsPipelineSettings), String> {
+    let rules = repo.list_rules().await.map_err(|e| e.to_string())?;
+    let settings = repo
+        .get_pipeline_settings()
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok((rules, settings))
+}
+
 pub fn update(state: &mut TtsFiltersState, rt: &RuntimeView, msg: TtsFiltersMsg) -> Task<Message> {
     match msg {
+        TtsFiltersMsg::LoadRequested => {
+            let repo = rt.backend.tts_filters_repo();
+            Task::perform(load_filters(repo), |r| {
+                Message::Tts(TtsMsg::Filters(TtsFiltersMsg::Loaded(r)))
+            })
+        }
+        TtsFiltersMsg::Loaded(Ok((mut rules, settings))) => {
+            rules.sort_by_key(|r| r.position);
+            state.rules = rules;
+            state.renumber();
+            state.max_length_input = settings
+                .max_length
+                .map(|n| n.to_string())
+                .unwrap_or_default();
+            state.settings = settings;
+            state.dirty = false;
+            state.save_error = None;
+            state.refresh_preview();
+            Task::none()
+        }
+        TtsFiltersMsg::Loaded(Err(e)) => {
+            tracing::warn!(error = %e, "failed to load tts filters");
+            Task::none()
+        }
         TtsFiltersMsg::PreviewInputChanged(s) => {
             state.preview_input = s;
             state.refresh_preview();
             Task::none()
         }
-        TtsFiltersMsg::BlocklistModeChanged(m) => {
-            state.blocklist_mode = m;
+        TtsFiltersMsg::AddRuleClicked => {
+            state.draft = Some(RuleDraft::blank());
+            Task::none()
+        }
+        TtsFiltersMsg::EditRule(i) => {
+            if let Some(rule) = state.rules.get(i) {
+                state.draft = Some(RuleDraft::from_rule(i, rule));
+            }
+            Task::none()
+        }
+        TtsFiltersMsg::DeleteRule(i) => {
+            if i < state.rules.len() {
+                state.rules.remove(i);
+                state.renumber();
+                state.dirty = true;
+                state.refresh_preview();
+            }
+            Task::none()
+        }
+        TtsFiltersMsg::ToggleRule(i) => {
+            if let Some(rule) = state.rules.get_mut(i) {
+                rule.enabled = !rule.enabled;
+                state.dirty = true;
+                state.refresh_preview();
+            }
+            Task::none()
+        }
+        TtsFiltersMsg::MoveRuleUp(i) => {
+            if i > 0 && i < state.rules.len() {
+                state.rules.swap(i, i - 1);
+                state.renumber();
+                state.dirty = true;
+                state.refresh_preview();
+            }
+            Task::none()
+        }
+        TtsFiltersMsg::MoveRuleDown(i) => {
+            if i + 1 < state.rules.len() {
+                state.rules.swap(i, i + 1);
+                state.renumber();
+                state.dirty = true;
+                state.refresh_preview();
+            }
+            Task::none()
+        }
+        TtsFiltersMsg::DraftKindChanged(kind) => {
+            if let Some(draft) = state.draft.as_mut() {
+                draft.kind = kind;
+            }
+            Task::none()
+        }
+        TtsFiltersMsg::DraftNameChanged(s) => {
+            if let Some(draft) = state.draft.as_mut() {
+                draft.name = s;
+            }
+            Task::none()
+        }
+        TtsFiltersMsg::DraftPatternChanged(s) => {
+            if let Some(draft) = state.draft.as_mut() {
+                draft.pattern = s;
+            }
+            Task::none()
+        }
+        TtsFiltersMsg::DraftReplacementChanged(s) => {
+            if let Some(draft) = state.draft.as_mut() {
+                draft.replacement = s;
+            }
+            Task::none()
+        }
+        TtsFiltersMsg::DraftWordsChanged(s) => {
+            if let Some(draft) = state.draft.as_mut() {
+                draft.words = s;
+            }
+            Task::none()
+        }
+        TtsFiltersMsg::DraftBlocklistModeChanged(mode) => {
+            if let Some(draft) = state.draft.as_mut() {
+                draft.blocklist_mode = mode;
+            }
+            Task::none()
+        }
+        TtsFiltersMsg::DraftSubmit => {
+            let Some(draft) = state.draft.take() else {
+                return Task::none();
+            };
+            let kind = draft.to_kind();
+            match draft.editing {
+                Some(i) if i < state.rules.len() => {
+                    state.rules[i].name = draft.name;
+                    state.rules[i].kind = kind;
+                }
+                _ => {
+                    let position = state.rules.len() as u32;
+                    state.rules.push(FilterRule {
+                        id: ulid::Ulid::new().to_string(),
+                        name: draft.name,
+                        enabled: true,
+                        position,
+                        kind,
+                    });
+                }
+            }
+            state.renumber();
+            state.dirty = true;
             state.refresh_preview();
             Task::none()
         }
-        TtsFiltersMsg::AddRuleClicked => Task::none(),
+        TtsFiltersMsg::DraftCancel => {
+            state.draft = None;
+            Task::none()
+        }
+        TtsFiltersMsg::UrlModeChanged(mode) => {
+            state.settings.url_mode = mode;
+            state.dirty = true;
+            state.refresh_preview();
+            Task::none()
+        }
+        TtsFiltersMsg::MaxLengthChanged(raw) => {
+            state.max_length_input = raw;
+            state.settings.max_length = state.max_length_input.trim().parse::<u32>().ok();
+            state.dirty = true;
+            state.refresh_preview();
+            Task::none()
+        }
+        TtsFiltersMsg::StripTwitchEmotesToggled(v) => {
+            state.settings.strip_twitch_emotes = v;
+            state.dirty = true;
+            state.refresh_preview();
+            Task::none()
+        }
+        TtsFiltersMsg::StripRewardEmotesToggled(v) => {
+            state.settings.strip_reward_emotes = v;
+            state.dirty = true;
+            state.refresh_preview();
+            Task::none()
+        }
+        TtsFiltersMsg::SettingsBlocklistModeChanged(mode) => {
+            state.settings.blocklist_mode = mode;
+            state.dirty = true;
+            state.refresh_preview();
+            Task::none()
+        }
+        TtsFiltersMsg::Save => {
+            let config = match build_config_strict(&state.rules, &state.settings) {
+                Ok(config) => config,
+                Err(e) => {
+                    state.save_error = Some(e.to_string());
+                    return Task::none();
+                }
+            };
+            state.save_error = None;
+            let repo = rt.backend.tts_filters_repo();
+            let handle = rt.pipeline_config.clone();
+            let rules = state.rules.clone();
+            let settings = state.settings.clone();
+            Task::perform(
+                async move {
+                    repo.replace_rules(&rules)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    repo.set_pipeline_settings(&settings)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    if let Some(handle) = handle {
+                        handle.swap(config);
+                    }
+                    Ok(())
+                },
+                |r| Message::Tts(TtsMsg::Filters(TtsFiltersMsg::SaveResult(r))),
+            )
+        }
+        TtsFiltersMsg::SaveResult(Ok(())) => {
+            state.dirty = false;
+            Task::none()
+        }
+        TtsFiltersMsg::SaveResult(Err(e)) => {
+            state.save_error = Some(e);
+            Task::none()
+        }
         TtsFiltersMsg::SpeakPreview => {
             let text = state.preview_input.trim();
             if text.is_empty() {
@@ -178,121 +454,44 @@ fn pipeline_column_view<'a>(
     ]
     .spacing(spf(Spacing::Xxs));
 
-    let word_count = state.word_blocklist.len();
-    let rule_count = state.replacement_rules.len();
-    let stage1 = pipeline_stage(
-        "1",
-        palette.random,
-        forge_widgets::tr!("tts_filters_stage_skip_title"),
-        forge_widgets::tr!("tts_filters_stage_skip_subtitle"),
-        skip_rules_content(state, palette, gap_sm),
-        palette,
-        true,
-    );
-
-    let stage2 = pipeline_stage(
-        "2",
-        palette.warning,
-        forge_widgets::tr!("tts_filters_stage_blocklist_title"),
-        forge_widgets::tr!("tts_filters_stage_words_count", count = word_count as i64),
-        blocklist_content(state, palette, gap_sm),
-        palette,
-        true,
-    );
-
-    let stage3 = pipeline_stage(
-        "3",
-        palette.brand,
-        forge_widgets::tr!("tts_filters_stage_replacements_title"),
-        forge_widgets::tr!("tts_filters_stage_rules_count", count = rule_count as i64),
-        replacements_content(state, palette, gap_sm),
-        palette,
-        true,
-    );
-
-    let stage4 = pipeline_stage(
-        "\u{2713}",
-        palette.success,
-        forge_widgets::tr!("tts_filters_stage_engine_title"),
-        String::new(),
-        Space::new().into(),
-        palette,
-        false,
-    );
-
-    let _ = gap_md;
+    let rules_section = rules_section_view(state, palette, gap_sm);
+    let settings_section = settings_section_view(state, palette, gap_sm);
+    let draft_section: Element<'a, Message> = match &state.draft {
+        Some(draft) => draft_form_view(draft, palette, gap_sm),
+        None => Space::new().into(),
+    };
+    let save_bar = save_bar_view(state, palette, gap_sm);
 
     scrollable(
-        container(column![header, stage1, stage2, stage3, stage4].spacing(0))
-            .padding([sp(Spacing::Md), sp(Spacing::Md)])
-            .width(Length::Fill),
+        container(
+            column![
+                header,
+                rules_section,
+                draft_section,
+                settings_section,
+                save_bar,
+            ]
+            .spacing(gap_md),
+        )
+        .padding([sp(Spacing::Md), sp(Spacing::Md)])
+        .width(Length::Fill),
     )
     .height(Length::Fill)
     .width(Length::Fill)
     .into()
 }
 
-fn pipeline_stage<'a>(
-    number: &'static str,
-    num_color: Color,
+fn section_card<'a>(
     title: String,
-    subtitle: String,
-    content: Element<'a, Message>,
+    body: Element<'a, Message>,
     palette: &'a ForgePalette,
-    has_connector: bool,
+    gap_sm: f32,
 ) -> Element<'a, Message> {
-    let gap_sm = spf(Spacing::Xs);
-    let badge = container(
-        text(number)
-            .size(FONT_XS)
-            .color(palette.shell)
-            .font(font(FontRole::Monospace)),
-    )
-    .style(move |_| container::Style {
-        background: Some(Background::Color(num_color)),
-        border: Border {
-            radius: radius(Radius::Pill).into(),
-            ..Border::default()
-        },
-        ..container::Style::default()
-    })
-    .width(22)
-    .height(22)
-    .align_x(iced::alignment::Horizontal::Center)
-    .align_y(iced::alignment::Vertical::Center);
-
-    let connector: Element<'a, Message> = if has_connector {
-        container(text(""))
-            .style(move |_| container::Style {
-                background: Some(Background::Color(palette.border_regular)),
-                ..container::Style::default()
-            })
-            .width(2)
-            .height(8)
-            .into()
-    } else {
-        Space::new().into()
-    };
-
-    let left_col = column![badge, connector]
-        .align_x(iced::alignment::Horizontal::Center)
-        .width(24);
-
-    let stage_header = row![
-        text(title.clone())
-            .size(FONT_SM)
-            .color(palette.text_primary)
-            .width(Length::Fill),
-        text(subtitle)
-            .size(FONT_XS)
-            .color(palette.text_muted)
-            .font(font(FontRole::Monospace)),
-    ]
-    .align_y(Alignment::Center);
-
-    let inner = column![stage_header, content].spacing(gap_sm);
-
-    let card = container(inner)
+    let header = text(title)
+        .size(FONT_XS)
+        .color(palette.text_muted)
+        .font(font(FontRole::Monospace));
+    container(column![header, body].spacing(gap_sm))
         .style(move |_| container::Style {
             background: Some(Background::Color(palette.elevated)),
             border: Border {
@@ -303,106 +502,342 @@ fn pipeline_stage<'a>(
             ..container::Style::default()
         })
         .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
-        .width(Length::Fill);
-
-    row![left_col, card]
-        .spacing(spf(Spacing::Xs))
-        .padding(iced::Padding {
-            top: 0.0,
-            right: 0.0,
-            bottom: spf(Spacing::Xs),
-            left: 0.0,
-        })
+        .width(Length::Fill)
         .into()
 }
 
-fn skip_rules_content<'a>(
+fn rules_section_view<'a>(
     state: &'a TtsFiltersState,
     palette: &'a ForgePalette,
     gap_sm: f32,
 ) -> Element<'a, Message> {
-    fn chip<'b>(label: &'static str, palette: &'b ForgePalette) -> Element<'b, Message> {
-        container(text(label).size(FONT_XS).color(palette.text_primary))
-            .style(move |_| container::Style {
-                background: Some(Background::Color(palette.shell)),
-                border: Border {
-                    color: palette.border_regular,
-                    width: BORDER_THIN,
-                    radius: radius(Radius::Pill).into(),
-                },
-                ..container::Style::default()
-            })
-            .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
+    let body: Element<'a, Message> = if state.rules.is_empty() {
+        text(forge_widgets::tr!("tts_filters_no_rules"))
+            .size(FONT_SM)
+            .color(palette.text_muted)
             .into()
-    }
+    } else {
+        let last = state.rules.len() - 1;
+        let rows: Vec<Element<'a, Message>> = state
+            .rules
+            .iter()
+            .enumerate()
+            .map(|(i, rule)| rule_row(i, rule, i == 0, i == last, palette, gap_sm))
+            .collect();
+        column(rows).spacing(gap_sm).into()
+    };
 
-    fn add_chip<'b>(palette: &'b ForgePalette) -> Element<'b, Message> {
-        button(
-            text(forge_widgets::tr!("tts_filters_chip_add_rule"))
+    let add_btn = button(
+        row![
+            tabler_icon(Icon::Plus, FONT_XS, palette.text_muted),
+            text(forge_widgets::tr!("tts_filters_add_rule_btn"))
                 .size(FONT_XS)
                 .color(palette.text_muted),
-        )
-        .on_press(Message::Tts(TtsMsg::Filters(TtsFiltersMsg::AddRuleClicked)))
-        .style(move |_, _| button::Style {
-            background: None,
-            border: Border {
-                color: palette.border_regular,
-                width: BORDER_THIN,
-                radius: radius(Radius::Pill).into(),
-            },
-            text_color: palette.text_muted,
-            ..button::Style::default()
-        })
-        .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
-        .into()
-    }
+        ]
+        .spacing(spf(Spacing::Xxs))
+        .align_y(Alignment::Center),
+    )
+    .on_press(Message::Tts(TtsMsg::Filters(TtsFiltersMsg::AddRuleClicked)))
+    .style(move |_, _| button::Style {
+        background: None,
+        border: Border {
+            color: palette.border_regular,
+            width: BORDER_THIN,
+            radius: radius(Radius::Sm).into(),
+        },
+        text_color: palette.text_muted,
+        ..button::Style::default()
+    })
+    .padding([sp(Spacing::Xxs), sp(Spacing::Xs)]);
 
-    let mut chips: Vec<Element<'a, Message>> = Vec::new();
-    if state.skip_contains_url {
-        chips.push(chip(
-            Box::leak(forge_widgets::tr!("tts_filters_chip_contains_url").into_boxed_str()),
-            palette,
-        ));
-    }
-    if state.skip_starts_with_bang {
-        chips.push(chip(
-            Box::leak(forge_widgets::tr!("tts_filters_chip_starts_bang").into_boxed_str()),
-            palette,
-        ));
-    }
-    if state.skip_from_bots {
-        chips.push(chip(
-            Box::leak(forge_widgets::tr!("tts_filters_chip_from_bots").into_boxed_str()),
-            palette,
-        ));
-    }
-    if let Some(limit) = state.skip_length_limit {
-        chips.push(chip(
-            Box::leak(format!("Length > {limit}").into_boxed_str()),
-            palette,
-        ));
-    }
-    chips.push(add_chip(palette));
-
-    row(chips).spacing(gap_sm).wrap().into()
+    section_card(
+        forge_widgets::tr!("tts_filters_rules_header"),
+        column![body, add_btn].spacing(gap_sm).into(),
+        palette,
+        gap_sm,
+    )
 }
 
-fn blocklist_content<'a>(
-    state: &'a TtsFiltersState,
+fn rule_row<'a>(
+    index: usize,
+    rule: &'a FilterRule,
+    is_first: bool,
+    is_last: bool,
     palette: &'a ForgePalette,
     gap_sm: f32,
 ) -> Element<'a, Message> {
-    fn mode_btn<'b>(
-        label: &'static str,
-        choice: BlocklistModeChoice,
-        current: &BlocklistModeChoice,
-        palette: &'b ForgePalette,
-    ) -> Element<'b, Message> {
-        let active = &choice == current;
+    let (badge_label, badge_color) = match &rule.kind {
+        FilterRuleKind::Literal { .. } => ("TEXT", palette.info),
+        FilterRuleKind::Regex { .. } => ("REGEX", palette.brand),
+        FilterRuleKind::Blocklist { .. } => ("BLOCK", palette.warning),
+    };
+
+    let badge = container(
+        text(badge_label)
+            .size(8.5)
+            .color(badge_color)
+            .font(font(FontRole::Monospace)),
+    )
+    .style(move |_| container::Style {
+        background: Some(Background::Color(palette.surface_overlay)),
+        border: Border {
+            radius: radius(Radius::Sm).into(),
+            ..Border::default()
+        },
+        ..container::Style::default()
+    })
+    .padding([sp(Spacing::Xxs), sp(Spacing::Xxs)]);
+
+    let summary = rule_summary(rule);
+    let name_color = if rule.enabled {
+        palette.text_primary
+    } else {
+        palette.text_faint
+    };
+
+    let toggle_label = if rule.enabled {
+        forge_widgets::tr!("tts_filters_rule_on")
+    } else {
+        forge_widgets::tr!("tts_filters_rule_off")
+    };
+    let toggle_color = if rule.enabled {
+        palette.success
+    } else {
+        palette.text_faint
+    };
+
+    let icon_btn = |icon: Icon, msg: TtsFiltersMsg, enabled: bool| {
+        let color = if enabled {
+            palette.text_muted
+        } else {
+            palette.text_faint
+        };
+        let mut b = button(tabler_icon(icon, FONT_XS, color))
+            .style(move |_, _| button::Style {
+                background: None,
+                text_color: color,
+                ..button::Style::default()
+            })
+            .padding(sp(Spacing::Xxs));
+        if enabled {
+            b = b.on_press(Message::Tts(TtsMsg::Filters(msg)));
+        }
+        b
+    };
+
+    let controls = row![
+        button(
+            text(toggle_label)
+                .size(8.5)
+                .color(toggle_color)
+                .font(font(FontRole::Monospace)),
+        )
+        .on_press(Message::Tts(TtsMsg::Filters(TtsFiltersMsg::ToggleRule(
+            index
+        ))))
+        .style(move |_, _| button::Style {
+            background: None,
+            text_color: toggle_color,
+            ..button::Style::default()
+        })
+        .padding(sp(Spacing::Xxs)),
+        icon_btn(Icon::ArrowUp, TtsFiltersMsg::MoveRuleUp(index), !is_first),
+        icon_btn(
+            Icon::ArrowDown,
+            TtsFiltersMsg::MoveRuleDown(index),
+            !is_last
+        ),
+        icon_btn(Icon::Settings, TtsFiltersMsg::EditRule(index), true),
+        icon_btn(Icon::X, TtsFiltersMsg::DeleteRule(index), true),
+    ]
+    .spacing(0)
+    .align_y(Alignment::Center);
+
+    container(
+        row![
+            badge,
+            column![
+                text(display_name(rule)).size(FONT_XS).color(name_color),
+                text(summary)
+                    .size(8.5)
+                    .color(palette.text_muted)
+                    .font(font(FontRole::Monospace)),
+            ]
+            .spacing(spf(Spacing::Xxs))
+            .width(Length::Fill),
+            controls,
+        ]
+        .align_y(Alignment::Center)
+        .spacing(gap_sm),
+    )
+    .style(move |_| container::Style {
+        background: Some(Background::Color(palette.shell)),
+        border: Border {
+            color: palette.border_regular,
+            width: BORDER_THIN,
+            radius: radius(Radius::Sm).into(),
+        },
+        ..container::Style::default()
+    })
+    .padding([sp(Spacing::Xs), sp(Spacing::Xs)])
+    .width(Length::Fill)
+    .into()
+}
+
+fn display_name(rule: &FilterRule) -> String {
+    if rule.name.trim().is_empty() {
+        match &rule.kind {
+            FilterRuleKind::Literal { .. } => forge_widgets::tr!("tts_filters_kind_literal"),
+            FilterRuleKind::Regex { .. } => forge_widgets::tr!("tts_filters_kind_regex"),
+            FilterRuleKind::Blocklist { .. } => forge_widgets::tr!("tts_filters_kind_blocklist"),
+        }
+    } else {
+        rule.name.clone()
+    }
+}
+
+fn rule_summary(rule: &FilterRule) -> String {
+    match &rule.kind {
+        FilterRuleKind::Literal {
+            pattern,
+            replacement,
+        }
+        | FilterRuleKind::Regex {
+            pattern,
+            replacement,
+        } => format!("{pattern} → {replacement}"),
+        FilterRuleKind::Blocklist { words, .. } => words.join(", "),
+    }
+}
+
+fn draft_form_view<'a>(
+    draft: &'a RuleDraft,
+    palette: &'a ForgePalette,
+    gap_sm: f32,
+) -> Element<'a, Message> {
+    let kind_btn = |label: String, kind: DraftKind| {
+        let active = draft.kind == kind;
         button(text(label).size(FONT_XS))
             .on_press(Message::Tts(TtsMsg::Filters(
-                TtsFiltersMsg::BlocklistModeChanged(choice),
+                TtsFiltersMsg::DraftKindChanged(kind),
             )))
+            .style(move |_, _| {
+                if active {
+                    button::Style {
+                        background: Some(Background::Color(palette.brand)),
+                        border: Border {
+                            radius: radius(Radius::Sm).into(),
+                            ..Border::default()
+                        },
+                        text_color: palette.shell,
+                        ..button::Style::default()
+                    }
+                } else {
+                    button::Style {
+                        background: None,
+                        text_color: palette.text_secondary,
+                        ..button::Style::default()
+                    }
+                }
+            })
+            .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
+    };
+
+    let kind_row = row![
+        kind_btn(
+            forge_widgets::tr!("tts_filters_kind_literal"),
+            DraftKind::Literal
+        ),
+        kind_btn(
+            forge_widgets::tr!("tts_filters_kind_regex"),
+            DraftKind::Regex
+        ),
+        kind_btn(
+            forge_widgets::tr!("tts_filters_kind_blocklist"),
+            DraftKind::Blocklist
+        ),
+    ]
+    .spacing(gap_sm);
+
+    let name_input = forge_widgets::text_input_field(
+        forge_widgets::tr!("tts_filters_draft_name_placeholder"),
+        &draft.name,
+        |s| Message::Tts(TtsMsg::Filters(TtsFiltersMsg::DraftNameChanged(s))),
+        palette,
+    );
+
+    let params: Element<'a, Message> = match draft.kind {
+        DraftKind::Literal | DraftKind::Regex => column![
+            forge_widgets::text_input_field(
+                forge_widgets::tr!("tts_filters_draft_pattern_placeholder"),
+                &draft.pattern,
+                |s| Message::Tts(TtsMsg::Filters(TtsFiltersMsg::DraftPatternChanged(s))),
+                palette,
+            ),
+            forge_widgets::text_input_field(
+                forge_widgets::tr!("tts_filters_draft_replacement_placeholder"),
+                &draft.replacement,
+                |s| Message::Tts(TtsMsg::Filters(TtsFiltersMsg::DraftReplacementChanged(s))),
+                palette,
+            ),
+        ]
+        .spacing(gap_sm)
+        .into(),
+        DraftKind::Blocklist => column![
+            forge_widgets::text_input_field(
+                forge_widgets::tr!("tts_filters_draft_words_placeholder"),
+                &draft.words,
+                |s| Message::Tts(TtsMsg::Filters(TtsFiltersMsg::DraftWordsChanged(s))),
+                palette,
+            ),
+            blocklist_mode_toggle(
+                draft.blocklist_mode,
+                |m| Message::Tts(TtsMsg::Filters(TtsFiltersMsg::DraftBlocklistModeChanged(m))),
+                palette,
+            ),
+        ]
+        .spacing(gap_sm)
+        .into(),
+    };
+
+    let submit_label = if draft.editing.is_some() {
+        forge_widgets::tr!("common_save")
+    } else {
+        forge_widgets::tr!("tts_filters_draft_add")
+    };
+    let actions = row![
+        forge_widgets::primary_button(
+            submit_label,
+            Message::Tts(TtsMsg::Filters(TtsFiltersMsg::DraftSubmit)),
+            palette,
+        ),
+        forge_widgets::secondary_button(
+            forge_widgets::tr!("common_cancel"),
+            Message::Tts(TtsMsg::Filters(TtsFiltersMsg::DraftCancel)),
+            palette,
+        ),
+    ]
+    .spacing(gap_sm);
+
+    section_card(
+        forge_widgets::tr!("tts_filters_draft_header"),
+        column![kind_row, name_input, params, actions]
+            .spacing(gap_sm)
+            .into(),
+        palette,
+        gap_sm,
+    )
+}
+
+fn blocklist_mode_toggle<'a>(
+    current: BlocklistMode,
+    on_change: impl Fn(BlocklistMode) -> Message + 'a + Copy,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    let mode_btn = move |label: String, mode: BlocklistMode| {
+        let active = current == mode;
+        button(text(label).size(FONT_XS))
+            .on_press(on_change(mode))
             .style(move |_, _| {
                 if active {
                     button::Style {
@@ -423,39 +858,17 @@ fn blocklist_content<'a>(
                 }
             })
             .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
-            .into()
-    }
+    };
 
-    let manage_box = container(
-        text(forge_widgets::tr!("tts_filters_blocklist_manage"))
-            .size(FONT_SM)
-            .color(palette.text_muted),
-    )
-    .style(move |_| container::Style {
-        background: Some(Background::Color(palette.shell)),
-        border: Border {
-            color: palette.border_regular,
-            width: BORDER_THIN,
-            radius: radius(Radius::Sm).into(),
-        },
-        ..container::Style::default()
-    })
-    .padding([sp(Spacing::Xs), sp(Spacing::Xs)])
-    .width(Length::Fill);
-
-    let mode_toggle = container(
+    container(
         row![
             mode_btn(
-                Box::leak(forge_widgets::tr!("tts_filters_mode_censor").into_boxed_str()),
-                BlocklistModeChoice::Censor,
-                &state.blocklist_mode,
-                palette
+                forge_widgets::tr!("tts_filters_mode_censor"),
+                BlocklistMode::Censor
             ),
             mode_btn(
-                Box::leak(forge_widgets::tr!("tts_filters_mode_skip").into_boxed_str()),
-                BlocklistModeChoice::SkipMessage,
-                &state.blocklist_mode,
-                palette,
+                forge_widgets::tr!("tts_filters_mode_skip"),
+                BlocklistMode::Suppress
             ),
         ]
         .spacing(0),
@@ -469,95 +882,215 @@ fn blocklist_content<'a>(
         },
         ..container::Style::default()
     })
-    .padding(sp(Spacing::Xxs));
-
-    row![manage_box, mode_toggle]
-        .align_y(Alignment::Center)
-        .spacing(gap_sm)
-        .into()
+    .padding(sp(Spacing::Xxs))
+    .into()
 }
 
-fn replacements_content<'a>(
+fn settings_section_view<'a>(
     state: &'a TtsFiltersState,
     palette: &'a ForgePalette,
     gap_sm: f32,
 ) -> Element<'a, Message> {
-    if state.replacement_rules.is_empty() {
-        return container(
-            text(forge_widgets::tr!("tts_filters_no_replacements"))
-                .size(FONT_SM)
-                .color(palette.text_muted),
-        )
-        .padding([sp(Spacing::Xxs), 0])
-        .into();
-    }
+    let url_options: Vec<String> = vec![
+        forge_widgets::tr!("tts_filters_url_speak"),
+        forge_widgets::tr!("tts_filters_url_replace"),
+        forge_widgets::tr!("tts_filters_url_suppress"),
+    ];
+    let url_selected = Some(match state.settings.url_mode {
+        UrlMode::Speak => url_options[0].clone(),
+        UrlMode::Replace => url_options[1].clone(),
+        UrlMode::Suppress => url_options[2].clone(),
+    });
+    let url_o0 = url_options[0].clone();
+    let url_o1 = url_options[1].clone();
+    let url_picker = forge_widgets::select_owned(
+        url_options,
+        url_selected,
+        String::new(),
+        move |chosen| {
+            let mode = if chosen == url_o0 {
+                UrlMode::Speak
+            } else if chosen == url_o1 {
+                UrlMode::Replace
+            } else {
+                UrlMode::Suppress
+            };
+            Message::Tts(TtsMsg::Filters(TtsFiltersMsg::UrlModeChanged(mode)))
+        },
+        palette,
+    );
 
-    let rows: Vec<Element<'a, Message>> = state
-        .replacement_rules
-        .iter()
-        .map(|rule| replacement_rule_row(rule, palette, gap_sm))
-        .collect();
+    let length_input = forge_widgets::text_input_field(
+        forge_widgets::tr!("tts_filters_length_placeholder"),
+        &state.max_length_input,
+        |s| Message::Tts(TtsMsg::Filters(TtsFiltersMsg::MaxLengthChanged(s))),
+        palette,
+    );
 
-    column(rows).spacing(gap_sm).into()
+    let twitch_toggle = forge_widgets::toggle(
+        palette,
+        forge_widgets::ToggleProps {
+            value: state.settings.strip_twitch_emotes,
+            label: forge_widgets::tr!("tts_filters_strip_twitch"),
+            description: String::new(),
+            on_toggle: Message::Tts(TtsMsg::Filters(TtsFiltersMsg::StripTwitchEmotesToggled(
+                !state.settings.strip_twitch_emotes,
+            ))),
+        },
+    );
+    let reward_toggle = forge_widgets::toggle(
+        palette,
+        forge_widgets::ToggleProps {
+            value: state.settings.strip_reward_emotes,
+            label: forge_widgets::tr!("tts_filters_strip_reward"),
+            description: String::new(),
+            on_toggle: Message::Tts(TtsMsg::Filters(TtsFiltersMsg::StripRewardEmotesToggled(
+                !state.settings.strip_reward_emotes,
+            ))),
+        },
+    );
+
+    let blocklist_default = blocklist_mode_toggle(
+        state.settings.blocklist_mode,
+        |m| {
+            Message::Tts(TtsMsg::Filters(
+                TtsFiltersMsg::SettingsBlocklistModeChanged(m),
+            ))
+        },
+        palette,
+    );
+
+    let body = column![
+        labeled(
+            forge_widgets::tr!("tts_filters_url_label"),
+            url_picker,
+            palette,
+            gap_sm
+        ),
+        labeled(
+            forge_widgets::tr!("tts_filters_length_label"),
+            length_input,
+            palette,
+            gap_sm
+        ),
+        labeled(
+            forge_widgets::tr!("tts_filters_blocklist_default_label"),
+            blocklist_default,
+            palette,
+            gap_sm
+        ),
+        twitch_toggle,
+        reward_toggle,
+    ]
+    .spacing(gap_sm);
+
+    section_card(
+        forge_widgets::tr!("tts_filters_settings_header"),
+        body.into(),
+        palette,
+        gap_sm,
+    )
 }
 
-fn replacement_rule_row<'a>(
-    rule: &'a ReplacementRuleRow,
+fn labeled<'a>(
+    label: String,
+    field: Element<'a, Message>,
     palette: &'a ForgePalette,
     gap_sm: f32,
 ) -> Element<'a, Message> {
-    let badge_color = if rule.is_regex {
-        palette.brand
-    } else {
-        palette.info
-    };
-    let badge_label = if rule.is_regex { "REGEX" } else { "TEXT" };
-
-    let badge = container(
-        text(badge_label)
-            .size(8.5)
-            .color(badge_color)
+    let _ = gap_sm;
+    column![
+        text(label)
+            .size(FONT_XS)
+            .color(palette.text_muted)
             .font(font(FontRole::Monospace)),
-    )
-    .style(move |_| container::Style {
-        background: Some(Background::Color(palette.surface_overlay)),
-        border: Border {
-            radius: radius(Radius::Sm).into(),
-            ..Border::default()
-        },
-        ..container::Style::default()
-    })
-    .padding([sp(Spacing::Xxs), sp(Spacing::Xxs)]);
+        field,
+    ]
+    .spacing(spf(Spacing::Xxs))
+    .into()
+}
 
-    container(
+fn save_bar_view<'a>(
+    state: &'a TtsFiltersState,
+    palette: &'a ForgePalette,
+    gap_sm: f32,
+) -> Element<'a, Message> {
+    let mut items: Vec<Element<'a, Message>> = Vec::new();
+    if let Some(err) = &state.save_error {
+        items.push(
+            container(
+                text(err.clone())
+                    .size(FONT_XS)
+                    .color(palette.random)
+                    .font(font(FontRole::Monospace)),
+            )
+            .style(move |_| container::Style {
+                background: Some(Background::Color(Color {
+                    a: 0.1,
+                    ..palette.random
+                })),
+                border: Border {
+                    color: palette.random,
+                    width: BORDER_THIN,
+                    radius: radius(Radius::Sm).into(),
+                },
+                ..container::Style::default()
+            })
+            .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
+            .width(Length::Fill)
+            .into(),
+        );
+    }
+
+    let dirty_label = if state.dirty {
+        forge_widgets::tr!("tts_filters_unsaved")
+    } else {
+        forge_widgets::tr!("tts_filters_saved")
+    };
+    let dirty_color = if state.dirty {
+        palette.warning
+    } else {
+        palette.text_muted
+    };
+
+    let save_btn: Element<'a, Message> = if state.dirty {
+        forge_widgets::primary_button(
+            forge_widgets::tr!("common_save"),
+            Message::Tts(TtsMsg::Filters(TtsFiltersMsg::Save)),
+            palette,
+        )
+    } else {
+        button(
+            text(forge_widgets::tr!("common_save"))
+                .size(FONT_SM)
+                .color(palette.text_faint),
+        )
+        .style(move |_, _| button::Style {
+            background: None,
+            border: Border {
+                color: palette.border_regular,
+                width: BORDER_THIN,
+                radius: radius(Radius::Md).into(),
+            },
+            text_color: palette.text_faint,
+            ..button::Style::default()
+        })
+        .padding([sp(Spacing::Sm), sp(Spacing::Md)])
+        .into()
+    };
+
+    items.push(
         row![
-            badge,
-            text(&rule.pattern)
-                .size(FONT_XS)
-                .color(palette.text_primary)
-                .font(font(FontRole::Monospace)),
-            tabler_icon(Icon::ArrowRight, FONT_XS, palette.text_muted),
-            text(&rule.replacement)
-                .size(FONT_XS)
-                .color(palette.success)
-                .font(font(FontRole::Monospace))
-                .width(Length::Fill),
+            text(dirty_label).size(FONT_XS).color(dirty_color),
+            Space::new().width(Length::Fill),
+            save_btn,
         ]
         .align_y(Alignment::Center)
-        .spacing(gap_sm),
-    )
-    .style(move |_| container::Style {
-        background: Some(Background::Color(palette.shell)),
-        border: Border {
-            color: palette.border_regular,
-            width: BORDER_THIN,
-            radius: radius(Radius::Sm).into(),
-        },
-        ..container::Style::default()
-    })
-    .padding([sp(Spacing::Xs), sp(Spacing::Xs)])
-    .width(Length::Fill)
-    .into()
+        .spacing(gap_sm)
+        .into(),
+    );
+
+    column(items).spacing(gap_sm).into()
 }
 
 fn preview_column_view<'a>(
@@ -715,23 +1248,12 @@ fn preview_stage_rows<'a>(
     gap_sm: f32,
 ) -> Element<'a, Message> {
     let _ = gap_sm;
-    let stage_names = [
-        "1 · SKIP RULES",
-        "2 · URL CHECK",
-        "3 · REPLACEMENTS",
-        "4 · BLOCKLIST",
-        "5 · LENGTH CAP",
-    ];
-
     let cards: Vec<Element<'a, Message>> = preview
         .stages
         .iter()
         .enumerate()
         .map(|(i, outcome)| {
-            let label = stage_names
-                .get(i)
-                .map(|s| (*s).to_owned())
-                .unwrap_or_else(|| forge_widgets::tr!("tts_filters_stage_fallback"));
+            let label = forge_widgets::tr!("tts_filters_stage_n", n = (i + 1) as i64);
             preview_stage_card(label, outcome, palette)
         })
         .collect();

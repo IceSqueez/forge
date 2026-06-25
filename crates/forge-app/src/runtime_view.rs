@@ -13,7 +13,7 @@ use forge_runtime::{
     ActionEngineHandle, EventBus, QueueSchedulerHandle, ScriptRegistry, actions::ActionsService,
 };
 use forge_soundboard::SoundboardPlayer;
-use forge_speak_queue::SpeakQueueHandle;
+use forge_speak_queue::{PipelineConfigHandle, SpeakQueueHandle};
 use forge_storage::DataProvider;
 use forge_tts_core::EngineId;
 use forge_vtube::{SwitchableVTubeSink, VTubeClient};
@@ -37,6 +37,8 @@ pub struct RuntimeView {
     pub midi_client: Option<Arc<MidiClient>>,
     pub hotkey_client: Option<Arc<HotkeyClient>>,
     pub speak_queue: Option<Arc<SpeakQueueHandle>>,
+    /// `None` when the runtime is offline; the Filters screen's save then skips the live swap.
+    pub pipeline_config: Option<PipelineConfigHandle>,
     pub sound_player: Option<Arc<SoundboardPlayer>>,
     pub twitch_builtin: Option<Arc<TwitchIntegrationBundle>>,
     pub chat_send_bridge: Option<ChatSendBridgeHandle>,

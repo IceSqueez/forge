@@ -694,42 +694,42 @@ tts_engines_voices_filter_placeholder = Фільтр голосів…
 tts_filters_pipeline_header = КОНВЕЄР ОБРОБКИ
 tts_filters_pipeline_hint = Кожне повідомлення проходить ці етапи по черзі перед озвученням
 
-## TTS Filters — назви / підзаголовки етапів
+## TTS Filters — список правил
 
-tts_filters_stage_skip_title = Правила пропуску
-tts_filters_stage_skip_subtitle = повідомлення скидається при збігу
-tts_filters_stage_blocklist_title = Список блокувань
-tts_filters_stage_replacements_title = Заміни тексту
-tts_filters_stage_engine_title = Передано рушію голосу
-tts_filters_stage_words_count = { $count ->
-    [one] { $count } слово
-    [few] { $count } слова
-    [many] { $count } слів
-   *[other] { $count } слів
-}
-tts_filters_stage_rules_count = { $count ->
-    [one] { $count } правило
-    [few] { $count } правила
-    [many] { $count } правил
-   *[other] { $count } правил
-}
+tts_filters_rules_header = ФІЛЬТРИ
+tts_filters_no_rules = Правил фільтрування ще немає
+tts_filters_add_rule_btn = Додати правило
+tts_filters_rule_on = УВІМК
+tts_filters_rule_off = ВИМК
+tts_filters_kind_literal = Заміна тексту
+tts_filters_kind_regex = Заміна regex
+tts_filters_kind_blocklist = Блок-список
 
-## TTS Filters — чіпи правил пропуску
+## TTS Filters — редактор правила
 
-tts_filters_chip_contains_url = Містить URL
-tts_filters_chip_starts_bang = Починається з !
-tts_filters_chip_from_bots = Від ботів
-tts_filters_chip_add_rule = + Додати правило
-
-## TTS Filters — список блокувань
-
-tts_filters_blocklist_manage = Керувати списком блокувань…
+tts_filters_draft_header = ПРАВИЛО
+tts_filters_draft_name_placeholder = Назва правила (необов'язково)
+tts_filters_draft_pattern_placeholder = Шаблон збігу
+tts_filters_draft_replacement_placeholder = Заміна
+tts_filters_draft_words_placeholder = Заблоковані слова (через кому)
+tts_filters_draft_add = Додати правило
 tts_filters_mode_censor = Цензура
 tts_filters_mode_skip = Пропустити
 
-## TTS Filters — заміни
+## TTS Filters — налаштування конвеєра
 
-tts_filters_no_replacements = Правил заміни немає
+tts_filters_settings_header = НАЛАШТУВАННЯ КОНВЕЄРА
+tts_filters_url_label = ОБРОБКА URL
+tts_filters_url_speak = Читати URL вголос
+tts_filters_url_replace = Замінити на "link"
+tts_filters_url_suppress = Пропустити повідомлення
+tts_filters_length_label = МАКС. ДОВЖИНА
+tts_filters_length_placeholder = Без обмеження
+tts_filters_blocklist_default_label = РЕЖИМ БЛОК-СПИСКУ ЗА ЗАМОВЧУВАННЯМ
+tts_filters_strip_twitch = Прибирати емоції Twitch
+tts_filters_strip_reward = Прибирати емоції нагород
+tts_filters_unsaved = Незбережені зміни
+tts_filters_saved = Усі зміни збережено
 
 ## TTS Filters — колонка попереднього перегляду
 
@@ -741,6 +741,7 @@ tts_filters_preview_output_label = ПІДСУМКОВИЙ РЕЗУЛЬТАТ
 tts_filters_speak_preview_btn = Озвучити перегляд
 tts_filters_preview_speaker_name = Перегляд
 tts_filters_preview_tip = Введіть будь-яке повідомлення вище, щоб побачити, як фільтри перетворюють його в реальному часі
+tts_filters_stage_n = СТАДІЯ { $n }
 
 ## TTS Triggers — заголовок
 
@@ -998,10 +999,6 @@ tts_dash_priority_high = ВИСОК.
 ## TTS рушії — запасний підпис невідомого рушія
 
 tts_engines_unknown = Невідомий рушій
-
-## TTS фільтри — запасний підпис стадії пайплайну
-
-tts_filters_stage_fallback = СТАДІЯ
 
 ## Хмарний TTS — підписи полів форми
 

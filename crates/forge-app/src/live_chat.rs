@@ -608,6 +608,7 @@ mod tests {
             midi_client: None,
             hotkey_client: None,
             speak_queue: None,
+            pipeline_config: None,
             sound_player: None,
             twitch_builtin: None,
             chat_send_bridge: None,

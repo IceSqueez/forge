@@ -692,38 +692,42 @@ tts_engines_voices_filter_placeholder = Filter voices…
 tts_filters_pipeline_header = PROCESSING PIPELINE
 tts_filters_pipeline_hint = Each message passes through these stages in order before being spoken
 
-## TTS Filters — stage titles / subtitles
+## TTS Filters — rule list
 
-tts_filters_stage_skip_title = Skip rules
-tts_filters_stage_skip_subtitle = message dropped if matched
-tts_filters_stage_blocklist_title = Word blocklist
-tts_filters_stage_replacements_title = Text replacements
-tts_filters_stage_engine_title = Sent to voice engine
-tts_filters_stage_words_count = { $count ->
-    [one] { $count } word
-   *[other] { $count } words
-}
-tts_filters_stage_rules_count = { $count ->
-    [one] { $count } rule
-   *[other] { $count } rules
-}
+tts_filters_rules_header = FILTER RULES
+tts_filters_no_rules = No filter rules yet
+tts_filters_add_rule_btn = Add rule
+tts_filters_rule_on = ON
+tts_filters_rule_off = OFF
+tts_filters_kind_literal = Text replace
+tts_filters_kind_regex = Regex replace
+tts_filters_kind_blocklist = Blocklist
 
-## TTS Filters — skip rule chips
+## TTS Filters — rule draft editor
 
-tts_filters_chip_contains_url = Contains URL
-tts_filters_chip_starts_bang = Starts with !
-tts_filters_chip_from_bots = From bots
-tts_filters_chip_add_rule = + Add rule
-
-## TTS Filters — blocklist
-
-tts_filters_blocklist_manage = Manage blocklist…
+tts_filters_draft_header = RULE
+tts_filters_draft_name_placeholder = Rule name (optional)
+tts_filters_draft_pattern_placeholder = Match pattern
+tts_filters_draft_replacement_placeholder = Replacement
+tts_filters_draft_words_placeholder = Blocked words (comma-separated)
+tts_filters_draft_add = Add rule
 tts_filters_mode_censor = Censor
 tts_filters_mode_skip = Skip msg
 
-## TTS Filters — replacements
+## TTS Filters — pipeline settings
 
-tts_filters_no_replacements = No replacement rules
+tts_filters_settings_header = PIPELINE SETTINGS
+tts_filters_url_label = URL HANDLING
+tts_filters_url_speak = Read URL aloud
+tts_filters_url_replace = Replace with "link"
+tts_filters_url_suppress = Skip message
+tts_filters_length_label = MAX LENGTH
+tts_filters_length_placeholder = No limit
+tts_filters_blocklist_default_label = DEFAULT BLOCKLIST MODE
+tts_filters_strip_twitch = Strip Twitch emotes
+tts_filters_strip_reward = Strip channel-point emotes
+tts_filters_unsaved = Unsaved changes
+tts_filters_saved = All changes saved
 
 ## TTS Filters — preview column
 
@@ -735,6 +739,7 @@ tts_filters_preview_output_label = FINAL OUTPUT
 tts_filters_speak_preview_btn = Speak preview
 tts_filters_preview_speaker_name = Preview
 tts_filters_preview_tip = Type any message above to see how filters transform it in real time
+tts_filters_stage_n = STAGE { $n }
 
 ## TTS Triggers — header
 
@@ -991,9 +996,6 @@ tts_dash_priority_high = HIGH
 
 tts_engines_unknown = Unknown engine
 
-## TTS filters — pipeline stage fallback label
-
-tts_filters_stage_fallback = STAGE
 
 ## Cloud TTS — form field labels
 

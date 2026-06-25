@@ -417,9 +417,38 @@ pub enum VoiceAliasesMsg {
 
 #[derive(Debug, Clone)]
 pub enum TtsFiltersMsg {
+    LoadRequested,
+    Loaded(
+        Result<
+            (
+                Vec<forge_storage::FilterRule>,
+                forge_storage::TtsPipelineSettings,
+            ),
+            String,
+        >,
+    ),
     PreviewInputChanged(String),
-    BlocklistModeChanged(crate::tts_filters::BlocklistModeChoice),
     AddRuleClicked,
+    EditRule(usize),
+    DeleteRule(usize),
+    ToggleRule(usize),
+    MoveRuleUp(usize),
+    MoveRuleDown(usize),
+    DraftKindChanged(crate::tts_filters::DraftKind),
+    DraftNameChanged(String),
+    DraftPatternChanged(String),
+    DraftReplacementChanged(String),
+    DraftWordsChanged(String),
+    DraftBlocklistModeChanged(forge_storage::BlocklistMode),
+    DraftSubmit,
+    DraftCancel,
+    UrlModeChanged(forge_storage::UrlMode),
+    MaxLengthChanged(String),
+    StripTwitchEmotesToggled(bool),
+    StripRewardEmotesToggled(bool),
+    SettingsBlocklistModeChanged(forge_storage::BlocklistMode),
+    Save,
+    SaveResult(Result<(), String>),
     SpeakPreview,
     SpeakPreviewResult(Result<(), String>),
 }

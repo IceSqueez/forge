@@ -1310,3 +1310,467 @@ fn preview_stage_card<'a>(
         })
         .into()
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use std::sync::Arc;
+
+    use forge_storage::{
+        CredentialsRepo, DataProvider, FilterRule, FilterRuleKind, TtsPipelineSettings,
+    };
+    use forge_storage_sqlite::SqliteBackend;
+
+    use crate::message::TtsFiltersMsg;
+    use crate::runtime_view::RuntimeView;
+    use crate::tts_filters::{DraftKind, TtsFiltersState, update};
+
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
+
+    fn make_literal(name: &str, pattern: &str, replacement: &str, pos: u32) -> FilterRule {
+        FilterRule {
+            id: format!("rule-{pos}"),
+            name: name.to_owned(),
+            enabled: true,
+            position: pos,
+            kind: FilterRuleKind::Literal {
+                pattern: pattern.to_owned(),
+                replacement: replacement.to_owned(),
+            },
+        }
+    }
+
+    fn make_regex(name: &str, pattern: &str, replacement: &str, pos: u32) -> FilterRule {
+        FilterRule {
+            id: format!("rule-regex-{pos}"),
+            name: name.to_owned(),
+            enabled: true,
+            position: pos,
+            kind: FilterRuleKind::Regex {
+                pattern: pattern.to_owned(),
+                replacement: replacement.to_owned(),
+            },
+        }
+    }
+
+    /// Minimal RuntimeView backed by an in-memory SQLite database.
+    fn test_rt() -> RuntimeView {
+        let tokio_rt = tokio::runtime::Runtime::new().unwrap();
+        let backend: Arc<dyn DataProvider> = Arc::new(
+            tokio_rt
+                .block_on(SqliteBackend::open_with_key("sqlite::memory:", [0xab; 32]))
+                .unwrap(),
+        );
+        let server_subsystem = Arc::new(crate::server_subsystem::ServerSubsystem::new(Arc::clone(
+            &backend,
+        )
+            as Arc<dyn CredentialsRepo>));
+        RuntimeView {
+            actions: Arc::new(forge_runtime::actions::ActionsService::new(
+                backend.action_repo(),
+                backend.queue_repo(),
+                backend.history_repo(),
+                backend.trigger_instance_repo(),
+                backend.soundboard_clips_repo(),
+            )),
+            backend,
+            bus: forge_runtime::EventBus::new(Arc::new(forge_runtime::NullEventLogRepo)),
+            script_registry: Arc::new(forge_runtime::ScriptRegistry::new()),
+            server_subsystem,
+            action_engine: None,
+            scheduler: None,
+            obs_client: None,
+            vtube_client: None,
+            vtube_sink: forge_vtube::SwitchableVTubeSink::new(),
+            obs_sink: forge_obs::SwitchableObsSink::new(),
+            discord_client: None,
+            midi_client: None,
+            hotkey_client: None,
+            speak_queue: None,
+            pipeline_config: None,
+            sound_player: None,
+            twitch_builtin: None,
+            chat_send_bridge: None,
+            twitch_flow: None,
+            youtube_flow: None,
+            kick_flow: None,
+            tts_engine_ids: Vec::new(),
+            twitch_login: None,
+            twitch_token_expires: None,
+            twitch_reauth_required: false,
+            sub_action_registry: Arc::new(forge_registry::SubActionRegistry::new()),
+            trigger_registry: Arc::new(forge_registry::TriggerRegistry::new()),
+        }
+    }
+
+    fn state_with(rules: Vec<FilterRule>) -> TtsFiltersState {
+        let mut s = TtsFiltersState::new();
+        s.rules = rules;
+        s.rules
+            .iter_mut()
+            .enumerate()
+            .for_each(|(i, r)| r.position = i as u32);
+        s
+    }
+
+    // -------------------------------------------------------------------------
+    // Reorder bounds
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn move_up_at_index_zero_is_a_noop() {
+        let rt = test_rt();
+        let mut state = state_with(vec![
+            make_literal("A", "a", "", 0),
+            make_literal("B", "b", "", 1),
+        ]);
+        let _ = update(&mut state, &rt, TtsFiltersMsg::MoveRuleUp(0));
+        assert_eq!(state.rules[0].name, "A");
+        assert_eq!(state.rules[1].name, "B");
+        assert!(!state.dirty, "no-op move must not set dirty");
+    }
+
+    #[test]
+    fn move_down_at_last_index_is_a_noop() {
+        let rt = test_rt();
+        let mut state = state_with(vec![
+            make_literal("A", "a", "", 0),
+            make_literal("B", "b", "", 1),
+        ]);
+        let _ = update(&mut state, &rt, TtsFiltersMsg::MoveRuleDown(1));
+        assert_eq!(state.rules[0].name, "A");
+        assert_eq!(state.rules[1].name, "B");
+        assert!(!state.dirty, "no-op move must not set dirty");
+    }
+
+    #[test]
+    fn move_up_swaps_rule_with_predecessor_and_renumbers() {
+        let rt = test_rt();
+        let mut state = state_with(vec![
+            make_literal("A", "a", "", 0),
+            make_literal("B", "b", "", 1),
+            make_literal("C", "c", "", 2),
+        ]);
+        let _ = update(&mut state, &rt, TtsFiltersMsg::MoveRuleUp(2));
+        assert_eq!(state.rules[0].name, "A");
+        assert_eq!(state.rules[1].name, "C");
+        assert_eq!(state.rules[2].name, "B");
+        assert_eq!(state.rules[0].position, 0);
+        assert_eq!(state.rules[1].position, 1);
+        assert_eq!(state.rules[2].position, 2);
+        assert!(state.dirty);
+    }
+
+    #[test]
+    fn move_down_swaps_rule_with_successor_and_renumbers() {
+        let rt = test_rt();
+        let mut state = state_with(vec![
+            make_literal("A", "a", "", 0),
+            make_literal("B", "b", "", 1),
+            make_literal("C", "c", "", 2),
+        ]);
+        let _ = update(&mut state, &rt, TtsFiltersMsg::MoveRuleDown(0));
+        assert_eq!(state.rules[0].name, "B");
+        assert_eq!(state.rules[1].name, "A");
+        assert_eq!(state.rules[2].name, "C");
+        assert_eq!(state.rules[0].position, 0);
+        assert_eq!(state.rules[1].position, 1);
+        assert_eq!(state.rules[2].position, 2);
+        assert!(state.dirty);
+    }
+
+    // -------------------------------------------------------------------------
+    // Delete / Toggle
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn delete_rule_removes_the_correct_row() {
+        let rt = test_rt();
+        let mut state = state_with(vec![
+            make_literal("A", "a", "", 0),
+            make_literal("B", "b", "", 1),
+            make_literal("C", "c", "", 2),
+        ]);
+        let _ = update(&mut state, &rt, TtsFiltersMsg::DeleteRule(1));
+        assert_eq!(state.rules.len(), 2);
+        assert_eq!(state.rules[0].name, "A");
+        assert_eq!(state.rules[1].name, "C");
+        assert!(state.dirty);
+    }
+
+    #[test]
+    fn delete_rule_out_of_bounds_is_a_noop() {
+        let rt = test_rt();
+        let mut state = state_with(vec![make_literal("A", "a", "", 0)]);
+        let _ = update(&mut state, &rt, TtsFiltersMsg::DeleteRule(5));
+        assert_eq!(state.rules.len(), 1);
+        assert!(!state.dirty);
+    }
+
+    #[test]
+    fn toggle_rule_flips_only_that_rows_enabled_flag() {
+        let rt = test_rt();
+        let mut state = state_with(vec![
+            make_literal("A", "a", "", 0),
+            make_literal("B", "b", "", 1),
+        ]);
+        let _ = update(&mut state, &rt, TtsFiltersMsg::ToggleRule(0));
+        assert!(!state.rules[0].enabled, "row 0 must be disabled");
+        assert!(state.rules[1].enabled, "row 1 must remain enabled");
+        assert!(state.dirty);
+    }
+
+    #[test]
+    fn toggle_rule_twice_restores_original_enabled_state() {
+        let rt = test_rt();
+        let mut state = state_with(vec![make_literal("A", "a", "", 0)]);
+        let _ = update(&mut state, &rt, TtsFiltersMsg::ToggleRule(0));
+        let _ = update(&mut state, &rt, TtsFiltersMsg::ToggleRule(0));
+        assert!(state.rules[0].enabled);
+    }
+
+    // -------------------------------------------------------------------------
+    // Draft submit — append
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn draft_submit_literal_appends_correct_kind() {
+        let rt = test_rt();
+        let mut state = TtsFiltersState::new();
+        let _ = update(&mut state, &rt, TtsFiltersMsg::AddRuleClicked);
+        let _ = update(
+            &mut state,
+            &rt,
+            TtsFiltersMsg::DraftKindChanged(DraftKind::Literal),
+        );
+        let _ = update(
+            &mut state,
+            &rt,
+            TtsFiltersMsg::DraftNameChanged("my-literal".to_owned()),
+        );
+        let _ = update(
+            &mut state,
+            &rt,
+            TtsFiltersMsg::DraftPatternChanged("hello".to_owned()),
+        );
+        let _ = update(
+            &mut state,
+            &rt,
+            TtsFiltersMsg::DraftReplacementChanged("hi".to_owned()),
+        );
+        let _ = update(&mut state, &rt, TtsFiltersMsg::DraftSubmit);
+
+        assert_eq!(state.rules.len(), 1);
+        assert_eq!(state.rules[0].name, "my-literal");
+        assert!(
+            matches!(
+                &state.rules[0].kind,
+                FilterRuleKind::Literal { pattern, replacement }
+                    if pattern == "hello" && replacement == "hi"
+            ),
+            "expected Literal kind with correct fields"
+        );
+        assert!(state.draft.is_none(), "draft must be consumed after submit");
+        assert!(state.dirty);
+    }
+
+    #[test]
+    fn draft_submit_regex_appends_correct_kind() {
+        let rt = test_rt();
+        let mut state = TtsFiltersState::new();
+        let _ = update(&mut state, &rt, TtsFiltersMsg::AddRuleClicked);
+        let _ = update(
+            &mut state,
+            &rt,
+            TtsFiltersMsg::DraftKindChanged(DraftKind::Regex),
+        );
+        let _ = update(
+            &mut state,
+            &rt,
+            TtsFiltersMsg::DraftPatternChanged(r"\bworld\b".to_owned()),
+        );
+        let _ = update(
+            &mut state,
+            &rt,
+            TtsFiltersMsg::DraftReplacementChanged("earth".to_owned()),
+        );
+        let _ = update(&mut state, &rt, TtsFiltersMsg::DraftSubmit);
+
+        assert_eq!(state.rules.len(), 1);
+        assert!(
+            matches!(
+                &state.rules[0].kind,
+                FilterRuleKind::Regex { pattern, .. } if pattern == r"\bworld\b"
+            ),
+            "expected Regex kind"
+        );
+    }
+
+    #[test]
+    fn draft_submit_blocklist_parses_comma_separated_words() {
+        let rt = test_rt();
+        let mut state = TtsFiltersState::new();
+        let _ = update(&mut state, &rt, TtsFiltersMsg::AddRuleClicked);
+        let _ = update(
+            &mut state,
+            &rt,
+            TtsFiltersMsg::DraftKindChanged(DraftKind::Blocklist),
+        );
+        let _ = update(
+            &mut state,
+            &rt,
+            TtsFiltersMsg::DraftWordsChanged("foo, bar ,  baz".to_owned()),
+        );
+        let _ = update(&mut state, &rt, TtsFiltersMsg::DraftSubmit);
+
+        assert_eq!(state.rules.len(), 1);
+        assert!(
+            matches!(&state.rules[0].kind, FilterRuleKind::Blocklist { .. }),
+            "expected Blocklist kind"
+        );
+        if let FilterRuleKind::Blocklist { words, .. } = &state.rules[0].kind {
+            assert_eq!(words, &["foo", "bar", "baz"]);
+        }
+    }
+
+    #[test]
+    fn draft_submit_while_editing_replaces_existing_row_not_append() {
+        let rt = test_rt();
+        let mut state = state_with(vec![
+            make_literal("A", "a", "", 0),
+            make_literal("B", "b", "", 1),
+        ]);
+        // edit row 0
+        let _ = update(&mut state, &rt, TtsFiltersMsg::EditRule(0));
+        let _ = update(
+            &mut state,
+            &rt,
+            TtsFiltersMsg::DraftKindChanged(DraftKind::Literal),
+        );
+        let _ = update(
+            &mut state,
+            &rt,
+            TtsFiltersMsg::DraftNameChanged("A-edited".to_owned()),
+        );
+        let _ = update(
+            &mut state,
+            &rt,
+            TtsFiltersMsg::DraftPatternChanged("edited".to_owned()),
+        );
+        let _ = update(
+            &mut state,
+            &rt,
+            TtsFiltersMsg::DraftReplacementChanged("done".to_owned()),
+        );
+        let _ = update(&mut state, &rt, TtsFiltersMsg::DraftSubmit);
+
+        assert_eq!(state.rules.len(), 2);
+        assert_eq!(state.rules[0].name, "A-edited");
+        assert_eq!(state.rules[1].name, "B");
+    }
+
+    #[test]
+    fn draft_cancel_clears_draft_without_mutating_rules() {
+        let rt = test_rt();
+        let mut state = state_with(vec![make_literal("A", "a", "", 0)]);
+        let _ = update(&mut state, &rt, TtsFiltersMsg::AddRuleClicked);
+        assert!(
+            state.draft.is_some(),
+            "draft must be open after AddRuleClicked"
+        );
+        let _ = update(&mut state, &rt, TtsFiltersMsg::DraftCancel);
+        assert!(
+            state.draft.is_none(),
+            "draft must be cleared by DraftCancel"
+        );
+        assert_eq!(state.rules.len(), 1, "rules must not be mutated by cancel");
+        assert!(!state.dirty, "cancel must not set dirty when no prior edit");
+    }
+
+    // -------------------------------------------------------------------------
+    // Save validation — sync branch only
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn save_with_invalid_regex_sets_save_error() {
+        // Why: build_config_strict rejects before any persist call — the early-return
+        // path is the only observable behaviour testable without a real repo.
+        let rt = test_rt();
+        let mut state = state_with(vec![make_regex(
+            "bad-regex",
+            "[unclosed", // deliberately invalid regex
+            "",
+            0,
+        )]);
+        let _ = update(&mut state, &rt, TtsFiltersMsg::Save);
+        assert!(
+            state.save_error.is_some(),
+            "save_error must be set for an invalid regex pattern"
+        );
+    }
+
+    #[test]
+    fn save_with_valid_rules_clears_pre_existing_save_error() {
+        // Pre-existing save_error from a previous failed attempt must be cleared
+        // when build_config_strict succeeds on the new rule set.
+        let rt = test_rt();
+        let mut state = state_with(vec![make_literal("ok", "hello", "hi", 0)]);
+        state.save_error = Some("previous error".to_owned());
+        let _ = update(&mut state, &rt, TtsFiltersMsg::Save);
+        assert!(
+            state.save_error.is_none(),
+            "save_error must be cleared when build_config_strict succeeds"
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // Loaded handler
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn loaded_ok_sorts_by_position_ascending_and_resets_dirty() {
+        let rt = test_rt();
+        let mut state = TtsFiltersState::new();
+        state.dirty = true;
+        // deliver rules in reverse position order to exercise the sort
+        let rules = vec![
+            make_literal("C", "c", "", 2),
+            make_literal("A", "a", "", 0),
+            make_literal("B", "b", "", 1),
+        ];
+        let settings = TtsPipelineSettings::default();
+        let _ = update(
+            &mut state,
+            &rt,
+            TtsFiltersMsg::Loaded(Ok((rules, settings))),
+        );
+        assert_eq!(state.rules[0].name, "A");
+        assert_eq!(state.rules[1].name, "B");
+        assert_eq!(state.rules[2].name, "C");
+        assert!(!state.dirty, "Loaded(Ok) must reset dirty to false");
+        assert!(
+            state.save_error.is_none(),
+            "Loaded(Ok) must clear save_error"
+        );
+    }
+
+    #[test]
+    fn loaded_err_does_not_panic_and_leaves_existing_rules_intact() {
+        // Why: a transient storage failure must surface as a warning, not a panic,
+        // and must not wipe the previously-loaded rule list.
+        let rt = test_rt();
+        let mut state = state_with(vec![make_literal("X", "x", "", 0)]);
+        let _ = update(
+            &mut state,
+            &rt,
+            TtsFiltersMsg::Loaded(Err("db error".to_owned())),
+        );
+        assert_eq!(
+            state.rules.len(),
+            1,
+            "rules must be untouched after Loaded(Err)"
+        );
+    }
+}

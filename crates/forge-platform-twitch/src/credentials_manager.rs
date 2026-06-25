@@ -121,6 +121,17 @@ impl TwitchCredentialsManager {
 }
 
 #[async_trait]
+impl crate::helix::HelixTokenSource for TwitchCredentialsManager {
+    async fn access_token(&self) -> Result<OAuthToken, crate::helix::HelixError> {
+        self.get_valid_access_token().await.map_err(|e| match e {
+            PlatformError::ReauthRequired { .. } => crate::helix::HelixError::ReauthRequired,
+            PlatformError::Io(io) => crate::helix::HelixError::Credentials(io.to_string()),
+            other => crate::helix::HelixError::Credentials(other.to_string()),
+        })
+    }
+}
+
+#[async_trait]
 impl crate::helix::HelixTokenRefresher for TwitchCredentialsManager {
     async fn refresh(&self) -> Result<OAuthToken, crate::helix::HelixError> {
         let cred = self

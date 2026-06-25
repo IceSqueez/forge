@@ -1,9 +1,10 @@
 use std::time::Duration;
 
 use forge_events::{Event, EventSource};
+use forge_platform_core::chat::ConnectionState;
 use futures_util::StreamExt;
 use serde::Deserialize;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{debug, info, warn};
 
@@ -28,6 +29,17 @@ pub struct KickChat {
 
 pub struct KickChatHandle {
     pub close_tx: oneshot::Sender<()>,
+    /// Receiver side of the watch channel updated by the run loop.
+    /// Cloned by `state_receiver()` so callers can observe state without owning the handle.
+    state_rx: watch::Receiver<ConnectionState>,
+}
+
+impl KickChatHandle {
+    /// Clones the watch receiver so `KickIntegrationBundle` can observe connection state
+    /// without consuming the handle.
+    pub fn state_receiver(&self) -> watch::Receiver<ConnectionState> {
+        self.state_rx.clone()
+    }
 }
 
 impl KickChat {
@@ -50,18 +62,22 @@ impl KickChat {
         let ws_stream = connect_ws(&ws_url).await?;
 
         let (close_tx, close_rx) = oneshot::channel();
+        let (state_tx, state_rx) = watch::channel(ConnectionState::Connecting);
 
         tokio::spawn(run_loop(
             ws_stream,
             chatroom_id,
-            event_tx,
-            close_rx,
-            ws_url,
-            self.slug.clone(),
-            self.http.clone(),
+            RunLoopContext {
+                event_tx,
+                close_rx,
+                ws_url,
+                slug: self.slug.clone(),
+                http: self.http.clone(),
+                state_tx,
+            },
         ));
 
-        Ok(KickChatHandle { close_tx })
+        Ok(KickChatHandle { close_tx, state_rx })
     }
 }
 
@@ -118,22 +134,40 @@ async fn send_ping(
         })
 }
 
+struct RunLoopContext {
+    event_tx: mpsc::Sender<Event>,
+    close_rx: oneshot::Receiver<()>,
+    ws_url: String,
+    slug: String,
+    http: reqwest::Client,
+    state_tx: watch::Sender<ConnectionState>,
+}
+
 async fn run_loop(
     mut ws_stream: tokio_tungstenite::WebSocketStream<
         tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
     >,
     chatroom_id: u64,
-    event_tx: mpsc::Sender<Event>,
-    mut close_rx: oneshot::Receiver<()>,
-    ws_url: String,
-    slug: String,
-    http: reqwest::Client,
+    ctx: RunLoopContext,
 ) {
+    let RunLoopContext {
+        event_tx,
+        mut close_rx,
+        ws_url,
+        slug,
+        http,
+        state_tx,
+    } = ctx;
     let mut attempt: u32 = 0;
 
     if let Err(e) = send_subscribe(&mut ws_stream, chatroom_id).await {
         warn!(error = %e, "subscribe send failed");
     }
+
+    // Subscribe frame sent; Pusher confirms via pusher_internal:subscription_succeeded.
+    // Treat the WS being open + subscribe sent as Connected — subscription_succeeded is
+    // a Pusher internal frame we silently ignore, so there is no better signal.
+    let _ = state_tx.send(ConnectionState::Connected);
 
     let mut ping_deadline = tokio::time::Instant::now() + PING_INTERVAL;
 
@@ -141,6 +175,7 @@ async fn run_loop(
         tokio::select! {
             _ = &mut close_rx => {
                 info!("kick chat close requested");
+                let _ = state_tx.send(ConnectionState::Disconnected);
                 return;
             }
 
@@ -171,6 +206,8 @@ async fn run_loop(
         }
     }
 
+    // Broken out of 'session — enter the reconnect loop.
+    let _ = state_tx.send(ConnectionState::Reconnecting);
     attempt += 1;
     reconnect::wait(attempt.saturating_sub(1)).await;
 
@@ -179,6 +216,7 @@ async fn run_loop(
             close_rx.try_recv(),
             Ok(()) | Err(oneshot::error::TryRecvError::Closed)
         ) {
+            let _ = state_tx.send(ConnectionState::Disconnected);
             return;
         }
 
@@ -206,6 +244,8 @@ async fn run_loop(
             warn!(error = %e, "subscribe failed on reconnect");
         }
 
+        // WS re-established and subscribe sent after backoff — treat as Connected again.
+        let _ = state_tx.send(ConnectionState::Connected);
         ping_deadline = tokio::time::Instant::now() + PING_INTERVAL;
         attempt = 0;
 
@@ -213,6 +253,7 @@ async fn run_loop(
             tokio::select! {
                 _ = &mut close_rx => {
                     info!("kick chat close requested");
+                    let _ = state_tx.send(ConnectionState::Disconnected);
                     return;
                 }
 
@@ -243,6 +284,8 @@ async fn run_loop(
             }
         }
 
+        // Dropped out of inner 'session — still in the outer reconnect loop.
+        let _ = state_tx.send(ConnectionState::Reconnecting);
         reconnect::wait(attempt).await;
         attempt += 1;
     }

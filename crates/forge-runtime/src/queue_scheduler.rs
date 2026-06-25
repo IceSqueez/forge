@@ -1043,6 +1043,72 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn reconfigure_blocking_flip_preserves_pause() {
+        // Regression: before 8bc1b04, a blocking-flip reconfigure rebuilt the
+        // slot with paused=false, silently resuming a paused queue.  After the
+        // fix, `was_paused` is carried forward into the new slot.
+        //
+        // Arrange: non-blocking queue, paused before the flip.
+        let dp = make_dp().await;
+        let q_id = QueueId::new();
+        let a_id = ActionId::new();
+        let queue = nonblocking(q_id);
+        let action = log_action(a_id, q_id);
+        seed(&dp, &queue, &action).await;
+
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::new(SubActionRegistry::new()),
+        );
+        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![nonblocking(q_id)]);
+        let mut sub = bus.subscribe();
+
+        // Pause first, then flip to blocking.
+        sched.pause(q_id).await.unwrap();
+        let outcome = sched.reconfigure(blocking_q(q_id)).await.unwrap();
+        assert_eq!(outcome, MembershipOutcome::Applied);
+
+        // Dispatch into the rebuilt (now blocking) queue.
+        sched
+            .dispatch(SchedulerRequest {
+                queue_id: q_id,
+                action_id: a_id,
+                trigger_event_id: EventId::new(),
+                initial_args: ArgStack::new(),
+                bypass_pause: false,
+            })
+            .await
+            .unwrap();
+
+        // Allow time for the action to execute if it were to slip through.
+        tokio::time::sleep(Duration::from_millis(120)).await;
+
+        let mut saw_skipped = false;
+        let mut saw_done = false;
+        for _ in 0..20 {
+            match tokio::time::timeout(Duration::from_millis(30), sub.recv()).await {
+                Ok(Ok(ev)) if ev.kind == "action.skipped" => saw_skipped = true,
+                Ok(Ok(ev)) if ev.kind == "action.done" => saw_done = true,
+                Ok(Ok(_)) => {}
+                _ => break,
+            }
+        }
+
+        assert!(
+            saw_skipped,
+            "blocking-flip reconfigure must preserve pause state: action.skipped expected"
+        );
+        assert!(
+            !saw_done,
+            "blocking-flip reconfigure must not silently resume a paused queue"
+        );
+        sched.shutdown();
+    }
+
+    #[tokio::test]
     async fn reconfigure_unknown_queue_returns_not_found() {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let dp = make_dp().await;

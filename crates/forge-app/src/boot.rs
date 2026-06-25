@@ -15,8 +15,8 @@ use iced::Task;
 use crate::app::App;
 use crate::builtin_detail::BuiltinDetailState;
 use crate::message::{
-    DiscordClientRef, HotkeyClientRef, Message, MidiClientRef, ObsClientRef, ServerSubsystemMsg,
-    TwitchBootBundle, VTubeClientRef,
+    DiscordClientRef, HotkeyClientRef, KickBundleRef, Message, MidiClientRef, ObsClientRef,
+    ServerSubsystemMsg, TwitchBootBundle, VTubeClientRef,
 };
 use crate::server_screen::ServerStatus;
 
@@ -125,6 +125,40 @@ pub(crate) fn handle_twitch_boot_result(
         Ok(None) => Task::none(),
         Err(e) => {
             tracing::warn!(error = %e, "twitch boot reconnect failed");
+            Task::none()
+        }
+    }
+}
+
+pub(crate) fn handle_kick_boot_result(
+    app: &mut App,
+    result: Result<KickBundleRef, String>,
+) -> Task<Message> {
+    match result {
+        Ok(handle) => {
+            let bundle = handle.into_arc();
+            let id = BuiltinId::new("kick");
+            let icon = SectionIcon::new("brand-kick");
+            let status: Arc<dyn BuiltinStatus> = bundle.clone();
+            let health: Arc<dyn BuiltinHealth> = bundle.clone();
+            let content: Arc<dyn BuiltinContent> = bundle.clone();
+            let quick_actions: Arc<dyn QuickActions> = bundle.clone();
+            let control: Option<Arc<dyn BuiltinControl>> =
+                Some(bundle.clone() as Arc<dyn BuiltinControl>);
+            app.ui.builtin_detail = Some(BuiltinDetailState::new(
+                id,
+                icon,
+                status,
+                health,
+                content,
+                quick_actions,
+                control,
+            ));
+            app.rt.kick_builtin = Some(bundle);
+            Task::none()
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "kick boot setup failed");
             Task::none()
         }
     }

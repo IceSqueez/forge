@@ -226,6 +226,7 @@ struct RuntimeHandles {
     obs_sink: Arc<SwitchableObsSink>,
     discord_client: Arc<DiscordClient>,
     midi_client: Option<Arc<MidiClient>>,
+    kick_builtin: Option<Arc<forge_platform_kick::KickIntegrationBundle>>,
 }
 
 fn find_piper_binary() -> Option<PathBuf> {
@@ -675,6 +676,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         }
     }
 
+    let mut kick_boot_bundle: Option<Arc<forge_platform_kick::KickIntegrationBundle>> = None;
     if let Some(kick_client_id) = forge_platform_kick::client_credentials() {
         let kk_creds: Arc<dyn CredentialsRepo> = Arc::clone(&dp) as Arc<dyn CredentialsRepo>;
         let kk_http = reqwest::Client::new();
@@ -695,27 +697,41 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
 
                 let poller_tx = kk_tx.clone();
 
-                let slug_for_chat = creds.username.clone();
-                let http_for_chat = kk_http.clone();
-                let bus_chat = Arc::clone(&bus);
-                tokio::spawn(async move {
-                    let chat = forge_platform_kick::KickChat::new(slug_for_chat, http_for_chat);
-                    match chat.connect(kk_tx).await {
-                        Ok(_handle) => {
-                            // Hold the handle for this task's lifetime; dropping it would
-                            // resolve the chat loop's close_rx and shut receive down at once.
-                            std::future::pending::<()>().await;
-                        }
-                        Err(e) => {
-                            tracing::warn!(error = %e, "kick chat connect failed");
-                            bus_chat.publish(forge_events::Event::new(
-                                forge_events::EventSource::Kick,
-                                "platform.connection.changed",
-                                serde_json::json!({"state": "error", "reason": e.to_string()}),
-                            ));
-                        }
+                let slug = creds.username.clone();
+                let chat = forge_platform_kick::KickChat::new(slug.clone(), kk_http.clone());
+                let chat_handle = match rt.block_on(chat.connect(kk_tx.clone())) {
+                    Ok(handle) => Some(handle),
+                    Err(e) => {
+                        tracing::warn!(error = %e, "kick chat connect failed");
+                        bus.publish(forge_events::Event::new(
+                            forge_events::EventSource::Kick,
+                            "platform.connection.changed",
+                            serde_json::json!({"state": "error", "reason": e.to_string()}),
+                        ));
+                        None
                     }
-                });
+                };
+                // The bundle owns `chat_handle`; its lifetime keeps the chat loop's close_rx
+                // unresolved, so dropping a separate parking task is no longer needed.
+                let state_rx = chat_handle.as_ref().map_or_else(
+                    || {
+                        tokio::sync::watch::channel(
+                            forge_platform_core::ConnectionState::Disconnected,
+                        )
+                        .1
+                    },
+                    |h| h.state_receiver(),
+                );
+                let (kick_bundle, _kick_health_tx) =
+                    forge_platform_kick::KickIntegrationBundle::new(
+                        slug,
+                        state_rx,
+                        Arc::clone(&manager),
+                        kk_http.clone(),
+                        kk_tx.clone(),
+                        chat_handle,
+                    );
+                kick_boot_bundle = Some(Arc::clone(&kick_bundle));
 
                 let limiter: Arc<dyn forge_platform_core::RateLimiter> = Arc::new(KickNoopLimiter);
                 let sender = Arc::new(forge_platform_kick::KickSendChat::new(limiter));
@@ -876,6 +892,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         obs_sink,
         discord_client,
         midi_client,
+        kick_builtin: kick_boot_bundle,
     })
 }
 
@@ -926,6 +943,7 @@ fn main() -> iced::Result {
         obs_sink,
         discord_client,
         midi_client,
+        kick_builtin_handle,
     ) = if storage_offline {
         let dc_pub: Arc<dyn EventPublisher> = Arc::clone(&bus) as _;
         let dc_creds: Arc<dyn forge_storage::CredentialsRepo> = Arc::clone(&backend) as _;
@@ -959,6 +977,7 @@ fn main() -> iced::Result {
             os,
             dc,
             mc,
+            None::<Arc<forge_platform_kick::KickIntegrationBundle>>,
         )
     } else {
         match spawn_runtime(Arc::clone(&backend), Arc::clone(&bus)) {
@@ -979,6 +998,7 @@ fn main() -> iced::Result {
                 h.obs_sink,
                 h.discord_client,
                 h.midi_client,
+                h.kick_builtin,
             ),
             None => {
                 let dc_pub: Arc<dyn EventPublisher> = Arc::clone(&bus) as _;
@@ -1016,6 +1036,7 @@ fn main() -> iced::Result {
                     os,
                     dc,
                     mc,
+                    None::<Arc<forge_platform_kick::KickIntegrationBundle>>,
                 )
             }
         }
@@ -1064,6 +1085,12 @@ fn main() -> iced::Result {
             load_vtube_and_connect(vtube_creds, Arc::clone(&bus_boot)),
             |r| forge_app::Message::Boot(forge_app::BootMsg::Vtube(r)),
         );
+        let kick_task = match kick_builtin_handle.clone() {
+            Some(bundle) => iced::Task::done(forge_app::Message::Boot(forge_app::BootMsg::Kick(
+                Ok(forge_app::message::KickBundleRef::new(bundle)),
+            ))),
+            None => iced::Task::none(),
+        };
         let discord_task =
             iced::Task::done(forge_app::Message::Boot(forge_app::BootMsg::Discord(Ok(
                 forge_app::message::DiscordClientRef::new(Arc::clone(&discord_client)),
@@ -1118,6 +1145,7 @@ fn main() -> iced::Result {
                 iced::Task::batch([
                     obs_task,
                     twitch_task,
+                    kick_task,
                     vtube_task,
                     discord_task,
                     midi_task,
@@ -1129,6 +1157,7 @@ fn main() -> iced::Result {
             None => iced::Task::batch([
                 obs_task,
                 twitch_task,
+                kick_task,
                 vtube_task,
                 discord_task,
                 midi_task,

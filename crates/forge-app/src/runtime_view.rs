@@ -5,7 +5,7 @@ use forge_discord::DiscordClient;
 use forge_hotkey::HotkeyClient;
 use forge_midi::MidiClient;
 use forge_obs::{ObsClient, SwitchableObsSink};
-use forge_platform_kick::KickAuthFlow;
+use forge_platform_kick::{KickAuthFlow, KickIntegrationBundle};
 use forge_platform_twitch::{ChatSendBridgeHandle, TwitchIntegrationBundle};
 use forge_platform_youtube::GoogleAuthFlow;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
@@ -41,6 +41,7 @@ pub struct RuntimeView {
     pub pipeline_config: Option<PipelineConfigHandle>,
     pub sound_player: Option<Arc<SoundboardPlayer>>,
     pub twitch_builtin: Option<Arc<TwitchIntegrationBundle>>,
+    pub kick_builtin: Option<Arc<KickIntegrationBundle>>,
     pub chat_send_bridge: Option<ChatSendBridgeHandle>,
     pub twitch_flow: Option<TwitchFlowHandle>,
     pub youtube_flow: Option<Arc<tokio::sync::Mutex<Option<GoogleAuthFlow>>>>,

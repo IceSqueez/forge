@@ -10,6 +10,7 @@ use forge_events::Event;
 use forge_hotkey::HotkeyClient;
 use forge_midi::MidiClient;
 use forge_obs::ObsClient;
+use forge_platform_kick::KickIntegrationBundle;
 use forge_vtube::VTubeClient;
 use forge_widgets::{DeviceLabel, PickerItem, ToastKind};
 
@@ -60,6 +61,30 @@ impl std::fmt::Debug for ObsClientRef {
 }
 
 impl Clone for ObsClientRef {
+    fn clone(&self) -> Self {
+        Self(Arc::clone(&self.0))
+    }
+}
+
+pub struct KickBundleRef(pub(crate) Arc<KickIntegrationBundle>);
+
+impl KickBundleRef {
+    pub fn new(bundle: Arc<KickIntegrationBundle>) -> Self {
+        Self(bundle)
+    }
+
+    pub(crate) fn into_arc(self) -> Arc<KickIntegrationBundle> {
+        self.0
+    }
+}
+
+impl std::fmt::Debug for KickBundleRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("KickBundleRef").finish()
+    }
+}
+
+impl Clone for KickBundleRef {
     fn clone(&self) -> Self {
         Self(Arc::clone(&self.0))
     }
@@ -564,6 +589,7 @@ pub enum BootMsg {
     Midi(Result<MidiClientRef, String>),
     Hotkey(Result<HotkeyClientRef, String>),
     Twitch(Result<Option<TwitchBootBundle>, String>),
+    Kick(Result<KickBundleRef, String>),
     Server(Result<crate::server_subsystem::ServerBootSnapshot, String>),
 }
 

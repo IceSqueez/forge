@@ -980,6 +980,10 @@ queues_running_label = виконується —
 queues_status_paused = ПАУЗА
 queues_status_running = ВИКОНУЄТЬСЯ
 
+## Черги — розбіжність живого членства
+
+queues_not_live_badge = НЕ В РОБОТІ · ПЕРЕЗАПУСК
+
 ## Черги — чіп переповнення
 
 queues_overflow_more = +{ $count } ще

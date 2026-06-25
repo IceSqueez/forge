@@ -976,6 +976,10 @@ queues_running_label = running —
 queues_status_paused = PAUSED
 queues_status_running = RUNNING
 
+## Queues — live-membership divergence
+
+queues_not_live_badge = NOT LIVE · RESTART
+
 ## Queues — overflow pill
 
 queues_overflow_more = +{ $count } more

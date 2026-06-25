@@ -53,6 +53,10 @@ pub struct QueuesState {
     pub loading: bool,
     pub new_queue_form: Option<NewQueueForm>,
     pub edit_queue_form: Option<EditQueueForm>,
+    // Queues persisted but rejected by the live scheduler after a successful DB write.
+    // Keyed by queue id and re-applied after every LoadRequested reload because the
+    // live/storage split is not a persisted field — a reload alone would erase it.
+    pub diverged: std::collections::HashSet<QueueId>,
 }
 
 impl QueuesState {
@@ -62,6 +66,7 @@ impl QueuesState {
             loading: false,
             new_queue_form: None,
             edit_queue_form: None,
+            diverged: std::collections::HashSet::new(),
         }
     }
 }
@@ -85,6 +90,9 @@ pub fn update(state: &mut QueuesState, rt: &RuntimeView, msg: QueuesMsg) -> Task
             )
         }
         QueuesMsg::QueuesLoaded(Ok(qs)) => {
+            // Re-apply divergence post-reload: the badge is not a persisted field, so the freshly
+            // loaded list carries no divergence info. Prune ids that no longer exist; keep the rest.
+            state.diverged.retain(|id| qs.iter().any(|q| q.id == *id));
             state.queues = qs;
             state.loading = false;
             Task::none()
@@ -198,9 +206,28 @@ pub fn update(state: &mut QueuesState, rt: &RuntimeView, msg: QueuesMsg) -> Task
                 blocking: form.blocking,
             };
             let repo = rt.backend.queue_repo();
+            let scheduler = rt.scheduler.clone();
+            // Persist-then-apply (RFC-090 Boundary 3): write to storage first, and only on a
+            // successful write call the live scheduler. The two phases ride two messages —
+            // the save outcome, then (on Ok) the register outcome carrying the queue id.
             Task::perform(
-                async move { repo.save(&queue).await.map_err(|e| e.to_string()) },
-                |r| Message::Queues(QueuesMsg::NewQueueSubmitResult(r)),
+                async move {
+                    repo.save(&queue).await.map_err(|e| e.to_string())?;
+                    Ok(register_outcome(scheduler, queue).await)
+                },
+                |r: Result<
+                    (
+                        QueueId,
+                        Option<Result<forge_runtime::MembershipOutcome, String>>,
+                    ),
+                    String,
+                >| match r {
+                    Err(e) => Message::Queues(QueuesMsg::NewQueueSubmitResult(Err(e))),
+                    Ok((_, None)) => Message::Queues(QueuesMsg::NewQueueSubmitResult(Ok(()))),
+                    Ok((id, Some(outcome))) => {
+                        Message::Queues(QueuesMsg::RegisterResult(id, outcome))
+                    }
+                },
             )
         }
         QueuesMsg::NewQueueSubmitResult(Ok(())) => {
@@ -213,6 +240,11 @@ pub fn update(state: &mut QueuesState, rt: &RuntimeView, msg: QueuesMsg) -> Task
             }
             tracing::warn!(error = %e, "create queue failed");
             Task::none()
+        }
+        QueuesMsg::RegisterResult(id, outcome) => {
+            state.new_queue_form = None;
+            apply_membership_outcome(state, id, outcome, "register");
+            Task::done(Message::Queues(QueuesMsg::LoadRequested))
         }
         QueuesMsg::ConfigureQueue(id, name, blocking) => {
             state.edit_queue_form = Some(EditQueueForm {
@@ -238,9 +270,27 @@ pub fn update(state: &mut QueuesState, rt: &RuntimeView, msg: QueuesMsg) -> Task
                 blocking: form.blocking,
             };
             let repo = rt.backend.queue_repo();
+            let scheduler = rt.scheduler.clone();
+            // Persist-then-apply (RFC-090 Boundary 3): write first, then reconfigure the live
+            // slot only on a successful write — same two-message shape as create.
             Task::perform(
-                async move { repo.save(&queue).await.map_err(|e| e.to_string()) },
-                |r| Message::Queues(QueuesMsg::EditQueueSubmitResult(r)),
+                async move {
+                    repo.save(&queue).await.map_err(|e| e.to_string())?;
+                    Ok(reconfigure_outcome(scheduler, queue).await)
+                },
+                |r: Result<
+                    (
+                        QueueId,
+                        Option<Result<forge_runtime::MembershipOutcome, String>>,
+                    ),
+                    String,
+                >| match r {
+                    Err(e) => Message::Queues(QueuesMsg::EditQueueSubmitResult(Err(e))),
+                    Ok((_, None)) => Message::Queues(QueuesMsg::EditQueueSubmitResult(Ok(()))),
+                    Ok((id, Some(outcome))) => {
+                        Message::Queues(QueuesMsg::ReconfigureResult(id, outcome))
+                    }
+                },
             )
         }
         QueuesMsg::EditQueueSubmitResult(Ok(())) => {
@@ -253,6 +303,11 @@ pub fn update(state: &mut QueuesState, rt: &RuntimeView, msg: QueuesMsg) -> Task
             }
             tracing::warn!(error = %e, "edit queue failed");
             Task::none()
+        }
+        QueuesMsg::ReconfigureResult(id, outcome) => {
+            state.edit_queue_form = None;
+            apply_membership_outcome(state, id, outcome, "reconfigure");
+            Task::done(Message::Queues(QueuesMsg::LoadRequested))
         }
         QueuesMsg::EditQueueCancel => {
             state.edit_queue_form = None;
@@ -267,6 +322,66 @@ pub fn update(state: &mut QueuesState, rt: &RuntimeView, msg: QueuesMsg) -> Task
         QueuesMsg::ResumeResult(Err(e)) => {
             tracing::warn!(error = %e, "resume queue failed");
             Task::none()
+        }
+    }
+}
+
+/// Register a freshly-saved queue with the live scheduler. `None` = no scheduler handle
+/// (runtime not up — the normal early-boot case; the queue is picked up next boot, NOT a
+/// divergence). `Some(result)` carries the scheduler's outcome for the caller to judge.
+async fn register_outcome(
+    scheduler: Option<forge_runtime::QueueSchedulerHandle>,
+    queue: Queue,
+) -> (
+    QueueId,
+    Option<Result<forge_runtime::MembershipOutcome, String>>,
+) {
+    let id = queue.id;
+    match scheduler {
+        Some(h) => (id, Some(h.register(queue).await.map_err(|e| e.to_string()))),
+        None => (id, None),
+    }
+}
+
+/// Reconfigure an existing live slot. `None`/`Some` semantics match [`register_outcome`].
+async fn reconfigure_outcome(
+    scheduler: Option<forge_runtime::QueueSchedulerHandle>,
+    queue: Queue,
+) -> (
+    QueueId,
+    Option<Result<forge_runtime::MembershipOutcome, String>>,
+) {
+    let id = queue.id;
+    match scheduler {
+        Some(h) => (
+            id,
+            Some(h.reconfigure(queue).await.map_err(|e| e.to_string())),
+        ),
+        None => (id, None),
+    }
+}
+
+/// Record (or clear) the saved-but-not-live divergence badge for one queue after a scheduler
+/// call. `AlreadyRegistered` is an idempotent success — no badge. A channel error or a
+/// `NotFound` outcome leaves storage and the live registry out of sync until restart → badge.
+fn apply_membership_outcome(
+    state: &mut QueuesState,
+    id: QueueId,
+    outcome: Result<forge_runtime::MembershipOutcome, String>,
+    op: &str,
+) {
+    match outcome {
+        Ok(forge_runtime::MembershipOutcome::Applied)
+        | Ok(forge_runtime::MembershipOutcome::AlreadyRegistered) => {
+            state.diverged.remove(&id);
+        }
+        Ok(forge_runtime::MembershipOutcome::NotFound) => {
+            tracing::warn!(queue_id = %id, op, "scheduler {op} reported queue not found");
+            state.diverged.insert(id);
+        }
+        Err(e) => {
+            tracing::warn!(queue_id = %id, op, error = %e, "scheduler {op} failed");
+            state.diverged.insert(id);
         }
     }
 }
@@ -735,11 +850,16 @@ fn build_grid<'a>(state: &'a QueuesState, palette: &'a ForgePalette) -> Element<
     }
 
     let mut rows: Vec<Element<'a, Message>> = vec![];
+    let diverged = &state.diverged;
     let mut iter = state.queues.iter().peekable();
 
     while iter.peek().is_some() {
-        let left = iter.next().map(|q| queue_card(q, palette));
-        let right = iter.next().map(|q| queue_card(q, palette));
+        let left = iter
+            .next()
+            .map(|q| queue_card(q, palette, diverged.contains(&q.id)));
+        let right = iter
+            .next()
+            .map(|q| queue_card(q, palette, diverged.contains(&q.id)));
 
         let row_el: Element<'a, Message> = match (left, right) {
             (Some(l), Some(r)) => row![l, r].spacing(spf(Spacing::Xs)).into(),
@@ -758,7 +878,11 @@ fn build_grid<'a>(state: &'a QueuesState, palette: &'a ForgePalette) -> Element<
     column(rows).spacing(spf(Spacing::Xs)).into()
 }
 
-fn queue_card<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Element<'a, Message> {
+fn queue_card<'a>(
+    q: &'a QueueSummary,
+    palette: &'a ForgePalette,
+    diverged: bool,
+) -> Element<'a, Message> {
     let card_bg = palette.elevated;
     let border_color = if q.paused {
         Color {
@@ -769,7 +893,7 @@ fn queue_card<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Element<'a,
         palette.border_regular
     };
 
-    let header = queue_card_header(q, palette);
+    let header = queue_card_header(q, palette, diverged);
     let metrics = queue_card_metrics(q, palette);
     let running_panel = queue_running_panel(q, palette);
     let buttons = queue_card_buttons(q, palette);
@@ -791,7 +915,11 @@ fn queue_card<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Element<'a,
         .into()
 }
 
-fn queue_card_header<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Element<'a, Message> {
+fn queue_card_header<'a>(
+    q: &'a QueueSummary,
+    palette: &'a ForgePalette,
+    diverged: bool,
+) -> Element<'a, Message> {
     let name = text(q.name.clone())
         .size(FONT_SM)
         .font(font(FontRole::Monospace))
@@ -808,9 +936,13 @@ fn queue_card_header<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Elem
         None => text("").size(FONT_XS).color(desc_color),
     };
 
-    let name_row = row![name, badge]
+    let mut name_row = row![name, badge]
         .spacing(spf(Spacing::Xs))
         .align_y(iced::Alignment::Center);
+
+    if diverged {
+        name_row = name_row.push(not_live_badge(palette));
+    }
 
     let left = column![name_row, desc].spacing(spf(Spacing::Xxs));
 
@@ -875,6 +1007,32 @@ fn status_badge<'a>(paused: bool, palette: &'a ForgePalette) -> Element<'a, Mess
         })
         .into()
     }
+}
+
+fn not_live_badge<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
+    let warning = palette.warning;
+    let bg = Color { a: 0.12, ..warning };
+    let icon = tabler_icon(Icon::AlertTriangle, 9.0, warning);
+    let label = text(forge_widgets::tr!("queues_not_live_badge"))
+        .size(FONT_XS)
+        .font(font(FontRole::Monospace))
+        .color(warning);
+    container(
+        row![icon, label]
+            .spacing(spf(Spacing::Xxs))
+            .align_y(iced::Alignment::Center),
+    )
+    .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
+    .style(move |_: &iced::Theme| iced::widget::container::Style {
+        background: Some(Background::Color(bg)),
+        border: Border {
+            color: Color { a: 0.3, ..warning },
+            width: BORDER_THIN,
+            radius: 8.0.into(),
+        },
+        ..Default::default()
+    })
+    .into()
 }
 
 fn queue_card_metrics<'a>(q: &'a QueueSummary, palette: &'a ForgePalette) -> Element<'a, Message> {

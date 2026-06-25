@@ -328,10 +328,18 @@ pub enum QueuesMsg {
     NewQueueBlockingToggled,
     NewQueueSubmit,
     NewQueueSubmitResult(Result<(), String>),
+    RegisterResult(
+        forge_types::QueueId,
+        Result<forge_runtime::MembershipOutcome, String>,
+    ),
     NewQueueCancel,
     ConfigureQueue(forge_types::QueueId, String, bool),
     EditQueueSubmit,
     EditQueueSubmitResult(Result<(), String>),
+    ReconfigureResult(
+        forge_types::QueueId,
+        Result<forge_runtime::MembershipOutcome, String>,
+    ),
     EditQueueCancel,
     PauseResult(Result<(), String>),
     ResumeResult(Result<(), String>),

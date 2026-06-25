@@ -166,3 +166,346 @@ struct RefreshResponse {
     expires_in: Option<u64>,
     refresh_token: Option<String>,
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::collections::HashMap;
+    use std::sync::Arc;
+    use std::sync::Mutex;
+    use std::time::SystemTime;
+
+    use async_trait::async_trait;
+    use forge_platform_core::PlatformError;
+    use forge_storage::{CredentialId, CredentialsRepo, StorageError};
+    use forge_types::OAuthToken;
+    use serde_json::json;
+    use time::OffsetDateTime;
+    use wiremock::matchers::{body_string_contains, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::TwitchCredentialsManager;
+    use crate::credentials::{StoredCredential, TWITCH_CREDENTIAL_ID};
+
+    // ---------------------------------------------------------------------------
+    // In-memory CredentialsRepo — same pattern as Kick harness.
+    // ---------------------------------------------------------------------------
+
+    struct InMemRepo(Mutex<HashMap<String, String>>);
+
+    impl InMemRepo {
+        fn empty() -> Arc<Self> {
+            Arc::new(Self(Mutex::new(HashMap::new())))
+        }
+
+        /// Seed the repo with a credential by directly writing the JSON blob that
+        /// `store_credential` would produce. Avoids `block_on` inside a tokio test.
+        fn seeded(cred: &StoredCredential) -> Arc<Self> {
+            let expires_at_unix: Option<i64> = cred.expires_at.and_then(|t| {
+                t.duration_since(std::time::UNIX_EPOCH)
+                    .ok()
+                    .map(|d| d.as_secs() as i64)
+            });
+            let blob = json!({
+                "access_token": cred.access_token.expose(),
+                "refresh_token": cred.refresh_token.as_ref().map(OAuthToken::expose),
+                "user_id": cred.user_id,
+                "login": cred.login,
+                "expires_at_unix": expires_at_unix,
+            })
+            .to_string();
+            let mut map = HashMap::new();
+            map.insert(TWITCH_CREDENTIAL_ID.to_owned(), blob);
+            Arc::new(Self(Mutex::new(map)))
+        }
+
+        fn get_stored_cred(&self) -> Option<StoredCredential> {
+            let guard = self.0.lock().unwrap();
+            let json = guard.get(TWITCH_CREDENTIAL_ID)?;
+            let v: serde_json::Value = serde_json::from_str(json).ok()?;
+            let access_token = OAuthToken::new(v["access_token"].as_str()?.to_owned());
+            let refresh_token = v["refresh_token"]
+                .as_str()
+                .map(|s| OAuthToken::new(s.to_owned()));
+            Some(StoredCredential {
+                access_token,
+                refresh_token,
+                user_id: v["user_id"].as_str().unwrap_or("").to_owned(),
+                login: v["login"].as_str().unwrap_or("").to_owned(),
+                expires_at: None,
+            })
+        }
+    }
+
+    #[async_trait]
+    impl CredentialsRepo for InMemRepo {
+        async fn store(&self, id: &CredentialId, plaintext: &str) -> Result<(), StorageError> {
+            self.0
+                .lock()
+                .unwrap()
+                .insert(id.as_str().to_owned(), plaintext.to_owned());
+            Ok(())
+        }
+
+        async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
+            Ok(self.0.lock().unwrap().get(id.as_str()).cloned())
+        }
+
+        async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
+            Ok(self.0.lock().unwrap().remove(id.as_str()).is_some())
+        }
+
+        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
+            Ok(self
+                .0
+                .lock()
+                .unwrap()
+                .keys()
+                .map(|k| CredentialId::new(k.clone()))
+                .collect())
+        }
+
+        async fn last_refresh(
+            &self,
+            _id: &CredentialId,
+        ) -> Result<Option<OffsetDateTime>, StorageError> {
+            Ok(None)
+        }
+
+        async fn mark_refreshed(&self, _id: &CredentialId) -> Result<(), StorageError> {
+            Ok(())
+        }
+    }
+
+    fn stub_cred(expires_at: SystemTime) -> StoredCredential {
+        StoredCredential {
+            access_token: OAuthToken::new("existing_access"),
+            refresh_token: Some(OAuthToken::new("existing_refresh")),
+            user_id: "user_1".to_owned(),
+            login: "streamer".to_owned(),
+            expires_at: Some(expires_at),
+        }
+    }
+
+    fn manager_with_server(
+        repo: Arc<dyn CredentialsRepo>,
+        server: &MockServer,
+    ) -> TwitchCredentialsManager {
+        TwitchCredentialsManager::with_endpoint(
+            repo,
+            "test_client_id".to_owned(),
+            format!("{}/token", server.uri()),
+        )
+    }
+
+    // ---------------------------------------------------------------------------
+    // get_valid_access_token: fresh credential — no network call.
+    // ---------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn get_valid_access_token_returns_stored_token_without_refresh_when_far_from_expiry() {
+        let server = MockServer::start().await;
+        // Expires 1 hour from now — well beyond the 5-minute buffer.
+        let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(3600));
+        let mgr = manager_with_server(InMemRepo::seeded(&cred), &server);
+
+        let token = mgr.get_valid_access_token().await.unwrap();
+        assert_eq!(token.expose(), "existing_access");
+
+        // No request must have reached the mock server.
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "refresh endpoint must not be called for a fresh credential"
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // get_valid_access_token: no credentials → ReauthRequired (no network).
+    // ---------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn get_valid_access_token_returns_reauth_required_when_no_credential_stored() {
+        let server = MockServer::start().await;
+        let mgr = manager_with_server(InMemRepo::empty(), &server);
+
+        let err = mgr.get_valid_access_token().await.unwrap_err();
+        assert!(
+            matches!(err, PlatformError::ReauthRequired { .. }),
+            "expected ReauthRequired when no credential exists, got: {err}"
+        );
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "no network call expected when credentials are absent"
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // refresh: rotated refresh_token from upstream is persisted (RFC-091 §2).
+    // ---------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn refresh_persists_rotated_refresh_token_returned_by_upstream() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "access_token": "new_access",
+                "refresh_token": "rotated_refresh",
+                "expires_in": 14400,
+            })))
+            .mount(&server)
+            .await;
+
+        let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(60));
+        let repo = InMemRepo::seeded(&cred);
+        let mgr = manager_with_server(repo.clone(), &server);
+
+        let prior_rt = OAuthToken::new("existing_refresh");
+        mgr.refresh(&prior_rt).await.unwrap();
+
+        let stored = repo.get_stored_cred().unwrap();
+        assert_eq!(
+            stored.refresh_token.as_ref().map(OAuthToken::expose),
+            Some("rotated_refresh"),
+            "rotated refresh_token from upstream must replace the prior one"
+        );
+        assert_eq!(stored.access_token.expose(), "new_access");
+    }
+
+    // ---------------------------------------------------------------------------
+    // refresh: upstream omits refresh_token → prior one is retained (RFC-091 §2).
+    // ---------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn refresh_retains_prior_refresh_token_when_upstream_omits_it() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "access_token": "new_access_only",
+                "expires_in": 14400,
+            })))
+            .mount(&server)
+            .await;
+
+        let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(60));
+        let repo = InMemRepo::seeded(&cred);
+        let mgr = manager_with_server(repo.clone(), &server);
+
+        let prior_rt = OAuthToken::new("existing_refresh");
+        mgr.refresh(&prior_rt).await.unwrap();
+
+        let stored = repo.get_stored_cred().unwrap();
+        assert_eq!(
+            stored.refresh_token.as_ref().map(OAuthToken::expose),
+            Some("existing_refresh"),
+            "prior refresh_token must be retained when upstream omits a new one"
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // refresh: HTTP 400 → ReauthRequired (RFC-091 §2).
+    // ---------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn refresh_returns_reauth_required_on_400() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(
+                ResponseTemplate::new(400).set_body_json(json!({"error": "invalid_grant"})),
+            )
+            .mount(&server)
+            .await;
+
+        let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(60));
+        let mgr = manager_with_server(InMemRepo::seeded(&cred), &server);
+
+        let err = mgr
+            .refresh(&OAuthToken::new("expired_rt"))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, PlatformError::ReauthRequired { .. }),
+            "HTTP 400 must map to ReauthRequired, got: {err}"
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // refresh: HTTP 401 → ReauthRequired (RFC-091 §2).
+    // ---------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn refresh_returns_reauth_required_on_401() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(ResponseTemplate::new(401).set_body_string("Unauthorized"))
+            .mount(&server)
+            .await;
+
+        let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(60));
+        let mgr = manager_with_server(InMemRepo::seeded(&cred), &server);
+
+        let err = mgr
+            .refresh(&OAuthToken::new("revoked_rt"))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, PlatformError::ReauthRequired { .. }),
+            "HTTP 401 must map to ReauthRequired, got: {err}"
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // refresh: form body must not contain client_secret (public-client PKCE).
+    // ---------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn refresh_sends_form_without_client_secret() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .and(body_string_contains("grant_type=refresh_token"))
+            .and(body_string_contains("client_id=test_client_id"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "access_token": "na",
+                "expires_in": 14400,
+            })))
+            .mount(&server)
+            .await;
+
+        let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(60));
+        let repo = InMemRepo::seeded(&cred);
+        let mgr = manager_with_server(repo, &server);
+        mgr.refresh(&OAuthToken::new("existing_refresh"))
+            .await
+            .unwrap();
+
+        let reqs = server.received_requests().await.unwrap();
+        assert_eq!(reqs.len(), 1);
+        let body = std::str::from_utf8(&reqs[0].body).unwrap();
+        assert!(
+            !body.contains("client_secret"),
+            "client_secret must never appear in the token refresh form (public-client PKCE)"
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // HelixTokenSource: no credentials → HelixError::ReauthRequired.
+    // ---------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn helix_token_source_returns_reauth_required_when_no_credential() {
+        use crate::helix::HelixTokenSource;
+
+        let server = MockServer::start().await;
+        let mgr = manager_with_server(InMemRepo::empty(), &server);
+
+        let err = mgr.access_token().await.unwrap_err();
+        assert!(
+            matches!(err, crate::helix::HelixError::ReauthRequired),
+            "HelixTokenSource must map missing credential to HelixError::ReauthRequired, got: {err:?}"
+        );
+    }
+}

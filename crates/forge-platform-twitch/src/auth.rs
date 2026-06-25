@@ -495,6 +495,71 @@ mod tests {
         assert_eq!(resp.access_token, "twitch_access_abc");
     }
 
+    /// RFC-091: token exchange now captures refresh_token and expires_in.
+    /// Verify both survive the parse and are correctly typed (Option).
+    #[tokio::test]
+    async fn exchange_code_captures_refresh_token_and_lifetime() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "access_token": "twitch_access_xyz",
+                "refresh_token": "twitch_refresh_xyz",
+                "expires_in": 14400,
+                "token_type": "bearer",
+                "scope": ["chat:read"],
+            })))
+            .mount(&server)
+            .await;
+
+        let http = reqwest::Client::new();
+        let resp = exchange_code(
+            &http,
+            &format!("{}/token", server.uri()),
+            "test_client",
+            "code_abc",
+            "http://127.0.0.1:0/oauth/callback",
+            "verifier_abc",
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(resp.access_token, "twitch_access_xyz");
+        assert_eq!(resp.refresh_token.as_deref(), Some("twitch_refresh_xyz"));
+        assert_eq!(resp.expires_in, Some(14400));
+    }
+
+    /// RFC-091: when the upstream response omits refresh_token and expires_in,
+    /// both fields deserialise to None (not a parse error).
+    #[tokio::test]
+    async fn exchange_code_handles_response_without_refresh_token_or_lifetime() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "access_token": "access_only",
+                "token_type": "bearer",
+            })))
+            .mount(&server)
+            .await;
+
+        let http = reqwest::Client::new();
+        let resp = exchange_code(
+            &http,
+            &format!("{}/token", server.uri()),
+            "client",
+            "code",
+            "http://127.0.0.1:0/callback",
+            "verifier",
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(resp.access_token, "access_only");
+        assert!(resp.refresh_token.is_none());
+        assert!(resp.expires_in.is_none());
+    }
+
     #[test]
     fn helix_error_sanitizer_strips_bearer_from_custom_variant() {
         use std::borrow::Cow;

@@ -130,17 +130,202 @@ impl HelixTokenSource for CredentialsTokenSource {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+
+    use async_trait::async_trait;
+    use forge_storage::{CredentialId, CredentialsRepo, StorageError};
+    use time::OffsetDateTime;
+
     use super::*;
 
+    // ---------------------------------------------------------------------------
+    // Minimal in-memory CredentialsRepo — mirrors the Kick harness pattern.
+    // ---------------------------------------------------------------------------
+
+    struct InMemRepo(Mutex<HashMap<String, String>>);
+
+    impl InMemRepo {
+        fn empty() -> Self {
+            Self(Mutex::new(HashMap::new()))
+        }
+
+        fn with_raw(key: &str, value: &str) -> Self {
+            let mut map = HashMap::new();
+            map.insert(key.to_owned(), value.to_owned());
+            Self(Mutex::new(map))
+        }
+    }
+
+    #[async_trait]
+    impl CredentialsRepo for InMemRepo {
+        async fn store(&self, id: &CredentialId, plaintext: &str) -> Result<(), StorageError> {
+            self.0
+                .lock()
+                .unwrap()
+                .insert(id.as_str().to_owned(), plaintext.to_owned());
+            Ok(())
+        }
+
+        async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
+            Ok(self.0.lock().unwrap().get(id.as_str()).cloned())
+        }
+
+        async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
+            Ok(self.0.lock().unwrap().remove(id.as_str()).is_some())
+        }
+
+        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
+            Ok(self
+                .0
+                .lock()
+                .unwrap()
+                .keys()
+                .map(|k| CredentialId::new(k.clone()))
+                .collect())
+        }
+
+        async fn last_refresh(
+            &self,
+            _id: &CredentialId,
+        ) -> Result<Option<OffsetDateTime>, StorageError> {
+            Ok(None)
+        }
+
+        async fn mark_refreshed(&self, _id: &CredentialId) -> Result<(), StorageError> {
+            Ok(())
+        }
+    }
+
+    fn cred_with_refresh(refresh: Option<&str>) -> StoredCredential {
+        StoredCredential {
+            access_token: OAuthToken::new("access_token_value"),
+            refresh_token: refresh.map(|s| OAuthToken::new(s.to_owned())),
+            user_id: "user_42".to_owned(),
+            login: "streamer".to_owned(),
+            expires_at: Some(std::time::UNIX_EPOCH + std::time::Duration::from_secs(9_999_999_999)),
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Debug / redaction
+    // ---------------------------------------------------------------------------
+
     #[test]
-    fn stored_credential_debug_does_not_expose_bearer_token() {
-        let cred = StoredCredential {
-            access_token: OAuthToken::new("DEADBEEF_BEARER"),
-            refresh_token: Some(OAuthToken::new("DEADBEEF_REFRESH")),
-            user_id: "123".to_owned(),
-            login: "user".to_owned(),
-            expires_at: None,
-        };
-        assert!(!format!("{cred:?}").contains("DEADBEEF_BEARER"));
+    fn stored_credential_debug_does_not_expose_access_or_refresh_tokens() {
+        // Why: both tokens are OAuthToken whose Debug impl writes "<redacted>".
+        // A regression here would silently log credentials to tracing INFO.
+        let cred = cred_with_refresh(Some("DEADBEEF_REFRESH_SECRET"));
+        let debug = format!("{cred:?}");
+        assert!(
+            !debug.contains("access_token_value"),
+            "access_token leaked: {debug}"
+        );
+        assert!(
+            !debug.contains("DEADBEEF_REFRESH_SECRET"),
+            "refresh_token leaked: {debug}"
+        );
+        assert!(
+            debug.contains("<redacted>"),
+            "expected <redacted> marker: {debug}"
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // Round-trip: with refresh_token
+    // ---------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn store_load_round_trip_preserves_refresh_token() {
+        let repo = InMemRepo::empty();
+        let original = cred_with_refresh(Some("rt_secret_value"));
+
+        store_credential(&repo, &original).await.unwrap();
+        let loaded = load(&repo).await.unwrap().unwrap();
+
+        let rt = loaded.refresh_token.unwrap();
+        assert_eq!(rt.expose(), "rt_secret_value");
+        assert_eq!(loaded.access_token.expose(), "access_token_value");
+        assert_eq!(loaded.user_id, "user_42");
+        assert_eq!(loaded.login, "streamer");
+    }
+
+    // ---------------------------------------------------------------------------
+    // Round-trip: without refresh_token
+    // ---------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn store_load_round_trip_without_refresh_token_loads_as_none() {
+        let repo = InMemRepo::empty();
+        let original = cred_with_refresh(None);
+
+        store_credential(&repo, &original).await.unwrap();
+        let loaded = load(&repo).await.unwrap().unwrap();
+
+        assert!(
+            loaded.refresh_token.is_none(),
+            "refresh_token absent on store must load as None"
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // Back-compat: blobs persisted BEFORE refresh support (no refresh_token field)
+    // must load without error and produce refresh_token = None.
+    // RFC-091 §1 critical requirement.
+    // ---------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn legacy_blob_without_refresh_token_loads_as_none_not_error() {
+        // Simulate a blob written before RFC-091 (no refresh_token key at all).
+        let legacy_json = r#"{"access_token":"old_access","user_id":"u1","login":"streamer","expires_at_unix":9999999999}"#;
+        let repo = InMemRepo::with_raw(TWITCH_CREDENTIAL_ID, legacy_json);
+
+        let loaded = load(&repo).await.unwrap().unwrap();
+        assert!(
+            loaded.refresh_token.is_none(),
+            "legacy blob without refresh_token must deserialise to None, not error"
+        );
+        assert_eq!(loaded.access_token.expose(), "old_access");
+    }
+
+    // ---------------------------------------------------------------------------
+    // Back-compat: blob with null refresh_token (e.g. written when the field was
+    // explicitly null) also loads as None.
+    // ---------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn blob_with_null_refresh_token_loads_as_none() {
+        let json = r#"{"access_token":"at","refresh_token":null,"user_id":"u1","login":"x","expires_at_unix":9999999999}"#;
+        let repo = InMemRepo::with_raw(TWITCH_CREDENTIAL_ID, json);
+
+        let loaded = load(&repo).await.unwrap().unwrap();
+        assert!(loaded.refresh_token.is_none());
+    }
+
+    // ---------------------------------------------------------------------------
+    // expires_at round-trip: zero / negative unix secs → None (not a parse error).
+    // ---------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn blob_with_zero_expires_at_loads_as_none() {
+        let json = r#"{"access_token":"at","user_id":"u1","login":"x","expires_at_unix":0}"#;
+        let repo = InMemRepo::with_raw(TWITCH_CREDENTIAL_ID, json);
+
+        let loaded = load(&repo).await.unwrap().unwrap();
+        assert!(
+            loaded.expires_at.is_none(),
+            "expires_at_unix = 0 must decode to None (no expiry)"
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // No credentials → load returns None (not an error).
+    // ---------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn load_returns_none_when_no_row_exists() {
+        let repo = InMemRepo::empty();
+        let result = load(&repo).await.unwrap();
+        assert!(result.is_none());
     }
 }

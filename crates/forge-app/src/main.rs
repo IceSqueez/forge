@@ -18,7 +18,7 @@ use forge_obs::{ObsSink, SwitchableObsSink, register_obs_sub_actions, register_o
 use forge_platform_core::paths;
 use forge_platform_twitch::{
     ChatSendBridge, ChatSendBridgeHandle, CredentialsTokenSource, HelixHttpTransport,
-    HelixTransport, register_twitch_sub_actions, register_twitch_triggers,
+    HelixTokenRefresher, HelixTransport, register_twitch_sub_actions, register_twitch_triggers,
 };
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
@@ -478,12 +478,20 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         Some(cid) => {
             let twitch_creds: Arc<dyn forge_storage::CredentialsRepo> =
                 Arc::clone(&dp) as Arc<dyn forge_storage::CredentialsRepo>;
-            let twitch_transport: Arc<dyn HelixTransport> = Arc::new(HelixHttpTransport::new(
-                Arc::clone(&twitch_rate_limiter),
-                Arc::clone(&bus),
-                cid,
-                Arc::new(CredentialsTokenSource::new(Arc::clone(&twitch_creds))),
-            ));
+            let refresher: Arc<dyn HelixTokenRefresher> =
+                Arc::new(forge_platform_twitch::TwitchCredentialsManager::new(
+                    Arc::clone(&twitch_creds),
+                    cid.clone(),
+                ));
+            let twitch_transport: Arc<dyn HelixTransport> = Arc::new(
+                HelixHttpTransport::new(
+                    Arc::clone(&twitch_rate_limiter),
+                    Arc::clone(&bus),
+                    cid,
+                    Arc::new(CredentialsTokenSource::new(Arc::clone(&twitch_creds))),
+                )
+                .with_refresher(Arc::clone(&refresher)),
+            );
             if let Err(e) =
                 register_twitch_sub_actions(&mut sub_action_reg, twitch_transport, twitch_creds)
             {

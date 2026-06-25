@@ -1658,4 +1658,246 @@ mod tests {
         let form = state.new_queue_form.expect("form stays open after error");
         assert!(!form.saving);
     }
+
+    // ── helpers ──────────────────────────────────────────────────────────────
+
+    fn dummy_summary(id: QueueId) -> QueueSummary {
+        QueueSummary {
+            id,
+            name: "Test".to_owned(),
+            blocking: false,
+            concurrency: 8,
+            paused: false,
+            assigned_actions: 0,
+            pending: 0,
+            in_flight: 0,
+            running_now: vec![],
+            paused_at: None,
+        }
+    }
+
+    // ── apply_membership_outcome (direct, table-driven) ───────────────────
+
+    #[test]
+    fn apply_membership_outcome_clears_badge_for_success_variants_and_sets_it_for_failures() {
+        use forge_runtime::MembershipOutcome;
+
+        // Pairs: (outcome, should_be_diverged_after)
+        let cases: &[(Result<MembershipOutcome, String>, bool)] = &[
+            (Ok(MembershipOutcome::Applied), false),
+            (Ok(MembershipOutcome::AlreadyRegistered), false),
+            (Ok(MembershipOutcome::NotFound), true),
+            (Err("channel closed".to_owned()), true),
+        ];
+
+        for (outcome, expect_diverged) in cases {
+            let id = QueueId::new();
+            let mut state = QueuesState::new();
+            // Pre-seed diverged so clearing is actually tested for success variants.
+            state.diverged.insert(id);
+            apply_membership_outcome(&mut state, id, outcome.clone(), "register");
+            assert_eq!(
+                state.diverged.contains(&id),
+                *expect_diverged,
+                "outcome {outcome:?}: expected diverged={expect_diverged}"
+            );
+        }
+    }
+
+    // ── RegisterResult message handler ────────────────────────────────────
+
+    #[test]
+    fn register_result_applied_clears_divergence_and_closes_form() {
+        use forge_runtime::MembershipOutcome;
+
+        let rt = test_rt();
+        let id = QueueId::new();
+        let mut state = QueuesState {
+            new_queue_form: Some(NewQueueForm {
+                name: "New".to_owned(),
+                saving: true,
+                ..NewQueueForm::default()
+            }),
+            ..QueuesState::new()
+        };
+        // Pre-seed a stale badge to confirm it gets cleared.
+        state.diverged.insert(id);
+
+        let _ = update(
+            &mut state,
+            &rt,
+            QueuesMsg::RegisterResult(id, Ok(MembershipOutcome::Applied)),
+        );
+
+        assert!(
+            !state.diverged.contains(&id),
+            "Applied must clear the badge"
+        );
+        assert!(state.new_queue_form.is_none(), "form must be closed");
+    }
+
+    #[test]
+    fn register_result_already_registered_is_idempotent_success_no_badge() {
+        use forge_runtime::MembershipOutcome;
+
+        let rt = test_rt();
+        let id = QueueId::new();
+        let mut state = QueuesState::new();
+        // No pre-existing badge — verify it isn't spuriously inserted either.
+        let _ = update(
+            &mut state,
+            &rt,
+            QueuesMsg::RegisterResult(id, Ok(MembershipOutcome::AlreadyRegistered)),
+        );
+
+        assert!(
+            !state.diverged.contains(&id),
+            "AlreadyRegistered must not set badge"
+        );
+    }
+
+    #[test]
+    fn register_result_err_sets_divergence_badge() {
+        let rt = test_rt();
+        let id = QueueId::new();
+        let mut state = QueuesState::new();
+
+        let _ = update(
+            &mut state,
+            &rt,
+            QueuesMsg::RegisterResult(id, Err("scheduler gone".to_owned())),
+        );
+
+        assert!(
+            state.diverged.contains(&id),
+            "Err must set the divergence badge"
+        );
+    }
+
+    #[test]
+    fn register_result_not_found_sets_divergence_badge() {
+        use forge_runtime::MembershipOutcome;
+
+        let rt = test_rt();
+        let id = QueueId::new();
+        let mut state = QueuesState::new();
+
+        let _ = update(
+            &mut state,
+            &rt,
+            QueuesMsg::RegisterResult(id, Ok(MembershipOutcome::NotFound)),
+        );
+
+        assert!(
+            state.diverged.contains(&id),
+            "NotFound must set the divergence badge"
+        );
+    }
+
+    // ── ReconfigureResult message handler ─────────────────────────────────
+
+    #[test]
+    fn reconfigure_result_applied_clears_badge_and_closes_edit_form() {
+        use forge_runtime::MembershipOutcome;
+
+        let rt = test_rt();
+        let id = QueueId::new();
+        let mut state = QueuesState {
+            edit_queue_form: Some(EditQueueForm {
+                id,
+                name: "Renamed".to_owned(),
+                blocking: false,
+                saving: true,
+            }),
+            ..QueuesState::new()
+        };
+        state.diverged.insert(id);
+
+        let _ = update(
+            &mut state,
+            &rt,
+            QueuesMsg::ReconfigureResult(id, Ok(MembershipOutcome::Applied)),
+        );
+
+        assert!(
+            !state.diverged.contains(&id),
+            "Applied must clear the badge"
+        );
+        assert!(state.edit_queue_form.is_none(), "edit form must be closed");
+    }
+
+    #[test]
+    fn reconfigure_result_err_sets_divergence_badge_and_closes_edit_form() {
+        let rt = test_rt();
+        let id = QueueId::new();
+        let mut state = QueuesState {
+            edit_queue_form: Some(EditQueueForm {
+                id,
+                name: "Renamed".to_owned(),
+                blocking: false,
+                saving: true,
+            }),
+            ..QueuesState::new()
+        };
+
+        let _ = update(
+            &mut state,
+            &rt,
+            QueuesMsg::ReconfigureResult(id, Err("channel closed".to_owned())),
+        );
+
+        assert!(
+            state.diverged.contains(&id),
+            "Err must set the divergence badge"
+        );
+        assert!(
+            state.edit_queue_form.is_none(),
+            "edit form must be closed even on error"
+        );
+    }
+
+    // ── QueuesLoaded divergence retention / pruning ───────────────────────
+
+    #[test]
+    fn queues_loaded_retains_diverged_ids_still_in_list_and_prunes_absent_ones() {
+        let rt = test_rt();
+        let id_present = QueueId::new();
+        let id_gone = QueueId::new();
+
+        let mut state = QueuesState::new();
+        state.diverged.insert(id_present);
+        state.diverged.insert(id_gone);
+
+        // Only id_present is in the freshly loaded list.
+        let _ = update(
+            &mut state,
+            &rt,
+            QueuesMsg::QueuesLoaded(Ok(vec![dummy_summary(id_present)])),
+        );
+
+        assert!(
+            state.diverged.contains(&id_present),
+            "divergence for an id still in the list must survive reload"
+        );
+        assert!(
+            !state.diverged.contains(&id_gone),
+            "divergence for a deleted queue must be pruned on reload"
+        );
+    }
+
+    #[test]
+    fn queues_loaded_with_empty_list_clears_all_diverged_ids() {
+        let rt = test_rt();
+        let id = QueueId::new();
+
+        let mut state = QueuesState::new();
+        state.diverged.insert(id);
+
+        let _ = update(&mut state, &rt, QueuesMsg::QueuesLoaded(Ok(vec![])));
+
+        assert!(
+            state.diverged.is_empty(),
+            "all diverged ids must be pruned when loaded list is empty"
+        );
+    }
 }

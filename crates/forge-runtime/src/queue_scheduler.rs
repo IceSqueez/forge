@@ -268,9 +268,14 @@ impl QueueScheduler {
                             slot.name = queue.name;
                             MembershipOutcome::Applied
                         }
-                        Some(_) => {
+                        Some(old) => {
+                            // A blocking-flip rebuilds the runner, but must carry pause
+                            // state forward, else a config edit silently resumes a paused
+                            // queue with no event.
+                            let was_paused = old.state.read().await.paused;
                             let id = queue.id;
                             let slot = Self::make_queue_slot(queue, Arc::clone(&engine));
+                            slot.state.write().await.paused = was_paused;
                             slots.insert(id, slot);
                             MembershipOutcome::Applied
                         }

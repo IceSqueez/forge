@@ -174,3 +174,163 @@ impl SubActionRunner for CoreGlobalsArrayRemoveRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use forge_events::EventPublisher;
+    use forge_storage::{GlobalEntry, StorageError};
+    use forge_types::EventId;
+    use std::collections::BTreeMap;
+    use std::sync::Mutex;
+
+    struct NullPublisher;
+    impl EventPublisher for NullPublisher {
+        fn publish(&self, _event: Event) {}
+    }
+
+    #[derive(Default)]
+    struct MapGlobals {
+        map: Mutex<BTreeMap<String, Variant>>,
+    }
+
+    impl MapGlobals {
+        fn with(entries: impl IntoIterator<Item = (&'static str, Variant)>) -> Self {
+            let map = entries
+                .into_iter()
+                .map(|(k, v)| (k.to_owned(), v))
+                .collect();
+            Self {
+                map: Mutex::new(map),
+            }
+        }
+        fn array(&self, key: &str) -> Vec<Variant> {
+            match self.map.lock().unwrap().get(key) {
+                Some(Variant::Array(a)) => a.clone(),
+                other => panic!("expected array at {key}, got {other:?}"),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl GlobalsRepo for MapGlobals {
+        async fn get(&self, name: &str) -> Result<Option<Variant>, StorageError> {
+            Ok(self.map.lock().unwrap().get(name).cloned())
+        }
+        async fn set(&self, name: &str, value: Variant, _p: bool) -> Result<(), StorageError> {
+            self.map.lock().unwrap().insert(name.to_owned(), value);
+            Ok(())
+        }
+        async fn delete(&self, name: &str) -> Result<bool, StorageError> {
+            Ok(self.map.lock().unwrap().remove(name).is_some())
+        }
+        async fn list(&self) -> Result<Vec<GlobalEntry>, StorageError> {
+            Ok(vec![])
+        }
+        async fn storage_bytes(&self) -> Result<u64, StorageError> {
+            Ok(0)
+        }
+        async fn last_save_at(&self) -> Result<Option<OffsetDateTime>, StorageError> {
+            Ok(None)
+        }
+        async fn incr(&self, _name: &str, _amount: i64) -> Result<Variant, StorageError> {
+            Ok(Variant::Int(0))
+        }
+    }
+
+    fn cfg(key: &str, value: &str, remove_all: bool) -> SubActionConfig {
+        let mut c = SubActionConfig::new();
+        c.insert("key".to_owned(), Variant::String(key.to_owned()));
+        c.insert("value".to_owned(), Variant::String(value.to_owned()));
+        c.insert("remove_all".to_owned(), Variant::Bool(remove_all));
+        c
+    }
+
+    /// [1, 2, 1, 3, 1] — the value `1` appears three times so first-only and
+    /// remove-all produce distinguishable results.
+    fn seeded() -> Arc<MapGlobals> {
+        Arc::new(MapGlobals::with([(
+            "list",
+            Variant::Array(vec![
+                Variant::Int(1),
+                Variant::Int(2),
+                Variant::Int(1),
+                Variant::Int(3),
+                Variant::Int(1),
+            ]),
+        )]))
+    }
+
+    async fn run(globals: Arc<MapGlobals>, config: &SubActionConfig) -> SubActionOutcome {
+        let runner = CoreGlobalsArrayRemoveRunner::new(globals);
+        let stack = ArgStack::new();
+        let ctx = RunContext {
+            arg_stack: &stack,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher: &NullPublisher,
+        };
+        runner.execute(config, &ctx).await.0.outcome
+    }
+
+    #[tokio::test]
+    async fn array_remove_first_only_drops_leftmost_match() {
+        let globals = seeded();
+        let outcome = run(globals.clone(), &cfg("list", "1", false)).await;
+        assert!(matches!(outcome, SubActionOutcome::Success));
+        // Only the leftmost Int(1) is gone; later duplicates survive.
+        assert_eq!(
+            globals.array("list"),
+            vec![
+                Variant::Int(2),
+                Variant::Int(1),
+                Variant::Int(3),
+                Variant::Int(1),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn array_remove_all_drops_every_match() {
+        let globals = seeded();
+        let outcome = run(globals.clone(), &cfg("list", "1", true)).await;
+        assert!(matches!(outcome, SubActionOutcome::Success));
+        assert_eq!(
+            globals.array("list"),
+            vec![Variant::Int(2), Variant::Int(3)]
+        );
+    }
+
+    #[tokio::test]
+    async fn array_remove_absent_value_leaves_array_unchanged() {
+        let globals = seeded();
+        let outcome = run(globals.clone(), &cfg("list", "99", false)).await;
+        // Absent value is a no-op success, NOT a failure.
+        assert!(matches!(outcome, SubActionOutcome::Success));
+        assert_eq!(
+            globals.array("list"),
+            vec![
+                Variant::Int(1),
+                Variant::Int(2),
+                Variant::Int(1),
+                Variant::Int(3),
+                Variant::Int(1),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn array_remove_missing_key_reports_failed() {
+        let globals = Arc::new(MapGlobals::default());
+        let outcome = run(globals, &cfg("ghost", "1", false)).await;
+        assert!(matches!(outcome, SubActionOutcome::Failed(_)));
+    }
+
+    #[tokio::test]
+    async fn array_remove_non_array_global_reports_failed() {
+        let globals = Arc::new(MapGlobals::with([("list", Variant::Int(5))]));
+        let outcome = run(globals, &cfg("list", "1", false)).await;
+        assert!(matches!(outcome, SubActionOutcome::Failed(_)));
+    }
+}

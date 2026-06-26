@@ -381,3 +381,177 @@ fn apply_response(arg_stack: &ArgStack, response: EgressResponse, parse_as: &str
         _ => stack.set("http.body".to_owned(), Variant::String(response.body)),
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use forge_events::{Event, EventPublisher};
+    use forge_storage::{SettingsRepo, reserved_keys};
+    use forge_storage_sqlite::SqliteBackend;
+    use forge_types::EventId;
+    use wiremock::matchers::{body_string, method};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    struct NullPublisher;
+    impl EventPublisher for NullPublisher {
+        fn publish(&self, _event: Event) {}
+    }
+
+    async fn backend() -> Arc<SqliteBackend> {
+        Arc::new(
+            SqliteBackend::open_with_key(":memory:", [0x11; 32])
+                .await
+                .unwrap(),
+        )
+    }
+
+    fn runner(method: HttpMethod, dp: &Arc<SqliteBackend>) -> CoreHttpRunner {
+        CoreHttpRunner::new(
+            method,
+            Arc::clone(dp) as Arc<dyn GlobalsRepo>,
+            Arc::clone(dp) as Arc<dyn SettingsRepo>,
+            Arc::new(EgressClient::new().unwrap()),
+        )
+    }
+
+    async fn run(
+        runner: &CoreHttpRunner,
+        cfg: &SubActionConfig,
+    ) -> (SubActionTelemetry, Option<ArgStack>) {
+        let stack = ArgStack::new();
+        let ctx = RunContext {
+            arg_stack: &stack,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher: &NullPublisher,
+        };
+        runner.execute(cfg, &ctx).await
+    }
+
+    #[tokio::test]
+    async fn get_success_writes_status_body_and_headers() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("x-trace", "abc")
+                    .set_body_string("body-text"),
+            )
+            .mount(&server)
+            .await;
+        let dp = backend().await;
+        dp.set_string(reserved_keys::CORE_HTTP_ALLOW_LOCAL_KEY, "true")
+            .await
+            .unwrap();
+
+        let mut cfg = SubActionConfig::new();
+        cfg.insert("url".to_owned(), Variant::String(server.uri()));
+        cfg.insert(
+            "parse_response_as".to_owned(),
+            Variant::String("text".to_owned()),
+        );
+
+        let (tel, stack) = run(&runner(HttpMethod::Get, &dp), &cfg).await;
+        assert_eq!(tel.outcome, SubActionOutcome::Success);
+        let stack = stack.unwrap();
+        assert_eq!(
+            stack.get("http.status_code").and_then(|v| v.as_int()),
+            Some(200)
+        );
+        assert_eq!(
+            stack.get("http.body").and_then(|v| v.as_str()),
+            Some("body-text")
+        );
+        match stack.get("http.headers") {
+            Some(Variant::Object(h)) => {
+                assert_eq!(h.get("x-trace").and_then(|v| v.as_str()), Some("abc"));
+            }
+            other => panic!("expected http.headers object, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn post_success_marshals_body_and_writes_status() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(body_string("the-payload"))
+            .respond_with(ResponseTemplate::new(201))
+            .mount(&server)
+            .await;
+        let dp = backend().await;
+        dp.set_string(reserved_keys::CORE_HTTP_ALLOW_LOCAL_KEY, "true")
+            .await
+            .unwrap();
+
+        let mut cfg = SubActionConfig::new();
+        cfg.insert("url".to_owned(), Variant::String(server.uri()));
+        cfg.insert("body".to_owned(), Variant::String("the-payload".to_owned()));
+        cfg.insert(
+            "parse_response_as".to_owned(),
+            Variant::String("ignore".to_owned()),
+        );
+
+        let (tel, stack) = run(&runner(HttpMethod::Post, &dp), &cfg).await;
+        assert_eq!(tel.outcome, SubActionOutcome::Success);
+        assert_eq!(
+            stack
+                .unwrap()
+                .get("http.status_code")
+                .and_then(|v| v.as_int()),
+            Some(201)
+        );
+    }
+
+    #[tokio::test]
+    async fn ssrf_rejected_request_fails_with_no_output_vars() {
+        // allow_local defaults to false (key unset) → metadata endpoint blocked.
+        let dp = backend().await;
+        let mut cfg = SubActionConfig::new();
+        cfg.insert(
+            "url".to_owned(),
+            Variant::String("http://169.254.169.254/latest/meta-data/".to_owned()),
+        );
+
+        let (tel, stack) = run(&runner(HttpMethod::Get, &dp), &cfg).await;
+        assert!(matches!(tel.outcome, SubActionOutcome::Failed(_)));
+        assert!(
+            stack.is_none(),
+            "rejected request must publish no http.* vars"
+        );
+    }
+
+    #[tokio::test]
+    async fn failed_request_error_does_not_leak_token_header_or_query() {
+        // 192.0.2.1 (RFC 5737) is public → passes the denylist, then the connection
+        // times out. The Failed message must not echo the bearer token or the
+        // token-bearing query string.
+        let dp = backend().await;
+        let mut headers = BTreeMap::new();
+        headers.insert(
+            "Authorization".to_owned(),
+            Variant::String("Bearer SECRET-TOKEN-XYZ".to_owned()),
+        );
+        let mut cfg = SubActionConfig::new();
+        cfg.insert(
+            "url".to_owned(),
+            Variant::String("http://192.0.2.1/v1/resource?access_token=QUERY-SECRET".to_owned()),
+        );
+        cfg.insert("headers".to_owned(), Variant::Object(headers));
+        cfg.insert("timeout_ms".to_owned(), Variant::Int(100));
+
+        let (tel, stack) = run(&runner(HttpMethod::Get, &dp), &cfg).await;
+        let SubActionOutcome::Failed(msg) = tel.outcome else {
+            panic!("expected Failed, got {:?}", tel.outcome);
+        };
+        assert!(stack.is_none());
+        assert!(
+            !msg.contains("SECRET-TOKEN-XYZ"),
+            "leaked auth header: {msg}"
+        );
+        assert!(!msg.contains("QUERY-SECRET"), "leaked query token: {msg}");
+        assert!(!msg.contains("192.0.2.1"), "leaked target host: {msg}");
+        // Bounded: the 100ms timeout fired, not an unbounded hang.
+        assert!(tel.duration_ms < 5_000, "took {}ms", tel.duration_ms);
+    }
+}

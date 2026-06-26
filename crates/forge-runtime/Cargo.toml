@@ -37,3 +37,4 @@ time = { workspace = true }
 
 [dev-dependencies]
 forge-storage-sqlite = { path = "../forge-storage-sqlite" }
+wiremock = { workspace = true }

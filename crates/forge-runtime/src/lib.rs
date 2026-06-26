@@ -4,7 +4,9 @@ pub mod audio_runners;
 mod bridge;
 mod buf;
 pub mod bus;
+pub mod chain;
 pub mod chat_stream;
+pub mod config;
 pub mod dashboard;
 pub mod queue_scheduler;
 pub mod script_registry;
@@ -18,7 +20,9 @@ pub use action_engine::{ActionEngineHandle, DispatchError, ExecutionRequest, spa
 pub use audio_runners::register_audio_sub_actions;
 pub use bridge::bus_subscription;
 pub use bus::{BusError, BusStats, EventBus, EventSubscription, NullEventLogRepo};
+pub use chain::{ChainEngine, ChainRun, ChainScope};
 pub use chat_stream::chat_stream;
+pub use config::Config;
 pub use queue_scheduler::{
     MembershipOutcome, QueueScheduler, QueueSchedulerHandle, SchedulerError, SchedulerRequest,
 };

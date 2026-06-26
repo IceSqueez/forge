@@ -3,8 +3,8 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use forge_events::{Event, EventSource};
-use forge_registry::{RunContext, SubActionRegistry, effective_config};
+use forge_events::{Event, EventPublisher, EventSource};
+use forge_registry::{CancelSignal, ChainSignal, RunContext, SubActionRegistry, effective_config};
 use forge_storage::{ActionRepo, HistoryRepo};
 use forge_types::{
     ActionId, ArgStack, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome,
@@ -15,7 +15,8 @@ use time::OffsetDateTime;
 use tokio::sync::mpsc;
 use tracing::warn;
 
-use crate::EventBus;
+use crate::chain::ChainEngine;
+use crate::{Config, EventBus};
 
 struct QuickActionRequest {
     step: SubActionStep,
@@ -75,7 +76,7 @@ struct ActionEngine {
     bus: Arc<EventBus>,
     actions: Arc<dyn ActionRepo>,
     history: Arc<dyn HistoryRepo>,
-    sub_action_registry: Arc<SubActionRegistry>,
+    chain_engine: Arc<ChainEngine>,
     input: mpsc::Receiver<ExecutionRequest>,
 }
 
@@ -90,11 +91,17 @@ impl ActionEngine {
         let (quick_tx, quick_rx) = mpsc::channel(64);
         let cancel = Arc::new(AtomicBool::new(false));
         let cancel_clone = Arc::clone(&cancel);
+        let publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
+        let chain_engine = Arc::new(ChainEngine::new(
+            Arc::clone(&sub_action_registry),
+            publisher,
+            Config::default(),
+        ));
         let engine = Self {
             bus: Arc::clone(&bus),
             actions: Arc::clone(&actions),
             history: Arc::clone(&history),
-            sub_action_registry: Arc::clone(&sub_action_registry),
+            chain_engine,
             input: rx,
         };
         tokio::spawn(async move { engine.run(cancel_clone).await });
@@ -164,13 +171,26 @@ impl ActionEngine {
             action.sub_actions.clone()
         };
 
-        if action.concurrent {
-            self.run_concurrent(&pick, &arg_stack, &mut ctx, start_event_id)
-                .await;
+        let cancel = CancelSignal::new();
+        let run = if action.concurrent {
+            self.chain_engine
+                .run_concurrent(&pick, &arg_stack, start_event_id, &cancel)
+                .await
         } else {
-            self.run_sequential(&pick, &arg_stack, &mut ctx, start_event_id)
-                .await;
-        }
+            self.chain_engine
+                .run_sequential(&pick, &arg_stack, start_event_id, &cancel)
+                .await
+        };
+
+        ctx.telemetry = run.telemetry;
+        ctx.outcome = match run.signal {
+            ChainSignal::Completed
+            | ChainSignal::Stop
+            | ChainSignal::Break
+            | ChainSignal::Continue => ExecutionOutcome::Success,
+            ChainSignal::Error(msg) => ExecutionOutcome::Failed(msg),
+            ChainSignal::Aborted => ExecutionOutcome::Cancelled,
+        };
 
         ctx.completed_at = Some(OffsetDateTime::now_utc());
 
@@ -194,142 +214,6 @@ impl ActionEngine {
 
         if let Err(e) = self.history.save(&ctx).await {
             warn!("history_repo.save failed: {e}");
-        }
-    }
-
-    async fn run_sequential(
-        &self,
-        steps: &[SubActionStep],
-        arg_stack: &ArgStack,
-        ctx: &mut ExecutionContext,
-        parent_event_id: EventId,
-    ) {
-        let publisher: Arc<dyn forge_events::EventPublisher> =
-            Arc::clone(&self.bus) as Arc<dyn forge_events::EventPublisher>;
-        let mut current_stack = arg_stack.clone();
-        for (index, step) in steps.iter().enumerate() {
-            if !step.enabled {
-                continue;
-            }
-
-            let run_event = Event::caused_by(
-                EventSource::Core,
-                "subaction.run",
-                json!({
-                    "step_index": index,
-                    "kind": step.kind_id,
-                }),
-                parent_event_id,
-            );
-            let run_event_id = run_event.id;
-            self.bus.publish(run_event);
-
-            let run_ctx = RunContext {
-                arg_stack: &current_stack,
-                index,
-                parent_event_id: run_event_id,
-                publisher: publisher.as_ref(),
-            };
-
-            let (telemetry, updated_stack) = match self.sub_action_registry.get(&step.kind_id) {
-                Some(runner) => {
-                    let resolved = effective_config(&runner.default_config(), &step.config);
-                    runner.execute(&resolved, &run_ctx).await
-                }
-                None => {
-                    warn!(
-                        "unknown sub-action kind_id: {} — skipping step",
-                        step.kind_id
-                    );
-                    (skipped_telemetry(index, &step.kind_id), None)
-                }
-            };
-
-            if let Some(new_stack) = updated_stack {
-                current_stack = new_stack;
-            }
-
-            let failure_msg = match &telemetry.outcome {
-                SubActionOutcome::Failed(m) => Some(m.clone()),
-                _ => None,
-            };
-            ctx.telemetry.push(telemetry);
-
-            if let Some(msg) = failure_msg {
-                ctx.outcome = ExecutionOutcome::Failed(msg);
-                return;
-            }
-        }
-    }
-
-    async fn run_concurrent(
-        &self,
-        steps: &[SubActionStep],
-        arg_stack: &ArgStack,
-        ctx: &mut ExecutionContext,
-        parent_event_id: EventId,
-    ) {
-        use futures_util::future::join_all;
-
-        let publisher: Arc<dyn forge_events::EventPublisher> =
-            Arc::clone(&self.bus) as Arc<dyn forge_events::EventPublisher>;
-
-        let futures: Vec<_> = steps
-            .iter()
-            .enumerate()
-            .filter(|(_, step)| step.enabled)
-            .map(|(index, step)| {
-                let run_event = Event::caused_by(
-                    EventSource::Core,
-                    "subaction.run",
-                    json!({
-                        "step_index": index,
-                        "kind": step.kind_id,
-                    }),
-                    parent_event_id,
-                );
-                let run_event_id = run_event.id;
-                self.bus.publish(run_event);
-
-                let run_ctx = RunContext {
-                    arg_stack,
-                    index,
-                    parent_event_id: run_event_id,
-                    publisher: publisher.as_ref(),
-                };
-
-                async move {
-                    match self.sub_action_registry.get(&step.kind_id) {
-                        Some(runner) => {
-                            let resolved = effective_config(&runner.default_config(), &step.config);
-                            runner.execute(&resolved, &run_ctx).await
-                        }
-                        None => {
-                            warn!(
-                                "unknown sub-action kind_id: {} — skipping step",
-                                step.kind_id
-                            );
-                            (skipped_telemetry(index, &step.kind_id), None)
-                        }
-                    }
-                }
-            })
-            .collect();
-
-        let results = join_all(futures).await;
-
-        let mut first_failure: Option<String> = None;
-        for (telemetry, _) in results {
-            if first_failure.is_none()
-                && let SubActionOutcome::Failed(msg) = &telemetry.outcome
-            {
-                first_failure = Some(msg.clone());
-            }
-            ctx.telemetry.push(telemetry);
-        }
-
-        if let Some(msg) = first_failure {
-            ctx.outcome = ExecutionOutcome::Failed(msg);
         }
     }
 }
@@ -392,7 +276,7 @@ async fn run_quick_action_loop(
     }
 }
 
-fn skipped_telemetry(index: usize, kind_id: &str) -> SubActionTelemetry {
+pub(crate) fn skipped_telemetry(index: usize, kind_id: &str) -> SubActionTelemetry {
     SubActionTelemetry {
         index,
         kind: kind_id.to_owned(),

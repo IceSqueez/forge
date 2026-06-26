@@ -242,3 +242,388 @@ impl ChainExecutor for ChainScope {
         self.cancel.clone()
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use std::collections::BTreeMap;
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use forge_registry::{FormField, SubActionCategory, SubActionConfig, SubActionRunner};
+    use forge_types::Variant;
+    use time::OffsetDateTime;
+
+    use super::*;
+
+    struct NoopPublisher;
+
+    impl EventPublisher for NoopPublisher {
+        fn publish(&self, _event: Event) {}
+    }
+
+    /// Runner whose outcome, arg-stack mutation, and side effects are scripted
+    /// per-test. `runs` and `observed` are shared `Arc`s so a test can inspect
+    /// them after the runner has been moved into the registry.
+    struct ScriptedRunner {
+        id: String,
+        outcome: SubActionOutcome,
+        set_binding: Option<(String, Variant)>,
+        observed: Arc<Mutex<Vec<BTreeMap<String, Variant>>>>,
+        cancel_on_run: Option<CancelSignal>,
+        runs: Arc<AtomicUsize>,
+    }
+
+    fn scripted(id: &str, outcome: SubActionOutcome) -> ScriptedRunner {
+        ScriptedRunner {
+            id: id.to_owned(),
+            outcome,
+            set_binding: None,
+            observed: Arc::new(Mutex::new(Vec::new())),
+            cancel_on_run: None,
+            runs: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    #[async_trait]
+    impl SubActionRunner for ScriptedRunner {
+        fn id(&self) -> &str {
+            &self.id
+        }
+        fn category(&self) -> SubActionCategory {
+            SubActionCategory::Util
+        }
+        fn label(&self) -> &str {
+            ""
+        }
+        fn summary(&self) -> &str {
+            ""
+        }
+        fn search_text(&self) -> &str {
+            ""
+        }
+        fn icon_name(&self) -> &str {
+            ""
+        }
+        fn default_config(&self) -> SubActionConfig {
+            BTreeMap::new()
+        }
+        fn config_fields(&self) -> Vec<FormField> {
+            Vec::new()
+        }
+        fn validate_config(&self, _: &SubActionConfig) -> Result<(), RegistryError> {
+            Ok(())
+        }
+        async fn execute(
+            &self,
+            _config: &SubActionConfig,
+            ctx: &RunContext<'_>,
+        ) -> (SubActionTelemetry, Option<ArgStack>) {
+            self.runs.fetch_add(1, Ordering::Relaxed);
+            self.observed.lock().unwrap().push(ctx.arg_stack.snapshot());
+            if let Some(c) = &self.cancel_on_run {
+                c.cancel();
+            }
+            let updated = self
+                .set_binding
+                .as_ref()
+                .map(|(k, v)| ctx.arg_stack.clone().set(k.clone(), v.clone()));
+            let tel = SubActionTelemetry {
+                index: ctx.index,
+                kind: self.id.clone(),
+                started_at: OffsetDateTime::now_utc(),
+                duration_ms: 0,
+                outcome: self.outcome.clone(),
+            };
+            (tel, updated)
+        }
+    }
+
+    fn registry(runners: Vec<Box<dyn SubActionRunner>>) -> Arc<SubActionRegistry> {
+        let mut reg = SubActionRegistry::new();
+        for r in runners {
+            reg.register(r).unwrap();
+        }
+        Arc::new(reg)
+    }
+
+    fn engine(reg: Arc<SubActionRegistry>, max_nesting_depth: u32) -> Arc<ChainEngine> {
+        let publisher: Arc<dyn EventPublisher> = Arc::new(NoopPublisher);
+        Arc::new(ChainEngine::new(
+            reg,
+            publisher,
+            Config { max_nesting_depth },
+        ))
+    }
+
+    fn step(kind: &str) -> SubActionStep {
+        SubActionStep {
+            kind_id: kind.to_owned(),
+            config: BTreeMap::new(),
+            enabled: true,
+            label: None,
+        }
+    }
+
+    // ---- Depth bound (invariant 1) -------------------------------------------
+
+    #[tokio::test]
+    async fn child_chain_entry_admitted_only_within_the_depth_bound() {
+        // root_scope sits at depth 0; its first child chain enters depth 1. The
+        // bound is the deepest child level allowed, so 0 rejects the first child
+        // chain and any value >= 1 admits it. Deeper nesting is unreachable from
+        // the public surface (no depth>0 scope constructor yet), so the reachable
+        // boundary is exactly {0 rejects, 1 admits}.
+        for (max_depth, admit) in [(0u32, false), (1, true), (4, true)] {
+            let reg = registry(vec![Box::new(scripted("d.ok", SubActionOutcome::Success))]);
+            let eng = engine(reg, max_depth);
+            let scope = eng.root_scope(CancelSignal::new());
+            let result = scope
+                .run_child_chain(&[step("d.ok")], &ArgStack::new(), EventId::new())
+                .await;
+            if admit {
+                let outcome =
+                    result.unwrap_or_else(|e| panic!("max_depth={max_depth} rejected: {e:?}"));
+                assert_eq!(outcome.signal, ChainSignal::Completed);
+            } else {
+                match result {
+                    Err(RegistryError::DepthExceeded(d)) => assert_eq!(d, 1),
+                    Err(e) => panic!("max_depth={max_depth} wrong error: {e:?}"),
+                    Ok(_) => panic!("max_depth={max_depth} should have rejected child chain"),
+                }
+            }
+        }
+    }
+
+    // ---- Cancellation (invariant 2) ------------------------------------------
+
+    #[tokio::test]
+    async fn pre_cancelled_signal_aborts_sequential_before_any_step_runs() {
+        let runs = Arc::new(AtomicUsize::new(0));
+        let mut r = scripted("seq.ok", SubActionOutcome::Success);
+        r.runs = Arc::clone(&runs);
+        let eng = engine(registry(vec![Box::new(r)]), 8);
+
+        let cancel = CancelSignal::new();
+        cancel.cancel();
+        let run = eng
+            .run_sequential(&[step("seq.ok")], &ArgStack::new(), EventId::new(), &cancel)
+            .await;
+
+        assert_eq!(run.signal, ChainSignal::Aborted);
+        assert!(run.telemetry.is_empty());
+        assert_eq!(runs.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn cancellation_mid_chain_aborts_with_partial_telemetry() {
+        let cancel = CancelSignal::new();
+        let downstream_runs = Arc::new(AtomicUsize::new(0));
+
+        let mut first = scripted("seq.first", SubActionOutcome::Success);
+        first.cancel_on_run = Some(cancel.clone());
+        let mut second = scripted("seq.second", SubActionOutcome::Success);
+        second.runs = Arc::clone(&downstream_runs);
+
+        let eng = engine(registry(vec![Box::new(first), Box::new(second)]), 8);
+        let run = eng
+            .run_sequential(
+                &[step("seq.first"), step("seq.second")],
+                &ArgStack::new(),
+                EventId::new(),
+                &cancel,
+            )
+            .await;
+
+        assert_eq!(run.signal, ChainSignal::Aborted);
+        assert_eq!(run.telemetry.len(), 1);
+        assert_eq!(run.telemetry[0].kind, "seq.first");
+        assert_eq!(downstream_runs.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn pre_cancelled_signal_aborts_concurrent_run() {
+        let eng = engine(
+            registry(vec![Box::new(scripted("c.x", SubActionOutcome::Success))]),
+            8,
+        );
+        let cancel = CancelSignal::new();
+        cancel.cancel();
+        let run = eng
+            .run_concurrent(&[step("c.x")], &ArgStack::new(), EventId::new(), &cancel)
+            .await;
+
+        assert_eq!(run.signal, ChainSignal::Aborted);
+        assert!(run.telemetry.is_empty());
+    }
+
+    #[test]
+    fn cancel_signal_propagates_through_clones() {
+        // Why: child chains share the parent's cancel via clone; cancelling one
+        // handle must be observable on every clone or nested chains can't stop.
+        let signal = CancelSignal::new();
+        let child = signal.clone();
+        assert!(!child.is_cancelled());
+        signal.cancel();
+        assert!(child.is_cancelled());
+    }
+
+    // ---- Sequential outcome (invariant 3) ------------------------------------
+
+    #[tokio::test]
+    async fn sequential_step_failure_halts_chain_with_error_signal() {
+        let downstream_runs = Arc::new(AtomicUsize::new(0));
+        let first = scripted("seq.fail", SubActionOutcome::Failed("boom".to_owned()));
+        let mut second = scripted("seq.after", SubActionOutcome::Success);
+        second.runs = Arc::clone(&downstream_runs);
+
+        let eng = engine(registry(vec![Box::new(first), Box::new(second)]), 8);
+        let run = eng
+            .run_sequential(
+                &[step("seq.fail"), step("seq.after")],
+                &ArgStack::new(),
+                EventId::new(),
+                &CancelSignal::new(),
+            )
+            .await;
+
+        assert_eq!(run.signal, ChainSignal::Error("boom".to_owned()));
+        assert_eq!(run.telemetry.len(), 1);
+        assert!(
+            matches!(&run.telemetry[0].outcome, SubActionOutcome::Failed(m) if m == "boom"),
+            "failed step must be recorded in telemetry"
+        );
+        assert_eq!(downstream_runs.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn unknown_kind_id_is_skipped_not_failed_and_chain_continues() {
+        let eng = engine(
+            registry(vec![Box::new(scripted(
+                "seq.known",
+                SubActionOutcome::Success,
+            ))]),
+            8,
+        );
+        let run = eng
+            .run_sequential(
+                &[step("seq.missing"), step("seq.known")],
+                &ArgStack::new(),
+                EventId::new(),
+                &CancelSignal::new(),
+            )
+            .await;
+
+        assert_eq!(run.signal, ChainSignal::Completed);
+        assert_eq!(run.telemetry.len(), 2);
+        assert!(matches!(
+            run.telemetry[0].outcome,
+            SubActionOutcome::Skipped(_)
+        ));
+        assert_eq!(run.telemetry[1].outcome, SubActionOutcome::Success);
+    }
+
+    #[tokio::test]
+    async fn updated_arg_stack_threads_into_the_next_step() {
+        let observed = Arc::new(Mutex::new(Vec::new()));
+        let mut producer = scripted("seq.producer", SubActionOutcome::Success);
+        producer.set_binding = Some(("token".to_owned(), Variant::Int(7)));
+        let mut consumer = scripted("seq.consumer", SubActionOutcome::Success);
+        consumer.observed = Arc::clone(&observed);
+
+        let eng = engine(registry(vec![Box::new(producer), Box::new(consumer)]), 8);
+        let run = eng
+            .run_sequential(
+                &[step("seq.producer"), step("seq.consumer")],
+                &ArgStack::new(),
+                EventId::new(),
+                &CancelSignal::new(),
+            )
+            .await;
+
+        let seen = observed.lock().unwrap();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0].get("token"), Some(&Variant::Int(7)));
+        assert_eq!(run.arg_stack.get("token"), Some(&Variant::Int(7)));
+    }
+
+    #[tokio::test]
+    async fn disabled_step_is_neither_executed_nor_recorded() {
+        let runs = Arc::new(AtomicUsize::new(0));
+        let mut r = scripted("seq.disabled", SubActionOutcome::Success);
+        r.runs = Arc::clone(&runs);
+        let eng = engine(registry(vec![Box::new(r)]), 8);
+
+        let disabled = SubActionStep {
+            kind_id: "seq.disabled".to_owned(),
+            config: BTreeMap::new(),
+            enabled: false,
+            label: None,
+        };
+        let run = eng
+            .run_sequential(
+                &[disabled],
+                &ArgStack::new(),
+                EventId::new(),
+                &CancelSignal::new(),
+            )
+            .await;
+
+        assert_eq!(run.signal, ChainSignal::Completed);
+        assert!(run.telemetry.is_empty());
+        assert_eq!(runs.load(Ordering::Relaxed), 0);
+    }
+
+    // ---- Concurrent first-failure (invariant 4) ------------------------------
+
+    #[tokio::test]
+    async fn concurrent_run_reports_first_failure_in_step_order() {
+        let eng = engine(
+            registry(vec![
+                Box::new(scripted("c.ok", SubActionOutcome::Success)),
+                Box::new(scripted(
+                    "c.fail.a",
+                    SubActionOutcome::Failed("first".to_owned()),
+                )),
+                Box::new(scripted(
+                    "c.fail.b",
+                    SubActionOutcome::Failed("second".to_owned()),
+                )),
+            ]),
+            8,
+        );
+        let run = eng
+            .run_concurrent(
+                &[step("c.ok"), step("c.fail.a"), step("c.fail.b")],
+                &ArgStack::new(),
+                EventId::new(),
+                &CancelSignal::new(),
+            )
+            .await;
+
+        assert_eq!(run.signal, ChainSignal::Error("first".to_owned()));
+        assert_eq!(run.telemetry.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn concurrent_run_all_success_completes() {
+        let eng = engine(
+            registry(vec![
+                Box::new(scripted("c.a", SubActionOutcome::Success)),
+                Box::new(scripted("c.b", SubActionOutcome::Success)),
+            ]),
+            8,
+        );
+        let run = eng
+            .run_concurrent(
+                &[step("c.a"), step("c.b")],
+                &ArgStack::new(),
+                EventId::new(),
+                &CancelSignal::new(),
+            )
+            .await;
+
+        assert_eq!(run.signal, ChainSignal::Completed);
+        assert_eq!(run.telemetry.len(), 2);
+    }
+}

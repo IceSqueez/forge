@@ -369,6 +369,155 @@ mod tests {
         }
     }
 
+    struct FixedOutcomeRunner {
+        id: String,
+        outcome: SubActionOutcome,
+    }
+
+    #[async_trait]
+    impl forge_registry::SubActionRunner for FixedOutcomeRunner {
+        fn id(&self) -> &str {
+            &self.id
+        }
+        fn category(&self) -> SubActionCategory {
+            SubActionCategory::Util
+        }
+        fn label(&self) -> &str {
+            ""
+        }
+        fn summary(&self) -> &str {
+            ""
+        }
+        fn search_text(&self) -> &str {
+            ""
+        }
+        fn icon_name(&self) -> &str {
+            ""
+        }
+        fn default_config(&self) -> forge_registry::SubActionConfig {
+            BTreeMap::new()
+        }
+        fn config_fields(&self) -> Vec<FormField> {
+            Vec::new()
+        }
+        fn validate_config(
+            &self,
+            _: &forge_registry::SubActionConfig,
+        ) -> Result<(), RegistryError> {
+            Ok(())
+        }
+        async fn execute(
+            &self,
+            _: &forge_registry::SubActionConfig,
+            ctx: &RunContext<'_>,
+        ) -> (SubActionTelemetry, Option<ArgStack>) {
+            (
+                SubActionTelemetry {
+                    index: ctx.index,
+                    kind: self.id.clone(),
+                    started_at: OffsetDateTime::now_utc(),
+                    duration_ms: 0,
+                    outcome: self.outcome.clone(),
+                },
+                None,
+            )
+        }
+    }
+
+    /// Drives the private ChainSignal -> ExecutionOutcome mapping through the
+    /// public dispatch path and reads the recorded outcome back from history.
+    /// Only Completed->Success and Error->Failed are reachable here: the chain
+    /// foundation never emits Stop/Break/Continue, and the per-run cancel signal
+    /// is internal and unreachable by a runner, so Aborted->Cancelled cannot be
+    /// driven via ActionEngine (Aborted itself is covered at the chain level).
+    #[tokio::test]
+    async fn chain_signal_maps_to_recorded_execution_outcome() {
+        let dp: Arc<dyn DataProvider> = Arc::new(
+            SqliteBackend::open_with_key(":memory:", [0xcd; 32])
+                .await
+                .unwrap(),
+        );
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+
+        let mut reg = SubActionRegistry::new();
+        reg.register(Box::new(FixedOutcomeRunner {
+            id: "map.success".to_owned(),
+            outcome: SubActionOutcome::Success,
+        }))
+        .unwrap();
+        reg.register(Box::new(FixedOutcomeRunner {
+            id: "map.failure".to_owned(),
+            outcome: SubActionOutcome::Failed("kaboom".to_owned()),
+        }))
+        .unwrap();
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::new(reg),
+        );
+
+        let cases = [
+            ("map.success", ExecutionOutcome::Success),
+            ("map.failure", ExecutionOutcome::Failed("kaboom".to_owned())),
+        ];
+
+        // The migrations seed exactly one queue (the nil ULID); the actions FK
+        // references it, so reuse that row rather than inventing a queue id.
+        let default_queue: forge_types::QueueId =
+            serde_json::from_str("\"00000000000000000000000000\"").unwrap();
+
+        for (kind, expected) in cases {
+            let action_id = ActionId::new();
+            let action = forge_types::Action {
+                id: action_id,
+                name: "map".to_owned(),
+                group: None,
+                queue_id: default_queue,
+                enabled: true,
+                concurrent: false,
+                bypass_pause: false,
+                execution_mode: forge_types::ExecutionMode::Sequential,
+                description: None,
+                sub_actions: vec![SubActionStep {
+                    kind_id: kind.to_owned(),
+                    config: BTreeMap::new(),
+                    enabled: true,
+                    label: None,
+                }],
+            };
+            dp.action_repo().save(&action).await.unwrap();
+
+            engine
+                .dispatch(ExecutionRequest {
+                    action_id,
+                    trigger_event_id: EventId::new(),
+                    initial_args: ArgStack::new(),
+                })
+                .await
+                .unwrap();
+
+            let mut recorded = None;
+            for _ in 0..40 {
+                let recent = dp
+                    .history_repo()
+                    .recent_for_action(action_id, 1)
+                    .await
+                    .unwrap();
+                if let Some(ctx) = recent.into_iter().next() {
+                    recorded = Some(ctx.outcome);
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+            assert_eq!(
+                recorded.expect("no history recorded"),
+                expected,
+                "kind={kind}"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn quick_action_resolves_effective_config_before_execute() {
         let dp: Arc<dyn DataProvider> = Arc::new(

@@ -1,3 +1,4 @@
+mod core_args_set;
 mod core_file_delete;
 mod core_file_list;
 mod core_file_read;
@@ -39,6 +40,7 @@ mod script_run_inline;
 mod script_run_named;
 mod twitch_chat_send_message;
 
+pub use core_args_set::CoreArgsSetRunner;
 pub use core_file_delete::CoreFileDeleteRunner;
 pub use core_file_list::CoreFileListRunner;
 pub use core_file_read::CoreFileReadRunner;
@@ -93,6 +95,7 @@ pub fn register_core_sub_actions(
     publisher: Arc<dyn EventPublisher>,
     settings: Arc<dyn SettingsRepo>,
 ) -> Result<(), RegistryError> {
+    reg.register(Box::new(CoreArgsSetRunner))?;
     reg.register(Box::new(CoreGlobalsSetRunner::new(Arc::clone(&globals))))?;
     reg.register(Box::new(CoreGlobalsGetRunner::new(Arc::clone(&globals))))?;
     reg.register(Box::new(CoreGlobalsIncrementRunner::new(Arc::clone(

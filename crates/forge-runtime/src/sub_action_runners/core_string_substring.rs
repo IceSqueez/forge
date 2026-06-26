@@ -197,12 +197,7 @@ mod tests {
 
     async fn run(cfg: &SubActionConfig) -> (SubActionTelemetry, Option<ArgStack>) {
         let stack = ArgStack::new();
-        let ctx = RunContext {
-            arg_stack: &stack,
-            index: 0,
-            parent_event_id: EventId::new(),
-            publisher: &NullPublisher,
-        };
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
         CoreStringSubstringRunner.execute(cfg, &ctx).await
     }
 

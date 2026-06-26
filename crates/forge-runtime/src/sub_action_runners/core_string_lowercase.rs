@@ -115,12 +115,7 @@ mod tests {
             Variant::String("HELLO Wörld".to_owned()),
         );
         let stack = ArgStack::new();
-        let ctx = RunContext {
-            arg_stack: &stack,
-            index: 0,
-            parent_event_id: EventId::new(),
-            publisher: &NullPublisher,
-        };
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
         let out = CoreStringLowercaseRunner
             .execute(&cfg, &ctx)
             .await

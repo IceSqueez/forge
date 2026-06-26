@@ -1,5 +1,6 @@
 mod core_action_disable;
 mod core_action_enable;
+mod core_action_run;
 mod core_action_toggle;
 mod core_args_set;
 mod core_clipboard_copy;
@@ -65,6 +66,7 @@ mod twitch_chat_send_message;
 
 pub use core_action_disable::CoreActionDisableRunner;
 pub use core_action_enable::CoreActionEnableRunner;
+pub use core_action_run::CoreActionRunRunner;
 pub use core_action_toggle::CoreActionToggleRunner;
 pub use core_args_set::CoreArgsSetRunner;
 pub use core_clipboard_copy::CoreClipboardCopyRunner;
@@ -156,6 +158,7 @@ pub fn register_core_sub_actions(
     reg.register(Box::new(CoreActionEnableRunner::new(Arc::clone(&actions))))?;
     reg.register(Box::new(CoreActionDisableRunner::new(Arc::clone(&actions))))?;
     reg.register(Box::new(CoreActionToggleRunner::new(Arc::clone(&actions))))?;
+    reg.register(Box::new(CoreActionRunRunner::new(Arc::clone(&actions))))?;
     reg.register(Box::new(CoreTriggerEnableRunner::new(Arc::clone(
         &trigger_instances,
     ))))?;

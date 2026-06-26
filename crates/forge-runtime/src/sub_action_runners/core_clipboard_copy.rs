@@ -112,12 +112,7 @@ mod tests {
         let mut cfg = SubActionConfig::new();
         cfg.insert("text".to_owned(), Variant::String(text.to_owned()));
         let publisher = NullPublisher;
-        let ctx = RunContext {
-            arg_stack: &stack,
-            index: 0,
-            parent_event_id: EventId::new(),
-            publisher: &publisher,
-        };
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &publisher);
         CoreClipboardCopyRunner::new(clipboard)
             .execute(&cfg, &ctx)
             .await

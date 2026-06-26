@@ -47,13 +47,44 @@ impl ChainEngine {
         }
     }
 
+    /// Drives an action's top-level chain sequentially: builds the depth-0 scope
+    /// the steps re-enter through and delegates to the executor-driven loop.
     pub async fn run_sequential(
-        &self,
+        self: &Arc<Self>,
         steps: &[SubActionStep],
         arg_stack: &ArgStack,
         parent_event_id: EventId,
         cancel: &CancelSignal,
     ) -> ChainRun {
+        let scope = self.root_scope(cancel.clone());
+        self.drive_sequential(steps, arg_stack, parent_event_id, &scope)
+            .await
+    }
+
+    /// Drives an action's top-level chain concurrently from the depth-0 scope.
+    pub async fn run_concurrent(
+        self: &Arc<Self>,
+        steps: &[SubActionStep],
+        arg_stack: &ArgStack,
+        parent_event_id: EventId,
+        cancel: &CancelSignal,
+    ) -> ChainRun {
+        let scope = self.root_scope(cancel.clone());
+        self.drive_concurrent(steps, arg_stack, parent_event_id, &scope)
+            .await
+    }
+
+    /// Runs `steps` in order, embedding `executor` in each step's `RunContext`
+    /// so a composite step re-enters one nesting level down. Cancellation is read
+    /// from the executor's shared signal and polled at every step boundary.
+    async fn drive_sequential(
+        &self,
+        steps: &[SubActionStep],
+        arg_stack: &ArgStack,
+        parent_event_id: EventId,
+        executor: &dyn ChainExecutor,
+    ) -> ChainRun {
+        let cancel = executor.cancel_signal();
         let mut current = arg_stack.clone();
         let mut telemetry = Vec::new();
 
@@ -83,6 +114,8 @@ impl ChainEngine {
                 index,
                 parent_event_id: run_event_id,
                 publisher: self.publisher.as_ref(),
+                executor,
+                cancel: cancel.clone(),
             };
 
             let (tel, updated) = match self.registry.get(&step.kind_id) {
@@ -125,15 +158,19 @@ impl ChainEngine {
         }
     }
 
-    pub async fn run_concurrent(
+    /// Concurrent sibling of `drive_sequential`: every enabled step runs on its
+    /// own future with the same embedded `executor`; the first failure in step
+    /// order becomes the chain's `Error` signal.
+    async fn drive_concurrent(
         &self,
         steps: &[SubActionStep],
         arg_stack: &ArgStack,
         parent_event_id: EventId,
-        cancel: &CancelSignal,
+        executor: &dyn ChainExecutor,
     ) -> ChainRun {
         use futures_util::future::join_all;
 
+        let cancel = executor.cancel_signal();
         if cancel.is_cancelled() {
             return ChainRun {
                 signal: ChainSignal::Aborted,
@@ -161,6 +198,8 @@ impl ChainEngine {
                     index,
                     parent_event_id: run_event_id,
                     publisher: self.publisher.as_ref(),
+                    executor,
+                    cancel: cancel.clone(),
                 };
 
                 async move {
@@ -226,9 +265,14 @@ impl ChainExecutor for ChainScope {
             return Err(RegistryError::DepthExceeded(child_depth));
         }
 
+        let child_scope = ChainScope {
+            engine: Arc::clone(&self.engine),
+            depth: child_depth,
+            cancel: self.cancel.clone(),
+        };
         let run = self
             .engine
-            .run_sequential(steps, arg_stack, parent_event_id, &self.cancel)
+            .drive_sequential(steps, arg_stack, parent_event_id, &child_scope)
             .await;
 
         Ok(ChildChainOutcome {

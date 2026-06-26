@@ -180,12 +180,7 @@ mod tests {
 
     async fn run(cfg: &SubActionConfig) -> (SubActionOutcome, Option<ArgStack>) {
         let stack = ArgStack::new();
-        let ctx = RunContext {
-            arg_stack: &stack,
-            index: 0,
-            parent_event_id: EventId::new(),
-            publisher: &NullPublisher,
-        };
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
         let (telemetry, out) = CoreMathEvaluateRunner::new().execute(cfg, &ctx).await;
         (telemetry.outcome, out)
     }

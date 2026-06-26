@@ -358,12 +358,7 @@ mod tests {
     }
 
     fn make_run_context<'a>(stack: &'a ArgStack) -> RunContext<'a> {
-        RunContext {
-            arg_stack: stack,
-            index: 0,
-            parent_event_id: EventId::new(),
-            publisher: &NoopPublisher,
-        }
+        RunContext::leaf(stack, 0, EventId::new(), &NoopPublisher)
     }
 
     #[tokio::test]

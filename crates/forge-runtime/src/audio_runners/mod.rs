@@ -211,12 +211,7 @@ mod tests {
     }
 
     fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
-        RunContext {
-            arg_stack: stack,
-            index: 0,
-            parent_event_id: EventId::new(),
-            publisher: &NullPublisher,
-        }
+        RunContext::leaf(stack, 0, EventId::new(), &NullPublisher)
     }
 
     fn config(pairs: &[(&str, Variant)]) -> SubActionConfig {

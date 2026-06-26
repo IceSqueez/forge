@@ -125,12 +125,7 @@ mod tests {
 
     async fn run(config: &SubActionConfig) -> ArgStack {
         let stack = ArgStack::new();
-        let ctx = RunContext {
-            arg_stack: &stack,
-            index: 0,
-            parent_event_id: EventId::new(),
-            publisher: &NullPublisher,
-        };
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
         let (telemetry, new_stack) = CoreArgsSetRunner.execute(config, &ctx).await;
         assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
         new_stack.expect("args.set always returns a mutated stack")

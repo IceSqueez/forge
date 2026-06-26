@@ -131,12 +131,7 @@ mod tests {
     }
 
     async fn run(cfg: &SubActionConfig, stack: &ArgStack) -> Option<ArgStack> {
-        let ctx = RunContext {
-            arg_stack: stack,
-            index: 0,
-            parent_event_id: EventId::new(),
-            publisher: &NullPublisher,
-        };
+        let ctx = RunContext::leaf(stack, 0, EventId::new(), &NullPublisher);
         CoreStringConcatRunner.execute(cfg, &ctx).await.1
     }
 

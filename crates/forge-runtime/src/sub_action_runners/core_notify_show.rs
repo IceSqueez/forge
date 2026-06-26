@@ -177,12 +177,7 @@ mod tests {
         cfg: SubActionConfig,
     ) -> SubActionOutcome {
         let publisher = NullPublisher;
-        let ctx = RunContext {
-            arg_stack: &stack,
-            index: 0,
-            parent_event_id: EventId::new(),
-            publisher: &publisher,
-        };
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &publisher);
         CoreNotifyShowRunner::new(notify)
             .execute(&cfg, &ctx)
             .await

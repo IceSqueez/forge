@@ -174,12 +174,7 @@ mod tests {
         cfg: &SubActionConfig,
         stack: ArgStack,
     ) -> (SubActionOutcome, Option<ArgStack>) {
-        let ctx = RunContext {
-            arg_stack: &stack,
-            index: 0,
-            parent_event_id: EventId::new(),
-            publisher: &NullPublisher,
-        };
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
         let (t, out) = CoreTimeParseRunner.execute(cfg, &ctx).await;
         (t.outcome, out)
     }

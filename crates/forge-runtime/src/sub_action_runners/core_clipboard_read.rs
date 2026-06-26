@@ -125,12 +125,7 @@ mod tests {
         cfg.insert("into_var".to_owned(), Variant::String(into_var.to_owned()));
         let stack = ArgStack::new();
         let publisher = NullPublisher;
-        let ctx = RunContext {
-            arg_stack: &stack,
-            index: 0,
-            parent_event_id: EventId::new(),
-            publisher: &publisher,
-        };
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &publisher);
         let (telemetry, updated) = CoreClipboardReadRunner::new(clipboard)
             .execute(&cfg, &ctx)
             .await;

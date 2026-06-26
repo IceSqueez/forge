@@ -285,12 +285,7 @@ async fn run_quick_action_loop(
         bus.publish(run_event);
 
         let stack = ArgStack::new();
-        let run_ctx = RunContext {
-            arg_stack: &stack,
-            index: 0,
-            parent_event_id: run_event_id,
-            publisher: publisher.as_ref(),
-        };
+        let run_ctx = RunContext::leaf(&stack, 0, run_event_id, publisher.as_ref());
 
         let (telemetry, _) = match sub_action_registry.get(&req.step.kind_id) {
             Some(runner) => {

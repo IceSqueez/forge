@@ -204,12 +204,7 @@ mod tests {
     ) -> (Arc<RecordingPublisher>, SubActionOutcome, Option<ArgStack>) {
         let recorder = Arc::new(RecordingPublisher::default());
         let runner = ServerBroadcastRunner::new(recorder.clone());
-        let ctx = RunContext {
-            arg_stack,
-            index: 0,
-            parent_event_id: parent,
-            publisher: &NullPublisher,
-        };
+        let ctx = RunContext::leaf(arg_stack, 0, parent, &NullPublisher);
         let (telemetry, updated_stack) = runner.execute(config, &ctx).await;
         (recorder, telemetry.outcome, updated_stack)
     }

@@ -225,12 +225,7 @@ mod tests {
 
     async fn replaced(cfg: &SubActionConfig) -> String {
         let stack = ArgStack::new();
-        let ctx = RunContext {
-            arg_stack: &stack,
-            index: 0,
-            parent_event_id: EventId::new(),
-            publisher: &NullPublisher,
-        };
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
         let out = CoreStringReplaceRunner.execute(cfg, &ctx).await.1.unwrap();
         out.get("string.result")
             .and_then(|v| v.as_str())

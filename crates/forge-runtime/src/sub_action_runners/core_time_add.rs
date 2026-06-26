@@ -216,12 +216,7 @@ mod tests {
 
     async fn run(cfg: &SubActionConfig) -> (SubActionOutcome, Option<ArgStack>) {
         let stack = ArgStack::new();
-        let ctx = RunContext {
-            arg_stack: &stack,
-            index: 0,
-            parent_event_id: EventId::new(),
-            publisher: &NullPublisher,
-        };
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
         let (t, out) = CoreTimeAddRunner.execute(cfg, &ctx).await;
         (t.outcome, out)
     }

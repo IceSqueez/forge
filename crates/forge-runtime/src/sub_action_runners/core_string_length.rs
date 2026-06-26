@@ -128,12 +128,7 @@ mod tests {
         cfg.insert("source".to_owned(), Variant::String("Привіт".to_owned()));
         cfg.insert("mode".to_owned(), Variant::String(mode.to_owned()));
         let stack = ArgStack::new();
-        let ctx = RunContext {
-            arg_stack: &stack,
-            index: 0,
-            parent_event_id: EventId::new(),
-            publisher: &NullPublisher,
-        };
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
         let out = CoreStringLengthRunner.execute(&cfg, &ctx).await.1.unwrap();
         out.get("string.result").and_then(|v| v.as_int()).unwrap()
     }

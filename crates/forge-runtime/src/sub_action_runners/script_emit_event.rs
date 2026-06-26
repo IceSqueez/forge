@@ -182,12 +182,7 @@ mod tests {
     ) -> (Arc<RecordingPublisher>, SubActionOutcome) {
         let recorder = Arc::new(RecordingPublisher::default());
         let runner = ScriptEmitEventRunner::new(recorder.clone());
-        let ctx = RunContext {
-            arg_stack,
-            index: 0,
-            parent_event_id: parent,
-            publisher: &NullPublisher,
-        };
+        let ctx = RunContext::leaf(arg_stack, 0, parent, &NullPublisher);
         let (telemetry, _) = runner.execute(config, &ctx).await;
         (recorder, telemetry.outcome)
     }

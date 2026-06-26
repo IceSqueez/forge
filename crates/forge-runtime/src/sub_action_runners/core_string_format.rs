@@ -122,12 +122,7 @@ mod tests {
         // %name% is already resolved upstream; the runner must NOT re-interpolate it,
         // even when the arg stack carries a matching binding.
         let stack = ArgStack::new().set("name".to_owned(), Variant::String("Alice".to_owned()));
-        let ctx = RunContext {
-            arg_stack: &stack,
-            index: 0,
-            parent_event_id: EventId::new(),
-            publisher: &NullPublisher,
-        };
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
         let out = CoreStringFormatRunner.execute(&cfg, &ctx).await.1.unwrap();
         assert_eq!(
             out.get("string.formatted").and_then(|v| v.as_str()),

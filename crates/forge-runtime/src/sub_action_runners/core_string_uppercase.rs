@@ -112,12 +112,7 @@ mod tests {
         let mut cfg = SubActionConfig::new();
         cfg.insert("source".to_owned(), Variant::String("café".to_owned()));
         let stack = ArgStack::new();
-        let ctx = RunContext {
-            arg_stack: &stack,
-            index: 0,
-            parent_event_id: EventId::new(),
-            publisher: &NullPublisher,
-        };
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
         let out = CoreStringUppercaseRunner
             .execute(&cfg, &ctx)
             .await

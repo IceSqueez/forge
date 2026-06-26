@@ -1,6 +1,6 @@
-use std::path::{Component, PathBuf};
 use std::sync::Arc;
 
+use super::file_sandbox::resolve_sandboxed;
 use async_trait::async_trait;
 use forge_events::{Event, EventSource};
 use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
@@ -161,27 +161,6 @@ impl SubActionRunner for CoreFileReadRunner {
             None,
         )
     }
-}
-
-fn resolve_sandboxed(rel: &str) -> Result<PathBuf, String> {
-    if rel.is_empty() {
-        return Err("path is empty".to_owned());
-    }
-    if rel.starts_with('/') || rel.starts_with('\\') {
-        return Err("absolute paths are forbidden".to_owned());
-    }
-    let candidate = PathBuf::from(rel);
-    for component in candidate.components() {
-        match component {
-            Component::ParentDir => return Err("parent dir traversal forbidden".to_owned()),
-            Component::Prefix(_) | Component::RootDir => {
-                return Err("rooted paths are forbidden".to_owned());
-            }
-            _ => {}
-        }
-    }
-    let root = forge_platform_core::paths::data_dir().join("assets");
-    Ok(root.join(candidate))
 }
 
 #[cfg(test)]

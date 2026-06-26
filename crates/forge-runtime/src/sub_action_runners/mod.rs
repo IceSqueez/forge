@@ -1,4 +1,7 @@
+mod core_file_delete;
+mod core_file_list;
 mod core_file_read;
+mod core_file_write;
 mod core_globals_delete;
 mod core_globals_get;
 mod core_globals_increment;
@@ -26,12 +29,16 @@ mod core_time_diff;
 mod core_time_format;
 mod core_time_now;
 mod core_time_parse;
+mod file_sandbox;
 mod interpolate;
 mod script_run_inline;
 mod script_run_named;
 mod twitch_chat_send_message;
 
+pub use core_file_delete::CoreFileDeleteRunner;
+pub use core_file_list::CoreFileListRunner;
 pub use core_file_read::CoreFileReadRunner;
+pub use core_file_write::CoreFileWriteRunner;
 pub use core_globals_delete::CoreGlobalsDeleteRunner;
 pub use core_globals_get::CoreGlobalsGetRunner;
 pub use core_globals_increment::CoreGlobalsIncrementRunner;
@@ -87,6 +94,9 @@ pub fn register_core_sub_actions(
     reg.register(Box::new(CoreLogicWaitRunner))?;
     reg.register(Box::new(CoreLogWriteRunner::new(Arc::clone(&globals))))?;
     reg.register(Box::new(CoreFileReadRunner::new(Arc::clone(&globals))))?;
+    reg.register(Box::new(CoreFileWriteRunner::new(Arc::clone(&globals))))?;
+    reg.register(Box::new(CoreFileDeleteRunner::new(Arc::clone(&globals))))?;
+    reg.register(Box::new(CoreFileListRunner::new(Arc::clone(&globals))))?;
     reg.register(Box::new(CoreRandomIntRunner::new(Arc::clone(&globals))))?;
     reg.register(Box::new(CoreRandomFloatRunner::new(Arc::clone(&globals))))?;
     reg.register(Box::new(CoreRandomBoolRunner::new(Arc::clone(&globals))))?;

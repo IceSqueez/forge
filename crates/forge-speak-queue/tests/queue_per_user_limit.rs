@@ -111,6 +111,8 @@ fn speak_req(viewer: &str, text: &str) -> SpeakRequest {
         text: text.into(),
         priority: Priority::Normal,
         alias_override: None,
+        engine_override: None,
+        voice_override: None,
         source_event_id: EventId::new(),
     }
 }

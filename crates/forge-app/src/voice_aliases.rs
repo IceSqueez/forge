@@ -199,6 +199,8 @@ pub fn update(
                         text: forge_widgets::tr!("tts_aliases_preview_text"),
                         priority: Priority::Normal,
                         alias_override: None,
+                        engine_override: None,
+                        voice_override: None,
                         source_event_id: forge_types::EventId::new(),
                     };
                     handle

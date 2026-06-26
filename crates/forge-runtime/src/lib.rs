@@ -30,7 +30,7 @@ pub use queue_scheduler::{
 };
 pub use script_registry::{CompiledScript, ScriptRegistry, ScriptRegistryError};
 pub use sound_player::{SoundPlayer, SoundPlayerError};
-pub use speak_dispatcher::{SpeakDispatchError, SpeakDispatcher};
+pub use speak_dispatcher::{SpeakDispatchError, SpeakDispatcher, VoiceDescriptor};
 pub use sub_action_runners::register_core_sub_actions;
 pub use trigger_evaluator::{TriggerEvaluatorHandle, spawn_trigger_evaluator};
 pub use triggers::register_core_triggers;

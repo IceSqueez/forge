@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_runtime::{SpeakDispatchError, SpeakDispatcher};
+use forge_runtime::{SpeakDispatchError, SpeakDispatcher, VoiceDescriptor};
 use forge_script::SpeakRequester;
 use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest};
-use forge_voice::AliasId;
+use forge_tts_core::{EngineId, VoiceId};
+use forge_voice::{AliasId, AliasState, VoiceAlias};
 
 pub struct SpeakBridge {
     handle: Arc<SpeakQueueHandle>,
@@ -15,20 +16,35 @@ impl SpeakBridge {
         Self { handle }
     }
 
-    async fn enqueue(&self, text: String, voice_id_override: Option<String>) -> Result<(), String> {
+    async fn enqueue(
+        &self,
+        text: String,
+        alias_override: Option<AliasId>,
+        engine_override: Option<EngineId>,
+        voice_override: Option<VoiceId>,
+    ) -> Result<(), String> {
         let request = SpeakRequest {
             request_id: RequestId::new(),
             viewer_id: "system".to_owned(),
             viewer_name: "Forge".to_owned(),
             text,
             priority: Priority::Normal,
-            alias_override: voice_id_override.map(AliasId),
+            alias_override,
+            engine_override,
+            voice_override,
             source_event_id: forge_types::EventId::new(),
         };
         self.handle
             .send(SpeakCommand::Enqueue(request))
             .await
             .map_err(|e| e.to_string())
+    }
+
+    async fn dispatch(&self, cmd: SpeakCommand) -> Result<(), SpeakDispatchError> {
+        self.handle
+            .send(cmd)
+            .await
+            .map_err(|e| SpeakDispatchError::Dispatch(e.to_string()))
     }
 }
 
@@ -39,16 +55,124 @@ impl SpeakDispatcher for SpeakBridge {
         text: String,
         voice_id_override: Option<String>,
     ) -> Result<(), SpeakDispatchError> {
-        self.enqueue(text, voice_id_override)
+        self.enqueue(text, voice_id_override.map(AliasId), None, None)
             .await
             .map_err(SpeakDispatchError::Dispatch)
+    }
+
+    async fn speak_with_alias(
+        &self,
+        text: String,
+        alias_id: String,
+    ) -> Result<(), SpeakDispatchError> {
+        self.enqueue(text, Some(AliasId(alias_id)), None, None)
+            .await
+            .map_err(SpeakDispatchError::Dispatch)
+    }
+
+    async fn speak_with_engine(
+        &self,
+        text: String,
+        engine_id: String,
+    ) -> Result<(), SpeakDispatchError> {
+        self.enqueue(text, None, Some(EngineId(engine_id)), None)
+            .await
+            .map_err(SpeakDispatchError::Dispatch)
+    }
+
+    async fn speak_with_voice(
+        &self,
+        text: String,
+        voice_id: String,
+    ) -> Result<(), SpeakDispatchError> {
+        self.enqueue(text, None, None, Some(VoiceId(voice_id)))
+            .await
+            .map_err(SpeakDispatchError::Dispatch)
+    }
+
+    async fn stop_current(&self) -> Result<(), SpeakDispatchError> {
+        self.dispatch(SpeakCommand::Skip).await
+    }
+
+    async fn pause(&self) -> Result<(), SpeakDispatchError> {
+        self.dispatch(SpeakCommand::Pause).await
+    }
+
+    async fn resume(&self) -> Result<(), SpeakDispatchError> {
+        self.dispatch(SpeakCommand::Resume).await
+    }
+
+    async fn skip_current(&self) -> Result<(), SpeakDispatchError> {
+        self.dispatch(SpeakCommand::Skip).await
+    }
+
+    async fn clear_keep_current(&self) -> Result<(), SpeakDispatchError> {
+        self.dispatch(SpeakCommand::ClearPending).await
+    }
+
+    async fn get_queue_depth(&self) -> usize {
+        self.handle.queue_depth()
+    }
+
+    async fn get_available_voices(&self) -> Vec<VoiceDescriptor> {
+        self.handle
+            .available_voices()
+            .iter()
+            .map(|v| VoiceDescriptor {
+                id: v.id.0.clone(),
+                name: v.name.clone(),
+                locale: v.locale.clone(),
+                engine_id: v.engine_id.0.clone(),
+            })
+            .collect()
+    }
+
+    async fn get_engines(&self) -> Vec<String> {
+        self.handle.engines().into_iter().map(|e| e.0).collect()
+    }
+
+    async fn alias_set(
+        &self,
+        viewer_id: String,
+        viewer_name: String,
+        engine_id: String,
+        voice_id: String,
+    ) -> Result<(), SpeakDispatchError> {
+        let alias = VoiceAlias {
+            id: AliasId::new(),
+            viewer_id,
+            viewer_name,
+            engine_id: EngineId(engine_id),
+            voice_id: VoiceId(voice_id),
+            pitch_semitones: None,
+            rate_multiplier: None,
+            state: AliasState::Active,
+        };
+        self.dispatch(SpeakCommand::SetAlias(alias)).await
+    }
+
+    async fn alias_switch(
+        &self,
+        viewer_id: String,
+        engine_id: String,
+        voice_id: String,
+    ) -> Result<(), SpeakDispatchError> {
+        self.dispatch(SpeakCommand::SwitchAlias {
+            viewer_id,
+            engine_id: EngineId(engine_id),
+            voice_id: VoiceId(voice_id),
+        })
+        .await
     }
 }
 
 #[async_trait]
 impl SpeakRequester for SpeakBridge {
     async fn speak(&self, text: String, voice_id_override: Option<String>) {
-        if let Err(e) = self.enqueue(text, voice_id_override).await {
+        if let Err(e) = self
+            .enqueue(text, voice_id_override.map(AliasId), None, None)
+            .await
+        {
             tracing::warn!(error = %e, "forge::tts::speak failed");
         }
     }

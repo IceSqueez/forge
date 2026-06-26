@@ -2,6 +2,7 @@ mod actor;
 pub mod filters;
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -10,8 +11,8 @@ pub use filters::{
     FilterMappingError, PipelineConfigHandle, build_config_lenient, build_config_strict,
 };
 pub use forge_tts_core::TtsError;
-use forge_tts_core::{EngineId, TtsRegistry, VoiceId};
-use forge_voice::{AliasId, VoiceAliasResolver};
+use forge_tts_core::{EngineId, TtsRegistry, TtsVoice, VoiceId};
+use forge_voice::{AliasId, VoiceAlias, VoiceAliasResolver};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct RequestId(pub String);
@@ -43,6 +44,12 @@ pub struct SpeakRequest {
     pub text: String,
     pub priority: Priority,
     pub alias_override: Option<AliasId>,
+    /// Forces synthesis through this engine, picking a voice from its catalog via
+    /// the resolver strategy. Ignored when `voice_override` is set.
+    pub engine_override: Option<EngineId>,
+    /// Forces this exact voice, bypassing alias and strategy resolution. The engine
+    /// is taken from `engine_override` if set, else inferred from the voice catalog.
+    pub voice_override: Option<VoiceId>,
     pub source_event_id: forge_types::EventId,
 }
 
@@ -51,9 +58,21 @@ pub enum SpeakCommand {
     Enqueue(SpeakRequest),
     Skip,
     Clear,
+    /// Drops every pending item but lets the in-flight synthesis/playback finish.
+    /// `Clear` also abandons the active item; `ClearPending` deliberately does not.
+    ClearPending,
     Pause,
     Resume,
     Replay,
+    /// Inserts or replaces (by `viewer_id`) an alias in the live resolver.
+    SetAlias(VoiceAlias),
+    /// Repoints an existing viewer's alias to a different voice; no-op when the
+    /// viewer has no alias yet (use `SetAlias` to create one).
+    SwitchAlias {
+        viewer_id: String,
+        engine_id: EngineId,
+        voice_id: VoiceId,
+    },
     /// Sent by `forge-audio` when the VoiceGate mic threshold is crossed.
     VoiceGateActivated,
     /// Sent by `forge-audio` when the VoiceGate mic level drops below threshold.
@@ -145,11 +164,38 @@ pub struct QueueDeps {
 pub struct SpeakQueueHandle {
     tx: tokio::sync::mpsc::Sender<SpeakCommand>,
     event_tx: tokio::sync::broadcast::Sender<SpeakEvent>,
+    depth: Arc<AtomicUsize>,
+    // std RwLock holding an Arc: a read clones the Arc and drops the guard in the
+    // same statement, so the lock is never held across an `.await`. Lets queries
+    // read the catalog without an actor round-trip.
+    voices: Arc<std::sync::RwLock<Arc<Vec<TtsVoice>>>>,
 }
 
 impl SpeakQueueHandle {
     pub async fn send(&self, cmd: SpeakCommand) -> Result<(), SpeakError> {
         self.tx.send(cmd).await.map_err(|_| SpeakError::ActorGone)
+    }
+
+    pub fn queue_depth(&self) -> usize {
+        self.depth.load(Ordering::Relaxed)
+    }
+
+    pub fn available_voices(&self) -> Arc<Vec<TtsVoice>> {
+        self.voices
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    pub fn engines(&self) -> Vec<EngineId> {
+        let voices = self.available_voices();
+        let mut engines: Vec<EngineId> = Vec::new();
+        for voice in voices.iter() {
+            if !engines.contains(&voice.engine_id) {
+                engines.push(voice.engine_id.clone());
+            }
+        }
+        engines
     }
 
     pub fn blocking_send(&self, cmd: SpeakCommand) -> Result<(), SpeakError> {
@@ -188,15 +234,30 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
     let (cmd_tx, cmd_rx) = tokio::sync::mpsc::channel::<SpeakCommand>(256);
     let (event_tx, event_rx) = tokio::sync::broadcast::channel::<SpeakEvent>(256);
 
+    let depth = Arc::new(AtomicUsize::new(0));
+    let voices = Arc::new(std::sync::RwLock::new(Arc::new(Vec::<TtsVoice>::new())));
+
     let event_tx_clone = event_tx.clone();
+    let depth_clone = depth.clone();
+    let voices_clone = voices.clone();
     tokio::spawn(async move {
-        actor::run_actor(config, deps, cmd_rx, event_tx_clone).await;
+        actor::run_actor(
+            config,
+            deps,
+            cmd_rx,
+            event_tx_clone,
+            depth_clone,
+            voices_clone,
+        )
+        .await;
     });
 
     (
         SpeakQueueHandle {
             tx: cmd_tx,
             event_tx,
+            depth,
+            voices,
         },
         SpeakEventStream(event_rx),
     )
@@ -215,6 +276,8 @@ mod tests {
         let handle = SpeakQueueHandle {
             tx: cmd_tx,
             event_tx,
+            depth: Arc::new(AtomicUsize::new(0)),
+            voices: Arc::new(std::sync::RwLock::new(Arc::new(Vec::new()))),
         };
         let result = handle.send(SpeakCommand::Skip).await;
         assert!(matches!(result, Err(SpeakError::ActorGone)));
@@ -227,6 +290,8 @@ mod tests {
         let handle = SpeakQueueHandle {
             tx: cmd_tx,
             event_tx: event_tx.clone(),
+            depth: Arc::new(AtomicUsize::new(0)),
+            voices: Arc::new(std::sync::RwLock::new(Arc::new(Vec::new()))),
         };
         let mut sub = handle.subscribe();
         event_tx

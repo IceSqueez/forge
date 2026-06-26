@@ -129,6 +129,8 @@ fn req(viewer: &str, text: &str, priority: Priority) -> SpeakRequest {
         text: text.into(),
         priority,
         alias_override: None,
+        engine_override: None,
+        voice_override: None,
         source_event_id: EventId::new(),
     }
 }

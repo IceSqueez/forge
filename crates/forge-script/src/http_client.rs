@@ -4,8 +4,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
+use forge_platform_core::is_private_or_special;
+
 use crate::http_config::ScriptHttpConfig;
-use crate::http_deny_list::is_private_or_special;
 
 #[derive(Debug, thiserror::Error)]
 pub enum HttpError {

@@ -25,7 +25,7 @@ use forge_runtime::{
     spawn_action_engine, spawn_trigger_evaluator, sub_action_runners::register_core_sub_actions,
     triggers::register_core_triggers,
 };
-use forge_storage::{DataProvider, GlobalsRepo, SettingsRepo};
+use forge_storage::{DataProvider, GlobalsRepo, SettingsRepo, UserGlobalsRepo};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
     Action, ActionId, ArgStack, ExecutionMode, Queue, QueueId, SubActionOutcome, SubActionStep,
@@ -95,6 +95,7 @@ fn custom_instance(event_name: &str) -> TriggerInstance {
 
 fn build_core_registries(
     globals: Arc<dyn GlobalsRepo>,
+    user_globals: Arc<dyn UserGlobalsRepo>,
     settings: Arc<dyn SettingsRepo>,
 ) -> (Arc<SubActionRegistry>, Arc<TriggerRegistry>) {
     let scripts = Arc::new(ScriptRegistry::new());
@@ -103,7 +104,15 @@ fn build_core_registries(
         Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>;
 
     let mut sub_reg = SubActionRegistry::new();
-    register_core_sub_actions(&mut sub_reg, globals, scripts, publisher, settings).unwrap();
+    register_core_sub_actions(
+        &mut sub_reg,
+        globals,
+        user_globals,
+        scripts,
+        publisher,
+        settings,
+    )
+    .unwrap();
 
     let mut trig_reg = TriggerRegistry::new();
     register_core_triggers(&mut trig_reg).unwrap();
@@ -224,6 +233,7 @@ async fn trigger_evaluator_applies_effective_config_overrides() {
 
     let (sub_reg, trig_reg) = build_core_registries(
         Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
+        Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
         Arc::clone(&dp) as Arc<dyn SettingsRepo>,
     );
 
@@ -397,6 +407,7 @@ async fn linked_action_executes_via_join_table_only() {
 
     let (sub_reg, trig_reg) = build_core_registries(
         Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
+        Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
         Arc::clone(&dp) as Arc<dyn SettingsRepo>,
     );
 

@@ -28,7 +28,7 @@ use forge_runtime::{
 };
 use forge_soundboard::{BusAudioEventSink, CpalSinkFactory, SoundboardPlayer};
 use forge_speak_queue::{QueueConfig, QueueDeps, SpeakQueueHandle};
-use forge_storage::{CredentialsRepo, DataProvider, GlobalsRepo, SettingsRepo};
+use forge_storage::{CredentialsRepo, DataProvider, GlobalsRepo, SettingsRepo, UserGlobalsRepo};
 use forge_storage_sqlite::SqliteBackend;
 use forge_tts_core::{EngineId, TtsEngineFactory, TtsRegistry};
 use forge_tts_espeak::EspeakEngineFactory;
@@ -420,6 +420,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
     if let Err(e) = register_core_sub_actions(
         &mut sub_action_reg,
         Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
+        Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
         Arc::clone(&registry),
         publisher,
         Arc::clone(&dp) as Arc<dyn SettingsRepo>,

@@ -34,6 +34,10 @@ mod core_time_diff;
 mod core_time_format;
 mod core_time_now;
 mod core_time_parse;
+mod core_users_get_var;
+mod core_users_increment_var;
+mod core_users_set_var;
+mod core_users_shared;
 mod file_sandbox;
 mod interpolate;
 mod script_run_inline;
@@ -76,6 +80,9 @@ pub use core_time_diff::CoreTimeDiffRunner;
 pub use core_time_format::CoreTimeFormatRunner;
 pub use core_time_now::CoreTimeNowRunner;
 pub use core_time_parse::CoreTimeParseRunner;
+pub use core_users_get_var::CoreUsersGetVarRunner;
+pub use core_users_increment_var::CoreUsersIncrementVarRunner;
+pub use core_users_set_var::CoreUsersSetVarRunner;
 pub use script_run_inline::ScriptRunInlineRunner;
 pub use script_run_named::ScriptRunNamedRunner;
 pub use twitch_chat_send_message::TwitchChatSendMessageRunner;
@@ -84,13 +91,14 @@ use std::sync::Arc;
 
 use forge_events::EventPublisher;
 use forge_registry::{RegistryError, SubActionRegistry};
-use forge_storage::{GlobalsRepo, SettingsRepo};
+use forge_storage::{GlobalsRepo, SettingsRepo, UserGlobalsRepo};
 
 use crate::script_registry::ScriptRegistry;
 
 pub fn register_core_sub_actions(
     reg: &mut SubActionRegistry,
     globals: Arc<dyn GlobalsRepo>,
+    user_globals: Arc<dyn UserGlobalsRepo>,
     scripts: Arc<ScriptRegistry>,
     publisher: Arc<dyn EventPublisher>,
     settings: Arc<dyn SettingsRepo>,
@@ -112,6 +120,18 @@ pub fn register_core_sub_actions(
         &globals,
     ))))?;
     reg.register(Box::new(CoreGlobalsDeleteRunner::new(Arc::clone(&globals))))?;
+    reg.register(Box::new(CoreUsersGetVarRunner::new(
+        Arc::clone(&globals),
+        Arc::clone(&user_globals),
+    )))?;
+    reg.register(Box::new(CoreUsersSetVarRunner::new(
+        Arc::clone(&globals),
+        Arc::clone(&user_globals),
+    )))?;
+    reg.register(Box::new(CoreUsersIncrementVarRunner::new(
+        Arc::clone(&globals),
+        user_globals,
+    )))?;
     reg.register(Box::new(CoreLogicWaitRunner))?;
     reg.register(Box::new(CoreLogWriteRunner::new(Arc::clone(&globals))))?;
     reg.register(Box::new(CoreFileReadRunner::new(Arc::clone(&globals))))?;

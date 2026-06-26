@@ -18,6 +18,7 @@ forge-script = { path = "../forge-script" }
 forge-obs = { path = "../forge-obs" }
 forge-platform-core = { path = "../forge-platform-core" }
 rand = { workspace = true }
+regex = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 futures-core = { workspace = true }

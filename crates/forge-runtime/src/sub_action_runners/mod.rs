@@ -6,6 +6,17 @@ mod core_globals_set;
 mod core_log_write;
 mod core_logic_wait;
 mod core_random_int;
+mod core_string_concat;
+mod core_string_format;
+mod core_string_length;
+mod core_string_lowercase;
+mod core_string_regex_match;
+mod core_string_replace;
+mod core_string_split;
+mod core_string_substring;
+mod core_string_titlecase;
+mod core_string_trim;
+mod core_string_uppercase;
 mod interpolate;
 mod script_run_inline;
 mod script_run_named;
@@ -19,6 +30,17 @@ pub use core_globals_set::CoreGlobalsSetRunner;
 pub use core_log_write::CoreLogWriteRunner;
 pub use core_logic_wait::CoreLogicWaitRunner;
 pub use core_random_int::CoreRandomIntRunner;
+pub use core_string_concat::CoreStringConcatRunner;
+pub use core_string_format::CoreStringFormatRunner;
+pub use core_string_length::CoreStringLengthRunner;
+pub use core_string_lowercase::CoreStringLowercaseRunner;
+pub use core_string_regex_match::CoreStringRegexMatchRunner;
+pub use core_string_replace::CoreStringReplaceRunner;
+pub use core_string_split::CoreStringSplitRunner;
+pub use core_string_substring::CoreStringSubstringRunner;
+pub use core_string_titlecase::CoreStringTitlecaseRunner;
+pub use core_string_trim::CoreStringTrimRunner;
+pub use core_string_uppercase::CoreStringUppercaseRunner;
 pub use script_run_inline::ScriptRunInlineRunner;
 pub use script_run_named::ScriptRunNamedRunner;
 pub use twitch_chat_send_message::TwitchChatSendMessageRunner;
@@ -63,5 +85,16 @@ pub fn register_core_sub_actions(
         Arc::clone(&publisher),
         settings,
     )))?;
+    reg.register(Box::new(CoreStringConcatRunner))?;
+    reg.register(Box::new(CoreStringSubstringRunner))?;
+    reg.register(Box::new(CoreStringReplaceRunner))?;
+    reg.register(Box::new(CoreStringLowercaseRunner))?;
+    reg.register(Box::new(CoreStringUppercaseRunner))?;
+    reg.register(Box::new(CoreStringTitlecaseRunner))?;
+    reg.register(Box::new(CoreStringTrimRunner))?;
+    reg.register(Box::new(CoreStringSplitRunner))?;
+    reg.register(Box::new(CoreStringLengthRunner))?;
+    reg.register(Box::new(CoreStringRegexMatchRunner))?;
+    reg.register(Box::new(CoreStringFormatRunner))?;
     Ok(())
 }

@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 
 use crate::error::AudioError;
+use crate::handle::PlaybackHandle;
 use crate::pcm::PcmBuffer;
 
 /// Output target for synthesized or decoded audio.
@@ -10,6 +11,16 @@ use crate::pcm::PcmBuffer;
 #[async_trait]
 pub trait AudioSink: Send + Sync {
     async fn play(&self, buffer: PcmBuffer) -> Result<(), AudioError>;
+
+    /// Starts playback and returns a token whose `stop` cancels this clip.
+    ///
+    /// The default forwards to `play` and returns a no-op handle: sinks that cannot
+    /// cancel an in-flight clip stay correct (the clip simply runs to completion).
+    /// Sinks owning a real device override this to wire the handle to playback.
+    async fn play_stoppable(&self, buffer: PcmBuffer) -> Result<PlaybackHandle, AudioError> {
+        self.play(buffer).await?;
+        Ok(PlaybackHandle::default())
+    }
 }
 
 /// No-op sink used by the runtime when the soundboard subsystem is not yet wired.

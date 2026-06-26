@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -9,6 +10,7 @@ use crate::convert;
 use crate::device::DeviceId;
 use crate::error::AudioError;
 use crate::events::{AudioEvent, AudioEventSink};
+use crate::handle::PlaybackHandle;
 use crate::pcm::PcmBuffer;
 use crate::sink::AudioSink;
 
@@ -33,21 +35,38 @@ impl CpalSink {
             event_sink,
         }
     }
-}
 
-#[async_trait]
-impl AudioSink for CpalSink {
-    async fn play(&self, buffer: PcmBuffer) -> Result<(), AudioError> {
+    fn spawn_playback(&self, buffer: PcmBuffer, stop: Arc<AtomicBool>) {
         let device_id_str = self.device_id.0.clone();
         let event_sink = Arc::clone(&self.event_sink);
         let target_sr = self.target_sample_rate;
         let target_ch = self.target_channels;
 
         tokio::task::spawn_blocking(move || {
-            run_playback(device_id_str, buffer, target_sr, target_ch, event_sink);
+            run_playback(
+                device_id_str,
+                buffer,
+                target_sr,
+                target_ch,
+                event_sink,
+                stop,
+            );
         });
+    }
+}
 
+#[async_trait]
+impl AudioSink for CpalSink {
+    async fn play(&self, buffer: PcmBuffer) -> Result<(), AudioError> {
+        let stop = Arc::new(AtomicBool::new(false));
+        self.spawn_playback(buffer, stop);
         Ok(())
+    }
+
+    async fn play_stoppable(&self, buffer: PcmBuffer) -> Result<PlaybackHandle, AudioError> {
+        let stop = Arc::new(AtomicBool::new(false));
+        self.spawn_playback(buffer, Arc::clone(&stop));
+        Ok(PlaybackHandle::from_flag(stop))
     }
 }
 
@@ -57,6 +76,7 @@ fn run_playback(
     target_sr: Option<u32>,
     target_ch: Option<u16>,
     event_sink: Arc<dyn AudioEventSink>,
+    stop: Arc<AtomicBool>,
 ) {
     let host = cpal::default_host();
 
@@ -126,11 +146,18 @@ fn run_playback(
     let rx_f32 = rx.clone();
     let rx_i16 = rx.clone();
     let rx_i32 = rx.clone();
+    let stop_f32 = Arc::clone(&stop);
+    let stop_i16 = Arc::clone(&stop);
+    let stop_i32 = Arc::clone(&stop);
 
     let stream = match sample_format {
         SampleFormat::F32 => device.build_output_stream(
             stream_config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                if stop_f32.load(Ordering::Relaxed) {
+                    data.fill(0.0);
+                    return;
+                }
                 for s in data.iter_mut() {
                     *s = rx_f32.try_recv().map(|v| v as f32 / 32767.0).unwrap_or(0.0);
                 }
@@ -141,6 +168,10 @@ fn run_playback(
         SampleFormat::I16 => device.build_output_stream(
             stream_config,
             move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
+                if stop_i16.load(Ordering::Relaxed) {
+                    data.fill(0);
+                    return;
+                }
                 for s in data.iter_mut() {
                     *s = rx_i16.try_recv().unwrap_or(0);
                 }
@@ -151,6 +182,10 @@ fn run_playback(
         SampleFormat::I32 => device.build_output_stream(
             stream_config,
             move |data: &mut [i32], _: &cpal::OutputCallbackInfo| {
+                if stop_i32.load(Ordering::Relaxed) {
+                    data.fill(0);
+                    return;
+                }
                 for s in data.iter_mut() {
                     *s = rx_i32.try_recv().map(|v| v as i32).unwrap_or(0);
                 }
@@ -191,7 +226,16 @@ fn run_playback(
         device: device_name,
     });
 
-    std::thread::sleep(Duration::from_millis(duration_ms + 50));
+    let total_ms = duration_ms + 50;
+    let mut elapsed_ms = 0u64;
+    while elapsed_ms < total_ms {
+        if stop.load(Ordering::Relaxed) {
+            break;
+        }
+        let step = (total_ms - elapsed_ms).min(20);
+        std::thread::sleep(Duration::from_millis(step));
+        elapsed_ms += step;
+    }
     drop(stream);
 
     event_sink.emit(AudioEvent::PlaybackFinished { clip_id: None });

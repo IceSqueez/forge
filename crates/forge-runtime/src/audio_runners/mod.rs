@@ -64,9 +64,12 @@ mod tests {
     use async_trait::async_trait;
     use forge_events::{Event, EventPublisher};
     use forge_registry::{RunContext, SubActionRunner};
-    use forge_types::{ArgStack, EventId, SubActionConfig, SubActionOutcome, Variant};
+    use forge_types::{
+        ArgStack, ClipId, EventId, OutputDevice, SubActionConfig, SubActionOutcome, Variant,
+    };
 
     use super::*;
+    use crate::sound_player::{SoundPlayer, SoundPlayerError};
     use crate::speak_dispatcher::{SpeakDispatchError, SpeakDispatcher};
 
     /// One recorded dispatcher invocation. The variant pins WHICH method ran;
@@ -443,5 +446,215 @@ mod tests {
         let (telemetry, _) = runner.execute(&runner.default_config(), &ctx).await;
 
         assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+    }
+
+    // ----- soundboard control family (stop / stop_all / set_master_volume) -----
+
+    /// One recorded `SoundPlayer` invocation. The variant pins WHICH method the
+    /// runner forwarded to; the payload pins the marshaled argument. A runner
+    /// wired to the wrong method records the wrong variant and fails.
+    #[derive(Debug, Clone, PartialEq)]
+    enum SoundCall {
+        Play(ClipId),
+        Stop(ClipId),
+        StopAll,
+        SetMasterVolume(f32),
+    }
+
+    /// Capturing test double for `SoundPlayer`. Records every call in order; with
+    /// `fail` set, each method records THEN returns an error so the runner's error
+    /// branch is exercised without real audio.
+    struct RecordingSoundPlayer {
+        calls: Mutex<Vec<SoundCall>>,
+        fail: bool,
+    }
+
+    impl RecordingSoundPlayer {
+        fn ok() -> Arc<Self> {
+            Arc::new(Self {
+                calls: Mutex::new(Vec::new()),
+                fail: false,
+            })
+        }
+
+        fn failing() -> Arc<Self> {
+            Arc::new(Self {
+                calls: Mutex::new(Vec::new()),
+                fail: true,
+            })
+        }
+
+        fn record(&self, call: SoundCall) -> Result<(), SoundPlayerError> {
+            self.calls.lock().unwrap().push(call);
+            if self.fail {
+                Err(SoundPlayerError::Play("boom".to_owned()))
+            } else {
+                Ok(())
+            }
+        }
+
+        fn calls(&self) -> Vec<SoundCall> {
+            self.calls.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait]
+    impl SoundPlayer for RecordingSoundPlayer {
+        async fn play(
+            &self,
+            clip_id: ClipId,
+            _override_device: Option<OutputDevice>,
+        ) -> Result<(), SoundPlayerError> {
+            self.record(SoundCall::Play(clip_id))
+        }
+
+        async fn stop(&self, clip_id: ClipId) -> Result<(), SoundPlayerError> {
+            self.record(SoundCall::Stop(clip_id))
+        }
+
+        async fn stop_all(&self) -> Result<(), SoundPlayerError> {
+            self.record(SoundCall::StopAll)
+        }
+
+        async fn set_master_volume(&self, gain: f32) -> Result<(), SoundPlayerError> {
+            self.record(SoundCall::SetMasterVolume(gain))
+        }
+    }
+
+    fn clip_config(clip_id: &str) -> SubActionConfig {
+        config(&[("clip_id", Variant::String(clip_id.to_owned()))])
+    }
+
+    /// Stop forwards to `stop(clip_id)` with the interpolated/resolved id — not
+    /// `stop_all`, not a different clip. Pins both the method and the id payload.
+    #[tokio::test]
+    async fn stop_sound_forwards_resolved_clip_id_to_player_stop() {
+        let player = RecordingSoundPlayer::ok();
+        let runner = StopSoundRunner::new(player.clone());
+        let clip_id = ClipId::new();
+        let stack = ArgStack::new().set("clip".to_owned(), Variant::String(clip_id.to_string()));
+        let ctx = make_ctx(&stack);
+
+        let (telemetry, updated) = runner.execute(&clip_config("%clip%"), &ctx).await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
+        assert!(updated.is_none());
+        assert_eq!(player.calls(), vec![SoundCall::Stop(clip_id)]);
+    }
+
+    /// The documented "empty clip = stop everything" contract: an empty clip_id
+    /// must route to `stop_all`, NOT `stop`. Swapping the branch records `Stop`
+    /// (or nothing) and fails here.
+    #[tokio::test]
+    async fn stop_sound_with_empty_clip_id_routes_to_stop_all() {
+        let player = RecordingSoundPlayer::ok();
+        let runner = StopSoundRunner::new(player.clone());
+        let stack = ArgStack::new();
+        let ctx = make_ctx(&stack);
+
+        let (telemetry, _) = runner.execute(&runner.default_config(), &ctx).await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
+        assert_eq!(player.calls(), vec![SoundCall::StopAll]);
+    }
+
+    /// A non-empty but unparseable clip_id is rejected before the player is
+    /// touched: outcome Failed AND zero player calls (no accidental stop_all).
+    #[tokio::test]
+    async fn stop_sound_with_invalid_clip_id_fails_without_touching_player() {
+        let player = RecordingSoundPlayer::ok();
+        let runner = StopSoundRunner::new(player.clone());
+        let stack = ArgStack::new();
+        let ctx = make_ctx(&stack);
+
+        let (telemetry, _) = runner.execute(&clip_config("not-a-ulid"), &ctx).await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert!(player.calls().is_empty());
+    }
+
+    /// Stop-all forwards to exactly `stop_all`.
+    #[tokio::test]
+    async fn stop_all_sounds_forwards_to_player_stop_all() {
+        let player = RecordingSoundPlayer::ok();
+        let runner = StopAllSoundsRunner::new(player.clone());
+        let stack = ArgStack::new();
+        let ctx = make_ctx(&stack);
+
+        let (telemetry, updated) = runner.execute(&runner.default_config(), &ctx).await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
+        assert!(updated.is_none());
+        assert_eq!(player.calls(), vec![SoundCall::StopAll]);
+    }
+
+    /// Every control runner that reaches the player must surface a player error as
+    /// `Failed` without panicking. One table over the three runners covers each
+    /// independent error branch.
+    #[tokio::test]
+    async fn sound_control_runners_surface_player_error_as_failed() {
+        let player = RecordingSoundPlayer::failing();
+        let valid_clip = ClipId::new().to_string();
+        let runners: Vec<(Box<dyn SubActionRunner>, SubActionConfig)> = vec![
+            (
+                Box::new(StopSoundRunner::new(player.clone())),
+                clip_config(&valid_clip),
+            ),
+            (
+                Box::new(StopAllSoundsRunner::new(player.clone())),
+                SubActionConfig::new(),
+            ),
+            (
+                Box::new(SetMasterVolumeRunner::new(player.clone())),
+                config(&[("volume_db", Variant::Float(0.0))]),
+            ),
+        ];
+
+        let stack = ArgStack::new();
+        for (runner, cfg) in runners {
+            let ctx = make_ctx(&stack);
+            let (telemetry, _) = runner.execute(&cfg, &ctx).await;
+            assert!(
+                matches!(telemetry.outcome, SubActionOutcome::Failed(_)),
+                "{} must surface player error as Failed",
+                runner.id()
+            );
+        }
+    }
+
+    /// Master-volume runner converts decibels to linear gain (`10^(db/20)`),
+    /// clamping the dB input to the catalog range [-30, 6] first. Covers happy
+    /// (0 dB), both clamp boundaries, the negative-dB attenuation case, the
+    /// absent-config default, and BOTH numeric accessor paths (Int + Float).
+    #[tokio::test]
+    async fn set_master_volume_converts_db_to_linear_gain_with_clamping() {
+        // (config, expected linear gain). Mixing Int and Float pins the
+        // `as_float().or_else(as_int)` accessor branches.
+        let cases: Vec<(SubActionConfig, f32)> = vec![
+            (config(&[("volume_db", Variant::Int(0))]), 1.0),
+            (config(&[("volume_db", Variant::Float(-6.0))]), 0.501_187),
+            (config(&[("volume_db", Variant::Int(6))]), 1.995_262),
+            // below MIN_VOLUME_DB (-30) clamps to -30 dB.
+            (config(&[("volume_db", Variant::Float(-60.0))]), 0.031_623),
+            // above MAX_VOLUME_DB (6) clamps to +6 dB.
+            (config(&[("volume_db", Variant::Int(30))]), 1.995_262),
+            // absent volume_db defaults to 0 dB → unity gain.
+            (SubActionConfig::new(), 1.0),
+        ];
+
+        let stack = ArgStack::new();
+        for (cfg, expected) in cases {
+            let player = RecordingSoundPlayer::ok();
+            let runner = SetMasterVolumeRunner::new(player.clone());
+            let ctx = make_ctx(&stack);
+            let (telemetry, _) = runner.execute(&cfg, &ctx).await;
+
+            assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
+            let calls = player.calls();
+            assert!(
+                matches!(calls.as_slice(), [SoundCall::SetMasterVolume(g)] if (*g - expected).abs() < 1e-4),
+                "expected one SetMasterVolume(~{expected}), got {calls:?}"
+            );
+        }
     }
 }

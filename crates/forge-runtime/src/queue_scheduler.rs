@@ -5,15 +5,42 @@
 //! guarantee, not a leak.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::future::Future;
+use std::sync::{Arc, Mutex};
 
+use arc_swap::ArcSwapOption;
 use forge_events::{Event, EventSource};
 use forge_types::{ActionId, ArgStack, EventId, Queue, QueueId};
 use serde_json::json;
 use tokio::sync::{RwLock, Semaphore, mpsc, oneshot};
+use tokio::task::{AbortHandle, JoinHandle};
 use tracing::warn;
 
 use crate::{ActionEngineHandle, EventBus, ExecutionRequest};
+
+/// Lock-free, settable holder for the live `QueueSchedulerHandle`. Queue-control
+/// sub-action runners are registered at boot, before the scheduler task exists;
+/// this cell is handed to them empty and filled once `QueueScheduler::spawn`
+/// returns, so runners reach the live scheduler without a registration-order
+/// dependency.
+#[derive(Clone, Default)]
+pub struct SchedulerCell {
+    inner: Arc<ArcSwapOption<QueueSchedulerHandle>>,
+}
+
+impl SchedulerCell {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn set(&self, handle: QueueSchedulerHandle) {
+        self.inner.store(Some(Arc::new(handle)));
+    }
+
+    pub fn get(&self) -> Option<QueueSchedulerHandle> {
+        self.inner.load_full().map(|h| (*h).clone())
+    }
+}
 
 pub struct SchedulerRequest {
     pub queue_id: QueueId,
@@ -47,6 +74,7 @@ enum SchedulerCommand {
     Enqueue(SchedulerRequest),
     Pause(QueueId, oneshot::Sender<Result<(), SchedulerError>>),
     Resume(QueueId, oneshot::Sender<Result<(), SchedulerError>>),
+    Clear(QueueId, bool, oneshot::Sender<Result<(), SchedulerError>>),
     Register(Queue, oneshot::Sender<MembershipOutcome>),
     Deregister(QueueId, oneshot::Sender<MembershipOutcome>),
     Reconfigure(Queue, oneshot::Sender<MembershipOutcome>),
@@ -59,6 +87,60 @@ struct QueueSlot {
     state: Arc<RwLock<PauseState>>,
     name: String,
     blocking: bool,
+    runner: JoinHandle<()>,
+    inflight: InflightTracker,
+}
+
+/// Tracks the abort handles of dispatches a queue's runner has already started,
+/// so `Clear` with `keep_current = false` can stop the in-flight execution(s).
+/// Tasks deregister themselves on completion; a placeholder is reserved before
+/// the spawn so a fast-completing task never leaves a dangling handle.
+#[derive(Clone, Default)]
+struct InflightTracker {
+    inner: Arc<Mutex<InflightInner>>,
+}
+
+#[derive(Default)]
+struct InflightInner {
+    next_id: u64,
+    handles: HashMap<u64, Option<AbortHandle>>,
+}
+
+impl InflightTracker {
+    fn track<F>(&self, fut: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        let id = {
+            let mut inner = self.lock();
+            let id = inner.next_id;
+            inner.next_id = inner.next_id.wrapping_add(1);
+            inner.handles.insert(id, None);
+            id
+        };
+
+        let tracker = self.clone();
+        let handle = tokio::spawn(async move {
+            fut.await;
+            tracker.lock().handles.remove(&id);
+        });
+
+        if let Some(slot) = self.lock().handles.get_mut(&id) {
+            *slot = Some(handle.abort_handle());
+        }
+    }
+
+    fn abort_all(&self) {
+        for (_, handle) in self.lock().handles.drain() {
+            if let Some(handle) = handle {
+                handle.abort();
+            }
+        }
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, InflightInner> {
+        self.inner.lock().unwrap_or_else(|e| e.into_inner())
+    }
 }
 
 struct PauseState {
@@ -90,6 +172,17 @@ impl QueueSchedulerHandle {
         let (tx, rx) = oneshot::channel();
         self.sender
             .send(SchedulerCommand::Resume(queue_id, tx))
+            .map_err(|_| SchedulerError::ChannelClosed)?;
+        rx.await.map_err(|_| SchedulerError::ChannelClosed)?
+    }
+
+    /// Discards the queue's pending (not-yet-started) executions. With
+    /// `keep_current = false` the in-flight execution is aborted too; with
+    /// `true` it runs to completion.
+    pub async fn clear(&self, queue_id: QueueId, keep_current: bool) -> Result<(), SchedulerError> {
+        let (tx, rx) = oneshot::channel();
+        self.sender
+            .send(SchedulerCommand::Clear(queue_id, keep_current, tx))
             .map_err(|_| SchedulerError::ChannelClosed)?;
         rx.await.map_err(|_| SchedulerError::ChannelClosed)?
     }
@@ -159,21 +252,24 @@ impl QueueScheduler {
     fn make_queue_slot(queue: Queue, engine: Arc<ActionEngineHandle>) -> QueueSlot {
         let (task_tx, task_rx) = mpsc::unbounded_channel::<QueueTask>();
         let state = Arc::new(RwLock::new(PauseState { paused: false }));
+        let inflight = InflightTracker::default();
         let name = queue.name.clone();
         let blocking = queue.blocking;
 
-        if blocking {
+        let runner = if blocking {
             let sem = Arc::new(Semaphore::new(1));
-            tokio::spawn(Self::run_blocking(task_rx, engine, sem));
+            tokio::spawn(Self::run_blocking(task_rx, engine, sem, inflight.clone()))
         } else {
-            tokio::spawn(Self::run_nonblocking(task_rx, engine));
-        }
+            tokio::spawn(Self::run_nonblocking(task_rx, engine, inflight.clone()))
+        };
 
         QueueSlot {
             sender: task_tx,
             state,
             name,
             blocking,
+            runner,
+            inflight,
         }
     }
 
@@ -181,6 +277,7 @@ impl QueueScheduler {
         mut rx: mpsc::UnboundedReceiver<QueueTask>,
         engine: Arc<ActionEngineHandle>,
         sem: Arc<Semaphore>,
+        inflight: InflightTracker,
     ) {
         while let Some(task) = rx.recv().await {
             let permit = match Arc::clone(&sem).acquire_owned().await {
@@ -197,7 +294,7 @@ impl QueueScheduler {
             let (done_tx, done_rx) = oneshot::channel::<()>();
             let engine_ref = Arc::clone(&engine);
 
-            tokio::spawn(async move {
+            inflight.track(async move {
                 let _ = engine_ref.dispatch(req).await;
                 let _ = done_tx.send(());
             });
@@ -210,6 +307,7 @@ impl QueueScheduler {
     async fn run_nonblocking(
         mut rx: mpsc::UnboundedReceiver<QueueTask>,
         engine: Arc<ActionEngineHandle>,
+        inflight: InflightTracker,
     ) {
         while let Some(task) = rx.recv().await {
             let req = ExecutionRequest {
@@ -219,7 +317,7 @@ impl QueueScheduler {
             };
 
             let engine_ref = Arc::clone(&engine);
-            tokio::spawn(async move {
+            inflight.track(async move {
                 let _ = engine_ref.dispatch(req).await;
             });
         }
@@ -242,6 +340,11 @@ impl QueueScheduler {
                 }
                 SchedulerCommand::Resume(queue_id, reply) => {
                     let r = Self::set_paused(&queue_id, false, &slots, &bus, "queue.resumed").await;
+                    let _ = reply.send(r);
+                }
+                SchedulerCommand::Clear(queue_id, keep_current, reply) => {
+                    let r =
+                        Self::clear_queue(&mut slots, &queue_id, keep_current, &bus, &engine).await;
                     let _ = reply.send(r);
                 }
                 SchedulerCommand::Register(queue, reply) => {
@@ -368,6 +471,57 @@ impl QueueScheduler {
             json!({
                 "queue_id": queue_id.to_string(),
                 "queue_name": slot.name,
+            }),
+        ));
+
+        Ok(())
+    }
+
+    async fn clear_queue(
+        slots: &mut HashMap<QueueId, QueueSlot>,
+        queue_id: &QueueId,
+        keep_current: bool,
+        bus: &Arc<EventBus>,
+        engine: &Arc<ActionEngineHandle>,
+    ) -> Result<(), SchedulerError> {
+        let (was_paused, name, blocking) = {
+            let slot = slots
+                .get(queue_id)
+                .ok_or(SchedulerError::QueueNotFound(*queue_id))?;
+
+            if !keep_current {
+                slot.inflight.abort_all();
+            }
+            // Aborting the runner drops its task receiver, discarding every
+            // buffered (not-yet-started) execution. A surviving in-flight
+            // dispatch runs in its own task and is unaffected.
+            slot.runner.abort();
+
+            (
+                slot.state.read().await.paused,
+                slot.name.clone(),
+                slot.blocking,
+            )
+        };
+
+        let rebuilt = Self::make_queue_slot(
+            Queue {
+                id: *queue_id,
+                name: name.clone(),
+                blocking,
+            },
+            Arc::clone(engine),
+        );
+        rebuilt.state.write().await.paused = was_paused;
+        slots.insert(*queue_id, rebuilt);
+
+        bus.publish(Event::new(
+            EventSource::Core,
+            "queue.cleared",
+            json!({
+                "queue_id": queue_id.to_string(),
+                "queue_name": name,
+                "keep_current": keep_current,
             }),
         ));
 

@@ -53,6 +53,14 @@ impl FromStr for TriggerInstanceId {
     }
 }
 
+impl FromStr for QueueId {
+    type Err = ulid::DecodeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        s.parse::<Ulid>().map(Self)
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {

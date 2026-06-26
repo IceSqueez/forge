@@ -26,7 +26,8 @@ pub use chat_stream::chat_stream;
 pub use condition::{ConditionError, ConditionGate};
 pub use config::Config;
 pub use queue_scheduler::{
-    MembershipOutcome, QueueScheduler, QueueSchedulerHandle, SchedulerError, SchedulerRequest,
+    MembershipOutcome, QueueScheduler, QueueSchedulerHandle, SchedulerCell, SchedulerError,
+    SchedulerRequest,
 };
 pub use script_registry::{CompiledScript, ScriptRegistry, ScriptRegistryError};
 pub use sound_player::{SoundPlayer, SoundPlayerError};

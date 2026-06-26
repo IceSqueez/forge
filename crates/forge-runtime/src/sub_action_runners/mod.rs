@@ -14,6 +14,10 @@ mod core_globals_toggle;
 mod core_log_write;
 mod core_logic_wait;
 mod core_math_evaluate;
+mod core_queue_clear;
+mod core_queue_pause;
+mod core_queue_resume;
+mod core_queue_shared;
 mod core_random_bool;
 mod core_random_float;
 mod core_random_int;
@@ -60,6 +64,9 @@ pub use core_globals_toggle::CoreGlobalsToggleRunner;
 pub use core_log_write::CoreLogWriteRunner;
 pub use core_logic_wait::CoreLogicWaitRunner;
 pub use core_math_evaluate::CoreMathEvaluateRunner;
+pub use core_queue_clear::CoreQueueClearRunner;
+pub use core_queue_pause::CoreQueuePauseRunner;
+pub use core_queue_resume::CoreQueueResumeRunner;
 pub use core_random_bool::CoreRandomBoolRunner;
 pub use core_random_float::CoreRandomFloatRunner;
 pub use core_random_int::CoreRandomIntRunner;
@@ -93,6 +100,7 @@ use forge_events::EventPublisher;
 use forge_registry::{RegistryError, SubActionRegistry};
 use forge_storage::{GlobalsRepo, SettingsRepo, UserGlobalsRepo};
 
+use crate::SchedulerCell;
 use crate::script_registry::ScriptRegistry;
 
 pub fn register_core_sub_actions(
@@ -102,8 +110,12 @@ pub fn register_core_sub_actions(
     scripts: Arc<ScriptRegistry>,
     publisher: Arc<dyn EventPublisher>,
     settings: Arc<dyn SettingsRepo>,
+    scheduler: SchedulerCell,
 ) -> Result<(), RegistryError> {
     reg.register(Box::new(CoreArgsSetRunner))?;
+    reg.register(Box::new(CoreQueuePauseRunner::new(scheduler.clone())))?;
+    reg.register(Box::new(CoreQueueResumeRunner::new(scheduler.clone())))?;
+    reg.register(Box::new(CoreQueueClearRunner::new(scheduler)))?;
     reg.register(Box::new(CoreGlobalsSetRunner::new(Arc::clone(&globals))))?;
     reg.register(Box::new(CoreGlobalsGetRunner::new(Arc::clone(&globals))))?;
     reg.register(Box::new(CoreGlobalsIncrementRunner::new(Arc::clone(

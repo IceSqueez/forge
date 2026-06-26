@@ -111,6 +111,7 @@ fn build_core_registries(
         scripts,
         publisher,
         settings,
+        forge_runtime::SchedulerCell::new(),
     )
     .unwrap();
 

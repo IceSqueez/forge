@@ -2156,6 +2156,7 @@ dependencies = [
 name = "forge-runtime"
 version = "0.1.0-beta.15"
 dependencies = [
+ "arc-swap",
  "async-trait",
  "base64",
  "forge-events",

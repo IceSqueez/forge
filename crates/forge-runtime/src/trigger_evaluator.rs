@@ -286,6 +286,7 @@ mod tests {
             registry,
             publisher,
             settings,
+            crate::SchedulerCell::new(),
         )
         .unwrap();
 

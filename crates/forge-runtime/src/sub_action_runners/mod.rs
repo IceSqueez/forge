@@ -2,10 +2,14 @@ mod core_file_delete;
 mod core_file_list;
 mod core_file_read;
 mod core_file_write;
+mod core_globals_array_append;
+mod core_globals_array_remove;
+mod core_globals_decrement;
 mod core_globals_delete;
 mod core_globals_get;
 mod core_globals_increment;
 mod core_globals_set;
+mod core_globals_toggle;
 mod core_log_write;
 mod core_logic_wait;
 mod core_math_evaluate;
@@ -39,10 +43,14 @@ pub use core_file_delete::CoreFileDeleteRunner;
 pub use core_file_list::CoreFileListRunner;
 pub use core_file_read::CoreFileReadRunner;
 pub use core_file_write::CoreFileWriteRunner;
+pub use core_globals_array_append::CoreGlobalsArrayAppendRunner;
+pub use core_globals_array_remove::CoreGlobalsArrayRemoveRunner;
+pub use core_globals_decrement::CoreGlobalsDecrementRunner;
 pub use core_globals_delete::CoreGlobalsDeleteRunner;
 pub use core_globals_get::CoreGlobalsGetRunner;
 pub use core_globals_increment::CoreGlobalsIncrementRunner;
 pub use core_globals_set::CoreGlobalsSetRunner;
+pub use core_globals_toggle::CoreGlobalsToggleRunner;
 pub use core_log_write::CoreLogWriteRunner;
 pub use core_logic_wait::CoreLogicWaitRunner;
 pub use core_math_evaluate::CoreMathEvaluateRunner;
@@ -88,6 +96,16 @@ pub fn register_core_sub_actions(
     reg.register(Box::new(CoreGlobalsSetRunner::new(Arc::clone(&globals))))?;
     reg.register(Box::new(CoreGlobalsGetRunner::new(Arc::clone(&globals))))?;
     reg.register(Box::new(CoreGlobalsIncrementRunner::new(Arc::clone(
+        &globals,
+    ))))?;
+    reg.register(Box::new(CoreGlobalsDecrementRunner::new(Arc::clone(
+        &globals,
+    ))))?;
+    reg.register(Box::new(CoreGlobalsToggleRunner::new(Arc::clone(&globals))))?;
+    reg.register(Box::new(CoreGlobalsArrayAppendRunner::new(Arc::clone(
+        &globals,
+    ))))?;
+    reg.register(Box::new(CoreGlobalsArrayRemoveRunner::new(Arc::clone(
         &globals,
     ))))?;
     reg.register(Box::new(CoreGlobalsDeleteRunner::new(Arc::clone(&globals))))?;

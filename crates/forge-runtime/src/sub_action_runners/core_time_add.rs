@@ -193,3 +193,168 @@ fn fail(
         None,
     )
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use forge_events::{Event, EventPublisher};
+    use forge_types::EventId;
+    use time::Time;
+
+    struct NullPublisher;
+    impl EventPublisher for NullPublisher {
+        fn publish(&self, _event: Event) {}
+    }
+
+    fn utc(y: i32, m: Month, d: u8, h: u8, min: u8, s: u8) -> OffsetDateTime {
+        OffsetDateTime::new_utc(
+            Date::from_calendar_date(y, m, d).unwrap(),
+            Time::from_hms(h, min, s).unwrap(),
+        )
+    }
+
+    async fn run(cfg: &SubActionConfig) -> (SubActionOutcome, Option<ArgStack>) {
+        let stack = ArgStack::new();
+        let ctx = RunContext {
+            arg_stack: &stack,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher: &NullPublisher,
+        };
+        let (t, out) = CoreTimeAddRunner.execute(cfg, &ctx).await;
+        (t.outcome, out)
+    }
+
+    fn cfg(base: Variant, amount: i64, unit: &str) -> SubActionConfig {
+        let mut c = SubActionConfig::new();
+        c.insert("base".to_owned(), base);
+        c.insert("add_amount".to_owned(), Variant::Int(amount));
+        c.insert("unit".to_owned(), Variant::String(unit.to_owned()));
+        c
+    }
+
+    #[tokio::test]
+    async fn add_calendar_month_and_year_arithmetic_clamps_to_valid_day() {
+        // time-of-day must be preserved across calendar shifts; day clamps to the
+        // target month's length when the source day would be invalid.
+        let cases = [
+            (
+                (2024, Month::January, 31),
+                1,
+                "months",
+                (2024, Month::February, 29),
+            ), // leap clamp
+            (
+                (2023, Month::January, 31),
+                1,
+                "months",
+                (2023, Month::February, 28),
+            ), // non-leap clamp
+            (
+                (2023, Month::December, 15),
+                1,
+                "months",
+                (2024, Month::January, 15),
+            ), // year rollover fwd
+            (
+                (2024, Month::March, 31),
+                -1,
+                "months",
+                (2024, Month::February, 29),
+            ), // negative + leap clamp
+            (
+                (2024, Month::January, 15),
+                -1,
+                "months",
+                (2023, Month::December, 15),
+            ), // negative year rollback
+            (
+                (2024, Month::January, 1),
+                12,
+                "months",
+                (2025, Month::January, 1),
+            ), // rem_euclid wrap
+            (
+                (2024, Month::January, 31),
+                1,
+                "years",
+                (2025, Month::January, 31),
+            ), // years = months * 12
+            (
+                (2024, Month::February, 29),
+                1,
+                "years",
+                (2025, Month::February, 28),
+            ), // leap-day anniversary clamp
+        ];
+        for ((by, bm, bd), amount, unit, (ey, em, ed)) in cases {
+            let base = utc(by, bm, bd, 8, 30, 15);
+            let expected = utc(ey, em, ed, 8, 30, 15);
+            let (outcome, out) = run(&cfg(Variant::Datetime(base), amount, unit)).await;
+            assert!(
+                matches!(outcome, SubActionOutcome::Success),
+                "{by}-{bm:?}-{bd} {amount} {unit}"
+            );
+            let got = *out
+                .unwrap()
+                .get("time.result")
+                .and_then(|v| v.as_datetime())
+                .unwrap();
+            assert_eq!(got, expected, "{by}-{bm:?}-{bd} {amount} {unit}");
+        }
+    }
+
+    #[tokio::test]
+    async fn add_duration_units_shift_by_exact_amount() {
+        let base = utc(2024, Month::January, 1, 0, 0, 0);
+        let cases = [
+            (90, "seconds", utc(2024, Month::January, 1, 0, 1, 30)),
+            (90, "minutes", utc(2024, Month::January, 1, 1, 30, 0)),
+            (25, "hours", utc(2024, Month::January, 2, 1, 0, 0)),
+            (1, "days", utc(2024, Month::January, 2, 0, 0, 0)),
+            (-1, "days", utc(2023, Month::December, 31, 0, 0, 0)),
+            // Unknown unit falls back to seconds.
+            (5, "weeks", utc(2024, Month::January, 1, 0, 0, 5)),
+        ];
+        for (amount, unit, expected) in cases {
+            let (outcome, out) = run(&cfg(Variant::Datetime(base), amount, unit)).await;
+            assert!(
+                matches!(outcome, SubActionOutcome::Success),
+                "{amount} {unit}"
+            );
+            let got = *out
+                .unwrap()
+                .get("time.result")
+                .and_then(|v| v.as_datetime())
+                .unwrap();
+            assert_eq!(got, expected, "{amount} {unit}");
+        }
+    }
+
+    #[tokio::test]
+    async fn add_writes_result_under_custom_into_var() {
+        let base = utc(2024, Month::January, 1, 0, 0, 0);
+        let mut c = cfg(Variant::Datetime(base), 1, "days");
+        c.insert(
+            "into_var".to_owned(),
+            Variant::String("deadline".to_owned()),
+        );
+        let out = run(&c).await.1.unwrap();
+        assert!(out.get("time.result").is_none());
+        let got = *out.get("deadline").and_then(|v| v.as_datetime()).unwrap();
+        assert_eq!(got, utc(2024, Month::January, 2, 0, 0, 0));
+    }
+
+    #[tokio::test]
+    async fn add_unparseable_base_yields_failed() {
+        let (outcome, out) = run(&cfg(
+            Variant::String("not a datetime".to_owned()),
+            1,
+            "days",
+        ))
+        .await;
+        assert!(matches!(outcome, SubActionOutcome::Failed(_)));
+        assert!(out.is_none());
+    }
+}

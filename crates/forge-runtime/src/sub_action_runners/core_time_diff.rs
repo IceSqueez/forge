@@ -178,3 +178,118 @@ fn fail(
         None,
     )
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use forge_events::{Event, EventPublisher};
+    use forge_types::EventId;
+    use time::{Date, Month, Time};
+
+    struct NullPublisher;
+    impl EventPublisher for NullPublisher {
+        fn publish(&self, _event: Event) {}
+    }
+
+    fn utc(y: i32, m: Month, d: u8, h: u8, min: u8, s: u8) -> OffsetDateTime {
+        OffsetDateTime::new_utc(
+            Date::from_calendar_date(y, m, d).unwrap(),
+            Time::from_hms(h, min, s).unwrap(),
+        )
+    }
+
+    async fn run(cfg: &SubActionConfig) -> (SubActionOutcome, Option<ArgStack>) {
+        let stack = ArgStack::new();
+        let ctx = RunContext {
+            arg_stack: &stack,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher: &NullPublisher,
+        };
+        let (t, out) = CoreTimeDiffRunner.execute(cfg, &ctx).await;
+        (t.outcome, out)
+    }
+
+    fn cfg(from: Variant, to: Variant, unit: &str) -> SubActionConfig {
+        let mut c = SubActionConfig::new();
+        c.insert("from".to_owned(), from);
+        c.insert("to".to_owned(), to);
+        c.insert("unit".to_owned(), Variant::String(unit.to_owned()));
+        c
+    }
+
+    #[tokio::test]
+    async fn diff_computes_signed_fractional_value_per_unit() {
+        // 90 seconds apart → 1.5 minutes: the fraction must survive, not truncate to 1.
+        let from = utc(2024, Month::January, 1, 0, 0, 0);
+        let to = utc(2024, Month::January, 1, 0, 1, 30);
+        for (unit, expected) in [
+            ("seconds", 90.0_f64),
+            ("minutes", 1.5),
+            ("hours", 90.0 / 3600.0),
+            ("days", 90.0 / 86_400.0),
+        ] {
+            let (outcome, out) =
+                run(&cfg(Variant::Datetime(from), Variant::Datetime(to), unit)).await;
+            assert!(matches!(outcome, SubActionOutcome::Success), "unit {unit}");
+            let v = out
+                .unwrap()
+                .get("time.diff_value")
+                .and_then(|v| v.as_float())
+                .unwrap();
+            assert!(
+                (v - expected).abs() < 1e-9,
+                "unit {unit}: got {v}, want {expected}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn diff_is_negative_when_to_precedes_from() {
+        let from = utc(2024, Month::January, 1, 0, 1, 30);
+        let to = utc(2024, Month::January, 1, 0, 0, 0);
+        let (_, out) = run(&cfg(
+            Variant::Datetime(from),
+            Variant::Datetime(to),
+            "seconds",
+        ))
+        .await;
+        let v = out
+            .unwrap()
+            .get("time.diff_value")
+            .and_then(|v| v.as_float())
+            .unwrap();
+        assert!((v - (-90.0)).abs() < 1e-9, "got {v}");
+    }
+
+    #[tokio::test]
+    async fn diff_same_instant_is_zero() {
+        let dt = utc(2024, Month::January, 1, 12, 0, 0);
+        let (_, out) = run(&cfg(
+            Variant::Datetime(dt),
+            Variant::Datetime(dt),
+            "seconds",
+        ))
+        .await;
+        let v = out
+            .unwrap()
+            .get("time.diff_value")
+            .and_then(|v| v.as_float())
+            .unwrap();
+        assert_eq!(v, 0.0);
+    }
+
+    #[tokio::test]
+    async fn diff_unparseable_from_yields_failed() {
+        let to = utc(2024, Month::January, 1, 0, 0, 0);
+        let (outcome, out) = run(&cfg(
+            Variant::String("garbage".to_owned()),
+            Variant::Datetime(to),
+            "seconds",
+        ))
+        .await;
+        assert!(matches!(outcome, SubActionOutcome::Failed(_)));
+        assert!(out.is_none());
+    }
+}

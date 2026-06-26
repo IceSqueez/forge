@@ -169,3 +169,91 @@ fn fail(
         None,
     )
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use forge_events::{Event, EventPublisher};
+    use forge_types::EventId;
+    use time::{Date, Month, Time};
+
+    struct NullPublisher;
+    impl EventPublisher for NullPublisher {
+        fn publish(&self, _event: Event) {}
+    }
+
+    fn utc(y: i32, m: Month, d: u8, h: u8, min: u8, s: u8) -> OffsetDateTime {
+        OffsetDateTime::new_utc(
+            Date::from_calendar_date(y, m, d).unwrap(),
+            Time::from_hms(h, min, s).unwrap(),
+        )
+    }
+
+    async fn run(cfg: &SubActionConfig) -> (SubActionOutcome, Option<ArgStack>) {
+        let stack = ArgStack::new();
+        let ctx = RunContext {
+            arg_stack: &stack,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher: &NullPublisher,
+        };
+        let (t, out) = CoreTimeFormatRunner.execute(cfg, &ctx).await;
+        (t.outcome, out)
+    }
+
+    fn cfg(source: Variant, fmt: &str) -> SubActionConfig {
+        let mut c = SubActionConfig::new();
+        c.insert("source".to_owned(), source);
+        c.insert("format_string".to_owned(), Variant::String(fmt.to_owned()));
+        c
+    }
+
+    #[tokio::test]
+    async fn format_renders_fixed_datetime_for_each_description() {
+        let dt = utc(2024, Month::January, 15, 12, 34, 56);
+        for (fmt, expected) in [
+            ("[year]", "2024"),
+            ("[year]-[month]-[day]", "2024-01-15"),
+            ("[hour]:[minute]:[second]", "12:34:56"),
+            (
+                "[year]-[month]-[day] [hour]:[minute]:[second]",
+                "2024-01-15 12:34:56",
+            ),
+        ] {
+            let (outcome, out) = run(&cfg(Variant::Datetime(dt), fmt)).await;
+            assert!(matches!(outcome, SubActionOutcome::Success), "fmt {fmt}");
+            assert_eq!(
+                out.unwrap().get("time.formatted").and_then(|v| v.as_str()),
+                Some(expected),
+                "fmt {fmt}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn format_resolves_unix_timestamp_source() {
+        let (outcome, out) = run(&cfg(Variant::Int(0), "[year]-[month]-[day]")).await;
+        assert!(matches!(outcome, SubActionOutcome::Success));
+        assert_eq!(
+            out.unwrap().get("time.formatted").and_then(|v| v.as_str()),
+            Some("1970-01-01")
+        );
+    }
+
+    #[tokio::test]
+    async fn format_with_invalid_format_string_yields_failed() {
+        let dt = utc(2024, Month::January, 15, 0, 0, 0);
+        let (outcome, out) = run(&cfg(Variant::Datetime(dt), "[bogus]")).await;
+        assert!(matches!(outcome, SubActionOutcome::Failed(_)));
+        assert!(out.is_none());
+    }
+
+    #[tokio::test]
+    async fn format_with_unparseable_source_string_yields_failed() {
+        let (outcome, out) =
+            run(&cfg(Variant::String("not a datetime".to_owned()), "[year]")).await;
+        assert!(matches!(outcome, SubActionOutcome::Failed(_)));
+        assert!(out.is_none());
+    }
+}

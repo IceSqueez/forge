@@ -162,3 +162,91 @@ fn fail(
         None,
     )
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use forge_events::{Event, EventPublisher};
+    use forge_types::EventId;
+
+    struct NullPublisher;
+    impl EventPublisher for NullPublisher {
+        fn publish(&self, _event: Event) {}
+    }
+
+    async fn run(cfg: &SubActionConfig) -> (SubActionOutcome, Option<ArgStack>) {
+        let stack = ArgStack::new();
+        let ctx = RunContext {
+            arg_stack: &stack,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher: &NullPublisher,
+        };
+        let (t, out) = CoreTimeNowRunner.execute(cfg, &ctx).await;
+        (t.outcome, out)
+    }
+
+    fn cfg(format: &str, custom: &str, into_var: &str) -> SubActionConfig {
+        let mut c = SubActionConfig::new();
+        c.insert("format".to_owned(), Variant::String(format.to_owned()));
+        c.insert(
+            "custom_format_string".to_owned(),
+            Variant::String(custom.to_owned()),
+        );
+        c.insert("into_var".to_owned(), Variant::String(into_var.to_owned()));
+        c
+    }
+
+    #[tokio::test]
+    async fn now_iso8601_outputs_datetime_formatted_and_unix_are_mutually_consistent() {
+        let (outcome, out) = run(&cfg("iso8601", "", "captured")).await;
+        assert!(matches!(outcome, SubActionOutcome::Success));
+        let out = out.unwrap();
+        // into_var routes the datetime (not the hardcoded default key).
+        let dt = *out.get("captured").and_then(|v| v.as_datetime()).unwrap();
+        let formatted = out.get("time.formatted").and_then(|v| v.as_str()).unwrap();
+        let unix = out
+            .get("time.unix_seconds")
+            .and_then(|v| v.as_int())
+            .unwrap();
+        // All three documented outputs describe the same instant.
+        assert_eq!(OffsetDateTime::parse(formatted, &Rfc3339).unwrap(), dt);
+        assert_eq!(unix, dt.unix_timestamp());
+    }
+
+    #[tokio::test]
+    async fn now_unix_seconds_is_within_wall_clock_window() {
+        let before = OffsetDateTime::now_utc().unix_timestamp();
+        let (_, out) = run(&cfg("iso8601", "", "now")).await;
+        let after = OffsetDateTime::now_utc().unix_timestamp();
+        let unix = out
+            .unwrap()
+            .get("time.unix_seconds")
+            .and_then(|v| v.as_int())
+            .unwrap();
+        assert!(
+            unix >= before && unix <= after,
+            "unix {unix} not in [{before}, {after}]"
+        );
+    }
+
+    #[tokio::test]
+    async fn now_unix_seconds_format_writes_integer_seconds_string() {
+        let (_, out) = run(&cfg("unix_seconds", "", "now")).await;
+        let out = out.unwrap();
+        let formatted = out.get("time.formatted").and_then(|v| v.as_str()).unwrap();
+        let unix = out
+            .get("time.unix_seconds")
+            .and_then(|v| v.as_int())
+            .unwrap();
+        assert_eq!(formatted, unix.to_string());
+    }
+
+    #[tokio::test]
+    async fn now_custom_format_with_invalid_description_yields_failed() {
+        let (outcome, out) = run(&cfg("custom", "[nope]", "now")).await;
+        assert!(matches!(outcome, SubActionOutcome::Failed(_)));
+        assert!(out.is_none());
+    }
+}

@@ -103,3 +103,52 @@ impl SubActionRunner for CoreArgsSetRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+    use forge_events::{Event, EventPublisher};
+    use forge_types::EventId;
+
+    struct NullPublisher;
+    impl EventPublisher for NullPublisher {
+        fn publish(&self, _event: Event) {}
+    }
+
+    fn cfg(name: &str, value: Variant) -> SubActionConfig {
+        let mut c = SubActionConfig::new();
+        c.insert("name".to_owned(), Variant::String(name.to_owned()));
+        c.insert("value".to_owned(), value);
+        c
+    }
+
+    async fn run(config: &SubActionConfig) -> ArgStack {
+        let stack = ArgStack::new();
+        let ctx = RunContext {
+            arg_stack: &stack,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher: &NullPublisher,
+        };
+        let (telemetry, new_stack) = CoreArgsSetRunner.execute(config, &ctx).await;
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
+        new_stack.expect("args.set always returns a mutated stack")
+    }
+
+    #[tokio::test]
+    async fn string_value_is_type_inferred_when_bound_to_arg_stack() {
+        // A String config value routes through parse_variant: "42" becomes Int(42),
+        // not a String left verbatim.
+        let stack = run(&cfg("answer", Variant::String("42".to_owned()))).await;
+        assert!(matches!(stack.get("answer"), Some(Variant::Int(42))));
+    }
+
+    #[tokio::test]
+    async fn pretyped_non_string_value_is_stored_without_reparsing() {
+        // Float(2.0) Displays as "2" and would re-parse to Int(2); the runner must keep
+        // a pre-typed Variant verbatim instead of round-tripping it through string parsing.
+        let stack = run(&cfg("ratio", Variant::float(2.0).unwrap())).await;
+        assert!(matches!(stack.get("ratio"), Some(Variant::Float(f)) if (*f - 2.0).abs() < 1e-12));
+    }
+}

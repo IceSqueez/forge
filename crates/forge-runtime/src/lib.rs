@@ -9,6 +9,7 @@ pub mod chat_stream;
 pub mod condition;
 pub mod config;
 pub mod dashboard;
+mod egress;
 pub mod queue_scheduler;
 pub mod script_registry;
 pub mod sound_player;

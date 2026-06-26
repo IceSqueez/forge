@@ -13,6 +13,7 @@ mod core_globals_get;
 mod core_globals_increment;
 mod core_globals_set;
 mod core_globals_toggle;
+mod core_http;
 mod core_log_write;
 mod core_logic_wait;
 mod core_math_evaluate;
@@ -71,6 +72,7 @@ pub use core_globals_get::CoreGlobalsGetRunner;
 pub use core_globals_increment::CoreGlobalsIncrementRunner;
 pub use core_globals_set::CoreGlobalsSetRunner;
 pub use core_globals_toggle::CoreGlobalsToggleRunner;
+pub use core_http::CoreHttpRunner;
 pub use core_log_write::CoreLogWriteRunner;
 pub use core_logic_wait::CoreLogicWaitRunner;
 pub use core_math_evaluate::CoreMathEvaluateRunner;
@@ -120,6 +122,7 @@ use forge_registry::{RegistryError, SubActionRegistry};
 use forge_storage::{ActionRepo, GlobalsRepo, SettingsRepo, TriggerInstanceRepo, UserGlobalsRepo};
 
 use crate::SchedulerCell;
+use crate::egress::{EgressClient, HttpMethod};
 use crate::script_registry::ScriptRegistry;
 
 #[allow(clippy::too_many_arguments)]
@@ -195,7 +198,7 @@ pub fn register_core_sub_actions(
         Arc::clone(&scripts),
         Arc::clone(&globals),
         Arc::clone(&publisher),
-        settings,
+        Arc::clone(&settings),
     )))?;
     reg.register(Box::new(ScriptEmitEventRunner::new(Arc::clone(&publisher))))?;
     reg.register(Box::new(ServerBroadcastRunner::new(Arc::clone(&publisher))))?;
@@ -227,5 +230,22 @@ pub fn register_core_sub_actions(
     reg.register(Box::new(CoreUrlOpenRunner::new(Arc::new(
         SystemUrlOpenPort,
     ))))?;
+
+    let egress =
+        Arc::new(EgressClient::new().map_err(|e| RegistryError::RunnerInit(e.to_string()))?);
+    for method in [
+        HttpMethod::Get,
+        HttpMethod::Post,
+        HttpMethod::Put,
+        HttpMethod::Patch,
+        HttpMethod::Delete,
+    ] {
+        reg.register(Box::new(CoreHttpRunner::new(
+            method,
+            Arc::clone(&globals),
+            Arc::clone(&settings),
+            Arc::clone(&egress),
+        )))?;
+    }
     Ok(())
 }

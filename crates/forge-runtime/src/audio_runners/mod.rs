@@ -5,9 +5,12 @@ mod queue_clear;
 mod queue_pause;
 mod queue_resume;
 mod queue_skip;
+mod set_master_volume;
 mod speak;
 mod speak_stop;
 mod speak_with_engine;
+mod stop_all_sounds;
+mod stop_sound;
 
 pub use alias_set::AliasSetRunner;
 pub use alias_switch::AliasSwitchRunner;
@@ -16,9 +19,12 @@ pub use queue_clear::QueueClearRunner;
 pub use queue_pause::QueuePauseRunner;
 pub use queue_resume::QueueResumeRunner;
 pub use queue_skip::QueueSkipRunner;
+pub use set_master_volume::SetMasterVolumeRunner;
 pub use speak::SpeakRunner;
 pub use speak_stop::SpeakStopRunner;
 pub use speak_with_engine::SpeakWithEngineRunner;
+pub use stop_all_sounds::StopAllSoundsRunner;
+pub use stop_sound::StopSoundRunner;
 
 use std::sync::Arc;
 
@@ -32,7 +38,12 @@ pub fn register_audio_sub_actions(
     sound_player: Arc<dyn SoundPlayer>,
     speak: Arc<dyn SpeakDispatcher>,
 ) -> Result<(), RegistryError> {
-    reg.register(Box::new(PlaySoundRunner::new(sound_player)))?;
+    reg.register(Box::new(PlaySoundRunner::new(Arc::clone(&sound_player))))?;
+    reg.register(Box::new(StopSoundRunner::new(Arc::clone(&sound_player))))?;
+    reg.register(Box::new(StopAllSoundsRunner::new(Arc::clone(
+        &sound_player,
+    ))))?;
+    reg.register(Box::new(SetMasterVolumeRunner::new(sound_player)))?;
     reg.register(Box::new(SpeakRunner::new(Arc::clone(&speak))))?;
     reg.register(Box::new(SpeakWithEngineRunner::new(Arc::clone(&speak))))?;
     reg.register(Box::new(SpeakStopRunner::new(Arc::clone(&speak))))?;

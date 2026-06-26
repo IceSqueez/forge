@@ -1,7 +1,10 @@
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_audio::{AudioEvent, AudioEventSink, PcmBuffer};
+use forge_audio::{AudioEvent, AudioEventSink, PcmBuffer, PlaybackHandle};
 use forge_runtime::{SoundPlayer, SoundPlayerError};
 use forge_storage::SoundboardClipsRepo;
 use forge_types::{ClipId, OutputDevice};
@@ -9,10 +12,28 @@ use forge_types::{ClipId, OutputDevice};
 use crate::error::SoundboardError;
 use crate::sink_factory::AudioSinkFactory;
 
+/// Upper bound on the linear master gain. +6 dB (the catalog ceiling) is ≈2.0;
+/// 4.0 leaves headroom for an interpolated/over-range request without letting a
+/// runaway value blow the sample scaling.
+const MAX_MASTER_GAIN: f32 = 4.0;
+
+/// Silence drained by the device after a clip's samples are exhausted; the
+/// registry entry outlives the clip by this much so a late `stop` still lands.
+const PLAYBACK_TAIL_MS: u64 = 200;
+
+type ActiveRegistry = Arc<Mutex<HashMap<ClipId, Vec<(u64, PlaybackHandle)>>>>;
+
 pub struct SoundboardPlayer {
     sink_factory: Arc<dyn AudioSinkFactory>,
     event_sink: Arc<dyn AudioEventSink>,
     clips_repo: Arc<dyn SoundboardClipsRepo>,
+    /// Live stop tokens keyed by clip; the `u64` tags one concrete play so
+    /// concurrent plays of the same clip register and clean up independently.
+    active: ActiveRegistry,
+    next_play_id: AtomicU64,
+    /// Linear master gain as `f32` bits; there is no shared mixer (per T2), so it
+    /// is folded into each clip's samples at play time rather than ramped.
+    master_gain_bits: AtomicU32,
 }
 
 impl SoundboardPlayer {
@@ -25,6 +46,37 @@ impl SoundboardPlayer {
             sink_factory,
             event_sink,
             clips_repo,
+            active: Arc::new(Mutex::new(HashMap::new())),
+            next_play_id: AtomicU64::new(0),
+            master_gain_bits: AtomicU32::new(1.0_f32.to_bits()),
+        }
+    }
+
+    pub fn set_master_volume(&self, gain: f32) {
+        let clamped = gain.clamp(0.0, MAX_MASTER_GAIN);
+        self.master_gain_bits
+            .store(clamped.to_bits(), Ordering::Relaxed);
+    }
+
+    pub fn stop(&self, clip_id: ClipId) {
+        let handles = {
+            let mut guard = self.active.lock().unwrap_or_else(PoisonError::into_inner);
+            guard.remove(&clip_id).unwrap_or_default()
+        };
+        for (_id, handle) in &handles {
+            handle.stop();
+        }
+    }
+
+    pub fn stop_all(&self) {
+        let drained = {
+            let mut guard = self.active.lock().unwrap_or_else(PoisonError::into_inner);
+            std::mem::take(&mut *guard)
+        };
+        for handles in drained.values() {
+            for (_id, handle) in handles {
+                handle.stop();
+            }
         }
     }
 
@@ -70,15 +122,20 @@ impl SoundboardPlayer {
             }
         };
 
-        let volume = clip.volume;
+        let gain = clip.volume * f32::from_bits(self.master_gain_bits.load(Ordering::Relaxed));
         let scaled: Vec<i16> = buffer
             .samples
             .iter()
             .map(|&s| {
-                let v = s as f32 * volume;
+                let v = s as f32 * gain;
                 v.clamp(i16::MIN as f32, i16::MAX as f32) as i16
             })
             .collect();
+
+        let sample_rate = buffer.sample_rate.max(1) as u64;
+        let channels = buffer.channels.max(1) as u64;
+        let frames = (scaled.len() as u64) / channels;
+        let duration_ms = frames.saturating_mul(1000) / sample_rate;
         let buffer = PcmBuffer::new(scaled, buffer.sample_rate, buffer.channels);
 
         self.event_sink.emit(AudioEvent::PlaybackStarted {
@@ -86,8 +143,9 @@ impl SoundboardPlayer {
             device: device_label,
         });
 
-        match sink.play(buffer).await {
-            Ok(()) => {
+        match sink.play_stoppable(buffer).await {
+            Ok(handle) => {
+                self.register(clip_id, handle, duration_ms);
                 self.event_sink.emit(AudioEvent::PlaybackFinished {
                     clip_id: Some(clip_id),
                 });
@@ -103,6 +161,30 @@ impl SoundboardPlayer {
             }
         }
     }
+
+    /// Stores the stop token and schedules its removal once the clip's own
+    /// duration (plus tail) has elapsed, so the registry self-drains even when no
+    /// explicit stop arrives. An earlier `stop`/`stop_all` removes it first; the
+    /// scheduled cleanup then finds nothing and is inert.
+    fn register(&self, clip_id: ClipId, handle: PlaybackHandle, duration_ms: u64) {
+        let play_id = self.next_play_id.fetch_add(1, Ordering::Relaxed);
+        {
+            let mut guard = self.active.lock().unwrap_or_else(PoisonError::into_inner);
+            guard.entry(clip_id).or_default().push((play_id, handle));
+        }
+
+        let active = Arc::clone(&self.active);
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(duration_ms + PLAYBACK_TAIL_MS)).await;
+            let mut guard = active.lock().unwrap_or_else(PoisonError::into_inner);
+            if let Some(plays) = guard.get_mut(&clip_id) {
+                plays.retain(|(id, _)| *id != play_id);
+                if plays.is_empty() {
+                    guard.remove(&clip_id);
+                }
+            }
+        });
+    }
 }
 
 #[async_trait]
@@ -115,6 +197,21 @@ impl SoundPlayer for SoundboardPlayer {
         SoundboardPlayer::play(self, clip_id, output_device_override)
             .await
             .map_err(|e| SoundPlayerError::Play(e.to_string()))
+    }
+
+    async fn stop(&self, clip_id: ClipId) -> Result<(), SoundPlayerError> {
+        SoundboardPlayer::stop(self, clip_id);
+        Ok(())
+    }
+
+    async fn stop_all(&self) -> Result<(), SoundPlayerError> {
+        SoundboardPlayer::stop_all(self);
+        Ok(())
+    }
+
+    async fn set_master_volume(&self, gain: f32) -> Result<(), SoundPlayerError> {
+        SoundboardPlayer::set_master_volume(self, gain);
+        Ok(())
     }
 }
 

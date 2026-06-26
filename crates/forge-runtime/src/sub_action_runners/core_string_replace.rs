@@ -210,3 +210,83 @@ fn apply_replace(
 
     Ok(re.replace_all(source, replacement.as_str()).into_owned())
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use forge_events::{Event, EventPublisher};
+    use forge_types::EventId;
+
+    struct NullPublisher;
+    impl EventPublisher for NullPublisher {
+        fn publish(&self, _event: Event) {}
+    }
+
+    async fn replaced(cfg: &SubActionConfig) -> String {
+        let stack = ArgStack::new();
+        let ctx = RunContext {
+            arg_stack: &stack,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher: &NullPublisher,
+        };
+        let out = CoreStringReplaceRunner.execute(cfg, &ctx).await.1.unwrap();
+        out.get("string.result")
+            .and_then(|v| v.as_str())
+            .unwrap()
+            .to_owned()
+    }
+
+    #[tokio::test]
+    async fn replace_literal_is_case_insensitive_when_flag_unset() {
+        let mut cfg = SubActionConfig::new();
+        cfg.insert(
+            "source".to_owned(),
+            Variant::String("Hello HELLO".to_owned()),
+        );
+        cfg.insert("search".to_owned(), Variant::String("hello".to_owned()));
+        cfg.insert("replace_with".to_owned(), Variant::String("x".to_owned()));
+        cfg.insert("case_sensitive".to_owned(), Variant::Bool(false));
+        assert_eq!(replaced(&cfg).await, "x x");
+    }
+
+    #[tokio::test]
+    async fn replace_literal_dollar_in_replacement_is_not_a_capture_reference() {
+        let mut cfg = SubActionConfig::new();
+        cfg.insert("source".to_owned(), Variant::String("price".to_owned()));
+        cfg.insert("search".to_owned(), Variant::String("price".to_owned()));
+        cfg.insert("replace_with".to_owned(), Variant::String("$1".to_owned()));
+        // is_regex defaults false: "$1" must land verbatim, not expand to a group.
+        assert_eq!(replaced(&cfg).await, "$1");
+    }
+
+    #[tokio::test]
+    async fn replace_regex_mode_expands_dollar_group_references() {
+        let mut cfg = SubActionConfig::new();
+        cfg.insert(
+            "source".to_owned(),
+            Variant::String("John Smith".to_owned()),
+        );
+        cfg.insert(
+            "search".to_owned(),
+            Variant::String(r"(\w+) (\w+)".to_owned()),
+        );
+        cfg.insert(
+            "replace_with".to_owned(),
+            Variant::String("$2 $1".to_owned()),
+        );
+        cfg.insert("is_regex".to_owned(), Variant::Bool(true));
+        assert_eq!(replaced(&cfg).await, "Smith John");
+    }
+
+    #[tokio::test]
+    async fn replace_regex_mode_applies_pattern_to_all_matches() {
+        let mut cfg = SubActionConfig::new();
+        cfg.insert("source".to_owned(), Variant::String("a1b2".to_owned()));
+        cfg.insert("search".to_owned(), Variant::String(r"\d".to_owned()));
+        cfg.insert("replace_with".to_owned(), Variant::String("#".to_owned()));
+        cfg.insert("is_regex".to_owned(), Variant::Bool(true));
+        assert_eq!(replaced(&cfg).await, "a#b#");
+    }
+}

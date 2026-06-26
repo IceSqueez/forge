@@ -140,3 +140,59 @@ impl SubActionRunner for CoreStringSplitRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use forge_events::{Event, EventPublisher};
+    use forge_types::EventId;
+
+    struct NullPublisher;
+    impl EventPublisher for NullPublisher {
+        fn publish(&self, _event: Event) {}
+    }
+
+    async fn split_parts(cfg: &SubActionConfig) -> Vec<String> {
+        let stack = ArgStack::new();
+        let ctx = RunContext {
+            arg_stack: &stack,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher: &NullPublisher,
+        };
+        let out = CoreStringSplitRunner.execute(cfg, &ctx).await.1.unwrap();
+        match out.get("string.parts") {
+            Some(Variant::Array(items)) => items
+                .iter()
+                .map(|v| v.as_str().unwrap().to_owned())
+                .collect(),
+            other => panic!("expected Variant::Array under string.parts, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn split_max_parts_caps_count_keeping_remainder_in_final_part() {
+        let mut cfg = SubActionConfig::new();
+        cfg.insert("source".to_owned(), Variant::String("a,b,c,d".to_owned()));
+        cfg.insert("max_parts".to_owned(), Variant::Int(2));
+        assert_eq!(split_parts(&cfg).await, vec!["a", "b,c,d"]);
+    }
+
+    #[tokio::test]
+    async fn split_max_parts_zero_means_unlimited() {
+        let mut cfg = SubActionConfig::new();
+        cfg.insert("source".to_owned(), Variant::String("a,b,c,d".to_owned()));
+        cfg.insert("max_parts".to_owned(), Variant::Int(0));
+        assert_eq!(split_parts(&cfg).await, vec!["a", "b", "c", "d"]);
+    }
+
+    #[tokio::test]
+    async fn split_empty_separator_splits_between_each_char() {
+        let mut cfg = SubActionConfig::new();
+        cfg.insert("source".to_owned(), Variant::String("Hi".to_owned()));
+        cfg.insert("separator".to_owned(), Variant::String(String::new()));
+        // Rust's `split("")` yields empty boundary parts at both ends.
+        assert_eq!(split_parts(&cfg).await, vec!["", "H", "i", ""]);
+    }
+}

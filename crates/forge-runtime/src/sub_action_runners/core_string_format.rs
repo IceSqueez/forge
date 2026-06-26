@@ -99,3 +99,39 @@ impl SubActionRunner for CoreStringFormatRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use forge_events::{Event, EventPublisher};
+    use forge_types::EventId;
+
+    struct NullPublisher;
+    impl EventPublisher for NullPublisher {
+        fn publish(&self, _event: Event) {}
+    }
+
+    #[tokio::test]
+    async fn format_writes_template_verbatim_without_reinterpolating_vars() {
+        let mut cfg = SubActionConfig::new();
+        cfg.insert(
+            "template".to_owned(),
+            Variant::String("Hi %name%".to_owned()),
+        );
+        // %name% is already resolved upstream; the runner must NOT re-interpolate it,
+        // even when the arg stack carries a matching binding.
+        let stack = ArgStack::new().set("name".to_owned(), Variant::String("Alice".to_owned()));
+        let ctx = RunContext {
+            arg_stack: &stack,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher: &NullPublisher,
+        };
+        let out = CoreStringFormatRunner.execute(&cfg, &ctx).await.1.unwrap();
+        assert_eq!(
+            out.get("string.formatted").and_then(|v| v.as_str()),
+            Some("Hi %name%")
+        );
+    }
+}

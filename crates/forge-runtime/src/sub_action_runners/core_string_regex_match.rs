@@ -171,3 +171,77 @@ impl SubActionRunner for CoreStringRegexMatchRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use forge_events::{Event, EventPublisher};
+    use forge_types::EventId;
+
+    struct NullPublisher;
+    impl EventPublisher for NullPublisher {
+        fn publish(&self, _event: Event) {}
+    }
+
+    async fn run(cfg: &SubActionConfig) -> (SubActionTelemetry, Option<ArgStack>) {
+        let stack = ArgStack::new();
+        let ctx = RunContext {
+            arg_stack: &stack,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher: &NullPublisher,
+        };
+        CoreStringRegexMatchRunner.execute(cfg, &ctx).await
+    }
+
+    fn captures(stack: &ArgStack) -> Vec<String> {
+        match stack.get("regex.captures") {
+            Some(Variant::Array(items)) => items
+                .iter()
+                .map(|v| v.as_str().unwrap().to_owned())
+                .collect(),
+            other => panic!("expected Variant::Array under regex.captures, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn regex_match_sets_flag_and_full_match_plus_group_captures() {
+        let mut cfg = SubActionConfig::new();
+        cfg.insert("source".to_owned(), Variant::String("2026-06".to_owned()));
+        cfg.insert(
+            "pattern".to_owned(),
+            Variant::String(r"(\d+)-(\d+)".to_owned()),
+        );
+        let stack = run(&cfg).await.1.unwrap();
+        assert_eq!(
+            stack.get("regex.matched").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        // captures[0] is the whole match, [1..] the numbered groups.
+        assert_eq!(captures(&stack), vec!["2026-06", "2026", "06"]);
+    }
+
+    #[tokio::test]
+    async fn regex_match_no_match_sets_false_and_empty_captures() {
+        let mut cfg = SubActionConfig::new();
+        cfg.insert("source".to_owned(), Variant::String("abc".to_owned()));
+        cfg.insert("pattern".to_owned(), Variant::String(r"\d+".to_owned()));
+        let stack = run(&cfg).await.1.unwrap();
+        assert_eq!(
+            stack.get("regex.matched").and_then(|v| v.as_bool()),
+            Some(false)
+        );
+        assert!(captures(&stack).is_empty());
+    }
+
+    #[tokio::test]
+    async fn regex_match_invalid_pattern_fails_without_panic() {
+        let mut cfg = SubActionConfig::new();
+        cfg.insert("source".to_owned(), Variant::String("abc".to_owned()));
+        cfg.insert("pattern".to_owned(), Variant::String("(".to_owned()));
+        let (tel, stack) = run(&cfg).await;
+        assert!(matches!(tel.outcome, SubActionOutcome::Failed(_)));
+        assert!(stack.is_none());
+    }
+}

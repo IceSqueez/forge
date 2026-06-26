@@ -109,3 +109,41 @@ impl SubActionRunner for CoreStringTrimRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use forge_events::{Event, EventPublisher};
+    use forge_types::EventId;
+
+    struct NullPublisher;
+    impl EventPublisher for NullPublisher {
+        fn publish(&self, _event: Event) {}
+    }
+
+    async fn run(cfg: &SubActionConfig, stack: &ArgStack) -> Option<ArgStack> {
+        let ctx = RunContext {
+            arg_stack: stack,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher: &NullPublisher,
+        };
+        CoreStringTrimRunner.execute(cfg, &ctx).await.1
+    }
+
+    #[tokio::test]
+    async fn trim_mode_selects_which_sides_are_stripped() {
+        for (mode, expected) in [("both", "hi"), ("left", "hi  "), ("right", "  hi")] {
+            let mut cfg = SubActionConfig::new();
+            cfg.insert("source".to_owned(), Variant::String("  hi  ".to_owned()));
+            cfg.insert("mode".to_owned(), Variant::String(mode.to_owned()));
+            let out = run(&cfg, &ArgStack::new()).await.unwrap();
+            assert_eq!(
+                out.get("string.result").and_then(|v| v.as_str()),
+                Some(expected),
+                "mode {mode}"
+            );
+        }
+    }
+}

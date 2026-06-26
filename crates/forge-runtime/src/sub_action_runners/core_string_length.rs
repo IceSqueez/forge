@@ -110,3 +110,38 @@ impl SubActionRunner for CoreStringLengthRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use forge_events::{Event, EventPublisher};
+    use forge_types::EventId;
+
+    struct NullPublisher;
+    impl EventPublisher for NullPublisher {
+        fn publish(&self, _event: Event) {}
+    }
+
+    async fn length_of(mode: &str) -> i64 {
+        let mut cfg = SubActionConfig::new();
+        cfg.insert("source".to_owned(), Variant::String("Привіт".to_owned()));
+        cfg.insert("mode".to_owned(), Variant::String(mode.to_owned()));
+        let stack = ArgStack::new();
+        let ctx = RunContext {
+            arg_stack: &stack,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher: &NullPublisher,
+        };
+        let out = CoreStringLengthRunner.execute(&cfg, &ctx).await.1.unwrap();
+        out.get("string.result").and_then(|v| v.as_int()).unwrap()
+    }
+
+    #[tokio::test]
+    async fn length_bytes_mode_exceeds_char_count_for_non_ascii() {
+        // "Привіт": 6 Cyrillic chars, each 2 UTF-8 bytes.
+        assert_eq!(length_of("chars").await, 6);
+        assert_eq!(length_of("bytes").await, 12);
+    }
+}

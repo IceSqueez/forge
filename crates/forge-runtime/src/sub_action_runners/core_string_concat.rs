@@ -117,3 +117,45 @@ impl SubActionRunner for CoreStringConcatRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use forge_events::{Event, EventPublisher};
+    use forge_types::EventId;
+
+    struct NullPublisher;
+    impl EventPublisher for NullPublisher {
+        fn publish(&self, _event: Event) {}
+    }
+
+    async fn run(cfg: &SubActionConfig, stack: &ArgStack) -> Option<ArgStack> {
+        let ctx = RunContext {
+            arg_stack: stack,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher: &NullPublisher,
+        };
+        CoreStringConcatRunner.execute(cfg, &ctx).await.1
+    }
+
+    #[tokio::test]
+    async fn concat_joins_array_parts_with_separator_into_result_var() {
+        let mut cfg = SubActionConfig::new();
+        cfg.insert(
+            "parts".to_owned(),
+            Variant::Array(vec![
+                Variant::String("a".to_owned()),
+                Variant::String("b".to_owned()),
+                Variant::String("c".to_owned()),
+            ]),
+        );
+        cfg.insert("separator".to_owned(), Variant::String("-".to_owned()));
+        let out = run(&cfg, &ArgStack::new()).await.unwrap();
+        assert_eq!(
+            out.get("string.result").and_then(|v| v.as_str()),
+            Some("a-b-c")
+        );
+    }
+}

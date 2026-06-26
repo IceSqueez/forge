@@ -94,3 +94,38 @@ impl SubActionRunner for CoreStringUppercaseRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use forge_events::{Event, EventPublisher};
+    use forge_types::EventId;
+
+    struct NullPublisher;
+    impl EventPublisher for NullPublisher {
+        fn publish(&self, _event: Event) {}
+    }
+
+    #[tokio::test]
+    async fn uppercase_folds_source_into_result_var() {
+        let mut cfg = SubActionConfig::new();
+        cfg.insert("source".to_owned(), Variant::String("café".to_owned()));
+        let stack = ArgStack::new();
+        let ctx = RunContext {
+            arg_stack: &stack,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher: &NullPublisher,
+        };
+        let out = CoreStringUppercaseRunner
+            .execute(&cfg, &ctx)
+            .await
+            .1
+            .unwrap();
+        assert_eq!(
+            out.get("string.result").and_then(|v| v.as_str()),
+            Some("CAFÉ")
+        );
+    }
+}

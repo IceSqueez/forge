@@ -174,3 +174,89 @@ impl SubActionRunner for CoreStringSubstringRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use forge_events::{Event, EventPublisher};
+    use forge_types::EventId;
+
+    struct NullPublisher;
+    impl EventPublisher for NullPublisher {
+        fn publish(&self, _event: Event) {}
+    }
+
+    fn cfg(source: &str, start: i64, end: i64) -> SubActionConfig {
+        let mut c = SubActionConfig::new();
+        c.insert("source".to_owned(), Variant::String(source.to_owned()));
+        c.insert("start_index".to_owned(), Variant::Int(start));
+        c.insert("end_index".to_owned(), Variant::Int(end));
+        c
+    }
+
+    async fn run(cfg: &SubActionConfig) -> (SubActionTelemetry, Option<ArgStack>) {
+        let stack = ArgStack::new();
+        let ctx = RunContext {
+            arg_stack: &stack,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher: &NullPublisher,
+        };
+        CoreStringSubstringRunner.execute(cfg, &ctx).await
+    }
+
+    #[tokio::test]
+    async fn substring_indices_count_chars_not_bytes() {
+        // "Привіт" is 12 UTF-8 bytes; a byte-slice [0..3] would split a codepoint.
+        let out = run(&cfg("Привіт", 0, 3)).await.1.unwrap();
+        assert_eq!(
+            out.get("string.result").and_then(|v| v.as_str()),
+            Some("При")
+        );
+    }
+
+    #[tokio::test]
+    async fn substring_end_minus_one_extends_to_string_end() {
+        let out = run(&cfg("hello", 2, -1)).await.1.unwrap();
+        assert_eq!(
+            out.get("string.result").and_then(|v| v.as_str()),
+            Some("llo")
+        );
+    }
+
+    #[tokio::test]
+    async fn substring_out_of_range_or_inverted_bounds_fail_without_panic() {
+        // (start > len), (end > len), (start > end) — each rejected, no slice emitted.
+        for (start, end) in [(6, 7), (0, 9), (3, 1)] {
+            let (tel, stack) = run(&cfg("hello", start, end)).await;
+            assert!(
+                matches!(tel.outcome, SubActionOutcome::Failed(_)),
+                "expected Failed for start={start} end={end}"
+            );
+            assert!(
+                stack.is_none(),
+                "no stack on failure for start={start} end={end}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn substring_writes_to_into_var_override() {
+        let mut c = cfg("hello", 0, 2);
+        c.insert("into_var".to_owned(), Variant::String("slice".to_owned()));
+        let out = run(&c).await.1.unwrap();
+        assert_eq!(out.get("slice").and_then(|v| v.as_str()), Some("he"));
+        assert!(out.get("string.result").is_none());
+    }
+
+    #[test]
+    fn validate_config_rejects_negative_start_and_below_minus_one_end() {
+        let runner = CoreStringSubstringRunner;
+        // start < 0 and end < -1 are illegal; start>=0 with end==-1 or end>=0 are legal.
+        assert!(runner.validate_config(&cfg("x", -1, 5)).is_err());
+        assert!(runner.validate_config(&cfg("x", 0, -2)).is_err());
+        assert!(runner.validate_config(&cfg("x", 0, -1)).is_ok());
+        assert!(runner.validate_config(&cfg("x", 0, 5)).is_ok());
+    }
+}

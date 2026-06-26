@@ -44,6 +44,7 @@ mod core_users_set_var;
 mod core_users_shared;
 mod file_sandbox;
 mod interpolate;
+mod script_emit_event;
 mod script_run_inline;
 mod script_run_named;
 mod twitch_chat_send_message;
@@ -90,6 +91,7 @@ pub use core_time_parse::CoreTimeParseRunner;
 pub use core_users_get_var::CoreUsersGetVarRunner;
 pub use core_users_increment_var::CoreUsersIncrementVarRunner;
 pub use core_users_set_var::CoreUsersSetVarRunner;
+pub use script_emit_event::ScriptEmitEventRunner;
 pub use script_run_inline::ScriptRunInlineRunner;
 pub use script_run_named::ScriptRunNamedRunner;
 pub use twitch_chat_send_message::TwitchChatSendMessageRunner;
@@ -170,6 +172,7 @@ pub fn register_core_sub_actions(
         Arc::clone(&publisher),
         settings,
     )))?;
+    reg.register(Box::new(ScriptEmitEventRunner::new(Arc::clone(&publisher))))?;
     reg.register(Box::new(CoreStringConcatRunner))?;
     reg.register(Box::new(CoreStringSubstringRunner))?;
     reg.register(Box::new(CoreStringReplaceRunner))?;

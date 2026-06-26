@@ -154,3 +154,72 @@ impl SubActionRunner for CoreMathEvaluateRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use forge_events::{Event, EventPublisher};
+    use forge_types::EventId;
+
+    struct NullPublisher;
+    impl EventPublisher for NullPublisher {
+        fn publish(&self, _event: Event) {}
+    }
+
+    fn cfg(expr: &str, into: &str, result_type: &str) -> SubActionConfig {
+        let mut c = SubActionConfig::new();
+        c.insert("expression".to_owned(), Variant::String(expr.to_owned()));
+        c.insert("into_var".to_owned(), Variant::String(into.to_owned()));
+        c.insert(
+            "result_type".to_owned(),
+            Variant::String(result_type.to_owned()),
+        );
+        c
+    }
+
+    async fn run(cfg: &SubActionConfig) -> (SubActionOutcome, Option<ArgStack>) {
+        let stack = ArgStack::new();
+        let ctx = RunContext {
+            arg_stack: &stack,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher: &NullPublisher,
+        };
+        let (telemetry, out) = CoreMathEvaluateRunner::new().execute(cfg, &ctx).await;
+        (telemetry.outcome, out)
+    }
+
+    #[tokio::test]
+    async fn evaluate_stores_numeric_result_under_named_var() {
+        let (outcome, out) = run(&cfg("2 + 3", "total", "auto")).await;
+        assert!(matches!(outcome, SubActionOutcome::Success));
+        assert_eq!(out.unwrap().get("total"), Some(&Variant::Int(5)));
+    }
+
+    #[tokio::test]
+    async fn evaluate_result_type_int_truncates_float_value() {
+        let (_, out) = run(&cfg("10.0 / 4.0", "x", "int")).await;
+        assert_eq!(out.unwrap().get("x"), Some(&Variant::Int(2)));
+    }
+
+    #[tokio::test]
+    async fn evaluate_result_type_float_promotes_int_value() {
+        let (_, out) = run(&cfg("5", "x", "float")).await;
+        assert_eq!(out.unwrap().get("x"), Some(&Variant::Float(5.0)));
+    }
+
+    #[tokio::test]
+    async fn evaluate_defaults_output_var_to_result_when_blank() {
+        let (outcome, out) = run(&cfg("1 + 1", "", "auto")).await;
+        assert!(matches!(outcome, SubActionOutcome::Success));
+        assert_eq!(out.unwrap().get("result"), Some(&Variant::Int(2)));
+    }
+
+    #[tokio::test]
+    async fn evaluate_failed_expression_yields_failed_and_no_stack() {
+        let (outcome, out) = run(&cfg("\"not a number\"", "x", "auto")).await;
+        assert!(matches!(outcome, SubActionOutcome::Failed(_)));
+        assert!(out.is_none());
+    }
+}

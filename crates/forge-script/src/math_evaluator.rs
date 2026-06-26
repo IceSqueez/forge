@@ -58,3 +58,72 @@ impl MathEvaluator {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    fn eval(expr: &str) -> Result<Variant, ScriptError> {
+        MathEvaluator::with_config(EngineConfig::default()).eval(expr)
+    }
+
+    #[test]
+    fn eval_computes_arithmetic_with_correct_precedence_and_types() {
+        // Each expected value is distinct, so swapping any single operator's
+        // semantics (precedence, integer vs float division) flips a row.
+        for (expr, expected) in [
+            ("2 + 3 * 4", Variant::Int(14)),     // multiplication before addition
+            ("(2 + 3) * 4", Variant::Int(20)),   // parentheses override precedence
+            ("-5 + 2", Variant::Int(-3)),        // negative operand
+            ("10 / 4", Variant::Int(2)),         // integer division truncates
+            ("7 % 3", Variant::Int(1)),          // modulo
+            ("10.0 / 4.0", Variant::Float(2.5)), // float division keeps fraction
+            ("2.5 + 2.5", Variant::Float(5.0)),  // float operands stay Float
+        ] {
+            assert_eq!(eval(expr).unwrap(), expected, "expr: {expr}");
+        }
+    }
+
+    #[test]
+    fn eval_rejects_non_finite_results() {
+        // NaN / infinity must never leak into a Variant downstream.
+        for expr in ["0.0 / 0.0", "1.0 / 0.0"] {
+            let err = eval(expr).unwrap_err();
+            assert!(err.to_string().contains("non-finite"), "expr {expr}: {err}");
+        }
+    }
+
+    #[test]
+    fn eval_rejects_non_numeric_result() {
+        let err = eval("\"hello\"").unwrap_err();
+        assert!(
+            err.to_string().contains("expected numeric result"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn eval_treats_percent_tokens_literally_without_re_interpolating() {
+        // `%var%` placeholders are interpolated by the caller BEFORE this point.
+        // The evaluator must parse the raw text — `%kills%` is a syntax error,
+        // not a second interpolation pass.
+        assert!(eval("%kills%").is_err());
+    }
+
+    #[test]
+    fn eval_bounded_expression_terminates_with_error_quickly() {
+        let evaluator = MathEvaluator::with_config(EngineConfig {
+            op_limit: 500,
+            wall_time_ms: 50,
+        });
+        let start = Instant::now();
+        let result = evaluator.eval("let x = 0; while x < 100000000 { x += 1; } x");
+        let elapsed = start.elapsed();
+        assert!(result.is_err(), "unbounded expression should be rejected");
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "evaluation must not hang: took {elapsed:?}"
+        );
+    }
+}

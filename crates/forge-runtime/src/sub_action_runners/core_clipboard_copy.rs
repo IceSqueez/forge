@@ -94,3 +94,51 @@ impl SubActionRunner for CoreClipboardCopyRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::sub_action_runners::os_ports::test_ports::{
+        MockErr, NullPublisher, RecordingClipboardPort,
+    };
+    use forge_types::EventId;
+
+    async fn run(
+        clipboard: Arc<RecordingClipboardPort>,
+        stack: ArgStack,
+        text: &str,
+    ) -> SubActionOutcome {
+        let mut cfg = SubActionConfig::new();
+        cfg.insert("text".to_owned(), Variant::String(text.to_owned()));
+        let publisher = NullPublisher;
+        let ctx = RunContext {
+            arg_stack: &stack,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher: &publisher,
+        };
+        CoreClipboardCopyRunner::new(clipboard)
+            .execute(&cfg, &ctx)
+            .await
+            .0
+            .outcome
+    }
+
+    #[tokio::test]
+    async fn writes_interpolated_text_to_port() {
+        let stack = ArgStack::new().set("name".to_owned(), Variant::String("World".to_owned()));
+        let port = Arc::new(RecordingClipboardPort::new());
+        let outcome = run(Arc::clone(&port), stack, "Hello %name%").await;
+        assert!(matches!(outcome, SubActionOutcome::Success));
+        assert_eq!(port.written(), vec!["Hello World".to_owned()]);
+    }
+
+    #[tokio::test]
+    async fn maps_port_error_to_failed_without_panicking() {
+        let port = Arc::new(RecordingClipboardPort::new().copy_fails(MockErr::Failed));
+        let outcome = run(Arc::clone(&port), ArgStack::new(), "x").await;
+        assert!(matches!(outcome, SubActionOutcome::Failed(_)));
+        assert_eq!(port.written(), vec!["x".to_owned()], "copy was attempted");
+    }
+}

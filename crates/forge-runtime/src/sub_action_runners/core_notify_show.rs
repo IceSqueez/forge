@@ -161,3 +161,132 @@ fn parse_urgency(s: &str) -> NotifyUrgency {
         _ => NotifyUrgency::Normal,
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::sub_action_runners::os_ports::test_ports::{
+        MockErr, NullPublisher, RecordingNotifyPort,
+    };
+    use forge_types::EventId;
+
+    async fn run(
+        notify: Arc<RecordingNotifyPort>,
+        stack: ArgStack,
+        cfg: SubActionConfig,
+    ) -> SubActionOutcome {
+        let publisher = NullPublisher;
+        let ctx = RunContext {
+            arg_stack: &stack,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher: &publisher,
+        };
+        CoreNotifyShowRunner::new(notify)
+            .execute(&cfg, &ctx)
+            .await
+            .0
+            .outcome
+    }
+
+    fn cfg_with(title: &str, body: &str, urgency: &str, timeout_ms: i64) -> SubActionConfig {
+        let mut cfg = SubActionConfig::new();
+        cfg.insert("title".to_owned(), Variant::String(title.to_owned()));
+        cfg.insert("body".to_owned(), Variant::String(body.to_owned()));
+        cfg.insert("urgency".to_owned(), Variant::String(urgency.to_owned()));
+        cfg.insert("timeout_ms".to_owned(), Variant::Int(timeout_ms));
+        cfg
+    }
+
+    #[tokio::test]
+    async fn forwards_resolved_fields_to_port() {
+        let stack = ArgStack::new().set("who".to_owned(), Variant::String("Alice".to_owned()));
+        let port = Arc::new(RecordingNotifyPort::new());
+        let cfg = cfg_with("Hi %who%", "Welcome %who%", "critical", 3000);
+        let outcome = run(Arc::clone(&port), stack, cfg).await;
+        assert!(matches!(outcome, SubActionOutcome::Success));
+        let shown = port.shown();
+        let notice = &shown[0];
+        assert_eq!(notice.title, "Hi Alice");
+        assert_eq!(notice.body, "Welcome Alice");
+        assert_eq!(notice.urgency, NotifyUrgency::Critical);
+        assert_eq!(notice.timeout_ms, 3000);
+    }
+
+    #[tokio::test]
+    async fn maps_port_error_to_failed_without_panicking() {
+        let port = Arc::new(RecordingNotifyPort::failing(MockErr::Unavailable));
+        let cfg = cfg_with("Title", "Body", "normal", 5000);
+        let outcome = run(Arc::clone(&port), ArgStack::new(), cfg).await;
+        assert!(matches!(outcome, SubActionOutcome::Failed(_)));
+        assert_eq!(
+            port.call_count(),
+            1,
+            "the notice was dispatched before failing"
+        );
+    }
+
+    #[tokio::test]
+    async fn clamps_out_of_range_timeout_instead_of_rejecting() {
+        // Out-of-range timeouts are clamped into [1000, 60000], NOT rejected.
+        for (input, expected) in [
+            (10_i64, 1000_u32),
+            (999, 1000),
+            (1000, 1000),
+            (5000, 5000),
+            (60000, 60000),
+            (999_999, 60000),
+        ] {
+            let port = Arc::new(RecordingNotifyPort::new());
+            let cfg = cfg_with("x", "", "normal", input);
+            let outcome = run(Arc::clone(&port), ArgStack::new(), cfg).await;
+            assert!(
+                matches!(outcome, SubActionOutcome::Success),
+                "input {input}"
+            );
+            assert_eq!(port.shown()[0].timeout_ms, expected, "input {input}");
+        }
+    }
+
+    #[test]
+    fn validate_rejects_title_length_outside_one_to_hundred() {
+        let runner = CoreNotifyShowRunner::new(Arc::new(RecordingNotifyPort::new()));
+        let cases: [(String, bool); 4] = [
+            (String::new(), false),   // empty rejected
+            ("x".to_owned(), true),   // lower boundary
+            ("a".repeat(100), true),  // upper boundary
+            ("a".repeat(101), false), // one over upper boundary
+        ];
+        for (title, expect_ok) in cases {
+            let mut cfg = SubActionConfig::new();
+            cfg.insert("title".to_owned(), Variant::String(title.clone()));
+            assert_eq!(
+                runner.validate_config(&cfg).is_ok(),
+                expect_ok,
+                "title char count {}",
+                title.chars().count()
+            );
+        }
+    }
+
+    #[test]
+    fn validate_rejects_missing_title_key() {
+        let runner = CoreNotifyShowRunner::new(Arc::new(RecordingNotifyPort::new()));
+        let cfg = SubActionConfig::new();
+        assert!(runner.validate_config(&cfg).is_err());
+    }
+
+    #[test]
+    fn validate_counts_unicode_scalar_values_not_bytes() {
+        // Why: 100 emoji = 100 chars but 400 bytes; a byte-length check would
+        // wrongly reject. The boundary is char-counted.
+        let runner = CoreNotifyShowRunner::new(Arc::new(RecordingNotifyPort::new()));
+        let mut ok = SubActionConfig::new();
+        ok.insert("title".to_owned(), Variant::String("😀".repeat(100)));
+        assert!(runner.validate_config(&ok).is_ok());
+        let mut too_long = SubActionConfig::new();
+        too_long.insert("title".to_owned(), Variant::String("😀".repeat(101)));
+        assert!(runner.validate_config(&too_long).is_err());
+    }
+}

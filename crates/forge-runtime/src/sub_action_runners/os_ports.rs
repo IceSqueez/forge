@@ -104,3 +104,171 @@ impl UrlOpenPort for SystemUrlOpenPort {
         open::that_detached(url).map_err(|e| OsPortError::Failed(e.to_string()))
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+pub(crate) mod test_ports {
+    //! Recording / programmable mock ports for runner tests. These NEVER touch a
+    //! real clipboard, notification daemon, or browser — they record every call
+    //! and return a pre-programmed outcome, so the security gate and field
+    //! marshaling can be asserted without OS side effects.
+
+    use std::sync::Mutex;
+
+    use forge_events::{Event, EventPublisher};
+
+    use super::{ClipboardPort, DesktopNotice, NotifyPort, OsPortError, UrlOpenPort};
+
+    #[derive(Clone, Copy)]
+    pub(crate) enum MockErr {
+        Unavailable,
+        Failed,
+    }
+
+    impl MockErr {
+        fn into_error(self) -> OsPortError {
+            match self {
+                MockErr::Unavailable => OsPortError::Unavailable("mock unavailable".to_owned()),
+                MockErr::Failed => OsPortError::Failed("mock failed".to_owned()),
+            }
+        }
+    }
+
+    /// Records every URL handed to the OS opener; performs no real I/O.
+    pub(crate) struct RecordingUrlOpenPort {
+        opened: Mutex<Vec<String>>,
+        err: Option<MockErr>,
+    }
+
+    impl RecordingUrlOpenPort {
+        pub(crate) fn new() -> Self {
+            Self {
+                opened: Mutex::new(Vec::new()),
+                err: None,
+            }
+        }
+
+        pub(crate) fn failing(err: MockErr) -> Self {
+            Self {
+                opened: Mutex::new(Vec::new()),
+                err: Some(err),
+            }
+        }
+
+        pub(crate) fn opened(&self) -> Vec<String> {
+            self.opened.lock().unwrap().clone()
+        }
+
+        pub(crate) fn call_count(&self) -> usize {
+            self.opened.lock().unwrap().len()
+        }
+    }
+
+    impl UrlOpenPort for RecordingUrlOpenPort {
+        fn open(&self, url: String) -> Result<(), OsPortError> {
+            self.opened.lock().unwrap().push(url);
+            match self.err {
+                Some(e) => Err(e.into_error()),
+                None => Ok(()),
+            }
+        }
+    }
+
+    /// Records clipboard writes and serves a programmed read result.
+    pub(crate) struct RecordingClipboardPort {
+        written: Mutex<Vec<String>>,
+        copy_err: Option<MockErr>,
+        read: Result<String, MockErr>,
+    }
+
+    impl RecordingClipboardPort {
+        pub(crate) fn new() -> Self {
+            Self {
+                written: Mutex::new(Vec::new()),
+                copy_err: None,
+                read: Ok(String::new()),
+            }
+        }
+
+        pub(crate) fn reads(mut self, text: &str) -> Self {
+            self.read = Ok(text.to_owned());
+            self
+        }
+
+        pub(crate) fn read_fails(mut self, err: MockErr) -> Self {
+            self.read = Err(err);
+            self
+        }
+
+        pub(crate) fn copy_fails(mut self, err: MockErr) -> Self {
+            self.copy_err = Some(err);
+            self
+        }
+
+        pub(crate) fn written(&self) -> Vec<String> {
+            self.written.lock().unwrap().clone()
+        }
+    }
+
+    impl ClipboardPort for RecordingClipboardPort {
+        fn copy(&self, text: String) -> Result<(), OsPortError> {
+            self.written.lock().unwrap().push(text);
+            match self.copy_err {
+                Some(e) => Err(e.into_error()),
+                None => Ok(()),
+            }
+        }
+
+        fn read(&self) -> Result<String, OsPortError> {
+            self.read.clone().map_err(MockErr::into_error)
+        }
+    }
+
+    /// Records every notice handed to the OS notification layer.
+    pub(crate) struct RecordingNotifyPort {
+        shown: Mutex<Vec<DesktopNotice>>,
+        err: Option<MockErr>,
+    }
+
+    impl RecordingNotifyPort {
+        pub(crate) fn new() -> Self {
+            Self {
+                shown: Mutex::new(Vec::new()),
+                err: None,
+            }
+        }
+
+        pub(crate) fn failing(err: MockErr) -> Self {
+            Self {
+                shown: Mutex::new(Vec::new()),
+                err: Some(err),
+            }
+        }
+
+        pub(crate) fn shown(&self) -> std::sync::MutexGuard<'_, Vec<DesktopNotice>> {
+            self.shown.lock().unwrap()
+        }
+
+        pub(crate) fn call_count(&self) -> usize {
+            self.shown.lock().unwrap().len()
+        }
+    }
+
+    impl NotifyPort for RecordingNotifyPort {
+        fn show(&self, notice: DesktopNotice) -> Result<(), OsPortError> {
+            self.shown.lock().unwrap().push(notice);
+            match self.err {
+                Some(e) => Err(e.into_error()),
+                None => Ok(()),
+            }
+        }
+    }
+
+    /// Sink that drops events — RunContext requires a publisher but these runners
+    /// emit none.
+    pub(crate) struct NullPublisher;
+
+    impl EventPublisher for NullPublisher {
+        fn publish(&self, _event: Event) {}
+    }
+}

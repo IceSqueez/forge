@@ -107,3 +107,80 @@ impl SubActionRunner for CoreClipboardReadRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::sub_action_runners::os_ports::test_ports::{
+        MockErr, NullPublisher, RecordingClipboardPort,
+    };
+    use forge_types::EventId;
+
+    async fn run(
+        clipboard: Arc<RecordingClipboardPort>,
+        into_var: &str,
+    ) -> (SubActionOutcome, Option<ArgStack>) {
+        let mut cfg = SubActionConfig::new();
+        cfg.insert("into_var".to_owned(), Variant::String(into_var.to_owned()));
+        let stack = ArgStack::new();
+        let publisher = NullPublisher;
+        let ctx = RunContext {
+            arg_stack: &stack,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher: &publisher,
+        };
+        let (telemetry, updated) = CoreClipboardReadRunner::new(clipboard)
+            .execute(&cfg, &ctx)
+            .await;
+        (telemetry.outcome, updated)
+    }
+
+    #[tokio::test]
+    async fn writes_clipboard_value_into_named_var() {
+        let port = Arc::new(RecordingClipboardPort::new().reads("hello"));
+        let (outcome, updated) = run(port, "my.var").await;
+        assert!(matches!(outcome, SubActionOutcome::Success));
+        let stack = updated.unwrap();
+        assert_eq!(stack.get("my.var").and_then(|v| v.as_str()), Some("hello"));
+    }
+
+    #[tokio::test]
+    async fn empty_buffer_succeeds_with_empty_string() {
+        // Contract: an accessible-but-empty clipboard is Success with an empty value,
+        // NOT a failure.
+        let port = Arc::new(RecordingClipboardPort::new().reads(""));
+        let (outcome, updated) = run(port, "my.var").await;
+        assert!(matches!(outcome, SubActionOutcome::Success));
+        assert_eq!(
+            updated.unwrap().get("my.var").and_then(|v| v.as_str()),
+            Some("")
+        );
+    }
+
+    #[tokio::test]
+    async fn unavailable_clipboard_maps_to_failed_and_yields_no_stack() {
+        let port = Arc::new(RecordingClipboardPort::new().read_fails(MockErr::Unavailable));
+        let (outcome, updated) = run(port, "my.var").await;
+        assert!(matches!(outcome, SubActionOutcome::Failed(_)));
+        assert!(
+            updated.is_none(),
+            "a failed read must not mutate the arg stack"
+        );
+    }
+
+    #[tokio::test]
+    async fn blank_into_var_falls_back_to_default_key() {
+        let port = Arc::new(RecordingClipboardPort::new().reads("data"));
+        let (outcome, updated) = run(port, "").await;
+        assert!(matches!(outcome, SubActionOutcome::Success));
+        assert_eq!(
+            updated
+                .unwrap()
+                .get("clipboard.text")
+                .and_then(|v| v.as_str()),
+            Some("data")
+        );
+    }
+}

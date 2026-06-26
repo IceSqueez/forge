@@ -428,6 +428,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         scheduler_cell.clone(),
         dp.trigger_instance_repo(),
         dp.action_repo(),
+        forge_runtime::Config::default(),
     ) {
         tracing::warn!("core sub-action runner registration failed: {e}");
     }

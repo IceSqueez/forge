@@ -118,6 +118,7 @@ fn build_core_registries(
         forge_runtime::SchedulerCell::new(),
         trigger_instances,
         actions,
+        forge_runtime::Config::default(),
     )
     .unwrap();
 

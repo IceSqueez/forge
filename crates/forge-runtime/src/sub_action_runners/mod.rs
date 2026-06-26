@@ -19,7 +19,15 @@ mod core_globals_set;
 mod core_globals_toggle;
 mod core_http;
 mod core_log_write;
+mod core_logic_break_loop;
+mod core_logic_continue_loop;
+mod core_logic_if_then_else;
+mod core_logic_loop;
+mod core_logic_shared;
+mod core_logic_stop;
+mod core_logic_switch_case;
 mod core_logic_wait;
+mod core_logic_wait_until;
 mod core_math_evaluate;
 mod core_notify_show;
 mod core_queue_clear;
@@ -85,7 +93,14 @@ pub use core_globals_set::CoreGlobalsSetRunner;
 pub use core_globals_toggle::CoreGlobalsToggleRunner;
 pub use core_http::CoreHttpRunner;
 pub use core_log_write::CoreLogWriteRunner;
+pub use core_logic_break_loop::CoreLogicBreakLoopRunner;
+pub use core_logic_continue_loop::CoreLogicContinueLoopRunner;
+pub use core_logic_if_then_else::CoreLogicIfThenElseRunner;
+pub use core_logic_loop::CoreLogicLoopRunner;
+pub use core_logic_stop::CoreLogicStopRunner;
+pub use core_logic_switch_case::CoreLogicSwitchCaseRunner;
 pub use core_logic_wait::CoreLogicWaitRunner;
+pub use core_logic_wait_until::CoreLogicWaitUntilRunner;
 pub use core_math_evaluate::CoreMathEvaluateRunner;
 pub use core_notify_show::CoreNotifyShowRunner;
 pub use core_queue_clear::CoreQueueClearRunner;
@@ -136,6 +151,8 @@ use forge_registry::{RegistryError, SubActionRegistry};
 use forge_storage::{ActionRepo, GlobalsRepo, SettingsRepo, TriggerInstanceRepo, UserGlobalsRepo};
 
 use crate::SchedulerCell;
+use crate::condition::ConditionGate;
+use crate::config::Config;
 use crate::egress::{EgressClient, HttpMethod};
 use crate::script_registry::ScriptRegistry;
 
@@ -150,8 +167,22 @@ pub fn register_core_sub_actions(
     scheduler: SchedulerCell,
     trigger_instances: Arc<dyn TriggerInstanceRepo>,
     actions: Arc<dyn ActionRepo>,
+    config: Config,
 ) -> Result<(), RegistryError> {
+    let condition_gate = Arc::new(ConditionGate::new(&config));
+
     reg.register(Box::new(CoreArgsSetRunner))?;
+    reg.register(Box::new(CoreLogicBreakLoopRunner))?;
+    reg.register(Box::new(CoreLogicContinueLoopRunner))?;
+    reg.register(Box::new(CoreLogicStopRunner))?;
+    reg.register(Box::new(CoreLogicSwitchCaseRunner))?;
+    reg.register(Box::new(CoreLogicIfThenElseRunner::new(Arc::clone(
+        &condition_gate,
+    ))))?;
+    reg.register(Box::new(CoreLogicLoopRunner::new(Arc::clone(
+        &condition_gate,
+    ))))?;
+    reg.register(Box::new(CoreLogicWaitUntilRunner::new(condition_gate)))?;
     reg.register(Box::new(CoreQueuePauseRunner::new(scheduler.clone())))?;
     reg.register(Box::new(CoreQueueResumeRunner::new(scheduler.clone())))?;
     reg.register(Box::new(CoreQueueClearRunner::new(scheduler.clone())))?;

@@ -224,10 +224,13 @@ impl ActionEngine {
 
         ctx.telemetry = run.telemetry;
         ctx.outcome = match run.signal {
-            ChainSignal::Completed
-            | ChainSignal::Stop
-            | ChainSignal::Break
-            | ChainSignal::Continue => ExecutionOutcome::Success,
+            ChainSignal::Completed | ChainSignal::Break | ChainSignal::Continue => {
+                ExecutionOutcome::Success
+            }
+            ChainSignal::Stop(mark) if mark.failed => {
+                ExecutionOutcome::Failed(mark.reason.unwrap_or_else(|| "stopped".to_owned()))
+            }
+            ChainSignal::Stop(_) => ExecutionOutcome::Success,
             ChainSignal::Error(msg) => ExecutionOutcome::Failed(msg),
             ChainSignal::Aborted => ExecutionOutcome::Cancelled,
         };

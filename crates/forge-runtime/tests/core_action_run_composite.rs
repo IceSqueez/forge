@@ -252,6 +252,7 @@ async fn run(
         publisher: &NullPublisher,
         executor,
         cancel: CancelSignal::new(),
+        control: forge_registry::ControlCell::new(),
     };
     runner.execute(config, &ctx).await.0.outcome
 }
@@ -343,7 +344,7 @@ async fn child_signal_maps_to_the_sub_action_outcome() {
 
     let cases = [
         (ChainSignal::Completed, Expect::Success),
-        (ChainSignal::Stop, Expect::Success),
+        (ChainSignal::Stop(Default::default()), Expect::Success),
         (ChainSignal::Break, Expect::Success),
         (ChainSignal::Continue, Expect::Success),
         (

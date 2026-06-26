@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_registry::{
-    CancelSignal, ChainExecutor, ChainSignal, ChildChainOutcome, RegistryError, RunContext,
-    SubActionRegistry, effective_config,
+    CancelSignal, ChainExecutor, ChainSignal, ChildChainOutcome, ControlCell, ControlSignal,
+    RegistryError, RunContext, SubActionRegistry, effective_config,
 };
 use forge_types::{ArgStack, EventId, SubActionOutcome, SubActionStep, SubActionTelemetry};
 use serde_json::json;
@@ -85,6 +85,7 @@ impl ChainEngine {
         executor: &dyn ChainExecutor,
     ) -> ChainRun {
         let cancel = executor.cancel_signal();
+        let control = ControlCell::new();
         let mut current = arg_stack.clone();
         let mut telemetry = Vec::new();
 
@@ -116,6 +117,7 @@ impl ChainEngine {
                 publisher: self.publisher.as_ref(),
                 executor,
                 cancel: cancel.clone(),
+                control: control.clone(),
             };
 
             let (tel, updated) = match self.registry.get(&step.kind_id) {
@@ -145,6 +147,18 @@ impl ChainEngine {
             if let Some(msg) = failure {
                 return ChainRun {
                     signal: ChainSignal::Error(msg),
+                    arg_stack: current,
+                    telemetry,
+                };
+            }
+
+            if let Some(control_signal) = control.take() {
+                return ChainRun {
+                    signal: match control_signal {
+                        ControlSignal::Break => ChainSignal::Break,
+                        ControlSignal::Continue => ChainSignal::Continue,
+                        ControlSignal::Stop(mark) => ChainSignal::Stop(mark),
+                    },
                     arg_stack: current,
                     telemetry,
                 };
@@ -193,6 +207,9 @@ impl ChainEngine {
                 let run_event_id = run_event.id;
                 self.publisher.publish(run_event);
 
+                // Concurrent siblings share no sequential ordering, so a control
+                // signal one raised has no defined enclosing chain to drain it;
+                // each gets its own never-read cell rather than racing on a shared one.
                 let run_ctx = RunContext {
                     arg_stack,
                     index,
@@ -200,6 +217,7 @@ impl ChainEngine {
                     publisher: self.publisher.as_ref(),
                     executor,
                     cancel: cancel.clone(),
+                    control: ControlCell::new(),
                 };
 
                 async move {

@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use forge_events::EventPublisher;
 use forge_types::{ArgStack, EventId, SubActionStep};
 
-use crate::chain::{CancelSignal, ChainExecutor, ChainSignal, ChildChainOutcome};
+use crate::chain::{CancelSignal, ChainExecutor, ChainSignal, ChildChainOutcome, ControlCell};
 use crate::error::RegistryError;
 
 pub struct RunContext<'a> {
@@ -17,6 +17,10 @@ pub struct RunContext<'a> {
     /// composite/looping runners poll it at boundaries. Leaf runners get a
     /// fresh, never-tripped signal.
     pub cancel: CancelSignal,
+    /// Where `break`/`continue`/`stop` leaves raise their flow-control signal for
+    /// the enclosing sequential chain to drain. Drained only by `drive_sequential`;
+    /// a leaf built through `RunContext::leaf` writes into a cell nobody reads.
+    pub control: ControlCell,
 }
 
 impl<'a> RunContext<'a> {
@@ -37,6 +41,7 @@ impl<'a> RunContext<'a> {
             publisher,
             executor: &NOOP_EXECUTOR,
             cancel: CancelSignal::new(),
+            control: ControlCell::new(),
         }
     }
 }

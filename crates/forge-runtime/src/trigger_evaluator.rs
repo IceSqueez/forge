@@ -293,6 +293,7 @@ mod tests {
             crate::SchedulerCell::new(),
             trigger_instances,
             actions,
+            crate::Config::default(),
         )
         .unwrap();
 

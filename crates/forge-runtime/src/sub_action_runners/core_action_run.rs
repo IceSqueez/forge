@@ -61,13 +61,12 @@ impl CoreActionRunRunner {
                 SubActionOutcome::Failed("core.action.run: max nesting depth exceeded".to_owned())
             }
             Err(e) => SubActionOutcome::Failed(format!("core.action.run: {e}")),
-            // Stop/Break/Continue are absorbed as Success here: the parent's
-            // action-root maps all three to a successful execution, and no child
-            // chain can emit them yet (flow-control runners that do are a later
-            // tier and will revisit cross-action propagation).
+            // The called action is its own root: its Stop/Break/Continue terminate
+            // the callee chain and never cross back into the caller, so all three
+            // resolve to a successful step here.
             Ok(child) => match child.signal {
                 ChainSignal::Completed
-                | ChainSignal::Stop
+                | ChainSignal::Stop(_)
                 | ChainSignal::Break
                 | ChainSignal::Continue => SubActionOutcome::Success,
                 ChainSignal::Error(msg) => SubActionOutcome::Failed(msg),

@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
 use forge_types::{ArgStack, EventId, SubActionStep, SubActionTelemetry};
@@ -9,8 +9,10 @@ use crate::error::RegistryError;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChainSignal {
     Completed,
-    /// Halts the whole action; absorbed only at the action-root executor.
-    Stop,
+    /// Halts the whole action; re-propagated through every enclosing loop and
+    /// absorbed only at the action-root, which records the run as failed iff the
+    /// carried mark says so.
+    Stop(StopMark),
     /// Unwinds to the nearest enclosing loop.
     Break,
     /// Skips to the next iteration of the nearest enclosing loop.
@@ -18,6 +20,50 @@ pub enum ChainSignal {
     Error(String),
     /// External cancellation observed at a step or iteration boundary.
     Aborted,
+}
+
+/// How the action-root records a run that a `stop` step halted.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct StopMark {
+    pub failed: bool,
+    pub reason: Option<String>,
+}
+
+/// In-band flow-control a leaf step raises for its immediately enclosing
+/// sequential chain to act on once, the turn after the step returns.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ControlSignal {
+    Break,
+    Continue,
+    Stop(StopMark),
+}
+
+/// One-shot mailbox a `break`/`continue`/`stop` leaf writes and its enclosing
+/// `drive_sequential` drains right after the step returns. A fresh cell is minted
+/// per sequential-chain invocation, so a raised signal never leaks past the chain
+/// that must act on it; a leaf built through `RunContext::leaf` writes into a cell
+/// nobody drains.
+#[derive(Clone, Default)]
+pub struct ControlCell(Arc<Mutex<Option<ControlSignal>>>);
+
+impl ControlCell {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn set(&self, signal: ControlSignal) {
+        *self.guard() = Some(signal);
+    }
+
+    pub fn take(&self) -> Option<ControlSignal> {
+        self.guard().take()
+    }
+
+    fn guard(&self) -> MutexGuard<'_, Option<ControlSignal>> {
+        self.0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 }
 
 pub struct ChildChainOutcome {

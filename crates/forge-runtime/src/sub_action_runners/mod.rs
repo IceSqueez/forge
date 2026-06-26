@@ -21,6 +21,11 @@ mod core_string_substring;
 mod core_string_titlecase;
 mod core_string_trim;
 mod core_string_uppercase;
+mod core_time_add;
+mod core_time_diff;
+mod core_time_format;
+mod core_time_now;
+mod core_time_parse;
 mod interpolate;
 mod script_run_inline;
 mod script_run_named;
@@ -49,6 +54,11 @@ pub use core_string_substring::CoreStringSubstringRunner;
 pub use core_string_titlecase::CoreStringTitlecaseRunner;
 pub use core_string_trim::CoreStringTrimRunner;
 pub use core_string_uppercase::CoreStringUppercaseRunner;
+pub use core_time_add::CoreTimeAddRunner;
+pub use core_time_diff::CoreTimeDiffRunner;
+pub use core_time_format::CoreTimeFormatRunner;
+pub use core_time_now::CoreTimeNowRunner;
+pub use core_time_parse::CoreTimeParseRunner;
 pub use script_run_inline::ScriptRunInlineRunner;
 pub use script_run_named::ScriptRunNamedRunner;
 pub use twitch_chat_send_message::TwitchChatSendMessageRunner;
@@ -108,5 +118,10 @@ pub fn register_core_sub_actions(
     reg.register(Box::new(CoreStringLengthRunner))?;
     reg.register(Box::new(CoreStringRegexMatchRunner))?;
     reg.register(Box::new(CoreStringFormatRunner))?;
+    reg.register(Box::new(CoreTimeNowRunner))?;
+    reg.register(Box::new(CoreTimeFormatRunner))?;
+    reg.register(Box::new(CoreTimeDiffRunner))?;
+    reg.register(Box::new(CoreTimeAddRunner))?;
+    reg.register(Box::new(CoreTimeParseRunner))?;
     Ok(())
 }

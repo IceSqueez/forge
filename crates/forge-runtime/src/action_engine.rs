@@ -12,7 +12,7 @@ use forge_types::{
 };
 use serde_json::json;
 use time::OffsetDateTime;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tracing::warn;
 
 use crate::chain::ChainEngine;
@@ -26,7 +26,7 @@ struct QuickActionRequest {
 
 #[derive(Clone)]
 pub struct ActionEngineHandle {
-    sender: mpsc::Sender<ExecutionRequest>,
+    sender: mpsc::Sender<EngineJob>,
     quick_sender: mpsc::Sender<QuickActionRequest>,
     cancel: Arc<AtomicBool>,
 }
@@ -35,6 +35,12 @@ pub struct ExecutionRequest {
     pub action_id: ActionId,
     pub trigger_event_id: EventId,
     pub initial_args: forge_types::ArgStack,
+}
+
+struct EngineJob {
+    request: ExecutionRequest,
+    cancel: CancelSignal,
+    on_complete: Option<oneshot::Sender<()>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -46,7 +52,30 @@ pub enum DispatchError {
 impl ActionEngineHandle {
     pub async fn dispatch(&self, req: ExecutionRequest) -> Result<(), DispatchError> {
         self.sender
-            .send(req)
+            .send(EngineJob {
+                request: req,
+                cancel: CancelSignal::new(),
+                on_complete: None,
+            })
+            .await
+            .map_err(|_| DispatchError::ChannelClosed)
+    }
+
+    /// Drives the execution with the caller-provided `cancel` (so an external
+    /// owner can cancel the live chain) and fires `on_complete` once the run
+    /// terminates, regardless of outcome.
+    pub(crate) async fn dispatch_tracked(
+        &self,
+        req: ExecutionRequest,
+        cancel: CancelSignal,
+        on_complete: oneshot::Sender<()>,
+    ) -> Result<(), DispatchError> {
+        self.sender
+            .send(EngineJob {
+                request: req,
+                cancel,
+                on_complete: Some(on_complete),
+            })
             .await
             .map_err(|_| DispatchError::ChannelClosed)
     }
@@ -77,7 +106,7 @@ struct ActionEngine {
     actions: Arc<dyn ActionRepo>,
     history: Arc<dyn HistoryRepo>,
     chain_engine: Arc<ChainEngine>,
-    input: mpsc::Receiver<ExecutionRequest>,
+    input: mpsc::Receiver<EngineJob>,
 }
 
 impl ActionEngine {
@@ -116,13 +145,25 @@ impl ActionEngine {
     async fn run(mut self, cancel: Arc<AtomicBool>) {
         while !cancel.load(Ordering::Relaxed) {
             match self.input.recv().await {
-                Some(req) => self.handle(req).await,
+                Some(job) => self.handle(job).await,
                 None => break,
             }
         }
     }
 
-    async fn handle(&self, req: ExecutionRequest) {
+    async fn handle(&self, job: EngineJob) {
+        let EngineJob {
+            request,
+            cancel,
+            on_complete,
+        } = job;
+        self.run_execution(request, &cancel).await;
+        if let Some(done) = on_complete {
+            let _ = done.send(());
+        }
+    }
+
+    async fn run_execution(&self, req: ExecutionRequest, cancel: &CancelSignal) {
         let action = match self.actions.get(req.action_id).await {
             Ok(Some(a)) if a.enabled => a,
             Ok(_) => return,
@@ -171,14 +212,13 @@ impl ActionEngine {
             action.sub_actions.clone()
         };
 
-        let cancel = CancelSignal::new();
         let run = if action.concurrent {
             self.chain_engine
-                .run_concurrent(&pick, &arg_stack, start_event_id, &cancel)
+                .run_concurrent(&pick, &arg_stack, start_event_id, cancel)
                 .await
         } else {
             self.chain_engine
-                .run_sequential(&pick, &arg_stack, start_event_id, &cancel)
+                .run_sequential(&pick, &arg_stack, start_event_id, cancel)
                 .await
         };
 
@@ -192,6 +232,12 @@ impl ActionEngine {
             ChainSignal::Aborted => ExecutionOutcome::Cancelled,
         };
 
+        // An external cancel landing after the chain's last boundary check still
+        // makes this a cancelled run; the leaf may have finished without observing it.
+        if cancel.is_cancelled() {
+            ctx.outcome = ExecutionOutcome::Cancelled;
+        }
+
         ctx.completed_at = Some(OffsetDateTime::now_utc());
 
         let total_ms: u64 = ctx.telemetry.iter().map(|t| t.duration_ms).sum();
@@ -201,16 +247,20 @@ impl ActionEngine {
             ExecutionOutcome::Cancelled => "cancelled",
         };
 
-        self.bus.publish(Event::caused_by(
-            EventSource::Core,
-            "action.done",
-            json!({
-                "action_id": action.id.to_string(),
-                "outcome": outcome_label,
-                "total_ms": total_ms,
-            }),
-            start_event_id,
-        ));
+        // A cancelled run was killed mid-flight, not completed: it records to
+        // history but emits no completion event onto the bus.
+        if !matches!(ctx.outcome, ExecutionOutcome::Cancelled) {
+            self.bus.publish(Event::caused_by(
+                EventSource::Core,
+                "action.done",
+                json!({
+                    "action_id": action.id.to_string(),
+                    "outcome": outcome_label,
+                    "total_ms": total_ms,
+                }),
+                start_event_id,
+            ));
+        }
 
         if let Err(e) = self.history.save(&ctx).await {
             warn!("history_repo.save failed: {e}");

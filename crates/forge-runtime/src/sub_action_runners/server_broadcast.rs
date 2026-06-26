@@ -150,3 +150,162 @@ fn config_payload(config: &SubActionConfig) -> serde_json::Value {
         _ => serde_json::Value::Object(Default::default()),
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+    use forge_types::EventId;
+    use std::sync::Mutex;
+
+    /// Captures every published event so tests can assert on the runner's output.
+    #[derive(Default)]
+    struct RecordingPublisher {
+        events: Mutex<Vec<Event>>,
+    }
+
+    impl EventPublisher for RecordingPublisher {
+        fn publish(&self, event: Event) {
+            self.events.lock().unwrap().push(event);
+        }
+    }
+
+    impl RecordingPublisher {
+        fn captured(&self) -> Vec<Event> {
+            self.events.lock().unwrap().clone()
+        }
+    }
+
+    /// The runner publishes through its OWN injected publisher, never `ctx.publisher`;
+    /// this null sink in the context proves which channel carried the event.
+    struct NullPublisher;
+    impl EventPublisher for NullPublisher {
+        fn publish(&self, _event: Event) {}
+    }
+
+    fn cfg(event_name: &str, payload: Variant) -> SubActionConfig {
+        let mut c = SubActionConfig::new();
+        c.insert(
+            "event_name".to_owned(),
+            Variant::String(event_name.to_owned()),
+        );
+        c.insert("payload".to_owned(), payload);
+        c
+    }
+
+    fn empty_object() -> Variant {
+        Variant::Object(BTreeMap::new())
+    }
+
+    async fn run(
+        config: &SubActionConfig,
+        arg_stack: &ArgStack,
+        parent: EventId,
+    ) -> (Arc<RecordingPublisher>, SubActionOutcome, Option<ArgStack>) {
+        let recorder = Arc::new(RecordingPublisher::default());
+        let runner = ServerBroadcastRunner::new(recorder.clone());
+        let ctx = RunContext {
+            arg_stack,
+            index: 0,
+            parent_event_id: parent,
+            publisher: &NullPublisher,
+        };
+        let (telemetry, updated_stack) = runner.execute(config, &ctx).await;
+        (recorder, telemetry.outcome, updated_stack)
+    }
+
+    #[tokio::test]
+    async fn broadcast_publishes_prefixed_event_from_server_source() {
+        // Load-bearing overlay round-trip contract: forge-server's BusAdapter forwards bus
+        // events to clients whose EventFilter matches. Overlays subscribe on
+        // source == Server and kind "broadcast.*". Pin BOTH exactly — if the kind drops the
+        // "broadcast." prefix, drops the name, or the source stops being Server, overlays
+        // silently stop receiving broadcasts.
+        let (recorder, outcome, _) = run(
+            &cfg("alert", empty_object()),
+            &ArgStack::new(),
+            EventId::new(),
+        )
+        .await;
+
+        assert!(matches!(outcome, SubActionOutcome::Success));
+        let events = recorder.captured();
+        assert_eq!(events.len(), 1, "exactly one event must be published");
+        // Exact string: not "alert" (missing prefix) and not "broadcast." (missing name).
+        assert_eq!(events[0].kind, "broadcast.alert");
+        assert!(matches!(events[0].source, EventSource::Server));
+    }
+
+    #[tokio::test]
+    async fn broadcast_links_published_event_to_parent_event_id() {
+        let parent = EventId::new();
+        let (recorder, _, _) = run(&cfg("alert", empty_object()), &ArgStack::new(), parent).await;
+
+        assert_eq!(recorder.captured()[0].caused_by, Some(parent));
+    }
+
+    #[tokio::test]
+    async fn broadcast_carries_config_object_payload_into_event() {
+        let mut payload = BTreeMap::new();
+        payload.insert("amount".to_owned(), Variant::Int(5));
+        let (recorder, _, _) = run(
+            &cfg("alert", Variant::Object(payload)),
+            &ArgStack::new(),
+            EventId::new(),
+        )
+        .await;
+
+        // The config payload object lands in event.payload; each value is carried through
+        // Variant::to_json, so it decodes back to the original Variant under its key.
+        let landed = recorder.captured()[0]
+            .payload
+            .get("amount")
+            .cloned()
+            .expect("amount key must be present in the published payload");
+        assert_eq!(Variant::from_json(landed).unwrap(), Variant::Int(5));
+    }
+
+    #[tokio::test]
+    async fn broadcast_interpolates_event_name_from_arg_stack_before_prefixing() {
+        // %kind% resolves from the stack, THEN the "broadcast." prefix is applied.
+        let stack = ArgStack::new().set("kind".to_owned(), Variant::String("raid".to_owned()));
+        let (recorder, _, _) = run(&cfg("%kind%", empty_object()), &stack, EventId::new()).await;
+
+        assert_eq!(recorder.captured()[0].kind, "broadcast.raid");
+    }
+
+    #[tokio::test]
+    async fn empty_event_name_fails_without_publishing() {
+        let (recorder, outcome, updated_stack) =
+            run(&cfg("", empty_object()), &ArgStack::new(), EventId::new()).await;
+
+        assert!(matches!(outcome, SubActionOutcome::Failed(_)));
+        assert!(
+            recorder.captured().is_empty(),
+            "no event may be published when event_name is empty"
+        );
+        assert!(
+            updated_stack.is_none(),
+            "a failed broadcast must not write output vars"
+        );
+    }
+
+    #[tokio::test]
+    async fn broadcast_writes_delivered_count_output_var() {
+        // Why: delivered_count is a documented placeholder, hard-wired to 0 because an
+        // accurate count needs direct BusAdapter access the runner doesn't have. Pin the
+        // var's presence + Int(0) so a future real-count impl updates this deliberately.
+        let (_, _, updated_stack) = run(
+            &cfg("alert", empty_object()),
+            &ArgStack::new(),
+            EventId::new(),
+        )
+        .await;
+
+        let stack = updated_stack.expect("a successful broadcast must return an updated stack");
+        assert_eq!(
+            stack.get("broadcast.delivered_count"),
+            Some(&Variant::Int(0))
+        );
+    }
+}

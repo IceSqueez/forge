@@ -131,3 +131,69 @@ impl SubActionRunner for CoreFileDeleteRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use forge_events::{Event, EventPublisher};
+    use forge_storage::{GlobalEntry, StorageError};
+    use forge_types::EventId;
+
+    struct NullPublisher;
+    impl EventPublisher for NullPublisher {
+        fn publish(&self, _event: Event) {}
+    }
+
+    struct StubGlobals;
+    #[async_trait]
+    impl GlobalsRepo for StubGlobals {
+        async fn get(&self, _name: &str) -> Result<Option<Variant>, StorageError> {
+            Ok(None)
+        }
+        async fn set(&self, _name: &str, _value: Variant, _p: bool) -> Result<(), StorageError> {
+            Ok(())
+        }
+        async fn delete(&self, _name: &str) -> Result<bool, StorageError> {
+            Ok(false)
+        }
+        async fn list(&self) -> Result<Vec<GlobalEntry>, StorageError> {
+            Ok(vec![])
+        }
+        async fn storage_bytes(&self) -> Result<u64, StorageError> {
+            Ok(0)
+        }
+        async fn last_save_at(&self) -> Result<Option<OffsetDateTime>, StorageError> {
+            Ok(None)
+        }
+        async fn incr(&self, _name: &str, _amount: i64) -> Result<Variant, StorageError> {
+            Ok(Variant::Int(0))
+        }
+    }
+
+    // A traversal path must surface the sandbox-rejection outcome rather than
+    // reach tokio::fs::remove_file (which would yield a "file not found" message).
+    #[tokio::test]
+    async fn delete_rejects_parent_traversal_before_touching_disk() {
+        let runner = CoreFileDeleteRunner::new(Arc::new(StubGlobals));
+        let mut cfg = SubActionConfig::new();
+        cfg.insert(
+            "path".to_owned(),
+            Variant::String("../../etc/passwd".to_owned()),
+        );
+
+        let stack = ArgStack::new();
+        let ctx = RunContext {
+            arg_stack: &stack,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher: &NullPublisher,
+        };
+        let outcome = runner.execute(&cfg, &ctx).await.0.outcome;
+
+        assert!(
+            matches!(&outcome, SubActionOutcome::Failed(msg) if msg.contains("sandbox rejected")),
+            "expected sandbox rejection, got {outcome:?}"
+        );
+    }
+}

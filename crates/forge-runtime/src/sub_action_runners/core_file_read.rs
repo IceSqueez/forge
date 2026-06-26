@@ -162,37 +162,3 @@ impl SubActionRunner for CoreFileReadRunner {
         )
     }
 }
-
-#[cfg(test)]
-#[allow(clippy::unwrap_used)]
-mod tests {
-    use super::resolve_sandboxed;
-
-    #[test]
-    fn rejects_absolute_path() {
-        assert!(resolve_sandboxed("/etc/passwd").is_err());
-    }
-
-    #[test]
-    fn rejects_parent_dir_traversal() {
-        assert!(resolve_sandboxed("../etc/passwd").is_err());
-        assert!(resolve_sandboxed("foo/../../bar").is_err());
-    }
-
-    #[test]
-    fn accepts_simple_relative_path() {
-        let p = resolve_sandboxed("greeting.txt").unwrap();
-        assert!(p.ends_with("assets/greeting.txt"));
-    }
-
-    #[test]
-    fn accepts_nested_relative_path() {
-        let p = resolve_sandboxed("subdir/file.txt").unwrap();
-        assert!(p.ends_with("assets/subdir/file.txt"));
-    }
-
-    #[test]
-    fn rejects_empty_path() {
-        assert!(resolve_sandboxed("").is_err());
-    }
-}

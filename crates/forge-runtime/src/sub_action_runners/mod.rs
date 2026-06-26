@@ -47,6 +47,7 @@ mod interpolate;
 mod script_emit_event;
 mod script_run_inline;
 mod script_run_named;
+mod server_broadcast;
 mod twitch_chat_send_message;
 
 pub use core_args_set::CoreArgsSetRunner;
@@ -94,6 +95,7 @@ pub use core_users_set_var::CoreUsersSetVarRunner;
 pub use script_emit_event::ScriptEmitEventRunner;
 pub use script_run_inline::ScriptRunInlineRunner;
 pub use script_run_named::ScriptRunNamedRunner;
+pub use server_broadcast::ServerBroadcastRunner;
 pub use twitch_chat_send_message::TwitchChatSendMessageRunner;
 
 use std::sync::Arc;
@@ -173,6 +175,7 @@ pub fn register_core_sub_actions(
         settings,
     )))?;
     reg.register(Box::new(ScriptEmitEventRunner::new(Arc::clone(&publisher))))?;
+    reg.register(Box::new(ServerBroadcastRunner::new(Arc::clone(&publisher))))?;
     reg.register(Box::new(CoreStringConcatRunner))?;
     reg.register(Box::new(CoreStringSubstringRunner))?;
     reg.register(Box::new(CoreStringReplaceRunner))?;

@@ -1,4 +1,6 @@
 mod core_args_set;
+mod core_clipboard_copy;
+mod core_clipboard_read;
 mod core_file_delete;
 mod core_file_list;
 mod core_file_read;
@@ -14,6 +16,7 @@ mod core_globals_toggle;
 mod core_log_write;
 mod core_logic_wait;
 mod core_math_evaluate;
+mod core_notify_show;
 mod core_queue_clear;
 mod core_queue_pause;
 mod core_queue_resume;
@@ -38,12 +41,14 @@ mod core_time_diff;
 mod core_time_format;
 mod core_time_now;
 mod core_time_parse;
+mod core_url_open;
 mod core_users_get_var;
 mod core_users_increment_var;
 mod core_users_set_var;
 mod core_users_shared;
 mod file_sandbox;
 mod interpolate;
+mod os_ports;
 mod script_emit_event;
 mod script_run_inline;
 mod script_run_named;
@@ -51,6 +56,8 @@ mod server_broadcast;
 mod twitch_chat_send_message;
 
 pub use core_args_set::CoreArgsSetRunner;
+pub use core_clipboard_copy::CoreClipboardCopyRunner;
+pub use core_clipboard_read::CoreClipboardReadRunner;
 pub use core_file_delete::CoreFileDeleteRunner;
 pub use core_file_list::CoreFileListRunner;
 pub use core_file_read::CoreFileReadRunner;
@@ -66,6 +73,7 @@ pub use core_globals_toggle::CoreGlobalsToggleRunner;
 pub use core_log_write::CoreLogWriteRunner;
 pub use core_logic_wait::CoreLogicWaitRunner;
 pub use core_math_evaluate::CoreMathEvaluateRunner;
+pub use core_notify_show::CoreNotifyShowRunner;
 pub use core_queue_clear::CoreQueueClearRunner;
 pub use core_queue_pause::CoreQueuePauseRunner;
 pub use core_queue_resume::CoreQueueResumeRunner;
@@ -89,9 +97,14 @@ pub use core_time_diff::CoreTimeDiffRunner;
 pub use core_time_format::CoreTimeFormatRunner;
 pub use core_time_now::CoreTimeNowRunner;
 pub use core_time_parse::CoreTimeParseRunner;
+pub use core_url_open::CoreUrlOpenRunner;
 pub use core_users_get_var::CoreUsersGetVarRunner;
 pub use core_users_increment_var::CoreUsersIncrementVarRunner;
 pub use core_users_set_var::CoreUsersSetVarRunner;
+pub use os_ports::{
+    ClipboardPort, DesktopNotice, NotifyPort, NotifyUrgency, OsPortError, SystemClipboardPort,
+    SystemNotifyPort, SystemUrlOpenPort, UrlOpenPort,
+};
 pub use script_emit_event::ScriptEmitEventRunner;
 pub use script_run_inline::ScriptRunInlineRunner;
 pub use script_run_named::ScriptRunNamedRunner;
@@ -192,5 +205,17 @@ pub fn register_core_sub_actions(
     reg.register(Box::new(CoreTimeDiffRunner))?;
     reg.register(Box::new(CoreTimeAddRunner))?;
     reg.register(Box::new(CoreTimeParseRunner))?;
+    reg.register(Box::new(CoreNotifyShowRunner::new(Arc::new(
+        SystemNotifyPort,
+    ))))?;
+    reg.register(Box::new(CoreClipboardCopyRunner::new(Arc::new(
+        SystemClipboardPort,
+    ))))?;
+    reg.register(Box::new(CoreClipboardReadRunner::new(Arc::new(
+        SystemClipboardPort,
+    ))))?;
+    reg.register(Box::new(CoreUrlOpenRunner::new(Arc::new(
+        SystemUrlOpenPort,
+    ))))?;
     Ok(())
 }

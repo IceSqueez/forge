@@ -17,8 +17,11 @@ forge-storage = { path = "../forge-storage" }
 forge-script = { path = "../forge-script" }
 forge-obs = { path = "../forge-obs" }
 forge-platform-core = { path = "../forge-platform-core" }
+arboard = { workspace = true }
 arc-swap = { workspace = true }
 base64 = { workspace = true }
+notify-rust = { workspace = true }
+open = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
 tokio = { workspace = true }

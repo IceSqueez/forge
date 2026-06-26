@@ -156,3 +156,144 @@ fn parse_literal(s: &str) -> Option<Lit> {
     }
     None
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    fn gate_with(op_limit: u64, wall_time_ms: u64) -> ConditionGate {
+        ConditionGate::new(&Config {
+            max_nesting_depth: 32,
+            condition_op_limit: op_limit,
+            condition_wall_time_ms: wall_time_ms,
+        })
+    }
+
+    /// THE PARITY INVARIANT. For each expression the gate's verdict (which may be
+    /// reached by the literal fast path) must equal full rhai evaluation, which in
+    /// turn must equal the independently-reasoned expected boolean. Rows split
+    /// between cases the fast path resolves and cases it defers to rhai; if the
+    /// fast path ever diverged from rhai, a fast-path row would mismatch here.
+    #[tokio::test]
+    async fn fast_path_verdict_never_diverges_from_full_evaluation() {
+        let cfg = Config::default();
+        let gate = ConditionGate::new(&cfg);
+        let evaluator = ConditionEvaluator::with_config(EngineConfig {
+            op_limit: cfg.condition_op_limit,
+            wall_time_ms: cfg.condition_wall_time_ms,
+        });
+
+        // (expr, expected, fast_path_resolves) — the third column documents intent;
+        // the assertion holds regardless of which path the gate actually took.
+        let rows: &[(&str, bool, bool)] = &[
+            // --- fast-path-resolved: literal OP literal, same primitive kind ---
+            ("5 == 5", true, true),
+            ("5 == 6", false, true),
+            ("3 < 5", true, true),
+            ("5 < 3", false, true),
+            ("5 <= 5", true, true),
+            ("5 >= 6", false, true),
+            ("7 != 7", false, true),
+            ("7 != 8", true, true),
+            ("1.5 < 2.5", true, true),
+            ("2.5 <= 2.5", true, true),
+            ("true == true", true, true),
+            ("true == false", false, true),
+            ("false != true", true, true),
+            (r#""abc" == "abc""#, true, true),
+            (r#""abc" == "abd""#, false, true),
+            (r#""abc" != "abd""#, true, true),
+            // --- deferred to rhai (literal_compare returns None) ---
+            ("1 == 1.0", true, false),            // mixed kinds
+            ("1 != 1.0", false, false),           // mixed kinds
+            (r#""a" < "b""#, true, false),        // string ordering
+            (r#""b" < "a""#, false, false),       // string ordering
+            ("1 < 2 && 3 < 4", true, false),      // logical operator
+            ("1 + 1 == 2", true, false),          // arithmetic operator
+            ("let n = 10; n > 3", true, false),   // identifier / statement
+            (r#""a\"b" == "a\"b""#, true, false), // embedded-quote string
+        ];
+
+        let mut saw_fast = false;
+        let mut saw_deferred = false;
+        for &(expr, expected, fast) in rows {
+            saw_fast |= fast;
+            saw_deferred |= !fast;
+
+            let full = evaluator
+                .eval(expr)
+                .unwrap_or_else(|e| panic!("full evaluation of {expr} errored: {e:?}"));
+            assert_eq!(full, expected, "rhai verdict for {expr}");
+
+            let gated = gate
+                .evaluate(expr)
+                .await
+                .unwrap_or_else(|e| panic!("gate evaluation of {expr} errored: {e:?}"));
+            assert_eq!(gated, expected, "gate verdict for {expr}");
+        }
+        assert!(saw_fast && saw_deferred, "table must cover both paths");
+    }
+
+    #[tokio::test]
+    async fn deferred_string_ordering_returns_correct_boolean_without_error() {
+        let gate = ConditionGate::new(&Config::default());
+        assert!(gate.evaluate(r#""apple" < "banana""#).await.unwrap());
+        assert!(!gate.evaluate(r#""banana" < "apple""#).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn deferred_mixed_kind_comparison_returns_correct_boolean_without_error() {
+        let gate = ConditionGate::new(&Config::default());
+        assert!(gate.evaluate("2 == 2.0").await.unwrap());
+        assert!(!gate.evaluate("2 < 1.0").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn non_boolean_result_surfaces_as_eval_error_not_truthiness() {
+        let gate = ConditionGate::new(&Config::default());
+        for expr in ["1 + 1", "42", r#""x""#] {
+            let err = gate.evaluate(expr).await.unwrap_err();
+            assert!(
+                matches!(
+                    err,
+                    ConditionError::Eval(ScriptError::ConditionNotBoolean { .. })
+                ),
+                "expr {expr} expected ConditionNotBoolean, got {err:?}",
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn op_limit_exhausting_condition_returns_typed_eval_error() {
+        let gate = gate_with(100, 5_000);
+        let err = gate
+            .evaluate("let x = 0; while x < 1000000 { x += 1; } x > 0")
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(
+                err,
+                ConditionError::Eval(ScriptError::OperationLimit { .. })
+            ),
+            "expected OperationLimit, got {err:?}",
+        );
+    }
+
+    #[tokio::test]
+    async fn wall_budget_exhausting_condition_returns_typed_error_without_hanging() {
+        let gate = gate_with(1_000_000_000, 1);
+        let start = Instant::now();
+        let err = gate.evaluate("loop {}").await.unwrap_err();
+        let elapsed = start.elapsed();
+        assert!(
+            matches!(err, ConditionError::Eval(ScriptError::Timeout { .. })),
+            "expected Timeout, got {err:?}",
+        );
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "wall-bounded condition must return promptly, took {elapsed:?}",
+        );
+    }
+}

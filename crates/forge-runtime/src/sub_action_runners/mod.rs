@@ -5,7 +5,11 @@ mod core_globals_increment;
 mod core_globals_set;
 mod core_log_write;
 mod core_logic_wait;
+mod core_math_evaluate;
+mod core_random_bool;
+mod core_random_float;
 mod core_random_int;
+mod core_random_pick;
 mod core_string_concat;
 mod core_string_format;
 mod core_string_length;
@@ -29,7 +33,11 @@ pub use core_globals_increment::CoreGlobalsIncrementRunner;
 pub use core_globals_set::CoreGlobalsSetRunner;
 pub use core_log_write::CoreLogWriteRunner;
 pub use core_logic_wait::CoreLogicWaitRunner;
+pub use core_math_evaluate::CoreMathEvaluateRunner;
+pub use core_random_bool::CoreRandomBoolRunner;
+pub use core_random_float::CoreRandomFloatRunner;
 pub use core_random_int::CoreRandomIntRunner;
+pub use core_random_pick::CoreRandomPickRunner;
 pub use core_string_concat::CoreStringConcatRunner;
 pub use core_string_format::CoreStringFormatRunner;
 pub use core_string_length::CoreStringLengthRunner;
@@ -70,6 +78,10 @@ pub fn register_core_sub_actions(
     reg.register(Box::new(CoreLogWriteRunner::new(Arc::clone(&globals))))?;
     reg.register(Box::new(CoreFileReadRunner::new(Arc::clone(&globals))))?;
     reg.register(Box::new(CoreRandomIntRunner::new(Arc::clone(&globals))))?;
+    reg.register(Box::new(CoreRandomFloatRunner::new(Arc::clone(&globals))))?;
+    reg.register(Box::new(CoreRandomBoolRunner::new(Arc::clone(&globals))))?;
+    reg.register(Box::new(CoreRandomPickRunner::new(Arc::clone(&globals))))?;
+    reg.register(Box::new(CoreMathEvaluateRunner::new()))?;
     reg.register(Box::new(TwitchChatSendMessageRunner::new(Arc::clone(
         &globals,
     ))))?;

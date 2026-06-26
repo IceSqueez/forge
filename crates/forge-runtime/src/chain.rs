@@ -352,7 +352,10 @@ mod tests {
         Arc::new(ChainEngine::new(
             reg,
             publisher,
-            Config { max_nesting_depth },
+            Config {
+                max_nesting_depth,
+                ..Default::default()
+            },
         ))
     }
 

@@ -2,6 +2,7 @@
 
 pub mod api;
 pub mod catalog;
+pub mod condition;
 pub mod contract;
 pub mod convert;
 pub mod engine;
@@ -20,6 +21,7 @@ pub use api::{ForgeApi, SpeakRequester};
 pub use catalog::{
     MethodDescriptor, ParamDescriptor, SymbolKind, SymbolToken, catalog, resolve_symbol_from_tokens,
 };
+pub use condition::ConditionEvaluator;
 pub use contract::{
     ContractParseError, InputMismatchError, build_scope_for_contract, parse_contract,
 };

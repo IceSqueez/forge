@@ -25,7 +25,9 @@ use forge_runtime::{
     spawn_action_engine, spawn_trigger_evaluator, sub_action_runners::register_core_sub_actions,
     triggers::register_core_triggers,
 };
-use forge_storage::{DataProvider, GlobalsRepo, SettingsRepo, UserGlobalsRepo};
+use forge_storage::{
+    ActionRepo, DataProvider, GlobalsRepo, SettingsRepo, TriggerInstanceRepo, UserGlobalsRepo,
+};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
     Action, ActionId, ArgStack, ExecutionMode, Queue, QueueId, SubActionOutcome, SubActionStep,
@@ -97,6 +99,8 @@ fn build_core_registries(
     globals: Arc<dyn GlobalsRepo>,
     user_globals: Arc<dyn UserGlobalsRepo>,
     settings: Arc<dyn SettingsRepo>,
+    trigger_instances: Arc<dyn TriggerInstanceRepo>,
+    actions: Arc<dyn ActionRepo>,
 ) -> (Arc<SubActionRegistry>, Arc<TriggerRegistry>) {
     let scripts = Arc::new(ScriptRegistry::new());
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
@@ -112,6 +116,8 @@ fn build_core_registries(
         publisher,
         settings,
         forge_runtime::SchedulerCell::new(),
+        trigger_instances,
+        actions,
     )
     .unwrap();
 
@@ -236,6 +242,8 @@ async fn trigger_evaluator_applies_effective_config_overrides() {
         Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
         Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
         Arc::clone(&dp) as Arc<dyn SettingsRepo>,
+        dp.trigger_instance_repo(),
+        dp.action_repo(),
     );
 
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
@@ -410,6 +418,8 @@ async fn linked_action_executes_via_join_table_only() {
         Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
         Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
         Arc::clone(&dp) as Arc<dyn SettingsRepo>,
+        dp.trigger_instance_repo(),
+        dp.action_repo(),
     );
 
     let bus = EventBus::new(Arc::new(NullEventLogRepo));

@@ -36,6 +36,7 @@ mod core_string_substring;
 mod core_string_titlecase;
 mod core_string_trim;
 mod core_string_uppercase;
+mod core_test_fire_trigger;
 mod core_time_add;
 mod core_time_diff;
 mod core_time_format;
@@ -92,6 +93,7 @@ pub use core_string_substring::CoreStringSubstringRunner;
 pub use core_string_titlecase::CoreStringTitlecaseRunner;
 pub use core_string_trim::CoreStringTrimRunner;
 pub use core_string_uppercase::CoreStringUppercaseRunner;
+pub use core_test_fire_trigger::CoreTestFireTriggerRunner;
 pub use core_time_add::CoreTimeAddRunner;
 pub use core_time_diff::CoreTimeDiffRunner;
 pub use core_time_format::CoreTimeFormatRunner;
@@ -115,11 +117,12 @@ use std::sync::Arc;
 
 use forge_events::EventPublisher;
 use forge_registry::{RegistryError, SubActionRegistry};
-use forge_storage::{GlobalsRepo, SettingsRepo, UserGlobalsRepo};
+use forge_storage::{ActionRepo, GlobalsRepo, SettingsRepo, TriggerInstanceRepo, UserGlobalsRepo};
 
 use crate::SchedulerCell;
 use crate::script_registry::ScriptRegistry;
 
+#[allow(clippy::too_many_arguments)]
 pub fn register_core_sub_actions(
     reg: &mut SubActionRegistry,
     globals: Arc<dyn GlobalsRepo>,
@@ -128,11 +131,18 @@ pub fn register_core_sub_actions(
     publisher: Arc<dyn EventPublisher>,
     settings: Arc<dyn SettingsRepo>,
     scheduler: SchedulerCell,
+    trigger_instances: Arc<dyn TriggerInstanceRepo>,
+    actions: Arc<dyn ActionRepo>,
 ) -> Result<(), RegistryError> {
     reg.register(Box::new(CoreArgsSetRunner))?;
     reg.register(Box::new(CoreQueuePauseRunner::new(scheduler.clone())))?;
     reg.register(Box::new(CoreQueueResumeRunner::new(scheduler.clone())))?;
-    reg.register(Box::new(CoreQueueClearRunner::new(scheduler)))?;
+    reg.register(Box::new(CoreQueueClearRunner::new(scheduler.clone())))?;
+    reg.register(Box::new(CoreTestFireTriggerRunner::new(
+        trigger_instances,
+        actions,
+        scheduler,
+    )))?;
     reg.register(Box::new(CoreGlobalsSetRunner::new(Arc::clone(&globals))))?;
     reg.register(Box::new(CoreGlobalsGetRunner::new(Arc::clone(&globals))))?;
     reg.register(Box::new(CoreGlobalsIncrementRunner::new(Arc::clone(

@@ -45,6 +45,14 @@ define_id!(GlobalId);
 define_id!(UserId);
 define_id!(ClipId);
 
+impl FromStr for ActionId {
+    type Err = ulid::DecodeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        s.parse::<Ulid>().map(Self)
+    }
+}
+
 impl FromStr for TriggerInstanceId {
     type Err = ulid::DecodeError;
 

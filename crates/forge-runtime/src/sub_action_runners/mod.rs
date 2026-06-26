@@ -1,3 +1,6 @@
+mod core_action_disable;
+mod core_action_enable;
+mod core_action_toggle;
 mod core_args_set;
 mod core_clipboard_copy;
 mod core_clipboard_read;
@@ -43,6 +46,9 @@ mod core_time_diff;
 mod core_time_format;
 mod core_time_now;
 mod core_time_parse;
+mod core_trigger_disable;
+mod core_trigger_enable;
+mod core_trigger_toggle;
 mod core_url_open;
 mod core_users_get_var;
 mod core_users_increment_var;
@@ -57,6 +63,9 @@ mod script_run_named;
 mod server_broadcast;
 mod twitch_chat_send_message;
 
+pub use core_action_disable::CoreActionDisableRunner;
+pub use core_action_enable::CoreActionEnableRunner;
+pub use core_action_toggle::CoreActionToggleRunner;
 pub use core_args_set::CoreArgsSetRunner;
 pub use core_clipboard_copy::CoreClipboardCopyRunner;
 pub use core_clipboard_read::CoreClipboardReadRunner;
@@ -101,6 +110,9 @@ pub use core_time_diff::CoreTimeDiffRunner;
 pub use core_time_format::CoreTimeFormatRunner;
 pub use core_time_now::CoreTimeNowRunner;
 pub use core_time_parse::CoreTimeParseRunner;
+pub use core_trigger_disable::CoreTriggerDisableRunner;
+pub use core_trigger_enable::CoreTriggerEnableRunner;
+pub use core_trigger_toggle::CoreTriggerToggleRunner;
 pub use core_url_open::CoreUrlOpenRunner;
 pub use core_users_get_var::CoreUsersGetVarRunner;
 pub use core_users_increment_var::CoreUsersIncrementVarRunner;
@@ -141,6 +153,18 @@ pub fn register_core_sub_actions(
     reg.register(Box::new(CoreQueuePauseRunner::new(scheduler.clone())))?;
     reg.register(Box::new(CoreQueueResumeRunner::new(scheduler.clone())))?;
     reg.register(Box::new(CoreQueueClearRunner::new(scheduler.clone())))?;
+    reg.register(Box::new(CoreActionEnableRunner::new(Arc::clone(&actions))))?;
+    reg.register(Box::new(CoreActionDisableRunner::new(Arc::clone(&actions))))?;
+    reg.register(Box::new(CoreActionToggleRunner::new(Arc::clone(&actions))))?;
+    reg.register(Box::new(CoreTriggerEnableRunner::new(Arc::clone(
+        &trigger_instances,
+    ))))?;
+    reg.register(Box::new(CoreTriggerDisableRunner::new(Arc::clone(
+        &trigger_instances,
+    ))))?;
+    reg.register(Box::new(CoreTriggerToggleRunner::new(Arc::clone(
+        &trigger_instances,
+    ))))?;
     reg.register(Box::new(CoreTestFireTriggerRunner::new(
         trigger_instances,
         actions,

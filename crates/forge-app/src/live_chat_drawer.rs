@@ -66,7 +66,7 @@ fn synthesize_from_chat(
     } else if role == Some(BadgeKind::Subscriber) {
         "Yes".to_owned()
     } else {
-        "No".to_owned()
+        "\u{2014}".to_owned()
     };
 
     Some(ViewerSummary {
@@ -76,9 +76,9 @@ fn synthesize_from_chat(
         last_seen_label: "now".to_owned(),
         avatar_letter,
         avatar_color,
-        watch_time: "0m".to_owned(),
+        watch_time: "\u{2014}".to_owned(),
         sub,
-        follow: "Yes".to_owned(),
+        follow: "\u{2014}".to_owned(),
     })
 }
 
@@ -91,47 +91,14 @@ fn enrich_with_storage(mut summary: ViewerSummary, viewers: &ViewersState) -> Vi
         summary.message_count = v.message_count;
         summary.last_seen_label = viewer_last_seen(v.last_seen_at);
 
-        let duration = v.last_seen_at - v.first_seen_at;
-        let sec_count_based = v.message_count * 90;
-        let seconds = duration.whole_seconds().max(sec_count_based as i64).max(0);
-
-        summary.watch_time = if seconds < 60 {
-            format!("{}s", seconds)
-        } else if seconds < 3600 {
-            format!("{}m", seconds / 60)
-        } else {
-            format!("{}h {}m", seconds / 3600, (seconds % 3600) / 60)
-        };
-
-        let age = OffsetDateTime::now_utc() - v.first_seen_at;
-        let days = age.whole_days().max(0);
-        summary.follow = if v.message_count == 0 {
-            "No".into()
-        } else if days >= 365 {
-            format!("{}y", days / 365)
-        } else if days >= 30 {
-            format!("{}mo", days / 30)
-        } else if days >= 1 {
-            format!("{}d", days)
-        } else {
-            let hours = age.whole_hours().max(0);
-            if hours >= 1 {
-                format!("{}h", hours)
-            } else {
-                let mins = age.whole_minutes().max(1);
-                format!("{}m", mins)
-            }
-        };
-
         let is_broadcaster = summary.role == Some(BadgeKind::Broadcaster);
         let is_subscriber = summary.role == Some(BadgeKind::Subscriber);
         summary.sub = if is_broadcaster {
             "\u{221e}".into()
         } else if is_subscriber {
-            let age_months = (days / 30).max(1);
-            format!("{}mo", age_months)
+            "Yes".into()
         } else {
-            "No".into()
+            "\u{2014}".into()
         };
     }
     summary
@@ -442,17 +409,17 @@ fn selected_viewer_detail<'a>(
 
     let msg_str = format!("{}", summary.message_count);
 
-    let sub_color = if summary.sub == "No" {
+    let sub_color = if summary.sub == "\u{2014}" {
         p.text_faint
     } else {
         p.text_primary
     };
-    let follow_color = if summary.follow == "No" {
+    let follow_color = if summary.follow == "\u{2014}" {
         p.text_faint
     } else {
         p.text_primary
     };
-    let watch_color = if summary.watch_time == "0m" || summary.watch_time == "\u{2014}" {
+    let watch_color = if summary.watch_time == "\u{2014}" {
         p.text_faint
     } else {
         p.text_primary

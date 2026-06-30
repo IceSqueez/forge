@@ -126,6 +126,10 @@ impl SubActionRunner for CoreLogicLoopRunner {
                 min: 0,
                 max: MAX_WHILE_ITERATIONS,
             },
+            FormField::SubChain {
+                key: "body",
+                label: "Body",
+            },
         ]
     }
 

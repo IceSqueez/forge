@@ -1,3 +1,4 @@
+use forge_registry::FormField;
 use forge_types::ActionId;
 use forge_widgets::ForgePalette;
 use forge_widgets::icons::{Icon, tabler_icon};
@@ -720,15 +721,9 @@ fn detail_pane<'a>(
         .spacing(spf(Spacing::Xs))
         .into();
 
-    let sub_count = action.sub_actions.len();
-    let sub_hdr_str = forge_widgets::tr!(
-        "action_editor_section_sub_actions",
-        count = sub_count as i64
-    );
-    let sub_label = text(sub_hdr_str)
-        .size(FONT_XS)
-        .color(p.text_muted)
-        .font(mono);
+    let nav_path = &app.ui.actions.nav_path;
+    let current_chain = crate::actions_nav::resolve_chain(&action.sub_actions, nav_path);
+    let at_root = nav_path.is_empty();
 
     let add_step_lbl = forge_widgets::tr!("action_editor_add_step");
     let add_step_btn = iced::widget::button(
@@ -753,27 +748,56 @@ fn detail_pane<'a>(
         },
     );
 
+    let header_left: Element<'_, Message> = if at_root {
+        let sub_hdr_str = forge_widgets::tr!(
+            "action_editor_section_sub_actions",
+            count = current_chain.len() as i64
+        );
+        text(sub_hdr_str)
+            .size(FONT_XS)
+            .color(p.text_muted)
+            .font(mono)
+            .into()
+    } else {
+        breadcrumb_header(app, action, nav_path, palette)
+    };
+
     let sub_header: Element<'_, Message> = row![
-        sub_label,
+        header_left,
         iced::widget::Space::new().width(Length::Fill),
         add_step_btn,
     ]
     .align_y(Alignment::Center)
     .into();
 
-    let total = action.sub_actions.len();
+    let total = current_chain.len();
     let mut steps_col: iced::widget::Column<'_, Message> = column![].spacing(0);
 
-    for (i, step) in action.sub_actions.iter().enumerate() {
+    if current_chain.is_empty() {
+        steps_col = steps_col.push(
+            container(
+                text(forge_widgets::tr!("action_editor_branch_empty"))
+                    .size(FONT_XS)
+                    .color(p.text_faint),
+            )
+            .padding([sp(Spacing::Xs), 0]),
+        );
+    }
+
+    for (i, step) in current_chain.iter().enumerate() {
         let step_num = i + 1;
         let is_last = step_num == total;
         let (icon_name, title, details) = sub_action_summary(step);
         let step_icon = Icon::from_name(icon_name);
-        let avg_ms_label = detail
-            .sub_action_avg_ms
-            .get(i)
-            .and_then(|v| *v)
-            .map(|ms| format!("{ms} ms avg"));
+        let avg_ms_label = if at_root {
+            detail
+                .sub_action_avg_ms
+                .get(i)
+                .and_then(|v| *v)
+                .map(|ms| format!("{ms} ms avg"))
+        } else {
+            None
+        };
 
         let circle_label = text(step_num.to_string())
             .size(FONT_XS)
@@ -862,8 +886,22 @@ fn detail_pane<'a>(
             .align_y(Alignment::Start)
             .into();
 
+        let block: Element<'_, Message> =
+            match branch_affordances(app, step, i, nav_path.len(), palette) {
+                Some(branches) => {
+                    // Indent the branch affordances under the step card body.
+                    let indented = container(branches).padding(Padding {
+                        left: 24.0 + spf(Spacing::Xs),
+                        top: spf(Spacing::Xxs),
+                        ..Padding::ZERO
+                    });
+                    column![step_row, indented].into()
+                }
+                None => step_row,
+            };
+
         let bottom_pad = if is_last { 0.0 } else { 6.0 };
-        let step_wrapper = container(step_row).width(Length::Fill).padding(Padding {
+        let step_wrapper = container(block).width(Length::Fill).padding(Padding {
             bottom: bottom_pad,
             ..Padding::ZERO
         });
@@ -884,6 +922,323 @@ fn detail_pane<'a>(
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
+}
+
+/// Human label for a single-sub-chain config key in the breadcrumb.
+fn branch_field_label(chain_key: &str) -> String {
+    match chain_key {
+        "then_chain" => forge_widgets::tr!("action_editor_branch_then"),
+        "else_chain" => forge_widgets::tr!("action_editor_branch_else"),
+        "body" => forge_widgets::tr!("action_editor_branch_body"),
+        "default_chain" => forge_widgets::tr!("action_editor_branch_default"),
+        other => other.to_owned(),
+    }
+}
+
+/// Breadcrumb that replaces the step-list header while drilled into a nested
+/// sub-chain. Each ancestor segment pops the nav path to that depth; the final
+/// (current) segment is inert.
+fn breadcrumb_header<'a>(
+    app: &'a App,
+    action: &forge_types::Action,
+    nav_path: &[crate::actions_nav::NavFrame],
+    palette: &ForgePalette,
+) -> Element<'a, Message> {
+    use iced::widget::{button, row, text};
+
+    let p = *palette;
+    let mono = forge_widgets::font(forge_widgets::FontRole::Monospace);
+
+    let mut segments: Vec<(String, Option<usize>)> = vec![(
+        forge_widgets::tr!("action_editor_breadcrumb_steps"),
+        Some(0),
+    )];
+
+    for (depth, frame) in nav_path.iter().enumerate() {
+        let prefix = crate::actions_nav::resolve_chain(&action.sub_actions, &nav_path[..depth]);
+        let step_label = prefix
+            .get(frame.step_index)
+            .and_then(|s| {
+                app.rt
+                    .sub_action_registry
+                    .get(&s.kind_id)
+                    .map(|r| r.label().to_owned())
+            })
+            .unwrap_or_else(|| forge_widgets::tr!("action_editor_kind_sub_action"));
+        let branch_label = match frame.case_index {
+            Some(ci) => format!(
+                "{} {}",
+                forge_widgets::tr!("action_editor_branch_case"),
+                ci + 1
+            ),
+            None => branch_field_label(&frame.chain_key),
+        };
+        let pop_target = if depth + 1 == nav_path.len() {
+            None
+        } else {
+            Some(depth + 1)
+        };
+        segments.push((format!("{step_label} \u{2023} {branch_label}"), pop_target));
+    }
+
+    let mut els: Vec<Element<'_, Message>> = Vec::new();
+    let last = segments.len().saturating_sub(1);
+    for (idx, (label, target)) in segments.into_iter().enumerate() {
+        if idx > 0 {
+            els.push(
+                text("\u{25B8}")
+                    .size(FONT_XS)
+                    .color(p.text_faint)
+                    .font(mono)
+                    .into(),
+            );
+        }
+        match target {
+            Some(depth) => {
+                els.push(
+                    button(text(label).size(FONT_XS).color(p.text_muted).font(mono))
+                        .padding(0)
+                        .on_press(Message::Actions(ActionsMsg::BreadcrumbPop(depth)))
+                        .style(|_t: &iced::Theme, _s| iced::widget::button::Style {
+                            background: None,
+                            text_color: iced::Color::TRANSPARENT,
+                            border: Border::default(),
+                            shadow: iced::Shadow::default(),
+                            snap: false,
+                        })
+                        .into(),
+                );
+            }
+            None => {
+                let color = if idx == last {
+                    p.text_secondary
+                } else {
+                    p.text_muted
+                };
+                els.push(text(label).size(FONT_XS).color(color).font(mono).into());
+            }
+        }
+    }
+
+    row(els)
+        .spacing(spf(Spacing::Xxs))
+        .align_y(Alignment::Center)
+        .wrap()
+        .into()
+}
+
+/// A drill-in chip: enters a nested sub-chain. Disabled (with a muted style)
+/// when descending would exceed the authoring depth cap on an empty branch.
+fn drill_in_chip<'a>(
+    label: String,
+    count: usize,
+    disabled: bool,
+    msg: Message,
+    palette: &ForgePalette,
+) -> Element<'a, Message> {
+    use iced::widget::{button, row, text};
+
+    let p = *palette;
+    let color = if disabled { p.disabled } else { p.brand };
+    let label_text = format!("{label} \u{00b7} {count}");
+    let content = row![
+        text(label_text).size(FONT_XS).color(color),
+        tabler_icon(Icon::ChevronRight, 11.0, color),
+    ]
+    .spacing(spf(Spacing::Xxs))
+    .align_y(Alignment::Center);
+
+    let mut btn = button(content)
+        .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
+        .style(
+            move |_t: &iced::Theme, status| iced::widget::button::Style {
+                background: if disabled {
+                    None
+                } else if matches!(status, iced::widget::button::Status::Hovered) {
+                    Some(Background::Color(p.surface_overlay))
+                } else {
+                    None
+                },
+                text_color: color,
+                border: Border {
+                    color: p.border_regular,
+                    width: 0.5,
+                    radius: 6.0.into(),
+                },
+                shadow: iced::Shadow::default(),
+                snap: false,
+            },
+        );
+    if !disabled {
+        btn = btn.on_press(msg);
+    }
+    btn.into()
+}
+
+/// Renders the drill-in affordances for a composite step's nested sub-chains:
+/// one chip per single sub-chain (then/else/body/default) and a full case-row
+/// editor for switch case lists. `None` when the step declares no nested chains.
+fn branch_affordances<'a>(
+    app: &'a App,
+    step: &forge_types::SubActionStep,
+    step_index: usize,
+    depth: usize,
+    palette: &'a ForgePalette,
+) -> Option<Element<'a, Message>> {
+    use iced::widget::{column, row, text};
+
+    let runner = app.rt.sub_action_registry.get(&step.kind_id)?;
+    let fields = runner.config_fields();
+    let p = *palette;
+    let at_cap = depth >= crate::actions_nav::UI_MAX_NESTING_DEPTH;
+
+    let mut rows: Vec<Element<'a, Message>> = Vec::new();
+    let mut capped_empty = false;
+
+    for field in &fields {
+        match field {
+            FormField::SubChain { key, label } => {
+                let count = crate::actions_nav::branch_step_count(step, key, None);
+                let disabled = at_cap && count == 0;
+                capped_empty |= disabled;
+                rows.push(drill_in_chip(
+                    (*label).to_owned(),
+                    count,
+                    disabled,
+                    Message::Actions(ActionsMsg::EnterBranch {
+                        step_index,
+                        chain_key: (*key).to_owned(),
+                        case_index: None,
+                    }),
+                    palette,
+                ));
+            }
+            FormField::CaseList { key, label } => {
+                let case_total = crate::actions_nav::case_count(step);
+                rows.push(
+                    text(format!("{label}:"))
+                        .size(FONT_XS)
+                        .color(p.text_muted)
+                        .into(),
+                );
+                for ci in 0..case_total {
+                    let count = crate::actions_nav::branch_step_count(step, key, Some(ci));
+                    let disabled = at_cap && count == 0;
+                    capped_empty |= disabled;
+
+                    let match_el: Element<'a, Message> =
+                        if crate::actions_nav::case_match_is_multi(step, ci) {
+                            text(forge_widgets::tr!("action_editor_case_multi"))
+                                .size(FONT_XS)
+                                .color(p.text_faint)
+                                .into()
+                        } else {
+                            let value = app
+                                .ui
+                                .actions
+                                .case_match_edits
+                                .get(&(step_index, ci))
+                                .map(String::as_str)
+                                .unwrap_or("");
+                            iced::widget::container(forge_widgets::text_input_field_submit(
+                                forge_widgets::tr!("action_editor_case_match_placeholder"),
+                                value,
+                                move |s| {
+                                    Message::Actions(ActionsMsg::SwitchCaseMatchChanged(
+                                        step_index, ci, s,
+                                    ))
+                                },
+                                Message::Actions(ActionsMsg::SwitchCaseMatchCommitted(
+                                    step_index, ci,
+                                )),
+                                palette,
+                            ))
+                            .width(Length::Fixed(160.0))
+                            .into()
+                        };
+
+                    let drill = drill_in_chip(
+                        forge_widgets::tr!("action_editor_branch_chain"),
+                        count,
+                        disabled,
+                        Message::Actions(ActionsMsg::EnterBranch {
+                            step_index,
+                            chain_key: (*key).to_owned(),
+                            case_index: Some(ci),
+                        }),
+                        palette,
+                    );
+                    let move_up = step_icon_btn(
+                        Icon::ArrowUp,
+                        ci == 0,
+                        Message::Actions(ActionsMsg::MoveSwitchCase(step_index, ci, true)),
+                        palette,
+                    );
+                    let move_down = step_icon_btn(
+                        Icon::ArrowDown,
+                        ci + 1 >= case_total,
+                        Message::Actions(ActionsMsg::MoveSwitchCase(step_index, ci, false)),
+                        palette,
+                    );
+                    let remove = step_icon_btn(
+                        Icon::Eraser,
+                        false,
+                        Message::Actions(ActionsMsg::RemoveSwitchCase(step_index, ci)),
+                        palette,
+                    );
+
+                    rows.push(
+                        row![match_el, drill, move_up, move_down, remove]
+                            .spacing(spf(Spacing::Xxs))
+                            .align_y(Alignment::Center)
+                            .into(),
+                    );
+                }
+
+                let add_case = iced::widget::button(
+                    row![
+                        tabler_icon(Icon::Plus, 11.0, p.brand),
+                        text(forge_widgets::tr!("action_editor_add_case"))
+                            .size(FONT_XS)
+                            .color(p.brand),
+                    ]
+                    .spacing(spf(Spacing::Xxs))
+                    .align_y(Alignment::Center),
+                )
+                .padding(0)
+                .on_press(Message::Actions(ActionsMsg::AddSwitchCase(step_index)))
+                .style(|_t: &iced::Theme, _s| iced::widget::button::Style {
+                    background: None,
+                    text_color: iced::Color::TRANSPARENT,
+                    border: Border::default(),
+                    shadow: iced::Shadow::default(),
+                    snap: false,
+                });
+                rows.push(add_case.into());
+            }
+            _ => {}
+        }
+    }
+
+    if rows.is_empty() {
+        return None;
+    }
+
+    if capped_empty {
+        rows.push(
+            text(forge_widgets::tr!("action_editor_branch_cap"))
+                .size(FONT_XS)
+                .color(p.warning)
+                .into(),
+        );
+    }
+
+    Some(
+        column(rows)
+            .spacing(spf(Spacing::Xxs))
+            .width(Length::Fill)
+            .into(),
+    )
 }
 
 pub fn action_editor_view<'a>(

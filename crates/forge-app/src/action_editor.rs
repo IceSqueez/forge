@@ -8,6 +8,7 @@ use crate::actions::{
     RemoveSubActionMsg, SubActionFormStep,
 };
 use crate::actions_field_form::{FieldEditMsg, apply_field_edit};
+use crate::actions_nav::{NavFrame, persist_chain_mutation, resolve_chain};
 use crate::message::{ActionEditorMsg, ActionsMsg, Message, MoveSubActionMsg};
 use crate::runtime_view::RuntimeView;
 
@@ -248,6 +249,7 @@ pub fn add_sub_action_update(
     state: &mut Option<AddSubActionForm>,
     rt: &RuntimeView,
     detail: Option<&ActionDetail>,
+    nav_path: &[NavFrame],
     msg: AddSubActionMsg,
 ) -> Task<Message> {
     match msg {
@@ -258,9 +260,11 @@ pub fn add_sub_action_update(
         AddSubActionMsg::EditRequested(action_id, index) => {
             let mut form = AddSubActionForm::new(action_id);
             form.editing_index = Some(index);
+            // The edited row lives in the chain the nav path currently points at,
+            // which is the top-level chain when the path is empty.
             if let Some(d) = detail
                 && d.action.id == action_id
-                && let Some(step) = d.action.sub_actions.get(index)
+                && let Some(step) = resolve_chain(&d.action.sub_actions, nav_path).get(index)
             {
                 form.populate_from_step(step);
             }
@@ -375,25 +379,19 @@ pub fn add_sub_action_update(
             let Some(step) = form.build_step() else {
                 return Task::none();
             };
-            let action_id = form.for_action_id;
             let editing_index = form.editing_index;
-            if let Some(f) = state.as_mut() {
-                f.saving = true;
-            }
-            let service = Arc::clone(&rt.actions);
-            Task::perform(
-                async move {
-                    service
-                        .save_sub_action(action_id, step, editing_index)
-                        .await
-                        .map_err(|e| e.to_string())
-                },
-                |r| {
-                    Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
-                        AddSubActionMsg::Saved(r),
-                    )))
-                },
-            )
+            let Some(action) = detail.map(|d| d.action.clone()) else {
+                return Task::none();
+            };
+            // Insert/replace the step in the chain the nav path points at, then
+            // persist the whole action (round-trips nested chains untouched).
+            let task =
+                persist_chain_mutation(rt, &action, nav_path, move |chain| match editing_index {
+                    Some(idx) if idx < chain.len() => chain[idx] = step,
+                    _ => chain.push(step),
+                });
+            *state = None;
+            task
         }
         AddSubActionMsg::Saved(Ok(())) => {
             let for_action_id = state.as_ref().map(|f| f.for_action_id);
@@ -410,21 +408,16 @@ pub fn add_sub_action_update(
             }
             Task::none()
         }
-        AddSubActionMsg::DuplicateRequested(action_id, index) => {
-            let service = Arc::clone(&rt.actions);
-            Task::perform(
-                async move {
-                    service
-                        .duplicate_sub_action(action_id, index)
-                        .await
-                        .map_err(|e| e.to_string())
-                },
-                |r| {
-                    Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
-                        AddSubActionMsg::Duplicated(r),
-                    )))
-                },
-            )
+        AddSubActionMsg::DuplicateRequested(_action_id, index) => {
+            let Some(action) = detail.map(|d| d.action.clone()) else {
+                return Task::none();
+            };
+            persist_chain_mutation(rt, &action, nav_path, move |chain| {
+                if index < chain.len() {
+                    let copy = chain[index].clone();
+                    chain.insert(index + 1, copy);
+                }
+            })
         }
         AddSubActionMsg::Duplicated(Ok(id)) => {
             Task::done(Message::Actions(ActionsMsg::ActionSelected(id)))
@@ -437,31 +430,23 @@ pub fn add_sub_action_update(
 }
 
 pub fn remove_sub_action_update(
-    selected: Option<ActionId>,
+    detail: Option<&ActionDetail>,
+    nav_path: &[NavFrame],
     rt: &RuntimeView,
     msg: RemoveSubActionMsg,
 ) -> Task<Message> {
     match msg {
-        RemoveSubActionMsg::Requested(action_id, index) => {
-            let service = Arc::clone(&rt.actions);
-            Task::perform(
-                async move {
-                    service
-                        .remove_sub_action(action_id, index)
-                        .await
-                        .map_err(|e| e.to_string())
-                },
-                |r| {
-                    Message::Actions(ActionsMsg::Editor(ActionEditorMsg::RemoveSubAction(
-                        RemoveSubActionMsg::Removed(r),
-                    )))
-                },
-            )
+        RemoveSubActionMsg::Requested(_action_id, index) => {
+            let Some(action) = detail.map(|d| d.action.clone()) else {
+                return Task::none();
+            };
+            persist_chain_mutation(rt, &action, nav_path, move |chain| {
+                if index < chain.len() {
+                    chain.remove(index);
+                }
+            })
         }
-        RemoveSubActionMsg::Removed(Ok(())) => match selected {
-            Some(id) => Task::done(Message::Actions(ActionsMsg::ActionSelected(id))),
-            None => Task::none(),
-        },
+        RemoveSubActionMsg::Removed(Ok(())) => Task::none(),
         RemoveSubActionMsg::Removed(Err(e)) => {
             tracing::warn!(error = %e, "remove sub-action persist failed");
             Task::none()
@@ -470,94 +455,45 @@ pub fn remove_sub_action_update(
 }
 
 pub fn move_sub_action_update(
+    detail: Option<&ActionDetail>,
+    nav_path: &[NavFrame],
     rt: &RuntimeView,
-    total: usize,
     msg: MoveSubActionMsg,
 ) -> Task<Message> {
-    match msg {
-        MoveSubActionMsg::Up(action_id, i) => {
-            if i == 0 {
-                return Task::none();
-            }
-            let service = Arc::clone(&rt.actions);
-            Task::perform(
-                async move {
-                    service
-                        .move_sub_action(action_id, i, i - 1)
-                        .await
-                        .map_err(|e| e.to_string())
-                },
-                |r| {
-                    Message::Actions(ActionsMsg::Editor(ActionEditorMsg::MoveSubAction(
-                        MoveSubActionMsg::Moved(r),
-                    )))
-                },
-            )
-        }
-        MoveSubActionMsg::Down(action_id, i) => {
-            if total == 0 || i + 1 >= total {
-                return Task::none();
-            }
-            let service = Arc::clone(&rt.actions);
-            Task::perform(
-                async move {
-                    service
-                        .move_sub_action(action_id, i, i + 1)
-                        .await
-                        .map_err(|e| e.to_string())
-                },
-                |r| {
-                    Message::Actions(ActionsMsg::Editor(ActionEditorMsg::MoveSubAction(
-                        MoveSubActionMsg::Moved(r),
-                    )))
-                },
-            )
-        }
-        MoveSubActionMsg::ToTop(action_id, i) => {
-            if i == 0 {
-                return Task::none();
-            }
-            let service = Arc::clone(&rt.actions);
-            Task::perform(
-                async move {
-                    service
-                        .move_sub_action(action_id, i, 0)
-                        .await
-                        .map_err(|e| e.to_string())
-                },
-                |r| {
-                    Message::Actions(ActionsMsg::Editor(ActionEditorMsg::MoveSubAction(
-                        MoveSubActionMsg::Moved(r),
-                    )))
-                },
-            )
-        }
-        MoveSubActionMsg::ToBottom(action_id, i) => {
-            if total == 0 || i + 1 >= total {
-                return Task::none();
-            }
-            let last = total - 1;
-            let service = Arc::clone(&rt.actions);
-            Task::perform(
-                async move {
-                    service
-                        .move_sub_action(action_id, i, last)
-                        .await
-                        .map_err(|e| e.to_string())
-                },
-                |r| {
-                    Message::Actions(ActionsMsg::Editor(ActionEditorMsg::MoveSubAction(
-                        MoveSubActionMsg::Moved(r),
-                    )))
-                },
-            )
-        }
+    let (index, to_bottom, to_top) = match msg {
+        MoveSubActionMsg::Up(_, i) => (i.checked_sub(1).map(|t| (i, t)), false, false),
+        MoveSubActionMsg::Down(_, i) => (Some((i, i + 1)), false, false),
+        MoveSubActionMsg::ToTop(_, i) => (Some((i, 0)), false, true),
+        MoveSubActionMsg::ToBottom(_, i) => (Some((i, 0)), true, false),
         MoveSubActionMsg::Moved(Ok(id)) => {
-            Task::done(Message::Actions(ActionsMsg::ActionSelected(id)))
+            return Task::done(Message::Actions(ActionsMsg::ActionSelected(id)));
         }
         MoveSubActionMsg::Moved(Err(e)) => {
             tracing::warn!(error = %e, "move sub-action failed");
-            Task::none()
+            return Task::none();
         }
-    }
+    };
+    let Some((from, to)) = index else {
+        return Task::none();
+    };
+    let Some(action) = detail.map(|d| d.action.clone()) else {
+        return Task::none();
+    };
+    persist_chain_mutation(rt, &action, nav_path, move |chain| {
+        let len = chain.len();
+        if from >= len {
+            return;
+        }
+        let target = if to_bottom {
+            len - 1
+        } else if to_top {
+            0
+        } else if to < len {
+            to
+        } else {
+            return;
+        };
+        let item = chain.remove(from);
+        chain.insert(target, item);
+    })
 }

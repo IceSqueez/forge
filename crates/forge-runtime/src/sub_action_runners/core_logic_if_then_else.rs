@@ -62,6 +62,14 @@ impl SubActionRunner for CoreLogicIfThenElseRunner {
                 key: "treat_undefined_as_false",
                 label: "Treat undefined as false",
             },
+            FormField::SubChain {
+                key: "then_chain",
+                label: "Then",
+            },
+            FormField::SubChain {
+                key: "else_chain",
+                label: "Else",
+            },
         ]
     }
 

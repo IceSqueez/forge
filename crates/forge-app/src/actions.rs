@@ -72,6 +72,11 @@ pub struct ActionsState {
     pub action_menu_open: Option<forge_types::ActionId>,
     pub renaming_action: Option<(forge_types::ActionId, String)>,
     pub last_selected_action: Option<(forge_types::ActionId, std::time::Instant)>,
+    /// Drill-in path into nested sub-chains; empty = the action's own steps.
+    pub nav_path: Vec<crate::actions_nav::NavFrame>,
+    /// Buffered switch-case match edits keyed by (step index, case index),
+    /// committed on submit so each keystroke is not a separate DB write.
+    pub case_match_edits: std::collections::HashMap<(usize, usize), String>,
 }
 
 impl ActionsState {
@@ -154,6 +159,11 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
             if already_loaded {
                 return Task::none();
             }
+            if state.selected != Some(id) {
+                // Switching to a different action: nested navigation is per-action.
+                state.nav_path.clear();
+                state.case_match_edits.clear();
+            }
             state.selected = Some(id);
             state.detail = None;
             state.telemetry = None;
@@ -182,6 +192,7 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
         }
         ActionsMsg::DetailLoaded(Ok(detail)) => {
             state.detail = Some(detail);
+            seed_case_buffer(state);
             Task::none()
         }
         ActionsMsg::DetailLoaded(Err(e)) => {
@@ -544,6 +555,89 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
             tracing::warn!(error = %e, "action rename failed");
             Task::none()
         }
+        ActionsMsg::EnterBranch {
+            step_index,
+            chain_key,
+            case_index,
+        } => {
+            if state.nav_path.len() >= crate::actions_nav::UI_MAX_NESTING_DEPTH {
+                // At/over the authoring cap: only descend into a branch that
+                // already has content (edit-but-don't-deepen). An empty branch
+                // beyond the cap would only create new depth, so reject it.
+                let has_content = state.detail.as_ref().is_some_and(|d| {
+                    let chain =
+                        crate::actions_nav::resolve_chain(&d.action.sub_actions, &state.nav_path);
+                    chain.get(step_index).is_some_and(|s| {
+                        crate::actions_nav::branch_step_count(s, &chain_key, case_index) > 0
+                    })
+                });
+                if !has_content {
+                    return Task::none();
+                }
+            }
+            state.nav_path.push(crate::actions_nav::NavFrame::new(
+                step_index, chain_key, case_index,
+            ));
+            state.case_match_edits.clear();
+            seed_case_buffer(state);
+            state.step_menu_open = None;
+            Task::none()
+        }
+        ActionsMsg::BreadcrumbPop(depth) => {
+            if depth < state.nav_path.len() {
+                state.nav_path.truncate(depth);
+            }
+            state.case_match_edits.clear();
+            seed_case_buffer(state);
+            state.step_menu_open = None;
+            Task::none()
+        }
+        ActionsMsg::BranchReload(id) => {
+            state.detail = None;
+            // Case-match buffers are re-seeded from persisted values on reload;
+            // dropping them here avoids stale indices after structural case edits.
+            state.case_match_edits.clear();
+            Task::done(Message::Actions(ActionsMsg::ActionSelected(id)))
+        }
+        ActionsMsg::AddSwitchCase(step_index) => persist_switch_case_op(state, rt, move |chain| {
+            if let Some(step) = chain.get_mut(step_index) {
+                crate::actions_nav::append_empty_case(&mut step.config);
+            }
+        }),
+        ActionsMsg::RemoveSwitchCase(step_index, case_index) => {
+            persist_switch_case_op(state, rt, move |chain| {
+                if let Some(step) = chain.get_mut(step_index) {
+                    crate::actions_nav::remove_case(&mut step.config, case_index);
+                }
+            })
+        }
+        ActionsMsg::MoveSwitchCase(step_index, case_index, up) => {
+            persist_switch_case_op(state, rt, move |chain| {
+                if let Some(step) = chain.get_mut(step_index) {
+                    crate::actions_nav::move_case(&mut step.config, case_index, up);
+                }
+            })
+        }
+        ActionsMsg::SwitchCaseMatchChanged(step_index, case_index, value) => {
+            state
+                .case_match_edits
+                .insert((step_index, case_index), value);
+            Task::none()
+        }
+        ActionsMsg::SwitchCaseMatchCommitted(step_index, case_index) => {
+            let Some(value) = state
+                .case_match_edits
+                .get(&(step_index, case_index))
+                .cloned()
+            else {
+                return Task::none();
+            };
+            persist_switch_case_op(state, rt, move |chain| {
+                if let Some(step) = chain.get_mut(step_index) {
+                    crate::actions_nav::set_case_match(&mut step.config, case_index, &value);
+                }
+            })
+        }
         ActionsMsg::Editor(sub) => match sub {
             ActionEditorMsg::AddAction(m) => {
                 crate::action_editor::add_action_update(&mut state.add_action_modal, rt, m)
@@ -553,6 +647,7 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
                     &mut state.add_sub_action_modal,
                     rt,
                     state.detail.as_ref(),
+                    &state.nav_path,
                     m,
                 );
                 if let Some(form) = state.add_sub_action_modal.as_mut()
@@ -567,20 +662,60 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
                 }
                 task
             }
-            ActionEditorMsg::RemoveSubAction(m) => {
-                crate::action_editor::remove_sub_action_update(state.selected, rt, m)
-            }
-            ActionEditorMsg::MoveSubAction(m) => crate::action_editor::move_sub_action_update(
+            ActionEditorMsg::RemoveSubAction(m) => crate::action_editor::remove_sub_action_update(
+                state.detail.as_ref(),
+                &state.nav_path,
                 rt,
-                state
-                    .detail
-                    .as_ref()
-                    .map(|d| d.action.sub_actions.len())
-                    .unwrap_or(0),
+                m,
+            ),
+            ActionEditorMsg::MoveSubAction(m) => crate::action_editor::move_sub_action_update(
+                state.detail.as_ref(),
+                &state.nav_path,
+                rt,
                 m,
             ),
         },
     }
+}
+
+/// Seeds the case-match buffer with each switch case's persisted single-value
+/// `match` for the chain currently in view, so the per-row inputs render against
+/// owned `'a` state. Multi-value (imported) matches are skipped — they render
+/// read-only and must never be clobbered by a single-value edit. Existing buffer
+/// entries (in-flight edits) are preserved.
+fn seed_case_buffer(state: &mut ActionsState) {
+    let Some(detail) = state.detail.as_ref() else {
+        return;
+    };
+    let chain = crate::actions_nav::resolve_chain(&detail.action.sub_actions, &state.nav_path);
+    for (step_index, step) in chain.iter().enumerate() {
+        for case_index in 0..crate::actions_nav::case_count(step) {
+            if state
+                .case_match_edits
+                .contains_key(&(step_index, case_index))
+            {
+                continue;
+            }
+            if let Some(value) = crate::actions_nav::case_match_display(step, case_index) {
+                state
+                    .case_match_edits
+                    .insert((step_index, case_index), value);
+            }
+        }
+    }
+}
+
+/// Persists a mutation to the chain at the current nav path (where switch steps
+/// live), then reloads the editor. A no-op when no action detail is loaded.
+fn persist_switch_case_op(
+    state: &ActionsState,
+    rt: &RuntimeView,
+    mutate: impl FnOnce(&mut Vec<forge_types::SubActionStep>),
+) -> Task<Message> {
+    let Some(action) = state.detail.as_ref().map(|d| d.action.clone()) else {
+        return Task::none();
+    };
+    crate::actions_nav::persist_chain_mutation(rt, &action, &state.nav_path, mutate)
 }
 
 #[cfg(test)]

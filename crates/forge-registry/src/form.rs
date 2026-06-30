@@ -35,4 +35,20 @@ pub enum FormField {
         label: &'static str,
         inner: Box<FormField>,
     },
+    /// Names a config key holding exactly one nested sub-chain (the canonical
+    /// `Array`-of-`Object` step form). The editor authors its steps in the
+    /// recursive step-list surface, so the renderer offers a drill-in affordance
+    /// rather than a text input.
+    SubChain {
+        key: &'static str,
+        label: &'static str,
+    },
+    /// Names a config key holding an ordered list of labeled branches, each
+    /// pairing a single-value match input with one nested sub-chain. The
+    /// renderer offers per-row add/remove/reorder, a single-value match input,
+    /// and a drill-in affordance into each branch.
+    CaseList {
+        key: &'static str,
+        label: &'static str,
+    },
 }

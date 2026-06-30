@@ -1440,6 +1440,8 @@ fn form_field_key(field: &forge_registry::FormField) -> &'static str {
         forge_registry::FormField::Select { key, .. } => key,
         forge_registry::FormField::DynamicSelect { key, .. } => key,
         forge_registry::FormField::Optional { key, .. } => key,
+        forge_registry::FormField::SubChain { key, .. } => key,
+        forge_registry::FormField::CaseList { key, .. } => key,
     }
 }
 
@@ -1452,6 +1454,8 @@ fn form_field_label(field: &forge_registry::FormField) -> &'static str {
         forge_registry::FormField::Select { label, .. } => label,
         forge_registry::FormField::DynamicSelect { label, .. } => label,
         forge_registry::FormField::Optional { label, .. } => label,
+        forge_registry::FormField::SubChain { label, .. } => label,
+        forge_registry::FormField::CaseList { label, .. } => label,
     }
 }
 

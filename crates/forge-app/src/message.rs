@@ -251,6 +251,27 @@ pub enum ActionsMsg {
     RenameCancel,
     RenameSaved(Result<(forge_types::ActionId, String), String>),
     DismissStepMenu,
+    /// Descend into a composite step's nested sub-chain (pushes a nav frame).
+    EnterBranch {
+        step_index: usize,
+        chain_key: String,
+        case_index: Option<usize>,
+    },
+    /// Pop the nav path back to the given depth (0 = the action's own steps).
+    BreadcrumbPop(usize),
+    /// Reload the editor detail after a nested-chain mutation, preserving the
+    /// current nav path.
+    BranchReload(ActionId),
+    /// Append an empty case row to a switch step's case list.
+    AddSwitchCase(usize),
+    /// Remove a switch case row by (step index, case index).
+    RemoveSwitchCase(usize, usize),
+    /// Reorder a switch case row up (`true`) or down (`false`).
+    MoveSwitchCase(usize, usize, bool),
+    /// Buffer an edit to a switch case's single-value match input.
+    SwitchCaseMatchChanged(usize, usize, String),
+    /// Persist the buffered switch case match value.
+    SwitchCaseMatchCommitted(usize, usize),
     Editor(ActionEditorMsg),
 }
 

@@ -74,6 +74,26 @@ pub fn text_input_field<'a, Msg: 'a + Clone>(
         .into()
 }
 
+/// Like [`text_input_field`] but also emits `on_submit` when the user presses
+/// Enter — used where an edit is buffered and committed explicitly.
+pub fn text_input_field_submit<'a, Msg: 'a + Clone>(
+    placeholder: impl Into<Cow<'a, str>>,
+    value: &'a str,
+    on_change: impl Fn(String) -> Msg + 'a,
+    on_submit: Msg,
+    palette: &ForgePalette,
+) -> Element<'a, Msg> {
+    let p = *palette;
+    let ph: Cow<'a, str> = placeholder.into();
+    text_input(ph.as_ref(), value)
+        .on_input(on_change)
+        .on_submit(on_submit)
+        .padding(input_padding())
+        .width(iced::Length::Fill)
+        .style(move |_theme, status| text_input_style(p, status))
+        .into()
+}
+
 pub fn search_input<'a, Msg: 'a + Clone>(
     placeholder: impl Into<Cow<'a, str>>,
     value: &'a str,

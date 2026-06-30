@@ -43,11 +43,21 @@ impl SubActionRunner for CoreLogicSwitchCaseRunner {
     }
 
     fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Text {
-            key: "expression",
-            label: "Expression",
-            placeholder: "%command.name%",
-        }]
+        vec![
+            FormField::Text {
+                key: "expression",
+                label: "Expression",
+                placeholder: "%command.name%",
+            },
+            FormField::CaseList {
+                key: "cases",
+                label: "Cases",
+            },
+            FormField::SubChain {
+                key: "default_chain",
+                label: "Default",
+            },
+        ]
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {

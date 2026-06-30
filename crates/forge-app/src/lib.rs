@@ -4,6 +4,7 @@ pub mod actions;
 pub mod actions_field_form;
 pub mod actions_forms;
 pub mod actions_modals;
+pub mod actions_nav;
 pub mod actions_telemetry;
 pub mod actions_trigger_kinds;
 pub mod actions_trigger_picker;

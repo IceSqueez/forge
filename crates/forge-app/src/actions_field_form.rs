@@ -213,6 +213,18 @@ where
                 }
             }
         }
+        FormField::SubChain { label, .. } | FormField::CaseList { label, .. } => {
+            // Nested sub-chains are authored in the recursive step-list surface
+            // (drill-in from the action detail pane), never as a text input here.
+            let hint = text(forge_widgets::tr!("action_editor_branch_modal_hint"))
+                .size(FONT_XS)
+                .color(p.text_faint)
+                .font(font(FontRole::Body));
+            column![field_label(label, p), hint]
+                .spacing(spf(Spacing::Xxs))
+                .padding(field_row_padding)
+                .into()
+        }
         FormField::Optional { key, label, inner } => {
             let is_enabled = matches!(buffers.overrides.get(*key), Some(Variant::Bool(true)));
             let k = key.to_string();

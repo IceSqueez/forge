@@ -118,6 +118,7 @@ fn build_core_registries(
         forge_runtime::SchedulerCell::new(),
         trigger_instances,
         actions,
+        Arc::new(forge_runtime::ActionCancelRegistry::new()),
         forge_runtime::Config::default(),
     )
     .unwrap();
@@ -255,6 +256,7 @@ async fn trigger_evaluator_applies_effective_config_overrides() {
         dp.action_repo(),
         dp.history_repo(),
         sub_reg,
+        Arc::new(forge_runtime::ActionCancelRegistry::new()),
     );
     let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![make_queue(q_id)]);
     let _eval = spawn_trigger_evaluator(
@@ -357,6 +359,7 @@ async fn sub_action_runner_sees_merged_default_and_override() {
         dp.action_repo(),
         dp.history_repo(),
         Arc::new(sub_reg),
+        Arc::new(forge_runtime::ActionCancelRegistry::new()),
     );
     let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![make_queue(q_id)]);
     let _eval = spawn_trigger_evaluator(
@@ -431,6 +434,7 @@ async fn linked_action_executes_via_join_table_only() {
         dp.action_repo(),
         dp.history_repo(),
         sub_reg,
+        Arc::new(forge_runtime::ActionCancelRegistry::new()),
     );
     let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![make_queue(q_id)]);
     let _eval = spawn_trigger_evaluator(

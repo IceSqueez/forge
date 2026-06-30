@@ -22,9 +22,10 @@ use forge_platform_twitch::{
 };
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
-    ActionEngineHandle, EventBus, QueueScheduler, QueueSchedulerHandle, SchedulerCell,
-    ScriptRegistry, TriggerEvaluatorHandle, register_audio_sub_actions, register_core_sub_actions,
-    register_core_triggers, spawn_action_engine, spawn_trigger_evaluator,
+    ActionCancelRegistry, ActionEngineHandle, EventBus, QueueScheduler, QueueSchedulerHandle,
+    SchedulerCell, ScriptRegistry, TriggerEvaluatorHandle, register_audio_sub_actions,
+    register_core_sub_actions, register_core_triggers, spawn_action_engine,
+    spawn_trigger_evaluator,
 };
 use forge_soundboard::{BusAudioEventSink, CpalSinkFactory, SoundboardPlayer};
 use forge_speak_queue::{QueueConfig, QueueDeps, SpeakQueueHandle};
@@ -418,6 +419,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
     let mut sub_action_reg = SubActionRegistry::new();
     let publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
     let scheduler_cell = SchedulerCell::new();
+    let cancel_registry = Arc::new(ActionCancelRegistry::new());
     if let Err(e) = register_core_sub_actions(
         &mut sub_action_reg,
         Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
@@ -428,6 +430,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         scheduler_cell.clone(),
         dp.trigger_instance_repo(),
         dp.action_repo(),
+        Arc::clone(&cancel_registry),
         forge_runtime::Config::default(),
     ) {
         tracing::warn!("core sub-action runner registration failed: {e}");
@@ -875,6 +878,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         dp.action_repo(),
         dp.history_repo(),
         Arc::clone(&sub_action_reg),
+        cancel_registry,
     );
     let scheduler = QueueScheduler::spawn(engine.clone(), Arc::clone(&bus), queues);
     scheduler_cell.set(scheduler.clone());

@@ -293,6 +293,7 @@ mod tests {
             crate::SchedulerCell::new(),
             trigger_instances,
             actions,
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
             crate::Config::default(),
         )
         .unwrap();
@@ -342,6 +343,7 @@ mod tests {
             dp.action_repo(),
             dp.history_repo(),
             sub_reg,
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let _handle = spawn_trigger_evaluator(
@@ -405,6 +407,7 @@ mod tests {
             dp.action_repo(),
             dp.history_repo(),
             sub_reg,
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let _handle = spawn_trigger_evaluator(

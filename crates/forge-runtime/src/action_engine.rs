@@ -15,6 +15,7 @@ use time::OffsetDateTime;
 use tokio::sync::{mpsc, oneshot};
 use tracing::warn;
 
+use crate::action_cancel::ActionCancelRegistry;
 use crate::chain::ChainEngine;
 use crate::{Config, EventBus};
 
@@ -106,6 +107,7 @@ struct ActionEngine {
     actions: Arc<dyn ActionRepo>,
     history: Arc<dyn HistoryRepo>,
     chain_engine: Arc<ChainEngine>,
+    cancel_registry: Arc<ActionCancelRegistry>,
     input: mpsc::Receiver<EngineJob>,
 }
 
@@ -115,6 +117,7 @@ impl ActionEngine {
         actions: Arc<dyn ActionRepo>,
         history: Arc<dyn HistoryRepo>,
         sub_action_registry: Arc<SubActionRegistry>,
+        cancel_registry: Arc<ActionCancelRegistry>,
     ) -> ActionEngineHandle {
         let (tx, rx) = mpsc::channel(256);
         let (quick_tx, quick_rx) = mpsc::channel(64);
@@ -131,6 +134,7 @@ impl ActionEngine {
             actions: Arc::clone(&actions),
             history: Arc::clone(&history),
             chain_engine,
+            cancel_registry,
             input: rx,
         };
         tokio::spawn(async move { engine.run(cancel_clone).await });
@@ -164,6 +168,13 @@ impl ActionEngine {
     }
 
     async fn run_execution(&self, req: ExecutionRequest, cancel: &CancelSignal) {
+        let exec_id = self.cancel_registry.register(req.action_id, cancel.clone());
+        let _cancel_guard = CancelGuard {
+            registry: Arc::clone(&self.cancel_registry),
+            action_id: req.action_id,
+            exec_id,
+        };
+
         let action = match self.actions.get(req.action_id).await {
             Ok(Some(a)) if a.enabled => a,
             Ok(_) => return,
@@ -271,6 +282,18 @@ impl ActionEngine {
     }
 }
 
+struct CancelGuard {
+    registry: Arc<ActionCancelRegistry>,
+    action_id: ActionId,
+    exec_id: u64,
+}
+
+impl Drop for CancelGuard {
+    fn drop(&mut self) {
+        self.registry.deregister(self.action_id, self.exec_id);
+    }
+}
+
 async fn run_quick_action_loop(
     mut rx: mpsc::Receiver<QuickActionRequest>,
     bus: Arc<EventBus>,
@@ -339,8 +362,9 @@ pub fn spawn_action_engine(
     actions: Arc<dyn ActionRepo>,
     history: Arc<dyn HistoryRepo>,
     sub_action_registry: Arc<SubActionRegistry>,
+    cancel_registry: Arc<ActionCancelRegistry>,
 ) -> ActionEngineHandle {
-    ActionEngine::spawn(bus, actions, history, sub_action_registry)
+    ActionEngine::spawn(bus, actions, history, sub_action_registry, cancel_registry)
 }
 
 #[cfg(test)]
@@ -503,6 +527,7 @@ mod tests {
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(reg),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
 
         let cases = [
@@ -586,6 +611,7 @@ mod tests {
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(reg),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
 
         let mut overrides = BTreeMap::new();

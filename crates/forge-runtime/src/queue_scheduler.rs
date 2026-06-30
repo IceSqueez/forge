@@ -623,6 +623,7 @@ mod tests {
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let mut sub = bus.subscribe();
@@ -666,6 +667,7 @@ mod tests {
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let mut sub = bus.subscribe();
@@ -716,6 +718,7 @@ mod tests {
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let mut sub = bus.subscribe();
@@ -767,6 +770,7 @@ mod tests {
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let mut sub = bus.subscribe();
@@ -806,6 +810,7 @@ mod tests {
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let mut sub = bus.subscribe();
@@ -844,6 +849,7 @@ mod tests {
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let mut sub = bus.subscribe();
@@ -870,6 +876,7 @@ mod tests {
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let mut sub = bus.subscribe();
@@ -900,6 +907,7 @@ mod tests {
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let mut sub = bus.subscribe();
@@ -941,6 +949,7 @@ mod tests {
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
         // Spawn with NO initial queues — q_id is unregistered.
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![]);
@@ -983,6 +992,7 @@ mod tests {
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![nonblocking(q_id)]);
         let mut sub = bus.subscribe();
@@ -1041,6 +1051,7 @@ mod tests {
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let mut sub = bus.subscribe();
@@ -1076,6 +1087,7 @@ mod tests {
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![]);
 
@@ -1103,6 +1115,7 @@ mod tests {
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![nonblocking(q_id)]);
         let mut sub = bus.subscribe();
@@ -1169,6 +1182,7 @@ mod tests {
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
         // Start non-blocking, flip to blocking.
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![nonblocking(q_id)]);
@@ -1216,6 +1230,7 @@ mod tests {
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![nonblocking(q_id)]);
         let mut sub = bus.subscribe();
@@ -1271,6 +1286,7 @@ mod tests {
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![]);
 
@@ -1445,6 +1461,7 @@ mod tests {
             dp.action_repo(),
             dp.history_repo(),
             waiting_registry(),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let mut sub = bus.subscribe();
@@ -1513,6 +1530,7 @@ mod tests {
             dp.action_repo(),
             dp.history_repo(),
             waiting_registry(),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let mut sub = bus.subscribe();
@@ -1555,6 +1573,7 @@ mod tests {
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
 
@@ -1578,6 +1597,7 @@ mod tests {
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![]);
 
@@ -1599,6 +1619,7 @@ mod tests {
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let mut sub = bus.subscribe();

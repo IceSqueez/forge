@@ -213,6 +213,7 @@ mod tests {
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
+            Arc::new(forge_runtime::ActionCancelRegistry::new()),
         ));
         let bind_addr: SocketAddr = "127.0.0.1:9515".parse().expect("addr");
         let state = AppState {

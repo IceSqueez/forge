@@ -653,6 +653,7 @@ mod tests {
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(forge_registry::SubActionRegistry::new()),
+            Arc::new(forge_runtime::ActionCancelRegistry::new()),
         );
         let scheduler =
             forge_runtime::QueueScheduler::spawn(engine.clone(), Arc::clone(&bus), queues);

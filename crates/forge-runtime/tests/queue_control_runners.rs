@@ -60,6 +60,7 @@ async fn live_scheduler(queue: Queue) -> (SchedulerCell, QueueSchedulerHandle, A
         dp.action_repo(),
         dp.history_repo(),
         Arc::new(SubActionRegistry::new()),
+        Arc::new(forge_runtime::ActionCancelRegistry::new()),
     );
     let handle = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
 

@@ -125,6 +125,7 @@ async fn spawn_pipeline() -> PipelineFixture {
         dp.action_repo(),
         dp.history_repo(),
         Arc::new(SubActionRegistry::new()),
+        Arc::new(forge_runtime::ActionCancelRegistry::new()),
     );
     let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
 

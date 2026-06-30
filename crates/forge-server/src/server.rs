@@ -302,6 +302,7 @@ mod tests {
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
+            Arc::new(forge_runtime::ActionCancelRegistry::new()),
         ));
         AppState {
             auth,

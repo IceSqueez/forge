@@ -1,3 +1,4 @@
+mod core_action_cancel;
 mod core_action_disable;
 mod core_action_enable;
 mod core_action_run;
@@ -72,6 +73,7 @@ mod script_run_named;
 mod server_broadcast;
 mod twitch_chat_send_message;
 
+pub use core_action_cancel::CoreActionCancelRunner;
 pub use core_action_disable::CoreActionDisableRunner;
 pub use core_action_enable::CoreActionEnableRunner;
 pub use core_action_run::CoreActionRunRunner;
@@ -151,6 +153,7 @@ use forge_registry::{RegistryError, SubActionRegistry};
 use forge_storage::{ActionRepo, GlobalsRepo, SettingsRepo, TriggerInstanceRepo, UserGlobalsRepo};
 
 use crate::SchedulerCell;
+use crate::action_cancel::ActionCancelRegistry;
 use crate::condition::ConditionGate;
 use crate::config::Config;
 use crate::egress::{EgressClient, HttpMethod};
@@ -167,6 +170,7 @@ pub fn register_core_sub_actions(
     scheduler: SchedulerCell,
     trigger_instances: Arc<dyn TriggerInstanceRepo>,
     actions: Arc<dyn ActionRepo>,
+    cancel_registry: Arc<ActionCancelRegistry>,
     config: Config,
 ) -> Result<(), RegistryError> {
     let condition_gate = Arc::new(ConditionGate::new(&config));
@@ -186,6 +190,9 @@ pub fn register_core_sub_actions(
     reg.register(Box::new(CoreQueuePauseRunner::new(scheduler.clone())))?;
     reg.register(Box::new(CoreQueueResumeRunner::new(scheduler.clone())))?;
     reg.register(Box::new(CoreQueueClearRunner::new(scheduler.clone())))?;
+    reg.register(Box::new(CoreActionCancelRunner::new(Arc::clone(
+        &cancel_registry,
+    ))))?;
     reg.register(Box::new(CoreActionEnableRunner::new(Arc::clone(&actions))))?;
     reg.register(Box::new(CoreActionDisableRunner::new(Arc::clone(&actions))))?;
     reg.register(Box::new(CoreActionToggleRunner::new(Arc::clone(&actions))))?;

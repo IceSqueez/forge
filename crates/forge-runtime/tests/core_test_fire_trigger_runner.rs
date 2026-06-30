@@ -91,6 +91,7 @@ async fn harness(queue: Queue) -> Harness {
         backend.action_repo(),
         backend.history_repo(),
         Arc::new(reg),
+        Arc::new(forge_runtime::ActionCancelRegistry::new()),
     );
     let handle = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
     let cell = SchedulerCell::new();

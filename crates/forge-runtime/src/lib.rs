@@ -1,3 +1,4 @@
+pub mod action_cancel;
 pub mod action_engine;
 pub mod actions;
 pub mod audio_runners;
@@ -18,6 +19,7 @@ pub mod sub_action_runners;
 pub mod trigger_evaluator;
 pub mod triggers;
 
+pub use action_cancel::ActionCancelRegistry;
 pub use action_engine::{ActionEngineHandle, DispatchError, ExecutionRequest, spawn_action_engine};
 pub use audio_runners::register_audio_sub_actions;
 pub use bridge::bus_subscription;

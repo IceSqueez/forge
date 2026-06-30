@@ -74,3 +74,82 @@ impl ActionCancelRegistry {
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cancel_trips_only_signals_under_the_named_action_and_returns_their_count() {
+        let registry = ActionCancelRegistry::new();
+        let a = ActionId::new();
+        let b = ActionId::new();
+        let (a1, a2, other) = (
+            CancelSignal::new(),
+            CancelSignal::new(),
+            CancelSignal::new(),
+        );
+        registry.register(a, a1.clone());
+        registry.register(a, a2.clone());
+        registry.register(b, other.clone());
+
+        assert_eq!(registry.cancel(a), 2);
+        assert!(a1.is_cancelled());
+        assert!(a2.is_cancelled());
+        assert!(
+            !other.is_cancelled(),
+            "cancelling action a must not touch a signal filed under action b"
+        );
+    }
+
+    #[test]
+    fn deregister_of_one_execution_leaves_a_concurrent_run_of_the_same_action_cancellable() {
+        // Why: the inner map is keyed per-execution so a finished run that
+        // deregisters never strands a concurrent run of the SAME action_id. A
+        // regression to whole-bucket keying would drop both here and cancel 0.
+        let registry = ActionCancelRegistry::new();
+        let action = ActionId::new();
+        let finished = CancelSignal::new();
+        let still_running = CancelSignal::new();
+        let finished_exec = registry.register(action, finished.clone());
+        let running_exec = registry.register(action, still_running.clone());
+        assert_ne!(
+            finished_exec, running_exec,
+            "each execution must get a distinct id"
+        );
+
+        registry.deregister(action, finished_exec);
+
+        assert_eq!(registry.cancel(action), 1);
+        assert!(still_running.is_cancelled());
+        assert!(
+            !finished.is_cancelled(),
+            "the deregistered execution must no longer be cancellable"
+        );
+    }
+
+    #[test]
+    fn cancel_and_cancel_all_on_empty_registry_return_zero() {
+        let registry = ActionCancelRegistry::new();
+        assert_eq!(registry.cancel(ActionId::new()), 0);
+        assert_eq!(registry.cancel_all(), 0);
+    }
+
+    #[test]
+    fn cancel_all_trips_every_signal_across_all_actions() {
+        let registry = ActionCancelRegistry::new();
+        let a = ActionId::new();
+        let b = ActionId::new();
+        let signals = [
+            CancelSignal::new(),
+            CancelSignal::new(),
+            CancelSignal::new(),
+        ];
+        registry.register(a, signals[0].clone());
+        registry.register(a, signals[1].clone());
+        registry.register(b, signals[2].clone());
+
+        assert_eq!(registry.cancel_all(), 3);
+        assert!(signals.iter().all(CancelSignal::is_cancelled));
+    }
+}

@@ -107,3 +107,122 @@ impl SubActionRunner for CoreActionCancelRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use forge_events::{Event, EventPublisher};
+    use forge_registry::CancelSignal;
+    use forge_types::EventId;
+
+    use super::*;
+
+    struct NullPublisher;
+    impl EventPublisher for NullPublisher {
+        fn publish(&self, _event: Event) {}
+    }
+
+    fn cfg(action_id: &str) -> SubActionConfig {
+        let mut c = SubActionConfig::new();
+        c.insert(
+            "action_id".to_owned(),
+            Variant::String(action_id.to_owned()),
+        );
+        c
+    }
+
+    async fn run_with(
+        registry: Arc<ActionCancelRegistry>,
+        config: &SubActionConfig,
+        arg_stack: &ArgStack,
+    ) -> SubActionOutcome {
+        let runner = CoreActionCancelRunner::new(registry);
+        let ctx = RunContext::leaf(arg_stack, 0, EventId::new(), &NullPublisher);
+        let (telemetry, _) = runner.execute(config, &ctx).await;
+        telemetry.outcome
+    }
+
+    #[tokio::test]
+    async fn valid_action_id_cancels_only_that_actions_signal_and_succeeds() {
+        let registry = Arc::new(ActionCancelRegistry::new());
+        let target = ActionId::new();
+        let bystander = ActionId::new();
+        let target_sig = CancelSignal::new();
+        let bystander_sig = CancelSignal::new();
+        registry.register(target, target_sig.clone());
+        registry.register(bystander, bystander_sig.clone());
+
+        let outcome = run_with(
+            Arc::clone(&registry),
+            &cfg(&target.to_string()),
+            &ArgStack::new(),
+        )
+        .await;
+
+        assert!(matches!(outcome, SubActionOutcome::Success));
+        assert!(target_sig.is_cancelled());
+        assert!(!bystander_sig.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn empty_action_id_cancels_every_registered_signal() {
+        let registry = Arc::new(ActionCancelRegistry::new());
+        let one = CancelSignal::new();
+        let two = CancelSignal::new();
+        registry.register(ActionId::new(), one.clone());
+        registry.register(ActionId::new(), two.clone());
+
+        let outcome = run_with(Arc::clone(&registry), &cfg(""), &ArgStack::new()).await;
+
+        assert!(matches!(outcome, SubActionOutcome::Success));
+        assert!(one.is_cancelled());
+        assert!(two.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn unparseable_action_id_fails_and_cancels_nothing() {
+        let registry = Arc::new(ActionCancelRegistry::new());
+        let untouched = CancelSignal::new();
+        registry.register(ActionId::new(), untouched.clone());
+
+        let outcome = run_with(Arc::clone(&registry), &cfg("not-a-ulid"), &ArgStack::new()).await;
+
+        assert!(
+            matches!(&outcome, SubActionOutcome::Failed(m) if m.contains("invalid action_id")),
+            "expected a Failed carrying the bad id, got {outcome:?}"
+        );
+        assert!(
+            !untouched.is_cancelled(),
+            "a parse failure must bail before cancelling anything"
+        );
+    }
+
+    #[tokio::test]
+    async fn known_format_action_id_with_nothing_running_succeeds_idempotently() {
+        let registry = Arc::new(ActionCancelRegistry::new());
+        let outcome = run_with(
+            registry,
+            &cfg(&ActionId::new().to_string()),
+            &ArgStack::new(),
+        )
+        .await;
+        assert!(matches!(outcome, SubActionOutcome::Success));
+    }
+
+    #[tokio::test]
+    async fn action_id_is_interpolated_and_trimmed_before_cancelling() {
+        let registry = Arc::new(ActionCancelRegistry::new());
+        let target = ActionId::new();
+        let target_sig = CancelSignal::new();
+        registry.register(target, target_sig.clone());
+
+        let stack = ArgStack::new().set("target".to_owned(), Variant::String(target.to_string()));
+        let outcome = run_with(Arc::clone(&registry), &cfg("  %target%  "), &stack).await;
+
+        assert!(matches!(outcome, SubActionOutcome::Success));
+        assert!(
+            target_sig.is_cancelled(),
+            "the %target% placeholder must resolve from the arg stack before cancelling"
+        );
+    }
+}

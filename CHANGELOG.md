@@ -1,10 +1,89 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-beta.16] - 2026-06-30
+### ⚙️ Miscellaneous Tasks
+- *(deps)* Bump actions/cache from 5 to 6 (#36)
+- *(deps)* Bump arc-swap from 1.9.1 to 1.9.2 (#38)
+- *(deps)* Bump mockall from 0.14.0 to 0.15.0 (#39)
+- *(deps)* Bump open from 5.3.5 to 5.3.6 (#37)
+
+### 🐛 Bug Fixes
+- *(runtime)* Cancel in-flight action on queue clear without keep-current
+- *(runtime)* Execute flow-control inline sub-chains
+- *(app)* Show add-sub-action modal on action editor screen
+- *(app)* Populate action/queue/trigger/script select options
+- *(app)* Make the action editor reachable from actions
+- *(app)* Anchor action context menu to its trigger button
+- *(app)* Add script editor to the sidebar navigation
+- *(app)* Complete sidebar nav and drop dead builtin screen
+
+### 📚 Documentation
+- *(readme)* Document expanded sub-actions and flow control
+
+### 🚀 Features
+- *(runtime)* Add re-entrant chain executor with control-flow signals
+- *(runtime)* Add bounded condition evaluator with literal fast-path
+- *(audio)* Add stoppable playback handle for in-flight clips
+- *(tts)* Add speak queue control and query dispatch surface
+- *(runtime)* Add string manipulation sub-action runners
+- *(runtime)* Add math and random sub-action runners
+- *(runtime)* Add datetime sub-action runners
+- *(runtime)* Add sandboxed file write, delete and list sub-actions
+- *(runtime)* Add globals decrement, toggle and array sub-actions
+- *(runtime)* Add local arg set sub-action runner
+- *(runtime)* Add per-user variable sub-action runners
+- *(runtime)* Add queue pause, resume and clear sub-actions
+- *(runtime)* Add custom event emit sub-action runner
+- *(runtime)* Add server broadcast sub-action runner
+- *(runtime)* Add notify, clipboard and url-open sub-actions
+- *(runtime)* Add trigger test-fire sub-action runner
+- *(runtime)* Add HTTP egress sub-actions with SSRF guard
+- *(tts)* Add TTS queue control and alias sub-actions
+- *(soundboard)* Add stop, stop-all and master-volume sub-actions
+- *(runtime)* Add action and trigger enable/disable sub-actions
+- *(runtime)* Add re-entrant action.run with RunContext executor
+- *(runtime)* Add flow-control composite and signal sub-actions
+- *(runtime)* Add action.cancel to stop in-flight action runs
+- *(actions)* Author flow-control nested sub-chains in editor
+
+### 🚜 Refactor
+- *(net)* Relocate SSRF address classifier to shared crate
+- *(actions)* Drop superseded sub-action service methods
+- *(app)* Consolidate action list and editor into one screen
+
+### 🧪 Testing
+- *(runtime)* Cover chain executor depth, cancel and signal mapping
+- *(runtime)* Cover bounded condition evaluator and fast-path parity
+- *(tts)* Cover speak queue control and query dispatch surface
+- *(runtime)* Cover string sub-action runner edge cases
+- *(runtime)* Cover math/random sub-action runners and MathEvaluator
+- *(runtime)* Cover datetime sub-action runners
+- *(runtime)* Cover sandboxed file sub-actions, prune moved tests
+- *(runtime)* Cover globals decrement, toggle and array sub-actions
+- *(runtime)* Cover per-user variable and local-arg set runners
+- *(runtime)* Cover queue control runners via scheduler cell
+- *(runtime)* Cover script.emit_event custom-event round-trip
+- *(runtime)* Cover server.broadcast overlay round-trip contract
+- *(runtime)* Cover notify/clipboard/url-open runners + url scheme gate
+- *(runtime)* Cover trigger test-fire runner dispatch and outputs
+- *(net)* Cover SSRF address classifier at shared crate home
+- *(runtime)* Cover HTTP egress client and core.http runners
+- *(tts)* Cover TTS control runner dispatch and arg marshaling
+- *(soundboard)* Cover stop, stop-all and master-volume sub-actions
+- *(runtime)* Cover action/trigger enable/disable/toggle state runners
+- *(runtime)* Cover action.run composite and RunContext leaf
+- *(runtime)* Cover flow-control sub-action runners
+- *(runtime)* Cover action.cancel runner and cancel registry
+- *(actions)* Cover nested sub-chain nav and switch cases
+- *(app)* Cover action-screen consolidation routing
+- *(app)* Guard Instant subtraction against Windows underflow
+
 ## [0.1.0-beta.15] - 2026-06-26
 ### ⚙️ Miscellaneous Tasks
 - *(deps)* Bump actions/checkout from 6 to 7 (#33)
 - *(deps)* Update to latest compatible and fix time deprecation
+- Release
 
 ### 🐛 Bug Fixes
 - *(ui)* Resolve trigger labels and picker groups from registry

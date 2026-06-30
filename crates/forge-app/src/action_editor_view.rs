@@ -1257,7 +1257,13 @@ pub fn action_editor_view<'a>(
         .find(|a| a.id == action_id)
         .map(|a| a.name.clone())
         .unwrap_or_else(|| forge_widgets::tr!("action_editor_fallback_name"));
-    let page_header = crate::page_chrome::simple_page_header(
+    let back_btn = forge_widgets::ghost_button_with_icon(
+        Icon::ArrowBackUp,
+        forge_widgets::tr!("action_editor_back_to_actions"),
+        Message::Navigate(Screen::Actions),
+        palette,
+    );
+    let page_header = crate::page_chrome::page_header_with_actions(
         &[
             (
                 forge_widgets::tr!("action_editor_breadcrumb_automation"),
@@ -1269,6 +1275,7 @@ pub fn action_editor_view<'a>(
             ),
             (action_name, true),
         ],
+        Some(back_btn),
         palette,
     );
 

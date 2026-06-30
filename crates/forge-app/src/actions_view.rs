@@ -610,7 +610,13 @@ fn actions_detail_panel<'a>(
         Message::Actions(ActionsMsg::DuplicateAction(action.id)),
         palette,
     );
-    let action_btns = row![test_btn, dup_btn].spacing(spf(Spacing::Xs));
+    let edit_btn = forge_widgets::ghost_button_with_icon(
+        Icon::ExternalLink,
+        forge_widgets::tr!("actions_detail_open_editor"),
+        Message::Navigate(crate::Screen::ActionEditor(action.id)),
+        palette,
+    );
+    let action_btns = row![test_btn, dup_btn, edit_btn].spacing(spf(Spacing::Xs));
 
     let header_row = row![container(name_row).width(Length::Fill), action_btns,]
         .spacing(spf(Spacing::Xs))

@@ -927,7 +927,10 @@ pub fn action_editor_view<'a>(
     .height(Length::Fill)
     .into();
 
-    if let Some(picker_state) = app.ui.actions.trigger_picker.as_ref() {
+    if let Some(form) = app.ui.actions.add_sub_action_modal.as_ref() {
+        let modal_el = crate::actions_modals::add_sub_action_modal_view(form, &app.rt, palette);
+        iced::widget::stack![base, modal_el].into()
+    } else if let Some(picker_state) = app.ui.actions.trigger_picker.as_ref() {
         let picker_el = crate::actions_trigger_picker::view(picker_state, &app.rt, palette);
         iced::widget::stack![base, picker_el].into()
     } else {

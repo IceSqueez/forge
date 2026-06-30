@@ -5,7 +5,6 @@ use forge_widgets::{
 use iced::{Element, Length};
 
 use crate::Screen;
-use crate::action_editor_view::action_editor_view;
 use crate::app::{App, format_uptime, subsystem_connectivity};
 use crate::builtin_detail::view as builtin_detail_view;
 use crate::event_feed::event_feed_view;
@@ -45,8 +44,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Screen::Home => crate::home::home_view(app, palette),
         Screen::LiveChat => live_chat_view(&app.ui.live_chat, &app.ui.viewers, palette),
         Screen::Globals => globals_view(app, palette),
-        Screen::Actions => crate::actions_view::actions_view(app, palette),
-        Screen::ActionEditor(id) => action_editor_view(app, *id, palette),
+        Screen::ActionEditor(_) => crate::actions_view::actions_view(app, palette),
         Screen::Queues => queues_view(&app.ui.queues, palette),
         Screen::TriggersRegistry => {
             crate::triggers_registry::view(&app.ui.triggers_registry, &app.rt, palette)
@@ -134,8 +132,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
 
     let screen_uses_own_header = matches!(
         &app.screen,
-        Screen::Actions
-            | Screen::ActionEditor(_)
+        Screen::ActionEditor(_)
             | Screen::LiveChat
             | Screen::Home
             | Screen::Globals

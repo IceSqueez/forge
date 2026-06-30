@@ -151,7 +151,7 @@ fn home_hero<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     let new_action_btn = home_inline_button(
         Icon::Plus,
         forge_widgets::tr!("home_hero_new_action"),
-        Message::Navigate(Screen::Actions),
+        Message::Navigate(Screen::ActionEditor(None)),
         palette,
     );
 
@@ -229,7 +229,7 @@ fn home_jump_cards<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, M
                 fired = triggers_fired as i64
             ),
             hint: forge_widgets::tr!("home_card_automation_hint"),
-            on_press: Message::Navigate(Screen::Actions),
+            on_press: Message::Navigate(Screen::ActionEditor(None)),
             warn: false,
         },
         palette,

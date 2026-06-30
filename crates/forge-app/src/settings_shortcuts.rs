@@ -150,7 +150,7 @@ fn action_message(id: &str) -> Option<Message> {
         "nav.home" => Screen::Home,
         "nav.live_chat" => Screen::LiveChat,
         "nav.event_feed" => Screen::EventFeed,
-        "nav.actions" => Screen::Actions,
+        "nav.actions" => Screen::ActionEditor(None),
         "nav.globals" => Screen::Globals,
         "nav.script_editor" => Screen::ScriptEditor,
         "nav.settings" => Screen::Settings(SettingsSection::Appearance),

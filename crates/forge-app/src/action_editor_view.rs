@@ -7,8 +7,7 @@ use forge_widgets::status::{StatusVariant, status_pill};
 use forge_widgets::tokens::{FONT_LG, FONT_SM, FONT_XS, Spacing, sp, spf};
 use iced::{Alignment, Background, Border, Element, Length, Padding};
 
-use crate::Screen;
-use crate::actions::{ActionsGroup, AddSubActionMsg, RemoveSubActionMsg};
+use crate::actions::{AddSubActionMsg, RemoveSubActionMsg};
 use crate::app::App;
 use crate::message::{ActionEditorMsg, ActionsMsg, Message, MoveSubActionMsg};
 
@@ -322,145 +321,57 @@ fn step_controls<'a>(
         .into()
 }
 
-fn tree_pane<'a>(
-    groups: &'a [ActionsGroup],
-    selected_id: ActionId,
+fn empty_placeholder_card<'a>(
+    icon: Icon,
+    icon_color: iced::Color,
+    label: impl Into<std::borrow::Cow<'a, str>>,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    use iced::widget::{column, container, row, scrollable, text};
-
+    use iced::widget::{column, container, text};
     let p = *palette;
-    let mono = forge_widgets::font(forge_widgets::FontRole::Monospace);
-    let dot_size = 6.0_f32;
 
-    let mut col: iced::widget::Column<'_, Message> = column![].spacing(0);
+    let inner = column![
+        tabler_icon(icon, 16.0, icon_color),
+        text(label.into()).size(FONT_XS).color(p.text_muted),
+    ]
+    .spacing(spf(Spacing::Xs))
+    .align_x(Alignment::Center);
 
-    for group in groups {
-        let header_row = row![
-            tabler_icon(Icon::ChevronDown, 11.0, p.text_muted),
-            text(group.category.display_name())
-                .size(FONT_XS)
-                .color(p.text_muted)
-                .font(mono),
-            iced::widget::Space::new().width(Length::Fill),
-            text(group.actions.len().to_string())
-                .size(FONT_XS)
-                .color(p.text_faint)
-                .font(mono),
-        ]
-        .spacing(spf(Spacing::Xs))
-        .align_y(Alignment::Center)
-        .padding([sp(Spacing::Xs), sp(Spacing::Sm)]);
-
-        col = col.push(container(header_row).width(Length::Fill));
-
-        for summary in &group.actions {
-            let is_selected = summary.id == selected_id;
-            let dot_color = if summary.enabled {
-                p.success
-            } else {
-                p.text_faint
-            };
-            let name_color = if is_selected {
-                p.text_primary
-            } else if summary.enabled {
-                p.text_secondary
-            } else {
-                p.text_faint
-            };
-
-            let dot = container(iced::widget::Space::new().width(dot_size).height(dot_size))
-                .width(dot_size)
-                .height(dot_size)
-                .style(move |_theme: &iced::Theme| iced::widget::container::Style {
-                    background: Some(Background::Color(dot_color)),
-                    border: Border {
-                        radius: (dot_size / 2.0).into(),
-                        ..Border::default()
-                    },
-                    ..iced::widget::container::Style::default()
-                });
-
-            let sub_count = summary.sub_action_count;
-            let sub_count_lbl =
-                forge_widgets::tr!("action_editor_sub_count", count = sub_count as i64);
-            let inner = row![
-                dot,
-                text(summary.name.clone()).size(FONT_SM).color(name_color),
-                iced::widget::Space::new().width(Length::Fill),
-                text(sub_count_lbl)
-                    .size(FONT_XS)
-                    .color(p.text_faint)
-                    .font(mono),
-            ]
-            .spacing(spf(Spacing::Xs))
-            .align_y(Alignment::Center);
-
-            let action_id = summary.id;
-            let row_btn =
-                iced::widget::button(container(inner).width(Length::Fill).padding(Padding {
-                    top: 6.0,
-                    bottom: 6.0,
-                    left: 32.0,
-                    right: 14.0,
-                }))
-                .on_press(Message::Navigate(Screen::ActionEditor(action_id)))
-                .padding(0)
-                .width(Length::Fill)
-                .style(move |_theme: &iced::Theme, _status| {
-                    let left_border_color = if is_selected {
-                        p.brand
-                    } else {
-                        iced::Color::TRANSPARENT
-                    };
-                    let bg = if is_selected {
-                        p.surface_overlay
-                    } else {
-                        iced::Color::TRANSPARENT
-                    };
-                    iced::widget::button::Style {
-                        background: Some(Background::Color(bg)),
-                        text_color: name_color,
-                        border: Border {
-                            color: left_border_color,
-                            width: 2.0,
-                            radius: 0.0.into(),
-                        },
-                        shadow: iced::Shadow::default(),
-                        snap: false,
-                    }
-                });
-
-            col = col.push(row_btn);
-        }
-    }
-
-    let scroll = scrollable(col).height(Length::Fill);
-
-    container(scroll)
-        .width(Length::Fixed(280.0))
-        .height(Length::Fill)
+    container(inner)
+        .padding([18_u16, 12_u16])
+        .width(Length::Fill)
+        .align_x(Alignment::Center)
         .style(move |_theme: &iced::Theme| iced::widget::container::Style {
-            background: Some(Background::Color(p.shell)),
+            background: None,
             border: Border {
-                color: p.border_regular,
+                color: p.border_input,
                 width: 0.5,
-                radius: 0.0.into(),
+                radius: forge_widgets::radius(forge_widgets::Radius::Md).into(),
             },
             ..iced::widget::container::Style::default()
         })
         .into()
 }
 
-fn detail_pane<'a>(
-    app: &'a App,
-    action_id: ActionId,
-    palette: &'a ForgePalette,
-) -> Element<'a, Message> {
+pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
     use iced::widget::{column, container, row, scrollable, text};
 
     let p = *palette;
     let mono = forge_widgets::font(forge_widgets::FontRole::Monospace);
+
+    let Some(action_id) = app.ui.actions.selected else {
+        return container(forge_widgets::empty_state(
+            forge_widgets::tr!("actions_detail_empty_title"),
+            forge_widgets::tr!("actions_detail_empty_hint"),
+            None::<(String, Message)>,
+            palette,
+        ))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center)
+        .into();
+    };
 
     let detail = match app.ui.actions.detail.as_ref() {
         Some(d) if d.action.id == action_id => d,
@@ -565,14 +476,12 @@ fn detail_pane<'a>(
 
     let mut triggers_col: iced::widget::Column<'_, Message> = column![].spacing(spf(Spacing::Xs));
     if detail.trigger_instances.is_empty() {
-        triggers_col = triggers_col.push(
-            container(
-                text(forge_widgets::tr!("action_editor_no_triggers"))
-                    .size(FONT_XS)
-                    .color(p.text_faint),
-            )
-            .padding([sp(Spacing::Xs), 0]),
-        );
+        triggers_col = triggers_col.push(empty_placeholder_card(
+            Icon::Bolt,
+            p.warning,
+            forge_widgets::tr!("action_editor_no_triggers"),
+            palette,
+        ));
     } else {
         for instance in &detail.trigger_instances {
             let descriptor = app.rt.trigger_registry.get(&instance.kind_id);
@@ -774,14 +683,12 @@ fn detail_pane<'a>(
     let mut steps_col: iced::widget::Column<'_, Message> = column![].spacing(0);
 
     if current_chain.is_empty() {
-        steps_col = steps_col.push(
-            container(
-                text(forge_widgets::tr!("action_editor_branch_empty"))
-                    .size(FONT_XS)
-                    .color(p.text_faint),
-            )
-            .padding([sp(Spacing::Xs), 0]),
-        );
+        steps_col = steps_col.push(empty_placeholder_card(
+            Icon::Plus,
+            p.brand,
+            forge_widgets::tr!("action_editor_branch_empty"),
+            palette,
+        ));
     }
 
     for (i, step) in current_chain.iter().enumerate() {
@@ -913,9 +820,20 @@ fn detail_pane<'a>(
         .spacing(spf(Spacing::Xs))
         .into();
 
-    let body: Element<'_, Message> = column![header_row, triggers_section, sub_section]
-        .spacing(spf(Spacing::Md))
-        .into();
+    let mut body_col: iced::widget::Column<'_, Message> =
+        column![header_row].spacing(spf(Spacing::Md));
+
+    if app.ui.actions.telemetry_loading {
+        body_col = body_col.push(crate::actions::telemetry_grid(
+            &forge_storage::ActionTelemetry::default(),
+            palette,
+        ));
+    } else if let Some(tel) = app.ui.actions.telemetry.as_ref() {
+        body_col = body_col.push(crate::actions::telemetry_grid(tel, palette));
+    }
+
+    body_col = body_col.push(triggers_section).push(sub_section);
+    let body: Element<'_, Message> = body_col.into();
 
     container(scrollable(body))
         .padding([18_u16, 22_u16])
@@ -1239,65 +1157,6 @@ fn branch_affordances<'a>(
             .width(Length::Fill)
             .into(),
     )
-}
-
-pub fn action_editor_view<'a>(
-    app: &'a App,
-    action_id: ActionId,
-    palette: &'a ForgePalette,
-) -> Element<'a, Message> {
-    let left = tree_pane(&app.ui.actions.tree, action_id, palette);
-    let right = detail_pane(app, action_id, palette);
-    let action_name = app
-        .ui
-        .actions
-        .tree
-        .iter()
-        .flat_map(|g| g.actions.iter())
-        .find(|a| a.id == action_id)
-        .map(|a| a.name.clone())
-        .unwrap_or_else(|| forge_widgets::tr!("action_editor_fallback_name"));
-    let back_btn = forge_widgets::ghost_button_with_icon(
-        Icon::ArrowBackUp,
-        forge_widgets::tr!("action_editor_back_to_actions"),
-        Message::Navigate(Screen::Actions),
-        palette,
-    );
-    let page_header = crate::page_chrome::page_header_with_actions(
-        &[
-            (
-                forge_widgets::tr!("action_editor_breadcrumb_automation"),
-                false,
-            ),
-            (
-                forge_widgets::tr!("action_editor_breadcrumb_actions"),
-                false,
-            ),
-            (action_name, true),
-        ],
-        Some(back_btn),
-        palette,
-    );
-
-    let base: Element<'_, Message> = iced::widget::column![
-        page_header,
-        iced::widget::row![left, right]
-            .spacing(0)
-            .height(Length::Fill),
-    ]
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .into();
-
-    if let Some(form) = app.ui.actions.add_sub_action_modal.as_ref() {
-        let modal_el = crate::actions_modals::add_sub_action_modal_view(form, &app.rt, palette);
-        iced::widget::stack![base, modal_el].into()
-    } else if let Some(picker_state) = app.ui.actions.trigger_picker.as_ref() {
-        let picker_el = crate::actions_trigger_picker::view(picker_state, &app.rt, palette);
-        iced::widget::stack![base, picker_el].into()
-    } else {
-        base
-    }
 }
 
 #[cfg(test)]

@@ -20,7 +20,7 @@ use forge_widgets::{
 
 use crate::Message;
 use crate::Screen;
-use crate::message::{ActionsMsg, ToastMsg};
+use crate::message::ToastMsg;
 use crate::runtime_view::RuntimeView;
 use crate::triggers_create_form::{CreateInstanceFormMsg, CreateInstanceFormState};
 
@@ -339,10 +339,9 @@ pub fn update(
                 duration_ms: 5000,
             }))
         }
-        TriggersRegistryMsg::NavigateToAction(action_id) => Task::batch([
-            Task::done(Message::Navigate(Screen::Actions)),
-            Task::done(Message::Actions(ActionsMsg::ActionSelected(action_id))),
-        ]),
+        TriggersRegistryMsg::NavigateToAction(action_id) => {
+            Task::done(Message::Navigate(Screen::ActionEditor(Some(action_id))))
+        }
         TriggersRegistryMsg::ScrollTo(instance_id) => {
             if state.instances.iter().any(|r| r.id == instance_id) {
                 state.selected_id = Some(instance_id);

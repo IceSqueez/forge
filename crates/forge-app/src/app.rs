@@ -543,8 +543,8 @@ mod tests {
     #[test]
     fn navigate_updates_screen() {
         let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::Actions));
-        assert_eq!(app.screen, Screen::Actions);
+        let _ = update(&mut app, Message::Navigate(Screen::ActionEditor(None)));
+        assert_eq!(app.screen, Screen::ActionEditor(None));
     }
 
     #[test]
@@ -731,8 +731,8 @@ mod tests {
     #[test]
     fn navigate_to_actions_sets_loading_true() {
         let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::Actions));
-        assert_eq!(app.screen, Screen::Actions);
+        let _ = update(&mut app, Message::Navigate(Screen::ActionEditor(None)));
+        assert_eq!(app.screen, Screen::ActionEditor(None));
     }
 
     #[test]
@@ -1004,7 +1004,7 @@ mod tests {
             Arc::clone(&dp) as Arc<dyn CredentialsRepo>
         ));
         let mut app = App {
-            screen: Screen::Actions,
+            screen: Screen::ActionEditor(None),
             theme,
             palette,
             language: Language::En,

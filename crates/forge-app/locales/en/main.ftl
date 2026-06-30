@@ -290,18 +290,6 @@ actions_empty = No actions yet
 
 actions_detail_empty_title = No action selected
 actions_detail_empty_hint = Select an action from the list to view its details.
-actions_detail_loading = Loading...
-actions_detail_enabled = Enabled
-actions_detail_disabled = Disabled
-actions_detail_test_run = Test run
-actions_detail_duplicate = Duplicate
-actions_detail_open_editor = Open in editor
-actions_detail_section_triggers = TRIGGERS · { $count }
-actions_detail_section_sub_actions = SUB-ACTIONS · { $count }
-actions_detail_add_trigger = Add trigger
-actions_detail_add_sub_action = Add sub-action
-actions_detail_no_triggers = No triggers — this action will never fire on its own
-actions_detail_no_steps = No steps yet — add one
 
 ## Actions — context menu
 
@@ -439,13 +427,10 @@ actions_summary_server_custom_event = Fires when triggerCodeEvent is called via 
 
 ## Action editor — breadcrumb / tree pane / detail pane
 
-action_editor_breadcrumb_automation = Automation
-action_editor_breadcrumb_actions = Actions
 action_editor_loading = Loading action…
 action_editor_no_description = No description
 action_editor_test_run = Test run
 action_editor_duplicate = Duplicate
-action_editor_back_to_actions = ← Actions
 action_editor_add_trigger = Add trigger
 action_editor_add_step = Add step
 action_editor_branch_modal_hint = Edit this branch from the step list below
@@ -1358,7 +1343,6 @@ action_editor_error_file_required = Path and target variable are required.
 action_editor_error_random_invalid = min, max (min ≤ max), and target variable are required.
 action_editor_pill_custom = Custom
 action_editor_pill_default = Default
-action_editor_fallback_name = Action
 
 ## Integration detail — OBS / quick-action
 

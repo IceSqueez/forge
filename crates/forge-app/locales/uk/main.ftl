@@ -292,18 +292,6 @@ actions_empty = Дій ще немає
 
 actions_detail_empty_title = Дію не обрано
 actions_detail_empty_hint = Оберіть дію зі списку, щоб переглянути деталі.
-actions_detail_loading = Завантаження...
-actions_detail_enabled = Увімкнено
-actions_detail_disabled = Вимкнено
-actions_detail_test_run = Тестовий запуск
-actions_detail_duplicate = Дублювати
-actions_detail_open_editor = Відкрити в редакторі
-actions_detail_section_triggers = ТРИГЕРИ · { $count }
-actions_detail_section_sub_actions = ПІДПУНКТИ · { $count }
-actions_detail_add_trigger = Додати тригер
-actions_detail_add_sub_action = Додати крок
-actions_detail_no_triggers = Тригерів немає — ця дія не спрацює самостійно
-actions_detail_no_steps = Кроків ще немає — додайте перший
 
 ## Дії — контекстне меню
 
@@ -441,13 +429,10 @@ actions_summary_server_custom_event = Спрацьовує при виклику
 
 ## Редактор дій — хлібні крихти / дерево / деталі
 
-action_editor_breadcrumb_automation = Автоматизація
-action_editor_breadcrumb_actions = Дії
 action_editor_loading = Завантаження дії…
 action_editor_no_description = Без опису
 action_editor_test_run = Тестовий запуск
 action_editor_duplicate = Дублювати
-action_editor_back_to_actions = ← Дії
 action_editor_add_trigger = Додати тригер
 action_editor_add_step = Додати крок
 action_editor_branch_modal_hint = Редагуйте цю гілку у списку кроків нижче
@@ -1377,7 +1362,6 @@ action_editor_error_file_required = Шлях та цільова змінна є
 action_editor_error_random_invalid = min, max (min ≤ max) та цільова змінна є обов'язковими.
 action_editor_pill_custom = Власний
 action_editor_pill_default = Типовий
-action_editor_fallback_name = Дія
 
 ## Integration detail — OBS / quick-action
 

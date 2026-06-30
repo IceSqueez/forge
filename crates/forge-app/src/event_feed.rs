@@ -12,7 +12,6 @@ use forge_widgets::{
 use iced::widget::{button, column, container, row, scrollable, text};
 use iced::{Background, Border, Color, Element, Length, Padding};
 
-use crate::message::ActionsMsg;
 use crate::runtime_view::RuntimeView;
 use crate::{Message, Screen};
 
@@ -405,10 +404,9 @@ pub fn update(
             tracing::warn!(error = %e, "event replay failed");
             iced::Task::none()
         }
-        EventFeedMsg::CausationChipClicked(action_id) => iced::Task::batch([
-            iced::Task::done(Message::Navigate(Screen::Actions)),
-            iced::Task::done(Message::Actions(ActionsMsg::ActionSelected(action_id))),
-        ]),
+        EventFeedMsg::CausationChipClicked(action_id) => {
+            iced::Task::done(Message::Navigate(Screen::ActionEditor(Some(action_id))))
+        }
     }
 }
 

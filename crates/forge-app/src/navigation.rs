@@ -30,9 +30,7 @@ pub(crate) fn coming_soon_view(
 pub(crate) fn breadcrumb_icon_for(screen: &Screen) -> Icon {
     match screen {
         Screen::Home => Icon::Home,
-        Screen::Actions | Screen::ActionEditor(_) | Screen::Queues | Screen::TriggersRegistry => {
-            Icon::Bolt
-        }
+        Screen::ActionEditor(_) | Screen::Queues | Screen::TriggersRegistry => Icon::Bolt,
         Screen::Platforms => Icon::Broadcast,
         Screen::StreamApps | Screen::Builtin | Screen::BuiltinDetail(_) => Icon::LayoutGrid,
         Screen::LiveChat => Icon::MessageCircle,
@@ -50,7 +48,7 @@ pub(crate) fn breadcrumb_icon_for(screen: &Screen) -> Icon {
 pub(crate) fn screen_label(screen: &Screen) -> String {
     match screen {
         Screen::Home => forge_widgets::tr!("nav_home"),
-        Screen::Actions | Screen::ActionEditor(_) => forge_widgets::tr!("nav_actions"),
+        Screen::ActionEditor(_) => forge_widgets::tr!("nav_actions"),
         Screen::Queues => forge_widgets::tr!("nav_queues"),
         Screen::TriggersRegistry => forge_widgets::tr!("nav_triggers"),
         Screen::Platforms => forge_widgets::tr!("nav_platforms"),
@@ -77,7 +75,7 @@ pub(crate) fn builtin_active(screen: &Screen, id: &str) -> bool {
 
 pub(crate) fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Sidebar<Message> {
     let is_home = matches!(app.screen, Screen::Home);
-    let is_actions = matches!(app.screen, Screen::Actions | Screen::ActionEditor(_));
+    let is_actions = matches!(app.screen, Screen::ActionEditor(_));
     let is_queues = matches!(app.screen, Screen::Queues);
     let is_triggers_registry = matches!(app.screen, Screen::TriggersRegistry);
     let is_live_chat = matches!(app.screen, Screen::LiveChat);
@@ -110,7 +108,7 @@ pub(crate) fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Side
             icon: Icon::Bolt,
             label: forge_widgets::tr!("nav_item_actions"),
             active: is_actions,
-            on_press: Message::Navigate(Screen::Actions),
+            on_press: Message::Navigate(Screen::ActionEditor(None)),
         },
         NavItem::Leaf {
             icon: Icon::Bolt,
@@ -206,7 +204,6 @@ pub(crate) fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Side
 }
 
 pub(crate) fn handle_navigate(app: &mut App, screen: Screen) -> Task<Message> {
-    let is_actions = matches!(screen, Screen::Actions);
     let is_queues = matches!(screen, Screen::Queues);
     let is_tts_aliases = matches!(screen, Screen::Tts(TtsSection::Aliases));
     let is_tts_filters = matches!(screen, Screen::Tts(TtsSection::Filters));
@@ -220,14 +217,35 @@ pub(crate) fn handle_navigate(app: &mut App, screen: Screen) -> Task<Message> {
     let is_settings_ws = matches!(screen, Screen::Settings(SettingsSection::WebSocket));
     let is_settings_hotkeys = matches!(screen, Screen::Settings(SettingsSection::Hotkeys));
     let is_settings_scripting = matches!(screen, Screen::Settings(SettingsSection::Scripting));
-    let editor_id = if let Screen::ActionEditor(id) = &screen {
-        Some(*id)
+    let actions_target = if let Screen::ActionEditor(sel) = &screen {
+        Some(*sel)
     } else {
         None
     };
     app.screen = screen;
-    if is_actions {
-        Task::done(Message::Actions(ActionsMsg::LoadRequested))
+    if let Some(selection) = actions_target {
+        // The consolidated Actions screen: always refresh the list; when a
+        // deep-link carries an id, also select it (loads detail + telemetry).
+        match selection {
+            Some(id) => {
+                let needs_load = app
+                    .ui
+                    .actions
+                    .detail
+                    .as_ref()
+                    .map(|d| d.action.id != id)
+                    .unwrap_or(true);
+                if needs_load {
+                    Task::batch([
+                        Task::done(Message::Actions(ActionsMsg::LoadRequested)),
+                        Task::done(Message::Actions(ActionsMsg::ActionSelected(id))),
+                    ])
+                } else {
+                    Task::done(Message::Actions(ActionsMsg::LoadRequested))
+                }
+            }
+            None => Task::done(Message::Actions(ActionsMsg::LoadRequested)),
+        }
     } else if is_triggers_registry {
         Task::done(Message::TriggersRegistry(
             crate::triggers_registry::TriggersRegistryMsg::LoadRequested,
@@ -269,22 +287,6 @@ pub(crate) fn handle_navigate(app: &mut App, screen: Screen) -> Task<Message> {
         Task::done(Message::Settings(crate::message::SettingsMsg::Scripting(
             crate::settings_scripting::ScriptingSettingsMsg::LoadRequested,
         )))
-    } else if let Some(id) = editor_id {
-        let needs_load = app
-            .ui
-            .actions
-            .detail
-            .as_ref()
-            .map(|d| d.action.id != id)
-            .unwrap_or(true);
-        if needs_load {
-            Task::batch([
-                Task::done(Message::Actions(ActionsMsg::LoadRequested)),
-                Task::done(Message::Actions(ActionsMsg::ActionSelected(id))),
-            ])
-        } else {
-            Task::none()
-        }
     } else {
         Task::none()
     }

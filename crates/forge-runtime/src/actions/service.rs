@@ -4,7 +4,7 @@ use forge_storage::{
     ActionRepo, ActionTelemetry, HistoryRepo, QueueRepo, SoundboardClipsRepo, StorageError,
     TriggerInstanceRepo,
 };
-use forge_types::{ActionId, ClipId, SubActionStep};
+use forge_types::{ActionId, ClipId};
 use time::OffsetDateTime;
 
 use super::types::{ActionDetail, ActionSummary};
@@ -87,83 +87,6 @@ impl ActionsService {
             trigger_instances,
             sub_action_avg_ms,
         })
-    }
-
-    pub async fn save_sub_action(
-        &self,
-        action_id: ActionId,
-        step: SubActionStep,
-        editing_index: Option<usize>,
-    ) -> Result<(), StorageError> {
-        let Some(mut action) = self.actions.get(action_id).await? else {
-            return Err(StorageError::NotFound {
-                key: action_id.to_string(),
-            });
-        };
-        if let Some(idx) = editing_index {
-            if idx < action.sub_actions.len() {
-                action.sub_actions[idx] = step;
-            } else {
-                action.sub_actions.push(step);
-            }
-        } else {
-            action.sub_actions.push(step);
-        }
-        self.actions.save(&action).await
-    }
-
-    pub async fn move_sub_action(
-        &self,
-        action_id: ActionId,
-        from: usize,
-        to: usize,
-    ) -> Result<ActionId, StorageError> {
-        let Some(mut action) = self.actions.get(action_id).await? else {
-            return Err(StorageError::NotFound {
-                key: action_id.to_string(),
-            });
-        };
-        let len = action.sub_actions.len();
-        if from < len && to < len && from != to {
-            let item = action.sub_actions.remove(from);
-            action.sub_actions.insert(to, item);
-            self.actions.save(&action).await?;
-        }
-        Ok(action_id)
-    }
-
-    pub async fn duplicate_sub_action(
-        &self,
-        action_id: ActionId,
-        index: usize,
-    ) -> Result<ActionId, StorageError> {
-        let Some(mut action) = self.actions.get(action_id).await? else {
-            return Err(StorageError::NotFound {
-                key: action_id.to_string(),
-            });
-        };
-        if index < action.sub_actions.len() {
-            let copy = action.sub_actions[index].clone();
-            action.sub_actions.insert(index + 1, copy);
-            self.actions.save(&action).await?;
-        }
-        Ok(action_id)
-    }
-
-    pub async fn remove_sub_action(
-        &self,
-        action_id: ActionId,
-        index: usize,
-    ) -> Result<(), StorageError> {
-        let Some(mut action) = self.actions.get(action_id).await? else {
-            return Err(StorageError::NotFound {
-                key: action_id.to_string(),
-            });
-        };
-        if index < action.sub_actions.len() {
-            action.sub_actions.remove(index);
-        }
-        self.actions.save(&action).await
     }
 
     pub async fn load_telemetry(&self, id: ActionId) -> Result<ActionTelemetry, StorageError> {

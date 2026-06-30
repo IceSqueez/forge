@@ -1,6 +1,5 @@
 use crate::subscriptions::{SubStatus, SubscriptionRecord, SubscriptionTracker};
-use forge_events::{Event, EventSource};
-use forge_runtime::EventBus;
+use forge_events::{Event, EventPublisher, EventSource};
 use forge_types::OAuthToken;
 use serde::Deserialize;
 use std::sync::Arc;
@@ -413,7 +412,7 @@ pub(crate) async fn subscribe_all(
     session_id: &str,
     broadcaster_id: &str,
     user_id: &str,
-    bus: &Arc<EventBus>,
+    bus: &Arc<dyn EventPublisher>,
     tracker: &SubscriptionTracker,
 ) -> Result<(), SubscribeError> {
     {

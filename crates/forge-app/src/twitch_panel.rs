@@ -158,7 +158,7 @@ pub fn update(
                 config.client_id.clone(),
                 config.broadcaster_id.clone(),
                 config.user_id.clone(),
-                Arc::clone(&rt.bus),
+                Arc::clone(&rt.bus) as Arc<dyn forge_events::EventPublisher>,
                 Arc::clone(&tracker),
             );
             let handle = chat.start();
@@ -167,7 +167,7 @@ pub fn update(
             let (twitch_bundle, _health_tx) = TwitchIntegrationBundle::new(
                 login,
                 config,
-                Arc::clone(&rt.bus),
+                Arc::clone(&rt.bus) as Arc<dyn forge_events::EventPublisher>,
                 creds,
                 tracker,
                 handle,

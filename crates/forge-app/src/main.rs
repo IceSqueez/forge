@@ -17,8 +17,8 @@ use forge_midi::{MidiClient, MidiConfig, register_midi_sub_actions, register_mid
 use forge_obs::{ObsSink, SwitchableObsSink, register_obs_sub_actions, register_obs_triggers};
 use forge_platform_core::paths;
 use forge_platform_twitch::{
-    ChatSendBridge, ChatSendBridgeHandle, HelixHttpTransport, HelixTokenRefresher, HelixTransport,
-    register_twitch_sub_actions, register_twitch_triggers,
+    ChatSessionConfig, HelixHttpTransport, HelixTokenRefresher, HelixTransport,
+    SubscriptionTracker, TwitchPlatform, register_twitch_sub_actions, register_twitch_triggers,
 };
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
@@ -214,7 +214,6 @@ struct RuntimeHandles {
     registry: Arc<ScriptRegistry>,
     engine: ActionEngineHandle,
     scheduler: QueueSchedulerHandle,
-    chat_send_bridge: ChatSendBridgeHandle,
     speak_queue: Arc<SpeakQueueHandle>,
     pipeline_config: forge_speak_queue::PipelineConfigHandle,
     tts_engine_ids: Vec<EngineId>,
@@ -496,7 +495,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
             let twitch_transport: Arc<dyn HelixTransport> = Arc::new(
                 HelixHttpTransport::new(
                     Arc::clone(&twitch_rate_limiter),
-                    Arc::clone(&bus),
+                    Arc::clone(&bus) as Arc<dyn EventPublisher>,
                     cid,
                     Arc::clone(&twitch_manager) as Arc<dyn forge_platform_twitch::HelixTokenSource>,
                 )
@@ -889,17 +888,115 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         dp.trigger_instance_repo(),
         scheduler.clone(),
     );
-    let chat_send_bridge = ChatSendBridge::spawn(
-        Arc::clone(&bus),
-        Arc::clone(&dp) as Arc<dyn CredentialsRepo>,
-        Arc::clone(&twitch_rate_limiter),
-    );
+    // Twitch chat send now routes through the `ChatPlatform` object instead of the
+    // removed ChatSendBridge. The platform owns its Helix transport + the shared
+    // rate-limit bucket; we bridge its private event stream onto the global bus and
+    // feed it the same `chat.send.request` events the bridge consumed.
+    if let Some(twitch_client_id) = forge_platform_twitch::client_id() {
+        let twitch_creds: Arc<dyn CredentialsRepo> = Arc::clone(&dp) as Arc<dyn CredentialsRepo>;
+        let stored = rt
+            .block_on(forge_platform_twitch::credentials::load(&*twitch_creds))
+            .ok()
+            .flatten();
+        let user_id = stored.map(|s| s.user_id).unwrap_or_default();
+        let config = ChatSessionConfig {
+            client_id: twitch_client_id,
+            broadcaster_id: user_id.clone(),
+            user_id,
+        };
+        let platform: Arc<dyn forge_platform_core::ChatPlatform> = Arc::new(TwitchPlatform::new(
+            config,
+            Arc::clone(&twitch_creds),
+            SubscriptionTracker::default(),
+            Arc::clone(&twitch_rate_limiter),
+        ));
+
+        // Republish the platform's own event stream (chat, connection, Helix
+        // observability) onto the global bus, preserving the direct-to-bus reach the
+        // old per-crate publishers had.
+        let bus_events = Arc::clone(&bus);
+        let mut platform_events = platform.events();
+        tokio::spawn(async move {
+            loop {
+                match platform_events.recv().await {
+                    Ok(event) => bus_events.publish(event),
+                    Err(forge_events::EventsError::BusClosed) => break,
+                    Err(forge_events::EventsError::LaggingReceiver) => {
+                        tracing::warn!("twitch platform event bridge: lagging receiver");
+                        continue;
+                    }
+                    Err(_) => continue,
+                }
+            }
+        });
+
+        // Replaces ChatSendBridge: consume `chat.send.request` targeted at twitch and
+        // send through the object, emitting the same chat.send / chat.send.failed
+        // outcome events the bridge published.
+        let bus_send = Arc::clone(&bus);
+        let send_platform = Arc::clone(&platform);
+        tokio::spawn(async move {
+            let mut sub = bus_send.subscribe();
+            loop {
+                let event = match sub.recv().await {
+                    Ok(e) => e,
+                    Err(forge_events::EventsError::BusClosed) => break,
+                    Err(forge_events::EventsError::LaggingReceiver) => {
+                        tracing::warn!("twitch_send: lagging receiver");
+                        continue;
+                    }
+                    Err(_) => continue,
+                };
+                if event.source != forge_events::EventSource::Core
+                    || event.kind != "chat.send.request"
+                {
+                    continue;
+                }
+                let target = event
+                    .payload
+                    .get("target")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                if target != "twitch" {
+                    continue;
+                }
+                let message = match event
+                    .payload
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .map(ToOwned::to_owned)
+                {
+                    Some(m) => m,
+                    None => continue,
+                };
+                let caused_by = event.id;
+                match send_platform.send_message("twitch", &message).await {
+                    Ok(()) => {
+                        bus_send.publish(forge_events::Event::caused_by(
+                            forge_events::EventSource::Twitch,
+                            "chat.send",
+                            serde_json::json!({"channel": "twitch", "message": message}),
+                            caused_by,
+                        ));
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "twitch chat send failed");
+                        bus_send.publish(forge_events::Event::caused_by(
+                            forge_events::EventSource::Twitch,
+                            "chat.send.failed",
+                            serde_json::json!({"target": "twitch", "error": e.to_string()}),
+                            caused_by,
+                        ));
+                    }
+                }
+            }
+        });
+    }
 
     Some(RuntimeHandles {
         registry,
         engine,
         scheduler,
-        chat_send_bridge,
         speak_queue,
         pipeline_config,
         tts_engine_ids,
@@ -950,7 +1047,6 @@ fn main() -> iced::Result {
         script_registry,
         action_engine,
         scheduler,
-        chat_send_bridge,
         speak_queue,
         pipeline_config,
         tts_engine_ids,
@@ -986,7 +1082,6 @@ fn main() -> iced::Result {
             None,
             None,
             None,
-            None,
             Vec::<EngineId>::new(),
             None,
             Arc::new(sar),
@@ -1005,7 +1100,6 @@ fn main() -> iced::Result {
                 h.registry,
                 Some(h.engine),
                 Some(h.scheduler),
-                Some(h.chat_send_bridge),
                 Some(h.speak_queue),
                 Some(h.pipeline_config),
                 h.tts_engine_ids,
@@ -1045,7 +1139,6 @@ fn main() -> iced::Result {
                     None,
                     None,
                     None,
-                    None,
                     Vec::<EngineId>::new(),
                     None,
                     Arc::new(sar),
@@ -1080,7 +1173,6 @@ fn main() -> iced::Result {
         );
         app.ui.settings_shortcuts.overrides = boot_shortcut_overrides.clone();
         app.rt.bus = Arc::clone(&bus_boot);
-        app.rt.chat_send_bridge = chat_send_bridge.clone();
         app.rt.speak_queue = speak_queue.clone();
         app.rt.pipeline_config = pipeline_config.clone();
         app.rt.tts_engine_ids = tts_engine_ids.clone();

@@ -8,7 +8,7 @@ use forge_events::Event;
 use forge_events::EventPublisher;
 #[cfg(test)]
 use forge_obs::ObsClient;
-use forge_platform_twitch::ChatConnectionState;
+use forge_platform_core::ConnectionState;
 use forge_runtime::{
     ActionEngineHandle, EventBus, NullEventLogRepo, QueueSchedulerHandle, ScriptRegistry,
 };
@@ -51,7 +51,6 @@ use crate::tts_filters::TtsFiltersState;
 use crate::tts_triggers::TtsTriggersState;
 use crate::voice_aliases::VoiceAliasesState;
 use crate::{Message, Screen};
-#[cfg(test)]
 use forge_types::PlatformId;
 
 pub struct SidebarExpandState {
@@ -204,7 +203,7 @@ impl App {
                 sound_player,
                 twitch_builtin: None,
                 kick_builtin: None,
-                chat_send_bridge: None,
+                platform_connection: std::collections::BTreeMap::new(),
                 twitch_flow: None,
                 youtube_flow: None,
                 kick_flow: None,
@@ -274,7 +273,7 @@ impl Default for App {
                 sound_player: None,
                 twitch_builtin: None,
                 kick_builtin: None,
-                chat_send_bridge: None,
+                platform_connection: std::collections::BTreeMap::new(),
                 twitch_flow: None,
                 youtube_flow: None,
                 kick_flow: None,
@@ -298,6 +297,23 @@ fn dispatch_event(app: &mut App, event: &Arc<Event>) -> Task<Message> {
         && event.payload["platform"].as_str() == Some("twitch")
     {
         app.rt.twitch_reauth_required = true;
+    }
+    // Reactive connectivity: push per-platform connection state into the indicator
+    // map. A legacy/bespoke emit with the same kind but missing `platform_id` or a
+    // non-canonical `state` (e.g. Kick's transient pre-Phase-2 event) deserializes to
+    // `None` and is skipped — never panics, never inserts a bogus entry.
+    if event.kind == forge_platform_core::CONNECTION_STATE_CHANGED_KIND {
+        let platform_id = event
+            .payload
+            .get("platform_id")
+            .and_then(|v| serde_json::from_value::<PlatformId>(v.clone()).ok());
+        let state = event
+            .payload
+            .get("state")
+            .and_then(|v| serde_json::from_value::<ConnectionState>(v.clone()).ok());
+        if let (Some(platform_id), Some(state)) = (platform_id, state) {
+            app.rt.platform_connection.insert(platform_id, state);
+        }
     }
     task
 }
@@ -498,10 +514,10 @@ pub(crate) fn format_uptime(elapsed: std::time::Duration) -> String {
 
 pub(crate) fn subsystem_connectivity(app: &App) -> (u8, u8) {
     let mut connected: u8 = 0;
-    let twitch_live =
-        app.rt.twitch_builtin.as_ref().is_some_and(|b| {
-            matches!(*b.state_receiver().borrow(), ChatConnectionState::Connected)
-        });
+    let twitch_live = matches!(
+        app.rt.platform_connection.get(&PlatformId::Twitch),
+        Some(ConnectionState::Connected)
+    );
     if twitch_live {
         connected += 2;
     }
@@ -699,7 +715,7 @@ mod tests {
                 sound_player: None,
                 twitch_builtin: None,
                 kick_builtin: None,
-                chat_send_bridge: None,
+                platform_connection: std::collections::BTreeMap::new(),
                 twitch_flow: None,
                 youtube_flow: None,
                 kick_flow: None,
@@ -1033,7 +1049,7 @@ mod tests {
                 sound_player: None,
                 twitch_builtin: None,
                 kick_builtin: None,
-                chat_send_bridge: None,
+                platform_connection: std::collections::BTreeMap::new(),
                 twitch_flow: None,
                 youtube_flow: None,
                 kick_flow: None,

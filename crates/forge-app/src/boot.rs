@@ -83,7 +83,7 @@ pub(crate) fn handle_twitch_boot_result(
                 config.client_id.clone(),
                 config.broadcaster_id.clone(),
                 config.user_id.clone(),
-                Arc::clone(&app.rt.bus),
+                Arc::clone(&app.rt.bus) as Arc<dyn EventPublisher>,
                 Arc::clone(&tracker),
             );
             let handle = chat.start();
@@ -92,7 +92,7 @@ pub(crate) fn handle_twitch_boot_result(
             let (twitch_bundle, _health_tx) = TwitchIntegrationBundle::new(
                 login.clone(),
                 config,
-                Arc::clone(&app.rt.bus),
+                Arc::clone(&app.rt.bus) as Arc<dyn EventPublisher>,
                 creds,
                 tracker,
                 handle,

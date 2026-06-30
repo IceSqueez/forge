@@ -11,7 +11,7 @@ pub use send::{ChatSendError, SentMessageId, send_chat};
 pub use session::ChatConnectionState;
 
 use crate::subscriptions::SubscriptionTracker;
-use forge_runtime::EventBus;
+use forge_events::EventPublisher;
 use forge_types::OAuthToken;
 use std::sync::Arc;
 use tokio::sync::{oneshot, watch};
@@ -21,7 +21,7 @@ pub struct TwitchChat {
     client_id: String,
     broadcaster_id: String,
     user_id: String,
-    bus: Arc<EventBus>,
+    bus: Arc<dyn EventPublisher>,
     tracker: SubscriptionTracker,
 }
 
@@ -36,7 +36,7 @@ impl TwitchChat {
         client_id: String,
         broadcaster_id: String,
         user_id: String,
-        bus: Arc<EventBus>,
+        bus: Arc<dyn EventPublisher>,
         tracker: SubscriptionTracker,
     ) -> Self {
         Self {
@@ -71,7 +71,7 @@ impl TwitchChatHandle {
         *self.state_rx.borrow()
     }
 
-    pub fn state_receiver(&self) -> watch::Receiver<ChatConnectionState> {
+    pub(crate) fn state_receiver(&self) -> watch::Receiver<ChatConnectionState> {
         self.state_rx.clone()
     }
 

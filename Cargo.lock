@@ -2122,7 +2122,6 @@ dependencies = [
  "forge-events",
  "forge-platform-core",
  "forge-registry",
- "forge-runtime",
  "forge-storage",
  "forge-storage-sqlite",
  "forge-types",

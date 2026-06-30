@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -5,8 +6,9 @@ use forge_discord::DiscordClient;
 use forge_hotkey::HotkeyClient;
 use forge_midi::MidiClient;
 use forge_obs::{ObsClient, SwitchableObsSink};
+use forge_platform_core::ConnectionState;
 use forge_platform_kick::{KickAuthFlow, KickIntegrationBundle};
-use forge_platform_twitch::{ChatSendBridgeHandle, TwitchIntegrationBundle};
+use forge_platform_twitch::TwitchIntegrationBundle;
 use forge_platform_youtube::GoogleAuthFlow;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
@@ -16,6 +18,7 @@ use forge_soundboard::SoundboardPlayer;
 use forge_speak_queue::{PipelineConfigHandle, SpeakQueueHandle};
 use forge_storage::DataProvider;
 use forge_tts_core::EngineId;
+use forge_types::PlatformId;
 use forge_vtube::{SwitchableVTubeSink, VTubeClient};
 
 use crate::server_subsystem::ServerSubsystem;
@@ -42,7 +45,10 @@ pub struct RuntimeView {
     pub sound_player: Option<Arc<SoundboardPlayer>>,
     pub twitch_builtin: Option<Arc<TwitchIntegrationBundle>>,
     pub kick_builtin: Option<Arc<KickIntegrationBundle>>,
-    pub chat_send_bridge: Option<ChatSendBridgeHandle>,
+    /// Latest per-platform connection state, fed by `CONNECTION_STATE_CHANGED_KIND`
+    /// bus events. The connectivity indicator reads this instead of holding a
+    /// `ChatPlatform` handle (Invariant #3).
+    pub platform_connection: BTreeMap<PlatformId, ConnectionState>,
     pub twitch_flow: Option<TwitchFlowHandle>,
     pub youtube_flow: Option<Arc<tokio::sync::Mutex<Option<GoogleAuthFlow>>>>,
     pub kick_flow: Option<Arc<tokio::sync::Mutex<Option<KickAuthFlow>>>>,

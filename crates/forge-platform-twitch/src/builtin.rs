@@ -13,7 +13,7 @@ use forge_platform_core::{
 };
 use std::collections::BTreeMap;
 
-use forge_runtime::EventBus;
+use forge_events::EventPublisher;
 use forge_storage::CredentialsRepo;
 use forge_types::{SubActionStep, Variant};
 
@@ -35,7 +35,7 @@ pub struct TwitchIntegrationBundle {
     health_tx: broadcast::Sender<HealthDelta>,
     tracker: SubscriptionTracker,
     config: ChatSessionConfig,
-    bus: Arc<EventBus>,
+    bus: Arc<dyn EventPublisher>,
     creds: Arc<dyn CredentialsRepo>,
     // Parked here so the &self-async control verbs can take() the consume-on-shutdown
     // handle without racing a concurrent disconnect/reconnect.
@@ -46,7 +46,7 @@ impl TwitchIntegrationBundle {
     pub fn new(
         login: Option<String>,
         config: ChatSessionConfig,
-        bus: Arc<EventBus>,
+        bus: Arc<dyn EventPublisher>,
         creds: Arc<dyn CredentialsRepo>,
         tracker: SubscriptionTracker,
         handle: TwitchChatHandle,
@@ -65,10 +65,6 @@ impl TwitchIntegrationBundle {
             handle: Mutex::new(Some(handle)),
         });
         (bundle, health_tx)
-    }
-
-    pub fn state_receiver(&self) -> watch::Receiver<ChatConnectionState> {
-        self.state_rx.clone()
     }
 
     pub(crate) fn spawn_chat(&self, token: forge_types::OAuthToken) -> TwitchChatHandle {
@@ -114,7 +110,7 @@ impl TwitchIntegrationBundle {
                 broadcaster_id: "1".to_owned(),
                 user_id: "1".to_owned(),
             },
-            bus: EventBus::new(Arc::new(forge_runtime::NullEventLogRepo)),
+            bus: Arc::new(crate::event_channel::PlatformEventChannel::new()),
             creds,
             handle: Mutex::new(None),
         })

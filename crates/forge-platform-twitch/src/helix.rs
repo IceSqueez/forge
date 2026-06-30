@@ -2,9 +2,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_events::{Event, EventSource};
+use forge_events::{Event, EventPublisher, EventSource};
 use forge_platform_core::{PlatformError, RateLimitOutcome, RateLimiter};
-use forge_runtime::EventBus;
 use forge_types::OAuthToken;
 use thiserror::Error;
 
@@ -99,7 +98,7 @@ pub trait HelixTransport: Send + Sync {
 pub struct HelixHttpTransport {
     http: reqwest::Client,
     rate_limiter: Arc<dyn RateLimiter>,
-    bus: Arc<EventBus>,
+    bus: Arc<dyn EventPublisher>,
     client_id: String,
     tokens: Arc<dyn HelixTokenSource>,
     refresher: Option<Arc<dyn HelixTokenRefresher>>,
@@ -109,7 +108,7 @@ pub struct HelixHttpTransport {
 impl HelixHttpTransport {
     pub fn new(
         rate_limiter: Arc<dyn RateLimiter>,
-        bus: Arc<EventBus>,
+        bus: Arc<dyn EventPublisher>,
         client_id: String,
         tokens: Arc<dyn HelixTokenSource>,
     ) -> Self {
@@ -132,7 +131,7 @@ impl HelixHttpTransport {
     pub(crate) fn with_base_url(
         base_url: String,
         rate_limiter: Arc<dyn RateLimiter>,
-        bus: Arc<EventBus>,
+        bus: Arc<dyn EventPublisher>,
         client_id: String,
         tokens: Arc<dyn HelixTokenSource>,
     ) -> Self {
@@ -304,8 +303,9 @@ fn extract_retry_after(resp: &reqwest::Response) -> Option<u64> {
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+    use crate::event_channel::PlatformEventChannel;
+    use forge_events::EventStream;
     use forge_platform_core::PlatformError;
-    use forge_runtime::NullEventLogRepo;
     use wiremock::matchers::{header, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -439,7 +439,7 @@ mod tests {
         }
     }
 
-    fn transport(base_url: String) -> (HelixHttpTransport, Arc<EventBus>) {
+    fn transport(base_url: String) -> (HelixHttpTransport, Arc<PlatformEventChannel>) {
         transport_with(
             base_url,
             Arc::new(GrantLimiter),
@@ -451,19 +451,20 @@ mod tests {
         base_url: String,
         limiter: Arc<dyn RateLimiter>,
         tokens: Arc<dyn HelixTokenSource>,
-    ) -> (HelixHttpTransport, Arc<EventBus>) {
-        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+    ) -> (HelixHttpTransport, Arc<PlatformEventChannel>) {
+        let bus = Arc::new(PlatformEventChannel::new());
+        let publisher: Arc<dyn EventPublisher> = bus.clone();
         let t = HelixHttpTransport::with_base_url(
             base_url,
             limiter,
-            Arc::clone(&bus),
+            publisher,
             CLIENT_ID.to_owned(),
             tokens,
         );
         (t, bus)
     }
 
-    async fn recv_request_fail(sub: &mut forge_runtime::EventSubscription) -> Event {
+    async fn recv_request_fail(sub: &mut EventStream) -> Event {
         tokio::time::timeout(Duration::from_secs(2), async {
             loop {
                 let event = sub.recv().await.unwrap();

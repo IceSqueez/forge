@@ -3,10 +3,11 @@
 pub mod auth;
 pub mod builtin;
 pub mod chat;
-pub mod chat_send_bridge;
+pub mod chat_platform;
 mod control;
 pub mod credentials;
 pub mod credentials_manager;
+mod event_channel;
 pub mod helix;
 pub mod sub_actions;
 pub mod subscriptions;
@@ -22,7 +23,7 @@ pub use chat::{
     ChatConnectionState, ChatSendError, SentMessageId, TwitchBadge, TwitchChat, TwitchChatEvent,
     TwitchChatHandle, send_chat,
 };
-pub use chat_send_bridge::{ChatSendBridge, ChatSendBridgeHandle};
+pub use chat_platform::TwitchPlatform;
 pub use credentials::CredentialsTokenSource;
 pub use credentials_manager::TwitchCredentialsManager;
 pub use helix::{

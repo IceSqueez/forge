@@ -968,4 +968,30 @@ mod tests {
         assert_eq!(state.events.len(), RING_CAP);
         assert_eq!(state.events.back().unwrap().kind, "overflow");
     }
+
+    #[test]
+    fn causation_chip_clicked_does_not_mutate_event_feed_state() {
+        // CausationChipClicked routes to ActionEditor(Some(id)) via a returned Task.
+        // The event feed's own state (ring, selection, pause) must not be touched.
+        use forge_types::ActionId;
+        let mut state = EventFeedState::new();
+        let rt = test_rt();
+        state.push_event(core_event("action.start"));
+        state.push_event(core_event("action.done"));
+        let events_before = state.events.len();
+
+        let id = ActionId::new();
+        let _task = update(&mut state, &rt, EventFeedMsg::CausationChipClicked(id));
+
+        assert_eq!(
+            state.events.len(),
+            events_before,
+            "ring must not be modified"
+        );
+        assert!(
+            state.selected.is_none(),
+            "chip click must not select an event in the feed"
+        );
+        assert!(!state.paused, "pause state must not be toggled");
+    }
 }

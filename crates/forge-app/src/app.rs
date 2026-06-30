@@ -729,13 +729,6 @@ mod tests {
     }
 
     #[test]
-    fn navigate_to_actions_sets_loading_true() {
-        let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::ActionEditor(None)));
-        assert_eq!(app.screen, Screen::ActionEditor(None));
-    }
-
-    #[test]
     fn summaries_loaded_ok_clears_loading_flag() {
         let mut app = App::default();
         app.ui.actions.loading = true;
@@ -1367,5 +1360,140 @@ mod tests {
             Message::TriggersRegistry(TriggersRegistryMsg::ScrollTo(id)),
         );
         assert_eq!(app.ui.triggers_registry.selected_id, Some(id));
+    }
+
+    // --- Action screen consolidation routing (Screen::ActionEditor(Option<ActionId>)) ---
+
+    fn make_action_detail(id: forge_types::ActionId) -> crate::actions::ActionDetail {
+        use forge_types::{Action, ExecutionMode, QueueId};
+        crate::actions::ActionDetail {
+            action: Action {
+                id,
+                name: "test-action".to_string(),
+                group: None,
+                queue_id: QueueId::new(),
+                enabled: true,
+                concurrent: false,
+                bypass_pause: false,
+                execution_mode: ExecutionMode::Sequential,
+                description: None,
+                sub_actions: vec![],
+            },
+            trigger_instances: vec![],
+            sub_action_avg_ms: vec![],
+        }
+    }
+
+    #[test]
+    fn navigate_to_action_editor_none_leaves_selection_empty() {
+        // Sidebar/home nav → ActionEditor(None): list shown, right pane in empty-state.
+        // No selection must be seeded synchronously.
+        let mut app = App::default();
+        let _ = update(&mut app, Message::Navigate(Screen::ActionEditor(None)));
+        assert_eq!(app.screen, Screen::ActionEditor(None));
+        assert!(app.ui.actions.selected.is_none());
+    }
+
+    #[test]
+    fn navigate_to_action_editor_some_sets_screen_to_deep_link_variant() {
+        // Deep-link callers (event-feed, triggers) supply Some(id).
+        // The consolidated screen variant must carry the id.
+        use forge_types::ActionId;
+        let mut app = App::default();
+        let id = ActionId::new();
+        let _ = update(&mut app, Message::Navigate(Screen::ActionEditor(Some(id))));
+        assert_eq!(app.screen, Screen::ActionEditor(Some(id)));
+    }
+
+    #[test]
+    fn navigate_to_action_editor_some_does_not_set_selection_synchronously() {
+        // ActionSelected is delivered via Task, not by handle_navigate directly.
+        // Immediately after Navigate, selected must still be None.
+        use forge_types::ActionId;
+        let mut app = App::default();
+        let id = ActionId::new();
+        let _ = update(&mut app, Message::Navigate(Screen::ActionEditor(Some(id))));
+        assert!(
+            app.ui.actions.selected.is_none(),
+            "handle_navigate must not set selected directly; task delivery does"
+        );
+    }
+
+    #[test]
+    fn navigate_deep_link_seeds_selection_on_action_selected_task_delivery() {
+        // Full chain: Navigate(Some(id)) → Task delivers ActionSelected(id) → selected set.
+        use forge_types::ActionId;
+        let mut app = App::default();
+        let id = ActionId::new();
+        let _ = update(&mut app, Message::Navigate(Screen::ActionEditor(Some(id))));
+        // Simulate iced delivering the ActionSelected task from the navigate batch:
+        let _ = update(&mut app, Message::Actions(ActionsMsg::ActionSelected(id)));
+        assert_eq!(app.screen, Screen::ActionEditor(Some(id)));
+        assert_eq!(app.ui.actions.selected, Some(id));
+        // ActionSelected also arms telemetry loading:
+        assert!(app.ui.actions.telemetry_loading);
+    }
+
+    #[test]
+    fn navigate_deep_link_preserves_loaded_detail_for_same_id() {
+        // needs_load=false branch: detail already current → only LoadRequested is queued,
+        // ActionSelected is absent, so detail is never cleared.
+        use forge_types::ActionId;
+        let mut app = App::default();
+        let id = ActionId::new();
+        app.ui.actions.detail = Some(make_action_detail(id));
+
+        let _ = update(&mut app, Message::Navigate(Screen::ActionEditor(Some(id))));
+        // Drive LoadRequested (the single task the navigate returned):
+        let _ = update(&mut app, Message::Actions(ActionsMsg::LoadRequested));
+
+        // Detail is intact — ActionSelected was not in the batch and never cleared it.
+        assert!(app.ui.actions.detail.is_some());
+        assert_eq!(app.ui.actions.detail.as_ref().unwrap().action.id, id);
+    }
+
+    #[test]
+    fn navigate_deep_link_clears_stale_detail_when_different_id() {
+        // needs_load=true branch: stale detail for a different id → batch includes
+        // ActionSelected(new_id), which clears the stale detail and updates selected.
+        use forge_types::ActionId;
+        let mut app = App::default();
+        let stale_id = ActionId::new();
+        let new_id = ActionId::new();
+        app.ui.actions.detail = Some(make_action_detail(stale_id));
+
+        let _ = update(
+            &mut app,
+            Message::Navigate(Screen::ActionEditor(Some(new_id))),
+        );
+        // Drive the ActionSelected task from the batch:
+        let _ = update(
+            &mut app,
+            Message::Actions(ActionsMsg::ActionSelected(new_id)),
+        );
+
+        assert_eq!(app.ui.actions.selected, Some(new_id));
+        // ActionSelected cleared the stale detail while fresh detail loads asynchronously:
+        assert!(app.ui.actions.detail.is_none());
+    }
+
+    #[test]
+    fn triggers_registry_navigate_to_action_delegates_routing_via_task() {
+        // TriggersRegistryMsg::NavigateToAction must not mutate app.screen directly;
+        // routing happens via Task::done(Navigate(ActionEditor(Some(id)))).
+        use crate::triggers_registry::TriggersRegistryMsg;
+        use forge_types::ActionId;
+        let mut app = App::default();
+        let id = ActionId::new();
+        let _ = update(
+            &mut app,
+            Message::TriggersRegistry(TriggersRegistryMsg::NavigateToAction(id)),
+        );
+        // Screen unchanged synchronously — task has not been run:
+        assert_eq!(
+            app.screen,
+            Screen::Home,
+            "NavigateToAction must not change screen synchronously"
+        );
     }
 }

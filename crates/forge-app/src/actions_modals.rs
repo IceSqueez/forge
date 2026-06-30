@@ -313,6 +313,7 @@ fn sub_category_color(cat: SubActionCategory, palette: &ForgePalette) -> iced::C
 
 fn dynamic_options_for<'a>(form: &'a AddSubActionForm, _rt: &'a RuntimeView) -> DynamicOptions<'a> {
     let mut map: DynamicOptions<'a> = BTreeMap::new();
+
     let clips: Vec<(String, String)> = form
         .available_clips
         .iter()
@@ -321,6 +322,43 @@ fn dynamic_options_for<'a>(form: &'a AddSubActionForm, _rt: &'a RuntimeView) -> 
     if !clips.is_empty() {
         map.insert("soundboard.clip_ids", clips);
     }
+
+    let actions: Vec<(String, String)> = form
+        .available_actions
+        .iter()
+        .map(|(id, name)| (id.to_string(), name.clone()))
+        .collect();
+    if !actions.is_empty() {
+        map.insert("action.ids", actions);
+    }
+
+    let queues: Vec<(String, String)> = form
+        .available_queues
+        .iter()
+        .map(|(id, name)| (id.to_string(), name.clone()))
+        .collect();
+    if !queues.is_empty() {
+        map.insert("queue.ids", queues);
+    }
+
+    let trigger_instances: Vec<(String, String)> = form
+        .available_trigger_instances
+        .iter()
+        .map(|(id, name)| (id.to_string(), name.clone()))
+        .collect();
+    if !trigger_instances.is_empty() {
+        map.insert("trigger_instance.ids", trigger_instances);
+    }
+
+    let scripts: Vec<(String, String)> = form
+        .available_scripts
+        .iter()
+        .map(|name| (name.clone(), name.clone()))
+        .collect();
+    if !scripts.is_empty() {
+        map.insert("script.names", scripts);
+    }
+
     map
 }
 

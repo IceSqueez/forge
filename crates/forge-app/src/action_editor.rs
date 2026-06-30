@@ -177,6 +177,73 @@ fn load_clips_task(rt: &RuntimeView) -> Task<Message> {
     })
 }
 
+fn load_queues_task(rt: &RuntimeView) -> Task<Message> {
+    let dp = Arc::clone(&rt.backend);
+    Task::perform(
+        async move {
+            dp.queue_repo()
+                .list()
+                .await
+                .map(|qs| qs.into_iter().map(|q| (q.id, q.name)).collect::<Vec<_>>())
+                .unwrap_or_default()
+        },
+        |opts| {
+            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                AddSubActionMsg::QueuesLoaded(opts),
+            )))
+        },
+    )
+}
+
+fn load_trigger_instances_task(rt: &RuntimeView) -> Task<Message> {
+    let dp = Arc::clone(&rt.backend);
+    Task::perform(
+        async move {
+            dp.trigger_instance_repo()
+                .list_all()
+                .await
+                .map(|instances| {
+                    instances
+                        .into_iter()
+                        .map(|i| (i.id, i.name))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        },
+        |opts| {
+            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                AddSubActionMsg::TriggerInstancesLoaded(opts),
+            )))
+        },
+    )
+}
+
+fn load_scripts_task(rt: &RuntimeView) -> Task<Message> {
+    let dp = Arc::clone(&rt.backend);
+    Task::perform(
+        async move {
+            dp.list_enabled()
+                .await
+                .map(|records| records.into_iter().map(|r| r.name).collect::<Vec<_>>())
+                .unwrap_or_default()
+        },
+        |names| {
+            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                AddSubActionMsg::ScriptNamesLoaded(names),
+            )))
+        },
+    )
+}
+
+fn open_form_tasks(rt: &RuntimeView) -> Task<Message> {
+    Task::batch([
+        load_clips_task(rt),
+        load_queues_task(rt),
+        load_trigger_instances_task(rt),
+        load_scripts_task(rt),
+    ])
+}
+
 pub fn add_sub_action_update(
     state: &mut Option<AddSubActionForm>,
     rt: &RuntimeView,
@@ -186,7 +253,7 @@ pub fn add_sub_action_update(
     match msg {
         AddSubActionMsg::OpenRequested(action_id) => {
             *state = Some(AddSubActionForm::new(action_id));
-            load_clips_task(rt)
+            open_form_tasks(rt)
         }
         AddSubActionMsg::EditRequested(action_id, index) => {
             let mut form = AddSubActionForm::new(action_id);
@@ -198,7 +265,7 @@ pub fn add_sub_action_update(
                 form.populate_from_step(step);
             }
             *state = Some(form);
-            load_clips_task(rt)
+            open_form_tasks(rt)
         }
         AddSubActionMsg::KindSelected(kind_id) => {
             if let Some(f) = state.as_mut() {
@@ -265,6 +332,24 @@ pub fn add_sub_action_update(
         AddSubActionMsg::ClipsLoaded(clips) => {
             if let Some(f) = state.as_mut() {
                 f.available_clips = clips;
+            }
+            Task::none()
+        }
+        AddSubActionMsg::QueuesLoaded(queues) => {
+            if let Some(f) = state.as_mut() {
+                f.available_queues = queues;
+            }
+            Task::none()
+        }
+        AddSubActionMsg::TriggerInstancesLoaded(instances) => {
+            if let Some(f) = state.as_mut() {
+                f.available_trigger_instances = instances;
+            }
+            Task::none()
+        }
+        AddSubActionMsg::ScriptNamesLoaded(names) => {
+            if let Some(f) = state.as_mut() {
+                f.available_scripts = names;
             }
             Task::none()
         }

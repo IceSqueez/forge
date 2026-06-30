@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use forge_types::{ActionId, ClipId, QueueId, SubActionStep, Variant};
+use forge_types::{ActionId, ClipId, QueueId, SubActionStep, TriggerInstanceId, Variant};
 
 use crate::actions_field_form::variant_to_display_str;
 
@@ -100,6 +100,10 @@ pub struct AddSubActionForm {
     pub overrides_buffer: BTreeMap<String, Variant>,
     pub text_buffer: BTreeMap<String, String>,
     pub available_clips: Vec<(ClipId, String)>,
+    pub available_actions: Vec<(ActionId, String)>,
+    pub available_queues: Vec<(QueueId, String)>,
+    pub available_trigger_instances: Vec<(TriggerInstanceId, String)>,
+    pub available_scripts: Vec<String>,
     pub error: Option<String>,
     pub saving: bool,
     pub editing_index: Option<usize>,
@@ -115,6 +119,10 @@ impl AddSubActionForm {
             overrides_buffer: BTreeMap::new(),
             text_buffer: BTreeMap::new(),
             available_clips: vec![],
+            available_actions: vec![],
+            available_queues: vec![],
+            available_trigger_instances: vec![],
+            available_scripts: vec![],
             error: None,
             saving: false,
             editing_index: None,
@@ -166,6 +174,9 @@ pub enum AddSubActionMsg {
     IntInputChanged(String, String),
     FieldCleared(String),
     ClipsLoaded(Vec<(ClipId, String)>),
+    QueuesLoaded(Vec<(QueueId, String)>),
+    TriggerInstancesLoaded(Vec<(TriggerInstanceId, String)>),
+    ScriptNamesLoaded(Vec<String>),
     Cancel,
     Submit,
     Saved(Result<(), String>),

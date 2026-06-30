@@ -548,12 +548,25 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
             ActionEditorMsg::AddAction(m) => {
                 crate::action_editor::add_action_update(&mut state.add_action_modal, rt, m)
             }
-            ActionEditorMsg::AddSubAction(m) => crate::action_editor::add_sub_action_update(
-                &mut state.add_sub_action_modal,
-                rt,
-                state.detail.as_ref(),
-                m,
-            ),
+            ActionEditorMsg::AddSubAction(m) => {
+                let task = crate::action_editor::add_sub_action_update(
+                    &mut state.add_sub_action_modal,
+                    rt,
+                    state.detail.as_ref(),
+                    m,
+                );
+                if let Some(form) = state.add_sub_action_modal.as_mut()
+                    && form.available_actions.is_empty()
+                {
+                    form.available_actions = state
+                        .tree
+                        .iter()
+                        .flat_map(|g| g.actions.iter())
+                        .map(|a| (a.id, a.name.clone()))
+                        .collect();
+                }
+                task
+            }
             ActionEditorMsg::RemoveSubAction(m) => {
                 crate::action_editor::remove_sub_action_update(state.selected, rt, m)
             }

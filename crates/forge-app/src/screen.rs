@@ -38,7 +38,6 @@ pub enum Screen {
     TriggersRegistry,
     Platforms,
     StreamApps,
-    Builtin,
     BuiltinDetail(BuiltinId),
     Tts(TtsSection),
     Soundboard,

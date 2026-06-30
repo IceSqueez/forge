@@ -32,7 +32,7 @@ pub(crate) fn breadcrumb_icon_for(screen: &Screen) -> Icon {
         Screen::Home => Icon::Home,
         Screen::ActionEditor(_) | Screen::Queues | Screen::TriggersRegistry => Icon::Bolt,
         Screen::Platforms => Icon::Broadcast,
-        Screen::StreamApps | Screen::Builtin | Screen::BuiltinDetail(_) => Icon::LayoutGrid,
+        Screen::StreamApps | Screen::BuiltinDetail(_) => Icon::LayoutGrid,
         Screen::LiveChat => Icon::MessageCircle,
         Screen::EventFeed => Icon::Activity,
         Screen::Globals => Icon::Variable,
@@ -53,7 +53,6 @@ pub(crate) fn screen_label(screen: &Screen) -> String {
         Screen::TriggersRegistry => forge_widgets::tr!("nav_triggers"),
         Screen::Platforms => forge_widgets::tr!("nav_platforms"),
         Screen::StreamApps => forge_widgets::tr!("nav_stream_apps"),
-        Screen::Builtin => forge_widgets::tr!("nav_builtin"),
         Screen::BuiltinDetail(_) => forge_widgets::tr!("nav_integration"),
         Screen::LiveChat => forge_widgets::tr!("nav_live_chat"),
         Screen::EventFeed => forge_widgets::tr!("nav_event_feed"),
@@ -84,6 +83,8 @@ pub(crate) fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Side
     let is_script_editor = matches!(app.screen, Screen::ScriptEditor);
     let is_soundboard = matches!(app.screen, Screen::Soundboard);
     let is_tts = matches!(app.screen, Screen::Tts(_));
+    let is_platforms = matches!(app.screen, Screen::Platforms);
+    let is_stream_apps = matches!(app.screen, Screen::StreamApps);
     let is_server = matches!(app.screen, Screen::Server);
     let is_settings = matches!(app.screen, Screen::Settings(_));
 
@@ -142,6 +143,12 @@ pub(crate) fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Side
             on_press: Message::Navigate(Screen::ScriptEditor),
         },
         NavItem::Section(forge_widgets::tr!("nav_section_connections")),
+        NavItem::Leaf {
+            icon: Icon::Broadcast,
+            label: forge_widgets::tr!("nav_platforms"),
+            active: is_platforms,
+            on_press: Message::Navigate(Screen::Platforms),
+        },
         NavItem::MiniLabel(forge_widgets::tr!("nav_item_platforms")),
         NavItem::FlatLink {
             dot_color: palette.brand,
@@ -160,6 +167,12 @@ pub(crate) fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Side
             label: "Kick".to_owned(),
             active: builtin_active(&app.screen, "kick"),
             on_press: Message::Navigate(Screen::BuiltinDetail(BuiltinId::new("kick"))),
+        },
+        NavItem::Leaf {
+            icon: Icon::LayoutGrid,
+            label: forge_widgets::tr!("nav_stream_apps"),
+            active: is_stream_apps,
+            on_press: Message::Navigate(Screen::StreamApps),
         },
         NavItem::MiniLabel(forge_widgets::tr!("nav_item_stream_apps")),
         NavItem::FlatLink {

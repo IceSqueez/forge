@@ -12,7 +12,6 @@ nav_queues = Queues
 nav_triggers = Triggers
 nav_platforms = Platforms
 nav_stream_apps = Stream apps
-nav_builtin = Builtin
 nav_integration = Integration
 nav_live_chat = Live chat
 nav_event_feed = Event feed

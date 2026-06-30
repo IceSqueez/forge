@@ -12,7 +12,6 @@ nav_queues = Черги
 nav_triggers = Тригери
 nav_platforms = Платформи
 nav_stream_apps = Стрім-застосунки
-nav_builtin = Вбудоване
 nav_integration = Інтеграція
 nav_live_chat = Живий чат
 nav_event_feed = Стрічка подій

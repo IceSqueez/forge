@@ -32,8 +32,23 @@ Connect to Twitch, YouTube, and Kick simultaneously. React to chat events with a
   - Sub-actions: send/delete chat message, ban/timeout/unban user, update channel title/category/tags, reward create/update/delete, redemption accept/reject
 
 ### Actions & automation
-- Action editor with trigger configuration and sub-action chains
-- Sub-actions: send chat, delay, set/get/increment globals, run script, play sound, speak text, read file, random int; Twitch sub-actions selectable in the same editor (see Twitch above)
+- Action editor with trigger configuration and nested sub-action chain authoring
+- **Nested flow control:** if/then/else branches, loops (count / foreach-array / while), switch/case, break/continue, stop chain, delay (fixed duration or wait-until-condition) — each flow-control step contains its own sub-chain authored via drill-in
+- **Built-in sub-action library grouped by area:**
+  - **Action & trigger control** — run another action, cancel action, enable/disable/toggle action or trigger instance
+  - **Globals & variables** — set, get, increment, decrement, toggle (bool), array append/remove on named globals; per-user get/set/increment; local execution-scoped args
+  - **Strings** — concat, substring, replace, case conversion, trim, split, regex match, format template
+  - **Math & random** — expression evaluation; random int, float, bool, and weighted pick
+  - **Date & time** — get current time, format, diff, arithmetic, parse
+  - **File (sandboxed)** — read, write/append, delete, list directory
+  - **HTTP** — GET, POST, PUT, PATCH, DELETE with headers, query params, body, and JSON/text response parsing
+  - **Queue control** — pause, resume, clear action queue
+  - **Desktop** — OS notification, clipboard read/write, open URL in browser
+  - **TTS** — speak text, stop, pause/resume/skip/clear queue, set/switch voice alias
+  - **Soundboard** — play clip, stop clip, stop all, set master volume
+  - **Script** — run inline rhai snippet, run named script, emit custom event to bus
+  - **Server** — broadcast event payload to connected overlay clients
+- Platform sub-actions (Twitch, YouTube, Kick, OBS, VTube, Discord, MIDI) selectable in the same editor
 - Command parser for chat-triggered actions
 - Queue scheduling: Sequential or RandomPick execution
 

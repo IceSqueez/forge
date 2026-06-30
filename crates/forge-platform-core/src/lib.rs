@@ -18,7 +18,9 @@ pub use builtin::{
     TrailingToken,
 };
 pub use capabilities::PlatformCapabilities;
-pub use chat::{ChatPlatform, ConnectionState};
+pub use chat::{
+    CONNECTION_STATE_CHANGED_KIND, ChatPlatform, ConnectionState, connection_state_changed_event,
+};
 pub use error::PlatformError;
 pub use net::is_private_or_special;
 pub use rate_limit::{RateLimitOutcome, RateLimiter, TokenBucketRateLimiter};

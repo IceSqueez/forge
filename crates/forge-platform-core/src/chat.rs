@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use forge_events::EventStream;
+use forge_events::{Event, EventSource, EventStream};
 use serde::{Deserialize, Serialize};
 
 use crate::{AuthFlow, PlatformCapabilities, PlatformError};
@@ -19,11 +19,21 @@ pub trait ChatPlatform: Send + Sync {
     fn auth_flow(&self) -> &AuthFlow;
     fn capabilities(&self) -> &PlatformCapabilities;
     fn connection_state(&self) -> ConnectionState;
-    async fn connect(&mut self) -> Result<(), PlatformError>;
-    async fn disconnect(&mut self) -> Result<(), PlatformError>;
+    async fn connect(&self) -> Result<(), PlatformError>;
+    async fn disconnect(&self) -> Result<(), PlatformError>;
     /// Fails with `PlatformError::Unsupported` if `capabilities().can_send_chat` is false.
     async fn send_message(&self, channel: &str, text: &str) -> Result<(), PlatformError>;
     fn events(&self) -> EventStream;
+}
+
+pub const CONNECTION_STATE_CHANGED_KIND: &str = "platform.connection.changed";
+
+pub fn connection_state_changed_event(platform_id: &str, state: ConnectionState) -> Event {
+    Event::new(
+        EventSource::Core,
+        CONNECTION_STATE_CHANGED_KIND,
+        serde_json::json!({ "platform_id": platform_id, "state": state }),
+    )
 }
 
 #[cfg(test)]

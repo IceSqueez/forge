@@ -315,3 +315,479 @@ pub fn persist_chain_mutation(
         },
     )
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    fn step(kind: &str) -> SubActionStep {
+        SubActionStep {
+            kind_id: kind.to_owned(),
+            config: SubActionConfig::new(),
+            enabled: true,
+            label: None,
+        }
+    }
+
+    fn step_with_chain(kind: &str, key: &str, inner: &[SubActionStep]) -> SubActionStep {
+        let mut s = step(kind);
+        s.config.insert(key.to_owned(), encode_chain(inner));
+        s
+    }
+
+    fn case_row(match_val: Variant, chain: &[SubActionStep]) -> Variant {
+        let mut o = SubActionConfig::new();
+        o.insert("match".to_owned(), match_val);
+        o.insert("chain".to_owned(), encode_chain(chain));
+        Variant::Object(o)
+    }
+
+    fn switch_step(cases: Vec<Variant>) -> SubActionStep {
+        let mut s = step("core.logic.switch_case");
+        s.config.insert("cases".to_owned(), Variant::Array(cases));
+        s
+    }
+
+    // ---- encode / decode ------------------------------------------------
+
+    #[test]
+    fn encode_then_decode_round_trips_labels_enabled_and_nested_config() {
+        let mut nested_cfg = SubActionConfig::new();
+        nested_cfg.insert(
+            "then_chain".to_owned(),
+            encode_chain(&[step("core.log.write")]),
+        );
+        nested_cfg.insert("flag".to_owned(), Variant::Bool(false));
+        let original = vec![
+            step("core.log.write"),
+            SubActionStep {
+                kind_id: "core.logic.if_then_else".to_owned(),
+                config: nested_cfg,
+                enabled: false,
+                label: Some("Branch".to_owned()),
+            },
+        ];
+
+        let decoded = decode_chain_value(Some(&encode_chain(&original)));
+
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn encode_chain_produces_canonical_runtime_object_shape() {
+        // Why: the runtime's own `decode_steps` reads these exact keys
+        // (kind_id/config/enabled/label) off each `Object`. If this wire shape
+        // drifts, the UI authors chains the runtime silently drops. `label` is
+        // omitted entirely when `None` (not stored as null/empty).
+        let labelled = SubActionStep {
+            label: Some("L".to_owned()),
+            ..step("core.log.write")
+        };
+        let encoded = encode_chain(&[step("core.log.write"), labelled]);
+
+        let items = encoded.as_array().unwrap();
+        let first = items[0].as_object().unwrap();
+        assert_eq!(
+            first.get("kind_id").and_then(Variant::as_str),
+            Some("core.log.write")
+        );
+        assert!(matches!(first.get("config"), Some(Variant::Object(_))));
+        assert!(matches!(first.get("enabled"), Some(Variant::Bool(true))));
+        assert!(first.get("label").is_none(), "None label must be omitted");
+
+        let second = items[1].as_object().unwrap();
+        assert_eq!(second.get("label").and_then(Variant::as_str), Some("L"));
+    }
+
+    #[test]
+    fn decode_chain_value_drops_elements_without_kind_id() {
+        let valid = step("core.log.write");
+        let mut malformed = SubActionConfig::new();
+        malformed.insert("enabled".to_owned(), Variant::Bool(true));
+        let blob = Variant::Array(vec![
+            encode_chain(std::slice::from_ref(&valid))
+                .as_array()
+                .unwrap()[0]
+                .clone(),
+            Variant::Object(malformed),
+        ]);
+
+        let decoded = decode_chain_value(Some(&blob));
+
+        assert_eq!(decoded, vec![valid]);
+    }
+
+    #[test]
+    fn decode_chain_value_non_array_or_missing_yields_empty() {
+        for value in [
+            None,
+            Some(&Variant::String("not a chain".to_owned())),
+            Some(&Variant::Int(7)),
+            Some(&Variant::Object(SubActionConfig::new())),
+        ] {
+            assert!(decode_chain_value(value).is_empty());
+        }
+    }
+
+    #[test]
+    fn decode_chain_value_applies_defaults_when_optional_fields_absent() {
+        let mut obj = SubActionConfig::new();
+        obj.insert(
+            "kind_id".to_owned(),
+            Variant::String("core.log.write".to_owned()),
+        );
+        let blob = Variant::Array(vec![Variant::Object(obj)]);
+
+        let decoded = decode_chain_value(Some(&blob));
+
+        assert_eq!(decoded.len(), 1);
+        assert!(decoded[0].enabled, "absent `enabled` must default to true");
+        assert_eq!(decoded[0].label, None);
+        assert!(decoded[0].config.is_empty());
+    }
+
+    // ---- resolve / set at depth ----------------------------------------
+
+    #[test]
+    fn resolve_chain_descends_into_single_nested_chain() {
+        let inner = vec![step("core.log.write"), step("core.logic.wait")];
+        let root = vec![step_with_chain(
+            "core.logic.if_then_else",
+            "then_chain",
+            &inner,
+        )];
+
+        let got = resolve_chain(&root, &[NavFrame::new(0, "then_chain", None)]);
+
+        assert_eq!(got, inner);
+    }
+
+    #[test]
+    fn resolve_chain_descends_two_levels() {
+        let innermost = vec![step("core.log.write")];
+        let mid = vec![step_with_chain("core.logic.loop", "body", &innermost)];
+        let root = vec![step_with_chain(
+            "core.logic.if_then_else",
+            "then_chain",
+            &mid,
+        )];
+
+        let got = resolve_chain(
+            &root,
+            &[
+                NavFrame::new(0, "then_chain", None),
+                NavFrame::new(0, "body", None),
+            ],
+        );
+
+        assert_eq!(got, innermost);
+    }
+
+    #[test]
+    fn resolve_chain_bad_step_index_yields_empty() {
+        let root = vec![step_with_chain(
+            "x",
+            "then_chain",
+            &[step("core.log.write")],
+        )];
+
+        let got = resolve_chain(&root, &[NavFrame::new(5, "then_chain", None)]);
+
+        assert!(got.is_empty());
+    }
+
+    #[test]
+    fn resolve_chain_malformed_blob_yields_empty() {
+        let mut s = step("x");
+        s.config
+            .insert("then_chain".to_owned(), Variant::String("oops".to_owned()));
+
+        let got = resolve_chain(&[s], &[NavFrame::new(0, "then_chain", None)]);
+
+        assert!(got.is_empty());
+    }
+
+    #[test]
+    fn set_chain_replaces_addressed_chain_preserving_siblings() {
+        let mut parent = step_with_chain("core.logic.if_then_else", "then_chain", &[step("old")]);
+        parent
+            .config
+            .insert("else_chain".to_owned(), encode_chain(&[step("keep_else")]));
+        let sibling = step("sibling");
+        let mut root = vec![parent, sibling.clone()];
+
+        let replacement = vec![step("new_a"), step("new_b")];
+        let ok = set_chain(
+            &mut root,
+            &[NavFrame::new(0, "then_chain", None)],
+            &replacement,
+        );
+
+        assert!(ok);
+        assert_eq!(
+            resolve_chain(&root, &[NavFrame::new(0, "then_chain", None)]),
+            replacement
+        );
+        // sibling step untouched, and the parent's other branch is not clobbered.
+        assert_eq!(root[1], sibling);
+        assert_eq!(
+            resolve_chain(&root, &[NavFrame::new(0, "else_chain", None)]),
+            vec![step("keep_else")]
+        );
+    }
+
+    #[test]
+    fn set_chain_at_depth_two_reserializes_through_parents() {
+        let mid = vec![step_with_chain("core.logic.loop", "body", &[step("old")])];
+        let mut root = vec![step_with_chain(
+            "core.logic.if_then_else",
+            "then_chain",
+            &mid,
+        )];
+        let path = [
+            NavFrame::new(0, "then_chain", None),
+            NavFrame::new(0, "body", None),
+        ];
+
+        let replacement = vec![step("deep_new")];
+        let ok = set_chain(&mut root, &path, &replacement);
+
+        assert!(ok);
+        assert_eq!(resolve_chain(&root, &path), replacement);
+    }
+
+    #[test]
+    fn set_chain_unresolvable_frame_returns_false_leaving_root_untouched() {
+        let mut root = vec![step_with_chain("x", "then_chain", &[step("old")])];
+        let before = root.clone();
+
+        let ok = set_chain(
+            &mut root,
+            &[NavFrame::new(9, "then_chain", None)],
+            &[step("new")],
+        );
+
+        assert!(!ok);
+        assert_eq!(root, before);
+    }
+
+    #[test]
+    fn write_chain_value_for_case_preserves_match_field() {
+        let mut config = SubActionConfig::new();
+        config.insert(
+            "cases".to_owned(),
+            Variant::Array(vec![case_row(
+                Variant::String("keep".to_owned()),
+                &[step("old")],
+            )]),
+        );
+
+        write_chain_value(&mut config, "cases", Some(0), &[step("a"), step("b")]);
+
+        let s = SubActionStep {
+            config,
+            ..step("core.logic.switch_case")
+        };
+        assert_eq!(case_match_display(&s, 0), Some("keep".to_owned()));
+        assert_eq!(branch_step_count(&s, "cases", Some(0)), 2);
+    }
+
+    // ---- switch case ops ------------------------------------------------
+
+    #[test]
+    fn append_empty_case_creates_list_when_absent() {
+        let mut config = SubActionConfig::new();
+
+        append_empty_case(&mut config);
+
+        let s = switch_step_from(&config);
+        assert_eq!(case_count(&s), 1);
+        assert_eq!(case_match_display(&s, 0), Some(String::new()));
+        assert_eq!(branch_step_count(&s, "cases", Some(0)), 0);
+    }
+
+    #[test]
+    fn append_empty_case_appends_preserving_existing_rows() {
+        let mut config = SubActionConfig::new();
+        config.insert(
+            "cases".to_owned(),
+            Variant::Array(vec![case_row(
+                Variant::String("first".to_owned()),
+                &[step("x")],
+            )]),
+        );
+
+        append_empty_case(&mut config);
+
+        let s = switch_step_from(&config);
+        assert_eq!(case_count(&s), 2);
+        assert_eq!(case_match_display(&s, 0), Some("first".to_owned()));
+        assert_eq!(branch_step_count(&s, "cases", Some(0)), 1);
+    }
+
+    #[test]
+    fn remove_case_removes_addressed_row() {
+        let mut config = SubActionConfig::new();
+        config.insert(
+            "cases".to_owned(),
+            Variant::Array(vec![
+                case_row(Variant::String("a".to_owned()), &[]),
+                case_row(Variant::String("b".to_owned()), &[]),
+            ]),
+        );
+
+        remove_case(&mut config, 0);
+
+        let s = switch_step_from(&config);
+        assert_eq!(case_count(&s), 1);
+        assert_eq!(case_match_display(&s, 0), Some("b".to_owned()));
+    }
+
+    #[test]
+    fn remove_case_out_of_range_is_noop() {
+        let mut config = SubActionConfig::new();
+        config.insert(
+            "cases".to_owned(),
+            Variant::Array(vec![case_row(Variant::String("a".to_owned()), &[])]),
+        );
+
+        remove_case(&mut config, 9);
+
+        assert_eq!(case_count(&switch_step_from(&config)), 1);
+    }
+
+    #[test]
+    fn move_case_swaps_with_neighbour() {
+        for (from, up, expected_top) in [(1usize, true, "b"), (0usize, false, "b")] {
+            let mut config = SubActionConfig::new();
+            config.insert(
+                "cases".to_owned(),
+                Variant::Array(vec![
+                    case_row(Variant::String("a".to_owned()), &[]),
+                    case_row(Variant::String("b".to_owned()), &[]),
+                ]),
+            );
+
+            move_case(&mut config, from, up);
+
+            let s = switch_step_from(&config);
+            assert_eq!(case_match_display(&s, 0).as_deref(), Some(expected_top));
+        }
+    }
+
+    #[test]
+    fn move_case_at_boundary_is_noop() {
+        // up at top (checked_sub underflow) and down at bottom (filtered) both no-op.
+        for (from, up) in [(0usize, true), (1usize, false)] {
+            let mut config = SubActionConfig::new();
+            config.insert(
+                "cases".to_owned(),
+                Variant::Array(vec![
+                    case_row(Variant::String("a".to_owned()), &[]),
+                    case_row(Variant::String("b".to_owned()), &[]),
+                ]),
+            );
+
+            move_case(&mut config, from, up);
+
+            let s = switch_step_from(&config);
+            assert_eq!(case_match_display(&s, 0).as_deref(), Some("a"));
+            assert_eq!(case_match_display(&s, 1).as_deref(), Some("b"));
+        }
+    }
+
+    #[test]
+    fn set_case_match_writes_single_value() {
+        let mut config = SubActionConfig::new();
+        config.insert(
+            "cases".to_owned(),
+            Variant::Array(vec![case_row(Variant::String(String::new()), &[])]),
+        );
+
+        set_case_match(&mut config, 0, "matched");
+
+        assert_eq!(
+            case_match_display(&switch_step_from(&config), 0),
+            Some("matched".to_owned())
+        );
+    }
+
+    // ---- single-value match contract (OQ-2) ----------------------------
+
+    #[test]
+    fn case_match_display_returns_single_value_and_empty_when_absent() {
+        let with_value = switch_step(vec![case_row(Variant::String("v".to_owned()), &[])]);
+        assert_eq!(case_match_display(&with_value, 0), Some("v".to_owned()));
+
+        let mut no_match = SubActionConfig::new();
+        no_match.insert("chain".to_owned(), encode_chain(&[]));
+        let absent = switch_step(vec![Variant::Object(no_match)]);
+        assert_eq!(case_match_display(&absent, 0), Some(String::new()));
+    }
+
+    #[test]
+    fn case_match_display_returns_none_for_imported_multi_value_array() {
+        let multi = switch_step(vec![case_row(
+            Variant::Array(vec![
+                Variant::String("a".to_owned()),
+                Variant::String("b".to_owned()),
+            ]),
+            &[],
+        )]);
+
+        assert_eq!(case_match_display(&multi, 0), None);
+    }
+
+    #[test]
+    fn case_match_is_multi_true_only_for_array() {
+        let single = switch_step(vec![case_row(Variant::String("v".to_owned()), &[])]);
+        let numeric = switch_step(vec![case_row(Variant::Int(3), &[])]);
+        let multi = switch_step(vec![case_row(Variant::Array(vec![Variant::Int(1)]), &[])]);
+
+        assert!(!case_match_is_multi(&single, 0));
+        assert!(!case_match_is_multi(&numeric, 0));
+        assert!(case_match_is_multi(&multi, 0));
+    }
+
+    #[test]
+    fn case_match_helpers_are_safe_for_out_of_range_index() {
+        let s = switch_step(vec![case_row(Variant::String("v".to_owned()), &[])]);
+
+        assert_eq!(case_match_display(&s, 9), None);
+        assert!(!case_match_is_multi(&s, 9));
+    }
+
+    // ---- depth cap (OQ-1) ----------------------------------------------
+
+    #[test]
+    fn branch_step_count_reports_existing_branch_length() {
+        let empty = step_with_chain("x", "body", &[]);
+        let filled = step_with_chain("x", "body", &[step("a"), step("b")]);
+        let absent = step("x");
+
+        assert_eq!(branch_step_count(&empty, "body", None), 0);
+        assert_eq!(branch_step_count(&filled, "body", None), 2);
+        assert_eq!(branch_step_count(&absent, "body", None), 0);
+
+        let cased = switch_step(vec![case_row(
+            Variant::String("m".to_owned()),
+            &[step("a")],
+        )]);
+        assert_eq!(branch_step_count(&cased, "cases", Some(0)), 1);
+    }
+
+    #[test]
+    fn ui_nesting_cap_stays_strictly_below_runtime_max() {
+        // Why: the authoring cap MUST be under the runtime's `max_nesting_depth`
+        // so the UI can never persist a chain the runtime would reject at execute.
+        assert!(UI_MAX_NESTING_DEPTH < forge_runtime::Config::default().max_nesting_depth as usize);
+    }
+
+    fn switch_step_from(config: &SubActionConfig) -> SubActionStep {
+        SubActionStep {
+            config: config.clone(),
+            ..step("core.logic.switch_case")
+        }
+    }
+}

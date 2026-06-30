@@ -306,7 +306,9 @@ mod tests {
         use std::time::Duration;
 
         let dp = open_test_dp().await;
-        let expired_deadline = Instant::now() - Duration::from_millis(50);
+        let expired_deadline = Instant::now()
+            .checked_sub(Duration::from_millis(50))
+            .unwrap();
         let api = ForgeApi::new(
             Arc::new(MockPublisher),
             dp as Arc<dyn GlobalsRepo>,

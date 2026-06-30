@@ -1159,6 +1159,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::unwrap_used)]
     #[test]
     fn animation_advances_when_open() {
         let mut widget = SideSheet::<CloseMsg, Theme, ()>::new(Space::new())
@@ -1170,7 +1171,9 @@ mod tests {
             .palette(&CATPPUCCIN_MOCHA);
         let mut tree = make_tree(&widget);
 
-        let past = Instant::now() - Duration::from_millis(100);
+        let past = Instant::now()
+            .checked_sub(Duration::from_millis(100))
+            .unwrap();
         tree.state.downcast_mut::<SideSheetState>().last_tick = Some(past);
 
         let now = Instant::now();
@@ -1189,6 +1192,7 @@ mod tests {
         );
     }
 
+    #[allow(clippy::unwrap_used)]
     #[test]
     fn animation_retreats_when_closed() {
         let mut widget = SideSheet::<CloseMsg, Theme, ()>::new(Space::new())
@@ -1201,7 +1205,9 @@ mod tests {
         let mut tree = make_tree(&widget);
 
         tree.state.downcast_mut::<SideSheetState>().progress = 1.0;
-        let past = Instant::now() - Duration::from_millis(100);
+        let past = Instant::now()
+            .checked_sub(Duration::from_millis(100))
+            .unwrap();
         tree.state.downcast_mut::<SideSheetState>().last_tick = Some(past);
 
         let now = Instant::now();
@@ -1216,6 +1222,7 @@ mod tests {
         assert_eq!(redraw, window::RedrawRequest::NextFrame);
     }
 
+    #[allow(clippy::unwrap_used)]
     #[test]
     fn animation_mid_flight_flip() {
         let mut widget = SideSheet::<CloseMsg, Theme, ()>::new(Space::new())
@@ -1228,7 +1235,9 @@ mod tests {
         let mut tree = make_tree(&widget);
 
         tree.state.downcast_mut::<SideSheetState>().progress = 0.5;
-        let past = Instant::now() - Duration::from_millis(50);
+        let past = Instant::now()
+            .checked_sub(Duration::from_millis(50))
+            .unwrap();
         tree.state.downcast_mut::<SideSheetState>().last_tick = Some(past);
 
         let now = Instant::now();
@@ -1260,6 +1269,7 @@ mod tests {
         assert_eq!(progress, 1.0, "zero-duration must snap to target instantly");
     }
 
+    #[allow(clippy::unwrap_used)]
     #[test]
     fn progress_clamped_to_unit_interval() {
         let mut widget = SideSheet::<CloseMsg, Theme, ()>::new(Space::new())
@@ -1271,7 +1281,7 @@ mod tests {
             .palette(&CATPPUCCIN_MOCHA);
         let mut tree = make_tree(&widget);
 
-        let past = Instant::now() - Duration::from_secs(10);
+        let past = Instant::now().checked_sub(Duration::from_secs(10)).unwrap();
         tree.state.downcast_mut::<SideSheetState>().last_tick = Some(past);
 
         let now = Instant::now();
@@ -1356,6 +1366,7 @@ mod tests {
         );
     }
 
+    #[allow(clippy::unwrap_used)]
     #[test]
     fn redraw_requested_while_animating() {
         let mut widget = SideSheet::<CloseMsg, Theme, ()>::new(Space::new())
@@ -1367,7 +1378,9 @@ mod tests {
             .palette(&CATPPUCCIN_MOCHA);
         let mut tree = make_tree(&widget);
 
-        let past = Instant::now() - Duration::from_millis(50);
+        let past = Instant::now()
+            .checked_sub(Duration::from_millis(50))
+            .unwrap();
         tree.state.downcast_mut::<SideSheetState>().last_tick = Some(past);
 
         let now = Instant::now();

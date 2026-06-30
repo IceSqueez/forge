@@ -9,13 +9,39 @@ pub(super) fn decode_chain(config: &SubActionConfig, key: &str) -> Vec<SubAction
     decode_steps(config.get(key))
 }
 
-/// Decodes a `Variant` (as authored into config) into a step list, reusing the
-/// `Variant` <-> JSON bridge so an embedded chain round-trips through storage.
+/// Walks the canonical stored chain form — `Variant::Array` of per-step
+/// `Variant::Object`s — into a step list. Anything that is not an array, and any
+/// element lacking a `kind_id`, is dropped so a missing or partially-authored
+/// branch degrades to a no-op instead of failing the action.
 pub(super) fn decode_steps(value: Option<&Variant>) -> Vec<SubActionStep> {
-    value
-        .map(Variant::to_json)
-        .and_then(|json| serde_json::from_value::<Vec<SubActionStep>>(json).ok())
-        .unwrap_or_default()
+    let Some(steps) = value.and_then(Variant::as_array) else {
+        return Vec::new();
+    };
+    steps
+        .iter()
+        .filter_map(|step| {
+            let obj = step.as_object()?;
+            let kind_id = obj.get("kind_id").and_then(Variant::as_str)?.to_owned();
+            let config = match obj.get("config") {
+                Some(Variant::Object(map)) => map.clone(),
+                _ => SubActionConfig::new(),
+            };
+            let enabled = obj
+                .get("enabled")
+                .and_then(Variant::as_bool)
+                .unwrap_or(true);
+            let label = obj
+                .get("label")
+                .and_then(Variant::as_str)
+                .map(str::to_owned);
+            Some(SubActionStep {
+                kind_id,
+                config,
+                enabled,
+                label,
+            })
+        })
+        .collect()
 }
 
 /// Re-raises a child chain's terminal signal into the enclosing chain unchanged.

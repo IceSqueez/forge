@@ -81,6 +81,7 @@ pub(crate) fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Side
     let is_live_chat = matches!(app.screen, Screen::LiveChat);
     let is_event_feed = matches!(app.screen, Screen::EventFeed);
     let is_globals = matches!(app.screen, Screen::Globals);
+    let is_script_editor = matches!(app.screen, Screen::ScriptEditor);
     let is_soundboard = matches!(app.screen, Screen::Soundboard);
     let is_tts = matches!(app.screen, Screen::Tts(_));
     let is_server = matches!(app.screen, Screen::Server);
@@ -133,6 +134,12 @@ pub(crate) fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Side
             label: forge_widgets::tr!("nav_item_globals"),
             active: is_globals,
             on_press: Message::Navigate(Screen::Globals),
+        },
+        NavItem::Leaf {
+            icon: Icon::Terminal,
+            label: forge_widgets::tr!("nav_script_editor"),
+            active: is_script_editor,
+            on_press: Message::Navigate(Screen::ScriptEditor),
         },
         NavItem::Section(forge_widgets::tr!("nav_section_connections")),
         NavItem::MiniLabel(forge_widgets::tr!("nav_item_platforms")),

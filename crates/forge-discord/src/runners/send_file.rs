@@ -276,12 +276,7 @@ mod tests {
     }
 
     fn ctx<'a>(stack: &'a ArgStack, publisher: &'a NoopPublisher) -> RunContext<'a> {
-        RunContext {
-            arg_stack: stack,
-            index: 0,
-            parent_event_id: EventId::new(),
-            publisher,
-        }
+        RunContext::leaf(stack, 0, EventId::new(), publisher)
     }
 
     /// Writes `bytes` to a uniquely named file under the OS temp dir and returns its path.

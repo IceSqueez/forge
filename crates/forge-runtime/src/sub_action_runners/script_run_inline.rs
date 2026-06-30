@@ -239,12 +239,8 @@ mod tests {
 
         let arg_stack = ArgStack::default();
         let dummy_pub: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
-        let ctx = forge_registry::RunContext {
-            arg_stack: &arg_stack,
-            index: 0,
-            parent_event_id: EventId::new(),
-            publisher: dummy_pub.as_ref(),
-        };
+        let ctx =
+            forge_registry::RunContext::leaf(&arg_stack, 0, EventId::new(), dummy_pub.as_ref());
 
         let (telemetry, _) = runner.execute(&config, &ctx).await;
 

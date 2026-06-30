@@ -28,6 +28,7 @@ pub mod reserved_keys {
     pub const SCRIPT_HTTP_TIMEOUT_MS_KEY: &str = "script.http_timeout_ms";
     pub const SCRIPT_HTTP_ALLOW_LOCAL_KEY: &str = "script.http_allow_local";
     pub const SCRIPT_HTTP_MAX_RESPONSE_BYTES_KEY: &str = "script.http_max_response_bytes";
+    pub const CORE_HTTP_ALLOW_LOCAL_KEY: &str = "core.http_allow_local";
     pub const SCRIPT_OP_LIMIT_KEY: &str = "script.op_limit";
     pub const SCRIPT_TIMEOUT_MS_KEY: &str = "script.timeout_ms";
     pub const LANGUAGE: &str = "app.language";

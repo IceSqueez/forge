@@ -18,6 +18,9 @@ pub enum ScriptError {
     #[error("script '{script}' exceeded op-count limit ({ops} operations)")]
     OperationLimit { script: String, ops: u64 },
 
+    #[error("condition '{expr}' did not evaluate to a boolean (got {got})")]
+    ConditionNotBoolean { expr: String, got: String },
+
     #[error("call to '{fn_name}' denied: {reason}")]
     HostCallDenied { fn_name: String, reason: String },
 

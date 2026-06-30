@@ -28,23 +28,27 @@ pub struct Engine {
     wall_timer: Arc<Mutex<Instant>>,
 }
 
+pub(crate) fn register_sandbox_base(inner: &mut rhai::Engine, cfg: &EngineConfig) {
+    inner.register_global_module(CorePackage::new().as_shared_module());
+    inner.register_global_module(LogicPackage::new().as_shared_module());
+    inner.register_global_module(BasicArrayPackage::new().as_shared_module());
+    inner.register_global_module(BasicMapPackage::new().as_shared_module());
+
+    inner.set_max_operations(cfg.op_limit);
+    inner.set_max_call_levels(64);
+    inner.set_max_expr_depths(64, 32);
+    inner.set_max_string_size(1 << 20);
+    inner.set_max_array_size(10_000);
+    inner.set_max_map_size(10_000);
+
+    inner.disable_symbol("eval");
+}
+
 impl Engine {
     pub fn with_config(cfg: EngineConfig) -> Self {
         let mut inner = rhai::Engine::new_raw();
 
-        inner.register_global_module(CorePackage::new().as_shared_module());
-        inner.register_global_module(LogicPackage::new().as_shared_module());
-        inner.register_global_module(BasicArrayPackage::new().as_shared_module());
-        inner.register_global_module(BasicMapPackage::new().as_shared_module());
-
-        inner.set_max_operations(cfg.op_limit);
-        inner.set_max_call_levels(64);
-        inner.set_max_expr_depths(64, 32);
-        inner.set_max_string_size(1 << 20);
-        inner.set_max_array_size(10_000);
-        inner.set_max_map_size(10_000);
-
-        inner.disable_symbol("eval");
+        register_sandbox_base(&mut inner, &cfg);
 
         let wall_timer = Arc::new(Mutex::new(Instant::now()));
         let timer_for_closure = Arc::clone(&wall_timer);
@@ -125,7 +129,11 @@ pub fn validate_syntax(body: &str) -> Result<(), ScriptError> {
         })
 }
 
-fn map_eval_error(script: &str, cfg: &EngineConfig, err: rhai::EvalAltResult) -> ScriptError {
+pub(crate) fn map_eval_error(
+    script: &str,
+    cfg: &EngineConfig,
+    err: rhai::EvalAltResult,
+) -> ScriptError {
     let reason = err.to_string();
     match err {
         rhai::EvalAltResult::ErrorParsing(..) => ScriptError::Compile {

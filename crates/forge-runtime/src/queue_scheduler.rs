@@ -5,15 +5,42 @@
 //! guarantee, not a leak.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
+use arc_swap::ArcSwapOption;
 use forge_events::{Event, EventSource};
+use forge_registry::CancelSignal;
 use forge_types::{ActionId, ArgStack, EventId, Queue, QueueId};
 use serde_json::json;
 use tokio::sync::{RwLock, Semaphore, mpsc, oneshot};
+use tokio::task::JoinHandle;
 use tracing::warn;
 
 use crate::{ActionEngineHandle, EventBus, ExecutionRequest};
+
+/// Lock-free, settable holder for the live `QueueSchedulerHandle`. Queue-control
+/// sub-action runners are registered at boot, before the scheduler task exists;
+/// this cell is handed to them empty and filled once `QueueScheduler::spawn`
+/// returns, so runners reach the live scheduler without a registration-order
+/// dependency.
+#[derive(Clone, Default)]
+pub struct SchedulerCell {
+    inner: Arc<ArcSwapOption<QueueSchedulerHandle>>,
+}
+
+impl SchedulerCell {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn set(&self, handle: QueueSchedulerHandle) {
+        self.inner.store(Some(Arc::new(handle)));
+    }
+
+    pub fn get(&self) -> Option<QueueSchedulerHandle> {
+        self.inner.load_full().map(|h| (*h).clone())
+    }
+}
 
 pub struct SchedulerRequest {
     pub queue_id: QueueId,
@@ -47,6 +74,7 @@ enum SchedulerCommand {
     Enqueue(SchedulerRequest),
     Pause(QueueId, oneshot::Sender<Result<(), SchedulerError>>),
     Resume(QueueId, oneshot::Sender<Result<(), SchedulerError>>),
+    Clear(QueueId, bool, oneshot::Sender<Result<(), SchedulerError>>),
     Register(Queue, oneshot::Sender<MembershipOutcome>),
     Deregister(QueueId, oneshot::Sender<MembershipOutcome>),
     Reconfigure(Queue, oneshot::Sender<MembershipOutcome>),
@@ -59,6 +87,47 @@ struct QueueSlot {
     state: Arc<RwLock<PauseState>>,
     name: String,
     blocking: bool,
+    runner: JoinHandle<()>,
+    inflight: InflightTracker,
+}
+
+/// Holds the cancel signal of each execution a queue's runner has started but
+/// not yet seen finish, so `Clear` with `keep_current = false` can cooperatively
+/// cancel the running chain(s). A runner registers before dispatching and removes
+/// on completion, so a finished execution is never cancelled retroactively.
+#[derive(Clone, Default)]
+struct InflightTracker {
+    inner: Arc<Mutex<InflightInner>>,
+}
+
+#[derive(Default)]
+struct InflightInner {
+    next_id: u64,
+    signals: HashMap<u64, CancelSignal>,
+}
+
+impl InflightTracker {
+    fn register(&self, signal: CancelSignal) -> u64 {
+        let mut inner = self.lock();
+        let id = inner.next_id;
+        inner.next_id = inner.next_id.wrapping_add(1);
+        inner.signals.insert(id, signal);
+        id
+    }
+
+    fn complete(&self, id: u64) {
+        self.lock().signals.remove(&id);
+    }
+
+    fn cancel_all(&self) {
+        for (_, signal) in self.lock().signals.drain() {
+            signal.cancel();
+        }
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, InflightInner> {
+        self.inner.lock().unwrap_or_else(|e| e.into_inner())
+    }
 }
 
 struct PauseState {
@@ -90,6 +159,17 @@ impl QueueSchedulerHandle {
         let (tx, rx) = oneshot::channel();
         self.sender
             .send(SchedulerCommand::Resume(queue_id, tx))
+            .map_err(|_| SchedulerError::ChannelClosed)?;
+        rx.await.map_err(|_| SchedulerError::ChannelClosed)?
+    }
+
+    /// Discards the queue's pending (not-yet-started) executions. With
+    /// `keep_current = false` the in-flight execution is cancelled cooperatively
+    /// too; with `true` it runs to completion.
+    pub async fn clear(&self, queue_id: QueueId, keep_current: bool) -> Result<(), SchedulerError> {
+        let (tx, rx) = oneshot::channel();
+        self.sender
+            .send(SchedulerCommand::Clear(queue_id, keep_current, tx))
             .map_err(|_| SchedulerError::ChannelClosed)?;
         rx.await.map_err(|_| SchedulerError::ChannelClosed)?
     }
@@ -159,21 +239,24 @@ impl QueueScheduler {
     fn make_queue_slot(queue: Queue, engine: Arc<ActionEngineHandle>) -> QueueSlot {
         let (task_tx, task_rx) = mpsc::unbounded_channel::<QueueTask>();
         let state = Arc::new(RwLock::new(PauseState { paused: false }));
+        let inflight = InflightTracker::default();
         let name = queue.name.clone();
         let blocking = queue.blocking;
 
-        if blocking {
+        let runner = if blocking {
             let sem = Arc::new(Semaphore::new(1));
-            tokio::spawn(Self::run_blocking(task_rx, engine, sem));
+            tokio::spawn(Self::run_blocking(task_rx, engine, sem, inflight.clone()))
         } else {
-            tokio::spawn(Self::run_nonblocking(task_rx, engine));
-        }
+            tokio::spawn(Self::run_nonblocking(task_rx, engine, inflight.clone()))
+        };
 
         QueueSlot {
             sender: task_tx,
             state,
             name,
             blocking,
+            runner,
+            inflight,
         }
     }
 
@@ -181,6 +264,7 @@ impl QueueScheduler {
         mut rx: mpsc::UnboundedReceiver<QueueTask>,
         engine: Arc<ActionEngineHandle>,
         sem: Arc<Semaphore>,
+        inflight: InflightTracker,
     ) {
         while let Some(task) = rx.recv().await {
             let permit = match Arc::clone(&sem).acquire_owned().await {
@@ -194,15 +278,15 @@ impl QueueScheduler {
                 initial_args: task.initial_args,
             };
 
+            let cancel = CancelSignal::new();
+            let id = inflight.register(cancel.clone());
             let (done_tx, done_rx) = oneshot::channel::<()>();
-            let engine_ref = Arc::clone(&engine);
 
-            tokio::spawn(async move {
-                let _ = engine_ref.dispatch(req).await;
-                let _ = done_tx.send(());
-            });
+            if engine.dispatch_tracked(req, cancel, done_tx).await.is_ok() {
+                let _ = done_rx.await;
+            }
 
-            let _ = done_rx.await;
+            inflight.complete(id);
             drop(permit);
         }
     }
@@ -210,6 +294,7 @@ impl QueueScheduler {
     async fn run_nonblocking(
         mut rx: mpsc::UnboundedReceiver<QueueTask>,
         engine: Arc<ActionEngineHandle>,
+        inflight: InflightTracker,
     ) {
         while let Some(task) = rx.recv().await {
             let req = ExecutionRequest {
@@ -218,9 +303,20 @@ impl QueueScheduler {
                 initial_args: task.initial_args,
             };
 
+            let cancel = CancelSignal::new();
+            let id = inflight.register(cancel.clone());
             let engine_ref = Arc::clone(&engine);
+            let inflight_ref = inflight.clone();
             tokio::spawn(async move {
-                let _ = engine_ref.dispatch(req).await;
+                let (done_tx, done_rx) = oneshot::channel::<()>();
+                if engine_ref
+                    .dispatch_tracked(req, cancel, done_tx)
+                    .await
+                    .is_ok()
+                {
+                    let _ = done_rx.await;
+                }
+                inflight_ref.complete(id);
             });
         }
     }
@@ -242,6 +338,11 @@ impl QueueScheduler {
                 }
                 SchedulerCommand::Resume(queue_id, reply) => {
                     let r = Self::set_paused(&queue_id, false, &slots, &bus, "queue.resumed").await;
+                    let _ = reply.send(r);
+                }
+                SchedulerCommand::Clear(queue_id, keep_current, reply) => {
+                    let r =
+                        Self::clear_queue(&mut slots, &queue_id, keep_current, &bus, &engine).await;
                     let _ = reply.send(r);
                 }
                 SchedulerCommand::Register(queue, reply) => {
@@ -373,6 +474,58 @@ impl QueueScheduler {
 
         Ok(())
     }
+
+    async fn clear_queue(
+        slots: &mut HashMap<QueueId, QueueSlot>,
+        queue_id: &QueueId,
+        keep_current: bool,
+        bus: &Arc<EventBus>,
+        engine: &Arc<ActionEngineHandle>,
+    ) -> Result<(), SchedulerError> {
+        let (was_paused, name, blocking) = {
+            let slot = slots
+                .get(queue_id)
+                .ok_or(SchedulerError::QueueNotFound(*queue_id))?;
+
+            if !keep_current {
+                slot.inflight.cancel_all();
+            }
+            // Aborting the runner drops its task receiver, discarding every
+            // buffered (not-yet-started) execution. With keep_current = false the
+            // running chain unwinds cooperatively via the cancel signal set above;
+            // with true it keeps running to completion in the engine.
+            slot.runner.abort();
+
+            (
+                slot.state.read().await.paused,
+                slot.name.clone(),
+                slot.blocking,
+            )
+        };
+
+        let rebuilt = Self::make_queue_slot(
+            Queue {
+                id: *queue_id,
+                name: name.clone(),
+                blocking,
+            },
+            Arc::clone(engine),
+        );
+        rebuilt.state.write().await.paused = was_paused;
+        slots.insert(*queue_id, rebuilt);
+
+        bus.publish(Event::new(
+            EventSource::Core,
+            "queue.cleared",
+            json!({
+                "queue_id": queue_id.to_string(),
+                "queue_name": name,
+                "keep_current": keep_current,
+            }),
+        ));
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -384,9 +537,10 @@ mod tests {
     use forge_registry::SubActionRegistry;
     use forge_storage::DataProvider;
     use forge_storage_sqlite::SqliteBackend;
-    use forge_types::{Action, ActionId, EventId, Queue, QueueId, SubActionStep};
+    use forge_types::{Action, ActionId, EventId, Queue, QueueId, SubActionStep, Variant};
 
     use super::*;
+    use crate::sub_action_runners::CoreLogicWaitRunner;
     use crate::{EventBus, EventSubscription, NullEventLogRepo, spawn_action_engine};
 
     async fn make_dp() -> Arc<dyn DataProvider> {
@@ -1129,6 +1283,332 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(outcome, MembershipOutcome::NotFound);
+        sched.shutdown();
+    }
+
+    // ── clear ────────────────────────────────────────────────────────────────
+
+    /// An action whose only step is a `core.logic.wait` of `ms` milliseconds.
+    /// Used to hold a blocking queue's single execution slot so that later
+    /// dispatches observably pile up as pending (not-yet-started) work.
+    fn wait_action(id: ActionId, queue_id: QueueId, ms: i64) -> Action {
+        let mut config = std::collections::BTreeMap::new();
+        config.insert("ms".to_owned(), Variant::Int(ms));
+        Action {
+            id,
+            name: "wait".to_string(),
+            group: None,
+            queue_id,
+            enabled: true,
+            concurrent: false,
+            bypass_pause: false,
+            execution_mode: forge_types::ExecutionMode::Sequential,
+            description: None,
+            sub_actions: vec![SubActionStep {
+                kind_id: "core.logic.wait".to_owned(),
+                config,
+                enabled: true,
+                label: None,
+            }],
+        }
+    }
+
+    fn waiting_registry() -> Arc<SubActionRegistry> {
+        let mut reg = SubActionRegistry::new();
+        reg.register(Box::new(CoreLogicWaitRunner)).unwrap();
+        Arc::new(reg)
+    }
+
+    fn req(queue_id: QueueId, action_id: ActionId) -> SchedulerRequest {
+        SchedulerRequest {
+            queue_id,
+            action_id,
+            trigger_event_id: EventId::new(),
+            initial_args: ArgStack::new(),
+            bypass_pause: false,
+        }
+    }
+
+    fn action_id_of(ev: &Event) -> Option<String> {
+        ev.payload
+            .get("action_id")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned)
+    }
+
+    /// Bounded poll for the `action.start` of a specific action — i.e. proof
+    /// that the action has acquired its slot and is in-flight.
+    async fn await_action_start(
+        sub: &mut EventSubscription,
+        action_id: ActionId,
+        attempts: usize,
+    ) -> bool {
+        let target = action_id.to_string();
+        for _ in 0..attempts {
+            match tokio::time::timeout(Duration::from_millis(200), sub.recv()).await {
+                Ok(Ok(ev))
+                    if ev.kind == "action.start"
+                        && action_id_of(&ev).as_deref() == Some(target.as_str()) =>
+                {
+                    return true;
+                }
+                Ok(Ok(_)) => {}
+                _ => {}
+            }
+        }
+        false
+    }
+
+    /// Drain every `action.done` published within `window`, returning the set of
+    /// completed action ids. A deadline-bounded drain (not a fixed sleep): it
+    /// returns as soon as the bus goes quiet for the remaining budget, and the
+    /// window is sized to exceed the in-flight action's own wait so a surviving
+    /// execution WOULD be observed if the clear failed to discard/abort it.
+    async fn drain_dones(
+        sub: &mut EventSubscription,
+        window: Duration,
+    ) -> std::collections::HashSet<String> {
+        let deadline = tokio::time::Instant::now() + window;
+        let mut seen = std::collections::HashSet::new();
+        loop {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            match tokio::time::timeout(remaining, sub.recv()).await {
+                Ok(Ok(ev)) if ev.kind == "action.done" => {
+                    if let Some(a) = action_id_of(&ev) {
+                        seen.insert(a);
+                    }
+                }
+                Ok(Ok(_)) => {}
+                _ => break,
+            }
+        }
+        seen
+    }
+
+    async fn await_queue_event(
+        sub: &mut EventSubscription,
+        kind: &str,
+        queue_id: QueueId,
+        attempts: usize,
+    ) -> bool {
+        let target = queue_id.to_string();
+        for _ in 0..attempts {
+            match tokio::time::timeout(Duration::from_millis(200), sub.recv()).await {
+                Ok(Ok(ev))
+                    if ev.kind == kind
+                        && ev.payload.get("queue_id").and_then(|v| v.as_str())
+                            == Some(target.as_str()) =>
+                {
+                    return true;
+                }
+                Ok(Ok(_)) => {}
+                _ => {}
+            }
+        }
+        false
+    }
+
+    #[tokio::test]
+    async fn clear_discards_pending_and_rebuilt_queue_runs_new_work() {
+        // A holds the blocking queue's single slot (150 ms wait); B and C queue
+        // up behind it as pending work. A `clear(keep_current = true)` must drop
+        // B and C while letting A finish, and the rebuilt slot must still run a
+        // fresh dispatch D. Window (800 ms) exceeds A's wait, so had B/C survived
+        // they would have run after A and shown up in the done set.
+        let dp = make_dp().await;
+        let q_id = QueueId::new();
+        let (a, b, c, d) = (
+            ActionId::new(),
+            ActionId::new(),
+            ActionId::new(),
+            ActionId::new(),
+        );
+        let queue = blocking_q(q_id);
+        dp.queue_repo().save(&queue).await.unwrap();
+        dp.action_repo()
+            .save(&wait_action(a, q_id, 150))
+            .await
+            .unwrap();
+        for id in [b, c, d] {
+            dp.action_repo()
+                .save(&wait_action(id, q_id, 0))
+                .await
+                .unwrap();
+        }
+
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            dp.action_repo(),
+            dp.history_repo(),
+            waiting_registry(),
+        );
+        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
+        let mut sub = bus.subscribe();
+
+        sched.dispatch(req(q_id, a)).await.unwrap();
+        assert!(
+            await_action_start(&mut sub, a, 30).await,
+            "A must occupy the blocking slot before clearing"
+        );
+        sched.dispatch(req(q_id, b)).await.unwrap();
+        sched.dispatch(req(q_id, c)).await.unwrap();
+
+        sched.clear(q_id, true).await.unwrap();
+        sched.dispatch(req(q_id, d)).await.unwrap();
+
+        let dones = drain_dones(&mut sub, Duration::from_millis(800)).await;
+        assert!(
+            dones.contains(&a.to_string()),
+            "keep_current=true must let the in-flight A finish"
+        );
+        assert!(
+            dones.contains(&d.to_string()),
+            "rebuilt queue must run work dispatched after clear"
+        );
+        assert!(
+            !dones.contains(&b.to_string()),
+            "pending B must be discarded by clear"
+        );
+        assert!(
+            !dones.contains(&c.to_string()),
+            "pending C must be discarded by clear"
+        );
+        sched.shutdown();
+    }
+
+    #[tokio::test]
+    async fn clear_with_keep_current_false_aborts_in_flight_action() {
+        // REGRESSION (currently FAILING — reproduces a bug, do not weaken):
+        // `clear(keep_current = false)` calls `InflightTracker::abort_all`, but the
+        // tracker only owns the dispatch-SEND future (`ActionEngineHandle::dispatch`
+        // returns once the request is enqueued on the engine's mpsc). The real
+        // execution runs detached in `ActionEngine::run`, so aborting the tracked
+        // task is a no-op: an action that has already started runs to completion.
+        //
+        // A is mid-flight (150 ms wait) when clear(keep_current = false) fires;
+        // its execution must be aborted (no action.done), while the rebuilt slot
+        // still runs a fresh dispatch D. The 800 ms window exceeds A's wait, so a
+        // non-aborted A would have completed and been observed.
+        let dp = make_dp().await;
+        let q_id = QueueId::new();
+        let (a, d) = (ActionId::new(), ActionId::new());
+        let queue = blocking_q(q_id);
+        dp.queue_repo().save(&queue).await.unwrap();
+        dp.action_repo()
+            .save(&wait_action(a, q_id, 150))
+            .await
+            .unwrap();
+        dp.action_repo()
+            .save(&wait_action(d, q_id, 0))
+            .await
+            .unwrap();
+
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            dp.action_repo(),
+            dp.history_repo(),
+            waiting_registry(),
+        );
+        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
+        let mut sub = bus.subscribe();
+
+        sched.dispatch(req(q_id, a)).await.unwrap();
+        assert!(
+            await_action_start(&mut sub, a, 30).await,
+            "A must be in-flight before clearing"
+        );
+
+        sched.clear(q_id, false).await.unwrap();
+        sched.dispatch(req(q_id, d)).await.unwrap();
+
+        let dones = drain_dones(&mut sub, Duration::from_millis(800)).await;
+        assert!(
+            dones.contains(&d.to_string()),
+            "queue must keep working after a keep_current=false clear"
+        );
+        assert!(
+            !dones.contains(&a.to_string()),
+            "keep_current=false must abort the in-flight action"
+        );
+        sched.shutdown();
+    }
+
+    #[tokio::test]
+    async fn clear_preserves_paused_state_across_slot_rebuild() {
+        // Load-bearing carry-forward: clearing rebuilds the queue's slot, and the
+        // paused flag must survive that rebuild (mirrors the blocking-flip
+        // reconfigure pause-preservation). Asserted directly via paused_queues so
+        // the test pins the state, not a downstream side effect.
+        let dp = make_dp().await;
+        let q_id = QueueId::new();
+        let queue = nonblocking(q_id);
+        dp.queue_repo().save(&queue).await.unwrap();
+
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::new(SubActionRegistry::new()),
+        );
+        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
+
+        sched.pause(q_id).await.unwrap();
+        sched.clear(q_id, true).await.unwrap();
+
+        let paused = sched.paused_queues().await.unwrap();
+        assert!(
+            paused.contains(&q_id),
+            "clear must preserve the paused state across the slot rebuild"
+        );
+        sched.shutdown();
+    }
+
+    #[tokio::test]
+    async fn clear_unknown_queue_returns_queue_not_found() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let dp = make_dp().await;
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::new(SubActionRegistry::new()),
+        );
+        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![]);
+
+        let err = sched.clear(QueueId::new(), true).await.unwrap_err();
+        assert!(matches!(err, SchedulerError::QueueNotFound(_)));
+        sched.shutdown();
+    }
+
+    #[tokio::test]
+    async fn clear_emits_queue_cleared_event_for_the_queue() {
+        let dp = make_dp().await;
+        let q_id = QueueId::new();
+        let queue = nonblocking(q_id);
+        dp.queue_repo().save(&queue).await.unwrap();
+
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::new(SubActionRegistry::new()),
+        );
+        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
+        let mut sub = bus.subscribe();
+
+        sched.clear(q_id, true).await.unwrap();
+
+        assert!(
+            await_queue_event(&mut sub, "queue.cleared", q_id, 10).await,
+            "clear must emit queue.cleared carrying the cleared queue_id"
+        );
         sched.shutdown();
     }
 }

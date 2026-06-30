@@ -35,7 +35,7 @@ members = [
 default-members = ["crates/forge-app"]
 
 [workspace.package]
-version = "0.1.0-beta.14"
+version = "0.1.0-beta.15"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/IceSqueez/forge"
@@ -75,7 +75,7 @@ aes-gcm = { version = "0.10" }
 directories = { version = "6.0" }
 rand = { version = "0.10" }
 tempfile = { version = "3.27" }
-mockall = { version = "0.14" }
+mockall = { version = "0.15" }
 wiremock = { version = "0.6" }
 
 sha2 = { version = "0.11" }
@@ -146,6 +146,10 @@ rfd = { version = "0.17", default-features = false, features = [
   "wayland",
 ] }
 open = { version = "5.3" }
+arboard = { version = "3.6", default-features = false, features = [
+  "wayland-data-control",
+] }
+notify-rust = { version = "4.11" }
 
 cpal = { version = "0.18" }
 rubato = { version = "3.0" }

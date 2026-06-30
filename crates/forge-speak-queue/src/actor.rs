@@ -1,11 +1,12 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use forge_audio::PcmBuffer;
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_tts_core::{EngineId, SynthesisRequest, TtsVoice, VoiceId};
 use forge_tts_pipeline::PipelineResult;
-use forge_voice::ResolveResult;
+use forge_voice::{AliasState, ResolveResult, VoiceAliasResolver};
 
 use crate::{
     PipelineConfigHandle, Priority, QueueConfig, QueueDeps, RequestId, SpeakCommand, SpeakEvent,
@@ -58,7 +59,7 @@ async fn run_synthesis(req: SpeakRequest, deps: SynthTaskDeps) -> SynthTaskResul
 
     let resolve_result = {
         let guard = deps.resolver.read().unwrap_or_else(|e| e.into_inner());
-        guard.resolve(&req.viewer_id, &req.viewer_name, &deps.voice_catalog)
+        resolve_with_overrides(&guard, &req, &deps.voice_catalog)
     };
 
     let (voice_id, engine_id, pitch, rate) = match resolve_result {
@@ -138,6 +139,43 @@ async fn run_synthesis(req: SpeakRequest, deps: SynthTaskDeps) -> SynthTaskResul
     }
 }
 
+fn resolve_with_overrides(
+    resolver: &VoiceAliasResolver,
+    req: &SpeakRequest,
+    catalog: &[TtsVoice],
+) -> ResolveResult {
+    if let Some(voice_id) = &req.voice_override {
+        let engine_id = req.engine_override.clone().or_else(|| {
+            catalog
+                .iter()
+                .find(|v| &v.id == voice_id)
+                .map(|v| v.engine_id.clone())
+        });
+        return match engine_id {
+            Some(engine_id) => ResolveResult::Speak {
+                voice_id: voice_id.clone(),
+                engine_id,
+                pitch: resolver.defaults.pitch_semitones,
+                rate: resolver.defaults.rate_multiplier,
+            },
+            None => ResolveResult::Skip {
+                reason: "voice override not found in catalog",
+            },
+        };
+    }
+
+    if let Some(engine_id) = &req.engine_override {
+        let scoped: Vec<TtsVoice> = catalog
+            .iter()
+            .filter(|v| &v.engine_id == engine_id)
+            .cloned()
+            .collect();
+        return resolver.resolve(&req.viewer_id, &req.viewer_name, &scoped);
+    }
+
+    resolver.resolve(&req.viewer_id, &req.viewer_name, catalog)
+}
+
 fn apply_master_volume(mut buf: PcmBuffer, volume: f32) -> PcmBuffer {
     if (volume - 1.0_f32).abs() < f32::EPSILON {
         return buf;
@@ -159,6 +197,8 @@ pub(crate) async fn run_actor(
     deps: QueueDeps,
     mut cmd_rx: tokio::sync::mpsc::Receiver<SpeakCommand>,
     event_tx: tokio::sync::broadcast::Sender<SpeakEvent>,
+    depth: Arc<AtomicUsize>,
+    voices: Arc<std::sync::RwLock<Arc<Vec<TtsVoice>>>>,
 ) {
     let mut high_queue: VecDeque<SpeakRequest> = VecDeque::new();
     let mut normal_queue: VecDeque<SpeakRequest> = VecDeque::new();
@@ -171,6 +211,7 @@ pub(crate) async fn run_actor(
     let (synth_tx, mut synth_rx) = tokio::sync::mpsc::channel::<SynthTaskResult>(8);
 
     let voice_catalog = Arc::new(build_voice_catalog(&deps.registry).await);
+    *voices.write().unwrap_or_else(|e| e.into_inner()) = voice_catalog.clone();
     let task_deps = SynthTaskDeps {
         resolver: deps.resolver.clone(),
         pipeline: deps.pipeline.clone(),
@@ -179,6 +220,8 @@ pub(crate) async fn run_actor(
     };
 
     loop {
+        depth.store(high_queue.len() + normal_queue.len(), Ordering::Relaxed);
+
         if active_request_id.is_none()
             && !paused
             && !voicegate_active
@@ -426,6 +469,41 @@ fn handle_command(
                 serde_json::json!({}),
             );
             let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len: 0 });
+        }
+        SpeakCommand::ClearPending => {
+            high_queue.clear();
+            normal_queue.clear();
+            per_user_counts.clear();
+            publish(
+                deps.event_bus.as_ref(),
+                "speak.cleared",
+                serde_json::json!({ "keep_current": true }),
+            );
+            let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len: 0 });
+        }
+        SpeakCommand::SetAlias(alias) => {
+            let mut guard = deps.resolver.write().unwrap_or_else(|e| e.into_inner());
+            if let Some(existing) = guard
+                .aliases
+                .iter_mut()
+                .find(|a| a.viewer_id == alias.viewer_id)
+            {
+                *existing = alias;
+            } else {
+                guard.aliases.push(alias);
+            }
+        }
+        SpeakCommand::SwitchAlias {
+            viewer_id,
+            engine_id,
+            voice_id,
+        } => {
+            let mut guard = deps.resolver.write().unwrap_or_else(|e| e.into_inner());
+            if let Some(existing) = guard.aliases.iter_mut().find(|a| a.viewer_id == viewer_id) {
+                existing.engine_id = engine_id;
+                existing.voice_id = voice_id;
+                existing.state = AliasState::Active;
+            }
         }
         SpeakCommand::Pause => {
             *paused = true;

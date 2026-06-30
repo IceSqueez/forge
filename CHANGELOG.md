@@ -1,7 +1,116 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-beta.15] - 2026-06-26
+### ⚙️ Miscellaneous Tasks
+- *(deps)* Bump actions/checkout from 6 to 7 (#33)
+- *(deps)* Update to latest compatible and fix time deprecation
+
+### 🐛 Bug Fixes
+- *(ui)* Resolve trigger labels and picker groups from registry
+- *(ui)* Localize picker sub-groups and complete platform filter chips
+- *(storage)* Rename kind-ids in place so FK-linked defaults survive
+- *(ui)* Surface database-open failure on an error screen
+- *(tts)* Stop-all clears the speak queue, not just the UI list
+- *(scheduler)* Preserve pause across a blocking-flip reconfigure
+- *(deps)* Bump quinn-proto and memmap2 to clear security advisories
+
+### 🚀 Features
+- *(obs)* Add scene-family triggers and explicit event subscription
+- *(obs)* Add streaming lifecycle triggers
+- *(obs)* Add recording lifecycle triggers
+- *(obs)* Add studio-mode and transition triggers
+- *(obs)* Add audio source triggers
+- *(obs)* Add input lifecycle and scene-item visibility triggers
+- *(obs)* Add scene-item lock-state trigger
+- *(obs)* Add source-filter triggers
+- *(obs)* Add scene-lifecycle and profile/collection-list triggers
+- *(obs)* Add virtual-camera triggers
+- *(obs)* Add connection lifecycle triggers
+- *(obs)* Add preview-scene, transition, volume and input-settings sub-actions
+- *(obs)* Add recording-pause, resume, toggle and stream-caption sub-actions
+- *(obs)* Add replay-buffer and studio-mode sub-actions
+- *(obs)* Add scene/source/status/settings lookup sub-actions
+- *(vtube)* Add model, hotkey, and expression triggers
+- *(vtube)* Add face-tracking and item triggers
+- *(vtube)* Add move-item sub-action runner
+- *(vtube)* Add state-lookup sub-action runners
+- *(midi)* Add pitch-bend and program-change triggers
+- *(midi)* Add device-connected and device-disconnected triggers
+- *(discord)* Add send-file and delete-message webhook runners
+- *(storage)* Migrate persisted midi/hotkey/discord kind-ids
+- *(ui)* Add New Queue creation modal
+- *(ui)* Wire voice-alias assign, edit, delete, and play preview
+- *(ui)* Wire TTS dashboard transport and filter speak preview
+- *(ui)* Wire overlay-folder Browse to a native picker
+- *(ui)* Wire live-chat Shoutout and Whisper to Twitch sub-actions
+- *(ui)* Reveal the overlay folder from the server screen
+- *(ui)* Add a Configure modal to rename and re-flag a queue
+- *(integrations)* Add BuiltinControl lifecycle trait
+- *(obs)* Implement BuiltinControl reconnect and disconnect
+- *(vtube)* Implement BuiltinControl reconnect and disconnect
+- *(twitch)* Implement BuiltinControl for the Twitch integration
+- *(kick)* Implement BuiltinControl with genuine token refresh
+- *(ui)* Wire integration header actions to BuiltinControl
+- *(storage)* Persist TTS filter rules and pipeline settings
+- *(tts)* Add hot-reloadable pipeline config and filter mapping
+- *(tts)* Wire filters screen to storage and live pipeline
+- *(runtime)* Add live queue register, deregister, reconfigure
+- *(queues)* Register and reconfigure queues with the live scheduler
+- *(kick)* Broadcast chat connection state via watch channel
+- *(kick)* Expose lifecycle controls in the integration detail
+- *(kick)* Expose the working token refresh as a header action
+- *(twitch)* Refresh OAuth tokens proactively and on 401
+- *(twitch)* Wire the token refresher into the Helix transport
+- *(twitch)* Make the Helix token source proactively refresh
+
+### 🚜 Refactor
+- *(midi)* Rename input trigger kind-ids to catalog scheme
+- *(discord)* Rename webhook sub-action kind-ids to catalog scheme
+- *(hotkey)* Rename pressed-trigger kind-id to catalog scheme
+
+### 🧪 Testing
+- *(obs)* Cover scene-family trigger matching and arg stacks
+- *(obs)* Cover streaming lifecycle trigger discrimination
+- *(obs)* Cover recording lifecycle trigger discrimination
+- *(obs)* Cover studio-mode and transition trigger discrimination
+- *(obs)* Cover audio source trigger family
+- *(obs)* Cover source input lifecycle and scene-item visibility triggers
+- *(obs)* Cover scene-item lock-state trigger
+- *(obs)* Cover source-filter trigger family
+- *(obs)* Cover scene-lifecycle and profile/collection-list trigger discrimination
+- *(obs)* Cover virtual-cam and connection-lifecycle triggers
+- *(obs)* Consolidate runner mock and cover new sub-actions
+- *(obs)* Cover record pause/resume/toggle and stream caption runners
+- *(obs)* Cover no-config replay and studio sub-action runners
+- *(obs)* Cover lookup sub-action arg-stack extraction
+- *(vtube)* Cover model/hotkey/expression trigger match and args
+- *(vtube)* Cover tracking and item triggers + dispatch
+- *(vtube)* Consolidate runner mock sinks into shared test double
+- *(vtube)* Cover item-move noop, dispatch, fade, interpolation
+- *(vtube)* Cover lookup sub-action arg-stack extraction
+- *(app)* Cover all vtube sub-action runners in boot wiring
+- *(midi)* Cover pitch-bend and program-change decode + triggers
+- *(midi)* Cover device hotplug trigger matching and arg stack
+- *(discord)* Cover send-file and delete-message webhook runners
+- *(storage)* Cover discord blob remap and midi/hotkey id migration
+- *(ui)* Cover trigger-picker grouping and sub-group labels
+- *(storage)* Cover FK-linked default survives kind-id rename
+- *(ui)* Cover New Queue modal state transitions and empty-name guard
+- *(tts)* Cover voice-alias form, delete-gate, and preview state machine
+- *(integrations)* Cover BuiltinControl token-safety and missing-creds guards
+- *(storage)* Cover TTS filter repo round-trips and migration
+- *(tts)* Cover filter mapping and hot-reload handle
+- *(tts)* Cover filters screen update logic
+- *(scheduler)* Cover live-membership register, deregister, reconfigure
+- *(scheduler)* Regress blocking-flip preserves pause
+- *(queues)* Cover live-membership badge transitions and pruning
+- *(twitch)* Cover token refresh round-trip, back-compat, rotation
+
 ## [0.1.0-beta.14] - 2026-06-18
+### ⚙️ Miscellaneous Tasks
+- Release
+
 ### 🐛 Bug Fixes
 - *(ui)* Group kick triggers under a kick picker section
 - *(ui)* Color youtube and kick sub-action category pills
@@ -12,6 +121,7 @@ All notable changes to this project will be documented in this file.
 
 ### 📚 Documentation
 - *(readme)* Describe kick official write tier and triggers
+- *(release)* Release v0.1.0-beta.14
 
 ### 🚀 Features
 - *(storage)* Migrate kick trigger kind_ids to canonical scheme

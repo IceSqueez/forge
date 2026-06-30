@@ -22,13 +22,13 @@ use forge_platform_twitch::{
 };
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
-    ActionEngineHandle, EventBus, QueueScheduler, QueueSchedulerHandle, ScriptRegistry,
-    TriggerEvaluatorHandle, register_audio_sub_actions, register_core_sub_actions,
+    ActionEngineHandle, EventBus, QueueScheduler, QueueSchedulerHandle, SchedulerCell,
+    ScriptRegistry, TriggerEvaluatorHandle, register_audio_sub_actions, register_core_sub_actions,
     register_core_triggers, spawn_action_engine, spawn_trigger_evaluator,
 };
 use forge_soundboard::{BusAudioEventSink, CpalSinkFactory, SoundboardPlayer};
 use forge_speak_queue::{QueueConfig, QueueDeps, SpeakQueueHandle};
-use forge_storage::{CredentialsRepo, DataProvider, GlobalsRepo, SettingsRepo};
+use forge_storage::{CredentialsRepo, DataProvider, GlobalsRepo, SettingsRepo, UserGlobalsRepo};
 use forge_storage_sqlite::SqliteBackend;
 use forge_tts_core::{EngineId, TtsEngineFactory, TtsRegistry};
 use forge_tts_espeak::EspeakEngineFactory;
@@ -417,12 +417,18 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
 
     let mut sub_action_reg = SubActionRegistry::new();
     let publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
+    let scheduler_cell = SchedulerCell::new();
     if let Err(e) = register_core_sub_actions(
         &mut sub_action_reg,
         Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
+        Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
         Arc::clone(&registry),
         publisher,
         Arc::clone(&dp) as Arc<dyn SettingsRepo>,
+        scheduler_cell.clone(),
+        dp.trigger_instance_repo(),
+        dp.action_repo(),
+        forge_runtime::Config::default(),
     ) {
         tracing::warn!("core sub-action runner registration failed: {e}");
     }
@@ -871,6 +877,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         Arc::clone(&sub_action_reg),
     );
     let scheduler = QueueScheduler::spawn(engine.clone(), Arc::clone(&bus), queues);
+    scheduler_cell.set(scheduler.clone());
     let trigger_evaluator = spawn_trigger_evaluator(
         Arc::clone(&bus),
         Arc::clone(&trigger_reg),

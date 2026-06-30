@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Cache advisory-db
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.cargo/advisory-db
           key: advisory-db-${{ github.run_id }}

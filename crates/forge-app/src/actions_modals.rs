@@ -288,6 +288,7 @@ fn sub_category_label(cat: SubActionCategory) -> String {
         SubActionCategory::Audio => tr!("sub_cat_audio"),
         SubActionCategory::Tts => tr!("sub_cat_tts"),
         SubActionCategory::Http => tr!("sub_cat_http"),
+        SubActionCategory::Server => "Server".to_owned(),
         SubActionCategory::Util => tr!("sub_cat_util"),
     }
 }

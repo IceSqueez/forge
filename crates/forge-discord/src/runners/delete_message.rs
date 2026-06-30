@@ -242,12 +242,7 @@ mod tests {
     }
 
     fn ctx<'a>(stack: &'a ArgStack, publisher: &'a NoopPublisher) -> RunContext<'a> {
-        RunContext {
-            arg_stack: stack,
-            index: 0,
-            parent_event_id: EventId::new(),
-            publisher,
-        }
+        RunContext::leaf(stack, 0, EventId::new(), publisher)
     }
 
     #[tokio::test]

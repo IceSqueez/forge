@@ -1,6 +1,6 @@
-use std::path::{Component, PathBuf};
 use std::sync::Arc;
 
+use super::file_sandbox::resolve_sandboxed;
 use async_trait::async_trait;
 use forge_events::{Event, EventSource};
 use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
@@ -160,60 +160,5 @@ impl SubActionRunner for CoreFileReadRunner {
             },
             None,
         )
-    }
-}
-
-fn resolve_sandboxed(rel: &str) -> Result<PathBuf, String> {
-    if rel.is_empty() {
-        return Err("path is empty".to_owned());
-    }
-    if rel.starts_with('/') || rel.starts_with('\\') {
-        return Err("absolute paths are forbidden".to_owned());
-    }
-    let candidate = PathBuf::from(rel);
-    for component in candidate.components() {
-        match component {
-            Component::ParentDir => return Err("parent dir traversal forbidden".to_owned()),
-            Component::Prefix(_) | Component::RootDir => {
-                return Err("rooted paths are forbidden".to_owned());
-            }
-            _ => {}
-        }
-    }
-    let root = forge_platform_core::paths::data_dir().join("assets");
-    Ok(root.join(candidate))
-}
-
-#[cfg(test)]
-#[allow(clippy::unwrap_used)]
-mod tests {
-    use super::resolve_sandboxed;
-
-    #[test]
-    fn rejects_absolute_path() {
-        assert!(resolve_sandboxed("/etc/passwd").is_err());
-    }
-
-    #[test]
-    fn rejects_parent_dir_traversal() {
-        assert!(resolve_sandboxed("../etc/passwd").is_err());
-        assert!(resolve_sandboxed("foo/../../bar").is_err());
-    }
-
-    #[test]
-    fn accepts_simple_relative_path() {
-        let p = resolve_sandboxed("greeting.txt").unwrap();
-        assert!(p.ends_with("assets/greeting.txt"));
-    }
-
-    #[test]
-    fn accepts_nested_relative_path() {
-        let p = resolve_sandboxed("subdir/file.txt").unwrap();
-        assert!(p.ends_with("assets/subdir/file.txt"));
-    }
-
-    #[test]
-    fn rejects_empty_path() {
-        assert!(resolve_sandboxed("").is_err());
     }
 }

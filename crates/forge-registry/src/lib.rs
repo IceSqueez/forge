@@ -1,4 +1,5 @@
 pub mod category;
+pub mod chain;
 pub mod descriptor;
 pub mod error;
 pub mod evaluator;
@@ -10,6 +11,10 @@ pub mod run_context;
 pub mod runner;
 
 pub use category::{SubActionCategory, TriggerCategory};
+pub use chain::{
+    CancelSignal, ChainExecutor, ChainSignal, ChildChainOutcome, ControlCell, ControlSignal,
+    StopMark,
+};
 pub use descriptor::TriggerKindDescriptor;
 pub use error::RegistryError;
 pub use evaluator::EventFilter;

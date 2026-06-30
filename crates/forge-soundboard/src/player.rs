@@ -1,7 +1,10 @@
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_audio::{AudioEvent, AudioEventSink, PcmBuffer};
+use forge_audio::{AudioEvent, AudioEventSink, PcmBuffer, PlaybackHandle};
 use forge_runtime::{SoundPlayer, SoundPlayerError};
 use forge_storage::SoundboardClipsRepo;
 use forge_types::{ClipId, OutputDevice};
@@ -9,10 +12,28 @@ use forge_types::{ClipId, OutputDevice};
 use crate::error::SoundboardError;
 use crate::sink_factory::AudioSinkFactory;
 
+/// Upper bound on the linear master gain. +6 dB (the catalog ceiling) is ≈2.0;
+/// 4.0 leaves headroom for an interpolated/over-range request without letting a
+/// runaway value blow the sample scaling.
+const MAX_MASTER_GAIN: f32 = 4.0;
+
+/// Silence drained by the device after a clip's samples are exhausted; the
+/// registry entry outlives the clip by this much so a late `stop` still lands.
+const PLAYBACK_TAIL_MS: u64 = 200;
+
+type ActiveRegistry = Arc<Mutex<HashMap<ClipId, Vec<(u64, PlaybackHandle)>>>>;
+
 pub struct SoundboardPlayer {
     sink_factory: Arc<dyn AudioSinkFactory>,
     event_sink: Arc<dyn AudioEventSink>,
     clips_repo: Arc<dyn SoundboardClipsRepo>,
+    /// Live stop tokens keyed by clip; the `u64` tags one concrete play so
+    /// concurrent plays of the same clip register and clean up independently.
+    active: ActiveRegistry,
+    next_play_id: AtomicU64,
+    /// Linear master gain as `f32` bits; there is no shared mixer (per T2), so it
+    /// is folded into each clip's samples at play time rather than ramped.
+    master_gain_bits: AtomicU32,
 }
 
 impl SoundboardPlayer {
@@ -25,6 +46,37 @@ impl SoundboardPlayer {
             sink_factory,
             event_sink,
             clips_repo,
+            active: Arc::new(Mutex::new(HashMap::new())),
+            next_play_id: AtomicU64::new(0),
+            master_gain_bits: AtomicU32::new(1.0_f32.to_bits()),
+        }
+    }
+
+    pub fn set_master_volume(&self, gain: f32) {
+        let clamped = gain.clamp(0.0, MAX_MASTER_GAIN);
+        self.master_gain_bits
+            .store(clamped.to_bits(), Ordering::Relaxed);
+    }
+
+    pub fn stop(&self, clip_id: ClipId) {
+        let handles = {
+            let mut guard = self.active.lock().unwrap_or_else(PoisonError::into_inner);
+            guard.remove(&clip_id).unwrap_or_default()
+        };
+        for (_id, handle) in &handles {
+            handle.stop();
+        }
+    }
+
+    pub fn stop_all(&self) {
+        let drained = {
+            let mut guard = self.active.lock().unwrap_or_else(PoisonError::into_inner);
+            std::mem::take(&mut *guard)
+        };
+        for handles in drained.values() {
+            for (_id, handle) in handles {
+                handle.stop();
+            }
         }
     }
 
@@ -70,15 +122,20 @@ impl SoundboardPlayer {
             }
         };
 
-        let volume = clip.volume;
+        let gain = clip.volume * f32::from_bits(self.master_gain_bits.load(Ordering::Relaxed));
         let scaled: Vec<i16> = buffer
             .samples
             .iter()
             .map(|&s| {
-                let v = s as f32 * volume;
+                let v = s as f32 * gain;
                 v.clamp(i16::MIN as f32, i16::MAX as f32) as i16
             })
             .collect();
+
+        let sample_rate = buffer.sample_rate.max(1) as u64;
+        let channels = buffer.channels.max(1) as u64;
+        let frames = (scaled.len() as u64) / channels;
+        let duration_ms = frames.saturating_mul(1000) / sample_rate;
         let buffer = PcmBuffer::new(scaled, buffer.sample_rate, buffer.channels);
 
         self.event_sink.emit(AudioEvent::PlaybackStarted {
@@ -86,8 +143,9 @@ impl SoundboardPlayer {
             device: device_label,
         });
 
-        match sink.play(buffer).await {
-            Ok(()) => {
+        match sink.play_stoppable(buffer).await {
+            Ok(handle) => {
+                self.register(clip_id, handle, duration_ms);
                 self.event_sink.emit(AudioEvent::PlaybackFinished {
                     clip_id: Some(clip_id),
                 });
@@ -103,6 +161,30 @@ impl SoundboardPlayer {
             }
         }
     }
+
+    /// Stores the stop token and schedules its removal once the clip's own
+    /// duration (plus tail) has elapsed, so the registry self-drains even when no
+    /// explicit stop arrives. An earlier `stop`/`stop_all` removes it first; the
+    /// scheduled cleanup then finds nothing and is inert.
+    fn register(&self, clip_id: ClipId, handle: PlaybackHandle, duration_ms: u64) {
+        let play_id = self.next_play_id.fetch_add(1, Ordering::Relaxed);
+        {
+            let mut guard = self.active.lock().unwrap_or_else(PoisonError::into_inner);
+            guard.entry(clip_id).or_default().push((play_id, handle));
+        }
+
+        let active = Arc::clone(&self.active);
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(duration_ms + PLAYBACK_TAIL_MS)).await;
+            let mut guard = active.lock().unwrap_or_else(PoisonError::into_inner);
+            if let Some(plays) = guard.get_mut(&clip_id) {
+                plays.retain(|(id, _)| *id != play_id);
+                if plays.is_empty() {
+                    guard.remove(&clip_id);
+                }
+            }
+        });
+    }
 }
 
 #[async_trait]
@@ -115,6 +197,21 @@ impl SoundPlayer for SoundboardPlayer {
         SoundboardPlayer::play(self, clip_id, output_device_override)
             .await
             .map_err(|e| SoundPlayerError::Play(e.to_string()))
+    }
+
+    async fn stop(&self, clip_id: ClipId) -> Result<(), SoundPlayerError> {
+        SoundboardPlayer::stop(self, clip_id);
+        Ok(())
+    }
+
+    async fn stop_all(&self) -> Result<(), SoundPlayerError> {
+        SoundboardPlayer::stop_all(self);
+        Ok(())
+    }
+
+    async fn set_master_volume(&self, gain: f32) -> Result<(), SoundPlayerError> {
+        SoundboardPlayer::set_master_volume(self, gain);
+        Ok(())
     }
 }
 
@@ -292,6 +389,67 @@ mod tests {
         }
     }
 
+    /// Writes the exact `samples` as a mono 16-bit PCM wav. 16-bit PCM is
+    /// lossless, so `forge_audio::decode_file` hands them back verbatim — letting
+    /// the scaling assertions compare against known inputs rather than magnitudes.
+    fn wav_with_samples(samples: &[i16]) -> tempfile::NamedTempFile {
+        let wav_bytes = write_wav(22_050, 1, samples);
+        let tmp = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
+        std::fs::write(tmp.path(), &wav_bytes).unwrap();
+        tmp
+    }
+
+    /// Plays a clip built from `samples` with the given per-clip volume and an
+    /// optional master gain, returning the samples the sink actually received.
+    /// The capture happens via `CountingSink::play` (the `play_stoppable` default
+    /// forwards to it), so it observes the post-scaling buffer.
+    async fn capture_played_samples(
+        samples: &[i16],
+        clip_volume: f32,
+        master_gain: Option<f32>,
+    ) -> Vec<i16> {
+        let clip_id = ClipId::new();
+        let tmp = wav_with_samples(samples);
+        let mut clip = make_stored_clip(clip_id, tmp.path().to_path_buf());
+        clip.volume = clip_volume;
+
+        let (factory, _count, last_buf) = CountingFactory::new();
+        let (event_sink, _events) = RecordingEventSink::new();
+        let clips_repo = MockClipsRepo { clip: Some(clip) };
+        let player = SoundboardPlayer::new(
+            Arc::new(factory),
+            Arc::new(event_sink),
+            Arc::new(clips_repo),
+        );
+
+        if let Some(gain) = master_gain {
+            player.set_master_volume(gain);
+        }
+        player.play(clip_id, None).await.unwrap();
+
+        let buf = last_buf.lock().unwrap();
+        buf.as_ref().unwrap().samples.clone()
+    }
+
+    /// Asserts `actual[i] ≈ factor × baseline[i]` (within one quantization step,
+    /// clamped to i16 range). Comparing against a unity-gain baseline rather than
+    /// raw input absorbs `decode_file`'s lossy i16→f32→i16 round-trip while still
+    /// pinning the multiplicative scaling factor.
+    fn assert_proportional(baseline: &[i16], actual: &[i16], factor: f32) {
+        assert_eq!(
+            baseline.len(),
+            actual.len(),
+            "baseline and actual sample counts differ"
+        );
+        for (&b, &a) in baseline.iter().zip(actual) {
+            let expected = (b as f32 * factor).clamp(i16::MIN as f32, i16::MAX as f32);
+            assert!(
+                (a as f32 - expected).abs() <= 1.0,
+                "sample {a} is not ~{factor}× baseline {b} (expected {expected})"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn play_emits_started_and_finished_and_calls_sink() {
         let clip_id = ClipId::new();
@@ -328,32 +486,83 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn play_applies_volume_to_samples() {
-        let clip_id = ClipId::new();
-        let tmp = make_wav_tempfile(22_050, 1, 100);
-        let mut clip = make_stored_clip(clip_id, tmp.path().to_path_buf());
-        clip.volume = 0.5;
+    async fn play_applies_clip_volume_to_samples() {
+        let samples = vec![0, 200, -200, 12_000, -12_000];
+        let baseline = capture_played_samples(&samples, 1.0, None).await;
+        let out = capture_played_samples(&samples, 0.5, None).await;
+        assert_proportional(&baseline, &out, 0.5);
+    }
 
-        let (factory, _count, last_buf) = CountingFactory::new();
+    /// Master gain defaults to unity: a play before any `set_master_volume`
+    /// produces the SAME buffer as an explicit master of 1.0. Guards against a
+    /// non-1.0 default silently attenuating every clip. (Compares two plays so
+    /// the decode round-trip cancels — exact equality is valid here.)
+    #[tokio::test]
+    async fn master_volume_defaults_to_unity() {
+        let samples = vec![0, 100, -100, 12_000, -12_000];
+        let default_master = capture_played_samples(&samples, 1.0, None).await;
+        let explicit_unity = capture_played_samples(&samples, 1.0, Some(1.0)).await;
+        assert_eq!(default_master, explicit_unity);
+    }
+
+    /// Master gain scales the buffer by that linear factor relative to unity.
+    #[tokio::test]
+    async fn master_volume_scales_samples_by_linear_gain() {
+        let samples = vec![0, 200, -200, 12_000, -12_000];
+        let baseline = capture_played_samples(&samples, 1.0, None).await;
+        let out = capture_played_samples(&samples, 1.0, Some(0.5)).await;
+        assert_proportional(&baseline, &out, 0.5);
+    }
+
+    /// The application point is `clip.volume * master_gain` (multiplicative, not
+    /// additive, not either-factor-alone): clip 0.5 × master 0.5 = 0.25× the
+    /// unity baseline. Pins where master gain folds into the per-clip samples.
+    #[tokio::test]
+    async fn master_gain_multiplies_with_clip_volume() {
+        let samples = vec![0, 400, -400, 8_000, -8_000];
+        let baseline = capture_played_samples(&samples, 1.0, None).await;
+        let out = capture_played_samples(&samples, 0.5, Some(0.5)).await;
+        assert_proportional(&baseline, &out, 0.25);
+    }
+
+    /// Master gain is clamped to the [0, 4] ceiling: a request of 10.0 must apply
+    /// 4.0. Samples chosen so ×4 stays in range while ×10 would clamp to i16::MAX,
+    /// making the assertion distinguish the clamp ceiling from the raw request.
+    #[tokio::test]
+    async fn master_volume_clamps_gain_above_ceiling() {
+        let samples = vec![100, -100, 4_000, -4_000];
+        let baseline = capture_played_samples(&samples, 1.0, None).await;
+        let out = capture_played_samples(&samples, 1.0, Some(10.0)).await;
+        assert_proportional(&baseline, &out, 4.0);
+    }
+
+    /// A negative master gain clamps to 0.0 — silence, never sign inversion.
+    #[tokio::test]
+    async fn master_volume_clamps_negative_gain_to_silence() {
+        let samples = vec![12_000, -12_000, 5_000];
+        let out = capture_played_samples(&samples, 1.0, Some(-1.0)).await;
+        assert!(
+            out.iter().all(|&s| s == 0),
+            "negative master gain must produce silence, got {out:?}"
+        );
+    }
+
+    /// Stopping an unregistered clip and stop_all on an empty registry succeed
+    /// without effect (documented contract) and without panicking — guards the
+    /// `remove(..).unwrap_or_default()` / `PoisonError::into_inner` paths against
+    /// an accidental `.unwrap()`.
+    #[tokio::test]
+    async fn stop_on_idle_player_succeeds_without_effect() {
+        let (factory, _count, _buf) = CountingFactory::new();
         let (event_sink, _events) = RecordingEventSink::new();
-        let clips_repo = MockClipsRepo { clip: Some(clip) };
-
         let player = SoundboardPlayer::new(
             Arc::new(factory),
             Arc::new(event_sink),
-            Arc::new(clips_repo),
+            Arc::new(MockClipsRepo { clip: None }),
         );
 
-        player.play(clip_id, None).await.unwrap();
-
-        let buf = last_buf.lock().unwrap();
-        let buf = buf.as_ref().unwrap();
-        for &s in &buf.samples {
-            assert!(
-                s.abs() <= i16::MAX / 2 + 1,
-                "volume 0.5 must halve sample magnitude"
-            );
-        }
+        assert!(SoundPlayer::stop(&player, ClipId::new()).await.is_ok());
+        assert!(SoundPlayer::stop_all(&player).await.is_ok());
     }
 
     #[tokio::test]

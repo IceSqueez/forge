@@ -185,10 +185,5 @@ impl EventPublisher for NoopPublisher {
 
 /// Builds a `RunContext` borrowing the given arg stack with a no-op publisher.
 pub(crate) fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
-    RunContext {
-        arg_stack: stack,
-        index: 0,
-        parent_event_id: EventId::new(),
-        publisher: &NoopPublisher,
-    }
+    RunContext::leaf(stack, 0, EventId::new(), &NoopPublisher)
 }

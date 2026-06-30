@@ -50,7 +50,7 @@ pub(crate) fn build_trigger_delta(snap: &HotkeyHealthSnapshot) -> HealthDelta {
         (Some(t), Some(c)) => {
             let formatted = t
                 .format(
-                    &time::format_description::parse("[hour]:[minute]:[second]")
+                    &time::format_description::parse_borrowed::<2>("[hour]:[minute]:[second]")
                         .unwrap_or_default(),
                 )
                 .unwrap_or_else(|_| "--:--:--".to_owned());
@@ -80,7 +80,7 @@ impl BuiltinHealth for HotkeyClient {
             (Some(t), Some(c)) => {
                 let formatted = t
                     .format(
-                        &time::format_description::parse("[hour]:[minute]:[second]")
+                        &time::format_description::parse_borrowed::<2>("[hour]:[minute]:[second]")
                             .unwrap_or_default(),
                     )
                     .unwrap_or_else(|_| "--:--:--".to_owned());

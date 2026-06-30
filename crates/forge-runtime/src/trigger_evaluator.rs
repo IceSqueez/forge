@@ -175,7 +175,9 @@ mod tests {
 
     use forge_events::{Event, EventSource};
     use forge_registry::{SubActionRegistry, TriggerRegistry};
-    use forge_storage::{DataProvider, GlobalsRepo, SettingsRepo};
+    use forge_storage::{
+        ActionRepo, DataProvider, GlobalsRepo, SettingsRepo, TriggerInstanceRepo, UserGlobalsRepo,
+    };
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::{
         Action, ActionId, PlatformId, PlatformScope, Queue, QueueId, SubActionStep,
@@ -270,7 +272,10 @@ mod tests {
 
     fn build_registries(
         globals: Arc<dyn GlobalsRepo>,
+        user_globals: Arc<dyn UserGlobalsRepo>,
         settings: Arc<dyn SettingsRepo>,
+        trigger_instances: Arc<dyn TriggerInstanceRepo>,
+        actions: Arc<dyn ActionRepo>,
     ) -> (Arc<SubActionRegistry>, Arc<TriggerRegistry>) {
         let registry = Arc::new(ScriptRegistry::new());
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
@@ -278,7 +283,19 @@ mod tests {
             Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>;
 
         let mut sub_reg = SubActionRegistry::new();
-        register_core_sub_actions(&mut sub_reg, globals, registry, publisher, settings).unwrap();
+        register_core_sub_actions(
+            &mut sub_reg,
+            globals,
+            user_globals,
+            registry,
+            publisher,
+            settings,
+            crate::SchedulerCell::new(),
+            trigger_instances,
+            actions,
+            crate::Config::default(),
+        )
+        .unwrap();
 
         let mut trig_reg = TriggerRegistry::new();
         register_core_triggers(&mut trig_reg).unwrap();
@@ -311,7 +328,10 @@ mod tests {
 
         let (sub_reg, trig_reg) = build_registries(
             Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
+            Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
             Arc::clone(&dp) as Arc<dyn SettingsRepo>,
+            dp.trigger_instance_repo(),
+            dp.action_repo(),
         );
 
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
@@ -371,7 +391,10 @@ mod tests {
 
         let (sub_reg, trig_reg) = build_registries(
             Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
+            Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
             Arc::clone(&dp) as Arc<dyn SettingsRepo>,
+            dp.trigger_instance_repo(),
+            dp.action_repo(),
         );
 
         let bus = EventBus::new(Arc::new(NullEventLogRepo));

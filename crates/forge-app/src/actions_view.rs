@@ -100,80 +100,7 @@ pub(crate) fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
         .height(Length::Fill)
         .into();
 
-    let main_view: Element<'_, Message> = if let Some(open_id) = actions_state.action_menu_open {
-        let open_summary = actions_state
-            .tree
-            .iter()
-            .flat_map(|g| g.actions.iter())
-            .find(|a| a.id == open_id);
-        let menu_top_offset = if open_summary.is_some() {
-            compute_action_menu_y_offset(actions_state, open_id)
-        } else {
-            None
-        };
-        if let (Some(summary), Some(top_y)) = (open_summary, menu_top_offset) {
-            let toggle_label = if summary.enabled {
-                forge_widgets::tr!("actions_menu_disable")
-            } else {
-                forge_widgets::tr!("actions_menu_enable")
-            };
-            let menu_items: Vec<forge_widgets::MenuItem<Message>> = vec![
-                forge_widgets::MenuItem::Item {
-                    label: forge_widgets::tr!("actions_menu_rename"),
-                    icon: Some(Icon::InfoCircle),
-                    on_press: Message::Actions(ActionsMsg::RenameStarted(open_id)),
-                    shortcut: None,
-                    color: None,
-                    disabled: false,
-                },
-                forge_widgets::MenuItem::Item {
-                    label: forge_widgets::tr!("actions_menu_duplicate"),
-                    icon: Some(Icon::Copy),
-                    on_press: Message::Actions(ActionsMsg::DuplicateAction(open_id)),
-                    shortcut: None,
-                    color: None,
-                    disabled: false,
-                },
-                forge_widgets::MenuItem::Item {
-                    label: toggle_label,
-                    icon: Some(Icon::Bolt),
-                    on_press: Message::Actions(ActionsMsg::ToggleEnabled(
-                        open_id,
-                        !summary.enabled,
-                    )),
-                    shortcut: None,
-                    color: None,
-                    disabled: false,
-                },
-                forge_widgets::MenuItem::Divider,
-                forge_widgets::MenuItem::Item {
-                    label: forge_widgets::tr!("actions_menu_delete"),
-                    icon: Some(Icon::Eraser),
-                    on_press: Message::Actions(ActionsMsg::DeleteAction(open_id)),
-                    shortcut: None,
-                    color: Some(p.random),
-                    disabled: false,
-                },
-            ];
-            let panel = forge_widgets::menu_panel(menu_items, palette);
-            let overlay = container(panel)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .padding(iced::Padding {
-                    top: top_y,
-                    right: 0.0,
-                    bottom: 0.0,
-                    left: 90.0,
-                })
-                .align_x(iced::Alignment::Start)
-                .align_y(iced::Alignment::Start);
-            iced::widget::stack![body_and_footer, overlay].into()
-        } else {
-            body_and_footer
-        }
-    } else {
-        body_and_footer
-    };
+    let main_view: Element<'_, Message> = body_and_footer;
 
     let main_view: Element<'_, Message> =
         if let Some(form) = app.ui.actions.add_sub_action_modal.as_ref() {
@@ -372,7 +299,7 @@ fn actions_tree_row<'a>(
     rename_buf: Option<&'a str>,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    use forge_widgets::menu_button_trigger;
+    use forge_widgets::{MenuPlacement, menu_button};
     use iced::widget::{button, container, row, text, text_input};
 
     let p = *palette;
@@ -478,10 +405,53 @@ fn actions_tree_row<'a>(
         }
     });
 
-    let menu_btn = menu_button_trigger(
+    let toggle_label = if summary.enabled {
+        forge_widgets::tr!("actions_menu_disable")
+    } else {
+        forge_widgets::tr!("actions_menu_enable")
+    };
+    let menu_items: Vec<forge_widgets::MenuItem<Message>> = vec![
+        forge_widgets::MenuItem::Item {
+            label: forge_widgets::tr!("actions_menu_rename"),
+            icon: Some(Icon::InfoCircle),
+            on_press: Message::Actions(ActionsMsg::RenameStarted(action_id)),
+            shortcut: None,
+            color: None,
+            disabled: false,
+        },
+        forge_widgets::MenuItem::Item {
+            label: forge_widgets::tr!("actions_menu_duplicate"),
+            icon: Some(Icon::Copy),
+            on_press: Message::Actions(ActionsMsg::DuplicateAction(action_id)),
+            shortcut: None,
+            color: None,
+            disabled: false,
+        },
+        forge_widgets::MenuItem::Item {
+            label: toggle_label,
+            icon: Some(Icon::Bolt),
+            on_press: Message::Actions(ActionsMsg::ToggleEnabled(action_id, !summary.enabled)),
+            shortcut: None,
+            color: None,
+            disabled: false,
+        },
+        forge_widgets::MenuItem::Divider,
+        forge_widgets::MenuItem::Item {
+            label: forge_widgets::tr!("actions_menu_delete"),
+            icon: Some(Icon::Eraser),
+            on_press: Message::Actions(ActionsMsg::DeleteAction(action_id)),
+            shortcut: None,
+            color: Some(p.random),
+            disabled: false,
+        },
+    ];
+    let menu_btn = menu_button(
         Icon::DotsVertical,
         menu_open,
         Message::Actions(ActionsMsg::ToggleActionMenu(action_id)),
+        Message::Actions(ActionsMsg::DismissActionMenu),
+        menu_items,
+        MenuPlacement::BottomRight,
         palette,
     );
 
@@ -499,38 +469,6 @@ fn actions_tree_row<'a>(
         .width(Length::Fill)
         .align_y(iced::Alignment::Center)
         .into()
-}
-
-fn compute_action_menu_y_offset(
-    state: &crate::actions::ActionsState,
-    open_id: forge_types::ActionId,
-) -> Option<f32> {
-    const PAGE_HEADER_H: f32 = 40.0;
-    const GROUP_HEADER_H: f32 = 28.0;
-    const ROW_H: f32 = 30.0;
-
-    let mut y = PAGE_HEADER_H;
-    for group in &state.tree {
-        let visible: Vec<&crate::actions::ActionSummary> = group
-            .actions
-            .iter()
-            .filter(|a| state.action_passes_filter(a))
-            .collect();
-        if visible.is_empty() {
-            continue;
-        }
-        y += GROUP_HEADER_H;
-        if state.collapsed_groups.contains(&group.category) {
-            continue;
-        }
-        for action in visible {
-            if action.id == open_id {
-                return Some(y + ROW_H);
-            }
-            y += ROW_H;
-        }
-    }
-    None
 }
 
 fn actions_footer<'a>(

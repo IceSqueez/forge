@@ -96,3 +96,77 @@ pub(crate) async fn build_connected_clients(
     }
     result
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use std::collections::HashSet;
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicU64;
+
+    use forge_events::EventSource;
+    use forge_runtime::{EventBus, NullEventLogRepo};
+
+    use super::build_connected_clients;
+    use crate::bus_adapter::{BusAdapter, ClientFilterSet, EventFilter};
+    use crate::server_info::ServerInfo;
+    use crate::ws_client::WsClient;
+
+    // Regression: the snapshot restructure moved every per-client field through
+    // a tuple before the async subscription lookup. Guard against a field
+    // transposition (identification vs remote_addr) and confirm subscriptions
+    // are still resolved for the client after the read guard is released.
+    #[tokio::test]
+    async fn snapshot_row_preserves_identity_addr_and_subscriptions() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let adapter = BusAdapter::new(bus);
+        let filters = ClientFilterSet::new(HashSet::from([EventFilter::new(
+            Some(EventSource::Twitch),
+            Some("chat.message".to_owned()),
+        )]));
+        let (handle, _rx) = adapter.register_client(filters).await;
+
+        let addr: std::net::SocketAddr = "203.0.113.7:5555".parse().unwrap();
+        let client = Arc::new(WsClient::new(handle.id, addr, Arc::new(AtomicU64::new(0))));
+        client
+            .identification
+            .store(Arc::new("dashboard-1".to_owned()));
+
+        let info = ServerInfo::new();
+        info.register(handle.id, client).await;
+
+        let rows = build_connected_clients(&info, &adapter).await;
+        assert_eq!(rows.len(), 1);
+        let row = &rows[0];
+        assert_eq!(row["client_id"], handle.id.to_string());
+        assert_eq!(row["identification"], "dashboard-1");
+        assert_eq!(row["remote_addr"], "203.0.113.7");
+
+        let subs = row["subscriptions"].as_array().unwrap();
+        assert_eq!(subs.len(), 1);
+        assert_eq!(subs[0]["source"], "twitch");
+        assert_eq!(subs[0]["type"], "chat.message");
+    }
+
+    // The disconnected-mid-loop case: a client present in `server_info` but not
+    // in the bus adapter registry must degrade to an empty subscription list
+    // rather than fail once the snapshot releases the read guard.
+    #[tokio::test]
+    async fn client_absent_from_bus_adapter_yields_empty_subscriptions() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let adapter = BusAdapter::new(bus);
+        let (handle, _rx) = adapter
+            .register_client(ClientFilterSet::new(HashSet::new()))
+            .await;
+        adapter.unregister_client(handle.id).await;
+
+        let addr: std::net::SocketAddr = "203.0.113.9:6000".parse().unwrap();
+        let client = Arc::new(WsClient::new(handle.id, addr, Arc::new(AtomicU64::new(0))));
+        let info = ServerInfo::new();
+        info.register(handle.id, client).await;
+
+        let rows = build_connected_clients(&info, &adapter).await;
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["subscriptions"].as_array().unwrap().len(), 0);
+    }
+}

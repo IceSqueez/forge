@@ -197,6 +197,116 @@ async fn telemetry_aggregates_multiple_recorded_executions() {
 }
 
 #[tokio::test]
+async fn prune_executions_before_removes_older_rows_and_telemetry_excludes_them() {
+    let backend = setup().await;
+    let queue_id = default_queue_id(&backend).await;
+    let action = make_test_action("prune_action", queue_id);
+    let action_id = action.id;
+    backend.action_repo().save(&action).await.expect("save");
+
+    let now = OffsetDateTime::now_utc();
+    // 8 days old — beyond the execution-retention floor; its 999ms must vanish.
+    backend
+        .action_repo()
+        .record_execution(
+            action_id,
+            now - time::Duration::days(8),
+            999,
+            ExecutionStatus::Success,
+        )
+        .await
+        .expect("record old");
+    let recent = at(now.unix_timestamp());
+    backend
+        .action_repo()
+        .record_execution(action_id, recent, 100, ExecutionStatus::Success)
+        .await
+        .expect("record recent");
+
+    let removed = backend
+        .action_repo()
+        .prune_executions_before(now - time::Duration::days(7))
+        .await
+        .expect("prune");
+
+    assert_eq!(
+        removed, 1,
+        "only the 8-day-old execution predates the 7-day cutoff"
+    );
+    let telemetry = backend
+        .action_repo()
+        .telemetry(action_id)
+        .await
+        .expect("telemetry");
+    assert_eq!(
+        telemetry.avg_duration_ms,
+        Some(100),
+        "the pruned row's 999ms duration no longer contributes to the average",
+    );
+    assert_eq!(
+        telemetry.last_fired_at.map(|t| t.unix_timestamp()),
+        Some(recent.unix_timestamp()),
+        "last_fired reflects the surviving execution",
+    );
+}
+
+#[tokio::test]
+async fn prune_executions_before_uses_second_precision_at_cutoff_boundary() {
+    // Unit guard: action_executions.started_at is stored in SECONDS. A row one
+    // second below the cutoff must be pruned; the row exactly at the cutoff and
+    // one second above must survive the strict `<` comparison. A seconds/millis
+    // (1000x) unit error would misclassify every row and fail this.
+    let backend = setup().await;
+    let queue_id = default_queue_id(&backend).await;
+    let action = make_test_action("boundary_action", queue_id);
+    let action_id = action.id;
+    backend.action_repo().save(&action).await.expect("save");
+
+    let base = OffsetDateTime::now_utc().unix_timestamp();
+    backend
+        .action_repo()
+        .record_execution(action_id, at(base - 1), 1, ExecutionStatus::Success)
+        .await
+        .expect("record before");
+    backend
+        .action_repo()
+        .record_execution(action_id, at(base), 100, ExecutionStatus::Success)
+        .await
+        .expect("record at cutoff");
+    backend
+        .action_repo()
+        .record_execution(action_id, at(base + 1), 200, ExecutionStatus::Success)
+        .await
+        .expect("record after");
+
+    let removed = backend
+        .action_repo()
+        .prune_executions_before(at(base))
+        .await
+        .expect("prune");
+
+    assert_eq!(
+        removed, 1,
+        "only the execution one second before the cutoff is pruned"
+    );
+    let telemetry = backend
+        .action_repo()
+        .telemetry(action_id)
+        .await
+        .expect("telemetry");
+    assert_eq!(
+        telemetry.avg_duration_ms,
+        Some(150),
+        "average is over the at-cutoff (100) and after-cutoff (200) survivors only",
+    );
+    assert_eq!(
+        telemetry.last_fired_at.map(|t| t.unix_timestamp()),
+        Some(base + 1),
+        "the cutoff+1s row survives the strict `<` prune",
+    );
+}
+
+#[tokio::test]
 async fn telemetry_is_scoped_per_action() {
     let backend = setup().await;
     let queue_id = default_queue_id(&backend).await;

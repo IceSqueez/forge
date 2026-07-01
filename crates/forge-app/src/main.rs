@@ -599,7 +599,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
                 }
 
                 // Consume `chat.send.request` targeted at youtube and send through the
-                // object, emitting the same chat.sent / chat.send.failed outcome events.
+                // object, emitting the same chat.send / chat.send.failed outcome events.
                 let bus_send = Arc::clone(&bus);
                 let send_platform = Arc::clone(&chat_platform);
                 tokio::spawn(async move {
@@ -641,7 +641,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
                             Ok(()) => {
                                 bus_send.publish(forge_events::Event::caused_by(
                                     forge_events::EventSource::YouTube,
-                                    "chat.sent",
+                                    "chat.send",
                                     serde_json::json!({"channel": "youtube", "message": message}),
                                     caused_by,
                                 ));
@@ -813,7 +813,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
                 kick_boot_bundle = Some(Arc::clone(&kick_bundle));
 
                 // Consume `chat.send.request` targeted at kick and send through the object,
-                // emitting the same chat.sent / chat.send.failed outcome events.
+                // emitting the same chat.send / chat.send.failed outcome events.
                 let bus_send = Arc::clone(&bus);
                 let send_platform = Arc::clone(&chat_platform);
                 tokio::spawn(async move {
@@ -855,7 +855,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
                             Ok(()) => {
                                 bus_send.publish(forge_events::Event::caused_by(
                                     forge_events::EventSource::Kick,
-                                    "chat.sent",
+                                    "chat.send",
                                     serde_json::json!({"channel": "kick", "message": message}),
                                     caused_by,
                                 ));

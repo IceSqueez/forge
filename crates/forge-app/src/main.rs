@@ -704,54 +704,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         ));
         match rt.block_on(manager.load()) {
             Ok(Some(creds)) => {
-                let (kk_tx, mut kk_rx) = tokio::sync::mpsc::channel::<forge_events::Event>(256);
-                let bus_bridge = Arc::clone(&bus);
-                tokio::spawn(async move {
-                    while let Some(event) = kk_rx.recv().await {
-                        bus_bridge.publish(event);
-                    }
-                });
-
-                let poller_tx = kk_tx.clone();
-
                 let slug = creds.username.clone();
-                let chat = forge_platform_kick::KickChat::new(slug.clone(), kk_http.clone());
-                let chat_handle = match rt.block_on(chat.connect(kk_tx.clone())) {
-                    Ok(handle) => Some(handle),
-                    Err(e) => {
-                        tracing::warn!(error = %e, "kick chat connect failed");
-                        bus.publish(forge_events::Event::new(
-                            forge_events::EventSource::Kick,
-                            "platform.connection.changed",
-                            serde_json::json!({"state": "error", "reason": e.to_string()}),
-                        ));
-                        None
-                    }
-                };
-                // The bundle owns `chat_handle`; its lifetime keeps the chat loop's close_rx
-                // unresolved, so dropping a separate parking task is no longer needed.
-                let state_rx = chat_handle.as_ref().map_or_else(
-                    || {
-                        tokio::sync::watch::channel(
-                            forge_platform_core::ConnectionState::Disconnected,
-                        )
-                        .1
-                    },
-                    |h| h.state_receiver(),
-                );
-                let (kick_bundle, _kick_health_tx) =
-                    forge_platform_kick::KickIntegrationBundle::new(
-                        slug,
-                        state_rx,
-                        Arc::clone(&manager),
-                        kk_http.clone(),
-                        kk_tx.clone(),
-                        chat_handle,
-                    );
-                kick_boot_bundle = Some(Arc::clone(&kick_bundle));
-
-                let limiter: Arc<dyn forge_platform_core::RateLimiter> = Arc::new(KickNoopLimiter);
-                let sender = Arc::new(forge_platform_kick::KickSendChat::new(limiter));
                 let broadcaster_user_id = creds.user_id;
 
                 let kick_rate_limiter: Arc<dyn forge_platform_core::RateLimiter> =
@@ -759,6 +712,51 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
                         60,
                         std::time::Duration::from_secs(60),
                     ));
+
+                let platform = Arc::new(forge_platform_kick::KickPlatform::new(
+                    slug.clone(),
+                    Arc::clone(&manager),
+                    Arc::clone(&kick_rate_limiter),
+                ));
+                let chat_platform: Arc<dyn forge_platform_core::ChatPlatform> =
+                    Arc::clone(&platform) as _;
+
+                // Republish the platform's own event stream (chat receive + connection
+                // state transitions) onto the global bus.
+                let bus_events = Arc::clone(&bus);
+                let mut platform_events = chat_platform.events();
+                tokio::spawn(async move {
+                    loop {
+                        match platform_events.recv().await {
+                            Ok(event) => bus_events.publish(event),
+                            Err(forge_events::EventsError::BusClosed) => break,
+                            Err(forge_events::EventsError::LaggingReceiver) => {
+                                tracing::warn!("kick platform event bridge: lagging receiver");
+                                continue;
+                            }
+                            Err(_) => continue,
+                        }
+                    }
+                });
+
+                if let Err(e) = rt.block_on(chat_platform.connect()) {
+                    tracing::warn!(error = %e, "kick chat connect failed");
+                }
+
+                // The poller emits livestream + reward-redemption events; bridge its own
+                // channel onto the bus (the chat channel is owned by the platform).
+                let (poller_tx, mut poller_rx) =
+                    tokio::sync::mpsc::channel::<forge_events::Event>(256);
+                let bus_poller = Arc::clone(&bus);
+                tokio::spawn(async move {
+                    while let Some(event) = poller_rx.recv().await {
+                        bus_poller.publish(event);
+                    }
+                });
+
+                let limiter: Arc<dyn forge_platform_core::RateLimiter> = Arc::new(KickNoopLimiter);
+                let sender = Arc::new(forge_platform_kick::KickSendChat::new(limiter));
+
                 let moderation = Arc::new(forge_platform_kick::KickModeration::new(Arc::clone(
                     &kick_rate_limiter,
                 )));
@@ -798,16 +796,26 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
                     poller_tx,
                 );
 
-                let manager_for_send = Arc::clone(&manager);
-                let bus_kk_send = Arc::clone(&bus);
+                let (kick_bundle, _kick_health_tx) =
+                    forge_platform_kick::KickIntegrationBundle::new(
+                        slug,
+                        Arc::clone(&platform),
+                        Arc::clone(&manager),
+                    );
+                kick_boot_bundle = Some(Arc::clone(&kick_bundle));
+
+                // Consume `chat.send.request` targeted at kick and send through the object,
+                // emitting the same chat.sent / chat.send.failed outcome events.
+                let bus_send = Arc::clone(&bus);
+                let send_platform = Arc::clone(&chat_platform);
                 tokio::spawn(async move {
-                    let mut sub = bus_kk_send.subscribe();
+                    let mut sub = bus_send.subscribe();
                     loop {
                         let event = match sub.recv().await {
                             Ok(e) => e,
                             Err(forge_events::EventsError::BusClosed) => break,
                             Err(forge_events::EventsError::LaggingReceiver) => {
-                                tracing::warn!("kick_send_bridge: lagging receiver");
+                                tracing::warn!("kick_send: lagging receiver");
                                 continue;
                             }
                             Err(_) => continue,
@@ -835,16 +843,9 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
                             None => continue,
                         };
                         let caused_by = event.id;
-                        let token = match manager_for_send.get_valid_access_token().await {
-                            Ok(t) => t,
-                            Err(e) => {
-                                tracing::warn!(error = %e, "kick send: token refresh failed");
-                                continue;
-                            }
-                        };
-                        match sender.send(&message, &token, broadcaster_user_id).await {
+                        match send_platform.send_message("kick", &message).await {
                             Ok(()) => {
-                                bus_kk_send.publish(forge_events::Event::caused_by(
+                                bus_send.publish(forge_events::Event::caused_by(
                                     forge_events::EventSource::Kick,
                                     "chat.sent",
                                     serde_json::json!({"channel": "kick", "message": message}),
@@ -853,7 +854,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
                             }
                             Err(e) => {
                                 tracing::warn!(error = %e, "kick chat send failed");
-                                bus_kk_send.publish(forge_events::Event::caused_by(
+                                bus_send.publish(forge_events::Event::caused_by(
                                     forge_events::EventSource::Kick,
                                     "chat.send.failed",
                                     serde_json::json!({"target": "kick", "error": e.to_string()}),

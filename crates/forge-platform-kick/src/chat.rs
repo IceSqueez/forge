@@ -28,17 +28,21 @@ pub struct KickChat {
 }
 
 pub struct KickChatHandle {
-    pub close_tx: oneshot::Sender<()>,
-    /// Receiver side of the watch channel updated by the run loop.
-    /// Cloned by `state_receiver()` so callers can observe state without owning the handle.
+    close_tx: oneshot::Sender<()>,
     state_rx: watch::Receiver<ConnectionState>,
 }
 
 impl KickChatHandle {
-    /// Clones the watch receiver so `KickIntegrationBundle` can observe connection state
-    /// without consuming the handle.
-    pub fn state_receiver(&self) -> watch::Receiver<ConnectionState> {
+    pub fn connection_state(&self) -> ConnectionState {
+        *self.state_rx.borrow()
+    }
+
+    pub(crate) fn state_receiver(&self) -> watch::Receiver<ConnectionState> {
         self.state_rx.clone()
+    }
+
+    pub fn shutdown(self) {
+        let _ = self.close_tx.send(());
     }
 }
 
@@ -52,7 +56,7 @@ impl KickChat {
     }
 
     /// Reconnects automatically with exponential backoff capped at 60 s. The returned
-    /// handle's `close_tx` signals graceful shutdown.
+    /// handle's `shutdown` signals graceful shutdown; dropping it does the same.
     pub async fn connect(self, event_tx: mpsc::Sender<Event>) -> Result<KickChatHandle, KickError> {
         let fetcher = ChannelInfoFetcher::new(self.slug.clone(), self.http.clone());
         let channel_info = fetcher.fetch().await?;

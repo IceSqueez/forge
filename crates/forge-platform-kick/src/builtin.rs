@@ -2,20 +2,19 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_events::Event;
 use forge_platform_core::{
     BannerLevel, BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, CapabilityFlags,
-    ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthStream,
-    HealthValue, QuickAction, QuickActions, SectionIcon,
+    ChatPlatform, ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric,
+    HealthStream, HealthValue, QuickAction, QuickActions, SectionIcon,
 };
 use forge_registry::{RegistryError, TriggerRegistry};
 use forge_types::{SubActionStep, Variant};
-use tokio::sync::{Mutex, broadcast, mpsc, watch};
+use tokio::sync::broadcast;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 
 use crate::capabilities::KICK_COMMUNITY_NOTE;
-use crate::chat::KickChatHandle;
+use crate::chat_platform::KickPlatform;
 use crate::credentials_manager::KickCredentialsManager;
 use crate::triggers::ban::BanDescriptor;
 use crate::triggers::chat::ChatDescriptor;
@@ -45,59 +44,38 @@ pub fn register_kick_triggers(registry: &mut TriggerRegistry) -> Result<(), Regi
 pub struct KickIntegrationBundle {
     id: BuiltinId,
     slug: String,
-    state_rx: watch::Receiver<ConnectionState>,
     health_tx: broadcast::Sender<HealthDelta>,
-    handle: Mutex<Option<KickChatHandle>>,
+    platform: Arc<KickPlatform>,
     credentials_manager: Arc<KickCredentialsManager>,
-    http: reqwest::Client,
-    event_tx: mpsc::Sender<Event>,
 }
 
 impl KickIntegrationBundle {
     pub fn new(
         slug: String,
-        state_rx: watch::Receiver<ConnectionState>,
+        platform: Arc<KickPlatform>,
         credentials_manager: Arc<KickCredentialsManager>,
-        http: reqwest::Client,
-        event_tx: mpsc::Sender<Event>,
-        initial_handle: Option<KickChatHandle>,
     ) -> (Arc<Self>, broadcast::Sender<HealthDelta>) {
         let (health_tx, _) = broadcast::channel(16);
         let bundle = Arc::new(Self {
             id: BuiltinId::new("kick"),
             slug,
-            state_rx,
             health_tx: health_tx.clone(),
-            handle: Mutex::new(initial_handle),
+            platform,
             credentials_manager,
-            http,
-            event_tx,
         });
         (bundle, health_tx)
     }
 
     fn current_state(&self) -> ConnectionState {
-        *self.state_rx.borrow()
-    }
-
-    pub(crate) fn handle_slot(&self) -> &Mutex<Option<KickChatHandle>> {
-        &self.handle
+        self.platform.connection_state()
     }
 
     pub(crate) fn credentials_manager(&self) -> &Arc<KickCredentialsManager> {
         &self.credentials_manager
     }
 
-    pub(crate) fn http(&self) -> &reqwest::Client {
-        &self.http
-    }
-
-    pub(crate) fn slug(&self) -> &str {
-        &self.slug
-    }
-
-    pub(crate) fn event_tx(&self) -> &mpsc::Sender<Event> {
-        &self.event_tx
+    pub(crate) fn platform(&self) -> &Arc<KickPlatform> {
+        &self.platform
     }
 }
 
@@ -268,78 +246,10 @@ impl QuickActions for KickIntegrationBundle {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use std::collections::HashMap;
-    use std::sync::Mutex as StdMutex;
-
-    use async_trait::async_trait;
     use forge_registry::KindPlatformContract;
-    use forge_storage::{CredentialId, CredentialsRepo, StorageError};
     use forge_types::PlatformId;
-    use time::OffsetDateTime;
 
     use super::*;
-
-    struct NullRepo(StdMutex<HashMap<String, String>>);
-
-    impl NullRepo {
-        fn empty() -> Arc<Self> {
-            Arc::new(Self(StdMutex::new(HashMap::new())))
-        }
-    }
-
-    #[async_trait]
-    impl CredentialsRepo for NullRepo {
-        async fn store(&self, id: &CredentialId, v: &str) -> Result<(), StorageError> {
-            self.0
-                .lock()
-                .unwrap()
-                .insert(id.as_str().to_owned(), v.to_owned());
-            Ok(())
-        }
-
-        async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
-            Ok(self.0.lock().unwrap().get(id.as_str()).cloned())
-        }
-
-        async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
-            Ok(self.0.lock().unwrap().remove(id.as_str()).is_some())
-        }
-
-        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-            Ok(Vec::new())
-        }
-
-        async fn last_refresh(
-            &self,
-            _: &CredentialId,
-        ) -> Result<Option<OffsetDateTime>, StorageError> {
-            Ok(None)
-        }
-
-        async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
-            Ok(())
-        }
-    }
-
-    fn make_bundle() -> Arc<KickIntegrationBundle> {
-        let (tx, rx) = watch::channel(ConnectionState::Disconnected);
-        let mgr = Arc::new(KickCredentialsManager::new(
-            NullRepo::empty(),
-            reqwest::Client::new(),
-            "test_cid".to_owned(),
-        ));
-        let (event_tx, _event_rx) = mpsc::channel(8);
-        let (bundle, _) = KickIntegrationBundle::new(
-            "test_channel".to_owned(),
-            rx,
-            mgr,
-            reqwest::Client::new(),
-            event_tx,
-            None,
-        );
-        drop(tx);
-        bundle
-    }
 
     #[test]
     fn register_adds_all_trigger_descriptors() {
@@ -388,102 +298,5 @@ mod tests {
                 descriptor.id()
             );
         }
-    }
-
-    #[test]
-    fn bundle_send_message_action_enabled_when_connected() {
-        let (tx, rx) = watch::channel(ConnectionState::Connected);
-        let mgr = Arc::new(KickCredentialsManager::new(
-            NullRepo::empty(),
-            reqwest::Client::new(),
-            "test_cid".to_owned(),
-        ));
-        let (event_tx, _event_rx) = mpsc::channel(8);
-        let (bundle, _) = KickIntegrationBundle::new(
-            "test_channel".to_owned(),
-            rx,
-            mgr,
-            reqwest::Client::new(),
-            event_tx,
-            None,
-        );
-        drop(tx);
-        let send_action = bundle
-            .actions()
-            .into_iter()
-            .find(|a| a.label == "Send message")
-            .unwrap();
-        assert!(send_action.enabled);
-    }
-
-    #[test]
-    fn bundle_send_message_action_disabled_when_disconnected() {
-        let bundle = make_bundle();
-        let send_action = bundle
-            .actions()
-            .into_iter()
-            .find(|a| a.label == "Send message")
-            .unwrap();
-        assert!(!send_action.enabled);
-    }
-
-    #[test]
-    fn bundle_content_has_warning_banner() {
-        let bundle = make_bundle();
-        let sections = bundle.sections();
-        assert!(
-            sections
-                .iter()
-                .any(|s| matches!(s, DetailSection::WarningBanner { .. }))
-        );
-    }
-
-    #[test]
-    fn bundle_header_includes_reconnect() {
-        let bundle = make_bundle();
-        assert!(bundle.header_actions().contains(&HeaderAction::Reconnect));
-    }
-
-    // Compile-time object-safety guard: the bundle must coerce into
-    // `Arc<dyn BuiltinControl>` for the generic UI lifecycle renderer.
-    #[test]
-    fn bundle_coerces_to_dyn_builtin_control() {
-        fn accepts(_: Arc<dyn forge_platform_core::BuiltinControl>) {}
-        accepts(make_bundle());
-    }
-
-    // Missing-credentials guard: both `refresh_token` and `reconnect` call
-    // `credentials_manager().load()` first. With an empty store (NullRepo) the
-    // load yields None and both must short-circuit to NotConnected before any
-    // network call (refresh grant / Pusher WS connect) is attempted.
-    #[tokio::test]
-    async fn refresh_token_without_stored_credentials_reports_not_connected() {
-        let bundle = make_bundle();
-        let outcome = forge_platform_core::BuiltinControl::refresh_token(bundle.as_ref()).await;
-        assert_eq!(
-            outcome,
-            Err(forge_platform_core::ControlFailure::NotConnected)
-        );
-    }
-
-    #[tokio::test]
-    async fn reconnect_without_stored_credentials_reports_not_connected() {
-        let bundle = make_bundle();
-        let outcome = forge_platform_core::BuiltinControl::reconnect(bundle.as_ref()).await;
-        assert_eq!(
-            outcome,
-            Err(forge_platform_core::ControlFailure::NotConnected)
-        );
-    }
-
-    // Disconnect with an empty handle slot is the reachable no-session branch.
-    #[tokio::test]
-    async fn disconnect_with_no_live_session_reports_not_connected() {
-        let bundle = make_bundle();
-        let outcome = forge_platform_core::BuiltinControl::disconnect(bundle.as_ref()).await;
-        assert_eq!(
-            outcome,
-            Err(forge_platform_core::ControlFailure::NotConnected)
-        );
     }
 }

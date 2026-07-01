@@ -235,15 +235,34 @@ pub fn subscription(app: &App) -> Subscription<Message> {
                             continue;
                         };
                         let bus_adapter = subsystem.bus_adapter().await;
-                        let clients_guard = info.connected_clients.read().await;
+                        // Snapshot each client's synchronous data under the read
+                        // guard, then release it before the async subscription
+                        // lookups so client register/deregister writers are not
+                        // blocked for the whole per-tick loop.
+                        let snapshots: Vec<_> = {
+                            let clients_guard = info.connected_clients.read().await;
+                            clients_guard
+                                .iter()
+                                .map(|(client_id, client)| {
+                                    (
+                                        *client_id,
+                                        (**client.identification.load()).clone(),
+                                        client.client_type.load().type_str().to_owned(),
+                                        client.events_per_second(),
+                                        format_short_duration(client.uptime()),
+                                    )
+                                })
+                                .collect()
+                        };
                         let mut rows: Vec<crate::server_screen::OwnedClientRow> = Vec::new();
                         let mut events_per_second_total: f32 = 0.0;
-                        for (client_id, client) in clients_guard.iter() {
-                            let eps = client.events_per_second();
+                        for (client_id, identification, client_type_label, eps, uptime_short) in
+                            snapshots
+                        {
                             events_per_second_total += eps;
                             let subscriptions = match bus_adapter.as_ref() {
                                 Some(adapter) => {
-                                    let filters = adapter.current_subscriptions(*client_id).await;
+                                    let filters = adapter.current_subscriptions(client_id).await;
                                     filters
                                         .into_iter()
                                         .map(|f| {
@@ -274,15 +293,14 @@ pub fn subscription(app: &App) -> Subscription<Message> {
                                 crate::server_screen::ClientLiveness::Idle
                             };
                             rows.push(crate::server_screen::OwnedClientRow {
-                                identification: (**client.identification.load()).clone(),
-                                client_type_label: client.client_type.load().type_str().to_owned(),
+                                identification,
+                                client_type_label,
                                 liveness,
                                 subscriptions,
                                 events_per_second: eps,
-                                uptime_short: format_short_duration(client.uptime()),
+                                uptime_short,
                             });
                         }
-                        drop(clients_guard);
                         let kbps = info.bandwidth.current_bps() as f32 / 1000.0;
                         let peak_kbps = info.bandwidth.peak() as f32 / 1000.0;
                         let total_bytes = info.bandwidth.total();

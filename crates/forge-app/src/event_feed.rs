@@ -994,4 +994,51 @@ mod tests {
         );
         assert!(!state.paused, "pause state must not be toggled");
     }
+
+    // --- Regression: fix(app) emit canonical chat.send success kind ---
+    //
+    // Before the fix, Kick and YouTube chat-send success published kind "chat.sent".
+    // event_feed already matched on "chat.send", so the result-tag was never shown
+    // and the Chat filter did not count those events.
+
+    #[test]
+    fn chat_send_result_tag_is_sent() {
+        // format_result_tag is private but accessible from this child module.
+        // The swap-impl guard: if someone renames the match arm back to "chat.sent",
+        // this test will return None instead of Some("sent") and fail.
+        let event = Event::new(EventSource::YouTube, "chat.send", serde_json::Value::Null);
+        assert_eq!(
+            super::format_result_tag(&event),
+            Some("sent".to_owned()),
+            "kind \"chat.send\" must produce result-tag \"sent\""
+        );
+    }
+
+    #[test]
+    fn chat_send_summary_returns_message_payload_field() {
+        let event = Event::new(
+            EventSource::Kick,
+            "chat.send",
+            serde_json::json!({"channel": "kick", "message": "hello world"}),
+        );
+        assert_eq!(
+            format_summary(&event),
+            "hello world",
+            "format_summary for chat.send must return the message field"
+        );
+    }
+
+    #[test]
+    fn chat_send_is_captured_by_chat_filter() {
+        // Ensures "chat.send" events are visible when the user selects the Chat filter.
+        let event = Event::new(EventSource::Kick, "chat.send", serde_json::Value::Null);
+        assert!(
+            matches_filter(&event, EventFilter::Chat),
+            "chat.send must match the Chat filter"
+        );
+        assert!(
+            !matches_filter(&event, EventFilter::Errors),
+            "chat.send must not match the Errors filter"
+        );
+    }
 }

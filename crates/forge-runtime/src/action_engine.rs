@@ -5,7 +5,7 @@ use std::sync::{
 
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_registry::{CancelSignal, ChainSignal, RunContext, SubActionRegistry, effective_config};
-use forge_storage::{ActionRepo, HistoryRepo};
+use forge_storage::{ActionRepo, ExecutionStatus, HistoryRepo};
 use forge_types::{
     ActionId, ArgStack, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome,
     SubActionOutcome, SubActionStep, SubActionTelemetry,
@@ -278,6 +278,20 @@ impl ActionEngine {
 
         if let Err(e) = self.history.save(&ctx).await {
             warn!("history_repo.save failed: {e}");
+        }
+
+        let telemetry_status = match &ctx.outcome {
+            ExecutionOutcome::Success => Some(ExecutionStatus::Success),
+            ExecutionOutcome::Failed(_) => Some(ExecutionStatus::Error),
+            ExecutionOutcome::Cancelled => None,
+        };
+        if let Some(status) = telemetry_status
+            && let Err(e) = self
+                .actions
+                .record_execution(action.id, started_at, total_ms, status)
+                .await
+        {
+            warn!("action_repo.record_execution failed: {e}");
         }
     }
 }

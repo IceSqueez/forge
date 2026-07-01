@@ -4,6 +4,9 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum PlatformId {
     Twitch,
+    // Without this the snake_case rule yields "you_tube", which does not match the
+    // "youtube" platform id emitted on the wire (connection events, chat.send targets).
+    #[serde(rename = "youtube")]
     YouTube,
     Kick,
 }

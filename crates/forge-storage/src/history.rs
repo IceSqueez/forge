@@ -28,6 +28,8 @@ pub trait HistoryRepo: Send + Sync {
         &self,
         since: OffsetDateTime,
     ) -> Result<HashMap<ActionId, ActionStats>, StorageError>;
+    /// Removes history entries started before `cutoff`; returns rows removed.
+    async fn prune_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError>;
 }
 
 #[cfg(test)]

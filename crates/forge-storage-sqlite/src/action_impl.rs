@@ -220,6 +220,16 @@ impl ActionRepo for SqliteActionRepo {
         Ok(())
     }
 
+    async fn prune_executions_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError> {
+        let cutoff_secs = cutoff.unix_timestamp();
+        let result = sqlx::query("DELETE FROM action_executions WHERE started_at < ?")
+            .bind(cutoff_secs)
+            .execute(&self.pool)
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+        Ok(result.rows_affected())
+    }
+
     async fn telemetry(&self, id: ActionId) -> Result<ActionTelemetry, StorageError> {
         let id_str = id.to_string();
         let now = OffsetDateTime::now_utc();

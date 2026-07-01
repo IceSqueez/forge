@@ -118,6 +118,9 @@ impl ActionRepo for MockActionRepo {
     ) -> Result<(), StorageError> {
         Ok(())
     }
+    async fn prune_executions_before(&self, _cutoff: OffsetDateTime) -> Result<u64, StorageError> {
+        Ok(0)
+    }
 }
 
 /// In-memory `TriggerInstanceRepo`. `writes` counts every `set_enabled` attempt;

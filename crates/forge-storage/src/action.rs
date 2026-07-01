@@ -38,6 +38,8 @@ pub trait ActionRepo: Send + Sync {
         duration_ms: u64,
         status: ExecutionStatus,
     ) -> Result<(), StorageError>;
+    /// Removes execution telemetry rows started before `cutoff`; returns rows removed.
+    async fn prune_executions_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError>;
 }
 
 #[cfg(test)]

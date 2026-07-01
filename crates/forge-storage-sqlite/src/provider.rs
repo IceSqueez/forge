@@ -99,13 +99,18 @@ impl SqliteBackend {
     ) -> Self {
         let shutdown = Arc::new(Notify::new());
 
-        let repo_for_task =
+        let event_log_for_task =
             Arc::new(SqliteEventLogRepo::new(pool.clone())) as Arc<dyn EventLogRepo>;
+        let history_for_task =
+            Arc::new(SqliteHistoryRepo::new(pool.clone())) as Arc<dyn HistoryRepo>;
+        let action_for_task = Arc::new(SqliteActionRepo::new(pool.clone())) as Arc<dyn ActionRepo>;
         let settings_for_task =
             Arc::new(SqliteSettingsRepo::new(pool.clone())) as Arc<dyn SettingsRepo>;
 
         spawn_retention_task(
-            repo_for_task,
+            event_log_for_task,
+            history_for_task,
+            action_for_task,
             settings_for_task,
             prune_interval,
             Arc::clone(&shutdown),

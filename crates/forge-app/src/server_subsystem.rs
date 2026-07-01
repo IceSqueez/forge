@@ -31,18 +31,29 @@ impl ServerSubsystem {
     }
 
     pub async fn start(&self, config: ServerConfig) -> Result<(), ServerError> {
-        let mut guard = self.handle.write().await;
-        if guard.is_some() {
+        if self.handle.read().await.is_some() {
             return Ok(());
         }
+        // Bind the server without holding the handle lock so concurrent readers
+        // (e.g. the metrics subscription) are not blocked for the bind duration.
         let handle = start_server(config).await?;
+        let mut guard = self.handle.write().await;
+        if guard.is_some() {
+            // Lost a concurrent start race; discard the redundant handle.
+            drop(guard);
+            handle.stop().await?;
+            return Ok(());
+        }
         *guard = Some(handle);
         Ok(())
     }
 
     pub async fn stop(&self) -> Result<(), ServerError> {
-        let mut guard = self.handle.write().await;
-        if let Some(handle) = guard.take() {
+        let handle = {
+            let mut guard = self.handle.write().await;
+            guard.take()
+        };
+        if let Some(handle) = handle {
             handle.stop().await?;
         }
         Ok(())

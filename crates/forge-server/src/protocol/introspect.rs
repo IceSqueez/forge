@@ -35,10 +35,39 @@ pub(crate) async fn build_connected_clients(
     server_info: &ServerInfo,
     bus_adapter: &BusAdapter,
 ) -> Vec<serde_json::Value> {
-    let clients = server_info.connected_clients.read().await;
-    let mut result = Vec::with_capacity(clients.len());
-    for (id, client) in clients.iter() {
-        let subs = bus_adapter.current_subscriptions(*id).await;
+    // Snapshot the per-client synchronous data under the read guard, then
+    // release it before issuing any async bus-adapter lookups so client
+    // register/deregister writers are not blocked for the whole loop.
+    let snapshots: Vec<_> = {
+        let clients = server_info.connected_clients.read().await;
+        clients
+            .iter()
+            .map(|(id, client)| {
+                (
+                    *id,
+                    client.identification.load_full(),
+                    client.client_type.load_full(),
+                    client.remote_addr.ip().to_string(),
+                    client.events_per_second(),
+                    client.uptime().whole_seconds(),
+                    client.bytes_sent_session.load(Ordering::Relaxed),
+                )
+            })
+            .collect()
+    };
+
+    let mut result = Vec::with_capacity(snapshots.len());
+    for (
+        id,
+        identification,
+        client_type,
+        remote_addr,
+        events_per_second,
+        uptime_seconds,
+        bytes_sent,
+    ) in snapshots
+    {
+        let subs = bus_adapter.current_subscriptions(id).await;
         let subscriptions: Vec<serde_json::Value> = subs
             .iter()
             .map(|f| {
@@ -54,19 +83,15 @@ pub(crate) async fn build_connected_clients(
             })
             .collect();
 
-        let identification = client.identification.load_full();
-        let client_type = client.client_type.load_full();
-        let uptime = client.uptime();
-
         result.push(serde_json::json!({
             "client_id": id.to_string(),
             "identification": identification.as_str(),
-            "remote_addr": client.remote_addr.ip().to_string(),
+            "remote_addr": remote_addr,
             "client_type": client_type.type_str(),
             "subscriptions": subscriptions,
-            "events_per_second": client.events_per_second(),
-            "uptime_seconds": uptime.whole_seconds(),
-            "bytes_sent": client.bytes_sent_session.load(Ordering::Relaxed),
+            "events_per_second": events_per_second,
+            "uptime_seconds": uptime_seconds,
+            "bytes_sent": bytes_sent,
         }));
     }
     result

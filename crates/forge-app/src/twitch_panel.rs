@@ -24,7 +24,10 @@ use crate::runtime_view::RuntimeView;
 /// Shared handle to an in-progress device code flow. Wrapped in a tokio Mutex
 /// so `request_code` (which calls `TwitchAuthFlow::start`) and `wait_for_auth`
 /// (which calls `wait_for_authorization`) operate on the same builder state.
-pub type TwitchFlowHandle = Arc<TokioMutex<TwitchAuthFlow>>;
+/// `wait_for_auth` `take()`s the flow out before its ≤300s authorization wait
+/// so the Mutex is not pinned across that await; a second wait then reports the
+/// flow as already consumed.
+pub type TwitchFlowHandle = Arc<TokioMutex<Option<TwitchAuthFlow>>>;
 
 #[derive(Debug, Clone)]
 pub struct LoopbackData {
@@ -43,7 +46,10 @@ const AUTH_TIMEOUT: Duration = Duration::from_secs(300);
 
 pub async fn request_code(flow: TwitchFlowHandle) -> Result<LoopbackData, String> {
     let mut guard = flow.lock().await;
-    let code = guard.start().await.map_err(|e| e.to_string())?;
+    let inner = guard
+        .as_mut()
+        .ok_or_else(|| "OAuth flow already consumed".to_owned())?;
+    let code = inner.start().await.map_err(|e| e.to_string())?;
     Ok(LoopbackData {
         auth_url: code.auth_url,
         expires_at: SystemTime::now() + AUTH_TIMEOUT,
@@ -54,13 +60,16 @@ pub async fn wait_for_auth(
     flow: TwitchFlowHandle,
     credentials: Arc<dyn CredentialsRepo>,
 ) -> Result<TwitchAuthOutcome, String> {
-    let bundle = {
+    let mut inner = {
         let mut guard = flow.lock().await;
         guard
-            .wait_for_authorization(AUTH_TIMEOUT)
-            .await
-            .map_err(|e| e.to_string())?
+            .take()
+            .ok_or_else(|| "OAuth flow already consumed".to_owned())?
     };
+    let bundle = inner
+        .wait_for_authorization(AUTH_TIMEOUT)
+        .await
+        .map_err(|e| e.to_string())?;
     forge_platform_twitch::credentials::store(&*credentials, &bundle)
         .await
         .map_err(|e| e.to_string())?;
@@ -84,7 +93,7 @@ pub fn update(
                 return Task::none();
             };
             *state = TwitchPanelState::Requesting;
-            let flow = Arc::new(TokioMutex::new(TwitchAuthFlow::new(cid)));
+            let flow = Arc::new(TokioMutex::new(Some(TwitchAuthFlow::new(cid))));
             rt.twitch_flow = Some(Arc::clone(&flow));
             Task::perform(request_code(flow), |r| {
                 Message::TwitchPanel(TwitchPanelMsg::DeviceCodeReceived(r))

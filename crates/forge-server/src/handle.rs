@@ -38,27 +38,33 @@ impl ServerHandle {
     }
 
     pub async fn stop(&self) -> Result<(), ServerError> {
-        let mut guard = self.inner.lock().await;
+        let (shutdown_tx, join, bus_adapter) = {
+            let mut guard = self.inner.lock().await;
 
-        if guard.shutdown_tx.is_none() {
-            return Ok(());
-        }
+            if guard.shutdown_tx.is_none() {
+                return Ok(());
+            }
 
-        if let Some(tx) = guard.shutdown_tx.take() {
+            (
+                guard.shutdown_tx.take(),
+                guard.join.take(),
+                Arc::clone(&guard.state.bus_adapter),
+            )
+        };
+
+        if let Some(tx) = shutdown_tx {
             let _ = tx.send(true);
         }
 
-        guard.state.bus_adapter.broadcast_close().await;
+        bus_adapter.broadcast_close().await;
 
         let drain = async {
-            if let Some(join) = guard.join.take() {
+            if let Some(join) = join {
                 let _ = join.await;
             }
         };
 
         let _ = tokio::time::timeout(Duration::from_secs(5), drain).await;
-
-        guard.join = None;
 
         Ok(())
     }

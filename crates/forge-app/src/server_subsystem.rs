@@ -60,9 +60,9 @@ impl ServerSubsystem {
     }
 
     pub async fn restart(&self) -> Result<(), ServerError> {
-        let guard = self.handle.read().await;
-        match guard.as_ref() {
-            Some(handle) => handle.restart().await,
+        let handle = { self.handle.read().await.as_ref().cloned() };
+        match handle {
+            Some(h) => h.restart().await,
             None => Err(ServerError::AuthInvalid {
                 reason: "server is not running".to_owned(),
             }),
@@ -89,25 +89,25 @@ impl ServerSubsystem {
     }
 
     pub async fn server_info(&self) -> Option<Arc<forge_server::ServerInfo>> {
-        let guard = self.handle.read().await;
-        match guard.as_ref() {
-            Some(handle) => Some(handle.server_info().await),
+        let handle = { self.handle.read().await.as_ref().cloned() };
+        match handle {
+            Some(h) => Some(h.server_info().await),
             None => None,
         }
     }
 
     pub async fn bus_adapter(&self) -> Option<Arc<forge_server::BusAdapter>> {
-        let guard = self.handle.read().await;
-        match guard.as_ref() {
-            Some(handle) => Some(handle.bus_adapter().await),
+        let handle = { self.handle.read().await.as_ref().cloned() };
+        match handle {
+            Some(h) => Some(h.bus_adapter().await),
             None => None,
         }
     }
 
     pub async fn overlay_root(&self) -> Option<Arc<std::path::PathBuf>> {
-        let guard = self.handle.read().await;
-        match guard.as_ref() {
-            Some(handle) => Some(handle.overlay_root().await),
+        let handle = { self.handle.read().await.as_ref().cloned() };
+        match handle {
+            Some(h) => Some(h.overlay_root().await),
             None => None,
         }
     }

@@ -16,6 +16,7 @@ struct HandleInner {
     bind_addr: SocketAddr,
 }
 
+#[derive(Clone)]
 pub struct ServerHandle {
     inner: Arc<Mutex<HandleInner>>,
 }

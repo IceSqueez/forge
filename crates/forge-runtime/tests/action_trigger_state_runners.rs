@@ -25,11 +25,14 @@ use forge_runtime::sub_action_runners::{
     CoreActionDisableRunner, CoreActionEnableRunner, CoreActionToggleRunner,
     CoreTriggerDisableRunner, CoreTriggerEnableRunner, CoreTriggerToggleRunner,
 };
-use forge_storage::{ActionRepo, ActionTelemetry, StorageError, TriggerInstanceRepo};
+use forge_storage::{
+    ActionRepo, ActionTelemetry, ExecutionStatus, StorageError, TriggerInstanceRepo,
+};
 use forge_types::{
     Action, ActionId, ArgStack, EventId, ExecutionMode, QueueId, SubActionConfig, SubActionOutcome,
     TriggerInstance, TriggerInstanceId, Variant,
 };
+use time::OffsetDateTime;
 
 struct NullPublisher;
 impl EventPublisher for NullPublisher {
@@ -105,6 +108,15 @@ impl ActionRepo for MockActionRepo {
     }
     async fn telemetry(&self, _id: ActionId) -> Result<ActionTelemetry, StorageError> {
         Ok(ActionTelemetry::default())
+    }
+    async fn record_execution(
+        &self,
+        _action_id: ActionId,
+        _started_at: OffsetDateTime,
+        _duration_ms: u64,
+        _status: ExecutionStatus,
+    ) -> Result<(), StorageError> {
+        Ok(())
     }
 }
 

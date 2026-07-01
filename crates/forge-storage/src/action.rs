@@ -4,6 +4,12 @@ use time::OffsetDateTime;
 
 use crate::StorageError;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecutionStatus {
+    Success,
+    Error,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ActionTelemetry {
     pub last_fired_at: Option<OffsetDateTime>,
@@ -25,6 +31,13 @@ pub trait ActionRepo: Send + Sync {
         group: Option<&'a str>,
     ) -> Result<Vec<Action>, StorageError>;
     async fn telemetry(&self, id: ActionId) -> Result<ActionTelemetry, StorageError>;
+    async fn record_execution(
+        &self,
+        action_id: ActionId,
+        started_at: OffsetDateTime,
+        duration_ms: u64,
+        status: ExecutionStatus,
+    ) -> Result<(), StorageError>;
 }
 
 #[cfg(test)]

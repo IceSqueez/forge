@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use forge_storage::{ActionRepo, ActionTelemetry, StorageError};
+use forge_storage::{ActionRepo, ActionTelemetry, ExecutionStatus, StorageError};
 use forge_types::{Action, ActionId, ExecutionMode, QueueId, SubActionStep};
 use serde_json;
 use time::OffsetDateTime;
@@ -190,6 +190,34 @@ impl ActionRepo for SqliteActionRepo {
         rows.into_iter()
             .map(|row| decode_row(row).map_err(StorageError::from))
             .collect()
+    }
+
+    async fn record_execution(
+        &self,
+        action_id: ActionId,
+        started_at: OffsetDateTime,
+        duration_ms: u64,
+        status: ExecutionStatus,
+    ) -> Result<(), StorageError> {
+        let id_str = action_id.to_string();
+        let started_at_secs = started_at.unix_timestamp();
+        let duration_i64 = duration_ms as i64;
+        let status_str = match status {
+            ExecutionStatus::Success => "ok",
+            ExecutionStatus::Error => "err",
+        };
+        sqlx::query(
+            "INSERT INTO action_executions (action_id, started_at, duration_ms, status)
+             VALUES (?, ?, ?, ?)",
+        )
+        .bind(id_str)
+        .bind(started_at_secs)
+        .bind(duration_i64)
+        .bind(status_str)
+        .execute(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+        Ok(())
     }
 
     async fn telemetry(&self, id: ActionId) -> Result<ActionTelemetry, StorageError> {

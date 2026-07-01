@@ -543,7 +543,7 @@ fn selected_viewer_detail<'a>(
             icon: None,
             shortcut: None,
             color: None,
-            disabled: false,
+            disabled: true,
         },
         MenuItem::Divider,
         MenuItem::Item {
@@ -552,7 +552,7 @@ fn selected_viewer_detail<'a>(
             icon: None,
             shortcut: None,
             color: Some(p.warning),
-            disabled: false,
+            disabled: true,
         },
         MenuItem::Item {
             label: forge_widgets::tr!("chat_drawer_timeout"),
@@ -560,7 +560,7 @@ fn selected_viewer_detail<'a>(
             icon: None,
             shortcut: None,
             color: Some(p.warning),
-            disabled: false,
+            disabled: true,
         },
         MenuItem::Item {
             label: forge_widgets::tr!("chat_drawer_ban"),
@@ -568,7 +568,7 @@ fn selected_viewer_detail<'a>(
             icon: None,
             shortcut: None,
             color: Some(p.random),
-            disabled: false,
+            disabled: true,
         },
     ];
 

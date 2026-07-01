@@ -29,3 +29,29 @@ impl EventPublisher for PlatformEventChannel {
         let _ = self.sender.send(event);
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use forge_events::EventSource;
+
+    use super::*;
+
+    // Why: this is the RFC-094 owned-stream contract — a subscriber taps the SAME
+    // sender the platform publishes to. If `subscribe()` ever created a fresh channel
+    // instead of tapping `self.sender`, the published event would never arrive.
+    #[tokio::test]
+    async fn published_event_reaches_a_prior_subscriber() {
+        let channel = PlatformEventChannel::new();
+        let mut stream = channel.subscribe();
+        let event = Event::new(
+            EventSource::Kick,
+            "kick.chat.message",
+            serde_json::Value::Null,
+        );
+        let sent_id = event.id;
+        channel.publish(event);
+        let received = stream.recv().await.unwrap();
+        assert_eq!(received.id, sent_id);
+    }
+}

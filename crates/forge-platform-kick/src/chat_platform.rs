@@ -149,3 +149,134 @@ fn map_connect_error(err: KickError) -> PlatformError {
         },
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::collections::HashMap;
+    use std::sync::Mutex as StdMutex;
+    use std::time::Duration as StdDuration;
+
+    use forge_platform_core::{RateLimitOutcome, RateLimiter};
+    use forge_storage::{CredentialId, CredentialsRepo, StorageError};
+    use time::{Duration, OffsetDateTime};
+
+    use super::*;
+    use crate::credentials::{CREDENTIAL_KEY, KickCredentials};
+
+    struct InMemRepo(StdMutex<HashMap<String, String>>);
+
+    impl InMemRepo {
+        fn empty() -> Arc<Self> {
+            Arc::new(Self(StdMutex::new(HashMap::new())))
+        }
+
+        fn with_valid_creds() -> Arc<Self> {
+            let creds = KickCredentials {
+                access_token: "tok".to_owned(),
+                refresh_token: "ref".to_owned(),
+                user_id: 42,
+                username: "streamer".to_owned(),
+                client_id: "cid".to_owned(),
+                // Comfortably outside the 5-minute refresh buffer so
+                // `get_valid_access_token` returns the stored token without any
+                // network call.
+                expires_at: OffsetDateTime::now_utc() + Duration::hours(1),
+            };
+            let mut map = HashMap::new();
+            map.insert(
+                CREDENTIAL_KEY.to_owned(),
+                serde_json::to_string(&creds).unwrap(),
+            );
+            Arc::new(Self(StdMutex::new(map)))
+        }
+    }
+
+    #[async_trait]
+    impl CredentialsRepo for InMemRepo {
+        async fn store(&self, id: &CredentialId, v: &str) -> Result<(), StorageError> {
+            self.0
+                .lock()
+                .unwrap()
+                .insert(id.as_str().to_owned(), v.to_owned());
+            Ok(())
+        }
+        async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
+            Ok(self.0.lock().unwrap().get(id.as_str()).cloned())
+        }
+        async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
+            Ok(self.0.lock().unwrap().remove(id.as_str()).is_some())
+        }
+        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
+            Ok(Vec::new())
+        }
+        async fn last_refresh(
+            &self,
+            _: &CredentialId,
+        ) -> Result<Option<OffsetDateTime>, StorageError> {
+            Ok(None)
+        }
+        async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
+            Ok(())
+        }
+    }
+
+    struct GrantLimiter;
+    #[async_trait]
+    impl RateLimiter for GrantLimiter {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+            Ok(RateLimitOutcome::Granted)
+        }
+        fn remaining(&self) -> u32 {
+            60
+        }
+        async fn observe_remote_throttle(&self, _retry_after: StdDuration) {}
+    }
+
+    struct ExhaustedLimiter;
+    #[async_trait]
+    impl RateLimiter for ExhaustedLimiter {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+            Ok(RateLimitOutcome::Exhausted)
+        }
+        fn remaining(&self) -> u32 {
+            0
+        }
+        async fn observe_remote_throttle(&self, _retry_after: StdDuration) {}
+    }
+
+    fn platform(repo: Arc<InMemRepo>, limiter: Arc<dyn RateLimiter>) -> KickPlatform {
+        let manager = Arc::new(KickCredentialsManager::new(
+            repo,
+            reqwest::Client::new(),
+            "test_cid".to_owned(),
+        ));
+        KickPlatform::new("test_channel".to_owned(), manager, limiter)
+    }
+
+    #[test]
+    fn connection_state_is_disconnected_before_connect() {
+        let p = platform(InMemRepo::empty(), Arc::new(GrantLimiter));
+        assert_eq!(p.connection_state(), ConnectionState::Disconnected);
+    }
+
+    #[tokio::test]
+    async fn send_message_without_credentials_requires_reauth() {
+        let p = platform(InMemRepo::empty(), Arc::new(GrantLimiter));
+        let err = p.send_message("chan", "hello").await.unwrap_err();
+        assert!(
+            matches!(&err, PlatformError::ReauthRequired { platform } if platform == "kick"),
+            "expected ReauthRequired {{ platform: kick }}, got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn send_message_with_valid_credentials_delegates_to_rate_limited_sender() {
+        // Valid stored creds pass the reauth gate and yield a token without network;
+        // an exhausted limiter then short-circuits inside the sender. Proves
+        // send_message wires creds -> token -> sender rather than returning early.
+        let p = platform(InMemRepo::with_valid_creds(), Arc::new(ExhaustedLimiter));
+        let err = p.send_message("chan", "hello").await.unwrap_err();
+        assert!(matches!(err, PlatformError::RateLimitExhausted));
+    }
+}

@@ -299,4 +299,121 @@ mod tests {
             );
         }
     }
+
+    mod lifecycle {
+        use std::time::Duration as StdDuration;
+
+        use async_trait::async_trait;
+        use forge_platform_core::{
+            BuiltinControl, ControlFailure, PlatformError, RateLimitOutcome, RateLimiter,
+        };
+        use forge_storage::{CredentialId, CredentialsRepo, StorageError};
+        use time::OffsetDateTime;
+
+        use super::super::*;
+        use crate::chat_platform::KickPlatform;
+
+        struct EmptyRepo;
+        #[async_trait]
+        impl CredentialsRepo for EmptyRepo {
+            async fn store(&self, _: &CredentialId, _: &str) -> Result<(), StorageError> {
+                Ok(())
+            }
+            async fn load(&self, _: &CredentialId) -> Result<Option<String>, StorageError> {
+                Ok(None)
+            }
+            async fn delete(&self, _: &CredentialId) -> Result<bool, StorageError> {
+                Ok(false)
+            }
+            async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
+                Ok(Vec::new())
+            }
+            async fn last_refresh(
+                &self,
+                _: &CredentialId,
+            ) -> Result<Option<OffsetDateTime>, StorageError> {
+                Ok(None)
+            }
+            async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
+                Ok(())
+            }
+        }
+
+        struct GrantLimiter;
+        #[async_trait]
+        impl RateLimiter for GrantLimiter {
+            async fn acquire(&self, _: u32) -> Result<RateLimitOutcome, PlatformError> {
+                Ok(RateLimitOutcome::Granted)
+            }
+            fn remaining(&self) -> u32 {
+                60
+            }
+            async fn observe_remote_throttle(&self, _: StdDuration) {}
+        }
+
+        // A bundle whose platform has never connected: `connection_state()` reports
+        // `Disconnected` and the credential store is empty.
+        fn disconnected_bundle() -> Arc<KickIntegrationBundle> {
+            let manager = Arc::new(KickCredentialsManager::new(
+                Arc::new(EmptyRepo),
+                reqwest::Client::new(),
+                "test_cid".to_owned(),
+            ));
+            let platform = Arc::new(KickPlatform::new(
+                "test_channel".to_owned(),
+                manager.clone(),
+                Arc::new(GrantLimiter),
+            ));
+            let (bundle, _) =
+                KickIntegrationBundle::new("test_channel".to_owned(), platform, manager);
+            bundle
+        }
+
+        #[test]
+        fn send_message_quick_action_is_disabled_while_disconnected() {
+            let bundle = disconnected_bundle();
+            let action = bundle
+                .actions()
+                .into_iter()
+                .find(|a| a.label == "Send message")
+                .unwrap();
+            assert!(!action.enabled);
+        }
+
+        #[test]
+        fn content_surfaces_the_mandatory_kick_disclaimer_banner() {
+            // Why: CLAUDE.md requires the unofficial-WS disclaimer on every Kick UI
+            // surface. This pins that the detail view renders it.
+            let bundle = disconnected_bundle();
+            assert!(
+                bundle
+                    .sections()
+                    .iter()
+                    .any(|s| matches!(s, DetailSection::WarningBanner { .. }))
+            );
+        }
+
+        #[tokio::test]
+        async fn reconnect_without_stored_credentials_reports_not_connected() {
+            let bundle = disconnected_bundle();
+            let outcome = BuiltinControl::reconnect(bundle.as_ref()).await;
+            assert_eq!(outcome, Err(ControlFailure::NotConnected));
+        }
+
+        #[tokio::test]
+        async fn refresh_token_without_stored_credentials_reports_not_connected() {
+            let bundle = disconnected_bundle();
+            let outcome = BuiltinControl::refresh_token(bundle.as_ref()).await;
+            assert_eq!(outcome, Err(ControlFailure::NotConnected));
+        }
+
+        #[tokio::test]
+        async fn dyn_control_disconnect_while_disconnected_reports_not_connected() {
+            // Also the object-safety guard: the bundle must coerce into
+            // `Arc<dyn BuiltinControl>` for the generic lifecycle renderer.
+            let control: Arc<dyn BuiltinControl> = disconnected_bundle();
+            let outcome = control.disconnect().await;
+            assert_eq!(outcome, Err(ControlFailure::NotConnected));
+        }
+    }
 }

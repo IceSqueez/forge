@@ -196,3 +196,118 @@ fn publish_transition(
         events.publish(connection_state_changed_event(PLATFORM_ID, new));
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use async_trait::async_trait;
+    use forge_events::Event;
+    use forge_platform_core::CONNECTION_STATE_CHANGED_KIND;
+    use forge_storage::{CredentialId, CredentialsRepo, StorageError};
+    use time::OffsetDateTime;
+
+    use super::*;
+    use crate::auth::GoogleAuthFlow;
+
+    struct EmptyRepo;
+    #[async_trait]
+    impl CredentialsRepo for EmptyRepo {
+        async fn store(&self, _: &CredentialId, _: &str) -> Result<(), StorageError> {
+            Ok(())
+        }
+        async fn load(&self, _: &CredentialId) -> Result<Option<String>, StorageError> {
+            Ok(None)
+        }
+        async fn delete(&self, _: &CredentialId) -> Result<bool, StorageError> {
+            Ok(false)
+        }
+        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
+            Ok(Vec::new())
+        }
+        async fn last_refresh(
+            &self,
+            _: &CredentialId,
+        ) -> Result<Option<OffsetDateTime>, StorageError> {
+            Ok(None)
+        }
+        async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
+            Ok(())
+        }
+    }
+
+    // A platform with no stored credentials: the poller's token source fails, so it
+    // never touches the network and only cancellation drives it to exit.
+    fn platform() -> YoutubePlatform {
+        let manager = Arc::new(YoutubeCredentialsManager::new(
+            Arc::new(EmptyRepo),
+            GoogleAuthFlow::new("test_cid".to_owned(), "test_secret".to_owned()),
+        ));
+        YoutubePlatform::new(
+            "UCtest".to_owned(),
+            manager,
+            LiveChatIdHandle::new(),
+            ActiveBroadcastIdHandle::new(),
+            Arc::new(tokio::sync::Mutex::new(QuotaState::default())),
+        )
+    }
+
+    fn state_of(event: &Event) -> Option<String> {
+        if event.kind != CONNECTION_STATE_CHANGED_KIND {
+            return None;
+        }
+        Some(event.payload["state"].as_str().unwrap().to_owned())
+    }
+
+    #[test]
+    fn connection_state_is_disconnected_before_connect() {
+        assert_eq!(platform().connection_state(), ConnectionState::Disconnected);
+    }
+
+    #[tokio::test]
+    async fn connect_publishes_connecting_then_connected_optimistically() {
+        // The flag is coarse: `connect` reports Connected on spawn, not on a confirmed
+        // broadcast. The observable contract is the ordered Connecting -> Connected pair.
+        let p = platform();
+        let mut stream = p.events();
+        p.connect().await.unwrap();
+        assert_eq!(
+            state_of(&stream.recv().await.unwrap()).as_deref(),
+            Some("connecting")
+        );
+        assert_eq!(
+            state_of(&stream.recv().await.unwrap()).as_deref(),
+            Some("connected")
+        );
+    }
+
+    #[tokio::test]
+    async fn send_message_without_credentials_requires_reauth() {
+        let p = platform();
+        let err = p.send_message("chan", "hello").await.unwrap_err();
+        assert!(
+            matches!(&err, PlatformError::ReauthRequired { platform } if platform == "youtube"),
+            "expected ReauthRequired {{ platform: youtube }}, got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn explicit_disconnect_deduplicates_the_redundant_poller_exit_transition() {
+        // connect -> Connecting,Connected; disconnect -> Disconnected AND cancels the
+        // poller. When the cancelled poller exits it also asks to publish Disconnected,
+        // but `publish_transition` must suppress that redundant same-state event.
+        // Without the dedup guard the drained sequence would carry a 4th Disconnected.
+        let p = platform();
+        let mut stream = p.events();
+        p.connect().await.unwrap();
+        p.disconnect().await.unwrap();
+        drop(p); // release the platform's own channel handle so the drain can terminate
+
+        let mut states = Vec::new();
+        while let Ok(event) = stream.recv().await {
+            if let Some(state) = state_of(&event) {
+                states.push(state);
+            }
+        }
+        assert_eq!(states, ["connecting", "connected", "disconnected"]);
+    }
+}

@@ -520,14 +520,6 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         match rt.block_on(manager.load()) {
             Ok(Some(creds)) => {
                 let channel_id = creds.channel_id.clone();
-                let (yt_tx, mut yt_rx) =
-                    tokio::sync::mpsc::unbounded_channel::<forge_events::Event>();
-                let bus_bridge = Arc::clone(&bus);
-                tokio::spawn(async move {
-                    while let Some(event) = yt_rx.recv().await {
-                        bus_bridge.publish(event);
-                    }
-                });
 
                 let yt_live_chat_id = forge_platform_youtube::LiveChatIdHandle::new();
                 let yt_active_broadcast = forge_platform_youtube::ActiveBroadcastIdHandle::new();
@@ -567,41 +559,57 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
 
                 if let Err(e) = forge_platform_youtube::register_youtube_sub_actions(
                     &mut sub_action_reg,
-                    Arc::clone(&yt_send),
-                    Arc::clone(&yt_moderation),
-                    Arc::clone(&yt_metadata),
+                    yt_send,
+                    yt_moderation,
+                    yt_metadata,
                 ) {
                     tracing::warn!("youtube sub-action runner registration failed: {e}");
                 }
 
-                let cancel = tokio_util::sync::CancellationToken::new();
-                let manager_for_poll = Arc::clone(&manager);
-                let poller = forge_platform_youtube::YoutubeChatPoller::new(
-                    Arc::new(move || {
-                        let m = Arc::clone(&manager_for_poll);
-                        Box::pin(async move { m.get_valid_access_token().await })
-                    }),
-                    yt_tx,
+                let platform = Arc::new(forge_platform_youtube::YoutubePlatform::new(
                     channel_id,
+                    Arc::clone(&manager),
                     yt_live_chat_id,
                     yt_active_broadcast,
-                    yt_quota,
-                );
+                    Arc::clone(&yt_quota),
+                ));
+                let chat_platform: Arc<dyn forge_platform_core::ChatPlatform> =
+                    Arc::clone(&platform) as _;
+
+                // Republish the platform's own event stream (chat receive + connection
+                // state transitions) onto the global bus.
+                let bus_events = Arc::clone(&bus);
+                let mut platform_events = chat_platform.events();
                 tokio::spawn(async move {
-                    if let Err(err) = poller.run(cancel).await {
-                        tracing::warn!("youtube chat poller exited: {err}");
+                    loop {
+                        match platform_events.recv().await {
+                            Ok(event) => bus_events.publish(event),
+                            Err(forge_events::EventsError::BusClosed) => break,
+                            Err(forge_events::EventsError::LaggingReceiver) => {
+                                tracing::warn!("youtube platform event bridge: lagging receiver");
+                                continue;
+                            }
+                            Err(_) => continue,
+                        }
                     }
                 });
 
-                let bus_yt_send = Arc::clone(&bus);
+                if let Err(e) = rt.block_on(chat_platform.connect()) {
+                    tracing::warn!(error = %e, "youtube chat connect failed");
+                }
+
+                // Consume `chat.send.request` targeted at youtube and send through the
+                // object, emitting the same chat.sent / chat.send.failed outcome events.
+                let bus_send = Arc::clone(&bus);
+                let send_platform = Arc::clone(&chat_platform);
                 tokio::spawn(async move {
-                    let mut sub = bus_yt_send.subscribe();
+                    let mut sub = bus_send.subscribe();
                     loop {
                         let event = match sub.recv().await {
                             Ok(e) => e,
                             Err(forge_events::EventsError::BusClosed) => break,
                             Err(forge_events::EventsError::LaggingReceiver) => {
-                                tracing::warn!("youtube_send_bridge: lagging receiver");
+                                tracing::warn!("youtube_send: lagging receiver");
                                 continue;
                             }
                             Err(_) => continue,
@@ -629,9 +637,9 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
                             None => continue,
                         };
                         let caused_by = event.id;
-                        match yt_send.send(&message).await {
+                        match send_platform.send_message("youtube", &message).await {
                             Ok(()) => {
-                                bus_yt_send.publish(forge_events::Event::caused_by(
+                                bus_send.publish(forge_events::Event::caused_by(
                                     forge_events::EventSource::YouTube,
                                     "chat.sent",
                                     serde_json::json!({"channel": "youtube", "message": message}),
@@ -640,7 +648,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
                             }
                             Err(e) => {
                                 tracing::warn!(error = %e, "youtube chat send failed");
-                                bus_yt_send.publish(forge_events::Event::caused_by(
+                                bus_send.publish(forge_events::Event::caused_by(
                                     forge_events::EventSource::YouTube,
                                     "chat.send.failed",
                                     serde_json::json!({"target": "youtube", "error": e.to_string()}),

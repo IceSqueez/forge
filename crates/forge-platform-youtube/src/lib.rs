@@ -1,10 +1,12 @@
 pub mod active_broadcast_id;
 pub mod auth;
 pub mod builtin;
+pub mod chat_platform;
 pub mod chat_poller;
 pub mod credentials;
 pub mod credentials_manager;
 pub mod dedup_window;
+mod event_channel;
 pub mod live_chat_id;
 pub mod moderation;
 pub mod quota_state;
@@ -20,6 +22,7 @@ pub use auth::{
     youtube_auth_flow,
 };
 pub use builtin::register_youtube_triggers;
+pub use chat_platform::YoutubePlatform;
 pub use chat_poller::YoutubeChatPoller;
 pub use credentials::{CREDENTIAL_KEY, QUOTA_KEY, YoutubeCredentials, YoutubeQuotaState};
 pub use credentials_manager::YoutubeCredentialsManager;

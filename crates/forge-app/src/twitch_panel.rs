@@ -870,7 +870,60 @@ fn format_mm_ss(d: Duration) -> String {
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
+    use async_trait::async_trait;
+    use forge_storage::StorageError;
+    use time::OffsetDateTime;
+
     use super::*;
+
+    struct NullCreds;
+
+    #[async_trait]
+    impl CredentialsRepo for NullCreds {
+        async fn store(&self, _id: &CredentialId, _bundle: &str) -> Result<(), StorageError> {
+            Ok(())
+        }
+        async fn load(&self, _id: &CredentialId) -> Result<Option<String>, StorageError> {
+            Ok(None)
+        }
+        async fn delete(&self, _id: &CredentialId) -> Result<bool, StorageError> {
+            Ok(false)
+        }
+        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
+            Ok(vec![])
+        }
+        async fn last_refresh(
+            &self,
+            _id: &CredentialId,
+        ) -> Result<Option<OffsetDateTime>, StorageError> {
+            Ok(None)
+        }
+        async fn mark_refreshed(&self, _id: &CredentialId) -> Result<(), StorageError> {
+            Ok(())
+        }
+    }
+
+    // Regression: once the OAuth flow value has been taken out of the shared
+    // Mutex (the one-shot consumption that lets `wait_for_auth` release the lock
+    // across its ≤300s authorization wait), every entry point must report the
+    // flow as already consumed instead of panicking or silently restarting it.
+    #[tokio::test]
+    async fn consumed_oauth_flow_is_rejected_by_both_entry_points() {
+        let flow: TwitchFlowHandle = Arc::new(TokioMutex::new(None));
+
+        let start_err = request_code(Arc::clone(&flow)).await.unwrap_err();
+        assert!(
+            start_err.contains("already consumed"),
+            "request_code on a consumed flow: {start_err}"
+        );
+
+        let creds: Arc<dyn CredentialsRepo> = Arc::new(NullCreds);
+        let wait_err = wait_for_auth(flow, creds).await.unwrap_err();
+        assert!(
+            wait_err.contains("already consumed"),
+            "wait_for_auth on a consumed flow: {wait_err}"
+        );
+    }
 
     #[test]
     fn format_mm_ss_basic() {

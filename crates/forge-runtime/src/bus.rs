@@ -407,6 +407,56 @@ mod tests {
         assert!(bus.lookup(ghost_id).is_none());
     }
 
+    #[test]
+    fn record_does_not_broadcast_to_subscribers() {
+        // Crux of the double-fire fix: `record` must store-only. A subscriber
+        // present before the call must observe nothing. If `record` reverts to
+        // `publish`, try_recv yields the event instead of Empty.
+        let bus = null_bus();
+        let mut rx = bus.subscribe().into_receiver();
+        bus.record(core_event("silent.record"));
+        assert!(matches!(
+            rx.try_recv(),
+            Err(broadcast::error::TryRecvError::Empty)
+        ));
+    }
+
+    #[test]
+    fn record_retains_event_in_ring_for_replay() {
+        // `record` is store-only, not a no-op: the event stays in the ring so a
+        // later replay_and_publish / lookup can find it.
+        let bus = null_bus();
+        let ev = core_event("recorded.candidate");
+        let id = ev.id;
+        bus.record(ev);
+        assert_eq!(bus.lookup(id).map(|e| e.id), Some(id));
+    }
+
+    #[tokio::test]
+    async fn record_then_replay_delivers_event_exactly_once() {
+        // Regression guard for the test-run double-fire: record (store-only) plus
+        // replay_and_publish must reach a subscriber exactly ONCE — the single
+        // replayed broadcast. A revert of `record` to `publish` delivers twice.
+        let bus = null_bus();
+        let mut rx = bus.subscribe().into_receiver();
+
+        let ev = core_event("trigger.candidate");
+        let id = ev.id;
+        bus.record(ev);
+        bus.replay_and_publish(id).await.unwrap();
+
+        let first = rx.try_recv().unwrap();
+        assert!(
+            first.replay,
+            "the single delivery must be the replayed event"
+        );
+        assert_eq!(first.kind, "trigger.candidate");
+        assert!(
+            matches!(rx.try_recv(), Err(broadcast::error::TryRecvError::Empty)),
+            "record must not broadcast; only replay delivers, so exactly one event arrives"
+        );
+    }
+
     #[tokio::test]
     async fn lagged_subscriber_gets_lagging_error() {
         let bus = null_bus();

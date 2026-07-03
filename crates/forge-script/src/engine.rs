@@ -354,6 +354,69 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn load_config_falls_back_to_defaults_when_settings_absent() {
+        let dp = open_test_dp().await;
+        // Fresh store: neither budget key persisted → both fall back to defaults.
+        let cfg = load_script_engine_config(dp.as_ref()).await;
+        assert_eq!(cfg, EngineConfig::default());
+    }
+
+    #[tokio::test]
+    async fn load_config_reads_persisted_op_limit_and_timeout() {
+        let dp = open_test_dp().await;
+        dp.set_string(reserved_keys::SCRIPT_OP_LIMIT_KEY, "777")
+            .await
+            .unwrap();
+        dp.set_string(reserved_keys::SCRIPT_TIMEOUT_MS_KEY, "1234")
+            .await
+            .unwrap();
+        let cfg = load_script_engine_config(dp.as_ref()).await;
+        assert_eq!(cfg.op_limit, 777);
+        assert_eq!(cfg.wall_time_ms, 1234);
+    }
+
+    #[tokio::test]
+    async fn load_config_falls_back_to_defaults_for_unparseable_values() {
+        let defaults = EngineConfig::default();
+        for bad in ["", "abc", "-5", "3.5", "99999999999999999999999999"] {
+            let dp = open_test_dp().await;
+            dp.set_string(reserved_keys::SCRIPT_OP_LIMIT_KEY, bad)
+                .await
+                .unwrap();
+            dp.set_string(reserved_keys::SCRIPT_TIMEOUT_MS_KEY, bad)
+                .await
+                .unwrap();
+            let cfg = load_script_engine_config(dp.as_ref()).await;
+            assert_eq!(
+                cfg, defaults,
+                "unparseable {bad:?} must fall back to defaults"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn persisted_low_op_limit_aborts_runaway_script_at_that_limit() {
+        // Guards the CORE-3 regression: runners must build the engine from the
+        // PERSISTED op-limit, not EngineConfig::default() (100_000). A low
+        // persisted limit must actually abort a runaway loop at THAT value —
+        // the `ops: 500` pattern fails if the default budget leaks back in.
+        let dp = open_test_dp().await;
+        dp.set_string(reserved_keys::SCRIPT_OP_LIMIT_KEY, "500")
+            .await
+            .unwrap();
+        let cfg = load_script_engine_config(dp.as_ref()).await;
+        let engine = Engine::with_config(cfg);
+        let err = tokio::task::spawn_blocking(move || engine.eval_script("loop {}"))
+            .await
+            .unwrap()
+            .unwrap_err();
+        assert!(
+            matches!(err, ScriptError::OperationLimit { ops: 500, .. }),
+            "runaway script must abort at the persisted op-limit (500), got: {err:?}",
+        );
+    }
+
+    #[tokio::test]
     async fn with_api_infinite_loop_terminates() {
         let dp = open_test_dp().await;
         let engine = Engine::with_api(

@@ -1155,4 +1155,29 @@ mod tests {
         );
         assert!(!state.polly.is_dirty);
     }
+
+    #[test]
+    fn config_badge_reflects_registry_membership_per_kind() {
+        let mut view = rt();
+        view.tts_engine_ids = vec![
+            CloudEngineKind::Azure.engine_id(),
+            CloudEngineKind::OpenAI.engine_id(),
+        ];
+        // The badge derives from live registry membership per kind — not from
+        // whether the form fields happen to be populated. Only the two
+        // registered kinds report configured; the absent two do not.
+        for (kind, expected) in [
+            (CloudEngineKind::Azure, true),
+            (CloudEngineKind::OpenAI, true),
+            (CloudEngineKind::ElevenLabs, false),
+            (CloudEngineKind::Polly, false),
+        ] {
+            let label = format!("{kind:?}");
+            assert_eq!(
+                is_registered(&view, kind),
+                expected,
+                "{label} registry-membership badge",
+            );
+        }
+    }
 }

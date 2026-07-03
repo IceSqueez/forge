@@ -110,6 +110,17 @@ impl EventBus {
         self.total_published.fetch_add(1, Ordering::Relaxed);
     }
 
+    /// Stores an event into the retained ring for later `replay_and_publish`
+    /// and observability, WITHOUT broadcasting it to subscribers. No subscriber
+    /// (including the trigger pipeline) observes a recorded event, so recording
+    /// then replaying evaluates the event exactly once instead of twice.
+    pub fn record(&self, event: Event) {
+        self.ring
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .push(event);
+    }
+
     pub fn subscribe(&self) -> EventSubscription {
         EventSubscription(self.sender.subscribe())
     }

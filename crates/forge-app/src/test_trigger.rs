@@ -1,18 +1,28 @@
 use forge_events::{Event, EventSource};
-use forge_types::{TriggerInstance, Variant};
+use forge_types::{TriggerConfig, TriggerInstance, Variant};
 use serde_json::json;
 
-pub fn synthesize_test_event(instance: &TriggerInstance) -> Event {
+/// Builds a synthetic event that the trigger evaluator will judge with the same
+/// `matches_trigger` predicate a live event faces. `config` is the instance's
+/// effective config (descriptor defaults merged with overrides), so the synthetic
+/// chat message carries the trigger's configured phrase instead of a fixed literal.
+pub fn synthesize_test_event(instance: &TriggerInstance, config: &TriggerConfig) -> Event {
     match instance.kind_id.as_str() {
-        "twitch.chat.command" => Event::new(
-            EventSource::Twitch,
-            "chat.message",
-            json!({
-                "message": "!test",
-                "user_login": "test_user",
-                "channel": "test_channel"
-            }),
-        ),
+        "twitch.chat.command" => {
+            let phrase = match config.get("phrase") {
+                Some(Variant::String(s)) if !s.is_empty() => s.as_str(),
+                _ => "!command",
+            };
+            Event::new(
+                EventSource::Twitch,
+                "chat.message",
+                json!({
+                    "message": format!("{phrase} test"),
+                    "user_login": "test_user",
+                    "channel": "test_channel"
+                }),
+            )
+        }
         "twitch.chat.message" => Event::new(
             EventSource::Twitch,
             "chat.message",
@@ -65,7 +75,7 @@ pub fn synthesize_test_event(instance: &TriggerInstance) -> Event {
             }),
         ),
         "obs.scenes.current_changed" => {
-            let scene_name = match instance.overrides.get("scene") {
+            let scene_name = match config.get("scene") {
                 Some(Variant::String(s)) => s.clone(),
                 _ => "TestScene".to_owned(),
             };
@@ -76,7 +86,7 @@ pub fn synthesize_test_event(instance: &TriggerInstance) -> Event {
             )
         }
         "script.event.custom" => {
-            let event_name = match instance.overrides.get("name") {
+            let event_name = match config.get("name") {
                 Some(Variant::String(s)) if !s.is_empty() => s.as_str(),
                 _ => "test",
             };
@@ -112,7 +122,7 @@ mod tests {
     #[test]
     fn chat_command_trigger_yields_twitch_chat_message() {
         let instance = make_instance("twitch.chat.command");
-        let event = synthesize_test_event(&instance);
+        let event = synthesize_test_event(&instance, &instance.overrides);
         assert_eq!(event.kind, "chat.message");
         assert_eq!(event.source, EventSource::Twitch);
     }
@@ -120,14 +130,14 @@ mod tests {
     #[test]
     fn chat_command_uses_test_message() {
         let instance = make_instance("twitch.chat.command");
-        let event = synthesize_test_event(&instance);
-        assert_eq!(event.payload["message"].as_str().unwrap(), "!test");
+        let event = synthesize_test_event(&instance, &instance.overrides);
+        assert_eq!(event.payload["message"].as_str().unwrap(), "!command test");
     }
 
     #[test]
     fn any_message_trigger_yields_twitch_chat_message() {
         let instance = make_instance("twitch.chat.message");
-        let event = synthesize_test_event(&instance);
+        let event = synthesize_test_event(&instance, &instance.overrides);
         assert_eq!(event.kind, "chat.message");
         assert_eq!(event.source, EventSource::Twitch);
     }
@@ -143,7 +153,7 @@ mod tests {
             user_defined: false,
             platform_scope: Default::default(),
         };
-        let event = synthesize_test_event(&instance);
+        let event = synthesize_test_event(&instance, &instance.overrides);
         assert_eq!(event.kind, "scene.changed");
         assert_eq!(event.source, EventSource::Obs);
         assert_eq!(event.payload["scene"].as_str().unwrap(), "Gaming");
@@ -152,14 +162,14 @@ mod tests {
     #[test]
     fn obs_scene_changed_none_uses_test_scene() {
         let instance = make_instance("obs.scenes.current_changed");
-        let event = synthesize_test_event(&instance);
+        let event = synthesize_test_event(&instance, &instance.overrides);
         assert_eq!(event.payload["scene"].as_str().unwrap(), "TestScene");
     }
 
     #[test]
     fn subscribe_trigger_yields_sub_received() {
         let instance = make_instance("twitch.support.subscriber");
-        let event = synthesize_test_event(&instance);
+        let event = synthesize_test_event(&instance, &instance.overrides);
         assert_eq!(event.kind, "sub.received");
         assert_eq!(event.source, EventSource::Twitch);
     }
@@ -167,7 +177,7 @@ mod tests {
     #[test]
     fn raid_trigger_yields_raid_received() {
         let instance = make_instance("twitch.channel.raid_received");
-        let event = synthesize_test_event(&instance);
+        let event = synthesize_test_event(&instance, &instance.overrides);
         assert_eq!(event.kind, "raid.received");
         assert_eq!(event.source, EventSource::Twitch);
     }

@@ -1,4 +1,5 @@
 use forge_events::{Event, EventSource};
+use forge_registry::effective_config;
 use forge_storage::ActionTelemetry;
 use forge_types::ActionId;
 use iced::Task;
@@ -238,28 +239,65 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
         ActionsMsg::TestTrigger(id) => {
             let bus = Arc::clone(&rt.bus);
             let service = Arc::clone(&rt.actions);
+            let registry = Arc::clone(&rt.trigger_registry);
             Task::perform(
                 async move {
                     let detail = service.load_detail(id).await.map_err(|e| e.to_string())?;
-                    let event = match detail.trigger_instances.first() {
-                        Some(instance) => synthesize_test_event(instance),
-                        None => Event::new(
-                            EventSource::Core,
-                            "test.trigger",
-                            serde_json::json!({ "action_id": id.to_string() }),
+                    let resolved = detail
+                        .trigger_instances
+                        .first()
+                        .and_then(|inst| registry.get(&inst.kind_id).map(|desc| (inst, desc)));
+                    let (event, matched) = match resolved {
+                        Some((instance, descriptor)) => {
+                            let config =
+                                effective_config(&descriptor.default_config(), &instance.overrides);
+                            let event = synthesize_test_event(instance, &config);
+                            let filter = descriptor.event_filter();
+                            let matched = filter.source.is_none_or(|s| s == event.source)
+                                && filter
+                                    .kind_prefix
+                                    .as_deref()
+                                    .is_none_or(|p| event.kind.starts_with(p))
+                                && descriptor.matches_trigger(&config, &event);
+                            (event, matched)
+                        }
+                        None => (
+                            Event::new(
+                                EventSource::Core,
+                                "test.trigger",
+                                serde_json::json!({ "action_id": id.to_string() }),
+                            ),
+                            false,
                         ),
                     };
                     let event_id = event.id;
-                    bus.publish(event);
+                    // Store-only: the synthesized event is retained for replay/observability
+                    // but never broadcast, so replay_and_publish is the single evaluation pass.
+                    bus.record(event);
                     bus.replay_and_publish(event_id)
                         .await
-                        .map_err(|e| e.to_string())
+                        .map_err(|e| e.to_string())?;
+                    Ok::<bool, String>(matched)
                 },
-                |r| {
-                    if let Err(e) = r {
+                |r| match r {
+                    Ok(true) => Message::Toast(ToastMsg::Fired {
+                        kind: forge_widgets::ToastKind::Success,
+                        message: "Test trigger fired".to_owned(),
+                        duration_ms: 3000,
+                    }),
+                    Ok(false) => Message::Toast(ToastMsg::Fired {
+                        kind: forge_widgets::ToastKind::Warn,
+                        message: "Test event did not match this trigger".to_owned(),
+                        duration_ms: 4000,
+                    }),
+                    Err(e) => {
                         tracing::warn!(error = %e, "test trigger failed");
+                        Message::Toast(ToastMsg::Fired {
+                            kind: forge_widgets::ToastKind::Error,
+                            message: format!("Test trigger failed: {e}"),
+                            duration_ms: 4000,
+                        })
                     }
-                    Message::Noop
                 },
             )
         }

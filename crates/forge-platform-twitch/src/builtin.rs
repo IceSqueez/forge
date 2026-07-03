@@ -333,14 +333,11 @@ impl QuickActions for TwitchIntegrationBundle {
                 icon: SectionIcon::new("flag"),
                 enabled: connected,
                 subaction_template: SubActionStep {
-                    kind_id: "core.log.write".to_owned(),
-                    config: BTreeMap::from([
-                        ("level".to_owned(), Variant::String("info".to_owned())),
-                        (
-                            "message".to_owned(),
-                            Variant::String("twitch.shoutout_requested".to_owned()),
-                        ),
-                    ]),
+                    kind_id: "twitch.channel.send_shoutout".to_owned(),
+                    config: BTreeMap::from([(
+                        "to_broadcaster_login".to_owned(),
+                        Variant::String(String::new()),
+                    )]),
                     enabled: true,
                     label: None,
                 },
@@ -351,32 +348,23 @@ impl QuickActions for TwitchIntegrationBundle {
                 icon: SectionIcon::new("clock"),
                 enabled: connected,
                 subaction_template: SubActionStep {
-                    kind_id: "core.log.write".to_owned(),
-                    config: BTreeMap::from([
-                        ("level".to_owned(), Variant::String("info".to_owned())),
-                        (
-                            "message".to_owned(),
-                            Variant::String("twitch.commercial_requested".to_owned()),
-                        ),
-                    ]),
+                    kind_id: "twitch.channel.run_ad".to_owned(),
+                    config: BTreeMap::from([(
+                        "duration_seconds".to_owned(),
+                        Variant::String("90".to_owned()),
+                    )]),
                     enabled: true,
                     label: None,
                 },
                 picker: None,
             },
             QuickAction {
-                label: "Update title/game".to_owned(),
+                label: "Update title".to_owned(),
                 icon: SectionIcon::new("edit"),
                 enabled: connected,
                 subaction_template: SubActionStep {
-                    kind_id: "core.log.write".to_owned(),
-                    config: BTreeMap::from([
-                        ("level".to_owned(), Variant::String("info".to_owned())),
-                        (
-                            "message".to_owned(),
-                            Variant::String("twitch.update_channel_requested".to_owned()),
-                        ),
-                    ]),
+                    kind_id: "twitch.channel.update_title".to_owned(),
+                    config: BTreeMap::from([("title".to_owned(), Variant::String(String::new()))]),
                     enabled: true,
                     label: None,
                 },

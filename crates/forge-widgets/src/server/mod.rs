@@ -13,9 +13,8 @@ pub use file_list::{
 };
 
 use iced::{
-    Border, Color, Element, Length,
+    Border, Color,
     widget::button::{Status, Style},
-    widget::{Space, container},
 };
 
 use crate::tokens::{Radius, radius};
@@ -90,14 +89,4 @@ fn ghost_icon_style(normal: Color, hover: Color) -> impl Fn(&iced::Theme, Status
         shadow: iced::Shadow::default(),
         snap: false,
     }
-}
-
-fn section_divider<'a, Msg: 'a>(border_color: Color) -> Element<'a, Msg> {
-    container(Space::new().width(Length::Fill).height(0.5f32))
-        .width(Length::Fill)
-        .style(move |_| container::Style {
-            background: Some(iced::Background::Color(border_color)),
-            ..container::Style::default()
-        })
-        .into()
 }

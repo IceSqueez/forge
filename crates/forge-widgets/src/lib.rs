@@ -106,8 +106,8 @@ pub use script_editor_widget::{
     choose_overlay, prefix_under_cursor, script_editor_widget, should_trigger_autocomplete,
 };
 pub use sections::{
-    BannerKind, ToastVariant, counter_badge, empty_state, live_status_banner, section_header,
-    section_header_expandable, toast_banner,
+    BannerKind, DividerAxis, ToastVariant, counter_badge, divider, empty_state, live_status_banner,
+    section_header, section_header_expandable, toast_banner,
 };
 pub use server::{
     BindAddressCardParams, BindBadge, BulletItem, BulletKind, ClientRowData, ClientStatus,

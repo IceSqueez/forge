@@ -10,6 +10,33 @@ use crate::tokens::{
     BORDER_THIN, FONT_MD, FONT_SM, FONT_XS, FONT_XXS, FontRole, Radius, Spacing, font, radius, sp,
 };
 
+const VERTICAL_DIVIDER_LENGTH: f32 = 14.0;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DividerAxis {
+    Horizontal,
+    Vertical,
+}
+
+pub fn divider<'a, Msg: 'a>(palette: &ForgePalette, axis: DividerAxis) -> Element<'a, Msg> {
+    let color = palette.border_regular;
+    let (width, height) = match axis {
+        DividerAxis::Horizontal => (Length::Fill, Length::Fixed(BORDER_THIN)),
+        DividerAxis::Vertical => (
+            Length::Fixed(BORDER_THIN),
+            Length::Fixed(VERTICAL_DIVIDER_LENGTH),
+        ),
+    };
+    container(Space::new())
+        .width(width)
+        .height(height)
+        .style(move |_theme: &iced::Theme| container::Style {
+            background: Some(Background::Color(color)),
+            ..container::Style::default()
+        })
+        .into()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BannerKind {
     Waiting,

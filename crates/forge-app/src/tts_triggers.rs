@@ -493,17 +493,6 @@ fn trigger_card_subs<'a>(
         .into()
 }
 
-fn divider_line<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
-    container(text(""))
-        .style(move |_| container::Style {
-            background: Some(Background::Color(palette.border_regular)),
-            ..container::Style::default()
-        })
-        .width(Length::Fill)
-        .height(BORDER_THIN)
-        .into()
-}
-
 fn format_row_toggle<'a>(
     label: &'static str,
     on: bool,
@@ -582,11 +571,11 @@ fn format_card<'a>(
     container(
         column![
             header,
-            divider_line(palette),
+            forge_widgets::divider(palette, forge_widgets::DividerAxis::Horizontal),
             username_row,
-            divider_line(palette),
+            forge_widgets::divider(palette, forge_widgets::DividerAxis::Horizontal),
             template_section,
-            divider_line(palette),
+            forge_widgets::divider(palette, forge_widgets::DividerAxis::Horizontal),
             emotes_row,
         ]
         .spacing(gap_sm),
@@ -672,19 +661,19 @@ fn queue_behavior_card<'a>(
     container(
         column![
             header,
-            divider_line(palette),
+            forge_widgets::divider(palette, forge_widgets::DividerAxis::Horizontal),
             queue_value_row(
                 Box::leak(forge_widgets::tr!("tts_triggers_queue_max_length").into_boxed_str()),
                 "20",
                 palette
             ),
-            divider_line(palette),
+            forge_widgets::divider(palette, forge_widgets::DividerAxis::Horizontal),
             queue_value_row(
                 Box::leak(forge_widgets::tr!("tts_triggers_queue_per_user_limit").into_boxed_str()),
                 "2",
                 palette
             ),
-            divider_line(palette),
+            forge_widgets::divider(palette, forge_widgets::DividerAxis::Horizontal),
             skip_row,
         ]
         .spacing(gap_sm),

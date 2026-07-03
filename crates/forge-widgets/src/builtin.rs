@@ -99,7 +99,7 @@ pub(crate) fn render_key_value_list<'a, Msg: 'a>(
     let r = radius(Radius::Md);
 
     let header = panel_header_row(icon.as_str(), title, None, palette);
-    let divider = horizontal_divider(border_color);
+    let divider = crate::sections::divider(palette, crate::sections::DividerAxis::Horizontal);
     let rows: Element<'a, Msg> = items
         .iter()
         .fold(Column::new(), |col, item| {
@@ -131,7 +131,7 @@ pub(crate) fn render_active_item_list<'a, Msg: 'a>(
     };
 
     let header = panel_header_row(icon.as_str(), title, count.as_deref(), palette);
-    let divider = horizontal_divider(border_color);
+    let divider = crate::sections::divider(palette, crate::sections::DividerAxis::Horizontal);
     let rows: Element<'a, Msg> = items
         .iter()
         .fold(Column::new(), |col, item| {
@@ -220,7 +220,7 @@ pub(crate) fn render_subscription_list<'a, Msg: 'a>(
     let count_str = crate::tr!("widget.builtin.active_count", count = items.len() as i64);
 
     let header = panel_header_row(icon.as_str(), title, Some(&count_str), palette);
-    let divider = horizontal_divider(border_color);
+    let divider = crate::sections::divider(palette, crate::sections::DividerAxis::Horizontal);
     let rows: Element<'a, Msg> = items
         .iter()
         .fold(Column::new(), |col, item| {
@@ -248,7 +248,7 @@ pub(crate) fn render_scopes_list<'a, Msg: 'a>(
     let count_str = scopes.len().to_string();
 
     let header = scopes_list_header(title, &count_str, palette);
-    let divider = horizontal_divider(border_color);
+    let divider = crate::sections::divider(palette, crate::sections::DividerAxis::Horizontal);
     let rows: Element<'a, Msg> = scopes
         .iter()
         .fold(Column::new(), |col, scope| {
@@ -276,7 +276,7 @@ pub(crate) fn render_info_card<'a, Msg: 'a>(
     let r = radius(Radius::Md);
 
     let header = info_card_header(title, live, palette);
-    let divider = horizontal_divider(border_color);
+    let divider = crate::sections::divider(palette, crate::sections::DividerAxis::Horizontal);
 
     let fields_grid: Element<'a, Msg> = fields
         .chunks(2)
@@ -322,7 +322,7 @@ pub(crate) fn render_stats_grid<'a, Msg: 'a>(
     let sep_color = border_color;
 
     let header = panel_header_row(icon.as_str(), title, None, palette);
-    let divider = horizontal_divider(border_color);
+    let divider = crate::sections::divider(palette, crate::sections::DividerAxis::Horizontal);
 
     let stats_row: Element<'a, Msg> = columns
         .iter()
@@ -367,7 +367,7 @@ fn content_list_panel<'a, Msg: 'a>(
         list.count_label.as_deref(),
         palette,
     );
-    let divider = horizontal_divider(border_color);
+    let divider = crate::sections::divider(palette, crate::sections::DividerAxis::Horizontal);
     let rows: Element<'a, Msg> = list
         .items
         .iter()
@@ -918,17 +918,6 @@ pub(crate) fn card_container<'a, Msg: 'a>(
                 width: BORDER_THIN,
                 radius: r.into(),
             },
-            ..container::Style::default()
-        })
-        .into()
-}
-
-pub(crate) fn horizontal_divider<'a, Msg: 'a>(color: Color) -> Element<'a, Msg> {
-    container(Space::new())
-        .width(Length::Fill)
-        .height(1.0)
-        .style(move |_: &iced::Theme| container::Style {
-            background: Some(iced::Background::Color(color)),
             ..container::Style::default()
         })
         .into()

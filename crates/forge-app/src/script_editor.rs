@@ -1444,7 +1444,7 @@ fn toolbar_action_row<'a>(
         tooltip(inner, tip, tooltip::Position::Bottom).into()
     };
 
-    let divider = crate::page_chrome::header_divider(palette);
+    let divider = forge_widgets::divider(palette, forge_widgets::DividerAxis::Vertical);
 
     row![
         run_btn,

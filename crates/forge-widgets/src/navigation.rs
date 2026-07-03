@@ -7,6 +7,7 @@ use iced::{
 
 use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
+use crate::sections::{DividerAxis, divider};
 use crate::tokens::{
     BORDER_THIN, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
 };
@@ -135,7 +136,15 @@ fn render_nav_item<'a, Msg: 'a + Clone>(
                 header
             }
         }
-        NavItem::Divider => nav_divider(palette.border_regular),
+        NavItem::Divider => container(divider(palette, DividerAxis::Horizontal))
+            .padding(iced::Padding {
+                top: spf(Spacing::Sm),
+                right: spf(Spacing::Xs),
+                bottom: 0.0,
+                left: spf(Spacing::Xs),
+            })
+            .width(iced::Length::Fill)
+            .into(),
     }
 }
 
@@ -448,25 +457,4 @@ fn nav_child_row<'a, Msg: 'a + Clone>(
     row![Space::new().width(18_u32), child_btn]
         .align_y(iced::Alignment::Center)
         .into()
-}
-
-fn nav_divider<'a, Msg: 'a>(border_color: Color) -> Element<'a, Msg> {
-    use iced::widget::rule;
-
-    container(
-        rule::horizontal(1.0_f32).style(move |_: &iced::Theme| rule::Style {
-            color: border_color,
-            radius: 0.0.into(),
-            fill_mode: rule::FillMode::Full,
-            snap: true,
-        }),
-    )
-    .padding(iced::Padding {
-        top: spf(Spacing::Sm),
-        right: spf(Spacing::Xs),
-        bottom: 0.0,
-        left: spf(Spacing::Xs),
-    })
-    .width(iced::Length::Fill)
-    .into()
 }

@@ -574,7 +574,7 @@ pub fn event_feed_view<'a>(
         .spacing(spf(Spacing::Xs))
         .align_y(iced::Alignment::Center);
 
-    let divider = crate::page_chrome::header_divider(palette);
+    let divider = forge_widgets::divider(palette, forge_widgets::DividerAxis::Vertical);
     let right_side = row![chips, divider, action_row]
         .spacing(spf(Spacing::Xs))
         .align_y(iced::Alignment::Center);

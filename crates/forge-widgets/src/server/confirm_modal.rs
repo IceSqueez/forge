@@ -270,15 +270,13 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
         ..container::Style::default()
     });
 
-    let divider_color = p.border_regular;
-
     let card_content = column![
         header_section,
-        super::section_divider(divider_color),
+        crate::sections::divider(&p, crate::sections::DividerAxis::Horizontal),
         risk_section,
-        super::section_divider(divider_color),
+        crate::sections::divider(&p, crate::sections::DividerAxis::Horizontal),
         confirm_section,
-        super::section_divider(divider_color),
+        crate::sections::divider(&p, crate::sections::DividerAxis::Horizontal),
         footer_section,
     ]
     .spacing(0);

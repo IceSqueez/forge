@@ -58,27 +58,6 @@ pub fn actionable_count<Msg>(items: &[MenuItem<Msg>]) -> usize {
         .count()
 }
 
-fn divider_el<'a, Msg: 'a>(palette: &'a ForgePalette) -> Element<'a, Msg> {
-    let xs = spf(Spacing::Xs);
-    let border_color = palette.border_regular;
-    container(
-        container(iced::widget::Space::new().width(Length::Fill))
-            .width(Length::Fill)
-            .height(Length::Fixed(1.0))
-            .style(move |_theme: &iced::Theme| container::Style {
-                background: Some(Background::Color(border_color)),
-                ..container::Style::default()
-            }),
-    )
-    .padding(Padding {
-        top: xs / 2.0,
-        right: 0.0,
-        bottom: xs / 2.0,
-        left: 0.0,
-    })
-    .into()
-}
-
 fn header_el<'a, Msg: 'a>(label: String, palette: &'a ForgePalette) -> Element<'a, Msg> {
     let xs = spf(Spacing::Xs);
     let sm = spf(Spacing::Sm);
@@ -199,7 +178,17 @@ fn panel_el<'a, Msg: Clone + 'a>(
     let item_els: Vec<Element<'a, Msg>> = items
         .into_iter()
         .map(|item| match item {
-            MenuItem::Divider => divider_el(palette),
+            MenuItem::Divider => container(crate::sections::divider(
+                palette,
+                crate::sections::DividerAxis::Horizontal,
+            ))
+            .padding(Padding {
+                top: spf(Spacing::Xs) / 2.0,
+                right: 0.0,
+                bottom: spf(Spacing::Xs) / 2.0,
+                left: 0.0,
+            })
+            .into(),
             MenuItem::Header(label) => header_el(label, palette),
             MenuItem::Item {
                 label,

@@ -59,15 +59,3 @@ pub(crate) fn page_header_with_actions<'a>(
         })
         .into()
 }
-
-pub(crate) fn header_divider<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
-    let p = *palette;
-    iced::widget::container(iced::widget::Space::new().width(0.5).height(16.0))
-        .width(0.5)
-        .height(16.0)
-        .style(move |_: &iced::Theme| iced::widget::container::Style {
-            background: Some(iced::Background::Color(p.border_regular)),
-            ..iced::widget::container::Style::default()
-        })
-        .into()
-}

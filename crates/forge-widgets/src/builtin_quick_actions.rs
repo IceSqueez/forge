@@ -4,7 +4,7 @@ use iced::{
     widget::{Column, Row, Space, container, text},
 };
 
-use crate::builtin::{card_container, horizontal_divider};
+use crate::builtin::card_container;
 use crate::{
     icons::{Icon, tabler_icon},
     palette::ForgePalette,
@@ -30,7 +30,7 @@ pub fn builtin_quick_actions_grid_with_hint<'a, Msg: Clone + 'a>(
     let r = radius(Radius::Md);
 
     let header = quick_actions_section_header(hint, palette);
-    let divider = horizontal_divider(border_color);
+    let divider = crate::sections::divider(palette, crate::sections::DividerAxis::Horizontal);
 
     let capped: &[QuickAction] = if actions.len() > 4 {
         &actions[..4]

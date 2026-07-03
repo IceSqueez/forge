@@ -245,18 +245,24 @@ pub fn overlay_file_list<'a, Msg: Clone + 'a>(
             if is_last {
                 btn.into()
             } else {
-                column![btn, super::section_divider::<Msg>(p.border_regular)]
-                    .spacing(0)
-                    .into()
+                column![
+                    btn,
+                    crate::sections::divider::<Msg>(&p, crate::sections::DividerAxis::Horizontal)
+                ]
+                .spacing(0)
+                .into()
             }
         } else {
             let plain = container(row_content).width(Length::Fill);
             if is_last {
                 plain.into()
             } else {
-                column![plain, super::section_divider::<Msg>(p.border_regular)]
-                    .spacing(0)
-                    .into()
+                column![
+                    plain,
+                    crate::sections::divider::<Msg>(&p, crate::sections::DividerAxis::Horizontal)
+                ]
+                .spacing(0)
+                .into()
             }
         };
         file_row_els.push(row_el);
@@ -320,7 +326,7 @@ pub fn overlay_file_list<'a, Msg: Clone + 'a>(
         .color(p.text_muted);
 
     let url_group: Element<'a, Msg> = column![
-        super::section_divider::<Msg>(p.border_regular),
+        crate::sections::divider::<Msg>(&p, crate::sections::DividerAxis::Horizontal),
         column![url_label, url_box].spacing(5),
     ]
     .spacing(10)
@@ -336,7 +342,7 @@ pub fn overlay_file_list<'a, Msg: Clone + 'a>(
 
     let card_content = column![
         header_row,
-        super::section_divider::<Msg>(p.border_regular),
+        crate::sections::divider::<Msg>(&p, crate::sections::DividerAxis::Horizontal),
         body
     ]
     .spacing(0);

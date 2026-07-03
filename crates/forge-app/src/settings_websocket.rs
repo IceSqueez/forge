@@ -346,16 +346,6 @@ fn section_rule<'a>(border_color: Color) -> Element<'a, Message> {
         .into()
 }
 
-fn auth_divider<'a>(border_color: Color) -> Element<'a, Message> {
-    container(Space::new().width(Length::Fill).height(0.5_f32))
-        .width(Length::Fill)
-        .style(move |_| container::Style {
-            background: Some(Background::Color(border_color)),
-            ..container::Style::default()
-        })
-        .into()
-}
-
 fn auth_toggle_row<'a>(
     icon: Icon,
     icon_color: Color,
@@ -699,7 +689,7 @@ pub fn settings_websocket_view<'a>(
             )),
             p,
         ),
-        auth_divider(p.border_regular),
+        forge_widgets::divider(p, forge_widgets::DividerAxis::Horizontal),
         auth_toggle_row(
             Icon::Globe,
             p.info,
@@ -711,7 +701,7 @@ pub fn settings_websocket_view<'a>(
             )),
             p,
         ),
-        auth_divider(p.border_regular),
+        forge_widgets::divider(p, forge_widgets::DividerAxis::Horizontal),
         auth_toggle_row(
             Icon::AlertTriangle,
             p.warning,

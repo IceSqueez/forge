@@ -811,7 +811,7 @@ tts_cloud_connection_verified = Connection verified
 
 ## Cloud TTS Engines — toast messages
 
-tts_cloud_saved_toast = Restart app to enable the { $name } engine.
+tts_cloud_saved_toast = { $name } engine is ready — no restart needed.
 tts_cloud_save_failed_toast = Failed to save { $name } credentials: { $error }
 
 ## Voice Aliases — strategy banner

@@ -208,6 +208,7 @@ impl App {
                 youtube_flow: None,
                 kick_flow: None,
                 tts_engine_ids: Vec::new(),
+                tts_registry: None,
                 twitch_login: None,
                 twitch_token_expires: None,
                 twitch_reauth_required: false,
@@ -278,6 +279,7 @@ impl Default for App {
                 youtube_flow: None,
                 kick_flow: None,
                 tts_engine_ids: Vec::new(),
+                tts_registry: None,
                 twitch_login: None,
                 twitch_token_expires: None,
                 twitch_reauth_required: false,
@@ -433,7 +435,7 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
             crate::tts_triggers::update(&mut app.ui.tts_triggers, &app.rt, sub)
         }
         Message::Tts(TtsMsg::CloudEngines(sub)) => {
-            crate::cloud_tts_engines::update(&mut app.ui.tts_cloud_engines, &app.rt, sub)
+            crate::cloud_tts_engines::update(&mut app.ui.tts_cloud_engines, &mut app.rt, sub)
         }
         Message::LocalCallbackFlow(sub) => {
             crate::local_callback_flow::update(&mut app.ui.local_callback_flow, &mut app.rt, sub)
@@ -720,6 +722,7 @@ mod tests {
                 youtube_flow: None,
                 kick_flow: None,
                 tts_engine_ids: Vec::new(),
+                tts_registry: None,
                 twitch_login: None,
                 twitch_token_expires: None,
                 twitch_reauth_required: false,
@@ -1054,6 +1057,7 @@ mod tests {
                 youtube_flow: None,
                 kick_flow: None,
                 tts_engine_ids: Vec::new(),
+                tts_registry: None,
                 twitch_login: None,
                 twitch_token_expires: None,
                 twitch_reauth_required: false,

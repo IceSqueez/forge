@@ -114,7 +114,9 @@ pub(crate) fn tts_section_view<'a>(
         TtsSection::Aliases => voice_aliases_view(&app.ui.tts_aliases, palette),
         TtsSection::Filters => tts_filters_view(&app.ui.tts_filters, palette),
         TtsSection::Triggers => tts_triggers_view(&app.ui.tts_triggers, palette),
-        TtsSection::CloudEngines => cloud_tts_engines::view(&app.ui.tts_cloud_engines, palette),
+        TtsSection::CloudEngines => {
+            cloud_tts_engines::view(&app.ui.tts_cloud_engines, &app.rt, palette)
+        }
     };
 
     let section_label = match section {

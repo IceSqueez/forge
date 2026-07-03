@@ -17,6 +17,7 @@ use forge_widgets::{DeviceLabel, PickerItem, ToastKind};
 use forge_platform_core::{HeaderAction, HealthDelta};
 use forge_storage::settings::Density;
 use forge_storage::{GlobalEntry, Language};
+use forge_tts_core::EngineId;
 use forge_types::{ActionId, OAuthToken, PlatformId, UnifiedChatRow};
 use forge_widgets::{ThemeId, VariantKind};
 use time::OffsetDateTime;
@@ -544,6 +545,18 @@ impl CloudEngineKind {
             Self::OpenAI => "OpenAI TTS",
             Self::Polly => "Amazon Polly",
         }
+    }
+
+    /// The `EngineId` this kind registers into the live `TtsRegistry` under —
+    /// shared between boot registration and the hot-register path so both agree.
+    pub fn engine_id(self) -> EngineId {
+        let id = match self {
+            Self::Azure => "azure",
+            Self::ElevenLabs => "elevenlabs",
+            Self::OpenAI => "openai",
+            Self::Polly => "polly",
+        };
+        EngineId(id.to_owned())
     }
 }
 

@@ -11,6 +11,8 @@ use forge_tts_cloud::openai::OpenAiEngineFactory;
 use forge_tts_cloud::polly::PollyEngineFactory;
 use forge_tts_core::{EngineId, TtsRegistry};
 
+use crate::message::CloudEngineKind;
+
 pub async fn register_cloud_engines(
     registry: &RwLock<TtsRegistry>,
     creds: &dyn CredentialsRepo,
@@ -29,6 +31,51 @@ pub async fn register_cloud_engines(
         registered.push(id);
     }
     registered
+}
+
+/// Registers Azure into `registry` under the shared `azure` `EngineId`. Callable
+/// both from boot load and from the Cloud Engines save flow (hot-register, no
+/// restart) so both paths agree on the id and factory construction.
+pub fn register_azure(registry: &RwLock<TtsRegistry>, creds: AzureCredentials) -> EngineId {
+    let id = CloudEngineKind::Azure.engine_id();
+    registry
+        .write()
+        .unwrap_or_else(|e| e.into_inner())
+        .register(id.clone(), Arc::new(AzureEngineFactory::new(creds)));
+    id
+}
+
+/// Registers ElevenLabs into `registry` under the shared `elevenlabs` `EngineId`.
+pub fn register_elevenlabs(
+    registry: &RwLock<TtsRegistry>,
+    creds: ElevenLabsCredentials,
+) -> EngineId {
+    let id = CloudEngineKind::ElevenLabs.engine_id();
+    registry
+        .write()
+        .unwrap_or_else(|e| e.into_inner())
+        .register(id.clone(), Arc::new(ElevenLabsEngineFactory::new(creds)));
+    id
+}
+
+/// Registers OpenAI into `registry` under the shared `openai` `EngineId`.
+pub fn register_openai(registry: &RwLock<TtsRegistry>, creds: OpenAiCredentials) -> EngineId {
+    let id = CloudEngineKind::OpenAI.engine_id();
+    registry
+        .write()
+        .unwrap_or_else(|e| e.into_inner())
+        .register(id.clone(), Arc::new(OpenAiEngineFactory::new(creds)));
+    id
+}
+
+/// Registers Polly into `registry` under the shared `polly` `EngineId`.
+pub fn register_polly(registry: &RwLock<TtsRegistry>, creds: PollyCredentials) -> EngineId {
+    let id = CloudEngineKind::Polly.engine_id();
+    registry
+        .write()
+        .unwrap_or_else(|e| e.into_inner())
+        .register(id.clone(), Arc::new(PollyEngineFactory::new(creds)));
+    id
 }
 
 async fn try_register_azure(
@@ -50,11 +97,7 @@ async fn try_register_azure(
             return None;
         }
     };
-    let id = EngineId("azure".into());
-    registry
-        .write()
-        .unwrap_or_else(|e| e.into_inner())
-        .register(id.clone(), Arc::new(AzureEngineFactory::new(azure_creds)));
+    let id = register_azure(registry, azure_creds);
     tracing::info!("registered Azure TTS engine");
     Some(id)
 }
@@ -81,11 +124,7 @@ async fn try_register_elevenlabs(
             return None;
         }
     };
-    let id = EngineId("elevenlabs".into());
-    registry
-        .write()
-        .unwrap_or_else(|e| e.into_inner())
-        .register(id.clone(), Arc::new(ElevenLabsEngineFactory::new(el_creds)));
+    let id = register_elevenlabs(registry, el_creds);
     tracing::info!("registered ElevenLabs TTS engine");
     Some(id)
 }
@@ -109,11 +148,7 @@ async fn try_register_openai(
             return None;
         }
     };
-    let id = EngineId("openai".into());
-    registry
-        .write()
-        .unwrap_or_else(|e| e.into_inner())
-        .register(id.clone(), Arc::new(OpenAiEngineFactory::new(oa_creds)));
+    let id = register_openai(registry, oa_creds);
     tracing::info!("registered OpenAI TTS engine");
     Some(id)
 }
@@ -137,11 +172,7 @@ async fn try_register_polly(
             return None;
         }
     };
-    let id = EngineId("polly".into());
-    registry
-        .write()
-        .unwrap_or_else(|e| e.into_inner())
-        .register(id.clone(), Arc::new(PollyEngineFactory::new(polly_creds)));
+    let id = register_polly(registry, polly_creds);
     tracing::info!("registered Polly TTS engine");
     Some(id)
 }

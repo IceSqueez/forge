@@ -79,6 +79,11 @@ pub enum SpeakCommand {
     SetVolume(f32),
     /// Drops an alias from the live resolver by id; no-op when the id is absent.
     RemoveAlias(AliasId),
+    /// Rebuilds the voice catalog from the live `TtsRegistry`. Send this after
+    /// registering a new engine factory into the same registry `Arc` so the
+    /// catalog (and `SpeakQueueHandle::engines`/`available_voices`) picks it up
+    /// without an app restart.
+    RefreshVoiceCatalog,
     /// Sent by `forge-audio` when the VoiceGate mic threshold is crossed.
     VoiceGateActivated,
     /// Sent by `forge-audio` when the VoiceGate mic level drops below threshold.

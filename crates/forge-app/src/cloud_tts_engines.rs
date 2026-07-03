@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use forge_speak_queue::SpeakCommand;
 use forge_storage::CredentialId;
 use forge_tts_cloud::azure::AzureEngineFactory;
 use forge_tts_cloud::credentials::{
@@ -18,6 +19,7 @@ use iced::widget::{button, column, container, row, scrollable, text, text_input}
 use iced::{Alignment, Background, Border, Color, Element, Length, Task};
 
 use crate::Message;
+use crate::cloud_tts_boot;
 use crate::message::{CloudTtsEnginesMsg, ToastMsg, TtsMsg};
 use crate::runtime_view::RuntimeView;
 
@@ -97,7 +99,7 @@ impl Default for CloudTtsEnginesState {
 
 pub fn update(
     state: &mut CloudTtsEnginesState,
-    rt: &RuntimeView,
+    rt: &mut RuntimeView,
     msg: CloudTtsEnginesMsg,
 ) -> Task<Message> {
     match msg {
@@ -260,11 +262,13 @@ pub fn update(
                 CloudEngineKind::OpenAI => state.openai.is_dirty = false,
                 CloudEngineKind::Polly => state.polly.is_dirty = false,
             }
-            Task::done(Message::Toast(ToastMsg::Fired {
+            let refresh_task = hot_register(kind, state, rt);
+            let toast_task = Task::done(Message::Toast(ToastMsg::Fired {
                 kind: ToastKind::Info,
                 message: forge_widgets::tr!("tts_cloud_saved_toast", name = name),
                 duration_ms: 6000,
-            }))
+            }));
+            Task::batch([toast_task, refresh_task])
         }
 
         CloudTtsEnginesMsg::Saved(kind, Err(e)) => {
@@ -409,8 +413,65 @@ pub fn update(
     }
 }
 
+/// Registers the just-persisted credentials into the live `TtsRegistry` (if the
+/// runtime is up) and returns a task that refreshes the speak queue's voice
+/// catalog, so the engine is usable from Dashboard/Engines without a restart.
+fn hot_register(
+    kind: CloudEngineKind,
+    state: &CloudTtsEnginesState,
+    rt: &mut RuntimeView,
+) -> Task<Message> {
+    let Some(registry) = rt.tts_registry.as_ref() else {
+        return Task::none();
+    };
+    let id = match kind {
+        CloudEngineKind::Azure => cloud_tts_boot::register_azure(
+            registry,
+            AzureCredentials {
+                api_key: state.azure.api_key.clone(),
+                region: state.azure.region.clone(),
+                base_url: None,
+            },
+        ),
+        CloudEngineKind::ElevenLabs => cloud_tts_boot::register_elevenlabs(
+            registry,
+            ElevenLabsCredentials {
+                api_key: state.elevenlabs.api_key.clone(),
+                base_url: None,
+            },
+        ),
+        CloudEngineKind::OpenAI => cloud_tts_boot::register_openai(
+            registry,
+            OpenAiCredentials {
+                api_key: state.openai.api_key.clone(),
+                base_url: None,
+            },
+        ),
+        CloudEngineKind::Polly => cloud_tts_boot::register_polly(
+            registry,
+            PollyCredentials {
+                access_key_id: state.polly.access_key.clone(),
+                secret_access_key: state.polly.secret_key.clone(),
+                region: state.polly.region.clone(),
+                base_url: None,
+            },
+        ),
+    };
+    if !rt.tts_engine_ids.contains(&id) {
+        rt.tts_engine_ids.push(id);
+    }
+    let Some(queue) = rt.speak_queue.clone() else {
+        return Task::none();
+    };
+    Task::perform(
+        async move { queue.send(SpeakCommand::RefreshVoiceCatalog).await },
+        |_| Message::Noop,
+    )
+}
+
 pub fn view<'a>(
     state: &'a CloudTtsEnginesState,
+    rt: &'a RuntimeView,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let header = text(forge_widgets::tr!("tts_cloud_header"))
@@ -419,10 +480,10 @@ pub fn view<'a>(
         .font(font(FontRole::Monospace));
 
     let cards = column![
-        azure_card(&state.azure, palette),
-        elevenlabs_card(&state.elevenlabs, palette),
-        openai_card(&state.openai, palette),
-        polly_card(&state.polly, palette),
+        azure_card(&state.azure, rt, palette),
+        elevenlabs_card(&state.elevenlabs, rt, palette),
+        openai_card(&state.openai, rt, palette),
+        polly_card(&state.polly, rt, palette),
     ]
     .spacing(spf(Spacing::Sm));
 
@@ -435,7 +496,11 @@ pub fn view<'a>(
     .into()
 }
 
-fn azure_card<'a>(form: &'a AzureForm, palette: &'a ForgePalette) -> Element<'a, Message> {
+fn azure_card<'a>(
+    form: &'a AzureForm,
+    rt: &'a RuntimeView,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
     let can_save = form.is_dirty && !form.api_key.is_empty() && !form.region.is_empty();
     let can_test = !form.api_key.is_empty()
         && !form.region.is_empty()
@@ -474,7 +539,7 @@ fn azure_card<'a>(form: &'a AzureForm, palette: &'a ForgePalette) -> Element<'a,
         "Azure Speech",
         palette.info,
         &form.test_status,
-        &form.api_key,
+        is_registered(rt, CloudEngineKind::Azure),
         fields.into(),
         CloudEngineKind::Azure,
         can_save,
@@ -485,6 +550,7 @@ fn azure_card<'a>(form: &'a AzureForm, palette: &'a ForgePalette) -> Element<'a,
 
 fn elevenlabs_card<'a>(
     form: &'a ElevenLabsForm,
+    rt: &'a RuntimeView,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let can_save = form.is_dirty && !form.api_key.is_empty();
@@ -508,7 +574,7 @@ fn elevenlabs_card<'a>(
         "ElevenLabs",
         palette.bits,
         &form.test_status,
-        &form.api_key,
+        is_registered(rt, CloudEngineKind::ElevenLabs),
         fields.into(),
         CloudEngineKind::ElevenLabs,
         can_save,
@@ -517,7 +583,11 @@ fn elevenlabs_card<'a>(
     )
 }
 
-fn openai_card<'a>(form: &'a OpenAiForm, palette: &'a ForgePalette) -> Element<'a, Message> {
+fn openai_card<'a>(
+    form: &'a OpenAiForm,
+    rt: &'a RuntimeView,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
     let can_save = form.is_dirty && !form.api_key.is_empty();
     let can_test = !form.api_key.is_empty() && form.test_status != TestStatus::Testing;
 
@@ -539,7 +609,7 @@ fn openai_card<'a>(form: &'a OpenAiForm, palette: &'a ForgePalette) -> Element<'
         "OpenAI TTS",
         palette.success,
         &form.test_status,
-        &form.api_key,
+        is_registered(rt, CloudEngineKind::OpenAI),
         fields.into(),
         CloudEngineKind::OpenAI,
         can_save,
@@ -548,7 +618,11 @@ fn openai_card<'a>(form: &'a OpenAiForm, palette: &'a ForgePalette) -> Element<'
     )
 }
 
-fn polly_card<'a>(form: &'a PollyForm, palette: &'a ForgePalette) -> Element<'a, Message> {
+fn polly_card<'a>(
+    form: &'a PollyForm,
+    rt: &'a RuntimeView,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
     let can_save = form.is_dirty
         && !form.access_key.is_empty()
         && !form.secret_key.is_empty()
@@ -597,7 +671,7 @@ fn polly_card<'a>(form: &'a PollyForm, palette: &'a ForgePalette) -> Element<'a,
         "Amazon Polly",
         palette.warning,
         &form.test_status,
-        &form.access_key,
+        is_registered(rt, CloudEngineKind::Polly),
         fields.into(),
         CloudEngineKind::Polly,
         can_save,
@@ -606,12 +680,19 @@ fn polly_card<'a>(form: &'a PollyForm, palette: &'a ForgePalette) -> Element<'a,
     )
 }
 
+/// Whether `kind`'s `EngineId` is a member of the live `TtsRegistry` right now —
+/// the config-status badge's single source of truth, independent of whether the
+/// form fields happen to be populated in this session.
+fn is_registered(rt: &RuntimeView, kind: CloudEngineKind) -> bool {
+    rt.tts_engine_ids.contains(&kind.engine_id())
+}
+
 #[allow(clippy::too_many_arguments)]
 fn engine_card<'a>(
     name: &'static str,
     dot_color: Color,
     test_status: &'a TestStatus,
-    primary_key: &str,
+    is_registered: bool,
     fields: Element<'a, Message>,
     kind: CloudEngineKind,
     can_save: bool,
@@ -630,7 +711,7 @@ fn engine_card<'a>(
         .width(7)
         .height(7);
 
-    let status_badge = config_status_badge(test_status, primary_key, palette);
+    let status_badge = config_status_badge(test_status, is_registered, palette);
 
     let header = row![
         status_dot,
@@ -799,21 +880,21 @@ fn engine_card<'a>(
 
 fn config_status_badge<'a>(
     test_status: &TestStatus,
-    primary_key: &str,
+    is_registered: bool,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    let (label, color) = if primary_key.is_empty() {
-        (
-            forge_widgets::tr!("tts_cloud_not_configured"),
-            palette.text_muted,
-        )
+    let (label, color) = if is_registered {
+        (forge_widgets::tr!("tts_cloud_configured"), palette.success)
     } else if matches!(test_status, TestStatus::Err(_)) {
         (
             forge_widgets::tr!("tts_cloud_connection_failed"),
             palette.random,
         )
     } else {
-        (forge_widgets::tr!("tts_cloud_configured"), palette.success)
+        (
+            forge_widgets::tr!("tts_cloud_not_configured"),
+            palette.text_muted,
+        )
     };
 
     container(
@@ -934,6 +1015,7 @@ mod tests {
             youtube_flow: None,
             kick_flow: None,
             tts_engine_ids: Vec::new(),
+            tts_registry: None,
             twitch_login: None,
             twitch_token_expires: None,
             twitch_reauth_required: false,
@@ -947,7 +1029,7 @@ mod tests {
         let mut state = CloudTtsEnginesState::default();
         let _task = update(
             &mut state,
-            &rt(),
+            &mut rt(),
             CloudTtsEnginesMsg::ApiKeyChanged(CloudEngineKind::Azure, "test-key".into()),
         );
         assert!(state.azure.is_dirty);
@@ -959,7 +1041,7 @@ mod tests {
         let mut state = CloudTtsEnginesState::default();
         let _task = update(
             &mut state,
-            &rt(),
+            &mut rt(),
             CloudTtsEnginesMsg::ApiKeyChanged(CloudEngineKind::ElevenLabs, "xi-key".into()),
         );
         assert!(state.elevenlabs.is_dirty);
@@ -971,7 +1053,7 @@ mod tests {
         let mut state = CloudTtsEnginesState::default();
         let _task = update(
             &mut state,
-            &rt(),
+            &mut rt(),
             CloudTtsEnginesMsg::SavePressed(CloudEngineKind::Azure),
         );
         assert!(!state.azure.is_dirty);
@@ -983,7 +1065,7 @@ mod tests {
         state.azure.api_key = "key".into();
         let _task = update(
             &mut state,
-            &rt(),
+            &mut rt(),
             CloudTtsEnginesMsg::SavePressed(CloudEngineKind::Azure),
         );
         assert!(!state.azure.is_dirty);
@@ -996,7 +1078,7 @@ mod tests {
         state.azure.region = "eastus".into();
         let _task = update(
             &mut state,
-            &rt(),
+            &mut rt(),
             CloudTtsEnginesMsg::TestPressed(CloudEngineKind::Azure),
         );
         assert_eq!(state.azure.test_status, TestStatus::Testing);
@@ -1008,7 +1090,7 @@ mod tests {
         state.azure.test_status = TestStatus::Testing;
         let _task = update(
             &mut state,
-            &rt(),
+            &mut rt(),
             CloudTtsEnginesMsg::Tested(CloudEngineKind::Azure, Ok(())),
         );
         assert_eq!(state.azure.test_status, TestStatus::Ok);
@@ -1020,7 +1102,7 @@ mod tests {
         state.azure.test_status = TestStatus::Testing;
         let _task = update(
             &mut state,
-            &rt(),
+            &mut rt(),
             CloudTtsEnginesMsg::Tested(CloudEngineKind::Azure, Err("auth failed".into())),
         );
         assert!(matches!(state.azure.test_status, TestStatus::Err(_)));
@@ -1032,7 +1114,7 @@ mod tests {
         state.azure.is_dirty = true;
         let _task = update(
             &mut state,
-            &rt(),
+            &mut rt(),
             CloudTtsEnginesMsg::Saved(CloudEngineKind::Azure, Ok(())),
         );
         assert!(!state.azure.is_dirty);
@@ -1043,7 +1125,7 @@ mod tests {
         let mut state = CloudTtsEnginesState::default();
         let _task = update(
             &mut state,
-            &rt(),
+            &mut rt(),
             CloudTtsEnginesMsg::PollySecretKeyChanged("secret".into()),
         );
         assert!(state.polly.is_dirty);
@@ -1055,7 +1137,7 @@ mod tests {
         let mut state = CloudTtsEnginesState::default();
         let _task = update(
             &mut state,
-            &rt(),
+            &mut rt(),
             CloudTtsEnginesMsg::RegionChanged(CloudEngineKind::Azure, "westus".into()),
         );
         assert!(state.azure.is_dirty);
@@ -1068,7 +1150,7 @@ mod tests {
         state.polly.access_key = "AKID".into();
         let _task = update(
             &mut state,
-            &rt(),
+            &mut rt(),
             CloudTtsEnginesMsg::SavePressed(CloudEngineKind::Polly),
         );
         assert!(!state.polly.is_dirty);

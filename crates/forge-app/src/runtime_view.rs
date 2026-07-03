@@ -58,4 +58,7 @@ pub struct RuntimeView {
     pub sub_action_registry: Arc<SubActionRegistry>,
     pub trigger_registry: Arc<TriggerRegistry>,
     pub tts_engine_ids: Vec<EngineId>,
+    /// `None` when the runtime is offline; the Cloud Engines save flow then
+    /// only persists credentials and defers live registration to next boot.
+    pub tts_registry: Option<Arc<std::sync::RwLock<forge_tts_core::TtsRegistry>>>,
 }

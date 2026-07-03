@@ -69,6 +69,7 @@ fn test_app() -> App {
             youtube_flow: None,
             kick_flow: None,
             tts_engine_ids: Vec::new(),
+            tts_registry: None,
             twitch_login: None,
             twitch_token_expires: None,
             twitch_reauth_required: false,

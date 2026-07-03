@@ -209,10 +209,11 @@ pub(crate) async fn run_actor(
     let mut last_successful: Option<SpeakRequest> = None;
 
     let (synth_tx, mut synth_rx) = tokio::sync::mpsc::channel::<SynthTaskResult>(8);
+    let (catalog_tx, mut catalog_rx) = tokio::sync::mpsc::channel::<Arc<Vec<TtsVoice>>>(1);
 
     let voice_catalog = Arc::new(build_voice_catalog(&deps.registry).await);
     *voices.write().unwrap_or_else(|e| e.into_inner()) = voice_catalog.clone();
-    let task_deps = SynthTaskDeps {
+    let mut task_deps = SynthTaskDeps {
         resolver: deps.resolver.clone(),
         pipeline: deps.pipeline.clone(),
         registry: deps.registry.clone(),
@@ -259,6 +260,14 @@ pub(crate) async fn run_actor(
             cmd = cmd_rx.recv() => {
                 match cmd {
                     None => break,
+                    Some(SpeakCommand::RefreshVoiceCatalog) => {
+                        let registry = deps.registry.clone();
+                        let tx = catalog_tx.clone();
+                        tokio::spawn(async move {
+                            let catalog = Arc::new(build_voice_catalog(&registry).await);
+                            let _ = tx.send(catalog).await;
+                        });
+                    }
                     Some(c) => handle_command(
                         c,
                         &mut config,
@@ -286,6 +295,12 @@ pub(crate) async fn run_actor(
                         &high_queue,
                         &normal_queue,
                     ).await;
+                }
+            }
+            result = catalog_rx.recv() => {
+                if let Some(catalog) = result {
+                    *voices.write().unwrap_or_else(|e| e.into_inner()) = catalog.clone();
+                    task_deps.voice_catalog = catalog;
                 }
             }
         }
@@ -526,6 +541,9 @@ fn handle_command(
             let mut guard = deps.resolver.write().unwrap_or_else(|e| e.into_inner());
             guard.aliases.retain(|a| a.id != id);
         }
+        // Intercepted in `run_actor` before dispatch (needs to spawn an async
+        // rebuild); never reaches this synchronous handler.
+        SpeakCommand::RefreshVoiceCatalog => {}
         SpeakCommand::Pause => {
             *paused = true;
             let _ = event_tx.send(SpeakEvent::Paused {

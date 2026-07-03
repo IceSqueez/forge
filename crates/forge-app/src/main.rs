@@ -217,6 +217,7 @@ struct RuntimeHandles {
     speak_queue: Arc<SpeakQueueHandle>,
     pipeline_config: forge_speak_queue::PipelineConfigHandle,
     tts_engine_ids: Vec<EngineId>,
+    tts_registry: Arc<std::sync::RwLock<TtsRegistry>>,
     sound_player: Arc<SoundboardPlayer>,
     sub_action_reg: Arc<SubActionRegistry>,
     trigger_reg: Arc<TriggerRegistry>,
@@ -265,6 +266,7 @@ fn spawn_speak_queue(
     Arc<SpeakQueueHandle>,
     Vec<EngineId>,
     forge_speak_queue::PipelineConfigHandle,
+    Arc<std::sync::RwLock<TtsRegistry>>,
 ) {
     let mut registry = TtsRegistry::new();
     if let Some(piper_binary) = find_piper_binary() {
@@ -377,6 +379,7 @@ fn spawn_speak_queue(
         }
     };
 
+    let registry_handle = Arc::clone(&registry);
     let deps = QueueDeps {
         registry,
         resolver,
@@ -386,7 +389,7 @@ fn spawn_speak_queue(
     };
     let config = QueueConfig::default();
     let (handle, _stream) = forge_speak_queue::spawn(config, deps);
-    (Arc::new(handle), engine_ids, pipeline)
+    (Arc::new(handle), engine_ids, pipeline, registry_handle)
 }
 
 #[allow(clippy::expect_used)]
@@ -408,7 +411,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
     };
 
     let creds_repo = Arc::clone(&dp) as Arc<dyn forge_storage::CredentialsRepo>;
-    let (speak_queue, tts_engine_ids, pipeline_config) = spawn_speak_queue(
+    let (speak_queue, tts_engine_ids, pipeline_config, tts_registry) = spawn_speak_queue(
         Arc::clone(&bus),
         creds_repo,
         dp.tts_filters_repo(),
@@ -1028,6 +1031,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         speak_queue,
         pipeline_config,
         tts_engine_ids,
+        tts_registry,
         sound_player,
         sub_action_reg,
         trigger_reg,
@@ -1078,6 +1082,7 @@ fn main() -> iced::Result {
         speak_queue,
         pipeline_config,
         tts_engine_ids,
+        tts_registry,
         sound_player,
         sub_action_reg,
         trigger_reg,
@@ -1112,6 +1117,7 @@ fn main() -> iced::Result {
             None,
             Vec::<EngineId>::new(),
             None,
+            None,
             Arc::new(sar),
             Arc::new(TriggerRegistry::new()),
             None,
@@ -1131,6 +1137,7 @@ fn main() -> iced::Result {
                 Some(h.speak_queue),
                 Some(h.pipeline_config),
                 h.tts_engine_ids,
+                Some(h.tts_registry),
                 Some(h.sound_player),
                 h.sub_action_reg,
                 h.trigger_reg,
@@ -1169,6 +1176,7 @@ fn main() -> iced::Result {
                     None,
                     Vec::<EngineId>::new(),
                     None,
+                    None,
                     Arc::new(sar),
                     Arc::new(TriggerRegistry::new()),
                     None,
@@ -1204,6 +1212,7 @@ fn main() -> iced::Result {
         app.rt.speak_queue = speak_queue.clone();
         app.rt.pipeline_config = pipeline_config.clone();
         app.rt.tts_engine_ids = tts_engine_ids.clone();
+        app.rt.tts_registry = tts_registry.clone();
         app.rt.sub_action_registry = Arc::clone(&sub_action_reg);
         app.rt.trigger_registry = Arc::clone(&trigger_reg);
         app.rt.vtube_sink = Arc::clone(&vtube_sink);

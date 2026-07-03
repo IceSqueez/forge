@@ -123,7 +123,8 @@ pub use tag_list_input::{TagListInputMessage, TagListInputState, tag_list_input}
 pub use theme::{catppuccin_mocha, latte, palette_for_theme, tokyo_night_storm};
 pub use toast::{Toast, ToastAction, ToastKind, ToastQueue, toast_viewport};
 pub use tokens::{
-    DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FontRole, Radius, Spacing, ThemeId, font,
-    install_density, install_font_override, load_fonts, radius, sp, spacing, spf,
+    DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FontRole, FontWeight, Radius, Spacing,
+    ThemeId, font, font_weighted, install_density, install_font_override, load_fonts, radius, sp,
+    spacing, spf,
 };
 pub use volume_slider::volume_slider;

@@ -133,6 +133,24 @@ pub enum FontRole {
     Monospace,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum FontWeight {
+    #[default]
+    Regular,
+    Medium,
+    SemiBold,
+}
+
+impl FontWeight {
+    fn to_iced(self) -> font::Weight {
+        match self {
+            Self::Regular => font::Weight::Normal,
+            Self::Medium => font::Weight::Medium,
+            Self::SemiBold => font::Weight::Semibold,
+        }
+    }
+}
+
 /// Replaces the active family for one role on this thread; `None` restores the bundled default.
 pub fn install_font_override(role: FontRole, family: Option<&str>) {
     let name = family.map(leak_family_name);
@@ -160,22 +178,32 @@ fn leak_family_name(name: &str) -> &'static str {
 
 /// Caller must invoke `load_fonts()` at startup; otherwise iced falls back to system fonts.
 pub fn font(role: FontRole) -> Font {
-    match role {
-        FontRole::Body => Font::with_name(
+    font_weighted(role, FontWeight::Regular)
+}
+
+/// Only Body (Inter) bundles Medium/SemiBold faces; any other role has no heavier face
+/// bundled, so a non-Regular request there degrades to Regular rather than letting fontdb
+/// synthesize a bold.
+pub fn font_weighted(role: FontRole, weight: FontWeight) -> Font {
+    let (family, weight) = match role {
+        FontRole::Body => (
             BODY_FAMILY_OVERRIDE
                 .with(Cell::get)
                 .unwrap_or(DEFAULT_BODY_FAMILY),
+            weight,
         ),
-        FontRole::Monospace => Font {
-            family: font::Family::Name(
-                MONO_FAMILY_OVERRIDE
-                    .with(Cell::get)
-                    .unwrap_or(DEFAULT_MONO_FAMILY),
-            ),
-            weight: font::Weight::Normal,
-            stretch: font::Stretch::Normal,
-            style: font::Style::Normal,
-        },
+        FontRole::Monospace => (
+            MONO_FAMILY_OVERRIDE
+                .with(Cell::get)
+                .unwrap_or(DEFAULT_MONO_FAMILY),
+            FontWeight::Regular,
+        ),
+    };
+    Font {
+        family: font::Family::Name(family),
+        weight: weight.to_iced(),
+        stretch: font::Stretch::Normal,
+        style: font::Style::Normal,
     }
 }
 
@@ -184,6 +212,8 @@ pub fn font(role: FontRole) -> Font {
 pub fn load_fonts() -> Vec<std::borrow::Cow<'static, [u8]>> {
     vec![
         std::borrow::Cow::Borrowed(include_bytes!("../assets/fonts/Inter-Regular.ttf")),
+        std::borrow::Cow::Borrowed(include_bytes!("../assets/fonts/Inter-Medium.ttf")),
+        std::borrow::Cow::Borrowed(include_bytes!("../assets/fonts/Inter-SemiBold.ttf")),
         std::borrow::Cow::Borrowed(include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf")),
     ]
 }

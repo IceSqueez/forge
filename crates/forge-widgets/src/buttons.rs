@@ -6,7 +6,9 @@ use iced::{
 };
 
 use crate::palette::ForgePalette;
-use crate::tokens::{BORDER_THIN, FONT_MD, FONT_SM, Radius, Spacing, radius, sp};
+use crate::tokens::{
+    BORDER_THIN, FONT_MD, FONT_SM, FontRole, FontWeight, Radius, Spacing, font_weighted, radius, sp,
+};
 
 fn primary_style(bg: Color, text_color: Color, status: Status) -> Style {
     let r = radius(Radius::Sm);
@@ -66,7 +68,8 @@ pub fn primary_button<'a, Msg: 'a + Clone>(
     iced::widget::button(
         iced::widget::text(label.into())
             .size(FONT_SM)
-            .color(text_color),
+            .color(text_color)
+            .font(font_weighted(FontRole::Body, FontWeight::SemiBold)),
     )
     .on_press(on_press)
     .padding([v, h])
@@ -87,7 +90,8 @@ pub fn primary_button_small<'a, Msg: 'a + Clone>(
     iced::widget::button(
         iced::widget::text(label.into())
             .size(FONT_SM)
-            .color(text_color),
+            .color(text_color)
+            .font(font_weighted(FontRole::Body, FontWeight::SemiBold)),
     )
     .on_press(on_press)
     .padding([v, h])
@@ -110,7 +114,8 @@ pub fn primary_button_with_icon_right<'a, Msg: 'a + Clone>(
     let content = iced::widget::row![
         iced::widget::text(label.into())
             .size(FONT_SM)
-            .color(text_color),
+            .color(text_color)
+            .font(font_weighted(FontRole::Body, FontWeight::SemiBold)),
         iced::widget::text(icon_char.to_string())
             .size(FONT_SM)
             .color(text_color),
@@ -137,7 +142,8 @@ pub fn destructive_button<'a, Msg: 'a + Clone>(
     iced::widget::button(
         iced::widget::text(label.into())
             .size(FONT_SM)
-            .color(text_color),
+            .color(text_color)
+            .font(font_weighted(FontRole::Body, FontWeight::SemiBold)),
     )
     .on_press(on_press)
     .padding([v, h])

@@ -337,7 +337,11 @@ pub enum GlobalsMsg {
     FilterSelected(GlobalsFilter),
     SearchChanged(String),
     TogglePersistence(String, bool),
-    PersistenceToggled(Result<(), String>),
+    PersistenceToggled {
+        name: String,
+        attempted: bool,
+        result: Result<(), String>,
+    },
     OpenCreateModal,
     OpenEditModal(String),
     DeleteRequested(String),

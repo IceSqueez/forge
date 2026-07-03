@@ -4,9 +4,9 @@ use std::sync::Arc;
 use forge_storage::{GlobalEntry, GlobalsExport, GlobalsRepo, StorageError};
 use forge_widgets::tokens::{FONT_SM, FONT_XS, Spacing, sp, spf};
 use forge_widgets::{
-    FontRole, FooterProps, ForgePalette, VariantKind, data_screen_footer, data_table, empty_state,
-    font, persistence_toggle_inline, primary_button_small, search_input, secondary_button,
-    type_pill, value_preview,
+    FontRole, FooterProps, ForgePalette, ToastKind, VariantKind, data_screen_footer, data_table,
+    empty_state, font, persistence_toggle_inline, primary_button_small, search_input,
+    secondary_button, type_pill, value_preview,
 };
 use iced::{
     Alignment, Background, Border, Color, Element, Length, Shadow,
@@ -16,7 +16,7 @@ use time::OffsetDateTime;
 
 use crate::Message;
 use crate::app::App;
-use crate::message::{GlobalsFilter, GlobalsLoadData, GlobalsMsg, VariantEditorMsg};
+use crate::message::{GlobalsFilter, GlobalsLoadData, GlobalsMsg, ToastMsg, VariantEditorMsg};
 use crate::runtime_view::RuntimeView;
 
 #[derive(Debug, thiserror::Error)]
@@ -186,22 +186,40 @@ pub fn update(state: &mut GlobalsState, rt: &RuntimeView, msg: GlobalsMsg) -> ic
             }
             state.refresh_displays();
             let repo: Arc<dyn GlobalsRepo> = Arc::clone(&rt.backend) as Arc<dyn GlobalsRepo>;
+            let name_for_msg = name.clone();
             iced::Task::perform(
                 async move {
                     repo.set(&name, entry.value, new_persisted)
                         .await
                         .map_err(|e| e.to_string())
                 },
-                |r| Message::Globals(GlobalsMsg::PersistenceToggled(r)),
+                move |result| {
+                    Message::Globals(GlobalsMsg::PersistenceToggled {
+                        name: name_for_msg.clone(),
+                        attempted: new_persisted,
+                        result,
+                    })
+                },
             )
         }
 
-        GlobalsMsg::PersistenceToggled(Err(e)) => {
-            tracing::warn!(error = %e, "failed to toggle global persistence");
-            iced::Task::none()
-        }
+        GlobalsMsg::PersistenceToggled { result: Ok(()), .. } => iced::Task::none(),
 
-        GlobalsMsg::PersistenceToggled(Ok(())) => iced::Task::none(),
+        GlobalsMsg::PersistenceToggled {
+            name,
+            attempted,
+            result: Err(e),
+        } => {
+            if let Some(entry) = state.entries.iter_mut().find(|entry| entry.name == name) {
+                entry.persisted = !attempted;
+            }
+            state.refresh_displays();
+            iced::Task::done(Message::Toast(ToastMsg::Fired {
+                kind: ToastKind::Error,
+                message: format!("Could not change persistence for '{name}': {e}"),
+                duration_ms: 5000,
+            }))
+        }
 
         GlobalsMsg::DeleteRequested(name) => {
             let repo: Arc<dyn GlobalsRepo> = Arc::clone(&rt.backend) as Arc<dyn GlobalsRepo>;

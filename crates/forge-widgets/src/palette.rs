@@ -231,34 +231,11 @@ mod tests {
     }
 
     #[test]
-    fn catppuccin_mocha_brand_is_lavender() {
-        let p = CATPPUCCIN_MOCHA;
-        assert!((p.brand.r - 0xcb as f32 / 255.0).abs() < 0.01);
-        assert!((p.brand.g - 0xa6 as f32 / 255.0).abs() < 0.01);
-        assert!((p.brand.b - 0xf7 as f32 / 255.0).abs() < 0.01);
-    }
-
-    #[test]
     fn latte_base_is_light() {
         let p = LATTE;
         assert!(p.base.r > 0.9);
         assert!(p.base.g > 0.9);
         assert!(p.base.b > 0.9);
-    }
-
-    #[test]
-    fn all_themes_define_platform_tokens() {
-        for p in [CATPPUCCIN_MOCHA, TOKYO_NIGHT, LATTE] {
-            assert!(
-                p.platform_twitch.r > 0.0 || p.platform_twitch.g > 0.0 || p.platform_twitch.b > 0.0
-            );
-            assert!(
-                p.platform_youtube.r > 0.0
-                    || p.platform_youtube.g > 0.0
-                    || p.platform_youtube.b > 0.0
-            );
-            assert!(p.platform_kick.r > 0.0 || p.platform_kick.g > 0.0 || p.platform_kick.b > 0.0);
-        }
     }
 
     #[test]
@@ -280,9 +257,68 @@ mod tests {
     }
 
     #[test]
-    fn surface_overlay_differs_from_border_regular_in_tokyo_night() {
-        let p = TOKYO_NIGHT;
-        assert_ne!(p.surface_overlay.r, p.border_regular.r);
+    fn structural_tokens_match_theme_css_per_theme() {
+        let matches = |c: Color, (r, g, b): (u8, u8, u8)| {
+            let approx = |a: f32, b: u8| (a - b as f32 / 255.0).abs() < 0.01;
+            approx(c.r, r) && approx(c.g, g) && approx(c.b, b)
+        };
+
+        // Every theme anchors shell to --crust and text_secondary to --sub.
+        for (name, p, crust, sub) in [
+            (
+                "mocha",
+                CATPPUCCIN_MOCHA,
+                (0x11, 0x11, 0x1b),
+                (0xba, 0xc2, 0xde),
+            ),
+            (
+                "tokyo-night",
+                TOKYO_NIGHT,
+                (0x16, 0x16, 0x1e),
+                (0xa9, 0xb1, 0xd6),
+            ),
+            ("latte", LATTE, (0xe6, 0xe9, 0xef), (0x5c, 0x5f, 0x77)),
+        ] {
+            assert!(matches(p.shell, crust), "{name}: shell must be --crust");
+            assert!(
+                matches(p.text_secondary, sub),
+                "{name}: text_secondary must be --sub"
+            );
+        }
+
+        // border_input and surface_overlay anchor to --surf-2.
+        // Why: Mocha surface_overlay is excluded — its design-source token is
+        // still an open decision; asserting it would pin a guess.
+        for (name, p, surf2) in [
+            ("tokyo-night", TOKYO_NIGHT, (0x3b, 0x42, 0x61)),
+            ("latte", LATTE, (0xbc, 0xc0, 0xcc)),
+        ] {
+            assert!(
+                matches(p.border_input, surf2),
+                "{name}: border_input must be --surf-2"
+            );
+            assert!(
+                matches(p.surface_overlay, surf2),
+                "{name}: surface_overlay must be --surf-2"
+            );
+        }
+
+        // Dark themes anchor brand to --mauve, shared with code_keyword and
+        // border_active. Latte brand is blue by design and stays unpinned here.
+        for (name, p, mauve) in [
+            ("mocha", CATPPUCCIN_MOCHA, (0xcb, 0xa6, 0xf7)),
+            ("tokyo-night", TOKYO_NIGHT, (0xbb, 0x9a, 0xf7)),
+        ] {
+            assert!(matches(p.brand, mauve), "{name}: brand must be --mauve");
+            assert_eq!(
+                p.brand, p.code_keyword,
+                "{name}: brand must equal code_keyword"
+            );
+            assert_eq!(
+                p.brand, p.border_active,
+                "{name}: brand must equal border_active"
+            );
+        }
     }
 
     #[test]

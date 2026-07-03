@@ -524,6 +524,8 @@ pub enum ToastMsg {
 
 #[derive(Debug, Clone)]
 pub enum TtsTriggersMsg {
+    LoadRequested,
+    Loaded(Result<forge_storage::TtsTriggerSettings, String>),
     CommandEnabledToggled(bool),
     ChannelPointsEnabledToggled(bool),
     BitsEnabledToggled(bool),
@@ -531,6 +533,7 @@ pub enum TtsTriggersMsg {
     ReadUsernameToggled(bool),
     SpeakEmotesToggled(bool),
     BitsSkipLineToggled(bool),
+    PersistResult(Result<(), String>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

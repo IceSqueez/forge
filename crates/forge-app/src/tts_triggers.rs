@@ -1,9 +1,10 @@
+use forge_storage::TtsTriggerSettings;
 use forge_widgets::tokens::{
     BORDER_THIN, FONT_MD, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
 };
 use forge_widgets::{ForgePalette, Icon, tabler_icon};
 use iced::widget::{Space, column, container, row, text};
-use iced::{Alignment, Background, Border, Element, Length, Task};
+use iced::{Alignment, Background, Border, Color, Element, Length, Task};
 
 use crate::Message;
 use crate::message::{TtsMsg, TtsTriggersMsg};
@@ -17,18 +18,36 @@ pub struct TtsTriggersState {
     pub read_username: bool,
     pub speak_emotes: bool,
     pub bits_skip_line: bool,
+    pub save_error: Option<String>,
 }
 
 impl TtsTriggersState {
     pub fn new() -> Self {
+        Self::from_settings(TtsTriggerSettings::default())
+    }
+
+    fn from_settings(settings: TtsTriggerSettings) -> Self {
         Self {
-            command_enabled: true,
-            channel_points_enabled: true,
-            bits_enabled: true,
-            sub_messages_enabled: false,
-            read_username: true,
-            speak_emotes: false,
-            bits_skip_line: true,
+            command_enabled: settings.command_enabled,
+            channel_points_enabled: settings.channel_points_enabled,
+            bits_enabled: settings.bits_enabled,
+            sub_messages_enabled: settings.sub_messages_enabled,
+            read_username: settings.read_username,
+            speak_emotes: settings.speak_emotes,
+            bits_skip_line: settings.bits_skip_line,
+            save_error: None,
+        }
+    }
+
+    fn to_settings(&self) -> TtsTriggerSettings {
+        TtsTriggerSettings {
+            command_enabled: self.command_enabled,
+            channel_points_enabled: self.channel_points_enabled,
+            bits_enabled: self.bits_enabled,
+            sub_messages_enabled: self.sub_messages_enabled,
+            read_username: self.read_username,
+            speak_emotes: self.speak_emotes,
+            bits_skip_line: self.bits_skip_line,
         }
     }
 }
@@ -39,12 +58,40 @@ impl Default for TtsTriggersState {
     }
 }
 
+fn persist(state: &TtsTriggersState, rt: &RuntimeView) -> Task<Message> {
+    let repo = rt.backend.tts_trigger_settings_repo();
+    let settings = state.to_settings();
+    Task::perform(
+        async move {
+            repo.set_trigger_settings(&settings)
+                .await
+                .map_err(|e| e.to_string())
+        },
+        |r| Message::Tts(TtsMsg::Triggers(TtsTriggersMsg::PersistResult(r))),
+    )
+}
+
 pub fn update(
     state: &mut TtsTriggersState,
-    _rt: &RuntimeView,
+    rt: &RuntimeView,
     msg: TtsTriggersMsg,
 ) -> Task<Message> {
     match msg {
+        TtsTriggersMsg::LoadRequested => {
+            let repo = rt.backend.tts_trigger_settings_repo();
+            return Task::perform(
+                async move { repo.get_trigger_settings().await.map_err(|e| e.to_string()) },
+                |r| Message::Tts(TtsMsg::Triggers(TtsTriggersMsg::Loaded(r))),
+            );
+        }
+        TtsTriggersMsg::Loaded(Ok(settings)) => {
+            *state = TtsTriggersState::from_settings(settings);
+            return Task::none();
+        }
+        TtsTriggersMsg::Loaded(Err(e)) => {
+            tracing::warn!(error = %e, "failed to load tts trigger settings");
+            return Task::none();
+        }
         TtsTriggersMsg::CommandEnabledToggled(v) => {
             state.command_enabled = v;
         }
@@ -66,8 +113,17 @@ pub fn update(
         TtsTriggersMsg::BitsSkipLineToggled(v) => {
             state.bits_skip_line = v;
         }
+        TtsTriggersMsg::PersistResult(Ok(())) => {
+            state.save_error = None;
+            return Task::none();
+        }
+        TtsTriggersMsg::PersistResult(Err(e)) => {
+            tracing::warn!(error = %e, "failed to persist tts trigger settings");
+            state.save_error = Some(e);
+            return Task::none();
+        }
     }
-    Task::none()
+    persist(state, rt)
 }
 
 pub fn tts_triggers_view<'a>(
@@ -109,10 +165,41 @@ pub fn tts_triggers_view<'a>(
     .spacing(gap_md)
     .width(Length::Fill);
 
+    let error_banner: Element<'a, Message> = match &state.save_error {
+        Some(err) => container(
+            text(err.clone())
+                .size(FONT_XS)
+                .color(palette.random)
+                .font(font(FontRole::Monospace)),
+        )
+        .style(move |_| container::Style {
+            background: Some(Background::Color(Color {
+                a: 0.1,
+                ..palette.random
+            })),
+            border: Border {
+                color: palette.random,
+                width: BORDER_THIN,
+                radius: radius(Radius::Sm).into(),
+            },
+            ..container::Style::default()
+        })
+        .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
+        .width(Length::Fill)
+        .into(),
+        None => Space::new().into(),
+    };
+
     container(
-        column![header_group, trigger_row1, trigger_row2, bottom_row]
-            .spacing(gap_md)
-            .width(Length::Fill),
+        column![
+            header_group,
+            error_banner,
+            trigger_row1,
+            trigger_row2,
+            bottom_row
+        ]
+        .spacing(gap_md)
+        .width(Length::Fill),
     )
     .padding([sp(Spacing::Md), sp(Spacing::Md)])
     .width(Length::Fill)

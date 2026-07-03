@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use forge_events::EventSource;
 use forge_widgets::{
@@ -183,20 +182,9 @@ pub fn update(
         }
         ServerScreenMsg::CopyToken => iced::clipboard::write::<Message>(state.bearer_token.clone()),
         ServerScreenMsg::CopyOverlayUrl(url) => iced::clipboard::write::<Message>(url),
-        ServerScreenMsg::RegenerateToken => {
-            let nanos = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0);
-            state.bearer_token = format!(
-                "fg_{:016x}{:016x}",
-                nanos,
-                nanos.wrapping_mul(6_364_136_223_846_793_005_u128)
-            );
-            Task::none()
-        }
-        ServerScreenMsg::RestartServer => Task::none(),
-        ServerScreenMsg::StopServer => Task::none(),
+        ServerScreenMsg::RegenerateToken
+        | ServerScreenMsg::RestartServer
+        | ServerScreenMsg::StopServer => Task::none(),
         ServerScreenMsg::OpenOverlayFolder => {
             let subsystem = Arc::clone(&rt.server_subsystem);
             Task::perform(

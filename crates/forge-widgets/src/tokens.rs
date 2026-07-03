@@ -39,6 +39,12 @@ pub enum Density {
     Spacious,
 }
 
+/// Closest-anchor mapping to the design scale (`theme.css` `--sp-xs/sm/md/lg` = 6/10/16/24),
+/// applied project-wide when porting a design padding: `Xs` ↔ `--sp-xs` (+2px at Cozy),
+/// `Sm` ↔ `--sp-sm` (+2px at Cozy), `Md` ↔ `--sp-md` (exact), `Lg` ↔ `--sp-lg` (exact);
+/// `None`/`Xxs` have no design anchor. Base values stay as-is on purpose — the Density
+/// multiplier system scales them, so exact per-value parity with the static design is
+/// impossible by construction; pick the anchor above instead of a literal px port.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Spacing {
     None,
@@ -90,8 +96,8 @@ pub enum Radius {
 
 pub fn radius(r: Radius) -> f32 {
     match r {
-        Radius::Sm => 7.0,
-        Radius::Md => 8.0,
+        Radius::Sm => 6.0,
+        Radius::Md => 9.0,
         Radius::Lg => 12.0,
         Radius::Pill => 999.0,
     }
@@ -115,12 +121,11 @@ pub fn modal_width(s: ModalSize) -> f32 {
 pub const BORDER_THIN: f32 = 0.5;
 pub const BORDER_ACCENT: f32 = 1.0;
 
+pub const FONT_XXS: f32 = 10.5;
 pub const FONT_XS: f32 = 12.0;
 pub const FONT_SM: f32 = 14.0;
 pub const FONT_MD: f32 = 16.0;
 pub const FONT_LG: f32 = 18.0;
-
-pub const FONT_DEVICE_CODE: f32 = 28.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FontRole {

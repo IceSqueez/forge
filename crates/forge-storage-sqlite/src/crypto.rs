@@ -78,7 +78,10 @@ pub fn encrypt(key: &[u8; 32], plaintext: &str) -> Result<(Vec<u8>, Vec<u8>), Sq
 
     let mut nonce_bytes = [0u8; NONCE_LEN];
     rand::rng().fill_bytes(&mut nonce_bytes);
-    let nonce = Nonce::from_slice(&nonce_bytes);
+    let nonce =
+        <&Nonce<_>>::try_from(nonce_bytes.as_slice()).map_err(|e| SqliteStorageError::Crypto {
+            reason: e.to_string(),
+        })?;
 
     let ciphertext =
         cipher
@@ -99,7 +102,9 @@ pub fn decrypt(
         reason: e.to_string(),
     })?;
 
-    let nonce = Nonce::from_slice(nonce);
+    let nonce = <&Nonce<_>>::try_from(nonce).map_err(|e| SqliteStorageError::Crypto {
+        reason: e.to_string(),
+    })?;
 
     let plaintext = cipher
         .decrypt(nonce, ciphertext)

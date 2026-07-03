@@ -75,6 +75,8 @@ pub enum SpeakCommand {
     },
     /// Replaces the fallback strategy applied to viewers without a manual alias.
     SetStrategy(AssignmentStrategy),
+    /// Sets `QueueConfig::master_volume`, clamped to `0.0..=1.0`.
+    SetVolume(f32),
     /// Drops an alias from the live resolver by id; no-op when the id is absent.
     RemoveAlias(AliasId),
     /// Sent by `forge-audio` when the VoiceGate mic threshold is crossed.
@@ -88,11 +90,19 @@ pub enum SpeakEvent {
     Enqueued {
         request_id: RequestId,
         queue_len: usize,
+        viewer_name: String,
+        text: String,
+        is_high_priority: bool,
     },
     Started {
         request_id: RequestId,
         voice_id: VoiceId,
         engine_id: EngineId,
+        viewer_name: String,
+        text: String,
+        /// Zero until synthesis resolves an actual voice (the pre-synthesis
+        /// `Started` ships this as 0, same as `voice_id`/`engine_id`).
+        duration_secs: u32,
     },
     Finished {
         request_id: RequestId,

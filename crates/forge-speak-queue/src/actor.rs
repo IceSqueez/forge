@@ -193,7 +193,7 @@ fn publish(bus: &dyn EventPublisher, kind: &str, payload: serde_json::Value) {
 }
 
 pub(crate) async fn run_actor(
-    config: QueueConfig,
+    mut config: QueueConfig,
     deps: QueueDeps,
     mut cmd_rx: tokio::sync::mpsc::Receiver<SpeakCommand>,
     event_tx: tokio::sync::broadcast::Sender<SpeakEvent>,
@@ -232,6 +232,9 @@ pub(crate) async fn run_actor(
                 request_id: req.request_id.clone(),
                 voice_id: VoiceId(String::new()),
                 engine_id: EngineId(String::new()),
+                viewer_name: req.viewer_name.clone(),
+                text: req.text.clone(),
+                duration_secs: 0,
             });
             publish(
                 deps.event_bus.as_ref(),
@@ -258,7 +261,7 @@ pub(crate) async fn run_actor(
                     None => break,
                     Some(c) => handle_command(
                         c,
-                        &config,
+                        &mut config,
                         &deps,
                         &event_tx,
                         &mut high_queue,
@@ -338,10 +341,14 @@ async fn handle_synth_result(
             voice_id,
             engine_id,
         } => {
+            let duration_secs = (pcm.duration_ms() / 1000) as u32;
             let _ = event_tx.send(SpeakEvent::Started {
                 request_id: result.request_id.clone(),
                 voice_id: voice_id.clone(),
                 engine_id: engine_id.clone(),
+                viewer_name: result.request.viewer_name.clone(),
+                text: result.request.text.clone(),
+                duration_secs,
             });
             publish(
                 deps.event_bus.as_ref(),
@@ -386,7 +393,7 @@ async fn handle_synth_result(
 #[allow(clippy::too_many_arguments)]
 fn handle_command(
     cmd: SpeakCommand,
-    config: &QueueConfig,
+    config: &mut QueueConfig,
     deps: &QueueDeps,
     event_tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
     high_queue: &mut VecDeque<SpeakRequest>,
@@ -442,6 +449,9 @@ fn handle_command(
             let _ = event_tx.send(SpeakEvent::Enqueued {
                 request_id: req.request_id.clone(),
                 queue_len: total_after,
+                viewer_name: req.viewer_name.clone(),
+                text: req.text.clone(),
+                is_high_priority: matches!(req.priority, Priority::High),
             });
             publish(
                 deps.event_bus.as_ref(),
@@ -509,6 +519,9 @@ fn handle_command(
             let mut guard = deps.resolver.write().unwrap_or_else(|e| e.into_inner());
             guard.strategy = strategy;
         }
+        SpeakCommand::SetVolume(volume) => {
+            config.master_volume = volume.clamp(0.0, 1.0);
+        }
         SpeakCommand::RemoveAlias(id) => {
             let mut guard = deps.resolver.write().unwrap_or_else(|e| e.into_inner());
             guard.aliases.retain(|a| a.id != id);
@@ -543,6 +556,9 @@ fn handle_command(
                 let _ = event_tx.send(SpeakEvent::Enqueued {
                     request_id: replay.request_id.clone(),
                     queue_len: total,
+                    viewer_name: replay.viewer_name.clone(),
+                    text: replay.text.clone(),
+                    is_high_priority: true,
                 });
                 let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len: total });
             }

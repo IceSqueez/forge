@@ -31,6 +31,7 @@ pub struct NowSpeakingData {
 }
 
 pub struct QueueItemData {
+    pub request_id: RequestId,
     pub viewer_name: String,
     pub engine_voice: String,
     pub text: String,
@@ -74,10 +75,45 @@ impl Default for TtsDashState {
 impl TtsDashState {
     pub fn apply_event(&mut self, event: SpeakEvent) {
         match event {
-            SpeakEvent::Enqueued { queue_len, .. } => {
-                let _ = queue_len;
+            SpeakEvent::Enqueued {
+                request_id,
+                viewer_name,
+                text,
+                is_high_priority,
+                ..
+            } => {
+                self.queue.push(QueueItemData {
+                    request_id,
+                    viewer_name,
+                    engine_voice: String::new(),
+                    text,
+                    duration_secs: 0,
+                    is_high_priority,
+                    bits_amount: None,
+                });
             }
-            SpeakEvent::Started { .. } => {}
+            SpeakEvent::Started {
+                request_id,
+                voice_id,
+                engine_id,
+                viewer_name,
+                text,
+                duration_secs,
+            } => {
+                self.queue.retain(|item| item.request_id != request_id);
+                self.now_speaking = Some(NowSpeakingData {
+                    viewer_name,
+                    engine_voice: if voice_id.0.is_empty() {
+                        String::new()
+                    } else {
+                        format!("{}/{}", engine_id.0, voice_id.0)
+                    },
+                    text,
+                    progress: 0.0,
+                    elapsed_secs: 0,
+                    total_secs: duration_secs,
+                });
+            }
             SpeakEvent::Finished { .. } => {
                 self.now_speaking = None;
                 self.stats.spoken = self.stats.spoken.saturating_add(1);
@@ -86,6 +122,7 @@ impl TtsDashState {
                 self.now_speaking = None;
             }
             SpeakEvent::Skipped { .. } => {
+                self.now_speaking = None;
                 self.stats.skipped = self.stats.skipped.saturating_add(1);
             }
             SpeakEvent::Rejected { .. } => {
@@ -140,7 +177,10 @@ pub fn update(state: &mut TtsDashState, rt: &RuntimeView, msg: TtsDashMsg) -> Ta
         }
         TtsDashMsg::VolumeChanged(v) => {
             state.volume = v;
-            Task::none()
+            let Some(handle) = rt.speak_queue.clone() else {
+                return Task::none();
+            };
+            send_command(handle, SpeakCommand::SetVolume(v))
         }
         TtsDashMsg::TestInputChanged(s) => {
             state.test_input = s;

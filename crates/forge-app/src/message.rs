@@ -448,6 +448,7 @@ pub enum TtsEnginesMsg {
 pub enum VoiceAliasesMsg {
     SearchChanged(String),
     StrategyChanged(crate::voice_aliases::AssignmentStrategyChoice),
+    StrategyLoaded(crate::voice_aliases::AssignmentStrategyChoice),
     LoadRequested,
     AliasesLoaded(Result<Vec<crate::voice_aliases::VoiceAliasRow>, String>),
     PlayPreview(usize),

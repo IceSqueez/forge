@@ -505,6 +505,14 @@ fn handle_command(
                 existing.state = AliasState::Active;
             }
         }
+        SpeakCommand::SetStrategy(strategy) => {
+            let mut guard = deps.resolver.write().unwrap_or_else(|e| e.into_inner());
+            guard.strategy = strategy;
+        }
+        SpeakCommand::RemoveAlias(id) => {
+            let mut guard = deps.resolver.write().unwrap_or_else(|e| e.into_inner());
+            guard.aliases.retain(|a| a.id != id);
+        }
         SpeakCommand::Pause => {
             *paused = true;
             let _ = event_tx.send(SpeakEvent::Paused {

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakRequest};
 use forge_storage::VoiceAliasRepo;
-use forge_voice::{AliasId, AliasState, EngineId, VoiceAlias, VoiceId};
+use forge_voice::{AliasId, AliasState, AssignmentStrategy, EngineId, VoiceAlias, VoiceId};
 use forge_widgets::ForgePalette;
 use forge_widgets::tokens::{
     BORDER_THIN, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
@@ -87,9 +87,52 @@ impl Default for VoiceAliasesState {
 fn reload(rt: &RuntimeView) -> Task<Message> {
     let repo = rt.backend.voice_alias_repo();
     let engine_ids: Vec<EngineId> = rt.tts_engine_ids.clone();
-    Task::perform(load_aliases(repo, engine_ids), |r| {
+    let aliases_task = Task::perform(load_aliases(repo.clone(), engine_ids), |r| {
         Message::Tts(TtsMsg::Aliases(VoiceAliasesMsg::AliasesLoaded(r)))
-    })
+    });
+    let strategy_task = Task::perform(
+        async move { repo.get_strategy().await.map_err(|e| e.to_string()) },
+        |r| match r {
+            Ok(strategy) => Message::Tts(TtsMsg::Aliases(VoiceAliasesMsg::StrategyLoaded(
+                choice_from_strategy(&strategy),
+            ))),
+            Err(e) => {
+                tracing::warn!(error = %e, "voice strategy load failed");
+                Message::Noop
+            }
+        },
+    );
+    Task::batch([aliases_task, strategy_task])
+}
+
+fn choice_from_strategy(strategy: &AssignmentStrategy) -> AssignmentStrategyChoice {
+    match strategy {
+        AssignmentStrategy::DeterministicByName => AssignmentStrategyChoice::DeterministicByName,
+        AssignmentStrategy::Random => AssignmentStrategyChoice::Random,
+        AssignmentStrategy::Single { .. } => AssignmentStrategyChoice::SingleVoice,
+    }
+}
+
+/// `SingleVoice` needs a concrete voice; absent a dedicated picker it binds to the
+/// first voice in the live catalog, so it returns `None` when no engine is running.
+fn strategy_from_choice(
+    choice: &AssignmentStrategyChoice,
+    rt: &RuntimeView,
+) -> Option<AssignmentStrategy> {
+    match choice {
+        AssignmentStrategyChoice::DeterministicByName => {
+            Some(AssignmentStrategy::DeterministicByName)
+        }
+        AssignmentStrategyChoice::Random => Some(AssignmentStrategy::Random),
+        AssignmentStrategyChoice::SingleVoice => {
+            let voices = rt.speak_queue.as_ref()?.available_voices();
+            let first = voices.first()?;
+            Some(AssignmentStrategy::Single {
+                voice_id: first.id.clone(),
+                engine_id: first.engine_id.clone(),
+            })
+        }
+    }
 }
 
 pub async fn load_aliases(
@@ -164,8 +207,49 @@ pub fn update(
             state.search = s;
             Task::none()
         }
-        VoiceAliasesMsg::StrategyChanged(s) => {
-            state.strategy = s;
+        VoiceAliasesMsg::StrategyChanged(choice) => {
+            state.strategy = choice.clone();
+            let Some(strategy) = strategy_from_choice(&choice, rt) else {
+                return Task::none();
+            };
+            let repo = rt.backend.voice_alias_repo();
+            let persist = {
+                let strategy = strategy.clone();
+                Task::perform(
+                    async move {
+                        repo.set_strategy(&strategy)
+                            .await
+                            .map_err(|e| e.to_string())
+                    },
+                    |r| {
+                        if let Err(e) = r {
+                            tracing::warn!(error = %e, "voice strategy persist failed");
+                        }
+                        Message::Noop
+                    },
+                )
+            };
+            let push = match rt.speak_queue.clone() {
+                Some(handle) => Task::perform(
+                    async move {
+                        handle
+                            .send(SpeakCommand::SetStrategy(strategy))
+                            .await
+                            .map_err(|e| e.to_string())
+                    },
+                    |r| {
+                        if let Err(e) = r {
+                            tracing::warn!(error = %e, "voice strategy hot-reload failed");
+                        }
+                        Message::Noop
+                    },
+                ),
+                None => Task::none(),
+            };
+            Task::batch([persist, push])
+        }
+        VoiceAliasesMsg::StrategyLoaded(choice) => {
+            state.strategy = choice;
             Task::none()
         }
         VoiceAliasesMsg::LoadRequested => reload(rt),
@@ -278,8 +362,17 @@ pub fn update(
             form.saving = true;
             let alias = form_to_alias(form);
             let repo = rt.backend.voice_alias_repo();
+            let handle = rt.speak_queue.clone();
             Task::perform(
-                async move { repo.upsert(&alias).await.map_err(|e| e.to_string()) },
+                async move {
+                    repo.upsert(&alias).await.map_err(|e| e.to_string())?;
+                    if let Some(handle) = handle
+                        && let Err(e) = handle.send(SpeakCommand::SetAlias(alias)).await
+                    {
+                        tracing::warn!(error = %e, "voice alias hot-reload failed");
+                    }
+                    Ok::<(), String>(())
+                },
                 |r| Message::Tts(TtsMsg::Aliases(VoiceAliasesMsg::FormSubmitResult(r))),
             )
         }
@@ -311,8 +404,17 @@ pub fn update(
             };
             let id = alias.id.clone();
             let repo = rt.backend.voice_alias_repo();
+            let handle = rt.speak_queue.clone();
             Task::perform(
-                async move { repo.delete(&id).await.map_err(|e| e.to_string()) },
+                async move {
+                    repo.delete(&id).await.map_err(|e| e.to_string())?;
+                    if let Some(handle) = handle
+                        && let Err(e) = handle.send(SpeakCommand::RemoveAlias(id)).await
+                    {
+                        tracing::warn!(error = %e, "voice alias hot-reload (remove) failed");
+                    }
+                    Ok::<(), String>(())
+                },
                 |r| Message::Tts(TtsMsg::Aliases(VoiceAliasesMsg::DeleteResult(r))),
             )
         }

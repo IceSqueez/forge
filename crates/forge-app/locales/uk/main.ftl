@@ -876,7 +876,7 @@ tts_aliases_form_create = Створити
 ## Голосові аліаси — підтвердження видалення
 
 tts_aliases_delete_title = Видалити голосовий аліас?
-tts_aliases_delete_body = Прибрати закріплений голос для { $viewer }?
+tts_aliases_delete_body = { $viewer } повернеться до типової стратегії призначення голосу.
 common_delete = Видалити
 
 ## Голосові аліаси — попереднє прослуховування

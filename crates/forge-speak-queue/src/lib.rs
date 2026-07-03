@@ -12,7 +12,7 @@ pub use filters::{
 };
 pub use forge_tts_core::TtsError;
 use forge_tts_core::{EngineId, TtsRegistry, TtsVoice, VoiceId};
-use forge_voice::{AliasId, VoiceAlias, VoiceAliasResolver};
+use forge_voice::{AliasId, AssignmentStrategy, VoiceAlias, VoiceAliasResolver};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct RequestId(pub String);
@@ -73,6 +73,10 @@ pub enum SpeakCommand {
         engine_id: EngineId,
         voice_id: VoiceId,
     },
+    /// Replaces the fallback strategy applied to viewers without a manual alias.
+    SetStrategy(AssignmentStrategy),
+    /// Drops an alias from the live resolver by id; no-op when the id is absent.
+    RemoveAlias(AliasId),
     /// Sent by `forge-audio` when the VoiceGate mic threshold is crossed.
     VoiceGateActivated,
     /// Sent by `forge-audio` when the VoiceGate mic level drops below threshold.

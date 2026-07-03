@@ -872,7 +872,7 @@ tts_aliases_form_create = Create
 ## Voice Aliases — delete confirm
 
 tts_aliases_delete_title = Delete voice alias?
-tts_aliases_delete_body = Remove the pinned voice for { $viewer }?
+tts_aliases_delete_body = { $viewer } will fall back to the default voice assignment strategy.
 common_delete = Delete
 
 ## Voice Aliases — preview

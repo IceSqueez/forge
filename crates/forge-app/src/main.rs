@@ -259,6 +259,7 @@ fn spawn_speak_queue(
     bus: Arc<EventBus>,
     creds: Arc<dyn forge_storage::CredentialsRepo>,
     filters_repo: Arc<dyn forge_storage::TtsFiltersRepo>,
+    voice_alias_repo: Arc<dyn forge_storage::VoiceAliasRepo>,
     rt: &tokio::runtime::Runtime,
 ) -> (
     Arc<SpeakQueueHandle>,
@@ -329,13 +330,26 @@ fn spawn_speak_queue(
         .unwrap_or_else(|e| e.into_inner())
         .engine_ids();
 
+    let (aliases, strategy, profile) = match rt.block_on(async {
+        let aliases = voice_alias_repo.list().await?;
+        let strategy = voice_alias_repo.get_strategy().await?;
+        let profile = voice_alias_repo.get_ignore_profile().await?;
+        Ok::<_, forge_storage::StorageError>((aliases, strategy, profile))
+    }) {
+        Ok(loaded) => loaded,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to load voice aliases on boot; using defaults");
+            (
+                vec![],
+                AssignmentStrategy::default(),
+                IgnoreProfile::default(),
+            )
+        }
+    };
     let resolver = Arc::new(std::sync::RwLock::new(VoiceAliasResolver::new(
-        vec![],
-        AssignmentStrategy::DeterministicByName,
-        IgnoreProfile {
-            excluded_voice_ids: vec![],
-            excluded_locales: vec![],
-        },
+        aliases,
+        strategy,
+        profile,
         SynthesisDefaults::default(),
     )));
     let pipeline_config = match rt.block_on(async {
@@ -394,8 +408,13 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
     };
 
     let creds_repo = Arc::clone(&dp) as Arc<dyn forge_storage::CredentialsRepo>;
-    let (speak_queue, tts_engine_ids, pipeline_config) =
-        spawn_speak_queue(Arc::clone(&bus), creds_repo, dp.tts_filters_repo(), &rt);
+    let (speak_queue, tts_engine_ids, pipeline_config) = spawn_speak_queue(
+        Arc::clone(&bus),
+        creds_repo,
+        dp.tts_filters_repo(),
+        dp.voice_alias_repo(),
+        &rt,
+    );
     let _viewer_tracker = forge_app::viewer_tracker::spawn(Arc::clone(&bus), dp.viewer_repo());
     let speak_bridge_concrete = Arc::new(SpeakBridge::new(Arc::clone(&speak_queue)));
     let speak_dispatcher: Arc<dyn forge_runtime::SpeakDispatcher> = speak_bridge_concrete.clone();

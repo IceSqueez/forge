@@ -649,3 +649,135 @@ async fn build_voice_catalog(
     }
     catalog
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use async_trait::async_trait;
+    use forge_audio::{AudioError, AudioSink};
+    use forge_voice::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults};
+
+    use super::*;
+
+    struct SilentSink;
+    #[async_trait]
+    impl AudioSink for SilentSink {
+        async fn play(&self, _buf: PcmBuffer) -> Result<(), AudioError> {
+            Ok(())
+        }
+    }
+
+    struct NullPublisher;
+    impl EventPublisher for NullPublisher {
+        fn publish(&self, _event: Event) {}
+    }
+
+    fn minimal_deps() -> QueueDeps {
+        let resolver = VoiceAliasResolver::new(
+            vec![],
+            AssignmentStrategy::DeterministicByName,
+            IgnoreProfile::default(),
+            SynthesisDefaults::default(),
+        );
+        QueueDeps {
+            registry: Arc::new(std::sync::RwLock::new(forge_tts_core::TtsRegistry::new())),
+            resolver: Arc::new(std::sync::RwLock::new(resolver)),
+            pipeline: crate::PipelineConfigHandle::new(
+                forge_tts_pipeline::PipelineConfig::default(),
+            ),
+            audio_sink: Arc::new(SilentSink),
+            event_bus: Arc::new(NullPublisher),
+        }
+    }
+
+    fn dispatch(
+        config: &mut QueueConfig,
+        deps: &QueueDeps,
+        tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
+        cmd: SpeakCommand,
+    ) {
+        let mut high: VecDeque<SpeakRequest> = VecDeque::new();
+        let mut normal: VecDeque<SpeakRequest> = VecDeque::new();
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        let mut paused = false;
+        let mut voicegate = false;
+        let mut active: Option<RequestId> = None;
+        let last: Option<SpeakRequest> = None;
+        handle_command(
+            cmd,
+            config,
+            deps,
+            tx,
+            &mut high,
+            &mut normal,
+            &mut counts,
+            &mut paused,
+            &mut voicegate,
+            &mut active,
+            &last,
+        );
+    }
+
+    fn request(viewer: &str, text: &str, priority: Priority) -> SpeakRequest {
+        SpeakRequest {
+            request_id: RequestId::new(),
+            viewer_id: viewer.into(),
+            viewer_name: viewer.into(),
+            text: text.into(),
+            priority,
+            alias_override: None,
+            engine_override: None,
+            voice_override: None,
+            source_event_id: forge_types::EventId::new(),
+        }
+    }
+
+    #[test]
+    fn set_volume_clamps_into_unit_range() {
+        let deps = minimal_deps();
+        let (tx, _rx) = tokio::sync::broadcast::channel::<SpeakEvent>(8);
+        // Boundaries (0.0, 1.0) pass through; out-of-range values clamp; an
+        // in-range value is preserved. Removing the clamp fails the 1.5/-0.2 rows.
+        for (input, expected) in [
+            (1.5_f32, 1.0_f32),
+            (-0.2, 0.0),
+            (0.5, 0.5),
+            (0.0, 0.0),
+            (1.0, 1.0),
+        ] {
+            let mut config = QueueConfig::default();
+            dispatch(&mut config, &deps, &tx, SpeakCommand::SetVolume(input));
+            assert_eq!(
+                config.master_volume, expected,
+                "SetVolume({input}) must set master_volume to {expected}",
+            );
+        }
+    }
+
+    #[test]
+    fn enqueue_emits_event_carrying_request_payload() {
+        let deps = minimal_deps();
+        let mut config = QueueConfig::default();
+        let (tx, mut rx) = tokio::sync::broadcast::channel::<SpeakEvent>(8);
+        dispatch(
+            &mut config,
+            &deps,
+            &tx,
+            SpeakCommand::Enqueue(request("nova", "hi chat", Priority::High)),
+        );
+        // The dashboard now-speaking/queue rows read these fields off the event;
+        // before the fix Enqueued shipped only request_id/queue_len.
+        let payload = std::iter::from_fn(|| rx.try_recv().ok())
+            .find_map(|ev| match ev {
+                SpeakEvent::Enqueued {
+                    viewer_name,
+                    text,
+                    is_high_priority,
+                    ..
+                } => Some((viewer_name, text, is_high_priority)),
+                _ => None,
+            })
+            .expect("an Enqueued event must be emitted");
+        assert_eq!(payload, ("nova".to_owned(), "hi chat".to_owned(), true));
+    }
+}

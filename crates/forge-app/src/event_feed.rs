@@ -314,6 +314,10 @@ fn is_error_event(event: &Event) -> bool {
     event.kind.contains("error") || event.kind.contains("fail")
 }
 
+pub fn event_feed_scroll_id() -> iced::advanced::widget::Id {
+    iced::advanced::widget::Id::new("forge:event_feed_scroll")
+}
+
 pub fn update(
     state: &mut EventFeedState,
     rt: &RuntimeView,
@@ -321,10 +325,16 @@ pub fn update(
 ) -> iced::Task<Message> {
     match msg {
         EventFeedMsg::EventArrived(event) => {
+            let mut should_scroll = false;
             if !state.paused {
                 state.push_event(event);
+                should_scroll = state.auto_scroll;
             }
-            iced::Task::none()
+            if should_scroll {
+                iced::widget::operation::snap_to_end(event_feed_scroll_id())
+            } else {
+                iced::Task::none()
+            }
         }
         EventFeedMsg::EventSelected(id) => {
             state.update_selection(id);
@@ -626,13 +636,17 @@ pub fn event_feed_view<'a>(
         column(row_elements)
     };
 
-    let event_list_pane = container(scrollable(list_content).height(Length::Fill))
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .style(move |_: &iced::Theme| container::Style {
-            background: Some(Background::Color(palette.base)),
-            ..container::Style::default()
-        });
+    let event_list_pane = container(
+        scrollable(list_content)
+            .id(event_feed_scroll_id())
+            .height(Length::Fill),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .style(move |_: &iced::Theme| container::Style {
+        background: Some(Background::Color(palette.base)),
+        ..container::Style::default()
+    });
 
     let inspector_pane: Element<'_, Message> = if let Some(ev) = state.selected_event() {
         let caused_action = state

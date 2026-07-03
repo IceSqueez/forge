@@ -287,6 +287,22 @@ fn extract_port(bind_address: &str) -> &str {
     bind_address.split(':').next_back().unwrap_or("8081")
 }
 
+/// Builds the browser-reachable origin for overlay URLs from the configured
+/// `host:port` bind address. Unspecified binds (`0.0.0.0` / `::`) are rendered
+/// as loopback since those are placeholders, not addresses a browser can open.
+fn overlay_origin(bind_address: &str) -> String {
+    let port = extract_port(bind_address);
+    let host = bind_address
+        .rsplit_once(':')
+        .map(|(host, _)| host)
+        .unwrap_or(bind_address);
+    let host = match host {
+        "0.0.0.0" | "::" | "[::]" => "127.0.0.1",
+        other => other,
+    };
+    format!("http://{host}:{port}")
+}
+
 fn stat_card<'a>(
     label: impl Into<String>,
     value: impl Into<String>,
@@ -537,7 +553,7 @@ fn overlay_entry_row<'a>(
     idx: usize,
     entry: &'a OwnedOverlayEntry,
     selected: bool,
-    port: &str,
+    origin: &str,
     palette: &ForgePalette,
 ) -> Element<'a, Message> {
     let size_label = match &entry.kind {
@@ -607,7 +623,7 @@ fn overlay_entry_row<'a>(
     .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
-    let url = format!("http://127.0.0.1:{}/{}", port, entry.name);
+    let url = format!("{}/overlays/{}", origin, entry.name);
     let url_for_copy = url.clone();
 
     let url_row: Option<Element<'a, Message>> = if selected {
@@ -1123,7 +1139,7 @@ fn overlay_panel<'a>(
     let open_btn_border = palette.border_regular;
     let text_muted = palette.text_muted;
     let text_faint = palette.text_faint;
-    let port = extract_port(&state.bind_address);
+    let origin = overlay_origin(&state.bind_address);
 
     let open_btn = button(
         row![
@@ -1192,7 +1208,7 @@ fn overlay_panel<'a>(
             .enumerate()
             .map(|(i, entry)| {
                 let selected = state.selected_overlay_file == Some(i);
-                overlay_entry_row(i, entry, selected, port, palette)
+                overlay_entry_row(i, entry, selected, &origin, palette)
             })
             .collect();
         scrollable(

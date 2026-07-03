@@ -13,6 +13,7 @@ const BEARER_CREDENTIAL_ID: &str = "server:bearer";
 
 #[derive(Debug, Clone)]
 pub struct ServerBootSnapshot {
+    pub started: bool,
     pub bind_address: String,
     pub bearer_token: String,
 }
@@ -138,10 +139,27 @@ pub async fn load_server_settings_and_start(
         .map_err(|e: std::net::AddrParseError| format!("invalid {SERVER_PORT_KEY}: {e}"))?;
     let bind_addr = std::net::SocketAddr::new(ip, snap.port);
 
+    if !snap.enabled {
+        // The user disabled the server; leave it unbound and report a stopped
+        // boot so the UI reflects the persisted preference.
+        let token = subsystem
+            .bearer_token()
+            .await
+            .map_err(|e| e.to_string())?
+            .unwrap_or_default();
+        return Ok(ServerBootSnapshot {
+            started: false,
+            bind_address: bind_addr.to_string(),
+            bearer_token: token,
+        });
+    }
+
     let actions = backend.action_repo();
     let globals: Arc<dyn GlobalsRepo> = Arc::clone(&backend) as Arc<dyn GlobalsRepo>;
     let user_globals: Arc<dyn UserGlobalsRepo> = Arc::clone(&backend) as Arc<dyn UserGlobalsRepo>;
+    let settings_repo: Arc<dyn SettingsRepo> = Arc::clone(&backend) as Arc<dyn SettingsRepo>;
     let mut config = ServerConfig::new(
+        settings_repo,
         Arc::clone(&subsystem.credentials),
         bus,
         actions,
@@ -169,6 +187,7 @@ pub async fn load_server_settings_and_start(
         .unwrap_or_default();
 
     Ok(ServerBootSnapshot {
+        started: true,
         bind_address: bind_addr.to_string(),
         bearer_token: token,
     })

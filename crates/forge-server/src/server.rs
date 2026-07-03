@@ -10,7 +10,7 @@ use axum::{Json, Router, middleware};
 use tokio::net::TcpListener;
 
 use forge_runtime::{ActionEngineHandle, EventBus};
-use forge_storage::{ActionRepo, CredentialsRepo, GlobalsRepo, UserGlobalsRepo};
+use forge_storage::{ActionRepo, CredentialsRepo, GlobalsRepo, SettingsRepo, UserGlobalsRepo};
 
 use crate::auth::AuthState;
 use crate::bus_adapter::BusAdapter;
@@ -27,6 +27,7 @@ pub struct AppState {
     pub globals: Arc<dyn GlobalsRepo>,
     pub user_globals: Arc<dyn UserGlobalsRepo>,
     pub credentials: Arc<dyn CredentialsRepo>,
+    pub settings: Arc<dyn SettingsRepo>,
     pub server_info: Arc<ServerInfo>,
     pub action_engine: Arc<ActionEngineHandle>,
     pub overlay_root: Arc<std::path::PathBuf>,
@@ -61,6 +62,7 @@ impl Server {
             globals: self.config.globals,
             user_globals: self.config.user_globals,
             credentials,
+            settings: self.config.settings,
             server_info: ServerInfo::new(),
             action_engine: self.config.action_engine,
             overlay_root,
@@ -218,7 +220,8 @@ mod tests {
     use forge_registry::SubActionRegistry;
     use forge_runtime::{EventBus, NullEventLogRepo, ScriptRegistry, spawn_action_engine};
     use forge_storage::{
-        CredentialId, CredentialsRepo, DataProvider, GlobalsRepo, StorageError, UserGlobalsRepo,
+        CredentialId, CredentialsRepo, DataProvider, GlobalsRepo, SettingsRepo, StorageError,
+        UserGlobalsRepo,
     };
     use time::OffsetDateTime;
     use tokio::net::TcpListener;
@@ -288,7 +291,49 @@ mod tests {
         }
     }
 
+    /// HashMap-backed `SettingsRepo` for tests that need `restart` to actually
+    /// read persisted values back (the mockall `MockSettingsRepo` from `test_dp`
+    /// panics on any unexpected call).
+    struct MapSettings(Mutex<HashMap<String, String>>);
+
+    impl MapSettings {
+        fn new() -> Arc<Self> {
+            Arc::new(Self(Mutex::new(HashMap::new())))
+        }
+    }
+
+    #[async_trait]
+    impl SettingsRepo for MapSettings {
+        async fn get_string(&self, key: &str) -> Result<Option<String>, StorageError> {
+            Ok(self.0.lock().expect("mutex").get(key).cloned())
+        }
+
+        async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
+            self.0
+                .lock()
+                .expect("mutex")
+                .insert(key.to_owned(), value.to_owned());
+            Ok(())
+        }
+
+        async fn delete(&self, key: &str) -> Result<bool, StorageError> {
+            Ok(self.0.lock().expect("mutex").remove(key).is_some())
+        }
+
+        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
+            Ok(self.0.lock().expect("mutex").clone())
+        }
+    }
+
     fn make_app_state(auth: Arc<AuthState>, creds: Arc<dyn CredentialsRepo>) -> AppState {
+        make_app_state_with_settings(auth, creds, MapSettings::new())
+    }
+
+    fn make_app_state_with_settings(
+        auth: Arc<AuthState>,
+        creds: Arc<dyn CredentialsRepo>,
+        settings: Arc<dyn SettingsRepo>,
+    ) -> AppState {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let bus_adapter = BusAdapter::new(Arc::clone(&bus));
         bus_adapter.spawn();
@@ -312,6 +357,7 @@ mod tests {
             globals,
             user_globals,
             credentials: creds,
+            settings,
             server_info: ServerInfo::new(),
             action_engine,
             overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
@@ -515,20 +561,57 @@ mod tests {
         handle.stop().await.expect("second stop must be a no-op Ok");
     }
 
+    // Regression (SERVER-1): `restart` must reload persisted settings and rebind
+    // to the CHANGED address, not re-serve the frozen boot-time bind. Guards
+    // against a revert to `guard.state.clone()` re-using the old bind_addr.
     #[tokio::test]
-    async fn restart_rebinds_on_same_port() {
+    async fn restart_rebinds_on_persisted_address() {
+        let settings = MapSettings::new();
         let creds = MemCreds::with_token("my-token");
-        let (handle, addr) = make_server(false, Arc::clone(&creds)).await;
+        let auth = AuthState::load(false, &*creds).await.expect("auth load");
+        let creds_dyn: Arc<dyn CredentialsRepo> = creds;
+        let state = make_app_state_with_settings(
+            auth,
+            creds_dyn,
+            Arc::clone(&settings) as Arc<dyn SettingsRepo>,
+        );
+
+        // Boot on an ephemeral loopback port and keep it occupied.
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let boot_addr = listener.local_addr().expect("local addr");
+        let handle = serve_on(listener, state);
+
+        // With the boot port still held, reserve a DISTINCT free loopback port,
+        // then release it so restart can claim it as the newly-persisted target.
+        let probe = TcpListener::bind("127.0.0.1:0").await.expect("probe bind");
+        let new_port = probe.local_addr().expect("probe addr").port();
+        drop(probe);
+        assert_ne!(
+            boot_addr.port(),
+            new_port,
+            "target port must differ from boot"
+        );
+
+        // Persist a bind target changed since boot.
+        crate::config::ServerSettings::save_bind_address(&*settings, "127.0.0.1")
+            .await
+            .expect("save addr");
+        crate::config::ServerSettings::save_port(&*settings, new_port)
+            .await
+            .expect("save port");
 
         handle.restart().await.expect("restart");
 
-        let url = format!("http://{}/api/v1/info", addr);
+        // The rebuilt server must answer on the persisted port, proving restart
+        // reloaded settings instead of re-serving the frozen boot address.
+        let url = format!("http://127.0.0.1:{new_port}/api/v1/info");
         let resp = reqwest::Client::new()
             .get(&url)
             .send()
             .await
             .expect("HTTP request after restart");
         assert_eq!(resp.status().as_u16(), 200);
+        assert_eq!(handle.bind_addr().await.port(), new_port);
 
         handle.stop().await.expect("stop after restart");
     }

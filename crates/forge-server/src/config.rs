@@ -18,6 +18,7 @@ pub struct ServerConfig {
     pub http_overlay_require_token: bool,
     pub overlay_cors_any_origin: bool,
     pub lan_bind_enabled: bool,
+    pub settings: Arc<dyn SettingsRepo>,
     pub credentials: Arc<dyn CredentialsRepo>,
     pub event_bus: Arc<EventBus>,
     pub actions: Arc<dyn ActionRepo>,
@@ -28,6 +29,7 @@ pub struct ServerConfig {
 
 impl ServerConfig {
     pub fn new(
+        settings: Arc<dyn SettingsRepo>,
         credentials: Arc<dyn CredentialsRepo>,
         event_bus: Arc<EventBus>,
         actions: Arc<dyn ActionRepo>,
@@ -42,6 +44,7 @@ impl ServerConfig {
             http_overlay_require_token: false,
             overlay_cors_any_origin: true,
             lan_bind_enabled: false,
+            settings,
             credentials,
             event_bus,
             actions,
@@ -54,6 +57,7 @@ impl ServerConfig {
 
 #[derive(Debug, Clone)]
 pub struct ServerSettings {
+    pub enabled: bool,
     pub bind_address: String,
     pub port: u16,
     pub lan_bind_enabled: bool,
@@ -66,6 +70,7 @@ pub struct ServerSettings {
 impl Default for ServerSettings {
     fn default() -> Self {
         Self {
+            enabled: true,
             bind_address: "127.0.0.1".to_owned(),
             port: 8081,
             lan_bind_enabled: false,
@@ -79,6 +84,12 @@ impl Default for ServerSettings {
 
 impl ServerSettings {
     pub async fn load(repo: &dyn SettingsRepo) -> Result<Self, StorageError> {
+        let enabled = repo
+            .get_string(reserved_keys::SERVER_ENABLED_KEY)
+            .await?
+            .as_deref()
+            .map(|s| s == "true")
+            .unwrap_or(true);
         let bind_address = repo
             .get_string(reserved_keys::SERVER_BIND_ADDRESS_KEY)
             .await?
@@ -117,6 +128,7 @@ impl ServerSettings {
             .get_string(reserved_keys::SERVER_OVERLAY_ROOT_KEY)
             .await?;
         Ok(Self {
+            enabled,
             bind_address,
             port,
             lan_bind_enabled,
@@ -125,6 +137,14 @@ impl ServerSettings {
             overlay_cors_any_origin,
             overlay_root,
         })
+    }
+
+    pub async fn save_enabled(repo: &dyn SettingsRepo, enabled: bool) -> Result<(), StorageError> {
+        repo.set_string(
+            reserved_keys::SERVER_ENABLED_KEY,
+            if enabled { "true" } else { "false" },
+        )
+        .await
     }
 
     pub async fn save_bind_address(

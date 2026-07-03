@@ -16,6 +16,7 @@ pub mod reserved_keys {
     pub const FONT_BODY: &str = "font_body";
     pub const FONT_MONO: &str = "font_mono";
     pub const EVENT_LOG_RETENTION_DAYS_KEY: &str = "event_log_retention_days";
+    pub const SERVER_ENABLED_KEY: &str = "server.enabled";
     pub const SERVER_BIND_ADDRESS_KEY: &str = "server.bind_address";
     pub const SERVER_PORT_KEY: &str = "server.port";
     pub const SERVER_LAN_BIND_ENABLED_KEY: &str = "server.lan_bind_enabled";

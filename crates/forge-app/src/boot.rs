@@ -338,7 +338,11 @@ pub(crate) fn handle_server_boot_result(
         Ok(snapshot) => {
             app.ui.server_screen.bind_address = snapshot.bind_address;
             app.ui.server_screen.bearer_token = snapshot.bearer_token;
-            app.ui.server_screen.server_status = ServerStatus::Running;
+            app.ui.server_screen.server_status = if snapshot.started {
+                ServerStatus::Running
+            } else {
+                ServerStatus::Stopped
+            };
         }
         Err(e) => {
             tracing::warn!(error = %e, "server boot failed");

@@ -224,6 +224,7 @@ mod tests {
             globals,
             user_globals,
             credentials: creds_dyn,
+            settings: Arc::clone(&dp) as Arc<dyn forge_storage::SettingsRepo>,
             server_info: ServerInfo::new(),
             action_engine,
             overlay_root: Arc::new(overlay_root),

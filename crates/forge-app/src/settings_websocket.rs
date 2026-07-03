@@ -169,16 +169,45 @@ pub fn update(
         }
         SettingsWebSocketMsg::ToggleEnable(val) => {
             state.enable_server = val;
-            state.all_changes_saved = false;
+            state.all_changes_saved = true;
+            state.save_error = None;
             let s: Arc<dyn SettingsRepo> = Arc::clone(&rt.backend) as Arc<dyn SettingsRepo>;
-            Task::perform(
-                async move {
-                    s.set_string("server.enabled", if val { "true" } else { "false" })
-                        .await
-                        .map_err(|e| e.to_string())
-                },
-                |r| Message::SettingsWebSocket(SettingsWebSocketMsg::SaveStatus(r)),
-            )
+            let subsystem = Arc::clone(&rt.server_subsystem);
+            if val {
+                let backend = Arc::clone(&rt.backend);
+                let bus = Arc::clone(&rt.bus);
+                let engine = rt.action_engine.clone();
+                Task::perform(
+                    async move {
+                        ServerSettings::save_enabled(s.as_ref(), true)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        match engine {
+                            Some(engine) => {
+                                crate::server_subsystem::load_server_settings_and_start(
+                                    backend,
+                                    bus,
+                                    Arc::new(engine),
+                                    subsystem,
+                                )
+                                .await
+                            }
+                            None => Err("runtime offline".to_owned()),
+                        }
+                    },
+                    |r| Message::Boot(crate::message::BootMsg::Server(r)),
+                )
+            } else {
+                Task::perform(
+                    async move {
+                        ServerSettings::save_enabled(s.as_ref(), false)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        subsystem.stop().await.map_err(|e| e.to_string())
+                    },
+                    |r| Message::ServerSubsystem(crate::message::ServerSubsystemMsg::StopResult(r)),
+                )
+            }
         }
         SettingsWebSocketMsg::SelectLocalhost => {
             state.bind_address_radio = BindAddressChoice::Localhost;

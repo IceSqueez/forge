@@ -1,11 +1,14 @@
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use forge_platform_core::paths;
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, watch};
 
 use crate::auth::AuthState;
+use crate::config::ServerSettings;
 use crate::server::AppState;
 use crate::{ServerError, server};
 
@@ -71,12 +74,58 @@ impl ServerHandle {
     }
 
     pub async fn restart(&self) -> Result<(), ServerError> {
-        let (state, bind_addr) = {
+        let state = {
             let guard = self.inner.lock().await;
-            (guard.state.clone(), guard.bind_addr)
+            guard.state.clone()
         };
 
+        // Reload persisted settings so bind address / port / overlay root / HTTP
+        // overlay token / CORS edits made since boot take effect on the new bind.
+        // The shared handles (auth, bus, adapters, repos, engine) are preserved.
+        let settings = ServerSettings::load(state.settings.as_ref())
+            .await
+            .map_err(|e| ServerError::Storage(e.to_string()))?;
+        let ip: IpAddr = settings
+            .bind_address
+            .parse()
+            .map_err(|_| ServerError::Bind {
+                addr: settings.bind_address.clone(),
+                reason: "invalid bind address".to_owned(),
+            })?;
+        let bind_addr = SocketAddr::new(ip, settings.port);
+        let overlay_root = settings
+            .overlay_root
+            .filter(|root| !root.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| paths::data_dir().join("overlays"));
+
+        // Reject an unauthenticated off-loopback bind before tearing down the
+        // running server, so a bad config leaves the current server untouched.
+        server::validate_lan_bind(
+            &bind_addr,
+            settings.lan_bind_enabled,
+            state.credentials.as_ref(),
+        )
+        .await?;
+
         self.stop().await?;
+
+        let new_state = AppState {
+            auth: Arc::clone(&state.auth),
+            bus: Arc::clone(&state.bus),
+            bus_adapter: Arc::clone(&state.bus_adapter),
+            actions: Arc::clone(&state.actions),
+            globals: Arc::clone(&state.globals),
+            user_globals: Arc::clone(&state.user_globals),
+            credentials: Arc::clone(&state.credentials),
+            settings: Arc::clone(&state.settings),
+            server_info: Arc::clone(&state.server_info),
+            action_engine: Arc::clone(&state.action_engine),
+            overlay_root: Arc::new(overlay_root),
+            http_overlay_require_token: settings.http_overlay_require_token,
+            overlay_cors_any_origin: settings.overlay_cors_any_origin,
+            bind_addr,
+        };
 
         let listener = TcpListener::bind(bind_addr)
             .await
@@ -85,12 +134,12 @@ impl ServerHandle {
                 reason: e.to_string(),
             })?;
 
-        let (join, shutdown_tx) = server::serve_on_with_shutdown(listener, state.clone());
+        let (join, shutdown_tx) = server::serve_on_with_shutdown(listener, new_state.clone());
 
         let mut guard = self.inner.lock().await;
         guard.join = Some(join);
         guard.shutdown_tx = Some(shutdown_tx);
-        guard.state = state;
+        guard.state = new_state;
         guard.bind_addr = bind_addr;
 
         Ok(())

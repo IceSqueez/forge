@@ -174,8 +174,6 @@ settings_diagnostics_log_level_hint = Рівень журналювання: к�
 
 settings_storage_section_title = Сховище та резервні копії
 settings_storage_db_path = База даних: { $path }
-settings_storage_vacuum_btn = Вакуумування (компактний знімок)
-settings_storage_vacuum_hint = Записує стиснутий знімок у тимчасовий файл; корисно перед ручними резервними копіями.
 settings_storage_backup_btn = Резервна копія зараз
 settings_storage_backup_hint = Створює копію бази з міткою часу в теці даних.
 

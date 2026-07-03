@@ -200,8 +200,6 @@ pub enum HomeMsg {
 pub enum SettingsMsg {
     ReconnectPlatform(PlatformId),
     PlatformReconnectResult(Result<(), String>),
-    DbVacuumRequested,
-    DbVacuumDone(Result<u64, String>),
     DbBackupRequested,
     DbBackupDone(Result<String, String>),
     OpenLogDirectoryRequested,

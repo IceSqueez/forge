@@ -172,8 +172,6 @@ settings_diagnostics_log_level_hint = Log level: controlled via RUST_LOG env var
 
 settings_storage_section_title = Storage & backups
 settings_storage_db_path = Database: { $path }
-settings_storage_vacuum_btn = Vacuum (export compact snapshot)
-settings_storage_vacuum_hint = Writes a vacuumed snapshot to a temp file; useful before manual backups.
 settings_storage_backup_btn = Backup now
 settings_storage_backup_hint = Creates a timestamped DB copy in the data directory.
 

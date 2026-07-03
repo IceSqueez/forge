@@ -101,15 +101,6 @@ fn settings_storage_pane(palette: &ForgePalette) -> Element<'static, Message> {
     .size(FONT_SM)
     .color(palette.text_muted);
 
-    let vacuum_btn = forge_widgets::primary_button(
-        forge_widgets::tr!("settings_storage_vacuum_btn"),
-        Message::Settings(SettingsMsg::DbVacuumRequested),
-        palette,
-    );
-    let vacuum_hint = iced::widget::text(forge_widgets::tr!("settings_storage_vacuum_hint"))
-        .size(FONT_XS)
-        .color(palette.text_faint);
-
     let backup_btn = forge_widgets::primary_button(
         forge_widgets::tr!("settings_storage_backup_btn"),
         Message::Settings(SettingsMsg::DbBackupRequested),
@@ -126,8 +117,6 @@ fn settings_storage_pane(palette: &ForgePalette) -> Element<'static, Message> {
                 .color(palette.text_primary)
                 .into(),
             path_label.into(),
-            vacuum_btn,
-            vacuum_hint.into(),
             backup_btn,
             backup_hint.into(),
         ],
@@ -718,26 +707,6 @@ pub(crate) fn handle_message(app: &mut App, sub: SettingsMsg) -> Task<Message> {
         SettingsMsg::PlatformReconnectResult(Ok(())) => Task::none(),
         SettingsMsg::PlatformReconnectResult(Err(e)) => {
             tracing::warn!(error = %e, "platform reconnect failed");
-            Task::none()
-        }
-        SettingsMsg::DbVacuumRequested => {
-            let dp = Arc::clone(&app.rt.backend);
-            Task::perform(
-                async move {
-                    let tmp_target = std::env::temp_dir().join("forge_vacuum.db");
-                    dp.export(&tmp_target)
-                        .await
-                        .map(|()| tmp_target.metadata().map(|m| m.len()).unwrap_or(0))
-                        .map_err(|e| e.to_string())
-                },
-                |r| Message::Settings(SettingsMsg::DbVacuumDone(r)),
-            )
-        }
-        SettingsMsg::DbVacuumDone(result) => {
-            match result {
-                Ok(bytes) => tracing::info!(bytes, "DB vacuum exported snapshot"),
-                Err(e) => tracing::warn!(error = %e, "DB vacuum failed"),
-            }
             Task::none()
         }
         SettingsMsg::DbBackupRequested => {

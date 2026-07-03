@@ -1036,6 +1036,69 @@ mod tests {
     }
 
     #[test]
+    fn persistence_toggled_err_reverts_optimistic_flip() {
+        // STORAGE-4 regression: the optimistic flip already set entry.persisted
+        // to `attempted`; a failed write must roll it back to `!attempted`.
+        for attempted in [true, false] {
+            let mut app = App::default();
+            // Simulate the state right after the optimistic flip.
+            app.ui.globals.entries = vec![make_entry("flag", attempted)];
+            let _ = update(
+                &mut app,
+                Message::Globals(GlobalsMsg::PersistenceToggled {
+                    name: "flag".to_owned(),
+                    attempted,
+                    result: Err("db down".to_owned()),
+                }),
+            );
+            let entry = app
+                .ui
+                .globals
+                .entries
+                .iter()
+                .find(|e| e.name == "flag")
+                .expect("entry");
+            assert_eq!(
+                entry.persisted, !attempted,
+                "failed write must revert persisted to !attempted ({attempted})"
+            );
+        }
+    }
+
+    #[test]
+    fn persistence_toggled_ok_leaves_optimistic_flip_intact() {
+        let mut app = App::default();
+        app.ui.globals.entries = vec![make_entry("flag", true)];
+        let _ = update(
+            &mut app,
+            Message::Globals(GlobalsMsg::PersistenceToggled {
+                name: "flag".to_owned(),
+                attempted: true,
+                result: Ok(()),
+            }),
+        );
+        let entry = app.ui.globals.entries.iter().find(|e| e.name == "flag");
+        assert!(entry.is_some_and(|e| e.persisted), "success keeps the flip");
+    }
+
+    #[test]
+    fn persistence_toggled_err_for_unknown_name_does_not_panic() {
+        let mut app = App::default();
+        app.ui.globals.entries = vec![make_entry("present", true)];
+        let _ = update(
+            &mut app,
+            Message::Globals(GlobalsMsg::PersistenceToggled {
+                name: "absent".to_owned(),
+                attempted: true,
+                result: Err("db down".to_owned()),
+            }),
+        );
+        // Untouched entry stays as-is; the missing target is a no-op on state.
+        let entry = app.ui.globals.entries.iter().find(|e| e.name == "present");
+        assert!(entry.is_some_and(|e| e.persisted));
+    }
+
+    #[test]
     fn submit_create_saves_to_backend() {
         let rt = tokio::runtime::Runtime::new().expect("tokio");
         let backend = Arc::new(

@@ -180,4 +180,20 @@ mod tests {
         let (ciphertext, nonce) = encrypt(&key, "payload").unwrap();
         assert!(decrypt(&wrong_key, &ciphertext, &nonce).is_err());
     }
+
+    // Why: the nonce comes from the DB, so a corrupted/truncated blob is a plausible
+    // input; this used to panic before the fallible try_from conversion.
+    #[test]
+    fn decrypt_wrong_length_nonce_returns_crypto_error() {
+        let key = [0x0cu8; 32];
+        let (ciphertext, _) = encrypt(&key, "payload").unwrap();
+        for bad_len in [0, NONCE_LEN - 1, NONCE_LEN + 1, 2 * NONCE_LEN] {
+            let bad_nonce = vec![0u8; bad_len];
+            let err = decrypt(&key, &ciphertext, &bad_nonce).unwrap_err();
+            assert!(
+                matches!(err, SqliteStorageError::Crypto { .. }),
+                "nonce len {bad_len}: expected Crypto error, got {err:?}"
+            );
+        }
+    }
 }

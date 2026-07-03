@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
 use forge_script::{
-    Engine, EngineConfig, ForgeApi, ScriptError, ScriptHttpClient, build_scope_for_contract,
-    load_script_http_config,
+    Engine, ForgeApi, ScriptError, ScriptHttpClient, build_scope_for_contract,
+    load_script_engine_config, load_script_http_config,
 };
 use forge_storage::{GlobalsRepo, SettingsRepo};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
@@ -126,6 +126,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
         let speak_requester = self.registry.speak_requester();
         let parent_event_id = ctx.parent_event_id;
         let http_cfg = Arc::new(load_script_http_config(self.settings.as_ref()).await);
+        let engine_cfg = load_script_engine_config(self.settings.as_ref()).await;
 
         let exec_event = Event::caused_by(
             EventSource::Rhai,
@@ -146,7 +147,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
                     reason: e.to_string(),
                 }
             })?;
-            let cfg = EngineConfig::default();
+            let cfg = engine_cfg;
             let deadline = Instant::now() + Duration::from_millis(cfg.wall_time_ms);
             // reqwest::blocking::Client must be built inside spawn_blocking — constructing it on
             // the outer async task causes a runtime conflict on drop.

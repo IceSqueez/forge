@@ -3,11 +3,13 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use forge_events::EventPublisher;
-use forge_storage::GlobalsRepo;
+use forge_storage::{GlobalsRepo, SettingsRepo};
 use forge_types::{ArgStack, EventId, ScriptId};
 
 use crate::error::ScriptError;
-use crate::{Engine, EngineConfig, ForgeApi, build_scope_for_contract, parse_contract};
+use crate::{
+    Engine, ForgeApi, build_scope_for_contract, load_script_engine_config, parse_contract,
+};
 
 #[derive(Debug, Clone)]
 pub struct RunResult {
@@ -27,6 +29,7 @@ pub async fn run_inline(
     body: String,
     arg_stack: ArgStack,
     globals: Arc<dyn GlobalsRepo>,
+    settings: Arc<dyn SettingsRepo>,
     bus: Arc<dyn EventPublisher>,
     script_id: ScriptId,
 ) -> Result<RunResult, ScriptError> {
@@ -39,7 +42,7 @@ pub async fn run_inline(
             script: body.chars().take(80).collect(),
             reason: e.to_string(),
         })?;
-    let cfg = EngineConfig::default();
+    let cfg = load_script_engine_config(settings.as_ref()).await;
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(cfg.wall_time_ms);
     let api = ForgeApi::new(bus, globals, EventId::new(), deadline);
     let engine = Engine::with_api(cfg, api);

@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+use forge_storage::{SettingsRepo, reserved_keys};
 use rhai::Dynamic;
 use rhai::packages::{BasicArrayPackage, BasicMapPackage, CorePackage, LogicPackage, Package};
 
@@ -19,6 +20,33 @@ impl Default for EngineConfig {
             op_limit: 100_000,
             wall_time_ms: 500,
         }
+    }
+}
+
+/// Resolves the user-configured operation and wall-time budgets from persisted
+/// settings, falling back to the built-in defaults for absent or unparseable values.
+pub async fn load_script_engine_config(repo: &dyn SettingsRepo) -> EngineConfig {
+    let defaults = EngineConfig::default();
+
+    let op_limit = repo
+        .get_string(reserved_keys::SCRIPT_OP_LIMIT_KEY)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(defaults.op_limit);
+
+    let wall_time_ms = repo
+        .get_string(reserved_keys::SCRIPT_TIMEOUT_MS_KEY)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(defaults.wall_time_ms);
+
+    EngineConfig {
+        op_limit,
+        wall_time_ms,
     }
 }
 

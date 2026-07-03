@@ -25,7 +25,7 @@ pub use condition::ConditionEvaluator;
 pub use contract::{
     ContractParseError, InputMismatchError, build_scope_for_contract, parse_contract,
 };
-pub use engine::{Engine, EngineConfig, validate_syntax};
+pub use engine::{Engine, EngineConfig, load_script_engine_config, validate_syntax};
 pub use error::ScriptError;
 pub use forge_platform_core::is_private_or_special;
 pub use format::format_script;

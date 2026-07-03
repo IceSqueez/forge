@@ -6,7 +6,7 @@ use forge_script::{
     MethodDescriptor, RHAI_VERSION, catalog, collect_user_functions, content_hash, format_script,
     parse_contract, run_inline,
 };
-use forge_storage::{GlobalsRepo, ScriptRecord, ScriptRepo};
+use forge_storage::{GlobalsRepo, ScriptRecord, ScriptRepo, SettingsRepo};
 use forge_types::{ArgStack, ScriptContract, ScriptId, Variant, VariantKind};
 use forge_widgets::tokens::{FONT_SM, FONT_XS, FontRole, Spacing, font, spf};
 use forge_widgets::{
@@ -386,6 +386,7 @@ pub fn update(
                 let script_id = open.id;
                 let script_name = open.record.name.clone();
                 let dp = Arc::clone(&rt.backend) as Arc<dyn GlobalsRepo>;
+                let settings = Arc::clone(&rt.backend) as Arc<dyn SettingsRepo>;
                 let bus = Arc::clone(&rt.bus);
                 let ts = now_timestamp();
                 state.console_lines.push(ConsoleLine {
@@ -396,7 +397,7 @@ pub fn update(
                 iced::Task::perform(
                     async move {
                         let publisher: Arc<dyn forge_events::EventPublisher> = bus;
-                        run_inline(body, ArgStack::new(), dp, publisher, script_id)
+                        run_inline(body, ArgStack::new(), dp, settings, publisher, script_id)
                             .await
                             .map_err(|e| e.to_string())
                     },
@@ -459,6 +460,7 @@ pub fn update(
             let script_id = form.script_id;
             let script_name = form.script_name.clone();
             let dp = Arc::clone(&rt.backend) as Arc<dyn GlobalsRepo>;
+            let settings = Arc::clone(&rt.backend) as Arc<dyn SettingsRepo>;
             let bus = Arc::clone(&rt.bus);
             if let Some(f) = state.run_modal.as_mut() {
                 f.running = true;
@@ -473,7 +475,7 @@ pub fn update(
             iced::Task::perform(
                 async move {
                     let publisher: Arc<dyn forge_events::EventPublisher> = bus;
-                    run_inline(body, arg_stack, dp, publisher, script_id)
+                    run_inline(body, arg_stack, dp, settings, publisher, script_id)
                         .await
                         .map_err(|e| e.to_string())
                 },
@@ -1670,11 +1672,13 @@ mod tests {
         let bus =
             forge_runtime::EventBus::new(std::sync::Arc::new(forge_runtime::NullEventLogRepo));
         let id = ScriptId::new();
+        let settings = Arc::clone(&dp) as Arc<dyn forge_storage::SettingsRepo>;
         let publisher: Arc<dyn forge_events::EventPublisher> = bus;
         let result = run_inline(
             "1 + 2".to_owned(),
             ArgStack::new(),
             dp as Arc<dyn forge_storage::GlobalsRepo>,
+            settings,
             publisher,
             id,
         )
@@ -1695,11 +1699,13 @@ mod tests {
             forge_runtime::EventBus::new(std::sync::Arc::new(forge_runtime::NullEventLogRepo));
         let id = ScriptId::new();
         let stack = ArgStack::new().set("x".to_owned(), Variant::Int(5));
+        let settings = Arc::clone(&dp) as Arc<dyn forge_storage::SettingsRepo>;
         let publisher: Arc<dyn forge_events::EventPublisher> = bus;
         let result = run_inline(
             "// @input x: int\nx * 2".to_owned(),
             stack,
             dp as Arc<dyn forge_storage::GlobalsRepo>,
+            settings,
             publisher,
             id,
         )

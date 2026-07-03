@@ -26,6 +26,21 @@ pub trait GlobalsRepo: Send + Sync {
     async fn get(&self, name: &str) -> Result<Option<Variant>, StorageError>;
     async fn set(&self, name: &str, value: Variant, persisted: bool) -> Result<(), StorageError>;
     async fn delete(&self, name: &str) -> Result<bool, StorageError>;
+
+    /// Stored `persisted` flag for `name`, or `None` when the key is absent.
+    ///
+    /// Lets in-place mutators (toggle, array append/remove) keep a global's
+    /// persistence instead of demoting it to session on every edit. Does not
+    /// count as a read. Backends with a direct lookup may override.
+    async fn persisted(&self, name: &str) -> Result<Option<bool>, StorageError> {
+        Ok(self
+            .list()
+            .await?
+            .into_iter()
+            .find(|e| e.name == name)
+            .map(|e| e.persisted))
+    }
+
     async fn list(&self) -> Result<Vec<GlobalEntry>, StorageError>;
     async fn storage_bytes(&self) -> Result<u64, StorageError>;
     async fn last_save_at(&self) -> Result<Option<OffsetDateTime>, StorageError>;

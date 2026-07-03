@@ -47,6 +47,7 @@ impl SubActionRunner for CoreGlobalsSetRunner {
         let mut cfg = SubActionConfig::new();
         cfg.insert("name".to_owned(), Variant::String(String::new()));
         cfg.insert("value".to_owned(), Variant::String(String::new()));
+        cfg.insert("persisted".to_owned(), Variant::Bool(false));
         cfg
     }
 
@@ -61,6 +62,10 @@ impl SubActionRunner for CoreGlobalsSetRunner {
                 key: "value",
                 label: "Value",
                 placeholder: "42",
+            },
+            FormField::Toggle {
+                key: "persisted",
+                label: "Persist across restarts",
             },
         ]
     }
@@ -103,10 +108,14 @@ impl SubActionRunner for CoreGlobalsSetRunner {
         )
         .await;
         let variant = parse_variant(&raw);
+        let persisted = config
+            .get("persisted")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
 
         let prev_value = self.globals.get(&name).await.ok().flatten();
 
-        let outcome = match self.globals.set(&name, variant, false).await {
+        let outcome = match self.globals.set(&name, variant, persisted).await {
             Ok(()) => {
                 let mut payload = serde_json::json!({
                     "key": name,

@@ -95,7 +95,14 @@ impl SubActionRunner for CoreGlobalsToggleRunner {
             )),
             Ok(Some(Variant::Bool(b))) => {
                 let flipped = Variant::Bool(!b);
-                match self.globals.set(&resolved_key, flipped, false).await {
+                let persisted = self
+                    .globals
+                    .persisted(&resolved_key)
+                    .await
+                    .ok()
+                    .flatten()
+                    .unwrap_or(false);
+                match self.globals.set(&resolved_key, flipped, persisted).await {
                     Ok(()) => {
                         ctx.publisher.publish(Event::caused_by(
                             EventSource::Core,

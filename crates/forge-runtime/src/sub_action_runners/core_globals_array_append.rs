@@ -140,9 +140,16 @@ impl SubActionRunner for CoreGlobalsArrayAppendRunner {
                         }
 
                         let new_len = arr.len();
+                        let persisted = self
+                            .globals
+                            .persisted(&resolved_key)
+                            .await
+                            .ok()
+                            .flatten()
+                            .unwrap_or(false);
                         match self
                             .globals
-                            .set(&resolved_key, Variant::Array(arr), false)
+                            .set(&resolved_key, Variant::Array(arr), persisted)
                             .await
                         {
                             Ok(()) => {

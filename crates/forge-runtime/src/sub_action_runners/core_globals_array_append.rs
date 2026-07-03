@@ -205,14 +205,19 @@ mod tests {
 
     #[derive(Default)]
     struct MapGlobals {
-        map: Mutex<BTreeMap<String, Variant>>,
+        // value + its stored `persisted` flag, so the runner's read-then-preserve
+        // path (and the create-if-missing default) can be observed.
+        map: Mutex<BTreeMap<String, (Variant, bool)>>,
     }
 
     impl MapGlobals {
         fn with(entries: impl IntoIterator<Item = (&'static str, Variant)>) -> Self {
+            Self::seeded(entries.into_iter().map(|(k, v)| (k, v, false)))
+        }
+        fn seeded(entries: impl IntoIterator<Item = (&'static str, Variant, bool)>) -> Self {
             let map = entries
                 .into_iter()
-                .map(|(k, v)| (k.to_owned(), v))
+                .map(|(k, v, p)| (k.to_owned(), (v, p)))
                 .collect();
             Self {
                 map: Mutex::new(map),
@@ -220,20 +225,26 @@ mod tests {
         }
         fn array(&self, key: &str) -> Vec<Variant> {
             match self.map.lock().unwrap().get(key) {
-                Some(Variant::Array(a)) => a.clone(),
+                Some((Variant::Array(a), _)) => a.clone(),
                 other => panic!("expected array at {key}, got {other:?}"),
             }
+        }
+        fn persisted_flag(&self, key: &str) -> Option<bool> {
+            self.map.lock().unwrap().get(key).map(|(_, p)| *p)
         }
     }
 
     #[async_trait]
     impl GlobalsRepo for MapGlobals {
         async fn get(&self, name: &str) -> Result<Option<Variant>, StorageError> {
-            Ok(self.map.lock().unwrap().get(name).cloned())
+            Ok(self.map.lock().unwrap().get(name).map(|(v, _)| v.clone()))
         }
-        async fn set(&self, name: &str, value: Variant, _p: bool) -> Result<(), StorageError> {
-            self.map.lock().unwrap().insert(name.to_owned(), value);
+        async fn set(&self, name: &str, value: Variant, p: bool) -> Result<(), StorageError> {
+            self.map.lock().unwrap().insert(name.to_owned(), (value, p));
             Ok(())
+        }
+        async fn persisted(&self, name: &str) -> Result<Option<bool>, StorageError> {
+            Ok(self.map.lock().unwrap().get(name).map(|(_, p)| *p))
         }
         async fn delete(&self, name: &str) -> Result<bool, StorageError> {
             Ok(self.map.lock().unwrap().remove(name).is_some())
@@ -291,6 +302,29 @@ mod tests {
             globals.array("fresh"),
             vec![Variant::String("hello".to_owned())]
         );
+    }
+
+    #[tokio::test]
+    async fn array_append_to_created_global_is_session() {
+        // Regression for CORE-2: create-if-missing must default to session
+        // (persisted = false), matching `persisted() -> None -> false`.
+        let globals = Arc::new(MapGlobals::default());
+        let outcome = run(globals.clone(), &cfg("fresh", "hello", 0)).await;
+        assert!(matches!(outcome, SubActionOutcome::Success));
+        assert_eq!(globals.persisted_flag("fresh"), Some(false));
+    }
+
+    #[tokio::test]
+    async fn array_append_preserves_existing_persisted_flag() {
+        // Appending to a persisted array must keep it persisted, not demote it.
+        let globals = Arc::new(MapGlobals::seeded([(
+            "list",
+            Variant::Array(vec![Variant::Int(1)]),
+            true,
+        )]));
+        let outcome = run(globals.clone(), &cfg("list", "2", 0)).await;
+        assert!(matches!(outcome, SubActionOutcome::Success));
+        assert_eq!(globals.persisted_flag("list"), Some(true));
     }
 
     #[tokio::test]

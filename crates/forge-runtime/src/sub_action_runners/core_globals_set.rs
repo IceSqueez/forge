@@ -171,9 +171,59 @@ fn parse_variant(s: &str) -> Variant {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+    use forge_events::EventPublisher;
+    use forge_registry::RunContext;
+    use forge_storage::{GlobalEntry, StorageError};
+    use forge_types::{ArgStack, EventId};
+    use std::collections::BTreeMap;
+    use std::sync::Mutex;
+    use time::OffsetDateTime;
+
+    struct NullPublisher;
+    impl EventPublisher for NullPublisher {
+        fn publish(&self, _event: Event) {}
+    }
+
+    #[derive(Default)]
+    struct MapGlobals {
+        // value + the `persisted` flag it was written with.
+        map: Mutex<BTreeMap<String, (Variant, bool)>>,
+    }
+
+    impl MapGlobals {
+        fn persisted_flag(&self, key: &str) -> Option<bool> {
+            self.map.lock().unwrap().get(key).map(|(_, p)| *p)
+        }
+    }
+
+    #[async_trait]
+    impl GlobalsRepo for MapGlobals {
+        async fn get(&self, name: &str) -> Result<Option<Variant>, StorageError> {
+            Ok(self.map.lock().unwrap().get(name).map(|(v, _)| v.clone()))
+        }
+        async fn set(&self, name: &str, value: Variant, p: bool) -> Result<(), StorageError> {
+            self.map.lock().unwrap().insert(name.to_owned(), (value, p));
+            Ok(())
+        }
+        async fn delete(&self, name: &str) -> Result<bool, StorageError> {
+            Ok(self.map.lock().unwrap().remove(name).is_some())
+        }
+        async fn list(&self) -> Result<Vec<GlobalEntry>, StorageError> {
+            Ok(vec![])
+        }
+        async fn storage_bytes(&self) -> Result<u64, StorageError> {
+            Ok(0)
+        }
+        async fn last_save_at(&self) -> Result<Option<OffsetDateTime>, StorageError> {
+            Ok(None)
+        }
+        async fn incr(&self, _name: &str, _amount: i64) -> Result<Variant, StorageError> {
+            Ok(Variant::Int(0))
+        }
+    }
 
     #[test]
     fn parse_variant_infers_type_per_input_format() {
@@ -187,5 +237,33 @@ mod tests {
         assert!(matches!(parse_variant("False"), Variant::Bool(false)));
         assert!(matches!(parse_variant("hello"), Variant::String(s) if s == "hello"));
         assert!(matches!(parse_variant(""), Variant::String(s) if s.is_empty()));
+    }
+
+    #[tokio::test]
+    async fn set_runner_honors_configured_persisted_flag() {
+        // Regression for CORE-2 / DT-05-F12: the set runner must forward the
+        // `persisted` config toggle, defaulting to session when it is absent.
+        // A hardcoded `false` (the original bug) fails the Some(true) row.
+        for (configured, expected) in [(Some(true), true), (Some(false), false), (None, false)] {
+            let globals = Arc::new(MapGlobals::default());
+            let mut config = SubActionConfig::new();
+            config.insert("name".to_owned(), Variant::String("counter".to_owned()));
+            config.insert("value".to_owned(), Variant::String("42".to_owned()));
+            if let Some(p) = configured {
+                config.insert("persisted".to_owned(), Variant::Bool(p));
+            }
+
+            let runner = CoreGlobalsSetRunner::new(Arc::clone(&globals) as Arc<dyn GlobalsRepo>);
+            let stack = ArgStack::new();
+            let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
+            let outcome = runner.execute(&config, &ctx).await.0.outcome;
+
+            assert!(matches!(outcome, SubActionOutcome::Success));
+            assert_eq!(
+                globals.persisted_flag("counter"),
+                Some(expected),
+                "configured persisted {configured:?} must reach set() as {expected}"
+            );
+        }
     }
 }

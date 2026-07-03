@@ -158,32 +158,43 @@ mod tests {
 
     #[derive(Default)]
     struct MapGlobals {
-        map: Mutex<BTreeMap<String, Variant>>,
+        // value + its stored `persisted` flag, so the runner's read-then-preserve
+        // path can be observed end to end.
+        map: Mutex<BTreeMap<String, (Variant, bool)>>,
     }
 
     impl MapGlobals {
         fn with(entries: impl IntoIterator<Item = (&'static str, Variant)>) -> Self {
+            Self::seeded(entries.into_iter().map(|(k, v)| (k, v, false)))
+        }
+        fn seeded(entries: impl IntoIterator<Item = (&'static str, Variant, bool)>) -> Self {
             let map = entries
                 .into_iter()
-                .map(|(k, v)| (k.to_owned(), v))
+                .map(|(k, v, p)| (k.to_owned(), (v, p)))
                 .collect();
             Self {
                 map: Mutex::new(map),
             }
         }
         fn snapshot(&self, key: &str) -> Option<Variant> {
-            self.map.lock().unwrap().get(key).cloned()
+            self.map.lock().unwrap().get(key).map(|(v, _)| v.clone())
+        }
+        fn persisted_flag(&self, key: &str) -> Option<bool> {
+            self.map.lock().unwrap().get(key).map(|(_, p)| *p)
         }
     }
 
     #[async_trait]
     impl GlobalsRepo for MapGlobals {
         async fn get(&self, name: &str) -> Result<Option<Variant>, StorageError> {
-            Ok(self.map.lock().unwrap().get(name).cloned())
+            Ok(self.map.lock().unwrap().get(name).map(|(v, _)| v.clone()))
         }
-        async fn set(&self, name: &str, value: Variant, _p: bool) -> Result<(), StorageError> {
-            self.map.lock().unwrap().insert(name.to_owned(), value);
+        async fn set(&self, name: &str, value: Variant, p: bool) -> Result<(), StorageError> {
+            self.map.lock().unwrap().insert(name.to_owned(), (value, p));
             Ok(())
+        }
+        async fn persisted(&self, name: &str) -> Result<Option<bool>, StorageError> {
+            Ok(self.map.lock().unwrap().get(name).map(|(_, p)| *p))
         }
         async fn delete(&self, name: &str) -> Result<bool, StorageError> {
             Ok(self.map.lock().unwrap().remove(name).is_some())
@@ -234,6 +245,23 @@ mod tests {
         let globals = Arc::new(MapGlobals::default());
         let outcome = run(globals, &cfg("ghost")).await;
         assert!(matches!(outcome, SubActionOutcome::Failed(_)));
+    }
+
+    #[tokio::test]
+    async fn toggle_preserves_the_stored_persisted_flag() {
+        // Regression for CORE-2 / DT-05-F12: the flip must reuse the global's
+        // existing persistence, not demote it to session by hardcoding false.
+        for flag in [true, false] {
+            let globals = Arc::new(MapGlobals::seeded([("flag", Variant::Bool(true), flag)]));
+            let outcome = run(globals.clone(), &cfg("flag")).await;
+            assert!(matches!(outcome, SubActionOutcome::Success));
+            assert_eq!(globals.snapshot("flag"), Some(Variant::Bool(false)));
+            assert_eq!(
+                globals.persisted_flag("flag"),
+                Some(flag),
+                "persisted flag must survive the toggle (was {flag})"
+            );
+        }
     }
 
     #[tokio::test]

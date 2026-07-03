@@ -128,10 +128,27 @@ mod tests {
     }
 
     #[test]
-    fn chat_command_uses_test_message() {
+    fn chat_command_message_uses_configured_phrase() {
+        // Regression guard: the synthesized chat message must carry the trigger's
+        // configured command phrase so matches_trigger judges it as it would a live
+        // event. A revert to the old fixed "!test" literal fails the custom-phrase row.
         let instance = make_instance("twitch.chat.command");
-        let event = synthesize_test_event(&instance, &instance.overrides);
-        assert_eq!(event.payload["message"].as_str().unwrap(), "!command test");
+        for (phrase_cfg, expected) in [
+            (None, "!command test"),         // phrase unset -> default
+            (Some(""), "!command test"),     // empty phrase falls back to default
+            (Some("!quote"), "!quote test"), // custom phrase honored verbatim
+        ] {
+            let mut config = TriggerConfig::new();
+            if let Some(p) = phrase_cfg {
+                config.insert("phrase".to_owned(), Variant::String(p.to_owned()));
+            }
+            let event = synthesize_test_event(&instance, &config);
+            assert_eq!(
+                event.payload["message"].as_str().unwrap(),
+                expected,
+                "phrase cfg {phrase_cfg:?}"
+            );
+        }
     }
 
     #[test]

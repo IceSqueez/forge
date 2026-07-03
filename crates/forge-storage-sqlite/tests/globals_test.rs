@@ -376,6 +376,86 @@ async fn export_all_round_trips_via_json_envelope() {
 }
 
 #[tokio::test]
+async fn set_stores_the_configured_persisted_flag() {
+    // Guards the DT-05-F12 headline: whatever `persisted` the caller passes to
+    // set() is the value the row carries — a runner passing the WRONG flag
+    // (the original bug) surfaces here. Insert path, both directions.
+    let repo = setup().await;
+    for (name, flag) in [("kept", true), ("ephemeral", false)] {
+        repo.set(name, Variant::Int(1), flag).await.expect("set");
+        assert_eq!(
+            repo.persisted(name).await.expect("persisted"),
+            Some(flag),
+            "persisted({name}) must report the flag passed to set()"
+        );
+        let entries = repo.list().await.expect("list");
+        let entry = entries.iter().find(|e| e.name == name).expect("entry");
+        assert_eq!(entry.persisted, flag, "list() must agree for {name}");
+    }
+}
+
+#[tokio::test]
+async fn set_on_existing_key_updates_the_persisted_flag_both_directions() {
+    // The ON CONFLICT branch must apply `persisted = excluded.persisted`; if it
+    // dropped that column, toggle's read-then-preserve write would silently fail.
+    let repo = setup().await;
+    for (name, first, second) in [("promote", false, true), ("demote", true, false)] {
+        repo.set(name, Variant::Int(0), first).await.expect("set 1");
+        repo.set(name, Variant::Int(1), second)
+            .await
+            .expect("set 2");
+        assert_eq!(
+            repo.persisted(name).await.expect("persisted"),
+            Some(second),
+            "overwrite of {name} must move persisted {first} -> {second}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn persisted_returns_none_for_absent_key() {
+    let repo = setup().await;
+    assert_eq!(repo.persisted("ghost").await.expect("persisted"), None);
+}
+
+#[tokio::test]
+async fn persisted_query_does_not_count_as_a_read() {
+    // The whole point of the SqliteGlobalsRepo override (vs the list()-based
+    // default) is a SELECT that leaves `reads` untouched. Three persisted()
+    // calls plus one get() must leave reads == 1.
+    let repo = setup().await;
+    repo.set("k", Variant::Int(0), true).await.expect("set");
+    repo.persisted("k").await.expect("persisted 1");
+    repo.persisted("k").await.expect("persisted 2");
+    repo.persisted("k").await.expect("persisted 3");
+    repo.get("k").await.expect("get");
+
+    let entries = repo.list().await.expect("list");
+    let entry = entries.iter().find(|e| e.name == "k").expect("entry");
+    assert_eq!(
+        entry.reads, 1,
+        "persisted() must not increment reads; only get() does"
+    );
+}
+
+#[tokio::test]
+async fn backend_persisted_delegates_to_globals_repo() {
+    let backend = SqliteBackend::open_with_key(":memory:", [0xab; 32])
+        .await
+        .expect("open backend");
+    backend
+        .set("live", Variant::Int(1), true)
+        .await
+        .expect("set");
+
+    assert_eq!(
+        backend.persisted("live").await.expect("persisted"),
+        Some(true)
+    );
+    assert_eq!(backend.persisted("nope").await.expect("persisted"), None);
+}
+
+#[tokio::test]
 async fn backend_export_all_delegates_correctly() {
     let backend = SqliteBackend::open_with_key(":memory:", [0xab; 32])
         .await

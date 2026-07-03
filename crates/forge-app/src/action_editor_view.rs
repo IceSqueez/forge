@@ -484,9 +484,15 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
         ));
     } else {
         for instance in &detail.trigger_instances {
+            let instance_enabled = instance.enabled;
             let descriptor = app.rt.trigger_registry.get(&instance.kind_id);
             let icon_name = descriptor.map(|d| d.icon_name()).unwrap_or("bolt");
-            let icon_box = container(tabler_icon(Icon::from_name(icon_name), 14.0, p.brand))
+            let icon_color = if instance_enabled {
+                p.brand
+            } else {
+                p.disabled
+            };
+            let icon_box = container(tabler_icon(Icon::from_name(icon_name), 14.0, icon_color))
                 .width(26.0)
                 .height(26.0)
                 .align_x(Alignment::Center)
@@ -517,15 +523,30 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
                 StatusVariant::Neutral
             };
             let pill: Element<'_, Message> = status_pill(pill_label_str, pill_variant, palette);
-            let name_row: Element<'_, Message> = row![
+            let name_color = if instance_enabled {
+                p.text_primary
+            } else {
+                p.text_faint
+            };
+            let mut name_row_items: Vec<Element<'_, Message>> = vec![
                 text(instance.name.as_str())
                     .size(FONT_SM)
-                    .color(p.text_primary),
+                    .color(name_color)
+                    .into(),
                 pill,
-            ]
-            .spacing(spf(Spacing::Xs))
-            .align_y(Alignment::Center)
-            .into();
+            ];
+            if !instance_enabled {
+                let off_pill: Element<'_, Message> = status_pill(
+                    forge_widgets::tr!("action_editor_disabled"),
+                    StatusVariant::Negative,
+                    palette,
+                );
+                name_row_items.push(off_pill);
+            }
+            let name_row: Element<'_, Message> = row(name_row_items)
+                .spacing(spf(Spacing::Xs))
+                .align_y(Alignment::Center)
+                .into();
             let secondary_str = if condition_str.is_empty() {
                 kind_label.clone()
             } else {

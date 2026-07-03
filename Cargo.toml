@@ -149,7 +149,7 @@ open = { version = "5.3" }
 arboard = { version = "3.6", default-features = false, features = [
   "wayland-data-control",
 ] }
-notify-rust = { version = "4.11" }
+notify-rust = { version = "4.18" }
 
 cpal = { version = "0.18" }
 rubato = { version = "3.0" }

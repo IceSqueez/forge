@@ -24,6 +24,7 @@ pub mod inputs;
 pub mod key_capture;
 pub mod layout;
 pub mod locale;
+pub mod modals;
 pub mod navigation;
 pub mod output_device_picker;
 pub mod palette;
@@ -89,6 +90,10 @@ pub use locale::{
     ArgsBuilder, fmt_feed_time, fmt_number, fmt_relative_time, fmt_short_date, install_bundle,
     set_locale_id, tr_lookup,
 };
+pub use modals::{
+    BulletItem, BulletKind, ConfirmKind, ConfirmModalParams, ConfirmTone, TypeToConfirmModalParams,
+    confirm_modal, type_to_confirm_modal,
+};
 pub use navigation::{NavChild, NavItem, SIDEBAR_WIDTH, Sidebar, sidebar};
 pub use output_device_picker::{DeviceLabel, output_device_picker};
 pub use palette::{CATPPUCCIN_MOCHA, ForgePalette, LATTE, TOKYO_NIGHT};
@@ -109,10 +114,7 @@ pub use sections::{
     BannerKind, DividerAxis, ToastVariant, counter_badge, divider, empty_state, live_status_banner,
     section_header, section_header_expandable, toast_banner,
 };
-pub use server::{
-    BindAddressCardParams, BindBadge, BulletItem, BulletKind, TypeToConfirmModalParams,
-    bearer_token_display, bind_address_card, type_to_confirm_modal,
-};
+pub use server::{BindAddressCardParams, BindBadge, bearer_token_display, bind_address_card};
 pub use side_sheet::{
     Easing, SheetAnimation, SheetHeader, SheetPosition, SheetWidth, SideSheet, SideSheetConfig,
 };

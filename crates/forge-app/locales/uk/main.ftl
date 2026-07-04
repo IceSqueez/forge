@@ -1436,6 +1436,17 @@ widget_confirm_type_suffix = для підтвердження:
 widget_confirm_esc_to_cancel = щоб скасувати
 widget_confirm_cancel = Скасувати
 
+## Widget — destructive confirm modal
+
+widget_confirm_delete_title = Видалити { $kind }?
+widget_confirm_delete_hint = Цей елемент буде остаточно видалено. Дію не можна скасувати.
+widget_confirm_delete_kind_action = дію
+widget_confirm_delete_kind_step = крок
+widget_confirm_delete_kind_trigger_link = прив'язку тригера
+widget_confirm_delete_kind_global = глобальну змінну
+widget_confirm_delete_kind_script = скрипт
+widget_confirm_delete_kind_client = клієнта
+
 ## Widget — server bearer token
 
 widget_bearer_copy = КОПІЮВАТИ

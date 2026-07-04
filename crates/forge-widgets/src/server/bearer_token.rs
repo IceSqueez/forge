@@ -64,7 +64,7 @@ pub fn bearer_token_display<'a, Msg: Clone + 'a>(
     let eye_btn = button(tabler_icon(eye_icon, 13.0, icon_normal))
         .on_press(on_toggle_reveal)
         .padding([sp(Spacing::Xxs), sp(Spacing::Xxs)])
-        .style(super::ghost_icon_style(icon_normal, icon_hover));
+        .style(crate::buttons::ghost_icon_style(icon_normal, icon_hover));
 
     let token_inner = row![
         text(display)
@@ -97,7 +97,11 @@ pub fn bearer_token_display<'a, Msg: Clone + 'a>(
     )
     .on_press(on_copy)
     .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
-    .style(super::outline_btn_style(border, copy_normal, copy_hover));
+    .style(crate::buttons::outline_btn_style(
+        border,
+        copy_normal,
+        copy_hover,
+    ));
 
     let warn_color = palette.warning;
 
@@ -113,7 +117,9 @@ pub fn bearer_token_display<'a, Msg: Clone + 'a>(
     )
     .on_press(on_regenerate)
     .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
-    .style(super::outline_btn_style(border, warn_color, warn_color));
+    .style(crate::buttons::outline_btn_style(
+        border, warn_color, warn_color,
+    ));
 
     let controls = row![token_box, copy_btn, regen_btn]
         .spacing(8)

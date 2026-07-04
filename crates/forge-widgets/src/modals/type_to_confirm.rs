@@ -231,7 +231,7 @@ pub fn type_to_confirm_modal<'a, Msg: Clone + 'a>(
     )
     .on_press(on_cancel)
     .padding([sp(Spacing::Xs), sp(Spacing::Md)])
-    .style(super::outline_btn_style(
+    .style(crate::buttons::outline_btn_style(
         p.border_regular,
         p.text_secondary,
         p.text_primary,

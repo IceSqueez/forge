@@ -1415,6 +1415,17 @@ widget_confirm_type_suffix = to confirm:
 widget_confirm_esc_to_cancel = to cancel
 widget_confirm_cancel = Cancel
 
+## Widget — destructive confirm modal
+
+widget_confirm_delete_title = Delete { $kind }?
+widget_confirm_delete_hint = This item will be permanently removed. This action cannot be undone.
+widget_confirm_delete_kind_action = action
+widget_confirm_delete_kind_step = step
+widget_confirm_delete_kind_trigger_link = trigger link
+widget_confirm_delete_kind_global = global
+widget_confirm_delete_kind_script = script
+widget_confirm_delete_kind_client = client
+
 ## Widget — server bearer token
 
 widget_bearer_copy = COPY

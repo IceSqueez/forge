@@ -6,7 +6,7 @@ use iced::Subscription;
 
 use crate::app::App;
 use crate::builtin_detail::health_subscription;
-use crate::message::{LiveChatMsg, Message};
+use crate::message::{HomeMsg, LiveChatMsg, Message};
 use crate::screen::Screen;
 use crate::server_screen::ServerScreenMsg;
 
@@ -343,6 +343,55 @@ pub fn subscription(app: &App) -> Subscription<Message> {
         Subscription::none()
     };
 
+    // Home's throughput sparkline (`HM-07-F11`): mirrors `ServerMetricsRecipe` above —
+    // own 1s ticker, samples a live counter, emits into the screen's own Msg. The rate
+    // source is `EventBus::stats().total_published` (a cheap atomic read, already
+    // exposed on the bus for observability) rather than counting `Message::EventArrived`
+    // arrivals in `update` — that would require wall-clock bucketing inline in the pure
+    // update fn, which this codebase avoids (see `Instant` subtraction footguns).
+    struct EventRateRecipe(Arc<EventBus>);
+
+    impl Recipe for EventRateRecipe {
+        type Output = Message;
+
+        fn hash(&self, state: &mut Hasher) {
+            use std::hash::Hash as _;
+            "home-event-rate-tick".hash(state);
+            (Arc::as_ptr(&self.0) as usize).hash(state);
+        }
+
+        fn stream(
+            self: Box<Self>,
+            _input: EventStream,
+        ) -> iced::futures::stream::BoxStream<'static, Self::Output> {
+            let bus = self.0;
+            iced::stream::channel(
+                4,
+                |mut tx: iced::futures::channel::mpsc::Sender<Message>| async move {
+                    let mut ticker = tokio::time::interval(std::time::Duration::from_secs(1));
+                    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                    // Seed from the current total so the first tick's delta reflects
+                    // one second of activity, not the bus's entire lifetime history.
+                    let mut previous_total = bus.stats().total_published;
+                    loop {
+                        ticker.tick().await;
+                        let current_total = bus.stats().total_published;
+                        let delta = current_total.saturating_sub(previous_total);
+                        previous_total = current_total;
+                        let _ = tx.try_send(Message::Home(HomeMsg::EvPerSecondTick(delta as f32)));
+                    }
+                },
+            )
+            .boxed()
+        }
+    }
+
+    let home_event_rate_tick = if matches!(app.screen, Screen::Home) {
+        from_recipe(EventRateRecipe(Arc::clone(&app.rt.bus)))
+    } else {
+        Subscription::none()
+    };
+
     let soundboard_keys = if matches!(app.screen, Screen::Soundboard) {
         iced::keyboard::listen().filter_map(soundboard_hotkey_filter)
     } else {
@@ -417,6 +466,7 @@ pub fn subscription(app: &App) -> Subscription<Message> {
             chat_stream,
             health_subscription(state),
             server_tick,
+            home_event_rate_tick,
             soundboard_keys,
             app_shortcuts,
             tts_events,
@@ -429,6 +479,7 @@ pub fn subscription(app: &App) -> Subscription<Message> {
             bus,
             chat_stream,
             server_tick,
+            home_event_rate_tick,
             soundboard_keys,
             app_shortcuts,
             tts_events,

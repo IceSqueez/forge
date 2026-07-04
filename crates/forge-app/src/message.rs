@@ -220,6 +220,7 @@ pub use forge_runtime::dashboard::DashboardStats as HomeStatsData;
 pub enum HomeMsg {
     LoadStats,
     StatsLoaded(Result<HomeStatsData, String>),
+    EvPerSecondTick(f32),
 }
 
 #[derive(Debug, Clone)]

@@ -14,11 +14,20 @@ use crate::page_chrome::simple_page_header;
 use crate::runtime_view::RuntimeView;
 use crate::screen::Screen;
 
+/// Rolling history cap for `ev_per_second_samples`, mirroring
+/// `server_screen::MAX_BANDWIDTH_SAMPLES` (same 60-sample window as the sparkline's
+/// `RING_LEN`).
+const MAX_EV_PER_SECOND_SAMPLES: usize = 60;
+
 #[derive(Default)]
 pub struct HomeStats {
     pub actions_count: Option<usize>,
     pub triggers_fired: Option<u64>,
     pub globals_count: Option<usize>,
+    /// Rolling events/second history sampled from `EventBus::stats().total_published`
+    /// by a periodic Subscription tick (see `subscriptions.rs`), fed into the Home
+    /// throughput sparkline. Newest sample is last.
+    pub ev_per_second_samples: Vec<f32>,
 }
 
 impl HomeStats {
@@ -57,6 +66,14 @@ pub fn update(state: &mut HomeStats, rt: &RuntimeView, msg: HomeMsg) -> Task<Mes
         }
         HomeMsg::StatsLoaded(Err(e)) => {
             tracing::warn!(error = %e, "home stats load failed");
+            Task::none()
+        }
+        HomeMsg::EvPerSecondTick(eps) => {
+            state.ev_per_second_samples.push(eps);
+            if state.ev_per_second_samples.len() > MAX_EV_PER_SECOND_SAMPLES {
+                let excess = state.ev_per_second_samples.len() - MAX_EV_PER_SECOND_SAMPLES;
+                state.ev_per_second_samples.drain(..excess);
+            }
             Task::none()
         }
     }
@@ -322,7 +339,7 @@ fn home_stream_health<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a
             .size(FONT_XS)
             .color(text_faint)
             .font(font(FontRole::Monospace)),
-        forge_widgets::throughput_sparkline(&[], "ev/s", palette),
+        forge_widgets::throughput_sparkline(&app.ui.home.ev_per_second_samples, "ev/s", palette),
     ]
     .spacing(spf(Spacing::Xxs))
     .width(Length::FillPortion(14));

@@ -4,12 +4,12 @@ use forge_events::Event;
 use forge_storage::GlobalsRepo;
 use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::tokens::{FONT_MD, FONT_SM, FONT_XS, Spacing, sp, spf};
-use forge_widgets::{FontRole, ForgePalette, Radius, font, radius};
+use forge_widgets::{FontRole, ForgePalette, Radius, ToastKind, font, radius};
 use iced::{Element, Length, Task, Theme};
 
 use crate::app::App;
 use crate::connectivity::{Connectivity, Integration};
-use crate::message::{HomeMsg, Message};
+use crate::message::{HomeMsg, Message, ToastMsg};
 use crate::page_chrome::simple_page_header;
 use crate::runtime_view::RuntimeView;
 use crate::screen::Screen;
@@ -18,6 +18,10 @@ use crate::screen::Screen;
 /// `server_screen::MAX_BANDWIDTH_SAMPLES` (same 60-sample window as the sparkline's
 /// `RING_LEN`).
 const MAX_EV_PER_SECOND_SAMPLES: usize = 60;
+
+/// Sentinel returned by `import_action` when the user dismisses the file picker.
+/// Treated as a no-op rather than an error toast (cancel-is-not-a-failure).
+const IMPORT_CANCELLED: &str = "import cancelled";
 
 #[derive(Default)]
 pub struct HomeStats {
@@ -28,6 +32,9 @@ pub struct HomeStats {
     /// by a periodic Subscription tick (see `subscriptions.rs`), fed into the Home
     /// throughput sparkline. Newest sample is last.
     pub ev_per_second_samples: Vec<f32>,
+    /// Last dashboard-stats load failure, surfaced as an in-place `inline_error`
+    /// banner with a retry affordance. `None` while a load is pending or succeeded.
+    pub stats_error: Option<String>,
 }
 
 impl HomeStats {
@@ -46,6 +53,7 @@ pub fn on_event(state: &mut HomeStats, event: &Event) -> Task<Message> {
 pub fn update(state: &mut HomeStats, rt: &RuntimeView, msg: HomeMsg) -> Task<Message> {
     match msg {
         HomeMsg::LoadStats => {
+            state.stats_error = None;
             let actions = rt.backend.action_repo();
             let globals: Arc<dyn GlobalsRepo> = Arc::clone(&rt.backend) as Arc<dyn GlobalsRepo>;
             let history = rt.backend.history_repo();
@@ -62,11 +70,43 @@ pub fn update(state: &mut HomeStats, rt: &RuntimeView, msg: HomeMsg) -> Task<Mes
             state.actions_count = Some(data.actions_count);
             state.triggers_fired = Some(data.triggers_fired);
             state.globals_count = Some(data.globals_count);
+            state.stats_error = None;
             Task::none()
         }
         HomeMsg::StatsLoaded(Err(e)) => {
             tracing::warn!(error = %e, "home stats load failed");
+            state.stats_error = Some(e);
             Task::none()
+        }
+        HomeMsg::ImportRequested => {
+            let dp = Arc::clone(&rt.backend);
+            Task::perform(import_action(dp), |r| {
+                Message::Home(HomeMsg::ImportCompleted(r))
+            })
+        }
+        HomeMsg::ImportCompleted(Ok(name)) => {
+            let toast = Task::done(Message::Toast(ToastMsg::Fired {
+                kind: ToastKind::Success,
+                message: forge_widgets::tr!("home_import_success", name = name.as_str()),
+                duration_ms: 4000,
+                action: None,
+            }));
+            let reload = Task::done(Message::Home(HomeMsg::LoadStats));
+            Task::batch([toast, reload])
+        }
+        HomeMsg::ImportCompleted(Err(e)) => {
+            // Dismissing the file picker is not a failure, same
+            // "cancel is not an error" convention as the Event Feed export flow.
+            if e == IMPORT_CANCELLED {
+                return Task::none();
+            }
+            tracing::warn!(error = %e, "action import failed");
+            Task::done(Message::Toast(ToastMsg::Fired {
+                kind: ToastKind::Error,
+                message: forge_widgets::tr!("home_import_failed", error = e.as_str()),
+                duration_ms: 5000,
+                action: None,
+            }))
         }
         HomeMsg::EvPerSecondTick(eps) => {
             state.ev_per_second_samples.push(eps);
@@ -77,6 +117,52 @@ pub fn update(state: &mut HomeStats, rt: &RuntimeView, msg: HomeMsg) -> Task<Mes
             Task::none()
         }
     }
+}
+
+/// Pick a JSON file, deserialize a single `Action`, and persist it via
+/// `ActionRepo`. Returns the imported action's name on success. Runs entirely
+/// off the UI thread (dialog + file read + save are all `.await`ed here, never
+/// inline in `update`). A fresh `ActionId` is minted so an import never clobbers
+/// an existing action; the imported `queue_id` is remapped onto an existing
+/// queue when the source queue is absent (the `actions.queue_id` FK would
+/// otherwise reject the insert).
+async fn import_action(dp: Arc<dyn forge_storage::DataProvider>) -> Result<String, String> {
+    let Some(handle) = rfd::AsyncFileDialog::new()
+        .add_filter("JSON", &["json"])
+        .pick_file()
+        .await
+    else {
+        return Err(IMPORT_CANCELLED.to_string());
+    };
+    let path = handle.path().to_path_buf();
+    let bytes = tokio::fs::read(&path).await.map_err(|e| e.to_string())?;
+    let mut action: forge_types::Action =
+        serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+
+    action.id = forge_types::ActionId::new();
+
+    let queue_repo = dp.queue_repo();
+    let queue_present = queue_repo
+        .get(action.queue_id)
+        .await
+        .map_err(|e| e.to_string())?
+        .is_some();
+    if !queue_present {
+        let fallback = queue_repo
+            .list()
+            .await
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .next()
+            .ok_or_else(|| "no queue available to import into".to_string())?;
+        action.queue_id = fallback.id;
+    }
+
+    dp.action_repo()
+        .save(&action)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(action.name)
 }
 
 fn home_inline_button<'a>(
@@ -163,7 +249,7 @@ fn home_hero<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     let import_btn = home_inline_button(
         Icon::Download,
         forge_widgets::tr!("home_hero_import"),
-        Message::Noop,
+        Message::Home(HomeMsg::ImportRequested),
         palette,
     );
     let new_action_btn = home_inline_button(
@@ -935,6 +1021,15 @@ pub(crate) fn home_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<
     let mut content = column![hero, jump_cards,]
         .spacing(spf(Spacing::Md))
         .width(Length::Fill);
+
+    if let Some(err) = &app.ui.home.stats_error {
+        content = content.push(forge_widgets::inline_error(
+            forge_widgets::tr!("home_stats_error", error = err.as_str()),
+            forge_widgets::tr!("home_stats_retry"),
+            Message::Home(HomeMsg::LoadStats),
+            palette,
+        ));
+    }
 
     if app.rt.obs_client.is_some() {
         content = content.push(home_stream_health(app, palette));

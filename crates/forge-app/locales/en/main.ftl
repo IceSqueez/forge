@@ -55,6 +55,10 @@ nav_coming_soon = Coming soon
 home_hero_tagline = Open-source stream automation, forged for streamers
 home_hero_import = Import
 home_hero_new_action = New action
+home_import_success = Imported action “{ $name }”
+home_import_failed = Import failed: { $error }
+home_stats_error = Couldn’t load dashboard stats: { $error }
+home_stats_retry = Retry
 
 ## Home — jump cards
 

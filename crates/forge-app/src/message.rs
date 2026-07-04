@@ -221,6 +221,8 @@ pub enum HomeMsg {
     LoadStats,
     StatsLoaded(Result<HomeStatsData, String>),
     EvPerSecondTick(f32),
+    ImportRequested,
+    ImportCompleted(Result<String, String>),
 }
 
 #[derive(Debug, Clone)]

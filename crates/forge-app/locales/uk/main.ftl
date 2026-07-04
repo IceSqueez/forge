@@ -55,6 +55,10 @@ nav_coming_soon = Незабаром
 home_hero_tagline = Відкрита автоматизація стрімів, створена для стрімерів
 home_hero_import = Імпортувати
 home_hero_new_action = Нова дія
+home_import_success = Імпортовано дію «{ $name }»
+home_import_failed = Не вдалося імпортувати: { $error }
+home_stats_error = Не вдалося завантажити статистику: { $error }
+home_stats_retry = Повторити
 
 ## Головна — картки швидкого переходу
 

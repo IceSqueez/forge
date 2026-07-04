@@ -8,6 +8,7 @@ use iced::{
 use crate::palette::ForgePalette;
 use crate::tokens::{
     BORDER_THIN, FONT_MD, FONT_SM, FONT_XS, FONT_XXS, FontRole, Radius, Spacing, font, radius, sp,
+    spf,
 };
 
 const VERTICAL_DIVIDER_LENGTH: f32 = 14.0;
@@ -295,6 +296,45 @@ pub fn toast_banner<'a, Msg: 'a + Clone>(
                 color: Color { a: 0.25, ..accent },
                 width: 1.0,
                 radius: 4.0.into(),
+            },
+            ..container::Style::default()
+        })
+        .into()
+}
+
+/// Inline error strip with a retry affordance. Renders an error-tinted card
+/// (accent = `palette.random`, the same hue the toast system uses for errors)
+/// carrying a warning glyph, a message, and a secondary "retry" button that
+/// emits `on_retry`. Unlike a toast it stays in place, so use it for a
+/// recoverable in-panel load failure the user should be able to re-trigger.
+pub fn inline_error<'a, Msg: 'a + Clone>(
+    message: impl Into<Cow<'a, str>>,
+    retry_label: impl Into<Cow<'a, str>>,
+    on_retry: Msg,
+    palette: &ForgePalette,
+) -> Element<'a, Msg> {
+    let accent = palette.random;
+
+    let inner = row![
+        crate::icons::tabler_icon(crate::icons::Icon::AlertTriangle, 14.0, accent),
+        text(message.into())
+            .size(FONT_SM)
+            .color(palette.text_primary),
+        Space::new().width(Length::Fill),
+        crate::buttons::secondary_button(retry_label, on_retry, palette),
+    ]
+    .spacing(spf(Spacing::Xs))
+    .align_y(Alignment::Center);
+
+    container(inner)
+        .width(Length::Fill)
+        .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
+        .style(move |_theme: &iced::Theme| container::Style {
+            background: Some(Background::Color(Color { a: 0.08, ..accent })),
+            border: Border {
+                color: Color { a: 0.35, ..accent },
+                width: BORDER_THIN,
+                radius: radius(Radius::Md).into(),
             },
             ..container::Style::default()
         })

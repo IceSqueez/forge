@@ -1357,6 +1357,11 @@ fn main() -> iced::Result {
             },
             |r| forge_app::Message::Boot(forge_app::BootMsg::Hotkey(r)),
         );
+        // Cold-boot Home stats: re-enter the tested `HomeMsg::LoadStats` handler
+        // (its own `Task::perform` off-thread compute) so first launch shows real
+        // dashboard numbers immediately instead of em-dash placeholders.
+        let home_stats_task =
+            iced::Task::done(forge_app::Message::Home(forge_app::HomeMsg::LoadStats));
         let boot_task = match app.rt.action_engine.clone() {
             Some(engine) => {
                 let dp = Arc::clone(&backend_boot);
@@ -1380,6 +1385,7 @@ fn main() -> iced::Result {
                     hotkey_task,
                     font_catalog_task,
                     server_boot_task,
+                    home_stats_task,
                 ])
             }
             None => iced::Task::batch([
@@ -1392,6 +1398,7 @@ fn main() -> iced::Result {
                 midi_task,
                 hotkey_task,
                 font_catalog_task,
+                home_stats_task,
             ]),
         };
         (app, boot_task)

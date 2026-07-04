@@ -405,6 +405,36 @@ pub(crate) fn apply_catalog_update(ev: &obws::events::Event, catalog: &mut ObsCa
     }
 }
 
+/// Health metric index 0 ("Stream") value for a given active/offline state. Shared between
+/// the event-driven update (`apply_health_update`) and the cold-connect `GetStreamStatus`
+/// seed (`client.rs::snapshot_catalog`) so both paths render the identical label/detail shape.
+pub(crate) fn make_stream_health_value(active: bool) -> HealthValue {
+    HealthValue::Status {
+        label: if active {
+            "Live".to_owned()
+        } else {
+            "Offline".to_owned()
+        },
+        active,
+        detail: None,
+    }
+}
+
+/// Health metric index 1 ("Recording") value for a given active/off state. Shared between
+/// the event-driven update (`apply_health_update`) and the cold-connect `GetRecordStatus`
+/// seed (`client.rs::snapshot_catalog`).
+pub(crate) fn make_record_health_value(active: bool) -> HealthValue {
+    HealthValue::Status {
+        label: if active {
+            "Active".to_owned()
+        } else {
+            "Off".to_owned()
+        },
+        active,
+        detail: None,
+    }
+}
+
 pub(crate) fn apply_health_update(
     ev: &obws::events::Event,
     snapshot: &mut HealthSnapshot,
@@ -417,15 +447,7 @@ pub(crate) fn apply_health_update(
             snapshot.stream_active = *active;
             vec![HealthDelta {
                 index: 0,
-                new_value: HealthValue::Status {
-                    label: if *active {
-                        "Live".to_owned()
-                    } else {
-                        "Offline".to_owned()
-                    },
-                    active: *active,
-                    detail: None,
-                },
+                new_value: make_stream_health_value(*active),
             }]
         }
         obws::events::Event::RecordStateChanged { active, .. } => {
@@ -435,19 +457,54 @@ pub(crate) fn apply_health_update(
             snapshot.record_active = *active;
             vec![HealthDelta {
                 index: 1,
-                new_value: HealthValue::Status {
-                    label: if *active {
-                        "Active".to_owned()
-                    } else {
-                        "Off".to_owned()
-                    },
-                    active: *active,
-                    detail: None,
-                },
+                new_value: make_record_health_value(*active),
             }]
         }
         _ => vec![],
     }
+}
+
+/// Applies a polled `GetStats` response (obs-websocket has no periodic Stats *event* — see
+/// OQ-OBS-1 resolution in `INTEGRATIONS_NOTES.md` — so this is fed by a periodic
+/// `client.general().stats()` poll, not the event-subscription pipeline) to the CPU/FPS
+/// (index 2) and Dropped-frames (index 3) health metrics. Only emits a delta when the
+/// rendered value actually changed, mirroring `apply_health_update`'s change-gating.
+pub(crate) fn apply_stats_update(
+    stats: &obws::responses::general::Stats,
+    snapshot: &mut HealthSnapshot,
+) -> Vec<HealthDelta> {
+    let mut deltas = Vec::new();
+
+    if (snapshot.cpu_percent - stats.cpu_usage).abs() > f64::EPSILON
+        || (snapshot.fps - stats.active_fps).abs() > f64::EPSILON
+    {
+        snapshot.cpu_percent = stats.cpu_usage;
+        snapshot.fps = stats.active_fps;
+        deltas.push(HealthDelta {
+            index: 2,
+            new_value: HealthValue::Pair {
+                left: format!("{:.1}%", stats.cpu_usage),
+                right: format!("{:.1} fps", stats.active_fps),
+            },
+        });
+    }
+
+    let dropped = u64::from(stats.output_skipped_frames);
+    let total = u64::from(stats.output_total_frames);
+    if snapshot.dropped_frames != dropped || snapshot.total_frames != total {
+        snapshot.dropped_frames = dropped;
+        snapshot.total_frames = total;
+        deltas.push(HealthDelta {
+            index: 3,
+            new_value: HealthValue::Ratio {
+                used: dropped,
+                total,
+                reset_hint: None,
+            },
+        });
+    }
+
+    deltas
 }
 
 #[cfg(test)]

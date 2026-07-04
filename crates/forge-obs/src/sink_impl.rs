@@ -193,7 +193,24 @@ impl ObsSink for ObsClient {
             .inputs()
             .set_volume(InputId::Name(input), Volume::Db(db as f32))
             .await
-            .map_err(|e| map_request_error("SetInputVolume", e))
+            .map_err(|e| map_request_error("SetInputVolume", e))?;
+        drop(guard);
+
+        // Write the confirmed level back into every scene's copy of this input's SourceInfo —
+        // an input's volume is global in OBS, so the same name can appear as a scene item in
+        // several scenes, all sharing one dB value. Without this, `audio_db` stays `None`
+        // until an unrelated catalog refresh happens to touch it (PL-09-F7).
+        if let Ok(mut catalog) = self.catalog_state.write() {
+            for sources in catalog.sources.values_mut() {
+                for info in sources.iter_mut() {
+                    if info.name == input {
+                        info.audio_db = Some(db as f32);
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     async fn set_input_settings(

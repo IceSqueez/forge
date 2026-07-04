@@ -13,7 +13,7 @@ use tokio::task::JoinHandle;
 use forge_events::EventPublisher;
 use forge_platform_core::{
     BuiltinControl, BuiltinId, BuiltinStatus, CapabilityFlags, ConnectionState, ControlFailure,
-    ControlOutcome, HeaderAction, HealthDelta,
+    ControlOutcome, HeaderAction, HealthDelta, HealthValue,
 };
 use forge_types::EventId;
 
@@ -379,7 +379,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                     }
                 }
 
-                snapshot_catalog(&client, &catalog_state).await;
+                snapshot_catalog(&client, &catalog_state, &health_state, &health_tx).await;
 
                 let events = client.events();
                 inner.write().await.replace(client);
@@ -392,10 +392,23 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                 tracing::info!(host = %host, port, "connected to OBS");
                 publisher.publish(crate::events::make_connection_connected());
 
+                // obs-websocket has no periodic Stats *event* (verified against obws 0.15.0
+                // and the protocol spec — General category is ExitStarted/VendorEvent/
+                // CustomEvent only; GetStats is request/response-only). CPU/FPS/Dropped are
+                // therefore sourced by polling `general().stats()` on a timer, independent
+                // of `required_event_subscriptions()` — no EventSubscription bitflag is
+                // touched, so there is no double-subscribe/overlap risk (OQ-OBS-1).
+                let stats_handle = spawn_stats_poll(
+                    Arc::clone(&inner),
+                    Arc::clone(&health_state),
+                    health_tx.clone(),
+                );
+
                 match events {
                     Ok(mut stream) => loop {
                         tokio::select! {
                             () = shutdown.notified() => {
+                                stats_handle.abort();
                                 inner.write().await.take();
                                 state.store(STATE_DISCONNECTED, Ordering::Release);
                                 tracing::info!("OBS supervisor shutting down");
@@ -429,12 +442,14 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                             "OBS event subscription unavailable; waiting for shutdown only"
                         );
                         shutdown.notified().await;
+                        stats_handle.abort();
                         inner.write().await.take();
                         state.store(STATE_DISCONNECTED, Ordering::Release);
                         return;
                     }
                 }
 
+                stats_handle.abort();
                 inner.write().await.take();
                 attempt = 1;
             }
@@ -557,7 +572,18 @@ fn handle_obs_event(
     }
 }
 
-async fn snapshot_catalog(client: &obws::Client, catalog_state: &RwLock<ObsCatalog>) {
+/// Seeds catalog + cold-connect health state right after a successful handshake, before the
+/// event stream starts delivering incremental updates. Source lists are snapshotted for
+/// EVERY known scene (not just the active one) so `BuiltinContent::sections()` has non-active
+/// scene source counts available immediately (PL-09-F6), and `GetStreamStatus`/`GetRecordStatus`
+/// seed the Stream/Recording health metrics so they read correctly before the first
+/// `StreamStateChanged`/`RecordStateChanged` event arrives (PL-09-F2).
+async fn snapshot_catalog(
+    client: &obws::Client,
+    catalog_state: &RwLock<ObsCatalog>,
+    health_state: &RwLock<HealthSnapshot>,
+    health_tx: &broadcast::Sender<HealthDelta>,
+) {
     use obws::requests::scenes::SceneId;
 
     let scenes: Vec<String> = client
@@ -574,27 +600,21 @@ async fn snapshot_catalog(client: &obws::Client, catalog_state: &RwLock<ObsCatal
         .map(|s| s.id.name.clone())
         .ok();
 
-    let sources: Option<(String, Vec<SourceInfo>)> = if let Some(scene) = current_scene.as_deref() {
-        client
-            .scene_items()
-            .list(SceneId::Name(scene))
-            .await
-            .map(|items| {
-                let infos = items
-                    .into_iter()
-                    .map(|i| SourceInfo {
-                        name: i.source_name,
-                        visible: true,
-                        locked: false,
-                        audio_db: None,
-                    })
-                    .collect();
-                (scene.to_owned(), infos)
-            })
-            .ok()
-    } else {
-        None
-    };
+    let mut sources_by_scene: HashMap<String, Vec<SourceInfo>> = HashMap::new();
+    for scene in &scenes {
+        if let Ok(items) = client.scene_items().list(SceneId::Name(scene)).await {
+            let infos = items
+                .into_iter()
+                .map(|i| SourceInfo {
+                    name: i.source_name,
+                    visible: true,
+                    locked: false,
+                    audio_db: None,
+                })
+                .collect();
+            sources_by_scene.insert(scene.clone(), infos);
+        }
+    }
 
     let audio_inputs: Vec<String> = client
         .inputs()
@@ -606,13 +626,95 @@ async fn snapshot_catalog(client: &obws::Client, catalog_state: &RwLock<ObsCatal
     if let Ok(mut catalog) = catalog_state.write() {
         catalog.scenes = scenes;
         catalog.audio_inputs = audio_inputs;
-        if let Some(scene) = current_scene {
-            if let Some((scene_key, infos)) = sources {
-                catalog.sources.insert(scene_key, infos);
-            }
-            catalog.current_scene = Some(scene);
-        }
+        catalog.sources = sources_by_scene;
+        catalog.current_scene = current_scene;
     }
+
+    if let Ok(status) = client.streaming().status().await {
+        seed_health_status(health_state, health_tx, 0, status.active, |a| {
+            crate::events::make_stream_health_value(a)
+        });
+    }
+    if let Ok(status) = client.recording().status().await {
+        seed_health_status(health_state, health_tx, 1, status.active, |a| {
+            crate::events::make_record_health_value(a)
+        });
+    }
+}
+
+/// Seeds a single Status-shaped health metric (index 0 = Stream, index 1 = Recording) from a
+/// cold-connect `GetStreamStatus`/`GetRecordStatus` response. Only broadcasts a delta when the
+/// value actually differs from the persisted snapshot (e.g. a reconnect where the previous
+/// session's last-known state already matches reality) — mirrors `apply_health_update`'s
+/// change-gating so a cold connect never emits a spurious duplicate delta.
+fn seed_health_status(
+    health_state: &RwLock<HealthSnapshot>,
+    health_tx: &broadcast::Sender<HealthDelta>,
+    index: u8,
+    active: bool,
+    make_value: impl Fn(bool) -> HealthValue,
+) {
+    let changed = match health_state.write() {
+        Ok(mut snap) => {
+            let field = if index == 0 {
+                &mut snap.stream_active
+            } else {
+                &mut snap.record_active
+            };
+            let changed = *field != active;
+            *field = active;
+            changed
+        }
+        Err(_) => false,
+    };
+    if changed {
+        let _ = health_tx.send(HealthDelta {
+            index,
+            new_value: make_value(active),
+        });
+    }
+}
+
+/// Interval for the CPU/FPS/Dropped-frames poll (`spawn_stats_poll`). Mirrors the 2s cadence
+/// `forge-vtube` uses for its own `StatisticsRequest` poll (see INTEGRATIONS_NOTES.md).
+const STATS_POLL_INTERVAL: Duration = Duration::from_secs(2);
+
+/// Periodically polls `GetStats` and feeds the CPU/FPS (index 2) and Dropped-frames (index 3)
+/// health metrics. obs-websocket has no push event for these — see the OQ-OBS-1 resolution
+/// note above `spawn_stats_poll`'s call site — so this poll loop is the only source for them.
+/// The returned handle MUST be `.abort()`-ed on every connection-loss/shutdown exit path;
+/// dropping a `JoinHandle` does not cancel the underlying task.
+fn spawn_stats_poll(
+    inner: Arc<tokio::sync::RwLock<Option<obws::Client>>>,
+    health_state: Arc<RwLock<HealthSnapshot>>,
+    health_tx: broadcast::Sender<HealthDelta>,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(STATS_POLL_INTERVAL);
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            ticker.tick().await;
+
+            let stats = {
+                let guard = inner.read().await;
+                let Some(client) = guard.as_ref() else {
+                    continue;
+                };
+                client.general().stats().await
+            };
+            let Ok(stats) = stats else {
+                continue;
+            };
+
+            let deltas = match health_state.write() {
+                Ok(mut snapshot) => crate::events::apply_stats_update(&stats, &mut snapshot),
+                Err(_) => continue,
+            };
+            for delta in deltas {
+                let _ = health_tx.send(delta);
+            }
+        }
+    })
 }
 
 fn parse_endpoint(endpoint: &str) -> Result<(String, u16), ObsError> {

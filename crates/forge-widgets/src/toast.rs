@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
 use iced::{
-    Alignment, Background, Border, Color, Element, Length, Padding,
+    Alignment, Background, Border, Color, Element, Length, Padding, Shadow, Vector,
     widget::{button, column, container, row, text},
 };
 
@@ -104,7 +104,10 @@ fn kind_color(kind: ToastKind, palette: &ForgePalette) -> Color {
         ToastKind::Success => palette.success,
         ToastKind::Warn => palette.warning,
         ToastKind::Error => palette.random,
-        ToastKind::Undo => palette.brand,
+        // Design's toast.jsx uses `var(--mute)` for the undo accent — a
+        // deliberately muted/neutral color (undo is a low-urgency, reversible
+        // action), NOT the brand accent used elsewhere for primary emphasis.
+        ToastKind::Undo => palette.text_muted,
     }
 }
 
@@ -231,6 +234,12 @@ fn toast_row<'a, Msg: Clone + 'a>(
             color: border_color,
             width: 0.5,
             radius: radius(Radius::Md).into(),
+        },
+        // Design's toast.jsx card shadow: `0 8px 24px rgba(0,0,0,0.4)`.
+        shadow: Shadow {
+            color: Color::from_rgba(0.0, 0.0, 0.0, 0.4),
+            offset: Vector::new(0.0, 8.0),
+            blur_radius: 24.0,
         },
         ..container::Style::default()
     })

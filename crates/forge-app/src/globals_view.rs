@@ -178,9 +178,9 @@ pub fn update(state: &mut GlobalsState, rt: &RuntimeView, msg: GlobalsMsg) -> ic
         }
 
         GlobalsMsg::TogglePersistence(name, new_persisted) => {
-            let Some(entry) = state.entries.iter().find(|e| e.name == name).cloned() else {
+            if !state.entries.iter().any(|e| e.name == name) {
                 return iced::Task::none();
-            };
+            }
             if let Some(e) = state.entries.iter_mut().find(|e| e.name == name) {
                 e.persisted = new_persisted;
             }
@@ -189,8 +189,9 @@ pub fn update(state: &mut GlobalsState, rt: &RuntimeView, msg: GlobalsMsg) -> ic
             let name_for_msg = name.clone();
             iced::Task::perform(
                 async move {
-                    repo.set(&name, entry.value, new_persisted)
+                    repo.set_persisted(&name, new_persisted)
                         .await
+                        .map(|_| ())
                         .map_err(|e| e.to_string())
                 },
                 move |result| {

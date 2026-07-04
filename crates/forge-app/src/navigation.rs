@@ -3,7 +3,7 @@ use forge_widgets::{ForgePalette, NavItem, Sidebar};
 use iced::{Element, Length, Task};
 
 use crate::app::App;
-use crate::connectivity::Integration;
+use crate::connectivity::{Connectivity, Integration, state_color};
 use crate::message::{
     ActionsMsg, GlobalsMsg, HomeMsg, LiveChatMsg, QueuesMsg, SettingsAudioMsg, SoundboardMsg,
 };
@@ -88,8 +88,10 @@ pub(crate) fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Side
     let is_server = matches!(app.screen, Screen::Server);
     let is_settings = matches!(app.screen, Screen::Settings(_));
 
+    let connectivity = Connectivity::resolve(&app.rt);
     let flat_link = |integration: Integration| NavItem::FlatLink {
         dot_color: integration.brand_color(palette),
+        status: Some(state_color(connectivity.state(integration), palette)),
         label: integration.label().to_owned(),
         active: builtin_active(&app.screen, integration.builtin_id().as_str()),
         on_press: Message::Navigate(Screen::BuiltinDetail(integration.builtin_id())),

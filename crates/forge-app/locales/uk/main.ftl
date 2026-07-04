@@ -83,7 +83,7 @@ home_health_cpu_label = CPU
 
 ## Головна — смуга підключень
 
-home_connections_title = Вбудоване
+home_connections_title = Інтеграції
 
 ## Головна — статуси підключень
 

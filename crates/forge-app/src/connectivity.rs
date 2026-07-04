@@ -83,6 +83,10 @@ impl Connectivity {
         &self.statuses
     }
 
+    pub fn is_connected(&self, integration: Integration) -> bool {
+        matches!(self.state(integration), ConnectionState::Connected)
+    }
+
     pub fn state(&self, integration: Integration) -> ConnectionState {
         self.statuses
             .iter()

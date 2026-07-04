@@ -5,6 +5,7 @@ use forge_widgets::tokens::{FONT_MD, FONT_SM, FONT_XS, Radius, Spacing, radius, 
 use iced::Element;
 
 use crate::app::App;
+use crate::connectivity::{Connectivity, Integration};
 use crate::page_chrome::simple_page_header;
 use crate::{Message, Screen};
 
@@ -162,8 +163,7 @@ pub(crate) fn platforms_overview_view<'a>(
         .color(p.text_muted);
     let header = column![title, subtitle].spacing(spf(Spacing::Xxs));
 
-    let twitch_connected = app.rt.twitch_builtin.is_some();
-    let youtube_connected = app.rt.youtube_builtin.is_some();
+    let connectivity = Connectivity::resolve(&app.rt);
 
     let twitch_card = platform_overview_card(
         "T",
@@ -171,7 +171,7 @@ pub(crate) fn platforms_overview_view<'a>(
         "Twitch",
         forge_widgets::tr!("platforms.twitch.desc"),
         &["IRC chat", "EventSub", "Channel points", "Bits & subs"],
-        twitch_connected,
+        connectivity.is_connected(Integration::Twitch),
         BuiltinId::new("twitch"),
         palette,
     );
@@ -181,7 +181,7 @@ pub(crate) fn platforms_overview_view<'a>(
         "YouTube",
         forge_widgets::tr!("platforms.youtube.desc"),
         &["Live chat", "Super chat", "Memberships"],
-        youtube_connected,
+        connectivity.is_connected(Integration::YouTube),
         BuiltinId::new("youtube"),
         palette,
     );
@@ -191,7 +191,7 @@ pub(crate) fn platforms_overview_view<'a>(
         "Kick",
         forge_widgets::tr!("platforms.kick.desc"),
         &["Chat", "Subs", "Channel events"],
-        false,
+        connectivity.is_connected(Integration::Kick),
         BuiltinId::new("kick"),
         palette,
     );

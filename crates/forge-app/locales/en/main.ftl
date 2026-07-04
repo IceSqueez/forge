@@ -83,7 +83,7 @@ home_health_cpu_label = CPU
 
 ## Home — connections strip
 
-home_connections_title = Builtin
+home_connections_title = Integrations
 
 ## Home — connection cell statuses
 

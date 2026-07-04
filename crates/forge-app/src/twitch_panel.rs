@@ -173,7 +173,7 @@ pub fn update(
             let handle = chat.start();
             let creds: Arc<dyn CredentialsRepo> =
                 Arc::clone(&rt.backend) as Arc<dyn CredentialsRepo>;
-            let (twitch_bundle, _health_tx) = TwitchIntegrationBundle::new(
+            let twitch_bundle = TwitchIntegrationBundle::new(
                 login,
                 config,
                 Arc::clone(&rt.bus) as Arc<dyn forge_events::EventPublisher>,

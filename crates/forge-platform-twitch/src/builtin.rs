@@ -50,21 +50,47 @@ impl TwitchIntegrationBundle {
         creds: Arc<dyn CredentialsRepo>,
         tracker: SubscriptionTracker,
         handle: TwitchChatHandle,
-    ) -> (Arc<Self>, broadcast::Sender<HealthDelta>) {
+    ) -> Arc<Self> {
         let (health_tx, _) = broadcast::channel(16);
         let state_rx = handle.state_receiver();
         let bundle = Arc::new(Self {
             id: BuiltinId::new("twitch"),
             login,
             state_rx,
-            health_tx: health_tx.clone(),
+            health_tx,
             tracker,
             config,
             bus,
             creds,
             handle: Mutex::new(Some(handle)),
         });
-        (bundle, health_tx)
+        Self::spawn_health_bridge(&bundle);
+        bundle
+    }
+
+    /// Bridges chat-connection and EventSub-subscription state changes onto
+    /// `health_tx` so `BuiltinHealth::stream()` (subscribed by the UI) is fed
+    /// live deltas instead of only ever answering the one-shot `metrics()`
+    /// snapshot taken at detail-screen construction. Ends on its own once the
+    /// underlying chat session's `watch::Sender` drops (session shutdown).
+    fn spawn_health_bridge(bundle: &Arc<Self>) {
+        let bundle = Arc::clone(bundle);
+        let mut state_rx = bundle.state_rx.clone();
+        tokio::spawn(async move {
+            while state_rx.changed().await.is_ok() {
+                let chat_delta = HealthDelta {
+                    index: 0,
+                    new_value: bundle.chat_health_value(),
+                };
+                let _ = bundle.health_tx.send(chat_delta);
+
+                let eventsub_delta = HealthDelta {
+                    index: 1,
+                    new_value: bundle.eventsub_health_value(),
+                };
+                let _ = bundle.health_tx.send(eventsub_delta);
+            }
+        });
     }
 
     pub(crate) fn spawn_chat(&self, token: forge_types::OAuthToken) -> TwitchChatHandle {
@@ -146,6 +172,21 @@ impl TwitchIntegrationBundle {
             .filter(|r| matches!(r.status, SubStatus::Active))
             .count()
     }
+
+    fn chat_health_value(&self) -> HealthValue {
+        HealthValue::Status {
+            label: self.chat_label(),
+            active: self.is_chat_connected(),
+            detail: self.login.as_ref().map(|l| format!("#{l}")),
+        }
+    }
+
+    fn eventsub_health_value(&self) -> HealthValue {
+        HealthValue::Text {
+            primary: format!("{} subs", self.active_sub_count()),
+            secondary: Some("WebSocket".to_owned()),
+        }
+    }
 }
 
 impl BuiltinStatus for TwitchIntegrationBundle {
@@ -192,25 +233,14 @@ impl BuiltinStatus for TwitchIntegrationBundle {
 
 impl BuiltinHealth for TwitchIntegrationBundle {
     fn metrics(&self) -> [HealthMetric; 4] {
-        let chat_active = self.is_chat_connected();
-        let chat_label = self.chat_label();
-        let active_count = self.active_sub_count();
-
         [
             HealthMetric {
                 label: "Chat IRC".to_owned(),
-                value: HealthValue::Status {
-                    label: chat_label,
-                    active: chat_active,
-                    detail: self.login.as_ref().map(|l| format!("#{l}")),
-                },
+                value: self.chat_health_value(),
             },
             HealthMetric {
                 label: "EventSub".to_owned(),
-                value: HealthValue::Text {
-                    primary: format!("{active_count} subs"),
-                    secondary: Some("WebSocket".to_owned()),
-                },
+                value: self.eventsub_health_value(),
             },
             HealthMetric {
                 label: "Viewers".to_owned(),

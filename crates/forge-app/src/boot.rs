@@ -132,7 +132,7 @@ pub(crate) fn handle_twitch_boot_result(
             let handle = chat.start();
             let creds: Arc<dyn CredentialsRepo> =
                 Arc::clone(&app.rt.backend) as Arc<dyn CredentialsRepo>;
-            let (twitch_bundle, _health_tx) = TwitchIntegrationBundle::new(
+            let twitch_bundle = TwitchIntegrationBundle::new(
                 login.clone(),
                 config,
                 Arc::clone(&app.rt.bus) as Arc<dyn EventPublisher>,

@@ -46,9 +46,10 @@ async fn run_synthesis(req: SpeakRequest, deps: SynthTaskDeps) -> SynthTaskResul
 
     // Reward-origin gating is per-message, not part of the shared PipelineConfig,
     // so it's applied here as a pre-pass rather than inside `process`: reusing the
-    // same word-token strip `strip_twitch_emotes` drives, ahead of the pipeline's
-    // own (always-applied) emote stage. A no-op when the toggle is off or the
-    // message isn't reward-sourced.
+    // same word-token strip `process`'s emote stage performs, independently of
+    // `emote_sources.twitch` (which gates only the general/always-in-the-pipeline
+    // strip inside `process`). A no-op when the toggle is off or the message isn't
+    // reward-sourced.
     let reward_stripped;
     let text_for_pipeline: &str = if req.is_reward && pipeline_cfg.strip_reward_emotes {
         reward_stripped =
@@ -794,5 +795,121 @@ mod tests {
             })
             .expect("an Enqueued event must be emitted");
         assert_eq!(payload, ("nova".to_owned(), "hi chat".to_owned(), true));
+    }
+
+    /// Records the text of every `SynthesisRequest` it receives so a test can
+    /// observe what `run_synthesis` actually handed to the engine.
+    struct CapturingEngine {
+        id: EngineId,
+        seen: Arc<std::sync::Mutex<Vec<String>>>,
+    }
+
+    #[async_trait]
+    impl forge_tts_core::TtsEngine for CapturingEngine {
+        fn engine_id(&self) -> &EngineId {
+            &self.id
+        }
+        fn capabilities(&self) -> &forge_tts_core::EngineCapabilities {
+            static CAPS: forge_tts_core::EngineCapabilities = forge_tts_core::EngineCapabilities {
+                ssml: false,
+                neural_voices: false,
+                streaming: false,
+                custom_lexicons: false,
+            };
+            &CAPS
+        }
+        async fn list_voices(&self) -> Result<Vec<TtsVoice>, forge_tts_core::TtsError> {
+            Ok(vec![])
+        }
+        async fn synthesize(
+            &self,
+            req: SynthesisRequest,
+        ) -> Result<PcmBuffer, forge_tts_core::TtsError> {
+            self.seen.lock().unwrap().push(req.text);
+            Ok(PcmBuffer::new(vec![0i16; 4], 22_050, 1))
+        }
+    }
+
+    struct CapturingFactory {
+        id: EngineId,
+        seen: Arc<std::sync::Mutex<Vec<String>>>,
+    }
+
+    impl forge_tts_core::TtsEngineFactory for CapturingFactory {
+        fn create(&self) -> Result<Box<dyn forge_tts_core::TtsEngine>, forge_tts_core::TtsError> {
+            Ok(Box::new(CapturingEngine {
+                id: self.id.clone(),
+                seen: self.seen.clone(),
+            }))
+        }
+    }
+
+    #[tokio::test]
+    async fn reward_emote_strip_fires_only_when_reward_and_toggle_both_set() {
+        // TTS-7: the reward pre-pass strips `emote_tokens` from the spoken text
+        // ONLY when the message is reward-sourced AND the persisted toggle is on.
+        // Any weaker gate (OR, ignoring one operand, always-on) fails a row.
+        // The engine records the text it actually received to synthesize.
+        for (is_reward, strip_reward_emotes, expected) in [
+            (true, true, "hi"),
+            (false, true, "hi LUL"),
+            (true, false, "hi LUL"),
+            (false, false, "hi LUL"),
+        ] {
+            let mut emote_tokens = forge_tts_pipeline::EmoteTokenSet::default();
+            emote_tokens.tokens.insert("LUL".into());
+            let cfg = forge_tts_pipeline::PipelineConfig {
+                emote_tokens,
+                strip_reward_emotes,
+                ..Default::default()
+            };
+            let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+            let engine_id = EngineId("cap".into());
+            let voice = TtsVoice {
+                id: VoiceId("cap-1".into()),
+                name: "cap-1".into(),
+                locale: "en-US".into(),
+                gender: forge_tts_core::VoiceGender::Neutral,
+                engine_id: engine_id.clone(),
+                is_neural: false,
+                sample_rate_hint: 22_050,
+            };
+            let mut registry = forge_tts_core::TtsRegistry::new();
+            registry.register(
+                engine_id.clone(),
+                Arc::new(CapturingFactory {
+                    id: engine_id,
+                    seen: seen.clone(),
+                }),
+            );
+            let resolver = VoiceAliasResolver::new(
+                vec![],
+                AssignmentStrategy::DeterministicByName,
+                IgnoreProfile::default(),
+                SynthesisDefaults::default(),
+            );
+            let deps = SynthTaskDeps {
+                resolver: Arc::new(std::sync::RwLock::new(resolver)),
+                pipeline: crate::PipelineConfigHandle::new(cfg),
+                registry: Arc::new(std::sync::RwLock::new(registry)),
+                voice_catalog: Arc::new(vec![voice.clone()]),
+            };
+
+            let mut req = request("nova", "hi LUL", Priority::Normal);
+            req.voice_override = Some(voice.id.clone());
+            req.is_reward = is_reward;
+
+            let result = run_synthesis(req, deps).await;
+            assert!(
+                matches!(result.outcome, SynthOutcome::Speak { .. }),
+                "expected Speak for is_reward={is_reward} toggle={strip_reward_emotes}",
+            );
+            let spoken = seen.lock().unwrap().clone();
+            assert_eq!(
+                spoken,
+                vec![expected.to_owned()],
+                "is_reward={is_reward} strip_reward_emotes={strip_reward_emotes}",
+            );
+        }
     }
 }

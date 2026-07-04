@@ -192,7 +192,17 @@ pub fn strip_emote_tokens(text: &str, tokens: &EmoteTokenSet) -> String {
 }
 
 fn stage_emote_stripper(text: &str, config: &PipelineConfig) -> String {
-    let stripped = strip_emote_tokens(text, &config.emote_tokens);
+    // Gated on `emote_sources.twitch` (persisted as `strip_twitch_emotes`) so this
+    // general, always-in-the-pipeline pass and the reward-only pre-pass the actor
+    // runs ahead of `process` (via `strip_emote_tokens` directly, gated on
+    // `is_reward && strip_reward_emotes`) are observably distinct: with this flag
+    // off, `emote_tokens` populated alone must NOT cause every message to be
+    // stripped — only reward-sourced ones, and only through the pre-pass.
+    let stripped = if config.emote_sources.twitch {
+        strip_emote_tokens(text, &config.emote_tokens)
+    } else {
+        text.to_owned()
+    };
 
     if config.emote_sources.emoji {
         stripped.chars().filter(|c| !is_emoji_char(*c)).collect()
@@ -449,6 +459,7 @@ mod tests {
     #[test]
     fn emote_stripper_removes_known_tokens() {
         let mut config = PipelineConfig::default();
+        config.emote_sources.twitch = true;
         config.emote_tokens.tokens.insert("LUL".into());
         config.emote_tokens.tokens.insert("Pog".into());
         let result = process("hello LUL world Pog nice", &config);
@@ -607,11 +618,45 @@ mod tests {
     #[test]
     fn preview_stage_input_output_chain() {
         let mut config = PipelineConfig::default();
+        config.emote_sources.twitch = true;
         config.emote_tokens.tokens.insert("LUL".into());
         let (result, outcomes) = preview("hello LUL world", &config);
         assert_eq!(result, PipelineResult::Speak("hello world".into()));
         assert_eq!(outcomes[0].output, "hello world");
         assert_eq!(outcomes[1].input, "hello world");
+    }
+
+    #[test]
+    fn strip_emote_tokens_removes_whole_word_matches_only() {
+        // The extracted strip pass is word-token based, NOT a unicode range or
+        // substring match: a code embedded inside a larger word must survive, and
+        // surrounding non-emote words are untouched. Swapping the whole-word
+        // `filter` for a `contains`/substring test would fail the `LULzy`/`aPog`
+        // rows; dropping the strip entirely fails the removal rows.
+        let mut set = EmoteTokenSet::default();
+        set.tokens.insert("LUL".into());
+        set.tokens.insert("PogChamp".into());
+        for (input, expected) in [
+            ("hello LUL world PogChamp", "hello world"),
+            ("LUL", ""),
+            ("no emotes here", "no emotes here"),
+            ("LULzy aPogChamp", "LULzy aPogChamp"),
+            ("PogChamp LUL PogChamp", ""),
+        ] {
+            assert_eq!(strip_emote_tokens(input, &set), expected, "input {input:?}",);
+        }
+    }
+
+    #[test]
+    fn strip_emote_tokens_with_empty_set_preserves_original_spacing() {
+        // Empty set takes the early-return path returning the input verbatim.
+        // The double space proves it is NOT routed through the split/join used
+        // when tokens exist (which would collapse runs of whitespace).
+        let set = EmoteTokenSet::default();
+        assert_eq!(
+            strip_emote_tokens("keep  all   spaces", &set),
+            "keep  all   spaces"
+        );
     }
 
     #[test]

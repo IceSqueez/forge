@@ -114,6 +114,7 @@ fn speak_req(viewer: &str, text: &str) -> SpeakRequest {
         engine_override: None,
         voice_override: None,
         source_event_id: EventId::new(),
+        is_reward: false,
     }
 }
 

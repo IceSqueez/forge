@@ -227,6 +227,7 @@ fn test_speak_request(text: String) -> SpeakRequest {
         engine_override: None,
         voice_override: None,
         source_event_id: forge_types::EventId::new(),
+        is_reward: false,
     }
 }
 

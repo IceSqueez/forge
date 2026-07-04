@@ -153,9 +153,10 @@ impl SubActionRunner for SpeakRunner {
             .and_then(|v| v.as_str())
             .map(|s| s.to_owned());
 
+        let origin = classify_origin(ctx.arg_stack);
         let settings = self.trigger_settings.load();
-        if let Some(origin) = classify_origin(ctx.arg_stack)
-            && !origin.is_enabled(&settings)
+        if let Some(ref o) = origin
+            && !o.is_enabled(&settings)
         {
             let duration_ms = (OffsetDateTime::now_utc() - started_at)
                 .whole_milliseconds()
@@ -166,13 +167,19 @@ impl SubActionRunner for SpeakRunner {
                     kind: "tts.speak.text".to_owned(),
                     started_at,
                     duration_ms,
-                    outcome: SubActionOutcome::Skipped(origin.disabled_reason().to_owned()),
+                    outcome: SubActionOutcome::Skipped(o.disabled_reason().to_owned()),
                 },
                 None,
             );
         }
 
-        let outcome = match self.speak.speak(text, voice_alias).await {
+        let is_reward = matches!(origin, Some(SpeakOrigin::ChannelPoints));
+        let dispatch_result = if is_reward {
+            self.speak.speak_reward_sourced(text, voice_alias).await
+        } else {
+            self.speak.speak(text, voice_alias).await
+        };
+        let outcome = match dispatch_result {
             Ok(()) => SubActionOutcome::Success,
             Err(e) => SubActionOutcome::Failed(e.to_string()),
         };

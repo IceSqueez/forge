@@ -132,6 +132,7 @@ fn req(viewer: &str, text: &str, priority: Priority) -> SpeakRequest {
         engine_override: None,
         voice_override: None,
         source_event_id: EventId::new(),
+        is_reward: false,
     }
 }
 

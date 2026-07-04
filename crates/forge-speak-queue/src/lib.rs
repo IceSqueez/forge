@@ -51,6 +51,11 @@ pub struct SpeakRequest {
     /// is taken from `engine_override` if set, else inferred from the voice catalog.
     pub voice_override: Option<VoiceId>,
     pub source_event_id: forge_types::EventId,
+    /// Set when this message originated from a Twitch channel-points reward
+    /// redemption. Gates `PipelineConfig::strip_reward_emotes` in the actor,
+    /// independently of the `strip_twitch_emotes`-driven stripping applied to
+    /// every message.
+    pub is_reward: bool,
 }
 
 #[derive(Debug)]

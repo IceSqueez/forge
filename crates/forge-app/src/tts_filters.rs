@@ -408,6 +408,7 @@ pub fn update(state: &mut TtsFiltersState, rt: &RuntimeView, msg: TtsFiltersMsg)
                         engine_override: None,
                         voice_override: None,
                         source_event_id: forge_types::EventId::new(),
+                        is_reward: false,
                     };
                     handle
                         .send(SpeakCommand::Enqueue(request))

@@ -112,9 +112,16 @@ pub struct PipelineConfig {
     pub word_blocklist: Vec<String>,
     pub blocklist_mode: BlocklistMode,
     pub max_chars: usize,
+    /// Whether channel-points-reward-sourced messages get `emote_tokens` stripped
+    /// in addition to (not instead of) whatever `emote_sources`/`emote_tokens`
+    /// already apply. Origin is per-message, not part of this shared config, so
+    /// callers gate on it themselves (see `strip_emote_tokens`) before invoking
+    /// `process`; this field only carries the persisted on/off setting.
+    pub strip_reward_emotes: bool,
 }
 
 impl PipelineConfig {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         emote_sources: EmoteSources,
         emote_tokens: EmoteTokenSet,
@@ -123,6 +130,7 @@ impl PipelineConfig {
         word_blocklist: Vec<String>,
         blocklist_mode: BlocklistMode,
         max_chars: usize,
+        strip_reward_emotes: bool,
     ) -> Self {
         Self {
             emote_sources,
@@ -132,6 +140,7 @@ impl PipelineConfig {
             word_blocklist,
             blocklist_mode,
             max_chars,
+            strip_reward_emotes,
         }
     }
 }
@@ -146,6 +155,7 @@ impl Default for PipelineConfig {
             word_blocklist: vec![],
             blocklist_mode: BlocklistMode::default(),
             max_chars: 500,
+            strip_reward_emotes: false,
         }
     }
 }
@@ -162,16 +172,27 @@ fn is_emoji_char(c: char) -> bool {
     )
 }
 
+/// Removes whitespace-delimited emote-code tokens (e.g. `LUL`, `Pog`) present in
+/// `tokens` from `text`. Word-token match only — emote codes are not a unicode
+/// range, so this never touches ordinary punctuation or non-emote unicode.
+///
+/// Exposed so callers needing origin-specific gating (e.g. only stripping for
+/// channel-points-reward-sourced messages) can invoke the same stripping pass
+/// `stage_emote_stripper` uses, ahead of `process`, without duplicating the
+/// token-match logic.
+pub fn strip_emote_tokens(text: &str, tokens: &EmoteTokenSet) -> String {
+    if tokens.tokens.is_empty() {
+        return text.to_owned();
+    }
+    let words: Vec<&str> = text
+        .split_whitespace()
+        .filter(|w| !tokens.tokens.contains(*w))
+        .collect();
+    words.join(" ")
+}
+
 fn stage_emote_stripper(text: &str, config: &PipelineConfig) -> String {
-    let stripped = if config.emote_tokens.tokens.is_empty() {
-        text.to_owned()
-    } else {
-        let words: Vec<&str> = text
-            .split_whitespace()
-            .filter(|w| !config.emote_tokens.tokens.contains(*w))
-            .collect();
-        words.join(" ")
-    };
+    let stripped = strip_emote_tokens(text, &config.emote_tokens);
 
     if config.emote_sources.emoji {
         stripped.chars().filter(|c| !is_emoji_char(*c)).collect()

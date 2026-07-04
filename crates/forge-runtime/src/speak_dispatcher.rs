@@ -61,6 +61,18 @@ pub trait SpeakDispatcher: Send + Sync {
         Ok(())
     }
 
+    /// Enqueue a speak request that originated from a channel-points reward
+    /// redemption, so the pipeline's `strip_reward_emotes` gate sees it as
+    /// reward-sourced. Defaults to plain `speak` for implementers that don't
+    /// need reward-specific gating (test doubles, the rhai bridge).
+    async fn speak_reward_sourced(
+        &self,
+        text: String,
+        voice_id_override: Option<String>,
+    ) -> Result<(), SpeakDispatchError> {
+        self.speak(text, voice_id_override).await
+    }
+
     /// Stop the active item; the queue then advances to the next.
     async fn stop_current(&self) -> Result<(), SpeakDispatchError> {
         Ok(())

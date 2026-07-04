@@ -180,6 +180,7 @@ pub fn build_config_strict(
         mapped.word_blocklist,
         mapped.blocklist_mode,
         max_chars,
+        settings.strip_reward_emotes,
     ))
 }
 
@@ -210,6 +211,7 @@ pub fn build_config_lenient(
         mapped.word_blocklist,
         mapped.blocklist_mode,
         max_chars,
+        settings.strip_reward_emotes,
     )
 }
 

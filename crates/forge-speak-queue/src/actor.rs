@@ -43,7 +43,21 @@ struct SynthTaskDeps {
 async fn run_synthesis(req: SpeakRequest, deps: SynthTaskDeps) -> SynthTaskResult {
     // Load the current config (atomic Arc clone, read guard dropped immediately).
     let pipeline_cfg = deps.pipeline.load();
-    let pipeline_result = forge_tts_pipeline::process(&req.text, &pipeline_cfg);
+
+    // Reward-origin gating is per-message, not part of the shared PipelineConfig,
+    // so it's applied here as a pre-pass rather than inside `process`: reusing the
+    // same word-token strip `strip_twitch_emotes` drives, ahead of the pipeline's
+    // own (always-applied) emote stage. A no-op when the toggle is off or the
+    // message isn't reward-sourced.
+    let reward_stripped;
+    let text_for_pipeline: &str = if req.is_reward && pipeline_cfg.strip_reward_emotes {
+        reward_stripped =
+            forge_tts_pipeline::strip_emote_tokens(&req.text, &pipeline_cfg.emote_tokens);
+        &reward_stripped
+    } else {
+        &req.text
+    };
+    let pipeline_result = forge_tts_pipeline::process(text_for_pipeline, &pipeline_cfg);
     let text_to_speak = match pipeline_result {
         PipelineResult::Speak(t) => t,
         PipelineResult::Skip { reason } => {
@@ -729,6 +743,7 @@ mod tests {
             engine_override: None,
             voice_override: None,
             source_event_id: forge_types::EventId::new(),
+            is_reward: false,
         }
     }
 

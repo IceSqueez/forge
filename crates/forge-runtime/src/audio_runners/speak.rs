@@ -197,6 +197,8 @@ impl SubActionRunner for SpeakRunner {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
     use async_trait::async_trait;
     use forge_types::{EventId, SubActionOutcome};
 
@@ -233,6 +235,24 @@ mod tests {
             _voice_id_override: Option<String>,
         ) -> Result<(), SpeakDispatchError> {
             Err(SpeakDispatchError::Dispatch("queue full".to_owned()))
+        }
+    }
+
+    /// Records whether the dispatcher was reached, so gate tests can assert a
+    /// gated-off speak never touches the queue.
+    struct RecordingSpeaker {
+        called: Arc<AtomicBool>,
+    }
+
+    #[async_trait]
+    impl SpeakDispatcher for RecordingSpeaker {
+        async fn speak(
+            &self,
+            _text: String,
+            _voice_id_override: Option<String>,
+        ) -> Result<(), SpeakDispatchError> {
+            self.called.store(true, Ordering::SeqCst);
+            Ok(())
         }
     }
 
@@ -338,5 +358,161 @@ mod tests {
             TtsTriggerSettingsHandle::new(TtsTriggerSettings::default()),
         );
         assert!(runner.validate_config(&config_with_text("hello")).is_ok());
+    }
+
+    #[test]
+    fn classify_origin_prefers_specific_source_over_base_chat_keys() {
+        // Reward/cheer/sub arg-stacks ALSO carry the base chat `message_text`;
+        // the classifier must pick the specific source, not fall through to
+        // Command. Locks the precedence chain reward > bits > sub > command, and
+        // None when no source key is present. A reversed check order (Command
+        // first) would misclassify every reward/cheer/sub speak.
+        fn stack(keys: &[&str]) -> ArgStack {
+            let mut s = ArgStack::new();
+            for k in keys {
+                s = s.set((*k).to_owned(), Variant::Int(1));
+            }
+            s
+        }
+        fn tag(origin: Option<SpeakOrigin>) -> &'static str {
+            match origin {
+                Some(SpeakOrigin::ChannelPoints) => "channel_points",
+                Some(SpeakOrigin::Bits) => "bits",
+                Some(SpeakOrigin::Sub) => "sub",
+                Some(SpeakOrigin::Command) => "command",
+                None => "none",
+            }
+        }
+        let cases: &[(&[&str], &str)] = &[
+            (&["reward.id", "message_text"], "channel_points"),
+            (&["reward.id", "cheer.bits"], "channel_points"),
+            (&["cheer.bits", "message_text"], "bits"),
+            (&["cheer.bits", "sub_tier"], "bits"),
+            (&["sub_tier", "message_text"], "sub"),
+            (&["message_text"], "command"),
+            (&[], "none"),
+        ];
+        for (keys, expected) in cases {
+            assert_eq!(
+                tag(classify_origin(&stack(keys))),
+                *expected,
+                "keys={keys:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn is_enabled_reads_only_the_matching_toggle_per_origin() {
+        // Guards the origin->field mapping against a copy-paste swap. One-hot-true
+        // rows catch a read misdirected to another (false) field; one-cold rows
+        // (self false, rest true) catch an always-true short-circuit.
+        fn settings(
+            command: bool,
+            channel_points: bool,
+            bits: bool,
+            sub: bool,
+        ) -> TtsTriggerSettings {
+            TtsTriggerSettings {
+                command_enabled: command,
+                channel_points_enabled: channel_points,
+                bits_enabled: bits,
+                sub_messages_enabled: sub,
+                ..TtsTriggerSettings::default()
+            }
+        }
+        let cases = [
+            (
+                SpeakOrigin::Command,
+                settings(true, false, false, false),
+                true,
+            ),
+            (
+                SpeakOrigin::ChannelPoints,
+                settings(false, true, false, false),
+                true,
+            ),
+            (SpeakOrigin::Bits, settings(false, false, true, false), true),
+            (SpeakOrigin::Sub, settings(false, false, false, true), true),
+            (
+                SpeakOrigin::Command,
+                settings(false, true, true, true),
+                false,
+            ),
+            (
+                SpeakOrigin::ChannelPoints,
+                settings(true, false, true, true),
+                false,
+            ),
+            (SpeakOrigin::Bits, settings(true, true, false, true), false),
+            (SpeakOrigin::Sub, settings(true, true, true, false), false),
+        ];
+        for (i, (origin, settings, expected)) in cases.into_iter().enumerate() {
+            assert_eq!(origin.is_enabled(&settings), expected, "case {i}");
+        }
+    }
+
+    #[tokio::test]
+    async fn speak_gated_off_by_source_toggle_is_skipped_and_not_dispatched() {
+        let called = Arc::new(AtomicBool::new(false));
+        let settings = TtsTriggerSettings {
+            bits_enabled: false,
+            ..TtsTriggerSettings::default()
+        };
+        let runner = SpeakRunner::new(
+            Arc::new(RecordingSpeaker {
+                called: Arc::clone(&called),
+            }),
+            TtsTriggerSettingsHandle::new(settings),
+        );
+        let stack = ArgStack::new().set("cheer.bits".to_owned(), Variant::Int(100));
+        let ctx = make_ctx(&stack);
+        let (telemetry, _) = runner.execute(&config_with_text("Thanks!"), &ctx).await;
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Skipped(_)));
+        assert!(
+            !called.load(Ordering::SeqCst),
+            "dispatcher must not be reached when the source toggle is off"
+        );
+    }
+
+    #[tokio::test]
+    async fn speak_dispatched_when_source_toggle_is_on() {
+        let called = Arc::new(AtomicBool::new(false));
+        // Default leaves bits_enabled = true.
+        let runner = SpeakRunner::new(
+            Arc::new(RecordingSpeaker {
+                called: Arc::clone(&called),
+            }),
+            TtsTriggerSettingsHandle::new(TtsTriggerSettings::default()),
+        );
+        let stack = ArgStack::new().set("cheer.bits".to_owned(), Variant::Int(100));
+        let ctx = make_ctx(&stack);
+        let (telemetry, _) = runner.execute(&config_with_text("Thanks!"), &ctx).await;
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
+        assert!(called.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn speak_without_source_keys_is_dispatched_even_with_all_toggles_off() {
+        let called = Arc::new(AtomicBool::new(false));
+        let settings = TtsTriggerSettings {
+            command_enabled: false,
+            channel_points_enabled: false,
+            bits_enabled: false,
+            sub_messages_enabled: false,
+            ..TtsTriggerSettings::default()
+        };
+        let runner = SpeakRunner::new(
+            Arc::new(RecordingSpeaker {
+                called: Arc::clone(&called),
+            }),
+            TtsTriggerSettingsHandle::new(settings),
+        );
+        let stack = ArgStack::new();
+        let ctx = make_ctx(&stack);
+        let (telemetry, _) = runner
+            .execute(&config_with_text("script speak"), &ctx)
+            .await;
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
+        assert!(called.load(Ordering::SeqCst));
     }
 }

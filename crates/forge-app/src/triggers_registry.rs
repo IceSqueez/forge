@@ -318,6 +318,11 @@ pub fn update(
         TriggersRegistryMsg::DeleteRequested(id) => {
             // Same rule as the sheet footer's `can_delete` gate: an instance
             // still referenced by an action never opens the confirm at all.
+            // The row `X` / sheet footer button are also dimmed+inert in that
+            // case (proactive gate, 4156dae), so this branch is normally
+            // unreachable from the UI — the toast here is defense-in-depth
+            // reactive feedback, same copy as the `DeleteResult(Err)` path
+            // below, for any dispatch path that bypasses the disabled button.
             let can_delete = state
                 .instances
                 .iter()
@@ -326,8 +331,15 @@ pub fn update(
                 .unwrap_or(false);
             if can_delete {
                 state.pending_delete = Some(id);
+                Task::none()
+            } else {
+                Task::done(Message::Toast(ToastMsg::Fired {
+                    kind: ToastKind::Error,
+                    message: forge_widgets::tr!("triggers_delete_reference_block"),
+                    duration_ms: 5000,
+                    action: None,
+                }))
             }
-            Task::none()
         }
         TriggersRegistryMsg::DeleteConfirmAccepted(id) => {
             state.pending_delete = None;

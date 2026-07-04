@@ -5,13 +5,14 @@ use std::time::Instant;
 use forge_events::{Event, EventSource};
 use forge_types::{ActionId, EventId};
 use forge_widgets::{
-    EventInspectorParams, EventRowData, FontRole, ForgePalette, Radius, Spacing, category_chip,
-    event_inspector, event_row_observability, font, radius, sp, spf,
+    EventInspectorParams, EventRowData, FontRole, ForgePalette, Radius, Spacing, ToastKind,
+    category_chip, event_inspector, event_row_observability, font, radius, sp, spf,
     tokens::{FONT_SM, FONT_XS},
 };
 use iced::widget::{button, column, container, row, scrollable, text};
 use iced::{Background, Border, Color, Element, Length, Padding};
 
+use crate::message::ToastMsg;
 use crate::runtime_view::RuntimeView;
 use crate::{Message, Screen};
 
@@ -383,11 +384,27 @@ pub fn update(
         }
         EventFeedMsg::ExportResult(Ok(path)) => {
             tracing::info!(path = %path.display(), "event feed exported");
-            iced::Task::none()
+            iced::Task::done(Message::Toast(ToastMsg::Fired {
+                kind: ToastKind::Success,
+                message: format!("Exported event feed to {}", path.display()),
+                duration_ms: 4000,
+                action: None,
+            }))
         }
         EventFeedMsg::ExportResult(Err(e)) => {
+            // "export cancelled" is the user dismissing the save-file dialog —
+            // not a failure worth a toast, same convention as other
+            // cancel-is-not-an-error dialog flows in this codebase.
+            if e == "export cancelled" {
+                return iced::Task::none();
+            }
             tracing::warn!(error = %e, "event feed export failed");
-            iced::Task::none()
+            iced::Task::done(Message::Toast(ToastMsg::Fired {
+                kind: ToastKind::Error,
+                message: format!("Event feed export failed: {e}"),
+                duration_ms: 5000,
+                action: None,
+            }))
         }
         EventFeedMsg::AutoScrollToggled => {
             state.auto_scroll = !state.auto_scroll;
@@ -407,12 +424,22 @@ pub fn update(
         }
         EventFeedMsg::ReplayResult(Ok(())) => {
             state.replay_loading = false;
-            iced::Task::none()
+            iced::Task::done(Message::Toast(ToastMsg::Fired {
+                kind: ToastKind::Success,
+                message: "Event replayed".to_string(),
+                duration_ms: 3000,
+                action: None,
+            }))
         }
         EventFeedMsg::ReplayResult(Err(e)) => {
             state.replay_loading = false;
             tracing::warn!(error = %e, "event replay failed");
-            iced::Task::none()
+            iced::Task::done(Message::Toast(ToastMsg::Fired {
+                kind: ToastKind::Error,
+                message: format!("Event replay failed: {e}"),
+                duration_ms: 5000,
+                action: None,
+            }))
         }
         EventFeedMsg::CausationChipClicked(action_id) => {
             iced::Task::done(Message::Navigate(Screen::ActionEditor(Some(action_id))))

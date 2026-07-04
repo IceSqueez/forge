@@ -198,7 +198,12 @@ pub fn update(
         ScriptEditorMsg::ScriptsLoaded(Err(e)) => {
             state.loading = false;
             tracing::warn!(error = %e, "script list load failed");
-            iced::Task::none()
+            iced::Task::done(Message::Toast(ToastMsg::Fired {
+                kind: forge_widgets::ToastKind::Error,
+                message: format!("Could not load scripts: {e}"),
+                duration_ms: 5000,
+                action: None,
+            }))
         }
         ScriptEditorMsg::ScriptSelected(id) => {
             // Nav guard: a dirty open script must not be overwritten by
@@ -242,7 +247,12 @@ pub fn update(
         }
         ScriptEditorMsg::ScriptOpened(Err(e)) => {
             tracing::warn!(error = %e, "script open failed");
-            iced::Task::none()
+            iced::Task::done(Message::Toast(ToastMsg::Fired {
+                kind: forge_widgets::ToastKind::Error,
+                message: format!("Could not open script: {e}"),
+                duration_ms: 5000,
+                action: None,
+            }))
         }
         ScriptEditorMsg::EditorAction(action) => {
             let just_typed = if let iced::widget::text_editor::Action::Edit(
@@ -623,7 +633,12 @@ pub fn update(
         }
         ScriptEditorMsg::NewScriptCreated(Err(e)) => {
             tracing::warn!(error = %e, "new script creation failed");
-            iced::Task::none()
+            iced::Task::done(Message::Toast(ToastMsg::Fired {
+                kind: forge_widgets::ToastKind::Error,
+                message: format!("Could not create script: {e}"),
+                duration_ms: 5000,
+                action: None,
+            }))
         }
         ScriptEditorMsg::DeleteRequested(id) => {
             // Arms the confirm gate only (mirrors Globals' DeleteRequested) —
@@ -661,7 +676,12 @@ pub fn update(
         }
         ScriptEditorMsg::Deleted(_, Err(e)) => {
             tracing::warn!(error = %e, "script delete failed");
-            iced::Task::none()
+            iced::Task::done(Message::Toast(ToastMsg::Fired {
+                kind: forge_widgets::ToastKind::Error,
+                message: format!("Could not delete script: {e}"),
+                duration_ms: 5000,
+                action: None,
+            }))
         }
         ScriptEditorMsg::RenameStarted(id) => {
             let current_name = state

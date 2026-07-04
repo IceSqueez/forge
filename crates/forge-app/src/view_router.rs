@@ -135,7 +135,6 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Screen::Soundboard => soundboard_view(&app.ui.soundboard, palette),
         Screen::Tts(section) => crate::tts_view::tts_section_view(app, section, palette),
         Screen::Error(reason) => crate::storage_error::storage_error_view(reason, palette),
-        other => navigation::coming_soon_view(format!("{other:?}"), palette),
     };
 
     let screen_uses_own_header = matches!(

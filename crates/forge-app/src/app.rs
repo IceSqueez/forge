@@ -34,9 +34,7 @@ use crate::message::ObsClientRef;
 use crate::message::SettingsMsg;
 #[cfg(test)]
 use crate::message::VTubeClientRef;
-use crate::message::{
-    ActionsMsg, BootMsg, LifecycleMsg, ServerSubsystemMsg, SidebarMsg, ToastMsg, TtsMsg,
-};
+use crate::message::{ActionsMsg, BootMsg, LifecycleMsg, ServerSubsystemMsg, ToastMsg, TtsMsg};
 use crate::queues_view::QueuesState;
 use crate::script_editor::{ScriptEditorMsg, ScriptEditorState};
 use crate::server_screen::ServerScreenState;
@@ -53,24 +51,6 @@ use crate::voice_aliases::VoiceAliasesState;
 use crate::{Message, Screen};
 use forge_types::PlatformId;
 
-pub struct SidebarExpandState {
-    pub actions_queues: bool,
-}
-
-impl SidebarExpandState {
-    pub fn new() -> Self {
-        Self {
-            actions_queues: false,
-        }
-    }
-}
-
-impl Default for SidebarExpandState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 pub struct App {
     pub screen: Screen,
     pub theme: Theme,
@@ -81,7 +61,6 @@ pub struct App {
     pub toast_queue: ToastQueue<Message>,
     pub storage_offline: bool,
     pub boot_time: SystemTime,
-    pub sidebar_state: SidebarExpandState,
     pub rt: crate::runtime_view::RuntimeView,
     pub ui: UiState,
 }
@@ -176,7 +155,6 @@ impl App {
             toast_queue: ToastQueue::new(),
             storage_offline,
             boot_time: SystemTime::now(),
-            sidebar_state: SidebarExpandState::new(),
             rt: crate::runtime_view::RuntimeView {
                 actions: Arc::new(forge_runtime::actions::ActionsService::new(
                     backend.action_repo(),
@@ -249,7 +227,6 @@ impl Default for App {
             toast_queue: ToastQueue::new(),
             storage_offline: false,
             boot_time: SystemTime::now(),
-            sidebar_state: SidebarExpandState::new(),
             rt: crate::runtime_view::RuntimeView {
                 actions: Arc::new(forge_runtime::actions::ActionsService::new(
                     backend.action_repo(),
@@ -331,14 +308,6 @@ fn dispatch_event(app: &mut App, event: &Arc<Event>) -> Task<Message> {
 pub fn update(app: &mut App, msg: Message) -> Task<Message> {
     match msg {
         Message::Navigate(screen) => crate::navigation::handle_navigate(app, screen),
-        Message::Sidebar(sub) => {
-            match sub {
-                SidebarMsg::ToggleActionsQueues => {
-                    app.sidebar_state.actions_queues = !app.sidebar_state.actions_queues;
-                }
-            }
-            Task::none()
-        }
         Message::ThemeChanged(id) => {
             let (theme, palette) = match id {
                 ThemeId::CatppuccinMocha => forge_widgets::catppuccin_mocha(),
@@ -555,7 +524,7 @@ mod tests {
     #[test]
     fn navigate_to_hub_sets_hub_screen() {
         let mut app = App::default();
-        let _ = update(&mut app, Message::Navigate(Screen::Logs));
+        let _ = update(&mut app, Message::Navigate(Screen::Server));
         let _ = update(&mut app, Message::Navigate(Screen::Home));
         assert_eq!(app.screen, Screen::Home);
     }
@@ -677,7 +646,6 @@ mod tests {
             toast_queue: ToastQueue::new(),
             storage_offline: false,
             boot_time: std::time::SystemTime::now(),
-            sidebar_state: SidebarExpandState::new(),
             rt: crate::runtime_view::RuntimeView {
                 actions: Arc::new(forge_runtime::actions::ActionsService::new(
                     dp.action_repo(),
@@ -1014,7 +982,6 @@ mod tests {
             toast_queue: ToastQueue::new(),
             storage_offline: false,
             boot_time: std::time::SystemTime::now(),
-            sidebar_state: SidebarExpandState::new(),
             rt: crate::runtime_view::RuntimeView {
                 actions: Arc::new(forge_runtime::actions::ActionsService::new(
                     dp.action_repo(),
@@ -1219,15 +1186,6 @@ mod tests {
         assert!(app.ui.home.actions_count.is_none());
         assert!(app.ui.home.triggers_fired.is_none());
         assert!(app.ui.home.globals_count.is_none());
-    }
-
-    #[test]
-    fn sidebar_toggle_actions_queues_flips_bool() {
-        let mut app = App::default();
-        let _ = update(&mut app, Message::Sidebar(SidebarMsg::ToggleActionsQueues));
-        assert!(app.sidebar_state.actions_queues);
-        let _ = update(&mut app, Message::Sidebar(SidebarMsg::ToggleActionsQueues));
-        assert!(!app.sidebar_state.actions_queues);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use forge_widgets::icons::Icon;
 use forge_widgets::{ForgePalette, NavItem, Sidebar};
-use iced::{Element, Length, Task};
+use iced::Task;
 
 use crate::app::App;
 use crate::connectivity::{Connectivity, Integration, state_color};
@@ -11,21 +11,6 @@ use crate::script_editor::ScriptEditorMsg;
 use crate::settings_websocket::SettingsWebSocketMsg;
 use crate::viewers::ViewersMsg;
 use crate::{Message, Screen, SettingsSection, TtsSection};
-
-pub(crate) fn coming_soon_view(
-    screen_label: String,
-    palette: &ForgePalette,
-) -> Element<'static, Message> {
-    iced::widget::container(forge_widgets::empty_state(
-        forge_widgets::tr!("nav_coming_soon"),
-        screen_label,
-        None::<(&str, Message)>,
-        palette,
-    ))
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .into()
-}
 
 pub(crate) fn breadcrumb_icon_for(screen: &Screen) -> Icon {
     match screen {
@@ -40,7 +25,7 @@ pub(crate) fn breadcrumb_icon_for(screen: &Screen) -> Icon {
         Screen::Tts(_) => Icon::Volume,
         Screen::Soundboard => Icon::Music,
         Screen::ScriptEditor | Screen::ScriptingApiDocs => Icon::Terminal,
-        Screen::Server | Screen::Logs => Icon::Settings,
+        Screen::Server => Icon::Settings,
         Screen::Error(_) => Icon::AlertTriangle,
     }
 }
@@ -63,7 +48,6 @@ pub(crate) fn screen_label(screen: &Screen) -> String {
         Screen::ScriptEditor => forge_widgets::tr!("nav_script_editor"),
         Screen::ScriptingApiDocs => forge_widgets::tr!("nav_api_reference"),
         Screen::Server => forge_widgets::tr!("nav_server"),
-        Screen::Logs => forge_widgets::tr!("nav_logs"),
         Screen::Error(_) => forge_widgets::tr!("storage_error_title"),
     }
 }

@@ -67,7 +67,7 @@ pub use actions::{
     ActionDetail, ActionSummary, ActionsGroup, ActionsState, AddActionForm, AddActionMsg,
     AddSubActionForm, AddSubActionMsg, RemoveSubActionMsg, TriggerCategory,
 };
-pub use app::{App, SidebarExpandState, UiState};
+pub use app::{App, UiState};
 pub use boot::load_obs_and_connect;
 pub use builtin_detail::{BuiltinDetailState, health_subscription};
 pub use event_feed::{EventFeedMsg, EventFeedState, EventFilter, matches_filter};
@@ -77,9 +77,8 @@ pub use live_chat::{EventsFilter, LiveChatState, PlatformFilter, SendId};
 pub use message::{
     ActionsMsg, BootMsg, BuiltinDetailMsg, CloudEngineKind, CloudTtsEnginesMsg, EditorMode,
     GlobalsFilter, GlobalsLoadData, GlobalsMsg, HomeMsg, HomeStatsData, LiveChatMsg, Message,
-    ObsClientRef, ServerSubsystemMsg, SettingsAudioMsg, SettingsMsg, SidebarMsg, SoundboardMsg,
-    TtsDashMsg, TtsEnginesMsg, TtsFiltersMsg, TtsMsg, TtsTriggersMsg, VariantEditorMsg,
-    VoiceAliasesMsg,
+    ObsClientRef, ServerSubsystemMsg, SettingsAudioMsg, SettingsMsg, SoundboardMsg, TtsDashMsg,
+    TtsEnginesMsg, TtsFiltersMsg, TtsMsg, TtsTriggersMsg, VariantEditorMsg, VoiceAliasesMsg,
 };
 pub use runtime_view::RuntimeView;
 pub use screen::{Screen, SettingsSection, TtsSection};

@@ -2,9 +2,7 @@
 
 use std::sync::Arc;
 
-use forge_app::{
-    App, LiveChatMsg, Message, PlatformFilter, RuntimeView, Screen, SidebarExpandState, app::update,
-};
+use forge_app::{App, LiveChatMsg, Message, PlatformFilter, RuntimeView, Screen, app::update};
 use forge_events::EventSource;
 use forge_runtime::{
     EventBus, NullEventLogRepo, ScriptRegistry, actions::ActionsService, bus_subscription,
@@ -37,7 +35,6 @@ fn test_app() -> App {
         toast_queue: forge_widgets::ToastQueue::new(),
         storage_offline: false,
         boot_time: std::time::SystemTime::now(),
-        sidebar_state: SidebarExpandState::new(),
         rt: RuntimeView {
             actions: Arc::new(ActionsService::new(
                 backend.action_repo(),

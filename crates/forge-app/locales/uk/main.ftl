@@ -22,7 +22,6 @@ nav_soundboard = Звукова панель
 nav_script_editor = Редактор скриптів
 nav_api_reference = Довідник API
 nav_server = Сервер
-nav_logs = Журнал
 
 ## Навігація — заголовки секцій бічної панелі
 
@@ -45,10 +44,6 @@ nav_item_soundboard = Звукова панель
 nav_item_tts = Синтез мовлення
 nav_item_ws_server = WebSocket-сервер
 nav_item_settings = Налаштування
-
-## Навігація — заглушка "незабаром"
-
-nav_coming_soon = Незабаром
 
 ## Головна — секція привітання
 

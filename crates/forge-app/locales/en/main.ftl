@@ -22,7 +22,6 @@ nav_soundboard = Soundboard
 nav_script_editor = Script editor
 nav_api_reference = API reference
 nav_server = Server
-nav_logs = Logs
 
 ## Navigation — sidebar section headers
 
@@ -45,10 +44,6 @@ nav_item_soundboard = Soundboard
 nav_item_tts = Text-to-Speech
 nav_item_ws_server = WebSocket server
 nav_item_settings = Settings
-
-## Navigation — coming-soon placeholder
-
-nav_coming_soon = Coming soon
 
 ## Home — hero section
 

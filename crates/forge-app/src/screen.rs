@@ -44,7 +44,6 @@ pub enum Screen {
     ScriptEditor,
     ScriptingApiDocs,
     Server,
-    Logs,
     Settings(SettingsSection),
     Error(String),
 }

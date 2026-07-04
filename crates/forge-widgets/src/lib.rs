@@ -94,7 +94,7 @@ pub use modals::{
     BulletItem, BulletKind, ConfirmKind, ConfirmModalParams, ConfirmTone, TypeToConfirmModalParams,
     confirm_modal, type_to_confirm_modal,
 };
-pub use navigation::{NavChild, NavItem, SIDEBAR_WIDTH, Sidebar, sidebar};
+pub use navigation::{NavItem, SIDEBAR_WIDTH, Sidebar, sidebar};
 pub use output_device_picker::{DeviceLabel, output_device_picker};
 pub use palette::{CATPPUCCIN_MOCHA, ForgePalette, LATTE, TOKYO_NIGHT};
 pub use picker::{PickerItem, PickerModalProps, picker_modal};

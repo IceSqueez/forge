@@ -35,22 +35,7 @@ pub enum NavItem<Msg> {
         active: bool,
         on_press: Msg,
     },
-    Group {
-        icon: Icon,
-        label: String,
-        active: bool,
-        expanded: bool,
-        on_toggle: Msg,
-        children: Vec<NavChild<Msg>>,
-    },
     Divider,
-}
-
-pub struct NavChild<Msg> {
-    pub dot_color: Color,
-    pub label: String,
-    pub active: bool,
-    pub on_press: Msg,
 }
 
 pub fn sidebar<'a, Msg: 'a + Clone>(
@@ -112,32 +97,6 @@ fn render_nav_item<'a, Msg: 'a + Clone>(
             active,
             on_press,
         } => nav_flat_link(dot_color, status, label, active, on_press, palette),
-        NavItem::Group {
-            icon,
-            label,
-            active,
-            expanded,
-            on_toggle,
-            children,
-        } => {
-            let header = nav_group_header(
-                icon,
-                label,
-                active || expanded,
-                expanded,
-                on_toggle,
-                palette,
-            );
-            if expanded && !children.is_empty() {
-                let mut col = column![header].spacing(2);
-                for child in children {
-                    col = col.push(nav_child_row(child, palette));
-                }
-                col.into()
-            } else {
-                header
-            }
-        }
         NavItem::Divider => container(divider(palette, DividerAxis::Horizontal))
             .padding(iced::Padding {
                 top: spf(Spacing::Sm),
@@ -334,146 +293,5 @@ fn nav_leaf<'a, Msg: 'a + Clone>(
                 snap: false,
             },
         })
-        .into()
-}
-
-fn nav_group_header<'a, Msg: 'a + Clone>(
-    icon: Icon,
-    label: String,
-    highlighted: bool,
-    expanded: bool,
-    on_toggle: Msg,
-    palette: &ForgePalette,
-) -> Element<'a, Msg> {
-    let icon_color = if highlighted {
-        palette.brand
-    } else {
-        palette.text_secondary
-    };
-    let text_color = if highlighted {
-        palette.text_primary
-    } else {
-        palette.text_secondary
-    };
-    let chevron_color = palette.text_secondary;
-    let chevron = if expanded {
-        Icon::ChevronUp
-    } else {
-        Icon::ChevronDown
-    };
-    let hover_bg = Color {
-        a: 0.5,
-        ..palette.surface_overlay
-    };
-    let hover_text = palette.text_primary;
-    let btn_radius = radius(Radius::Sm);
-
-    let content = row![
-        tabler_icon(icon, 15.0, icon_color),
-        text(label).size(FONT_SM),
-        Space::new().width(iced::Length::Fill),
-        tabler_icon(chevron, 13.0, chevron_color),
-    ]
-    .spacing(10)
-    .align_y(iced::Alignment::Center);
-
-    button(content)
-        .on_press(on_toggle)
-        .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
-        .width(iced::Length::Fill)
-        .style(move |_theme: &iced::Theme, status| match status {
-            ButtonStatus::Hovered | ButtonStatus::Pressed => ButtonStyle {
-                background: Some(iced::Background::Color(hover_bg)),
-                text_color: hover_text,
-                border: Border {
-                    radius: btn_radius.into(),
-                    ..Border::default()
-                },
-                shadow: iced::Shadow::default(),
-                snap: false,
-            },
-            _ => ButtonStyle {
-                background: None,
-                text_color,
-                border: Border::default(),
-                shadow: iced::Shadow::default(),
-                snap: false,
-            },
-        })
-        .into()
-}
-
-fn nav_child_row<'a, Msg: 'a + Clone>(
-    child: NavChild<Msg>,
-    palette: &ForgePalette,
-) -> Element<'a, Msg> {
-    let text_color = if child.active {
-        palette.text_primary
-    } else {
-        palette.text_secondary
-    };
-    let bg = if child.active {
-        Some(iced::Background::Color(palette.surface_overlay))
-    } else {
-        None
-    };
-    let hover_bg = Color {
-        a: 0.5,
-        ..palette.surface_overlay
-    };
-    let hover_text = palette.text_primary;
-    let btn_radius = radius(Radius::Sm);
-    let dot_color = child.dot_color;
-    let child_active = child.active;
-
-    let dot = container(Space::new())
-        .width(8_u32)
-        .height(8_u32)
-        .style(move |_: &iced::Theme| iced::widget::container::Style {
-            background: Some(iced::Background::Color(dot_color)),
-            border: Border {
-                radius: 2.0.into(),
-                ..Border::default()
-            },
-            ..Default::default()
-        });
-
-    let content = row![dot, text(child.label).size(FONT_SM)]
-        .spacing(10)
-        .align_y(iced::Alignment::Center);
-
-    let child_btn = button(content)
-        .on_press(child.on_press)
-        .padding([6, 10])
-        .width(iced::Length::Fill)
-        .style(move |_theme: &iced::Theme, status| match status {
-            ButtonStatus::Hovered | ButtonStatus::Pressed => ButtonStyle {
-                background: Some(iced::Background::Color(hover_bg)),
-                text_color: hover_text,
-                border: Border {
-                    radius: btn_radius.into(),
-                    ..Border::default()
-                },
-                shadow: iced::Shadow::default(),
-                snap: false,
-            },
-            _ => ButtonStyle {
-                background: bg,
-                text_color,
-                border: Border {
-                    radius: if child_active {
-                        btn_radius.into()
-                    } else {
-                        0.0.into()
-                    },
-                    ..Border::default()
-                },
-                shadow: iced::Shadow::default(),
-                snap: false,
-            },
-        });
-
-    row![Space::new().width(18_u32), child_btn]
-        .align_y(iced::Alignment::Center)
         .into()
 }

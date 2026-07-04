@@ -448,11 +448,6 @@ pub enum QueuesMsg {
 }
 
 #[derive(Debug, Clone)]
-pub enum SidebarMsg {
-    ToggleActionsQueues,
-}
-
-#[derive(Debug, Clone)]
 pub enum SettingsAudioMsg {
     LoadRequested,
     DevicesLoaded(Result<(Vec<DeviceLabel>, Option<String>), String>),
@@ -718,7 +713,6 @@ pub enum ServerSubsystemMsg {
 pub enum Message {
     Navigate(Screen),
     Toast(ToastMsg),
-    Sidebar(SidebarMsg),
     Settings(SettingsMsg),
     Home(HomeMsg),
     Globals(GlobalsMsg),

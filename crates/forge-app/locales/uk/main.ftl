@@ -510,6 +510,13 @@ triggers_usage_badge = використовується в { $count }
 triggers_toggle_on = УВІМК
 triggers_toggle_off = ВИМК
 
+## Реєстр тригерів — меню рядка
+
+triggers_menu_rename = Перейменувати…
+triggers_menu_template = Використати як шаблон
+triggers_menu_delete = Видалити…
+triggers_template_copy_name = { $name } копія
+
 ## Реєстр тригерів — деталі у бічній панелі
 
 triggers_sheet_section_configuration = КОНФІГУРАЦІЯ

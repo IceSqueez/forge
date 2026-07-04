@@ -480,6 +480,10 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 Task::done(Message::Actions(ActionsMsg::DismissActionMenu))
             } else if app.ui.script_editor.renaming_script.is_some() {
                 Task::done(Message::ScriptEditor(ScriptEditorMsg::RenameCancel))
+            } else if app.ui.triggers_registry.renaming.is_some() {
+                Task::done(Message::TriggersRegistry(
+                    crate::triggers_registry::TriggersRegistryMsg::RenameCancel,
+                ))
             } else {
                 Task::none()
             }

@@ -3,17 +3,20 @@ use std::sync::Arc;
 
 use forge_registry::{KindPlatformContract, effective_config};
 use forge_storage::StorageError;
-use forge_types::{ActionId, PlatformId, PlatformScope, TriggerConfig, TriggerInstanceId};
+use forge_types::{
+    ActionId, PlatformId, PlatformScope, TriggerConfig, TriggerInstance, TriggerInstanceId,
+};
 use iced::{
     Alignment, Background, Border, Color, Element, Length, Task,
-    widget::{Space, button, column, container, row, rule, scrollable, stack, text},
+    widget::{Space, button, column, container, row, rule, scrollable, stack, text, text_input},
 };
 
 use forge_widgets::{
-    ConfirmKind, ConfirmModalParams, ConfirmTone, ForgePalette, Radius, SheetHeader, SheetWidth,
-    SideSheet, Spacing, ToastKind, category_chip, confirm_modal, destructive_button, empty_state,
+    ConfirmKind, ConfirmModalParams, ConfirmTone, ForgePalette, MenuItem, MenuPlacement, Radius,
+    SheetHeader, SheetWidth, SideSheet, Spacing, ToastKind, category_chip, confirm_modal,
+    destructive_button, empty_state,
     icons::{Icon, tabler_icon},
-    radius, search_input, secondary_button, section_header, sp, spf,
+    menu_button, radius, search_input, secondary_button, section_header, sp, spf,
     tokens::{BORDER_THIN, FONT_SM, FONT_XS, FontRole, font},
     value_preview,
 };
@@ -67,6 +70,9 @@ pub struct TriggersRegistryState {
     pub confirm_disable: Option<ConfirmDisable>,
     pub pending_delete: Option<TriggerInstanceId>,
     pub create_form: Option<CreateInstanceFormState>,
+    pub menu_open: Option<TriggerInstanceId>,
+    // (id, draft name) of the row whose name is being edited inline.
+    pub renaming: Option<(TriggerInstanceId, String)>,
 }
 
 impl Default for TriggersRegistryState {
@@ -83,8 +89,14 @@ impl Default for TriggersRegistryState {
             confirm_disable: None,
             pending_delete: None,
             create_form: None,
+            menu_open: None,
+            renaming: None,
         }
     }
+}
+
+pub fn trigger_rename_input_id() -> iced::advanced::widget::Id {
+    iced::advanced::widget::Id::new("forge:trigger_rename")
 }
 
 #[derive(Debug, Clone)]
@@ -111,6 +123,15 @@ pub enum TriggersRegistryMsg {
     ScrollTo(TriggerInstanceId),
     OpenCreateForm,
     CreateFormMsg(CreateInstanceFormMsg),
+    MenuToggled(TriggerInstanceId),
+    MenuDismissed,
+    RenameStarted(TriggerInstanceId),
+    RenameBufferChanged(String),
+    RenameSubmit,
+    RenameCancel,
+    RenameSaved(Result<(TriggerInstanceId, String), String>),
+    UseAsTemplate(TriggerInstanceId),
+    TemplateCreated(Result<TriggerInstanceId, String>),
 }
 
 pub fn update(
@@ -400,6 +421,126 @@ pub fn update(
         TriggersRegistryMsg::CreateFormMsg(sub) => {
             crate::triggers_create_form::update(&mut state.create_form, rt, sub)
         }
+        TriggersRegistryMsg::MenuToggled(id) => {
+            state.menu_open = if state.menu_open == Some(id) {
+                None
+            } else {
+                Some(id)
+            };
+            Task::none()
+        }
+        TriggersRegistryMsg::MenuDismissed => {
+            state.menu_open = None;
+            Task::none()
+        }
+        TriggersRegistryMsg::RenameStarted(id) => {
+            let current = state
+                .instances
+                .iter()
+                .find(|r| r.id == id)
+                .map(|r| r.name.clone())
+                .unwrap_or_default();
+            state.renaming = Some((id, current));
+            state.menu_open = None;
+            iced::widget::operation::focus(trigger_rename_input_id())
+        }
+        TriggersRegistryMsg::RenameBufferChanged(buf) => {
+            if let Some((_, name)) = state.renaming.as_mut() {
+                *name = buf;
+            }
+            Task::none()
+        }
+        TriggersRegistryMsg::RenameCancel => {
+            state.renaming = None;
+            Task::none()
+        }
+        TriggersRegistryMsg::RenameSubmit => {
+            let Some((id, name)) = state.renaming.clone() else {
+                return Task::none();
+            };
+            let trimmed = name.trim().to_owned();
+            if trimmed.is_empty() {
+                state.renaming = None;
+                return Task::none();
+            }
+            let dp = Arc::clone(&rt.backend);
+            // Re-saving the fetched instance under its own id renames in place:
+            // the upsert-on-conflict keeps the id, so existing action links
+            // (a separate join table keyed by that id) are untouched.
+            Task::perform(
+                async move {
+                    let repo = dp.trigger_instance_repo();
+                    let mut instance = repo
+                        .get(id)
+                        .await
+                        .map_err(|e| e.to_string())?
+                        .ok_or_else(|| "trigger instance not found".to_owned())?;
+                    instance.name = trimmed.clone();
+                    repo.save(&instance).await.map_err(|e| e.to_string())?;
+                    Ok::<(TriggerInstanceId, String), String>((id, trimmed))
+                },
+                |r| Message::TriggersRegistry(TriggersRegistryMsg::RenameSaved(r)),
+            )
+        }
+        TriggersRegistryMsg::RenameSaved(Ok((id, new_name))) => {
+            state.renaming = None;
+            if let Some(row) = state.instances.iter_mut().find(|r| r.id == id) {
+                row.name = new_name;
+            }
+            Task::none()
+        }
+        TriggersRegistryMsg::RenameSaved(Err(msg)) => {
+            state.renaming = None;
+            Task::done(Message::Toast(ToastMsg::Fired {
+                kind: ToastKind::Error,
+                message: msg,
+                duration_ms: 5000,
+                action: None,
+            }))
+        }
+        TriggersRegistryMsg::UseAsTemplate(id) => {
+            state.menu_open = None;
+            let Some(src) = state.instances.iter().find(|r| r.id == id) else {
+                return Task::none();
+            };
+            let instance = TriggerInstance {
+                id: TriggerInstanceId::new(),
+                kind_id: src.kind_id.clone(),
+                name: forge_widgets::tr!("triggers_template_copy_name", name = src.name.as_str()),
+                overrides: src.overrides.clone(),
+                enabled: src.enabled,
+                user_defined: true,
+                platform_scope: src.platform_scope.clone(),
+            };
+            let dp = Arc::clone(&rt.backend);
+            Task::perform(
+                async move {
+                    let new_id = instance.id;
+                    dp.trigger_instance_repo()
+                        .save(&instance)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    Ok::<TriggerInstanceId, String>(new_id)
+                },
+                |r| Message::TriggersRegistry(TriggersRegistryMsg::TemplateCreated(r)),
+            )
+        }
+        TriggersRegistryMsg::TemplateCreated(Ok(id)) => Task::batch([
+            Task::done(Message::TriggersRegistry(
+                TriggersRegistryMsg::LoadRequested,
+            )),
+            Task::done(Message::TriggersRegistry(TriggersRegistryMsg::RowSelected(
+                id,
+            ))),
+        ]),
+        TriggersRegistryMsg::TemplateCreated(Err(msg)) => {
+            Task::done(Message::Toast(ToastMsg::Fired {
+                kind: ToastKind::Error,
+                message: msg,
+                duration_ms: 5000,
+                action: None,
+            }))
+        }
     }
 }
 
@@ -472,7 +613,20 @@ pub fn view<'a>(
     } else {
         let row_els: Vec<Element<'_, Message>> = filtered
             .iter()
-            .map(|row| instance_row(row, state.selected_id == Some(row.id), palette))
+            .map(|row| {
+                let rename_buf = state
+                    .renaming
+                    .as_ref()
+                    .filter(|(id, _)| *id == row.id)
+                    .map(|(_, name)| name.as_str());
+                instance_row(
+                    row,
+                    state.selected_id == Some(row.id),
+                    state.menu_open == Some(row.id),
+                    rename_buf,
+                    palette,
+                )
+            })
             .collect();
         scrollable(column(row_els)).height(Length::Fill).into()
     };
@@ -769,6 +923,8 @@ fn platform_dot_color(kind_id: &str, palette: &ForgePalette) -> Color {
 fn instance_row<'a>(
     row: &'a TriggerInstanceRow,
     selected: bool,
+    menu_open: bool,
+    rename_buf: Option<&'a str>,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let p = *palette;
@@ -795,7 +951,28 @@ fn instance_row<'a>(
             ..container::Style::default()
         });
 
-    let name_col = column![
+    let name_el: Element<'_, Message> = if let Some(buf) = rename_buf {
+        text_input("", buf)
+            .id(trigger_rename_input_id())
+            .on_input(|s| Message::TriggersRegistry(TriggersRegistryMsg::RenameBufferChanged(s)))
+            .on_submit(Message::TriggersRegistry(TriggersRegistryMsg::RenameSubmit))
+            .size(FONT_SM)
+            .padding([2, sp(Spacing::Xs)])
+            .width(Length::Fill)
+            .style(move |_: &iced::Theme, _status| text_input::Style {
+                background: Background::Color(p.shell),
+                border: Border {
+                    color: p.brand,
+                    width: 0.5,
+                    radius: radius(Radius::Sm).into(),
+                },
+                icon: p.text_muted,
+                placeholder: p.text_muted,
+                value: p.text_primary,
+                selection: Color { a: 0.25, ..p.brand },
+            })
+            .into()
+    } else {
         text(row.name.as_str())
             .size(FONT_SM)
             .color(if row.enabled {
@@ -803,7 +980,12 @@ fn instance_row<'a>(
             } else {
                 p.text_muted
             })
-            .font(font(FontRole::Body)),
+            .font(font(FontRole::Body))
+            .into()
+    };
+
+    let name_col = column![
+        name_el,
         text(row.kind_id.as_str())
             .size(FONT_XS)
             .color(p.text_faint)
@@ -874,49 +1056,48 @@ fn instance_row<'a>(
         snap: false,
     });
 
-    // Same rule as the sheet footer: a still-referenced instance never fires
-    // delete from the row either — dimmed + inert instead of clickable.
-    let row_can_delete = row.used_in_count == 0;
-    let delete_icon_color = if row_can_delete {
-        p.text_faint
-    } else {
-        Color {
-            a: 0.3,
-            ..p.text_faint
-        }
-    };
-    let delete_btn_base = button(tabler_icon::<Message>(Icon::X, 13.0, delete_icon_color))
-        .padding(sp(Spacing::Xxs))
-        .style(|_: &iced::Theme, status| button::Style {
-            background: match status {
-                button::Status::Hovered | button::Status::Pressed => {
-                    Some(Background::Color(Color {
-                        a: 0.08,
-                        ..Color::WHITE
-                    }))
-                }
-                _ => None,
-            },
-            border: Border {
-                radius: radius(Radius::Sm).into(),
-                color: Color::TRANSPARENT,
-                width: 0.0,
-            },
-            text_color: Color::TRANSPARENT,
-            shadow: iced::Shadow::default(),
-            snap: false,
-        });
-    let delete_btn: Element<'_, Message> = if row_can_delete {
-        delete_btn_base
-            .on_press(Message::TriggersRegistry(
-                TriggersRegistryMsg::DeleteRequested(row.id),
-            ))
-            .into()
-    } else {
-        delete_btn_base.into()
-    };
+    let row_id = row.id;
+    // A still-referenced instance can't be deleted (FK), so its Delete item is
+    // disabled — same gate as the sheet footer's `can_delete`.
+    let can_delete = row.used_in_count == 0;
+    let menu_items: Vec<MenuItem<Message>> = vec![
+        MenuItem::Item {
+            label: forge_widgets::tr!("triggers_menu_rename"),
+            icon: Some(Icon::InfoCircle),
+            on_press: Message::TriggersRegistry(TriggersRegistryMsg::RenameStarted(row_id)),
+            shortcut: None,
+            color: None,
+            disabled: false,
+        },
+        MenuItem::Item {
+            label: forge_widgets::tr!("triggers_menu_template"),
+            icon: Some(Icon::Copy),
+            on_press: Message::TriggersRegistry(TriggersRegistryMsg::UseAsTemplate(row_id)),
+            shortcut: None,
+            color: None,
+            disabled: false,
+        },
+        MenuItem::Divider,
+        MenuItem::Item {
+            label: forge_widgets::tr!("triggers_menu_delete"),
+            icon: Some(Icon::X),
+            on_press: Message::TriggersRegistry(TriggersRegistryMsg::DeleteRequested(row_id)),
+            shortcut: None,
+            color: Some(p.random),
+            disabled: !can_delete,
+        },
+    ];
+    let menu_btn = menu_button(
+        Icon::DotsVertical,
+        menu_open,
+        Message::TriggersRegistry(TriggersRegistryMsg::MenuToggled(row_id)),
+        Message::TriggersRegistry(TriggersRegistryMsg::MenuDismissed),
+        menu_items,
+        MenuPlacement::BottomRight,
+        palette,
+    );
 
-    let controls = row![toggle_btn, delete_btn]
+    let controls = row![toggle_btn, menu_btn]
         .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Center);
 
@@ -1014,7 +1195,6 @@ fn instance_row<'a>(
     .align_y(Alignment::Center)
     .padding([sp(Spacing::Xs), sp(Spacing::Md)]);
 
-    let row_id = row.id;
     button(
         container(inner)
             .width(Length::Fill)

@@ -508,6 +508,13 @@ triggers_usage_badge = used in { $count }
 triggers_toggle_on = ON
 triggers_toggle_off = OFF
 
+## Triggers registry — row overflow menu
+
+triggers_menu_rename = Rename…
+triggers_menu_template = Use as template
+triggers_menu_delete = Delete…
+triggers_template_copy_name = { $name } copy
+
 ## Triggers registry — sheet detail
 
 triggers_sheet_section_configuration = CONFIGURATION

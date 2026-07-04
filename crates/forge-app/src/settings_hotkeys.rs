@@ -832,13 +832,14 @@ async fn do_replace(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use std::sync::Arc;
 
     use forge_runtime::EventBus;
     use forge_storage::{CredentialsRepo, DataProvider};
     use forge_storage_sqlite::SqliteBackend;
+    use forge_types::ExecutionMode;
 
     use super::*;
     use crate::runtime_view::RuntimeView;
@@ -1048,5 +1049,128 @@ mod tests {
         let _ = update(&mut state, &rt, SettingsHotkeysMsg::ConflictReplace);
         assert!(state.conflict_modal.is_none());
         assert!(state.bind_error.is_some());
+    }
+
+    // --- PLATFORMS-8 / SY-09-F22 orphan-cleanup regression -------------------
+    // Guards `cleanup_stale_combo_instances`: re-binding a key must UNLINK the
+    // prior persisted `hotkey.global.pressed` row before DELETE (delete is
+    // FK-blocked while an action still references it), and must touch ONLY rows
+    // whose `combo` override equals the target. Boot re-registration is out of
+    // scope here (needs a HotkeyClient/OS mock) — this exercises the storage
+    // effect the fix relies on directly.
+
+    async fn mem_backend() -> Arc<dyn DataProvider> {
+        Arc::new(
+            SqliteBackend::open_with_key("sqlite::memory:", [0xcd; 32])
+                .await
+                .unwrap(),
+        )
+    }
+
+    async fn insert_action(backend: &Arc<dyn DataProvider>, name: &str) -> ActionId {
+        let queue_id = backend
+            .queue_repo()
+            .get_by_name("Default")
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        let action = Action {
+            id: ActionId::new(),
+            name: name.to_owned(),
+            group: None,
+            queue_id,
+            enabled: true,
+            concurrent: false,
+            bypass_pause: false,
+            execution_mode: ExecutionMode::Sequential,
+            description: None,
+            sub_actions: vec![],
+        };
+        let id = action.id;
+        backend.action_repo().save(&action).await.unwrap();
+        id
+    }
+
+    async fn insert_hotkey_instance(
+        backend: &Arc<dyn DataProvider>,
+        combo: &str,
+    ) -> TriggerInstanceId {
+        let mut overrides = BTreeMap::new();
+        overrides.insert("combo".to_owned(), Variant::String(combo.to_owned()));
+        let inst = TriggerInstance {
+            id: TriggerInstanceId::new(),
+            kind_id: "hotkey.global.pressed".to_owned(),
+            name: combo.to_owned(),
+            overrides,
+            enabled: true,
+            user_defined: true,
+            platform_scope: PlatformScope::default(),
+        };
+        let id = inst.id;
+        backend.trigger_instance_repo().save(&inst).await.unwrap();
+        id
+    }
+
+    #[tokio::test]
+    async fn cleanup_unlinks_then_deletes_matching_combo_instance() {
+        let backend = mem_backend().await;
+        let action_id = insert_action(&backend, "Bound Action").await;
+        let inst_id = insert_hotkey_instance(&backend, "Ctrl+Shift+X").await;
+        backend
+            .trigger_instance_repo()
+            .link_action(action_id, inst_id, 0)
+            .await
+            .unwrap();
+
+        // A naive delete-without-unlink would FK-block and surface an Err here.
+        cleanup_stale_combo_instances(&backend, "Ctrl+Shift+X")
+            .await
+            .expect("cleanup must unlink before delete, not FK-block");
+
+        assert!(
+            backend
+                .trigger_instance_repo()
+                .get(inst_id)
+                .await
+                .unwrap()
+                .is_none(),
+            "stale hotkey instance must be deleted"
+        );
+        assert!(
+            backend
+                .action_repo()
+                .get(action_id)
+                .await
+                .unwrap()
+                .is_some(),
+            "linked action must survive orphan cleanup (unlink, not cascade-delete)"
+        );
+    }
+
+    #[tokio::test]
+    async fn cleanup_leaves_instance_with_different_combo_intact() {
+        let backend = mem_backend().await;
+        let action_x = insert_action(&backend, "X Action").await;
+        let action_y = insert_action(&backend, "Y Action").await;
+        let inst_x = insert_hotkey_instance(&backend, "Ctrl+X").await;
+        let inst_y = insert_hotkey_instance(&backend, "Ctrl+Y").await;
+        let repo = backend.trigger_instance_repo();
+        repo.link_action(action_x, inst_x, 0).await.unwrap();
+        repo.link_action(action_y, inst_y, 0).await.unwrap();
+
+        cleanup_stale_combo_instances(&backend, "Ctrl+X")
+            .await
+            .unwrap();
+
+        assert!(
+            repo.get(inst_y).await.unwrap().is_some(),
+            "different-combo instance must not be deleted"
+        );
+        assert_eq!(
+            repo.actions_using(inst_y).await.unwrap(),
+            vec![action_y],
+            "different-combo instance must keep its action link"
+        );
     }
 }

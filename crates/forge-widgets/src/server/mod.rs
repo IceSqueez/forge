@@ -1,16 +1,10 @@
 mod bearer_token;
 mod bind_card;
-mod client_row;
 mod confirm_modal;
-mod file_list;
 
 pub use bearer_token::bearer_token_display;
 pub use bind_card::{BindAddressCardParams, BindBadge, bind_address_card};
-pub use client_row::{ClientRowData, ClientStatus, SubscriptionChipData, client_table_row};
 pub use confirm_modal::{BulletItem, BulletKind, TypeToConfirmModalParams, type_to_confirm_modal};
-pub use file_list::{
-    FileMime, OverlayEntry, OverlayFileListParams, OverlayKind, overlay_file_list,
-};
 
 use iced::{
     Border, Color,

@@ -110,10 +110,8 @@ pub use sections::{
     section_header, section_header_expandable, toast_banner,
 };
 pub use server::{
-    BindAddressCardParams, BindBadge, BulletItem, BulletKind, ClientRowData, ClientStatus,
-    FileMime, OverlayEntry, OverlayFileListParams, OverlayKind, SubscriptionChipData,
-    TypeToConfirmModalParams, bearer_token_display, bind_address_card, client_table_row,
-    overlay_file_list, type_to_confirm_modal,
+    BindAddressCardParams, BindBadge, BulletItem, BulletKind, TypeToConfirmModalParams,
+    bearer_token_display, bind_address_card, type_to_confirm_modal,
 };
 pub use side_sheet::{
     Easing, SheetAnimation, SheetHeader, SheetPosition, SheetWidth, SideSheet, SideSheetConfig,

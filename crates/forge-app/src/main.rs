@@ -216,6 +216,7 @@ struct RuntimeHandles {
     scheduler: QueueSchedulerHandle,
     speak_queue: Arc<SpeakQueueHandle>,
     pipeline_config: forge_speak_queue::PipelineConfigHandle,
+    tts_trigger_settings: forge_runtime::TtsTriggerSettingsHandle,
     tts_engine_ids: Vec<EngineId>,
     tts_registry: Arc<std::sync::RwLock<TtsRegistry>>,
     sound_player: Arc<SoundboardPlayer>,
@@ -456,10 +457,21 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
     ) {
         tracing::warn!("core sub-action runner registration failed: {e}");
     }
+    let tts_trigger_settings = {
+        let repo = dp.tts_trigger_settings_repo();
+        let loaded = rt
+            .block_on(repo.get_trigger_settings())
+            .unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "failed to load tts trigger settings on boot, using defaults");
+                forge_storage::TtsTriggerSettings::default()
+            });
+        forge_runtime::TtsTriggerSettingsHandle::new(loaded)
+    };
     if let Err(e) = register_audio_sub_actions(
         &mut sub_action_reg,
         Arc::clone(&sound_player) as Arc<dyn forge_runtime::SoundPlayer>,
         speak_dispatcher,
+        tts_trigger_settings.clone(),
     ) {
         tracing::warn!("audio sub-action runner registration failed: {e}");
     }
@@ -1030,6 +1042,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         scheduler,
         speak_queue,
         pipeline_config,
+        tts_trigger_settings,
         tts_engine_ids,
         tts_registry,
         sound_player,
@@ -1081,6 +1094,7 @@ fn main() -> iced::Result {
         scheduler,
         speak_queue,
         pipeline_config,
+        tts_trigger_settings,
         tts_engine_ids,
         tts_registry,
         sound_player,
@@ -1115,6 +1129,7 @@ fn main() -> iced::Result {
             None,
             None,
             None,
+            None,
             Vec::<EngineId>::new(),
             None,
             None,
@@ -1136,6 +1151,7 @@ fn main() -> iced::Result {
                 Some(h.scheduler),
                 Some(h.speak_queue),
                 Some(h.pipeline_config),
+                Some(h.tts_trigger_settings),
                 h.tts_engine_ids,
                 Some(h.tts_registry),
                 Some(h.sound_player),
@@ -1170,6 +1186,7 @@ fn main() -> iced::Result {
                 }
                 (
                     Arc::new(ScriptRegistry::new()),
+                    None,
                     None,
                     None,
                     None,
@@ -1211,6 +1228,7 @@ fn main() -> iced::Result {
         app.rt.bus = Arc::clone(&bus_boot);
         app.rt.speak_queue = speak_queue.clone();
         app.rt.pipeline_config = pipeline_config.clone();
+        app.rt.tts_trigger_settings = tts_trigger_settings.clone();
         app.rt.tts_engine_ids = tts_engine_ids.clone();
         app.rt.tts_registry = tts_registry.clone();
         app.rt.sub_action_registry = Arc::clone(&sub_action_reg);

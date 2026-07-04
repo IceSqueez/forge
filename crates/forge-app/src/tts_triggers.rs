@@ -60,12 +60,17 @@ impl Default for TtsTriggersState {
 
 fn persist(state: &TtsTriggersState, rt: &RuntimeView) -> Task<Message> {
     let repo = rt.backend.tts_trigger_settings_repo();
+    let handle = rt.tts_trigger_settings.clone();
     let settings = state.to_settings();
     Task::perform(
         async move {
             repo.set_trigger_settings(&settings)
                 .await
-                .map_err(|e| e.to_string())
+                .map_err(|e| e.to_string())?;
+            if let Some(handle) = handle {
+                handle.swap(settings);
+            }
+            Ok(())
         },
         |r| Message::Tts(TtsMsg::Triggers(TtsTriggersMsg::PersistResult(r))),
     )

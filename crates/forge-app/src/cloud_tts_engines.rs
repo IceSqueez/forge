@@ -1007,6 +1007,7 @@ mod tests {
             hotkey_client: None,
             speak_queue: None,
             pipeline_config: None,
+            tts_trigger_settings: None,
             sound_player: None,
             twitch_builtin: None,
             kick_builtin: None,

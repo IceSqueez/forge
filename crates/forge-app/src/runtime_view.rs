@@ -12,7 +12,8 @@ use forge_platform_twitch::TwitchIntegrationBundle;
 use forge_platform_youtube::GoogleAuthFlow;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
-    ActionEngineHandle, EventBus, QueueSchedulerHandle, ScriptRegistry, actions::ActionsService,
+    ActionEngineHandle, EventBus, QueueSchedulerHandle, ScriptRegistry, TtsTriggerSettingsHandle,
+    actions::ActionsService,
 };
 use forge_soundboard::SoundboardPlayer;
 use forge_speak_queue::{PipelineConfigHandle, SpeakQueueHandle};
@@ -42,6 +43,9 @@ pub struct RuntimeView {
     pub speak_queue: Option<Arc<SpeakQueueHandle>>,
     /// `None` when the runtime is offline; the Filters screen's save then skips the live swap.
     pub pipeline_config: Option<PipelineConfigHandle>,
+    /// `None` when the runtime is offline; the TTS Triggers screen's save then
+    /// skips the live swap and defers gating changes to next boot.
+    pub tts_trigger_settings: Option<TtsTriggerSettingsHandle>,
     pub sound_player: Option<Arc<SoundboardPlayer>>,
     pub twitch_builtin: Option<Arc<TwitchIntegrationBundle>>,
     pub kick_builtin: Option<Arc<KickIntegrationBundle>>,

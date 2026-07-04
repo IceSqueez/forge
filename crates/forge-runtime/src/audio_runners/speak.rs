@@ -5,15 +5,74 @@ use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, Su
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
+use forge_storage::TtsTriggerSettings;
+
 use crate::speak_dispatcher::SpeakDispatcher;
+use crate::tts_trigger_settings::TtsTriggerSettingsHandle;
 
 pub struct SpeakRunner {
     speak: Arc<dyn SpeakDispatcher>,
+    trigger_settings: TtsTriggerSettingsHandle,
 }
 
 impl SpeakRunner {
-    pub fn new(speak: Arc<dyn SpeakDispatcher>) -> Self {
-        Self { speak }
+    pub fn new(
+        speak: Arc<dyn SpeakDispatcher>,
+        trigger_settings: TtsTriggerSettingsHandle,
+    ) -> Self {
+        Self {
+            speak,
+            trigger_settings,
+        }
+    }
+}
+
+/// Origin category a speak fires from, inferred from the arg-stack keys the
+/// triggering platform event placed. Selects which `TtsTriggerSettings` toggle
+/// gates the speech. A stack carrying none of these keys (e.g. a script-driven
+/// speak) has no gating category and always speaks.
+enum SpeakOrigin {
+    Command,
+    ChannelPoints,
+    Bits,
+    Sub,
+}
+
+impl SpeakOrigin {
+    fn is_enabled(&self, settings: &TtsTriggerSettings) -> bool {
+        match self {
+            SpeakOrigin::Command => settings.command_enabled,
+            SpeakOrigin::ChannelPoints => settings.channel_points_enabled,
+            SpeakOrigin::Bits => settings.bits_enabled,
+            SpeakOrigin::Sub => settings.sub_messages_enabled,
+        }
+    }
+
+    fn disabled_reason(&self) -> &'static str {
+        match self {
+            SpeakOrigin::Command => "command-sourced TTS is disabled",
+            SpeakOrigin::ChannelPoints => "channel-point-sourced TTS is disabled",
+            SpeakOrigin::Bits => "bits-sourced TTS is disabled",
+            SpeakOrigin::Sub => "subscription-sourced TTS is disabled",
+        }
+    }
+}
+
+/// Reward redemptions carry `reward.id`; cheers add `cheer.bits` over the base
+/// chat args; subscriptions carry `sub_tier`; plain chat/command messages carry
+/// `message_text`. Reward/cheer are checked first because they also carry the
+/// base chat keys.
+fn classify_origin(arg_stack: &ArgStack) -> Option<SpeakOrigin> {
+    if arg_stack.get("reward.id").is_some() {
+        Some(SpeakOrigin::ChannelPoints)
+    } else if arg_stack.get("cheer.bits").is_some() {
+        Some(SpeakOrigin::Bits)
+    } else if arg_stack.get("sub_tier").is_some() {
+        Some(SpeakOrigin::Sub)
+    } else if arg_stack.get("message_text").is_some() {
+        Some(SpeakOrigin::Command)
+    } else {
+        None
     }
 }
 
@@ -94,6 +153,25 @@ impl SubActionRunner for SpeakRunner {
             .and_then(|v| v.as_str())
             .map(|s| s.to_owned());
 
+        let settings = self.trigger_settings.load();
+        if let Some(origin) = classify_origin(ctx.arg_stack)
+            && !origin.is_enabled(&settings)
+        {
+            let duration_ms = (OffsetDateTime::now_utc() - started_at)
+                .whole_milliseconds()
+                .max(0) as u64;
+            return (
+                SubActionTelemetry {
+                    index: ctx.index,
+                    kind: "tts.speak.text".to_owned(),
+                    started_at,
+                    duration_ms,
+                    outcome: SubActionOutcome::Skipped(origin.disabled_reason().to_owned()),
+                },
+                None,
+            );
+        }
+
         let outcome = match self.speak.speak(text, voice_alias).await {
             Ok(()) => SubActionOutcome::Success,
             Err(e) => SubActionOutcome::Failed(e.to_string()),
@@ -170,7 +248,10 @@ mod tests {
 
     #[tokio::test]
     async fn success_path() {
-        let runner = SpeakRunner::new(Arc::new(OkSpeaker));
+        let runner = SpeakRunner::new(
+            Arc::new(OkSpeaker),
+            TtsTriggerSettingsHandle::new(TtsTriggerSettings::default()),
+        );
         let stack = ArgStack::new();
         let ctx = make_ctx(&stack);
         let (telemetry, updated) = runner.execute(&config_with_text("Hello chat!"), &ctx).await;
@@ -180,7 +261,10 @@ mod tests {
 
     #[tokio::test]
     async fn failure_path() {
-        let runner = SpeakRunner::new(Arc::new(FailSpeaker));
+        let runner = SpeakRunner::new(
+            Arc::new(FailSpeaker),
+            TtsTriggerSettingsHandle::new(TtsTriggerSettings::default()),
+        );
         let stack = ArgStack::new();
         let ctx = make_ctx(&stack);
         let (telemetry, _) = runner.execute(&config_with_text("Hello!"), &ctx).await;
@@ -189,7 +273,10 @@ mod tests {
 
     #[tokio::test]
     async fn empty_text_is_forwarded() {
-        let runner = SpeakRunner::new(Arc::new(OkSpeaker));
+        let runner = SpeakRunner::new(
+            Arc::new(OkSpeaker),
+            TtsTriggerSettingsHandle::new(TtsTriggerSettings::default()),
+        );
         let cfg = runner.default_config();
         let stack = ArgStack::new();
         let ctx = make_ctx(&stack);
@@ -218,9 +305,12 @@ mod tests {
         }
 
         let captured: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
-        let runner = SpeakRunner::new(Arc::new(CapturingSpeaker {
-            captured: Arc::clone(&captured),
-        }));
+        let runner = SpeakRunner::new(
+            Arc::new(CapturingSpeaker {
+                captured: Arc::clone(&captured),
+            }),
+            TtsTriggerSettingsHandle::new(TtsTriggerSettings::default()),
+        );
 
         let stack = ArgStack::new().set("user".to_owned(), Variant::String("Alice".to_owned()));
         let ctx = make_ctx(&stack);
@@ -234,13 +324,19 @@ mod tests {
 
     #[test]
     fn validate_config_rejects_missing_text() {
-        let runner = SpeakRunner::new(Arc::new(OkSpeaker));
+        let runner = SpeakRunner::new(
+            Arc::new(OkSpeaker),
+            TtsTriggerSettingsHandle::new(TtsTriggerSettings::default()),
+        );
         assert!(runner.validate_config(&SubActionConfig::new()).is_err());
     }
 
     #[test]
     fn validate_config_accepts_nonempty_text() {
-        let runner = SpeakRunner::new(Arc::new(OkSpeaker));
+        let runner = SpeakRunner::new(
+            Arc::new(OkSpeaker),
+            TtsTriggerSettingsHandle::new(TtsTriggerSettings::default()),
+        );
         assert!(runner.validate_config(&config_with_text("hello")).is_ok());
     }
 }

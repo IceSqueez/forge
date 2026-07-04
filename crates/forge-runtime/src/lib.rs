@@ -18,6 +18,7 @@ pub mod speak_dispatcher;
 pub mod sub_action_runners;
 pub mod trigger_evaluator;
 pub mod triggers;
+pub mod tts_trigger_settings;
 
 pub use action_cancel::ActionCancelRegistry;
 pub use action_engine::{ActionEngineHandle, DispatchError, ExecutionRequest, spawn_action_engine};
@@ -38,3 +39,4 @@ pub use speak_dispatcher::{SpeakDispatchError, SpeakDispatcher, VoiceDescriptor}
 pub use sub_action_runners::register_core_sub_actions;
 pub use trigger_evaluator::{TriggerEvaluatorHandle, spawn_trigger_evaluator};
 pub use triggers::register_core_triggers;
+pub use tts_trigger_settings::TtsTriggerSettingsHandle;

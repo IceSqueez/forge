@@ -32,11 +32,13 @@ use forge_registry::{RegistryError, SubActionRegistry};
 
 use crate::sound_player::SoundPlayer;
 use crate::speak_dispatcher::SpeakDispatcher;
+use crate::tts_trigger_settings::TtsTriggerSettingsHandle;
 
 pub fn register_audio_sub_actions(
     reg: &mut SubActionRegistry,
     sound_player: Arc<dyn SoundPlayer>,
     speak: Arc<dyn SpeakDispatcher>,
+    trigger_settings: TtsTriggerSettingsHandle,
 ) -> Result<(), RegistryError> {
     reg.register(Box::new(PlaySoundRunner::new(Arc::clone(&sound_player))))?;
     reg.register(Box::new(StopSoundRunner::new(Arc::clone(&sound_player))))?;
@@ -44,7 +46,10 @@ pub fn register_audio_sub_actions(
         &sound_player,
     ))))?;
     reg.register(Box::new(SetMasterVolumeRunner::new(sound_player)))?;
-    reg.register(Box::new(SpeakRunner::new(Arc::clone(&speak))))?;
+    reg.register(Box::new(SpeakRunner::new(
+        Arc::clone(&speak),
+        trigger_settings,
+    )))?;
     reg.register(Box::new(SpeakWithEngineRunner::new(Arc::clone(&speak))))?;
     reg.register(Box::new(SpeakStopRunner::new(Arc::clone(&speak))))?;
     reg.register(Box::new(QueuePauseRunner::new(Arc::clone(&speak))))?;

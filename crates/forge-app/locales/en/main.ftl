@@ -43,6 +43,9 @@ nav_item_stream_apps = Stream apps
 nav_item_soundboard = Soundboard
 nav_item_tts = Text-to-Speech
 nav_item_ws_server = WebSocket server
+nav_item_discord = Discord
+nav_item_midi = MIDI
+nav_item_hotkey = Hotkeys
 nav_item_settings = Settings
 
 ## Home — hero section

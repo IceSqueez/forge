@@ -43,6 +43,9 @@ nav_item_stream_apps = Стрім-застосунки
 nav_item_soundboard = Звукова панель
 nav_item_tts = Синтез мовлення
 nav_item_ws_server = WebSocket-сервер
+nav_item_discord = Discord
+nav_item_midi = MIDI
+nav_item_hotkey = Гарячі клавіші
 nav_item_settings = Налаштування
 
 ## Головна — секція привітання

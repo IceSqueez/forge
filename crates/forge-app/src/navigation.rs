@@ -1,3 +1,4 @@
+use forge_platform_core::BuiltinId;
 use forge_widgets::icons::Icon;
 use forge_widgets::{ForgePalette, NavItem, Sidebar};
 use iced::Task;
@@ -169,6 +170,24 @@ pub(crate) fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Side
             label: forge_widgets::tr!("nav_item_ws_server"),
             active: is_server,
             on_press: Message::Navigate(Screen::Server),
+        },
+        NavItem::Leaf {
+            icon: Icon::Send,
+            label: forge_widgets::tr!("nav_item_discord"),
+            active: builtin_active(&app.screen, "discord"),
+            on_press: Message::Navigate(Screen::BuiltinDetail(BuiltinId::new("discord"))),
+        },
+        NavItem::Leaf {
+            icon: Icon::PlugConnected,
+            label: forge_widgets::tr!("nav_item_midi"),
+            active: builtin_active(&app.screen, "midi"),
+            on_press: Message::Navigate(Screen::BuiltinDetail(BuiltinId::new("midi"))),
+        },
+        NavItem::Leaf {
+            icon: Icon::Keyboard,
+            label: forge_widgets::tr!("nav_item_hotkey"),
+            active: builtin_active(&app.screen, "hotkey"),
+            on_press: Message::Navigate(Screen::BuiltinDetail(BuiltinId::new("hotkey"))),
         },
     ];
 

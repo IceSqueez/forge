@@ -459,6 +459,7 @@ action_editor_delete = Видалити
 action_editor_delete_cascade_hint = Також буде видалено { $sub_actions } підпунктів і { $trigger_links } прив'язок тригерів.
 action_editor_section_triggers = ТРИГЕРИ
 action_editor_section_sub_actions = ПІДПУНКТИ · { $count }
+action_editor_section_sub_actions_label = ПІДПУНКТИ
 action_editor_sub_count = { $count } кр.
 action_editor_enabled = Увімкнено
 action_editor_disabled = Вимкнено

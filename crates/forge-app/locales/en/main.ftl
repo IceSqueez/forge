@@ -457,6 +457,7 @@ action_editor_delete = Delete
 action_editor_delete_cascade_hint = { $sub_actions } sub-actions and { $trigger_links } trigger links will also be removed.
 action_editor_section_triggers = TRIGGERS
 action_editor_section_sub_actions = SUB-ACTIONS · { $count }
+action_editor_section_sub_actions_label = SUB-ACTIONS
 action_editor_sub_count = { $count } sub
 action_editor_enabled = Enabled
 action_editor_disabled = Disabled

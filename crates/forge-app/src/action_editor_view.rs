@@ -3,8 +3,10 @@ use forge_types::ActionId;
 use forge_widgets::ForgePalette;
 use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::popover::{MenuItem, MenuPlacement, menu_button};
-use forge_widgets::status::{StatusVariant, status_pill};
-use forge_widgets::tokens::{FONT_LG, FONT_SM, FONT_XS, Spacing, sp, spf};
+use forge_widgets::tokens::{
+    BORDER_THIN, FONT_LG, FONT_SM, FONT_XS, FONT_XXS, FontRole, FontWeight, Radius, Spacing,
+    font_weighted, radius, sp, spf,
+};
 use iced::{Alignment, Background, Border, Element, Length, Padding};
 
 use crate::actions::{AddSubActionMsg, PendingDelete, RemoveSubActionMsg};
@@ -164,6 +166,93 @@ fn variable_text<'a>(s: &str, palette: &ForgePalette, mono: iced::Font) -> Eleme
     iced::widget::row(els).spacing(0).wrap().into()
 }
 
+/// Full-width, centered "Add …" button that closes a section (triggers /
+/// sub-actions). Filled with the deep-panel background, an accent-colored
+/// icon + label, and a light hairline border. Used twice in `detail_pane`.
+fn add_row_button<'a>(
+    icon: Icon,
+    label: String,
+    accent: iced::Color,
+    msg: Message,
+    palette: &ForgePalette,
+) -> Element<'a, Message> {
+    use iced::widget::{button, container, row, text};
+
+    let p = *palette;
+    let content = row![
+        tabler_icon(icon, 13.0, accent),
+        text(label).size(FONT_XS).color(accent),
+    ]
+    .spacing(spf(Spacing::Xxs))
+    .align_y(Alignment::Center);
+
+    button(
+        container(content)
+            .width(Length::Fill)
+            .align_x(Alignment::Center),
+    )
+    .width(Length::Fill)
+    .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
+    .on_press(msg)
+    .style(
+        move |_t: &iced::Theme, status| iced::widget::button::Style {
+            background: Some(Background::Color(match status {
+                iced::widget::button::Status::Hovered | iced::widget::button::Status::Pressed => {
+                    p.surface_overlay
+                }
+                _ => p.shell,
+            })),
+            text_color: accent,
+            border: Border {
+                color: p.border_input,
+                width: BORDER_THIN,
+                radius: radius(Radius::Sm).into(),
+            },
+            shadow: iced::Shadow::default(),
+            snap: false,
+        },
+    )
+    .into()
+}
+
+/// Borderless icon-only affordance sitting at the trailing edge of a trigger
+/// row (open / unlink). Faint by default, tinted on hover.
+fn row_icon_btn<'a>(
+    icon: Icon,
+    hover_tint: iced::Color,
+    msg: Message,
+    palette: &ForgePalette,
+) -> Element<'a, Message> {
+    use iced::widget::button;
+
+    let p = *palette;
+    button(tabler_icon(icon, 13.0, p.text_faint))
+        .padding([sp(Spacing::Xxs), sp(Spacing::Xxs)])
+        .on_press(msg)
+        .style(
+            move |_t: &iced::Theme, status| iced::widget::button::Style {
+                background: match status {
+                    iced::widget::button::Status::Hovered
+                    | iced::widget::button::Status::Pressed => {
+                        Some(Background::Color(iced::Color {
+                            a: 0.10,
+                            ..hover_tint
+                        }))
+                    }
+                    _ => None,
+                },
+                text_color: p.text_faint,
+                border: Border {
+                    radius: radius(Radius::Sm).into(),
+                    ..Border::default()
+                },
+                shadow: iced::Shadow::default(),
+                snap: false,
+            },
+        )
+        .into()
+}
+
 fn step_icon_btn<'a>(
     icon: Icon,
     disabled: bool,
@@ -172,36 +261,38 @@ fn step_icon_btn<'a>(
 ) -> Element<'a, Message> {
     let p = *palette;
     let icon_color = if disabled { p.disabled } else { p.text_faint };
-    let surface_overlay = p.surface_overlay;
     let icon_el = tabler_icon(icon, 12.0, icon_color);
 
     let content = iced::widget::container(icon_el)
-        .width(20.0)
-        .height(20.0)
+        .width(22.0)
+        .height(22.0)
         .align_x(Alignment::Center)
         .align_y(Alignment::Center);
 
-    let mut btn = iced::widget::button(content)
-        .padding([sp(Spacing::Xxs), sp(Spacing::Xxs)])
-        .style(
-            move |_t: &iced::Theme, status| iced::widget::button::Style {
-                background: if disabled {
-                    None
-                } else {
-                    match status {
+    let mut btn =
+        iced::widget::button(content)
+            .padding(0)
+            .style(
+                move |_t: &iced::Theme, status| iced::widget::button::Style {
+                    background: match status {
                         iced::widget::button::Status::Hovered
-                        | iced::widget::button::Status::Pressed => {
-                            Some(Background::Color(surface_overlay))
+                        | iced::widget::button::Status::Pressed
+                            if !disabled =>
+                        {
+                            Some(Background::Color(p.surface_overlay))
                         }
-                        _ => None,
-                    }
+                        _ => Some(Background::Color(p.base)),
+                    },
+                    text_color: icon_color,
+                    border: Border {
+                        color: p.border_regular,
+                        width: BORDER_THIN,
+                        radius: radius(Radius::Sm).into(),
+                    },
+                    shadow: iced::Shadow::default(),
+                    snap: false,
                 },
-                text_color: icon_color,
-                border: Border::default(),
-                shadow: iced::Shadow::default(),
-                snap: false,
-            },
-        );
+            );
 
     if !disabled {
         btn = btn.on_press(msg);
@@ -220,7 +311,6 @@ fn step_controls<'a>(
     use iced::widget::row;
 
     let p = *palette;
-    let border_color = p.border_regular;
 
     let move_up = step_icon_btn(
         Icon::ArrowUp,
@@ -238,17 +328,6 @@ fn step_controls<'a>(
         ))),
         palette,
     );
-
-    let divider = iced::widget::container(
-        iced::widget::container(iced::widget::Space::new().width(0.5).height(12.0))
-            .width(0.5)
-            .height(12.0)
-            .style(move |_t: &iced::Theme| iced::widget::container::Style {
-                background: Some(Background::Color(border_color)),
-                ..iced::widget::container::Style::default()
-            }),
-    )
-    .padding([0, sp(Spacing::Xxs)]);
 
     let items: Vec<MenuItem<Message>> = vec![
         MenuItem::Item {
@@ -315,7 +394,7 @@ fn step_controls<'a>(
         palette,
     );
 
-    row![move_up, move_down, divider, menu]
+    row![move_up, move_down, menu]
         .spacing(spf(Spacing::Xxs))
         .align_y(Alignment::Center)
         .into()
@@ -495,22 +574,35 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
 
     let action = &detail.action;
 
-    let pill_variant = if action.enabled {
-        forge_widgets::StatusVariant::Positive
+    let (pill_color, pill_label) = if action.enabled {
+        (p.success, forge_widgets::tr!("action_editor_enabled"))
     } else {
-        forge_widgets::StatusVariant::Negative
+        (p.random, forge_widgets::tr!("action_editor_disabled"))
     };
-    let pill_label = if action.enabled {
-        forge_widgets::tr!("action_editor_enabled")
-    } else {
-        forge_widgets::tr!("action_editor_disabled")
-    };
-    let pill = forge_widgets::status_pill(pill_label, pill_variant, palette);
+    let pill: Element<'_, Message> = container(
+        row![
+            forge_widgets::status_dot(pill_color, 5.0),
+            text(pill_label).size(FONT_XXS).color(pill_color),
+        ]
+        .spacing(spf(Spacing::Xxs))
+        .align_y(Alignment::Center),
+    )
+    .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
+    .style(move |_t: &iced::Theme| iced::widget::container::Style {
+        background: Some(Background::Color(p.surface_overlay)),
+        border: Border {
+            radius: radius(Radius::Sm).into(),
+            ..Border::default()
+        },
+        ..iced::widget::container::Style::default()
+    })
+    .into();
 
     let title_row = row![
         text(action.name.clone())
             .size(FONT_LG)
-            .color(p.text_primary),
+            .color(p.text_primary)
+            .font(font_weighted(FontRole::Body, FontWeight::SemiBold)),
         pill,
     ]
     .spacing(spf(Spacing::Xs))
@@ -522,12 +614,14 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
         .unwrap_or_else(|| forge_widgets::tr!("action_editor_no_description"));
     let desc = text(desc_text).size(FONT_XS).color(p.text_muted);
 
-    let test_run_btn = forge_widgets::secondary_button(
+    let test_run_btn = forge_widgets::ghost_button_with_icon(
+        Icon::PlayerPlay,
         forge_widgets::tr!("action_editor_test_run"),
         Message::Actions(ActionsMsg::TestTrigger(action_id)),
         palette,
     );
-    let dup_btn = forge_widgets::secondary_button(
+    let dup_btn = forge_widgets::ghost_button_with_icon(
+        Icon::Copy,
         forge_widgets::tr!("action_editor_duplicate"),
         Message::Actions(ActionsMsg::DuplicateAction(action_id)),
         palette,
@@ -551,30 +645,15 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
         .font(mono);
 
     let add_trigger_lbl = forge_widgets::tr!("action_editor_add_trigger");
-    let add_trigger_btn = iced::widget::button(
-        row![
-            tabler_icon(Icon::Plus, 11.0, p.brand),
-            text(add_trigger_lbl).size(FONT_XS).color(p.brand),
-        ]
-        .spacing(spf(Spacing::Xxs))
-        .align_y(Alignment::Center),
-    )
-    .on_press(Message::Actions(ActionsMsg::OpenTriggerPicker(action_id)))
-    .padding(0)
-    .style(
-        |_theme: &iced::Theme, _status| iced::widget::button::Style {
-            background: None,
-            text_color: iced::Color::TRANSPARENT,
-            border: Border::default(),
-            shadow: iced::Shadow::default(),
-            snap: false,
-        },
-    );
+    let triggers_count = text(detail.trigger_instances.len().to_string())
+        .size(FONT_XS)
+        .color(p.text_faint)
+        .font(mono);
 
     let triggers_header: Element<'_, Message> = row![
         triggers_label,
         iced::widget::Space::new().width(Length::Fill),
-        add_trigger_btn,
+        triggers_count,
     ]
     .align_y(Alignment::Center)
     .into();
@@ -592,24 +671,16 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
             let instance_enabled = instance.enabled;
             let descriptor = app.rt.trigger_registry.get(&instance.kind_id);
             let icon_name = descriptor.map(|d| d.icon_name()).unwrap_or("bolt");
-            let icon_color = if instance_enabled {
+            let accent = if instance_enabled {
                 p.brand
             } else {
                 p.disabled
             };
-            let icon_box = container(tabler_icon(Icon::from_name(icon_name), 14.0, icon_color))
-                .width(26.0)
-                .height(26.0)
-                .align_x(Alignment::Center)
-                .align_y(Alignment::Center)
-                .style(move |_theme: &iced::Theme| iced::widget::container::Style {
-                    background: Some(Background::Color(p.surface_overlay)),
-                    border: Border {
-                        radius: 6.0.into(),
-                        ..Border::default()
-                    },
-                    ..iced::widget::container::Style::default()
-                });
+            let name_color = if instance_enabled {
+                p.text_primary
+            } else {
+                p.text_faint
+            };
 
             let kind_label = descriptor
                 .map(|d| d.label().to_owned())
@@ -617,121 +688,44 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
             let condition_str = descriptor
                 .map(|d| d.condition_display(&instance.overrides))
                 .unwrap_or_default();
-            let pill_label_str = if instance.user_defined {
-                forge_widgets::tr!("action_editor_pill_custom")
-            } else {
-                forge_widgets::tr!("action_editor_pill_default")
-            };
-            let pill_variant = if instance.user_defined {
-                StatusVariant::Positive
-            } else {
-                StatusVariant::Neutral
-            };
-            let pill: Element<'_, Message> = status_pill(pill_label_str, pill_variant, palette);
-            let name_color = if instance_enabled {
-                p.text_primary
-            } else {
-                p.text_faint
-            };
-            let mut name_row_items: Vec<Element<'_, Message>> = vec![
-                text(instance.name.as_str())
-                    .size(FONT_SM)
-                    .color(name_color)
-                    .into(),
-                pill,
-            ];
-            if !instance_enabled {
-                let off_pill: Element<'_, Message> = status_pill(
-                    forge_widgets::tr!("action_editor_disabled"),
-                    StatusVariant::Negative,
-                    palette,
-                );
-                name_row_items.push(off_pill);
-            }
-            let name_row: Element<'_, Message> = row(name_row_items)
-                .spacing(spf(Spacing::Xs))
-                .align_y(Alignment::Center)
-                .into();
-            let secondary_str = if condition_str.is_empty() {
-                kind_label.clone()
-            } else {
-                format!("{kind_label} \u{00b7} {condition_str}")
-            };
-            let info_col: Element<'_, Message> = column![
-                name_row,
-                text(secondary_str)
-                    .size(FONT_XS)
-                    .color(p.text_muted)
-                    .font(mono),
-            ]
-            .spacing(spf(Spacing::Xxs))
-            .into();
 
             let instance_id = instance.id;
-            let action_id_local = action_id;
-            let p_btn = p;
-            let p_nav = p;
-            let delete_lbl = forge_widgets::tr!("action_editor_delete");
-            let delete_btn = iced::widget::button(
-                text(delete_lbl)
-                    .size(FONT_XS)
-                    .color(p.random)
-                    .font(forge_widgets::font(forge_widgets::FontRole::Monospace)),
-            )
-            .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
-            .on_press(Message::Actions(ActionsMsg::RemoveTriggerInstance(
-                action_id_local,
-                instance_id,
-            )))
-            .style(move |_t, status| iced::widget::button::Style {
-                background: if matches!(status, iced::widget::button::Status::Hovered) {
-                    Some(Background::Color(iced::Color {
-                        a: 0.08,
-                        ..p_btn.random
-                    }))
-                } else {
-                    None
-                },
-                text_color: p_btn.random,
-                border: Border {
-                    color: iced::Color::TRANSPARENT,
-                    width: 0.0,
-                    radius: 4.0.into(),
-                },
-                shadow: iced::Shadow::default(),
-                snap: false,
-            });
+            let name_el = text(instance.name.to_string())
+                .size(FONT_XS)
+                .color(name_color)
+                .font(font_weighted(FontRole::Body, FontWeight::SemiBold));
+            let kind_el = text(kind_label).size(FONT_XXS).color(p.text_faint);
+            let summary_el = text(condition_str)
+                .size(FONT_XXS)
+                .color(p.bits)
+                .font(mono)
+                .wrapping(iced::widget::text::Wrapping::None);
 
-            let nav_btn: Element<'_, Message> = iced::widget::button(
-                row![icon_box, info_col]
-                    .spacing(spf(Spacing::Xs))
-                    .align_y(Alignment::Center),
-            )
-            .on_press(Message::Actions(ActionsMsg::TriggerChipClicked(
-                instance_id,
-            )))
-            .padding(0)
-            .style(move |_: &iced::Theme, status| iced::widget::button::Style {
-                background: if matches!(status, iced::widget::button::Status::Hovered) {
-                    Some(Background::Color(iced::Color {
-                        a: 0.06,
-                        ..p_nav.brand
-                    }))
-                } else {
-                    None
-                },
-                text_color: iced::Color::TRANSPARENT,
-                border: Border::default(),
-                shadow: iced::Shadow::default(),
-                snap: false,
-            })
-            .width(Length::Fill)
-            .into();
+            let open_btn = row_icon_btn(
+                Icon::ExternalLink,
+                p.brand,
+                Message::Actions(ActionsMsg::TriggerChipClicked(instance_id)),
+                palette,
+            );
+            let del_btn = row_icon_btn(
+                Icon::X,
+                p.random,
+                Message::Actions(ActionsMsg::RemoveTriggerInstance(action_id, instance_id)),
+                palette,
+            );
 
-            let trigger_row: Element<'_, Message> = row![nav_btn, delete_btn]
-                .spacing(spf(Spacing::Xs))
-                .align_y(Alignment::Center)
-                .into();
+            let trigger_row = row![
+                forge_widgets::status_dot(accent, 7.0),
+                tabler_icon(Icon::from_name(icon_name), 13.0, accent),
+                name_el,
+                kind_el,
+                summary_el,
+                iced::widget::Space::new().width(Length::Fill),
+                open_btn,
+                del_btn,
+            ]
+            .spacing(spf(Spacing::Xs))
+            .align_y(Alignment::Center);
 
             let trigger_card = container(trigger_row)
                 .width(Length::Fill)
@@ -740,8 +734,8 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
                     background: Some(Background::Color(p.elevated)),
                     border: Border {
                         color: p.border_regular,
-                        width: 0.5,
-                        radius: 8.0.into(),
+                        width: BORDER_THIN,
+                        radius: radius(Radius::Md).into(),
                     },
                     ..iced::widget::container::Style::default()
                 });
@@ -749,6 +743,14 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
             triggers_col = triggers_col.push(trigger_card);
         }
     }
+
+    triggers_col = triggers_col.push(add_row_button(
+        Icon::Plus,
+        add_trigger_lbl,
+        p.warning,
+        Message::Actions(ActionsMsg::OpenTriggerPicker(action_id)),
+        palette,
+    ));
 
     let triggers_section: Element<'_, Message> = column![triggers_header, triggers_col]
         .spacing(spf(Spacing::Xs))
@@ -759,46 +761,28 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
     let at_root = nav_path.is_empty();
 
     let add_step_lbl = forge_widgets::tr!("action_editor_add_step");
-    let add_step_btn = iced::widget::button(
-        row![
-            tabler_icon(Icon::Plus, 11.0, p.brand),
-            text(add_step_lbl).size(FONT_XS).color(p.brand),
-        ]
-        .spacing(spf(Spacing::Xxs))
-        .align_y(Alignment::Center),
-    )
-    .on_press(Message::Actions(ActionsMsg::Editor(
-        ActionEditorMsg::AddSubAction(AddSubActionMsg::OpenRequested(action_id)),
-    )))
-    .padding(0)
-    .style(
-        |_theme: &iced::Theme, _status| iced::widget::button::Style {
-            background: None,
-            text_color: iced::Color::TRANSPARENT,
-            border: Border::default(),
-            shadow: iced::Shadow::default(),
-            snap: false,
-        },
-    );
 
     let header_left: Element<'_, Message> = if at_root {
-        let sub_hdr_str = forge_widgets::tr!(
-            "action_editor_section_sub_actions",
-            count = current_chain.len() as i64
-        );
-        text(sub_hdr_str)
-            .size(FONT_XS)
-            .color(p.text_muted)
-            .font(mono)
-            .into()
+        text(forge_widgets::tr!(
+            "action_editor_section_sub_actions_label"
+        ))
+        .size(FONT_XS)
+        .color(p.text_muted)
+        .font(mono)
+        .into()
     } else {
         breadcrumb_header(app, action, nav_path, palette)
     };
 
+    let sub_count = text(current_chain.len().to_string())
+        .size(FONT_XS)
+        .color(p.text_faint)
+        .font(mono);
+
     let sub_header: Element<'_, Message> = row![
         header_left,
         iced::widget::Space::new().width(Length::Fill),
-        add_step_btn,
+        sub_count,
     ]
     .align_y(Alignment::Center)
     .into();
@@ -818,14 +802,19 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
     for (i, step) in current_chain.iter().enumerate() {
         let step_num = i + 1;
         let is_last = step_num == total;
-        let (icon_name, title, details) = sub_action_summary(step);
+        let (fallback_icon, fallback_title, details) = sub_action_summary(step);
+        let runner = app.rt.sub_action_registry.get(&step.kind_id);
+        let title = runner
+            .map(|r| r.label().to_owned())
+            .unwrap_or(fallback_title);
+        let icon_name = runner.map(|r| r.icon_name()).unwrap_or(fallback_icon);
         let step_icon = Icon::from_name(icon_name);
         let avg_ms_label = if at_root {
             detail
                 .sub_action_avg_ms
                 .get(i)
                 .and_then(|v| *v)
-                .map(|ms| format!("{ms} ms avg"))
+                .map(|ms| format!("{ms} ms"))
         } else {
             None
         };
@@ -868,13 +857,22 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
             .into();
 
         let icon_el = tabler_icon(step_icon, 13.0, p.text_secondary);
-        let title_el = text(title).size(FONT_SM).color(p.text_primary);
+        let title_el = text(title)
+            .size(FONT_SM)
+            .color(p.text_primary)
+            .font(font_weighted(FontRole::Body, FontWeight::SemiBold));
 
         let timing_el: Element<'_, Message> = match avg_ms_label {
-            Some(label) => text(label)
-                .size(FONT_XS)
-                .color(p.text_faint)
-                .font(forge_widgets::font(forge_widgets::FontRole::Monospace))
+            Some(label) => container(text(label).size(FONT_XXS).color(p.success).font(mono))
+                .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
+                .style(move |_t: &iced::Theme| iced::widget::container::Style {
+                    background: Some(Background::Color(p.surface_overlay)),
+                    border: Border {
+                        radius: radius(Radius::Sm).into(),
+                        ..Border::default()
+                    },
+                    ..iced::widget::container::Style::default()
+                })
                 .into(),
             None => iced::widget::Space::new().width(Length::Shrink).into(),
         };
@@ -893,7 +891,10 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
         .align_y(Alignment::Center)
         .into();
 
-        let details_el = variable_text(&details, palette, mono);
+        let details_el = container(variable_text(&details, palette, mono)).padding(Padding {
+            left: 21.0,
+            ..Padding::ZERO
+        });
 
         let card_inner: Element<'_, Message> = column![title_row, details_el]
             .spacing(spf(Spacing::Xxs))
@@ -906,8 +907,8 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
                 background: Some(Background::Color(p.elevated)),
                 border: Border {
                     color: p.border_regular,
-                    width: 0.5,
-                    radius: 8.0.into(),
+                    width: BORDER_THIN,
+                    radius: radius(Radius::Md).into(),
                 },
                 ..iced::widget::container::Style::default()
             });
@@ -939,6 +940,23 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
 
         steps_col = steps_col.push(step_wrapper);
     }
+
+    steps_col = steps_col.push(
+        container(add_row_button(
+            Icon::Plus,
+            add_step_lbl,
+            p.brand,
+            Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                AddSubActionMsg::OpenRequested(action_id),
+            ))),
+            palette,
+        ))
+        .padding(Padding {
+            left: 24.0 + spf(Spacing::Xs),
+            top: spf(Spacing::Xs),
+            ..Padding::ZERO
+        }),
+    );
 
     let sub_section: Element<'_, Message> = column![sub_header, steps_col]
         .spacing(spf(Spacing::Xs))

@@ -1396,6 +1396,7 @@ widget_key_capture_placeholder = Натисніть комбінацію…
 ## Widget — event inspector
 
 widget_event_replay = Відтворити цю подію
+widget_event_replaying = Відтворення…
 widget_event_payload_header = ДАНІ
 widget_event_caused_header = ПРИЧИНА
 

@@ -441,6 +441,13 @@ pub fn update(
             iced::Task::none()
         }
         EventFeedMsg::ReplayRequested(event_id) => {
+            // Busy-guard: the view already disables the Replay button while
+            // `replay_loading` is set, but re-check here too so any dispatch
+            // path (not just the button click) can't fire a second replay
+            // while one is still in flight.
+            if state.replay_loading {
+                return iced::Task::none();
+            }
             state.replay_loading = true;
             let bus = Arc::clone(&rt.bus);
             iced::Task::perform(
@@ -724,6 +731,7 @@ pub fn event_feed_view<'a>(
             payload: &ev.payload,
             caused_event,
             on_replay: Message::EventFeed(EventFeedMsg::ReplayRequested(ev.id)),
+            replay_loading: state.replay_loading,
         };
 
         container(

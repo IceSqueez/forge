@@ -6,13 +6,25 @@ use forge_types::{
     ChatEventDetail, ChatSegment, ChatSource, EventId, ModerationMarks, PlatformId, SubActionStep,
     UnifiedChatRow, UserBadge, Variant,
 };
+use forge_widgets::ToastKind;
 use iced::Task;
 use time::OffsetDateTime;
 
 use crate::Message;
 use crate::live_chat_view::platform_id_to_key;
-use crate::message::LiveChatMsg;
+use crate::message::{LiveChatMsg, ToastMsg};
 use crate::runtime_view::RuntimeView;
+
+/// Human-readable platform name for toast copy — the crate-local
+/// `platform_id_to_key` returns the lowercase wire key (`"twitch"`), not
+/// display casing.
+fn platform_display_name(id: PlatformId) -> &'static str {
+    match id {
+        PlatformId::Twitch => "Twitch",
+        PlatformId::YouTube => "YouTube",
+        PlatformId::Kick => "Kick",
+    }
+}
 
 pub const CHAT_LOG_MAX: usize = 2_000;
 
@@ -386,13 +398,26 @@ pub fn update(state: &mut LiveChatState, rt: &RuntimeView, msg: LiveChatMsg) -> 
             Task::batch(tasks)
         }
         LiveChatMsg::SendCompleted(id, result) => {
+            let target = state.pending_sends.get(&id).map(|ps| ps.target);
+            let toast_task = match &result {
+                Ok(()) => Task::none(),
+                Err(e) => {
+                    let platform = target.map(platform_display_name).unwrap_or("chat");
+                    Task::done(Message::Toast(ToastMsg::Fired {
+                        kind: ToastKind::Error,
+                        message: format!("Failed to send message to {platform}: {e}"),
+                        duration_ms: 5000,
+                        action: None,
+                    }))
+                }
+            };
             if let Some(ps) = state.pending_sends.get_mut(&id) {
                 ps.status = match result {
                     Ok(()) => PendingSendStatus::Ok,
                     Err(e) => PendingSendStatus::Failed(e),
                 };
             }
-            Task::none()
+            toast_task
         }
         LiveChatMsg::ConnectedPlatformsUpdated(platforms) => {
             state.connected_platforms = platforms;
@@ -473,19 +498,33 @@ pub fn update(state: &mut LiveChatState, rt: &RuntimeView, msg: LiveChatMsg) -> 
             let engine = rt.action_engine.clone();
             Task::perform(
                 async move {
-                    if let Some(e) = engine {
-                        let _ = e
+                    match engine {
+                        Some(e) => e
                             .execute_quick_action(
                                 step,
                                 "twitch".to_owned(),
                                 format!("Shoutout {login}"),
                             )
-                            .await;
+                            .await
+                            .map_err(|e| e.to_string()),
+                        None => Err("action engine unavailable".to_owned()),
                     }
                 },
-                |_| Message::Noop,
+                |r| Message::LiveChat(LiveChatMsg::ShoutoutResult(r)),
             )
         }
+        LiveChatMsg::ShoutoutResult(Ok(())) => Task::done(Message::Toast(ToastMsg::Fired {
+            kind: ToastKind::Success,
+            message: "Shoutout sent".to_owned(),
+            duration_ms: 3000,
+            action: None,
+        })),
+        LiveChatMsg::ShoutoutResult(Err(e)) => Task::done(Message::Toast(ToastMsg::Fired {
+            kind: ToastKind::Error,
+            message: format!("Shoutout failed: {e}"),
+            duration_ms: 5000,
+            action: None,
+        })),
         LiveChatMsg::WhisperOpen => {
             if state.selected_viewer.is_some() {
                 state.whisper_form = Some(WhisperForm {
@@ -517,19 +556,33 @@ pub fn update(state: &mut LiveChatState, rt: &RuntimeView, msg: LiveChatMsg) -> 
             let engine = rt.action_engine.clone();
             Task::perform(
                 async move {
-                    if let Some(e) = engine {
-                        let _ = e
+                    match engine {
+                        Some(e) => e
                             .execute_quick_action(
                                 step,
                                 "twitch".to_owned(),
                                 format!("Whisper {login}"),
                             )
-                            .await;
+                            .await
+                            .map_err(|e| e.to_string()),
+                        None => Err("action engine unavailable".to_owned()),
                     }
                 },
-                |_| Message::Noop,
+                |r| Message::LiveChat(LiveChatMsg::WhisperResult(r)),
             )
         }
+        LiveChatMsg::WhisperResult(Ok(())) => Task::done(Message::Toast(ToastMsg::Fired {
+            kind: ToastKind::Success,
+            message: "Whisper sent".to_owned(),
+            duration_ms: 3000,
+            action: None,
+        })),
+        LiveChatMsg::WhisperResult(Err(e)) => Task::done(Message::Toast(ToastMsg::Fired {
+            kind: ToastKind::Error,
+            message: format!("Whisper failed: {e}"),
+            duration_ms: 5000,
+            action: None,
+        })),
         LiveChatMsg::WhisperCancel => {
             state.whisper_form = None;
             Task::none()

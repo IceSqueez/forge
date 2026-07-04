@@ -484,12 +484,17 @@ pub fn json_viewer<'a, Msg: 'a>(
         .into()
 }
 
+/// `loading = true` renders a disabled, muted, spinner-iconed button — the
+/// busy-guard so a double-click on Replay cannot fire two concurrent replays
+/// (the button simply has no `on_press` attached while a replay is in flight).
 pub fn replay_button<'a, Msg: Clone + 'a>(
     on_click: Msg,
+    loading: bool,
     palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let brand = palette.brand;
     let border_color = palette.border_regular;
+    let content_color = if loading { palette.text_faint } else { brand };
     let hover_bg = Color {
         r: brand.r,
         g: brand.g,
@@ -497,11 +502,20 @@ pub fn replay_button<'a, Msg: Clone + 'a>(
         a: 0.08,
     };
 
-    let icon = tabler_icon(Icon::Repeat, FONT_SM, brand);
+    let icon = if loading {
+        tabler_icon(Icon::Loader2, FONT_SM, content_color)
+    } else {
+        tabler_icon(Icon::Repeat, FONT_SM, content_color)
+    };
 
-    let label = iced::widget::text(crate::tr!("widget.event.replay"))
+    let label_key = if loading {
+        "widget.event.replaying"
+    } else {
+        "widget.event.replay"
+    };
+    let label = iced::widget::text(crate::tr!(label_key))
         .size(FONT_XS)
-        .color(brand);
+        .color(content_color);
 
     let content = container(
         row![icon, label]
@@ -510,8 +524,7 @@ pub fn replay_button<'a, Msg: Clone + 'a>(
     )
     .center_x(Length::Fill);
 
-    button(content)
-        .on_press(on_click)
+    let btn = button(content)
         .padding(Padding {
             top: spf(Spacing::Xs),
             right: spf(Spacing::Sm),
@@ -522,12 +535,12 @@ pub fn replay_button<'a, Msg: Clone + 'a>(
         .style(
             move |_theme: &iced::Theme, status: button::Status| button::Style {
                 background: match status {
-                    button::Status::Hovered | button::Status::Pressed => {
+                    button::Status::Hovered | button::Status::Pressed if !loading => {
                         Some(Background::Color(hover_bg))
                     }
                     _ => None,
                 },
-                text_color: brand,
+                text_color: content_color,
                 border: Border {
                     color: border_color,
                     width: 0.5,
@@ -536,8 +549,13 @@ pub fn replay_button<'a, Msg: Clone + 'a>(
                 shadow: iced::Shadow::default(),
                 snap: false,
             },
-        )
-        .into()
+        );
+
+    if loading {
+        btn.into()
+    } else {
+        btn.on_press(on_click).into()
+    }
 }
 
 pub struct EventInspectorParams<'a, Msg> {
@@ -550,6 +568,9 @@ pub struct EventInspectorParams<'a, Msg> {
     /// `(summary, kind, on_click)`. `on_click` walks one hop up the causation chain.
     pub caused_event: Option<(&'a str, &'a str, Msg)>,
     pub on_replay: Msg,
+    /// Busy-guard: `true` while a replay is in flight — renders the Replay
+    /// button disabled/spinner so a double-click cannot fire a second replay.
+    pub replay_loading: bool,
 }
 
 pub fn event_inspector<'a, Msg: Clone + 'a>(
@@ -613,6 +634,10 @@ pub fn event_inspector<'a, Msg: Clone + 'a>(
     }
 
     col.push(Space::new().height(2))
-        .push(replay_button(params.on_replay, palette))
+        .push(replay_button(
+            params.on_replay,
+            params.replay_loading,
+            palette,
+        ))
         .into()
 }

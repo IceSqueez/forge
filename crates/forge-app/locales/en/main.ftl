@@ -1377,6 +1377,7 @@ widget_key_capture_placeholder = Press a combo…
 ## Widget — event inspector
 
 widget_event_replay = Replay this event
+widget_event_replaying = Replaying…
 widget_event_payload_header = PAYLOAD
 widget_event_caused_header = CAUSED
 

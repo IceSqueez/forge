@@ -5,14 +5,16 @@ use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::tokens::{
     BORDER_THIN, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
 };
-use forge_widgets::{ConfirmKind, ConfirmModalParams, ConfirmTone, ForgePalette, confirm_modal};
+use forge_widgets::{
+    ConfirmKind, ConfirmModalParams, ConfirmTone, ForgePalette, ToastKind, confirm_modal,
+};
 use iced::widget::{
     Space, button, column, container, row, scrollable, slider, stack, text, text_input,
 };
 use iced::{Alignment, Background, Border, Color, Element, Length, Task};
 
 use crate::Message;
-use crate::message::{TtsDashMsg, TtsMsg};
+use crate::message::{ToastMsg, TtsDashMsg, TtsMsg};
 use crate::runtime_view::RuntimeView;
 
 pub struct TtsDashState {
@@ -22,7 +24,6 @@ pub struct TtsDashState {
     pub now_speaking: Option<NowSpeakingData>,
     pub queue: Vec<QueueItemData>,
     pub stats: SessionStats,
-    pub command_error: Option<String>,
     /// Two-phase Stop-all gate — armed by the control strip's Stop button,
     /// rendered by the shared `confirm_modal`. `false` = no confirm showing.
     pub pending_stop_all: bool,
@@ -68,7 +69,6 @@ impl TtsDashState {
                 filtered: 0,
                 avg_latency_ms: None,
             },
-            command_error: None,
             pending_stop_all: false,
         }
     }
@@ -216,12 +216,13 @@ pub fn update(state: &mut TtsDashState, rt: &RuntimeView, msg: TtsDashMsg) -> Ta
             let text = text.to_owned();
             send_command(handle, SpeakCommand::Enqueue(test_speak_request(text)))
         }
-        TtsDashMsg::CommandResult(r) => {
-            if let Err(e) = r {
-                state.command_error = Some(e);
-            }
-            Task::none()
-        }
+        TtsDashMsg::CommandResult(Ok(())) => Task::none(),
+        TtsDashMsg::CommandResult(Err(e)) => Task::done(Message::Toast(ToastMsg::Fired {
+            kind: ToastKind::Error,
+            message: format!("TTS command failed: {e}"),
+            duration_ms: 5000,
+            action: None,
+        })),
     }
 }
 

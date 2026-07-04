@@ -672,9 +672,11 @@ pub enum LiveChatMsg {
     DrawerWidthLoaded(Option<f32>),
     SheetResized(f32),
     ShoutoutViewer,
+    ShoutoutResult(Result<(), String>),
     WhisperOpen,
     WhisperMessageChanged(String),
     WhisperSend,
+    WhisperResult(Result<(), String>),
     WhisperCancel,
 }
 

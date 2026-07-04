@@ -233,6 +233,8 @@ pub enum SettingsMsg {
     DbBackupDone(Result<String, String>),
     OpenLogDirectoryRequested,
     OpenLogDirectoryResult(Result<(), String>),
+    CheckForUpdatesRequested,
+    CheckForUpdatesResult(Result<(), String>),
     Scripting(crate::settings_scripting::ScriptingSettingsMsg),
     Shortcuts(crate::settings_shortcuts::ShortcutsMsg),
     LanguageChanged(Language),

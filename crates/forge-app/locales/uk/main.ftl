@@ -162,7 +162,6 @@ settings_nav_websocket = WebSocket
 settings_nav_hotkeys = Хоткеї
 settings_nav_version = Версія
 settings_nav_diagnostics = Діагностика
-settings_coming_soon_placeholder = Незабаром.
 
 ## Налаштування → панель діагностики
 
@@ -171,6 +170,14 @@ settings_diagnostics_section_title = Журнали та діагностика
 settings_diagnostics_log_dir = Тека журналів: { $path }
 settings_diagnostics_open_log_dir = Відкрити теку журналів
 settings_diagnostics_log_level_hint = Рівень журналювання: керується через змінну RUST_LOG (наприклад: info, debug, trace).
+
+## Налаштування → панель версії
+
+settings_version_title = Версія та оновлення
+settings_version_tagline = Відкритий код · MIT OR Apache-2.0 · iced 0.14 + Rhai 1.25
+settings_version_check_updates = Перевірити оновлення
+settings_version_recent_releases = ОСТАННІ РЕЛІЗИ
+settings_version_changelog_empty = Історія релізів поки відсутня.
 
 ## Налаштування → панель сховища
 

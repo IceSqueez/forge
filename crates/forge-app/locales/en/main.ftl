@@ -160,7 +160,6 @@ settings_nav_websocket = WebSocket
 settings_nav_hotkeys = Hotkeys
 settings_nav_version = Version
 settings_nav_diagnostics = Diagnostics
-settings_coming_soon_placeholder = Coming soon.
 
 ## Settings → Diagnostics pane
 
@@ -169,6 +168,14 @@ settings_diagnostics_section_title = Logs & diagnostics
 settings_diagnostics_log_dir = Log directory: { $path }
 settings_diagnostics_open_log_dir = Open log directory
 settings_diagnostics_log_level_hint = Log level: controlled via RUST_LOG env var (e.g. info, debug, trace).
+
+## Settings → Version pane
+
+settings_version_title = Version & updates
+settings_version_tagline = Open-source · MIT OR Apache-2.0 · iced 0.14 + Rhai 1.25
+settings_version_check_updates = Check for updates
+settings_version_recent_releases = RECENT RELEASES
+settings_version_changelog_empty = No release history yet.
 
 ## Settings → Storage pane
 

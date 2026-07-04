@@ -1,8 +1,8 @@
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use forge_storage::Language;
 use forge_widgets::icons::{Icon, tabler_icon};
-use forge_widgets::tokens::{FONT_LG, FONT_SM, FONT_XS, Spacing, sp, spf};
+use forge_widgets::tokens::{FONT_LG, FONT_MD, FONT_SM, FONT_XS, FONT_XXS, Spacing, sp, spf};
 use forge_widgets::{ForgePalette, Radius, radius};
 use iced::{Element, Length, Task};
 
@@ -39,6 +39,223 @@ fn settings_section_button(
             palette,
         )
     }
+}
+
+/// One parsed release header from the embedded changelog.
+struct ReleaseEntry {
+    version: String,
+    date: String,
+    summary: String,
+}
+
+/// Embedded changelog, parsed once into the most recent release headers.
+/// Kept behind `LazyLock` so the ~36 KB markdown is scanned a single time
+/// rather than on every `view` frame.
+static RECENT_RELEASES: LazyLock<Vec<ReleaseEntry>> =
+    LazyLock::new(|| parse_release_headers(include_str!("../../../CHANGELOG.md"), 4));
+
+/// Strips a leading `*(scope)*` tag and a `[**breaking**]` marker from a
+/// changelog bullet, leaving the human-readable summary line.
+fn clean_bullet(bullet: &str) -> String {
+    let mut text = bullet.trim();
+    if let Some(rest) = text.strip_prefix("*(")
+        && let Some(idx) = rest.find(")* ")
+    {
+        text = rest[idx + 3..].trim_start();
+    }
+    text.replace("[**breaking**] ", "").trim().to_string()
+}
+
+/// Extracts up to `limit` release headers from git-cliff changelog markdown.
+/// Each `## [version] - date` header yields a version tag, date, and a short
+/// summary drawn from the release's first Features bullet (falling back to the
+/// first bullet of any category). Never synthesizes entries not in the source.
+fn parse_release_headers(raw: &str, limit: usize) -> Vec<ReleaseEntry> {
+    let mut out: Vec<ReleaseEntry> = Vec::new();
+    let mut version = String::new();
+    let mut date = String::new();
+    let mut first_any: Option<String> = None;
+    let mut first_feature: Option<String> = None;
+    let mut in_features = false;
+    let mut open = false;
+
+    let flush = |out: &mut Vec<ReleaseEntry>,
+                 version: &str,
+                 date: &str,
+                 first_any: &Option<String>,
+                 first_feature: &Option<String>| {
+        let summary = first_feature
+            .clone()
+            .or_else(|| first_any.clone())
+            .unwrap_or_default();
+        out.push(ReleaseEntry {
+            version: version.to_string(),
+            date: date.to_string(),
+            summary,
+        });
+    };
+
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("## [") {
+            if open {
+                flush(&mut out, &version, &date, &first_any, &first_feature);
+                if out.len() >= limit {
+                    return out;
+                }
+            }
+            let (v, d) = match rest.split_once("] - ") {
+                Some((v, d)) => (v.trim().to_string(), d.trim().to_string()),
+                None => (rest.trim_end_matches(']').trim().to_string(), String::new()),
+            };
+            version = v;
+            date = d;
+            first_any = None;
+            first_feature = None;
+            in_features = false;
+            open = true;
+            continue;
+        }
+        if !open {
+            continue;
+        }
+        if trimmed.starts_with("### ") {
+            in_features = trimmed.contains("Features");
+            continue;
+        }
+        if let Some(bullet) = trimmed.strip_prefix("- ") {
+            let cleaned = clean_bullet(bullet);
+            if cleaned.is_empty() {
+                continue;
+            }
+            if first_any.is_none() {
+                first_any = Some(cleaned.clone());
+            }
+            if in_features && first_feature.is_none() {
+                first_feature = Some(cleaned);
+            }
+        }
+    }
+    if open && out.len() < limit {
+        flush(&mut out, &version, &date, &first_any, &first_feature);
+    }
+    out
+}
+
+/// GitHub releases page for the "Check for updates" affordance.
+const RELEASES_URL: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/releases");
+
+fn release_row<'a>(entry: &'a ReleaseEntry, palette: &ForgePalette) -> Element<'a, Message> {
+    use iced::widget::{Space, row, text};
+
+    let mono = forge_widgets::font(forge_widgets::FontRole::Monospace);
+
+    row![
+        iced::widget::container(
+            text(entry.version.as_str())
+                .size(FONT_XS)
+                .font(mono)
+                .color(palette.text_primary)
+        )
+        .width(Length::Fixed(130.0)),
+        text(entry.summary.as_str())
+            .size(FONT_XS)
+            .color(palette.text_muted),
+        Space::new().width(Length::Fill),
+        text(entry.date.as_str())
+            .size(FONT_XXS)
+            .font(mono)
+            .color(palette.text_faint),
+    ]
+    .spacing(spf(Spacing::Sm))
+    .align_y(iced::Alignment::Center)
+    .into()
+}
+
+fn settings_version_pane(palette: &ForgePalette) -> Element<'static, Message> {
+    use iced::widget::{Space, column, container, row, text};
+
+    let p = *palette;
+    let mono = forge_widgets::font(forge_widgets::FontRole::Monospace);
+    let version = env!("CARGO_PKG_VERSION");
+
+    let header = row![
+        tabler_icon(Icon::InfoCircle, 18.0, p.brand),
+        text(forge_widgets::tr!("settings_version_title"))
+            .size(FONT_LG)
+            .color(p.text_primary),
+    ]
+    .spacing(spf(Spacing::Xs))
+    .align_y(iced::Alignment::Center);
+
+    // Identity card: mauve "F" tile + name/version + tagline + updates button.
+    let tile = container(text("F").size(24.0).color(p.base))
+        .center_x(Length::Fixed(48.0))
+        .center_y(Length::Fixed(48.0))
+        .style(move |_: &iced::Theme| container::Style {
+            background: Some(iced::Background::Color(p.brand)),
+            border: iced::Border {
+                radius: 11.0.into(),
+                ..Default::default()
+            },
+            ..container::Style::default()
+        });
+
+    let name_line = row![
+        text("Forge").size(FONT_MD).color(p.text_primary),
+        text(format!("v{version}"))
+            .size(FONT_XS)
+            .font(mono)
+            .color(p.text_muted),
+    ]
+    .spacing(spf(Spacing::Xs))
+    .align_y(iced::Alignment::Center);
+
+    let tagline = text(forge_widgets::tr!("settings_version_tagline"))
+        .size(FONT_XS)
+        .color(p.text_muted);
+
+    let identity = row![
+        tile,
+        column![name_line, tagline].spacing(4),
+        Space::new().width(Length::Fill),
+        forge_widgets::ghost_button_with_icon(
+            Icon::Refresh,
+            forge_widgets::tr!("settings_version_check_updates"),
+            Message::Settings(SettingsMsg::CheckForUpdatesRequested),
+            palette,
+        ),
+    ]
+    .spacing(spf(Spacing::Md))
+    .align_y(iced::Alignment::Center);
+
+    let identity_card = forge_widgets::card([identity.into()], palette);
+
+    // Recent releases card, sourced from the embedded changelog.
+    let releases_header = text(forge_widgets::tr!("settings_version_recent_releases"))
+        .size(FONT_XXS)
+        .font(mono)
+        .color(p.text_muted);
+
+    let mut releases_col = column![releases_header].spacing(spf(Spacing::Xs));
+    if RECENT_RELEASES.is_empty() {
+        releases_col = releases_col.push(
+            text(forge_widgets::tr!("settings_version_changelog_empty"))
+                .size(FONT_XS)
+                .color(p.text_faint),
+        );
+    } else {
+        for entry in RECENT_RELEASES.iter() {
+            releases_col = releases_col.push(release_row(entry, palette));
+        }
+    }
+    let releases_card = forge_widgets::card([releases_col.into()], palette);
+
+    container(column![header, identity_card, releases_card].spacing(spf(Spacing::Md)))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(sp(Spacing::Md))
+        .into()
 }
 
 fn settings_diagnostics_pane(palette: &ForgePalette) -> Element<'static, Message> {
@@ -653,6 +870,7 @@ pub(crate) fn settings_view<'a>(
         SettingsSection::WebSocket => {
             settings_websocket_view(ws, &server.bearer_token, server.token_revealed, palette)
         }
+        SettingsSection::Version => settings_version_pane(palette),
         SettingsSection::Storage => settings_storage_pane(palette),
         SettingsSection::Queues => settings_queues_pane(palette),
         SettingsSection::Notifications => settings_notifications_pane(palette),
@@ -661,18 +879,6 @@ pub(crate) fn settings_view<'a>(
         SettingsSection::Shortcuts => crate::settings_shortcuts::view(shortcuts, palette),
         SettingsSection::Hotkeys => crate::settings_hotkeys::view(hotkeys, rt, palette),
         SettingsSection::Scripting => crate::settings_scripting::view(scripting, palette),
-        other => {
-            let label = format!("Settings · {other:?}");
-            iced::widget::container(forge_widgets::empty_state(
-                label,
-                forge_widgets::tr!("settings_coming_soon_placeholder"),
-                None::<(&str, Message)>,
-                palette,
-            ))
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
-        }
     };
 
     let page_header = simple_page_header(
@@ -748,6 +954,21 @@ pub(crate) fn handle_message(app: &mut App, sub: SettingsMsg) -> Task<Message> {
         SettingsMsg::OpenLogDirectoryResult(result) => {
             if let Err(e) = result {
                 tracing::warn!(error = %e, "failed to open log directory");
+            }
+            Task::none()
+        }
+        SettingsMsg::CheckForUpdatesRequested => Task::perform(
+            async move {
+                tokio::task::spawn_blocking(|| open::that(RELEASES_URL).map_err(|e| e.to_string()))
+                    .await
+                    .map_err(|e| e.to_string())
+                    .and_then(|r| r)
+            },
+            |r| Message::Settings(SettingsMsg::CheckForUpdatesResult(r)),
+        ),
+        SettingsMsg::CheckForUpdatesResult(result) => {
+            if let Err(e) = result {
+                tracing::warn!(error = %e, "failed to open releases page");
             }
             Task::none()
         }

@@ -737,4 +737,114 @@ mod tests {
         );
         assert_eq!(HttpError::Timeout.to_string(), "http: timeout");
     }
+
+    // ── script.log emission + error counting (CORE-4) ────────────────────────
+
+    #[tokio::test]
+    async fn forge_log_warn_error_emit_script_log_events_with_matching_level_and_script_id() {
+        // Each console-logging builtin publishes exactly one `script.log` bus event
+        // whose `level` distinguishes it, tagged with the owning script so the editor
+        // console can filter to its own run. The message text flows through verbatim.
+        for (call, level) in [
+            (r#"forge::log("hi")"#, "info"),
+            (r#"forge::warn("hi")"#, "warn"),
+            (r#"forge::error("hi")"#, "error"),
+        ] {
+            let dp = open_dp().await;
+            let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+            let caused_by = EventId::new();
+            let script_id = ScriptId::new();
+            let api = ForgeApi::new(
+                Arc::new(CapturingPublisher(Arc::clone(&captured))),
+                dp as Arc<dyn GlobalsRepo>,
+                caused_by,
+                Instant::now() + std::time::Duration::from_secs(10),
+            )
+            .with_script_id(script_id);
+            let engine = Engine::with_api(EngineConfig::default(), api);
+
+            tokio::task::spawn_blocking(move || {
+                let _ = engine.eval_script(call).unwrap();
+            })
+            .await
+            .unwrap();
+
+            let events = captured.lock().unwrap();
+            let logs: Vec<&Event> = events.iter().filter(|e| e.kind == "script.log").collect();
+            assert_eq!(logs.len(), 1, "exactly one script.log for {call}");
+            let ev = logs[0];
+            assert_eq!(
+                ev.payload["level"].as_str(),
+                Some(level),
+                "level for {call}"
+            );
+            assert_eq!(
+                ev.payload["message"].as_str(),
+                Some("hi"),
+                "message for {call}"
+            );
+            assert_eq!(
+                ev.payload["script_id"].as_str(),
+                Some(script_id.to_string().as_str()),
+                "script_id tag for {call}",
+            );
+            assert_eq!(ev.caused_by, Some(caused_by));
+        }
+    }
+
+    #[tokio::test]
+    async fn error_count_reflects_only_forge_error_calls() {
+        // The shared counter tracks `forge::error` calls and nothing else — log and
+        // warn must leave it untouched, and repeated errors accumulate.
+        let dp = open_dp().await;
+        let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+        let caused_by = EventId::new();
+        let api = ForgeApi::new(
+            Arc::new(CapturingPublisher(captured)),
+            dp as Arc<dyn GlobalsRepo>,
+            caused_by,
+            Instant::now() + std::time::Duration::from_secs(10),
+        );
+        let counter = api.error_count_handle();
+        let engine = Engine::with_api(EngineConfig::default(), api);
+
+        tokio::task::spawn_blocking(move || {
+            let _ = engine
+                .eval_script(
+                    r#"forge::log("a"); forge::warn("b"); forge::error("c"); forge::error("d");"#,
+                )
+                .unwrap();
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(
+            counter.load(Ordering::Relaxed),
+            2,
+            "only the two forge::error calls count; log and warn do not",
+        );
+    }
+
+    #[tokio::test]
+    async fn script_log_script_id_is_null_when_api_has_no_script_id() {
+        // Live action-chain runs have no owning editor console, so their `script.log`
+        // events carry a null `script_id` rather than an empty or fabricated one.
+        let dp = open_dp().await;
+        let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+        let (api, _caused_by) = make_api_with_publisher(Arc::clone(&dp), Arc::clone(&captured));
+        let engine = Engine::with_api(EngineConfig::default(), api);
+
+        tokio::task::spawn_blocking(move || {
+            let _ = engine.eval_script(r#"forge::log("x")"#).unwrap();
+        })
+        .await
+        .unwrap();
+
+        let events = captured.lock().unwrap();
+        let ev = events.iter().find(|e| e.kind == "script.log").unwrap();
+        assert!(
+            ev.payload["script_id"].is_null(),
+            "a run with no owning script must emit a null script_id",
+        );
+    }
 }

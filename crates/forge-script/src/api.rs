@@ -1,10 +1,10 @@
 use std::sync::Arc;
-use std::sync::atomic::AtomicU32;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_storage::GlobalsRepo;
-use forge_types::{EventId, Variant};
+use forge_types::{EventId, ScriptId, Variant};
 use rhai::{EvalAltResult, ImmutableString, Module, Position};
 use tokio::runtime::Handle;
 
@@ -26,6 +26,8 @@ pub struct ForgeApi {
     publisher: Arc<dyn EventPublisher>,
     globals: Arc<dyn GlobalsRepo>,
     caused_by: EventId,
+    script_id: Option<ScriptId>,
+    error_count: Arc<AtomicU32>,
     speak: Option<Arc<dyn SpeakRequester>>,
     http: Option<Arc<ScriptHttpClient>>,
     pub deadline: Instant,
@@ -42,10 +44,25 @@ impl ForgeApi {
             publisher,
             globals,
             caused_by,
+            script_id: None,
+            error_count: Arc::new(AtomicU32::new(0)),
             speak: None,
             http: None,
             deadline,
         }
+    }
+
+    /// Tags every `forge::log/warn/error` bus event this API emits with the owning
+    /// script so a single editor console can filter to just its own run.
+    pub fn with_script_id(mut self, script_id: ScriptId) -> Self {
+        self.script_id = Some(script_id);
+        self
+    }
+
+    /// Shares the counter incremented by every `forge::error` call so the caller
+    /// can read the real error total after the run completes.
+    pub fn error_count_handle(&self) -> Arc<AtomicU32> {
+        Arc::clone(&self.error_count)
     }
 
     /// Optional builder — wires the TTS hook so `forge::tts::*` rhai functions become
@@ -66,24 +83,52 @@ impl ForgeApi {
         let mut root = Module::new();
 
         let caused_by = self.caused_by;
+        let script_id_str = self.script_id.map(|id| id.to_string());
+
+        let log_pub = Arc::clone(&self.publisher);
+        let log_sid = script_id_str.clone();
         root.set_native_fn(
             "log",
             move |msg: ImmutableString| -> Result<(), Box<EvalAltResult>> {
                 tracing::info!(caused_by = %caused_by, message = %msg);
+                log_pub.publish(script_log_event(
+                    "info",
+                    msg.as_str(),
+                    caused_by,
+                    log_sid.as_deref(),
+                ));
                 Ok(())
             },
         );
+        let warn_pub = Arc::clone(&self.publisher);
+        let warn_sid = script_id_str.clone();
         root.set_native_fn(
             "warn",
             move |msg: ImmutableString| -> Result<(), Box<EvalAltResult>> {
                 tracing::warn!(caused_by = %caused_by, message = %msg);
+                warn_pub.publish(script_log_event(
+                    "warn",
+                    msg.as_str(),
+                    caused_by,
+                    warn_sid.as_deref(),
+                ));
                 Ok(())
             },
         );
+        let error_pub = Arc::clone(&self.publisher);
+        let error_sid = script_id_str.clone();
+        let error_counter = Arc::clone(&self.error_count);
         root.set_native_fn(
             "error",
             move |msg: ImmutableString| -> Result<(), Box<EvalAltResult>> {
                 tracing::error!(caused_by = %caused_by, message = %msg);
+                error_counter.fetch_add(1, Ordering::Relaxed);
+                error_pub.publish(script_log_event(
+                    "error",
+                    msg.as_str(),
+                    caused_by,
+                    error_sid.as_deref(),
+                ));
                 Ok(())
             },
         );
@@ -123,6 +168,27 @@ impl ForgeApi {
 
         Arc::new(root)
     }
+}
+
+/// Builds the observability event emitted by `forge::log/warn/error`. `script_id`
+/// is `null` for live action-chain runs (no editor console owns them) and set to
+/// the owning script for editor test-runs so the console can filter to its own run.
+fn script_log_event(
+    level: &str,
+    message: &str,
+    caused_by: EventId,
+    script_id: Option<&str>,
+) -> Event {
+    Event::caused_by(
+        EventSource::Rhai,
+        "script.log",
+        serde_json::json!({
+            "level": level,
+            "message": message,
+            "script_id": script_id,
+        }),
+        caused_by,
+    )
 }
 
 fn build_http_module(

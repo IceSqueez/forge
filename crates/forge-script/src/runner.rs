@@ -44,7 +44,8 @@ pub async fn run_inline(
         })?;
     let cfg = load_script_engine_config(settings.as_ref()).await;
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(cfg.wall_time_ms);
-    let api = ForgeApi::new(bus, globals, EventId::new(), deadline);
+    let api = ForgeApi::new(bus, globals, EventId::new(), deadline).with_script_id(script_id);
+    let error_count = api.error_count_handle();
     let engine = Engine::with_api(cfg, api);
     let start = std::time::Instant::now();
     let result =
@@ -68,7 +69,7 @@ pub async fn run_inline(
     Ok(RunResult {
         script_id,
         duration_ms,
-        error_count: 0,
+        error_count: error_count.load(std::sync::atomic::Ordering::Relaxed) as usize,
         output_display,
     })
 }

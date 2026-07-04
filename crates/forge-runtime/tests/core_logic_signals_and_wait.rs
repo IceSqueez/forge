@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use forge_events::{Event, EventPublisher};
 use forge_registry::{
     CancelSignal, ChainExecutor, ChainSignal, ChildChainOutcome, ControlCell, ControlSignal,
-    RegistryError, RunContext, StopMark, SubActionRunner,
+    RegistryError, RunContext, StopMark, SubActionRunner, TelemetrySink,
 };
 use forge_runtime::sub_action_runners::{
     CoreLogicBreakLoopRunner, CoreLogicContinueLoopRunner, CoreLogicStopRunner,
@@ -70,6 +70,7 @@ fn ctx_with<'a>(
         executor,
         cancel,
         control,
+        telemetry: TelemetrySink::new(),
     }
 }
 

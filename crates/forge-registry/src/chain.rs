@@ -72,6 +72,35 @@ pub struct ChildChainOutcome {
     pub telemetry: Vec<SubActionTelemetry>,
 }
 
+/// Side channel a composite runner writes the re-tagged telemetry of its nested
+/// steps into, for the enclosing sequential/concurrent chain to drain and splice
+/// into its own flat list right after the runner returns. A fresh cell is minted
+/// per chain invocation and drained per step, so nested rows never leak past the
+/// step that produced them; a runner built through `RunContext::leaf` writes into
+/// a cell nobody drains.
+#[derive(Clone, Default)]
+pub struct TelemetrySink(Arc<Mutex<Vec<SubActionTelemetry>>>);
+
+impl TelemetrySink {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn extend(&self, rows: impl IntoIterator<Item = SubActionTelemetry>) {
+        self.guard().extend(rows);
+    }
+
+    pub fn drain(&self) -> Vec<SubActionTelemetry> {
+        std::mem::take(&mut self.guard())
+    }
+
+    fn guard(&self) -> MutexGuard<'_, Vec<SubActionTelemetry>> {
+        self.0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
 /// Pollable cancellation flag shared across a single execution and its nested
 /// child chains. Deliberately lives off the serde `ExecutionContext` (it is not
 /// serializable) and is observed cooperatively between awaits.

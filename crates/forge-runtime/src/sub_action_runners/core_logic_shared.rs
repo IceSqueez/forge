@@ -68,6 +68,34 @@ pub(super) fn propagate(signal: ChainSignal, ctx: &RunContext<'_>) -> SubActionO
     }
 }
 
+/// Lifts a nested child chain's telemetry into flat rows for the enclosing chain
+/// to splice after this composite step. Each row gains a leading `parent_index.arm`
+/// path segment (segments joined by `/`) and its `index` is set to
+/// `SubActionTelemetry::NESTED`, so surfaces keyed by top-level position skip it
+/// while the failure trail stays legible. A row already lifted from a deeper body
+/// keeps its trail; a fresh branch-chain row folds its local index and kind id into
+/// the trail's final segment.
+pub(super) fn retag(
+    children: Vec<SubActionTelemetry>,
+    parent_index: usize,
+    arm: &str,
+) -> Vec<SubActionTelemetry> {
+    let prefix = format!("{parent_index}.{arm}");
+    children
+        .into_iter()
+        .map(|mut child| {
+            let trail = if child.is_nested() {
+                child.kind
+            } else {
+                format!("{}.{}", child.index, child.kind)
+            };
+            child.kind = format!("{prefix}/{trail}");
+            child.index = SubActionTelemetry::NESTED;
+            child
+        })
+        .collect()
+}
+
 pub(super) fn telemetry(
     ctx: &RunContext<'_>,
     kind: &str,

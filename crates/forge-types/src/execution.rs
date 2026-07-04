@@ -28,6 +28,22 @@ pub struct SubActionTelemetry {
     pub outcome: SubActionOutcome,
 }
 
+impl SubActionTelemetry {
+    /// `index` value marking a row that is not a positional top-level chain step
+    /// but a nested step lifted out of a branch/loop/switch body into the same
+    /// flat list. Such a row carries its parent-path locator in `kind` (segments
+    /// `parentIndex.arm` joined by `/`, ending in `localIndex.kindId`) rather than
+    /// a bare kind id, and holds no top-level position.
+    pub const NESTED: usize = usize::MAX;
+
+    /// Whether this row is a nested step surfaced from a composite body. Surfaces
+    /// keyed by top-level position (per-step averages, total-time sums) skip these;
+    /// the full flat list keeps them so a failure inside a branch stays diagnosable.
+    pub fn is_nested(&self) -> bool {
+        self.index == Self::NESTED
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ExecutionMetadata {

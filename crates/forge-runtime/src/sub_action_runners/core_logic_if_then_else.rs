@@ -5,7 +5,7 @@ use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, Su
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
-use super::core_logic_shared::{decode_chain, propagate, telemetry};
+use super::core_logic_shared::{decode_chain, propagate, retag, telemetry};
 use crate::ConditionGate;
 
 pub struct CoreLogicIfThenElseRunner {
@@ -128,6 +128,8 @@ impl SubActionRunner for CoreLogicIfThenElseRunner {
             .await
         {
             Ok(child) => {
+                ctx.telemetry
+                    .extend(retag(child.telemetry, ctx.index, branch));
                 let outcome = propagate(child.signal, ctx);
                 let stack = child.arg_stack.set(
                     "branch.taken".to_owned(),

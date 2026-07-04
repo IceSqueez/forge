@@ -13,7 +13,7 @@ pub mod runner;
 pub use category::{SubActionCategory, TriggerCategory};
 pub use chain::{
     CancelSignal, ChainExecutor, ChainSignal, ChildChainOutcome, ControlCell, ControlSignal,
-    StopMark,
+    StopMark, TelemetrySink,
 };
 pub use descriptor::TriggerKindDescriptor;
 pub use error::RegistryError;

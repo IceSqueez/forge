@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_registry::{
     CancelSignal, ChainExecutor, ChainSignal, ChildChainOutcome, ControlCell, ControlSignal,
-    RegistryError, RunContext, SubActionRegistry, effective_config,
+    RegistryError, RunContext, SubActionRegistry, TelemetrySink, effective_config,
 };
 use forge_types::{ArgStack, EventId, SubActionOutcome, SubActionStep, SubActionTelemetry};
 use serde_json::json;
@@ -86,6 +86,7 @@ impl ChainEngine {
     ) -> ChainRun {
         let cancel = executor.cancel_signal();
         let control = ControlCell::new();
+        let nested_sink = TelemetrySink::new();
         let mut current = arg_stack.clone();
         let mut telemetry = Vec::new();
 
@@ -118,6 +119,7 @@ impl ChainEngine {
                 executor,
                 cancel: cancel.clone(),
                 control: control.clone(),
+                telemetry: nested_sink.clone(),
             };
 
             let (tel, updated) = match self.registry.get(&step.kind_id) {
@@ -134,6 +136,8 @@ impl ChainEngine {
                 }
             };
 
+            let nested = nested_sink.drain();
+
             if let Some(new_stack) = updated {
                 current = new_stack;
             }
@@ -143,6 +147,7 @@ impl ChainEngine {
                 _ => None,
             };
             telemetry.push(tel);
+            telemetry.extend(nested);
 
             if let Some(msg) = failure {
                 return ChainRun {
@@ -210,6 +215,9 @@ impl ChainEngine {
                 // Concurrent siblings share no sequential ordering, so a control
                 // signal one raised has no defined enclosing chain to drain it;
                 // each gets its own never-read cell rather than racing on a shared one.
+                // Each also gets its own telemetry sink, drained once its future
+                // settles, so a composite sibling's nested rows stay with it.
+                let nested_sink = TelemetrySink::new();
                 let run_ctx = RunContext {
                     arg_stack,
                     index,
@@ -218,10 +226,11 @@ impl ChainEngine {
                     executor,
                     cancel: cancel.clone(),
                     control: ControlCell::new(),
+                    telemetry: nested_sink.clone(),
                 };
 
                 async move {
-                    match self.registry.get(&step.kind_id) {
+                    let (tel, _) = match self.registry.get(&step.kind_id) {
                         Some(runner) => {
                             let resolved = effective_config(&runner.default_config(), &step.config);
                             runner.execute(&resolved, &run_ctx).await
@@ -233,7 +242,8 @@ impl ChainEngine {
                             );
                             (skipped_telemetry(index, &step.kind_id), None)
                         }
-                    }
+                    };
+                    (tel, nested_sink.drain())
                 }
             })
             .collect();
@@ -242,13 +252,14 @@ impl ChainEngine {
 
         let mut telemetry = Vec::new();
         let mut first_failure: Option<String> = None;
-        for (tel, _) in results {
+        for (tel, nested) in results {
             if first_failure.is_none()
                 && let SubActionOutcome::Failed(msg) = &tel.outcome
             {
                 first_failure = Some(msg.clone());
             }
             telemetry.push(tel);
+            telemetry.extend(nested);
         }
 
         let signal = match first_failure {

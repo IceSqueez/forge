@@ -254,7 +254,12 @@ impl ActionEngine {
 
         ctx.completed_at = Some(OffsetDateTime::now_utc());
 
-        let total_ms: u64 = ctx.telemetry.iter().map(|t| t.duration_ms).sum();
+        let total_ms: u64 = ctx
+            .telemetry
+            .iter()
+            .filter(|t| !t.is_nested())
+            .map(|t| t.duration_ms)
+            .sum();
         let outcome_label = match &ctx.outcome {
             ExecutionOutcome::Success => "success",
             ExecutionOutcome::Failed(_) => "failed",

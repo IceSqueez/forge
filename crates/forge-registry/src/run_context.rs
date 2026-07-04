@@ -2,7 +2,9 @@ use async_trait::async_trait;
 use forge_events::EventPublisher;
 use forge_types::{ArgStack, EventId, SubActionStep};
 
-use crate::chain::{CancelSignal, ChainExecutor, ChainSignal, ChildChainOutcome, ControlCell};
+use crate::chain::{
+    CancelSignal, ChainExecutor, ChainSignal, ChildChainOutcome, ControlCell, TelemetrySink,
+};
 use crate::error::RegistryError;
 
 pub struct RunContext<'a> {
@@ -21,6 +23,10 @@ pub struct RunContext<'a> {
     /// the enclosing sequential chain to drain. Drained only by `drive_sequential`;
     /// a leaf built through `RunContext::leaf` writes into a cell nobody reads.
     pub control: ControlCell,
+    /// Where a composite runner deposits the re-tagged telemetry of its nested
+    /// steps for the enclosing chain to splice into its flat list. Drained after
+    /// each step by the chain driver; a leaf writes into a cell nobody drains.
+    pub telemetry: TelemetrySink,
 }
 
 impl<'a> RunContext<'a> {
@@ -42,6 +48,7 @@ impl<'a> RunContext<'a> {
             executor: &NOOP_EXECUTOR,
             cancel: CancelSignal::new(),
             control: ControlCell::new(),
+            telemetry: TelemetrySink::new(),
         }
     }
 }

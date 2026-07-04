@@ -5,7 +5,7 @@ use forge_types::{
 };
 use time::OffsetDateTime;
 
-use super::core_logic_shared::{decode_chain, decode_steps, propagate, telemetry};
+use super::core_logic_shared::{decode_chain, decode_steps, propagate, retag, telemetry};
 
 pub struct CoreLogicSwitchCaseRunner;
 
@@ -83,6 +83,11 @@ impl SubActionRunner for CoreLogicSwitchCaseRunner {
         let value = ctx.arg_stack.interpolate(template);
 
         let (matched_index, steps) = select_case(config, &value);
+        let arm = if matched_index >= 0 {
+            format!("case{matched_index}")
+        } else {
+            "default".to_owned()
+        };
 
         let base = ctx.arg_stack.clone().set(
             "switch.matched_case_index".to_owned(),
@@ -95,6 +100,8 @@ impl SubActionRunner for CoreLogicSwitchCaseRunner {
             .await
         {
             Ok(child) => {
+                ctx.telemetry
+                    .extend(retag(child.telemetry, ctx.index, &arm));
                 let outcome = propagate(child.signal, ctx);
                 let stack = child.arg_stack.set(
                     "switch.matched_case_index".to_owned(),

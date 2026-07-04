@@ -110,7 +110,7 @@ fn compute_sub_action_averages(
     let mut counts: Vec<u64> = vec![0; sub_action_count];
     for ctx in history {
         for t in &ctx.telemetry {
-            if t.index < sub_action_count {
+            if !t.is_nested() && t.index < sub_action_count {
                 sums[t.index] += t.duration_ms;
                 counts[t.index] += 1;
             }

@@ -11,7 +11,7 @@ use forge_types::{
 };
 use time::OffsetDateTime;
 
-use super::core_logic_shared::{decode_chain, telemetry};
+use super::core_logic_shared::{decode_chain, retag, telemetry};
 use crate::ConditionGate;
 
 const MAX_COUNT: i64 = 1000;
@@ -38,26 +38,34 @@ enum IterOutcome {
     Abort(ArgStack),
 }
 
+/// Runs one loop body pass, returning the iteration verdict alongside the body's
+/// per-step telemetry so the caller can re-tag and splice it into the flat list.
 async fn run_body(
     executor: &dyn ChainExecutor,
     body: &[SubActionStep],
     iter_stack: ArgStack,
     parent_event_id: EventId,
-) -> IterOutcome {
+) -> (IterOutcome, Vec<SubActionTelemetry>) {
     match executor
         .run_child_chain(body, &iter_stack, parent_event_id)
         .await
     {
-        Ok(child) => match child.signal {
-            ChainSignal::Completed | ChainSignal::Continue => {
-                IterOutcome::Continue(child.arg_stack)
-            }
-            ChainSignal::Break => IterOutcome::Break(child.arg_stack),
-            ChainSignal::Stop(mark) => IterOutcome::Stop(child.arg_stack, mark),
-            ChainSignal::Error(msg) => IterOutcome::Fail(msg),
-            ChainSignal::Aborted => IterOutcome::Abort(child.arg_stack),
-        },
-        Err(e) => IterOutcome::Fail(format!("core.logic.loop: {e}")),
+        Ok(child) => {
+            let outcome = match child.signal {
+                ChainSignal::Completed | ChainSignal::Continue => {
+                    IterOutcome::Continue(child.arg_stack)
+                }
+                ChainSignal::Break => IterOutcome::Break(child.arg_stack),
+                ChainSignal::Stop(mark) => IterOutcome::Stop(child.arg_stack, mark),
+                ChainSignal::Error(msg) => IterOutcome::Fail(msg),
+                ChainSignal::Aborted => IterOutcome::Abort(child.arg_stack),
+            };
+            (outcome, child.telemetry)
+        }
+        Err(e) => (
+            IterOutcome::Fail(format!("core.logic.loop: {e}")),
+            Vec::new(),
+        ),
     }
 }
 
@@ -221,7 +229,13 @@ impl SubActionRunner for CoreLogicLoopRunner {
                 }
             };
 
-            match run_body(ctx.executor, &body, iter_stack, ctx.parent_event_id).await {
+            let iter_no = iterations;
+            let (iter_outcome, body_telemetry) =
+                run_body(ctx.executor, &body, iter_stack, ctx.parent_event_id).await;
+            ctx.telemetry
+                .extend(retag(body_telemetry, ctx.index, &format!("body#{iter_no}")));
+
+            match iter_outcome {
                 IterOutcome::Continue(stack) => {
                     current = stack;
                     iterations += 1;

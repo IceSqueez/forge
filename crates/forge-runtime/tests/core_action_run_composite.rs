@@ -266,6 +266,7 @@ async fn run(
         executor,
         cancel: CancelSignal::new(),
         control: forge_registry::ControlCell::new(),
+        telemetry: forge_registry::TelemetrySink::new(),
     };
     runner.execute(config, &ctx).await.0.outcome
 }

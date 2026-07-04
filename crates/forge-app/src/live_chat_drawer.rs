@@ -562,27 +562,27 @@ fn selected_viewer_detail<'a>(
         MenuItem::Divider,
         MenuItem::Item {
             label: forge_widgets::tr!("chat_drawer_block_tts"),
-            on_press: Message::Noop,
+            on_press: Message::LiveChat(LiveChatMsg::BlockTtsViewer),
             icon: None,
             shortcut: None,
             color: Some(p.warning),
-            disabled: true,
+            disabled: false,
         },
         MenuItem::Item {
             label: forge_widgets::tr!("chat_drawer_timeout"),
-            on_press: Message::Noop,
+            on_press: Message::LiveChat(LiveChatMsg::TimeoutViewer),
             icon: None,
             shortcut: None,
             color: Some(p.warning),
-            disabled: true,
+            disabled: false,
         },
         MenuItem::Item {
             label: forge_widgets::tr!("chat_drawer_ban"),
-            on_press: Message::Noop,
+            on_press: Message::LiveChat(LiveChatMsg::BanViewer),
             icon: None,
             shortcut: None,
             color: Some(p.random),
-            disabled: true,
+            disabled: false,
         },
     ];
 

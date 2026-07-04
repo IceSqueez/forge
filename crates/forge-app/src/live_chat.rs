@@ -2,10 +2,12 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::sync::Arc;
 
 use forge_events::{Event, EventSource};
+use forge_speak_queue::SpeakCommand;
 use forge_types::{
     ChatEventDetail, ChatSegment, ChatSource, EventId, ModerationMarks, PlatformId, SubActionStep,
     UnifiedChatRow, UserBadge, Variant,
 };
+use forge_voice::{AliasId, AliasState, EngineId, VoiceAlias, VoiceId};
 use forge_widgets::ToastKind;
 use iced::Task;
 use time::OffsetDateTime;
@@ -63,6 +65,59 @@ fn build_whisper_step(login: &str, message: &str) -> SubActionStep {
         config,
         enabled: true,
         label: Some(format!("Whisper {login}")),
+    }
+}
+
+/// The drawer's "Timeout 10 min" affordance — the `twitch.moderation.timeout_user`
+/// runner resolves the login to a user id itself, so the drawer passes the username.
+const DRAWER_TIMEOUT_SECONDS: i64 = 600;
+
+fn build_timeout_step(login: &str) -> SubActionStep {
+    let mut config = BTreeMap::new();
+    config.insert(
+        "target_user_login".to_owned(),
+        Variant::String(login.to_owned()),
+    );
+    config.insert(
+        "duration_seconds".to_owned(),
+        Variant::Int(DRAWER_TIMEOUT_SECONDS),
+    );
+    SubActionStep {
+        kind_id: "twitch.moderation.timeout_user".to_owned(),
+        config,
+        enabled: true,
+        label: Some(format!("Timeout {login}")),
+    }
+}
+
+fn build_ban_step(login: &str) -> SubActionStep {
+    let mut config = BTreeMap::new();
+    config.insert(
+        "target_user_login".to_owned(),
+        Variant::String(login.to_owned()),
+    );
+    SubActionStep {
+        kind_id: "twitch.moderation.ban_user".to_owned(),
+        config,
+        enabled: true,
+        label: Some(format!("Ban {login}")),
+    }
+}
+
+/// A blocked viewer needs no engine/voice — the resolver honours `AliasState::Blocked`
+/// before any voice assignment, so both are left empty (mirrors the alias form's
+/// blocked path). A fresh `AliasId` means repeated blocks append rather than update,
+/// same as the alias-form "Assign" flow.
+fn blocked_alias(viewer: &str) -> VoiceAlias {
+    VoiceAlias {
+        id: AliasId::new(),
+        viewer_id: viewer.to_owned(),
+        viewer_name: viewer.to_owned(),
+        engine_id: EngineId(String::new()),
+        voice_id: VoiceId(String::new()),
+        pitch_semitones: None,
+        rate_multiplier: None,
+        state: AliasState::Blocked,
     }
 }
 
@@ -587,6 +642,107 @@ pub fn update(state: &mut LiveChatState, rt: &RuntimeView, msg: LiveChatMsg) -> 
             state.whisper_form = None;
             Task::none()
         }
+        LiveChatMsg::TimeoutViewer => {
+            state.drawer_menu_open = false;
+            let Some(login) = state.selected_viewer.clone() else {
+                return Task::none();
+            };
+            let step = build_timeout_step(&login);
+            let engine = rt.action_engine.clone();
+            Task::perform(
+                async move {
+                    match engine {
+                        Some(e) => e
+                            .execute_quick_action(
+                                step,
+                                "twitch".to_owned(),
+                                format!("Timeout {login}"),
+                            )
+                            .await
+                            .map_err(|e| e.to_string()),
+                        None => Err("action engine unavailable".to_owned()),
+                    }
+                },
+                |r| Message::LiveChat(LiveChatMsg::TimeoutResult(r)),
+            )
+        }
+        LiveChatMsg::TimeoutResult(Ok(())) => Task::done(Message::Toast(ToastMsg::Fired {
+            kind: ToastKind::Success,
+            message: "Viewer timed out for 10 min".to_owned(),
+            duration_ms: 3000,
+            action: None,
+        })),
+        LiveChatMsg::TimeoutResult(Err(e)) => Task::done(Message::Toast(ToastMsg::Fired {
+            kind: ToastKind::Error,
+            message: format!("Timeout failed: {e}"),
+            duration_ms: 5000,
+            action: None,
+        })),
+        LiveChatMsg::BanViewer => {
+            state.drawer_menu_open = false;
+            let Some(login) = state.selected_viewer.clone() else {
+                return Task::none();
+            };
+            let step = build_ban_step(&login);
+            let engine = rt.action_engine.clone();
+            Task::perform(
+                async move {
+                    match engine {
+                        Some(e) => e
+                            .execute_quick_action(step, "twitch".to_owned(), format!("Ban {login}"))
+                            .await
+                            .map_err(|e| e.to_string()),
+                        None => Err("action engine unavailable".to_owned()),
+                    }
+                },
+                |r| Message::LiveChat(LiveChatMsg::BanResult(r)),
+            )
+        }
+        LiveChatMsg::BanResult(Ok(())) => Task::done(Message::Toast(ToastMsg::Fired {
+            kind: ToastKind::Success,
+            message: "Viewer banned".to_owned(),
+            duration_ms: 3000,
+            action: None,
+        })),
+        LiveChatMsg::BanResult(Err(e)) => Task::done(Message::Toast(ToastMsg::Fired {
+            kind: ToastKind::Error,
+            message: format!("Ban failed: {e}"),
+            duration_ms: 5000,
+            action: None,
+        })),
+        LiveChatMsg::BlockTtsViewer => {
+            state.drawer_menu_open = false;
+            let Some(viewer) = state.selected_viewer.clone() else {
+                return Task::none();
+            };
+            let alias = blocked_alias(&viewer);
+            let repo = rt.backend.voice_alias_repo();
+            let handle = rt.speak_queue.clone();
+            Task::perform(
+                async move {
+                    repo.upsert(&alias).await.map_err(|e| e.to_string())?;
+                    if let Some(handle) = handle
+                        && let Err(e) = handle.send(SpeakCommand::SetAlias(alias)).await
+                    {
+                        tracing::warn!(error = %e, "voice alias hot-reload failed");
+                    }
+                    Ok::<(), String>(())
+                },
+                |r| Message::LiveChat(LiveChatMsg::BlockTtsResult(r)),
+            )
+        }
+        LiveChatMsg::BlockTtsResult(Ok(())) => Task::done(Message::Toast(ToastMsg::Fired {
+            kind: ToastKind::Success,
+            message: "Viewer blocked from TTS".to_owned(),
+            duration_ms: 3000,
+            action: None,
+        })),
+        LiveChatMsg::BlockTtsResult(Err(e)) => Task::done(Message::Toast(ToastMsg::Fired {
+            kind: ToastKind::Error,
+            message: format!("Block from TTS failed: {e}"),
+            duration_ms: 5000,
+            action: None,
+        })),
     }
 }
 

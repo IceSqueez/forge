@@ -686,6 +686,12 @@ pub enum LiveChatMsg {
     WhisperSend,
     WhisperResult(Result<(), String>),
     WhisperCancel,
+    TimeoutViewer,
+    TimeoutResult(Result<(), String>),
+    BanViewer,
+    BanResult(Result<(), String>),
+    BlockTtsViewer,
+    BlockTtsResult(Result<(), String>),
 }
 
 #[derive(Debug, Clone)]

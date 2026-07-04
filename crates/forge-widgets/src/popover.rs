@@ -522,15 +522,27 @@ where
             shell,
             &panel_bounds,
         );
-        if let Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) = event
-            && let mouse::Cursor::Available(pos) = cursor
-            && !self.trigger_bounds.contains(pos)
-        {
-            let inside_panel = panel_bounds.contains(pos);
-            let panel_captured = !captured_before_panel && shell.is_event_captured();
-            if !inside_panel || panel_captured {
-                shell.publish(self.on_dismiss.clone());
+        let mouse::Cursor::Available(pos) = cursor else {
+            return;
+        };
+        match event {
+            // Click-away: a press outside both the panel and its trigger closes
+            // the menu. Presses on the trigger are left to its own toggle.
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+                if !panel_bounds.contains(pos) && !self.trigger_bounds.contains(pos) {
+                    shell.publish(self.on_dismiss.clone());
+                }
             }
+            // Item activation fires on release: the panel captured this release,
+            // so an item button has just published its `on_press`. Dismiss after
+            // it, never before, so the click is not swallowed on mouse-down.
+            Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
+                let panel_captured = !captured_before_panel && shell.is_event_captured();
+                if panel_bounds.contains(pos) && panel_captured {
+                    shell.publish(self.on_dismiss.clone());
+                }
+            }
+            _ => {}
         }
     }
 

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use forge_audio::{list_output_devices, refresh_output_devices};
+use forge_storage::SettingsRepo;
 use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::tokens::{FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spf};
 use forge_widgets::{DeviceLabel, ForgePalette, output_device_picker, section_header};
@@ -14,8 +15,12 @@ use crate::runtime_view::RuntimeView;
 pub struct SettingsAudioState {
     pub devices: Vec<DeviceLabel>,
     pub selected_device_idx: usize,
+    /// Id of the currently selected device, tracked across reloads/refreshes so the
+    /// selection survives a device-list re-fetch (e.g. after "Refresh devices").
+    pub selected_device_id: Option<String>,
     pub devices_loading: bool,
     pub devices_error: Option<String>,
+    pub persist_error: Option<String>,
     pub test_tone_playing: bool,
     pub test_tone_error: Option<String>,
 }
@@ -25,8 +30,10 @@ impl SettingsAudioState {
         Self {
             devices: Vec::new(),
             selected_device_idx: 0,
+            selected_device_id: None,
             devices_loading: false,
             devices_error: None,
+            persist_error: None,
             test_tone_playing: false,
             test_tone_error: None,
         }
@@ -67,6 +74,39 @@ async fn enumerate_devices_uncached() -> Result<Vec<DeviceLabel>, String> {
     .map_err(|e| e.to_string())?
 }
 
+async fn enumerate_devices_and_preference(
+    settings: Arc<dyn SettingsRepo>,
+) -> Result<(Vec<DeviceLabel>, Option<String>), String> {
+    let devices = enumerate_devices().await?;
+    let preference = settings
+        .audio_output_device_id()
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok((devices, preference))
+}
+
+async fn enumerate_devices_uncached_and_preference(
+    settings: Arc<dyn SettingsRepo>,
+) -> Result<(Vec<DeviceLabel>, Option<String>), String> {
+    let devices = enumerate_devices_uncached().await?;
+    let preference = settings
+        .audio_output_device_id()
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok((devices, preference))
+}
+
+/// Picks which device index should be selected after a (re)load: prefer `want_id` if it
+/// still exists in `devices`, else the OS-default device, else index 0.
+fn resolve_selected_idx(devices: &[DeviceLabel], want_id: Option<&str>) -> usize {
+    if let Some(id) = want_id
+        && let Some(idx) = devices.iter().position(|d| d.id == id)
+    {
+        return idx;
+    }
+    devices.iter().position(|d| d.is_default).unwrap_or(0)
+}
+
 async fn play_test_tone(device_id: Option<String>) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
         use forge_audio::{AudioSink, CpalSink, DeviceId, NullAudioEventSink, PcmBuffer};
@@ -97,20 +137,27 @@ async fn play_test_tone(device_id: Option<String>) -> Result<(), String> {
 
 pub fn update(
     state: &mut SettingsAudioState,
-    _rt: &RuntimeView,
+    rt: &RuntimeView,
     msg: SettingsAudioMsg,
 ) -> Task<Message> {
     match msg {
         SettingsAudioMsg::LoadRequested => {
             state.devices_loading = true;
             state.devices_error = None;
-            Task::perform(enumerate_devices(), |r| {
+            let settings: Arc<dyn SettingsRepo> = Arc::clone(&rt.backend) as Arc<dyn SettingsRepo>;
+            Task::perform(enumerate_devices_and_preference(settings), |r| {
                 Message::SettingsAudio(SettingsAudioMsg::DevicesLoaded(r))
             })
         }
-        SettingsAudioMsg::DevicesLoaded(Ok(devices)) => {
+        SettingsAudioMsg::DevicesLoaded(Ok((devices, persisted))) => {
             state.devices = devices;
             state.devices_loading = false;
+            let want = state.selected_device_id.clone().or(persisted);
+            state.selected_device_idx = resolve_selected_idx(&state.devices, want.as_deref());
+            state.selected_device_id = state
+                .devices
+                .get(state.selected_device_idx)
+                .map(|d| d.id.clone());
             Task::none()
         }
         SettingsAudioMsg::DevicesLoaded(Err(e)) => {
@@ -121,12 +168,30 @@ pub fn update(
         SettingsAudioMsg::RefreshDevices => {
             state.devices_loading = true;
             state.devices_error = None;
-            Task::perform(enumerate_devices_uncached(), |r| {
+            let settings: Arc<dyn SettingsRepo> = Arc::clone(&rt.backend) as Arc<dyn SettingsRepo>;
+            Task::perform(enumerate_devices_uncached_and_preference(settings), |r| {
                 Message::SettingsAudio(SettingsAudioMsg::DevicesLoaded(r))
             })
         }
         SettingsAudioMsg::DeviceSelected(idx) => {
             state.selected_device_idx = idx;
+            state.selected_device_id = state.devices.get(idx).map(|d| d.id.clone());
+            state.persist_error = None;
+            let settings: Arc<dyn SettingsRepo> = Arc::clone(&rt.backend) as Arc<dyn SettingsRepo>;
+            let device_id = state.selected_device_id.clone();
+            Task::perform(
+                async move {
+                    settings
+                        .set_audio_output_device_id(device_id)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                |r| Message::SettingsAudio(SettingsAudioMsg::DevicePersisted(r)),
+            )
+        }
+        SettingsAudioMsg::DevicePersisted(Ok(())) => Task::none(),
+        SettingsAudioMsg::DevicePersisted(Err(e)) => {
+            state.persist_error = Some(e);
             Task::none()
         }
         SettingsAudioMsg::TestToneRequested => {
@@ -188,6 +253,14 @@ pub fn settings_audio_view<'a>(
             .into()
     });
 
+    let persist_error_el: Option<Element<'a, Message>> = state.persist_error.as_ref().map(|e| {
+        text(format!("Failed to save device selection: {e}"))
+            .size(FONT_SM)
+            .color(palette.random)
+            .font(font(FontRole::Body))
+            .into()
+    });
+
     let p = *palette;
     let test_btn_label = if state.test_tone_playing {
         "Playing\u{2026}"
@@ -243,6 +316,9 @@ pub fn settings_audio_view<'a>(
     .spacing(gap_xxl);
 
     if let Some(err) = test_error_el {
+        content_col = content_col.push(err);
+    }
+    if let Some(err) = persist_error_el {
         content_col = content_col.push(err);
     }
 

@@ -402,9 +402,10 @@ pub enum SidebarMsg {
 #[derive(Debug, Clone)]
 pub enum SettingsAudioMsg {
     LoadRequested,
-    DevicesLoaded(Result<Vec<DeviceLabel>, String>),
+    DevicesLoaded(Result<(Vec<DeviceLabel>, Option<String>), String>),
     RefreshDevices,
     DeviceSelected(usize),
+    DevicePersisted(Result<(), String>),
     TestToneRequested,
     TestToneResult(Result<(), String>),
 }

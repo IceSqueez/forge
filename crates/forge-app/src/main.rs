@@ -247,14 +247,47 @@ fn find_piper_binary() -> Option<PathBuf> {
     })
 }
 
-fn default_audio_device_id() -> Option<DeviceId> {
-    forge_audio::list_output_devices().ok().and_then(|devices| {
-        devices
-            .iter()
-            .find(|d| d.is_default)
-            .map(|d| d.id.clone())
-            .or_else(|| devices.first().map(|d| d.id.clone()))
-    })
+/// Resolves the output device to open at boot: the user's persisted preference if it
+/// still exists in the current device list, else the OS default, else the first
+/// enumerated device. Returns `None` only when no output devices exist at all.
+fn resolve_audio_output_device(
+    rt: &tokio::runtime::Runtime,
+    settings: &Arc<dyn forge_storage::SettingsRepo>,
+) -> Option<DeviceId> {
+    let devices = match forge_audio::list_output_devices() {
+        Ok(devices) => devices,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to enumerate audio output devices");
+            return None;
+        }
+    };
+    if devices.is_empty() {
+        return None;
+    }
+
+    let stored = match rt.block_on(settings.audio_output_device_id()) {
+        Ok(id) => id,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to read stored audio output device preference");
+            None
+        }
+    };
+
+    if let Some(stored_id) = stored {
+        if let Some(found) = devices.iter().find(|d| d.id.as_str() == stored_id) {
+            return Some(found.id.clone());
+        }
+        tracing::warn!(
+            device = %stored_id,
+            "stored audio output device no longer present; falling back to OS default"
+        );
+    }
+
+    devices
+        .iter()
+        .find(|d| d.is_default)
+        .map(|d| d.id.clone())
+        .or_else(|| devices.first().map(|d| d.id.clone()))
 }
 
 fn spawn_speak_queue(
@@ -262,6 +295,7 @@ fn spawn_speak_queue(
     creds: Arc<dyn forge_storage::CredentialsRepo>,
     filters_repo: Arc<dyn forge_storage::TtsFiltersRepo>,
     voice_alias_repo: Arc<dyn forge_storage::VoiceAliasRepo>,
+    settings: Arc<dyn forge_storage::SettingsRepo>,
     rt: &tokio::runtime::Runtime,
 ) -> (
     Arc<SpeakQueueHandle>,
@@ -368,17 +402,18 @@ fn spawn_speak_queue(
     };
     let pipeline = forge_speak_queue::PipelineConfigHandle::new(pipeline_config);
 
-    let audio_sink: Arc<dyn forge_audio::AudioSink> = match default_audio_device_id() {
-        Some(device_id) => {
-            let event_sink = Arc::new(forge_audio::NullAudioEventSink);
-            tracing::info!(device = %device_id.0, "speak queue audio sink ready");
-            Arc::new(CpalSink::new(device_id, None, None, event_sink))
-        }
-        None => {
-            tracing::warn!("no audio output device found; speak queue using NullSink");
-            Arc::new(NullSink)
-        }
-    };
+    let audio_sink: Arc<dyn forge_audio::AudioSink> =
+        match resolve_audio_output_device(rt, &settings) {
+            Some(device_id) => {
+                let event_sink = Arc::new(forge_audio::NullAudioEventSink);
+                tracing::info!(device = %device_id.0, "speak queue audio sink ready");
+                Arc::new(CpalSink::new(device_id, None, None, event_sink))
+            }
+            None => {
+                tracing::warn!("no audio output device found; speak queue using NullSink");
+                Arc::new(NullSink)
+            }
+        };
 
     let registry_handle = Arc::clone(&registry);
     let deps = QueueDeps {
@@ -412,11 +447,13 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
     };
 
     let creds_repo = Arc::clone(&dp) as Arc<dyn forge_storage::CredentialsRepo>;
+    let settings_repo = Arc::clone(&dp) as Arc<dyn forge_storage::SettingsRepo>;
     let (speak_queue, tts_engine_ids, pipeline_config, tts_registry) = spawn_speak_queue(
         Arc::clone(&bus),
         creds_repo,
         dp.tts_filters_repo(),
         dp.voice_alias_repo(),
+        settings_repo,
         &rt,
     );
     let _viewer_tracker = forge_app::viewer_tracker::spawn(Arc::clone(&bus), dp.viewer_repo());

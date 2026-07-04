@@ -34,6 +34,7 @@ pub mod reserved_keys {
     pub const SCRIPT_TIMEOUT_MS_KEY: &str = "script.timeout_ms";
     pub const LANGUAGE: &str = "app.language";
     pub const KEYBOARD_SHORTCUTS: &str = "app.keyboard_shortcuts";
+    pub const AUDIO_OUTPUT_DEVICE_ID_KEY: &str = "audio.output_device_id";
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -178,6 +179,32 @@ pub trait SettingsRepo: Send + Sync {
             Some(family) => self.set_string(reserved_keys::FONT_MONO, &family).await,
             None => {
                 self.delete(reserved_keys::FONT_MONO).await?;
+                Ok(())
+            }
+        }
+    }
+
+    /// Returns the persisted TTS output device id (opaque, backend-defined string), or
+    /// None if unset (OS default device applies).
+    async fn audio_output_device_id(&self) -> Result<Option<String>, StorageError> {
+        self.get_string(reserved_keys::AUDIO_OUTPUT_DEVICE_ID_KEY)
+            .await
+    }
+
+    /// Sets the persisted TTS output device id, or pass None to clear the preference
+    /// and fall back to the OS default device.
+    async fn set_audio_output_device_id(
+        &self,
+        device_id: Option<String>,
+    ) -> Result<(), StorageError> {
+        match device_id {
+            Some(id) => {
+                self.set_string(reserved_keys::AUDIO_OUTPUT_DEVICE_ID_KEY, &id)
+                    .await
+            }
+            None => {
+                self.delete(reserved_keys::AUDIO_OUTPUT_DEVICE_ID_KEY)
+                    .await?;
                 Ok(())
             }
         }

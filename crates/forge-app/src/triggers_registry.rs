@@ -1,10 +1,11 @@
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use forge_registry::{KindPlatformContract, effective_config};
 use forge_storage::StorageError;
 use forge_types::{
-    ActionId, PlatformId, PlatformScope, TriggerConfig, TriggerInstance, TriggerInstanceId,
+    ActionId, PlatformId, PlatformScope, TriggerConfig, TriggerInstance, TriggerInstanceId, Variant,
 };
 use iced::{
     Alignment, Background, Border, Color, Element, Length, Task,
@@ -16,13 +17,14 @@ use forge_widgets::{
     SheetHeader, SheetWidth, SideSheet, Spacing, ToastKind, category_chip, confirm_modal,
     destructive_button, empty_state,
     icons::{Icon, tabler_icon},
-    menu_button, radius, search_input, secondary_button, section_header, sp, spf,
-    tokens::{BORDER_THIN, FONT_SM, FONT_XS, FontRole, font},
+    menu_button, primary_button, radius, search_input, secondary_button, section_header, sp, spf,
+    tokens::{BORDER_THIN, FONT_SM, FONT_XS, FONT_XXS, FontRole, font},
     value_preview,
 };
 
 use crate::Message;
 use crate::Screen;
+use crate::actions_field_form::{DynamicOptions, FieldBuffers, FieldEditMsg, render_field};
 use crate::message::ToastMsg;
 use crate::runtime_view::RuntimeView;
 use crate::triggers_create_form::{CreateInstanceFormMsg, CreateInstanceFormState};
@@ -73,6 +75,20 @@ pub struct TriggersRegistryState {
     pub menu_open: Option<TriggerInstanceId>,
     // (id, draft name) of the row whose name is being edited inline.
     pub renaming: Option<(TriggerInstanceId, String)>,
+    // Inline edit session for the selected instance's Configuration section.
+    pub config_edit: Option<ConfigEditState>,
+}
+
+/// Working state for editing a selected instance's config in its sheet.
+///
+/// The buffers are seeded from the *effective* config so every field shows its
+/// inherited default while being edited; on save the buffer is diffed against
+/// the kind's default so only genuinely-changed keys persist as overrides.
+pub struct ConfigEditState {
+    pub instance_id: TriggerInstanceId,
+    pub text_buffer: BTreeMap<String, String>,
+    pub overrides_buffer: BTreeMap<String, Variant>,
+    pub saving: bool,
 }
 
 impl Default for TriggersRegistryState {
@@ -91,6 +107,7 @@ impl Default for TriggersRegistryState {
             create_form: None,
             menu_open: None,
             renaming: None,
+            config_edit: None,
         }
     }
 }
@@ -132,6 +149,13 @@ pub enum TriggersRegistryMsg {
     RenameSaved(Result<(TriggerInstanceId, String), String>),
     UseAsTemplate(TriggerInstanceId),
     TemplateCreated(Result<TriggerInstanceId, String>),
+    ConfigEditStarted(TriggerInstanceId),
+    ConfigFieldChanged(String, Variant),
+    ConfigIntInputChanged(String, String),
+    ConfigFieldReverted(String),
+    ConfigEditCancelled,
+    ConfigEditSubmit,
+    ConfigEditSaved(Result<(), String>),
 }
 
 pub fn update(
@@ -215,6 +239,14 @@ pub fn update(
         TriggersRegistryMsg::RowSelected(id) => {
             state.selected_id = Some(id);
             state.used_in.clear();
+            // Selecting a different row abandons any in-progress config edit.
+            if state
+                .config_edit
+                .as_ref()
+                .is_some_and(|c| c.instance_id != id)
+            {
+                state.config_edit = None;
+            }
             let dp = Arc::clone(&rt.backend);
             Task::perform(
                 async move {
@@ -246,6 +278,7 @@ pub fn update(
         TriggersRegistryMsg::RowDeselected | TriggersRegistryMsg::SheetClosed => {
             state.selected_id = None;
             state.used_in.clear();
+            state.config_edit = None;
             Task::none()
         }
         TriggersRegistryMsg::UsedInLoaded(Ok(usages)) => {
@@ -541,6 +574,140 @@ pub fn update(
                 action: None,
             }))
         }
+        TriggersRegistryMsg::ConfigEditStarted(id) => {
+            let Some(row) = state.instances.iter().find(|r| r.id == id) else {
+                return Task::none();
+            };
+            let Some(descriptor) = rt.trigger_registry.get(&row.kind_id) else {
+                return Task::none();
+            };
+            let default_cfg = descriptor.default_config();
+            let effective = effective_config(&default_cfg, &row.overrides);
+            let mut text_buffer = BTreeMap::new();
+            for (k, v) in &effective {
+                text_buffer.insert(
+                    k.clone(),
+                    crate::actions_field_form::variant_to_display_str(v),
+                );
+            }
+            state.config_edit = Some(ConfigEditState {
+                instance_id: id,
+                text_buffer,
+                overrides_buffer: effective,
+                saving: false,
+            });
+            Task::none()
+        }
+        TriggersRegistryMsg::ConfigFieldChanged(key, variant) => {
+            if let Some(edit) = state.config_edit.as_mut() {
+                crate::actions_field_form::apply_field_edit(
+                    &mut edit.text_buffer,
+                    &mut edit.overrides_buffer,
+                    FieldEditMsg::Set(key, variant),
+                );
+            }
+            Task::none()
+        }
+        TriggersRegistryMsg::ConfigIntInputChanged(key, raw) => {
+            if let Some(edit) = state.config_edit.as_mut() {
+                crate::actions_field_form::apply_field_edit(
+                    &mut edit.text_buffer,
+                    &mut edit.overrides_buffer,
+                    FieldEditMsg::IntInput(key, raw),
+                );
+            }
+            Task::none()
+        }
+        TriggersRegistryMsg::ConfigFieldReverted(key) => {
+            // Reverting = writing the field back to its schema default so the
+            // save-time diff drops it from the sparse overrides. The default is
+            // resolved from the kind descriptor; a key with no default is
+            // cleared outright.
+            let Some(edit_id) = state.config_edit.as_ref().map(|e| e.instance_id) else {
+                return Task::none();
+            };
+            let default_v = state
+                .instances
+                .iter()
+                .find(|r| r.id == edit_id)
+                .and_then(|row| rt.trigger_registry.get(&row.kind_id))
+                .map(|d| d.default_config())
+                .and_then(|cfg| cfg.get(&key).cloned());
+            if let Some(edit) = state.config_edit.as_mut() {
+                let op = match default_v {
+                    Some(v) => FieldEditMsg::Set(key, v),
+                    None => FieldEditMsg::Clear(key),
+                };
+                crate::actions_field_form::apply_field_edit(
+                    &mut edit.text_buffer,
+                    &mut edit.overrides_buffer,
+                    op,
+                );
+            }
+            Task::none()
+        }
+        TriggersRegistryMsg::ConfigEditCancelled => {
+            state.config_edit = None;
+            Task::none()
+        }
+        TriggersRegistryMsg::ConfigEditSubmit => {
+            let Some(edit) = state.config_edit.as_ref() else {
+                return Task::none();
+            };
+            let id = edit.instance_id;
+            let Some(row) = state.instances.iter().find(|r| r.id == id) else {
+                return Task::none();
+            };
+            let Some(descriptor) = rt.trigger_registry.get(&row.kind_id) else {
+                return Task::none();
+            };
+            let default_cfg = descriptor.default_config();
+            let sparse: TriggerConfig = edit
+                .overrides_buffer
+                .iter()
+                .filter(|(k, v)| default_cfg.get(*k) != Some(*v))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            if let Some(edit) = state.config_edit.as_mut() {
+                edit.saving = true;
+            }
+            let dp = Arc::clone(&rt.backend);
+            // Id-stable upsert: re-saving the fetched instance keeps its id, so
+            // the action_trigger_instances join rows stay intact.
+            Task::perform(
+                async move {
+                    let repo = dp.trigger_instance_repo();
+                    let mut instance = repo
+                        .get(id)
+                        .await
+                        .map_err(|e| e.to_string())?
+                        .ok_or_else(|| "trigger instance not found".to_owned())?;
+                    instance.overrides = sparse;
+                    repo.save(&instance).await.map_err(|e| e.to_string())?;
+                    Ok::<(), String>(())
+                },
+                |r| Message::TriggersRegistry(TriggersRegistryMsg::ConfigEditSaved(r)),
+            )
+        }
+        TriggersRegistryMsg::ConfigEditSaved(Ok(())) => {
+            state.config_edit = None;
+            // Reload to refresh the row's overrides (and used-in counts); the
+            // selection is preserved so the sheet re-renders in read mode.
+            Task::done(Message::TriggersRegistry(
+                TriggersRegistryMsg::LoadRequested,
+            ))
+        }
+        TriggersRegistryMsg::ConfigEditSaved(Err(msg)) => {
+            if let Some(edit) = state.config_edit.as_mut() {
+                edit.saving = false;
+            }
+            Task::done(Message::Toast(ToastMsg::Fired {
+                kind: ToastKind::Error,
+                message: msg,
+                duration_ms: 5000,
+                action: None,
+            }))
+        }
     }
 }
 
@@ -641,7 +808,7 @@ pub fn view<'a>(
     let sheet_body: Element<'_, Message> = state
         .selected_id
         .and_then(|id| state.instances.iter().find(|r| r.id == id))
-        .map(|row| sheet_body_for(row, &state.used_in, rt, palette))
+        .map(|row| sheet_body_for(row, &state.used_in, state.config_edit.as_ref(), rt, palette))
         .unwrap_or_else(|| Space::new().width(Length::Fill).height(Length::Fill).into());
 
     let sheet = SideSheet::new(sheet_body)
@@ -1225,6 +1392,7 @@ fn instance_row<'a>(
 fn sheet_body_for<'a>(
     row: &'a TriggerInstanceRow,
     used_in: &'a [InstanceUsage],
+    config_edit: Option<&'a ConfigEditState>,
     rt: &'a RuntimeView,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
@@ -1246,81 +1414,7 @@ fn sheet_body_for<'a>(
         snap: true,
     };
 
-    let config_section: Element<'_, Message> =
-        if let Some(descriptor) = rt.trigger_registry.get(&row.kind_id) {
-            let default_cfg = descriptor.default_config();
-            let effective = effective_config(&default_cfg, &row.overrides);
-            let fields = descriptor.config_fields();
-
-            if fields.is_empty() {
-                container(
-                    text(forge_widgets::tr!("triggers_sheet_no_config"))
-                        .size(FONT_XS)
-                        .color(p.text_faint)
-                        .font(font(FontRole::Body)),
-                )
-                .padding([sp(Spacing::Xs), sp(Spacing::Md)])
-                .into()
-            } else {
-                let field_rows: Vec<Element<'_, Message>> = fields
-                    .iter()
-                    .map(|field| {
-                        let key = form_field_key(field);
-                        let label = form_field_label(field);
-                        let is_overridden = row.overrides.contains_key(key);
-                        let value = effective.get(key);
-
-                        let label_el = text(label)
-                            .size(FONT_XS)
-                            .color(p.text_secondary)
-                            .font(font(FontRole::Body));
-
-                        let value_el: Element<'_, Message> = if let Some(v) = value {
-                            if is_overridden {
-                                value_preview::<Message>(palette, v)
-                            } else {
-                                text(variant_one_line(v))
-                                    .size(FONT_XS)
-                                    .color(p.text_muted)
-                                    .font(mono)
-                                    .into()
-                            }
-                        } else {
-                            text("—")
-                                .size(FONT_XS)
-                                .color(p.text_faint)
-                                .font(mono)
-                                .into()
-                        };
-
-                        let field_row = row![
-                            container(label_el).width(Length::FillPortion(4)),
-                            container(value_el).width(Length::FillPortion(6)),
-                        ]
-                        .align_y(Alignment::Center)
-                        .padding([sp(Spacing::Xxs), sp(Spacing::Md)]);
-
-                        field_row.into()
-                    })
-                    .collect();
-
-                let hdr = section_header(
-                    forge_widgets::tr!("triggers_sheet_section_configuration"),
-                    None,
-                    palette,
-                );
-                column(std::iter::once(hdr).chain(field_rows).collect::<Vec<_>>()).into()
-            }
-        } else {
-            container(
-                text(forge_widgets::tr!("triggers_sheet_not_registered"))
-                    .size(FONT_XS)
-                    .color(p.text_faint)
-                    .font(font(FontRole::Body)),
-            )
-            .padding([sp(Spacing::Xs), sp(Spacing::Md)])
-            .into()
-        };
+    let config_section = config_section_view(row, config_edit, rt, palette);
 
     let used_in_section: Element<'_, Message> = if !used_in.is_empty() {
         let hdr = section_header(
@@ -1414,6 +1508,281 @@ fn sheet_body_for<'a>(
     ]
     .width(Length::Fill)
     .height(Length::Fill)
+    .into()
+}
+
+fn config_section_view<'a>(
+    row: &'a TriggerInstanceRow,
+    config_edit: Option<&'a ConfigEditState>,
+    rt: &'a RuntimeView,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    let p = *palette;
+    let mono = font(FontRole::Monospace);
+
+    let Some(descriptor) = rt.trigger_registry.get(&row.kind_id) else {
+        return container(
+            text(forge_widgets::tr!("triggers_sheet_not_registered"))
+                .size(FONT_XS)
+                .color(p.text_faint)
+                .font(font(FontRole::Body)),
+        )
+        .padding([sp(Spacing::Xs), sp(Spacing::Md)])
+        .into();
+    };
+
+    let fields = descriptor.config_fields();
+    if fields.is_empty() {
+        return column![
+            config_header(0, palette),
+            container(
+                text(forge_widgets::tr!("triggers_sheet_no_config"))
+                    .size(FONT_XS)
+                    .color(p.text_faint)
+                    .font(font(FontRole::Body)),
+            )
+            .padding([sp(Spacing::Xs), sp(Spacing::Md)]),
+        ]
+        .into();
+    }
+
+    let default_cfg = descriptor.default_config();
+    let editing = config_edit.filter(|c| c.instance_id == row.id);
+
+    if let Some(edit) = editing {
+        // EDIT MODE — every field type is rendered by the shared render_field.
+        let buffers = FieldBuffers {
+            text: &edit.text_buffer,
+            overrides: &edit.overrides_buffer,
+        };
+        let options = DynamicOptions::new();
+        let on_edit = |e: FieldEditMsg| {
+            let m = match e {
+                FieldEditMsg::Set(k, v) => TriggersRegistryMsg::ConfigFieldChanged(k, v),
+                FieldEditMsg::IntInput(k, raw) => {
+                    TriggersRegistryMsg::ConfigIntInputChanged(k, raw)
+                }
+                FieldEditMsg::Clear(k) => TriggersRegistryMsg::ConfigFieldReverted(k),
+            };
+            Message::TriggersRegistry(m)
+        };
+
+        let mut overridden_count = 0usize;
+        let field_rows: Vec<Element<'a, Message>> = fields
+            .iter()
+            .map(|field| {
+                let key = form_field_key(field);
+                let is_overridden = edit.overrides_buffer.get(key) != default_cfg.get(key);
+                if is_overridden {
+                    overridden_count += 1;
+                }
+                let widget = render_field(field, &buffers, &options, palette, on_edit);
+                row![
+                    container(widget).width(Length::Fill),
+                    revert_button(key, is_overridden, palette),
+                ]
+                .spacing(spf(Spacing::Xs))
+                .align_y(Alignment::Center)
+                .padding([sp(Spacing::Xxs), sp(Spacing::Md)])
+                .into()
+            })
+            .collect();
+
+        let sparse: TriggerConfig = edit
+            .overrides_buffer
+            .iter()
+            .filter(|(k, v)| default_cfg.get(*k) != Some(*v))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        let dirty = sparse != row.overrides;
+        let footer = config_edit_footer(dirty && !edit.saving, palette);
+
+        column(
+            std::iter::once(config_header(overridden_count, palette))
+                .chain(field_rows)
+                .chain(std::iter::once(footer))
+                .collect::<Vec<_>>(),
+        )
+        .into()
+    } else {
+        // READ MODE — calm summary; clicking a value opens the edit session.
+        let effective = effective_config(&default_cfg, &row.overrides);
+        let field_rows: Vec<Element<'a, Message>> = fields
+            .iter()
+            .map(|field| {
+                let key = form_field_key(field);
+                let label = form_field_label(field);
+                let is_overridden = row.overrides.contains_key(key);
+                let value = effective.get(key);
+
+                let label_el = text(label)
+                    .size(FONT_XS)
+                    .color(p.text_secondary)
+                    .font(font(FontRole::Body));
+
+                let value_el: Element<'a, Message> = if let Some(v) = value {
+                    if is_overridden {
+                        value_preview::<Message>(palette, v)
+                    } else {
+                        text(variant_one_line(v))
+                            .size(FONT_XS)
+                            .color(p.text_faint)
+                            .font(mono)
+                            .into()
+                    }
+                } else {
+                    text("—")
+                        .size(FONT_XS)
+                        .color(p.text_faint)
+                        .font(mono)
+                        .into()
+                };
+
+                let value_btn = button(container(value_el).width(Length::Fill))
+                    .on_press(Message::TriggersRegistry(
+                        TriggersRegistryMsg::ConfigEditStarted(row.id),
+                    ))
+                    .padding(0)
+                    .width(Length::Fill)
+                    .style(|_: &iced::Theme, _status| button::Style {
+                        background: None,
+                        border: Border::default(),
+                        text_color: Color::TRANSPARENT,
+                        shadow: iced::Shadow::default(),
+                        snap: false,
+                    });
+
+                row![
+                    container(label_el).width(Length::FillPortion(4)),
+                    container(value_btn).width(Length::FillPortion(6)),
+                ]
+                .align_y(Alignment::Center)
+                .padding([sp(Spacing::Xxs), sp(Spacing::Md)])
+                .into()
+            })
+            .collect();
+
+        column(
+            std::iter::once(config_header(row.overrides.len(), palette))
+                .chain(field_rows)
+                .collect::<Vec<_>>(),
+        )
+        .into()
+    }
+}
+
+fn config_header<'a>(overridden_count: usize, palette: &'a ForgePalette) -> Element<'a, Message> {
+    let p = *palette;
+    let mono = font(FontRole::Monospace);
+    let right: Element<'a, Message> = if overridden_count > 0 {
+        text(forge_widgets::tr!(
+            "triggers_sheet_config_overridden",
+            count = overridden_count as i64
+        ))
+        .size(FONT_XXS)
+        .color(p.warning)
+        .font(mono)
+        .into()
+    } else {
+        text(forge_widgets::tr!("triggers_sheet_config_all_defaults"))
+            .size(FONT_XXS)
+            .color(p.text_faint)
+            .font(mono)
+            .into()
+    };
+    container(
+        row![
+            text(forge_widgets::tr!("triggers_sheet_section_configuration"))
+                .size(FONT_XXS)
+                .color(p.text_muted)
+                .font(mono),
+            Space::new().width(Length::Fill),
+            right,
+        ]
+        .align_y(Alignment::Center),
+    )
+    .padding([sp(Spacing::Xs), sp(Spacing::Md)])
+    .into()
+}
+
+fn revert_button<'a>(
+    key: &str,
+    overridden: bool,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    let p = *palette;
+    if !overridden {
+        // Reserve the slot so overridden and default rows stay column-aligned.
+        return Space::new().width(18.0).height(18.0).into();
+    }
+    let key_owned = key.to_owned();
+    button(tabler_icon::<Message>(Icon::X, 12.0, p.text_faint))
+        .on_press(Message::TriggersRegistry(
+            TriggersRegistryMsg::ConfigFieldReverted(key_owned),
+        ))
+        .padding(sp(Spacing::Xxs))
+        .style(move |_: &iced::Theme, status| button::Style {
+            background: match status {
+                button::Status::Hovered | button::Status::Pressed => {
+                    Some(Background::Color(Color {
+                        a: 0.08,
+                        ..Color::WHITE
+                    }))
+                }
+                _ => None,
+            },
+            border: Border {
+                radius: radius(Radius::Sm).into(),
+                color: Color::TRANSPARENT,
+                width: 0.0,
+            },
+            text_color: Color::TRANSPARENT,
+            shadow: iced::Shadow::default(),
+            snap: false,
+        })
+        .into()
+}
+
+fn config_edit_footer<'a>(can_save: bool, palette: &'a ForgePalette) -> Element<'a, Message> {
+    let p = *palette;
+    let cancel = secondary_button(
+        forge_widgets::tr!("triggers_sheet_config_cancel"),
+        Message::TriggersRegistry(TriggersRegistryMsg::ConfigEditCancelled),
+        palette,
+    );
+    let save_lbl = forge_widgets::tr!("triggers_sheet_config_save");
+    let save: Element<'a, Message> = if can_save {
+        primary_button(
+            save_lbl,
+            Message::TriggersRegistry(TriggersRegistryMsg::ConfigEditSubmit),
+            palette,
+        )
+    } else {
+        container(
+            text(save_lbl)
+                .size(FONT_SM)
+                .color(Color { a: 0.5, ..p.shell })
+                .font(font(FontRole::Body)),
+        )
+        .padding([sp(Spacing::Xs), sp(Spacing::Md)])
+        .style(move |_: &iced::Theme| container::Style {
+            background: Some(Background::Color(Color { a: 0.4, ..p.brand })),
+            border: Border {
+                radius: radius(Radius::Md).into(),
+                color: Color::TRANSPARENT,
+                width: 0.0,
+            },
+            ..container::Style::default()
+        })
+        .into()
+    };
+    container(
+        row![cancel, Space::new().width(Length::Fill), save]
+            .spacing(spf(Spacing::Xs))
+            .align_y(Alignment::Center),
+    )
+    .width(Length::Fill)
+    .padding([sp(Spacing::Xs), sp(Spacing::Md)])
     .into()
 }
 

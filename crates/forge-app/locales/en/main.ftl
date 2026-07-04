@@ -518,6 +518,10 @@ triggers_template_copy_name = { $name } copy
 ## Triggers registry — sheet detail
 
 triggers_sheet_section_configuration = CONFIGURATION
+triggers_sheet_config_overridden = { $count } overridden
+triggers_sheet_config_all_defaults = all defaults
+triggers_sheet_config_save = Save
+triggers_sheet_config_cancel = Cancel
 triggers_sheet_no_config = No configurable fields
 triggers_sheet_not_registered = Trigger kind not registered
 triggers_sheet_section_used_in = USED IN

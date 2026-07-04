@@ -520,6 +520,10 @@ triggers_template_copy_name = { $name } копія
 ## Реєстр тригерів — деталі у бічній панелі
 
 triggers_sheet_section_configuration = КОНФІГУРАЦІЯ
+triggers_sheet_config_overridden = { $count } перевизначено
+triggers_sheet_config_all_defaults = усе за замовчуванням
+triggers_sheet_config_save = Зберегти
+triggers_sheet_config_cancel = Скасувати
 triggers_sheet_no_config = Налаштованих полів немає
 triggers_sheet_not_registered = Тип тригера не зареєстровано
 triggers_sheet_section_used_in = ВИКОРИСТОВУЄТЬСЯ В

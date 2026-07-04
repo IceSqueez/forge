@@ -1,15 +1,17 @@
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use forge_events::EventSource;
 use forge_widgets::{
-    ForgePalette, Radius, Spacing, bearer_token_display, color_for_source,
+    ConfirmKind, ConfirmModalParams, ConfirmTone, ForgePalette, Radius, Spacing,
+    bearer_token_display, color_for_source, confirm_modal,
     icons::{Icon, tabler_icon},
     section_header, sp, spf, throughput_sparkline,
     tokens::{FONT_MD, FONT_SM, FONT_XS, FontRole, font, radius},
 };
 use iced::{
     Alignment, Background, Border, Color, Element, Length, Task,
-    widget::{Column, Row, Space, button, column, container, row, scrollable, text},
+    widget::{Column, Row, Space, button, column, container, row, scrollable, stack, text},
 };
 
 use crate::Message;
@@ -116,6 +118,11 @@ pub struct ServerScreenState {
     pub overlay_root: String,
     pub overlay_entries: Vec<OwnedOverlayEntry>,
     pub selected_overlay_file: Option<usize>,
+    /// Two-phase disconnect gate — armed by the row `X` control, rendered by
+    /// the shared `confirm_modal`. Holds the target client's `identification`
+    /// (not its row index, which can shift under a live snapshot refresh).
+    /// `None` = no confirm dialog showing.
+    pub pending_disconnect: Option<String>,
 }
 
 impl Default for ServerScreenState {
@@ -132,6 +139,7 @@ impl Default for ServerScreenState {
             overlay_root: String::new(),
             overlay_entries: Vec::new(),
             selected_overlay_file: None,
+            pending_disconnect: None,
         }
     }
 }
@@ -162,6 +170,8 @@ pub enum ServerScreenMsg {
     OpenOverlayFolderResult(Result<(), String>),
     SelectOverlayFile(usize),
     DisconnectClient(usize),
+    DisconnectConfirmAccepted,
+    DisconnectConfirmDismissed,
     ServerInfoArrived(ServerInfoSnapshot),
     OverlayListingArrived(OverlayListingSnapshot),
     BandwidthTick(f32),
@@ -213,8 +223,26 @@ pub fn update(
             Task::none()
         }
         ServerScreenMsg::DisconnectClient(idx) => {
-            if idx < state.connected_clients.len() {
-                state.connected_clients.remove(idx);
+            // Arms the confirm gate only — the row `X` no longer disconnects
+            // directly (SY-03-F10: no modal shell rendered at all today).
+            // Captures the client's stable `identification`, not its row
+            // index, which can shift under a live `ServerInfoArrived` refresh
+            // while the dialog is open.
+            if let Some(row) = state.connected_clients.get(idx) {
+                state.pending_disconnect = Some(row.identification.clone());
+            }
+            Task::none()
+        }
+        ServerScreenMsg::DisconnectConfirmDismissed => {
+            state.pending_disconnect = None;
+            Task::none()
+        }
+        ServerScreenMsg::DisconnectConfirmAccepted => {
+            // The real force-disconnect backend capability does not exist yet
+            // (tracked separately as a SERVER-2 item) — this only removes the
+            // row from local UI state, same as the pre-confirm behavior.
+            if let Some(id) = state.pending_disconnect.take() {
+                state.connected_clients.retain(|c| c.identification != id);
             }
             Task::none()
         }
@@ -1309,6 +1337,36 @@ fn footer_bar<'a>(state: &'a ServerScreenState, palette: &ForgePalette) -> Eleme
         .into()
 }
 
+/// Renders the shared destructive-confirm modal while a disconnect is armed.
+/// Returns `None` (silent no-render) if the pending client has vanished from
+/// `connected_clients` since the row `X` was clicked — same defensive
+/// convention as the other `confirm_modal` consumers.
+fn pending_disconnect_modal<'a>(
+    state: &'a ServerScreenState,
+    palette: &'a ForgePalette,
+) -> Option<Element<'a, Message>> {
+    let id = state.pending_disconnect.as_ref()?;
+    let row = state
+        .connected_clients
+        .iter()
+        .find(|c| &c.identification == id)?;
+
+    Some(confirm_modal(
+        ConfirmModalParams {
+            kind: ConfirmKind::Client,
+            item_name: Cow::Borrowed(row.identification.as_str()),
+            cascade_hint: Some(Cow::Owned(forge_widgets::tr!(
+                "server_disconnect_confirm_hint",
+                info = row.client_type_label.as_str()
+            ))),
+            tone: ConfirmTone::Warning,
+        },
+        Message::Server(ServerScreenMsg::DisconnectConfirmAccepted),
+        Message::Server(ServerScreenMsg::DisconnectConfirmDismissed),
+        palette,
+    ))
+}
+
 pub fn server_screen_view<'a>(
     state: &'a ServerScreenState,
     palette: &'a ForgePalette,
@@ -1331,12 +1389,17 @@ pub fn server_screen_view<'a>(
         palette,
     );
 
-    column![
+    let base: Element<'a, Message> = column![
         page_header,
         scrollable(body).height(Length::Fill),
         footer_bar(state, palette),
     ]
-    .into()
+    .into();
+
+    match pending_disconnect_modal(state, palette) {
+        Some(modal) => stack![base, modal].into(),
+        None => base,
+    }
 }
 
 #[cfg(test)]

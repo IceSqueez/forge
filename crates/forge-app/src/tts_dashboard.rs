@@ -1,10 +1,14 @@
+use std::borrow::Cow;
+
 use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakEvent, SpeakRequest};
-use forge_widgets::ForgePalette;
 use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::tokens::{
     BORDER_THIN, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
 };
-use iced::widget::{Space, button, column, container, row, scrollable, slider, text, text_input};
+use forge_widgets::{ConfirmKind, ConfirmModalParams, ConfirmTone, ForgePalette, confirm_modal};
+use iced::widget::{
+    Space, button, column, container, row, scrollable, slider, stack, text, text_input,
+};
 use iced::{Alignment, Background, Border, Color, Element, Length, Task};
 
 use crate::Message;
@@ -19,6 +23,9 @@ pub struct TtsDashState {
     pub queue: Vec<QueueItemData>,
     pub stats: SessionStats,
     pub command_error: Option<String>,
+    /// Two-phase Stop-all gate — armed by the control strip's Stop button,
+    /// rendered by the shared `confirm_modal`. `false` = no confirm showing.
+    pub pending_stop_all: bool,
 }
 
 pub struct NowSpeakingData {
@@ -62,6 +69,7 @@ impl TtsDashState {
                 avg_latency_ms: None,
             },
             command_error: None,
+            pending_stop_all: false,
         }
     }
 }
@@ -168,6 +176,17 @@ pub fn update(state: &mut TtsDashState, rt: &RuntimeView, msg: TtsDashMsg) -> Ta
             send_command(handle, SpeakCommand::Skip)
         }
         TtsDashMsg::StopAll => {
+            // Arms the confirm gate only (TT-01-F4 — was a bare
+            // immediate-execute site with no confirm at all).
+            state.pending_stop_all = true;
+            Task::none()
+        }
+        TtsDashMsg::StopAllConfirmDismissed => {
+            state.pending_stop_all = false;
+            Task::none()
+        }
+        TtsDashMsg::StopAllConfirmAccepted => {
+            state.pending_stop_all = false;
             state.queue.clear();
             state.now_speaking = None;
             let Some(handle) = rt.speak_queue.clone() else {
@@ -250,7 +269,26 @@ pub fn tts_dashboard_view<'a>(
 
     let main_row = row![left_col, right_pane].height(Length::Fill);
 
-    column![control_strip, main_row].into()
+    let main: Element<'a, Message> = column![control_strip, main_row].into();
+
+    if state.pending_stop_all {
+        let modal = confirm_modal(
+            ConfirmModalParams {
+                kind: ConfirmKind::Action,
+                item_name: Cow::Owned(forge_widgets::tr!("tts_dash_stop_all_confirm_name")),
+                cascade_hint: Some(Cow::Owned(forge_widgets::tr!(
+                    "tts_dash_stop_all_confirm_hint"
+                ))),
+                tone: ConfirmTone::Destructive,
+            },
+            Message::Tts(TtsMsg::Dashboard(TtsDashMsg::StopAllConfirmAccepted)),
+            Message::Tts(TtsMsg::Dashboard(TtsDashMsg::StopAllConfirmDismissed)),
+            palette,
+        );
+        stack![main, modal].into()
+    } else {
+        main
+    }
 }
 
 fn control_strip_view<'a>(

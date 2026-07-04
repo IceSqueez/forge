@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use forge_events::Event;
@@ -8,9 +9,10 @@ use forge_platform_core::{
 };
 use forge_types::Variant;
 use forge_widgets::{
-    ForgePalette, HeaderCardParams, PickerItem, PickerModalProps, Spacing, ToastVariant,
-    builtin_content_renderer, builtin_header_card, builtin_health_grid, builtin_quick_actions_grid,
-    picker_modal, sp, spf, toast_banner,
+    ConfirmKind, ConfirmModalParams, ConfirmTone, ForgePalette, HeaderCardParams, PickerItem,
+    PickerModalProps, Spacing, ToastVariant, builtin_content_renderer, builtin_header_card,
+    builtin_health_grid, builtin_quick_actions_grid, confirm_modal, picker_modal, sp, spf,
+    toast_banner,
 };
 use iced::widget::container;
 use iced::{Alignment, Element, Length, Subscription, Task};
@@ -43,6 +45,9 @@ pub struct BuiltinDetailState {
     pub health_metrics: [HealthMetric; 4],
     pub pending_picker: Option<PendingPicker>,
     pub quick_action_toast: Option<String>,
+    /// Two-phase disconnect gate — armed by the header's Disconnect action,
+    /// rendered by the shared `confirm_modal`. `false` = no confirm showing.
+    pub pending_disconnect: bool,
     display_name: String,
     version: Option<String>,
     endpoint: Option<String>,
@@ -81,6 +86,7 @@ impl BuiltinDetailState {
             health_metrics,
             pending_picker: None,
             quick_action_toast: None,
+            pending_disconnect: false,
             display_name,
             version,
             endpoint,
@@ -129,6 +135,13 @@ pub fn update(
             }
             Task::none()
         }
+        BuiltinDetailMsg::HeaderActionClicked(HeaderAction::Disconnect) => {
+            // Arms the confirm gate only (PL-03-F6 — was a bare
+            // immediate-execute site). The actual disconnect body moved to
+            // `DisconnectConfirmAccepted`.
+            state.pending_disconnect = true;
+            Task::none()
+        }
         BuiltinDetailMsg::HeaderActionClicked(action) => {
             let Some(ctrl) = state.builtin_control.clone() else {
                 return Task::none();
@@ -138,16 +151,27 @@ pub fn update(
                     async move { ctrl.reconnect().await.map_err(|e| e.to_string()) },
                     |r| Message::BuiltinDetail(BuiltinDetailMsg::ControlResult(r)),
                 ),
-                HeaderAction::Disconnect => Task::perform(
-                    async move { ctrl.disconnect().await.map_err(|e| e.to_string()) },
-                    |r| Message::BuiltinDetail(BuiltinDetailMsg::ControlResult(r)),
-                ),
                 HeaderAction::RefreshToken => Task::perform(
                     async move { ctrl.refresh_token().await.map_err(|e| e.to_string()) },
                     |r| Message::BuiltinDetail(BuiltinDetailMsg::ControlResult(r)),
                 ),
                 HeaderAction::Settings => Task::none(),
+                HeaderAction::Disconnect => unreachable!("handled by the arm above"),
             }
+        }
+        BuiltinDetailMsg::DisconnectConfirmDismissed => {
+            state.pending_disconnect = false;
+            Task::none()
+        }
+        BuiltinDetailMsg::DisconnectConfirmAccepted => {
+            state.pending_disconnect = false;
+            let Some(ctrl) = state.builtin_control.clone() else {
+                return Task::none();
+            };
+            Task::perform(
+                async move { ctrl.disconnect().await.map_err(|e| e.to_string()) },
+                |r| Message::BuiltinDetail(BuiltinDetailMsg::ControlResult(r)),
+            )
         }
         BuiltinDetailMsg::ControlResult(Err(e)) => {
             tracing::warn!(error = %e, "builtin control action failed");
@@ -406,7 +430,7 @@ pub fn view<'a>(state: &'a BuiltinDetailState, palette: &'a ForgePalette) -> Ele
         .height(iced::Length::Fill)
         .into();
 
-    match (&state.pending_picker, &state.quick_action_toast) {
+    let content: Element<'_, Message> = match (&state.pending_picker, &state.quick_action_toast) {
         (Some(pending), Some(toast_msg)) => iced::widget::stack![
             base,
             build_picker_overlay(pending, palette),
@@ -420,7 +444,38 @@ pub fn view<'a>(state: &'a BuiltinDetailState, palette: &'a ForgePalette) -> Ele
             iced::widget::stack![base, build_toast_overlay(toast_msg, palette)].into()
         }
         (None, None) => base,
+    };
+
+    match pending_disconnect_modal(state, palette) {
+        Some(modal) => iced::widget::stack![content, modal].into(),
+        None => content,
     }
+}
+
+/// Renders the shared destructive-confirm modal while a disconnect is armed.
+/// Sits on top of the picker/toast overlays — a blocking confirm dialog
+/// always dominates.
+fn pending_disconnect_modal<'a>(
+    state: &'a BuiltinDetailState,
+    palette: &'a ForgePalette,
+) -> Option<Element<'a, Message>> {
+    if !state.pending_disconnect {
+        return None;
+    }
+
+    Some(confirm_modal(
+        ConfirmModalParams {
+            kind: ConfirmKind::Client,
+            item_name: Cow::Borrowed(state.display_name.as_str()),
+            cascade_hint: Some(Cow::Owned(forge_widgets::tr!(
+                "builtin_disconnect_confirm_hint"
+            ))),
+            tone: ConfirmTone::Warning,
+        },
+        Message::BuiltinDetail(BuiltinDetailMsg::DisconnectConfirmAccepted),
+        Message::BuiltinDetail(BuiltinDetailMsg::DisconnectConfirmDismissed),
+        palette,
+    ))
 }
 
 fn build_picker_overlay<'a>(

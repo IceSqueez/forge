@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use forge_speak_queue::{
     Priority, RequestId, SpeakCommand, SpeakRequest, build_config_lenient, build_config_strict,
 };
@@ -8,8 +10,10 @@ use forge_tts_pipeline::{PipelineResult, StageAction, StageOutcome};
 use forge_widgets::tokens::{
     BORDER_THIN, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
 };
-use forge_widgets::{ForgePalette, Icon, tabler_icon};
-use iced::widget::{Space, button, column, container, row, scrollable, text, text_input};
+use forge_widgets::{
+    ConfirmKind, ConfirmModalParams, ConfirmTone, ForgePalette, Icon, confirm_modal, tabler_icon,
+};
+use iced::widget::{Space, button, column, container, row, scrollable, stack, text, text_input};
 use iced::{Alignment, Background, Border, Color, Element, Length, Task};
 
 use crate::Message;
@@ -118,6 +122,9 @@ pub struct TtsFiltersState {
     save_error: Option<String>,
     dirty: bool,
     cached_preview: Option<CachedPreview>,
+    /// Two-phase delete gate — armed by a row's delete control, rendered by
+    /// the shared `confirm_modal`. `None` = no confirm dialog showing.
+    pending_delete: Option<usize>,
 }
 
 pub struct CachedPreview {
@@ -140,6 +147,7 @@ impl TtsFiltersState {
             save_error: None,
             dirty: false,
             cached_preview: None,
+            pending_delete: None,
         }
     }
 
@@ -219,6 +227,19 @@ pub fn update(state: &mut TtsFiltersState, rt: &RuntimeView, msg: TtsFiltersMsg)
             Task::none()
         }
         TtsFiltersMsg::DeleteRule(i) => {
+            // Arms the confirm gate only (TT-03-F4 — was a bare
+            // immediate-execute site).
+            if i < state.rules.len() {
+                state.pending_delete = Some(i);
+            }
+            Task::none()
+        }
+        TtsFiltersMsg::DeleteConfirmDismissed => {
+            state.pending_delete = None;
+            Task::none()
+        }
+        TtsFiltersMsg::DeleteConfirmAccepted(i) => {
+            state.pending_delete = None;
             if i < state.rules.len() {
                 state.rules.remove(i);
                 state.renumber();
@@ -427,6 +448,30 @@ pub fn update(state: &mut TtsFiltersState, rt: &RuntimeView, msg: TtsFiltersMsg)
     }
 }
 
+/// Renders the shared destructive-confirm modal while a rule delete is
+/// armed. Returns `None` (silent no-render) if the pending index has fallen
+/// out of range since the row's delete control was clicked — same defensive
+/// convention as the other `confirm_modal` consumers.
+fn pending_delete_modal<'a>(
+    state: &'a TtsFiltersState,
+    palette: &'a ForgePalette,
+) -> Option<Element<'a, Message>> {
+    let idx = state.pending_delete?;
+    let rule = state.rules.get(idx)?;
+
+    Some(confirm_modal(
+        ConfirmModalParams {
+            kind: ConfirmKind::Step,
+            item_name: Cow::Owned(display_name(rule)),
+            cascade_hint: None,
+            tone: ConfirmTone::Destructive,
+        },
+        Message::Tts(TtsMsg::Filters(TtsFiltersMsg::DeleteConfirmAccepted(idx))),
+        Message::Tts(TtsMsg::Filters(TtsFiltersMsg::DeleteConfirmDismissed)),
+        palette,
+    ))
+}
+
 pub fn tts_filters_view<'a>(
     state: &'a TtsFiltersState,
     palette: &'a ForgePalette,
@@ -437,7 +482,12 @@ pub fn tts_filters_view<'a>(
     let pipeline_col = pipeline_column_view(state, palette, gap_sm, gap_md);
     let preview_col = preview_column_view(state, palette, gap_sm, gap_md);
 
-    row![pipeline_col, preview_col].height(Length::Fill).into()
+    let main: Element<'a, Message> = row![pipeline_col, preview_col].height(Length::Fill).into();
+
+    match pending_delete_modal(state, palette) {
+        Some(modal) => stack![main, modal].into(),
+        None => main,
+    }
 }
 
 fn pipeline_column_view<'a>(
@@ -1500,6 +1550,17 @@ mod tests {
             make_literal("C", "c", "", 2),
         ]);
         let _ = update(&mut state, &rt, TtsFiltersMsg::DeleteRule(1));
+        assert_eq!(
+            state.pending_delete,
+            Some(1),
+            "DeleteRule only arms the confirm gate"
+        );
+        assert_eq!(
+            state.rules.len(),
+            3,
+            "nothing removed before confirm accepted"
+        );
+        let _ = update(&mut state, &rt, TtsFiltersMsg::DeleteConfirmAccepted(1));
         assert_eq!(state.rules.len(), 2);
         assert_eq!(state.rules[0].name, "A");
         assert_eq!(state.rules[1].name, "C");

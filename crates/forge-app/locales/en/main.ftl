@@ -635,6 +635,8 @@ tts_dash_pause_btn = Pause queue
 tts_dash_resume_btn = Resume
 tts_dash_skip_btn = Skip
 tts_dash_stop_all_btn = Stop all
+tts_dash_stop_all_confirm_name = Stop all TTS
+tts_dash_stop_all_confirm_hint = Currently speaking message will be cut off and all queued messages dropped. Engines remain ready to handle new messages.
 tts_dash_test_placeholder = Type to test a voice…
 tts_dash_speak_btn = Speak
 tts_dash_test_speaker_name = Test
@@ -1156,6 +1158,7 @@ server_col_evs = EV/S
 server_col_uptime = UPTIME
 server_overlay_files_empty = No overlay files found
 server_overlay_dir_items = { $count } items
+server_disconnect_confirm_hint = Client at { $info } will be disconnected from the WebSocket server. Other clients are not affected.
 
 ## Common status badges (shared across platform detail pages)
 
@@ -1352,6 +1355,7 @@ action_editor_pill_default = Default
 builtin_quick_action_fallback = Quick Action
 builtin_obs_not_connected = OBS not connected
 builtin_obs_not_supported = Not supported for OBS
+builtin_disconnect_confirm_hint = You will be disconnected and will need to reconnect manually. Live events from this integration stop arriving until then.
 
 ## OAuth / authentication errors
 

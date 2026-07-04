@@ -637,6 +637,8 @@ tts_dash_pause_btn = Пауза черги
 tts_dash_resume_btn = Продовжити
 tts_dash_skip_btn = Пропустити
 tts_dash_stop_all_btn = Зупинити все
+tts_dash_stop_all_confirm_name = Зупинити всю озвучку
+tts_dash_stop_all_confirm_hint = Повідомлення, що зараз озвучується, буде обірвано, а всі повідомлення в черзі — скинуто. Рушії залишаться готові обробляти нові повідомлення.
 tts_dash_test_placeholder = Введіть текст для тестування…
 tts_dash_speak_btn = Озвучити
 tts_dash_test_speaker_name = Тест
@@ -1164,6 +1166,7 @@ server_overlay_dir_items = { $count ->
     [many] { $count } елементів
    *[other] { $count } елементів
 }
+server_disconnect_confirm_hint = Клієнта { $info } буде відключено від WebSocket-сервера. Інші клієнти не постраждають.
 
 ## Загальні бейджі статусу (використовуються на сторінках деталей платформ)
 
@@ -1371,6 +1374,7 @@ action_editor_pill_default = Типовий
 builtin_quick_action_fallback = Швидка дія
 builtin_obs_not_connected = OBS не підключено
 builtin_obs_not_supported = Не підтримується для OBS
+builtin_disconnect_confirm_hint = Вас буде відключено, і потрібно буде підключитися повторно вручну. Живі події від цієї інтеграції перестануть надходити до цього моменту.
 
 ## OAuth / authentication errors
 

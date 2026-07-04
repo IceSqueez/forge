@@ -10,8 +10,8 @@ use iced::{
 };
 
 use forge_widgets::{
-    ForgePalette, Radius, SheetHeader, SheetWidth, SideSheet, Spacing, ToastKind, category_chip,
-    destructive_button, empty_state,
+    ConfirmKind, ConfirmModalParams, ConfirmTone, ForgePalette, Radius, SheetHeader, SheetWidth,
+    SideSheet, Spacing, ToastKind, category_chip, confirm_modal, destructive_button, empty_state,
     icons::{Icon, tabler_icon},
     radius, search_input, secondary_button, section_header, sp, spf,
     tokens::{BORDER_THIN, FONT_SM, FONT_XS, FontRole, font},
@@ -65,6 +65,7 @@ pub struct TriggersRegistryState {
     pub usage_filter: UsageFilter,
     pub sheet_width: f32,
     pub confirm_disable: Option<ConfirmDisable>,
+    pub pending_delete: Option<TriggerInstanceId>,
     pub create_form: Option<CreateInstanceFormState>,
 }
 
@@ -80,6 +81,7 @@ impl Default for TriggersRegistryState {
             usage_filter: UsageFilter::All,
             sheet_width: 420.0,
             confirm_disable: None,
+            pending_delete: None,
             create_form: None,
         }
     }
@@ -102,6 +104,8 @@ pub enum TriggersRegistryMsg {
     SheetResized(f32),
     SheetWidthLoaded(Option<f32>),
     DeleteRequested(TriggerInstanceId),
+    DeleteConfirmAccepted(TriggerInstanceId),
+    DeleteConfirmDismissed,
     DeleteResult(Result<(), String>),
     NavigateToAction(ActionId),
     ScrollTo(TriggerInstanceId),
@@ -312,6 +316,21 @@ pub fn update(
             Task::none()
         }
         TriggersRegistryMsg::DeleteRequested(id) => {
+            // Same rule as the sheet footer's `can_delete` gate: an instance
+            // still referenced by an action never opens the confirm at all.
+            let can_delete = state
+                .instances
+                .iter()
+                .find(|r| r.id == id)
+                .map(|r| r.used_in_count == 0)
+                .unwrap_or(false);
+            if can_delete {
+                state.pending_delete = Some(id);
+            }
+            Task::none()
+        }
+        TriggersRegistryMsg::DeleteConfirmAccepted(id) => {
+            state.pending_delete = None;
             let dp = Arc::clone(&rt.backend);
             Task::perform(
                 async move {
@@ -328,6 +347,10 @@ pub fn update(
                 },
                 |r| Message::TriggersRegistry(TriggersRegistryMsg::DeleteResult(r)),
             )
+        }
+        TriggersRegistryMsg::DeleteConfirmDismissed => {
+            state.pending_delete = None;
+            Task::none()
         }
         TriggersRegistryMsg::DeleteResult(Ok(())) => {
             state.selected_id = None;
@@ -484,20 +507,39 @@ pub fn view<'a>(
 
     let main_with_sheet: Element<'_, Message> = stack![main_col, sheet].into();
 
-    if let Some(ref cd) = state.confirm_disable {
+    let with_confirm_disable: Element<'_, Message> = if let Some(ref cd) = state.confirm_disable {
         let dialog = confirm_disable_dialog(cd, palette);
-        let with_dialog: Element<'_, Message> = stack![main_with_sheet, dialog].into();
-        if let Some(ref form) = state.create_form {
-            let overlay = crate::triggers_create_form::view(form, rt, palette);
-            stack![with_dialog, overlay].into()
-        } else {
-            with_dialog
-        }
-    } else if let Some(ref form) = state.create_form {
-        let overlay = crate::triggers_create_form::view(form, rt, palette);
-        stack![main_with_sheet, overlay].into()
+        stack![main_with_sheet, dialog].into()
     } else {
         main_with_sheet
+    };
+
+    let with_pending_delete: Element<'_, Message> = match state
+        .pending_delete
+        .and_then(|id| state.instances.iter().find(|r| r.id == id))
+    {
+        Some(row) => {
+            let modal = confirm_modal(
+                ConfirmModalParams {
+                    kind: ConfirmKind::TriggerLink,
+                    item_name: Cow::Borrowed(row.name.as_str()),
+                    cascade_hint: None,
+                    tone: ConfirmTone::Destructive,
+                },
+                Message::TriggersRegistry(TriggersRegistryMsg::DeleteConfirmAccepted(row.id)),
+                Message::TriggersRegistry(TriggersRegistryMsg::DeleteConfirmDismissed),
+                palette,
+            );
+            stack![with_confirm_disable, modal].into()
+        }
+        None => with_confirm_disable,
+    };
+
+    if let Some(ref form) = state.create_form {
+        let overlay = crate::triggers_create_form::view(form, rt, palette);
+        stack![with_pending_delete, overlay].into()
+    } else {
+        with_pending_delete
     }
 }
 
@@ -820,10 +862,18 @@ fn instance_row<'a>(
         snap: false,
     });
 
-    let delete_btn = button(tabler_icon::<Message>(Icon::X, 13.0, p.text_faint))
-        .on_press(Message::TriggersRegistry(
-            TriggersRegistryMsg::DeleteRequested(row.id),
-        ))
+    // Same rule as the sheet footer: a still-referenced instance never fires
+    // delete from the row either — dimmed + inert instead of clickable.
+    let row_can_delete = row.used_in_count == 0;
+    let delete_icon_color = if row_can_delete {
+        p.text_faint
+    } else {
+        Color {
+            a: 0.3,
+            ..p.text_faint
+        }
+    };
+    let delete_btn_base = button(tabler_icon::<Message>(Icon::X, 13.0, delete_icon_color))
         .padding(sp(Spacing::Xxs))
         .style(|_: &iced::Theme, status| button::Style {
             background: match status {
@@ -844,6 +894,15 @@ fn instance_row<'a>(
             shadow: iced::Shadow::default(),
             snap: false,
         });
+    let delete_btn: Element<'_, Message> = if row_can_delete {
+        delete_btn_base
+            .on_press(Message::TriggersRegistry(
+                TriggersRegistryMsg::DeleteRequested(row.id),
+            ))
+            .into()
+    } else {
+        delete_btn_base.into()
+    };
 
     let controls = row![toggle_btn, delete_btn]
         .spacing(spf(Spacing::Xs))

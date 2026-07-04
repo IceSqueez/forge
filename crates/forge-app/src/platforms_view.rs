@@ -25,23 +25,7 @@ fn platform_overview_card<'a>(
 
     let p = *palette;
 
-    let letter_box = container(text(letter).size(22.0).color(p.shell).font(iced::Font {
-        weight: iced::font::Weight::Semibold,
-        ..iced::Font::DEFAULT
-    }))
-    .width(44.0)
-    .height(44.0)
-    .align_x(Alignment::Center)
-    .align_y(Alignment::Center)
-    .style(move |_: &iced::Theme| container::Style {
-        background: Some(Background::Color(color)),
-        border: Border {
-            radius: radius(Radius::Md).into(),
-            color: iced::Color::TRANSPARENT,
-            width: 0.0,
-        },
-        ..container::Style::default()
-    });
+    let letter_box = forge_widgets::platform_identity_tile(letter, color, p.shell, 44.0);
 
     let dot_color = if connected { p.success } else { p.text_faint };
     let dot = container(iced::widget::Space::new())
@@ -167,7 +151,7 @@ pub(crate) fn platforms_overview_view<'a>(
 
     let twitch_card = platform_overview_card(
         "T",
-        p.platform_twitch,
+        Integration::Twitch.brand_color(palette),
         "Twitch",
         forge_widgets::tr!("platforms.twitch.desc"),
         &["IRC chat", "EventSub", "Channel points", "Bits & subs"],
@@ -177,7 +161,7 @@ pub(crate) fn platforms_overview_view<'a>(
     );
     let youtube_card = platform_overview_card(
         "Y",
-        p.platform_youtube,
+        Integration::YouTube.brand_color(palette),
         "YouTube",
         forge_widgets::tr!("platforms.youtube.desc"),
         &["Live chat", "Super chat", "Memberships"],
@@ -187,7 +171,7 @@ pub(crate) fn platforms_overview_view<'a>(
     );
     let kick_card = platform_overview_card(
         "K",
-        p.platform_kick,
+        Integration::Kick.brand_color(palette),
         "Kick",
         forge_widgets::tr!("platforms.kick.desc"),
         &["Chat", "Subs", "Channel events"],

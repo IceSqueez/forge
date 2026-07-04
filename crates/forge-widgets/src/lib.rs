@@ -29,6 +29,7 @@ pub mod navigation;
 pub mod output_device_picker;
 pub mod palette;
 pub mod picker;
+pub mod platform_tile;
 pub mod popover;
 pub mod rhai_highlight;
 pub mod script_editor_overlay;
@@ -98,6 +99,7 @@ pub use navigation::{NavItem, SIDEBAR_WIDTH, Sidebar, sidebar};
 pub use output_device_picker::{DeviceLabel, output_device_picker};
 pub use palette::{CATPPUCCIN_MOCHA, ForgePalette, LATTE, TOKYO_NIGHT};
 pub use picker::{PickerItem, PickerModalProps, picker_modal};
+pub use platform_tile::platform_identity_tile;
 pub use popover::{
     MenuItem, MenuPlacement, RowAction, actionable_count, menu_button, menu_button_trigger,
     menu_panel, row_actions,

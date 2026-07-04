@@ -345,23 +345,7 @@ pub fn twitch_disconnected_view<'a>(
 }
 
 fn twitch_header_card<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
-    let brand = container(text("T").size(24.0).color(palette.shell).font(iced::Font {
-        weight: iced::font::Weight::Semibold,
-        ..iced::Font::DEFAULT
-    }))
-    .width(48.0)
-    .height(48.0)
-    .align_x(Alignment::Center)
-    .align_y(Alignment::Center)
-    .style(move |_theme: &Theme| container::Style {
-        background: Some(Background::Color(palette.brand)),
-        border: Border {
-            radius: 11.0.into(),
-            color: Color::TRANSPARENT,
-            width: 0.0,
-        },
-        ..container::Style::default()
-    });
+    let brand = forge_widgets::platform_identity_tile("T", palette.brand, palette.shell, 48.0);
 
     let title_col = column![
         text("Twitch").size(FONT_SM).color(palette.text_primary),

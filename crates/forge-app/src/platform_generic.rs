@@ -10,6 +10,7 @@ use iced::{
 };
 
 use crate::Message;
+use crate::connectivity::Integration;
 use crate::local_callback_flow::LocalCallbackFlowMsg;
 
 pub struct GenericPlatform {
@@ -36,7 +37,7 @@ pub enum PlatformStatus {
 pub fn registry(id: &BuiltinId, palette: &ForgePalette) -> Option<(Color, GenericPlatform)> {
     match id.as_str() {
         "youtube" => Some((
-            palette.platform_youtube,
+            Integration::YouTube.brand_color(palette),
             GenericPlatform {
                 name: "YouTube",
                 letter: "Y",
@@ -54,7 +55,7 @@ pub fn registry(id: &BuiltinId, palette: &ForgePalette) -> Option<(Color, Generi
             },
         )),
         "kick" => Some((
-            palette.platform_kick,
+            Integration::Kick.brand_color(palette),
             GenericPlatform {
                 name: "Kick",
                 letter: "K",
@@ -72,7 +73,7 @@ pub fn registry(id: &BuiltinId, palette: &ForgePalette) -> Option<(Color, Generi
             },
         )),
         "vtube" => Some((
-            palette.warning,
+            Integration::VTube.brand_color(palette),
             GenericPlatform {
                 name: "VTube Studio",
                 letter: "V",
@@ -100,28 +101,7 @@ pub fn platform_generic_view<'a>(
     let p = *palette;
     let mono = font(FontRole::Monospace);
 
-    let letter_box = container(
-        text(info.letter)
-            .size(22.0)
-            .color(p.shell)
-            .font(iced::Font {
-                weight: iced::font::Weight::Semibold,
-                ..iced::Font::DEFAULT
-            }),
-    )
-    .width(48.0)
-    .height(48.0)
-    .align_x(Alignment::Center)
-    .align_y(Alignment::Center)
-    .style(move |_: &iced::Theme| container::Style {
-        background: Some(Background::Color(color)),
-        border: Border {
-            radius: radius(Radius::Md).into(),
-            color: Color::TRANSPARENT,
-            width: 0.0,
-        },
-        ..container::Style::default()
-    });
+    let letter_box = forge_widgets::platform_identity_tile(info.letter, color, p.shell, 48.0);
 
     let name_text = text(info.name).size(FONT_MD).color(p.text_primary);
 

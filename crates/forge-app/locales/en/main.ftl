@@ -1291,6 +1291,7 @@ globals_editor_title_create = New variable
 globals_editor_title_edit = Edit variable
 globals_editor_section_name = NAME
 globals_editor_section_type = TYPE
+globals_editor_type_locked_hint = Type is fixed after creation and can't be changed here
 globals_editor_section_persistence = PERSISTENCE
 globals_editor_section_value = VALUE
 globals_editor_persist_label = Save across restarts

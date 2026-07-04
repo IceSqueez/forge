@@ -181,6 +181,30 @@ impl VariantEditorForm {
     }
 }
 
+/// Returns a static reason when `form`'s current name would collide with a
+/// *different* existing global — Create with an already-used name, or an Edit
+/// that renames into a name still held by another entry. Renaming a global
+/// back to its own current name (or leaving it unchanged) is not a collision.
+fn duplicate_name_error(
+    form: &VariantEditorForm,
+    existing: &[GlobalEntry],
+) -> Option<&'static str> {
+    let trimmed = form.name.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let unchanged =
+        matches!(&form.mode, EditorMode::Edit(original) if original.as_str() == trimmed);
+    if unchanged {
+        return None;
+    }
+    if existing.iter().any(|e| e.name == trimmed) {
+        Some("A global with this name already exists")
+    } else {
+        None
+    }
+}
+
 fn variant_to_display_json(v: &Variant) -> serde_json::Value {
     match v {
         Variant::Int(n) => serde_json::Value::Number((*n).into()),
@@ -208,6 +232,7 @@ pub fn update_variant_editor(
     editor: &mut Option<VariantEditorForm>,
     rt: &RuntimeView,
     sub: VariantEditorMsg,
+    existing: &[GlobalEntry],
 ) -> iced::Task<Message> {
     match sub {
         VariantEditorMsg::OpenCreate => {
@@ -234,8 +259,12 @@ pub fn update_variant_editor(
 
         VariantEditorMsg::KindSelected(kind) => {
             if let Some(f) = editor.as_mut() {
-                f.kind = kind;
-                f.error = None;
+                // Variant kind is fixed per Invariant #1 once a global exists —
+                // only Create may pick a kind; Edit ignores the message.
+                if matches!(f.mode, EditorMode::Create) {
+                    f.kind = kind;
+                    f.error = None;
+                }
             }
             iced::Task::none()
         }
@@ -303,6 +332,12 @@ pub fn update_variant_editor(
             if form.is_valid().is_some() {
                 return iced::Task::none();
             }
+            if let Some(reason) = duplicate_name_error(form, existing) {
+                if let Some(f) = editor.as_mut() {
+                    f.error = Some(reason.to_owned());
+                }
+                return iced::Task::none();
+            }
             let Some(variant) = form.build_variant() else {
                 return iced::Task::none();
             };
@@ -321,14 +356,13 @@ pub fn update_variant_editor(
             let dp = Arc::clone(&rt.backend);
             iced::Task::perform(
                 async move {
-                    if let Some(old) = old_name {
-                        let g: &dyn GlobalsRepo = &*dp;
-                        g.delete(&old)
-                            .await
-                            .map_err(|e| e.to_string())
-                            .map(|_| ())?;
-                    }
                     let g: &dyn GlobalsRepo = &*dp;
+                    if let Some(old) = old_name {
+                        // Atomic + collision-checked: renames the row in place
+                        // (telemetry survives), rejects if `name` is already
+                        // taken instead of silently overwriting it.
+                        g.rename(&old, &name).await.map_err(|e| e.to_string())?;
+                    }
                     g.set(&name, variant, persisted)
                         .await
                         .map_err(|e| e.to_string())
@@ -354,6 +388,7 @@ pub fn update_variant_editor(
 
 pub fn variant_editor_modal_view<'a>(
     form: &'a VariantEditorForm,
+    existing: &'a [GlobalEntry],
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let title = match &form.mode {
@@ -394,18 +429,26 @@ pub fn variant_editor_modal_view<'a>(
         VariantKind::Array,
         VariantKind::Object,
     ];
+    // Variant kind is immutable once a global exists (Invariant #1) — Edit
+    // renders the chips inert (Noop) instead of wiring KindSelected.
+    let kind_locked = matches!(form.mode, EditorMode::Edit(_));
     let chips_row = kinds
         .iter()
         .fold(row![].spacing(spf(Spacing::Xxs)), |acc, &k| {
+            let on_press = if kind_locked {
+                Message::Noop
+            } else {
+                Message::Globals(GlobalsMsg::VariantEditor(VariantEditorMsg::KindSelected(k)))
+            };
             acc.push(category_chip(
                 palette,
                 k.label(),
                 variant_kind_color(k, palette),
                 form.kind == k,
-                Message::Globals(GlobalsMsg::VariantEditor(VariantEditorMsg::KindSelected(k))),
+                on_press,
             ))
         });
-    let type_block = column![
+    let mut type_block = column![
         section_header(
             forge_widgets::tr!("globals_editor_section_type"),
             None,
@@ -414,6 +457,13 @@ pub fn variant_editor_modal_view<'a>(
         chips_row
     ]
     .spacing(spf(Spacing::Xxs));
+    if kind_locked {
+        type_block = type_block.push(
+            text(forge_widgets::tr!("globals_editor_type_locked_hint"))
+                .size(FONT_XS)
+                .color(palette.text_faint),
+        );
+    }
 
     let persist_toggle = toggle(
         palette,
@@ -531,7 +581,8 @@ pub fn variant_editor_modal_view<'a>(
         Message::Globals(GlobalsMsg::VariantEditor(VariantEditorMsg::Cancel)),
         palette,
     );
-    let is_saveable = form.is_valid().is_none() && !form.saving;
+    let is_saveable =
+        form.is_valid().is_none() && duplicate_name_error(form, existing).is_none() && !form.saving;
     let save_label = if form.saving {
         forge_widgets::tr!("globals_editor_saving")
     } else {

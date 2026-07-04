@@ -1308,6 +1308,7 @@ globals_editor_title_create = Нова змінна
 globals_editor_title_edit = Редагувати змінну
 globals_editor_section_name = НАЗВА
 globals_editor_section_type = ТИП
+globals_editor_type_locked_hint = Тип фіксується після створення і тут не змінюється
 globals_editor_section_persistence = ЗБЕРЕЖЕННЯ
 globals_editor_section_value = ЗНАЧЕННЯ
 globals_editor_persist_label = Зберігати після перезапуску

@@ -357,7 +357,9 @@ pub fn update(state: &mut GlobalsState, rt: &RuntimeView, msg: GlobalsMsg) -> ic
             iced::Task::none()
         }
 
-        GlobalsMsg::VariantEditor(sub) => update_variant_editor(&mut state.editor, rt, sub),
+        GlobalsMsg::VariantEditor(sub) => {
+            update_variant_editor(&mut state.editor, rt, sub, &state.entries)
+        }
     }
 }
 
@@ -383,7 +385,7 @@ pub fn globals_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, 
     };
 
     if let Some(form) = app.ui.globals.editor.as_ref() {
-        let modal_el = variant_editor_modal_view(form, palette);
+        let modal_el = variant_editor_modal_view(form, &app.ui.globals.entries, palette);
         stack![with_pending_delete, modal_el].into()
     } else {
         with_pending_delete

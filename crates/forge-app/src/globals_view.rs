@@ -1,16 +1,18 @@
+use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use forge_storage::{GlobalEntry, GlobalsExport, GlobalsRepo, StorageError};
 use forge_widgets::tokens::{FONT_SM, FONT_XS, Spacing, sp, spf};
 use forge_widgets::{
-    FontRole, FooterProps, ForgePalette, ToastKind, VariantKind, data_screen_footer, data_table,
-    empty_state, font, persistence_toggle_inline, primary_button_small, search_input,
+    ConfirmKind, ConfirmModalParams, ConfirmTone, FontRole, FooterProps, ForgePalette, Icon,
+    RowAction, ToastAction, ToastKind, VariantKind, confirm_modal, data_screen_footer, data_table,
+    empty_state, font, persistence_toggle_inline, primary_button_small, row_actions, search_input,
     secondary_button, type_pill, value_preview,
 };
 use iced::{
     Alignment, Background, Border, Color, Element, Length, Shadow,
-    widget::{Space, button, column, container, row, rule, scrollable, text},
+    widget::{Space, button, column, container, row, rule, scrollable, stack, text},
 };
 use time::OffsetDateTime;
 
@@ -65,6 +67,9 @@ pub struct GlobalsState {
     pub storage_display: String,
     pub save_display: String,
     pub editor: Option<VariantEditorForm>,
+    /// Two-phase delete gate — armed by the row delete control, rendered by
+    /// the shared `confirm_modal`. `None` = no confirm dialog showing.
+    pub pending_delete: Option<String>,
 }
 
 impl GlobalsState {
@@ -80,6 +85,7 @@ impl GlobalsState {
             storage_display: "Storage: 0 B".to_owned(),
             save_display: "Not yet saved".to_owned(),
             editor: None,
+            pending_delete: None,
         }
     }
 
@@ -224,19 +230,80 @@ pub fn update(state: &mut GlobalsState, rt: &RuntimeView, msg: GlobalsMsg) -> ic
         }
 
         GlobalsMsg::DeleteRequested(name) => {
+            // Arms the confirm gate only — the row delete control no longer
+            // deletes directly (DT-06-F13/OV-04-F15: was fully wired but
+            // unreachable AND unconfirmed).
+            state.pending_delete = Some(name);
+            iced::Task::none()
+        }
+
+        GlobalsMsg::DeleteConfirmDismissed => {
+            state.pending_delete = None;
+            iced::Task::none()
+        }
+
+        GlobalsMsg::DeleteConfirmAccepted(name) => {
+            state.pending_delete = None;
+            // Capture the full entry BEFORE deleting — this is the undo
+            // payload (name/value/persisted), not just a reload trigger.
+            let Some(entry) = state.entries.iter().find(|e| e.name == name).cloned() else {
+                return iced::Task::none();
+            };
             let repo: Arc<dyn GlobalsRepo> = Arc::clone(&rt.backend) as Arc<dyn GlobalsRepo>;
             iced::Task::perform(
                 async move {
-                    repo.delete(&name)
+                    let result = repo
+                        .delete(&entry.name)
                         .await
                         .map(|_| ())
-                        .map_err(|e| e.to_string())
+                        .map_err(|e| e.to_string());
+                    (entry, result)
                 },
-                |r| Message::Globals(GlobalsMsg::Deleted(r)),
+                |(entry, result)| Message::Globals(GlobalsMsg::Deleted(entry, result)),
             )
         }
 
-        GlobalsMsg::Deleted(Ok(())) => {
+        GlobalsMsg::Deleted(entry, Ok(())) => {
+            let repo: Arc<dyn GlobalsRepo> = Arc::clone(&rt.backend) as Arc<dyn GlobalsRepo>;
+            let reload = iced::Task::perform(
+                async move { load_globals_data(repo).await.map_err(|e| e.to_string()) },
+                |r| Message::Globals(GlobalsMsg::EntriesLoaded(r)),
+            );
+            let undo_toast = iced::Task::done(Message::Toast(ToastMsg::Fired {
+                kind: ToastKind::Undo,
+                message: forge_widgets::tr!("globals_deleted_toast", name = entry.name.as_str()),
+                duration_ms: 6000,
+                action: Some(Box::new(ToastAction {
+                    label: forge_widgets::tr!("common_undo"),
+                    on_press: Message::Globals(GlobalsMsg::UndoDelete(entry)),
+                })),
+            }));
+            iced::Task::batch([reload, undo_toast])
+        }
+
+        GlobalsMsg::Deleted(entry, Err(e)) => {
+            tracing::warn!(error = %e, name = %entry.name, "failed to delete global");
+            iced::Task::done(Message::Toast(ToastMsg::Fired {
+                kind: ToastKind::Error,
+                message: format!("Could not delete '{}': {e}", entry.name),
+                duration_ms: 5000,
+                action: None,
+            }))
+        }
+
+        GlobalsMsg::UndoDelete(entry) => {
+            let repo: Arc<dyn GlobalsRepo> = Arc::clone(&rt.backend) as Arc<dyn GlobalsRepo>;
+            iced::Task::perform(
+                async move {
+                    repo.set(&entry.name, entry.value, entry.persisted)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                |r| Message::Globals(GlobalsMsg::UndoDeleteResult(r)),
+            )
+        }
+
+        GlobalsMsg::UndoDeleteResult(Ok(())) => {
             let repo: Arc<dyn GlobalsRepo> = Arc::clone(&rt.backend) as Arc<dyn GlobalsRepo>;
             iced::Task::perform(
                 async move { load_globals_data(repo).await.map_err(|e| e.to_string()) },
@@ -244,9 +311,14 @@ pub fn update(state: &mut GlobalsState, rt: &RuntimeView, msg: GlobalsMsg) -> ic
             )
         }
 
-        GlobalsMsg::Deleted(Err(e)) => {
-            tracing::warn!(error = %e, "failed to delete global");
-            iced::Task::none()
+        GlobalsMsg::UndoDeleteResult(Err(e)) => {
+            tracing::warn!(error = %e, "undo delete failed");
+            iced::Task::done(Message::Toast(ToastMsg::Fired {
+                kind: ToastKind::Error,
+                message: format!("Could not restore global: {e}"),
+                duration_ms: 5000,
+                action: None,
+            }))
         }
 
         GlobalsMsg::OpenCreateModal => iced::Task::done(Message::Globals(
@@ -291,11 +363,30 @@ pub fn update(state: &mut GlobalsState, rt: &RuntimeView, msg: GlobalsMsg) -> ic
 
 pub fn globals_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
     let main = globals_main_view(app, palette);
+
+    let with_pending_delete: Element<'_, Message> = match app.ui.globals.pending_delete.as_ref() {
+        Some(name) => {
+            let modal = confirm_modal(
+                ConfirmModalParams {
+                    kind: ConfirmKind::Global,
+                    item_name: Cow::Borrowed(name.as_str()),
+                    cascade_hint: None,
+                    tone: ConfirmTone::Destructive,
+                },
+                Message::Globals(GlobalsMsg::DeleteConfirmAccepted(name.clone())),
+                Message::Globals(GlobalsMsg::DeleteConfirmDismissed),
+                palette,
+            );
+            stack![main, modal].into()
+        }
+        None => main,
+    };
+
     if let Some(form) = app.ui.globals.editor.as_ref() {
         let modal_el = variant_editor_modal_view(form, palette);
-        iced::widget::stack![main, modal_el].into()
+        stack![with_pending_delete, modal_el].into()
     } else {
-        main
+        with_pending_delete
     }
 }
 
@@ -351,6 +442,7 @@ fn globals_main_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a,
                 "LAST MODIFIED",
                 "READS · WRITES",
                 "PERSIST",
+                "",
             ];
             let widths = [
                 Length::Fixed(24.0),
@@ -360,6 +452,7 @@ fn globals_main_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a,
                 Length::Fixed(120.0),
                 Length::Fixed(100.0),
                 Length::Fixed(70.0),
+                Length::Fixed(36.0),
             ];
 
             let rows: Vec<Vec<Element<'_, Message>>> = visible_entries
@@ -606,6 +699,22 @@ fn build_entry_row<'a>(
         ),
     ];
 
+    // `row_actions` is a hover-reveal primitive (dims to `text_faint` when
+    // `hovered` is false); Globals' `data_table` has no per-row hover-state
+    // tracking today, so this always renders in its "hovered" (full-opacity)
+    // style — the delete control being reachable matters more here than the
+    // dim-until-hover polish. Revisit once a row-hover primitive exists.
+    let delete_cell = row_actions(
+        vec![RowAction {
+            icon: Icon::X,
+            label: forge_widgets::tr!("globals_delete_action"),
+            on_press: Message::Globals(GlobalsMsg::DeleteRequested(entry.name.clone())),
+            color: Some(palette.random),
+        }],
+        true,
+        palette,
+    );
+
     vec![
         status_dot.into(),
         name_cell.into(),
@@ -614,6 +723,7 @@ fn build_entry_row<'a>(
         modified_cell.into(),
         rw_cell.into(),
         toggle_cell.into(),
+        delete_cell,
     ]
 }
 

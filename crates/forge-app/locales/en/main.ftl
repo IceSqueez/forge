@@ -874,6 +874,7 @@ tts_aliases_form_create = Create
 tts_aliases_delete_title = Delete voice alias?
 tts_aliases_delete_body = { $viewer } will fall back to the default voice assignment strategy.
 common_delete = Delete
+common_undo = Undo
 
 ## Voice Aliases — preview
 
@@ -1277,6 +1278,8 @@ globals_new_btn = + New variable
 globals_loading = Loading...
 globals_empty_title = No globals here
 globals_empty_desc = Adjust the filter or search, or create one with + New variable.
+globals_delete_action = Delete
+globals_deleted_toast = Deleted '{ $name }'
 
 ## Globals — variant editor modal
 

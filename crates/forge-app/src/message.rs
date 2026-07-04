@@ -344,8 +344,18 @@ pub enum GlobalsMsg {
     },
     OpenCreateModal,
     OpenEditModal(String),
+    /// Arms the two-phase confirm gate (`GlobalsState.pending_delete`); does
+    /// NOT delete. Mirrors Triggers Registry's `DeleteRequested`.
     DeleteRequested(String),
-    Deleted(Result<(), String>),
+    /// Confirmed from the shared `confirm_modal`. Captures the full entry
+    /// BEFORE deleting so a failed delete's `Err` path and the undo toast
+    /// both have the exact pre-delete value/type/persisted-flag.
+    DeleteConfirmAccepted(String),
+    DeleteConfirmDismissed,
+    Deleted(GlobalEntry, Result<(), String>),
+    /// Re-inserts a captured entry via `GlobalsRepo::set` (undo toast action).
+    UndoDelete(GlobalEntry),
+    UndoDeleteResult(Result<(), String>),
     ExportRequested,
     Exported(Result<PathBuf, String>),
     VariantEditor(VariantEditorMsg),

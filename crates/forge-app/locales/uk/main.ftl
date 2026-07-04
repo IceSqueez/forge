@@ -878,6 +878,7 @@ tts_aliases_form_create = Створити
 tts_aliases_delete_title = Видалити голосовий аліас?
 tts_aliases_delete_body = { $viewer } повернеться до типової стратегії призначення голосу.
 common_delete = Видалити
+common_undo = Відмінити
 
 ## Голосові аліаси — попереднє прослуховування
 
@@ -1294,6 +1295,8 @@ globals_new_btn = + Нова змінна
 globals_loading = Завантаження...
 globals_empty_title = Глобальних змінних немає
 globals_empty_desc = Змініть фільтр або пошук, або створіть нову за допомогою + Нова змінна.
+globals_delete_action = Видалити
+globals_deleted_toast = Видалено '{ $name }'
 
 ## Глобальні змінні — редактор значень
 

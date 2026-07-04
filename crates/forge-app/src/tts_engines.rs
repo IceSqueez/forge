@@ -1,3 +1,6 @@
+use std::sync::{Arc, RwLock};
+
+use forge_tts_core::{EngineId, TtsRegistry, TtsVoice, VoiceGender};
 use forge_widgets::ForgePalette;
 use forge_widgets::tokens::{
     BORDER_THIN, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
@@ -6,9 +9,10 @@ use iced::widget::{Space, button, column, container, row, scrollable, text, text
 use iced::{Alignment, Background, Border, Color, Element, Length, Task};
 
 use crate::Message;
-use crate::message::{TtsEnginesMsg, TtsMsg};
+use crate::message::{CloudEngineKind, TtsEnginesMsg, TtsMsg};
 use crate::runtime_view::RuntimeView;
 
+#[derive(Debug, Clone)]
 pub struct EngineVoiceRow {
     pub display_name: String,
     pub locale: String,
@@ -19,40 +23,17 @@ pub struct EngineVoiceRow {
 pub struct TtsEnginesState {
     pub selected_engine: String,
     pub voice_search: String,
-    pub piper_voices: Vec<EngineVoiceRow>,
+    pub voices: Vec<EngineVoiceRow>,
+    pub voices_loading: bool,
 }
 
 impl TtsEnginesState {
     pub fn new() -> Self {
         Self {
-            selected_engine: "piper".to_owned(),
+            selected_engine: String::new(),
             voice_search: String::new(),
-            piper_voices: vec![
-                EngineVoiceRow {
-                    display_name: "Lessac".to_owned(),
-                    locale: "en-US".to_owned(),
-                    quality: "medium".to_owned(),
-                    gender: "M".to_owned(),
-                },
-                EngineVoiceRow {
-                    display_name: "Amy".to_owned(),
-                    locale: "en-US".to_owned(),
-                    quality: "medium".to_owned(),
-                    gender: "F".to_owned(),
-                },
-                EngineVoiceRow {
-                    display_name: "Lada".to_owned(),
-                    locale: "uk-UA".to_owned(),
-                    quality: "x_low".to_owned(),
-                    gender: "F".to_owned(),
-                },
-                EngineVoiceRow {
-                    display_name: "Thorsten".to_owned(),
-                    locale: "de-DE".to_owned(),
-                    quality: "medium".to_owned(),
-                    gender: "M".to_owned(),
-                },
-            ],
+            voices: Vec::new(),
+            voices_loading: false,
         }
     }
 }
@@ -63,12 +44,71 @@ impl Default for TtsEnginesState {
     }
 }
 
-pub fn update(state: &mut TtsEnginesState, _rt: &RuntimeView, msg: TtsEnginesMsg) -> Task<Message> {
+pub fn update(state: &mut TtsEnginesState, rt: &RuntimeView, msg: TtsEnginesMsg) -> Task<Message> {
     match msg {
         TtsEnginesMsg::SelectEngine(id) => {
-            state.selected_engine = id;
+            state.selected_engine = id.clone();
+            state.voices.clear();
+            let Some(registry) = rt.tts_registry.clone() else {
+                state.voices_loading = false;
+                return Task::none();
+            };
+            state.voices_loading = true;
+            let engine_id = EngineId(id.clone());
+            Task::perform(fetch_engine_voices(registry, engine_id), move |r| {
+                Message::Tts(TtsMsg::Engines(TtsEnginesMsg::VoicesLoaded(id, r)))
+            })
+        }
+        TtsEnginesMsg::VoiceSearchChanged(s) => {
+            state.voice_search = s;
             Task::none()
         }
+        TtsEnginesMsg::VoicesLoaded(id, result) => {
+            if id != state.selected_engine {
+                return Task::none();
+            }
+            state.voices_loading = false;
+            match result {
+                Ok(voices) => state.voices = voices,
+                Err(e) => tracing::warn!(error = %e, engine = %id, "failed to list voices"),
+            }
+            Task::none()
+        }
+    }
+}
+
+async fn fetch_engine_voices(
+    registry: Arc<RwLock<TtsRegistry>>,
+    engine_id: EngineId,
+) -> Result<Vec<EngineVoiceRow>, String> {
+    let factory = registry
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(&engine_id);
+    let Some(factory) = factory else {
+        return Err(format!("engine {} is not registered", engine_id.0));
+    };
+    let engine = factory.create().map_err(|e| e.to_string())?;
+    let voices = engine.list_voices().await.map_err(|e| e.to_string())?;
+    Ok(voices.into_iter().map(voice_row_from).collect())
+}
+
+fn voice_row_from(voice: TtsVoice) -> EngineVoiceRow {
+    EngineVoiceRow {
+        display_name: voice.name,
+        locale: voice.locale,
+        quality: if voice.is_neural {
+            "neural"
+        } else {
+            "standard"
+        }
+        .to_owned(),
+        gender: match voice.gender {
+            VoiceGender::Male => "M",
+            VoiceGender::Female => "F",
+            VoiceGender::Neutral => "N",
+        }
+        .to_owned(),
     }
 }
 
@@ -100,33 +140,55 @@ fn current_engines(rt: &RuntimeView) -> Vec<EngineCard> {
 
 struct EngineCard {
     id: String,
-    name: Option<&'static str>,
+    name: String,
     kind: &'static str,
-    voice_count: u8,
     status_color: fn(&ForgePalette) -> Color,
     is_default: bool,
 }
 
-type EngineMetaTuple = (
-    Option<&'static str>,
-    &'static str,
-    u8,
-    fn(&ForgePalette) -> Color,
-);
+/// Maps a registered `EngineId` to its human-facing label. Falls back to the raw id for
+/// engines this UI doesn't know about, so a newly added engine crate never renders blank.
+pub(crate) fn engine_display_label(id: &str) -> String {
+    match id {
+        "piper" => "Piper".to_owned(),
+        "espeak-ng" => "eSpeak-NG".to_owned(),
+        "sapi" => "Microsoft SAPI 5".to_owned(),
+        "nsspeech" => "Apple AVSpeech".to_owned(),
+        other => cloud_kind_from_id(other)
+            .map(|k| k.display_name().to_owned())
+            .unwrap_or_else(|| other.to_owned()),
+    }
+}
+
+pub(crate) fn engine_kind(id: &str) -> &'static str {
+    match id {
+        "piper" | "espeak-ng" => "local",
+        "sapi" | "nsspeech" => "system",
+        _ => "cloud",
+    }
+}
+
+fn cloud_kind_from_id(id: &str) -> Option<CloudEngineKind> {
+    match id {
+        "azure" => Some(CloudEngineKind::Azure),
+        "elevenlabs" => Some(CloudEngineKind::ElevenLabs),
+        "openai" => Some(CloudEngineKind::OpenAI),
+        "polly" => Some(CloudEngineKind::Polly),
+        _ => None,
+    }
+}
 
 fn engine_meta(id: &str, is_default: bool) -> EngineCard {
-    let (name, kind, voice_count, status_color): EngineMetaTuple = match id {
-        "piper" => (Some("Piper"), "local", 4, |p| p.success),
-        "espeak" => (Some("eSpeak-NG"), "local", 0, |p| p.success),
-        "sapi" => (Some("Microsoft SAPI 5"), "system", 0, |p| p.info),
-        "nsspeech" => (Some("Apple AVSpeech"), "system", 0, |p| p.info),
-        _ => (None, "external", 0, |p: &ForgePalette| p.text_muted),
+    let kind = engine_kind(id);
+    let status_color = if kind == "system" {
+        |p: &ForgePalette| p.info
+    } else {
+        |p: &ForgePalette| p.success
     };
     EngineCard {
         id: id.to_owned(),
-        name,
+        name: engine_display_label(id),
         kind,
-        voice_count,
         status_color,
         is_default,
     }
@@ -202,12 +264,8 @@ fn engine_list_card<'a>(
         .width(7)
         .height(7);
 
-    let display_name = engine
-        .name
-        .map(str::to_owned)
-        .unwrap_or_else(|| forge_widgets::tr!("tts_engines_unknown"));
     let name_row = row![
-        text(display_name)
+        text(engine.name.clone())
             .size(FONT_SM)
             .color(palette.text_primary)
             .width(Length::Fill),
@@ -215,13 +273,10 @@ fn engine_list_card<'a>(
     ]
     .align_y(Alignment::Center);
 
-    let meta = text(format!(
-        "{} \u{b7} {} voices",
-        engine.kind, engine.voice_count
-    ))
-    .size(FONT_XS)
-    .color(palette.text_muted)
-    .font(font(FontRole::Monospace));
+    let meta = text(engine.kind)
+        .size(FONT_XS)
+        .color(palette.text_muted)
+        .font(font(FontRole::Monospace));
 
     let border_color = if selected {
         palette.brand
@@ -295,10 +350,16 @@ fn engine_detail_pane<'a>(
     gap_sm: f32,
     _gap_md: f32,
 ) -> Element<'a, Message> {
-    let detail_header = engine_detail_header(engine, palette, gap_sm);
+    let detail_header = engine_detail_header(engine, state.voices.len(), palette, gap_sm);
     let creds = credentials_section(palette);
     let params = params_section(palette, gap_sm);
-    let voices = voices_section(&state.piper_voices, &state.voice_search, palette, gap_sm);
+    let voices = voices_section(
+        &state.voices,
+        state.voices_loading,
+        &state.voice_search,
+        palette,
+        gap_sm,
+    );
 
     scrollable(
         column![detail_header, creds, params, voices]
@@ -311,6 +372,7 @@ fn engine_detail_pane<'a>(
 
 fn engine_detail_header<'a>(
     engine: EngineCard,
+    voice_count: usize,
     palette: &'a ForgePalette,
     gap_sm: f32,
 ) -> Element<'a, Message> {
@@ -356,12 +418,8 @@ fn engine_detail_header<'a>(
         Space::new().into()
     };
 
-    let engine_display_name = engine
-        .name
-        .map(str::to_owned)
-        .unwrap_or_else(|| forge_widgets::tr!("tts_engines_unknown"));
     let title_row = row![
-        text(engine_display_name)
+        text(engine.name.clone())
             .size(FONT_SM)
             .color(palette.text_primary),
         default_badge,
@@ -369,13 +427,9 @@ fn engine_detail_header<'a>(
     .align_y(Alignment::Center)
     .spacing(gap_sm);
 
-    let sub = text(format!(
-        "{} \u{b7} {} voices",
-        forge_widgets::tr!("tts_engines_local_meta"),
-        engine.voice_count
-    ))
-    .size(FONT_SM)
-    .color(palette.text_muted);
+    let sub = text(format!("{} \u{b7} {voice_count} voices", engine.kind))
+        .size(FONT_SM)
+        .color(palette.text_muted);
 
     container(
         row![
@@ -531,6 +585,7 @@ fn params_section<'a>(palette: &'a ForgePalette, gap_sm: f32) -> Element<'a, Mes
 
 fn voices_section<'a>(
     voices: &'a [EngineVoiceRow],
+    loading: bool,
     search: &'a str,
     palette: &'a ForgePalette,
     gap_sm: f32,
@@ -551,7 +606,7 @@ fn voices_section<'a>(
                 &forge_widgets::tr!("tts_engines_voices_filter_placeholder"),
                 search
             )
-            .on_input(|_| Message::Noop)
+            .on_input(|s| Message::Tts(TtsMsg::Engines(TtsEnginesMsg::VoiceSearchChanged(s))))
             .size(FONT_XS)
             .width(90)
             .style(move |_, _| text_input::Style {
@@ -572,24 +627,37 @@ fn voices_section<'a>(
     .align_y(Alignment::Center)
     .spacing(gap_sm);
 
-    let visible_voices: Vec<&EngineVoiceRow> = voices
-        .iter()
-        .filter(|v| {
-            search.is_empty()
-                || v.display_name
-                    .to_ascii_lowercase()
-                    .contains(&search.to_ascii_lowercase())
-        })
-        .collect();
+    let body: Element<'a, Message> = if loading {
+        text(forge_widgets::tr!("tts_engines_voices_loading"))
+            .size(FONT_SM)
+            .color(palette.text_muted)
+            .into()
+    } else {
+        let visible_voices: Vec<&EngineVoiceRow> = voices
+            .iter()
+            .filter(|v| {
+                search.is_empty()
+                    || v.display_name
+                        .to_ascii_lowercase()
+                        .contains(&search.to_ascii_lowercase())
+            })
+            .collect();
 
-    let voice_cells: Vec<Element<'a, Message>> = visible_voices
-        .iter()
-        .map(|v| voice_cell(v, palette))
-        .collect();
+        if visible_voices.is_empty() {
+            text(forge_widgets::tr!("tts_engines_voices_empty"))
+                .size(FONT_SM)
+                .color(palette.text_muted)
+                .into()
+        } else {
+            let voice_cells: Vec<Element<'a, Message>> = visible_voices
+                .iter()
+                .map(|v| voice_cell(v, palette))
+                .collect();
+            row(voice_cells).spacing(gap_sm).wrap().into()
+        }
+    };
 
-    let grid = row(voice_cells).spacing(gap_sm).wrap();
-
-    container(column![header_row, grid].spacing(spf(Spacing::Xs)))
+    container(column![header_row, body].spacing(spf(Spacing::Xs)))
         .style(move |_| container::Style {
             border: Border {
                 color: palette.border_regular,

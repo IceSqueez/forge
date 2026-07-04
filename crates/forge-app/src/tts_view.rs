@@ -109,9 +109,9 @@ pub(crate) fn tts_section_view<'a>(
     });
 
     let content: Element<'a, Message> = match section {
-        TtsSection::Dashboard => tts_dashboard_view(&app.ui.tts_dashboard, palette),
+        TtsSection::Dashboard => tts_dashboard_view(&app.ui.tts_dashboard, &app.rt, palette),
         TtsSection::Engines => tts_engines_view(&app.ui.tts_engines, &app.rt, palette),
-        TtsSection::Aliases => voice_aliases_view(&app.ui.tts_aliases, palette),
+        TtsSection::Aliases => voice_aliases_view(&app.ui.tts_aliases, &app.rt, palette),
         TtsSection::Filters => tts_filters_view(&app.ui.tts_filters, palette),
         TtsSection::Triggers => tts_triggers_view(&app.ui.tts_triggers, palette),
         TtsSection::CloudEngines => {

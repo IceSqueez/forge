@@ -692,6 +692,8 @@ tts_engines_param_volume = Гучність
 
 tts_engines_voices_header_prefix = ДОСТУПНІ ГОЛОСИ
 tts_engines_voices_filter_placeholder = Фільтр голосів…
+tts_engines_voices_loading = Завантаження голосів…
+tts_engines_voices_empty = Голосів не знайдено
 
 ## TTS Filters — колонка пайплайну
 

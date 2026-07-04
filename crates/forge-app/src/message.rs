@@ -503,6 +503,11 @@ pub enum TtsDashMsg {
 #[derive(Debug, Clone)]
 pub enum TtsEnginesMsg {
     SelectEngine(String),
+    VoiceSearchChanged(String),
+    VoicesLoaded(
+        String,
+        Result<Vec<crate::tts_engines::EngineVoiceRow>, String>,
+    ),
 }
 
 #[derive(Debug, Clone)]

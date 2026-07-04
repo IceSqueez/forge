@@ -690,6 +690,8 @@ tts_engines_param_volume = Volume
 
 tts_engines_voices_header_prefix = AVAILABLE VOICES
 tts_engines_voices_filter_placeholder = Filter voices…
+tts_engines_voices_loading = Loading voices…
+tts_engines_voices_empty = No voices found
 
 ## TTS Filters — pipeline column
 

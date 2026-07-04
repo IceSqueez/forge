@@ -253,6 +253,7 @@ fn test_speak_request(text: String) -> SpeakRequest {
 
 pub fn tts_dashboard_view<'a>(
     state: &'a TtsDashState,
+    rt: &'a RuntimeView,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let gap_sm = spf(Spacing::Xs);
@@ -262,7 +263,7 @@ pub fn tts_dashboard_view<'a>(
     let control_strip = control_strip_view(state, palette, gap_sm, gap_md);
     let now_speaking = now_speaking_view(state, palette, gap_sm);
     let queue_section = queue_section_view(state, palette, gap_sm);
-    let right_pane = right_pane_view(state, palette, gap_sm, gap_lg);
+    let right_pane = right_pane_view(state, rt, palette, gap_sm, gap_lg);
 
     let left_col = column![now_speaking, queue_section]
         .width(Length::Fill)
@@ -657,6 +658,7 @@ fn queue_item_row<'a>(
 
 fn right_pane_view<'a>(
     state: &'a TtsDashState,
+    rt: &'a RuntimeView,
     palette: &'a ForgePalette,
     gap_sm: f32,
     gap_lg: f32,
@@ -744,14 +746,28 @@ fn right_pane_view<'a>(
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
-    let piper_card = engine_card(
-        "Piper",
-        forge_widgets::tr!("tts_dash_engine_local_ready"),
-        palette.success,
-        palette,
-        gap_sm,
-    );
-    let engines_col = column![engines_header, piper_card].spacing(gap_sm);
+    let engine_cards: Vec<Element<'a, Message>> = rt
+        .tts_engine_ids
+        .iter()
+        .map(|id| {
+            let kind = crate::tts_engines::engine_kind(&id.0);
+            let status_color = if kind == "system" {
+                palette.info
+            } else {
+                palette.success
+            };
+            engine_card(
+                crate::tts_engines::engine_display_label(&id.0),
+                format!("{kind} \u{b7} ready"),
+                status_color,
+                palette,
+                gap_sm,
+            )
+        })
+        .collect();
+    let engines_col = column![engines_header]
+        .push(column(engine_cards).spacing(gap_sm))
+        .spacing(gap_sm);
 
     container(
         scrollable(
@@ -776,7 +792,7 @@ fn right_pane_view<'a>(
 }
 
 fn engine_card<'a>(
-    name: &'a str,
+    name: String,
     meta: String,
     status_color: Color,
     palette: &'a ForgePalette,

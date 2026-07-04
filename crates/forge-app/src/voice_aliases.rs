@@ -429,6 +429,7 @@ pub fn update(
 
 pub fn voice_aliases_view<'a>(
     state: &'a VoiceAliasesState,
+    rt: &'a RuntimeView,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let gap_sm = spf(Spacing::Xs);
@@ -450,7 +451,7 @@ pub fn voice_aliases_view<'a>(
         .into();
 
     if let Some(form) = &state.form {
-        iced::widget::stack![page, alias_form_modal(form, &state.aliases, palette)].into()
+        iced::widget::stack![page, alias_form_modal(form, &rt.tts_engine_ids, palette)].into()
     } else if let Some(index) = state.pending_delete {
         let name = state
             .aliases
@@ -520,7 +521,7 @@ fn modal_field<'a>(
 
 fn alias_form_modal<'a>(
     form: &'a AliasForm,
-    rows: &'a [VoiceAliasRow],
+    engine_ids: &'a [EngineId],
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let p = *palette;
@@ -537,12 +538,7 @@ fn alias_form_modal<'a>(
         .font(font(FontRole::Body));
 
     let engines: Vec<String> = {
-        let mut seen: Vec<String> = rows
-            .iter()
-            .map(|r| r.engine_id.clone())
-            .collect::<std::collections::BTreeSet<_>>()
-            .into_iter()
-            .collect();
+        let mut seen: Vec<String> = engine_ids.iter().map(|e| e.0.clone()).collect();
         if !form.engine.is_empty() && !seen.contains(&form.engine) {
             seen.push(form.engine.clone());
         }

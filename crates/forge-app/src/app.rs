@@ -299,6 +299,10 @@ fn dispatch_event(app: &mut App, event: &Arc<Event>) -> Task<Message> {
     let mut task = crate::builtin_detail::on_event(app.ui.builtin_detail.as_mut(), event);
     task = task.chain(crate::home::on_event(&mut app.ui.home, event));
     task = task.chain(crate::event_feed::on_event(&mut app.ui.event_feed, event));
+    task = task.chain(crate::script_editor::on_event(
+        &mut app.ui.script_editor,
+        event,
+    ));
     if event.kind == "platform.reauth_required"
         && event.payload["platform"].as_str() == Some("twitch")
     {

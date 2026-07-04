@@ -172,6 +172,41 @@ async fn load_script_list(repo: Arc<dyn ScriptRepo>) -> Result<Vec<ScriptListEnt
         .collect())
 }
 
+/// Appends `forge::log/warn/error` output from the open script's run to the console
+/// panel live. Bridged off the shared bus stream (`Message::EventArrived` →
+/// `dispatch_event`), the same path `event_feed`/`home` consume — so no dedicated
+/// subscription or extra `Message` variant is needed. Events tagged with a different
+/// (or absent) `script_id` are ignored so one script's logs never bleed into another's.
+pub fn on_event(state: &mut ScriptEditorState, event: &forge_events::Event) -> iced::Task<Message> {
+    if event.kind != "script.log" {
+        return iced::Task::none();
+    }
+    let Some(open_id) = state.editor.as_ref().map(|o| o.id) else {
+        return iced::Task::none();
+    };
+    if event.payload.get("script_id").and_then(|v| v.as_str()) != Some(open_id.to_string().as_str())
+    {
+        return iced::Task::none();
+    }
+    let level = match event.payload.get("level").and_then(|v| v.as_str()) {
+        Some("warn") => ConsoleLevel::Warn,
+        Some("error") => ConsoleLevel::Err,
+        _ => ConsoleLevel::Info,
+    };
+    let text = event
+        .payload
+        .get("message")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    state.console_lines.push(ConsoleLine {
+        level,
+        timestamp: Some(now_timestamp()),
+        text,
+    });
+    iced::Task::none()
+}
+
 pub fn update(
     state: &mut ScriptEditorState,
     rt: &RuntimeView,

@@ -104,6 +104,19 @@ fn format_row_timestamp(dt: OffsetDateTime) -> String {
     format!("{h:02}:{m:02}:{s:02}")
 }
 
+/// YouTube membership level names are free text set by the channel owner (e.g.
+/// "Level 3", "Superfan"); this extracts a digit run as a best-effort tier
+/// number and falls back to 1 when the name carries no number, since `ChatBody`
+/// has no string-level field of its own.
+fn member_level_to_tier(level: &str) -> u8 {
+    level
+        .chars()
+        .filter(char::is_ascii_digit)
+        .collect::<String>()
+        .parse()
+        .unwrap_or(1)
+}
+
 fn unified_to_chat_row(
     row: &UnifiedChatRow,
     seq: u64,
@@ -140,14 +153,18 @@ fn unified_to_chat_row(
             bits: amount_micros / 10_000,
             text: message.clone().unwrap_or_default(),
         },
-        Some(ChatEventDetail::NewMember { .. }) | Some(ChatEventDetail::MemberMilestone { .. }) => {
-            ChatBody::Subscription {
-                tier: 1,
-                months: None,
-                message: None,
-                triggered_action,
-            }
-        }
+        Some(ChatEventDetail::NewMember { level }) => ChatBody::Subscription {
+            tier: member_level_to_tier(level),
+            months: None,
+            message: Some(level.clone()).filter(|s| !s.is_empty()),
+            triggered_action,
+        },
+        Some(ChatEventDetail::MemberMilestone { months, message }) => ChatBody::Subscription {
+            tier: 1,
+            months: Some(*months),
+            message: message.clone(),
+            triggered_action,
+        },
         None => ChatBody::Message(row.body_text()),
     };
     ChatRow {

@@ -84,6 +84,19 @@ impl GlobalsRepo for SqliteGlobalsRepo {
         Ok(row.map(|(p,)| p != 0))
     }
 
+    async fn set_persisted(&self, name: &str, persisted: bool) -> Result<bool, StorageError> {
+        let persisted_int: i64 = if persisted { 1 } else { 0 };
+
+        let result = sqlx::query("UPDATE globals SET persisted = ? WHERE name = ?")
+            .bind(persisted_int)
+            .bind(name)
+            .execute(&self.pool)
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
     async fn delete(&self, name: &str) -> Result<bool, StorageError> {
         let result = sqlx::query("DELETE FROM globals WHERE name = ?")
             .bind(name)

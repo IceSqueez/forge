@@ -196,6 +196,10 @@ impl GlobalsRepo for SqliteBackend {
         self.globals.persisted(name).await
     }
 
+    async fn set_persisted(&self, name: &str, persisted: bool) -> Result<bool, StorageError> {
+        self.globals.set_persisted(name, persisted).await
+    }
+
     async fn delete(&self, name: &str) -> Result<bool, StorageError> {
         self.globals.delete(name).await
     }

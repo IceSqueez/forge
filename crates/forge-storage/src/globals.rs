@@ -41,8 +41,30 @@ pub trait GlobalsRepo: Send + Sync {
             .map(|e| e.persisted))
     }
 
+    /// Updates only the `persisted` flag for `name`; does not touch `writes`. Returns
+    /// `false` when `name` does not exist.
+    ///
+    /// Use this for metadata-only edits (e.g. a UI persist toggle) instead of `set()`,
+    /// which always bumps `writes` even when the value itself is unchanged. Backends
+    /// without a direct column update inherit this default, which re-`set()`s the
+    /// current value and so still bumps `writes` — a real backend should override for
+    /// true metadata-only semantics.
+    async fn set_persisted(&self, name: &str, persisted: bool) -> Result<bool, StorageError> {
+        let Some(entry) = self.list().await?.into_iter().find(|e| e.name == name) else {
+            return Ok(false);
+        };
+        self.set(name, entry.value, persisted).await?;
+        Ok(true)
+    }
+
     async fn list(&self) -> Result<Vec<GlobalEntry>, StorageError>;
+
+    /// Sums the footprint of ALL globals, persisted and session-scoped alike — the
+    /// Data screen's total storage-used figure, not a disk-durable-only figure.
     async fn storage_bytes(&self) -> Result<u64, StorageError>;
+
+    /// Timestamp of the most recent write to a `persisted = true` global. Session-only
+    /// globals are never durably saved, so they never advance this value.
     async fn last_save_at(&self) -> Result<Option<OffsetDateTime>, StorageError>;
 
     /// Atomically adds `amount` to an `Int` or `Float` global and returns the updated value.

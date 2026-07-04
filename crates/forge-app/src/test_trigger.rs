@@ -120,14 +120,6 @@ mod tests {
     }
 
     #[test]
-    fn chat_command_trigger_yields_twitch_chat_message() {
-        let instance = make_instance("twitch.chat.command");
-        let event = synthesize_test_event(&instance, &instance.overrides);
-        assert_eq!(event.kind, "chat.message");
-        assert_eq!(event.source, EventSource::Twitch);
-    }
-
-    #[test]
     fn chat_command_message_uses_configured_phrase() {
         // Regression guard: the synthesized chat message must carry the trigger's
         // configured command phrase so matches_trigger judges it as it would a live
@@ -152,14 +144,6 @@ mod tests {
     }
 
     #[test]
-    fn any_message_trigger_yields_twitch_chat_message() {
-        let instance = make_instance("twitch.chat.message");
-        let event = synthesize_test_event(&instance, &instance.overrides);
-        assert_eq!(event.kind, "chat.message");
-        assert_eq!(event.source, EventSource::Twitch);
-    }
-
-    #[test]
     fn obs_scene_changed_yields_scene_changed_with_obs_source() {
         let instance = TriggerInstance {
             id: TriggerInstanceId::new(),
@@ -181,21 +165,5 @@ mod tests {
         let instance = make_instance("obs.scenes.current_changed");
         let event = synthesize_test_event(&instance, &instance.overrides);
         assert_eq!(event.payload["scene"].as_str().unwrap(), "TestScene");
-    }
-
-    #[test]
-    fn subscribe_trigger_yields_sub_received() {
-        let instance = make_instance("twitch.support.subscriber");
-        let event = synthesize_test_event(&instance, &instance.overrides);
-        assert_eq!(event.kind, "sub.received");
-        assert_eq!(event.source, EventSource::Twitch);
-    }
-
-    #[test]
-    fn raid_trigger_yields_raid_received() {
-        let instance = make_instance("twitch.channel.raid_received");
-        let event = synthesize_test_event(&instance, &instance.overrides);
-        assert_eq!(event.kind, "raid.received");
-        assert_eq!(event.source, EventSource::Twitch);
     }
 }

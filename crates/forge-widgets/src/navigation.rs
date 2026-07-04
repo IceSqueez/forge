@@ -30,6 +30,7 @@ pub enum NavItem<Msg> {
     },
     FlatLink {
         dot_color: Color,
+        status: Option<Color>,
         label: String,
         active: bool,
         on_press: Msg,
@@ -106,10 +107,11 @@ fn render_nav_item<'a, Msg: 'a + Clone>(
         } => nav_leaf(icon, label, active, on_press, palette),
         NavItem::FlatLink {
             dot_color,
+            status,
             label,
             active,
             on_press,
-        } => nav_flat_link(dot_color, label, active, on_press, palette),
+        } => nav_flat_link(dot_color, status, label, active, on_press, palette),
         NavItem::Group {
             icon,
             label,
@@ -185,6 +187,7 @@ fn nav_mini_label<'a, Msg: 'a>(label: String, palette: &ForgePalette) -> Element
 
 fn nav_flat_link<'a, Msg: 'a + Clone>(
     dot_color: Color,
+    status: Option<Color>,
     label: String,
     active: bool,
     on_press: Msg,
@@ -216,15 +219,31 @@ fn nav_flat_link<'a, Msg: 'a + Clone>(
             ..Default::default()
         });
 
-    let content = row![dot, text(label).size(FONT_XS)]
+    let mut content = row![dot, text(label).size(FONT_XS).width(iced::Length::Fill)]
         .spacing(10)
         .align_y(iced::Alignment::Center);
+
+    if let Some(status_color) = status {
+        let status_dot =
+            container(Space::new())
+                .width(5_u32)
+                .height(5_u32)
+                .style(move |_: &iced::Theme| iced::widget::container::Style {
+                    background: Some(iced::Background::Color(status_color)),
+                    border: Border {
+                        radius: 2.5.into(),
+                        ..Border::default()
+                    },
+                    ..Default::default()
+                });
+        content = content.push(status_dot);
+    }
 
     button(content)
         .on_press(on_press)
         .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
         .width(iced::Length::Fill)
-        .style(move |_theme: &iced::Theme, status| match status {
+        .style(move |_theme: &iced::Theme, btn_status| match btn_status {
             ButtonStatus::Hovered | ButtonStatus::Pressed if !active => ButtonStyle {
                 background: Some(iced::Background::Color(hover_bg)),
                 text_color: hover_text,

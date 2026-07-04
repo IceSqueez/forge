@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use forge_events::{Event, EventSource};
-use forge_types::{ActionId, EventId};
+use forge_types::{ActionId, ChatPayload, ChatSegment, EventId};
 use forge_widgets::{
     EventInspectorParams, EventRowData, FontRole, ForgePalette, Radius, Spacing, ToastKind,
     category_chip, event_inspector, event_row_observability, font, radius, sp, spf,
@@ -197,19 +197,45 @@ fn format_timestamp(ts: &time::OffsetDateTime) -> String {
     forge_widgets::fmt_feed_time(ts)
 }
 
+/// Renders the unified `_chat` envelope (`ChatPayload`) that every chat platform
+/// attaches, as `author: text`. Works identically for Twitch, YouTube, and Kick
+/// because all three publish the same envelope under [`ChatPayload::KEY`].
+fn chat_summary(event: &Event) -> String {
+    let Some(chat) = event
+        .payload
+        .get(ChatPayload::KEY)
+        .and_then(|v| serde_json::from_value::<ChatPayload>(v.clone()).ok())
+    else {
+        return event.kind.clone();
+    };
+    let text: String = chat
+        .segments
+        .iter()
+        .map(|seg| match seg {
+            ChatSegment::Text { text } => text.clone(),
+            ChatSegment::Emote { name, .. } => name.clone(),
+            ChatSegment::Link { display, .. } => display.clone(),
+            ChatSegment::Mention { username } => format!("@{username}"),
+        })
+        .collect();
+    format!("{}: {text}", chat.author)
+}
+
+fn is_chat_message_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "chat.message"
+            | "youtube.chat.message"
+            | "kick.chat.message"
+            | "youtube.chat.command"
+            | "kick.chat.command"
+    )
+}
+
 pub(crate) fn format_summary(event: &Event) -> String {
     let p = &event.payload;
     match event.kind.as_str() {
-        "chat.message" => {
-            use forge_platform_twitch::{TwitchChatEvent, parse_chat_event};
-            let (user, msg) = parse_chat_event(event)
-                .and_then(|e| match e {
-                    TwitchChatEvent::Message { username, text, .. } => Some((username, text)),
-                    _ => None,
-                })
-                .unwrap_or_else(|| ("?".to_owned(), String::new()));
-            format!("{user}: {msg}")
-        }
+        k if is_chat_message_kind(k) => chat_summary(event),
         "command.matched" => {
             let cmd = p["command"].as_str().unwrap_or("?");
             let user = p["user"]["login"]
@@ -218,28 +244,23 @@ pub(crate) fn format_summary(event: &Event) -> String {
                 .unwrap_or("?");
             format!("{cmd} by {user}")
         }
-        "action.start" => {
-            let name = p["action_name"].as_str().unwrap_or("?");
-            let queue = p["queue"].as_str().unwrap_or("Default");
-            format!("{name} · queue={queue}")
-        }
-        "action.done" => {
-            let name = p["action_name"].as_str().unwrap_or("?");
-            let status = p["status"].as_str().unwrap_or("ok");
-            format!("{name} · status={status}")
-        }
+        "action.start" => p["action_name"].as_str().unwrap_or("?").to_owned(),
+        "action.done" => p["outcome"].as_str().unwrap_or("done").to_owned(),
         "subaction.run" => {
-            let idx = p["index"].as_u64().unwrap_or(0);
-            let total = p["total"].as_u64().unwrap_or(0);
+            let idx = p["step_index"].as_u64().unwrap_or(0);
             let kind = p["kind"].as_str().unwrap_or("?");
-            format!("[{idx}/{total}] {kind}")
+            format!("[{idx}] {kind}")
         }
         "script.exec" => p["script_name"].as_str().unwrap_or("?").to_owned(),
         "timer.tick" => p["name"].as_str().unwrap_or("?").to_owned(),
         "scene.changed" => {
-            let from = p["from"].as_str().unwrap_or("?");
-            let to = p["to"].as_str().unwrap_or("?");
-            format!("\"{from}\" \u{2192} \"{to}\"")
+            let from = p["from_scene"].as_str().unwrap_or("");
+            let to = p["to_scene"].as_str().unwrap_or("?");
+            if from.is_empty() {
+                format!("\u{2192} \"{to}\"")
+            } else {
+                format!("\"{from}\" \u{2192} \"{to}\"")
+            }
         }
         "chat.send" => p["message"]
             .as_str()
@@ -247,22 +268,21 @@ pub(crate) fn format_summary(event: &Event) -> String {
             .unwrap_or("?")
             .to_owned(),
         "request.fail" => {
-            let url = p["url"].as_str().unwrap_or("?");
-            let status = p["status"]
+            let endpoint = p["endpoint"].as_str().unwrap_or("?");
+            let status = p["status_code"]
                 .as_u64()
                 .map(|n| n.to_string())
                 .unwrap_or_else(|| "error".to_owned());
-            format!("{url} \u{2192} {status}")
+            format!("{endpoint} \u{2192} {status}")
         }
-        "global.set" => {
-            let name = p["name"].as_str().unwrap_or("?");
-            let val = p["value"]
+        "global.set" | "global.incr" => {
+            let name = p["key"].as_str().unwrap_or("?");
+            let val = p["new_value"]
                 .as_str()
                 .map(str::to_owned)
-                .unwrap_or_else(|| p["value"].to_string());
+                .unwrap_or_else(|| p["new_value"].to_string());
             format!("{name} = {val}")
         }
-        "global.incr" => p["name"].as_str().unwrap_or("?").to_owned(),
         _ => event.kind.clone(),
     }
 }
@@ -271,32 +291,22 @@ fn format_result_tag(event: &Event) -> Option<String> {
     let p = &event.payload;
     match event.kind.as_str() {
         "action.done" => {
-            let status = p["status"].as_str().unwrap_or("ok");
-            let dur = p["duration_ms"].as_u64();
-            match (status, dur) {
-                ("ok", Some(d)) => Some(format!("{d}ms total")),
-                ("ok", None) => Some("ok".to_owned()),
-                (s, _) => Some(s.to_owned()),
+            let outcome = p["outcome"].as_str().unwrap_or("done");
+            let dur = p["total_ms"].as_u64();
+            match outcome {
+                "success" => Some(match dur {
+                    Some(d) => format!("{d}ms total"),
+                    None => "ok".to_owned(),
+                }),
+                other => Some(format!("\u{2717} {other}")),
             }
         }
         "command.matched" => Some("\u{2192} trigger fired".to_owned()),
         "chat.send" => Some("sent".to_owned()),
-        "request.fail" => {
-            let retry = p["retry_in_secs"].as_u64();
-            retry.map(|s| format!("retry in {s}s"))
-        }
-        "subaction.run" => p["duration_ms"].as_u64().map(|d| {
-            if d == 0 {
-                "<1ms".to_owned()
-            } else {
-                format!("{d}ms")
-            }
-        }),
-        "scene.changed" => {
-            let count = p["action_count"].as_u64();
-            count.map(|c| format!("\u{2192} {c} actions"))
-        }
-        "chat.message" => {
+        "request.fail" => p["retry_after_secs"]
+            .as_u64()
+            .map(|s| format!("retry in {s}s")),
+        k if is_chat_message_kind(k) => {
             let matched = p["matched"].as_bool().unwrap_or(false);
             Some(
                 if matched {

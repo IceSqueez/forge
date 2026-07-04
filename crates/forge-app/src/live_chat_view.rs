@@ -1,4 +1,6 @@
-use forge_types::{ChatEventDetail, ChatSource, PlatformId, UnifiedChatRow, UserBadge};
+use std::collections::{HashMap, HashSet};
+
+use forge_types::{ChatEventDetail, ChatSource, EventId, PlatformId, UnifiedChatRow, UserBadge};
 use forge_widgets::{
     BadgeKind, ChatBody, ChatRow, ForgePalette, Icon, Platform, PlatformTarget, tabler_icon,
     tokens::{Radius, Spacing, radius, sp, spf},
@@ -9,7 +11,14 @@ use time::OffsetDateTime;
 use crate::Message;
 use crate::live_chat::{EventsFilter, LiveChatState, PlatformFilter, chat_scroll_id};
 use crate::message::LiveChatMsg;
+use crate::runtime_view::RuntimeView;
 use crate::viewers::ViewersState;
+
+/// How many recent bus events are scanned to correlate a chat event with the
+/// automation it triggered. An `action.start` is published in the same instant
+/// as its triggering event, so both sit adjacent at the head of the ring; older
+/// events beyond this window degrade to no badge rather than a false positive.
+const TRIGGER_SCAN_WINDOW: usize = 2_048;
 
 pub fn row_match_opacity(row: &UnifiedChatRow, query: &str) -> f32 {
     if query.is_empty() {
@@ -95,7 +104,11 @@ fn format_row_timestamp(dt: OffsetDateTime) -> String {
     format!("{h:02}:{m:02}:{s:02}")
 }
 
-fn unified_to_chat_row(row: &UnifiedChatRow, seq: u64) -> ChatRow {
+fn unified_to_chat_row(
+    row: &UnifiedChatRow,
+    seq: u64,
+    triggered_action: Option<String>,
+) -> ChatRow {
     let platform = match row.source {
         ChatSource::Twitch => Platform::Twitch,
         ChatSource::YouTube => Platform::YouTube,
@@ -113,11 +126,11 @@ fn unified_to_chat_row(row: &UnifiedChatRow, seq: u64) -> ChatRow {
             tier: *tier,
             months: *months,
             message: message.clone(),
-            triggered_action: None,
+            triggered_action,
         },
         Some(ChatEventDetail::Raid { viewer_count }) => ChatBody::Raid {
             viewers: *viewer_count,
-            triggered_action: None,
+            triggered_action,
         },
         Some(ChatEventDetail::SuperChat {
             amount_micros,
@@ -132,7 +145,7 @@ fn unified_to_chat_row(row: &UnifiedChatRow, seq: u64) -> ChatRow {
                 tier: 1,
                 months: None,
                 message: None,
-                triggered_action: None,
+                triggered_action,
             }
         }
         None => ChatBody::Message(row.body_text()),
@@ -148,6 +161,43 @@ fn unified_to_chat_row(row: &UnifiedChatRow, seq: u64) -> ChatRow {
     }
 }
 
+fn detail_supports_trigger_badge(detail: &ChatEventDetail) -> bool {
+    matches!(
+        detail,
+        ChatEventDetail::Subscription { .. }
+            | ChatEventDetail::Raid { .. }
+            | ChatEventDetail::NewMember { .. }
+            | ChatEventDetail::MemberMilestone { .. }
+    )
+}
+
+/// Reverse of the `caused_by` edge: given the chat event ids in `wanted`, finds
+/// the automation that fired for each by scanning recent `action.start`
+/// observability events whose `caused_by` points back at the chat event, then
+/// reads its `action_name`. The bus exposes only a forward `lookup`, so this
+/// scans the recent ring once; newest match wins when several actions fired.
+fn resolve_triggered_actions(
+    rt: &RuntimeView,
+    wanted: &HashSet<EventId>,
+) -> HashMap<EventId, String> {
+    let mut resolved = HashMap::new();
+    for ev in rt.bus.recent(TRIGGER_SCAN_WINDOW) {
+        if ev.kind != "action.start" {
+            continue;
+        }
+        let Some(cause) = ev.caused_by else {
+            continue;
+        };
+        if !wanted.contains(&cause) || resolved.contains_key(&cause) {
+            continue;
+        }
+        if let Some(name) = ev.payload["action_name"].as_str() {
+            resolved.insert(cause, name.to_owned());
+        }
+    }
+    resolved
+}
+
 fn select_viewer_msg(name: String) -> Message {
     Message::LiveChat(LiveChatMsg::DrawerSelectViewer(name))
 }
@@ -155,10 +205,11 @@ fn select_viewer_msg(name: String) -> Message {
 pub fn live_chat_view<'a>(
     state: &'a LiveChatState,
     viewers: &'a ViewersState,
+    rt: &RuntimeView,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let page_header = live_chat_page_header(state, palette);
-    let chat_area = build_chat_area(state, palette);
+    let chat_area = build_chat_area(state, rt, palette);
 
     let targets: Vec<PlatformTarget<'a, Message>> = state
         .connected_platforms
@@ -406,6 +457,7 @@ fn live_chat_page_header<'a>(
 
 fn build_chat_area<'a>(
     state: &'a LiveChatState,
+    rt: &RuntimeView,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     use forge_widgets::{
@@ -418,7 +470,7 @@ fn build_chat_area<'a>(
     let palette_copy = *palette;
     let query = state.search_query.clone();
 
-    let visible: Vec<Element<'a, Message>> = state
+    let filtered: Vec<(usize, &UnifiedChatRow)> = state
         .rows
         .iter()
         .enumerate()
@@ -427,9 +479,34 @@ fn build_chat_area<'a>(
                 && row_matches_events_filter(row, state.events_filter)
                 && !(state.hide_bots && row_is_bot(row))
         })
+        .collect();
+
+    let wanted: HashSet<EventId> = filtered
+        .iter()
+        .filter(|(_, row)| {
+            row.event_detail
+                .as_ref()
+                .is_some_and(detail_supports_trigger_badge)
+        })
+        .map(|(_, row)| row.event_id)
+        .collect();
+
+    let triggered = if wanted.is_empty() {
+        HashMap::new()
+    } else {
+        resolve_triggered_actions(rt, &wanted)
+    };
+
+    let visible: Vec<Element<'a, Message>> = filtered
+        .into_iter()
         .map(|(idx, row)| {
             let opacity = row_match_opacity(row, &query);
-            let chat_row = unified_to_chat_row(row, state.next_chat_seq.wrapping_add(idx as u64));
+            let triggered_action = triggered.get(&row.event_id).cloned();
+            let chat_row = unified_to_chat_row(
+                row,
+                state.next_chat_seq.wrapping_add(idx as u64),
+                triggered_action,
+            );
             let seq = chat_row.seq;
             let row_el: Element<'a, Message> = iced::widget::lazy(seq, move |_: &u64| {
                 forge_widgets::ChatRowWidget::new(

@@ -200,6 +200,10 @@ impl GlobalsRepo for SqliteBackend {
         self.globals.set_persisted(name, persisted).await
     }
 
+    async fn rename(&self, old_name: &str, new_name: &str) -> Result<(), StorageError> {
+        self.globals.rename(old_name, new_name).await
+    }
+
     async fn delete(&self, name: &str) -> Result<bool, StorageError> {
         self.globals.delete(name).await
     }

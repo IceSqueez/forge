@@ -57,6 +57,41 @@ pub trait GlobalsRepo: Send + Sync {
         Ok(true)
     }
 
+    /// Renames `old_name` to `new_name`, preserving the row's value, `persisted`
+    /// flag, and `reads`/`writes`/`created_at` telemetry — only the name (the
+    /// join key scripts and sub-actions reference) changes.
+    ///
+    /// Rejects with [`StorageError::NameCollision`] when `new_name` already
+    /// names a different global (never silently overwrites it), and with
+    /// [`StorageError::NotFound`] when `old_name` does not exist. Renaming a
+    /// name to itself is a no-op success.
+    ///
+    /// The default impl is a best-effort composition of `list`/`set`/`delete`
+    /// for backends without a direct column update; it is **not** atomic and
+    /// does **not** preserve `reads`/`writes`/`created_at` (the re-inserted row
+    /// starts fresh). A real backend should override this with a single
+    /// transactional `UPDATE` of the name column to get both properties.
+    async fn rename(&self, old_name: &str, new_name: &str) -> Result<(), StorageError> {
+        if old_name == new_name {
+            return Ok(());
+        }
+
+        let entries = self.list().await?;
+        if entries.iter().any(|e| e.name == new_name) {
+            return Err(StorageError::NameCollision {
+                name: new_name.to_string(),
+            });
+        }
+        let Some(entry) = entries.into_iter().find(|e| e.name == old_name) else {
+            return Err(StorageError::NotFound {
+                key: old_name.to_string(),
+            });
+        };
+
+        self.delete(old_name).await?;
+        self.set(new_name, entry.value, entry.persisted).await
+    }
+
     async fn list(&self) -> Result<Vec<GlobalEntry>, StorageError>;
 
     /// Sums the footprint of ALL globals, persisted and session-scoped alike — the

@@ -18,6 +18,9 @@ pub enum StorageError {
     #[error("key not found: {key}")]
     NotFound { key: String },
 
+    #[error("name '{name}' is already in use")]
+    NameCollision { name: String },
+
     #[error("global '{name}' has type {actual}, expected numeric")]
     TypeMismatch { name: String, actual: String },
 

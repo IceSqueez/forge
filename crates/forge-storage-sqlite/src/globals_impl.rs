@@ -97,6 +97,43 @@ impl GlobalsRepo for SqliteGlobalsRepo {
         Ok(result.rows_affected() > 0)
     }
 
+    async fn rename(&self, old_name: &str, new_name: &str) -> Result<(), StorageError> {
+        if old_name == new_name {
+            return Ok(());
+        }
+
+        let mut tx = self.pool.begin().await.map_err(SqliteStorageError::Sqlx)?;
+
+        let collision: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM globals WHERE name = ?")
+            .bind(new_name)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+        if collision.is_some() {
+            return Err(StorageError::NameCollision {
+                name: new_name.to_string(),
+            });
+        }
+
+        // Only the primary key column changes — value, persisted, type_tag,
+        // reads/writes, created_at, and last_modified all survive untouched.
+        let result = sqlx::query("UPDATE globals SET name = ? WHERE name = ?")
+            .bind(new_name)
+            .bind(old_name)
+            .execute(&mut *tx)
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+        if result.rows_affected() == 0 {
+            return Err(StorageError::NotFound {
+                key: old_name.to_string(),
+            });
+        }
+
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
+        Ok(())
+    }
+
     async fn delete(&self, name: &str) -> Result<bool, StorageError> {
         let result = sqlx::query("DELETE FROM globals WHERE name = ?")
             .bind(name)

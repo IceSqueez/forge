@@ -339,7 +339,15 @@ fn build_globals_module(
         move |key: ImmutableString| -> Result<rhai::Dynamic, Box<EvalAltResult>> {
             match Handle::current().block_on(globals_get.get(key.as_str())) {
                 Ok(Some(v)) => Ok(variant_to_dynamic(v)),
-                Ok(None) => Ok(rhai::Dynamic::UNIT),
+                Ok(None) => {
+                    // Never silent: a script may hold a name that no longer
+                    // resolves because the global was renamed or deleted.
+                    tracing::warn!(
+                        global_name = key.as_str(),
+                        "script read an unknown global; it may have been renamed or deleted"
+                    );
+                    Ok(rhai::Dynamic::UNIT)
+                }
                 Err(e) => Err(e.to_string().into()),
             }
         },

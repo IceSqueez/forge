@@ -38,7 +38,7 @@ use crate::message::{
     ActionsMsg, BootMsg, LifecycleMsg, ServerSubsystemMsg, SidebarMsg, ToastMsg, TtsMsg,
 };
 use crate::queues_view::QueuesState;
-use crate::script_editor::ScriptEditorState;
+use crate::script_editor::{ScriptEditorMsg, ScriptEditorState};
 use crate::server_screen::ServerScreenState;
 use crate::server_subsystem::ServerSubsystem;
 use crate::settings_audio::SettingsAudioState;
@@ -471,6 +471,8 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 Task::done(Message::Actions(ActionsMsg::RenameCancel))
             } else if app.ui.actions.action_menu_open.is_some() {
                 Task::done(Message::Actions(ActionsMsg::DismissActionMenu))
+            } else if app.ui.script_editor.renaming_script.is_some() {
+                Task::done(Message::ScriptEditor(ScriptEditorMsg::RenameCancel))
             } else {
                 Task::none()
             }

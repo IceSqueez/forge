@@ -10,16 +10,17 @@ use forge_storage::{GlobalsRepo, ScriptRecord, ScriptRepo, SettingsRepo};
 use forge_types::{ArgStack, ScriptContract, ScriptId, Variant, VariantKind};
 use forge_widgets::tokens::{FONT_SM, FONT_XS, FontRole, Spacing, font, spf};
 use forge_widgets::{
-    ConsoleLevel, ConsoleLine, ForgePalette, ModalProps, ScriptEditorWidgetMsg,
-    ScriptEditorWidgetState, StatusVariant, apply_autocomplete_insert, filter_candidates, modal,
-    prefix_under_cursor, scan_type_hint, script_editor_widget, should_trigger_autocomplete,
-    status_pill,
+    ConfirmKind, ConfirmModalParams, ConfirmTone, ConsoleLevel, ConsoleLine, ForgePalette, Icon,
+    ModalProps, RowAction, ScriptEditorWidgetMsg, ScriptEditorWidgetState, StatusVariant,
+    apply_autocomplete_insert, confirm_modal, filter_candidates, modal, prefix_under_cursor,
+    row_actions, scan_type_hint, script_editor_widget, should_trigger_autocomplete, status_pill,
 };
 use iced::widget::{column, container, row, scrollable, text, text_editor, tooltip};
 use iced::{Alignment, Background, Border, Element, Length};
 use time::OffsetDateTime;
 
 use crate::Message;
+use crate::message::ToastMsg;
 use crate::runtime_view::RuntimeView;
 
 #[derive(Debug, Clone)]
@@ -62,6 +63,15 @@ pub struct ScriptEditorState {
     pub run_modal: Option<RunModalForm>,
     pub loading: bool,
     pub api_docs_search: String,
+    /// Two-phase delete gate (mirrors Globals/Triggers/Actions) — the shared
+    /// `confirm_modal` is the only render site; `DeleteRequested` only arms
+    /// this, `DeleteConfirmAccepted` does the real delete.
+    pub pending_delete: Option<ScriptId>,
+    /// Inline rename buffer: `(id, in-progress name)`. Mirrors Actions'
+    /// `renaming_action` shape (the reference implementation `InlineRename`
+    /// will later extract from) — self-contained here per M2 scope, not
+    /// blocked on the M7 shared-widget extraction.
+    pub renaming_script: Option<(ScriptId, String)>,
 }
 
 impl ScriptEditorState {
@@ -75,6 +85,8 @@ impl ScriptEditorState {
             run_modal: None,
             loading: false,
             api_docs_search: String::new(),
+            pending_delete: None,
+            renaming_script: None,
         }
     }
 
@@ -89,6 +101,10 @@ impl Default for ScriptEditorState {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn script_rename_input_id() -> iced::advanced::widget::Id {
+    iced::advanced::widget::Id::new("forge:script_rename")
 }
 
 fn now_timestamp() -> String {
@@ -561,6 +577,19 @@ pub fn update(
             iced::Task::none()
         }
         ScriptEditorMsg::DeleteRequested(id) => {
+            // Arms the confirm gate only (mirrors Globals' DeleteRequested) —
+            // the row delete control no longer deletes directly
+            // (SC-13-F26: correct `update` body existed with zero reachable
+            // view producer AND no confirm gate).
+            state.pending_delete = Some(id);
+            iced::Task::none()
+        }
+        ScriptEditorMsg::DeleteConfirmDismissed => {
+            state.pending_delete = None;
+            iced::Task::none()
+        }
+        ScriptEditorMsg::DeleteConfirmAccepted(id) => {
+            state.pending_delete = None;
             let dp = Arc::clone(&rt.backend);
             iced::Task::perform(
                 async move {
@@ -569,21 +598,97 @@ pub fn update(
                         .map(|_| ())
                         .map_err(|e| e.to_string())
                 },
-                |r| Message::ScriptEditor(ScriptEditorMsg::Deleted(r)),
+                move |r| Message::ScriptEditor(ScriptEditorMsg::Deleted(id, r)),
             )
         }
-        ScriptEditorMsg::Deleted(Ok(())) => {
-            let id = state.selected;
-            if let Some(selected_id) = id {
-                state.scripts.retain(|e| e.id != selected_id);
+        ScriptEditorMsg::Deleted(id, Ok(())) => {
+            state.scripts.retain(|e| e.id != id);
+            if state.selected == Some(id) {
+                state.selected = None;
+                state.editor = None;
+                state.variables_in_scope.clear();
             }
-            state.selected = None;
-            state.editor = None;
-            state.variables_in_scope.clear();
             iced::Task::done(Message::ScriptEditor(ScriptEditorMsg::LoadRequested))
         }
-        ScriptEditorMsg::Deleted(Err(e)) => {
+        ScriptEditorMsg::Deleted(_, Err(e)) => {
             tracing::warn!(error = %e, "script delete failed");
+            iced::Task::none()
+        }
+        ScriptEditorMsg::RenameStarted(id) => {
+            let current_name = state
+                .scripts
+                .iter()
+                .find(|e| e.id == id)
+                .map(|e| e.name.clone())
+                .unwrap_or_default();
+            state.renaming_script = Some((id, current_name));
+            iced::widget::operation::focus(script_rename_input_id())
+        }
+        ScriptEditorMsg::RenameBufferChanged(buf) => {
+            if let Some((_, name)) = state.renaming_script.as_mut() {
+                *name = buf;
+            }
+            iced::Task::none()
+        }
+        ScriptEditorMsg::RenameCancel => {
+            state.renaming_script = None;
+            iced::Task::none()
+        }
+        ScriptEditorMsg::RenameSubmit => {
+            let Some((id, name)) = state.renaming_script.clone() else {
+                return iced::Task::none();
+            };
+            let trimmed = name.trim().to_owned();
+            if trimmed.is_empty() {
+                state.renaming_script = None;
+                return iced::Task::none();
+            }
+            let already_taken = state
+                .scripts
+                .iter()
+                .any(|e| e.id != id && e.name.eq_ignore_ascii_case(&trimmed));
+            if already_taken {
+                state.renaming_script = None;
+                return iced::Task::done(Message::Toast(ToastMsg::Fired {
+                    kind: forge_widgets::ToastKind::Error,
+                    message: format!("Name \u{201c}{trimmed}\u{201d} is already taken"),
+                    duration_ms: 3000,
+                    action: None,
+                }));
+            }
+            let dp = Arc::clone(&rt.backend);
+            iced::Task::perform(
+                async move {
+                    let mut record = ScriptRepo::get(&*dp, id)
+                        .await
+                        .map_err(|e| e.to_string())?
+                        .ok_or_else(|| "script not found".to_owned())?;
+                    record.name = trimmed.clone();
+                    ScriptRepo::save(&*dp, record)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    Ok::<_, String>((id, trimmed))
+                },
+                |r| Message::ScriptEditor(ScriptEditorMsg::RenameSaved(r)),
+            )
+        }
+        ScriptEditorMsg::RenameSaved(Ok((id, new_name))) => {
+            state.renaming_script = None;
+            for entry in &mut state.scripts {
+                if entry.id == id {
+                    entry.name = new_name.clone();
+                }
+            }
+            if let Some(open) = state.editor.as_mut()
+                && open.id == id
+            {
+                open.record.name = new_name;
+            }
+            iced::Task::none()
+        }
+        ScriptEditorMsg::RenameSaved(Err(e)) => {
+            state.renaming_script = None;
+            tracing::warn!(error = %e, "script rename failed");
             iced::Task::none()
         }
         ScriptEditorMsg::ConsoleClear => {
@@ -881,41 +986,98 @@ fn left_pane<'a>(state: &'a ScriptEditorState, palette: &'a ForgePalette) -> Ele
     } else {
         for entry in &state.scripts {
             let selected = state.selected == Some(entry.id);
-            let name_text = text(entry.name.clone())
-                .size(FONT_XS)
-                .color(if selected {
-                    palette.text_primary
-                } else {
-                    palette.text_secondary
-                })
-                .font(font(FontRole::Monospace));
-            let fg = if selected {
-                palette.brand
-            } else {
-                Color::TRANSPARENT
-            };
-            let bg = if selected {
-                palette.elevated
-            } else {
-                Color::TRANSPARENT
-            };
             let id = entry.id;
-            let btn = button(name_text)
-                .on_press(Message::ScriptEditor(ScriptEditorMsg::ScriptSelected(id)))
-                .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
-                .width(Length::Fill)
-                .style(move |_: &iced::Theme, _status| button::Style {
-                    background: Some(Background::Color(bg)),
-                    border: Border {
-                        color: fg,
-                        width: if selected { 2.0 } else { 0.0 },
-                        radius: 5.0.into(),
-                    },
-                    text_color: palette.text_primary,
-                    shadow: Shadow::default(),
-                    snap: false,
-                });
-            tree_col = tree_col.push(btn);
+
+            let row_el: Element<'a, Message> = if let Some((_, buf)) =
+                state.renaming_script.as_ref().filter(|(rid, _)| *rid == id)
+            {
+                iced::widget::text_input("", buf)
+                    .id(script_rename_input_id())
+                    .on_input(|s| Message::ScriptEditor(ScriptEditorMsg::RenameBufferChanged(s)))
+                    .on_submit(Message::ScriptEditor(ScriptEditorMsg::RenameSubmit))
+                    .size(FONT_XS)
+                    .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
+                    .font(font(FontRole::Monospace))
+                    .width(Length::Fill)
+                    .style(
+                        move |_: &iced::Theme, _status| iced::widget::text_input::Style {
+                            background: Background::Color(palette.shell),
+                            border: Border {
+                                color: palette.brand,
+                                width: 0.5,
+                                radius: 5.0.into(),
+                            },
+                            icon: palette.text_muted,
+                            placeholder: palette.text_muted,
+                            value: palette.text_primary,
+                            selection: Color {
+                                a: 0.25,
+                                ..palette.brand
+                            },
+                        },
+                    )
+                    .into()
+            } else {
+                let name_text = text(entry.name.clone())
+                    .size(FONT_XS)
+                    .color(if selected {
+                        palette.text_primary
+                    } else {
+                        palette.text_secondary
+                    })
+                    .font(font(FontRole::Monospace));
+                let fg = if selected {
+                    palette.brand
+                } else {
+                    Color::TRANSPARENT
+                };
+                let bg = if selected {
+                    palette.elevated
+                } else {
+                    Color::TRANSPARENT
+                };
+                let select_btn = button(name_text)
+                    .on_press(Message::ScriptEditor(ScriptEditorMsg::ScriptSelected(id)))
+                    .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
+                    .width(Length::Fill)
+                    .style(move |_: &iced::Theme, _status| button::Style {
+                        background: Some(Background::Color(bg)),
+                        border: Border {
+                            color: fg,
+                            width: if selected { 2.0 } else { 0.0 },
+                            radius: 5.0.into(),
+                        },
+                        text_color: palette.text_primary,
+                        shadow: Shadow::default(),
+                        snap: false,
+                    });
+
+                // `row_actions` is a hover-reveal primitive; this list has no
+                // per-row hover-state tracking (same convention as Globals'
+                // delete cell), so it always renders full-opacity.
+                let actions = row_actions(
+                    vec![
+                        RowAction {
+                            icon: Icon::InfoCircle,
+                            label: forge_widgets::tr!("script_editor_rename_action"),
+                            on_press: Message::ScriptEditor(ScriptEditorMsg::RenameStarted(id)),
+                            color: None,
+                        },
+                        RowAction {
+                            icon: Icon::X,
+                            label: forge_widgets::tr!("script_editor_delete_action"),
+                            on_press: Message::ScriptEditor(ScriptEditorMsg::DeleteRequested(id)),
+                            color: Some(palette.random),
+                        },
+                    ],
+                    true,
+                    palette,
+                );
+
+                row![select_btn, actions].align_y(Alignment::Center).into()
+            };
+
+            tree_col = tree_col.push(row_el);
         }
     }
 
@@ -1339,9 +1501,33 @@ pub fn script_editor_view<'a>(
     if state.run_modal.is_some() {
         let modal_el = run_modal_view(state, palette);
         iced::widget::stack![main_content, modal_el].into()
+    } else if let Some(modal_el) = pending_delete_modal(state, palette) {
+        iced::widget::stack![main_content, modal_el].into()
     } else {
         main_content.into()
     }
+}
+
+/// Renders the shared destructive-confirm dialog while `pending_delete` is
+/// armed. `None` (no render) if the target has vanished from `state.scripts`
+/// (same defensive convention as Globals/Actions).
+fn pending_delete_modal<'a>(
+    state: &'a ScriptEditorState,
+    palette: &'a ForgePalette,
+) -> Option<Element<'a, Message>> {
+    let id = state.pending_delete?;
+    let name = state.scripts.iter().find(|e| e.id == id)?.name.as_str();
+    Some(confirm_modal(
+        ConfirmModalParams {
+            kind: ConfirmKind::Script,
+            item_name: std::borrow::Cow::Borrowed(name),
+            cascade_hint: None,
+            tone: ConfirmTone::Destructive,
+        },
+        Message::ScriptEditor(ScriptEditorMsg::DeleteConfirmAccepted(id)),
+        Message::ScriptEditor(ScriptEditorMsg::DeleteConfirmDismissed),
+        palette,
+    ))
 }
 
 fn toolbar_action_row<'a>(
@@ -1479,7 +1665,14 @@ pub enum ScriptEditorMsg {
     NewScriptRequested,
     NewScriptCreated(Result<ScriptRecord, String>),
     DeleteRequested(ScriptId),
-    Deleted(Result<(), String>),
+    DeleteConfirmAccepted(ScriptId),
+    DeleteConfirmDismissed,
+    Deleted(ScriptId, Result<(), String>),
+    RenameStarted(ScriptId),
+    RenameBufferChanged(String),
+    RenameCancel,
+    RenameSubmit,
+    RenameSaved(Result<(ScriptId, String), String>),
     ConsoleClear,
     AutocompleteSelectionUp,
     AutocompleteSelectionDown,

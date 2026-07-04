@@ -892,6 +892,9 @@ tts_aliases_form_pitch_placeholder = 0
 tts_aliases_form_rate_label = ТЕМП (x)
 tts_aliases_form_rate_placeholder = 1.0
 tts_aliases_form_create = Створити
+tts_aliases_form_block_label = Заблокувати в TTS
+tts_aliases_form_block_desc = Повідомлення цього глядача ніколи не озвучуються.
+tts_aliases_form_blocked_note = Не озвучувати — налаштування голосу не застосовуються.
 
 ## Голосові аліаси — підтвердження видалення
 

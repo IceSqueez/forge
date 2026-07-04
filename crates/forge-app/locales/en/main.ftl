@@ -888,6 +888,9 @@ tts_aliases_form_pitch_placeholder = 0
 tts_aliases_form_rate_label = RATE (x)
 tts_aliases_form_rate_placeholder = 1.0
 tts_aliases_form_create = Create
+tts_aliases_form_block_label = Block from TTS
+tts_aliases_form_block_desc = This viewer's messages are never spoken.
+tts_aliases_form_blocked_note = Never speak — voice settings do not apply.
 
 ## Voice Aliases — delete confirm
 

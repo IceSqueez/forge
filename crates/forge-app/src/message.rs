@@ -525,6 +525,7 @@ pub enum VoiceAliasesMsg {
     FormVoiceChanged(String),
     FormPitchChanged(String),
     FormRateChanged(String),
+    FormBlockedToggled(bool),
     FormCancel,
     FormSubmit,
     FormSubmitResult(Result<(), String>),

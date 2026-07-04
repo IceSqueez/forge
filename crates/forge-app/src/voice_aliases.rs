@@ -53,6 +53,7 @@ pub struct AliasForm {
     pub voice: String,
     pub pitch: String,
     pub rate: String,
+    pub blocked: bool,
     pub saving: bool,
 }
 
@@ -189,7 +190,11 @@ fn form_to_alias(form: &AliasForm) -> VoiceAlias {
         voice_id: VoiceId(form.voice.trim().to_owned()),
         pitch_semitones: pitch,
         rate_multiplier: rate,
-        state: AliasState::Active,
+        state: if form.blocked {
+            AliasState::Blocked
+        } else {
+            AliasState::Active
+        },
     }
 }
 
@@ -314,6 +319,7 @@ pub fn update(
                     voice: alias.voice_id.clone(),
                     pitch: fmt_opt(alias.pitch_semitones),
                     rate: fmt_opt(alias.rate_multiplier),
+                    blocked: alias.blocked,
                     saving: false,
                 });
             }
@@ -346,6 +352,12 @@ pub fn update(
         VoiceAliasesMsg::FormRateChanged(v) => {
             if let Some(form) = state.form.as_mut() {
                 form.rate = v;
+            }
+            Task::none()
+        }
+        VoiceAliasesMsg::FormBlockedToggled(v) => {
+            if let Some(form) = state.form.as_mut() {
+                form.blocked = v;
             }
             Task::none()
         }
@@ -537,34 +549,6 @@ fn alias_form_modal<'a>(
         .color(p.text_primary)
         .font(font(FontRole::Body));
 
-    let engines: Vec<String> = {
-        let mut seen: Vec<String> = engine_ids.iter().map(|e| e.0.clone()).collect();
-        if !form.engine.is_empty() && !seen.contains(&form.engine) {
-            seen.push(form.engine.clone());
-        }
-        seen
-    };
-    let selected_engine = if form.engine.is_empty() {
-        None
-    } else {
-        Some(form.engine.clone())
-    };
-    let engine_picker = pick_list(engines, selected_engine, |v| {
-        Message::Tts(TtsMsg::Aliases(VoiceAliasesMsg::FormEngineChanged(v)))
-    })
-    .placeholder(forge_widgets::tr!("tts_aliases_form_engine_placeholder"))
-    .text_size(FONT_SM)
-    .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
-    .width(Length::Fill);
-    let engine_section = column![
-        text(forge_widgets::tr!("tts_aliases_form_engine_label"))
-            .size(FONT_XS)
-            .color(p.text_muted)
-            .font(font(FontRole::Monospace)),
-        engine_picker,
-    ]
-    .spacing(spf(Spacing::Xxs));
-
     let viewer_field = modal_field(
         forge_widgets::tr!("tts_aliases_form_viewer_label"),
         form.viewer.as_str(),
@@ -572,27 +556,85 @@ fn alias_form_modal<'a>(
         |s| Message::Tts(TtsMsg::Aliases(VoiceAliasesMsg::FormViewerChanged(s))),
         palette,
     );
-    let voice_field = modal_field(
-        forge_widgets::tr!("tts_aliases_form_voice_label"),
-        form.voice.as_str(),
-        forge_widgets::tr!("tts_aliases_form_voice_placeholder"),
-        |s| Message::Tts(TtsMsg::Aliases(VoiceAliasesMsg::FormVoiceChanged(s))),
+
+    let block_toggle = forge_widgets::toggle(
         palette,
+        forge_widgets::ToggleProps {
+            label: forge_widgets::tr!("tts_aliases_form_block_label"),
+            description: forge_widgets::tr!("tts_aliases_form_block_desc"),
+            value: form.blocked,
+            on_toggle: Message::Tts(TtsMsg::Aliases(VoiceAliasesMsg::FormBlockedToggled(
+                !form.blocked,
+            ))),
+        },
     );
-    let pitch_field = modal_field(
-        forge_widgets::tr!("tts_aliases_form_pitch_label"),
-        form.pitch.as_str(),
-        forge_widgets::tr!("tts_aliases_form_pitch_placeholder"),
-        |s| Message::Tts(TtsMsg::Aliases(VoiceAliasesMsg::FormPitchChanged(s))),
-        palette,
-    );
-    let rate_field = modal_field(
-        forge_widgets::tr!("tts_aliases_form_rate_label"),
-        form.rate.as_str(),
-        forge_widgets::tr!("tts_aliases_form_rate_placeholder"),
-        |s| Message::Tts(TtsMsg::Aliases(VoiceAliasesMsg::FormRateChanged(s))),
-        palette,
-    );
+
+    // A blocked viewer is never spoken, so voice configuration is inapplicable — mirror
+    // the list row's "Never speak" state instead of offering dead engine/voice inputs.
+    let config_section: Element<'a, Message> = if form.blocked {
+        text(forge_widgets::tr!("tts_aliases_form_blocked_note"))
+            .size(FONT_SM)
+            .color(p.text_faint)
+            .font(font(FontRole::Monospace))
+            .into()
+    } else {
+        let engines: Vec<String> = {
+            let mut seen: Vec<String> = engine_ids.iter().map(|e| e.0.clone()).collect();
+            if !form.engine.is_empty() && !seen.contains(&form.engine) {
+                seen.push(form.engine.clone());
+            }
+            seen
+        };
+        let selected_engine = if form.engine.is_empty() {
+            None
+        } else {
+            Some(form.engine.clone())
+        };
+        let engine_picker = pick_list(engines, selected_engine, |v| {
+            Message::Tts(TtsMsg::Aliases(VoiceAliasesMsg::FormEngineChanged(v)))
+        })
+        .placeholder(forge_widgets::tr!("tts_aliases_form_engine_placeholder"))
+        .text_size(FONT_SM)
+        .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
+        .width(Length::Fill);
+        let engine_section = column![
+            text(forge_widgets::tr!("tts_aliases_form_engine_label"))
+                .size(FONT_XS)
+                .color(p.text_muted)
+                .font(font(FontRole::Monospace)),
+            engine_picker,
+        ]
+        .spacing(spf(Spacing::Xxs));
+
+        let voice_field = modal_field(
+            forge_widgets::tr!("tts_aliases_form_voice_label"),
+            form.voice.as_str(),
+            forge_widgets::tr!("tts_aliases_form_voice_placeholder"),
+            |s| Message::Tts(TtsMsg::Aliases(VoiceAliasesMsg::FormVoiceChanged(s))),
+            palette,
+        );
+        let pitch_field = modal_field(
+            forge_widgets::tr!("tts_aliases_form_pitch_label"),
+            form.pitch.as_str(),
+            forge_widgets::tr!("tts_aliases_form_pitch_placeholder"),
+            |s| Message::Tts(TtsMsg::Aliases(VoiceAliasesMsg::FormPitchChanged(s))),
+            palette,
+        );
+        let rate_field = modal_field(
+            forge_widgets::tr!("tts_aliases_form_rate_label"),
+            form.rate.as_str(),
+            forge_widgets::tr!("tts_aliases_form_rate_placeholder"),
+            |s| Message::Tts(TtsMsg::Aliases(VoiceAliasesMsg::FormRateChanged(s))),
+            palette,
+        );
+        column![
+            engine_section,
+            voice_field,
+            row![pitch_field, rate_field].spacing(spf(Spacing::Sm)),
+        ]
+        .spacing(spf(Spacing::Sm))
+        .into()
+    };
 
     let can_save = !form.viewer.trim().is_empty() && !form.saving;
     let save_key = if form.editing.is_some() {
@@ -647,16 +689,9 @@ fn alias_form_modal<'a>(
     let footer =
         row![cancel_btn, Space::new().width(Length::Fill), save_btn].align_y(Alignment::Center);
 
-    let inner = column![
-        title,
-        viewer_field,
-        engine_section,
-        voice_field,
-        row![pitch_field, rate_field].spacing(spf(Spacing::Sm)),
-        footer,
-    ]
-    .spacing(spf(Spacing::Sm))
-    .padding(sp(Spacing::Md));
+    let inner = column![title, viewer_field, block_toggle, config_section, footer,]
+        .spacing(spf(Spacing::Sm))
+        .padding(sp(Spacing::Md));
 
     let card = container(inner)
         .max_width(440)

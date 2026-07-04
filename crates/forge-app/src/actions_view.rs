@@ -116,6 +116,12 @@ pub(crate) fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
             main_view
         };
 
+    let main_view: Element<'_, Message> =
+        match crate::action_editor_view::pending_delete_modal(app, palette) {
+            Some(modal) => iced::widget::stack![main_view, modal].into(),
+            None => main_view,
+        };
+
     iced::widget::column![page_header, main_view]
         .width(Length::Fill)
         .height(Length::Fill)
@@ -439,7 +445,7 @@ fn actions_tree_row<'a>(
         forge_widgets::MenuItem::Item {
             label: forge_widgets::tr!("actions_menu_delete"),
             icon: Some(Icon::Eraser),
-            on_press: Message::Actions(ActionsMsg::DeleteAction(action_id)),
+            on_press: Message::Actions(ActionsMsg::DeleteRequested(action_id)),
             shortcut: None,
             color: Some(p.random),
             disabled: false,

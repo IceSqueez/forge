@@ -447,6 +447,7 @@ action_editor_case_match_placeholder = значення зіставлення
 action_editor_branch_cap = Досягнуто межі вкладеності · глибше вкладати не можна
 action_editor_no_triggers = Тригерів немає · натисніть «Додати тригер», щоб почати
 action_editor_delete = Видалити
+action_editor_delete_cascade_hint = Також буде видалено { $sub_actions } підпунктів і { $trigger_links } прив'язок тригерів.
 action_editor_section_triggers = ТРИГЕРИ
 action_editor_section_sub_actions = ПІДПУНКТИ · { $count }
 action_editor_sub_count = { $count } кр.

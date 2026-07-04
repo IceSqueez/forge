@@ -445,6 +445,7 @@ action_editor_case_match_placeholder = match value
 action_editor_branch_cap = Max nesting depth reached · cannot nest deeper here
 action_editor_no_triggers = No triggers · click Add trigger to start
 action_editor_delete = Delete
+action_editor_delete_cascade_hint = { $sub_actions } sub-actions and { $trigger_links } trigger links will also be removed.
 action_editor_section_triggers = TRIGGERS
 action_editor_section_sub_actions = SUB-ACTIONS · { $count }
 action_editor_sub_count = { $count } sub

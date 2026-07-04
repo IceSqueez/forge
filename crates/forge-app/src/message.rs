@@ -226,11 +226,24 @@ pub enum ActionsMsg {
     ToggleEnabled(ActionId, bool),
     EnabledToggled(Result<(), String>),
     TestTrigger(ActionId),
-    DeleteAction(ActionId),
+    /// Arms the shared destructive-confirm gate for the action delete affordance.
+    DeleteRequested(ActionId),
+    /// Confirmed via the modal: performs the delete previously done by `DeleteRequested`.
+    DeleteConfirmAccepted(ActionId),
+    /// Cancelled via the modal (button or backdrop click).
+    DeleteConfirmDismissed,
+    /// Cascade impact (sub-action count, trigger-link count) for the pending delete,
+    /// loaded asynchronously so the confirm modal's hint is never fabricated.
+    DeleteCascadeLoaded(ActionId, Result<(usize, usize), String>),
     ActionDeleted(Result<(), String>),
     DuplicateAction(ActionId),
     ActionDuplicated(Result<ActionId, String>),
+    /// Arms the shared destructive-confirm gate for the trigger-link unlink affordance.
     RemoveTriggerInstance(ActionId, forge_types::TriggerInstanceId),
+    /// Confirmed via the modal: performs the unlink previously done by `RemoveTriggerInstance`.
+    RemoveTriggerInstanceConfirmAccepted(ActionId, forge_types::TriggerInstanceId),
+    /// Cancelled via the modal (button or backdrop click).
+    RemoveTriggerInstanceConfirmDismissed,
     TriggerInstanceRemoved(Result<ActionId, String>),
     TriggerChipClicked(forge_types::TriggerInstanceId),
     OpenAddActionModal,

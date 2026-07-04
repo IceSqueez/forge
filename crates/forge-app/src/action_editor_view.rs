@@ -7,7 +7,7 @@ use forge_widgets::status::{StatusVariant, status_pill};
 use forge_widgets::tokens::{FONT_LG, FONT_SM, FONT_XS, Spacing, sp, spf};
 use iced::{Alignment, Background, Border, Element, Length, Padding};
 
-use crate::actions::{AddSubActionMsg, RemoveSubActionMsg};
+use crate::actions::{AddSubActionMsg, PendingDelete, RemoveSubActionMsg};
 use crate::app::App;
 use crate::message::{ActionEditorMsg, ActionsMsg, Message, MoveSubActionMsg};
 
@@ -351,6 +351,111 @@ fn empty_placeholder_card<'a>(
             ..iced::widget::container::Style::default()
         })
         .into()
+}
+
+/// Builds the shared destructive-confirm modal for whichever Actions-screen
+/// delete/unlink affordance is currently armed
+/// (`app.ui.actions.pending_delete`). Returns `None` when nothing is pending,
+/// or when the pending target has already vanished from the currently-loaded
+/// state (e.g. a stale index after a concurrent reload) — a silent no-render
+/// rather than a panic, mirroring the Triggers Registry precedent.
+pub(crate) fn pending_delete_modal<'a>(
+    app: &'a App,
+    palette: &'a ForgePalette,
+) -> Option<Element<'a, Message>> {
+    use std::borrow::Cow;
+
+    use forge_widgets::{ConfirmKind, ConfirmModalParams, ConfirmTone, confirm_modal};
+
+    let pending = app.ui.actions.pending_delete.as_ref()?;
+    match pending {
+        PendingDelete::Action { id, cascade } => {
+            let name = app
+                .ui
+                .actions
+                .tree
+                .iter()
+                .flat_map(|g| g.actions.iter())
+                .find(|a| a.id == *id)
+                .map(|a| a.name.as_str())?;
+            let cascade_hint = cascade.map(|(sub_actions, trigger_links)| {
+                Cow::Owned(forge_widgets::tr!(
+                    "action_editor_delete_cascade_hint",
+                    sub_actions = sub_actions as i64,
+                    trigger_links = trigger_links as i64
+                ))
+            });
+            Some(confirm_modal(
+                ConfirmModalParams {
+                    kind: ConfirmKind::Action,
+                    item_name: Cow::Borrowed(name),
+                    cascade_hint,
+                    tone: ConfirmTone::Destructive,
+                },
+                Message::Actions(ActionsMsg::DeleteConfirmAccepted(*id)),
+                Message::Actions(ActionsMsg::DeleteConfirmDismissed),
+                palette,
+            ))
+        }
+        PendingDelete::TriggerLink {
+            action_id,
+            instance_id,
+        } => {
+            let detail = app
+                .ui
+                .actions
+                .detail
+                .as_ref()
+                .filter(|d| d.action.id == *action_id)?;
+            let instance = detail
+                .trigger_instances
+                .iter()
+                .find(|i| i.id == *instance_id)?;
+            Some(confirm_modal(
+                ConfirmModalParams {
+                    kind: ConfirmKind::TriggerLink,
+                    item_name: Cow::Borrowed(instance.name.as_str()),
+                    cascade_hint: None,
+                    tone: ConfirmTone::Destructive,
+                },
+                Message::Actions(ActionsMsg::RemoveTriggerInstanceConfirmAccepted(
+                    *action_id,
+                    *instance_id,
+                )),
+                Message::Actions(ActionsMsg::RemoveTriggerInstanceConfirmDismissed),
+                palette,
+            ))
+        }
+        PendingDelete::Step { action_id, index } => {
+            let detail = app
+                .ui
+                .actions
+                .detail
+                .as_ref()
+                .filter(|d| d.action.id == *action_id)?;
+            let chain = crate::actions_nav::resolve_chain(
+                &detail.action.sub_actions,
+                &app.ui.actions.nav_path,
+            );
+            let step = chain.get(*index)?;
+            let (_, title, _) = sub_action_summary(step);
+            Some(confirm_modal(
+                ConfirmModalParams {
+                    kind: ConfirmKind::Step,
+                    item_name: Cow::Owned(title),
+                    cascade_hint: None,
+                    tone: ConfirmTone::Destructive,
+                },
+                Message::Actions(ActionsMsg::Editor(ActionEditorMsg::RemoveSubAction(
+                    RemoveSubActionMsg::ConfirmAccepted(*action_id, *index),
+                ))),
+                Message::Actions(ActionsMsg::Editor(ActionEditorMsg::RemoveSubAction(
+                    RemoveSubActionMsg::ConfirmDismissed,
+                ))),
+                palette,
+            ))
+        }
+    }
 }
 
 pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {

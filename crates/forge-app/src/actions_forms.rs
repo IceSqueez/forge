@@ -186,7 +186,12 @@ pub enum AddSubActionMsg {
 
 #[derive(Debug, Clone)]
 pub enum RemoveSubActionMsg {
+    /// Arms the shared destructive-confirm gate — no longer removes directly.
     Requested(ActionId, usize),
+    /// Confirmed via the modal: performs the removal previously done by `Requested`.
+    ConfirmAccepted(ActionId, usize),
+    /// Cancelled via the modal (button or backdrop click).
+    ConfirmDismissed,
     Removed(Result<(), String>),
 }
 

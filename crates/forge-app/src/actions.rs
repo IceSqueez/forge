@@ -23,6 +23,31 @@ pub use crate::actions_trigger_kinds::{
     ActionsFilter, TriggerCategory, category_of, trigger_label_of,
 };
 
+/// Which of the three Actions-screen destructive affordances is currently
+/// gated behind the shared `confirm_modal`. The screen renders at most one
+/// modal at a time; arming a new one implicitly replaces any prior pending
+/// state (there is no stacking of confirms).
+#[derive(Debug, Clone)]
+pub enum PendingDelete {
+    /// Deleting the whole action — cascades its sub-actions and trigger
+    /// links. `cascade` is populated by a follow-up detail load so the
+    /// modal's hint is never fabricated; `None` while that load is in flight.
+    Action {
+        id: ActionId,
+        cascade: Option<(usize, usize)>,
+    },
+    /// Unlinking one trigger instance from the currently-open action.
+    TriggerLink {
+        action_id: ActionId,
+        instance_id: forge_types::TriggerInstanceId,
+    },
+    /// Removing one sub-action step at `index` within the chain addressed by
+    /// the nav path in effect when the confirm was armed (the modal's
+    /// backdrop blocks all other interaction, so the path cannot drift
+    /// between arm and confirm).
+    Step { action_id: ActionId, index: usize },
+}
+
 #[derive(Debug, Clone)]
 pub struct ActionsGroup {
     pub category: TriggerCategory,
@@ -78,6 +103,8 @@ pub struct ActionsState {
     /// Buffered switch-case match edits keyed by (step index, case index),
     /// committed on submit so each keystroke is not a separate DB write.
     pub case_match_edits: std::collections::HashMap<(usize, usize), String>,
+    /// The armed destructive-confirm gate, if any. `None` = no modal shown.
+    pub pending_delete: Option<PendingDelete>,
 }
 
 impl ActionsState {
@@ -304,12 +331,46 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
                 },
             )
         }
-        ActionsMsg::DeleteAction(id) => {
+        ActionsMsg::DeleteRequested(id) => {
+            state.pending_delete = Some(PendingDelete::Action { id, cascade: None });
+            let service = Arc::clone(&rt.actions);
+            Task::perform(
+                async move {
+                    service
+                        .load_detail(id)
+                        .await
+                        .map(|d| (d.action.sub_actions.len(), d.trigger_instances.len()))
+                        .map_err(|e| e.to_string())
+                },
+                move |r| Message::Actions(ActionsMsg::DeleteCascadeLoaded(id, r)),
+            )
+        }
+        ActionsMsg::DeleteCascadeLoaded(id, Ok(counts)) => {
+            if let Some(PendingDelete::Action {
+                id: pending_id,
+                cascade,
+            }) = state.pending_delete.as_mut()
+                && *pending_id == id
+            {
+                *cascade = Some(counts);
+            }
+            Task::none()
+        }
+        ActionsMsg::DeleteCascadeLoaded(_, Err(e)) => {
+            tracing::warn!(error = %e, "action delete cascade count load failed");
+            Task::none()
+        }
+        ActionsMsg::DeleteConfirmAccepted(id) => {
+            state.pending_delete = None;
             let dp = Arc::clone(&rt.backend);
             Task::perform(
                 async move { dp.action_repo().delete(id).await.map_err(|e| e.to_string()) },
                 |r| Message::Actions(ActionsMsg::ActionDeleted(r.map(|_| ()))),
             )
+        }
+        ActionsMsg::DeleteConfirmDismissed => {
+            state.pending_delete = None;
+            Task::none()
         }
         ActionsMsg::ActionDeleted(Ok(())) => {
             state.selected = None;
@@ -351,6 +412,14 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
             Task::none()
         }
         ActionsMsg::RemoveTriggerInstance(action_id, instance_id) => {
+            state.pending_delete = Some(PendingDelete::TriggerLink {
+                action_id,
+                instance_id,
+            });
+            Task::none()
+        }
+        ActionsMsg::RemoveTriggerInstanceConfirmAccepted(action_id, instance_id) => {
+            state.pending_delete = None;
             let dp = Arc::clone(&rt.backend);
             Task::perform(
                 async move {
@@ -362,6 +431,10 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
                 },
                 |r| Message::Actions(ActionsMsg::TriggerInstanceRemoved(r)),
             )
+        }
+        ActionsMsg::RemoveTriggerInstanceConfirmDismissed => {
+            state.pending_delete = None;
+            Task::none()
         }
         ActionsMsg::TriggerInstanceRemoved(Ok(action_id)) => {
             state.detail = None;
@@ -705,6 +778,23 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
                         .collect();
                 }
                 task
+            }
+            ActionEditorMsg::RemoveSubAction(RemoveSubActionMsg::Requested(action_id, index)) => {
+                state.pending_delete = Some(PendingDelete::Step { action_id, index });
+                Task::none()
+            }
+            ActionEditorMsg::RemoveSubAction(RemoveSubActionMsg::ConfirmDismissed) => {
+                state.pending_delete = None;
+                Task::none()
+            }
+            ActionEditorMsg::RemoveSubAction(m @ RemoveSubActionMsg::ConfirmAccepted(..)) => {
+                state.pending_delete = None;
+                crate::action_editor::remove_sub_action_update(
+                    state.detail.as_ref(),
+                    &state.nav_path,
+                    rt,
+                    m,
+                )
             }
             ActionEditorMsg::RemoveSubAction(m) => crate::action_editor::remove_sub_action_update(
                 state.detail.as_ref(),

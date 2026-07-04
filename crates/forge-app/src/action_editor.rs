@@ -436,7 +436,7 @@ pub fn remove_sub_action_update(
     msg: RemoveSubActionMsg,
 ) -> Task<Message> {
     match msg {
-        RemoveSubActionMsg::Requested(_action_id, index) => {
+        RemoveSubActionMsg::ConfirmAccepted(_action_id, index) => {
             let Some(action) = detail.map(|d| d.action.clone()) else {
                 return Task::none();
             };
@@ -451,6 +451,10 @@ pub fn remove_sub_action_update(
             tracing::warn!(error = %e, "remove sub-action persist failed");
             Task::none()
         }
+        // `Requested` (arm) and `ConfirmDismissed` are intercepted in
+        // `actions::update` before reaching this fn — they only mutate
+        // `ActionsState.pending_delete`, which this fn has no access to.
+        RemoveSubActionMsg::Requested(..) | RemoveSubActionMsg::ConfirmDismissed => Task::none(),
     }
 }
 

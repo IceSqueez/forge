@@ -1,9 +1,9 @@
-use forge_platform_core::BuiltinId;
 use forge_widgets::icons::Icon;
 use forge_widgets::{ForgePalette, NavItem, Sidebar};
 use iced::{Element, Length, Task};
 
 use crate::app::App;
+use crate::connectivity::Integration;
 use crate::message::{
     ActionsMsg, GlobalsMsg, HomeMsg, LiveChatMsg, QueuesMsg, SettingsAudioMsg, SoundboardMsg,
 };
@@ -88,8 +88,12 @@ pub(crate) fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Side
     let is_server = matches!(app.screen, Screen::Server);
     let is_settings = matches!(app.screen, Screen::Settings(_));
 
-    let twitch_target = Message::Navigate(Screen::BuiltinDetail(BuiltinId::new("twitch")));
-    let obs_target = Message::Navigate(Screen::BuiltinDetail(BuiltinId::new("obs")));
+    let flat_link = |integration: Integration| NavItem::FlatLink {
+        dot_color: integration.brand_color(palette),
+        label: integration.label().to_owned(),
+        active: builtin_active(&app.screen, integration.builtin_id().as_str()),
+        on_press: Message::Navigate(Screen::BuiltinDetail(integration.builtin_id())),
+    };
 
     let items = vec![
         NavItem::Leaf {
@@ -150,24 +154,9 @@ pub(crate) fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Side
             on_press: Message::Navigate(Screen::Platforms),
         },
         NavItem::MiniLabel(forge_widgets::tr!("nav_item_platforms")),
-        NavItem::FlatLink {
-            dot_color: palette.brand,
-            label: "Twitch".to_owned(),
-            active: builtin_active(&app.screen, "twitch"),
-            on_press: twitch_target.clone(),
-        },
-        NavItem::FlatLink {
-            dot_color: palette.random,
-            label: "YouTube".to_owned(),
-            active: builtin_active(&app.screen, "youtube"),
-            on_press: Message::Navigate(Screen::BuiltinDetail(BuiltinId::new("youtube"))),
-        },
-        NavItem::FlatLink {
-            dot_color: palette.info,
-            label: "Kick".to_owned(),
-            active: builtin_active(&app.screen, "kick"),
-            on_press: Message::Navigate(Screen::BuiltinDetail(BuiltinId::new("kick"))),
-        },
+        flat_link(Integration::Twitch),
+        flat_link(Integration::YouTube),
+        flat_link(Integration::Kick),
         NavItem::Leaf {
             icon: Icon::LayoutGrid,
             label: forge_widgets::tr!("nav_stream_apps"),
@@ -175,18 +164,8 @@ pub(crate) fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Side
             on_press: Message::Navigate(Screen::StreamApps),
         },
         NavItem::MiniLabel(forge_widgets::tr!("nav_item_stream_apps")),
-        NavItem::FlatLink {
-            dot_color: palette.success,
-            label: "OBS Studio".to_owned(),
-            active: builtin_active(&app.screen, "obs"),
-            on_press: obs_target.clone(),
-        },
-        NavItem::FlatLink {
-            dot_color: palette.warning,
-            label: "VTube Studio".to_owned(),
-            active: builtin_active(&app.screen, "vtube"),
-            on_press: Message::Navigate(Screen::BuiltinDetail(BuiltinId::new("vtube"))),
-        },
+        flat_link(Integration::Obs),
+        flat_link(Integration::VTube),
         NavItem::Leaf {
             icon: Icon::Music,
             label: forge_widgets::tr!("nav_item_soundboard"),

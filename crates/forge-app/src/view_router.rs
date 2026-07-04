@@ -5,8 +5,9 @@ use forge_widgets::{
 use iced::{Element, Length};
 
 use crate::Screen;
-use crate::app::{App, format_uptime, subsystem_connectivity};
+use crate::app::{App, format_uptime};
 use crate::builtin_detail::view as builtin_detail_view;
+use crate::connectivity::Connectivity;
 use crate::event_feed::event_feed_view;
 use crate::globals_view::globals_view;
 use crate::live_chat_view::live_chat_view;
@@ -25,9 +26,15 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let version = env!("CARGO_PKG_VERSION");
 
     let chrome_title = title_bar(palette);
-    let (conn_n, conn_total) = subsystem_connectivity(app);
+    let connectivity = Connectivity::resolve(&app.rt);
     let uptime_str = format_uptime(elapsed);
-    let chrome_footer = app_footer(conn_n, conn_total, &uptime_str, version, palette);
+    let chrome_footer = app_footer(
+        connectivity.connected_count(),
+        connectivity.total(),
+        &uptime_str,
+        version,
+        palette,
+    );
 
     let crumb_bar = breadcrumb(
         vec![BreadcrumbCrumb {

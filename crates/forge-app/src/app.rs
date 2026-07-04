@@ -523,36 +523,6 @@ pub(crate) fn format_uptime(elapsed: std::time::Duration) -> String {
     }
 }
 
-pub(crate) fn subsystem_connectivity(app: &App) -> (u8, u8) {
-    let mut connected: u8 = 0;
-    let twitch_live = matches!(
-        app.rt.platform_connection.get(&PlatformId::Twitch),
-        Some(ConnectionState::Connected)
-    );
-    if twitch_live {
-        connected += 2;
-    }
-    if app.rt.obs_client.is_some() {
-        connected += 1;
-    }
-    if matches!(
-        app.ui.server_screen.server_status,
-        crate::server_screen::ServerStatus::Running
-    ) {
-        connected += 1;
-    }
-    if app.rt.sound_player.is_some() {
-        connected += 2;
-    }
-    if app.rt.speak_queue.is_some() {
-        connected += 1;
-    }
-    if !app.storage_offline {
-        connected += 1;
-    }
-    (connected, 8)
-}
-
 pub fn theme_callback(app: &App) -> Theme {
     app.theme.clone()
 }

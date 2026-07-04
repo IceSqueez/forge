@@ -14,6 +14,7 @@ pub mod boot;
 pub mod builtin_detail;
 pub mod cloud_tts_boot;
 pub mod cloud_tts_engines;
+pub mod connectivity;
 pub mod event_feed;
 pub mod globals_variant_editor;
 pub mod globals_view;

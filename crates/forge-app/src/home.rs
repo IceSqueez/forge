@@ -8,6 +8,7 @@ use forge_widgets::{FontRole, ForgePalette, Radius, font, radius};
 use iced::{Element, Length, Task, Theme};
 
 use crate::app::App;
+use crate::connectivity::{Connectivity, Integration};
 use crate::message::{HomeMsg, Message};
 use crate::page_chrome::simple_page_header;
 use crate::runtime_view::RuntimeView;
@@ -195,10 +196,9 @@ fn home_jump_cards<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, M
     let actions_count = app.ui.home.actions_count.unwrap_or(0);
     let triggers_fired = app.ui.home.triggers_fired.unwrap_or(0);
     let chat_count = app.ui.live_chat.rows.len();
-    let twitch_ok = app.rt.twitch_builtin.is_some();
-    let obs_ok = app.rt.obs_client.is_some();
-    let total_integrations: u8 = 6;
-    let connected_integrations: u8 = u8::from(twitch_ok) + u8::from(obs_ok);
+    let connectivity = Connectivity::resolve(&app.rt);
+    let total_integrations = connectivity.total();
+    let connected_integrations = connectivity.connected_count();
     let connections_warn = connected_integrations < total_integrations;
 
     let card_chat = big_jump_card(
@@ -423,16 +423,15 @@ fn home_stream_health<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a
 fn home_connection_cell<'a>(
     label: &'a str,
     dot_color: iced::Color,
-    ok: bool,
+    state: forge_platform_core::ConnectionState,
     on_press: Message,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     use iced::widget::{button, column, container, row, text};
     use iced::{Alignment, Background, Border, Shadow};
 
+    let ok = matches!(state, forge_platform_core::ConnectionState::Connected);
     let text_primary = palette.text_primary;
-    let text_faint = palette.text_faint;
-    let success = palette.success;
     let elevated = palette.elevated;
     let shell = palette.shell;
     let border_regular = palette.border_regular;
@@ -450,7 +449,7 @@ fn home_connection_cell<'a>(
             ..iced::widget::container::Style::default()
         });
 
-    let status_color = if ok { success } else { text_faint };
+    let status_color = crate::connectivity::state_color(state, palette);
     let status_str = if ok {
         forge_widgets::tr!("home_conn_connected")
     } else {
@@ -517,11 +516,9 @@ fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
     use iced::widget::{column, container, row, text};
     use iced::{Alignment, Background, Border};
 
-    let twitch_ok = app.rt.twitch_builtin.is_some();
-    let obs_ok = app.rt.obs_client.is_some();
-    let youtube_ok = app.rt.youtube_builtin.is_some();
-    let connected: u8 = u8::from(twitch_ok) + u8::from(obs_ok) + u8::from(youtube_ok);
-    let disconnected: u8 = 6u8.saturating_sub(connected);
+    let connectivity = Connectivity::resolve(&app.rt);
+    let connected = connectivity.connected_count();
+    let disconnected = connectivity.total().saturating_sub(connected);
 
     let connections_summary = forge_widgets::tr!(
         "home_connections_summary",
@@ -572,59 +569,25 @@ fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
             ..iced::widget::container::Style::default()
         });
 
-    let cells = row![
-        container(home_connection_cell(
-            "Twitch",
-            palette.brand,
-            twitch_ok,
-            Message::Navigate(Screen::BuiltinDetail(forge_platform_core::BuiltinId::new(
-                "twitch"
-            ))),
-            palette,
-        ))
-        .width(Length::FillPortion(1)),
-        container(home_connection_cell(
-            "YouTube",
-            palette.random,
-            youtube_ok,
-            Message::Navigate(Screen::BuiltinDetail(forge_platform_core::BuiltinId::new(
-                "youtube"
-            ))),
-            palette,
-        ))
-        .width(Length::FillPortion(1)),
-        container(home_connection_cell(
-            "Kick",
-            palette.info,
-            false,
-            Message::Navigate(Screen::BuiltinDetail(forge_platform_core::BuiltinId::new(
-                "kick"
-            ))),
-            palette,
-        ))
-        .width(Length::FillPortion(1)),
-        container(home_connection_cell(
-            "OBS",
-            palette.success,
-            obs_ok,
-            Message::Navigate(Screen::BuiltinDetail(forge_platform_core::BuiltinId::new(
-                "obs"
-            ))),
-            palette,
-        ))
-        .width(Length::FillPortion(1)),
-        container(home_connection_cell(
-            "VTube",
-            palette.warning,
-            false,
-            Message::Navigate(Screen::BuiltinDetail(forge_platform_core::BuiltinId::new(
-                "vtube"
-            ))),
-            palette,
-        ))
-        .width(Length::FillPortion(1)),
-    ]
-    .spacing(spf(Spacing::Xxs));
+    let mut cells = row![].spacing(spf(Spacing::Xxs));
+    for status in connectivity.statuses() {
+        let integration = status.integration;
+        let short_label = match integration {
+            Integration::Obs => "OBS",
+            Integration::VTube => "VTube",
+            other => other.label(),
+        };
+        cells = cells.push(
+            container(home_connection_cell(
+                short_label,
+                integration.brand_color(palette),
+                status.state,
+                Message::Navigate(Screen::BuiltinDetail(integration.builtin_id())),
+                palette,
+            ))
+            .width(Length::FillPortion(1)),
+        );
+    }
 
     let cells_container = container(cells)
         .width(Length::Fill)

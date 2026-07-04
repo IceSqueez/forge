@@ -40,6 +40,33 @@ pub trait ActionRepo: Send + Sync {
     ) -> Result<(), StorageError>;
     /// Removes execution telemetry rows started before `cutoff`; returns rows removed.
     async fn prune_executions_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError>;
+
+    /// Copies `source_id`'s row into a new action `new_id` named `new_name`.
+    ///
+    /// Errors with [`StorageError::NotFound`] if `source_id` does not exist.
+    ///
+    /// The default impl composes `get`/`save` and copies only the `Action`
+    /// row itself — it does **not** carry over trigger-instance links, since
+    /// this trait has no visibility into `action_trigger_instances`. A real
+    /// backend should override this with a single transaction that also
+    /// re-points every linked trigger instance to `new_id`, so the duplicate
+    /// ends up with the same trigger links as the source instead of zero.
+    async fn duplicate(
+        &self,
+        source_id: ActionId,
+        new_id: ActionId,
+        new_name: &str,
+    ) -> Result<(), StorageError> {
+        let mut copy = self
+            .get(source_id)
+            .await?
+            .ok_or_else(|| StorageError::NotFound {
+                key: source_id.to_string(),
+            })?;
+        copy.id = new_id;
+        copy.name = new_name.to_owned();
+        self.save(&copy).await
+    }
 }
 
 #[cfg(test)]

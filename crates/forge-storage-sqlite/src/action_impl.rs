@@ -230,6 +230,74 @@ impl ActionRepo for SqliteActionRepo {
         Ok(result.rows_affected())
     }
 
+    async fn duplicate(
+        &self,
+        source_id: ActionId,
+        new_id: ActionId,
+        new_name: &str,
+    ) -> Result<(), StorageError> {
+        let source_id_str = source_id.to_string();
+        let new_id_str = new_id.to_string();
+
+        let mut tx = self.pool.begin().await.map_err(SqliteStorageError::Sqlx)?;
+
+        let row: Option<ActionRow> = sqlx::query_as(
+            "SELECT id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions, execution_mode
+             FROM actions WHERE id = ?",
+        )
+        .bind(&source_id_str)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        let (
+            _,
+            _,
+            group_name,
+            queue_id_str,
+            enabled,
+            concurrent,
+            bypass_pause,
+            description,
+            sub_actions_json,
+            execution_mode_str,
+        ) = row.ok_or_else(|| StorageError::NotFound {
+            key: source_id_str.clone(),
+        })?;
+
+        sqlx::query(
+            "INSERT INTO actions (id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions, execution_mode)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&new_id_str)
+        .bind(new_name)
+        .bind(&group_name)
+        .bind(&queue_id_str)
+        .bind(enabled)
+        .bind(concurrent)
+        .bind(bypass_pause)
+        .bind(&description)
+        .bind(&sub_actions_json)
+        .bind(&execution_mode_str)
+        .execute(&mut *tx)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        sqlx::query(
+            "INSERT INTO action_trigger_instances (action_id, trigger_instance_id, position)
+             SELECT ?, trigger_instance_id, position FROM action_trigger_instances WHERE action_id = ?",
+        )
+        .bind(&new_id_str)
+        .bind(&source_id_str)
+        .execute(&mut *tx)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
+
+        Ok(())
+    }
+
     async fn telemetry(&self, id: ActionId) -> Result<ActionTelemetry, StorageError> {
         let id_str = id.to_string();
         let now = OffsetDateTime::now_utc();

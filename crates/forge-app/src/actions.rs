@@ -391,14 +391,13 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
                         .await
                         .map_err(|e| e.to_string())?
                         .ok_or_else(|| "source action not found".to_string())?;
-                    let mut copy = original.clone();
-                    copy.id = forge_types::ActionId::new();
-                    copy.name = format!("{} (copy)", original.name);
+                    let new_id = forge_types::ActionId::new();
+                    let new_name = format!("{} (copy)", original.name);
                     dp.action_repo()
-                        .save(&copy)
+                        .duplicate(id, new_id, &new_name)
                         .await
                         .map_err(|e| e.to_string())?;
-                    Ok(copy.id)
+                    Ok(new_id)
                 },
                 |r| Message::Actions(ActionsMsg::ActionDuplicated(r)),
             )

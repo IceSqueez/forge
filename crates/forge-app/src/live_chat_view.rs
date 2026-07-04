@@ -86,6 +86,13 @@ fn unified_badge_to_kind(badge: &UserBadge) -> BadgeKind {
         UserBadge::Subscriber { .. } => BadgeKind::Subscriber,
         UserBadge::Member { .. } => BadgeKind::Subscriber,
         UserBadge::Bot => BadgeKind::Bot,
+        UserBadge::Partner => BadgeKind::Partner,
+        UserBadge::Premium => BadgeKind::Premium,
+        UserBadge::Founder => BadgeKind::Founder,
+        UserBadge::Turbo => BadgeKind::Turbo,
+        UserBadge::HypeTrain => BadgeKind::HypeTrain,
+        UserBadge::Bits { .. } => BadgeKind::Bits,
+        UserBadge::BitsLeader { .. } => BadgeKind::BitsLeader,
     }
 }
 
@@ -165,7 +172,7 @@ fn unified_to_chat_row(
             message: message.clone(),
             triggered_action,
         },
-        None => ChatBody::Message(row.body_text()),
+        None => ChatBody::Message(row.display_text()),
     };
     ChatRow {
         seq,

@@ -76,6 +76,13 @@ fn badge_color(kind: BadgeKind, palette: ForgePalette) -> Color {
         BadgeKind::Bot => palette.brand,
         BadgeKind::Subscriber => palette.info,
         BadgeKind::Broadcaster => palette.random,
+        BadgeKind::Partner => palette.accent_teal,
+        BadgeKind::Premium => palette.accent_pink_light,
+        BadgeKind::Founder => palette.disabled,
+        BadgeKind::Turbo => palette.brand,
+        BadgeKind::HypeTrain => palette.warning,
+        BadgeKind::Bits => palette.bits,
+        BadgeKind::BitsLeader => palette.bits,
     }
 }
 
@@ -86,6 +93,13 @@ fn badge_label(kind: BadgeKind) -> &'static str {
         BadgeKind::Subscriber => "SUB",
         BadgeKind::Bot => "BOT",
         BadgeKind::Broadcaster => "LIVE",
+        BadgeKind::Partner => "PARTNER",
+        BadgeKind::Premium => "PRIME",
+        BadgeKind::Founder => "FOUNDER",
+        BadgeKind::Turbo => "TURBO",
+        BadgeKind::HypeTrain => "HYPE",
+        BadgeKind::Bits => "BITS",
+        BadgeKind::BitsLeader => "BITS LEADER",
     }
 }
 

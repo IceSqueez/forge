@@ -69,6 +69,17 @@ pub(crate) fn map_badges(badges: Option<&serde_json::Value>) -> Vec<UserBadge> {
                     let months: u32 = info.parse().unwrap_or(0);
                     Some(UserBadge::Subscriber { months })
                 }
+                "partner" => Some(UserBadge::Partner),
+                "premium" => Some(UserBadge::Premium),
+                "founder" => Some(UserBadge::Founder),
+                "turbo" => Some(UserBadge::Turbo),
+                "hype-train" => Some(UserBadge::HypeTrain),
+                "bits" => Some(UserBadge::Bits {
+                    amount: info.parse().unwrap_or(0),
+                }),
+                "bits-leader" => Some(UserBadge::BitsLeader {
+                    rank: info.parse().unwrap_or(0),
+                }),
                 _ => None,
             }
         })
@@ -408,7 +419,7 @@ mod tests {
     #[test]
     fn map_badges_skips_unknown_set_ids() {
         let badges = serde_json::json!([
-            { "set_id": "partner", "id": "1", "info": "" },
+            { "set_id": "totally-unknown-set-id", "id": "1", "info": "" },
             { "set_id": "moderator", "id": "1", "info": "" }
         ]);
         let result = map_badges(Some(&badges));

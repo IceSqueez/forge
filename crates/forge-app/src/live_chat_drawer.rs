@@ -40,6 +40,13 @@ fn unified_badge_to_kind(badge: &UserBadge) -> BadgeKind {
         UserBadge::Subscriber { .. } => BadgeKind::Subscriber,
         UserBadge::Member { .. } => BadgeKind::Subscriber,
         UserBadge::Bot => BadgeKind::Bot,
+        UserBadge::Partner => BadgeKind::Partner,
+        UserBadge::Premium => BadgeKind::Premium,
+        UserBadge::Founder => BadgeKind::Founder,
+        UserBadge::Turbo => BadgeKind::Turbo,
+        UserBadge::HypeTrain => BadgeKind::HypeTrain,
+        UserBadge::Bits { .. } => BadgeKind::Bits,
+        UserBadge::BitsLeader { .. } => BadgeKind::BitsLeader,
     }
 }
 
@@ -240,6 +247,13 @@ fn drawer_role_badge<'a>(kind: BadgeKind, palette: &ForgePalette) -> Element<'a,
         BadgeKind::Vip => ("VIP", palette.brand),
         BadgeKind::Subscriber => ("SUB", palette.info),
         BadgeKind::Bot => ("BOT", palette.text_muted),
+        BadgeKind::Partner => ("PARTNER", palette.accent_teal),
+        BadgeKind::Premium => ("PRIME", palette.accent_pink_light),
+        BadgeKind::Founder => ("FOUNDER", palette.disabled),
+        BadgeKind::Turbo => ("TURBO", palette.brand),
+        BadgeKind::HypeTrain => ("HYPE", palette.warning),
+        BadgeKind::Bits => ("BITS", palette.bits),
+        BadgeKind::BitsLeader => ("BITS LEADER", palette.bits),
     };
     let p = *palette;
     container(

@@ -14,6 +14,13 @@ pub enum BadgeKind {
     Subscriber,
     Bot,
     Broadcaster,
+    Partner,
+    Premium,
+    Founder,
+    Turbo,
+    HypeTrain,
+    Bits,
+    BitsLeader,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -76,6 +76,22 @@ impl UnifiedChatRow {
             })
             .collect()
     }
+
+    /// Concatenates `Text` and `Mention` segments (as `@username`) for message rendering.
+    pub fn display_text(&self) -> String {
+        let mut out = String::new();
+        for segment in &self.body_segments {
+            match segment {
+                ChatSegment::Text { text } => out.push_str(text),
+                ChatSegment::Mention { username } => {
+                    out.push('@');
+                    out.push_str(username);
+                }
+                _ => {}
+            }
+        }
+        out
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -96,6 +112,13 @@ pub enum UserBadge {
     Subscriber { months: u32 },
     Member { level: String },
     Bot,
+    Partner,
+    Premium,
+    Founder,
+    Turbo,
+    HypeTrain,
+    Bits { amount: u32 },
+    BitsLeader { rank: u32 },
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]

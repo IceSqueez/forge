@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use forge_events::EventPublisher;
+use forge_platform_core::ChatPlatform;
 use forge_storage::CredentialsRepo;
 use forge_types::PlatformId;
 use forge_widgets::ForgePalette;
@@ -8,7 +10,7 @@ use forge_widgets::tokens::{FONT_SM, FONT_XS, FontRole, Spacing, font, sp, spf};
 use iced::widget::{button, column, container, row, text};
 use iced::{Alignment, Background, Border, Color, Element, Length, Shadow, Task, Theme};
 
-use crate::message::Message;
+use crate::message::{BootMsg, Message, YoutubeBundleRef};
 use crate::runtime_view::RuntimeView;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -172,7 +174,23 @@ pub fn update(
         }
         LocalCallbackFlowMsg::WaitResult(Ok(())) => {
             state.phase = LocalCallbackFlowPhase::Authorized;
-            Task::none()
+            match state.platform {
+                // Bring the platform live in this same session instead of leaving
+                // `rt.youtube_builtin` empty until the next restart: without this the
+                // "Return" button would drop the user right back on the static Connect
+                // card, since that card is only bypassed once a builtin is present.
+                PlatformId::YouTube => {
+                    let credentials_repo: Arc<dyn CredentialsRepo> =
+                        Arc::clone(&rt.backend) as Arc<dyn CredentialsRepo>;
+                    let bus: Arc<dyn EventPublisher> =
+                        Arc::clone(&rt.bus) as Arc<dyn EventPublisher>;
+                    Task::perform(
+                        async move { connect_youtube_after_oauth(credentials_repo, bus).await },
+                        |r| Message::Boot(BootMsg::Youtube(r)),
+                    )
+                }
+                PlatformId::Kick | PlatformId::Twitch => Task::none(),
+            }
         }
         LocalCallbackFlowMsg::WaitResult(Err(e)) => {
             state.phase = LocalCallbackFlowPhase::Failed;
@@ -253,6 +271,65 @@ async fn wait_for_youtube_authorization(
         .save_from_bundle(bundle)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// Builds the live `YoutubePlatform`, connects it, and republishes its own event
+/// stream onto the global bus, mirroring the cold-boot wiring in `main.rs` minus
+/// sub-action registration (deferred to the next restart; `sub_action_registry`
+/// is an immutable `Arc`, not a hot-reloadable slot).
+async fn connect_youtube_after_oauth(
+    credentials_repo: Arc<dyn CredentialsRepo>,
+    bus: Arc<dyn EventPublisher>,
+) -> Result<YoutubeBundleRef, String> {
+    let (client_id, client_secret) = forge_platform_youtube::client_credentials()
+        .ok_or_else(|| "YouTube OAuth client credentials are not configured".to_owned())?;
+    let google = forge_platform_youtube::GoogleAuthFlow::new(client_id, client_secret);
+    let manager = Arc::new(forge_platform_youtube::YoutubeCredentialsManager::new(
+        credentials_repo,
+        google,
+    ));
+    let creds = manager
+        .load()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "no YouTube credentials found right after authorization".to_owned())?;
+    let channel_id = creds.channel_id;
+
+    let quota = Arc::new(tokio::sync::Mutex::new(
+        forge_platform_youtube::QuotaState::default(),
+    ));
+    let platform = Arc::new(forge_platform_youtube::YoutubePlatform::new(
+        channel_id.clone(),
+        Arc::clone(&manager),
+        forge_platform_youtube::LiveChatIdHandle::new(),
+        forge_platform_youtube::ActiveBroadcastIdHandle::new(),
+        Arc::clone(&quota),
+    ));
+
+    let mut platform_events = platform.events();
+    tokio::spawn(async move {
+        loop {
+            match platform_events.recv().await {
+                Ok(event) => bus.publish(event),
+                Err(forge_events::EventsError::BusClosed) => break,
+                Err(forge_events::EventsError::LaggingReceiver) => {
+                    tracing::warn!("youtube platform event bridge: lagging receiver");
+                    continue;
+                }
+                Err(_) => continue,
+            }
+        }
+    });
+
+    platform.connect().await.map_err(|e| e.to_string())?;
+
+    let (bundle, _health_tx) = forge_platform_youtube::YoutubeIntegrationBundle::new(
+        channel_id,
+        Arc::clone(&platform),
+        manager,
+        quota,
+    );
+    Ok(YoutubeBundleRef::new(bundle))
 }
 
 async fn wait_for_kick_authorization(
@@ -814,6 +891,7 @@ mod tests {
             sound_player: None,
             twitch_builtin: None,
             kick_builtin: None,
+            youtube_builtin: None,
             platform_connection: std::collections::BTreeMap::new(),
             twitch_flow: None,
             youtube_flow: None,

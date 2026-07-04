@@ -163,6 +163,7 @@ pub(crate) fn platforms_overview_view<'a>(
     let header = column![title, subtitle].spacing(spf(Spacing::Xxs));
 
     let twitch_connected = app.rt.twitch_builtin.is_some();
+    let youtube_connected = app.rt.youtube_builtin.is_some();
 
     let twitch_card = platform_overview_card(
         "T",
@@ -180,7 +181,7 @@ pub(crate) fn platforms_overview_view<'a>(
         "YouTube",
         forge_widgets::tr!("platforms.youtube.desc"),
         &["Live chat", "Super chat", "Memberships"],
-        false,
+        youtube_connected,
         BuiltinId::new("youtube"),
         palette,
     );

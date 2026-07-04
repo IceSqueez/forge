@@ -18,7 +18,7 @@ use crate::app::App;
 use crate::builtin_detail::BuiltinDetailState;
 use crate::message::{
     DiscordClientRef, HotkeyClientRef, KickBundleRef, Message, MidiClientRef, ObsClientRef,
-    ServerSubsystemMsg, TwitchBootBundle, VTubeClientRef,
+    ServerSubsystemMsg, TwitchBootBundle, VTubeClientRef, YoutubeBundleRef,
 };
 use crate::server_screen::ServerStatus;
 
@@ -202,6 +202,40 @@ pub(crate) fn handle_kick_boot_result(
         }
         Err(e) => {
             tracing::warn!(error = %e, "kick boot setup failed");
+            Task::none()
+        }
+    }
+}
+
+pub(crate) fn handle_youtube_boot_result(
+    app: &mut App,
+    result: Result<YoutubeBundleRef, String>,
+) -> Task<Message> {
+    match result {
+        Ok(handle) => {
+            let bundle = handle.into_arc();
+            let id = BuiltinId::new("youtube");
+            let icon = SectionIcon::new("brand-youtube");
+            let status: Arc<dyn BuiltinStatus> = bundle.clone();
+            let health: Arc<dyn BuiltinHealth> = bundle.clone();
+            let content: Arc<dyn BuiltinContent> = bundle.clone();
+            let quick_actions: Arc<dyn QuickActions> = bundle.clone();
+            let control: Option<Arc<dyn BuiltinControl>> =
+                Some(bundle.clone() as Arc<dyn BuiltinControl>);
+            app.ui.builtin_detail = Some(BuiltinDetailState::new(
+                id,
+                icon,
+                status,
+                health,
+                content,
+                quick_actions,
+                control,
+            ));
+            app.rt.youtube_builtin = Some(bundle);
+            Task::none()
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "youtube boot setup failed");
             Task::none()
         }
     }

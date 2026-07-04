@@ -519,7 +519,8 @@ fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
 
     let twitch_ok = app.rt.twitch_builtin.is_some();
     let obs_ok = app.rt.obs_client.is_some();
-    let connected: u8 = u8::from(twitch_ok) + u8::from(obs_ok);
+    let youtube_ok = app.rt.youtube_builtin.is_some();
+    let connected: u8 = u8::from(twitch_ok) + u8::from(obs_ok) + u8::from(youtube_ok);
     let disconnected: u8 = 6u8.saturating_sub(connected);
 
     let connections_summary = forge_widgets::tr!(
@@ -585,7 +586,7 @@ fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
         container(home_connection_cell(
             "YouTube",
             palette.random,
-            false,
+            youtube_ok,
             Message::Navigate(Screen::BuiltinDetail(forge_platform_core::BuiltinId::new(
                 "youtube"
             ))),

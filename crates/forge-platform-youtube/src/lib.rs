@@ -3,6 +3,7 @@ pub mod auth;
 pub mod builtin;
 pub mod chat_platform;
 pub mod chat_poller;
+pub(crate) mod control;
 pub mod credentials;
 pub mod credentials_manager;
 pub mod dedup_window;
@@ -21,7 +22,7 @@ pub use auth::{
     YOUTUBE_BROADCASTER_SCOPES, YoutubeAuthBundle, YoutubeAuthError, client_credentials,
     youtube_auth_flow,
 };
-pub use builtin::register_youtube_triggers;
+pub use builtin::{YoutubeIntegrationBundle, register_youtube_triggers};
 pub use chat_platform::YoutubePlatform;
 pub use chat_poller::YoutubeChatPoller;
 pub use credentials::{CREDENTIAL_KEY, QUOTA_KEY, YoutubeCredentials, YoutubeQuotaState};

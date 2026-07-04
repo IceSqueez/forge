@@ -1,5 +1,21 @@
-use forge_registry::{RegistryError, TriggerRegistry};
+use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::time::Duration;
 
+use forge_platform_core::{
+    BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, CapabilityFlags, ChatPlatform,
+    ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthStream,
+    HealthValue, QuickAction, QuickActions, SectionIcon,
+};
+use forge_registry::{RegistryError, TriggerRegistry};
+use forge_types::{SubActionStep, Variant};
+use tokio::sync::broadcast;
+use tokio_stream::StreamExt;
+use tokio_stream::wrappers::BroadcastStream;
+
+use crate::chat_platform::YoutubePlatform;
+use crate::credentials_manager::YoutubeCredentialsManager;
+use crate::quota_state::QuotaState;
 use crate::triggers::channel_member::SupportNewMemberDescriptor;
 use crate::triggers::channel_member_milestone::SupportMemberMilestoneDescriptor;
 use crate::triggers::channel_user_banned::ChannelUserBannedDescriptor;
@@ -13,6 +29,10 @@ use crate::triggers::message_deleted::ChatMessageDeletedDescriptor;
 use crate::triggers::stream_offline::ChannelBroadcastEndedDescriptor;
 use crate::triggers::stream_online::ChannelBroadcastStartedDescriptor;
 use crate::triggers::title_changed::ChannelBroadcastTitleChangedDescriptor;
+
+/// YouTube's Data API v3 default daily quota budget (project-level, shared
+/// across every endpoint the account calls). See `PLATFORMS_NOTES.md`.
+const QUOTA_DAILY_BUDGET: u64 = 10_000;
 
 pub fn register_youtube_triggers(registry: &mut TriggerRegistry) -> Result<(), RegistryError> {
     registry.register(Box::new(ChatMessageDescriptor))?;
@@ -29,6 +49,206 @@ pub fn register_youtube_triggers(registry: &mut TriggerRegistry) -> Result<(), R
     registry.register(Box::new(ChannelBroadcastEndedDescriptor))?;
     registry.register(Box::new(ChannelBroadcastTitleChangedDescriptor))?;
     Ok(())
+}
+
+/// Wraps the live `YoutubePlatform` + credentials manager so `forge-app` can
+/// render the same detail-screen/health/quick-action surface every other
+/// builtin exposes (`BuiltinStatus`/`BuiltinHealth`/`BuiltinContent`/`QuickActions`).
+pub struct YoutubeIntegrationBundle {
+    id: BuiltinId,
+    channel_id: String,
+    health_tx: broadcast::Sender<HealthDelta>,
+    platform: Arc<YoutubePlatform>,
+    credentials_manager: Arc<YoutubeCredentialsManager>,
+    quota: Arc<tokio::sync::Mutex<QuotaState>>,
+}
+
+impl YoutubeIntegrationBundle {
+    pub fn new(
+        channel_id: String,
+        platform: Arc<YoutubePlatform>,
+        credentials_manager: Arc<YoutubeCredentialsManager>,
+        quota: Arc<tokio::sync::Mutex<QuotaState>>,
+    ) -> (Arc<Self>, broadcast::Sender<HealthDelta>) {
+        let (health_tx, _) = broadcast::channel(16);
+        let bundle = Arc::new(Self {
+            id: BuiltinId::new("youtube"),
+            channel_id,
+            health_tx: health_tx.clone(),
+            platform,
+            credentials_manager,
+            quota,
+        });
+        (bundle, health_tx)
+    }
+
+    fn current_state(&self) -> ConnectionState {
+        self.platform.connection_state()
+    }
+
+    pub(crate) fn credentials_manager(&self) -> &Arc<YoutubeCredentialsManager> {
+        &self.credentials_manager
+    }
+
+    pub(crate) fn platform(&self) -> &Arc<YoutubePlatform> {
+        &self.platform
+    }
+
+    /// Non-blocking: the poller task holds this lock only for the duration of a
+    /// single quota charge, so a contended read here just falls back to a
+    /// "no data yet" reading rather than stalling the sync `metrics()` call.
+    fn quota_metric(&self) -> HealthMetric {
+        let value = match self.quota.try_lock() {
+            Ok(guard) => HealthValue::Ratio {
+                used: u64::from(guard.used_today),
+                total: QUOTA_DAILY_BUDGET,
+                reset_hint: Some("resets daily (Pacific)".to_owned()),
+            },
+            Err(_) => HealthValue::Text {
+                primary: "unavailable".to_owned(),
+                secondary: None,
+            },
+        };
+        HealthMetric {
+            label: "Quota".to_owned(),
+            value,
+        }
+    }
+}
+
+impl BuiltinStatus for YoutubeIntegrationBundle {
+    fn id(&self) -> &BuiltinId {
+        &self.id
+    }
+
+    fn display_name(&self) -> &str {
+        "YouTube"
+    }
+
+    fn version(&self) -> Option<&str> {
+        None
+    }
+
+    fn connection(&self) -> ConnectionState {
+        self.current_state()
+    }
+
+    fn uptime(&self) -> Option<Duration> {
+        None
+    }
+
+    fn endpoint(&self) -> Option<&str> {
+        Some("YouTube Data API v3 (polled)")
+    }
+
+    fn capability_flags(&self) -> CapabilityFlags {
+        CapabilityFlags {
+            limited: false,
+            label: None,
+        }
+    }
+
+    fn header_actions(&self) -> Vec<HeaderAction> {
+        vec![
+            HeaderAction::Reconnect,
+            HeaderAction::RefreshToken,
+            HeaderAction::Disconnect,
+        ]
+    }
+}
+
+impl BuiltinHealth for YoutubeIntegrationBundle {
+    fn metrics(&self) -> [HealthMetric; 4] {
+        let state = self.current_state();
+        let (poll_label, poll_active) = match state {
+            ConnectionState::Connected => ("Connected".to_owned(), true),
+            ConnectionState::Connecting => ("Connecting".to_owned(), false),
+            ConnectionState::Reconnecting => ("Reconnecting".to_owned(), false),
+            ConnectionState::Disconnected => ("Disconnected".to_owned(), false),
+        };
+
+        [
+            HealthMetric {
+                label: "Chat poller".to_owned(),
+                value: HealthValue::Status {
+                    label: poll_label,
+                    active: poll_active,
+                    detail: Some("liveChatMessages.list".to_owned()),
+                },
+            },
+            HealthMetric {
+                label: "Channel".to_owned(),
+                value: HealthValue::Text {
+                    primary: self.channel_id.clone(),
+                    secondary: None,
+                },
+            },
+            self.quota_metric(),
+            HealthMetric {
+                label: "Auth".to_owned(),
+                value: HealthValue::Status {
+                    label: "OAuth 2.0 + PKCE".to_owned(),
+                    active: true,
+                    detail: None,
+                },
+            },
+        ]
+    }
+
+    fn stream(&self) -> HealthStream {
+        let rx = self.health_tx.subscribe();
+        Box::pin(BroadcastStream::new(rx).filter_map(|r| r.ok()))
+    }
+}
+
+impl BuiltinContent for YoutubeIntegrationBundle {
+    fn sections(&self) -> Vec<DetailSection> {
+        Vec::new()
+    }
+}
+
+impl QuickActions for YoutubeIntegrationBundle {
+    fn actions(&self) -> Vec<QuickAction> {
+        let connected = matches!(self.current_state(), ConnectionState::Connected);
+        vec![
+            QuickAction {
+                label: "Refresh channel info".to_owned(),
+                icon: SectionIcon::new("database"),
+                enabled: true,
+                subaction_template: SubActionStep {
+                    kind_id: "core.log.write".to_owned(),
+                    config: BTreeMap::from([
+                        ("level".to_owned(), Variant::String("info".to_owned())),
+                        (
+                            "message".to_owned(),
+                            Variant::String("youtube.channel_info_refresh_requested".to_owned()),
+                        ),
+                    ]),
+                    enabled: true,
+                    label: None,
+                },
+                picker: None,
+            },
+            QuickAction {
+                label: "Send message".to_owned(),
+                icon: SectionIcon::new("send"),
+                enabled: connected,
+                subaction_template: SubActionStep {
+                    kind_id: "core.log.write".to_owned(),
+                    config: BTreeMap::from([
+                        ("level".to_owned(), Variant::String("info".to_owned())),
+                        (
+                            "message".to_owned(),
+                            Variant::String("youtube.send_message_requested".to_owned()),
+                        ),
+                    ]),
+                    enabled: true,
+                    label: None,
+                },
+                picker: None,
+            },
+        ]
+    }
 }
 
 #[cfg(test)]

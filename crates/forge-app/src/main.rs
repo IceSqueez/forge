@@ -231,6 +231,7 @@ struct RuntimeHandles {
     discord_client: Arc<DiscordClient>,
     midi_client: Option<Arc<MidiClient>>,
     kick_builtin: Option<Arc<forge_platform_kick::KickIntegrationBundle>>,
+    youtube_builtin: Option<Arc<forge_platform_youtube::YoutubeIntegrationBundle>>,
 }
 
 fn find_piper_binary() -> Option<PathBuf> {
@@ -584,6 +585,8 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
             tracing::warn!("no Twitch client_id configured; twitch sub-actions unavailable");
         }
     }
+    let mut youtube_boot_bundle: Option<Arc<forge_platform_youtube::YoutubeIntegrationBundle>> =
+        None;
     if let Some((yt_id, yt_secret)) = forge_platform_youtube::client_credentials() {
         let google = forge_platform_youtube::GoogleAuthFlow::new(yt_id, yt_secret);
         let yt_creds: Arc<dyn CredentialsRepo> = Arc::clone(&dp) as Arc<dyn CredentialsRepo>;
@@ -640,7 +643,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
                 }
 
                 let platform = Arc::new(forge_platform_youtube::YoutubePlatform::new(
-                    channel_id,
+                    channel_id.clone(),
                     Arc::clone(&manager),
                     yt_live_chat_id,
                     yt_active_broadcast,
@@ -648,6 +651,15 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
                 ));
                 let chat_platform: Arc<dyn forge_platform_core::ChatPlatform> =
                     Arc::clone(&platform) as _;
+
+                let (youtube_bundle, _youtube_health_tx) =
+                    forge_platform_youtube::YoutubeIntegrationBundle::new(
+                        channel_id,
+                        Arc::clone(&platform),
+                        Arc::clone(&manager),
+                        Arc::clone(&yt_quota),
+                    );
+                youtube_boot_bundle = Some(youtube_bundle);
 
                 // Republish the platform's own event stream (chat receive + connection
                 // state transitions) onto the global bus.
@@ -1094,6 +1106,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         discord_client,
         midi_client,
         kick_builtin: kick_boot_bundle,
+        youtube_builtin: youtube_boot_bundle,
     })
 }
 
@@ -1146,6 +1159,7 @@ fn main() -> iced::Result {
         discord_client,
         midi_client,
         kick_builtin_handle,
+        youtube_builtin_handle,
     ) = if storage_offline {
         let dc_pub: Arc<dyn EventPublisher> = Arc::clone(&bus) as _;
         let dc_creds: Arc<dyn forge_storage::CredentialsRepo> = Arc::clone(&backend) as _;
@@ -1181,6 +1195,7 @@ fn main() -> iced::Result {
             dc,
             mc,
             None::<Arc<forge_platform_kick::KickIntegrationBundle>>,
+            None::<Arc<forge_platform_youtube::YoutubeIntegrationBundle>>,
         )
     } else {
         match spawn_runtime(Arc::clone(&backend), Arc::clone(&bus)) {
@@ -1203,6 +1218,7 @@ fn main() -> iced::Result {
                 h.discord_client,
                 h.midi_client,
                 h.kick_builtin,
+                h.youtube_builtin,
             ),
             None => {
                 let dc_pub: Arc<dyn EventPublisher> = Arc::clone(&bus) as _;
@@ -1242,6 +1258,7 @@ fn main() -> iced::Result {
                     dc,
                     mc,
                     None::<Arc<forge_platform_kick::KickIntegrationBundle>>,
+                    None::<Arc<forge_platform_youtube::YoutubeIntegrationBundle>>,
                 )
             }
         }
@@ -1297,6 +1314,12 @@ fn main() -> iced::Result {
             ))),
             None => iced::Task::none(),
         };
+        let youtube_task = match youtube_builtin_handle.clone() {
+            Some(bundle) => iced::Task::done(forge_app::Message::Boot(
+                forge_app::BootMsg::Youtube(Ok(forge_app::message::YoutubeBundleRef::new(bundle))),
+            )),
+            None => iced::Task::none(),
+        };
         let discord_task =
             iced::Task::done(forge_app::Message::Boot(forge_app::BootMsg::Discord(Ok(
                 forge_app::message::DiscordClientRef::new(Arc::clone(&discord_client)),
@@ -1350,6 +1373,7 @@ fn main() -> iced::Result {
                     obs_task,
                     twitch_task,
                     kick_task,
+                    youtube_task,
                     vtube_task,
                     discord_task,
                     midi_task,
@@ -1362,6 +1386,7 @@ fn main() -> iced::Result {
                 obs_task,
                 twitch_task,
                 kick_task,
+                youtube_task,
                 vtube_task,
                 discord_task,
                 midi_task,

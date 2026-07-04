@@ -9,7 +9,7 @@ use forge_obs::{ObsClient, SwitchableObsSink};
 use forge_platform_core::ConnectionState;
 use forge_platform_kick::{KickAuthFlow, KickIntegrationBundle};
 use forge_platform_twitch::TwitchIntegrationBundle;
-use forge_platform_youtube::GoogleAuthFlow;
+use forge_platform_youtube::{GoogleAuthFlow, YoutubeIntegrationBundle};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
     ActionEngineHandle, EventBus, QueueSchedulerHandle, ScriptRegistry, TtsTriggerSettingsHandle,
@@ -49,6 +49,7 @@ pub struct RuntimeView {
     pub sound_player: Option<Arc<SoundboardPlayer>>,
     pub twitch_builtin: Option<Arc<TwitchIntegrationBundle>>,
     pub kick_builtin: Option<Arc<KickIntegrationBundle>>,
+    pub youtube_builtin: Option<Arc<YoutubeIntegrationBundle>>,
     /// Latest per-platform connection state, fed by `CONNECTION_STATE_CHANGED_KIND`
     /// bus events. The connectivity indicator reads this instead of holding a
     /// `ChatPlatform` handle (Invariant #3).

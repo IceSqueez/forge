@@ -11,6 +11,7 @@ use forge_hotkey::HotkeyClient;
 use forge_midi::MidiClient;
 use forge_obs::ObsClient;
 use forge_platform_kick::KickIntegrationBundle;
+use forge_platform_youtube::YoutubeIntegrationBundle;
 use forge_vtube::VTubeClient;
 use forge_widgets::{DeviceLabel, PickerItem, ToastAction, ToastKind};
 
@@ -86,6 +87,30 @@ impl std::fmt::Debug for KickBundleRef {
 }
 
 impl Clone for KickBundleRef {
+    fn clone(&self) -> Self {
+        Self(Arc::clone(&self.0))
+    }
+}
+
+pub struct YoutubeBundleRef(pub(crate) Arc<YoutubeIntegrationBundle>);
+
+impl YoutubeBundleRef {
+    pub fn new(bundle: Arc<YoutubeIntegrationBundle>) -> Self {
+        Self(bundle)
+    }
+
+    pub(crate) fn into_arc(self) -> Arc<YoutubeIntegrationBundle> {
+        self.0
+    }
+}
+
+impl std::fmt::Debug for YoutubeBundleRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("YoutubeBundleRef").finish()
+    }
+}
+
+impl Clone for YoutubeBundleRef {
     fn clone(&self) -> Self {
         Self(Arc::clone(&self.0))
     }
@@ -661,6 +686,7 @@ pub enum BootMsg {
     Hotkey(Result<HotkeyClientRef, String>),
     Twitch(Result<Option<TwitchBootBundle>, String>),
     Kick(Result<KickBundleRef, String>),
+    Youtube(Result<YoutubeBundleRef, String>),
     Server(Result<crate::server_subsystem::ServerBootSnapshot, String>),
 }
 

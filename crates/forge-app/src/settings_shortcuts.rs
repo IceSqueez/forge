@@ -654,6 +654,7 @@ mod tests {
             sound_player: None,
             twitch_builtin: None,
             kick_builtin: None,
+            youtube_builtin: None,
             platform_connection: std::collections::BTreeMap::new(),
             twitch_flow: None,
             youtube_flow: None,

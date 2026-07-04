@@ -1339,6 +1339,11 @@ script_editor_empty_title = Виберіть скрипт або натисні�
 script_editor_empty_desc = Скрипти дозволяють запускати код rhai з будь-якої дії.
 script_editor_running = Виконується…
 script_editor_run_modal_cancel = Скасувати
+script_editor_save_blocked = Збереження заблоковано — спершу виправте синтаксичні помилки
+script_editor_discard_title = Відхилити незбережені зміни?
+script_editor_discard_body = У цьому скрипті є незбережені зміни. Продовжити й втратити їх або залишитися для редагування.
+script_editor_discard_confirm = Відхилити
+script_editor_discard_cancel = Продовжити редагування
 
 ## Редактор скриптів — модальне вікно запуску
 

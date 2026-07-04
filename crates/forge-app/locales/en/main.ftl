@@ -1322,6 +1322,11 @@ script_editor_empty_title = Select a script or click + New
 script_editor_empty_desc = Scripts let you run rhai code from any action.
 script_editor_running = Running…
 script_editor_run_modal_cancel = Cancel
+script_editor_save_blocked = Save blocked — fix syntax errors first
+script_editor_discard_title = Discard unsaved changes?
+script_editor_discard_body = This script has unsaved edits. Continue and lose them, or stay to keep editing.
+script_editor_discard_confirm = Discard
+script_editor_discard_cancel = Keep editing
 
 ## Script Editor — run modal
 

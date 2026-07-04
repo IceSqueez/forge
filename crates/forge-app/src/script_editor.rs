@@ -4,7 +4,7 @@ pub use forge_script::RunResult;
 use forge_script::contract::collect_annotation_diagnostics;
 use forge_script::{
     MethodDescriptor, RHAI_VERSION, catalog, collect_user_functions, content_hash, format_script,
-    parse_contract, run_inline,
+    parse_contract, run_inline, validate_syntax,
 };
 use forge_storage::{GlobalsRepo, ScriptRecord, ScriptRepo, SettingsRepo};
 use forge_types::{ArgStack, ScriptContract, ScriptId, Variant, VariantKind};
@@ -35,6 +35,18 @@ pub struct OpenScript {
     pub record: ScriptRecord,
     pub widget: ScriptEditorWidgetState,
     pub original_body: String,
+}
+
+/// A navigation the user requested while the open script had unsaved edits.
+/// Held pending a discard-or-cancel confirmation instead of silently
+/// overwriting `state.editor`. Every entry point into the editor (row select,
+/// New, API Docs, and navigate-away-and-back re-entry which cascades through
+/// `ScriptSelected`) arms this when `is_dirty()`.
+#[derive(Debug, Clone)]
+pub enum PendingNav {
+    SelectScript(ScriptId),
+    NewScript,
+    ApiDocs,
 }
 
 #[derive(Debug, Clone)]
@@ -72,6 +84,10 @@ pub struct ScriptEditorState {
     /// will later extract from) — self-contained here per M2 scope, not
     /// blocked on the M7 shared-widget extraction.
     pub renaming_script: Option<(ScriptId, String)>,
+    /// Deferred-navigation gate: armed when a navigation entry point fires
+    /// while `is_dirty()`. The discard modal consults it; confirm performs the
+    /// deferred navigation after reverting edits, cancel clears it.
+    pub pending_nav: Option<PendingNav>,
 }
 
 impl ScriptEditorState {
@@ -87,6 +103,7 @@ impl ScriptEditorState {
             api_docs_search: String::new(),
             pending_delete: None,
             renaming_script: None,
+            pending_nav: None,
         }
     }
 
@@ -184,6 +201,14 @@ pub fn update(
             iced::Task::none()
         }
         ScriptEditorMsg::ScriptSelected(id) => {
+            // Nav guard: a dirty open script must not be overwritten by
+            // selecting another (row click) — nor by the auto-select-first
+            // that navigate-away-and-back cascades through here via
+            // LoadRequested. Arm the discard gate instead.
+            if state.is_dirty() {
+                state.pending_nav = Some(PendingNav::SelectScript(id));
+                return iced::Task::none();
+            }
             state.selected = Some(id);
             let dp = Arc::clone(&rt.backend);
             iced::Task::perform(
@@ -334,6 +359,25 @@ pub fn update(
                     return iced::Task::none();
                 }
             };
+            // Validate the executable rhai body (not just the annotation
+            // comments) BEFORE persisting. Compiling here closes the 3-way
+            // split where storage would hold a broken body the live registry
+            // rejects on reload while the editor believed it was clean.
+            // `validate_syntax` is a fast raw compile — safe to run inline.
+            if let Err(e) = validate_syntax(&body) {
+                let ts = now_timestamp();
+                state.console_lines.push(ConsoleLine {
+                    level: ConsoleLevel::Err,
+                    timestamp: Some(ts),
+                    text: format!("syntax error: {e}"),
+                });
+                return iced::Task::done(Message::Toast(ToastMsg::Fired {
+                    kind: forge_widgets::ToastKind::Error,
+                    message: forge_widgets::tr!("script_editor_save_blocked"),
+                    duration_ms: 4000,
+                    action: None,
+                }));
+            }
             let mut record = open.record.clone();
             record.body = body.clone();
             record.body_hash = content_hash(&body);
@@ -527,6 +571,11 @@ pub fn update(
             iced::Task::none()
         }
         ScriptEditorMsg::NewScriptRequested => {
+            // Nav guard: creating a new script replaces the open editor.
+            if state.is_dirty() {
+                state.pending_nav = Some(PendingNav::NewScript);
+                return iced::Task::none();
+            }
             let dp = Arc::clone(&rt.backend);
             iced::Task::perform(
                 async move {
@@ -713,7 +762,47 @@ pub fn update(
             iced::Task::none()
         }
         ScriptEditorMsg::ApiDocsRequested => {
+            // Nav guard: leaving for API Docs would strand unsaved edits.
+            if state.is_dirty() {
+                state.pending_nav = Some(PendingNav::ApiDocs);
+                return iced::Task::none();
+            }
             iced::Task::done(Message::Navigate(crate::Screen::ScriptingApiDocs))
+        }
+        ScriptEditorMsg::DiscardNavConfirmed => {
+            let Some(nav) = state.pending_nav.take() else {
+                return iced::Task::none();
+            };
+            // Revert the editor to the last-loaded body so the re-dispatched
+            // navigation is no longer guarded (and, for the API-Docs path where
+            // the editor is kept, so no dirty edits linger).
+            if let Some(open) = state.editor.as_mut() {
+                let original = open.original_body.clone();
+                open.widget.editor.content = text_editor::Content::with_text(&original);
+                open.widget.annotation_diagnostics = collect_annotation_diagnostics(&original);
+                open.widget.error_lines = open
+                    .widget
+                    .annotation_diagnostics
+                    .iter()
+                    .map(|d| d.line)
+                    .collect();
+                open.widget.user_functions = collect_user_functions(&original);
+            }
+            match nav {
+                PendingNav::SelectScript(id) => {
+                    iced::Task::done(Message::ScriptEditor(ScriptEditorMsg::ScriptSelected(id)))
+                }
+                PendingNav::NewScript => {
+                    iced::Task::done(Message::ScriptEditor(ScriptEditorMsg::NewScriptRequested))
+                }
+                PendingNav::ApiDocs => {
+                    iced::Task::done(Message::ScriptEditor(ScriptEditorMsg::ApiDocsRequested))
+                }
+            }
+        }
+        ScriptEditorMsg::DiscardNavDismissed => {
+            state.pending_nav = None;
+            iced::Task::none()
         }
         ScriptEditorMsg::ApiDocsSearchChanged(q) => {
             state.api_docs_search = q;
@@ -1503,9 +1592,76 @@ pub fn script_editor_view<'a>(
         iced::widget::stack![main_content, modal_el].into()
     } else if let Some(modal_el) = pending_delete_modal(state, palette) {
         iced::widget::stack![main_content, modal_el].into()
+    } else if let Some(modal_el) = pending_discard_modal(state, palette) {
+        iced::widget::stack![main_content, modal_el].into()
     } else {
         main_content.into()
     }
+}
+
+/// Renders the discard-unsaved-changes prompt while a navigation is deferred by
+/// `pending_nav`. Confirm proceeds with the deferred navigation (reverting the
+/// edits); cancel keeps the user on the open script with edits intact.
+fn pending_discard_modal<'a>(
+    state: &'a ScriptEditorState,
+    palette: &'a ForgePalette,
+) -> Option<Element<'a, Message>> {
+    state.pending_nav.as_ref()?;
+
+    let body = container(
+        text(forge_widgets::tr!("script_editor_discard_body"))
+            .size(FONT_SM)
+            .color(palette.text_muted),
+    )
+    .padding([spf(Spacing::Sm), 0.0]);
+
+    let footer = {
+        let cancel = forge_widgets::ghost_button(
+            forge_widgets::tr!("script_editor_discard_cancel"),
+            Message::ScriptEditor(ScriptEditorMsg::DiscardNavDismissed),
+            palette,
+        );
+        let discard = {
+            use iced::Shadow;
+            use iced::widget::button;
+            let accent = palette.warning;
+            button(
+                text(forge_widgets::tr!("script_editor_discard_confirm"))
+                    .size(FONT_SM)
+                    .color(palette.shell),
+            )
+            .on_press(Message::ScriptEditor(ScriptEditorMsg::DiscardNavConfirmed))
+            .padding([spf(Spacing::Xs), spf(Spacing::Md)])
+            .style(move |_: &iced::Theme, _status| button::Style {
+                background: Some(Background::Color(accent)),
+                border: Border {
+                    radius: 6.0.into(),
+                    ..Border::default()
+                },
+                text_color: palette.shell,
+                shadow: Shadow::default(),
+                snap: false,
+            })
+        };
+        row![
+            cancel,
+            iced::widget::Space::new().width(Length::Fill),
+            discard
+        ]
+        .align_y(Alignment::Center)
+        .into()
+    };
+
+    Some(modal(
+        palette,
+        ModalProps {
+            title: std::borrow::Cow::Owned(forge_widgets::tr!("script_editor_discard_title")),
+            on_close: Message::ScriptEditor(ScriptEditorMsg::DiscardNavDismissed),
+            kbd_hint: None,
+        },
+        body.into(),
+        footer,
+    ))
 }
 
 /// Renders the shared destructive-confirm dialog while `pending_delete` is
@@ -1682,6 +1838,8 @@ pub enum ScriptEditorMsg {
     ApiDocsRequested,
     ApiDocsSearchChanged(String),
     CtrlSpacePressed,
+    DiscardNavConfirmed,
+    DiscardNavDismissed,
 }
 
 #[cfg(test)]

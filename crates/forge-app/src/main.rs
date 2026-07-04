@@ -4,7 +4,9 @@ use std::sync::Arc;
 use forge_app::App;
 use forge_app::Screen;
 use forge_app::app::{theme_callback, update};
-use forge_app::boot::{load_obs_and_connect, load_twitch_credential, load_vtube_and_connect};
+use forge_app::boot::{
+    load_hotkey_and_register, load_obs_and_connect, load_twitch_credential, load_vtube_and_connect,
+};
 use forge_app::cloud_tts_boot::register_cloud_engines;
 use forge_app::speak_bridge::SpeakBridge;
 use forge_app::subscriptions::subscription;
@@ -12,7 +14,7 @@ use forge_app::view_router::view;
 use forge_audio::{CpalSink, DeviceId, NullSink};
 use forge_discord::{DiscordClient, DiscordConfig, register_discord_sub_actions};
 use forge_events::EventPublisher;
-use forge_hotkey::{HotkeyClient, HotkeyConfig, register_hotkey_triggers};
+use forge_hotkey::register_hotkey_triggers;
 use forge_midi::{MidiClient, MidiConfig, register_midi_sub_actions, register_midi_triggers};
 use forge_obs::{ObsSink, SwitchableObsSink, register_obs_sub_actions, register_obs_triggers};
 use forge_platform_core::paths;
@@ -1324,13 +1326,11 @@ fn main() -> iced::Result {
             },
         );
         let bus_hotkey = Arc::clone(&bus_boot);
+        let hotkey_backend = Arc::clone(&backend_boot);
         let hotkey_task = iced::Task::perform(
             async move {
-                let publisher: Arc<dyn EventPublisher> = bus_hotkey;
-                let client = HotkeyClient::new(HotkeyConfig::default(), publisher).await;
-                Ok::<forge_app::message::HotkeyClientRef, String>(
-                    forge_app::message::HotkeyClientRef::new(client),
-                )
+                let client = load_hotkey_and_register(hotkey_backend, bus_hotkey).await;
+                Ok::<forge_app::message::HotkeyClientRef, String>(client)
             },
             |r| forge_app::Message::Boot(forge_app::BootMsg::Hotkey(r)),
         );

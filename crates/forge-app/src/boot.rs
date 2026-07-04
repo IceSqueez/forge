@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use forge_events::EventPublisher;
+use forge_hotkey::{HotkeyClient, HotkeyCombo, HotkeyConfig};
 use forge_platform_core::{
     BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinId, BuiltinStatus, QuickActions,
     SectionIcon,
@@ -9,7 +10,8 @@ use forge_platform_twitch::{
     ChatSessionConfig, SubscriptionTracker, TwitchChat, TwitchIntegrationBundle,
 };
 use forge_runtime::EventBus;
-use forge_storage::CredentialsRepo;
+use forge_storage::{CredentialsRepo, DataProvider};
+use forge_types::Variant;
 use iced::Task;
 
 use crate::app::App;
@@ -19,6 +21,8 @@ use crate::message::{
     ServerSubsystemMsg, TwitchBootBundle, VTubeClientRef,
 };
 use crate::server_screen::ServerStatus;
+
+const HOTKEY_PRESSED_KIND: &str = "hotkey.global.pressed";
 
 pub async fn load_twitch_credential(
     creds: Arc<dyn CredentialsRepo>,
@@ -59,6 +63,45 @@ pub async fn load_obs_and_connect(
         .await
         .map_err(|e| e.to_string())?;
     Ok(ObsClientRef::new(client))
+}
+
+pub async fn load_hotkey_and_register(
+    backend: Arc<dyn DataProvider>,
+    bus: Arc<EventBus>,
+) -> HotkeyClientRef {
+    let publisher: Arc<dyn EventPublisher> = bus;
+    let client = HotkeyClient::new(HotkeyConfig::default(), publisher).await;
+    reregister_persisted_hotkeys(&client, &backend).await;
+    HotkeyClientRef::new(client)
+}
+
+async fn reregister_persisted_hotkeys(client: &Arc<HotkeyClient>, backend: &Arc<dyn DataProvider>) {
+    let instances = match backend.trigger_instance_repo().list_all().await {
+        Ok(instances) => instances,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to load persisted hotkey bindings at boot");
+            return;
+        }
+    };
+
+    for instance in instances {
+        if instance.kind_id != HOTKEY_PRESSED_KIND {
+            continue;
+        }
+        let Some(Variant::String(combo_str)) = instance.overrides.get("combo") else {
+            continue;
+        };
+        let combo = match HotkeyCombo::parse(combo_str) {
+            Ok(combo) => combo,
+            Err(e) => {
+                tracing::warn!(combo = %combo_str, error = %e, "persisted hotkey combo failed to parse");
+                continue;
+            }
+        };
+        if let Err(e) = client.register(combo).await {
+            tracing::warn!(combo = %combo_str, error = %e, "failed to re-register hotkey at boot");
+        }
+    }
 }
 
 pub(crate) fn handle_twitch_boot_result(

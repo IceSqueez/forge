@@ -738,6 +738,48 @@ async fn load_bindings(
     Ok(bindings)
 }
 
+async fn cleanup_stale_combo_instances(
+    backend: &Arc<dyn DataProvider>,
+    combo_str: &str,
+) -> Result<(), String> {
+    let instances = backend
+        .trigger_instance_repo()
+        .list_all()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    for instance in instances {
+        if instance.kind_id != "hotkey.global.pressed" {
+            continue;
+        }
+        let Some(Variant::String(existing_combo)) = instance.overrides.get("combo") else {
+            continue;
+        };
+        if existing_combo != combo_str {
+            continue;
+        }
+        let action_ids = backend
+            .trigger_instance_repo()
+            .actions_using(instance.id)
+            .await
+            .map_err(|e| e.to_string())?;
+        for aid in action_ids {
+            backend
+                .trigger_instance_repo()
+                .unlink_action(aid, instance.id)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        backend
+            .trigger_instance_repo()
+            .delete(instance.id)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
 async fn do_bind(
     client: Arc<HotkeyClient>,
     backend: Arc<dyn DataProvider>,
@@ -746,6 +788,8 @@ async fn do_bind(
 ) -> Result<HotkeyId, String> {
     let combo = HotkeyCombo::parse(&combo_str).map_err(|e| e.to_string())?;
     let id = client.register(combo).await.map_err(|e| e.to_string())?;
+
+    cleanup_stale_combo_instances(&backend, &combo_str).await?;
 
     let mut overrides = BTreeMap::new();
     overrides.insert("combo".to_owned(), Variant::String(combo_str.clone()));

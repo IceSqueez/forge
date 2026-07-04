@@ -734,4 +734,31 @@ mod tests {
         assert_eq!(visible.len(), 1);
         assert_eq!(visible[0].id, "m1");
     }
+
+    /// Conflict trace CH-05-F14: a Twitch `channel.cheer` reaches the render path
+    /// as `ChatEventDetail::SuperChat` (the variant repurposed for bits). This pins
+    /// that `unified_to_chat_row` surfaces it inline as `ChatBody::Cheer` and does
+    /// NOT fall through the `None` arm to a plain `ChatBody::Message` (which would be
+    /// the silent-drop the second audit pass suspected). `amount_micros / 10_000`
+    /// decodes back to raw bits; a `None` cheer note yields empty body text but is
+    /// still a Cheer, never dropped.
+    #[test]
+    fn cheer_super_chat_detail_renders_as_cheer_body_not_dropped() {
+        for (message, expected_text) in [(Some("PogChamp".to_owned()), "PogChamp"), (None, "")] {
+            let mut row = make_row("cheer-1", ChatSource::Twitch, "cheerer", true);
+            row.event_detail = Some(ChatEventDetail::SuperChat {
+                amount_micros: 1_000_000,
+                currency: "BITS".to_owned(),
+                message,
+            });
+            let chat_row = unified_to_chat_row(&row, 0, None);
+            assert_eq!(
+                chat_row.body,
+                ChatBody::Cheer {
+                    bits: 100,
+                    text: expected_text.to_owned(),
+                }
+            );
+        }
+    }
 }

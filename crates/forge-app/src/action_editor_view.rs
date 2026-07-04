@@ -623,9 +623,7 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
             .width(Length::Fill)
             .into();
 
-            let dots = tabler_icon(Icon::DotsVertical, 14.0, p.text_faint);
-
-            let trigger_row: Element<'_, Message> = row![nav_btn, delete_btn, dots]
+            let trigger_row: Element<'_, Message> = row![nav_btn, delete_btn]
                 .spacing(spf(Spacing::Xs))
                 .align_y(Alignment::Center)
                 .into();

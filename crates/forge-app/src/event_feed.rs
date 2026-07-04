@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use forge_events::{Event, EventSource};
-use forge_types::{ActionId, ChatPayload, ChatSegment, EventId};
+use forge_types::{ChatPayload, ChatSegment, EventId};
 use forge_widgets::{
     EventInspectorParams, EventRowData, FontRole, ForgePalette, Radius, Spacing, ToastKind,
     category_chip, event_inspector, event_row_observability, font, radius, sp, spf,
@@ -12,9 +12,9 @@ use forge_widgets::{
 use iced::widget::{button, column, container, row, scrollable, text};
 use iced::{Background, Border, Color, Element, Length, Padding};
 
+use crate::Message;
 use crate::message::ToastMsg;
 use crate::runtime_view::RuntimeView;
-use crate::{Message, Screen};
 
 const RING_CAP: usize = 10_000;
 const RATE_WINDOW_SECS: u64 = 10;
@@ -43,7 +43,6 @@ pub enum EventFeedMsg {
     AutoScrollToggled,
     ReplayRequested(EventId),
     ReplayResult(Result<(), String>),
-    CausationChipClicked(ActionId),
 }
 
 struct EvRateTracker {
@@ -89,9 +88,11 @@ pub struct EventFeedState {
     pub replay_loading: bool,
     selected_ts_str: String,
     selected_id_str: String,
-    selected_action_name: Option<String>,
-    selected_action_id_str: Option<String>,
-    selected_action_id: Option<ActionId>,
+    // The event resolved by walking the selected event's `caused_by` edge (its
+    // real trigger), not a read of the selected event's own payload.
+    caused_summary: Option<String>,
+    caused_kind: Option<String>,
+    caused_event_id: Option<EventId>,
 }
 
 impl EventFeedState {
@@ -106,9 +107,9 @@ impl EventFeedState {
             replay_loading: false,
             selected_ts_str: String::new(),
             selected_id_str: String::new(),
-            selected_action_name: None,
-            selected_action_id_str: None,
-            selected_action_id: None,
+            caused_summary: None,
+            caused_kind: None,
+            caused_event_id: None,
         }
     }
 
@@ -129,7 +130,7 @@ impl EventFeedState {
         self.events.iter().rev().find(|e| e.id == id)
     }
 
-    fn update_selection(&mut self, id: EventId) {
+    fn update_selection(&mut self, id: EventId, rt: &RuntimeView) {
         self.selected = Some(id);
         let found = self.events.iter().rev().find(|e| e.id == id).cloned();
         if let Some(ev) = found {
@@ -137,19 +138,38 @@ impl EventFeedState {
             self.selected_ts_str = forge_widgets::fmt_feed_time(&ts);
             let id_s = id.to_string();
             self.selected_id_str = format!("ev_{}", &id_s[..id_s.len().min(4)]);
-            self.selected_action_name = ev.payload["action_name"].as_str().map(str::to_owned);
-            let aid_opt = ev.payload["action_id"].as_str();
-            self.selected_action_id_str = aid_opt.map(|s| format!("#{}", &s[..s.len().min(6)]));
-            self.selected_action_id = aid_opt.and_then(|s| {
-                serde_json::from_value::<ActionId>(serde_json::Value::String(s.to_owned())).ok()
-            });
+            // Walk the causation edge (Invariant #2): the CAUSED section shows the
+            // event that triggered this one, resolved through the bus ring exactly
+            // as replay does, with the local feed ring as fallback.
+            let caused = ev.caused_by.and_then(|cid| self.resolve_event(cid, rt));
+            match caused {
+                Some(cause) => {
+                    self.caused_summary = Some(format_summary(&cause));
+                    self.caused_kind = Some(cause.kind.clone());
+                    self.caused_event_id = Some(cause.id);
+                }
+                None => {
+                    self.caused_summary = None;
+                    self.caused_kind = None;
+                    self.caused_event_id = None;
+                }
+            }
         } else {
             self.selected_ts_str.clear();
             self.selected_id_str.clear();
-            self.selected_action_name = None;
-            self.selected_action_id_str = None;
-            self.selected_action_id = None;
+            self.caused_summary = None;
+            self.caused_kind = None;
+            self.caused_event_id = None;
         }
+    }
+
+    /// Resolves an event id to the actual [`Event`], preferring the runtime bus
+    /// ring (the same source `EventBus::replay_and_publish` reads) and falling
+    /// back to this feed's local ring.
+    fn resolve_event(&self, id: EventId, rt: &RuntimeView) -> Option<Event> {
+        rt.bus
+            .lookup(id)
+            .or_else(|| self.events.iter().rev().find(|e| e.id == id).cloned())
     }
 }
 
@@ -348,7 +368,7 @@ pub fn update(
             }
         }
         EventFeedMsg::EventSelected(id) => {
-            state.update_selection(id);
+            state.update_selection(id, rt);
             iced::Task::none()
         }
         EventFeedMsg::FilterChanged(f) => {
@@ -364,9 +384,9 @@ pub fn update(
             state.selected = None;
             state.selected_ts_str.clear();
             state.selected_id_str.clear();
-            state.selected_action_name = None;
-            state.selected_action_id_str = None;
-            state.selected_action_id = None;
+            state.caused_summary = None;
+            state.caused_kind = None;
+            state.caused_event_id = None;
             state.ev_rate.clear();
             iced::Task::none()
         }
@@ -450,9 +470,6 @@ pub fn update(
                 duration_ms: 5000,
                 action: None,
             }))
-        }
-        EventFeedMsg::CausationChipClicked(action_id) => {
-            iced::Task::done(Message::Navigate(Screen::ActionEditor(Some(action_id))))
         }
     }
 }
@@ -686,16 +703,16 @@ pub fn event_feed_view<'a>(
     });
 
     let inspector_pane: Element<'_, Message> = if let Some(ev) = state.selected_event() {
-        let caused_action = state
-            .selected_action_name
+        let caused_event = state
+            .caused_summary
             .as_deref()
-            .zip(state.selected_action_id_str.as_deref())
-            .zip(state.selected_action_id)
-            .map(|((name, id_disp), aid)| {
+            .zip(state.caused_kind.as_deref())
+            .zip(state.caused_event_id)
+            .map(|((summary, kind), cid)| {
                 (
-                    name,
-                    id_disp,
-                    Message::EventFeed(EventFeedMsg::CausationChipClicked(aid)),
+                    summary,
+                    kind,
+                    Message::EventFeed(EventFeedMsg::EventSelected(cid)),
                 )
             });
 
@@ -705,7 +722,7 @@ pub fn event_feed_view<'a>(
             timestamp: &state.selected_ts_str,
             event_id: &state.selected_id_str,
             payload: &ev.payload,
-            caused_action,
+            caused_event,
             on_replay: Message::EventFeed(EventFeedMsg::ReplayRequested(ev.id)),
         };
 
@@ -1021,32 +1038,6 @@ mod tests {
         state.push_event(core_event("overflow"));
         assert_eq!(state.events.len(), RING_CAP);
         assert_eq!(state.events.back().unwrap().kind, "overflow");
-    }
-
-    #[test]
-    fn causation_chip_clicked_does_not_mutate_event_feed_state() {
-        // CausationChipClicked routes to ActionEditor(Some(id)) via a returned Task.
-        // The event feed's own state (ring, selection, pause) must not be touched.
-        use forge_types::ActionId;
-        let mut state = EventFeedState::new();
-        let rt = test_rt();
-        state.push_event(core_event("action.start"));
-        state.push_event(core_event("action.done"));
-        let events_before = state.events.len();
-
-        let id = ActionId::new();
-        let _task = update(&mut state, &rt, EventFeedMsg::CausationChipClicked(id));
-
-        assert_eq!(
-            state.events.len(),
-            events_before,
-            "ring must not be modified"
-        );
-        assert!(
-            state.selected.is_none(),
-            "chip click must not select an event in the feed"
-        );
-        assert!(!state.paused, "pause state must not be toggled");
     }
 
     // --- Regression: fix(app) emit canonical chat.send success kind ---

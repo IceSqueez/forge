@@ -214,7 +214,7 @@ pub fn event_row_observability<'a, Msg: Clone + 'a>(
 
 pub fn causation_chip<'a, Msg: Clone + 'a>(
     label: &'a str,
-    action_id_display: &'a str,
+    meta: &'a str,
     on_click: Msg,
     palette: &ForgePalette,
 ) -> Element<'a, Msg> {
@@ -239,7 +239,7 @@ pub fn causation_chip<'a, Msg: Clone + 'a>(
         .color(text_primary)
         .width(Length::Fill);
 
-    let badge = iced::widget::text(action_id_display)
+    let badge = iced::widget::text(meta)
         .size(FONT_XS)
         .color(text_faint)
         .font(mono);
@@ -546,7 +546,9 @@ pub struct EventInspectorParams<'a, Msg> {
     pub timestamp: &'a str,
     pub event_id: &'a str,
     pub payload: &'a serde_json::Value,
-    pub caused_action: Option<(&'a str, &'a str, Msg)>,
+    /// The event that caused the selected one (resolved by walking `caused_by`):
+    /// `(summary, kind, on_click)`. `on_click` walks one hop up the causation chain.
+    pub caused_event: Option<(&'a str, &'a str, Msg)>,
     pub on_replay: Msg,
 }
 
@@ -599,7 +601,7 @@ pub fn event_inspector<'a, Msg: Clone + 'a>(
 
     let mut col = column![header_card, payload_label, viewer].spacing(8);
 
-    if let Some((label, action_id_display, on_click)) = params.caused_action {
+    if let Some((summary, kind, on_click)) = params.caused_event {
         let caused_label = iced::widget::text(crate::tr!("widget.event.caused_header"))
             .size(FONT_XS)
             .color(text_faint)
@@ -607,7 +609,7 @@ pub fn event_inspector<'a, Msg: Clone + 'a>(
         col = col
             .push(Space::new().height(4))
             .push(caused_label)
-            .push(causation_chip(label, action_id_display, on_click, palette));
+            .push(causation_chip(summary, kind, on_click, palette));
     }
 
     col.push(Space::new().height(2))

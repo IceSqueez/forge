@@ -267,6 +267,7 @@ pub fn update(
                 kind: ToastKind::Info,
                 message: forge_widgets::tr!("tts_cloud_saved_toast", name = name),
                 duration_ms: 6000,
+                action: None,
             }));
             Task::batch([toast_task, refresh_task])
         }
@@ -281,6 +282,7 @@ pub fn update(
                     error = e.as_str()
                 ),
                 duration_ms: 8000,
+                action: None,
             }))
         }
 

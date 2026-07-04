@@ -450,9 +450,11 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 kind,
                 message,
                 duration_ms,
+                action,
             } => {
                 let duration = std::time::Duration::from_millis(duration_ms);
-                app.toast_queue.push(kind, message, None, duration);
+                app.toast_queue
+                    .push(kind, message, action.map(|a| *a), duration);
                 Task::none()
             }
             ToastMsg::Dismissed(id) => {

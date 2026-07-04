@@ -284,11 +284,13 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
                         kind: forge_widgets::ToastKind::Success,
                         message: "Test trigger fired".to_owned(),
                         duration_ms: 3000,
+                        action: None,
                     }),
                     Ok(false) => Message::Toast(ToastMsg::Fired {
                         kind: forge_widgets::ToastKind::Warn,
                         message: "Test event did not match this trigger".to_owned(),
                         duration_ms: 4000,
+                        action: None,
                     }),
                     Err(e) => {
                         tracing::warn!(error = %e, "test trigger failed");
@@ -296,6 +298,7 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
                             kind: forge_widgets::ToastKind::Error,
                             message: format!("Test trigger failed: {e}"),
                             duration_ms: 4000,
+                            action: None,
                         })
                     }
                 },
@@ -430,6 +433,7 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
                 kind: forge_widgets::ToastKind::Error,
                 message: e,
                 duration_ms: 3000,
+                action: None,
             }))
         }
         ActionsMsg::TriggerChipClicked(instance_id) => {
@@ -444,6 +448,7 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
                     kind: forge_widgets::ToastKind::Info,
                     message: "Default trigger \u{2014} read-only. Create a Custom instance to override values.".to_owned(),
                     duration_ms: 4000,
+                    action: None,
                 }))
             } else {
                 Task::batch([
@@ -547,6 +552,7 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
                     kind: forge_widgets::ToastKind::Error,
                     message: toast_msg,
                     duration_ms: 3000,
+                    action: None,
                 }));
             }
             let dp = Arc::clone(&rt.backend);

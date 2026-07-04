@@ -219,6 +219,7 @@ pub fn update(state: &mut GlobalsState, rt: &RuntimeView, msg: GlobalsMsg) -> ic
                 kind: ToastKind::Error,
                 message: format!("Could not change persistence for '{name}': {e}"),
                 duration_ms: 5000,
+                action: None,
             }))
         }
 

@@ -173,6 +173,7 @@ pub fn update(
             kind: ToastKind::Error,
             message: msg,
             duration_ms: 5000,
+            action: None,
         })),
         TriggersRegistryMsg::SearchChanged(s) => {
             state.search = s;
@@ -231,6 +232,7 @@ pub fn update(
                 kind: ToastKind::Error,
                 message: msg,
                 duration_ms: 5000,
+                action: None,
             }))
         }
         TriggersRegistryMsg::EnableToggled(id, enabled) => {
@@ -263,6 +265,7 @@ pub fn update(
                         kind: ToastKind::Error,
                         message: e,
                         duration_ms: 5000,
+                        action: None,
                     }),
                 },
             )
@@ -283,6 +286,7 @@ pub fn update(
                         kind: ToastKind::Error,
                         message: e,
                         duration_ms: 5000,
+                        action: None,
                     }),
                 },
             )
@@ -337,6 +341,7 @@ pub fn update(
                 kind: ToastKind::Error,
                 message: msg,
                 duration_ms: 5000,
+                action: None,
             }))
         }
         TriggersRegistryMsg::NavigateToAction(action_id) => {

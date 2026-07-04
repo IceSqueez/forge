@@ -208,6 +208,7 @@ pub fn update(
                 kind: ToastKind::Error,
                 message: err,
                 duration_ms: 5000,
+                action: None,
             }))
         }
         CreateInstanceFormMsg::PlatformScopeChanged(scope) => {

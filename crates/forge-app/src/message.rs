@@ -12,7 +12,7 @@ use forge_midi::MidiClient;
 use forge_obs::ObsClient;
 use forge_platform_kick::KickIntegrationBundle;
 use forge_vtube::VTubeClient;
-use forge_widgets::{DeviceLabel, PickerItem, ToastKind};
+use forge_widgets::{DeviceLabel, PickerItem, ToastAction, ToastKind};
 
 use forge_platform_core::{HeaderAction, HealthDelta};
 use forge_storage::settings::Density;
@@ -518,6 +518,7 @@ pub enum ToastMsg {
         kind: ToastKind,
         message: String,
         duration_ms: u64,
+        action: Option<Box<ToastAction<Message>>>,
     },
     Dismissed(u64),
     Tick(Instant),

@@ -531,7 +531,7 @@ fn actions_footer<'a>(
     visible: usize,
     total: usize,
     palette: &'a ForgePalette,
-) -> iced::widget::Container<'a, Message> {
+) -> Element<'a, Message> {
     use iced::widget::{container, row, text};
 
     let p = *palette;
@@ -568,24 +568,13 @@ fn actions_footer<'a>(
         .color(p.text_faint)
         .font(mono);
 
-    let right = row![storage_el, green_dot, saved_el]
-        .spacing(spf(Spacing::Xs))
+    let saved_group = row![green_dot, saved_el]
+        .spacing(spf(Spacing::Xxs))
         .align_y(iced::alignment::Vertical::Center);
 
-    let inner = row![container(left_el).width(Length::Fill), right,]
-        .spacing(0)
-        .align_y(iced::alignment::Vertical::Center);
-
-    container(inner)
-        .width(Length::Fill)
-        .padding([7, 16])
-        .style(move |_theme: &iced::Theme| iced::widget::container::Style {
-            background: Some(iced::Background::Color(p.shell)),
-            border: iced::Border {
-                color: p.border_regular,
-                width: 0.5,
-                radius: 0.0.into(),
-            },
-            ..iced::widget::container::Style::default()
-        })
+    forge_widgets::status_footer(
+        vec![left_el.into()],
+        vec![storage_el.into(), saved_group.into()],
+        palette,
+    )
 }

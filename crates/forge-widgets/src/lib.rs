@@ -18,6 +18,7 @@ pub mod console;
 pub mod data;
 pub mod events;
 pub mod font_catalog;
+pub mod footer;
 pub mod hover_popover;
 pub mod icons;
 pub mod inputs;
@@ -83,6 +84,7 @@ pub use events::{
     event_row_observability, json_viewer, replay_button, source_badge, source_label,
 };
 pub use font_catalog::{FontFamily, enumerate_font_families};
+pub use footer::status_footer;
 pub use hover_popover::{HoverTarget, format_signature, hover_popover};
 pub use icons::{Icon, tabler_icon};
 pub use inputs::{

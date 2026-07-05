@@ -1,7 +1,7 @@
 use iced::widget::button::Status;
 use iced::{
     Alignment, Background, Border, Color, Element, Font, Length, Shadow, font as iced_font,
-    widget::{Column, Row, Space, button, column, container, row, rule, text},
+    widget::{Column, Row, Space, button, container, row, rule, text},
 };
 
 use forge_types::Variant;
@@ -217,24 +217,27 @@ pub fn data_screen_footer<'a, Msg: 'a>(
     palette: &'a ForgePalette,
     props: FooterProps<'a>,
 ) -> Element<'a, Msg> {
-    let border_color = palette.border_regular;
-    let shell_bg = palette.shell;
     let faint = palette.text_faint;
     let mono = font(FontRole::Monospace);
 
-    let left = text(props.position_info)
-        .size(FONT_XS)
-        .font(mono)
-        .color(faint);
+    let left: Vec<Element<'a, Msg>> = vec![
+        text(props.position_info)
+            .size(FONT_XS)
+            .font(mono)
+            .color(faint)
+            .into(),
+    ];
 
-    let mut right_row = Row::new().spacing(14).align_y(Alignment::Center);
+    let mut right: Vec<Element<'a, Msg>> = Vec::new();
 
     if let Some(storage) = props.storage_info {
-        right_row = right_row.push(text(storage).size(FONT_XS).font(mono).color(faint));
+        right.push(text(storage).size(FONT_XS).font(mono).color(faint).into());
     }
 
     if let Some(save) = props.save_info {
-        let mut save_row = Row::new().spacing(5).align_y(Alignment::Center);
+        let mut save_row = Row::new()
+            .spacing(spf(Spacing::Xxs))
+            .align_y(Alignment::Center);
 
         if props.live_indicator {
             let dot_color = palette.success;
@@ -256,31 +259,10 @@ pub fn data_screen_footer<'a, Msg: 'a>(
 
         save_row = save_row.push(text(save).size(FONT_XS).font(mono).color(faint));
 
-        right_row = right_row.push(save_row);
+        right.push(save_row.into());
     }
 
-    let content = Row::new()
-        .push(left)
-        .push(Space::new().width(Length::Fill))
-        .push(right_row)
-        .align_y(Alignment::Center);
-
-    column![
-        rule::horizontal(1.0_f32).style(move |_: &iced::Theme| rule::Style {
-            color: border_color,
-            radius: 0.0.into(),
-            fill_mode: rule::FillMode::Full,
-            snap: true,
-        }),
-        container(content)
-            .padding([spf(Spacing::Xs), spf(Spacing::Md)])
-            .width(Length::Fill)
-            .style(move |_: &iced::Theme| container::Style {
-                background: Some(Background::Color(shell_bg)),
-                ..container::Style::default()
-            }),
-    ]
-    .into()
+    crate::footer::status_footer(left, right, palette)
 }
 
 #[cfg(test)]

@@ -20,7 +20,7 @@ use crate::message::{
     DiscordClientRef, HotkeyClientRef, KickBundleRef, Message, MidiClientRef, ObsClientRef,
     ServerSubsystemMsg, TwitchBootBundle, VTubeClientRef, YoutubeBundleRef,
 };
-use crate::server_screen::ServerStatus;
+use crate::server_screen::{ServerControl, ServerStatus};
 
 const HOTKEY_PRESSED_KIND: &str = "hotkey.global.pressed";
 
@@ -433,6 +433,7 @@ pub(crate) fn handle_server_restart_result(
     app: &mut App,
     result: Result<(), String>,
 ) -> Task<Message> {
+    app.ui.server_screen.control_in_flight = None;
     match result {
         Ok(()) => {
             app.ui.server_screen.server_status = ServerStatus::Running;
@@ -449,6 +450,7 @@ pub(crate) fn handle_server_stop_result(
     app: &mut App,
     result: Result<(), String>,
 ) -> Task<Message> {
+    app.ui.server_screen.control_in_flight = None;
     match result {
         Ok(()) => {
             app.ui.server_screen.server_status = ServerStatus::Stopped;
@@ -478,7 +480,8 @@ pub(crate) fn handle_server_token_rotated(
     Task::none()
 }
 
-pub(crate) fn handle_server_restart_command(app: &App) -> Task<Message> {
+pub(crate) fn handle_server_restart_command(app: &mut App) -> Task<Message> {
+    app.ui.server_screen.control_in_flight = Some(ServerControl::Restarting);
     let subsystem = Arc::clone(&app.rt.server_subsystem);
     Task::perform(
         async move { subsystem.restart().await.map_err(|e| e.to_string()) },
@@ -486,7 +489,8 @@ pub(crate) fn handle_server_restart_command(app: &App) -> Task<Message> {
     )
 }
 
-pub(crate) fn handle_server_stop_command(app: &App) -> Task<Message> {
+pub(crate) fn handle_server_stop_command(app: &mut App) -> Task<Message> {
+    app.ui.server_screen.control_in_flight = Some(ServerControl::Stopping);
     let subsystem = Arc::clone(&app.rt.server_subsystem);
     Task::perform(
         async move { subsystem.stop().await.map_err(|e| e.to_string()) },

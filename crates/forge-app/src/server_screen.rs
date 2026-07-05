@@ -28,6 +28,12 @@ pub enum ServerStatus {
     Error(String),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServerControl {
+    Restarting,
+    Stopping,
+}
+
 #[derive(Debug, Clone)]
 pub struct OwnedSubscriptionChip {
     pub label: String,
@@ -111,6 +117,9 @@ pub struct ServerScreenState {
     pub bearer_token: String,
     pub token_revealed: bool,
     pub server_status: ServerStatus,
+    /// `Some` while a restart/stop command is dispatched but its async result has
+    /// not yet arrived; gates the header controls into a disabled pending state.
+    pub control_in_flight: Option<ServerControl>,
     pub uptime_seconds: i64,
     pub connected_clients: Vec<OwnedClientRow>,
     pub bandwidth_samples: Vec<f32>,
@@ -132,6 +141,7 @@ impl Default for ServerScreenState {
             bearer_token: "fg_placeholder00000000000000000000".to_string(),
             token_revealed: false,
             server_status: ServerStatus::default(),
+            control_in_flight: None,
             uptime_seconds: 0,
             connected_clients: Vec::new(),
             bandwidth_samples: Vec::new(),
@@ -799,8 +809,8 @@ fn header_card<'a>(
 
     let actions_row = row![
         Space::new().width(Length::Fill),
-        restart_btn(palette),
-        stop_btn(palette),
+        restart_btn(state.control_in_flight, palette),
+        stop_btn(state.control_in_flight, palette),
     ]
     .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
@@ -884,21 +894,26 @@ fn header_card<'a>(
         .into()
 }
 
-fn restart_btn<'a>(palette: &ForgePalette) -> Element<'a, Message> {
-    let border = palette.success;
-    let hover_bg = Color { a: 0.08, ..border };
+fn restart_btn<'a>(pending: Option<ServerControl>, palette: &ForgePalette) -> Element<'a, Message> {
+    let busy = pending.is_some();
+    let base = palette.success;
+    let border = if busy { Color { a: 0.4, ..base } } else { base };
+    let hover_bg = Color { a: 0.08, ..base };
+    let label = if pending == Some(ServerControl::Restarting) {
+        forge_widgets::tr!("server.btn.restarting")
+    } else {
+        forge_widgets::tr!("server.btn.restart")
+    };
 
     button(
         row![
-            tabler_icon(Icon::Refresh, 12.0, palette.success),
-            text(forge_widgets::tr!("server.btn.restart"))
-                .font(font(FontRole::Monospace))
-                .size(FONT_XS),
+            tabler_icon(Icon::Refresh, 12.0, border),
+            text(label).font(font(FontRole::Monospace)).size(FONT_XS),
         ]
         .spacing(spf(Spacing::Xxs))
         .align_y(Alignment::Center),
     )
-    .on_press(Message::Server(ServerScreenMsg::RestartServer))
+    .on_press_maybe((!busy).then_some(Message::Server(ServerScreenMsg::RestartServer)))
     .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
     .style(move |_theme: &iced::Theme, status| {
         use iced::widget::button::Status;
@@ -920,35 +935,38 @@ fn restart_btn<'a>(palette: &ForgePalette) -> Element<'a, Message> {
     .into()
 }
 
-fn stop_btn<'a>(palette: &ForgePalette) -> Element<'a, Message> {
-    let border = palette.random;
-    let hover_bg = Color { a: 0.08, ..border };
+fn stop_btn<'a>(pending: Option<ServerControl>, palette: &ForgePalette) -> Element<'a, Message> {
+    let busy = pending.is_some();
+    let base = palette.random;
+    let border = if busy { Color { a: 0.4, ..base } } else { base };
+    let hover_bg = Color { a: 0.08, ..base };
+    let label = if pending == Some(ServerControl::Stopping) {
+        forge_widgets::tr!("server.btn.stopping")
+    } else {
+        forge_widgets::tr!("server.btn.stop")
+    };
 
-    button(
-        text(forge_widgets::tr!("server.btn.stop"))
-            .font(font(FontRole::Monospace))
-            .size(FONT_XS),
-    )
-    .on_press(Message::Server(ServerScreenMsg::StopServer))
-    .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
-    .style(move |_theme: &iced::Theme, status| {
-        use iced::widget::button::Status;
-        iced::widget::button::Style {
-            background: match status {
-                Status::Hovered | Status::Pressed => Some(Background::Color(hover_bg)),
-                _ => None,
-            },
-            text_color: border,
-            border: Border {
-                color: border,
-                width: 0.5,
-                radius: radius(Radius::Md).into(),
-            },
-            shadow: iced::Shadow::default(),
-            snap: false,
-        }
-    })
-    .into()
+    button(text(label).font(font(FontRole::Monospace)).size(FONT_XS))
+        .on_press_maybe((!busy).then_some(Message::Server(ServerScreenMsg::StopServer)))
+        .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
+        .style(move |_theme: &iced::Theme, status| {
+            use iced::widget::button::Status;
+            iced::widget::button::Style {
+                background: match status {
+                    Status::Hovered | Status::Pressed => Some(Background::Color(hover_bg)),
+                    _ => None,
+                },
+                text_color: border,
+                border: Border {
+                    color: border,
+                    width: 0.5,
+                    radius: radius(Radius::Md).into(),
+                },
+                shadow: iced::Shadow::default(),
+                snap: false,
+            }
+        })
+        .into()
 }
 
 fn copy_address_btn<'a>(palette: &ForgePalette) -> Element<'a, Message> {
@@ -1267,9 +1285,7 @@ fn overlay_panel<'a>(
         .into()
 }
 
-fn footer_bar<'a>(state: &'a ServerScreenState, palette: &ForgePalette) -> Element<'a, Message> {
-    let shell = palette.shell;
-    let border_color = palette.border_regular;
+fn footer_bar<'a>(state: &'a ServerScreenState, palette: &'a ForgePalette) -> Element<'a, Message> {
     let text_faint = palette.text_faint;
     let port = extract_port(&state.bind_address);
     let s_color = status_color(&state.server_status, palette);
@@ -1316,25 +1332,7 @@ fn footer_bar<'a>(state: &'a ServerScreenState, palette: &ForgePalette) -> Eleme
     .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
-    let content = row![left, Space::new().width(Length::Fill), right]
-        .align_y(Alignment::Center)
-        .padding([sp(Spacing::Xs), sp(Spacing::Md)]);
-
-    let top_border =
-        container(Space::new().width(Length::Fill).height(1.0f32)).style(move |_: &iced::Theme| {
-            container::Style {
-                background: Some(Background::Color(border_color)),
-                ..container::Style::default()
-            }
-        });
-
-    container(column![top_border, content])
-        .width(Length::Fill)
-        .style(move |_: &iced::Theme| container::Style {
-            background: Some(Background::Color(shell)),
-            ..container::Style::default()
-        })
-        .into()
+    forge_widgets::status_footer(vec![left.into()], vec![right.into()], palette)
 }
 
 /// Renders the shared destructive-confirm modal while a disconnect is armed.

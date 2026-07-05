@@ -15,11 +15,11 @@ use iced::{
 use forge_widgets::{
     ConfirmKind, ConfirmModalParams, ConfirmTone, ForgePalette, MenuItem, MenuPlacement, Radius,
     SheetHeader, SheetWidth, SideSheet, Spacing, ToastKind, category_chip, confirm_modal,
-    destructive_button, empty_state,
+    destructive_button, empty_state, empty_state_primary,
     icons::{Icon, tabler_icon},
     menu_button, primary_button, radius, search_input, secondary_button, section_header,
     skeleton_row, sp, spf,
-    tokens::{BORDER_THIN, FONT_SM, FONT_XS, FONT_XXS, FontRole, font},
+    tokens::{BORDER_THIN, FONT_MD, FONT_SM, FONT_XS, FONT_XXS, FontRole, font},
     value_preview,
 };
 
@@ -781,7 +781,7 @@ pub fn view<'a>(
     let list_content: Element<'_, Message> = if !state.loaded {
         registry_loading_skeleton(palette)
     } else if state.instances.is_empty() && !filters_active {
-        container(empty_state(
+        container(empty_state_primary(
             forge_widgets::tr!("triggers_empty_title"),
             forge_widgets::tr!("triggers_empty_hint"),
             Some((
@@ -813,16 +813,28 @@ pub fn view<'a>(
                     .as_ref()
                     .filter(|(id, _)| *id == row.id)
                     .map(|(_, name)| name.as_str());
+                let kind_icon = rt
+                    .trigger_registry
+                    .get(&row.kind_id)
+                    .map(|d| Icon::from_name(d.icon_name()))
+                    .unwrap_or(Icon::Bolt);
                 instance_row(
                     row,
                     state.selected_id == Some(row.id),
                     state.menu_open == Some(row.id),
                     rename_buf,
+                    kind_icon,
                     palette,
                 )
             })
             .collect();
-        scrollable(column(row_els)).height(Length::Fill).into()
+        column![
+            list_column_caption(palette),
+            scrollable(column(row_els)).height(Length::Fill),
+        ]
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
     };
 
     let sheet_open = state.selected_id.is_some();
@@ -943,6 +955,41 @@ fn registry_header<'a>(
     let lbl_filter_discord = forge_widgets::tr!("triggers_filter_discord");
     let lbl_filter_script = forge_widgets::tr!("triggers_filter_script");
 
+    // Live per-platform / usage instance counts drive the chip captions so the
+    // filter bar doubles as an at-a-glance registry census.
+    let count_for = |prefix: &str| {
+        state
+            .instances
+            .iter()
+            .filter(|r| r.kind_id.starts_with(prefix))
+            .count()
+    };
+    let with_count = |base: &str, n: usize| -> String {
+        if n > 0 {
+            format!("{base}  {n}")
+        } else {
+            base.to_owned()
+        }
+    };
+    let total_n = state.instances.len();
+    let used_n = state
+        .instances
+        .iter()
+        .filter(|r| r.used_in_count > 0)
+        .count();
+    let unused_n = total_n - used_n;
+
+    let s_twitch = with_count(lbl_filter_twitch.as_str(), count_for("twitch."));
+    let s_youtube = with_count(lbl_filter_youtube.as_str(), count_for("youtube."));
+    let s_kick = with_count(lbl_filter_kick.as_str(), count_for("kick."));
+    let s_obs = with_count(lbl_filter_obs.as_str(), count_for("obs."));
+    let s_vtube = with_count(lbl_filter_vtube.as_str(), count_for("vtube."));
+    let s_midi = with_count(lbl_filter_midi.as_str(), count_for("midi."));
+    let s_hotkey = with_count(lbl_filter_hotkey.as_str(), count_for("hotkey."));
+    let s_discord = with_count(lbl_filter_discord.as_str(), count_for("discord."));
+    let s_script = with_count(lbl_filter_script.as_str(), count_for("script."));
+    let s_all = with_count(lbl_filter_all.as_str(), total_n);
+
     let chip = |label: &str, prefix: &'static str| {
         category_chip(
             palette,
@@ -955,18 +1002,18 @@ fn registry_header<'a>(
         )
     };
 
-    let chip_twitch = chip(lbl_filter_twitch.as_str(), "twitch.");
-    let chip_youtube = chip(lbl_filter_youtube.as_str(), "youtube.");
-    let chip_kick = chip(lbl_filter_kick.as_str(), "kick.");
-    let chip_obs = chip(lbl_filter_obs.as_str(), "obs.");
-    let chip_vtube = chip(lbl_filter_vtube.as_str(), "vtube.");
-    let chip_midi = chip(lbl_filter_midi.as_str(), "midi.");
-    let chip_hotkey = chip(lbl_filter_hotkey.as_str(), "hotkey.");
-    let chip_discord = chip(lbl_filter_discord.as_str(), "discord.");
-    let chip_script = chip(lbl_filter_script.as_str(), "script.");
+    let chip_twitch = chip(s_twitch.as_str(), "twitch.");
+    let chip_youtube = chip(s_youtube.as_str(), "youtube.");
+    let chip_kick = chip(s_kick.as_str(), "kick.");
+    let chip_obs = chip(s_obs.as_str(), "obs.");
+    let chip_vtube = chip(s_vtube.as_str(), "vtube.");
+    let chip_midi = chip(s_midi.as_str(), "midi.");
+    let chip_hotkey = chip(s_hotkey.as_str(), "hotkey.");
+    let chip_discord = chip(s_discord.as_str(), "discord.");
+    let chip_script = chip(s_script.as_str(), "script.");
     let chip_all = category_chip(
         palette,
-        lbl_filter_all.as_str(),
+        s_all.as_str(),
         p.text_secondary,
         all_active,
         Message::TriggersRegistry(TriggersRegistryMsg::PlatformFilterChanged(None)),
@@ -986,20 +1033,30 @@ fn registry_header<'a>(
     let usage_used_active = state.usage_filter == UsageFilter::Used;
     let usage_unused_active = state.usage_filter == UsageFilter::Unused;
 
+    let s_u_all = with_count(forge_widgets::tr!("triggers_usage_all").as_str(), total_n);
+    let s_u_used = with_count(forge_widgets::tr!("triggers_usage_used").as_str(), used_n);
+    let s_u_unused = with_count(
+        forge_widgets::tr!("triggers_usage_unused").as_str(),
+        unused_n,
+    );
+
     let chip_u_all = usage_filter_chip(
-        forge_widgets::tr!("triggers_usage_all"),
+        s_u_all,
+        p.text_secondary,
         usage_all_active,
         Message::TriggersRegistry(TriggersRegistryMsg::UsageFilterChanged(UsageFilter::All)),
         palette,
     );
     let chip_u_used = usage_filter_chip(
-        forge_widgets::tr!("triggers_usage_used"),
+        s_u_used,
+        p.success,
         usage_used_active,
         Message::TriggersRegistry(TriggersRegistryMsg::UsageFilterChanged(UsageFilter::Used)),
         palette,
     );
     let chip_u_unused = usage_filter_chip(
-        forge_widgets::tr!("triggers_usage_unused"),
+        s_u_unused,
+        p.text_faint,
         usage_unused_active,
         Message::TriggersRegistry(TriggersRegistryMsg::UsageFilterChanged(UsageFilter::Unused)),
         palette,
@@ -1071,13 +1128,14 @@ fn registry_header<'a>(
 
 fn usage_filter_chip<'a>(
     label: impl Into<std::borrow::Cow<'a, str>>,
+    dot: Color,
     active: bool,
     on_press: Message,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     forge_widgets::chip(
         label,
-        forge_widgets::ChipGlyph::None,
+        forge_widgets::ChipGlyph::Dot(dot),
         active,
         Some(on_press),
         palette,
@@ -1104,11 +1162,47 @@ fn platform_dot_color(kind_id: &str, palette: &ForgePalette) -> Color {
     }
 }
 
+/// Column-header caption strip pinned above the instance list. iced list rows
+/// are flex (not a strict grid), so this reads as a lightweight guide rather
+/// than a pixel-aligned table header: NAME/KIND label the left title+meta
+/// column, USED IN/ON label the trailing usage badge + enable toggle.
+fn list_column_caption<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
+    let p = *palette;
+    let mono = font(FontRole::Monospace);
+    let cap = move |s: String| text(s).size(FONT_XXS).color(p.text_faint).font(mono);
+
+    container(
+        row![
+            cap(forge_widgets::tr!("triggers_col_name")),
+            cap(forge_widgets::tr!("triggers_col_kind")),
+            Space::new().width(Length::Fill),
+            cap(forge_widgets::tr!("triggers_col_used")),
+            Space::new().width(Length::Fixed(72.0)),
+            cap(forge_widgets::tr!("triggers_col_on")),
+        ]
+        .spacing(spf(Spacing::Md))
+        .align_y(Alignment::Center),
+    )
+    .width(Length::Fill)
+    .padding([sp(Spacing::Xs), sp(Spacing::Md)])
+    .style(move |_: &iced::Theme| container::Style {
+        background: Some(Background::Color(p.shell)),
+        border: Border {
+            color: p.border_regular,
+            width: BORDER_THIN,
+            radius: 0.0.into(),
+        },
+        ..container::Style::default()
+    })
+    .into()
+}
+
 fn instance_row<'a>(
     row: &'a TriggerInstanceRow,
     selected: bool,
     menu_open: bool,
     rename_buf: Option<&'a str>,
+    kind_icon: Icon,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let p = *palette;
@@ -1162,6 +1256,39 @@ fn instance_row<'a>(
         .size(FONT_XS)
         .color(p.text_faint)
         .font(font(FontRole::Monospace));
+
+    let override_badge: Element<'_, Message> = if row.overrides.is_empty() {
+        Space::new().width(0).into()
+    } else {
+        container(
+            text(forge_widgets::tr!(
+                "triggers_sheet_config_overridden",
+                count = row.overrides.len() as i64
+            ))
+            .size(FONT_XXS)
+            .color(p.warning)
+            .font(font(FontRole::Monospace)),
+        )
+        .padding([1, sp(Spacing::Xs)])
+        .style(move |_: &iced::Theme| container::Style {
+            background: Some(Background::Color(p.surface_overlay)),
+            border: Border {
+                radius: radius(Radius::Sm).into(),
+                color: Color::TRANSPARENT,
+                width: 0.0,
+            },
+            ..container::Style::default()
+        })
+        .into()
+    };
+
+    let meta_row = row![
+        tabler_icon::<Message>(kind_icon, 11.0, dot_color),
+        kind_meta,
+        override_badge,
+    ]
+    .spacing(spf(Spacing::Xxs))
+    .align_y(Alignment::Center);
 
     let usage_badge: Element<'_, Message> = if row.used_in_count > 0 {
         let label = forge_widgets::tr!("triggers_usage_badge", count = row.used_in_count as i64);
@@ -1328,7 +1455,7 @@ fn instance_row<'a>(
 
     forge_widgets::row_card(name_el, palette)
         .leading(container(dot).align_y(Alignment::Center))
-        .meta(kind_meta)
+        .meta(meta_row)
         .trailing(trailing)
         .selected(selected)
         .idle_background(p.base)
@@ -1377,28 +1504,37 @@ fn sheet_body_for<'a>(
             .map(|u| {
                 let aid = u.action_id;
                 let p_row = p;
-                button(
+                // Bolt marks the linked action; arrow signals the row jumps to
+                // the Action editor (cross-nav chrome from the mockup).
+                let content = row![
+                    tabler_icon::<Message>(Icon::Bolt, 12.0, p_row.brand),
                     text(u.action_name.as_str())
                         .size(FONT_SM)
+                        .color(p_row.text_secondary)
                         .font(font(FontRole::Body)),
-                )
-                .on_press(Message::TriggersRegistry(
-                    TriggersRegistryMsg::NavigateToAction(aid),
-                ))
-                .padding([sp(Spacing::Xxs), sp(Spacing::Md)])
-                .style(move |_: &iced::Theme, status| button::Style {
-                    background: None,
-                    text_color: if matches!(status, button::Status::Hovered) {
-                        p_row.brand
-                    } else {
-                        p_row.text_secondary
-                    },
-                    border: Border::default(),
-                    shadow: iced::Shadow::default(),
-                    snap: false,
-                })
-                .width(Length::Fill)
-                .into()
+                    Space::new().width(Length::Fill),
+                    tabler_icon::<Message>(Icon::ArrowRight, 11.0, p_row.text_faint),
+                ]
+                .spacing(spf(Spacing::Xs))
+                .align_y(Alignment::Center);
+                button(content)
+                    .on_press(Message::TriggersRegistry(
+                        TriggersRegistryMsg::NavigateToAction(aid),
+                    ))
+                    .padding([sp(Spacing::Xxs), sp(Spacing::Md)])
+                    .style(move |_: &iced::Theme, status| button::Style {
+                        background: if matches!(status, button::Status::Hovered) {
+                            Some(Background::Color(p_row.surface_overlay))
+                        } else {
+                            None
+                        },
+                        text_color: p_row.text_secondary,
+                        border: Border::default(),
+                        shadow: iced::Shadow::default(),
+                        snap: false,
+                    })
+                    .width(Length::Fill)
+                    .into()
             })
             .collect();
         column(std::iter::once(hdr).chain(usage_rows).collect::<Vec<_>>()).into()
@@ -1612,11 +1748,39 @@ fn config_section_view<'a>(
             })
             .collect();
 
-        column(
-            std::iter::once(config_header(row.overrides.len(), palette))
-                .chain(field_rows)
-                .collect::<Vec<_>>(),
-        )
+        // Frame the field list in an inset crust-toned card with hairline
+        // dividers between rows (iced rules render solid — a dashed stroke is
+        // not expressible at the pinned version, so this reads as a calm
+        // hairline rather than the mockup's dashed divider).
+        let field_divider = move |_: &iced::Theme| rule::Style {
+            color: p.border_regular,
+            radius: 0.0.into(),
+            fill_mode: rule::FillMode::Full,
+            snap: true,
+        };
+        let mut boxed: Vec<Element<'a, Message>> = Vec::with_capacity(field_rows.len() * 2);
+        for (i, fr) in field_rows.into_iter().enumerate() {
+            if i > 0 {
+                boxed.push(rule::horizontal(1.0).style(field_divider).into());
+            }
+            boxed.push(fr);
+        }
+        let box_el = container(column(boxed).width(Length::Fill))
+            .width(Length::Fill)
+            .style(move |_: &iced::Theme| container::Style {
+                background: Some(Background::Color(p.base)),
+                border: Border {
+                    color: p.border_regular,
+                    width: BORDER_THIN,
+                    radius: radius(Radius::Md).into(),
+                },
+                ..container::Style::default()
+            });
+
+        column![
+            config_header(row.overrides.len(), palette),
+            container(box_el).padding([0, sp(Spacing::Md)]),
+        ]
         .into()
     }
 }
@@ -1960,11 +2124,67 @@ fn confirm_disable_dialog<'a>(
         count = cd.action_count as i64
     );
 
+    // Disabling is reversible-but-disruptive, not destructive — warning-yellow
+    // tone with an alert-triangle tile, mirroring the M6 confirm modal's
+    // Warning tone rather than the red delete flow.
+    let accent = p.warning;
+    let icon_bg = Color { a: 0.12, ..accent };
+    let icon_tile = container(tabler_icon::<Message>(Icon::AlertTriangle, 18.0, accent))
+        .width(Length::Fixed(36.0))
+        .height(Length::Fixed(36.0))
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center)
+        .style(move |_: &iced::Theme| container::Style {
+            background: Some(Background::Color(icon_bg)),
+            border: Border {
+                color: Color::TRANSPARENT,
+                width: 0.0,
+                radius: radius(Radius::Md).into(),
+            },
+            ..container::Style::default()
+        });
+    let header = row![
+        icon_tile,
+        text(forge_widgets::tr!("triggers_confirm_disable_title"))
+            .size(FONT_MD)
+            .color(p.text_primary)
+            .font(font(FontRole::Body)),
+    ]
+    .spacing(spf(Spacing::Sm))
+    .align_y(Alignment::Center);
+
+    let accept_btn = button(
+        text(forge_widgets::tr!("triggers_confirm_disable_accept"))
+            .size(FONT_SM)
+            .color(p.shell)
+            .font(font(FontRole::Body)),
+    )
+    .on_press(Message::TriggersRegistry(
+        TriggersRegistryMsg::DisableConfirmAccepted(id),
+    ))
+    .padding([sp(Spacing::Xs), sp(Spacing::Md)])
+    .style(move |_: &iced::Theme, status| button::Style {
+        background: Some(Background::Color(match status {
+            button::Status::Hovered => Color { a: 0.9, ..accent },
+            button::Status::Pressed => Color { a: 0.75, ..accent },
+            _ => accent,
+        })),
+        text_color: p.shell,
+        border: Border {
+            color: Color::TRANSPARENT,
+            width: 0.0,
+            radius: radius(Radius::Sm).into(),
+        },
+        shadow: iced::Shadow::default(),
+        snap: false,
+    });
+
     let card = container(
         column![
+            header,
             text(body_text)
                 .size(FONT_SM)
-                .color(p.text_primary)
+                .color(p.text_muted)
                 .font(font(FontRole::Body)),
             row![
                 secondary_button(
@@ -1973,11 +2193,7 @@ fn confirm_disable_dialog<'a>(
                     palette,
                 ),
                 Space::new().width(Length::Fill),
-                destructive_button(
-                    forge_widgets::tr!("triggers_confirm_disable_accept"),
-                    Message::TriggersRegistry(TriggersRegistryMsg::DisableConfirmAccepted(id)),
-                    palette,
-                ),
+                accept_btn,
             ]
             .spacing(spf(Spacing::Xs))
             .align_y(Alignment::Center),

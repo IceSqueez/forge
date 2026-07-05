@@ -520,6 +520,10 @@ triggers_clear_filters = Скинути фільтри
 triggers_usage_badge = використовується в { $count }
 triggers_toggle_on = УВІМК
 triggers_toggle_off = ВИМК
+triggers_col_name = НАЗВА
+triggers_col_kind = ТИП
+triggers_col_used = ВИКОРИСТАННЯ
+triggers_col_on = УВІМК
 
 ## Реєстр тригерів — меню рядка
 
@@ -546,6 +550,7 @@ triggers_sheet_will_fire_on_scope = Спрацює на: { $scope }
 
 ## Реєстр тригерів — діалог підтвердження вимкнення
 
+triggers_confirm_disable_title = Вимкнути цей тригер?
 triggers_confirm_disable_body = Вимкнення цього тригера призупинить його для { $count } дій. Продовжити?
 triggers_confirm_disable_dismiss = Скасувати
 triggers_confirm_disable_accept = Все одно вимкнути

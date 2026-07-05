@@ -518,6 +518,10 @@ triggers_clear_filters = Clear filters
 triggers_usage_badge = used in { $count }
 triggers_toggle_on = ON
 triggers_toggle_off = OFF
+triggers_col_name = NAME
+triggers_col_kind = KIND
+triggers_col_used = USED IN
+triggers_col_on = ON
 
 ## Triggers registry — row overflow menu
 
@@ -544,6 +548,7 @@ triggers_sheet_will_fire_on_scope = Will fire on: { $scope }
 
 ## Triggers registry — confirm-disable dialog
 
+triggers_confirm_disable_title = Disable this trigger?
 triggers_confirm_disable_body = Disabling this trigger will pause it for { $count } action(s). Continue?
 triggers_confirm_disable_dismiss = Cancel
 triggers_confirm_disable_accept = Disable anyway

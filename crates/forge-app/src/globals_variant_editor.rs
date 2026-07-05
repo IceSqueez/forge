@@ -24,8 +24,8 @@ pub struct VariantEditorFields {
     pub bool_value: bool,
     pub string_input: String,
     pub datetime_input: String,
-    pub array_json: String,
-    pub object_json: String,
+    pub array_json: iced::widget::text_editor::Content,
+    pub object_json: iced::widget::text_editor::Content,
 }
 
 #[derive(Debug, Clone)]
@@ -69,14 +69,14 @@ impl VariantEditorForm {
                 if let Ok(json) =
                     serde_json::to_string_pretty(&variant_to_display_json(&entry.value))
                 {
-                    fields.array_json = json;
+                    fields.array_json = iced::widget::text_editor::Content::with_text(&json);
                 }
             }
             Variant::Object(_) => {
                 if let Ok(json) =
                     serde_json::to_string_pretty(&variant_to_display_json(&entry.value))
                 {
-                    fields.object_json = json;
+                    fields.object_json = iced::widget::text_editor::Content::with_text(&json);
                 }
             }
         }
@@ -124,7 +124,7 @@ impl VariantEditorForm {
                 }
             }
             VariantKind::Array => {
-                match serde_json::from_str::<serde_json::Value>(&self.fields.array_json) {
+                match serde_json::from_str::<serde_json::Value>(&self.fields.array_json.text()) {
                     Err(_) => Some("Invalid JSON array"),
                     Ok(v) => {
                         if v.is_array() && Variant::from_json(v).is_ok() {
@@ -136,7 +136,7 @@ impl VariantEditorForm {
                 }
             }
             VariantKind::Object => {
-                match serde_json::from_str::<serde_json::Value>(&self.fields.object_json) {
+                match serde_json::from_str::<serde_json::Value>(&self.fields.object_json.text()) {
                     Err(_) => Some("Invalid JSON object"),
                     Ok(v) => {
                         if v.is_object() && Variant::from_json(v).is_ok() {
@@ -168,12 +168,12 @@ impl VariantEditorForm {
             .ok()
             .map(Variant::Datetime),
             VariantKind::Array => {
-                serde_json::from_str::<serde_json::Value>(&self.fields.array_json)
+                serde_json::from_str::<serde_json::Value>(&self.fields.array_json.text())
                     .ok()
                     .and_then(|v| Variant::from_json(v).ok())
             }
             VariantKind::Object => {
-                serde_json::from_str::<serde_json::Value>(&self.fields.object_json)
+                serde_json::from_str::<serde_json::Value>(&self.fields.object_json.text())
                     .ok()
                     .and_then(|v| Variant::from_json(v).ok())
             }
@@ -311,16 +311,16 @@ pub fn update_variant_editor(
             iced::Task::none()
         }
 
-        VariantEditorMsg::ArrayJsonChanged(v) => {
+        VariantEditorMsg::ArrayJsonChanged(action) => {
             if let Some(f) = editor.as_mut() {
-                f.fields.array_json = v;
+                f.fields.array_json.perform(action);
             }
             iced::Task::none()
         }
 
-        VariantEditorMsg::ObjectJsonChanged(v) => {
+        VariantEditorMsg::ObjectJsonChanged(action) => {
             if let Some(f) = editor.as_mut() {
-                f.fields.object_json = v;
+                f.fields.object_json.perform(action);
             }
             iced::Task::none()
         }
@@ -394,6 +394,21 @@ pub fn variant_editor_modal_view<'a>(
     let title = match &form.mode {
         EditorMode::Create => forge_widgets::tr!("globals_editor_title_create"),
         EditorMode::Edit(_) => forge_widgets::tr!("globals_editor_title_edit"),
+    };
+
+    // Edit mode surfaces a Modified/reads/writes meta strip beside the modal's
+    // shared icon-tile (rendered as the modal subtitle). Values come from the
+    // stored entry — the in-flight form does not carry telemetry.
+    let meta_subtitle: Option<std::borrow::Cow<'_, str>> = match &form.mode {
+        EditorMode::Edit(original) => existing.iter().find(|e| e.name == *original).map(|e| {
+            std::borrow::Cow::Owned(format!(
+                "Modified {} · {} reads · {} writes",
+                crate::globals_view::format_time_ago(e.last_modified),
+                e.reads,
+                e.writes,
+            ))
+        }),
+        EditorMode::Create => None,
     };
 
     let name_count = format!("{}/64", form.name.len().min(64));
@@ -507,17 +522,36 @@ pub fn variant_editor_modal_view<'a>(
             },
             palette,
         ),
-        VariantKind::Bool => toggle(
-            palette,
-            ToggleProps {
-                label: "Value".to_owned(),
-                description: String::new(),
-                value: form.fields.bool_value,
-                on_toggle: Message::Globals(GlobalsMsg::VariantEditor(
-                    VariantEditorMsg::BoolValueChanged(!form.fields.bool_value),
-                )),
-            },
-        ),
+        VariantKind::Bool => {
+            // Colour-code the current value to match the row Badge semantics
+            // (`value_preview`): true → success, false → random.
+            let (bool_label, bool_color) = if form.fields.bool_value {
+                ("true", palette.success)
+            } else {
+                ("false", palette.random)
+            };
+            let value_badge = text(bool_label)
+                .size(FONT_XS)
+                .color(bool_color)
+                .font(font(FontRole::Monospace));
+            row![
+                toggle(
+                    palette,
+                    ToggleProps {
+                        label: "Value".to_owned(),
+                        description: String::new(),
+                        value: form.fields.bool_value,
+                        on_toggle: Message::Globals(GlobalsMsg::VariantEditor(
+                            VariantEditorMsg::BoolValueChanged(!form.fields.bool_value),
+                        )),
+                    },
+                ),
+                Space::new().width(Length::Fill),
+                value_badge,
+            ]
+            .align_y(Alignment::Center)
+            .into()
+        }
         VariantKind::String => forge_widgets::text_input_field(
             "",
             &form.fields.string_input,
@@ -538,22 +572,22 @@ pub fn variant_editor_modal_view<'a>(
             },
             palette,
         ),
-        VariantKind::Array => forge_widgets::text_input_field(
+        VariantKind::Array => forge_widgets::text_area_field(
             "[1, 2, 3]",
             &form.fields.array_json,
-            |v| {
+            |a| {
                 Message::Globals(GlobalsMsg::VariantEditor(
-                    VariantEditorMsg::ArrayJsonChanged(v),
+                    VariantEditorMsg::ArrayJsonChanged(a),
                 ))
             },
             palette,
         ),
-        VariantKind::Object => forge_widgets::text_input_field(
+        VariantKind::Object => forge_widgets::text_area_field(
             r#"{"key": "value"}"#,
             &form.fields.object_json,
-            |v| {
+            |a| {
                 Message::Globals(GlobalsMsg::VariantEditor(
-                    VariantEditorMsg::ObjectJsonChanged(v),
+                    VariantEditorMsg::ObjectJsonChanged(a),
                 ))
             },
             palette,
@@ -606,7 +640,7 @@ pub fn variant_editor_modal_view<'a>(
         palette,
         ModalProps {
             title: std::borrow::Cow::Owned(title),
-            subtitle: None,
+            subtitle: meta_subtitle,
             icon: Some(Icon::Variable),
             icon_tint: Some(palette.warning),
             size: ModalSize::Md,

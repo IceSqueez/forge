@@ -80,8 +80,8 @@ pub use clip_card::{ClipCardData, clip_card};
 pub use code_editor::{CodeEditorState, rhai_editor};
 pub use console::{ConsoleLevel, ConsoleLine, console};
 pub use data::{
-    FooterProps, VariantKind, data_screen_footer, data_table, persistence_toggle_inline, type_pill,
-    value_preview, variant_kind_color,
+    DataRow, FooterProps, VariantKind, data_screen_footer, data_table, hover_reveal, hover_row,
+    persistence_toggle_inline, type_pill, value_preview, variant_kind_color,
 };
 pub use events::{
     EventInspectorParams, EventRowData, causation_chip, color_for_source, event_inspector,

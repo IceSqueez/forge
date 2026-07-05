@@ -5,10 +5,10 @@ use std::sync::Arc;
 use forge_storage::{GlobalEntry, GlobalsExport, GlobalsRepo, StorageError};
 use forge_widgets::tokens::{FONT_SM, Spacing, sp, spf};
 use forge_widgets::{
-    ConfirmKind, ConfirmModalParams, ConfirmTone, FontRole, FooterProps, ForgePalette, Icon,
-    RowAction, ToastAction, ToastKind, VariantKind, confirm_modal, data_screen_footer, data_table,
-    empty_state, font, persistence_toggle_inline, primary_button_small, row_actions, search_input,
-    secondary_button, type_pill, value_preview,
+    ConfirmKind, ConfirmModalParams, ConfirmTone, DataRow, FontRole, FooterProps, ForgePalette,
+    Icon, RowAction, ToastAction, ToastKind, VariantKind, confirm_modal, data_screen_footer,
+    data_table, empty_state, font, hover_reveal, persistence_toggle_inline, primary_button_small,
+    row_actions, search_input, secondary_button, type_pill, value_preview,
 };
 use iced::{
     Alignment, Background, Border, Color, Element, Length,
@@ -533,7 +533,7 @@ fn globals_main_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a,
                 Length::Fixed(36.0),
             ];
 
-            let rows: Vec<Vec<Element<'_, Message>>> = visible_entries
+            let rows: Vec<DataRow<'_, Message>> = visible_entries
                 .iter()
                 .map(|entry| {
                     let rename_buf = app
@@ -668,7 +668,7 @@ fn build_entry_row<'a>(
     entry: &'a GlobalEntry,
     rename_buf: Option<&'a str>,
     palette: &'a ForgePalette,
-) -> Vec<Element<'a, Message>> {
+) -> DataRow<'a, Message> {
     let mono = font(FontRole::Monospace);
     let muted = palette.text_muted;
 
@@ -742,12 +742,12 @@ fn build_entry_row<'a>(
         ),
     ];
 
-    // `row_actions` is a hover-reveal primitive (dims to `text_faint` when
-    // `hovered` is false); Globals' `data_table` has no per-row hover-state
-    // tracking today, so this always renders in its "hovered" (full-opacity)
-    // style — the delete control being reachable matters more here than the
-    // dim-until-hover polish. Revisit once a row-hover primitive exists.
-    let delete_cell = row_actions(
+    // The ACTIONS column reveals on row hover: `data_table` wraps each row in a
+    // `hover_row` that writes its hover state into `hover_flag`; `hover_reveal`
+    // reads the same flag and only draws the (full-colour) `row_actions` while
+    // the row is hovered — matching the design's opacity fade-in.
+    let hover_flag = std::rc::Rc::new(std::cell::Cell::new(false));
+    let actions = row_actions(
         vec![
             RowAction {
                 icon: Icon::Notebook,
@@ -765,20 +765,24 @@ fn build_entry_row<'a>(
         true,
         palette,
     );
+    let delete_cell = hover_reveal(actions, std::rc::Rc::clone(&hover_flag));
 
-    vec![
-        status_dot.into(),
-        name_cell,
-        type_cell,
-        value_cell,
-        modified_cell.into(),
-        rw_cell.into(),
-        toggle_cell.into(),
-        delete_cell,
-    ]
+    DataRow::with_hover_sink(
+        vec![
+            status_dot.into(),
+            name_cell,
+            type_cell,
+            value_cell,
+            modified_cell.into(),
+            rw_cell.into(),
+            toggle_cell.into(),
+            delete_cell,
+        ],
+        hover_flag,
+    )
 }
 
-fn format_time_ago(dt: OffsetDateTime) -> String {
+pub(crate) fn format_time_ago(dt: OffsetDateTime) -> String {
     let now = OffsetDateTime::now_utc();
     let diff = now - dt;
     let secs = diff.whole_seconds().max(0);
@@ -1044,7 +1048,7 @@ mod tests {
             kind: VariantKind::Array,
             persisted: false,
             fields: VariantEditorFields {
-                array_json: "[1, 2, 3]".to_owned(),
+                array_json: iced::widget::text_editor::Content::with_text("[1, 2, 3]"),
                 ..VariantEditorFields::default()
             },
             error: None,
@@ -1061,7 +1065,7 @@ mod tests {
             kind: VariantKind::Array,
             persisted: false,
             fields: VariantEditorFields {
-                array_json: "not json".to_owned(),
+                array_json: iced::widget::text_editor::Content::with_text("not json"),
                 ..VariantEditorFields::default()
             },
             error: None,

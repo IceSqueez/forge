@@ -418,11 +418,12 @@ pub fn view<'a>(state: &'a BuiltinDetailState, palette: &'a ForgePalette) -> Ele
         .padding([sp(Spacing::Md), sp(Spacing::Lg)]);
 
     let scroll_body: Element<'_, Message> = iced::widget::scrollable(padded).into();
-    let page_header = crate::page_chrome::simple_page_header(
-        &[
-            (forge_widgets::tr!("builtin.breadcrumb"), false),
-            (state.display_name.clone(), true),
+    let page_header = forge_widgets::breadcrumb(
+        vec![
+            forge_widgets::BreadcrumbCrumb::leaf(forge_widgets::tr!("builtin.breadcrumb")),
+            forge_widgets::BreadcrumbCrumb::leaf(state.display_name.clone()),
         ],
+        None,
         palette,
     );
     let base: Element<'_, Message> = iced::widget::column![page_header, scroll_body]

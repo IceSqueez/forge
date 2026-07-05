@@ -309,26 +309,21 @@ fn live_chat_page_header<'a>(
     state: &'a LiveChatState,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    use forge_widgets::tokens::{FONT_SM, FONT_XS};
-    use iced::widget::{button, container, row, text};
+    use forge_widgets::tokens::FONT_XS;
+    use iced::widget::{button, column, container, row, text};
     use iced::{Background, Border};
 
     let p = *palette;
     let mono = forge_widgets::font(forge_widgets::FontRole::Monospace);
 
-    let crumbs_left = row![
-        tabler_icon(Icon::Home, 13.0, p.text_faint),
-        tabler_icon(Icon::ChevronRight, 11.0, p.text_faint),
-        text(forge_widgets::tr!("chat_breadcrumb_audience"))
-            .size(FONT_SM)
-            .color(p.text_muted),
-        tabler_icon(Icon::ChevronRight, 11.0, p.text_faint),
-        text(forge_widgets::tr!("chat_breadcrumb_chat"))
-            .size(FONT_SM)
-            .color(p.text_primary),
-    ]
-    .spacing(spf(Spacing::Xs))
-    .align_y(iced::alignment::Vertical::Center);
+    let crumb_bar = forge_widgets::breadcrumb(
+        vec![
+            forge_widgets::BreadcrumbCrumb::leaf(forge_widgets::tr!("chat_breadcrumb_audience")),
+            forge_widgets::BreadcrumbCrumb::leaf(forge_widgets::tr!("chat_breadcrumb_chat")),
+        ],
+        None,
+        palette,
+    );
 
     let label_all = forge_widgets::tr!("chat_filter_all");
     let chip_all = forge_widgets::filter_chip(
@@ -453,18 +448,17 @@ fn live_chat_page_header<'a>(
         }
     });
 
-    let right_side = row![chips, divider, viewer_info, drawer_btn]
-        .spacing(spf(Spacing::Xs))
-        .align_y(iced::alignment::Vertical::Center);
-
-    let inner = row![
-        crumbs_left,
+    let filter_row = row![
+        chips,
         iced::widget::Space::new().width(Length::Fill),
-        right_side,
+        viewer_info,
+        divider,
+        drawer_btn
     ]
+    .spacing(spf(Spacing::Xs))
     .align_y(iced::alignment::Vertical::Center);
 
-    container(inner)
+    let filter_bar = container(filter_row)
         .width(Length::Fill)
         .padding([sp(Spacing::Xs), sp(Spacing::Md)])
         .style(move |_: &iced::Theme| container::Style {
@@ -475,8 +469,9 @@ fn live_chat_page_header<'a>(
                 radius: 0.0.into(),
             },
             ..container::Style::default()
-        })
-        .into()
+        });
+
+    column![crumb_bar, filter_bar].into()
 }
 
 fn build_chat_area<'a>(

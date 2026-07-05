@@ -27,7 +27,6 @@ pub mod local_callback_flow;
 pub mod message;
 pub mod navigation;
 pub mod obs_panel;
-pub mod page_chrome;
 pub mod platform_generic;
 pub mod platforms_view;
 pub mod queues_view;

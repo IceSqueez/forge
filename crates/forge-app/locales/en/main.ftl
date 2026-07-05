@@ -687,6 +687,7 @@ tts_engines_header_prefix = CONFIGURED
 tts_engines_more_placeholder = + More engines in future releases
 tts_engines_select_hint = Select an engine to configure
 tts_engines_status_ready = Ready
+tts_header_engines_ready = { $count } engines ready
 
 ## TTS Engines — detail header
 
@@ -1293,6 +1294,9 @@ event_feed_buffer = Buffer: { $count } / 10,000
 event_feed_rate = { $rate } ev/s
 event_feed_breadcrumb_automation = Automation
 event_feed_breadcrumb_feed = Event Feed
+event_feed_status_live = LIVE
+event_feed_status_paused = PAUSED
+event_feed_header_count = { $count } events
 event_feed_streaming_status = Streaming · WebSocket :8081
 
 ## Globals — page header / filters

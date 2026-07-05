@@ -1,7 +1,5 @@
 use forge_widgets::tokens::{Spacing, spf};
-use forge_widgets::{
-    BreadcrumbCrumb, app_footer, breadcrumb, page_shell, sidebar, title_bar, toast_viewport,
-};
+use forge_widgets::{app_footer, page_shell, sidebar, title_bar, toast_viewport};
 use iced::{Element, Length};
 
 use crate::Screen;
@@ -33,15 +31,6 @@ pub fn view(app: &App) -> Element<'_, Message> {
         connectivity.total(),
         &uptime_str,
         version,
-        palette,
-    );
-
-    let crumb_bar = breadcrumb(
-        vec![BreadcrumbCrumb {
-            icon: Some(navigation::breadcrumb_icon_for(&app.screen)),
-            label: navigation::screen_label(&app.screen),
-            on_press: None::<Message>,
-        }],
         palette,
     );
 
@@ -137,36 +126,10 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Screen::Error(reason) => crate::storage_error::storage_error_view(reason, palette),
     };
 
-    let screen_uses_own_header = matches!(
-        &app.screen,
-        Screen::ActionEditor(_)
-            | Screen::LiveChat
-            | Screen::Home
-            | Screen::Globals
-            | Screen::Queues
-            | Screen::TriggersRegistry
-            | Screen::EventFeed
-            | Screen::Platforms
-            | Screen::StreamApps
-            | Screen::BuiltinDetail(_)
-            | Screen::Settings(_)
-            | Screen::Server
-            | Screen::ScriptEditor
-            | Screen::Soundboard
-            | Screen::Tts(_)
-            | Screen::Error(_)
-    );
-    let content: Element<'_, Message> = if screen_uses_own_header {
-        iced::widget::column![screen_content]
-            .height(Length::Fill)
-            .width(Length::Fill)
-            .into()
-    } else {
-        iced::widget::column![crumb_bar, screen_content]
-            .height(Length::Fill)
-            .width(Length::Fill)
-            .into()
-    };
+    let content: Element<'_, Message> = iced::widget::column![screen_content]
+        .height(Length::Fill)
+        .width(Length::Fill)
+        .into();
 
     let main_view = page_shell(chrome_title, None, sidebar, content, Some(chrome_footer));
     let toast_layer = toast_viewport(

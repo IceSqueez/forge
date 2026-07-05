@@ -121,7 +121,20 @@ pub fn scripting_api_docs_view<'a>(
     )
     .height(Length::Fill);
 
+    let page_header = forge_widgets::breadcrumb(
+        vec![
+            forge_widgets::BreadcrumbCrumb::link(
+                forge_widgets::tr!("nav_script_editor"),
+                Message::Navigate(crate::Screen::ScriptEditor),
+            ),
+            forge_widgets::BreadcrumbCrumb::leaf(forge_widgets::tr!("nav_api_reference")),
+        ],
+        None,
+        palette,
+    );
+
     column![
+        page_header,
         container(search_bar)
             .padding([spf(Spacing::Sm), spf(Spacing::Md)])
             .width(Length::Fill),

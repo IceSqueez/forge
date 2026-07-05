@@ -1,77 +1,95 @@
 use iced::{
     Border, Element, Length,
-    widget::{container, row, text},
+    widget::{button, container, row, text},
 };
 
 use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
-use crate::tokens::{BORDER_THIN, FONT_SM, Spacing, sp};
+use crate::tokens::{BORDER_THIN, FONT_SM, Spacing, sp, spf};
 
 pub struct BreadcrumbCrumb<Msg> {
-    pub icon: Option<Icon>,
     pub label: String,
     pub on_press: Option<Msg>,
 }
 
-pub fn breadcrumb<'a, Msg: 'a + Clone>(
-    crumbs: Vec<BreadcrumbCrumb<Msg>>,
-    palette: &'a ForgePalette,
-) -> Element<'a, Msg> {
-    let shell = palette.shell;
-    let border_color = palette.border_regular;
-    let text_primary = palette.text_primary;
-    let text_muted = palette.text_muted;
-    let text_faint = palette.text_faint;
-
-    let last_idx = crumbs.len().saturating_sub(1);
-    let mut content = row([]).spacing(6).align_y(iced::Alignment::Center);
-
-    for (i, crumb) in crumbs.into_iter().enumerate() {
-        let is_last = i == last_idx;
-        let label_color = if is_last { text_primary } else { text_muted };
-
-        if let Some(icon) = crumb.icon {
-            content = content.push(tabler_icon(icon, 13.0, text_faint));
-        }
-
-        let label_el: Element<'a, Msg> = match crumb.on_press {
-            Some(msg) => {
-                let fg = text_muted;
-                let fg_hover = text_primary;
-                iced::widget::button(text(crumb.label).size(FONT_SM).color(fg))
-                    .on_press(msg)
-                    .padding(0)
-                    .style(move |_theme: &iced::Theme, status| {
-                        let fg_actual = match status {
-                            iced::widget::button::Status::Hovered => fg_hover,
-                            _ => fg,
-                        };
-                        iced::widget::button::Style {
-                            background: None,
-                            text_color: fg_actual,
-                            border: iced::Border::default(),
-                            shadow: iced::Shadow::default(),
-                            snap: false,
-                        }
-                    })
-                    .into()
-            }
-            None => text(crumb.label).size(FONT_SM).color(label_color).into(),
-        };
-        content = content.push(label_el);
-
-        if !is_last {
-            content = content.push(text(" /").size(FONT_SM).color(text_faint));
+impl<Msg> BreadcrumbCrumb<Msg> {
+    pub fn leaf(label: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            on_press: None,
         }
     }
 
-    container(content)
+    pub fn link(label: impl Into<String>, on_press: Msg) -> Self {
+        Self {
+            label: label.into(),
+            on_press: Some(on_press),
+        }
+    }
+}
+
+pub fn breadcrumb<'a, Msg: 'a + Clone>(
+    crumbs: Vec<BreadcrumbCrumb<Msg>>,
+    right: Option<Element<'a, Msg>>,
+    palette: &'a ForgePalette,
+) -> Element<'a, Msg> {
+    let p = *palette;
+    let last_idx = crumbs.len().saturating_sub(1);
+
+    let mut crumb_row = row![tabler_icon(Icon::Home, 13.0, p.text_faint)]
+        .spacing(spf(Spacing::Xs))
+        .align_y(iced::alignment::Vertical::Center);
+
+    for (i, crumb) in crumbs.into_iter().enumerate() {
+        let is_last = i == last_idx;
+        crumb_row = crumb_row.push(tabler_icon(Icon::ChevronRight, 11.0, p.text_faint));
+
+        let color = if is_last {
+            p.text_primary
+        } else {
+            p.text_muted
+        };
+        let label_el: Element<'a, Msg> = match crumb.on_press {
+            Some(msg) => button(text(crumb.label).size(FONT_SM).color(color))
+                .on_press(msg)
+                .padding(0)
+                .style(move |_theme: &iced::Theme, status| {
+                    let text_color = match status {
+                        button::Status::Hovered => p.text_primary,
+                        _ => color,
+                    };
+                    button::Style {
+                        background: None,
+                        text_color,
+                        border: Border::default(),
+                        shadow: iced::Shadow::default(),
+                        snap: false,
+                    }
+                })
+                .into(),
+            None => text(crumb.label).size(FONT_SM).color(color).into(),
+        };
+        crumb_row = crumb_row.push(label_el);
+    }
+
+    let inner: Element<'a, Msg> = match right {
+        Some(right_el) => row![
+            crumb_row,
+            iced::widget::Space::new().width(Length::Fill),
+            right_el,
+        ]
+        .align_y(iced::alignment::Vertical::Center)
+        .into(),
+        None => crumb_row.into(),
+    };
+
+    container(inner)
         .width(Length::Fill)
         .padding([sp(Spacing::Sm), sp(Spacing::Md)])
-        .style(move |_theme: &iced::Theme| iced::widget::container::Style {
-            background: Some(iced::Background::Color(shell)),
+        .style(move |_theme: &iced::Theme| container::Style {
+            background: Some(iced::Background::Color(p.shell)),
             border: Border {
-                color: border_color,
+                color: p.border_regular,
                 width: BORDER_THIN,
                 radius: 0.0.into(),
             },

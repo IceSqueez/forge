@@ -10,9 +10,9 @@ use iced::{Element, Length, Task, Theme};
 use crate::app::App;
 use crate::connectivity::{Connectivity, Integration};
 use crate::message::{HomeMsg, Message, ToastMsg};
-use crate::page_chrome::simple_page_header;
 use crate::runtime_view::RuntimeView;
 use crate::screen::Screen;
+use forge_widgets::{BreadcrumbCrumb, breadcrumb};
 
 /// Rolling history cap for `ev_per_second_samples`, mirroring
 /// `server_screen::MAX_BANDWIDTH_SAMPLES` (same 60-sample window as the sparkline's
@@ -1007,7 +1007,11 @@ fn home_glance_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, 
 pub(crate) fn home_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
     use iced::widget::{column, container};
 
-    let page_header = simple_page_header(&[(forge_widgets::tr!("nav_home"), true)], palette);
+    let page_header = breadcrumb(
+        vec![BreadcrumbCrumb::leaf(forge_widgets::tr!("nav_home"))],
+        None,
+        palette,
+    );
 
     let hero = home_hero(palette);
     let jump_cards = home_jump_cards(app, palette);

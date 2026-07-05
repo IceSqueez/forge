@@ -807,11 +807,15 @@ pub fn view<'a>(
     let name = platform_display_name(state.platform);
     let dot_color = platform_dot_color(state.platform, palette);
 
-    let page_header = crate::page_chrome::simple_page_header(
-        &[
-            (forge_widgets::tr!("platforms.breadcrumb"), false),
-            (name.to_owned(), true),
+    let page_header = forge_widgets::breadcrumb(
+        vec![
+            forge_widgets::BreadcrumbCrumb::link(
+                forge_widgets::tr!("platforms.breadcrumb"),
+                Message::Navigate(crate::Screen::Platforms),
+            ),
+            forge_widgets::BreadcrumbCrumb::leaf(name.to_owned()),
         ],
+        None,
         palette,
     );
 

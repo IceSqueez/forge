@@ -5,8 +5,9 @@ use std::time::Instant;
 use forge_events::{Event, EventSource};
 use forge_types::{ChatPayload, ChatSegment, EventId};
 use forge_widgets::{
-    EventInspectorParams, EventRowData, FontRole, ForgePalette, Radius, Spacing, ToastKind,
-    category_chip, event_inspector, event_row_observability, font, radius, sp, spf,
+    EventInspectorParams, EventRowData, FontRole, ForgePalette, Radius, Spacing, StatusVariant,
+    ToastKind, category_chip, event_inspector, event_row_observability, font, radius, sp, spf,
+    status_pill,
     tokens::{FONT_SM, FONT_XS},
 };
 use iced::widget::{button, column, container, row, scrollable, text};
@@ -645,8 +646,32 @@ pub fn event_feed_view<'a>(
         .spacing(spf(Spacing::Xs))
         .align_y(iced::Alignment::Center);
 
+    let (live_label, live_variant) = if state.paused {
+        (
+            forge_widgets::tr!("event_feed_status_paused"),
+            StatusVariant::Neutral,
+        )
+    } else {
+        (
+            forge_widgets::tr!("event_feed_status_live"),
+            StatusVariant::Positive,
+        )
+    };
+    let live_badge = status_pill(live_label, live_variant, palette);
+    let live_count = text(forge_widgets::tr!(
+        "event_feed_header_count",
+        count = state.events.len() as i64
+    ))
+    .size(FONT_XS)
+    .color(palette.text_faint)
+    .font(mono);
+    let status_group = row![live_badge, live_count]
+        .spacing(spf(Spacing::Xs))
+        .align_y(iced::Alignment::Center);
+
     let divider = forge_widgets::divider(palette, forge_widgets::DividerAxis::Vertical);
-    let right_side = row![chips, divider, action_row]
+    let divider2 = forge_widgets::divider(palette, forge_widgets::DividerAxis::Vertical);
+    let right_side = row![status_group, divider2, chips, divider, action_row]
         .spacing(spf(Spacing::Xs))
         .align_y(iced::Alignment::Center);
 
@@ -861,13 +886,12 @@ pub fn event_feed_view<'a>(
         ..container::Style::default()
     });
 
-    let page_header = crate::page_chrome::page_header_with_actions(
-        &[
-            (
-                forge_widgets::tr!("event_feed_breadcrumb_automation"),
-                false,
-            ),
-            (forge_widgets::tr!("event_feed_breadcrumb_feed"), true),
+    let page_header = forge_widgets::breadcrumb(
+        vec![
+            forge_widgets::BreadcrumbCrumb::leaf(forge_widgets::tr!(
+                "event_feed_breadcrumb_automation"
+            )),
+            forge_widgets::BreadcrumbCrumb::leaf(forge_widgets::tr!("event_feed_breadcrumb_feed")),
         ],
         Some(right_side.into()),
         palette,

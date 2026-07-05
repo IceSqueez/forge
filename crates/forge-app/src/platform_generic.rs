@@ -240,15 +240,25 @@ pub fn platform_generic_view<'a>(
 
     body_parts.push(footer.into());
 
-    let parent_label = match info.kind {
-        PlatformKind::Platform => forge_widgets::tr!("platform_generic.parent.platforms"),
-        PlatformKind::StreamApp => forge_widgets::tr!("platform_generic.parent.stream_apps"),
+    let (parent_label, parent_screen) = match info.kind {
+        PlatformKind::Platform => (
+            forge_widgets::tr!("platform_generic.parent.platforms"),
+            crate::Screen::Platforms,
+        ),
+        PlatformKind::StreamApp => (
+            forge_widgets::tr!("platform_generic.parent.stream_apps"),
+            crate::Screen::StreamApps,
+        ),
     };
 
     let body = column(body_parts).spacing(spf(Spacing::Sm));
 
-    let page_header = crate::page_chrome::simple_page_header(
-        &[(parent_label, false), (info.name.to_owned(), true)],
+    let page_header = forge_widgets::breadcrumb(
+        vec![
+            forge_widgets::BreadcrumbCrumb::link(parent_label, Message::Navigate(parent_screen)),
+            forge_widgets::BreadcrumbCrumb::leaf(info.name.to_owned()),
+        ],
+        None,
         palette,
     );
 

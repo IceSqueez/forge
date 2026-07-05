@@ -6,8 +6,8 @@ use iced::Element;
 
 use crate::app::App;
 use crate::connectivity::{Connectivity, Integration};
-use crate::page_chrome::simple_page_header;
 use crate::{Message, Screen};
+use forge_widgets::{BreadcrumbCrumb, breadcrumb};
 
 #[allow(clippy::too_many_arguments)]
 fn platform_overview_card<'a>(
@@ -188,8 +188,11 @@ pub(crate) fn platforms_overview_view<'a>(
     let grid = column![grid_row_1, grid_row_2].spacing(spf(Spacing::Sm));
 
     let body = column![header, grid].spacing(spf(Spacing::Md));
-    let page_header = simple_page_header(
-        &[(forge_widgets::tr!("platforms.breadcrumb"), true)],
+    let page_header = breadcrumb(
+        vec![BreadcrumbCrumb::leaf(forge_widgets::tr!(
+            "platforms.breadcrumb"
+        ))],
+        None,
         palette,
     );
     let body_container = container(scrollable(body).height(Length::Fill))

@@ -1636,8 +1636,10 @@ pub fn script_editor_view<'a>(
         .width(Length::Fill)
         .height(Length::Fill);
 
-    let page_header = crate::page_chrome::page_header_with_actions(
-        &[(forge_widgets::tr!("script_editor_breadcrumb"), true)],
+    let page_header = forge_widgets::breadcrumb(
+        vec![forge_widgets::BreadcrumbCrumb::leaf(forge_widgets::tr!(
+            "script_editor_breadcrumb"
+        ))],
         Some(toolbar_actions),
         palette,
     );

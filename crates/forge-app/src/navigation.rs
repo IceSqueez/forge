@@ -13,46 +13,6 @@ use crate::settings_websocket::SettingsWebSocketMsg;
 use crate::viewers::ViewersMsg;
 use crate::{Message, Screen, SettingsSection, TtsSection};
 
-pub(crate) fn breadcrumb_icon_for(screen: &Screen) -> Icon {
-    match screen {
-        Screen::Home => Icon::Home,
-        Screen::ActionEditor(_) | Screen::Queues | Screen::TriggersRegistry => Icon::Bolt,
-        Screen::Platforms => Icon::Broadcast,
-        Screen::StreamApps | Screen::BuiltinDetail(_) => Icon::LayoutGrid,
-        Screen::LiveChat => Icon::MessageCircle,
-        Screen::EventFeed => Icon::Activity,
-        Screen::Globals => Icon::Variable,
-        Screen::Settings(_) => Icon::Settings,
-        Screen::Tts(_) => Icon::Volume,
-        Screen::Soundboard => Icon::Music,
-        Screen::ScriptEditor | Screen::ScriptingApiDocs => Icon::Terminal,
-        Screen::Server => Icon::Settings,
-        Screen::Error(_) => Icon::AlertTriangle,
-    }
-}
-
-pub(crate) fn screen_label(screen: &Screen) -> String {
-    match screen {
-        Screen::Home => forge_widgets::tr!("nav_home"),
-        Screen::ActionEditor(_) => forge_widgets::tr!("nav_actions"),
-        Screen::Queues => forge_widgets::tr!("nav_queues"),
-        Screen::TriggersRegistry => forge_widgets::tr!("nav_triggers"),
-        Screen::Platforms => forge_widgets::tr!("nav_platforms"),
-        Screen::StreamApps => forge_widgets::tr!("nav_stream_apps"),
-        Screen::BuiltinDetail(_) => forge_widgets::tr!("nav_integration"),
-        Screen::LiveChat => forge_widgets::tr!("nav_live_chat"),
-        Screen::EventFeed => forge_widgets::tr!("nav_event_feed"),
-        Screen::Globals => forge_widgets::tr!("nav_globals"),
-        Screen::Settings(_) => forge_widgets::tr!("nav_settings"),
-        Screen::Tts(_) => forge_widgets::tr!("nav_tts"),
-        Screen::Soundboard => forge_widgets::tr!("nav_soundboard"),
-        Screen::ScriptEditor => forge_widgets::tr!("nav_script_editor"),
-        Screen::ScriptingApiDocs => forge_widgets::tr!("nav_api_reference"),
-        Screen::Server => forge_widgets::tr!("nav_server"),
-        Screen::Error(_) => forge_widgets::tr!("storage_error_title"),
-    }
-}
-
 pub(crate) fn builtin_active(screen: &Screen, id: &str) -> bool {
     matches!(screen, Screen::BuiltinDetail(s) if s.as_str() == id)
 }

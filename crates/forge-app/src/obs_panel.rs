@@ -229,11 +229,15 @@ pub fn obs_disconnected_view<'a>(
     .width(Length::Fill);
     let tip = obs_tip_card(palette);
 
-    let page_header = crate::page_chrome::simple_page_header(
-        &[
-            (forge_widgets::tr!("obs.breadcrumb.stream_apps"), false),
-            ("OBS Studio".to_owned(), true),
+    let page_header = forge_widgets::breadcrumb(
+        vec![
+            forge_widgets::BreadcrumbCrumb::link(
+                forge_widgets::tr!("obs.breadcrumb.stream_apps"),
+                Message::Navigate(crate::Screen::StreamApps),
+            ),
+            forge_widgets::BreadcrumbCrumb::leaf("OBS Studio"),
         ],
+        None,
         palette,
     );
 

@@ -689,6 +689,7 @@ tts_engines_header_prefix = НАЛАШТОВАНО
 tts_engines_more_placeholder = + Більше рушіїв у майбутніх оновленнях
 tts_engines_select_hint = Оберіть рушій для налаштування
 tts_engines_status_ready = Готовий
+tts_header_engines_ready = Готово рушіїв: { $count }
 
 ## TTS Engines — заголовок деталей
 
@@ -1310,6 +1311,9 @@ event_feed_buffer = Буфер: { $count } / 10 000
 event_feed_rate = { $rate } под/с
 event_feed_breadcrumb_automation = Автоматизація
 event_feed_breadcrumb_feed = Стрічка подій
+event_feed_status_live = НАЖИВО
+event_feed_status_paused = ПАУЗА
+event_feed_header_count = Подій: { $count }
 event_feed_streaming_status = Стрімінг · WebSocket :8081
 
 ## Глобальні змінні — заголовок / фільтри

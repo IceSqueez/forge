@@ -451,10 +451,12 @@ pub fn queues_view<'a>(state: &'a QueuesState, palette: &'a ForgePalette) -> Ele
     .spacing(spf(Spacing::Xs))
     .align_y(iced::Alignment::Center);
 
-    let page_header = crate::page_chrome::page_header_with_actions(
-        &[
-            (forge_widgets::tr!("queues_breadcrumb_automation"), false),
-            (forge_widgets::tr!("queues_breadcrumb_queues"), true),
+    let page_header = forge_widgets::breadcrumb(
+        vec![
+            forge_widgets::BreadcrumbCrumb::leaf(forge_widgets::tr!(
+                "queues_breadcrumb_automation"
+            )),
+            forge_widgets::BreadcrumbCrumb::leaf(forge_widgets::tr!("queues_breadcrumb_queues")),
         ],
         Some(right_side.into()),
         palette,

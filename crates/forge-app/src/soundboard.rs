@@ -758,10 +758,14 @@ pub fn soundboard_view<'a>(
         .into()
     });
 
-    let page_header = crate::page_chrome::page_header_with_actions(
-        &[
-            (forge_widgets::tr!("soundboard_breadcrumb_builtin"), false),
-            (forge_widgets::tr!("soundboard_breadcrumb_soundboard"), true),
+    let page_header = forge_widgets::breadcrumb(
+        vec![
+            forge_widgets::BreadcrumbCrumb::leaf(forge_widgets::tr!(
+                "soundboard_breadcrumb_builtin"
+            )),
+            forge_widgets::BreadcrumbCrumb::leaf(forge_widgets::tr!(
+                "soundboard_breadcrumb_soundboard"
+            )),
         ],
         Some(add_btn.into()),
         palette,

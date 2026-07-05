@@ -325,11 +325,15 @@ pub fn twitch_disconnected_view<'a>(
     };
     let scopes_card = scopes_preview_card(palette);
 
-    let page_header = crate::page_chrome::simple_page_header(
-        &[
-            (forge_widgets::tr!("twitch.breadcrumb.platforms"), false),
-            ("Twitch".to_owned(), true),
+    let page_header = forge_widgets::breadcrumb(
+        vec![
+            forge_widgets::BreadcrumbCrumb::link(
+                forge_widgets::tr!("twitch.breadcrumb.platforms"),
+                Message::Navigate(crate::Screen::Platforms),
+            ),
+            forge_widgets::BreadcrumbCrumb::leaf("Twitch"),
         ],
+        None,
         palette,
     );
 

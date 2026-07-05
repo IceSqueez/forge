@@ -489,23 +489,18 @@ fn globals_main_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a,
 }
 
 fn globals_page_header<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
-    use forge_widgets::{Icon, tabler_icon};
-
     let p = *palette;
 
-    let crumbs_left = row![
-        tabler_icon::<Message>(Icon::Home, 13.0, p.text_faint),
-        tabler_icon::<Message>(Icon::ChevronRight, 11.0, p.text_faint),
-        text(forge_widgets::tr!("globals_breadcrumb_automation"))
-            .size(FONT_SM)
-            .color(p.text_muted),
-        tabler_icon::<Message>(Icon::ChevronRight, 11.0, p.text_faint),
-        text(forge_widgets::tr!("globals_breadcrumb_globals"))
-            .size(FONT_SM)
-            .color(p.text_primary),
-    ]
-    .spacing(spf(Spacing::Xs))
-    .align_y(Alignment::Center);
+    let crumb_bar = forge_widgets::breadcrumb(
+        vec![
+            forge_widgets::BreadcrumbCrumb::leaf(forge_widgets::tr!(
+                "globals_breadcrumb_automation"
+            )),
+            forge_widgets::BreadcrumbCrumb::leaf(forge_widgets::tr!("globals_breadcrumb_globals")),
+        ],
+        None,
+        palette,
+    );
 
     let chip_all = filter_chip(
         forge_widgets::tr!("globals_filter_all"),
@@ -557,14 +552,18 @@ fn globals_page_header<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'
         palette,
     );
 
-    let right_side = row![chips, divider, search, export_btn, new_btn]
-        .spacing(spf(Spacing::Xs))
-        .align_y(Alignment::Center);
+    let filter_row = row![
+        chips,
+        divider,
+        search,
+        Space::new().width(Length::Fill),
+        export_btn,
+        new_btn
+    ]
+    .spacing(spf(Spacing::Xs))
+    .align_y(Alignment::Center);
 
-    let inner =
-        row![crumbs_left, Space::new().width(Length::Fill), right_side].align_y(Alignment::Center);
-
-    container(inner)
+    let filter_bar = container(filter_row)
         .width(Length::Fill)
         .padding([sp(Spacing::Xs), sp(Spacing::Md)])
         .style(move |_: &iced::Theme| container::Style {
@@ -575,8 +574,9 @@ fn globals_page_header<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'
                 radius: 0.0.into(),
             },
             ..container::Style::default()
-        })
-        .into()
+        });
+
+    column![crumb_bar, filter_bar].into()
 }
 
 fn filter_chip<'a>(

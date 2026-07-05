@@ -1,7 +1,6 @@
 use crate::app::App;
 use crate::cloud_tts_engines;
 use crate::message::Message;
-use crate::page_chrome::simple_page_header;
 use crate::screen::{Screen, TtsSection};
 use crate::tts_dashboard::tts_dashboard_view;
 use crate::tts_engines::tts_engines_view;
@@ -10,6 +9,7 @@ use crate::tts_triggers::tts_triggers_view;
 use crate::voice_aliases::voice_aliases_view;
 use forge_widgets::ForgePalette;
 use forge_widgets::tokens::{FONT_SM, Spacing, spf};
+use forge_widgets::{BreadcrumbCrumb, StatusVariant, breadcrumb, status_pill};
 use iced::Element;
 
 fn tts_tab_button<'a>(
@@ -127,12 +127,19 @@ pub(crate) fn tts_section_view<'a>(
         TtsSection::Triggers => forge_widgets::tr!("tts_tab_triggers"),
         TtsSection::CloudEngines => forge_widgets::tr!("tts_tab_cloud_engines"),
     };
-    let page_header = simple_page_header(
-        &[
-            (forge_widgets::tr!("tts_breadcrumb_builtin"), false),
-            (forge_widgets::tr!("tts_breadcrumb_tts"), false),
-            (section_label, true),
+    let engines_ready = app.rt.tts_engine_ids.len() as i64;
+    let engines_chip = status_pill(
+        forge_widgets::tr!("tts_header_engines_ready", count = engines_ready),
+        StatusVariant::Positive,
+        palette,
+    );
+    let page_header = breadcrumb(
+        vec![
+            BreadcrumbCrumb::leaf(forge_widgets::tr!("tts_breadcrumb_builtin")),
+            BreadcrumbCrumb::leaf(forge_widgets::tr!("tts_breadcrumb_tts")),
+            BreadcrumbCrumb::leaf(section_label),
         ],
+        Some(engines_chip),
         palette,
     );
 

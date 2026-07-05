@@ -129,6 +129,36 @@ pub fn primary_button_with_icon_right<'a, Msg: 'a + Clone>(
         .into()
 }
 
+pub fn primary_button_with_icon<'a, Msg: 'a + Clone>(
+    icon: crate::icons::Icon,
+    label: impl Into<Cow<'a, str>>,
+    on_press: Msg,
+    palette: &ForgePalette,
+) -> Element<'a, Msg> {
+    use crate::icons::tabler_icon;
+
+    let bg = palette.brand;
+    let text_color = palette.shell;
+    let v = sp(Spacing::Xxs);
+    let h = sp(Spacing::Sm);
+
+    let content = iced::widget::row![
+        tabler_icon::<Msg>(icon, FONT_SM, text_color),
+        iced::widget::text(label.into())
+            .size(FONT_SM)
+            .color(text_color)
+            .font(font_weighted(FontRole::Body, FontWeight::SemiBold)),
+    ]
+    .spacing(5)
+    .align_y(iced::Alignment::Center);
+
+    iced::widget::button(content)
+        .on_press(on_press)
+        .padding([v, h])
+        .style(move |_theme: &iced::Theme, status| primary_style(bg, text_color, status))
+        .into()
+}
+
 pub fn destructive_button<'a, Msg: 'a + Clone>(
     label: impl Into<Cow<'a, str>>,
     on_press: Msg,

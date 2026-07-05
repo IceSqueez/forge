@@ -11,7 +11,6 @@ use crate::app::App;
 use forge_storage::SettingsRepo;
 
 use crate::message::{Message, SettingsMsg};
-use crate::page_chrome::simple_page_header;
 use crate::runtime_view::RuntimeView;
 use crate::screen::{Screen, SettingsSection};
 use crate::server_screen::ServerScreenState;
@@ -20,20 +19,57 @@ use crate::settings_hotkeys::SettingsHotkeysState;
 use crate::settings_scripting::ScriptingSettingsState;
 use crate::settings_websocket::settings_websocket_view;
 
+fn section_icon(section: &SettingsSection) -> Icon {
+    match section {
+        SettingsSection::Appearance => Icon::Photo,
+        SettingsSection::Language => Icon::Globe,
+        SettingsSection::Shortcuts => Icon::Keyboard,
+        SettingsSection::Notifications => Icon::InfoCircle,
+        SettingsSection::Audio => Icon::Volume,
+        SettingsSection::Scripting => Icon::Terminal,
+        SettingsSection::Queues => Icon::Notebook,
+        SettingsSection::Storage => Icon::Folder,
+        SettingsSection::WebSocket => Icon::Server,
+        SettingsSection::Hotkeys => Icon::Bolt,
+        SettingsSection::Version => Icon::Diamond,
+        SettingsSection::Diagnostics => Icon::Activity,
+    }
+}
+
+fn section_label(section: &SettingsSection) -> String {
+    match section {
+        SettingsSection::Appearance => forge_widgets::tr!("settings_nav_appearance"),
+        SettingsSection::Language => forge_widgets::tr!("settings_nav_language"),
+        SettingsSection::Shortcuts => forge_widgets::tr!("settings_nav_shortcuts"),
+        SettingsSection::Notifications => forge_widgets::tr!("settings_nav_notifications"),
+        SettingsSection::Audio => forge_widgets::tr!("settings_nav_audio"),
+        SettingsSection::Scripting => forge_widgets::tr!("settings_nav_scripting"),
+        SettingsSection::Queues => forge_widgets::tr!("settings_nav_queues"),
+        SettingsSection::Storage => forge_widgets::tr!("settings_nav_storage"),
+        SettingsSection::WebSocket => forge_widgets::tr!("settings_nav_websocket"),
+        SettingsSection::Hotkeys => forge_widgets::tr!("settings_nav_hotkeys"),
+        SettingsSection::Version => forge_widgets::tr!("settings_nav_version"),
+        SettingsSection::Diagnostics => forge_widgets::tr!("settings_nav_diagnostics"),
+    }
+}
+
 fn settings_section_button(
     label: &str,
     section: SettingsSection,
     active: &SettingsSection,
     palette: &ForgePalette,
 ) -> Element<'static, Message> {
+    let icon = section_icon(&section);
     if &section == active {
-        forge_widgets::primary_button(
+        forge_widgets::primary_button_with_icon(
+            icon,
             label.to_owned(),
             Message::Navigate(Screen::Settings(section)),
             palette,
         )
     } else {
-        forge_widgets::ghost_button(
+        forge_widgets::ghost_button_with_icon(
+            icon,
             label.to_owned(),
             Message::Navigate(Screen::Settings(section)),
             palette,
@@ -881,8 +917,12 @@ pub(crate) fn settings_view<'a>(
         SettingsSection::Scripting => crate::settings_scripting::view(scripting, palette),
     };
 
-    let page_header = simple_page_header(
-        &[(forge_widgets::tr!("settings_page_title"), true)],
+    let page_header = forge_widgets::breadcrumb(
+        vec![
+            forge_widgets::BreadcrumbCrumb::leaf(forge_widgets::tr!("settings_page_title")),
+            forge_widgets::BreadcrumbCrumb::leaf(section_label(section)),
+        ],
+        None,
         palette,
     );
     let body = iced::widget::row![nav_container, pane].spacing(0);

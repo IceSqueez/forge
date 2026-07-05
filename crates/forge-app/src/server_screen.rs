@@ -1381,11 +1381,12 @@ pub fn server_screen_view<'a>(
     .spacing(spf(Spacing::Sm))
     .padding([sp(Spacing::Md), sp(Spacing::Lg)]);
 
-    let page_header = crate::page_chrome::simple_page_header(
-        &[
-            (forge_widgets::tr!("server.breadcrumb.builtin"), false),
-            (forge_widgets::tr!("server.breadcrumb.server"), true),
+    let page_header = forge_widgets::breadcrumb(
+        vec![
+            forge_widgets::BreadcrumbCrumb::leaf(forge_widgets::tr!("server.breadcrumb.builtin")),
+            forge_widgets::BreadcrumbCrumb::leaf(forge_widgets::tr!("server.breadcrumb.server")),
         ],
+        None,
         palette,
     );
 

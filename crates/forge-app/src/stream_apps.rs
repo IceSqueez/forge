@@ -55,8 +55,11 @@ pub fn view<'a>(state: &'a App, palette: &'a ForgePalette) -> Element<'a, Messag
         .width(Length::Fill);
 
     let body = column![header, grid].spacing(spf(Spacing::Md));
-    let page_header = crate::page_chrome::simple_page_header(
-        &[(forge_widgets::tr!("stream_apps.breadcrumb"), true)],
+    let page_header = forge_widgets::breadcrumb(
+        vec![forge_widgets::BreadcrumbCrumb::leaf(forge_widgets::tr!(
+            "stream_apps.breadcrumb"
+        ))],
+        None,
         palette,
     );
     let body_container = container(scrollable(body).height(Length::Fill))

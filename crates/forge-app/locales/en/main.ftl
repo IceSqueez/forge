@@ -726,9 +726,15 @@ tts_engines_voices_empty = No voices found
 tts_filters_pipeline_header = PROCESSING PIPELINE
 tts_filters_pipeline_hint = Each message passes through these stages in order before being spoken
 
+## TTS Filters — numbered stage cards
+
+tts_filters_stage_emote_url_title = Emote & URL handling
+tts_filters_stage_replacements_title = Text replacements
+tts_filters_stage_blocklist_title = Word blocklist
+tts_filters_stage_output_title = Output length
+
 ## TTS Filters — rule list
 
-tts_filters_rules_header = FILTER RULES
 tts_filters_no_rules = No filter rules yet
 tts_filters_add_rule_btn = Add rule
 tts_filters_rule_on = ON
@@ -750,7 +756,6 @@ tts_filters_mode_skip = Skip msg
 
 ## TTS Filters — pipeline settings
 
-tts_filters_settings_header = PIPELINE SETTINGS
 tts_filters_url_label = URL HANDLING
 tts_filters_url_speak = Read URL aloud
 tts_filters_url_replace = Replace with "link"
@@ -919,6 +924,10 @@ common_undo = Undo
 ## Voice Aliases — preview
 
 tts_aliases_preview_text = This is a voice preview.
+
+## Voice Aliases — footer caption
+
+tts_aliases_footer_caption = Showing { $shown } of { $total } manual aliases
 
 ## Soundboard — breadcrumb
 

@@ -113,6 +113,42 @@ impl RuleDraft {
     }
 }
 
+/// Finds the nearest preceding rule of the same `DraftKind` as `rules[i]`, scanning
+/// backward. Reorder arrows operate within a rule's own kind group (the visual grouping
+/// splits the flat `rules` list into per-kind stage cards), not the raw array — an
+/// adjacent-in-array rule of a different kind is not what "move up" should target.
+fn same_kind_prev_index(rules: &[FilterRule], i: usize) -> Option<usize> {
+    let kind = DraftKind::of(&rules.get(i)?.kind);
+    rules[..i]
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, r)| DraftKind::of(&r.kind) == kind)
+        .map(|(j, _)| j)
+}
+
+/// Symmetric counterpart to [`same_kind_prev_index`] for "move down".
+fn same_kind_next_index(rules: &[FilterRule], i: usize) -> Option<usize> {
+    let kind = DraftKind::of(&rules.get(i)?.kind);
+    rules
+        .get(i + 1..)?
+        .iter()
+        .enumerate()
+        .find(|(_, r)| DraftKind::of(&r.kind) == kind)
+        .map(|(j, _)| i + 1 + j)
+}
+
+fn is_replacement_kind(kind: &FilterRuleKind) -> bool {
+    matches!(
+        kind,
+        FilterRuleKind::Literal { .. } | FilterRuleKind::Regex { .. }
+    )
+}
+
+fn is_blocklist_kind(kind: &FilterRuleKind) -> bool {
+    matches!(kind, FilterRuleKind::Blocklist { .. })
+}
+
 pub struct TtsFiltersState {
     pub preview_input: iced::widget::text_editor::Content,
     rules: Vec<FilterRule>,
@@ -258,8 +294,8 @@ pub fn update(state: &mut TtsFiltersState, rt: &RuntimeView, msg: TtsFiltersMsg)
             Task::none()
         }
         TtsFiltersMsg::MoveRuleUp(i) => {
-            if i > 0 && i < state.rules.len() {
-                state.rules.swap(i, i - 1);
+            if let Some(j) = same_kind_prev_index(&state.rules, i) {
+                state.rules.swap(i, j);
                 state.renumber();
                 state.dirty = true;
                 state.refresh_preview();
@@ -267,8 +303,8 @@ pub fn update(state: &mut TtsFiltersState, rt: &RuntimeView, msg: TtsFiltersMsg)
             Task::none()
         }
         TtsFiltersMsg::MoveRuleDown(i) => {
-            if i + 1 < state.rules.len() {
-                state.rules.swap(i, i + 1);
+            if let Some(j) = same_kind_next_index(&state.rules, i) {
+                state.rules.swap(i, j);
                 state.renumber();
                 state.dirty = true;
                 state.refresh_preview();
@@ -509,8 +545,16 @@ fn pipeline_column_view<'a>(
     ]
     .spacing(spf(Spacing::Xxs));
 
-    let rules_section = rules_section_view(state, palette, gap_sm);
-    let settings_section = settings_section_view(state, palette, gap_sm);
+    // Four numbered stage cards, in the real pipeline's execution order
+    // (EmoteStripper+UrlSanitizer merged visually into card 1, since neither is a
+    // user-extensible rule list — see `forge_tts_pipeline::process`'s five fixed
+    // stages). This is a rendering-only regroup: the underlying model is still one
+    // `Vec<FilterRule>` tagged by `FilterRuleKind`, `TtsPipelineSettings`, and the
+    // pipeline crate's five `StageName` variants, all unchanged.
+    let emote_url_card = emote_url_section_view(state, palette, gap_sm);
+    let replacements_card = replacements_section_view(state, palette, gap_sm);
+    let blocklist_card = blocklist_section_view(state, palette, gap_sm);
+    let output_card = output_length_section_view(state, palette, gap_sm);
     let draft_section: Element<'a, Message> = match &state.draft {
         Some(draft) => draft_form_view(draft, palette, gap_sm),
         None => Space::new().into(),
@@ -521,9 +565,11 @@ fn pipeline_column_view<'a>(
         container(
             column![
                 header,
-                rules_section,
+                emote_url_card,
+                replacements_card,
+                blocklist_card,
                 draft_section,
-                settings_section,
+                output_card,
                 save_bar,
             ]
             .spacing(gap_md),
@@ -534,6 +580,270 @@ fn pipeline_column_view<'a>(
     .height(Length::Fill)
     .width(Length::Fill)
     .into()
+}
+
+/// Numbered stage-card chrome shared by the four pipeline groups: a colored numbered
+/// badge, an icon, a title, an optional "Add" affordance for stages backed by a
+/// user-extensible rule list, and the body underneath.
+#[allow(clippy::too_many_arguments)]
+fn stage_card<'a>(
+    n: u8,
+    icon: Icon,
+    color: Color,
+    title: String,
+    add: Option<Message>,
+    body: Element<'a, Message>,
+    palette: &'a ForgePalette,
+    gap_sm: f32,
+) -> Element<'a, Message> {
+    let badge = container(
+        text(n.to_string())
+            .size(FONT_XS)
+            .color(palette.shell)
+            .font(font(FontRole::Monospace)),
+    )
+    .style(move |_| container::Style {
+        background: Some(Background::Color(color)),
+        border: Border {
+            radius: radius(Radius::Pill).into(),
+            ..Border::default()
+        },
+        ..container::Style::default()
+    })
+    .width(20)
+    .height(20)
+    .align_x(Alignment::Center)
+    .align_y(Alignment::Center);
+
+    let mut header_row = row![
+        badge,
+        tabler_icon(icon, FONT_SM, color),
+        text(title)
+            .size(FONT_SM)
+            .color(palette.text_primary)
+            .width(Length::Fill),
+    ]
+    .align_y(Alignment::Center)
+    .spacing(spf(Spacing::Xs));
+
+    if let Some(msg) = add {
+        let add_btn = button(
+            row![
+                tabler_icon(Icon::Plus, FONT_XS, palette.brand),
+                text(forge_widgets::tr!("tts_filters_add_rule_btn"))
+                    .size(FONT_XS)
+                    .color(palette.brand),
+            ]
+            .spacing(spf(Spacing::Xxs))
+            .align_y(Alignment::Center),
+        )
+        .on_press(msg)
+        .style(move |_, _| button::Style {
+            background: None,
+            text_color: palette.brand,
+            ..button::Style::default()
+        })
+        .padding([sp(Spacing::Xxs), sp(Spacing::Xs)]);
+        header_row = header_row.push(add_btn);
+    }
+
+    forge_widgets::card(column![header_row, body].spacing(gap_sm), palette)
+        .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
+        .width(Length::Fill)
+        .into()
+}
+
+/// Renders the subset of `state.rules` matching `keep`, positioned as its own group
+/// (first/last computed within the group, not the flat array) — reused by the two
+/// rule-list stage cards (Text replacements, Word blocklist).
+fn filtered_rules_body<'a>(
+    state: &'a TtsFiltersState,
+    keep: fn(&FilterRuleKind) -> bool,
+    palette: &'a ForgePalette,
+    gap_sm: f32,
+) -> Element<'a, Message> {
+    let filtered: Vec<(usize, &FilterRule)> = state
+        .rules
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| keep(&r.kind))
+        .collect();
+
+    if filtered.is_empty() {
+        return text(forge_widgets::tr!("tts_filters_no_rules"))
+            .size(FONT_SM)
+            .color(palette.text_muted)
+            .into();
+    }
+
+    let last = filtered.len() - 1;
+    let rows: Vec<Element<'a, Message>> = filtered
+        .into_iter()
+        .enumerate()
+        .map(|(pos, (idx, rule))| rule_row(idx, rule, pos == 0, pos == last, palette, gap_sm))
+        .collect();
+    column(rows).spacing(gap_sm).into()
+}
+
+fn emote_url_section_view<'a>(
+    state: &'a TtsFiltersState,
+    palette: &'a ForgePalette,
+    gap_sm: f32,
+) -> Element<'a, Message> {
+    let url_options: Vec<String> = vec![
+        forge_widgets::tr!("tts_filters_url_speak"),
+        forge_widgets::tr!("tts_filters_url_replace"),
+        forge_widgets::tr!("tts_filters_url_suppress"),
+    ];
+    let url_selected = Some(match state.settings.url_mode {
+        UrlMode::Speak => url_options[0].clone(),
+        UrlMode::Replace => url_options[1].clone(),
+        UrlMode::Suppress => url_options[2].clone(),
+    });
+    let url_o0 = url_options[0].clone();
+    let url_o1 = url_options[1].clone();
+    let url_picker = forge_widgets::select_owned(
+        url_options,
+        url_selected,
+        String::new(),
+        move |chosen| {
+            let mode = if chosen == url_o0 {
+                UrlMode::Speak
+            } else if chosen == url_o1 {
+                UrlMode::Replace
+            } else {
+                UrlMode::Suppress
+            };
+            Message::Tts(TtsMsg::Filters(TtsFiltersMsg::UrlModeChanged(mode)))
+        },
+        palette,
+    );
+
+    let twitch_toggle = forge_widgets::toggle(
+        palette,
+        forge_widgets::ToggleProps {
+            value: state.settings.strip_twitch_emotes,
+            label: forge_widgets::tr!("tts_filters_strip_twitch"),
+            description: String::new(),
+            on_toggle: Message::Tts(TtsMsg::Filters(TtsFiltersMsg::StripTwitchEmotesToggled(
+                !state.settings.strip_twitch_emotes,
+            ))),
+        },
+    );
+    let reward_toggle = forge_widgets::toggle(
+        palette,
+        forge_widgets::ToggleProps {
+            value: state.settings.strip_reward_emotes,
+            label: forge_widgets::tr!("tts_filters_strip_reward"),
+            description: String::new(),
+            on_toggle: Message::Tts(TtsMsg::Filters(TtsFiltersMsg::StripRewardEmotesToggled(
+                !state.settings.strip_reward_emotes,
+            ))),
+        },
+    );
+
+    let body = column![
+        labeled(
+            forge_widgets::tr!("tts_filters_url_label"),
+            url_picker,
+            palette,
+            gap_sm
+        ),
+        twitch_toggle,
+        reward_toggle,
+    ]
+    .spacing(gap_sm);
+
+    stage_card(
+        1,
+        Icon::Globe,
+        palette.accent_teal,
+        forge_widgets::tr!("tts_filters_stage_emote_url_title"),
+        None,
+        body.into(),
+        palette,
+        gap_sm,
+    )
+}
+
+fn replacements_section_view<'a>(
+    state: &'a TtsFiltersState,
+    palette: &'a ForgePalette,
+    gap_sm: f32,
+) -> Element<'a, Message> {
+    let body = filtered_rules_body(state, is_replacement_kind, palette, gap_sm);
+    stage_card(
+        2,
+        Icon::Repeat,
+        palette.info,
+        forge_widgets::tr!("tts_filters_stage_replacements_title"),
+        Some(Message::Tts(TtsMsg::Filters(TtsFiltersMsg::AddRuleClicked))),
+        body,
+        palette,
+        gap_sm,
+    )
+}
+
+fn blocklist_section_view<'a>(
+    state: &'a TtsFiltersState,
+    palette: &'a ForgePalette,
+    gap_sm: f32,
+) -> Element<'a, Message> {
+    let rules_body = filtered_rules_body(state, is_blocklist_kind, palette, gap_sm);
+    let mode_row = labeled(
+        forge_widgets::tr!("tts_filters_blocklist_default_label"),
+        blocklist_mode_toggle(
+            state.settings.blocklist_mode,
+            |m| {
+                Message::Tts(TtsMsg::Filters(
+                    TtsFiltersMsg::SettingsBlocklistModeChanged(m),
+                ))
+            },
+            palette,
+        ),
+        palette,
+        gap_sm,
+    );
+    let body = column![rules_body, mode_row].spacing(gap_sm).into();
+    stage_card(
+        3,
+        Icon::AlertTriangle,
+        palette.warning,
+        forge_widgets::tr!("tts_filters_stage_blocklist_title"),
+        Some(Message::Tts(TtsMsg::Filters(TtsFiltersMsg::AddRuleClicked))),
+        body,
+        palette,
+        gap_sm,
+    )
+}
+
+fn output_length_section_view<'a>(
+    state: &'a TtsFiltersState,
+    palette: &'a ForgePalette,
+    gap_sm: f32,
+) -> Element<'a, Message> {
+    let length_input = forge_widgets::text_input_field(
+        forge_widgets::tr!("tts_filters_length_placeholder"),
+        &state.max_length_input,
+        |s| Message::Tts(TtsMsg::Filters(TtsFiltersMsg::MaxLengthChanged(s))),
+        palette,
+    );
+    let body = labeled(
+        forge_widgets::tr!("tts_filters_length_label"),
+        length_input,
+        palette,
+        gap_sm,
+    );
+    stage_card(
+        4,
+        Icon::Send,
+        palette.success,
+        forge_widgets::tr!("tts_filters_stage_output_title"),
+        None,
+        body,
+        palette,
+        gap_sm,
+    )
 }
 
 fn section_card<'a>(
@@ -550,58 +860,6 @@ fn section_card<'a>(
         .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
         .width(Length::Fill)
         .into()
-}
-
-fn rules_section_view<'a>(
-    state: &'a TtsFiltersState,
-    palette: &'a ForgePalette,
-    gap_sm: f32,
-) -> Element<'a, Message> {
-    let body: Element<'a, Message> = if state.rules.is_empty() {
-        text(forge_widgets::tr!("tts_filters_no_rules"))
-            .size(FONT_SM)
-            .color(palette.text_muted)
-            .into()
-    } else {
-        let last = state.rules.len() - 1;
-        let rows: Vec<Element<'a, Message>> = state
-            .rules
-            .iter()
-            .enumerate()
-            .map(|(i, rule)| rule_row(i, rule, i == 0, i == last, palette, gap_sm))
-            .collect();
-        column(rows).spacing(gap_sm).into()
-    };
-
-    let add_btn = button(
-        row![
-            tabler_icon(Icon::Plus, FONT_XS, palette.text_muted),
-            text(forge_widgets::tr!("tts_filters_add_rule_btn"))
-                .size(FONT_XS)
-                .color(palette.text_muted),
-        ]
-        .spacing(spf(Spacing::Xxs))
-        .align_y(Alignment::Center),
-    )
-    .on_press(Message::Tts(TtsMsg::Filters(TtsFiltersMsg::AddRuleClicked)))
-    .style(move |_, _| button::Style {
-        background: None,
-        border: Border {
-            color: palette.border_regular,
-            width: BORDER_THIN,
-            radius: radius(Radius::Sm).into(),
-        },
-        text_color: palette.text_muted,
-        ..button::Style::default()
-    })
-    .padding([sp(Spacing::Xxs), sp(Spacing::Xs)]);
-
-    section_card(
-        forge_widgets::tr!("tts_filters_rules_header"),
-        column![body, add_btn].spacing(gap_sm).into(),
-        palette,
-        gap_sm,
-    )
 }
 
 fn rule_row<'a>(
@@ -898,112 +1156,6 @@ fn blocklist_mode_toggle<'a>(
     .radius(Radius::Sm)
     .padding(sp(Spacing::Xxs))
     .into()
-}
-
-fn settings_section_view<'a>(
-    state: &'a TtsFiltersState,
-    palette: &'a ForgePalette,
-    gap_sm: f32,
-) -> Element<'a, Message> {
-    let url_options: Vec<String> = vec![
-        forge_widgets::tr!("tts_filters_url_speak"),
-        forge_widgets::tr!("tts_filters_url_replace"),
-        forge_widgets::tr!("tts_filters_url_suppress"),
-    ];
-    let url_selected = Some(match state.settings.url_mode {
-        UrlMode::Speak => url_options[0].clone(),
-        UrlMode::Replace => url_options[1].clone(),
-        UrlMode::Suppress => url_options[2].clone(),
-    });
-    let url_o0 = url_options[0].clone();
-    let url_o1 = url_options[1].clone();
-    let url_picker = forge_widgets::select_owned(
-        url_options,
-        url_selected,
-        String::new(),
-        move |chosen| {
-            let mode = if chosen == url_o0 {
-                UrlMode::Speak
-            } else if chosen == url_o1 {
-                UrlMode::Replace
-            } else {
-                UrlMode::Suppress
-            };
-            Message::Tts(TtsMsg::Filters(TtsFiltersMsg::UrlModeChanged(mode)))
-        },
-        palette,
-    );
-
-    let length_input = forge_widgets::text_input_field(
-        forge_widgets::tr!("tts_filters_length_placeholder"),
-        &state.max_length_input,
-        |s| Message::Tts(TtsMsg::Filters(TtsFiltersMsg::MaxLengthChanged(s))),
-        palette,
-    );
-
-    let twitch_toggle = forge_widgets::toggle(
-        palette,
-        forge_widgets::ToggleProps {
-            value: state.settings.strip_twitch_emotes,
-            label: forge_widgets::tr!("tts_filters_strip_twitch"),
-            description: String::new(),
-            on_toggle: Message::Tts(TtsMsg::Filters(TtsFiltersMsg::StripTwitchEmotesToggled(
-                !state.settings.strip_twitch_emotes,
-            ))),
-        },
-    );
-    let reward_toggle = forge_widgets::toggle(
-        palette,
-        forge_widgets::ToggleProps {
-            value: state.settings.strip_reward_emotes,
-            label: forge_widgets::tr!("tts_filters_strip_reward"),
-            description: String::new(),
-            on_toggle: Message::Tts(TtsMsg::Filters(TtsFiltersMsg::StripRewardEmotesToggled(
-                !state.settings.strip_reward_emotes,
-            ))),
-        },
-    );
-
-    let blocklist_default = blocklist_mode_toggle(
-        state.settings.blocklist_mode,
-        |m| {
-            Message::Tts(TtsMsg::Filters(
-                TtsFiltersMsg::SettingsBlocklistModeChanged(m),
-            ))
-        },
-        palette,
-    );
-
-    let body = column![
-        labeled(
-            forge_widgets::tr!("tts_filters_url_label"),
-            url_picker,
-            palette,
-            gap_sm
-        ),
-        labeled(
-            forge_widgets::tr!("tts_filters_length_label"),
-            length_input,
-            palette,
-            gap_sm
-        ),
-        labeled(
-            forge_widgets::tr!("tts_filters_blocklist_default_label"),
-            blocklist_default,
-            palette,
-            gap_sm
-        ),
-        twitch_toggle,
-        reward_toggle,
-    ]
-    .spacing(gap_sm);
-
-    section_card(
-        forge_widgets::tr!("tts_filters_settings_header"),
-        body.into(),
-        palette,
-        gap_sm,
-    )
 }
 
 fn labeled<'a>(

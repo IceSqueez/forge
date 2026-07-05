@@ -3,10 +3,10 @@ use std::sync::Arc;
 use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakRequest};
 use forge_storage::VoiceAliasRepo;
 use forge_voice::{AliasId, AliasState, AssignmentStrategy, EngineId, VoiceAlias, VoiceId};
-use forge_widgets::ForgePalette;
 use forge_widgets::tokens::{
     BORDER_THIN, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
 };
+use forge_widgets::{ForgePalette, Icon, tabler_icon};
 use iced::widget::{
     Space, button, column, container, pick_list, row, scrollable, text, text_input,
 };
@@ -176,6 +176,31 @@ fn engine_display_label(engine_id: &str) -> String {
         "sapi" => "SAPI 5".to_owned(),
         "avfoundation" => "AVFoundation".to_owned(),
         other => other.to_owned(),
+    }
+}
+
+/// Local engines run on-device with no network round-trip; everything else is a cloud
+/// engine. Mirrors the same local-engine id set `engine_display_label` special-cases.
+fn is_local_engine(engine_id: &str) -> bool {
+    matches!(
+        engine_id,
+        "piper" | "espeak" | "espeak-ng" | "sapi" | "avfoundation"
+    )
+}
+
+fn engine_icon_for(engine_id: &str) -> Icon {
+    if is_local_engine(engine_id) {
+        Icon::Terminal
+    } else {
+        Icon::Globe
+    }
+}
+
+fn engine_icon_color_for(engine_id: &str, palette: &ForgePalette) -> Color {
+    if is_local_engine(engine_id) {
+        palette.success
+    } else {
+        palette.info
     }
 }
 
@@ -476,19 +501,15 @@ pub fn voice_aliases_view<'a>(
     }
 }
 
-fn modal_backdrop<'a>(on_press: Message) -> Element<'a, Message> {
+fn modal_backdrop<'a>(on_press: Message, palette: &ForgePalette) -> Element<'a, Message> {
+    let scrim = palette.scrim;
     button(Space::new().width(Length::Fill).height(Length::Fill))
         .on_press(on_press)
         .padding(0)
         .width(Length::Fill)
         .height(Length::Fill)
-        .style(|_, _| button::Style {
-            background: Some(Background::Color(Color {
-                r: 0.0,
-                g: 0.0,
-                b: 0.0,
-                a: 0.5,
-            })),
+        .style(move |_, _| button::Style {
+            background: Some(Background::Color(scrim)),
             border: Border::default(),
             text_color: Color::TRANSPARENT,
             shadow: iced::Shadow::default(),
@@ -537,7 +558,10 @@ fn alias_form_modal<'a>(
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let p = *palette;
-    let backdrop = modal_backdrop(Message::Tts(TtsMsg::Aliases(VoiceAliasesMsg::FormCancel)));
+    let backdrop = modal_backdrop(
+        Message::Tts(TtsMsg::Aliases(VoiceAliasesMsg::FormCancel)),
+        palette,
+    );
 
     let title_key = if form.editing.is_some() {
         "tts_aliases_form_title_edit"
@@ -719,7 +743,10 @@ fn delete_confirm_modal<'a>(
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let p = *palette;
-    let backdrop = modal_backdrop(Message::Tts(TtsMsg::Aliases(VoiceAliasesMsg::DeleteCancel)));
+    let backdrop = modal_backdrop(
+        Message::Tts(TtsMsg::Aliases(VoiceAliasesMsg::DeleteCancel)),
+        palette,
+    );
 
     let title = text(forge_widgets::tr!("tts_aliases_delete_title"))
         .size(FONT_SM)
@@ -1037,7 +1064,19 @@ fn aliases_table_view<'a>(
         })
         .width(Length::Fill);
 
-    container(column![header, body].width(Length::Fill))
+    let footer = container(
+        text(forge_widgets::tr!(
+            "tts_aliases_footer_caption",
+            shown = visible.len() as i64,
+            total = state.total_count as i64
+        ))
+        .size(FONT_XS)
+        .color(palette.text_faint)
+        .font(mono),
+    )
+    .padding([sp(Spacing::Xs), 0]);
+
+    container(column![header, body, footer].width(Length::Fill))
         .padding([0, sp(Spacing::Md)])
         .width(Length::Fill)
         .into()
@@ -1131,19 +1170,33 @@ fn alias_row<'a>(
     .width(Length::FillPortion(14));
 
     let voice_col: Element<'a, Message> = if muted {
-        text(forge_widgets::tr!("tts_aliases_never_speak"))
-            .size(FONT_SM)
-            .color(palette.random)
-            .font(mono)
-            .width(Length::FillPortion(16))
-            .into()
+        row![
+            tabler_icon(Icon::Volume, FONT_XS, palette.random),
+            text(forge_widgets::tr!("tts_aliases_never_speak"))
+                .size(FONT_SM)
+                .color(palette.random)
+                .font(mono),
+        ]
+        .align_y(Alignment::Center)
+        .spacing(spf(Spacing::Xxs))
+        .width(Length::FillPortion(16))
+        .into()
     } else {
-        text(format!("{} · {}", alias.engine_label, alias.voice_label))
-            .size(FONT_SM)
-            .color(palette.text_primary)
-            .font(mono)
-            .width(Length::FillPortion(16))
-            .into()
+        row![
+            tabler_icon(
+                engine_icon_for(&alias.engine_id),
+                FONT_XS,
+                engine_icon_color_for(&alias.engine_id, palette)
+            ),
+            text(format!("{} · {}", alias.engine_label, alias.voice_label))
+                .size(FONT_SM)
+                .color(palette.text_primary)
+                .font(mono),
+        ]
+        .align_y(Alignment::Center)
+        .spacing(spf(Spacing::Xxs))
+        .width(Length::FillPortion(16))
+        .into()
     };
 
     let pitch_str = if muted {

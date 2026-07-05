@@ -728,9 +728,15 @@ tts_engines_voices_empty = Голосів не знайдено
 tts_filters_pipeline_header = КОНВЕЄР ОБРОБКИ
 tts_filters_pipeline_hint = Кожне повідомлення проходить ці етапи по черзі перед озвученням
 
+## TTS Filters — нумеровані картки етапів
+
+tts_filters_stage_emote_url_title = Емоції та обробка URL
+tts_filters_stage_replacements_title = Заміни тексту
+tts_filters_stage_blocklist_title = Блок-список слів
+tts_filters_stage_output_title = Обмеження виводу
+
 ## TTS Filters — список правил
 
-tts_filters_rules_header = ФІЛЬТРИ
 tts_filters_no_rules = Правил фільтрування ще немає
 tts_filters_add_rule_btn = Додати правило
 tts_filters_rule_on = УВІМК
@@ -752,7 +758,6 @@ tts_filters_mode_skip = Пропустити
 
 ## TTS Filters — налаштування конвеєра
 
-tts_filters_settings_header = НАЛАШТУВАННЯ КОНВЕЄРА
 tts_filters_url_label = ОБРОБКА URL
 tts_filters_url_speak = Читати URL вголос
 tts_filters_url_replace = Замінити на "link"
@@ -923,6 +928,10 @@ common_undo = Відмінити
 ## Голосові аліаси — попереднє прослуховування
 
 tts_aliases_preview_text = Це попереднє прослуховування голосу.
+
+## Голосові аліаси — підпис під таблицею
+
+tts_aliases_footer_caption = Показано { $shown } з { $total } ручних аліасів
 
 ## Звукова панель — хлібні крихти
 

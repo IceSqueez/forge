@@ -592,37 +592,7 @@ fn toggle_row<'a>(
         .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Center);
 
-    let knob_bg = if on {
-        palette.success
-    } else {
-        palette.surface_overlay
-    };
-    let knob = container(iced::widget::Space::new())
-        .width(28.0)
-        .height(16.0)
-        .style(move |_theme: &Theme| container::Style {
-            background: Some(Background::Color(knob_bg)),
-            border: Border {
-                radius: 8.0.into(),
-                color: Color::TRANSPARENT,
-                width: 0.0,
-            },
-            ..container::Style::default()
-        });
-    let toggle_btn = button(knob)
-        .on_press(Message::ObsPanel(msg))
-        .padding(0)
-        .style(move |_theme: &Theme, _status| button::Style {
-            background: Some(Background::Color(Color::TRANSPARENT)),
-            text_color: Color::TRANSPARENT,
-            border: Border {
-                color: Color::TRANSPARENT,
-                width: 0.0,
-                radius: 8.0.into(),
-            },
-            shadow: Shadow::default(),
-            snap: false,
-        });
+    let toggle_btn = forge_widgets::toggle_switch(on, None, Message::ObsPanel(msg), palette);
 
     let inner = row![
         left,

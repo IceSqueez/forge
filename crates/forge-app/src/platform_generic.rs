@@ -22,6 +22,8 @@ pub struct GenericPlatform {
     pub kind: PlatformKind,
     pub connect_platform: Option<PlatformId>,
     pub status: PlatformStatus,
+    /// Warning-banner `(title, body)` shown above the feature list.
+    pub disclaimer: Option<(&'static str, String)>,
 }
 
 pub enum PlatformKind {
@@ -52,6 +54,7 @@ pub fn registry(id: &BuiltinId, palette: &ForgePalette) -> Option<(Color, Generi
                 kind: PlatformKind::Platform,
                 connect_platform: Some(PlatformId::YouTube),
                 status: PlatformStatus::Available,
+                disclaimer: None,
             },
         )),
         "kick" => Some((
@@ -70,6 +73,10 @@ pub fn registry(id: &BuiltinId, palette: &ForgePalette) -> Option<(Color, Generi
                 kind: PlatformKind::Platform,
                 connect_platform: Some(PlatformId::Kick),
                 status: PlatformStatus::Available,
+                disclaimer: Some((
+                    "Hybrid chat transport",
+                    forge_platform_kick::capabilities::KICK_COMMUNITY_NOTE.to_owned(),
+                )),
             },
         )),
         "vtube" => Some((
@@ -87,6 +94,7 @@ pub fn registry(id: &BuiltinId, palette: &ForgePalette) -> Option<(Color, Generi
                 kind: PlatformKind::StreamApp,
                 connect_platform: None,
                 status: PlatformStatus::Coming,
+                disclaimer: None,
             },
         )),
         _ => None,
@@ -192,7 +200,13 @@ pub fn platform_generic_view<'a>(
         ..container::Style::default()
     });
 
-    let mut body_parts: Vec<Element<'_, Message>> = vec![hero_card.into(), features_col.into()];
+    let mut body_parts: Vec<Element<'_, Message>> = vec![hero_card.into()];
+
+    if let Some((title, body)) = &info.disclaimer {
+        body_parts.push(forge_widgets::warning_banner(title, body, palette));
+    }
+
+    body_parts.push(features_col.into());
 
     if let Some(target_platform) = info.connect_platform {
         let connect_btn = button(

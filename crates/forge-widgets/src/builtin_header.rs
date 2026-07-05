@@ -1,15 +1,15 @@
+use std::borrow::Cow;
 use std::time::Duration;
 
-use forge_platform_core::{BadgeTone, CapabilityFlags, ConnectionState, HeaderAction, SectionIcon};
+use forge_platform_core::{BadgeTone, CapabilityFlags, HeaderAction};
 use iced::{
     Alignment, Border, Color, Element, Length,
     widget::{Row, container},
 };
 
 use crate::{
-    icons::{Icon, tabler_icon},
     palette::ForgePalette,
-    semantic::SemanticState,
+    platform_tile::platform_identity_tile,
     tokens::{
         BORDER_THIN, FONT_LG, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
     },
@@ -22,8 +22,8 @@ pub struct HeaderCardParams<'a> {
     pub uptime: Option<Duration>,
     pub capability_flags: &'a CapabilityFlags,
     pub header_actions: &'a [HeaderAction],
-    pub connection: ConnectionState,
-    pub icon: SectionIcon,
+    pub letter: Cow<'a, str>,
+    pub brand_color: Color,
     pub badges: &'a [(String, BadgeTone)],
 }
 
@@ -32,8 +32,12 @@ pub fn builtin_header_card<'a, Msg: Clone + 'a>(
     on_action: impl Fn(HeaderAction) -> Msg + 'a,
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
-    let icon_str = params.icon.as_str().to_owned();
-    let icon_elem = icon_box(icon_str, params.connection, palette);
+    let icon_elem = platform_identity_tile(
+        params.letter.clone(),
+        params.brand_color,
+        palette.shell,
+        48.0,
+    );
     let info_elem = info_column(&params, palette);
     let actions_elem = action_buttons(params.header_actions, on_action, palette);
 
@@ -60,37 +64,6 @@ pub fn builtin_header_card<'a, Msg: Clone + 'a>(
                 color: border_color,
                 width: BORDER_THIN,
                 radius: r.into(),
-            },
-            ..container::Style::default()
-        })
-        .into()
-}
-
-fn icon_box<'a, Msg: 'a>(
-    icon_str: String,
-    connection: ConnectionState,
-    palette: &'a ForgePalette,
-) -> Element<'a, Msg> {
-    let icon_color = match connection {
-        ConnectionState::Connected => SemanticState::Connected.color(palette),
-        ConnectionState::Connecting | ConnectionState::Reconnecting => palette.warning,
-        ConnectionState::Disconnected => SemanticState::Disconnected.color(palette),
-    };
-    let box_bg = palette.surface_overlay;
-    let r = radius(Radius::Lg);
-
-    let icon_el = tabler_icon(Icon::from_name(&icon_str), 24.0, icon_color);
-
-    container(icon_el)
-        .width(48.0)
-        .height(48.0)
-        .align_x(Alignment::Center)
-        .align_y(Alignment::Center)
-        .style(move |_theme: &iced::Theme| container::Style {
-            background: Some(iced::Background::Color(box_bg)),
-            border: Border {
-                radius: r.into(),
-                ..Border::default()
             },
             ..container::Style::default()
         })

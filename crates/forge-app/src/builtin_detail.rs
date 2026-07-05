@@ -377,9 +377,36 @@ async fn fetch_picker_items(
     }
 }
 
+fn hero_identity<'a>(
+    icon: &str,
+    display_name: &'a str,
+    palette: &ForgePalette,
+) -> (Cow<'a, str>, iced::Color) {
+    let (letter, color): (&'static str, iced::Color) = match icon {
+        "brand-twitch" => ("T", palette.brand),
+        "brand-youtube" => ("Y", palette.random),
+        "brand-kick" => ("K", palette.info),
+        "broadcast" => ("O", palette.success),
+        "mood-smile" => ("V", palette.warning),
+        "brand-discord" => ("D", palette.brand),
+        "piano" => ("M", palette.accent_teal),
+        "keyboard" => ("H", palette.info),
+        _ => {
+            let initial = display_name
+                .chars()
+                .next()
+                .map(|c| c.to_ascii_uppercase().to_string())
+                .unwrap_or_else(|| "?".to_owned());
+            return (Cow::Owned(initial), palette.brand);
+        }
+    };
+    (Cow::Borrowed(letter), color)
+}
+
 pub fn view<'a>(state: &'a BuiltinDetailState, palette: &'a ForgePalette) -> Element<'a, Message> {
     let section_gap = spf(Spacing::Md);
 
+    let (letter, brand_color) = hero_identity(state.icon.as_str(), &state.display_name, palette);
     let params = HeaderCardParams {
         display_name: &state.display_name,
         version: state.version.as_deref(),
@@ -387,8 +414,8 @@ pub fn view<'a>(state: &'a BuiltinDetailState, palette: &'a ForgePalette) -> Ele
         uptime: state.builtin_status.uptime(),
         capability_flags: &state.capability_flags,
         header_actions: &state.header_actions,
-        connection: state.builtin_status.connection(),
-        icon: state.icon.clone(),
+        letter,
+        brand_color,
         badges: &[],
     };
 

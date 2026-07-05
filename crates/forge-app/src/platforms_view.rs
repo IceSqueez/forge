@@ -136,7 +136,7 @@ pub(crate) fn platforms_overview_view<'a>(
     let grid_row_1 = row![twitch_card, youtube_card]
         .spacing(spf(Spacing::Sm))
         .width(Length::Fill);
-    let grid_row_2 = row![kick_card]
+    let grid_row_2 = row![kick_card, iced::widget::Space::new().width(Length::Fill)]
         .spacing(spf(Spacing::Sm))
         .width(Length::Fill);
     let grid = column![grid_row_1, grid_row_2].spacing(spf(Spacing::Sm));

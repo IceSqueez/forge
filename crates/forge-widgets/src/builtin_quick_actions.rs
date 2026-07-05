@@ -46,7 +46,12 @@ pub fn builtin_quick_actions_grid_with_hint<'a, Msg: Clone + 'a>(
         } else {
             None
         };
-        btn_row = btn_row.push(quick_action_btn(action, msg, palette));
+        btn_row = btn_row.push(quick_action_btn(
+            action,
+            msg,
+            quick_action_accent(i, palette),
+            palette,
+        ));
     }
     for _ in capped.len()..4 {
         btn_row = btn_row.push(Space::new().width(Length::Fill));
@@ -98,9 +103,19 @@ fn quick_actions_section_header<'a, Msg: 'a>(
         .into()
 }
 
+fn quick_action_accent(index: usize, palette: &ForgePalette) -> Color {
+    match index % 4 {
+        0 => palette.brand,
+        1 => palette.random,
+        2 => palette.warning,
+        _ => palette.info,
+    }
+}
+
 fn quick_action_btn<'a, Msg: Clone + 'a>(
     action: &'a QuickAction,
     msg: Option<Msg>,
+    accent: Color,
     palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let shell = palette.shell;
@@ -109,12 +124,7 @@ fn quick_action_btn<'a, Msg: Clone + 'a>(
     let enabled = msg.is_some();
 
     let (icon_color, label_color, bg_color, bdr_color) = if enabled {
-        (
-            palette.text_secondary,
-            palette.text_primary,
-            shell,
-            border_color,
-        )
+        (accent, palette.text_primary, shell, border_color)
     } else {
         (
             Color {

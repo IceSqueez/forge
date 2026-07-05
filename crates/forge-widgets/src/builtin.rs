@@ -10,7 +10,7 @@ use iced::{
 
 use crate::{
     icons::{Icon, tabler_icon},
-    palette::ForgePalette,
+    palette::{ForgePalette, with_alpha},
     tokens::{
         BORDER_THIN, FONT_LG, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
     },
@@ -145,6 +145,14 @@ pub(crate) fn render_active_item_list<'a, Msg: 'a>(
         border_color,
         r,
     )
+}
+
+pub fn warning_banner<'a, Msg: 'a>(
+    title: &str,
+    body: &str,
+    palette: &'a ForgePalette,
+) -> Element<'a, Msg> {
+    render_warning_banner(&BannerLevel::Warning, title, body, None, palette)
 }
 
 pub(crate) fn render_warning_banner<'a, Msg: 'a>(
@@ -388,20 +396,23 @@ fn content_list_item_row<'a, Msg: 'a>(
     item: &'a ContentListItem,
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
-    let text_color = if !item.enabled {
-        palette.disabled
-    } else if item.active {
-        palette.text_primary
-    } else {
-        palette.text_secondary
-    };
-    let icon_color = if !item.enabled {
-        palette.disabled
-    } else if item.active {
-        palette.success
-    } else {
-        palette.text_faint
-    };
+    let dim = if item.enabled { 1.0 } else { 0.4 };
+    let text_color = with_alpha(
+        if item.active {
+            palette.text_primary
+        } else {
+            palette.text_secondary
+        },
+        dim,
+    );
+    let icon_color = with_alpha(
+        if item.active {
+            palette.success
+        } else {
+            palette.text_faint
+        },
+        dim,
+    );
 
     let icon_elem = tabler_icon(Icon::from_name(item.icon.as_str()), FONT_SM, icon_color);
 
@@ -429,7 +440,7 @@ fn content_list_item_row<'a, Msg: 'a>(
     }
 
     for token in &item.trailing {
-        trailing = trailing.push(trailing_token_elem(token, icon_color, palette));
+        trailing = trailing.push(trailing_token_elem(token, icon_color, dim, palette));
     }
 
     let content: Element<'a, Msg> = Row::new()
@@ -710,13 +721,25 @@ fn stat_column_cell<'a, Msg: 'a>(
     .into()
 }
 
+fn panel_header_icon_color(icon_str: &str, palette: &ForgePalette) -> Color {
+    match icon_str {
+        "key" => palette.warning,
+        "rss" => palette.brand,
+        _ => palette.text_secondary,
+    }
+}
+
 fn panel_header_row<'a, Msg: 'a>(
     icon_str: &str,
     title: &str,
     count: Option<&str>,
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
-    let icon_elem = tabler_icon(Icon::from_name(icon_str), FONT_SM, palette.text_secondary);
+    let icon_elem = tabler_icon(
+        Icon::from_name(icon_str),
+        FONT_SM,
+        panel_header_icon_color(icon_str, palette),
+    );
 
     let left = Row::new()
         .spacing(spf(Spacing::Xs))
@@ -943,11 +966,12 @@ fn active_badge<'a, Msg: 'a>(label: &str, palette: &'a ForgePalette) -> Element<
 fn trailing_token_elem<'a, Msg: 'a>(
     token: &'a TrailingToken,
     icon_color: Color,
+    dim: f32,
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
     match token {
         TrailingToken::Badge(label, color) => {
-            let tc = token_color_value(color, palette);
+            let tc = with_alpha(token_color_value(color, palette), dim);
             let surface = palette.surface_overlay;
             let r = radius(Radius::Md);
             container(text(label.clone()).size(FONT_XS).color(tc))
@@ -968,7 +992,7 @@ fn trailing_token_elem<'a, Msg: 'a>(
         TrailingToken::Label(label) => text(label.clone())
             .font(font(FontRole::Monospace))
             .size(FONT_XS)
-            .color(palette.text_faint)
+            .color(with_alpha(palette.text_faint, dim))
             .into(),
     }
 }

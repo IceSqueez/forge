@@ -60,7 +60,7 @@ pub use autocomplete_popup::{
     AutocompletePopupMessage, AutocompletePopupState, autocomplete_popup, filter_candidates,
 };
 pub use breadcrumb::{BreadcrumbCrumb, breadcrumb};
-pub use builtin::builtin_content_renderer;
+pub use builtin::{builtin_content_renderer, warning_banner};
 pub use builtin_header::{HeaderCardParams, builtin_header_card};
 pub use builtin_health::builtin_health_grid;
 pub use builtin_quick_actions::{builtin_quick_actions_grid, builtin_quick_actions_grid_with_hint};

@@ -12,6 +12,7 @@ pub mod cards;
 pub mod charts;
 pub mod chat;
 pub mod chat_widget;
+pub mod chip;
 pub mod clip_card;
 pub mod code_editor;
 pub mod console;
@@ -69,10 +70,9 @@ pub use cards::{
     BigJumpCardProps, big_jump_card, card, card_with_radius, hero_card, metric_card, stat_row,
 };
 pub use charts::throughput_sparkline;
-pub use chat::{
-    BadgeKind, ChatBody, ChatRow, Platform, PlatformTarget, chip_bg, filter_chip, input_bar,
-};
+pub use chat::{BadgeKind, ChatBody, ChatRow, Platform, PlatformTarget, filter_chip, input_bar};
 pub use chat_widget::ChatRowWidget;
+pub use chip::{ChipGlyph, ChipSpec, chip, filter_chip_row};
 pub use clip_card::{ClipCardData, clip_card};
 pub use code_editor::{CodeEditorState, rhai_editor};
 pub use console::{ConsoleLevel, ConsoleLine, console};

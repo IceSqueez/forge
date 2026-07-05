@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use forge_storage::{GlobalEntry, GlobalsExport, GlobalsRepo, StorageError};
-use forge_widgets::tokens::{FONT_SM, FONT_XS, Spacing, sp, spf};
+use forge_widgets::tokens::{FONT_SM, Spacing, sp, spf};
 use forge_widgets::{
     ConfirmKind, ConfirmModalParams, ConfirmTone, FontRole, FooterProps, ForgePalette, Icon,
     RowAction, ToastAction, ToastKind, VariantKind, confirm_modal, data_screen_footer, data_table,
@@ -502,26 +502,26 @@ fn globals_page_header<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'
         palette,
     );
 
-    let chip_all = filter_chip(
-        forge_widgets::tr!("globals_filter_all"),
+    let chip_all = forge_widgets::filter_chip(
+        palette,
+        &forge_widgets::tr!("globals_filter_all"),
         p.brand,
         app.ui.globals.filter == GlobalsFilter::All,
         Message::Globals(GlobalsMsg::FilterSelected(GlobalsFilter::All)),
-        palette,
     );
-    let chip_persisted = filter_chip(
-        forge_widgets::tr!("globals_filter_persisted"),
+    let chip_persisted = forge_widgets::filter_chip(
+        palette,
+        &forge_widgets::tr!("globals_filter_persisted"),
         p.success,
         app.ui.globals.filter == GlobalsFilter::Persisted,
         Message::Globals(GlobalsMsg::FilterSelected(GlobalsFilter::Persisted)),
-        palette,
     );
-    let chip_session = filter_chip(
-        forge_widgets::tr!("globals_filter_session"),
+    let chip_session = forge_widgets::filter_chip(
+        palette,
+        &forge_widgets::tr!("globals_filter_session"),
         p.warning,
         app.ui.globals.filter == GlobalsFilter::Session,
         Message::Globals(GlobalsMsg::FilterSelected(GlobalsFilter::Session)),
-        palette,
     );
     let chips = row![chip_all, chip_persisted, chip_session].spacing(spf(Spacing::Xxs));
 
@@ -577,58 +577,6 @@ fn globals_page_header<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'
         });
 
     column![crumb_bar, filter_bar].into()
-}
-
-fn filter_chip<'a>(
-    label: impl Into<String>,
-    dot_color: Color,
-    active: bool,
-    on_press: Message,
-    palette: &'a ForgePalette,
-) -> Element<'a, Message> {
-    let bg = if active {
-        Some(Background::Color(palette.surface_overlay))
-    } else {
-        None
-    };
-    let text_color = if active {
-        palette.text_primary
-    } else {
-        palette.text_secondary
-    };
-
-    let dot = container(Space::new())
-        .width(5.0)
-        .height(5.0)
-        .style(move |_: &iced::Theme| container::Style {
-            background: Some(Background::Color(dot_color)),
-            border: Border {
-                radius: 2.5.into(),
-                color: Color::TRANSPARENT,
-                width: 0.0,
-            },
-            ..container::Style::default()
-        });
-
-    let inner = row![dot, text(label.into()).size(FONT_XS).color(text_color)]
-        .spacing(spf(Spacing::Xxs))
-        .align_y(Alignment::Center);
-
-    button(inner)
-        .on_press(on_press)
-        .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
-        .style(move |_: &iced::Theme, _: button::Status| button::Style {
-            background: bg,
-            text_color,
-            border: Border {
-                radius: 11.0.into(),
-                color: Color::TRANSPARENT,
-                width: 0.0,
-            },
-            shadow: Shadow::default(),
-            snap: false,
-        })
-        .into()
 }
 
 fn build_entry_row<'a>(

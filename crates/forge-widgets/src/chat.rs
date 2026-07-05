@@ -89,14 +89,6 @@ pub struct PlatformTarget<'a, Msg> {
     pub on_press: Option<Box<dyn Fn() -> Msg + 'a>>,
 }
 
-pub fn chip_bg(active: bool, palette: &ForgePalette) -> Color {
-    if active {
-        palette.surface_overlay
-    } else {
-        Color::TRANSPARENT
-    }
-}
-
 pub fn filter_chip<'a, Msg: Clone + 'a>(
     palette: &ForgePalette,
     label: &str,
@@ -104,52 +96,13 @@ pub fn filter_chip<'a, Msg: Clone + 'a>(
     active: bool,
     on_press: Msg,
 ) -> Element<'a, Msg> {
-    let bg = chip_bg(active, palette);
-    let text_color = if active {
-        palette.text_primary
-    } else {
-        palette.text_secondary
-    };
-    let dot_size = 5.0_f32;
-    let dot_radius = dot_size / 2.0;
-
-    let dot = container(iced::widget::Space::new().width(dot_size).height(dot_size))
-        .width(dot_size)
-        .height(dot_size)
-        .style(move |_theme: &iced::Theme| container::Style {
-            background: Some(Background::Color(dot_color)),
-            border: Border {
-                radius: dot_radius.into(),
-                color: Color::TRANSPARENT,
-                width: 0.0,
-            },
-            ..container::Style::default()
-        });
-
-    let label_text = text(label.to_owned())
-        .size(FONT_XS)
-        .color(text_color)
-        .font(font(FontRole::Body));
-
-    let content = row![dot, label_text]
-        .spacing(5)
-        .align_y(iced::Alignment::Center);
-
-    button(content)
-        .on_press(on_press)
-        .padding([sp(Spacing::Xxs), sp(Spacing::Sm)])
-        .style(move |_theme: &iced::Theme, _status| button::Style {
-            background: Some(Background::Color(bg)),
-            border: Border {
-                radius: radius(Radius::Pill).into(),
-                color: Color::TRANSPARENT,
-                width: 0.0,
-            },
-            text_color,
-            shadow: iced::Shadow::default(),
-            snap: false,
-        })
-        .into()
+    crate::chip::chip(
+        label.to_owned(),
+        crate::chip::ChipGlyph::Dot(dot_color),
+        active,
+        Some(on_press),
+        palette,
+    )
 }
 
 fn platform_target_button<'a, Msg: Clone + 'a>(

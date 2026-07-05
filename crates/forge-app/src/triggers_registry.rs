@@ -916,11 +916,11 @@ fn registry_header<'a>(
     let lbl_filter_discord = forge_widgets::tr!("triggers_filter_discord");
     let lbl_filter_script = forge_widgets::tr!("triggers_filter_script");
 
-    let chip = |label: &str, color: Color, prefix: &'static str| {
+    let chip = |label: &str, prefix: &'static str| {
         category_chip(
             palette,
             label,
-            color,
+            platform_dot_color(prefix, palette),
             is_filter(prefix),
             Message::TriggersRegistry(TriggersRegistryMsg::PlatformFilterChanged(Some(
                 prefix.to_owned(),
@@ -928,15 +928,15 @@ fn registry_header<'a>(
         )
     };
 
-    let chip_twitch = chip(lbl_filter_twitch.as_str(), p.brand, "twitch.");
-    let chip_youtube = chip(lbl_filter_youtube.as_str(), p.platform_youtube, "youtube.");
-    let chip_kick = chip(lbl_filter_kick.as_str(), p.platform_kick, "kick.");
-    let chip_obs = chip(lbl_filter_obs.as_str(), p.success, "obs.");
-    let chip_vtube = chip(lbl_filter_vtube.as_str(), p.accent_teal, "vtube.");
-    let chip_midi = chip(lbl_filter_midi.as_str(), p.random, "midi.");
-    let chip_hotkey = chip(lbl_filter_hotkey.as_str(), p.warning, "hotkey.");
-    let chip_discord = chip(lbl_filter_discord.as_str(), p.info, "discord.");
-    let chip_script = chip(lbl_filter_script.as_str(), p.warning, "script.");
+    let chip_twitch = chip(lbl_filter_twitch.as_str(), "twitch.");
+    let chip_youtube = chip(lbl_filter_youtube.as_str(), "youtube.");
+    let chip_kick = chip(lbl_filter_kick.as_str(), "kick.");
+    let chip_obs = chip(lbl_filter_obs.as_str(), "obs.");
+    let chip_vtube = chip(lbl_filter_vtube.as_str(), "vtube.");
+    let chip_midi = chip(lbl_filter_midi.as_str(), "midi.");
+    let chip_hotkey = chip(lbl_filter_hotkey.as_str(), "hotkey.");
+    let chip_discord = chip(lbl_filter_discord.as_str(), "discord.");
+    let chip_script = chip(lbl_filter_script.as_str(), "script.");
     let chip_all = category_chip(
         palette,
         lbl_filter_all.as_str(),
@@ -1048,49 +1048,32 @@ fn usage_filter_chip<'a>(
     on_press: Message,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    let p = *palette;
-    let bg = if active {
-        Some(Background::Color(p.surface_overlay))
-    } else {
-        None
-    };
-    let text_color = if active {
-        p.text_primary
-    } else {
-        p.text_secondary
-    };
-
-    let inner = text(label.into())
-        .size(FONT_XS)
-        .color(text_color)
-        .font(font(FontRole::Body));
-
-    button(inner)
-        .on_press(on_press)
-        .padding([sp(Spacing::Xxs), sp(Spacing::Sm)])
-        .style(move |_: &iced::Theme, _status| button::Style {
-            background: bg,
-            border: Border {
-                radius: radius(Radius::Pill).into(),
-                color: Color::TRANSPARENT,
-                width: 0.0,
-            },
-            text_color,
-            shadow: iced::Shadow::default(),
-            snap: false,
-        })
-        .into()
+    forge_widgets::chip(
+        label,
+        forge_widgets::ChipGlyph::None,
+        active,
+        Some(on_press),
+        palette,
+    )
 }
 
 fn platform_dot_color(kind_id: &str, palette: &ForgePalette) -> Color {
-    if kind_id.starts_with("twitch.") {
-        palette.brand
-    } else if kind_id.starts_with("obs.") {
-        palette.success
-    } else if kind_id.starts_with("script.") {
-        palette.warning
-    } else {
-        palette.info
+    match kind_id.split('.').next().unwrap_or("") {
+        "twitch" => palette.brand,
+        "youtube" => palette.platform_youtube,
+        "kick" => palette.platform_kick,
+        "obs" => palette.success,
+        "vtube" => palette.accent_teal,
+        "midi" => palette.random,
+        "hotkey" => palette.warning,
+        "discord" => palette.info,
+        "script" | "rhai" => palette.warning,
+        "timer" => palette.warning,
+        "server" => palette.info,
+        "http" => palette.random,
+        "audio" => palette.bits,
+        "core" => palette.warning,
+        _ => palette.info,
     }
 }
 

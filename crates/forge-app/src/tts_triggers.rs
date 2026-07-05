@@ -213,21 +213,11 @@ pub fn tts_triggers_view<'a>(
 }
 
 fn role_chip<'a>(
-    label: &'static str,
+    label: impl Into<std::borrow::Cow<'a, str>>,
     color: iced::Color,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    container(text(label).size(FONT_XS).color(color))
-        .style(move |_| container::Style {
-            background: Some(Background::Color(palette.surface_overlay)),
-            border: Border {
-                radius: radius(Radius::Pill).into(),
-                ..Border::default()
-            },
-            ..container::Style::default()
-        })
-        .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
-        .into()
+    forge_widgets::badge(palette.surface_overlay, color, label, false, FONT_XS)
 }
 
 fn trigger_card_command<'a>(
@@ -280,17 +270,17 @@ fn trigger_card_command<'a>(
 
     let chips = row![
         role_chip(
-            Box::leak(forge_widgets::tr!("tts_triggers_role_subscribers").into_boxed_str()),
+            forge_widgets::tr!("tts_triggers_role_subscribers"),
             palette.success,
             palette
         ),
         role_chip(
-            Box::leak(forge_widgets::tr!("tts_triggers_role_vips").into_boxed_str()),
+            forge_widgets::tr!("tts_triggers_role_vips"),
             palette.brand,
             palette
         ),
         role_chip(
-            Box::leak(forge_widgets::tr!("tts_triggers_role_mods").into_boxed_str()),
+            forge_widgets::tr!("tts_triggers_role_mods"),
             palette.warning,
             palette
         ),
@@ -360,7 +350,7 @@ fn trigger_card_channel_points<'a>(
     .spacing(gap_sm);
 
     let chips = row![role_chip(
-        Box::leak(forge_widgets::tr!("tts_triggers_role_everyone").into_boxed_str()),
+        forge_widgets::tr!("tts_triggers_role_everyone"),
         palette.text_primary,
         palette
     )]

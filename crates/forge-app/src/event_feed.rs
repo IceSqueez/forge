@@ -5,9 +5,9 @@ use std::time::Instant;
 use forge_events::{Event, EventSource};
 use forge_types::{ChatPayload, ChatSegment, EventId};
 use forge_widgets::{
-    EventInspectorParams, EventRowData, FontRole, ForgePalette, Radius, Spacing, StatusVariant,
-    ToastKind, badge, category_chip, event_inspector, event_row_observability, font, radius, sp,
-    spf,
+    ChipGlyph, ChipSpec, EventInspectorParams, EventRowData, FontRole, ForgePalette, Icon, Radius,
+    Spacing, StatusVariant, ToastKind, badge, event_inspector, event_row_observability,
+    filter_chip_row, font, radius, sp, spf,
     tokens::{FONT_SM, FONT_XS, FONT_XXS},
 };
 use iced::widget::{button, column, container, row, scrollable, text};
@@ -561,58 +561,46 @@ pub fn event_feed_view<'a>(
     let obs_label = forge_widgets::tr!("event_feed_filter_obs", n = obs_n as i64);
     let errors_label = forge_widgets::tr!("event_feed_filter_errors", n = errors_n as i64);
 
-    let chips = row![
-        category_chip(
-            palette,
-            &all_label,
-            palette.brand,
-            filter == EventFilter::All,
-            Message::EventFeed(EventFeedMsg::FilterChanged(EventFilter::All)),
-        ),
-        category_chip(
-            palette,
-            &chat_label,
-            palette.info,
-            filter == EventFilter::Chat,
-            Message::EventFeed(EventFeedMsg::FilterChanged(EventFilter::Chat)),
-        ),
-        category_chip(
-            palette,
-            &subs_label,
-            palette.success,
-            filter == EventFilter::Subs,
-            Message::EventFeed(EventFeedMsg::FilterChanged(EventFilter::Subs)),
-        ),
-        category_chip(
-            palette,
-            &bits_label,
-            palette.bits,
-            filter == EventFilter::Bits,
-            Message::EventFeed(EventFeedMsg::FilterChanged(EventFilter::Bits)),
-        ),
-        category_chip(
-            palette,
-            &timers_label,
-            palette.warning,
-            filter == EventFilter::Timers,
-            Message::EventFeed(EventFeedMsg::FilterChanged(EventFilter::Timers)),
-        ),
-        category_chip(
-            palette,
-            &obs_label,
-            palette.success,
-            filter == EventFilter::Obs,
-            Message::EventFeed(EventFeedMsg::FilterChanged(EventFilter::Obs)),
-        ),
-        category_chip(
-            palette,
-            &errors_label,
-            palette.random,
-            filter == EventFilter::Errors,
-            Message::EventFeed(EventFeedMsg::FilterChanged(EventFilter::Errors)),
-        ),
-    ]
-    .spacing(spf(Spacing::Xxs));
+    let chip_spec = |label: String, icon: Icon, color: Color, bucket: EventFilter| {
+        ChipSpec::new(
+            label,
+            ChipGlyph::Icon(icon, color),
+            filter == bucket,
+            Message::EventFeed(EventFeedMsg::FilterChanged(bucket)),
+        )
+    };
+    let chips = filter_chip_row(
+        vec![
+            chip_spec(all_label, Icon::LayoutGrid, palette.brand, EventFilter::All),
+            chip_spec(
+                chat_label,
+                Icon::MessageCircle,
+                palette.info,
+                EventFilter::Chat,
+            ),
+            chip_spec(subs_label, Icon::Star, palette.success, EventFilter::Subs),
+            chip_spec(bits_label, Icon::Diamond, palette.bits, EventFilter::Bits),
+            chip_spec(
+                timers_label,
+                Icon::Clock,
+                palette.warning,
+                EventFilter::Timers,
+            ),
+            chip_spec(
+                obs_label,
+                Icon::Broadcast,
+                palette.success,
+                EventFilter::Obs,
+            ),
+            chip_spec(
+                errors_label,
+                Icon::AlertTriangle,
+                palette.random,
+                EventFilter::Errors,
+            ),
+        ],
+        palette,
+    );
 
     let sep = container(iced::widget::Space::new().width(0.5).height(14.0)).style(
         move |_: &iced::Theme| container::Style {

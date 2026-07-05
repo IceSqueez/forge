@@ -263,6 +263,11 @@ pub(crate) fn add_action_modal_view<'a>(
                 AddActionMsg::Cancel,
             ))),
             kbd_hint: None,
+            on_submit: (form.is_valid() && !form.saving).then(|| {
+                Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
+                    AddActionMsg::Submit,
+                )))
+            }),
         },
         body_col.into(),
         footer,

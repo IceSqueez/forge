@@ -614,6 +614,7 @@ pub fn variant_editor_modal_view<'a>(
             kbd_hint: Some(std::borrow::Cow::Owned(forge_widgets::tr!(
                 "globals_editor_kbd_hint"
             ))),
+            on_submit: None,
         },
         body,
         footer,

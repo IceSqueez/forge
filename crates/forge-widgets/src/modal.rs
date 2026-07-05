@@ -1,7 +1,10 @@
 use std::borrow::Cow;
 
+use iced::advanced::widget::{Operation, tree::Tree};
+use iced::advanced::widget::{Widget, tree};
+use iced::advanced::{Clipboard, Layout, Shell, layout, mouse, overlay, renderer};
 use iced::{
-    Alignment, Background, Border, Color, Element, Length,
+    Alignment, Background, Border, Color, Element, Event, Length, Rectangle, Size, Vector,
     widget::{Space, button, column, container, row, stack, text},
 };
 
@@ -21,6 +24,8 @@ pub struct ModalProps<'a, Msg> {
     pub size: ModalSize,
     pub on_close: Msg,
     pub kbd_hint: Option<Cow<'a, str>>,
+    /// Optional submit binding fired on ⌘/Ctrl+Enter while the modal is open.
+    pub on_submit: Option<Msg>,
 }
 
 impl<'a, Msg> ModalProps<'a, Msg> {
@@ -33,6 +38,7 @@ impl<'a, Msg> ModalProps<'a, Msg> {
             size: ModalSize::Md,
             on_close,
             kbd_hint: None,
+            on_submit: None,
         }
     }
 }
@@ -178,5 +184,182 @@ pub fn modal<'a, Msg: Clone + 'a>(
         .align_x(Alignment::Center)
         .align_y(Alignment::Center);
 
-    stack![backdrop, centered_card].into()
+    ModalKeys {
+        content: stack![backdrop, centered_card].into(),
+        on_close: props.on_close,
+        on_submit: props.on_submit,
+    }
+    .into()
+}
+
+/// Transparent wrapper that grants a `modal()` dialog keyboard affordance:
+/// Escape publishes `on_close`, ⌘/Ctrl+Enter publishes `on_submit` when bound.
+/// Every other event is forwarded untouched so nested `text_input` /
+/// `text_editor` widgets keep full keyboard control (they do not consume
+/// Escape, and only plain Enter, never ⌘/Ctrl+Enter).
+struct ModalKeys<'a, Msg, Theme = iced::Theme, Renderer = iced::Renderer>
+where
+    Renderer: iced::advanced::Renderer,
+{
+    content: Element<'a, Msg, Theme, Renderer>,
+    on_close: Msg,
+    on_submit: Option<Msg>,
+}
+
+impl<'a, Msg, Theme, Renderer> Widget<Msg, Theme, Renderer> for ModalKeys<'a, Msg, Theme, Renderer>
+where
+    Msg: Clone + 'a,
+    Renderer: iced::advanced::Renderer,
+{
+    fn tag(&self) -> tree::Tag {
+        tree::Tag::stateless()
+    }
+
+    fn state(&self) -> tree::State {
+        tree::State::None
+    }
+
+    fn children(&self) -> Vec<Tree> {
+        vec![Tree::new(&self.content)]
+    }
+
+    fn diff(&self, tree: &mut Tree) {
+        tree.diff_children(std::slice::from_ref(&self.content));
+    }
+
+    fn size(&self) -> Size<Length> {
+        self.content.as_widget().size()
+    }
+
+    fn layout(
+        &mut self,
+        tree: &mut Tree,
+        renderer: &Renderer,
+        limits: &layout::Limits,
+    ) -> layout::Node {
+        self.content
+            .as_widget_mut()
+            .layout(&mut tree.children[0], renderer, limits)
+    }
+
+    fn draw(
+        &self,
+        tree: &Tree,
+        renderer: &mut Renderer,
+        theme: &Theme,
+        style: &renderer::Style,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        viewport: &Rectangle,
+    ) {
+        self.content.as_widget().draw(
+            &tree.children[0],
+            renderer,
+            theme,
+            style,
+            layout,
+            cursor,
+            viewport,
+        );
+    }
+
+    fn operate(
+        &mut self,
+        tree: &mut Tree,
+        layout: Layout<'_>,
+        renderer: &Renderer,
+        operation: &mut dyn Operation,
+    ) {
+        self.content
+            .as_widget_mut()
+            .operate(&mut tree.children[0], layout, renderer, operation);
+    }
+
+    fn update(
+        &mut self,
+        tree: &mut Tree,
+        event: &Event,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        renderer: &Renderer,
+        clipboard: &mut dyn Clipboard,
+        shell: &mut Shell<'_, Msg>,
+        viewport: &Rectangle,
+    ) {
+        if let Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) = event {
+            use iced::keyboard::key::Named;
+            if let iced::keyboard::Key::Named(named) = key {
+                match named {
+                    Named::Escape => {
+                        shell.publish(self.on_close.clone());
+                        return;
+                    }
+                    Named::Enter if modifiers.command() => {
+                        if let Some(submit) = &self.on_submit {
+                            shell.publish(submit.clone());
+                            return;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        self.content.as_widget_mut().update(
+            &mut tree.children[0],
+            event,
+            layout,
+            cursor,
+            renderer,
+            clipboard,
+            shell,
+            viewport,
+        );
+    }
+
+    fn mouse_interaction(
+        &self,
+        tree: &Tree,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        viewport: &Rectangle,
+        renderer: &Renderer,
+    ) -> mouse::Interaction {
+        self.content.as_widget().mouse_interaction(
+            &tree.children[0],
+            layout,
+            cursor,
+            viewport,
+            renderer,
+        )
+    }
+
+    fn overlay<'b>(
+        &'b mut self,
+        tree: &'b mut Tree,
+        layout: Layout<'b>,
+        renderer: &Renderer,
+        viewport: &Rectangle,
+        translation: Vector,
+    ) -> Option<overlay::Element<'b, Msg, Theme, Renderer>> {
+        self.content.as_widget_mut().overlay(
+            &mut tree.children[0],
+            layout,
+            renderer,
+            viewport,
+            translation,
+        )
+    }
+}
+
+impl<'a, Msg, Theme, Renderer> From<ModalKeys<'a, Msg, Theme, Renderer>>
+    for Element<'a, Msg, Theme, Renderer>
+where
+    Msg: Clone + 'a,
+    Theme: 'a,
+    Renderer: iced::advanced::Renderer + 'a,
+{
+    fn from(w: ModalKeys<'a, Msg, Theme, Renderer>) -> Self {
+        Element::new(w)
+    }
 }

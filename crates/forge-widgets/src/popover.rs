@@ -522,6 +522,14 @@ where
             shell,
             &panel_bounds,
         );
+        if let Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
+            ..
+        }) = event
+        {
+            shell.publish(self.on_dismiss.clone());
+            return;
+        }
         let mouse::Cursor::Available(pos) = cursor else {
             return;
         };

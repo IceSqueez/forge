@@ -6,9 +6,9 @@ use iced::{
 };
 
 /// Corner radius as a fraction of tile size: 44px -> ~10, 48px -> ~11.
-const CORNER_RATIO: f32 = 0.23;
+pub const CORNER_RATIO: f32 = 0.23;
 /// Initial glyph size as a fraction of tile size: 44px -> 22, 48px -> 24.
-const GLYPH_RATIO: f32 = 0.5;
+pub const GLYPH_RATIO: f32 = 0.5;
 
 /// Rounded, brand-filled square holding a platform's centered initial.
 ///

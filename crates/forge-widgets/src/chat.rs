@@ -39,7 +39,7 @@ impl Platform {
         }
     }
 
-    fn letter(self) -> &'static str {
+    pub fn letter(self) -> &'static str {
         match self {
             Platform::Twitch => "T",
             Platform::YouTube => "Y",

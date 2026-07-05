@@ -6,9 +6,9 @@ use forge_events::{Event, EventSource};
 use forge_types::{ChatPayload, ChatSegment, EventId};
 use forge_widgets::{
     EventInspectorParams, EventRowData, FontRole, ForgePalette, Radius, Spacing, StatusVariant,
-    ToastKind, category_chip, event_inspector, event_row_observability, font, radius, sp, spf,
-    status_pill,
-    tokens::{FONT_SM, FONT_XS},
+    ToastKind, badge, category_chip, event_inspector, event_row_observability, font, radius, sp,
+    spf,
+    tokens::{FONT_SM, FONT_XS, FONT_XXS},
 };
 use iced::widget::{button, column, container, row, scrollable, text};
 use iced::{Background, Border, Color, Element, Length, Padding};
@@ -657,7 +657,8 @@ pub fn event_feed_view<'a>(
             StatusVariant::Positive,
         )
     };
-    let live_badge = status_pill(live_label, live_variant, palette);
+    let (live_bg, live_fg) = live_variant.colors(palette);
+    let live_badge = badge(live_bg, live_fg, live_label, false, FONT_XXS);
     let live_count = text(forge_widgets::tr!(
         "event_feed_header_count",
         count = state.events.len() as i64

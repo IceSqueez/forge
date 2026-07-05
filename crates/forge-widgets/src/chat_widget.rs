@@ -11,7 +11,7 @@ use iced::{
     Vector, alignment,
 };
 
-use crate::chat::{BadgeKind, ChatBody, ChatRow, Platform};
+use crate::chat::{BadgeKind, ChatBody, ChatRow};
 use crate::icons::Icon;
 use crate::palette::ForgePalette;
 use crate::tokens::{FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, spf};
@@ -23,6 +23,7 @@ const SPACING_INNER: f32 = 2.0;
 const ICON_W: f32 = 13.0;
 const ICON_SPACING: f32 = 8.0;
 const BADGE_SPACING: f32 = 6.0;
+const PLATFORM_TILE: f32 = 14.0;
 const SEPARATOR_H: f32 = 0.5;
 const BODY_LINE_SPACING: f32 = 3.0;
 
@@ -100,14 +101,6 @@ fn badge_label(kind: BadgeKind) -> &'static str {
         BadgeKind::HypeTrain => "HYPE",
         BadgeKind::Bits => "BITS",
         BadgeKind::BitsLeader => "BITS LEADER",
-    }
-}
-
-fn platform_name(platform: Platform) -> &'static str {
-    match platform {
-        Platform::Twitch => "Twitch",
-        Platform::YouTube => "YouTube",
-        Platform::Kick => "Kick",
     }
 }
 
@@ -229,9 +222,12 @@ where
             text::Wrapping::None,
         );
         state.paragraphs.platform = shape_text::<R::Paragraph>(
-            platform_name(self.data.platform),
-            FONT_XS,
-            font(FontRole::Body),
+            self.data.platform.letter(),
+            PLATFORM_TILE * crate::platform_tile::GLYPH_RATIO,
+            Font {
+                weight: iced::font::Weight::Semibold,
+                ..font(FontRole::Body)
+            },
             Size::INFINITE,
             text::Wrapping::None,
         );
@@ -503,20 +499,19 @@ where
         cursor_x += state.paragraphs.timestamp.min_bounds().width + BADGE_SPACING;
 
         {
-            let plat_text_w = state.paragraphs.platform.min_bounds().width;
-            let plat_pad = spf(Spacing::Xs);
-            let plat_w = plat_text_w + plat_pad * 2.0;
             let plat_color = self.data.platform.color(&self.palette);
+            let corner = PLATFORM_TILE * crate::platform_tile::CORNER_RATIO;
+            let tile_y = top_row_y + (top_row_h - PLATFORM_TILE) / 2.0;
             renderer.fill_quad(
                 renderer::Quad {
                     bounds: Rectangle {
                         x: cursor_x,
-                        y: top_row_y,
-                        width: plat_w,
-                        height: top_row_h,
+                        y: tile_y,
+                        width: PLATFORM_TILE,
+                        height: PLATFORM_TILE,
                     },
                     border: Border {
-                        radius: radius(Radius::Sm).into(),
+                        radius: corner.into(),
                         color: Color::TRANSPARENT,
                         width: 0.0,
                     },
@@ -525,16 +520,17 @@ where
                 },
                 plat_color,
             );
+            let glyph = state.paragraphs.platform.min_bounds();
             renderer.fill_paragraph(
                 &state.paragraphs.platform,
                 Point {
-                    x: cursor_x + plat_pad,
-                    y: top_row_y,
+                    x: cursor_x + (PLATFORM_TILE - glyph.width) / 2.0,
+                    y: tile_y + (PLATFORM_TILE - glyph.height) / 2.0,
                 },
                 self.palette.shell,
                 *viewport,
             );
-            cursor_x += plat_w + BADGE_SPACING;
+            cursor_x += PLATFORM_TILE + BADGE_SPACING;
         }
 
         for (i, badge_para) in state.paragraphs.badges.iter().enumerate() {

@@ -298,11 +298,7 @@ pub fn live_chat_view<'a>(
 }
 
 fn platform_filter_chip_color(id: PlatformId, palette: &ForgePalette) -> Color {
-    match id {
-        PlatformId::Twitch => palette.platform_twitch,
-        PlatformId::YouTube => palette.platform_youtube,
-        PlatformId::Kick => palette.platform_kick,
-    }
+    platform_id_to_widget(id).color(palette)
 }
 
 fn live_chat_page_header<'a>(

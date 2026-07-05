@@ -27,44 +27,7 @@ fn platform_overview_card<'a>(
 
     let letter_box = forge_widgets::platform_identity_tile(letter, color, p.shell, 44.0);
 
-    let dot_color = if connected { p.success } else { p.text_faint };
-    let dot = container(iced::widget::Space::new())
-        .width(5.0)
-        .height(5.0)
-        .style(move |_: &iced::Theme| container::Style {
-            background: Some(Background::Color(dot_color)),
-            border: Border {
-                radius: 2.5.into(),
-                ..Border::default()
-            },
-            ..container::Style::default()
-        });
-
-    let badge_label = if connected {
-        forge_widgets::tr!("platforms.status.connected")
-    } else {
-        forge_widgets::tr!("platforms.status.not_connected")
-    };
-    let badge_text_color = if connected { p.success } else { p.text_muted };
-    let badge = container(
-        row![
-            dot,
-            text(badge_label.to_owned())
-                .size(FONT_XS)
-                .color(badge_text_color),
-        ]
-        .spacing(spf(Spacing::Xxs))
-        .align_y(Alignment::Center),
-    )
-    .padding([2_u16, 7_u16])
-    .style(move |_: &iced::Theme| container::Style {
-        background: Some(Background::Color(p.surface_overlay)),
-        border: Border {
-            radius: radius(Radius::Sm).into(),
-            ..Border::default()
-        },
-        ..container::Style::default()
-    });
+    let badge = forge_widgets::connection_status_badge(connected, palette);
 
     let title_row = row![
         text(name.to_owned()).size(FONT_SM).color(p.text_primary),

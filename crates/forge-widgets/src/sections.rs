@@ -341,32 +341,6 @@ pub fn inline_error<'a, Msg: 'a + Clone>(
         .into()
 }
 
-pub fn counter_badge<'a, Msg: 'a>(count: u32, palette: &ForgePalette) -> Element<'a, Msg> {
-    let label = if count > 99 {
-        "99+".to_string()
-    } else {
-        count.to_string()
-    };
-
-    let bg = Color {
-        a: 0.20,
-        ..palette.brand
-    };
-    let text_color = palette.brand;
-
-    container(text(label).size(FONT_XS).color(text_color))
-        .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
-        .style(move |_theme: &iced::Theme| container::Style {
-            background: Some(iced::Background::Color(bg)),
-            border: Border {
-                radius: 8.0.into(),
-                ..Border::default()
-            },
-            ..container::Style::default()
-        })
-        .into()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

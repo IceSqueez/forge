@@ -8,12 +8,12 @@ use forge_script::{
 };
 use forge_storage::{GlobalsRepo, ScriptRecord, ScriptRepo, SettingsRepo};
 use forge_types::{ArgStack, ScriptContract, ScriptId, Variant, VariantKind};
-use forge_widgets::tokens::{FONT_SM, FONT_XS, FontRole, Spacing, font, spf};
+use forge_widgets::tokens::{FONT_SM, FONT_XS, FONT_XXS, FontRole, Spacing, font, spf};
 use forge_widgets::{
     ConfirmKind, ConfirmModalParams, ConfirmTone, ConsoleLevel, ConsoleLine, ForgePalette, Icon,
     ModalProps, RowAction, ScriptEditorWidgetMsg, ScriptEditorWidgetState, StatusVariant,
-    apply_autocomplete_insert, confirm_modal, filter_candidates, modal, prefix_under_cursor,
-    row_actions, scan_type_hint, script_editor_widget, should_trigger_autocomplete, status_pill,
+    apply_autocomplete_insert, badge, confirm_modal, filter_candidates, modal, prefix_under_cursor,
+    row_actions, scan_type_hint, script_editor_widget, should_trigger_autocomplete,
 };
 use iced::widget::{column, container, row, scrollable, text, text_editor, tooltip};
 use iced::{Alignment, Background, Border, Element, Length};
@@ -1046,16 +1046,22 @@ fn status_indicators_row<'a>(
     } else {
         StatusVariant::Negative
     };
-    let type_check = status_pill(
+    let (type_check_bg, type_check_fg) = type_check_variant.colors(palette);
+    let type_check = badge(
+        type_check_bg,
+        type_check_fg,
         type_check_pill_label(diag_count),
-        type_check_variant,
-        palette,
+        false,
+        FONT_XXS,
     );
 
-    let rhai_pill = status_pill(
+    let (rhai_bg, rhai_fg) = StatusVariant::Neutral.colors(palette);
+    let rhai_pill = badge(
+        rhai_bg,
+        rhai_fg,
         format!("Rhai {RHAI_VERSION}"),
-        StatusVariant::Neutral,
-        palette,
+        false,
+        FONT_XXS,
     );
 
     let (ln, col) = state

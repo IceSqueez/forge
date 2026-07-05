@@ -1,7 +1,7 @@
 use forge_platform_core::{BuiltinId, ConnectionState};
 use forge_widgets::{
     ForgePalette, Icon, tabler_icon,
-    tokens::{FONT_MD, FONT_SM, FONT_XS, Radius, Spacing, radius, sp, spf},
+    tokens::{FONT_MD, FONT_SM, Radius, Spacing, radius, sp, spf},
 };
 use iced::{
     Alignment, Background, Border, Color, Element, Length, Shadow,
@@ -100,39 +100,7 @@ fn app_overview_card<'a>(
             ..container::Style::default()
         });
 
-    let dot_color = if connected { p.success } else { p.text_faint };
-    let dot = container(iced::widget::Space::new())
-        .width(5.0)
-        .height(5.0)
-        .style(move |_: &iced::Theme| container::Style {
-            background: Some(Background::Color(dot_color)),
-            border: Border {
-                radius: 2.5.into(),
-                ..Border::default()
-            },
-            ..container::Style::default()
-        });
-
-    let badge_label = if connected {
-        forge_widgets::tr!("platforms.status.connected")
-    } else {
-        forge_widgets::tr!("platforms.status.not_connected")
-    };
-    let badge_text_color = if connected { p.success } else { p.text_muted };
-    let badge = container(
-        row![dot, text(badge_label).size(FONT_XS).color(badge_text_color),]
-            .spacing(spf(Spacing::Xxs))
-            .align_y(Alignment::Center),
-    )
-    .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
-    .style(move |_: &iced::Theme| container::Style {
-        background: Some(Background::Color(p.surface_overlay)),
-        border: Border {
-            radius: radius(Radius::Sm).into(),
-            ..Border::default()
-        },
-        ..container::Style::default()
-    });
+    let badge = forge_widgets::connection_status_badge(connected, palette);
 
     let title_row = row![
         text(name.to_owned()).size(FONT_SM).color(p.text_primary),

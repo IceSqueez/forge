@@ -9,7 +9,7 @@ use crate::tts_triggers::tts_triggers_view;
 use crate::voice_aliases::voice_aliases_view;
 use forge_widgets::ForgePalette;
 use forge_widgets::tokens::{FONT_SM, Spacing, spf};
-use forge_widgets::{BreadcrumbCrumb, StatusVariant, breadcrumb, status_pill};
+use forge_widgets::{BreadcrumbCrumb, StatusVariant, badge, breadcrumb, tokens::FONT_XXS};
 use iced::Element;
 
 fn tts_tab_button<'a>(
@@ -128,10 +128,13 @@ pub(crate) fn tts_section_view<'a>(
         TtsSection::CloudEngines => forge_widgets::tr!("tts_tab_cloud_engines"),
     };
     let engines_ready = app.rt.tts_engine_ids.len() as i64;
-    let engines_chip = status_pill(
+    let (engines_bg, engines_fg) = StatusVariant::Positive.colors(palette);
+    let engines_chip = badge(
+        engines_bg,
+        engines_fg,
         forge_widgets::tr!("tts_header_engines_ready", count = engines_ready),
-        StatusVariant::Positive,
-        palette,
+        false,
+        FONT_XXS,
     );
     let page_header = breadcrumb(
         vec![

@@ -391,6 +391,11 @@ pub enum GlobalsMsg {
     },
     OpenCreateModal,
     OpenEditModal(String),
+    RenameStarted(String),
+    RenameBufferChanged(String),
+    RenameCancel,
+    RenameSubmit,
+    RenameSaved(Result<(String, String), String>),
     /// Arms the two-phase confirm gate (`GlobalsState.pending_delete`); does
     /// NOT delete. Mirrors Triggers Registry's `DeleteRequested`.
     DeleteRequested(String),

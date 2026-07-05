@@ -9,7 +9,7 @@ use forge_types::{
 };
 use iced::{
     Alignment, Background, Border, Color, Element, Length, Task,
-    widget::{Space, button, column, container, row, rule, scrollable, stack, text, text_input},
+    widget::{Space, button, column, container, row, rule, scrollable, stack, text},
 };
 
 use forge_widgets::{
@@ -1136,26 +1136,16 @@ fn instance_row<'a>(
         });
 
     let name_el: Element<'_, Message> = if let Some(buf) = rename_buf {
-        text_input("", buf)
-            .id(trigger_rename_input_id())
-            .on_input(|s| Message::TriggersRegistry(TriggersRegistryMsg::RenameBufferChanged(s)))
-            .on_submit(Message::TriggersRegistry(TriggersRegistryMsg::RenameSubmit))
-            .size(FONT_SM)
-            .padding([2, sp(Spacing::Xs)])
-            .width(Length::Fill)
-            .style(move |_: &iced::Theme, _status| text_input::Style {
-                background: Background::Color(p.shell),
-                border: Border {
-                    color: p.brand,
-                    width: 0.5,
-                    radius: radius(Radius::Sm).into(),
-                },
-                icon: p.text_muted,
-                placeholder: p.text_muted,
-                value: p.text_primary,
-                selection: Color { a: 0.25, ..p.brand },
-            })
-            .into()
+        forge_widgets::inline_rename(
+            trigger_rename_input_id(),
+            buf,
+            |s| Message::TriggersRegistry(TriggersRegistryMsg::RenameBufferChanged(s)),
+            Message::TriggersRegistry(TriggersRegistryMsg::RenameSubmit),
+            palette,
+        )
+        .size(FONT_SM)
+        .padding([2, sp(Spacing::Xs)])
+        .into()
     } else {
         text(row.name.as_str())
             .size(FONT_SM)

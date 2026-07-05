@@ -313,7 +313,7 @@ fn actions_tree_row<'a>(
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     use forge_widgets::{MenuPlacement, menu_button};
-    use iced::widget::{button, container, mouse_area, row, text, text_input};
+    use iced::widget::{button, container, mouse_area, row, text};
 
     // Fixed row height so the selection stripe, the row background, and the
     // overflow-menu button all share one clean bar (no per-widget height drift).
@@ -342,33 +342,21 @@ fn actions_tree_row<'a>(
     };
 
     let name_el: Element<'a, Message> = if let Some(buf) = rename_buf {
-        text_input("", buf)
-            .id(crate::actions::action_rename_input_id())
-            .on_input(|s| Message::Actions(ActionsMsg::RenameBufferChanged(s)))
-            .on_submit(Message::Actions(ActionsMsg::RenameSubmit))
-            .size(FONT_XS)
-            .padding(iced::Padding {
-                top: 2.0,
-                bottom: 2.0,
-                left: 6.0,
-                right: 6.0,
-            })
-            .width(Length::Fill)
-            .style(
-                move |_t: &iced::Theme, _s| iced::widget::text_input::Style {
-                    background: iced::Background::Color(p.shell),
-                    border: iced::Border {
-                        color: p.brand,
-                        width: 0.5,
-                        radius: forge_widgets::radius(forge_widgets::Radius::Sm).into(),
-                    },
-                    icon: p.text_muted,
-                    placeholder: p.text_muted,
-                    value: p.text_primary,
-                    selection: iced::Color { a: 0.25, ..p.brand },
-                },
-            )
-            .into()
+        forge_widgets::inline_rename(
+            crate::actions::action_rename_input_id(),
+            buf,
+            |s| Message::Actions(ActionsMsg::RenameBufferChanged(s)),
+            Message::Actions(ActionsMsg::RenameSubmit),
+            palette,
+        )
+        .size(FONT_XS)
+        .padding(iced::Padding {
+            top: 2.0,
+            bottom: 2.0,
+            left: 6.0,
+            right: 6.0,
+        })
+        .into()
     } else {
         container(
             text(&summary.name)

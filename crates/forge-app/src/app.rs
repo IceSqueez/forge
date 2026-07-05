@@ -455,6 +455,8 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
                 Task::done(Message::TriggersRegistry(
                     crate::triggers_registry::TriggersRegistryMsg::RenameCancel,
                 ))
+            } else if app.ui.globals.renaming.is_some() {
+                Task::done(Message::Globals(crate::message::GlobalsMsg::RenameCancel))
             } else {
                 Task::none()
             }

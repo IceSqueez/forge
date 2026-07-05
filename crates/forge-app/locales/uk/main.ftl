@@ -1335,6 +1335,7 @@ globals_new_btn = + Нова змінна
 globals_loading = Завантаження...
 globals_empty_title = Глобальних змінних немає
 globals_empty_desc = Змініть фільтр або пошук, або створіть нову за допомогою + Нова змінна.
+globals_edit_action = Редагувати значення
 globals_delete_action = Видалити
 globals_deleted_toast = Видалено '{ $name }'
 

@@ -1148,32 +1148,17 @@ fn left_pane<'a>(state: &'a ScriptEditorState, palette: &'a ForgePalette) -> Ele
             let row_el: Element<'a, Message> = if let Some((_, buf)) =
                 state.renaming_script.as_ref().filter(|(rid, _)| *rid == id)
             {
-                iced::widget::text_input("", buf)
-                    .id(script_rename_input_id())
-                    .on_input(|s| Message::ScriptEditor(ScriptEditorMsg::RenameBufferChanged(s)))
-                    .on_submit(Message::ScriptEditor(ScriptEditorMsg::RenameSubmit))
-                    .size(FONT_XS)
-                    .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
-                    .font(font(FontRole::Monospace))
-                    .width(Length::Fill)
-                    .style(
-                        move |_: &iced::Theme, _status| iced::widget::text_input::Style {
-                            background: Background::Color(palette.shell),
-                            border: Border {
-                                color: palette.brand,
-                                width: 0.5,
-                                radius: 5.0.into(),
-                            },
-                            icon: palette.text_muted,
-                            placeholder: palette.text_muted,
-                            value: palette.text_primary,
-                            selection: Color {
-                                a: 0.25,
-                                ..palette.brand
-                            },
-                        },
-                    )
-                    .into()
+                forge_widgets::inline_rename(
+                    script_rename_input_id(),
+                    buf,
+                    |s| Message::ScriptEditor(ScriptEditorMsg::RenameBufferChanged(s)),
+                    Message::ScriptEditor(ScriptEditorMsg::RenameSubmit),
+                    palette,
+                )
+                .size(FONT_XS)
+                .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
+                .font(font(FontRole::Monospace))
+                .into()
             } else {
                 let name_text = text(entry.name.clone())
                     .size(FONT_XS)

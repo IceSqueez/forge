@@ -94,6 +94,44 @@ pub fn text_input_field_submit<'a, Msg: 'a + Clone>(
         .into()
 }
 
+fn inline_rename_style(palette: ForgePalette) -> text_input::Style {
+    text_input::Style {
+        background: Background::Color(palette.shell),
+        border: Border {
+            color: palette.brand,
+            width: 0.5,
+            radius: radius(Radius::Sm).into(),
+        },
+        icon: palette.text_muted,
+        placeholder: palette.text_muted,
+        value: palette.text_primary,
+        selection: Color {
+            a: 0.25,
+            ..palette.brand
+        },
+    }
+}
+
+/// Brand-outlined "rename in place" `text_input` for tree/list rows. The caller
+/// supplies the focus `id`, current buffer, and change/submit messages, then
+/// chains row-specific `size`/`padding`/`font` before `.into()`; Escape and
+/// click-away cancel stay the caller's job.
+pub fn inline_rename<'a, Msg: 'a + Clone>(
+    id: impl Into<iced::advanced::widget::Id>,
+    value: &'a str,
+    on_change: impl Fn(String) -> Msg + 'a,
+    on_submit: Msg,
+    palette: &ForgePalette,
+) -> text_input::TextInput<'a, Msg> {
+    let p = *palette;
+    text_input("", value)
+        .id(id)
+        .on_input(on_change)
+        .on_submit(on_submit)
+        .width(iced::Length::Fill)
+        .style(move |_theme, _status| inline_rename_style(p))
+}
+
 fn text_editor_style(palette: ForgePalette, status: text_editor::Status) -> text_editor::Style {
     let border_color = match status {
         text_editor::Status::Focused { .. } => palette.border_active,

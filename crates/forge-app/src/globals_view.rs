@@ -11,8 +11,8 @@ use forge_widgets::{
     secondary_button, type_pill, value_preview,
 };
 use iced::{
-    Alignment, Background, Border, Color, Element, Length, Shadow,
-    widget::{Space, button, column, container, row, rule, scrollable, stack, text},
+    Alignment, Background, Border, Color, Element, Length,
+    widget::{Space, column, container, row, rule, scrollable, stack, text},
 };
 use time::OffsetDateTime;
 
@@ -70,6 +70,9 @@ pub struct GlobalsState {
     /// Two-phase delete gate — armed by the row delete control, rendered by
     /// the shared `confirm_modal`. `None` = no confirm dialog showing.
     pub pending_delete: Option<String>,
+    /// Inline rename buffer: `(original_name, in-progress name)`. `original_name`
+    /// is the storage join key targeted by the rename; `None` = no row editing.
+    pub renaming: Option<(String, String)>,
 }
 
 impl GlobalsState {
@@ -86,6 +89,7 @@ impl GlobalsState {
             save_display: "Not yet saved".to_owned(),
             editor: None,
             pending_delete: None,
+            renaming: None,
         }
     }
 
@@ -143,6 +147,10 @@ pub async fn load_globals_data(repo: Arc<dyn GlobalsRepo>) -> Result<GlobalsLoad
         storage_bytes,
         last_save,
     })
+}
+
+pub fn globals_rename_input_id() -> iced::advanced::widget::Id {
+    iced::advanced::widget::Id::new("forge:global_rename")
 }
 
 pub fn update(state: &mut GlobalsState, rt: &RuntimeView, msg: GlobalsMsg) -> iced::Task<Message> {
@@ -335,6 +343,74 @@ pub fn update(state: &mut GlobalsState, rt: &RuntimeView, msg: GlobalsMsg) -> ic
             }
         }
 
+        GlobalsMsg::RenameStarted(name) => {
+            state.renaming = Some((name.clone(), name));
+            iced::widget::operation::focus(globals_rename_input_id())
+        }
+
+        GlobalsMsg::RenameBufferChanged(buf) => {
+            if let Some((_, name)) = state.renaming.as_mut() {
+                *name = buf;
+            }
+            iced::Task::none()
+        }
+
+        GlobalsMsg::RenameCancel => {
+            state.renaming = None;
+            iced::Task::none()
+        }
+
+        GlobalsMsg::RenameSubmit => {
+            let Some((old, new)) = state.renaming.clone() else {
+                return iced::Task::none();
+            };
+            let trimmed = new.trim().to_owned();
+            if trimmed.is_empty() || trimmed == old {
+                state.renaming = None;
+                return iced::Task::none();
+            }
+            if state.entries.iter().any(|e| e.name == trimmed) {
+                let toast_msg = format!("Name \u{201c}{trimmed}\u{201d} is already taken");
+                return iced::Task::done(Message::Toast(ToastMsg::Fired {
+                    kind: ToastKind::Error,
+                    message: toast_msg,
+                    duration_ms: 3000,
+                    action: None,
+                }));
+            }
+            let repo: Arc<dyn GlobalsRepo> = Arc::clone(&rt.backend) as Arc<dyn GlobalsRepo>;
+            iced::Task::perform(
+                async move {
+                    repo.rename(&old, &trimmed)
+                        .await
+                        .map(|()| (old, trimmed))
+                        .map_err(|e| e.to_string())
+                },
+                |r| Message::Globals(GlobalsMsg::RenameSaved(r)),
+            )
+        }
+
+        GlobalsMsg::RenameSaved(Ok((old, new))) => {
+            state.renaming = None;
+            if let Some(entry) = state.entries.iter_mut().find(|e| e.name == old) {
+                entry.name = new;
+            }
+            state.entries.sort_unstable_by(|a, b| a.name.cmp(&b.name));
+            state.refresh_displays();
+            iced::Task::none()
+        }
+
+        GlobalsMsg::RenameSaved(Err(reason)) => {
+            state.renaming = None;
+            tracing::warn!(error = %reason, "global rename failed");
+            iced::Task::done(Message::Toast(ToastMsg::Fired {
+                kind: ToastKind::Error,
+                message: format!("Rename failed: {reason}"),
+                duration_ms: 3000,
+                action: None,
+            }))
+        }
+
         GlobalsMsg::ExportRequested => {
             let repo: Arc<dyn GlobalsRepo> = Arc::clone(&rt.backend) as Arc<dyn GlobalsRepo>;
             iced::Task::perform(
@@ -459,7 +535,16 @@ fn globals_main_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a,
 
             let rows: Vec<Vec<Element<'_, Message>>> = visible_entries
                 .iter()
-                .map(|entry| build_entry_row(entry, palette))
+                .map(|entry| {
+                    let rename_buf = app
+                        .ui
+                        .globals
+                        .renaming
+                        .as_ref()
+                        .filter(|(old, _)| *old == entry.name)
+                        .map(|(_, buf)| buf.as_str());
+                    build_entry_row(entry, rename_buf, palette)
+                })
                 .collect();
 
             data_table(palette, headers, &widths, rows)
@@ -581,6 +666,7 @@ fn globals_page_header<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'
 
 fn build_entry_row<'a>(
     entry: &'a GlobalEntry,
+    rename_buf: Option<&'a str>,
     palette: &'a ForgePalette,
 ) -> Vec<Element<'a, Message>> {
     let mono = font(FontRole::Monospace);
@@ -606,23 +692,30 @@ fn build_entry_row<'a>(
     .align_x(Alignment::Center)
     .align_y(Alignment::Center);
 
-    let name_cell = button(
-        text(&entry.name)
-            .size(FONT_SM)
-            .font(mono)
-            .color(palette.text_primary),
-    )
-    .on_press(Message::Globals(GlobalsMsg::OpenEditModal(
-        entry.name.clone(),
-    )))
-    .padding(0)
-    .style(|_: &iced::Theme, _: button::Status| button::Style {
-        background: None,
-        text_color: Color::TRANSPARENT,
-        border: Border::default(),
-        shadow: Shadow::default(),
-        snap: false,
-    });
+    let name_cell: Element<'a, Message> = if let Some(buf) = rename_buf {
+        forge_widgets::inline_rename(
+            globals_rename_input_id(),
+            buf,
+            |s| Message::Globals(GlobalsMsg::RenameBufferChanged(s)),
+            Message::Globals(GlobalsMsg::RenameSubmit),
+            palette,
+        )
+        .size(FONT_SM)
+        .padding([2, sp(Spacing::Xs)])
+        .font(mono)
+        .into()
+    } else {
+        iced::widget::mouse_area(
+            text(&entry.name)
+                .size(FONT_SM)
+                .font(mono)
+                .color(palette.text_primary),
+        )
+        .on_double_click(Message::Globals(GlobalsMsg::RenameStarted(
+            entry.name.clone(),
+        )))
+        .into()
+    };
 
     let type_cell = type_pill(palette, VariantKind::from_variant(&entry.value));
 
@@ -655,19 +748,27 @@ fn build_entry_row<'a>(
     // style — the delete control being reachable matters more here than the
     // dim-until-hover polish. Revisit once a row-hover primitive exists.
     let delete_cell = row_actions(
-        vec![RowAction {
-            icon: Icon::X,
-            label: forge_widgets::tr!("globals_delete_action"),
-            on_press: Message::Globals(GlobalsMsg::DeleteRequested(entry.name.clone())),
-            color: Some(palette.random),
-        }],
+        vec![
+            RowAction {
+                icon: Icon::Notebook,
+                label: forge_widgets::tr!("globals_edit_action"),
+                on_press: Message::Globals(GlobalsMsg::OpenEditModal(entry.name.clone())),
+                color: Some(palette.brand),
+            },
+            RowAction {
+                icon: Icon::X,
+                label: forge_widgets::tr!("globals_delete_action"),
+                on_press: Message::Globals(GlobalsMsg::DeleteRequested(entry.name.clone())),
+                color: Some(palette.random),
+            },
+        ],
         true,
         palette,
     );
 
     vec![
         status_dot.into(),
-        name_cell.into(),
+        name_cell,
         type_cell,
         value_cell,
         modified_cell.into(),

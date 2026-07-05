@@ -1318,6 +1318,7 @@ globals_new_btn = + New variable
 globals_loading = Loading...
 globals_empty_title = No globals here
 globals_empty_desc = Adjust the filter or search, or create one with + New variable.
+globals_edit_action = Edit value
 globals_delete_action = Delete
 globals_deleted_toast = Deleted '{ $name }'
 

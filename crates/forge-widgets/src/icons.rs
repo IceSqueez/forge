@@ -66,6 +66,8 @@ pub enum Icon {
     ArrowBarDown,
     CircleCheckFilled,
     Circle,
+    Coin,
+    Pin,
 }
 
 impl Icon {
@@ -136,6 +138,8 @@ impl Icon {
                 include_bytes!("../assets/icons/tabler/circle-check-filled.svg")
             }
             Icon::Circle => include_bytes!("../assets/icons/tabler/circle.svg"),
+            Icon::Coin => include_bytes!("../assets/icons/tabler/coin.svg"),
+            Icon::Pin => include_bytes!("../assets/icons/tabler/pin.svg"),
         }
     }
 
@@ -204,6 +208,8 @@ impl Icon {
             "chart-line" | "chart" | "graph" | "line-chart" => Icon::ChartLine,
             "arrow-right" => Icon::ArrowRight,
             "diamond" => Icon::Diamond,
+            "coin" | "coins" | "bits" => Icon::Coin,
+            "pin" | "pinned" | "thumbtack" => Icon::Pin,
             "arrow-up" => Icon::ArrowUp,
             "arrow-down" => Icon::ArrowDown,
             "arrow-bar-up" | "arrow-to-top" => Icon::ArrowBarUp,

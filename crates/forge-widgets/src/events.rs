@@ -81,6 +81,12 @@ pub struct EventRowData {
     pub summary: String,
     pub result_tag: Option<String>,
     pub is_error: bool,
+    /// Colour for the event-type cell, derived by the caller from the event's
+    /// real emitter fields (kind + outcome), not from the joined summary string.
+    pub type_color: Color,
+    /// Colour for the result-tag cell, derived by the caller from the same real
+    /// fields the tag text reads (outcome / matched / status).
+    pub result_color: Color,
 }
 
 pub fn event_row_observability<'a, Msg: Clone + 'a>(
@@ -133,7 +139,7 @@ pub fn event_row_observability<'a, Msg: Clone + 'a>(
     let etype = container(
         iced::widget::text(event.event_type.clone())
             .size(FONT_XS)
-            .color(palette.text_primary)
+            .color(event.type_color)
             .font(mono),
     )
     .width(104);
@@ -141,21 +147,13 @@ pub fn event_row_observability<'a, Msg: Clone + 'a>(
     let summary = container(
         iced::widget::text(event.summary.clone())
             .size(FONT_XS)
-            .color(palette.text_secondary)
+            .color(palette.text_primary)
             .font(mono),
     )
     .width(Length::Fill)
     .clip(true);
 
-    let result_color = if is_error {
-        palette.random
-    } else {
-        match event.result_tag.as_deref() {
-            Some("ok") | Some("sent") => palette.success,
-            Some("err") => palette.random,
-            _ => palette.text_muted,
-        }
-    };
+    let result_color = event.result_color;
 
     let mut content_row = row![ts, badge, etype, summary]
         .spacing(10)

@@ -36,6 +36,8 @@ pub enum EventFilter {
 pub enum EventFeedMsg {
     EventArrived(Event),
     EventSelected(EventId),
+    Deselected,
+    SheetResized(f32),
     FilterChanged(EventFilter),
     PauseToggled,
     Cleared,
@@ -87,6 +89,7 @@ pub struct EventFeedState {
     pub active_filter: EventFilter,
     ev_rate: EvRateTracker,
     pub replay_loading: bool,
+    pub inspector_width: Option<f32>,
     selected_ts_str: String,
     selected_id_str: String,
     // The event resolved by walking the selected event's `caused_by` edge (its
@@ -106,6 +109,7 @@ impl EventFeedState {
             active_filter: EventFilter::All,
             ev_rate: EvRateTracker::new(),
             replay_loading: false,
+            inspector_width: None,
             selected_ts_str: String::new(),
             selected_id_str: String::new(),
             caused_summary: None,
@@ -138,7 +142,7 @@ impl EventFeedState {
             let ts = ev.timestamp;
             self.selected_ts_str = forge_widgets::fmt_feed_time(&ts);
             let id_s = id.to_string();
-            self.selected_id_str = format!("ev_{}", &id_s[..id_s.len().min(4)]);
+            self.selected_id_str = id_s[id_s.len().saturating_sub(6)..].to_lowercase();
             // Walk the causation edge (Invariant #2): the CAUSED section shows the
             // event that triggered this one, resolved through the bus ring exactly
             // as replay does, with the local feed ring as fallback.
@@ -346,6 +350,52 @@ fn is_error_event(event: &Event) -> bool {
     event.kind.contains("error") || event.kind.contains("fail")
 }
 
+/// Colour for the event-type cell, keyed on the event kind and — for
+/// `action.done` — the real `outcome` field, so a failed action reads red even
+/// though its kind is not an error kind.
+fn type_color(event: &Event, palette: &ForgePalette) -> Color {
+    if is_error_event(event) {
+        return palette.random;
+    }
+    match event.kind.as_str() {
+        k if is_chat_message_kind(k) => palette.info,
+        "command.matched" => palette.brand,
+        "action.done" => match event.payload["outcome"].as_str().unwrap_or("success") {
+            "success" => palette.success,
+            _ => palette.random,
+        },
+        "scene.changed" => palette.success,
+        "chat.send" => palette.info,
+        "action.start" | "script.exec" | "timer.tick" | "global.set" | "global.incr" => {
+            palette.warning
+        }
+        _ => palette.text_secondary,
+    }
+}
+
+/// Colour for the result-tag cell, read from the same real fields the tag text
+/// is built from (`outcome`, `matched`, retry status).
+fn result_color(event: &Event, palette: &ForgePalette) -> Color {
+    if is_error_event(event) {
+        return palette.warning;
+    }
+    match event.kind.as_str() {
+        "action.done" => match event.payload["outcome"].as_str().unwrap_or("success") {
+            "success" => palette.success,
+            _ => palette.random,
+        },
+        "command.matched" | "chat.send" => palette.success,
+        k if is_chat_message_kind(k) => {
+            if event.payload["matched"].as_bool().unwrap_or(false) {
+                palette.success
+            } else {
+                palette.text_muted
+            }
+        }
+        _ => palette.text_muted,
+    }
+}
+
 pub fn event_feed_scroll_id() -> iced::advanced::widget::Id {
     iced::advanced::widget::Id::new("forge:event_feed_scroll")
 }
@@ -370,6 +420,19 @@ pub fn update(
         }
         EventFeedMsg::EventSelected(id) => {
             state.update_selection(id, rt);
+            iced::Task::none()
+        }
+        EventFeedMsg::Deselected => {
+            state.selected = None;
+            state.selected_ts_str.clear();
+            state.selected_id_str.clear();
+            state.caused_summary = None;
+            state.caused_kind = None;
+            state.caused_event_id = None;
+            iced::Task::none()
+        }
+        EventFeedMsg::SheetResized(w) => {
+            state.inspector_width = Some(w);
             iced::Task::none()
         }
         EventFeedMsg::FilterChanged(f) => {
@@ -483,6 +546,7 @@ pub fn update(
 }
 
 fn toolbar_action_btn<'a>(
+    icon: Icon,
     label: impl Into<String>,
     on_press: Message,
     palette: &'a ForgePalette,
@@ -493,7 +557,14 @@ fn toolbar_action_btn<'a>(
         ..palette.border_regular
     };
 
-    button(text(label.into()).size(FONT_XS).color(text_color))
+    let content = row![
+        forge_widgets::tabler_icon(icon, FONT_XS, text_color),
+        text(label.into()).size(FONT_XS).color(text_color),
+    ]
+    .spacing(spf(Spacing::Xxs))
+    .align_y(iced::Alignment::Center);
+
+    button(content)
         .on_press(on_press)
         .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
         .style(move |_theme: &iced::Theme, status| button::Style {
@@ -520,8 +591,6 @@ pub fn event_feed_view<'a>(
 ) -> Element<'a, Message> {
     let mono = font(FontRole::Monospace);
     let filter = state.active_filter;
-
-    let _ = mono;
 
     let mut all_n = 0u32;
     let mut chat_n = 0u32;
@@ -571,15 +640,20 @@ pub fn event_feed_view<'a>(
     };
     let chips = filter_chip_row(
         vec![
-            chip_spec(all_label, Icon::LayoutGrid, palette.brand, EventFilter::All),
+            ChipSpec::new(
+                all_label,
+                ChipGlyph::None,
+                filter == EventFilter::All,
+                Message::EventFeed(EventFeedMsg::FilterChanged(EventFilter::All)),
+            ),
             chip_spec(
                 chat_label,
                 Icon::MessageCircle,
                 palette.info,
                 EventFilter::Chat,
             ),
-            chip_spec(subs_label, Icon::Star, palette.success, EventFilter::Subs),
-            chip_spec(bits_label, Icon::Diamond, palette.bits, EventFilter::Bits),
+            chip_spec(subs_label, Icon::Star, palette.brand, EventFilter::Subs),
+            chip_spec(bits_label, Icon::Coin, palette.warning, EventFilter::Bits),
             chip_spec(
                 timers_label,
                 Icon::Clock,
@@ -609,22 +683,25 @@ pub fn event_feed_view<'a>(
         },
     );
 
-    let pause_label = if state.paused {
-        forge_widgets::tr!("event_feed_resume")
+    let (pause_label, pause_icon) = if state.paused {
+        (forge_widgets::tr!("event_feed_resume"), Icon::PlayerPlay)
     } else {
-        forge_widgets::tr!("event_feed_pause")
+        (forge_widgets::tr!("event_feed_pause"), Icon::PlayerPause)
     };
     let pause_btn = toolbar_action_btn(
+        pause_icon,
         pause_label,
         Message::EventFeed(EventFeedMsg::PauseToggled),
         palette,
     );
     let clear_btn = toolbar_action_btn(
+        Icon::Eraser,
         forge_widgets::tr!("event_feed_clear"),
         Message::EventFeed(EventFeedMsg::Cleared),
         palette,
     );
     let export_btn = toolbar_action_btn(
+        Icon::Download,
         forge_widgets::tr!("event_feed_export"),
         Message::EventFeed(EventFeedMsg::ExportRequested),
         palette,
@@ -686,6 +763,8 @@ pub fn event_feed_view<'a>(
                 summary: format_summary(ev),
                 result_tag: format_result_tag(ev),
                 is_error: is_err,
+                type_color: type_color(ev, palette),
+                result_color: result_color(ev, palette),
             };
 
             event_row_observability(
@@ -723,7 +802,7 @@ pub fn event_feed_view<'a>(
         ..container::Style::default()
     });
 
-    let inspector_pane: Element<'_, Message> = if let Some(ev) = state.selected_event() {
+    let inspector_content: Element<'_, Message> = if let Some(ev) = state.selected_event() {
         let caused_event = state
             .caused_summary
             .as_deref()
@@ -748,55 +827,35 @@ pub fn event_feed_view<'a>(
             replay_loading: state.replay_loading,
         };
 
-        container(
-            scrollable(column![event_inspector(params, palette)].padding(Padding {
-                top: 0.0,
-                right: 0.0,
-                bottom: spf(Spacing::Sm),
-                left: 0.0,
-            }))
-            .height(Length::Fill),
-        )
-        .width(Length::Fixed(280.0))
+        scrollable(column![event_inspector(params, palette)].padding(Padding {
+            top: 0.0,
+            right: 0.0,
+            bottom: spf(Spacing::Sm),
+            left: 0.0,
+        }))
         .height(Length::Fill)
-        .padding(sp(Spacing::Sm))
-        .style(move |_: &iced::Theme| container::Style {
-            background: Some(Background::Color(palette.shell)),
-            border: Border {
-                color: palette.border_regular,
-                width: 0.5,
-                radius: 0.0.into(),
-            },
-            ..container::Style::default()
-        })
         .into()
     } else {
-        let inspector_header = text(forge_widgets::tr!("event_feed_inspector_title"))
-            .size(FONT_SM)
-            .color(palette.text_primary);
-
-        let placeholder = text(forge_widgets::tr!("event_feed_inspector_hint"))
-            .size(FONT_XS)
-            .color(palette.text_faint)
-            .font(mono);
-
-        container(column![inspector_header, placeholder].spacing(spf(Spacing::Xs)))
-            .width(Length::Fixed(280.0))
-            .height(Length::Fill)
-            .padding(sp(Spacing::Sm))
-            .style(move |_: &iced::Theme| container::Style {
-                background: Some(Background::Color(palette.shell)),
-                border: Border {
-                    color: palette.border_regular,
-                    width: 0.5,
-                    radius: 0.0.into(),
-                },
-                ..container::Style::default()
-            })
-            .into()
+        iced::widget::Space::new().into()
     };
 
-    let body_row = row![event_list_pane, inspector_pane].height(Length::Fill);
+    let inspector_w = state.inspector_width.unwrap_or(300.0).clamp(220.0, 540.0);
+    let inspector_sheet = forge_widgets::SideSheet::new(inspector_content)
+        .open(state.selected.is_some())
+        .palette(palette)
+        .width(forge_widgets::SheetWidth::new(inspector_w, 220.0, 540.0))
+        .resizable(true)
+        .sheet_key("event_inspector")
+        .header(forge_widgets::SheetHeader {
+            title: std::borrow::Cow::Owned(forge_widgets::tr!("event_feed_inspector_title")),
+            subtitle: None,
+            on_close: Some(Message::EventFeed(EventFeedMsg::Deselected)),
+        })
+        .header_icon(Icon::Pin, palette.brand)
+        .on_close(Message::EventFeed(EventFeedMsg::Deselected))
+        .on_resize(|w| Message::EventFeed(EventFeedMsg::SheetResized(w)));
+
+    let body_row = iced::widget::stack![event_list_pane, inspector_sheet].height(Length::Fill);
 
     let buf_count = state.events.len();
     let rate = state.ev_rate();

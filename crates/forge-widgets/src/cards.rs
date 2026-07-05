@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use iced::widget::{button, column, container, row, text};
-use iced::{Alignment, Background, Border, Element, Length, Shadow};
+use iced::{Alignment, Background, Border, Color, Element, Length, Padding, Shadow};
 
 use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
@@ -25,28 +25,154 @@ fn card_style(
     }
 }
 
-pub fn card<'a, Msg: 'a>(
-    children: impl IntoIterator<Item = Element<'a, Msg>>,
-    palette: &ForgePalette,
-) -> Element<'a, Msg> {
-    card_with_radius(children, palette, Radius::Md)
+/// Elevated surface panel matching the design-system `Card`.
+///
+/// Built via [`card`]. Renders as a bordered container by default and switches
+/// to a hover-reactive button once [`Card::on_press`] is set. The child is
+/// placed verbatim — no forced column wrapper — so callers own their layout.
+pub struct Card<'a, Msg> {
+    child: Element<'a, Msg>,
+    padding: Padding,
+    top_radius: f32,
+    bottom_radius: f32,
+    width: Length,
+    background: Color,
+    border_idle: Color,
+    border_hover: Color,
+    text_color: Color,
+    on_press: Option<Msg>,
 }
 
-/// Variant of `card` for callers that need a non-default corner radius.
-pub fn card_with_radius<'a, Msg: 'a>(
-    children: impl IntoIterator<Item = Element<'a, Msg>>,
+/// Wrap `child` in a standard card surface. Defaults reproduce the baseline
+/// chrome: `Spacing::Md` padding, `Radius::Md` on every corner, elevated
+/// background, thin regular border, shrink width, no hover reaction.
+pub fn card<'a, Msg: 'a>(
+    child: impl Into<Element<'a, Msg>>,
     palette: &ForgePalette,
-    r: Radius,
-) -> Element<'a, Msg> {
-    let bg = palette.elevated;
-    let border_color = palette.border_regular;
+) -> Card<'a, Msg> {
+    let r = radius(Radius::Md);
+    Card {
+        child: child.into(),
+        padding: Padding::from(spf(Spacing::Md)),
+        top_radius: r,
+        bottom_radius: r,
+        width: Length::Shrink,
+        background: palette.elevated,
+        border_idle: palette.border_regular,
+        border_hover: palette.border_input,
+        text_color: palette.text_primary,
+        on_press: None,
+    }
+}
 
-    let col = iced::widget::column(children).spacing(8);
+impl<'a, Msg: 'a> Card<'a, Msg> {
+    /// Override inner padding; accepts `0` for a flush, zero-inset surface.
+    #[must_use]
+    pub fn padding(mut self, padding: impl Into<Padding>) -> Self {
+        self.padding = padding.into();
+        self
+    }
 
-    container(col)
-        .padding(sp(Spacing::Md))
-        .style(card_style(bg, border_color, radius(r)))
-        .into()
+    /// Set the card width (defaults to `Length::Shrink`).
+    #[must_use]
+    pub fn width(mut self, width: impl Into<Length>) -> Self {
+        self.width = width.into();
+        self
+    }
+
+    /// Override the surface background (defaults to `palette.elevated`).
+    #[must_use]
+    pub fn background(mut self, color: Color) -> Self {
+        self.background = color;
+        self
+    }
+
+    /// Uniform corner radius on all four corners.
+    #[must_use]
+    pub fn radius(mut self, r: Radius) -> Self {
+        let v = radius(r);
+        self.top_radius = v;
+        self.bottom_radius = v;
+        self
+    }
+
+    /// Split the corner radius: `top` rounds the header edge, `bottom` the body
+    /// edge — used to butt a header bar flush against the panel below it. Pass
+    /// `0.0` for a square edge (feed the token via [`radius`] for rounded ones).
+    #[must_use]
+    pub fn split_radius(mut self, top: f32, bottom: f32) -> Self {
+        self.top_radius = top;
+        self.bottom_radius = bottom;
+        self
+    }
+
+    /// Make the card interactive: a press emits `msg` and hovering lifts the
+    /// border to `palette.border_input`.
+    #[must_use]
+    pub fn on_press(mut self, msg: Msg) -> Self {
+        self.on_press = Some(msg);
+        self
+    }
+}
+
+impl<'a, Msg: Clone + 'a> From<Card<'a, Msg>> for Element<'a, Msg> {
+    fn from(card: Card<'a, Msg>) -> Self {
+        let Card {
+            child,
+            padding,
+            top_radius,
+            bottom_radius,
+            width,
+            background,
+            border_idle,
+            border_hover,
+            text_color,
+            on_press,
+        } = card;
+
+        let corners = iced::border::Radius {
+            top_left: top_radius,
+            top_right: top_radius,
+            bottom_right: bottom_radius,
+            bottom_left: bottom_radius,
+        };
+
+        match on_press {
+            Some(msg) => button(child)
+                .on_press(msg)
+                .padding(padding)
+                .width(width)
+                .style(move |_theme: &iced::Theme, status| button::Style {
+                    background: Some(Background::Color(background)),
+                    border: Border {
+                        color: if matches!(status, button::Status::Hovered) {
+                            border_hover
+                        } else {
+                            border_idle
+                        },
+                        width: BORDER_THIN,
+                        radius: corners,
+                    },
+                    text_color,
+                    shadow: Shadow::default(),
+                    snap: false,
+                })
+                .into(),
+            None => container(child)
+                .padding(padding)
+                .width(width)
+                .style(move |_theme: &iced::Theme| container::Style {
+                    background: Some(Background::Color(background)),
+                    border: Border {
+                        color: border_idle,
+                        width: BORDER_THIN,
+                        radius: corners,
+                    },
+                    ..container::Style::default()
+                })
+                .into(),
+        }
+    }
 }
 
 pub fn metric_card<'a, Msg: 'a>(
@@ -111,41 +237,6 @@ pub fn stat_row<'a, Msg: 'a>(
     ]
     .align_y(iced::alignment::Vertical::Center)
     .into()
-}
-
-pub fn hero_card<'a, Msg: 'a>(
-    title: impl Into<Cow<'a, str>>,
-    subtitle: impl Into<Cow<'a, str>>,
-    children: impl IntoIterator<Item = Element<'a, Msg>>,
-    palette: &ForgePalette,
-) -> Element<'a, Msg> {
-    let bg = palette.elevated;
-    let border_color = palette.border_regular;
-    let title_color = palette.text_primary;
-    let subtitle_color = palette.text_secondary;
-
-    let title_str: Cow<'a, str> = title.into();
-    let subtitle_str: Cow<'a, str> = subtitle.into();
-
-    let header = iced::widget::column![
-        iced::widget::text(title_str)
-            .size(FONT_LG)
-            .color(title_color),
-        iced::widget::text(subtitle_str)
-            .size(FONT_SM)
-            .color(subtitle_color),
-    ]
-    .spacing(4);
-
-    let mut col = iced::widget::column![header].spacing(16);
-    for child in children {
-        col = col.push(child);
-    }
-
-    container(col)
-        .padding(sp(Spacing::Lg))
-        .style(card_style(bg, border_color, radius(Radius::Lg)))
-        .into()
 }
 
 pub struct BigJumpCardProps<Msg> {

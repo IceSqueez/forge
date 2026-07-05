@@ -3,7 +3,7 @@ use std::sync::Arc;
 use forge_events::Event;
 use forge_storage::GlobalsRepo;
 use forge_widgets::icons::{Icon, tabler_icon};
-use forge_widgets::tokens::{FONT_MD, FONT_SM, FONT_XS, Spacing, sp, spf};
+use forge_widgets::tokens::{FONT_MD, FONT_SM, FONT_XS, Spacing, spf};
 use forge_widgets::{FontRole, ForgePalette, Radius, ToastKind, font, radius};
 use iced::{Element, Length, Task, Theme};
 
@@ -165,54 +165,6 @@ async fn import_action(dp: Arc<dyn forge_storage::DataProvider>) -> Result<Strin
     Ok(action.name)
 }
 
-fn home_inline_button<'a>(
-    icon: Icon,
-    label: String,
-    on_press: Message,
-    palette: &'a ForgePalette,
-) -> Element<'a, Message> {
-    use iced::widget::{button, row, text};
-    use iced::{Alignment, Background, Border, Shadow};
-
-    let icon_color = palette.text_secondary;
-    let text_color = palette.text_secondary;
-    let border_color = palette.border_regular;
-    let r = radius(Radius::Md);
-
-    let content = row![
-        tabler_icon(icon, 12.0, icon_color),
-        text(label).size(FONT_SM).color(text_color),
-    ]
-    .spacing(spf(Spacing::Xxs))
-    .align_y(Alignment::Center);
-
-    button(content)
-        .on_press(on_press)
-        .padding([6.0, 12.0])
-        .style(move |_theme: &Theme, status| {
-            let bg = if matches!(status, iced::widget::button::Status::Hovered) {
-                Some(Background::Color(iced::Color {
-                    a: 0.06,
-                    ..border_color
-                }))
-            } else {
-                Some(Background::Color(iced::Color::TRANSPARENT))
-            };
-            button::Style {
-                background: bg,
-                text_color,
-                border: Border {
-                    color: border_color,
-                    width: 0.5,
-                    radius: r.into(),
-                },
-                shadow: Shadow::default(),
-                snap: false,
-            }
-        })
-        .into()
-}
-
 fn home_hero<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     use iced::widget::{column, container, row, text};
     use iced::{Alignment, Background, Border};
@@ -246,13 +198,13 @@ fn home_hero<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     ]
     .spacing(spf(Spacing::Xxs));
 
-    let import_btn = home_inline_button(
+    let import_btn = forge_widgets::ghost_button_with_icon(
         Icon::Download,
         forge_widgets::tr!("home_hero_import"),
         Message::Home(HomeMsg::ImportRequested),
         palette,
     );
-    let new_action_btn = home_inline_button(
+    let new_action_btn = forge_widgets::ghost_button_with_icon(
         Icon::Plus,
         forge_widgets::tr!("home_hero_new_action"),
         Message::Navigate(Screen::ActionEditor(None)),
@@ -269,10 +221,7 @@ fn home_hero<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     .spacing(spf(Spacing::Md))
     .align_y(Alignment::Center);
 
-    let elevated = palette.elevated;
-    let border_regular = palette.border_regular;
-
-    container(inner)
+    forge_widgets::card(inner, palette)
         .width(Length::Fill)
         .padding(iced::Padding {
             top: 22.0,
@@ -280,15 +229,7 @@ fn home_hero<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
             bottom: 22.0,
             left: 24.0,
         })
-        .style(move |_theme: &Theme| iced::widget::container::Style {
-            background: Some(Background::Color(elevated)),
-            border: Border {
-                color: border_regular,
-                width: 0.5,
-                radius: radius(Radius::Lg).into(),
-            },
-            ..iced::widget::container::Style::default()
-        })
+        .radius(Radius::Lg)
         .into()
 }
 
@@ -366,8 +307,6 @@ fn home_stream_health<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a
     use iced::widget::{column, container, row, text};
     use iced::{Alignment, Background, Border};
 
-    let elevated = palette.elevated;
-    let border_regular = palette.border_regular;
     let success = palette.success;
     let text_faint = palette.text_faint;
     let text_primary = palette.text_primary;
@@ -508,18 +447,9 @@ fn home_stream_health<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a
 
     let card_content = column![header, stats_row].spacing(spf(Spacing::Xs));
 
-    container(card_content)
+    forge_widgets::card(card_content, palette)
         .width(Length::Fill)
-        .padding(sp(Spacing::Sm))
-        .style(move |_theme: &Theme| iced::widget::container::Style {
-            background: Some(Background::Color(elevated)),
-            border: Border {
-                color: border_regular,
-                width: 0.5,
-                radius: radius(Radius::Md).into(),
-            },
-            ..iced::widget::container::Style::default()
-        })
+        .padding(spf(Spacing::Sm))
         .into()
 }
 
@@ -616,8 +546,8 @@ fn home_connection_cell<'a>(
 }
 
 fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
+    use iced::Alignment;
     use iced::widget::{column, container, row, text};
-    use iced::{Alignment, Background, Border};
 
     let connectivity = Connectivity::resolve(&app.rt);
     let connected = connectivity.connected_count();
@@ -645,11 +575,9 @@ fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
     .spacing(spf(Spacing::Xs))
     .align_y(Alignment::Center);
 
-    let elevated = palette.elevated;
-    let border_regular = palette.border_regular;
     let surface_overlay = palette.surface_overlay;
 
-    let header_bar = container(header)
+    let header_bar = forge_widgets::card(header, palette)
         .width(Length::Fill)
         .padding(iced::Padding {
             top: 10.0,
@@ -657,20 +585,7 @@ fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
             bottom: 10.0,
             left: 14.0,
         })
-        .style(move |_theme: &Theme| iced::widget::container::Style {
-            background: Some(Background::Color(elevated)),
-            border: Border {
-                color: border_regular,
-                width: 0.5,
-                radius: iced::border::Radius {
-                    top_left: radius(Radius::Md),
-                    top_right: radius(Radius::Md),
-                    bottom_left: 0.0,
-                    bottom_right: 0.0,
-                },
-            },
-            ..iced::widget::container::Style::default()
-        });
+        .split_radius(radius(Radius::Md), 0.0);
 
     let mut cells = row![].spacing(spf(Spacing::Xxs));
     for status in connectivity.statuses() {
@@ -692,22 +607,11 @@ fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
         );
     }
 
-    let cells_container = container(cells)
+    let cells_container = forge_widgets::card(cells, palette)
         .width(Length::Fill)
-        .style(move |_theme: &Theme| iced::widget::container::Style {
-            background: Some(Background::Color(surface_overlay)),
-            border: Border {
-                color: border_regular,
-                width: 0.5,
-                radius: iced::border::Radius {
-                    top_left: 0.0,
-                    top_right: 0.0,
-                    bottom_left: radius(Radius::Md),
-                    bottom_right: radius(Radius::Md),
-                },
-            },
-            ..iced::widget::container::Style::default()
-        });
+        .padding(0)
+        .background(surface_overlay)
+        .split_radius(0.0, radius(Radius::Md));
 
     column![header_bar, cells_container]
         .spacing(0.0)
@@ -819,8 +723,6 @@ fn home_recent_events_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
     use iced::widget::{column, container, row, text};
     use iced::{Alignment, Background, Border};
 
-    let elevated = palette.elevated;
-    let border_regular = palette.border_regular;
     let success = palette.success;
     let text_faint = palette.text_faint;
     let text_primary = palette.text_primary;
@@ -874,18 +776,9 @@ fn home_recent_events_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
         col.into()
     };
 
-    container(column![header, body].spacing(spf(Spacing::Xs)))
+    forge_widgets::card(column![header, body].spacing(spf(Spacing::Xs)), palette)
         .width(Length::FillPortion(14))
-        .padding(sp(Spacing::Sm))
-        .style(move |_theme: &Theme| iced::widget::container::Style {
-            background: Some(Background::Color(elevated)),
-            border: Border {
-                color: border_regular,
-                width: 0.5,
-                radius: radius(Radius::Md).into(),
-            },
-            ..iced::widget::container::Style::default()
-        })
+        .padding(spf(Spacing::Sm))
         .into()
 }
 
@@ -936,11 +829,8 @@ fn home_glance_row<'a>(
 }
 
 fn home_glance_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
-    use iced::widget::{column, container, text};
-    use iced::{Background, Border};
+    use iced::widget::{column, text};
 
-    let elevated = palette.elevated;
-    let border_regular = palette.border_regular;
     let text_primary = palette.text_primary;
 
     let actions_val = app
@@ -989,18 +879,9 @@ fn home_glance_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, 
     ]
     .spacing(0.0);
 
-    container(content)
+    forge_widgets::card(content, palette)
         .width(Length::FillPortion(10))
-        .padding(sp(Spacing::Sm))
-        .style(move |_theme: &Theme| iced::widget::container::Style {
-            background: Some(Background::Color(elevated)),
-            border: Border {
-                color: border_regular,
-                width: 0.5,
-                radius: radius(Radius::Md).into(),
-            },
-            ..iced::widget::container::Style::default()
-        })
+        .padding(spf(Spacing::Sm))
         .into()
 }
 

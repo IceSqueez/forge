@@ -265,7 +265,7 @@ fn settings_version_pane(palette: &ForgePalette) -> Element<'static, Message> {
     .spacing(spf(Spacing::Md))
     .align_y(iced::Alignment::Center);
 
-    let identity_card = forge_widgets::card([identity.into()], palette);
+    let identity_card = forge_widgets::card(identity, palette);
 
     // Recent releases card, sourced from the embedded changelog.
     let releases_header = text(forge_widgets::tr!("settings_version_recent_releases"))
@@ -285,7 +285,7 @@ fn settings_version_pane(palette: &ForgePalette) -> Element<'static, Message> {
             releases_col = releases_col.push(release_row(entry, palette));
         }
     }
-    let releases_card = forge_widgets::card([releases_col.into()], palette);
+    let releases_card = forge_widgets::card(releases_col, palette);
 
     container(column![header, identity_card, releases_card].spacing(spf(Spacing::Md)))
         .width(Length::Fill)
@@ -326,15 +326,15 @@ fn settings_diagnostics_pane(palette: &ForgePalette) -> Element<'static, Message
         .color(palette.text_muted);
 
     let logs_card = forge_widgets::card(
-        [
+        iced::widget::column![
             iced::widget::text(forge_widgets::tr!("settings_diagnostics_section_title"))
                 .size(FONT_SM)
-                .color(palette.text_primary)
-                .into(),
-            log_path_label.into(),
+                .color(palette.text_primary),
+            log_path_label,
             open_logs_btn,
-            level_label.into(),
-        ],
+            level_label,
+        ]
+        .spacing(spf(Spacing::Xs)),
         palette,
     );
 
@@ -364,15 +364,15 @@ fn settings_storage_pane(palette: &ForgePalette) -> Element<'static, Message> {
         .color(palette.text_faint);
 
     let storage_card = forge_widgets::card(
-        [
+        iced::widget::column![
             iced::widget::text(forge_widgets::tr!("settings_storage_section_title"))
                 .size(FONT_SM)
-                .color(palette.text_primary)
-                .into(),
-            path_label.into(),
+                .color(palette.text_primary),
+            path_label,
             backup_btn,
-            backup_hint.into(),
-        ],
+            backup_hint,
+        ]
+        .spacing(spf(Spacing::Xs)),
         palette,
     );
 
@@ -390,20 +390,18 @@ fn settings_queues_pane(palette: &ForgePalette) -> Element<'static, Message> {
     let thread_hint =
         forge_widgets::tr!("settings_queues_thread_hint", workers = workers.to_string());
     let card = forge_widgets::card(
-        [
+        iced::widget::column![
             iced::widget::text(forge_widgets::tr!("settings_queues_section_title"))
                 .size(FONT_SM)
-                .color(palette.text_primary)
-                .into(),
+                .color(palette.text_primary),
             iced::widget::text(thread_hint)
                 .size(FONT_SM)
-                .color(palette.text_muted)
-                .into(),
+                .color(palette.text_muted),
             iced::widget::text(forge_widgets::tr!("settings_queues_managed_hint"))
                 .size(FONT_XS)
-                .color(palette.text_faint)
-                .into(),
-        ],
+                .color(palette.text_faint),
+        ]
+        .spacing(spf(Spacing::Xs)),
         palette,
     );
     iced::widget::container(card)
@@ -742,16 +740,15 @@ fn settings_appearance_pane<'a>(
 
 fn settings_notifications_pane(palette: &ForgePalette) -> Element<'static, Message> {
     let card = forge_widgets::card(
-        [
+        iced::widget::column![
             iced::widget::text(forge_widgets::tr!("settings_notifications_section_title"))
                 .size(FONT_SM)
-                .color(palette.text_primary)
-                .into(),
+                .color(palette.text_primary),
             iced::widget::text(forge_widgets::tr!("settings_notifications_hint"))
                 .size(FONT_SM)
-                .color(palette.text_muted)
-                .into(),
-        ],
+                .color(palette.text_muted),
+        ]
+        .spacing(spf(Spacing::Xs)),
         palette,
     );
     iced::widget::container(card)

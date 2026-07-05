@@ -43,7 +43,7 @@ pub fn storage_error_view<'a>(reason: &str, palette: &ForgePalette) -> Element<'
         .align_x(Alignment::Center)
         .max_width(560.0);
 
-    container(card([body.into()], palette))
+    container(card(body, palette))
         .width(Length::Fill)
         .height(Length::Fill)
         .align_x(Alignment::Center)

@@ -508,6 +508,7 @@ fn credentials_section<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
 fn param_slider_row<'a>(
     label: &str,
     value_label: &'static str,
+    fraction: f32,
     palette: &'a ForgePalette,
     gap_sm: f32,
 ) -> Element<'a, Message> {
@@ -516,13 +517,7 @@ fn param_slider_row<'a>(
             .size(FONT_SM)
             .color(palette.text_muted)
             .width(70),
-        container(text(""))
-            .style(move |_| container::Style {
-                background: Some(Background::Color(palette.brand)),
-                ..container::Style::default()
-            })
-            .height(4)
-            .width(Length::Fill),
+        container(forge_widgets::slider_track(fraction, palette)).width(Length::Fill),
         text(value_label)
             .size(FONT_SM)
             .color(palette.text_muted)
@@ -546,18 +541,21 @@ fn params_section<'a>(palette: &'a ForgePalette, gap_sm: f32) -> Element<'a, Mes
             param_slider_row(
                 &forge_widgets::tr!("tts_engines_param_pitch"),
                 "0 st",
+                0.5,
                 palette,
                 gap_sm
             ),
             param_slider_row(
                 &forge_widgets::tr!("tts_engines_param_speed"),
                 "1.0x",
+                0.5,
                 palette,
                 gap_sm
             ),
             param_slider_row(
                 &forge_widgets::tr!("tts_engines_param_volume"),
                 "0 dB",
+                1.0,
                 palette,
                 gap_sm
             ),

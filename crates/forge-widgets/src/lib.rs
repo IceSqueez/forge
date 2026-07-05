@@ -41,6 +41,7 @@ pub mod sections;
 pub mod semantic;
 pub mod server;
 pub mod side_sheet;
+pub mod slider;
 pub mod status;
 pub mod tag_list_input;
 pub mod theme;
@@ -129,6 +130,7 @@ pub use server::{BindAddressCardParams, BindBadge, bearer_token_display, bind_ad
 pub use side_sheet::{
     Easing, SheetAnimation, SheetHeader, SheetPosition, SheetWidth, SideSheet, SideSheetConfig,
 };
+pub use slider::{slider, slider_style, slider_track};
 pub use status::{StatusVariant, badge, connection_status_badge, status_dot};
 pub use tag_list_input::{TagListInputMessage, TagListInputState, tag_list_input};
 pub use theme::{catppuccin_mocha, latte, palette_for_theme, theme_assets, tokyo_night_storm};

@@ -8,9 +8,7 @@ use forge_widgets::tokens::{
 use forge_widgets::{
     ConfirmKind, ConfirmModalParams, ConfirmTone, ForgePalette, ToastKind, confirm_modal,
 };
-use iced::widget::{
-    Space, button, column, container, row, scrollable, slider, stack, text, text_input,
-};
+use iced::widget::{Space, button, column, container, row, scrollable, stack, text, text_input};
 use iced::{Alignment, Background, Border, Color, Element, Length, Task};
 
 use crate::Message;
@@ -369,9 +367,12 @@ fn control_strip_view<'a>(
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
-    let vol_slider = slider(0.0..=1.0, state.volume, |v| {
-        Message::Tts(TtsMsg::Dashboard(TtsDashMsg::VolumeChanged(v)))
-    })
+    let vol_slider = forge_widgets::slider(
+        0.0..=1.0,
+        state.volume,
+        |v| Message::Tts(TtsMsg::Dashboard(TtsDashMsg::VolumeChanged(v))),
+        palette,
+    )
     .width(90)
     .step(0.01);
 

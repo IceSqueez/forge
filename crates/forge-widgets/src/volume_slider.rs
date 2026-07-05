@@ -1,9 +1,10 @@
 use iced::{
     Alignment, Element, Length,
-    widget::{row, slider, text},
+    widget::{row, text},
 };
 
 use crate::palette::ForgePalette;
+use crate::slider::slider;
 use crate::tokens::{FONT_SM, FontRole, Spacing, font, spf};
 
 pub fn volume_slider<'a, Msg: 'a + Clone>(
@@ -27,7 +28,7 @@ pub fn volume_slider<'a, Msg: 'a + Clone>(
             .color(palette.text_muted)
             .font(font(FontRole::Monospace))
             .width(label_w),
-        slider(0.0..=1.5, value, on_change).width(Length::Fill),
+        slider(0.0..=1.5, value, on_change, palette).width(Length::Fill),
         text(pct_label)
             .size(FONT_SM)
             .color(pct_color)

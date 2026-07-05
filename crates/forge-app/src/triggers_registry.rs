@@ -1183,45 +1183,18 @@ fn instance_row<'a>(
         Space::new().width(0).into()
     };
 
-    let toggle_label = if row.enabled {
-        forge_widgets::tr!("triggers_toggle_on")
-    } else {
-        forge_widgets::tr!("triggers_toggle_off")
-    };
-    let toggle_bg = if row.enabled {
-        p.brand
-    } else {
-        p.surface_overlay
-    };
-    let toggle_fg = if row.enabled {
-        p.shell
-    } else {
-        p.text_secondary
-    };
     let toggle_id = row.id;
     let toggle_enabled = row.enabled;
 
-    let toggle_btn = button(
-        text(toggle_label)
-            .size(FONT_XS)
-            .color(toggle_fg)
-            .font(font(FontRole::Body)),
-    )
-    .on_press(Message::TriggersRegistry(
-        TriggersRegistryMsg::EnableToggled(toggle_id, !toggle_enabled),
-    ))
-    .padding([2, sp(Spacing::Xs)])
-    .style(move |_: &iced::Theme, _status| button::Style {
-        background: Some(Background::Color(toggle_bg)),
-        border: Border {
-            radius: radius(Radius::Pill).into(),
-            color: Color::TRANSPARENT,
-            width: 0.0,
-        },
-        text_color: toggle_fg,
-        shadow: iced::Shadow::default(),
-        snap: false,
-    });
+    let toggle_btn = forge_widgets::toggle_switch(
+        toggle_enabled,
+        None,
+        Message::TriggersRegistry(TriggersRegistryMsg::EnableToggled(
+            toggle_id,
+            !toggle_enabled,
+        )),
+        palette,
+    );
 
     let row_id = row.id;
     // A still-referenced instance can't be deleted (FK), so its Delete item is

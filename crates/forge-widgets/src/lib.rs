@@ -41,12 +41,13 @@ pub mod status;
 pub mod tag_list_input;
 pub mod theme;
 pub mod toast;
+pub mod toggle;
 pub mod tokens;
 pub mod volume_slider;
 
 pub use actions::{
-    ModalProps, NodeProps, NodeStatus, SubActionProps, ToggleProps, TriggerCardProps,
-    category_chip, modal, sub_action_card, toggle, tree_node_with_status, variable_chip,
+    ModalProps, NodeProps, NodeStatus, SubActionProps, TriggerCardProps, category_chip, modal,
+    sub_action_card, tree_node_with_status, variable_chip,
 };
 pub use autocomplete_popup::{
     AutocompletePopupMessage, AutocompletePopupState, autocomplete_popup, filter_candidates,
@@ -124,6 +125,7 @@ pub use status::{StatusVariant, platform_badge, role_badge, status_dot, status_p
 pub use tag_list_input::{TagListInputMessage, TagListInputState, tag_list_input};
 pub use theme::{catppuccin_mocha, latte, palette_for_theme, tokyo_night_storm};
 pub use toast::{Toast, ToastAction, ToastKind, ToastQueue, toast_viewport};
+pub use toggle::{ToggleProps, toggle, toggle_switch};
 pub use tokens::{
     DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FontRole, FontWeight, Radius, Spacing,
     ThemeId, font, font_weighted, install_density, install_font_override, load_fonts, radius, sp,

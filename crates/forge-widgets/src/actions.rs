@@ -52,27 +52,11 @@ pub struct ModalProps<'a, Msg> {
     pub kbd_hint: Option<&'a str>,
 }
 
-#[derive(Debug, Clone)]
-pub struct ToggleProps<Msg> {
-    pub label: String,
-    pub description: String,
-    pub value: bool,
-    pub on_toggle: Msg,
-}
-
 pub(crate) fn node_status_dot_color(status: NodeStatus, palette: &ForgePalette) -> Color {
     match status {
         NodeStatus::Enabled => palette.success,
         NodeStatus::Disabled => palette.border_regular,
         NodeStatus::Error => palette.random,
-    }
-}
-
-pub(crate) fn toggle_thumb_bg(value: bool, palette: &ForgePalette) -> Color {
-    if value {
-        palette.brand
-    } else {
-        palette.surface_overlay
     }
 }
 
@@ -418,85 +402,6 @@ pub fn modal<'a, Msg: Clone + 'a>(
         .align_y(Alignment::Center);
 
     stack![backdrop, centered_card].into()
-}
-
-pub fn toggle<'a, Msg: Clone + 'a>(
-    palette: &'a ForgePalette,
-    props: ToggleProps<Msg>,
-) -> Element<'a, Msg> {
-    let track_bg = toggle_thumb_bg(props.value, palette);
-    let thumb_color = palette.text_primary;
-
-    let track_width = 36_f32;
-    let track_height = 20_f32;
-    let thumb_size = 16_f32;
-    let thumb_offset = if props.value {
-        track_width - thumb_size - 2.0
-    } else {
-        2.0
-    };
-
-    let thumb = container(Space::new().width(thumb_size).height(thumb_size))
-        .width(thumb_size)
-        .height(thumb_size)
-        .style(move |_theme: &iced::Theme| container::Style {
-            background: Some(Background::Color(thumb_color)),
-            border: Border {
-                radius: (thumb_size / 2.0).into(),
-                color: Color::TRANSPARENT,
-                width: 0.0,
-            },
-            ..container::Style::default()
-        });
-
-    let thumb_padded = container(thumb).padding(Padding {
-        top: spf(Spacing::Xxs),
-        right: 0.0,
-        bottom: 0.0,
-        left: thumb_offset,
-    });
-
-    let track = container(thumb_padded)
-        .width(track_width)
-        .height(track_height)
-        .style(move |_theme: &iced::Theme| container::Style {
-            background: Some(Background::Color(track_bg)),
-            border: Border {
-                radius: (track_height / 2.0).into(),
-                color: Color::TRANSPARENT,
-                width: 0.0,
-            },
-            ..container::Style::default()
-        });
-
-    let label_el = text(props.label)
-        .size(FONT_SM)
-        .color(palette.text_primary)
-        .font(font(FontRole::Body));
-
-    let desc_el = text(props.description)
-        .size(FONT_SM)
-        .color(palette.text_faint)
-        .font(font(FontRole::Body));
-
-    let label_col = column![label_el, desc_el].spacing(2);
-
-    let inner = row![container(label_col).width(Length::Fill), track,]
-        .spacing(12)
-        .align_y(Alignment::Center);
-
-    button(inner)
-        .on_press(props.on_toggle)
-        .padding([sp(Spacing::Xs), 0])
-        .width(Length::Fill)
-        .style(|_theme: &iced::Theme, _status| button::Style {
-            background: None,
-            border: Border::default(),
-            text_color: Color::TRANSPARENT,
-            shadow: iced::Shadow::default(),
-            snap: false,
-        })
-        .into()
 }
 
 /// Re-exports `filter_chip` under a semantically appropriate name for trigger modal category

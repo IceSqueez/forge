@@ -648,17 +648,6 @@ fn rule_row<'a>(
         palette.text_faint
     };
 
-    let toggle_label = if rule.enabled {
-        forge_widgets::tr!("tts_filters_rule_on")
-    } else {
-        forge_widgets::tr!("tts_filters_rule_off")
-    };
-    let toggle_color = if rule.enabled {
-        palette.success
-    } else {
-        palette.text_faint
-    };
-
     let icon_btn = |icon: Icon, msg: TtsFiltersMsg, enabled: bool| {
         let color = if enabled {
             palette.text_muted
@@ -679,21 +668,12 @@ fn rule_row<'a>(
     };
 
     let controls = row![
-        button(
-            text(toggle_label)
-                .size(8.5)
-                .color(toggle_color)
-                .font(font(FontRole::Monospace)),
-        )
-        .on_press(Message::Tts(TtsMsg::Filters(TtsFiltersMsg::ToggleRule(
-            index
-        ))))
-        .style(move |_, _| button::Style {
-            background: None,
-            text_color: toggle_color,
-            ..button::Style::default()
-        })
-        .padding(sp(Spacing::Xxs)),
+        forge_widgets::toggle_switch(
+            rule.enabled,
+            None,
+            Message::Tts(TtsMsg::Filters(TtsFiltersMsg::ToggleRule(index))),
+            palette,
+        ),
         icon_btn(Icon::ArrowUp, TtsFiltersMsg::MoveRuleUp(index), !is_first),
         icon_btn(
             Icon::ArrowDown,

@@ -212,58 +212,6 @@ pub fn tts_triggers_view<'a>(
     .into()
 }
 
-fn toggle_switch<'a>(on: bool, msg: Message, palette: &'a ForgePalette) -> Element<'a, Message> {
-    use iced::widget::button;
-
-    let knob_offset = if on { 14.0_f32 } else { 2.0_f32 };
-    let track_color = if on {
-        palette.success
-    } else {
-        palette.surface_overlay
-    };
-
-    button(
-        container(
-            container(text(""))
-                .style(move |_| container::Style {
-                    background: Some(Background::Color(palette.text_primary)),
-                    border: Border {
-                        radius: radius(Radius::Pill).into(),
-                        ..Border::default()
-                    },
-                    ..container::Style::default()
-                })
-                .width(14)
-                .height(14),
-        )
-        .style(move |_| container::Style {
-            background: Some(Background::Color(track_color)),
-            border: Border {
-                radius: radius(Radius::Pill).into(),
-                ..Border::default()
-            },
-            ..container::Style::default()
-        })
-        .width(32)
-        .height(18)
-        .padding(iced::Padding {
-            top: spf(Spacing::Xxs),
-            bottom: spf(Spacing::Xxs),
-            left: knob_offset,
-            right: spf(Spacing::Xxs),
-        }),
-    )
-    .on_press(msg)
-    .style(|_, _| button::Style {
-        background: None,
-        border: Border::default(),
-        text_color: iced::Color::TRANSPARENT,
-        ..button::Style::default()
-    })
-    .padding(0)
-    .into()
-}
-
 fn role_chip<'a>(
     label: &'static str,
     color: iced::Color,
@@ -318,8 +266,9 @@ fn trigger_card_command<'a>(
         ]
         .spacing(spf(Spacing::Xxs))
         .width(Length::Fill),
-        toggle_switch(
+        forge_widgets::toggle_switch(
             state.command_enabled,
+            None,
             Message::Tts(TtsMsg::Triggers(TtsTriggersMsg::CommandEnabledToggled(
                 !state.command_enabled,
             ))),
@@ -398,8 +347,9 @@ fn trigger_card_channel_points<'a>(
         ]
         .spacing(spf(Spacing::Xxs))
         .width(Length::Fill),
-        toggle_switch(
+        forge_widgets::toggle_switch(
             state.channel_points_enabled,
+            None,
             Message::Tts(TtsMsg::Triggers(
                 TtsTriggersMsg::ChannelPointsEnabledToggled(!state.channel_points_enabled,)
             )),
@@ -466,8 +416,9 @@ fn trigger_card_bits<'a>(
         ]
         .spacing(spf(Spacing::Xxs))
         .width(Length::Fill),
-        toggle_switch(
+        forge_widgets::toggle_switch(
             state.bits_enabled,
+            None,
             Message::Tts(TtsMsg::Triggers(TtsTriggersMsg::BitsEnabledToggled(
                 !state.bits_enabled,
             ))),
@@ -550,8 +501,9 @@ fn trigger_card_subs<'a>(
         ]
         .spacing(spf(Spacing::Xxs))
         .width(Length::Fill),
-        toggle_switch(
+        forge_widgets::toggle_switch(
             state.sub_messages_enabled,
+            None,
             Message::Tts(TtsMsg::Triggers(TtsTriggersMsg::SubMessagesEnabledToggled(
                 !state.sub_messages_enabled,
             ))),
@@ -597,7 +549,7 @@ fn format_row_toggle<'a>(
                 .size(FONT_SM)
                 .color(palette.text_primary)
                 .width(Length::Fill),
-            toggle_switch(on, msg, palette),
+            forge_widgets::toggle_switch(on, None, msg, palette),
         ]
         .align_y(Alignment::Center),
     )
@@ -737,8 +689,9 @@ fn queue_behavior_card<'a>(
                 .size(FONT_SM)
                 .color(palette.text_primary)
                 .width(Length::Fill),
-            toggle_switch(
+            forge_widgets::toggle_switch(
                 state.bits_skip_line,
+                None,
                 Message::Tts(TtsMsg::Triggers(TtsTriggersMsg::BitsSkipLineToggled(
                     !state.bits_skip_line,
                 ))),

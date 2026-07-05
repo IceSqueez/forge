@@ -303,10 +303,11 @@ fn settings_diagnostics_pane(palette: &ForgePalette) -> Element<'static, Message
             forge_widgets::tr!("settings_about_build_label"),
             version,
             None::<&str>,
+            None,
             palette,
         ),
-        forge_widgets::metric_card("Rust", "1.95.0", None::<&str>, palette),
-        forge_widgets::metric_card("OS", std::env::consts::OS, None::<&str>, palette),
+        forge_widgets::metric_card("Rust", "1.95.0", None::<&str>, None, palette),
+        forge_widgets::metric_card("OS", std::env::consts::OS, None::<&str>, None, palette),
     ]
     .spacing(spf(Spacing::Sm));
 

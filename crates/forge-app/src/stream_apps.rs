@@ -1,14 +1,14 @@
 use forge_platform_core::{BuiltinId, ConnectionState};
 use forge_widgets::{
     ForgePalette, Icon, tabler_icon,
-    tokens::{FONT_MD, FONT_SM, Radius, Spacing, radius, sp, spf},
+    tokens::{FONT_MD, FONT_SM, Radius, Spacing, radius, spf},
 };
 use iced::{
-    Alignment, Background, Border, Color, Element, Length, Shadow,
-    widget::{button, column, container, row, scrollable, text},
+    Alignment, Background, Border, Color, Element, Length,
+    widget::{column, container, row, scrollable, text},
 };
 
-use crate::{App, Message, Screen};
+use crate::{App, Message};
 
 pub fn view<'a>(state: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
     let p = *palette;
@@ -26,11 +26,11 @@ pub fn view<'a>(state: &'a App, palette: &'a ForgePalette) -> Element<'a, Messag
         Some(ConnectionState::Connected)
     );
 
-    let obs_card = app_overview_card(
-        Icon::Broadcast,
-        p.success,
+    let obs_card = crate::platforms_view::overview_card(
+        app_icon_tile(Icon::Broadcast, p.success, palette),
         "OBS Studio",
         forge_widgets::tr!("stream_apps.obs.desc"),
+        &[],
         obs_connected,
         BuiltinId::new("obs"),
         palette,
@@ -40,11 +40,11 @@ pub fn view<'a>(state: &'a App, palette: &'a ForgePalette) -> Element<'a, Messag
         Some(ConnectionState::Connected)
     );
 
-    let vtube_card = app_overview_card(
-        Icon::MoodSmile,
-        p.warning,
+    let vtube_card = crate::platforms_view::overview_card(
+        app_icon_tile(Icon::MoodSmile, p.warning, palette),
         "VTube Studio",
         forge_widgets::tr!("stream_apps.vtube.desc"),
+        &[],
         vtube_connected,
         BuiltinId::new("vtube"),
         palette,
@@ -73,19 +73,15 @@ pub fn view<'a>(state: &'a App, palette: &'a ForgePalette) -> Element<'a, Messag
         .into()
 }
 
-#[allow(clippy::too_many_arguments)]
-fn app_overview_card<'a>(
+/// Rounded surface tile holding a stream-app glyph, used as the `leading`
+/// visual for [`crate::platforms_view::overview_card`].
+fn app_icon_tile<'a>(
     icon: Icon,
     icon_color: Color,
-    name: &'a str,
-    desc: impl Into<String>,
-    connected: bool,
-    target: BuiltinId,
-    palette: &'a ForgePalette,
+    palette: &ForgePalette,
 ) -> Element<'a, Message> {
     let p = *palette;
-
-    let icon_box = container(tabler_icon(icon, 22.0, icon_color))
+    container(tabler_icon(icon, 22.0, icon_color))
         .width(44.0)
         .height(44.0)
         .align_x(Alignment::Center)
@@ -98,56 +94,7 @@ fn app_overview_card<'a>(
                 width: 0.0,
             },
             ..container::Style::default()
-        });
-
-    let badge = forge_widgets::connection_status_badge(connected, palette);
-
-    let title_row = row![
-        text(name.to_owned()).size(FONT_SM).color(p.text_primary),
-        badge,
-    ]
-    .spacing(spf(Spacing::Xs))
-    .align_y(Alignment::Center);
-
-    let desc_text = text(desc.into()).size(FONT_SM).color(p.text_muted);
-
-    let info_col = column![title_row, desc_text].spacing(spf(Spacing::Xs));
-
-    let inner = row![
-        icon_box,
-        container(info_col).width(Length::Fill),
-        tabler_icon(Icon::ChevronRight, 16.0, p.text_faint),
-    ]
-    .spacing(spf(Spacing::Sm))
-    .align_y(Alignment::Start);
-
-    button(inner)
-        .padding([sp(Spacing::Md), sp(Spacing::Md)])
-        .width(Length::Fill)
-        .on_press(Message::Navigate(Screen::BuiltinDetail(target)))
-        .style(
-            move |_: &iced::Theme, status: iced::widget::button::Status| {
-                let hovered = matches!(
-                    status,
-                    iced::widget::button::Status::Hovered | iced::widget::button::Status::Pressed
-                );
-                button::Style {
-                    background: Some(Background::Color(p.elevated)),
-                    border: Border {
-                        color: if hovered {
-                            p.border_input
-                        } else {
-                            p.border_regular
-                        },
-                        width: 0.5,
-                        radius: radius(Radius::Md).into(),
-                    },
-                    text_color: p.text_primary,
-                    shadow: Shadow::default(),
-                    snap: false,
-                }
-            },
-        )
+        })
         .into()
 }
 

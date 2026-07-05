@@ -6,7 +6,7 @@ use iced::{Alignment, Background, Border, Color, Element, Length, Padding, Shado
 use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
 use crate::tokens::{
-    BORDER_THIN, FONT_LG, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
+    BORDER_THIN, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
 };
 
 fn card_style(
@@ -179,23 +179,24 @@ pub fn metric_card<'a, Msg: 'a>(
     label: impl Into<Cow<'a, str>>,
     value: impl Into<Cow<'a, str>>,
     sublabel: Option<impl Into<Cow<'a, str>>>,
+    sublabel_color: Option<Color>,
     palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let bg = palette.elevated;
     let border_color = palette.border_regular;
     let label_color = palette.text_muted;
     let value_color = palette.text_primary;
-    let sublabel_color = palette.text_faint;
 
     let label_str: Cow<'a, str> = label.into();
     let value_str: Cow<'a, str> = value.into();
 
     let mut col = iced::widget::column![
-        iced::widget::text(label_str)
+        iced::widget::text(label_str.to_uppercase())
+            .font(font(FontRole::Monospace))
             .size(FONT_XS)
             .color(label_color),
         iced::widget::text(value_str)
-            .size(FONT_LG)
+            .size(FONT_SM)
             .color(value_color),
     ]
     .spacing(4);
@@ -204,8 +205,9 @@ pub fn metric_card<'a, Msg: 'a>(
         let sub_str: Cow<'a, str> = sub.into();
         col = col.push(
             iced::widget::text(sub_str)
+                .font(font(FontRole::Monospace))
                 .size(FONT_XS)
-                .color(sublabel_color),
+                .color(sublabel_color.unwrap_or(palette.text_faint)),
         );
     }
 

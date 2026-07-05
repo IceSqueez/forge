@@ -137,18 +137,9 @@ pub fn platform_generic_view<'a>(
         .spacing(spf(Spacing::Md))
         .align_y(Alignment::Center);
 
-    let hero_card = container(hero_row)
+    let hero_card = forge_widgets::card(hero_row, palette)
         .padding([sp(Spacing::Md), sp(Spacing::Md)])
-        .width(Length::Fill)
-        .style(move |_: &iced::Theme| container::Style {
-            background: Some(Background::Color(p.elevated)),
-            border: Border {
-                color: p.border_regular,
-                width: 0.5,
-                radius: radius(Radius::Md).into(),
-            },
-            ..container::Style::default()
-        });
+        .width(Length::Fill);
 
     let features_label_text = match info.status {
         PlatformStatus::Available => forge_widgets::tr!("platform_generic.features.available"),

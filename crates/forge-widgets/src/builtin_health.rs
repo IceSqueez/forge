@@ -2,7 +2,7 @@ use iced::{Alignment, Border, Element, Length, widget::container};
 
 use crate::{
     palette::ForgePalette,
-    tokens::{BORDER_THIN, FONT_MD, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf},
+    tokens::{BORDER_THIN, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf},
 };
 
 pub fn builtin_health_grid<'a, Msg: 'a>(
@@ -50,7 +50,7 @@ fn health_metric_card<'a, Msg: 'a>(
             };
             let dot = crate::status::status_dot(color, 7.0);
             let val_text = iced::widget::text(val_label.clone())
-                .size(FONT_MD)
+                .size(FONT_SM)
                 .color(color);
             let value_row: Element<'a, Msg> = iced::widget::row![dot, val_text]
                 .spacing(spf(Spacing::Xs))
@@ -70,7 +70,7 @@ fn health_metric_card<'a, Msg: 'a>(
         }
         HealthValue::Text { primary, secondary } => {
             let primary_text = iced::widget::text(primary.clone())
-                .size(FONT_MD)
+                .size(FONT_SM)
                 .color(palette.text_primary);
             if let Some(sec) = secondary {
                 let sub = iced::widget::text(sec.clone())
@@ -86,7 +86,7 @@ fn health_metric_card<'a, Msg: 'a>(
         }
         HealthValue::Pair { left, right } => iced::widget::text(format!("{left} · {right}"))
             .font(font(FontRole::Monospace))
-            .size(FONT_MD)
+            .size(FONT_SM)
             .color(palette.text_primary)
             .into(),
         HealthValue::Ratio {
@@ -95,7 +95,7 @@ fn health_metric_card<'a, Msg: 'a>(
             reset_hint,
         } => {
             let ratio_text = iced::widget::text(format!("{used} / {total}"))
-                .size(FONT_MD)
+                .size(FONT_SM)
                 .color(palette.text_primary);
             if let Some(hint) = reset_hint {
                 let hint_text = iced::widget::text(hint.clone())

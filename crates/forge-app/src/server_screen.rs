@@ -7,7 +7,7 @@ use forge_widgets::{
     bearer_token_display, color_for_source, confirm_modal,
     icons::{Icon, tabler_icon},
     section_header, sp, spf, throughput_sparkline,
-    tokens::{FONT_MD, FONT_SM, FONT_XS, FontRole, font, radius},
+    tokens::{FONT_SM, FONT_XS, FontRole, font, radius},
 };
 use iced::{
     Alignment, Background, Border, Color, Element, Length, Task,
@@ -339,50 +339,6 @@ fn overlay_origin(bind_address: &str) -> String {
         other => other,
     };
     format!("http://{host}:{port}")
-}
-
-fn stat_card<'a>(
-    label: impl Into<String>,
-    value: impl Into<String>,
-    sublabel: impl Into<String>,
-    sublabel_color: Color,
-    palette: &ForgePalette,
-) -> Element<'a, Message> {
-    let card_bg = palette.elevated;
-    let border_color = palette.border_regular;
-    let text_faint = palette.text_faint;
-    let text_primary = palette.text_primary;
-    let r = radius(Radius::Lg);
-
-    let content = column![
-        text(label.into())
-            .font(font(FontRole::Monospace))
-            .size(FONT_XS)
-            .color(text_faint),
-        text(value.into())
-            .font(font(FontRole::Monospace))
-            .size(FONT_MD)
-            .color(text_primary),
-        text(sublabel.into())
-            .font(font(FontRole::Monospace))
-            .size(FONT_XS)
-            .color(sublabel_color),
-    ]
-    .spacing(spf(Spacing::Xxs));
-
-    container(content)
-        .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
-        .width(Length::Fill)
-        .style(move |_: &iced::Theme| container::Style {
-            background: Some(Background::Color(card_bg)),
-            border: Border {
-                color: border_color,
-                width: 1.0,
-                radius: r.into(),
-            },
-            ..container::Style::default()
-        })
-        .into()
 }
 
 fn chip_container<'a>(label: impl Into<String>, fg: Color, bg: Color) -> Element<'a, Message> {
@@ -1013,43 +969,44 @@ fn copy_address_btn<'a>(palette: &ForgePalette) -> Element<'a, Message> {
 fn stats_grid<'a>(state: &'a ServerScreenState, palette: &ForgePalette) -> Element<'a, Message> {
     let clients_n = state.connected_clients.len();
     let success = palette.success;
-    let text_faint = palette.text_faint;
+
+    let cell = |card: Element<'a, Message>| container(card).width(Length::Fill);
 
     row![
-        stat_card(
+        cell(forge_widgets::metric_card(
             forge_widgets::tr!("server.stat.clients"),
             format!("{clients_n}"),
-            forge_widgets::tr!("server.stat.clients_sub"),
-            success,
+            Some(forge_widgets::tr!("server.stat.clients_sub")),
+            Some(success),
             palette
-        ),
-        stat_card(
+        )),
+        cell(forge_widgets::metric_card(
             forge_widgets::tr!("server.stat.events_out"),
             format!("{:.1} ev/s", state.stats.events_per_second),
-            forge_widgets::tr!(
+            Some(forge_widgets::tr!(
                 "server.stat.events_sub",
                 avg = format!("{:.1}", state.stats.events_per_second_avg)
-            ),
-            text_faint,
+            )),
+            None,
             palette
-        ),
-        stat_card(
+        )),
+        cell(forge_widgets::metric_card(
             forge_widgets::tr!("server.stat.http"),
             format!("{}", state.stats.http_requests),
-            forge_widgets::tr!("server.stat.http_sub"),
-            text_faint,
+            Some(forge_widgets::tr!("server.stat.http_sub")),
+            None,
             palette
-        ),
-        stat_card(
+        )),
+        cell(forge_widgets::metric_card(
             forge_widgets::tr!("server.stat.bandwidth"),
             format!("{:.0} KB/s", state.stats.bandwidth_kbps),
-            forge_widgets::tr!(
+            Some(forge_widgets::tr!(
                 "server.stat.bandwidth_sub",
                 peak = format!("{:.0}", state.stats.bandwidth_peak_kbps)
-            ),
-            success,
+            )),
+            Some(success),
             palette
-        ),
+        )),
     ]
     .spacing(spf(Spacing::Xs))
     .into()

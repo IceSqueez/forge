@@ -9,10 +9,12 @@ use crate::connectivity::{Connectivity, Integration};
 use crate::{Message, Screen};
 use forge_widgets::{BreadcrumbCrumb, breadcrumb};
 
-#[allow(clippy::too_many_arguments)]
-fn platform_overview_card<'a>(
-    letter: &'static str,
-    color: iced::Color,
+/// Shared overview card for the Platforms and Stream-apps grids: a `leading`
+/// visual (letter tile or icon box), a name with a live connection badge, a
+/// description, and an optional feature-chip row, wrapped in an interactive
+/// [`forge_widgets::card`] that navigates to the builtin detail on press.
+pub(crate) fn overview_card<'a>(
+    leading: Element<'a, Message>,
     name: &'a str,
     desc: impl Into<String>,
     features: &'static [&'static str],
@@ -20,12 +22,10 @@ fn platform_overview_card<'a>(
     target: BuiltinId,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    use iced::widget::{button, column, container, row, text};
+    use iced::widget::{Row, column, container, row, text};
     use iced::{Alignment, Background, Border, Length};
 
     let p = *palette;
-
-    let letter_box = forge_widgets::platform_identity_tile(letter, color, p.shell, 44.0);
 
     let badge = forge_widgets::connection_status_badge(connected, palette);
 
@@ -38,58 +38,37 @@ fn platform_overview_card<'a>(
 
     let desc_text = text(desc.into()).size(FONT_SM).color(p.text_muted);
 
-    let mut chip_row = iced::widget::Row::new().spacing(spf(Spacing::Xxs));
-    for f in features {
-        let chip = container(text(*f).size(FONT_XS).color(p.text_secondary))
-            .padding([2_u16, 7_u16])
-            .style(move |_: &iced::Theme| container::Style {
-                background: Some(Background::Color(p.shell)),
-                border: Border {
-                    radius: radius(Radius::Sm).into(),
-                    ..Border::default()
-                },
-                ..container::Style::default()
-            });
-        chip_row = chip_row.push(chip);
+    let mut info_col = column![title_row, desc_text].spacing(spf(Spacing::Xs));
+    if !features.is_empty() {
+        let mut chip_row = Row::new().spacing(spf(Spacing::Xxs));
+        for f in features {
+            let chip = container(text(*f).size(FONT_XS).color(p.text_secondary))
+                .padding([2_u16, 7_u16])
+                .style(move |_: &iced::Theme| container::Style {
+                    background: Some(Background::Color(p.shell)),
+                    border: Border {
+                        radius: radius(Radius::Sm).into(),
+                        ..Border::default()
+                    },
+                    ..container::Style::default()
+                });
+            chip_row = chip_row.push(chip);
+        }
+        info_col = info_col.push(chip_row.wrap());
     }
 
-    let info_col = column![title_row, desc_text, chip_row.wrap()].spacing(spf(Spacing::Xs));
-
     let inner = row![
-        letter_box,
+        leading,
         container(info_col).width(Length::Fill),
         tabler_icon(Icon::ChevronRight, 16.0, p.text_faint),
     ]
     .spacing(spf(Spacing::Sm))
     .align_y(Alignment::Start);
 
-    button(inner)
+    forge_widgets::card(inner, palette)
+        .on_press(Message::Navigate(Screen::BuiltinDetail(target)))
         .padding([16_u16, 18_u16])
         .width(Length::Fill)
-        .on_press(Message::Navigate(Screen::BuiltinDetail(target)))
-        .style(
-            move |_: &iced::Theme, status: iced::widget::button::Status| {
-                let hovered = matches!(
-                    status,
-                    iced::widget::button::Status::Hovered | iced::widget::button::Status::Pressed
-                );
-                iced::widget::button::Style {
-                    background: Some(Background::Color(p.elevated)),
-                    border: Border {
-                        color: if hovered {
-                            p.border_input
-                        } else {
-                            p.border_regular
-                        },
-                        width: 0.5,
-                        radius: radius(Radius::Md).into(),
-                    },
-                    text_color: p.text_primary,
-                    shadow: iced::Shadow::default(),
-                    snap: false,
-                }
-            },
-        )
         .into()
 }
 
@@ -112,9 +91,13 @@ pub(crate) fn platforms_overview_view<'a>(
 
     let connectivity = Connectivity::resolve(&app.rt);
 
-    let twitch_card = platform_overview_card(
-        "T",
-        Integration::Twitch.brand_color(palette),
+    let twitch_card = overview_card(
+        forge_widgets::platform_identity_tile(
+            "T",
+            Integration::Twitch.brand_color(palette),
+            p.shell,
+            44.0,
+        ),
         "Twitch",
         forge_widgets::tr!("platforms.twitch.desc"),
         &["IRC chat", "EventSub", "Channel points", "Bits & subs"],
@@ -122,9 +105,13 @@ pub(crate) fn platforms_overview_view<'a>(
         BuiltinId::new("twitch"),
         palette,
     );
-    let youtube_card = platform_overview_card(
-        "Y",
-        Integration::YouTube.brand_color(palette),
+    let youtube_card = overview_card(
+        forge_widgets::platform_identity_tile(
+            "Y",
+            Integration::YouTube.brand_color(palette),
+            p.shell,
+            44.0,
+        ),
         "YouTube",
         forge_widgets::tr!("platforms.youtube.desc"),
         &["Live chat", "Super chat", "Memberships"],
@@ -132,9 +119,13 @@ pub(crate) fn platforms_overview_view<'a>(
         BuiltinId::new("youtube"),
         palette,
     );
-    let kick_card = platform_overview_card(
-        "K",
-        Integration::Kick.brand_color(palette),
+    let kick_card = overview_card(
+        forge_widgets::platform_identity_tile(
+            "K",
+            Integration::Kick.brand_color(palette),
+            p.shell,
+            44.0,
+        ),
         "Kick",
         forge_widgets::tr!("platforms.kick.desc"),
         &["Chat", "Subs", "Channel events"],

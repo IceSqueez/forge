@@ -287,6 +287,9 @@ pub enum ActionsMsg {
     ToggleStepMenu(usize),
     ToggleActionMenu(forge_types::ActionId),
     DismissActionMenu,
+    /// Pointer entered (`true`) or left (`false`) a tree row; toggles the
+    /// per-row overflow-menu reveal. `bool` avoids a second variant.
+    RowHover(forge_types::ActionId, bool),
     RenameStarted(forge_types::ActionId),
     RenameBufferChanged(String),
     RenameSubmit,

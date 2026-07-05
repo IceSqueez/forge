@@ -96,6 +96,9 @@ pub struct ActionsState {
     pub telemetry_loading: bool,
     pub step_menu_open: Option<usize>,
     pub action_menu_open: Option<forge_types::ActionId>,
+    /// The tree row currently under the pointer; drives the count↔overflow-menu
+    /// swap in the right slot so `⋮` only appears on hover (or open menu).
+    pub hovered_action: Option<forge_types::ActionId>,
     pub renaming_action: Option<(forge_types::ActionId, String)>,
     pub last_selected_action: Option<(forge_types::ActionId, std::time::Instant)>,
     /// Drill-in path into nested sub-chains; empty = the action's own steps.
@@ -580,6 +583,14 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
         }
         ActionsMsg::DismissActionMenu => {
             state.action_menu_open = None;
+            Task::none()
+        }
+        ActionsMsg::RowHover(id, entering) => {
+            if entering {
+                state.hovered_action = Some(id);
+            } else if state.hovered_action == Some(id) {
+                state.hovered_action = None;
+            }
             Task::none()
         }
         ActionsMsg::RenameStarted(id) => {

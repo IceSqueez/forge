@@ -1,6 +1,6 @@
 use forge_widgets::ForgePalette;
 use forge_widgets::icons::{Icon, tabler_icon};
-use forge_widgets::tokens::{FONT_SM, FONT_XS, Spacing, spf};
+use forge_widgets::tokens::{FONT_SM, FONT_XS, FONT_XXS, Spacing, spf};
 use iced::{Element, Length};
 
 use crate::App;
@@ -59,13 +59,14 @@ pub(crate) fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
                 for summary in &filtered {
                     let selected = actions_state.selected == Some(summary.id);
                     let menu_open = actions_state.action_menu_open == Some(summary.id);
+                    let hovered = actions_state.hovered_action == Some(summary.id);
                     let rename_buf = actions_state
                         .renaming_action
                         .as_ref()
                         .filter(|(id, _)| *id == summary.id)
                         .map(|(_, n)| n.as_str());
                     tree_col = tree_col.push(actions_tree_row(
-                        summary, selected, menu_open, rename_buf, palette,
+                        summary, selected, menu_open, hovered, rename_buf, palette,
                     ));
                 }
             }
@@ -77,13 +78,22 @@ pub(crate) fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
     let left_panel = container(tree_scrollable)
         .width(Length::Fixed(290.0))
         .height(Length::Fill)
+        .padding(iced::Padding {
+            top: 8.0,
+            bottom: 8.0,
+            left: 0.0,
+            right: 0.0,
+        })
         .style(move |_theme: &iced::Theme| iced::widget::container::Style {
             background: Some(iced::Background::Color(p.shell)),
-            border: iced::Border {
-                color: p.border_regular,
-                width: 0.5,
-                radius: 0.0.into(),
-            },
+            ..iced::widget::container::Style::default()
+        });
+
+    let left_hairline = container(iced::widget::Space::new().width(0.5).height(Length::Fill))
+        .width(0.5)
+        .height(Length::Fill)
+        .style(move |_theme: &iced::Theme| iced::widget::container::Style {
+            background: Some(iced::Background::Color(p.border_regular)),
             ..iced::widget::container::Style::default()
         });
 
@@ -91,7 +101,7 @@ pub(crate) fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
 
     let footer = actions_footer(visible, total, palette);
 
-    let body = row![left_panel, right_panel]
+    let body = row![left_panel, left_hairline, right_panel]
         .spacing(0)
         .height(Length::Fill);
 
@@ -251,15 +261,15 @@ fn actions_group_header<'a>(
     } else {
         Icon::ChevronDown
     };
-    let chevron_el = tabler_icon(chevron_icon, 11.0, p.text_faint);
+    let chevron_el = tabler_icon(chevron_icon, 11.0, p.text_muted);
 
     let cat_el = text(group.category.display_name())
-        .size(FONT_XS)
+        .size(FONT_XXS)
         .color(p.text_muted)
         .font(forge_widgets::font(forge_widgets::FontRole::Monospace));
 
     let count_el = text(group.actions.len().to_string())
-        .size(FONT_XS)
+        .size(FONT_XXS)
         .color(p.text_faint)
         .font(forge_widgets::font(forge_widgets::FontRole::Monospace));
 
@@ -274,23 +284,19 @@ fn actions_group_header<'a>(
 
     let cat = group.category.clone();
 
-    button(container(inner).width(Length::Fill).padding([8, 16]))
+    button(container(inner).width(Length::Fill).padding([6, 14]))
         .on_press(Message::Actions(ActionsMsg::ToggleGroupCollapsed(cat)))
         .padding(0)
         .width(Length::Fill)
         .style(move |_theme: &iced::Theme, status| {
             let bg_color = match status {
                 iced::widget::button::Status::Hovered => p.elevated,
-                _ => p.shell,
+                _ => iced::Color::TRANSPARENT,
             };
             iced::widget::button::Style {
                 background: Some(iced::Background::Color(bg_color)),
                 text_color: p.text_muted,
-                border: iced::Border {
-                    color: p.border_regular,
-                    width: 0.5,
-                    radius: 0.0.into(),
-                },
+                border: iced::Border::default(),
                 shadow: iced::Shadow::default(),
                 snap: false,
             }
@@ -302,20 +308,29 @@ fn actions_tree_row<'a>(
     summary: &'a crate::actions::ActionSummary,
     selected: bool,
     menu_open: bool,
+    hovered: bool,
     rename_buf: Option<&'a str>,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     use forge_widgets::{MenuPlacement, menu_button};
-    use iced::widget::{button, container, row, text, text_input};
+    use iced::widget::{button, container, mouse_area, row, text, text_input};
+
+    // Fixed row height so the selection stripe, the row background, and the
+    // overflow-menu button all share one clean bar (no per-widget height drift).
+    const ROW_HEIGHT: f32 = 30.0;
+    // Right slot width shared by the count ("N sub") and the `⋮` button so
+    // swapping one for the other on hover never shifts the name column; wide
+    // enough for a two-digit "NN sub" count.
+    const RIGHT_SLOT_WIDTH: f32 = 46.0;
 
     let p = *palette;
     let mono = forge_widgets::font(forge_widgets::FontRole::Monospace);
     let action_id = summary.id;
 
     let state_icon = if summary.enabled {
-        tabler_icon(Icon::CircleCheckFilled, 13.0, p.success)
+        tabler_icon(Icon::CircleCheckFilled, 11.0, p.success)
     } else {
-        tabler_icon(Icon::Circle, 13.0, p.text_faint)
+        tabler_icon(Icon::Circle, 11.0, p.text_faint)
     };
 
     let name_color = if !summary.enabled {
@@ -331,7 +346,7 @@ fn actions_tree_row<'a>(
             .id(crate::actions::action_rename_input_id())
             .on_input(|s| Message::Actions(ActionsMsg::RenameBufferChanged(s)))
             .on_submit(Message::Actions(ActionsMsg::RenameSubmit))
-            .size(FONT_SM)
+            .size(FONT_XS)
             .padding(iced::Padding {
                 top: 2.0,
                 bottom: 2.0,
@@ -357,9 +372,9 @@ fn actions_tree_row<'a>(
     } else {
         container(
             text(&summary.name)
-                .size(FONT_SM)
+                .size(FONT_XS)
                 .color(name_color)
-                .font(mono)
+                .font(forge_widgets::font(forge_widgets::FontRole::Body))
                 .wrapping(iced::widget::text::Wrapping::None),
         )
         .width(Length::Fill)
@@ -367,8 +382,10 @@ fn actions_tree_row<'a>(
         .into()
     };
 
-    let count_el = text(summary.sub_action_count.to_string())
-        .size(FONT_XS)
+    // Action rows show the sub-action count as "N sub"; only the group header
+    // (see `actions_group_header`) shows a bare number (its action count).
+    let count_el = text(format!("{} sub", summary.sub_action_count))
+        .size(FONT_XXS)
         .color(p.text_faint)
         .font(mono);
 
@@ -379,101 +396,134 @@ fn actions_tree_row<'a>(
     };
     let stripe = container(iced::widget::Space::new().width(2.0).height(Length::Fill))
         .width(2.0)
+        .height(Length::Fill)
         .style(move |_theme: &iced::Theme| iced::widget::container::Style {
             background: Some(iced::Background::Color(stripe_color)),
             ..iced::widget::container::Style::default()
         });
 
+    // The row highlight is painted once by the outer container so it spans the
+    // whole bar (name + count/menu); every inner widget stays transparent, which
+    // is why the `⋮` slot is highlighted together with the name on select/hover.
     let select_btn = button(
-        row![state_icon, name_el, count_el,]
+        row![state_icon, name_el]
             .spacing(spf(Spacing::Xs))
+            .height(Length::Fill)
             .align_y(iced::alignment::Vertical::Center),
     )
     .on_press(Message::Actions(ActionsMsg::ActionSelected(action_id)))
     .padding(iced::Padding {
-        top: 6.0,
-        bottom: 6.0,
+        top: 0.0,
+        bottom: 0.0,
         left: 32.0,
         right: 8.0,
     })
     .width(Length::Fill)
-    .style(move |_theme: &iced::Theme, status| {
-        let bg_color = match (selected, status) {
-            (true, _) | (false, iced::widget::button::Status::Hovered) => p.base,
-            _ => iced::Color::TRANSPARENT,
-        };
-        iced::widget::button::Style {
-            background: Some(iced::Background::Color(bg_color)),
+    .height(Length::Fill)
+    .style(
+        move |_theme: &iced::Theme, _status| iced::widget::button::Style {
+            background: Some(iced::Background::Color(iced::Color::TRANSPARENT)),
             text_color: name_color,
             border: iced::Border::default(),
             shadow: iced::Shadow::default(),
             snap: false,
-        }
-    });
-
-    let toggle_label = if summary.enabled {
-        forge_widgets::tr!("actions_menu_disable")
-    } else {
-        forge_widgets::tr!("actions_menu_enable")
-    };
-    let menu_items: Vec<forge_widgets::MenuItem<Message>> = vec![
-        forge_widgets::MenuItem::Item {
-            label: forge_widgets::tr!("actions_menu_rename"),
-            icon: Some(Icon::InfoCircle),
-            on_press: Message::Actions(ActionsMsg::RenameStarted(action_id)),
-            shortcut: None,
-            color: None,
-            disabled: false,
         },
-        forge_widgets::MenuItem::Item {
-            label: forge_widgets::tr!("actions_menu_duplicate"),
-            icon: Some(Icon::Copy),
-            on_press: Message::Actions(ActionsMsg::DuplicateAction(action_id)),
-            shortcut: None,
-            color: None,
-            disabled: false,
-        },
-        forge_widgets::MenuItem::Item {
-            label: toggle_label,
-            icon: Some(Icon::Bolt),
-            on_press: Message::Actions(ActionsMsg::ToggleEnabled(action_id, !summary.enabled)),
-            shortcut: None,
-            color: None,
-            disabled: false,
-        },
-        forge_widgets::MenuItem::Divider,
-        forge_widgets::MenuItem::Item {
-            label: forge_widgets::tr!("actions_menu_delete"),
-            icon: Some(Icon::Eraser),
-            on_press: Message::Actions(ActionsMsg::DeleteRequested(action_id)),
-            shortcut: None,
-            color: Some(p.random),
-            disabled: false,
-        },
-    ];
-    let menu_btn = menu_button(
-        Icon::DotsVertical,
-        menu_open,
-        Message::Actions(ActionsMsg::ToggleActionMenu(action_id)),
-        Message::Actions(ActionsMsg::DismissActionMenu),
-        menu_items,
-        MenuPlacement::BottomRight,
-        palette,
     );
 
-    let right_col = container(menu_btn)
-        .padding(iced::Padding {
-            top: 2.0,
-            bottom: 2.0,
-            left: 0.0,
-            right: 6.0,
-        })
-        .align_y(iced::Alignment::Center);
+    // The count and the `⋮` menu share one fixed-width, right-aligned slot so
+    // swapping them on hover never shifts the right edge; the slot's right edge
+    // sits at the same 14px gutter as the group header's count.
+    let show_menu = hovered || menu_open;
+    let slot_inner: Element<'a, Message> = if show_menu {
+        let toggle_label = if summary.enabled {
+            forge_widgets::tr!("actions_menu_disable")
+        } else {
+            forge_widgets::tr!("actions_menu_enable")
+        };
+        let menu_items: Vec<forge_widgets::MenuItem<Message>> = vec![
+            forge_widgets::MenuItem::Item {
+                label: forge_widgets::tr!("actions_menu_rename"),
+                icon: Some(Icon::InfoCircle),
+                on_press: Message::Actions(ActionsMsg::RenameStarted(action_id)),
+                shortcut: None,
+                color: None,
+                disabled: false,
+            },
+            forge_widgets::MenuItem::Item {
+                label: forge_widgets::tr!("actions_menu_duplicate"),
+                icon: Some(Icon::Copy),
+                on_press: Message::Actions(ActionsMsg::DuplicateAction(action_id)),
+                shortcut: None,
+                color: None,
+                disabled: false,
+            },
+            forge_widgets::MenuItem::Item {
+                label: toggle_label,
+                icon: Some(Icon::Bolt),
+                on_press: Message::Actions(ActionsMsg::ToggleEnabled(action_id, !summary.enabled)),
+                shortcut: None,
+                color: None,
+                disabled: false,
+            },
+            forge_widgets::MenuItem::Divider,
+            forge_widgets::MenuItem::Item {
+                label: forge_widgets::tr!("actions_menu_delete"),
+                icon: Some(Icon::Eraser),
+                on_press: Message::Actions(ActionsMsg::DeleteRequested(action_id)),
+                shortcut: None,
+                color: Some(p.random),
+                disabled: false,
+            },
+        ];
+        menu_button(
+            Icon::DotsVertical,
+            menu_open,
+            Message::Actions(ActionsMsg::ToggleActionMenu(action_id)),
+            Message::Actions(ActionsMsg::DismissActionMenu),
+            menu_items,
+            MenuPlacement::BottomRight,
+            palette,
+        )
+    } else {
+        count_el.into()
+    };
 
-    row![stripe, select_btn, right_col]
+    let right_col = container(
+        container(slot_inner)
+            .width(Length::Fixed(RIGHT_SLOT_WIDTH))
+            .align_x(iced::alignment::Horizontal::Right)
+            .align_y(iced::Alignment::Center),
+    )
+    .height(Length::Fill)
+    .padding(iced::Padding {
+        top: 0.0,
+        bottom: 0.0,
+        left: 0.0,
+        right: 14.0,
+    })
+    .align_y(iced::Alignment::Center);
+
+    let row_bg = if selected || hovered {
+        p.elevated
+    } else {
+        iced::Color::TRANSPARENT
+    };
+    let row_inner = row![stripe, select_btn, right_col]
         .spacing(0)
         .width(Length::Fill)
-        .align_y(iced::Alignment::Center)
+        .height(Length::Fixed(ROW_HEIGHT))
+        .align_y(iced::Alignment::Center);
+
+    let row_el = container(row_inner)
+        .width(Length::Fill)
+        .style(move |_theme: &iced::Theme| iced::widget::container::Style {
+            background: Some(iced::Background::Color(row_bg)),
+            ..iced::widget::container::Style::default()
+        });
+
+    mouse_area(row_el)
+        .on_enter(Message::Actions(ActionsMsg::RowHover(action_id, true)))
+        .on_exit(Message::Actions(ActionsMsg::RowHover(action_id, false)))
         .into()
 }
 

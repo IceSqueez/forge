@@ -29,6 +29,7 @@ pub enum Icon {
     Eye,
     EyeOff,
     Copy,
+    Pencil,
     Refresh,
     AlertTriangle,
     Lock,
@@ -96,6 +97,7 @@ impl Icon {
             Icon::Eye => include_bytes!("../assets/icons/tabler/eye.svg"),
             Icon::EyeOff => include_bytes!("../assets/icons/tabler/eye-off.svg"),
             Icon::Copy => include_bytes!("../assets/icons/tabler/copy.svg"),
+            Icon::Pencil => include_bytes!("../assets/icons/tabler/pencil.svg"),
             Icon::Refresh => include_bytes!("../assets/icons/tabler/refresh.svg"),
             Icon::AlertTriangle => include_bytes!("../assets/icons/tabler/alert-triangle.svg"),
             Icon::Lock => include_bytes!("../assets/icons/tabler/lock.svg"),
@@ -168,6 +170,7 @@ impl Icon {
             "eye" => Icon::Eye,
             "eye-off" | "eye-slash" => Icon::EyeOff,
             "copy" => Icon::Copy,
+            "edit" | "pencil" => Icon::Pencil,
             "refresh" => Icon::Refresh,
             "loader" | "loader-2" => Icon::Loader2,
             "alert-triangle" | "warning" => Icon::AlertTriangle,
@@ -176,7 +179,7 @@ impl Icon {
             "circle-check" | "check" | "check-circle" | "shield-check" | "circle" => {
                 Icon::CircleCheck
             }
-            "info-circle" | "info" | "list" | "edit" | "pencil" | "flag-alert" => Icon::InfoCircle,
+            "info-circle" | "info" | "list" | "flag-alert" => Icon::InfoCircle,
             "keyboard" => Icon::Keyboard,
             "folder" => Icon::Folder,
             "folder-open" => Icon::FolderOpen,

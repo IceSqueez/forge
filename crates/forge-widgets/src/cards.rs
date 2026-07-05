@@ -196,6 +196,9 @@ pub struct RowCard<'a, Msg> {
     idle_bg: Color,
     selected_bg: Color,
     hover_bg: Color,
+    idle_border: Option<Color>,
+    border_width: f32,
+    corner_radius: f32,
     padding: Padding,
     text_color: Color,
     on_press: Option<Msg>,
@@ -218,6 +221,9 @@ pub fn row_card<'a, Msg: 'a>(
         idle_bg: Color::TRANSPARENT,
         selected_bg: palette.elevated,
         hover_bg: palette.surface_overlay,
+        idle_border: None,
+        border_width: 2.0,
+        corner_radius: 0.0,
         padding: Padding {
             top: spf(Spacing::Xs),
             right: spf(Spacing::Md),
@@ -287,6 +293,17 @@ impl<'a, Msg: 'a> RowCard<'a, Msg> {
         self.on_press = Some(msg);
         self
     }
+
+    /// Give the row a persistent (unselected) border + rounded corners, turning
+    /// the flat list-row into a bordered card. The `selected` state still wins,
+    /// swapping the border color for the accent.
+    #[must_use]
+    pub fn bordered(mut self, color: Color, width: f32, radius: f32) -> Self {
+        self.idle_border = Some(color);
+        self.border_width = width;
+        self.corner_radius = radius;
+        self
+    }
 }
 
 impl<'a, Msg: Clone + 'a> From<RowCard<'a, Msg>> for Element<'a, Msg> {
@@ -301,10 +318,16 @@ impl<'a, Msg: Clone + 'a> From<RowCard<'a, Msg>> for Element<'a, Msg> {
             idle_bg,
             selected_bg,
             hover_bg,
+            idle_border,
+            border_width,
+            corner_radius,
             padding,
             text_color,
             on_press,
         } = rc;
+
+        let idle_border_color = idle_border.unwrap_or(Color::TRANSPARENT);
+        let corners: iced::border::Radius = corner_radius.into();
 
         let mut title_col = iced::widget::column![title].spacing(2.0);
         if let Some(meta) = meta {
@@ -350,9 +373,9 @@ impl<'a, Msg: Clone + 'a> From<RowCard<'a, Msg>> for Element<'a, Msg> {
                     button::Style {
                         background: Some(Background::Color(bg)),
                         border: Border {
-                            color: if selected { accent } else { Color::TRANSPARENT },
-                            width: 2.0,
-                            radius: 0.0.into(),
+                            color: if selected { accent } else { idle_border_color },
+                            width: border_width,
+                            radius: corners,
                         },
                         text_color,
                         shadow: Shadow::default(),
@@ -370,9 +393,9 @@ impl<'a, Msg: Clone + 'a> From<RowCard<'a, Msg>> for Element<'a, Msg> {
                         idle_bg
                     })),
                     border: Border {
-                        color: if selected { accent } else { Color::TRANSPARENT },
-                        width: 2.0,
-                        radius: 0.0.into(),
+                        color: if selected { accent } else { idle_border_color },
+                        width: border_width,
+                        radius: corners,
                     },
                     ..container::Style::default()
                 })

@@ -714,31 +714,27 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
                 palette,
             );
 
-            let trigger_row = row![
+            let leading = row![
                 forge_widgets::status_dot(accent, 7.0),
                 tabler_icon(Icon::from_name(icon_name), 13.0, accent),
-                name_el,
-                kind_el,
-                summary_el,
-                iced::widget::Space::new().width(Length::Fill),
-                open_btn,
-                del_btn,
             ]
-            .spacing(spf(Spacing::Xs))
+            .spacing(spf(Spacing::Xxs))
             .align_y(Alignment::Center);
 
-            let trigger_card = container(trigger_row)
-                .width(Length::Fill)
-                .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
-                .style(move |_theme: &iced::Theme| iced::widget::container::Style {
-                    background: Some(Background::Color(p.elevated)),
-                    border: Border {
-                        color: p.border_regular,
-                        width: BORDER_THIN,
-                        radius: radius(Radius::Md).into(),
-                    },
-                    ..iced::widget::container::Style::default()
-                });
+            let title = row![name_el, kind_el, summary_el]
+                .spacing(spf(Spacing::Xs))
+                .align_y(Alignment::Center);
+
+            let trailing = row![open_btn, del_btn]
+                .spacing(spf(Spacing::Xxs))
+                .align_y(Alignment::Center);
+
+            let trigger_card = forge_widgets::row_card(title, palette)
+                .leading(leading)
+                .trailing(trailing)
+                .idle_background(p.elevated)
+                .bordered(p.border_regular, BORDER_THIN, radius(Radius::Md))
+                .padding([sp(Spacing::Xs), sp(Spacing::Sm)]);
 
             triggers_col = triggers_col.push(trigger_card);
         }
@@ -862,56 +858,29 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
             .color(p.text_primary)
             .font(font_weighted(FontRole::Body, FontWeight::SemiBold));
 
-        let timing_el: Element<'_, Message> = match avg_ms_label {
-            Some(label) => container(text(label).size(FONT_XXS).color(p.success).font(mono))
-                .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
-                .style(move |_t: &iced::Theme| iced::widget::container::Style {
-                    background: Some(Background::Color(p.surface_overlay)),
-                    border: Border {
-                        radius: radius(Radius::Sm).into(),
-                        ..Border::default()
-                    },
-                    ..iced::widget::container::Style::default()
-                })
-                .into(),
-            None => iced::widget::Space::new().width(Length::Shrink).into(),
-        };
-
         let menu_open = app.ui.actions.step_menu_open == Some(i);
         let controls = step_controls(action_id, i, total, menu_open, palette);
 
-        let title_row: Element<'_, Message> = row![
-            icon_el,
-            title_el,
-            iced::widget::Space::new().width(Length::Fill),
-            timing_el,
-            controls,
-        ]
-        .spacing(spf(Spacing::Xs))
-        .align_y(Alignment::Center)
-        .into();
+        let mut trailing = row![].spacing(spf(Spacing::Xs)).align_y(Alignment::Center);
+        if let Some(label) = avg_ms_label {
+            trailing = trailing.push(forge_widgets::badge(
+                p.surface_overlay,
+                p.success,
+                label,
+                true,
+                FONT_XXS,
+            ));
+        }
+        trailing = trailing.push(controls);
 
-        let details_el = container(variable_text(&details, palette, mono)).padding(Padding {
-            left: 21.0,
-            ..Padding::ZERO
-        });
-
-        let card_inner: Element<'_, Message> = column![title_row, details_el]
-            .spacing(spf(Spacing::Xxs))
-            .into();
-
-        let card = container(card_inner)
-            .width(Length::Fill)
+        let card: Element<'_, Message> = forge_widgets::row_card(title_el, palette)
+            .leading(icon_el)
+            .meta(variable_text(&details, palette, mono))
+            .trailing(trailing)
+            .idle_background(p.elevated)
+            .bordered(p.border_regular, BORDER_THIN, radius(Radius::Md))
             .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
-            .style(move |_theme: &iced::Theme| iced::widget::container::Style {
-                background: Some(Background::Color(p.elevated)),
-                border: Border {
-                    color: p.border_regular,
-                    width: BORDER_THIN,
-                    radius: radius(Radius::Md).into(),
-                },
-                ..iced::widget::container::Style::default()
-            });
+            .into();
 
         let step_row: Element<'_, Message> = row![left_col, card]
             .spacing(spf(Spacing::Xs))

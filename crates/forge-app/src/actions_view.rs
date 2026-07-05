@@ -431,7 +431,7 @@ fn actions_tree_row<'a>(
         let menu_items: Vec<forge_widgets::MenuItem<Message>> = vec![
             forge_widgets::MenuItem::Item {
                 label: forge_widgets::tr!("actions_menu_rename"),
-                icon: Some(Icon::InfoCircle),
+                icon: Some(Icon::Pencil),
                 on_press: Message::Actions(ActionsMsg::RenameStarted(action_id)),
                 shortcut: None,
                 color: None,

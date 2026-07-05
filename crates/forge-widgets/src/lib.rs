@@ -66,7 +66,9 @@ pub use buttons::{
     primary_button_small, primary_button_with_icon, primary_button_with_icon_right,
     secondary_button,
 };
-pub use cards::{BigJumpCardProps, Card, big_jump_card, card, metric_card, stat_row};
+pub use cards::{
+    BigJumpCardProps, Card, RowCard, big_jump_card, card, metric_card, row_card, stat_row,
+};
 pub use charts::throughput_sparkline;
 pub use chat::{BadgeKind, ChatBody, ChatRow, Platform, PlatformTarget, filter_chip, input_bar};
 pub use chat_widget::ChatRowWidget;

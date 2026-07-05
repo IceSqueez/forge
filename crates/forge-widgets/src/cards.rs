@@ -175,6 +175,212 @@ impl<'a, Msg: Clone + 'a> From<Card<'a, Msg>> for Element<'a, Msg> {
     }
 }
 
+/// Shared list-row surface: a `leading` visual (status dot or icon), a
+/// `title` + optional `meta` line, and an optional `trailing` control cluster
+/// (toggle, badge, or a [`crate::row_actions`] / [`crate::menu_button`]
+/// overflow menu). Standardizes the row scaffolding — spacing, padding, the
+/// selected accent border, and the whole-row hover/press affordance — so list
+/// screens stop hand-rolling it.
+///
+/// Built via [`row_card`]. Interactive rows ([`RowCard::on_press`]) hover to a
+/// subtle overlay and, when [`RowCard::selected`], fill elevated with a full
+/// accent border. `title`/`meta`/`trailing` accept arbitrary elements so a row
+/// can host an inline rename `text_input` or a badge cluster verbatim.
+pub struct RowCard<'a, Msg> {
+    leading: Option<Element<'a, Msg>>,
+    title: Element<'a, Msg>,
+    meta: Option<Element<'a, Msg>>,
+    trailing: Option<Element<'a, Msg>>,
+    selected: bool,
+    accent: Color,
+    idle_bg: Color,
+    selected_bg: Color,
+    hover_bg: Color,
+    padding: Padding,
+    text_color: Color,
+    on_press: Option<Msg>,
+}
+
+/// Start a row-card carrying `title`. Defaults: no leading/meta/trailing,
+/// transparent idle background, `palette.elevated` selected fill, brand accent
+/// border, `Spacing::Xs`/`Spacing::Md` inset, not interactive.
+pub fn row_card<'a, Msg: 'a>(
+    title: impl Into<Element<'a, Msg>>,
+    palette: &ForgePalette,
+) -> RowCard<'a, Msg> {
+    RowCard {
+        leading: None,
+        title: title.into(),
+        meta: None,
+        trailing: None,
+        selected: false,
+        accent: palette.brand,
+        idle_bg: Color::TRANSPARENT,
+        selected_bg: palette.elevated,
+        hover_bg: palette.surface_overlay,
+        padding: Padding {
+            top: spf(Spacing::Xs),
+            right: spf(Spacing::Md),
+            bottom: spf(Spacing::Xs),
+            left: spf(Spacing::Md),
+        },
+        text_color: palette.text_primary,
+        on_press: None,
+    }
+}
+
+impl<'a, Msg: 'a> RowCard<'a, Msg> {
+    /// Leading visual placed before the title column (status dot or icon).
+    #[must_use]
+    pub fn leading(mut self, el: impl Into<Element<'a, Msg>>) -> Self {
+        self.leading = Some(el.into());
+        self
+    }
+
+    /// Secondary line rendered under the title (kind id, summary, path).
+    #[must_use]
+    pub fn meta(mut self, el: impl Into<Element<'a, Msg>>) -> Self {
+        self.meta = Some(el.into());
+        self
+    }
+
+    /// Trailing control cluster pinned to the row's right edge.
+    #[must_use]
+    pub fn trailing(mut self, el: impl Into<Element<'a, Msg>>) -> Self {
+        self.trailing = Some(el.into());
+        self
+    }
+
+    /// Mark the row selected: fills [`RowCard::selected_bg`] and draws a full
+    /// accent border.
+    #[must_use]
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
+        self
+    }
+
+    /// Override the accent color used for the selected border (default brand).
+    #[must_use]
+    pub fn accent(mut self, color: Color) -> Self {
+        self.accent = color;
+        self
+    }
+
+    /// Idle (unselected) background fill; defaults to transparent so the row
+    /// blends with its parent surface.
+    #[must_use]
+    pub fn idle_background(mut self, color: Color) -> Self {
+        self.idle_bg = color;
+        self
+    }
+
+    /// Override inner padding.
+    #[must_use]
+    pub fn padding(mut self, padding: impl Into<Padding>) -> Self {
+        self.padding = padding.into();
+        self
+    }
+
+    /// Make the row a whole-row press target emitting `msg`.
+    #[must_use]
+    pub fn on_press(mut self, msg: Msg) -> Self {
+        self.on_press = Some(msg);
+        self
+    }
+}
+
+impl<'a, Msg: Clone + 'a> From<RowCard<'a, Msg>> for Element<'a, Msg> {
+    fn from(rc: RowCard<'a, Msg>) -> Self {
+        let RowCard {
+            leading,
+            title,
+            meta,
+            trailing,
+            selected,
+            accent,
+            idle_bg,
+            selected_bg,
+            hover_bg,
+            padding,
+            text_color,
+            on_press,
+        } = rc;
+
+        let mut title_col = iced::widget::column![title].spacing(2.0);
+        if let Some(meta) = meta {
+            title_col = title_col.push(meta);
+        }
+
+        let mut cells: Vec<Element<'a, Msg>> = Vec::with_capacity(3);
+        if let Some(leading) = leading {
+            cells.push(
+                container(leading)
+                    .align_y(Alignment::Center)
+                    .padding(Padding {
+                        top: 0.0,
+                        right: spf(Spacing::Xs),
+                        bottom: 0.0,
+                        left: 0.0,
+                    })
+                    .into(),
+            );
+        }
+        cells.push(container(title_col).width(Length::Fill).into());
+        if let Some(trailing) = trailing {
+            cells.push(container(trailing).align_y(Alignment::Center).into());
+        }
+
+        let inner = row(cells)
+            .spacing(spf(Spacing::Xs))
+            .align_y(Alignment::Center);
+
+        match on_press {
+            Some(msg) => button(inner)
+                .on_press(msg)
+                .padding(padding)
+                .width(Length::Fill)
+                .style(move |_theme: &iced::Theme, status| {
+                    let bg = if selected {
+                        selected_bg
+                    } else if matches!(status, button::Status::Hovered | button::Status::Pressed) {
+                        hover_bg
+                    } else {
+                        idle_bg
+                    };
+                    button::Style {
+                        background: Some(Background::Color(bg)),
+                        border: Border {
+                            color: if selected { accent } else { Color::TRANSPARENT },
+                            width: 2.0,
+                            radius: 0.0.into(),
+                        },
+                        text_color,
+                        shadow: Shadow::default(),
+                        snap: false,
+                    }
+                })
+                .into(),
+            None => container(inner)
+                .padding(padding)
+                .width(Length::Fill)
+                .style(move |_theme: &iced::Theme| container::Style {
+                    background: Some(Background::Color(if selected {
+                        selected_bg
+                    } else {
+                        idle_bg
+                    })),
+                    border: Border {
+                        color: if selected { accent } else { Color::TRANSPARENT },
+                        width: 2.0,
+                        radius: 0.0.into(),
+                    },
+                    ..container::Style::default()
+                })
+                .into(),
+        }
+    }
+}
+
 pub fn metric_card<'a, Msg: 'a>(
     label: impl Into<Cow<'a, str>>,
     value: impl Into<Cow<'a, str>>,

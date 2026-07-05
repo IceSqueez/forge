@@ -485,7 +485,7 @@ fn sub_kind_row<'a>(
     dot_color: iced::Color,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    use iced::widget::{Space, button, column, container, row, text};
+    use iced::widget::{Space, container, text};
     use iced::{Alignment, Background, Border, Color};
 
     let p = *palette;
@@ -503,43 +503,17 @@ fn sub_kind_row<'a>(
             ..container::Style::default()
         });
 
-    let label_col = column![
+    forge_widgets::row_card(
         text(label.to_owned()).size(FONT_SM).color(p.text_primary),
-        text(summary.to_owned()).size(FONT_XS).color(p.text_faint),
-    ]
-    .spacing(2);
-
-    let row_inner = row![
-        container(dot)
-            .align_y(Alignment::Center)
-            .padding([0.0, spf(Spacing::Xs)]),
-        container(label_col).width(Length::Fill),
-    ]
-    .align_y(Alignment::Center)
-    .padding([spf(Spacing::Xs), spf(Spacing::Sm)]);
-
-    button(row_inner)
-        .on_press(Message::Actions(ActionsMsg::Editor(
-            ActionEditorMsg::AddSubAction(AddSubActionMsg::KindSelected(kind_id)),
-        )))
-        .padding(0)
-        .width(Length::Fill)
-        .style(|_: &iced::Theme, status| button::Style {
-            background: match status {
-                button::Status::Hovered | button::Status::Pressed => {
-                    Some(Background::Color(Color {
-                        a: 0.06,
-                        ..Color::WHITE
-                    }))
-                }
-                _ => None,
-            },
-            border: Border::default(),
-            text_color: Color::TRANSPARENT,
-            shadow: iced::Shadow::default(),
-            snap: false,
-        })
-        .into()
+        palette,
+    )
+    .leading(container(dot).align_y(Alignment::Center))
+    .meta(text(summary.to_owned()).size(FONT_XS).color(p.text_faint))
+    .padding([spf(Spacing::Xs), spf(Spacing::Sm)])
+    .on_press(Message::Actions(ActionsMsg::Editor(
+        ActionEditorMsg::AddSubAction(AddSubActionMsg::KindSelected(kind_id)),
+    )))
+    .into()
 }
 
 fn sub_kind_form_body<'a>(

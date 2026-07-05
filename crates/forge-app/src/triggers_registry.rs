@@ -1141,14 +1141,10 @@ fn instance_row<'a>(
             .into()
     };
 
-    let name_col = column![
-        name_el,
-        text(row.kind_id.as_str())
-            .size(FONT_XS)
-            .color(p.text_faint)
-            .font(font(FontRole::Monospace)),
-    ]
-    .spacing(2);
+    let kind_meta = text(row.kind_id.as_str())
+        .size(FONT_XS)
+        .color(p.text_faint)
+        .font(font(FontRole::Monospace));
 
     let usage_badge: Element<'_, Message> = if row.used_in_count > 0 {
         let label = forge_widgets::tr!("triggers_usage_badge", count = row.used_in_count as i64);
@@ -1231,13 +1227,6 @@ fn instance_row<'a>(
         .spacing(spf(Spacing::Xs))
         .align_y(Alignment::Center);
 
-    let row_bg = if selected { p.elevated } else { p.base };
-    let left_border_color = if selected {
-        p.brand
-    } else {
-        Color::TRANSPARENT
-    };
-
     let scope_indicator: Element<'_, Message> = match &row.platform_scope {
         PlatformScope::Any => Space::new().width(0).into(),
         PlatformScope::Only(set) => {
@@ -1309,11 +1298,7 @@ fn instance_row<'a>(
         }
     };
 
-    let inner = row![
-        container(dot)
-            .align_y(Alignment::Center)
-            .padding([0, sp(Spacing::Xs)]),
-        container(column![name_col]).width(Length::Fill),
+    let trailing = row![
         container(scope_indicator)
             .align_y(Alignment::Center)
             .padding([0, sp(Spacing::Xs)]),
@@ -1322,34 +1307,19 @@ fn instance_row<'a>(
             .padding([0, sp(Spacing::Xs)]),
         container(controls).align_y(Alignment::Center),
     ]
-    .align_y(Alignment::Center)
-    .padding([sp(Spacing::Xs), sp(Spacing::Md)]);
+    .align_y(Alignment::Center);
 
-    button(
-        container(inner)
-            .width(Length::Fill)
-            .style(move |_: &iced::Theme| container::Style {
-                background: Some(Background::Color(row_bg)),
-                border: Border {
-                    color: left_border_color,
-                    width: 2.0,
-                    radius: 0.0.into(),
-                },
-                ..container::Style::default()
-            }),
-    )
-    .on_press(Message::TriggersRegistry(TriggersRegistryMsg::RowSelected(
-        row_id,
-    )))
-    .padding(0)
-    .style(|_: &iced::Theme, _status| button::Style {
-        background: None,
-        border: Border::default(),
-        text_color: Color::TRANSPARENT,
-        shadow: iced::Shadow::default(),
-        snap: false,
-    })
-    .into()
+    forge_widgets::row_card(name_el, palette)
+        .leading(container(dot).align_y(Alignment::Center))
+        .meta(kind_meta)
+        .trailing(trailing)
+        .selected(selected)
+        .idle_background(p.base)
+        .padding([sp(Spacing::Xs), sp(Spacing::Md)])
+        .on_press(Message::TriggersRegistry(TriggersRegistryMsg::RowSelected(
+            row_id,
+        )))
+        .into()
 }
 
 fn sheet_body_for<'a>(

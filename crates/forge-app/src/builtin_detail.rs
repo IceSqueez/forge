@@ -398,7 +398,12 @@ pub fn view<'a>(state: &'a BuiltinDetailState, palette: &'a ForgePalette) -> Ele
         palette,
     );
 
-    let health = builtin_health_grid(&state.health_metrics, palette);
+    let reconnecting = matches!(
+        state.builtin_status.connection(),
+        forge_platform_core::ConnectionState::Connecting
+            | forge_platform_core::ConnectionState::Reconnecting
+    );
+    let health = builtin_health_grid(&state.health_metrics, reconnecting, palette);
     let content = builtin_content_renderer(&state.sections, palette);
     let quick = builtin_quick_actions_grid(
         &state.quick_actions,

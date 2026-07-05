@@ -13,7 +13,7 @@ use forge_widgets::{
     ConfirmKind, ConfirmModalParams, ConfirmTone, ConsoleLevel, ConsoleLine, ForgePalette, Icon,
     ModalProps, RowAction, ScriptEditorWidgetMsg, ScriptEditorWidgetState, StatusVariant,
     apply_autocomplete_insert, badge, confirm_modal, filter_candidates, modal, prefix_under_cursor,
-    row_actions, scan_type_hint, script_editor_widget, should_trigger_autocomplete,
+    row_actions, scan_type_hint, script_editor_widget, should_trigger_autocomplete, skeleton,
 };
 use iced::widget::{column, container, row, scrollable, text, text_editor, tooltip};
 use iced::{Alignment, Background, Border, Element, Length};
@@ -1126,7 +1126,14 @@ fn left_pane<'a>(state: &'a ScriptEditorState, palette: &'a ForgePalette) -> Ele
 
     let mut tree_col = column![scripts_header].spacing(0);
 
-    if state.scripts.is_empty() {
+    if state.loading && state.scripts.is_empty() {
+        for width in [140.0, 110.0, 160.0, 95.0] {
+            tree_col = tree_col.push(
+                container(skeleton(Length::Fixed(width), 12.0, palette))
+                    .padding([spf(Spacing::Xxs), spf(Spacing::Xs)]),
+            );
+        }
+    } else if state.scripts.is_empty() {
         let empty_label = text(forge_widgets::tr!("script_editor_no_scripts"))
             .size(FONT_XS)
             .color(palette.text_extreme_faint)

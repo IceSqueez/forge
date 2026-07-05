@@ -7,16 +7,51 @@ use crate::{
 
 pub fn builtin_health_grid<'a, Msg: 'a>(
     metrics: &[forge_platform_core::HealthMetric; 4],
+    loading: bool,
     palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     let gap = spf(Spacing::Sm);
 
+    let card = |idx: usize| -> Element<'a, Msg> {
+        if loading {
+            skeleton_health_card(palette)
+        } else {
+            health_metric_card(&metrics[idx], palette)
+        }
+    };
+
     iced::widget::Row::new()
         .spacing(gap)
-        .push(container(health_metric_card(&metrics[0], palette)).width(Length::FillPortion(1)))
-        .push(container(health_metric_card(&metrics[1], palette)).width(Length::FillPortion(1)))
-        .push(container(health_metric_card(&metrics[2], palette)).width(Length::FillPortion(1)))
-        .push(container(health_metric_card(&metrics[3], palette)).width(Length::FillPortion(1)))
+        .push(container(card(0)).width(Length::FillPortion(1)))
+        .push(container(card(1)).width(Length::FillPortion(1)))
+        .push(container(card(2)).width(Length::FillPortion(1)))
+        .push(container(card(3)).width(Length::FillPortion(1)))
+        .into()
+}
+
+fn skeleton_health_card<'a, Msg: 'a>(palette: &ForgePalette) -> Element<'a, Msg> {
+    let bg = palette.elevated;
+    let border_color = palette.border_regular;
+    let r = radius(Radius::Md);
+
+    let inner = iced::widget::column![
+        crate::skeleton::skeleton(Length::Fixed(48.0), 10.0, palette),
+        crate::skeleton::skeleton(Length::Fixed(72.0), FONT_SM, palette),
+    ]
+    .spacing(spf(Spacing::Xs));
+
+    container(inner)
+        .padding([sp(Spacing::Sm), sp(Spacing::Md)])
+        .width(Length::Fill)
+        .style(move |_theme: &iced::Theme| container::Style {
+            background: Some(iced::Background::Color(bg)),
+            border: Border {
+                color: border_color,
+                width: BORDER_THIN,
+                radius: r.into(),
+            },
+            ..container::Style::default()
+        })
         .into()
 }
 

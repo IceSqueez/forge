@@ -17,7 +17,8 @@ use forge_widgets::{
     SheetHeader, SheetWidth, SideSheet, Spacing, ToastKind, category_chip, confirm_modal,
     destructive_button, empty_state,
     icons::{Icon, tabler_icon},
-    menu_button, primary_button, radius, search_input, secondary_button, section_header, sp, spf,
+    menu_button, primary_button, radius, search_input, secondary_button, section_header,
+    skeleton_row, sp, spf,
     tokens::{BORDER_THIN, FONT_SM, FONT_XS, FONT_XXS, FontRole, font},
     value_preview,
 };
@@ -62,6 +63,9 @@ pub struct ConfirmDisable {
 
 pub struct TriggersRegistryState {
     pub instances: Vec<TriggerInstanceRow>,
+    /// `false` until the first `Loaded` resolves; distinguishes an in-flight
+    /// initial load from a genuinely empty registry.
+    pub loaded: bool,
     pub selected_id: Option<TriggerInstanceId>,
     pub pending_scroll_to: Option<TriggerInstanceId>,
     pub used_in: Vec<InstanceUsage>,
@@ -95,6 +99,7 @@ impl Default for TriggersRegistryState {
     fn default() -> Self {
         Self {
             instances: Vec::new(),
+            loaded: false,
             selected_id: None,
             pending_scroll_to: None,
             used_in: Vec::new(),
@@ -207,6 +212,7 @@ pub fn update(
             ])
         }
         TriggersRegistryMsg::Loaded(Ok(rows)) => {
+            state.loaded = true;
             state.instances = rows;
             if let Some(pending) = state.pending_scroll_to.take()
                 && state.instances.iter().any(|r| r.id == pending)
@@ -218,12 +224,15 @@ pub fn update(
             }
             Task::none()
         }
-        TriggersRegistryMsg::Loaded(Err(msg)) => Task::done(Message::Toast(ToastMsg::Fired {
-            kind: ToastKind::Error,
-            message: msg,
-            duration_ms: 5000,
-            action: None,
-        })),
+        TriggersRegistryMsg::Loaded(Err(msg)) => {
+            state.loaded = true;
+            Task::done(Message::Toast(ToastMsg::Fired {
+                kind: ToastKind::Error,
+                message: msg,
+                duration_ms: 5000,
+                action: None,
+            }))
+        }
         TriggersRegistryMsg::SearchChanged(s) => {
             state.search = s;
             Task::none()
@@ -711,6 +720,22 @@ pub fn update(
     }
 }
 
+fn registry_loading_skeleton<'a>(palette: &ForgePalette) -> Element<'a, Message> {
+    let rows: Vec<Element<'a, Message>> = (0..6)
+        .map(|_| {
+            container(skeleton_row(&[180.0, 90.0], palette))
+                .padding([sp(Spacing::Sm), sp(Spacing::Md)])
+                .width(Length::Fill)
+                .into()
+        })
+        .collect();
+
+    container(column(rows).spacing(spf(Spacing::Xxs)))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+}
+
 pub fn view<'a>(
     state: &'a TriggersRegistryState,
     rt: &'a RuntimeView,
@@ -753,7 +778,9 @@ pub fn view<'a>(
         snap: true,
     };
 
-    let list_content: Element<'_, Message> = if state.instances.is_empty() && !filters_active {
+    let list_content: Element<'_, Message> = if !state.loaded {
+        registry_loading_skeleton(palette)
+    } else if state.instances.is_empty() && !filters_active {
         container(empty_state(
             forge_widgets::tr!("triggers_empty_title"),
             forge_widgets::tr!("triggers_empty_hint"),

@@ -838,7 +838,7 @@ fn strategy_banner_view<'a>(
 
     let _ = gap_sm;
 
-    let segmented = container(
+    let segmented = forge_widgets::card(
         row![
             strategy_btn(
                 Box::leak(
@@ -862,19 +862,13 @@ fn strategy_banner_view<'a>(
             ),
         ]
         .spacing(0),
+        palette,
     )
-    .style(move |_| container::Style {
-        background: Some(Background::Color(palette.shell)),
-        border: Border {
-            color: palette.border_regular,
-            width: BORDER_THIN,
-            radius: radius(Radius::Sm).into(),
-        },
-        ..container::Style::default()
-    })
+    .background(palette.shell)
+    .radius(Radius::Sm)
     .padding(sp(Spacing::Xxs));
 
-    let inner = container(
+    let inner = forge_widgets::card(
         row![
             text(forge_widgets::tr!("tts_aliases_strategy_label"))
                 .size(FONT_SM)
@@ -884,16 +878,8 @@ fn strategy_banner_view<'a>(
         ]
         .align_y(Alignment::Center)
         .spacing(gap_md),
+        palette,
     )
-    .style(move |_| container::Style {
-        background: Some(Background::Color(palette.elevated)),
-        border: Border {
-            color: palette.border_regular,
-            width: BORDER_THIN,
-            radius: radius(Radius::Md).into(),
-        },
-        ..container::Style::default()
-    })
     .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
     .width(Length::Fill);
 
@@ -969,7 +955,7 @@ fn aliases_table_view<'a>(
 ) -> Element<'a, Message> {
     let mono = font(FontRole::Monospace);
 
-    let header = container(
+    let header = forge_widgets::card(
         row![
             text(forge_widgets::tr!("tts_aliases_col_viewer"))
                 .size(FONT_XS)
@@ -999,21 +985,10 @@ fn aliases_table_view<'a>(
         ]
         .align_y(Alignment::Center)
         .spacing(0),
+        palette,
     )
-    .style(move |_| container::Style {
-        background: Some(Background::Color(palette.shell)),
-        border: Border {
-            color: palette.border_regular,
-            width: BORDER_THIN,
-            radius: iced::border::Radius {
-                top_left: 8.0,
-                top_right: 8.0,
-                bottom_left: 0.0,
-                bottom_right: 0.0,
-            },
-        },
-        ..container::Style::default()
-    })
+    .background(palette.shell)
+    .split_radius(8.0, 0.0)
     .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
     .width(Length::Fill);
 

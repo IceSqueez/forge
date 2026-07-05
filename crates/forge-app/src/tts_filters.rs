@@ -544,16 +544,7 @@ fn section_card<'a>(
         .size(FONT_XS)
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
-    container(column![header, body].spacing(gap_sm))
-        .style(move |_| container::Style {
-            background: Some(Background::Color(palette.elevated)),
-            border: Border {
-                color: palette.border_regular,
-                width: BORDER_THIN,
-                radius: radius(Radius::Md).into(),
-            },
-            ..container::Style::default()
-        })
+    forge_widgets::card(column![header, body].spacing(gap_sm), palette)
         .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
         .width(Length::Fill)
         .into()
@@ -686,7 +677,7 @@ fn rule_row<'a>(
     .spacing(0)
     .align_y(Alignment::Center);
 
-    container(
+    forge_widgets::card(
         row![
             badge,
             column![
@@ -702,16 +693,10 @@ fn rule_row<'a>(
         ]
         .align_y(Alignment::Center)
         .spacing(gap_sm),
+        palette,
     )
-    .style(move |_| container::Style {
-        background: Some(Background::Color(palette.shell)),
-        border: Border {
-            color: palette.border_regular,
-            width: BORDER_THIN,
-            radius: radius(Radius::Sm).into(),
-        },
-        ..container::Style::default()
-    })
+    .background(palette.shell)
+    .radius(Radius::Sm)
     .padding([sp(Spacing::Xs), sp(Spacing::Xs)])
     .width(Length::Fill)
     .into()
@@ -893,7 +878,7 @@ fn blocklist_mode_toggle<'a>(
             .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
     };
 
-    container(
+    forge_widgets::card(
         row![
             mode_btn(
                 forge_widgets::tr!("tts_filters_mode_censor"),
@@ -905,16 +890,10 @@ fn blocklist_mode_toggle<'a>(
             ),
         ]
         .spacing(0),
+        palette,
     )
-    .style(move |_| container::Style {
-        background: Some(Background::Color(palette.shell)),
-        border: Border {
-            color: palette.border_regular,
-            width: BORDER_THIN,
-            radius: radius(Radius::Sm).into(),
-        },
-        ..container::Style::default()
-    })
+    .background(palette.shell)
+    .radius(Radius::Sm)
     .padding(sp(Spacing::Xxs))
     .into()
 }
@@ -1229,24 +1208,17 @@ fn preview_column_view<'a>(
         .padding([sp(Spacing::Xs), 0])
         .width(Length::Fill);
 
-    let tip = container(
+    let tip = forge_widgets::card(
         text(forge_widgets::tr!("tts_filters_preview_tip"))
             .size(FONT_XS)
             .color(palette.text_muted),
+        palette,
     )
-    .style(move |_| container::Style {
-        background: Some(Background::Color(palette.elevated)),
-        border: Border {
-            color: palette.border_regular,
-            width: BORDER_THIN,
-            radius: radius(Radius::Sm).into(),
-        },
-        ..container::Style::default()
-    })
+    .radius(Radius::Sm)
     .padding([sp(Spacing::Xs), sp(Spacing::Xs)])
     .width(Length::Fill);
 
-    container(
+    forge_widgets::card(
         scrollable(
             column![
                 header,
@@ -1260,16 +1232,10 @@ fn preview_column_view<'a>(
             .width(Length::Fill),
         )
         .height(Length::Fill),
+        palette,
     )
-    .style(move |_| container::Style {
-        background: Some(Background::Color(palette.shell)),
-        border: Border {
-            color: palette.border_regular,
-            width: BORDER_THIN,
-            radius: iced::border::Radius::default(),
-        },
-        ..container::Style::default()
-    })
+    .background(palette.shell)
+    .split_radius(0.0, 0.0)
     .padding([sp(Spacing::Md), sp(Spacing::Md)])
     .width(300)
     .into()
@@ -1329,19 +1295,14 @@ fn preview_stage_card<'a>(
         .into(),
     };
 
-    container(column![label_el, body_el].spacing(spf(Spacing::Xxs)))
-        .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
-        .width(Length::Fill)
-        .style(move |_: &iced::Theme| container::Style {
-            background: Some(Background::Color(p.elevated)),
-            border: Border {
-                color: p.border_regular,
-                width: BORDER_THIN,
-                radius: radius(Radius::Sm).into(),
-            },
-            ..container::Style::default()
-        })
-        .into()
+    forge_widgets::card(
+        column![label_el, body_el].spacing(spf(Spacing::Xxs)),
+        palette,
+    )
+    .radius(Radius::Sm)
+    .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
+    .width(Length::Fill)
+    .into()
 }
 
 #[cfg(test)]

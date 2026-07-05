@@ -460,7 +460,7 @@ fn credentials_section<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
-    let keyring_notice = container(
+    let keyring_notice = forge_widgets::card(
         row![
             text(forge_widgets::tr!("tts_engines_credentials_notice"))
                 .size(FONT_SM)
@@ -484,16 +484,10 @@ fn credentials_section<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
             .padding([sp(Spacing::Xxs), sp(Spacing::Xs)]),
         ]
         .align_y(Alignment::Center),
+        palette,
     )
-    .style(move |_| container::Style {
-        background: Some(Background::Color(palette.shell)),
-        border: Border {
-            color: palette.border_regular,
-            width: BORDER_THIN,
-            radius: radius(Radius::Sm).into(),
-        },
-        ..container::Style::default()
-    })
+    .background(palette.shell)
+    .radius(Radius::Sm)
     .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
     .width(Length::Fill);
 
@@ -677,7 +671,7 @@ fn voice_cell<'a>(voice: &'a EngineVoiceRow, palette: &'a ForgePalette) -> Eleme
         voice.locale, voice.quality, voice.gender
     );
 
-    container(
+    forge_widgets::card(
         column![
             text(&voice.display_name)
                 .size(FONT_SM)
@@ -688,16 +682,10 @@ fn voice_cell<'a>(voice: &'a EngineVoiceRow, palette: &'a ForgePalette) -> Eleme
                 .font(font(FontRole::Monospace)),
         ]
         .spacing(spf(Spacing::Xxs)),
+        palette,
     )
-    .style(move |_| container::Style {
-        background: Some(Background::Color(palette.shell)),
-        border: Border {
-            color: palette.border_regular,
-            width: BORDER_THIN,
-            radius: radius(Radius::Sm).into(),
-        },
-        ..container::Style::default()
-    })
+    .background(palette.shell)
+    .radius(Radius::Sm)
     .padding([sp(Spacing::Xs), sp(Spacing::Xs)])
     .width(Length::Fixed(140.0))
     .into()

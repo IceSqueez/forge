@@ -425,21 +425,14 @@ fn control_strip_view<'a>(
         .align_y(Alignment::Center)
         .spacing(gap_sm);
 
-    container(
+    forge_widgets::card(
         row![left, right]
             .align_y(Alignment::Center)
             .spacing(gap_md)
             .width(Length::Fill),
+        palette,
     )
-    .style(move |_| container::Style {
-        background: Some(Background::Color(palette.elevated)),
-        border: Border {
-            color: palette.border_regular,
-            width: BORDER_THIN,
-            radius: iced::border::Radius::default(),
-        },
-        ..container::Style::default()
-    })
+    .split_radius(0.0, 0.0)
     .padding([sp(Spacing::Xs), sp(Spacing::Md)])
     .width(Length::Fill)
     .into()
@@ -493,16 +486,8 @@ fn now_speaking_view<'a>(
         .into()
     };
 
-    container(body)
-        .style(move |_| container::Style {
-            background: Some(Background::Color(palette.elevated)),
-            border: Border {
-                color: palette.border_regular,
-                width: BORDER_THIN,
-                radius: iced::border::Radius::default(),
-            },
-            ..container::Style::default()
-        })
+    forge_widgets::card(body, palette)
+        .split_radius(0.0, 0.0)
         .padding([sp(Spacing::Sm), sp(Spacing::Md)])
         .width(Length::Fill)
         .into()
@@ -769,23 +754,17 @@ fn right_pane_view<'a>(
         .push(column(engine_cards).spacing(gap_sm))
         .spacing(gap_sm);
 
-    container(
+    forge_widgets::card(
         scrollable(
             column![stats_col, engines_col]
                 .spacing(gap_lg)
                 .width(Length::Fill),
         )
         .height(Length::Fill),
+        palette,
     )
-    .style(move |_| container::Style {
-        background: Some(Background::Color(palette.shell)),
-        border: Border {
-            color: palette.border_regular,
-            width: BORDER_THIN,
-            radius: iced::border::Radius::default(),
-        },
-        ..container::Style::default()
-    })
+    .background(palette.shell)
+    .split_radius(0.0, 0.0)
     .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
     .width(236)
     .into()
@@ -798,7 +777,7 @@ fn engine_card<'a>(
     palette: &'a ForgePalette,
     _gap_sm: f32,
 ) -> Element<'a, Message> {
-    container(
+    forge_widgets::card(
         column![
             row![
                 text(name)
@@ -824,16 +803,8 @@ fn engine_card<'a>(
                 .font(font(FontRole::Monospace)),
         ]
         .spacing(spf(Spacing::Xxs)),
+        palette,
     )
-    .style(move |_| container::Style {
-        background: Some(Background::Color(palette.elevated)),
-        border: Border {
-            color: palette.border_regular,
-            width: BORDER_THIN,
-            radius: radius(Radius::Md).into(),
-        },
-        ..container::Style::default()
-    })
     .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
     .width(Length::Fill)
     .into()

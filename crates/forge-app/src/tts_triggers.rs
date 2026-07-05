@@ -362,16 +362,8 @@ fn trigger_card_channel_points<'a>(
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
-    container(column![header, chips, meta].spacing(gap_sm))
-        .style(move |_| container::Style {
-            background: Some(Background::Color(palette.elevated)),
-            border: Border {
-                color: palette.border_regular,
-                width: BORDER_THIN,
-                radius: radius(Radius::Lg).into(),
-            },
-            ..container::Style::default()
-        })
+    forge_widgets::card(column![header, chips, meta].spacing(gap_sm), palette)
+        .radius(Radius::Lg)
         .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
         .width(Length::Fill)
         .into()
@@ -422,21 +414,15 @@ fn trigger_card_bits<'a>(
         text(forge_widgets::tr!("tts_triggers_bits_min_label"))
             .size(FONT_XS)
             .color(palette.text_muted),
-        container(
+        forge_widgets::card(
             text("100 bits")
                 .size(FONT_SM)
                 .color(palette.warning)
                 .font(font(FontRole::Monospace)),
+            palette,
         )
-        .style(move |_| container::Style {
-            background: Some(Background::Color(palette.shell)),
-            border: Border {
-                color: palette.border_regular,
-                width: BORDER_THIN,
-                radius: radius(Radius::Sm).into(),
-            },
-            ..container::Style::default()
-        })
+        .background(palette.shell)
+        .radius(Radius::Sm)
         .padding([3, 9]),
     ]
     .align_y(Alignment::Center)
@@ -447,16 +433,8 @@ fn trigger_card_bits<'a>(
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
-    container(column![header, min_bits, meta].spacing(gap_sm))
-        .style(move |_| container::Style {
-            background: Some(Background::Color(palette.elevated)),
-            border: Border {
-                color: palette.border_regular,
-                width: BORDER_THIN,
-                radius: radius(Radius::Lg).into(),
-            },
-            ..container::Style::default()
-        })
+    forge_widgets::card(column![header, min_bits, meta].spacing(gap_sm), palette)
+        .radius(Radius::Lg)
         .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
         .width(Length::Fill)
         .into()
@@ -512,16 +490,8 @@ fn trigger_card_subs<'a>(
             .into()
     };
 
-    container(column![header, disabled_note].spacing(gap_sm))
-        .style(move |_| container::Style {
-            background: Some(Background::Color(palette.elevated)),
-            border: Border {
-                color: palette.border_regular,
-                width: BORDER_THIN,
-                radius: radius(Radius::Lg).into(),
-            },
-            ..container::Style::default()
-        })
+    forge_widgets::card(column![header, disabled_note].spacing(gap_sm), palette)
+        .radius(Radius::Lg)
         .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
         .width(Length::Fill)
         .into()
@@ -572,22 +542,16 @@ fn format_card<'a>(
             .size(FONT_XS)
             .color(palette.text_muted)
             .font(font(FontRole::Monospace)),
-        container(
+        forge_widgets::card(
             text("{user} says: {message}")
                 .size(FONT_SM)
                 .color(palette.text_primary)
                 .font(font(FontRole::Monospace))
                 .width(Length::Fill),
+            palette,
         )
-        .style(move |_| container::Style {
-            background: Some(Background::Color(palette.shell)),
-            border: Border {
-                color: palette.border_regular,
-                width: BORDER_THIN,
-                radius: radius(Radius::Sm).into(),
-            },
-            ..container::Style::default()
-        })
+        .background(palette.shell)
+        .radius(Radius::Sm)
         .padding([sp(Spacing::Xs), sp(Spacing::Xs)])
         .width(Length::Fill),
     ]
@@ -602,7 +566,7 @@ fn format_card<'a>(
         palette,
     );
 
-    container(
+    forge_widgets::card(
         column![
             header,
             forge_widgets::divider(palette, forge_widgets::DividerAxis::Horizontal),
@@ -613,16 +577,9 @@ fn format_card<'a>(
             emotes_row,
         ]
         .spacing(gap_sm),
+        palette,
     )
-    .style(move |_| container::Style {
-        background: Some(Background::Color(palette.elevated)),
-        border: Border {
-            color: palette.border_regular,
-            width: BORDER_THIN,
-            radius: radius(Radius::Lg).into(),
-        },
-        ..container::Style::default()
-    })
+    .radius(Radius::Lg)
     .padding([13, 14])
     .width(Length::Fill)
     .into()
@@ -639,21 +596,15 @@ fn queue_value_row<'a>(
                 .size(FONT_SM)
                 .color(palette.text_primary)
                 .width(Length::Fill),
-            container(
+            forge_widgets::card(
                 text(value)
                     .size(FONT_SM)
                     .color(palette.text_primary)
                     .font(font(FontRole::Monospace)),
+                palette,
             )
-            .style(move |_| container::Style {
-                background: Some(Background::Color(palette.shell)),
-                border: Border {
-                    color: palette.border_regular,
-                    width: BORDER_THIN,
-                    radius: radius(Radius::Sm).into(),
-                },
-                ..container::Style::default()
-            })
+            .background(palette.shell)
+            .radius(Radius::Sm)
             .padding([sp(Spacing::Xxs), sp(Spacing::Xs)]),
         ]
         .align_y(Alignment::Center),
@@ -693,7 +644,7 @@ fn queue_behavior_card<'a>(
     .padding([sp(Spacing::Xs), 0])
     .width(Length::Fill);
 
-    container(
+    forge_widgets::card(
         column![
             header,
             forge_widgets::divider(palette, forge_widgets::DividerAxis::Horizontal),
@@ -712,16 +663,9 @@ fn queue_behavior_card<'a>(
             skip_row,
         ]
         .spacing(gap_sm),
+        palette,
     )
-    .style(move |_| container::Style {
-        background: Some(Background::Color(palette.elevated)),
-        border: Border {
-            color: palette.border_regular,
-            width: BORDER_THIN,
-            radius: radius(Radius::Lg).into(),
-        },
-        ..container::Style::default()
-    })
+    .radius(Radius::Lg)
     .padding([13, 14])
     .width(Length::Fill)
     .into()

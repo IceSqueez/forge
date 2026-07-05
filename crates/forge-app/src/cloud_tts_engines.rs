@@ -865,16 +865,8 @@ fn engine_card<'a>(
         body = body.push(result_row);
     }
 
-    container(body)
-        .style(move |_| container::Style {
-            background: Some(Background::Color(palette.elevated)),
-            border: Border {
-                color: palette.border_regular,
-                width: BORDER_THIN,
-                radius: radius(Radius::Lg).into(),
-            },
-            ..container::Style::default()
-        })
+    forge_widgets::card(body, palette)
+        .radius(Radius::Lg)
         .padding([sp(Spacing::Sm), sp(Spacing::Md)])
         .width(Length::Fill)
         .into()

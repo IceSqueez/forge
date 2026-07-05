@@ -1342,6 +1342,7 @@ globals_editor_persist_desc = Збережені глобальні вижива
 globals_editor_cancel = Скасувати
 globals_editor_save = Зберегти
 globals_editor_saving = Збереження...
+globals_editor_kbd_hint = ⌘ Enter — зберегти
 
 ## Редактор скриптів — сторінка / панель інструментів
 

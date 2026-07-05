@@ -4,9 +4,9 @@ use forge_storage::{GlobalEntry, GlobalsRepo};
 use forge_types::Variant;
 use forge_widgets::tokens::{FONT_XS, Spacing, spf};
 use forge_widgets::{
-    BannerKind, FontRole, ForgePalette, ModalProps, ToggleProps, VariantKind, category_chip, font,
-    live_status_banner, modal, primary_button_small, secondary_button, section_header, toggle,
-    variant_kind_color,
+    BannerKind, FontRole, ForgePalette, Icon, ModalProps, ModalSize, ToggleProps, VariantKind,
+    category_chip, font, live_status_banner, modal, primary_button_small, secondary_button,
+    section_header, toggle, variant_kind_color,
 };
 use iced::{
     Alignment, Element, Length,
@@ -606,8 +606,14 @@ pub fn variant_editor_modal_view<'a>(
         palette,
         ModalProps {
             title: std::borrow::Cow::Owned(title),
+            subtitle: None,
+            icon: Some(Icon::Variable),
+            icon_tint: Some(palette.warning),
+            size: ModalSize::Md,
             on_close: Message::Globals(GlobalsMsg::VariantEditor(VariantEditorMsg::Cancel)),
-            kbd_hint: Some("ESC to cancel"),
+            kbd_hint: Some(std::borrow::Cow::Owned(forge_widgets::tr!(
+                "globals_editor_kbd_hint"
+            ))),
         },
         body,
         footer,

@@ -255,6 +255,10 @@ pub(crate) fn add_action_modal_view<'a>(
         palette,
         ModalProps {
             title: std::borrow::Cow::Owned(forge_widgets::tr!("actions_modal_new_action_title")),
+            subtitle: None,
+            icon: None,
+            icon_tint: None,
+            size: forge_widgets::ModalSize::Md,
             on_close: Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
                 AddActionMsg::Cancel,
             ))),
@@ -680,26 +684,30 @@ pub(crate) fn add_sub_action_modal_view<'a>(
 
     let body = container(stacked).width(Length::Fill).height(Length::Fill);
 
-    let footer: Element<'a, Message> = if matches!(form.step, SubActionFormStep::FillForm) {
-        let btn_label = if form.editing_index.is_some() {
-            forge_widgets::tr!("actions_sub_modal_save_btn")
-        } else {
-            forge_widgets::tr!("actions_sub_modal_add_btn")
-        };
+    let footer: Element<'a, Message> = {
         let cancel_btn = forge_widgets::secondary_button(
             forge_widgets::tr!("actions_sub_modal_cancel_btn"),
             on_cancel.clone(),
             palette,
         );
-        let add_on_press = Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
-            AddSubActionMsg::Submit,
-        )));
-        let add_btn = if form.selected_kind_id.is_some() && !form.saving {
-            forge_widgets::primary_button(btn_label, add_on_press, palette)
+        let buttons: Element<'a, Message> = if matches!(form.step, SubActionFormStep::FillForm) {
+            let btn_label = if form.editing_index.is_some() {
+                forge_widgets::tr!("actions_sub_modal_save_btn")
+            } else {
+                forge_widgets::tr!("actions_sub_modal_add_btn")
+            };
+            let add_on_press = Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddSubAction(
+                AddSubActionMsg::Submit,
+            )));
+            let add_btn = if form.selected_kind_id.is_some() && !form.saving {
+                forge_widgets::primary_button(btn_label, add_on_press, palette)
+            } else {
+                forge_widgets::secondary_button(btn_label, Message::Noop, palette)
+            };
+            row![cancel_btn, add_btn].spacing(spf(Spacing::Xs)).into()
         } else {
-            forge_widgets::secondary_button(btn_label, Message::Noop, palette)
+            row![cancel_btn].into()
         };
-        let buttons = row![cancel_btn, add_btn].spacing(spf(Spacing::Xs));
         container(
             row![
                 text(forge_widgets::tr!("actions_esc_hint"))
@@ -722,8 +730,6 @@ pub(crate) fn add_sub_action_modal_view<'a>(
             ..container::Style::default()
         })
         .into()
-    } else {
-        Space::new().width(0).height(0).into()
     };
 
     let content = column![body, footer]

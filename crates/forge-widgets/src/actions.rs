@@ -1,15 +1,13 @@
-use std::borrow::Cow;
-
 use iced::{
     Alignment, Background, Border, Color, Element, Length, Padding,
-    widget::{Space, button, column, container, row, stack, text},
+    widget::{Space, button, column, container, row, text},
 };
 
 use crate::chat::filter_chip;
 use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
 use crate::tokens::{
-    BORDER_THIN, FONT_MD, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
+    BORDER_THIN, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,13 +41,6 @@ pub struct TriggerCardProps<'a, Msg> {
     pub icon_char: char,
     pub summary: &'a str,
     pub on_remove: Msg,
-}
-
-#[derive(Debug, Clone)]
-pub struct ModalProps<'a, Msg> {
-    pub title: Cow<'a, str>,
-    pub on_close: Msg,
-    pub kbd_hint: Option<&'a str>,
 }
 
 pub(crate) fn node_status_dot_color(status: NodeStatus, palette: &ForgePalette) -> Color {
@@ -298,110 +289,6 @@ pub fn trigger_card<'a, Msg: Clone + 'a>(
             ..container::Style::default()
         })
         .into()
-}
-
-pub fn modal<'a, Msg: Clone + 'a>(
-    palette: &'a ForgePalette,
-    props: ModalProps<'a, Msg>,
-    body: Element<'a, Msg>,
-    footer: Element<'a, Msg>,
-) -> Element<'a, Msg> {
-    let close_msg = props.on_close.clone();
-
-    let title_el = text(props.title)
-        .size(FONT_MD)
-        .color(palette.text_primary)
-        .font(font(FontRole::Body));
-
-    let close_btn = button(tabler_icon(Icon::X, FONT_MD, palette.text_faint))
-        .on_press(props.on_close.clone())
-        .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
-        .style(|_theme: &iced::Theme, _status| button::Style {
-            background: None,
-            border: Border::default(),
-            text_color: Color::TRANSPARENT,
-            shadow: iced::Shadow::default(),
-            snap: false,
-        });
-
-    let header_row = row![container(title_el).width(Length::Fill), close_btn,]
-        .align_y(Alignment::Center)
-        .padding([sp(Spacing::Sm), sp(Spacing::Md)]);
-
-    let header_container =
-        container(header_row)
-            .width(Length::Fill)
-            .style(move |_theme: &iced::Theme| container::Style {
-                border: Border {
-                    color: palette.border_regular,
-                    width: 0.5,
-                    radius: 0.0.into(),
-                },
-                ..container::Style::default()
-            });
-
-    let body_container = container(body).padding([sp(Spacing::Md), sp(Spacing::Md)]);
-
-    let mut footer_col = column![footer].spacing(6);
-    if let Some(hint) = props.kbd_hint {
-        let hint_el = text(hint)
-            .size(FONT_XS)
-            .color(palette.text_faint)
-            .font(font(FontRole::Monospace));
-        footer_col = footer_col.push(hint_el);
-    }
-
-    let footer_container = container(footer_col)
-        .width(Length::Fill)
-        .padding([sp(Spacing::Sm), sp(Spacing::Md)])
-        .style(move |_theme: &iced::Theme| container::Style {
-            background: Some(Background::Color(palette.shell)),
-            border: Border {
-                color: palette.border_regular,
-                width: 0.5,
-                radius: 0.0.into(),
-            },
-            ..container::Style::default()
-        });
-
-    let card_content = column![header_container, body_container, footer_container];
-
-    let card = container(card_content)
-        .max_width(560)
-        .style(move |_theme: &iced::Theme| container::Style {
-            background: Some(Background::Color(palette.elevated)),
-            border: Border {
-                color: palette.border_regular,
-                width: BORDER_THIN,
-                radius: radius(Radius::Lg).into(),
-            },
-            ..container::Style::default()
-        });
-
-    let backdrop_dismiss = close_msg;
-    let backdrop = button(Space::new().width(Length::Fill).height(Length::Fill))
-        .on_press(backdrop_dismiss)
-        .padding(0)
-        .style(|_theme: &iced::Theme, _status| button::Style {
-            background: Some(Background::Color(Color {
-                r: 0.0,
-                g: 0.0,
-                b: 0.0,
-                a: 0.6,
-            })),
-            border: Border::default(),
-            text_color: Color::TRANSPARENT,
-            shadow: iced::Shadow::default(),
-            snap: false,
-        });
-
-    let centered_card = container(iced::widget::opaque(card))
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .align_x(Alignment::Center)
-        .align_y(Alignment::Center);
-
-    stack![backdrop, centered_card].into()
 }
 
 /// Re-exports `filter_chip` under a semantically appropriate name for trigger modal category

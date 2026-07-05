@@ -1325,6 +1325,7 @@ globals_editor_persist_desc = Persisted globals survive app close; session-only 
 globals_editor_cancel = Cancel
 globals_editor_save = Save
 globals_editor_saving = Saving...
+globals_editor_kbd_hint = ⌘ Enter to save
 
 ## Script Editor — page / toolbar
 

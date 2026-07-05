@@ -24,6 +24,7 @@ pub mod inputs;
 pub mod key_capture;
 pub mod layout;
 pub mod locale;
+pub mod modal;
 pub mod modals;
 pub mod navigation;
 pub mod output_device_picker;
@@ -46,8 +47,8 @@ pub mod tokens;
 pub mod volume_slider;
 
 pub use actions::{
-    ModalProps, NodeProps, NodeStatus, SubActionProps, TriggerCardProps, category_chip, modal,
-    sub_action_card, tree_node_with_status, variable_chip,
+    NodeProps, NodeStatus, SubActionProps, TriggerCardProps, category_chip, sub_action_card,
+    tree_node_with_status, variable_chip,
 };
 pub use autocomplete_popup::{
     AutocompletePopupMessage, AutocompletePopupState, autocomplete_popup, filter_candidates,
@@ -92,6 +93,7 @@ pub use locale::{
     ArgsBuilder, fmt_feed_time, fmt_number, fmt_relative_time, fmt_short_date, install_bundle,
     set_locale_id, tr_lookup,
 };
+pub use modal::{ModalProps, modal};
 pub use modals::{
     BulletItem, BulletKind, ConfirmKind, ConfirmModalParams, ConfirmTone, TypeToConfirmModalParams,
     confirm_modal, type_to_confirm_modal,
@@ -127,8 +129,8 @@ pub use theme::{catppuccin_mocha, latte, palette_for_theme, tokyo_night_storm};
 pub use toast::{Toast, ToastAction, ToastKind, ToastQueue, toast_viewport};
 pub use toggle::{ToggleProps, toggle, toggle_switch};
 pub use tokens::{
-    DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FontRole, FontWeight, Radius, Spacing,
-    ThemeId, font, font_weighted, install_density, install_font_override, load_fonts, radius, sp,
-    spacing, spf,
+    DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FontRole, FontWeight, ModalSize, Radius,
+    Spacing, ThemeId, font, font_weighted, install_density, install_font_override, load_fonts,
+    modal_width, radius, sp, spacing, spf,
 };
 pub use volume_slider::volume_slider;

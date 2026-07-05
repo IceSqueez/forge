@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use iced::advanced::layout;
 use iced::advanced::mouse;
 use iced::advanced::renderer;
+use iced::advanced::svg;
 use iced::advanced::text;
 use iced::advanced::widget::Widget;
 use iced::advanced::widget::tree::{self, Tree};
@@ -15,10 +16,14 @@ use iced::{
     window,
 };
 
+use crate::icons::Icon;
 use crate::palette::ForgePalette;
-use crate::tokens::{BORDER_THIN, FONT_MD, FONT_SM, FontRole, font};
+use crate::tokens::{BORDER_THIN, FONT_MD, FONT_SM, FontRole, Radius, font, radius};
 
 const HEADER_H: f32 = 56.0;
+const HEADER_TILE: f32 = 28.0;
+const HEADER_TILE_GAP: f32 = 10.0;
+const HEADER_TILE_ICON: f32 = 15.0;
 const PAD_H: f32 = 16.0;
 const PAD_V: f32 = 12.0;
 const CLOSE_HIT_W: f32 = 32.0;
@@ -99,6 +104,7 @@ pub struct SideSheetConfig<'a, Message> {
     pub width: SheetWidth,
     pub animation: SheetAnimation,
     pub header: Option<SheetHeader<'a, Message>>,
+    pub header_icon: Option<(Icon, Color)>,
     pub on_close: Option<Message>,
     pub on_resize: Option<Box<dyn Fn(f32) -> Message + 'a>>,
     pub resizable: bool,
@@ -108,7 +114,9 @@ pub struct SideSheetConfig<'a, Message> {
 
 pub struct SideSheet<'a, Message, Theme = iced::Theme, Renderer = iced::Renderer>
 where
-    Renderer: iced::advanced::Renderer + iced::advanced::text::Renderer<Font = Font>,
+    Renderer: iced::advanced::Renderer
+        + iced::advanced::text::Renderer<Font = Font>
+        + iced::advanced::svg::Renderer,
 {
     content: Element<'a, Message, Theme, Renderer>,
     config: SideSheetConfig<'a, Message>,
@@ -144,7 +152,10 @@ fn apply_easing(t: f32, easing: Easing) -> f32 {
 impl<'a, Message, Theme, Renderer> SideSheet<'a, Message, Theme, Renderer>
 where
     Message: Clone + 'a,
-    Renderer: iced::advanced::Renderer + iced::advanced::text::Renderer<Font = Font> + 'a,
+    Renderer: iced::advanced::Renderer
+        + iced::advanced::text::Renderer<Font = Font>
+        + iced::advanced::svg::Renderer
+        + 'a,
 {
     pub fn new(content: impl Into<Element<'a, Message, Theme, Renderer>>) -> Self
     where
@@ -158,6 +169,7 @@ where
                 width: SheetWidth::default(),
                 animation: SheetAnimation::default(),
                 header: None,
+                header_icon: None,
                 on_close: None,
                 on_resize: None,
                 resizable: false,
@@ -189,6 +201,11 @@ where
 
     pub fn header(mut self, header: SheetHeader<'a, Message>) -> Self {
         self.config.header = Some(header);
+        self
+    }
+
+    pub fn header_icon(mut self, icon: Icon, tint: Color) -> Self {
+        self.config.header_icon = Some((icon, tint));
         self
     }
 
@@ -306,7 +323,9 @@ impl<'a, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
     for SideSheet<'a, Message, Theme, Renderer>
 where
     Message: Clone + 'a,
-    Renderer: iced::advanced::Renderer + iced::advanced::text::Renderer<Font = Font>,
+    Renderer: iced::advanced::Renderer
+        + iced::advanced::text::Renderer<Font = Font>
+        + iced::advanced::svg::Renderer,
 {
     fn size(&self) -> Size<Length> {
         Size {
@@ -426,6 +445,45 @@ where
         );
 
         if let Some(header) = &self.config.header {
+            let icon_offset = if self.config.header_icon.is_some() {
+                HEADER_TILE + HEADER_TILE_GAP
+            } else {
+                0.0
+            };
+
+            if let Some((icon, tint)) = self.config.header_icon {
+                let tile_rect = Rectangle {
+                    x: animated_sheet_rect.x + PAD_H,
+                    y: bounds.y + (HEADER_H - HEADER_TILE) / 2.0,
+                    width: HEADER_TILE,
+                    height: HEADER_TILE,
+                };
+                renderer.fill_quad(
+                    renderer::Quad {
+                        bounds: tile_rect,
+                        border: Border {
+                            color: Color::TRANSPARENT,
+                            width: 0.0,
+                            radius: radius(Radius::Sm).into(),
+                        },
+                        shadow: Shadow::default(),
+                        snap: true,
+                    },
+                    p.surface_overlay,
+                );
+                let icon_rect = Rectangle {
+                    x: tile_rect.x + (HEADER_TILE - HEADER_TILE_ICON) / 2.0,
+                    y: tile_rect.y + (HEADER_TILE - HEADER_TILE_ICON) / 2.0,
+                    width: HEADER_TILE_ICON,
+                    height: HEADER_TILE_ICON,
+                };
+                renderer.draw_svg(
+                    svg::Svg::new(svg::Handle::from_memory(icon.bytes())).color(tint),
+                    icon_rect,
+                    *viewport,
+                );
+            }
+
             let title_line_h = FONT_MD * 1.4;
             let block_h = if header.subtitle.is_some() {
                 title_line_h + 2.0 + FONT_SM * 1.4
@@ -433,7 +491,8 @@ where
                 title_line_h
             };
             let text_y = bounds.y + (HEADER_H - block_h) / 2.0;
-            let title_avail_w = (sheet_w - PAD_H * 3.0 - CLOSE_HIT_W).max(0.0);
+            let text_x = animated_sheet_rect.x + PAD_H + icon_offset;
+            let title_avail_w = (sheet_w - PAD_H * 3.0 - CLOSE_HIT_W - icon_offset).max(0.0);
 
             fill_sheet_text(
                 renderer,
@@ -441,7 +500,7 @@ where
                 FONT_MD,
                 Size::new(title_avail_w, FONT_MD * 1.4),
                 Point {
-                    x: animated_sheet_rect.x + PAD_H,
+                    x: text_x,
                     y: text_y,
                 },
                 p.text_primary,
@@ -455,7 +514,7 @@ where
                     FONT_SM,
                     Size::new(title_avail_w, FONT_SM * 1.4),
                     Point {
-                        x: animated_sheet_rect.x + PAD_H,
+                        x: text_x,
                         y: text_y + title_line_h + 2.0,
                     },
                     p.text_secondary,
@@ -758,7 +817,10 @@ impl<'a, Message, Theme, Renderer> From<SideSheet<'a, Message, Theme, Renderer>>
 where
     Message: Clone + 'a,
     Theme: 'a,
-    Renderer: iced::advanced::Renderer + iced::advanced::text::Renderer<Font = Font> + 'a,
+    Renderer: iced::advanced::Renderer
+        + iced::advanced::text::Renderer<Font = Font>
+        + iced::advanced::svg::Renderer
+        + 'a,
 {
     fn from(w: SideSheet<'a, Message, Theme, Renderer>) -> Self {
         Element::new(w)
@@ -813,7 +875,9 @@ mod tests {
     fn make_tree<Msg, R>(widget: &SideSheet<'_, Msg, Theme, R>) -> Tree
     where
         Msg: Clone + 'static,
-        R: iced::advanced::Renderer + iced::advanced::text::Renderer<Font = Font>,
+        R: iced::advanced::Renderer
+            + iced::advanced::text::Renderer<Font = Font>
+            + iced::advanced::svg::Renderer,
     {
         use iced::advanced::widget::Widget as _;
         Tree {

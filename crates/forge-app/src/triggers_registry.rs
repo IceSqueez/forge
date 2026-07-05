@@ -811,6 +811,12 @@ pub fn view<'a>(
         .map(|row| sheet_body_for(row, &state.used_in, state.config_edit.as_ref(), rt, palette))
         .unwrap_or_else(|| Space::new().width(Length::Fill).height(Length::Fill).into());
 
+    let sheet_icon_tint = state
+        .selected_id
+        .and_then(|id| state.instances.iter().find(|r| r.id == id))
+        .map(|r| platform_dot_color(&r.kind_id, palette))
+        .unwrap_or(palette.info);
+
     let sheet = SideSheet::new(sheet_body)
         .open(sheet_open)
         .palette(palette)
@@ -821,6 +827,7 @@ pub fn view<'a>(
         ))
         .resizable(true)
         .sheet_key("trigger_editor")
+        .header_icon(Icon::Bolt, sheet_icon_tint)
         .header(SheetHeader {
             title: sheet_title,
             subtitle: None,

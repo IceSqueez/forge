@@ -1608,6 +1608,10 @@ fn run_modal_view<'a>(
         palette,
         ModalProps {
             title: std::borrow::Cow::Borrowed(form.display_title.as_str()),
+            subtitle: None,
+            icon: None,
+            icon_tint: None,
+            size: forge_widgets::ModalSize::Md,
             on_close: Message::ScriptEditor(ScriptEditorMsg::RunModalCancel),
             kbd_hint: None,
         },
@@ -1711,6 +1715,10 @@ fn pending_discard_modal<'a>(
         palette,
         ModalProps {
             title: std::borrow::Cow::Owned(forge_widgets::tr!("script_editor_discard_title")),
+            subtitle: None,
+            icon: None,
+            icon_tint: None,
+            size: forge_widgets::ModalSize::Md,
             on_close: Message::ScriptEditor(ScriptEditorMsg::DiscardNavDismissed),
             kbd_hint: None,
         },

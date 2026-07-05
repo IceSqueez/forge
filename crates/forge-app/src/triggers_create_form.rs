@@ -284,7 +284,7 @@ pub fn view<'a>(
             ..container::Style::default()
         });
 
-    let centered = container(card)
+    let centered = container(iced::widget::opaque(card))
         .width(Length::Fill)
         .height(Length::Fill)
         .align_x(Alignment::Center)

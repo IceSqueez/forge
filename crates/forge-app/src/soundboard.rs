@@ -617,7 +617,7 @@ fn add_clip_modal<'a>(modal: &'a AddClipModal, palette: &'a ForgePalette) -> Ele
         .on_press(Message::Soundboard(SoundboardMsg::ModalCancel))
         .style(|_theme, _status| modal_backdrop_style(_theme));
 
-    let centered = container(card)
+    let centered = container(iced::widget::opaque(card))
         .width(Length::Fill)
         .height(Length::Fill)
         .align_x(Alignment::Center)

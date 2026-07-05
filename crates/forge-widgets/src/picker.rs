@@ -157,7 +157,7 @@ pub fn picker_modal<'a, Msg: 'a + Clone>(
             ..container::Style::default()
         });
 
-    let centered_card = container(card)
+    let centered_card = container(iced::widget::opaque(card))
         .width(Length::Fill)
         .height(Length::Fill)
         .align_x(Alignment::Center)

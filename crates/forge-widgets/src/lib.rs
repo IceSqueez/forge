@@ -124,8 +124,8 @@ pub use script_editor_widget::{
     choose_overlay, prefix_under_cursor, script_editor_widget, should_trigger_autocomplete,
 };
 pub use sections::{
-    BannerKind, DividerAxis, ToastVariant, divider, empty_state, inline_error, live_status_banner,
-    section_header, section_header_expandable, toast_banner,
+    BannerKind, DividerAxis, ToastVariant, divider, empty_state, empty_state_primary, inline_error,
+    live_status_banner, section_header, section_header_expandable, toast_banner,
 };
 pub use semantic::{SemanticState, state_icon};
 pub use server::{BindAddressCardParams, BindBadge, bearer_token_display, bind_address_card};

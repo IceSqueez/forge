@@ -217,26 +217,37 @@ fn counter_badge_inline<'a, Msg: 'a>(count: u32, palette: &ForgePalette) -> Elem
         .into()
 }
 
-pub fn empty_state<'a, Msg: 'a + Clone>(
-    headline: impl Into<Cow<'a, str>>,
-    body: impl Into<Cow<'a, str>>,
-    action: Option<(impl Into<Cow<'a, str>>, Msg)>,
+/// Emphasis of an empty-state call-to-action button.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EmptyCta {
+    /// Low-emphasis outline button — the default for secondary escape hatches
+    /// (e.g. "Clear filters" on a no-results state).
+    Ghost,
+    /// Filled brand button — the primary create action on a genuinely-empty
+    /// screen whose whole purpose is to drive that first creation.
+    Primary,
+}
+
+fn empty_state_inner<'a, Msg: 'a + Clone>(
+    headline: Cow<'a, str>,
+    body: Cow<'a, str>,
+    action: Option<(Cow<'a, str>, Msg)>,
+    cta: EmptyCta,
     palette: &ForgePalette,
 ) -> Element<'a, Msg> {
-    let headline_str: Cow<'a, str> = headline.into();
-    let body_str: Cow<'a, str> = body.into();
-
     let mut col = column![
-        text(headline_str)
-            .size(FONT_MD)
-            .color(palette.text_secondary),
-        text(body_str).size(FONT_SM).color(palette.text_muted),
+        text(headline).size(FONT_MD).color(palette.text_secondary),
+        text(body).size(FONT_SM).color(palette.text_muted),
     ]
     .spacing(6)
     .align_x(Alignment::Center);
 
     if let Some((lbl, msg)) = action {
-        col = col.push(crate::ghost_button(lbl, msg, palette));
+        let btn = match cta {
+            EmptyCta::Ghost => crate::ghost_button(lbl, msg, palette),
+            EmptyCta::Primary => crate::primary_button(lbl, msg, palette),
+        };
+        col = col.push(btn);
     }
 
     container(col)
@@ -244,6 +255,40 @@ pub fn empty_state<'a, Msg: 'a + Clone>(
         .align_x(Alignment::Center)
         .align_y(Alignment::Center)
         .into()
+}
+
+pub fn empty_state<'a, Msg: 'a + Clone>(
+    headline: impl Into<Cow<'a, str>>,
+    body: impl Into<Cow<'a, str>>,
+    action: Option<(impl Into<Cow<'a, str>>, Msg)>,
+    palette: &ForgePalette,
+) -> Element<'a, Msg> {
+    empty_state_inner(
+        headline.into(),
+        body.into(),
+        action.map(|(lbl, msg)| (lbl.into(), msg)),
+        EmptyCta::Ghost,
+        palette,
+    )
+}
+
+/// Empty state whose call-to-action reads as the screen's primary create
+/// action: a filled brand button rather than [`empty_state`]'s outline ghost.
+/// Use on genuinely-empty (not filtered-empty) screens where the CTA is the
+/// single obvious next step.
+pub fn empty_state_primary<'a, Msg: 'a + Clone>(
+    headline: impl Into<Cow<'a, str>>,
+    body: impl Into<Cow<'a, str>>,
+    action: Option<(impl Into<Cow<'a, str>>, Msg)>,
+    palette: &ForgePalette,
+) -> Element<'a, Msg> {
+    empty_state_inner(
+        headline.into(),
+        body.into(),
+        action.map(|(lbl, msg)| (lbl.into(), msg)),
+        EmptyCta::Primary,
+        palette,
+    )
 }
 
 pub fn toast_banner<'a, Msg: 'a + Clone>(

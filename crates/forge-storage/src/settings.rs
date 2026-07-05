@@ -152,6 +152,16 @@ pub trait SettingsRepo: Send + Sync {
             .await
     }
 
+    /// Returns the persisted theme identifier (opaque key defined by the UI layer), or
+    /// None if unset (the UI's default theme applies).
+    async fn get_theme(&self) -> Result<Option<String>, StorageError> {
+        self.get_string(reserved_keys::THEME).await
+    }
+
+    async fn set_theme(&self, theme_key: &str) -> Result<(), StorageError> {
+        self.set_string(reserved_keys::THEME, theme_key).await
+    }
+
     /// Returns stored font family name for interface (body) text, or None if unset (bundled default applies).
     async fn font_body(&self) -> Result<Option<String>, StorageError> {
         self.get_string(reserved_keys::FONT_BODY).await

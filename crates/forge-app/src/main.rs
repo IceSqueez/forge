@@ -95,6 +95,24 @@ fn boot_density(
     density
 }
 
+fn boot_theme(
+    rt: &tokio::runtime::Runtime,
+    backend: Arc<dyn DataProvider>,
+) -> (iced::Theme, forge_widgets::ForgePalette) {
+    let settings: Arc<dyn forge_storage::SettingsRepo> =
+        Arc::clone(&backend) as Arc<dyn forge_storage::SettingsRepo>;
+    let theme_id = match rt.block_on(settings.get_theme()) {
+        Ok(Some(key)) => forge_widgets::ThemeId::from_storage_key(&key)
+            .unwrap_or(forge_widgets::ThemeId::CatppuccinMocha),
+        Ok(None) => forge_widgets::ThemeId::CatppuccinMocha,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to read theme setting; using default");
+            forge_widgets::ThemeId::CatppuccinMocha
+        }
+    };
+    forge_widgets::theme_assets(theme_id)
+}
+
 fn boot_fonts(
     rt: &tokio::runtime::Runtime,
     backend: Arc<dyn DataProvider>,
@@ -1127,6 +1145,7 @@ fn main() -> iced::Result {
     let storage_offline = storage_failure.is_some();
     let boot_language = boot_locale(&runtime, Arc::clone(&backend));
     let boot_density = boot_density(&runtime, Arc::clone(&backend));
+    let boot_theme = boot_theme(&runtime, Arc::clone(&backend));
     let boot_font_settings = boot_fonts(&runtime, Arc::clone(&backend));
     let boot_shortcut_overrides = boot_shortcuts(&runtime, Arc::clone(&backend));
     // A real DB-open failure must be unmissable: open on the error screen so the user
@@ -1281,6 +1300,8 @@ fn main() -> iced::Result {
             boot_font_settings.clone(),
         );
         app.ui.settings_shortcuts.overrides = boot_shortcut_overrides.clone();
+        app.theme = boot_theme.0.clone();
+        app.palette = boot_theme.1;
         app.rt.bus = Arc::clone(&bus_boot);
         app.rt.speak_queue = speak_queue.clone();
         app.rt.pipeline_config = pipeline_config.clone();

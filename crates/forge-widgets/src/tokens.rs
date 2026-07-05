@@ -31,6 +31,32 @@ pub enum ThemeId {
     Latte,
 }
 
+impl ThemeId {
+    pub const ALL: [ThemeId; 3] = [
+        ThemeId::CatppuccinMocha,
+        ThemeId::TokyoNight,
+        ThemeId::Latte,
+    ];
+
+    /// Stable persisted identifier; safe to store and match on across restarts.
+    pub fn storage_key(self) -> &'static str {
+        match self {
+            ThemeId::CatppuccinMocha => "catppuccin_mocha",
+            ThemeId::TokyoNight => "tokyo_night",
+            ThemeId::Latte => "latte",
+        }
+    }
+
+    pub fn from_storage_key(key: &str) -> Option<ThemeId> {
+        match key {
+            "catppuccin_mocha" => Some(ThemeId::CatppuccinMocha),
+            "tokyo_night" => Some(ThemeId::TokyoNight),
+            "latte" => Some(ThemeId::Latte),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Density {
     Compact,

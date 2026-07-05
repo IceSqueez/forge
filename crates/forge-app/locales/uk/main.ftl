@@ -120,6 +120,11 @@ home_connections_summary = { $active } активних · { $disconnected } в�
 ## Налаштування → панель зовнішнього вигляду
 
 settings_appearance_title = Зовнішній вигляд
+settings_appearance_theme_label = Тема
+settings_theme_active = АКТИВНА
+settings_theme_mocha_desc = Темна, тепла
+settings_theme_tokyo_desc = Темна, холодна
+settings_theme_latte_desc = Світла
 settings_appearance_density_label = Щільність інтерфейсу
 settings_appearance_density_subtitle = Скільки простору отримує інтерфейс — застосовується миттєво
 settings_appearance_density_compact = Компактна

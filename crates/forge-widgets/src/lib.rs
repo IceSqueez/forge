@@ -44,6 +44,7 @@ pub mod side_sheet;
 pub mod status;
 pub mod tag_list_input;
 pub mod theme;
+pub mod theme_card;
 pub mod toast;
 pub mod toggle;
 pub mod tokens;
@@ -130,7 +131,8 @@ pub use side_sheet::{
 };
 pub use status::{StatusVariant, badge, connection_status_badge, status_dot};
 pub use tag_list_input::{TagListInputMessage, TagListInputState, tag_list_input};
-pub use theme::{catppuccin_mocha, latte, palette_for_theme, tokyo_night_storm};
+pub use theme::{catppuccin_mocha, latte, palette_for_theme, theme_assets, tokyo_night_storm};
+pub use theme_card::{ThemeCardParams, theme_card};
 pub use toast::{Toast, ToastAction, ToastKind, ToastQueue, toast_viewport};
 pub use toggle::{ToggleProps, toggle, toggle_switch};
 pub use tokens::{

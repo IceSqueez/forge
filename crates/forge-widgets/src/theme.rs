@@ -53,3 +53,11 @@ pub fn palette_for_theme(theme_id: ThemeId) -> &'static ForgePalette {
         ThemeId::Latte => &LATTE,
     }
 }
+
+pub fn theme_assets(theme_id: ThemeId) -> (Theme, ForgePalette) {
+    match theme_id {
+        ThemeId::CatppuccinMocha => catppuccin_mocha(),
+        ThemeId::TokyoNight => tokyo_night_storm(),
+        ThemeId::Latte => latte(),
+    }
+}

@@ -692,6 +692,38 @@ fn settings_fonts_section<'a>(
         .into()
 }
 
+fn theme_option<'a>(
+    theme_id: forge_widgets::ThemeId,
+    palette: &'a ForgePalette,
+) -> Element<'a, Message> {
+    let (title, subtitle) = match theme_id {
+        forge_widgets::ThemeId::CatppuccinMocha => (
+            "Catppuccin Mocha",
+            forge_widgets::tr!("settings_theme_mocha_desc"),
+        ),
+        forge_widgets::ThemeId::TokyoNight => (
+            "Tokyo Night",
+            forge_widgets::tr!("settings_theme_tokyo_desc"),
+        ),
+        forge_widgets::ThemeId::Latte => (
+            "Catppuccin Latte",
+            forge_widgets::tr!("settings_theme_latte_desc"),
+        ),
+    };
+    let selected = *palette == *forge_widgets::palette_for_theme(theme_id);
+    forge_widgets::theme_card(
+        forge_widgets::ThemeCardParams {
+            theme_id,
+            title: title.to_owned(),
+            subtitle,
+            active_label: forge_widgets::tr!("settings_theme_active"),
+            selected,
+        },
+        Message::ThemeChanged(theme_id),
+        palette,
+    )
+}
+
 fn settings_appearance_pane<'a>(
     current: forge_storage::settings::Density,
     fonts: &'a crate::ui_settings::FontSettings,
@@ -724,8 +756,20 @@ fn settings_appearance_pane<'a>(
     ]
     .spacing(spf(Spacing::Xs));
 
+    let theme_label = text(forge_widgets::tr!("settings_appearance_theme_label"))
+        .size(FONT_SM)
+        .color(p.text_primary);
+    let theme_row = row![
+        theme_option(forge_widgets::ThemeId::CatppuccinMocha, palette),
+        theme_option(forge_widgets::ThemeId::TokyoNight, palette),
+        theme_option(forge_widgets::ThemeId::Latte, palette),
+    ]
+    .spacing(spf(Spacing::Sm));
+
     let body = column![
         header,
+        theme_label,
+        theme_row,
         column![density_label, density_subtitle].spacing(2),
         options,
         settings_fonts_section(fonts, palette),
@@ -1050,6 +1094,12 @@ pub(crate) fn handle_message(app: &mut App, sub: SettingsMsg) -> Task<Message> {
         SettingsMsg::DensityPersisted(result) => {
             if let Err(e) = result {
                 tracing::warn!(error = %e, "failed to persist density selection");
+            }
+            Task::none()
+        }
+        SettingsMsg::ThemePersisted(result) => {
+            if let Err(e) = result {
+                tracing::warn!(error = %e, "failed to persist theme selection");
             }
             Task::none()
         }

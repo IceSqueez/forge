@@ -241,6 +241,7 @@ pub enum SettingsMsg {
     LanguagePersisted(Result<(), String>),
     DensityChanged(Density),
     DensityPersisted(Result<(), String>),
+    ThemePersisted(Result<(), String>),
     FontCatalogLoaded(Vec<forge_widgets::FontFamily>),
     FontChanged(forge_widgets::FontRole, Option<String>),
     FontPersisted(Result<(), String>),

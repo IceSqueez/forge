@@ -17,7 +17,7 @@ use forge_storage::settings::Density;
 use forge_storage::{CredentialsRepo, DataProvider};
 #[cfg(test)]
 use forge_vtube::{VTubeClient, VTubeConfig};
-use forge_widgets::{ForgePalette, ThemeId, ToastQueue};
+use forge_widgets::{ForgePalette, ToastQueue};
 use iced::{Task, Theme};
 
 use crate::actions::ActionsState;
@@ -309,14 +309,16 @@ pub fn update(app: &mut App, msg: Message) -> Task<Message> {
     match msg {
         Message::Navigate(screen) => crate::navigation::handle_navigate(app, screen),
         Message::ThemeChanged(id) => {
-            let (theme, palette) = match id {
-                ThemeId::CatppuccinMocha => forge_widgets::catppuccin_mocha(),
-                ThemeId::TokyoNight => forge_widgets::tokyo_night_storm(),
-                ThemeId::Latte => forge_widgets::latte(),
-            };
+            let (theme, palette) = forge_widgets::theme_assets(id);
             app.theme = theme;
             app.palette = palette;
-            Task::none()
+            let settings: Arc<dyn forge_storage::SettingsRepo> =
+                Arc::clone(&app.rt.backend) as Arc<dyn forge_storage::SettingsRepo>;
+            let key = id.storage_key();
+            Task::perform(
+                async move { settings.set_theme(key).await.map_err(|e| e.to_string()) },
+                |r| Message::Settings(crate::message::SettingsMsg::ThemePersisted(r)),
+            )
         }
         Message::EventArrived(event) => dispatch_event(app, &event),
         Message::EventFeed(sub) => event_feed::update(&mut app.ui.event_feed, &app.rt, sub),

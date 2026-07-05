@@ -118,6 +118,11 @@ home_connections_summary = { $active } active · { $disconnected } disconnected
 ## Settings → Appearance pane
 
 settings_appearance_title = Appearance
+settings_appearance_theme_label = Theme
+settings_theme_active = ACTIVE
+settings_theme_mocha_desc = Dark, warm
+settings_theme_tokyo_desc = Dark, cool
+settings_theme_latte_desc = Light
 settings_appearance_density_label = Interface density
 settings_appearance_density_subtitle = How much breathing room the interface gets — applies instantly
 settings_appearance_density_compact = Compact

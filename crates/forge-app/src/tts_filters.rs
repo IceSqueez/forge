@@ -13,7 +13,7 @@ use forge_widgets::tokens::{
 use forge_widgets::{
     ConfirmKind, ConfirmModalParams, ConfirmTone, ForgePalette, Icon, confirm_modal, tabler_icon,
 };
-use iced::widget::{Space, button, column, container, row, scrollable, stack, text, text_input};
+use iced::widget::{Space, button, column, container, row, scrollable, stack, text};
 use iced::{Alignment, Background, Border, Color, Element, Length, Task};
 
 use crate::Message;
@@ -114,7 +114,7 @@ impl RuleDraft {
 }
 
 pub struct TtsFiltersState {
-    pub preview_input: String,
+    pub preview_input: iced::widget::text_editor::Content,
     rules: Vec<FilterRule>,
     settings: TtsPipelineSettings,
     max_length_input: String,
@@ -136,7 +136,7 @@ impl TtsFiltersState {
     pub fn new() -> Self {
         let settings = TtsPipelineSettings::default();
         Self {
-            preview_input: String::new(),
+            preview_input: iced::widget::text_editor::Content::new(),
             rules: Vec::new(),
             max_length_input: settings
                 .max_length
@@ -158,12 +158,13 @@ impl TtsFiltersState {
     }
 
     fn refresh_preview(&mut self) {
-        if self.preview_input.is_empty() {
+        let input = self.preview_input.text();
+        if input.is_empty() {
             self.cached_preview = None;
             return;
         }
         let config = build_config_lenient(&self.rules, &self.settings);
-        let (result, stages) = forge_tts_pipeline::preview(&self.preview_input, &config);
+        let (result, stages) = forge_tts_pipeline::preview(&input, &config);
         self.cached_preview = Some(CachedPreview { stages, result });
     }
 }
@@ -211,8 +212,8 @@ pub fn update(state: &mut TtsFiltersState, rt: &RuntimeView, msg: TtsFiltersMsg)
             tracing::warn!(error = %e, "failed to load tts filters");
             Task::none()
         }
-        TtsFiltersMsg::PreviewInputChanged(s) => {
-            state.preview_input = s;
+        TtsFiltersMsg::PreviewInputAction(action) => {
+            state.preview_input.perform(action);
             state.refresh_preview();
             Task::none()
         }
@@ -409,7 +410,8 @@ pub fn update(state: &mut TtsFiltersState, rt: &RuntimeView, msg: TtsFiltersMsg)
             Task::none()
         }
         TtsFiltersMsg::SpeakPreview => {
-            let text = state.preview_input.trim();
+            let content = state.preview_input.text();
+            let text = content.trim();
             if text.is_empty() {
                 return Task::none();
             }
@@ -1121,25 +1123,12 @@ fn preview_column_view<'a>(
         .color(palette.text_muted)
         .font(font(FontRole::Monospace));
 
-    let input_box = text_input(
-        &forge_widgets::tr!("tts_filters_preview_input_placeholder"),
+    let input_box = forge_widgets::text_area_field(
+        forge_widgets::tr!("tts_filters_preview_input_placeholder"),
         &state.preview_input,
-    )
-    .on_input(|s| Message::Tts(TtsMsg::Filters(TtsFiltersMsg::PreviewInputChanged(s))))
-    .size(FONT_SM)
-    .width(Length::Fill)
-    .style(move |_, _| text_input::Style {
-        background: Background::Color(palette.elevated),
-        border: Border {
-            color: palette.border_regular,
-            width: BORDER_THIN,
-            radius: radius(Radius::Sm).into(),
-        },
-        icon: palette.text_muted,
-        placeholder: palette.text_muted,
-        value: palette.text_primary,
-        selection: palette.brand,
-    });
+        |a| Message::Tts(TtsMsg::Filters(TtsFiltersMsg::PreviewInputAction(a))),
+        palette,
+    );
 
     let stage_results = if let Some(preview) = &state.cached_preview {
         preview_stage_rows(preview, palette, gap_sm)

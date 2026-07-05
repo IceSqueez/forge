@@ -114,12 +114,12 @@ pub(crate) fn add_action_modal_view<'a>(
 
     let two_col = row![group_block, queue_block].spacing(spf(Spacing::Sm));
 
-    let desc_input = forge_widgets::text_input_field(
+    let desc_input = forge_widgets::text_area_field(
         forge_widgets::tr!("actions_description_placeholder"),
         &form.description,
-        |v| {
+        |a| {
             Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
-                AddActionMsg::DescriptionChanged(v),
+                AddActionMsg::DescriptionAction(a),
             )))
         },
         palette,

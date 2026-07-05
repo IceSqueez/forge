@@ -548,7 +548,7 @@ pub enum TtsFiltersMsg {
             String,
         >,
     ),
-    PreviewInputChanged(String),
+    PreviewInputAction(iced::widget::text_editor::Action),
     AddRuleClicked,
     EditRule(usize),
     DeleteRule(usize),

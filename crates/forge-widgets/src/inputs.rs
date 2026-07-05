@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use iced::{
     Background, Border, Color, Element, Padding,
-    widget::{container, pick_list, row, text_input},
+    widget::{container, pick_list, row, text_editor, text_input},
 };
 
 use crate::icons::{Icon, tabler_icon};
@@ -91,6 +91,53 @@ pub fn text_input_field_submit<'a, Msg: 'a + Clone>(
         .padding(input_padding())
         .width(iced::Length::Fill)
         .style(move |_theme, status| text_input_style(p, status))
+        .into()
+}
+
+fn text_editor_style(palette: ForgePalette, status: text_editor::Status) -> text_editor::Style {
+    let border_color = match status {
+        text_editor::Status::Focused { .. } => palette.border_active,
+        text_editor::Status::Disabled => palette.disabled,
+        _ => palette.border_input,
+    };
+    let value_color = match status {
+        text_editor::Status::Disabled => palette.text_muted,
+        _ => palette.text_primary,
+    };
+    text_editor::Style {
+        background: Background::Color(palette.shell),
+        border: Border {
+            color: border_color,
+            width: BORDER_THIN,
+            radius: radius(Radius::Md).into(),
+        },
+        placeholder: palette.text_muted,
+        value: value_color,
+        selection: Color {
+            a: 0.25,
+            ..palette.brand
+        },
+    }
+}
+
+/// Multi-line counterpart to [`text_input_field`] — a ~130px resizable area for
+/// long-form or JSON-shaped values. Wraps the stateful `text_editor`: the caller
+/// holds a `text_editor::Content` and forwards each `text_editor::Action` back
+/// through `on_action`.
+pub fn text_area_field<'a, Msg: 'a + Clone>(
+    placeholder: impl Into<Cow<'a, str>>,
+    content: &'a text_editor::Content,
+    on_action: impl Fn(text_editor::Action) -> Msg + 'a,
+    palette: &ForgePalette,
+) -> Element<'a, Msg> {
+    let p = *palette;
+    let ph: Cow<'a, str> = placeholder.into();
+    text_editor(content)
+        .placeholder(ph.into_owned())
+        .on_action(on_action)
+        .padding(input_padding())
+        .height(iced::Length::Fixed(130.0))
+        .style(move |_theme, status| text_editor_style(p, status))
         .into()
 }
 

@@ -66,9 +66,9 @@ pub fn add_action_update(
             }
             Task::none()
         }
-        AddActionMsg::DescriptionChanged(v) => {
+        AddActionMsg::DescriptionAction(action) => {
             if let Some(f) = state.as_mut() {
-                f.description = v;
+                f.description.perform(action);
             }
             Task::none()
         }
@@ -127,10 +127,14 @@ pub fn add_action_update(
                 } else {
                     forge_types::ExecutionMode::Sequential
                 },
-                description: if form.description.trim().is_empty() {
-                    None
-                } else {
-                    Some(form.description.trim().to_string())
+                description: {
+                    let text = form.description.text();
+                    let trimmed = text.trim();
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(trimmed.to_string())
+                    }
                 },
                 sub_actions: vec![],
             };

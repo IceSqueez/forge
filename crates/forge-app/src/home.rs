@@ -369,77 +369,94 @@ fn home_stream_health<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a
     .spacing(spf(Spacing::Xxs))
     .width(Length::FillPortion(14));
 
-    let health_stat =
-        |label: String, value: String, unit: Option<&'static str>| -> Element<'a, Message> {
-            let val_el: Element<'a, Message> = if let Some(u) = unit {
-                row![
-                    text(value)
-                        .size(FONT_MD)
-                        .color(text_primary)
-                        .font(font(FontRole::Monospace)),
-                    text(u).size(FONT_XS).color(text_muted),
-                ]
-                .spacing(spf(Spacing::Xxs))
-                .align_y(Alignment::Center)
-                .into()
-            } else {
+    let health_stat = |label: String,
+                       value: String,
+                       unit: Option<String>,
+                       value_color: iced::Color|
+     -> Element<'a, Message> {
+        let val_el: Element<'a, Message> = if let Some(u) = unit {
+            row![
                 text(value)
                     .size(FONT_MD)
-                    .color(text_primary)
-                    .font(font(FontRole::Monospace))
-                    .into()
-            };
-            column![
-                text(label)
-                    .size(FONT_XS)
-                    .color(text_faint)
+                    .color(value_color)
                     .font(font(FontRole::Monospace)),
-                val_el,
+                text(u).size(FONT_XS).color(text_muted),
             ]
             .spacing(spf(Spacing::Xxs))
-            .width(Length::FillPortion(10))
+            .align_y(Alignment::Center)
             .into()
-        };
-
-    let (fps_val, cpu_val, dropped_val) = if let Some(client) = &app.rt.obs_client {
-        let snap = client.health_snapshot();
-        let fps = format!("{:.1}", snap.fps);
-        let cpu = format!("{:.1}", snap.cpu_percent);
-        let dropped = if snap.total_frames > 0 {
-            format!(
-                "{} ({:.2}%)",
-                snap.dropped_frames,
-                (snap.dropped_frames as f64 / snap.total_frames as f64) * 100.0
-            )
         } else {
-            snap.dropped_frames.to_string()
+            text(value)
+                .size(FONT_MD)
+                .color(value_color)
+                .font(font(FontRole::Monospace))
+                .into()
         };
-        (fps, cpu, dropped)
-    } else {
-        (
-            "\u{2014}".to_owned(),
-            "\u{2014}".to_owned(),
-            "\u{2014}".to_owned(),
-        )
+        column![
+            text(label)
+                .size(FONT_XS)
+                .color(text_faint)
+                .font(font(FontRole::Monospace)),
+            val_el,
+        ]
+        .spacing(spf(Spacing::Xxs))
+        .width(Length::FillPortion(10))
+        .into()
     };
+
+    let (fps_val, cpu_val, dropped_main, dropped_pct, dropped_color) =
+        if let Some(client) = &app.rt.obs_client {
+            let snap = client.health_snapshot();
+            let fps = format!("{:.1}", snap.fps);
+            let cpu = format!("{:.1}", snap.cpu_percent);
+            let dropped_main = snap.dropped_frames.to_string();
+            let dropped_pct = (snap.total_frames > 0).then(|| {
+                format!(
+                    "{:.2}%",
+                    (snap.dropped_frames as f64 / snap.total_frames as f64) * 100.0
+                )
+            });
+            let dropped_color = if snap.dropped_frames == 0 {
+                success
+            } else {
+                palette.warning
+            };
+            (fps, cpu, dropped_main, dropped_pct, dropped_color)
+        } else {
+            (
+                "\u{2014}".to_owned(),
+                "\u{2014}".to_owned(),
+                "\u{2014}".to_owned(),
+                None,
+                text_primary,
+            )
+        };
 
     let stats_row = row![
         sparkline_col,
         health_stat(
             forge_widgets::tr!("home_health_bitrate_label"),
             "\u{2014}".to_owned(),
-            Some("kbps")
+            Some("kbps".to_owned()),
+            text_primary,
         ),
         health_stat(
             forge_widgets::tr!("home_health_dropped_label"),
-            dropped_val,
-            None
+            dropped_main,
+            dropped_pct,
+            dropped_color,
         ),
-        health_stat(forge_widgets::tr!("home_health_fps_label"), fps_val, None),
+        health_stat(
+            forge_widgets::tr!("home_health_fps_label"),
+            fps_val,
+            None,
+            text_primary,
+        ),
         health_stat(
             forge_widgets::tr!("home_health_cpu_label"),
             cpu_val,
-            Some("%")
+            Some("%".to_owned()),
+            text_primary,
         ),
     ]
     .spacing(spf(Spacing::Sm))
@@ -633,6 +650,8 @@ fn home_system_event_row<'a>(
     let border_regular = palette.border_regular;
     let shell = palette.shell;
     let text_primary = palette.text_primary;
+    let text_muted = palette.text_muted;
+    let brand = palette.brand;
 
     let dot = container(iced::widget::Space::new())
         .width(6.0)
@@ -662,15 +681,45 @@ fn home_system_event_row<'a>(
     )
     .width(60.0);
 
-    let source_str = source_label(event.source);
+    use iced::widget::text::Wrapping;
+    let source_str = source_label(event.source).to_lowercase();
     let summary_str = crate::event_feed::format_summary(event);
-    let full = format!("{}: {}", source_str, summary_str);
+    let show_desc = !summary_str.is_empty() && summary_str != event.kind;
 
-    let description: Element<'a, Message> = text(full)
-        .size(FONT_XS)
-        .color(text_primary)
-        .width(Length::Fill)
-        .into();
+    let mut spans = irow![
+        text(source_str)
+            .size(FONT_XS)
+            .color(dot_color)
+            .wrapping(Wrapping::None),
+        text(": ")
+            .size(FONT_XS)
+            .color(text_muted)
+            .wrapping(Wrapping::None),
+        text(event.kind.clone())
+            .size(FONT_XS)
+            .color(brand)
+            .wrapping(Wrapping::None),
+    ]
+    .spacing(0.0)
+    .align_y(Alignment::Center);
+
+    if show_desc {
+        spans = spans.push(
+            text(" \u{2014} ")
+                .size(FONT_XS)
+                .color(text_muted)
+                .wrapping(Wrapping::None),
+        );
+        spans = spans.push(
+            text(summary_str)
+                .size(FONT_XS)
+                .color(text_primary)
+                .wrapping(Wrapping::None)
+                .width(Length::Fill),
+        );
+    }
+
+    let description: Element<'a, Message> = spans.width(Length::Fill).into();
 
     let inner = irow![dot, ts_col, description]
         .spacing(spf(Spacing::Xs))
@@ -886,7 +935,7 @@ fn home_glance_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, 
 }
 
 pub(crate) fn home_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
-    use iced::widget::{column, container};
+    use iced::widget::{column, container, scrollable};
 
     let page_header = breadcrumb(
         vec![BreadcrumbCrumb::leaf(forge_widgets::tr!("nav_home"))],
@@ -922,15 +971,20 @@ pub(crate) fn home_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<
 
     content = content.push(connections).push(bottom);
 
-    let body = container(content)
+    let padded = container(content)
         .width(Length::Fill)
-        .height(Length::Fill)
         .padding(iced::Padding {
             top: 22.0,
             right: 28.0,
             bottom: 22.0,
             left: 28.0,
-        })
+        });
+
+    let scroll = scrollable(padded).width(Length::Fill).height(Length::Fill);
+
+    let body = container(scroll)
+        .width(Length::Fill)
+        .height(Length::Fill)
         .style(move |_theme: &Theme| iced::widget::container::Style {
             background: Some(iced::Background::Color(palette.base)),
             ..iced::widget::container::Style::default()

@@ -9,6 +9,7 @@ use iced::{
 use crate::{
     icons::{Icon, tabler_icon},
     palette::ForgePalette,
+    semantic::SemanticState,
     tokens::{
         BORDER_THIN, FONT_LG, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
     },
@@ -71,9 +72,9 @@ fn icon_box<'a, Msg: 'a>(
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
     let icon_color = match connection {
-        ConnectionState::Connected => palette.success,
+        ConnectionState::Connected => SemanticState::Connected.color(palette),
         ConnectionState::Connecting | ConnectionState::Reconnecting => palette.warning,
-        ConnectionState::Disconnected => palette.disabled,
+        ConnectionState::Disconnected => SemanticState::Disconnected.color(palette),
     };
     let box_bg = palette.surface_overlay;
     let r = radius(Radius::Lg);

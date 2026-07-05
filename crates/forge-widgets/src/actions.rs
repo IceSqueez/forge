@@ -6,6 +6,7 @@ use iced::{
 use crate::chat::filter_chip;
 use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
+use crate::semantic::SemanticState;
 use crate::tokens::{
     BORDER_THIN, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp, spf,
 };
@@ -44,11 +45,12 @@ pub struct TriggerCardProps<'a, Msg> {
 }
 
 pub(crate) fn node_status_dot_color(status: NodeStatus, palette: &ForgePalette) -> Color {
-    match status {
-        NodeStatus::Enabled => palette.success,
-        NodeStatus::Disabled => palette.border_regular,
-        NodeStatus::Error => palette.random,
-    }
+    let state = match status {
+        NodeStatus::Enabled => SemanticState::Enabled,
+        NodeStatus::Disabled => SemanticState::Disabled,
+        NodeStatus::Error => SemanticState::Error,
+    };
+    state.color(palette)
 }
 
 pub fn tree_node_with_status<'a, Msg: Clone + 'a>(

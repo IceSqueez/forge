@@ -37,6 +37,7 @@ pub mod rhai_highlight;
 pub mod script_editor_overlay;
 pub mod script_editor_widget;
 pub mod sections;
+pub mod semantic;
 pub mod server;
 pub mod side_sheet;
 pub mod status;
@@ -122,6 +123,7 @@ pub use sections::{
     BannerKind, DividerAxis, ToastVariant, counter_badge, divider, empty_state, inline_error,
     live_status_banner, section_header, section_header_expandable, toast_banner,
 };
+pub use semantic::{SemanticState, state_icon};
 pub use server::{BindAddressCardParams, BindBadge, bearer_token_display, bind_address_card};
 pub use side_sheet::{
     Easing, SheetAnimation, SheetHeader, SheetPosition, SheetWidth, SideSheet, SideSheetConfig,

@@ -79,6 +79,7 @@ fn blocklist_runs_after_replacement_rules() {
 fn emote_stripper_runs_before_url_sanitizer() {
     // EmoteStripper runs first. Emote token "LUL" removed before URL check.
     let mut config = url_replace_config();
+    config.emote_sources.twitch = true;
     config.emote_tokens = EmoteTokenSet {
         tokens: ["LUL".to_string()].into_iter().collect(),
     };
@@ -160,12 +161,13 @@ fn blocklist_skip_mode_short_circuits_length_capper() {
 
 #[test]
 fn empty_text_after_emote_strip_skips_at_length_capper() {
-    let config = PipelineConfig {
+    let mut config = PipelineConfig {
         emote_tokens: EmoteTokenSet {
             tokens: ["LUL".to_string(), "Pog".to_string()].into_iter().collect(),
         },
         ..PipelineConfig::default()
     };
+    config.emote_sources.twitch = true;
 
     match process("LUL Pog LUL", &config) {
         PipelineResult::Skip { reason } => {

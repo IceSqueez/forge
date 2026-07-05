@@ -72,12 +72,13 @@ fn preview_stage_output_feeds_next_stage_input() {
 
 #[test]
 fn preview_emote_stage_shows_transform_when_token_stripped() {
-    let config = PipelineConfig {
+    let mut config = PipelineConfig {
         emote_tokens: EmoteTokenSet {
             tokens: ["Pog".to_string()].into_iter().collect(),
         },
         ..PipelineConfig::default()
     };
+    config.emote_sources.twitch = true;
 
     let (_result, outcomes) = preview("hello Pog world", &config);
     assert_eq!(outcomes[0].action, StageAction::Transformed);

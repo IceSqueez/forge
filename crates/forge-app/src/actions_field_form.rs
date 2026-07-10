@@ -403,4 +403,58 @@ mod tests {
         obj.insert("a".to_owned(), Variant::Int(1));
         assert_eq!(variant_to_display_str(&Variant::Object(obj)), "");
     }
+
+    #[test]
+    fn sparse_overrides_keeps_only_entries_that_diverge_from_default() {
+        // Two-key default the saved instance config is diffed against.
+        let default = || {
+            BTreeMap::from([
+                ("mode".to_owned(), Variant::String("cheer".to_owned())),
+                ("threshold".to_owned(), Variant::Int(100)),
+            ])
+        };
+
+        // (label, buffer, expected sparse result). Each row pins the SPARSE-1
+        // invariant end-to-end, not a restatement of the filter predicate.
+        type Config = BTreeMap<String, Variant>;
+        let cases: Vec<(&str, Config, Config)> = vec![
+            // Revert-to-default — the whole point of the fix: a buffer entry that
+            // re-states today's default MUST be pruned, so a later default change
+            // is not masked by a frozen snapshot of the old value.
+            (
+                "entry equal to default is pruned",
+                BTreeMap::from([("threshold".to_owned(), Variant::Int(100))]),
+                BTreeMap::new(),
+            ),
+            // Genuine override survives verbatim.
+            (
+                "entry differing from default is kept with the buffer value",
+                BTreeMap::from([("threshold".to_owned(), Variant::Int(250))]),
+                BTreeMap::from([("threshold".to_owned(), Variant::Int(250))]),
+            ),
+            // Boundary: key absent from default_config (default.get(k) == None,
+            // so None != Some(v)) is kept rather than dropped.
+            (
+                "entry whose key is absent from default is kept",
+                BTreeMap::from([("extra".to_owned(), Variant::Bool(true))]),
+                BTreeMap::from([("extra".to_owned(), Variant::Bool(true))]),
+            ),
+            // The exact bug the fix closes: a full snapshot of the defaults must
+            // collapse to empty — no full snapshots are ever stored again.
+            (
+                "buffer identical to full default collapses to empty",
+                default(),
+                BTreeMap::new(),
+            ),
+            (
+                "empty buffer yields empty result",
+                BTreeMap::new(),
+                BTreeMap::new(),
+            ),
+        ];
+
+        for (label, buffer, expected) in cases {
+            assert_eq!(sparse_overrides(&default(), &buffer), expected, "{label}");
+        }
+    }
 }

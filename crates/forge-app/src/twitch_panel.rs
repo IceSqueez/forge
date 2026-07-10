@@ -198,6 +198,9 @@ pub fn update(
                 quick_actions,
                 control,
             ));
+            if let Some(live_viewers) = &rt.live_viewers {
+                live_viewers.register(twitch_bundle.viewer_source());
+            }
             rt.twitch_builtin = Some(twitch_bundle);
             *state = TwitchPanelState::Disconnected;
             Task::none()

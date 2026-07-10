@@ -4,13 +4,14 @@ use std::time::Duration;
 use tokio::sync::broadcast;
 use tokio::sync::{Mutex, watch};
 use tokio_stream::StreamExt;
-use tokio_stream::wrappers::BroadcastStream;
+use tokio_stream::wrappers::{BroadcastStream, WatchStream};
 
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, CapabilityFlags, ConnectionState,
     ContentList, ContentListItem, DetailSection, HeaderAction, HealthDelta, HealthMetric,
-    HealthStream, HealthValue, ListFooter, QuickAction, QuickActions, RateLimiter, SectionIcon,
-    TokenBucketRateLimiter, TrailingToken,
+    HealthStream, HealthValue, ListFooter, LiveViewerSource, QuickAction, QuickActions,
+    RateLimiter, SectionIcon, TokenBucketRateLimiter, TrailingToken, ViewerReport,
+    ViewerReportStream,
 };
 use std::collections::BTreeMap;
 
@@ -54,6 +55,28 @@ enum ViewerPollState {
     Live(u64),
 }
 
+impl ViewerPollState {
+    fn as_report(self) -> ViewerReport {
+        match self {
+            ViewerPollState::Live(count) => ViewerReport::Live { count },
+            ViewerPollState::Unknown | ViewerPollState::Offline => ViewerReport::Absent,
+        }
+    }
+}
+
+/// Bridges the bundle's viewer poll into the runtime live-viewer aggregate.
+/// Holds only a `watch` receiver, so it does not keep the bundle alive: once the
+/// bundle's sender drops the report stream ends, dropping the aggregate slot.
+struct TwitchViewerSource {
+    reports: watch::Receiver<ViewerReport>,
+}
+
+impl LiveViewerSource for TwitchViewerSource {
+    fn viewer_reports(&self) -> ViewerReportStream {
+        Box::pin(WatchStream::new(self.reports.clone()))
+    }
+}
+
 /// Inputs required to (re)build a chat session for the bundle's broadcaster.
 pub struct ChatSessionConfig {
     pub client_id: String,
@@ -74,6 +97,7 @@ pub struct TwitchIntegrationBundle {
     // handle without racing a concurrent disconnect/reconnect.
     handle: Mutex<Option<TwitchChatHandle>>,
     viewer_state: std::sync::RwLock<ViewerPollState>,
+    viewer_report_tx: watch::Sender<ViewerReport>,
 }
 
 impl TwitchIntegrationBundle {
@@ -86,6 +110,7 @@ impl TwitchIntegrationBundle {
         handle: TwitchChatHandle,
     ) -> Arc<Self> {
         let (health_tx, _) = broadcast::channel(16);
+        let (viewer_report_tx, _) = watch::channel(ViewerReport::Absent);
         let state_rx = handle.state_receiver();
         let viewer_transport = Self::build_viewer_transport(&config, &bus, &creds);
         let bundle = Arc::new(Self {
@@ -99,6 +124,7 @@ impl TwitchIntegrationBundle {
             creds,
             handle: Mutex::new(Some(handle)),
             viewer_state: std::sync::RwLock::new(ViewerPollState::default()),
+            viewer_report_tx,
         });
         Self::spawn_health_bridge(&bundle);
         Self::spawn_viewer_poll(&bundle, viewer_transport);
@@ -185,6 +211,7 @@ impl TwitchIntegrationBundle {
                 if let Ok(mut guard) = bundle.viewer_state.write() {
                     *guard = new_state;
                 }
+                let _ = bundle.viewer_report_tx.send(new_state.as_report());
                 let delta = HealthDelta {
                     index: 2,
                     new_value: bundle.viewers_health_value(),
@@ -218,6 +245,12 @@ impl TwitchIntegrationBundle {
         &self.handle
     }
 
+    pub fn viewer_source(&self) -> Box<dyn LiveViewerSource> {
+        Box::new(TwitchViewerSource {
+            reports: self.viewer_report_tx.subscribe(),
+        })
+    }
+
     #[cfg(test)]
     pub(crate) fn for_test(
         login: Option<String>,
@@ -226,6 +259,7 @@ impl TwitchIntegrationBundle {
         creds: Arc<dyn CredentialsRepo>,
     ) -> Arc<Self> {
         let (health_tx, _) = broadcast::channel(16);
+        let (viewer_report_tx, _) = watch::channel(ViewerReport::Absent);
         Arc::new(Self {
             id: BuiltinId::new("twitch"),
             login,
@@ -241,6 +275,7 @@ impl TwitchIntegrationBundle {
             creds,
             handle: Mutex::new(None),
             viewer_state: std::sync::RwLock::new(ViewerPollState::default()),
+            viewer_report_tx,
         })
     }
 

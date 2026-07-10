@@ -825,6 +825,11 @@ fn header_card<'a>(
             Message::Server(ServerScreenMsg::RegenerateToken),
             palette,
         ),
+        forge_widgets::warning_banner(
+            &forge_widgets::tr!("widget.bearer.regen.warning"),
+            &forge_widgets::tr!("widget.bearer.regen.warning.body"),
+            palette,
+        ),
     ]
     .spacing(spf(Spacing::Xs))
     .width(Length::FillPortion(2));

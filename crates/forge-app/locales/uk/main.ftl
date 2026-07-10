@@ -173,6 +173,7 @@ settings_nav_diagnostics = Діагностика
 settings_about_build_label = Збірка
 settings_diagnostics_section_title = Журнали та діагностика
 settings_diagnostics_log_dir = Тека журналів: { $path }
+settings_diagnostics_log_dir_label = Тека журналів
 settings_diagnostics_open_log_dir = Відкрити теку журналів
 settings_diagnostics_log_level_hint = Рівень журналювання: керується через змінну RUST_LOG (наприклад: info, debug, trace).
 
@@ -188,6 +189,7 @@ settings_version_changelog_empty = Історія релізів поки від
 
 settings_storage_section_title = Сховище та резервні копії
 settings_storage_db_path = База даних: { $path }
+settings_storage_db_path_label = База даних
 settings_storage_backup_btn = Резервна копія зараз
 settings_storage_backup_hint = Створює копію бази з міткою часу в теці даних.
 
@@ -195,6 +197,7 @@ settings_storage_backup_hint = Створює копію бази з мітко�
 
 settings_queues_section_title = Черги та потоки
 settings_queues_thread_hint = Пул потоків Tokio: { $workers } потік(ів) (автоматично за системою).
+settings_queues_workers_label = Робочі потоки
 settings_queues_managed_hint = Ліміти паралелізму та прапорці блокування керуються на екрані Черги.
 
 ## Налаштування → панель сповіщень
@@ -1521,6 +1524,7 @@ widget_confirm_delete_kind_client = клієнта
 widget_bearer_copy = КОПІЮВАТИ
 widget_bearer_regenerate = ПЕРЕГЕНЕРУВАТИ
 widget_bearer_regen_warning = Перегенерація відключить всіх клієнтів
+widget_bearer_regen_warning_body = Підключені WebSocket-клієнти мають перепідключитися з новим токеном.
 
 ## Widget — server bind card
 

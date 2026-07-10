@@ -171,6 +171,7 @@ settings_nav_diagnostics = Diagnostics
 settings_about_build_label = Build
 settings_diagnostics_section_title = Logs & diagnostics
 settings_diagnostics_log_dir = Log directory: { $path }
+settings_diagnostics_log_dir_label = Log directory
 settings_diagnostics_open_log_dir = Open log directory
 settings_diagnostics_log_level_hint = Log level: controlled via RUST_LOG env var (e.g. info, debug, trace).
 
@@ -186,6 +187,7 @@ settings_version_changelog_empty = No release history yet.
 
 settings_storage_section_title = Storage & backups
 settings_storage_db_path = Database: { $path }
+settings_storage_db_path_label = Database
 settings_storage_backup_btn = Backup now
 settings_storage_backup_hint = Creates a timestamped DB copy in the data directory.
 
@@ -193,6 +195,7 @@ settings_storage_backup_hint = Creates a timestamped DB copy in the data directo
 
 settings_queues_section_title = Queues & threading
 settings_queues_thread_hint = Tokio threadpool: { $workers } worker(s) (auto-sized to system).
+settings_queues_workers_label = Worker threads
 settings_queues_managed_hint = Per-queue concurrency limits and blocking flags are managed on the Queues screen.
 
 ## Settings → Notifications pane
@@ -1500,6 +1503,7 @@ widget_confirm_delete_kind_client = client
 widget_bearer_copy = COPY
 widget_bearer_regenerate = REGENERATE
 widget_bearer_regen_warning = Regenerating disconnects all clients
+widget_bearer_regen_warning_body = Connected WebSocket clients must reconnect with the new token.
 
 ## Widget — server bind card
 

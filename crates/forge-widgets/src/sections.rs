@@ -38,6 +38,32 @@ pub fn divider<'a, Msg: 'a>(palette: &ForgePalette, axis: DividerAxis) -> Elemen
         .into()
 }
 
+pub fn settings_info_row<'a, Msg: 'a>(
+    label: &str,
+    value: &str,
+    is_last: bool,
+    palette: &ForgePalette,
+) -> Element<'a, Msg> {
+    let content = row![
+        text(label.to_owned())
+            .size(FONT_SM)
+            .color(palette.text_primary),
+        Space::new().width(Length::Fill),
+        text(value.to_owned())
+            .size(FONT_SM)
+            .font(font(FontRole::Monospace))
+            .color(palette.text_muted),
+    ]
+    .align_y(Alignment::Center)
+    .padding([sp(Spacing::Xs), 0_u16]);
+
+    if is_last {
+        content.into()
+    } else {
+        column![content, divider(palette, DividerAxis::Horizontal)].into()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BannerKind {
     Waiting,

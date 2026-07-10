@@ -125,7 +125,7 @@ pub use script_editor_widget::{
 };
 pub use sections::{
     BannerKind, DividerAxis, ToastVariant, divider, empty_state, empty_state_primary, inline_error,
-    live_status_banner, section_header, section_header_expandable, toast_banner,
+    live_status_banner, section_header, section_header_expandable, settings_info_row, toast_banner,
 };
 pub use semantic::{SemanticState, state_icon};
 pub use server::{BindAddressCardParams, BindBadge, bearer_token_display, bind_address_card};

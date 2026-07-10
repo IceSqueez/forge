@@ -311,12 +311,12 @@ fn settings_diagnostics_pane(palette: &ForgePalette) -> Element<'static, Message
     ]
     .spacing(spf(Spacing::Sm));
 
-    let log_path_label = iced::widget::text(forge_widgets::tr!(
-        "settings_diagnostics_log_dir",
-        path = log_dir.display().to_string()
-    ))
-    .size(FONT_SM)
-    .color(palette.text_muted);
+    let log_dir_row = forge_widgets::settings_info_row(
+        &forge_widgets::tr!("settings_diagnostics_log_dir_label"),
+        &log_dir.display().to_string(),
+        true,
+        palette,
+    );
     let open_logs_btn = forge_widgets::primary_button(
         forge_widgets::tr!("settings_diagnostics_open_log_dir"),
         Message::Settings(SettingsMsg::OpenLogDirectoryRequested),
@@ -331,7 +331,7 @@ fn settings_diagnostics_pane(palette: &ForgePalette) -> Element<'static, Message
             iced::widget::text(forge_widgets::tr!("settings_diagnostics_section_title"))
                 .size(FONT_SM)
                 .color(palette.text_primary),
-            log_path_label,
+            log_dir_row,
             open_logs_btn,
             level_label,
         ]
@@ -348,12 +348,12 @@ fn settings_diagnostics_pane(palette: &ForgePalette) -> Element<'static, Message
 
 fn settings_storage_pane(palette: &ForgePalette) -> Element<'static, Message> {
     let db_path = forge_platform_core::paths::data_dir().join("forge.db");
-    let path_label = iced::widget::text(forge_widgets::tr!(
-        "settings_storage_db_path",
-        path = db_path.display().to_string()
-    ))
-    .size(FONT_SM)
-    .color(palette.text_muted);
+    let path_row = forge_widgets::settings_info_row(
+        &forge_widgets::tr!("settings_storage_db_path_label"),
+        &db_path.display().to_string(),
+        true,
+        palette,
+    );
 
     let backup_btn = forge_widgets::primary_button(
         forge_widgets::tr!("settings_storage_backup_btn"),
@@ -369,7 +369,7 @@ fn settings_storage_pane(palette: &ForgePalette) -> Element<'static, Message> {
             iced::widget::text(forge_widgets::tr!("settings_storage_section_title"))
                 .size(FONT_SM)
                 .color(palette.text_primary),
-            path_label,
+            path_row,
             backup_btn,
             backup_hint,
         ]
@@ -388,16 +388,18 @@ fn settings_queues_pane(palette: &ForgePalette) -> Element<'static, Message> {
     let workers = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(0);
-    let thread_hint =
-        forge_widgets::tr!("settings_queues_thread_hint", workers = workers.to_string());
+    let workers_row = forge_widgets::settings_info_row(
+        &forge_widgets::tr!("settings_queues_workers_label"),
+        &workers.to_string(),
+        true,
+        palette,
+    );
     let card = forge_widgets::card(
         iced::widget::column![
             iced::widget::text(forge_widgets::tr!("settings_queues_section_title"))
                 .size(FONT_SM)
                 .color(palette.text_primary),
-            iced::widget::text(thread_hint)
-                .size(FONT_SM)
-                .color(palette.text_muted),
+            workers_row,
             iced::widget::text(forge_widgets::tr!("settings_queues_managed_hint"))
                 .size(FONT_XS)
                 .color(palette.text_faint),

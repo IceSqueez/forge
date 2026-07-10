@@ -14,7 +14,8 @@ pub(crate) fn add_action_modal_view<'a>(
     form: &'a AddActionForm,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    use forge_widgets::{BannerKind, ModalProps, ToggleProps};
+    use forge_widgets::icons::Icon;
+    use forge_widgets::{BannerKind, ModalProps, ToggleAccent, ToggleProps};
     use iced::widget::{column, row, text};
 
     let name_count = format!("{}/64", form.name.len().min(64));
@@ -48,16 +49,63 @@ pub(crate) fn add_action_modal_view<'a>(
     ]
     .spacing(spf(Spacing::Xs));
 
-    let group_input = forge_widgets::text_input_field(
-        forge_widgets::tr!("actions_group_placeholder"),
-        &form.group,
-        |v| {
+    // GROUP renders as the design's colored-dot select box: a leading brand dot
+    // inside the input frame. Kept as a free-text field (not a closed dropdown) so
+    // authors can still name a brand-new group here; the dot supplies the visual.
+    let gp = *palette;
+    let group_ph = forge_widgets::tr!("actions_group_placeholder");
+    let group_dot = iced::widget::container(iced::widget::Space::new().width(8).height(8))
+        .width(8)
+        .height(8)
+        .style(move |_: &iced::Theme| iced::widget::container::Style {
+            background: Some(iced::Background::Color(gp.brand)),
+            border: iced::Border {
+                radius: forge_widgets::radius(forge_widgets::Radius::Sm).into(),
+                color: iced::Color::TRANSPARENT,
+                width: 0.0,
+            },
+            ..iced::widget::container::Style::default()
+        });
+    let group_text_input = iced::widget::text_input(group_ph.as_str(), &form.group)
+        .on_input(|v| {
             Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
                 AddActionMsg::GroupChanged(v),
             )))
+        })
+        .size(FONT_SM)
+        .padding(0)
+        .width(Length::Fill)
+        .style(move |_theme, _status| iced::widget::text_input::Style {
+            background: iced::Background::Color(iced::Color::TRANSPARENT),
+            border: iced::Border {
+                color: iced::Color::TRANSPARENT,
+                width: 0.0,
+                radius: 0.0.into(),
+            },
+            icon: gp.text_muted,
+            placeholder: gp.text_muted,
+            value: gp.text_primary,
+            selection: iced::Color {
+                a: 0.25,
+                ..gp.brand
+            },
+        });
+    let group_input = iced::widget::container(
+        row![group_dot, group_text_input]
+            .spacing(spf(Spacing::Xs))
+            .align_y(iced::alignment::Vertical::Center),
+    )
+    .padding(forge_widgets::inputs::input_padding())
+    .width(Length::Fill)
+    .style(move |_theme: &iced::Theme| iced::widget::container::Style {
+        background: Some(iced::Background::Color(gp.shell)),
+        border: iced::Border {
+            color: gp.border_regular,
+            width: forge_widgets::tokens::BORDER_THIN,
+            radius: forge_widgets::radius(forge_widgets::Radius::Md).into(),
         },
-        palette,
-    );
+        ..iced::widget::container::Style::default()
+    });
 
     let group_block = column![
         forge_widgets::section_header(
@@ -144,6 +192,7 @@ pub(crate) fn add_action_modal_view<'a>(
             on_toggle: Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
                 AddActionMsg::EnabledToggled(!form.enabled),
             ))),
+            accent: Some(ToggleAccent::new(Icon::CircleCheck, palette.success)),
         },
     );
 
@@ -156,6 +205,7 @@ pub(crate) fn add_action_modal_view<'a>(
             on_toggle: Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
                 AddActionMsg::ConcurrentToggled(!form.concurrent),
             ))),
+            accent: Some(ToggleAccent::new(Icon::Copy, palette.info)),
         },
     );
 
@@ -168,6 +218,7 @@ pub(crate) fn add_action_modal_view<'a>(
             on_toggle: Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
                 AddActionMsg::BypassPauseToggled(!form.bypass_pause),
             ))),
+            accent: Some(ToggleAccent::new(Icon::PlayerPlay, palette.warning)),
         },
     );
 
@@ -180,6 +231,7 @@ pub(crate) fn add_action_modal_view<'a>(
             on_toggle: Message::Actions(ActionsMsg::Editor(ActionEditorMsg::AddAction(
                 AddActionMsg::RandomPickToggled(!form.random_pick),
             ))),
+            accent: Some(ToggleAccent::new(Icon::Repeat, palette.random)),
         },
     );
 

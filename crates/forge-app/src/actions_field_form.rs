@@ -149,6 +149,7 @@ where
                     description: String::new(),
                     value: checked,
                     on_toggle: on_edit(FieldEditMsg::Set(k, Variant::Bool(!checked))),
+                    accent: None,
                 },
             ))
             .padding(field_row_padding)
@@ -235,6 +236,7 @@ where
                     description: String::new(),
                     value: is_enabled,
                     on_toggle: on_edit(FieldEditMsg::Set(k, Variant::Bool(!is_enabled))),
+                    accent: None,
                 },
             );
             if is_enabled {

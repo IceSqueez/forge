@@ -590,6 +590,7 @@ fn alias_form_modal<'a>(
             on_toggle: Message::Tts(TtsMsg::Aliases(VoiceAliasesMsg::FormBlockedToggled(
                 !form.blocked,
             ))),
+            accent: None,
         },
     );
 

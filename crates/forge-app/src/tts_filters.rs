@@ -728,6 +728,7 @@ fn emote_url_section_view<'a>(
             on_toggle: Message::Tts(TtsMsg::Filters(TtsFiltersMsg::StripTwitchEmotesToggled(
                 !state.settings.strip_twitch_emotes,
             ))),
+            accent: None,
         },
     );
     let reward_toggle = forge_widgets::toggle(
@@ -739,6 +740,7 @@ fn emote_url_section_view<'a>(
             on_toggle: Message::Tts(TtsMsg::Filters(TtsFiltersMsg::StripRewardEmotesToggled(
                 !state.settings.strip_reward_emotes,
             ))),
+            accent: None,
         },
     );
 

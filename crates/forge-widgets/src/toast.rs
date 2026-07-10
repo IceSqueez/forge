@@ -249,6 +249,7 @@ fn toast_row<'a, Msg: Clone + 'a>(
 pub fn toast_viewport<'a, Msg: Clone + 'a>(
     queue: &'a ToastQueue<Msg>,
     on_dismiss: impl Fn(u64) -> Msg + 'a,
+    footer_clearance: f32,
     palette: &'a ForgePalette,
 ) -> Element<'a, Msg> {
     if queue.is_empty() {
@@ -259,12 +260,13 @@ pub fn toast_viewport<'a, Msg: Clone + 'a>(
     }
 
     let sm = sp(Spacing::Sm);
-    let md = sp(Spacing::Md);
+    let md = sp(Spacing::Md) as f32;
 
+    // Oldest first, newest last: the bottom-anchored column then lays the newest
+    // toast nearest the bottom-right corner, matching the design's stacking order.
     let rows: Vec<Element<'a, Msg>> = queue
         .toasts
         .iter()
-        .rev()
         .map(|t| toast_row(t, &on_dismiss, palette))
         .collect();
 
@@ -275,7 +277,14 @@ pub fn toast_viewport<'a, Msg: Clone + 'a>(
         .height(Length::Fill)
         .align_x(iced::alignment::Horizontal::Right)
         .align_y(iced::alignment::Vertical::Bottom)
-        .padding(md)
+        .padding(Padding {
+            top: md,
+            right: md,
+            // Lift the stack clear of the fixed-height app footer so toasts never
+            // sit under it, at any window size.
+            bottom: md + footer_clearance,
+            left: md,
+        })
         .into()
 }
 

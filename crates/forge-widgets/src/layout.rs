@@ -8,6 +8,10 @@ use crate::palette::ForgePalette;
 use crate::status::status_dot;
 use crate::tokens::{BORDER_THIN, FONT_SM, FONT_XS, FontRole, Radius, Spacing, font, radius, sp};
 
+/// Fixed drawn height of [`app_footer`]. Exported so overlays (e.g. the toast
+/// viewport) can reserve exactly this much bottom clearance and never paint under it.
+pub const FOOTER_HEIGHT: f32 = 24.0;
+
 fn logo_box<'a, Msg: 'a>(palette: &ForgePalette) -> Element<'a, Msg> {
     let bg = palette.brand;
     let fg = palette.shell;
@@ -131,7 +135,7 @@ pub fn app_footer<'a, Msg: 'a>(
 
     container(content)
         .width(Length::Fill)
-        .height(24)
+        .height(FOOTER_HEIGHT)
         .align_y(iced::Alignment::Center)
         .style(move |_theme: &iced::Theme| iced::widget::container::Style {
             background: Some(iced::Background::Color(shell)),

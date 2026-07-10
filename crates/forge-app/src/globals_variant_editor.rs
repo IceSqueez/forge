@@ -489,6 +489,7 @@ pub fn variant_editor_modal_view<'a>(
             on_toggle: Message::Globals(GlobalsMsg::VariantEditor(
                 VariantEditorMsg::PersistenceToggled(!form.persisted),
             )),
+            accent: None,
         },
     );
     let persist_block = column![
@@ -544,6 +545,7 @@ pub fn variant_editor_modal_view<'a>(
                         on_toggle: Message::Globals(GlobalsMsg::VariantEditor(
                             VariantEditorMsg::BoolValueChanged(!form.fields.bool_value),
                         )),
+                        accent: None,
                     },
                 ),
                 Space::new().width(Length::Fill),

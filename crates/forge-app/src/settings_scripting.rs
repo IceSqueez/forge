@@ -528,6 +528,7 @@ pub fn view<'a>(
             on_toggle: Message::Settings(SettingsMsg::Scripting(
                 ScriptingSettingsMsg::AllowLocalToggled,
             )),
+            accent: None,
         },
     );
 

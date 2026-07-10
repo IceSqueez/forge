@@ -3,6 +3,7 @@ use iced::{
     widget::{Space, button, column, container, row, text},
 };
 
+use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
 use crate::tokens::{FONT_SM, FontRole, Spacing, font, sp};
 
@@ -11,12 +12,28 @@ const TRACK_HEIGHT: f32 = 18.0;
 const THUMB_SIZE: f32 = 14.0;
 const THUMB_INSET: f32 = 2.0;
 
+/// Semantic glyph + tint painted at the leading edge of a toggle row. Rows that
+/// leave [`ToggleProps::accent`] as `None` render icon-free, matching every
+/// pre-accent call site unchanged.
+#[derive(Debug, Clone, Copy)]
+pub struct ToggleAccent {
+    pub icon: Icon,
+    pub color: Color,
+}
+
+impl ToggleAccent {
+    pub fn new(icon: Icon, color: Color) -> Self {
+        Self { icon, color }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ToggleProps<Msg> {
     pub label: String,
     pub description: String,
     pub value: bool,
     pub on_toggle: Msg,
+    pub accent: Option<ToggleAccent>,
 }
 
 fn switch_visual<'a, Msg: 'a>(
@@ -108,13 +125,23 @@ pub fn toggle<'a, Msg: Clone + 'a>(
         .font(font(FontRole::Body));
 
     let label_col = column![label_el, desc_el].spacing(2);
+    let switch = switch_visual(props.value, None, palette);
 
-    let inner = row![
-        container(label_col).width(Length::Fill),
-        switch_visual(props.value, None, palette),
-    ]
-    .spacing(12)
-    .align_y(Alignment::Center);
+    let inner: Element<'a, Msg> = if let Some(accent) = props.accent {
+        row![
+            tabler_icon(accent.icon, FONT_SM, accent.color),
+            container(label_col).width(Length::Fill),
+            switch,
+        ]
+        .spacing(12)
+        .align_y(Alignment::Center)
+        .into()
+    } else {
+        row![container(label_col).width(Length::Fill), switch]
+            .spacing(12)
+            .align_y(Alignment::Center)
+            .into()
+    };
 
     button(inner)
         .on_press(props.on_toggle)

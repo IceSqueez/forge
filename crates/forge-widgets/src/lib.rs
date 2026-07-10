@@ -96,7 +96,7 @@ pub use inputs::{
     text_input_field, text_input_field_submit,
 };
 pub use key_capture::{KeyCapture, chord_from_key, key_capture};
-pub use layout::{app_footer, page_shell, title_bar, toolbar};
+pub use layout::{FOOTER_HEIGHT, app_footer, page_shell, title_bar, toolbar};
 pub use locale::{
     ArgsBuilder, fmt_feed_time, fmt_number, fmt_relative_time, fmt_short_date, install_bundle,
     set_locale_id, tr_lookup,
@@ -139,7 +139,7 @@ pub use tag_list_input::{TagListInputMessage, TagListInputState, tag_list_input}
 pub use theme::{catppuccin_mocha, latte, palette_for_theme, theme_assets, tokyo_night_storm};
 pub use theme_card::{ThemeCardParams, theme_card};
 pub use toast::{Toast, ToastAction, ToastKind, ToastQueue, toast_viewport};
-pub use toggle::{ToggleProps, toggle, toggle_switch};
+pub use toggle::{ToggleAccent, ToggleProps, toggle, toggle_switch};
 pub use tokens::{
     DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FontRole, FontWeight, ModalSize, Radius,
     Spacing, ThemeId, font, font_weighted, install_density, install_font_override, load_fonts,

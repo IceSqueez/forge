@@ -602,6 +602,7 @@ pub fn settings_websocket_view<'a>(
             on_toggle: Message::SettingsWebSocket(SettingsWebSocketMsg::ToggleEnable(
                 !state.enable_server,
             )),
+            accent: None,
         },
     );
 

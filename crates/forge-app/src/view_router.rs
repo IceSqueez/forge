@@ -1,5 +1,5 @@
 use forge_widgets::tokens::{Spacing, spf};
-use forge_widgets::{app_footer, page_shell, sidebar, title_bar, toast_viewport};
+use forge_widgets::{FOOTER_HEIGHT, app_footer, page_shell, sidebar, title_bar, toast_viewport};
 use iced::{Element, Length};
 
 use crate::Screen;
@@ -135,6 +135,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let toast_layer = toast_viewport(
         &app.toast_queue,
         |id| Message::Toast(ToastMsg::Dismissed(id)),
+        FOOTER_HEIGHT,
         palette,
     );
     iced::widget::stack![main_view, toast_layer].into()

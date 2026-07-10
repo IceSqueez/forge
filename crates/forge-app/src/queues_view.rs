@@ -539,6 +539,7 @@ fn new_queue_modal<'a>(form: &'a NewQueueForm, palette: &'a ForgePalette) -> Ele
             description: forge_widgets::tr!("queues_create_blocking_desc"),
             value: form.blocking,
             on_toggle: Message::Queues(QueuesMsg::NewQueueBlockingToggled),
+            accent: None,
         },
     ))
     .padding([sp(Spacing::Sm), sp(Spacing::Md)]);
@@ -688,6 +689,7 @@ fn edit_queue_modal<'a>(
             description: forge_widgets::tr!("queues_create_blocking_desc"),
             value: form.blocking,
             on_toggle: Message::Queues(QueuesMsg::NewQueueBlockingToggled),
+            accent: None,
         },
     ))
     .padding([sp(Spacing::Sm), sp(Spacing::Md)]);

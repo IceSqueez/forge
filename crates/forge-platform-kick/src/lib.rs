@@ -17,6 +17,7 @@ pub mod rewards;
 pub mod send;
 pub mod sub_actions;
 pub mod triggers;
+pub mod viewer_poll;
 
 pub use auth::{
     KickAuthBundle, KickAuthError, KickAuthFlow, LoopbackCode, client_credentials, kick_auth_flow,
@@ -39,3 +40,4 @@ pub use sub_actions::{
     TimeoutUserRunner, UnbanUserRunner, UpdateInfoRunner, UpdateRewardRunner,
     register_kick_sub_actions,
 };
+pub use viewer_poll::{KickViewerPoll, KickViewerSource};

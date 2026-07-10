@@ -806,6 +806,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
     }
 
     let mut kick_boot_bundle: Option<Arc<forge_platform_kick::KickIntegrationBundle>> = None;
+    let mut kick_viewer_source: Option<forge_platform_kick::KickViewerSource> = None;
     if let Some(kick_client_id) = forge_platform_kick::client_credentials() {
         let kk_creds: Arc<dyn CredentialsRepo> = Arc::clone(&dp) as Arc<dyn CredentialsRepo>;
         let kk_http = reqwest::Client::new();
@@ -908,6 +909,11 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
                     poller_tx,
                 );
 
+                let (viewer_poll, viewer_source) =
+                    forge_platform_kick::KickViewerPoll::new(slug.clone(), kk_http.clone());
+                tokio::spawn(viewer_poll.run());
+                kick_viewer_source = Some(viewer_source);
+
                 let (kick_bundle, _kick_health_tx) =
                     forge_platform_kick::KickIntegrationBundle::new(
                         slug,
@@ -987,6 +993,9 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
     let live_viewers = spawn_live_viewer_aggregator();
     if let Some(youtube_bundle) = &youtube_boot_bundle {
         live_viewers.register(youtube_bundle.viewer_source());
+    }
+    if let Some(kick_source) = kick_viewer_source {
+        live_viewers.register(Box::new(kick_source));
     }
     let sub_action_reg = Arc::new(sub_action_reg);
     let engine = spawn_action_engine(

@@ -66,4 +66,8 @@ pub struct RuntimeView {
     /// `None` when the runtime is offline; the Cloud Engines save flow then
     /// only persists credentials and defers live registration to next boot.
     pub tts_registry: Option<Arc<std::sync::RwLock<forge_tts_core::TtsRegistry>>>,
+    /// `None` when the runtime is offline. Platform viewer-report capabilities
+    /// register here at boot; the Home "viewers now" figure bridges its
+    /// `subscribe()` stream.
+    pub live_viewers: Option<forge_runtime::LiveViewerAggregatorHandle>,
 }

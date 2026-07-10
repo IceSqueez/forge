@@ -5,6 +5,7 @@ pub mod builtin;
 pub mod capabilities;
 pub mod chat;
 pub mod error;
+pub mod live_viewers;
 pub mod net;
 pub mod paths;
 pub mod rate_limit;
@@ -22,5 +23,6 @@ pub use chat::{
     CONNECTION_STATE_CHANGED_KIND, ChatPlatform, ConnectionState, connection_state_changed_event,
 };
 pub use error::PlatformError;
+pub use live_viewers::{LiveViewerSource, ViewerReport, ViewerReportStream};
 pub use net::is_private_or_special;
 pub use rate_limit::{RateLimitOutcome, RateLimiter, TokenBucketRateLimiter};

@@ -1524,6 +1524,7 @@ mod tests {
             kick_flow: None,
             tts_engine_ids: Vec::new(),
             tts_registry: None,
+            live_viewers: None,
             twitch_login: None,
             twitch_token_expires: None,
             twitch_reauth_required: false,

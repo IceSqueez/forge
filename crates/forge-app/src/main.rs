@@ -24,10 +24,10 @@ use forge_platform_twitch::{
 };
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
-    ActionCancelRegistry, ActionEngineHandle, EventBus, QueueScheduler, QueueSchedulerHandle,
-    SchedulerCell, ScriptRegistry, TriggerEvaluatorHandle, register_audio_sub_actions,
-    register_core_sub_actions, register_core_triggers, spawn_action_engine,
-    spawn_trigger_evaluator,
+    ActionCancelRegistry, ActionEngineHandle, EventBus, LiveViewerAggregatorHandle, QueueScheduler,
+    QueueSchedulerHandle, SchedulerCell, ScriptRegistry, TriggerEvaluatorHandle,
+    register_audio_sub_actions, register_core_sub_actions, register_core_triggers,
+    spawn_action_engine, spawn_live_viewer_aggregator, spawn_trigger_evaluator,
 };
 use forge_soundboard::{BusAudioEventSink, CpalSinkFactory, SoundboardPlayer};
 use forge_speak_queue::{QueueConfig, QueueDeps, SpeakQueueHandle};
@@ -250,6 +250,7 @@ struct RuntimeHandles {
     midi_client: Option<Arc<MidiClient>>,
     kick_builtin: Option<Arc<forge_platform_kick::KickIntegrationBundle>>,
     youtube_builtin: Option<Arc<forge_platform_youtube::YoutubeIntegrationBundle>>,
+    live_viewers: LiveViewerAggregatorHandle,
 }
 
 fn find_piper_binary() -> Option<PathBuf> {
@@ -983,6 +984,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         }
     }
 
+    let live_viewers = spawn_live_viewer_aggregator();
     let sub_action_reg = Arc::new(sub_action_reg);
     let engine = spawn_action_engine(
         Arc::clone(&bus),
@@ -1125,6 +1127,7 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
         midi_client,
         kick_builtin: kick_boot_bundle,
         youtube_builtin: youtube_boot_bundle,
+        live_viewers,
     })
 }
 
@@ -1179,6 +1182,7 @@ fn main() -> iced::Result {
         midi_client,
         kick_builtin_handle,
         youtube_builtin_handle,
+        live_viewers_handle,
     ) = if storage_offline {
         let dc_pub: Arc<dyn EventPublisher> = Arc::clone(&bus) as _;
         let dc_creds: Arc<dyn forge_storage::CredentialsRepo> = Arc::clone(&backend) as _;
@@ -1215,6 +1219,7 @@ fn main() -> iced::Result {
             mc,
             None::<Arc<forge_platform_kick::KickIntegrationBundle>>,
             None::<Arc<forge_platform_youtube::YoutubeIntegrationBundle>>,
+            None::<LiveViewerAggregatorHandle>,
         )
     } else {
         match spawn_runtime(Arc::clone(&backend), Arc::clone(&bus)) {
@@ -1238,6 +1243,7 @@ fn main() -> iced::Result {
                 h.midi_client,
                 h.kick_builtin,
                 h.youtube_builtin,
+                Some(h.live_viewers),
             ),
             None => {
                 let dc_pub: Arc<dyn EventPublisher> = Arc::clone(&bus) as _;
@@ -1278,6 +1284,7 @@ fn main() -> iced::Result {
                     mc,
                     None::<Arc<forge_platform_kick::KickIntegrationBundle>>,
                     None::<Arc<forge_platform_youtube::YoutubeIntegrationBundle>>,
+                    None::<LiveViewerAggregatorHandle>,
                 )
             }
         }
@@ -1304,6 +1311,7 @@ fn main() -> iced::Result {
         app.palette = boot_theme.1;
         app.rt.bus = Arc::clone(&bus_boot);
         app.rt.speak_queue = speak_queue.clone();
+        app.rt.live_viewers = live_viewers_handle.clone();
         app.rt.pipeline_config = pipeline_config.clone();
         app.rt.tts_trigger_settings = tts_trigger_settings.clone();
         app.rt.tts_engine_ids = tts_engine_ids.clone();

@@ -666,6 +666,7 @@ mod tests {
             trigger_registry: Arc::new(forge_registry::TriggerRegistry::new()),
             tts_engine_ids: Vec::new(),
             tts_registry: None,
+            live_viewers: None,
         }
     }
 

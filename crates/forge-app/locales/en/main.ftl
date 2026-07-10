@@ -10,8 +10,6 @@ nav_home = Home
 nav_actions = Actions
 nav_queues = Queues
 nav_triggers = Triggers
-nav_platforms = Platforms
-nav_stream_apps = Stream apps
 nav_integration = Integration
 nav_live_chat = Live chat
 nav_event_feed = Event feed
@@ -19,7 +17,7 @@ nav_globals = Globals
 nav_settings = Settings
 nav_tts = TTS
 nav_soundboard = Soundboard
-nav_script_editor = Script editor
+nav_script_editor = Scripts
 nav_api_reference = API reference
 nav_server = Server
 
@@ -27,7 +25,6 @@ nav_server = Server
 
 nav_section_audience = AUDIENCE
 nav_section_automation = AUTOMATION
-nav_section_connections = CONNECTIONS
 
 ## Navigation — sidebar item labels
 
@@ -40,7 +37,7 @@ nav_item_event_feed = Event feed
 nav_item_globals = Globals
 nav_item_platforms = Platforms
 nav_item_stream_apps = Stream apps
-nav_group_modules = Modules
+nav_group_modules = Builtin
 nav_item_soundboard = Soundboard
 nav_item_tts = Text-to-Speech
 nav_item_ws_server = WebSocket server
@@ -213,7 +210,7 @@ settings_shortcuts_action_nav_live_chat = Open Live Chat
 settings_shortcuts_action_nav_event_feed = Open Event Feed
 settings_shortcuts_action_nav_actions = Open Actions
 settings_shortcuts_action_nav_globals = Open Globals
-settings_shortcuts_action_nav_script_editor = Open Script Editor
+settings_shortcuts_action_nav_script_editor = Open Scripts
 settings_shortcuts_action_nav_settings = Open Settings
 settings_shortcuts_unbound = Not bound
 settings_shortcuts_rebind = Change

@@ -28,8 +28,6 @@ pub(crate) fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Side
     let is_script_editor = matches!(app.screen, Screen::ScriptEditor);
     let is_soundboard = matches!(app.screen, Screen::Soundboard);
     let is_tts = matches!(app.screen, Screen::Tts(_));
-    let is_platforms = matches!(app.screen, Screen::Platforms);
-    let is_stream_apps = matches!(app.screen, Screen::StreamApps);
     let is_server = matches!(app.screen, Screen::Server);
     let is_settings = matches!(app.screen, Screen::Settings(_));
 
@@ -88,38 +86,19 @@ pub(crate) fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Side
             on_press: Message::Navigate(Screen::Globals),
         },
         NavItem::Leaf {
-            icon: Icon::Terminal,
+            icon: Icon::FileCode,
             label: forge_widgets::tr!("nav_script_editor"),
             active: is_script_editor,
             on_press: Message::Navigate(Screen::ScriptEditor),
-        },
-        NavItem::Section(forge_widgets::tr!("nav_section_connections")),
-        NavItem::Leaf {
-            icon: Icon::Broadcast,
-            label: forge_widgets::tr!("nav_platforms"),
-            active: is_platforms,
-            on_press: Message::Navigate(Screen::Platforms),
         },
         NavItem::MiniLabel(forge_widgets::tr!("nav_item_platforms")),
         flat_link(Integration::Twitch),
         flat_link(Integration::YouTube),
         flat_link(Integration::Kick),
-        NavItem::Leaf {
-            icon: Icon::LayoutGrid,
-            label: forge_widgets::tr!("nav_stream_apps"),
-            active: is_stream_apps,
-            on_press: Message::Navigate(Screen::StreamApps),
-        },
         NavItem::MiniLabel(forge_widgets::tr!("nav_item_stream_apps")),
         flat_link(Integration::Obs),
         flat_link(Integration::VTube),
         NavItem::MiniLabel(forge_widgets::tr!("nav_group_modules")),
-        NavItem::Leaf {
-            icon: Icon::Music,
-            label: forge_widgets::tr!("nav_item_soundboard"),
-            active: is_soundboard,
-            on_press: Message::Navigate(Screen::Soundboard),
-        },
         NavItem::Leaf {
             icon: Icon::Volume,
             label: forge_widgets::tr!("nav_item_tts"),
@@ -127,16 +106,10 @@ pub(crate) fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Side
             on_press: Message::Navigate(Screen::Tts(TtsSection::Dashboard)),
         },
         NavItem::Leaf {
-            icon: Icon::Server,
-            label: forge_widgets::tr!("nav_item_ws_server"),
-            active: is_server,
-            on_press: Message::Navigate(Screen::Server),
-        },
-        NavItem::Leaf {
-            icon: Icon::Send,
-            label: forge_widgets::tr!("nav_item_discord"),
-            active: builtin_active(&app.screen, "discord"),
-            on_press: Message::Navigate(Screen::BuiltinDetail(BuiltinId::new("discord"))),
+            icon: Icon::Music,
+            label: forge_widgets::tr!("nav_item_soundboard"),
+            active: is_soundboard,
+            on_press: Message::Navigate(Screen::Soundboard),
         },
         NavItem::Leaf {
             icon: Icon::PlugConnected,
@@ -149,6 +122,18 @@ pub(crate) fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Side
             label: forge_widgets::tr!("nav_item_hotkey"),
             active: builtin_active(&app.screen, "hotkey"),
             on_press: Message::Navigate(Screen::BuiltinDetail(BuiltinId::new("hotkey"))),
+        },
+        NavItem::Leaf {
+            icon: Icon::Send,
+            label: forge_widgets::tr!("nav_item_discord"),
+            active: builtin_active(&app.screen, "discord"),
+            on_press: Message::Navigate(Screen::BuiltinDetail(BuiltinId::new("discord"))),
+        },
+        NavItem::Leaf {
+            icon: Icon::Server,
+            label: forge_widgets::tr!("nav_item_ws_server"),
+            active: is_server,
+            on_press: Message::Navigate(Screen::Server),
         },
     ];
 

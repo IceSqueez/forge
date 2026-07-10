@@ -10,8 +10,6 @@ nav_home = Головна
 nav_actions = Дії
 nav_queues = Черги
 nav_triggers = Тригери
-nav_platforms = Платформи
-nav_stream_apps = Стрім-застосунки
 nav_integration = Інтеграція
 nav_live_chat = Живий чат
 nav_event_feed = Стрічка подій
@@ -19,7 +17,7 @@ nav_globals = Глобальні змінні
 nav_settings = Налаштування
 nav_tts = TTS
 nav_soundboard = Звукова панель
-nav_script_editor = Редактор скриптів
+nav_script_editor = Скрипти
 nav_api_reference = Довідник API
 nav_server = Сервер
 
@@ -27,7 +25,6 @@ nav_server = Сервер
 
 nav_section_audience = АУДИТОРІЯ
 nav_section_automation = АВТОМАТИЗАЦІЯ
-nav_section_connections = ПІДКЛЮЧЕННЯ
 
 ## Навігація — підписи пунктів бічної панелі
 
@@ -40,7 +37,7 @@ nav_item_event_feed = Стрічка подій
 nav_item_globals = Глобальні змінні
 nav_item_platforms = Платформи
 nav_item_stream_apps = Стрім-застосунки
-nav_group_modules = Модулі
+nav_group_modules = Вбудовані
 nav_item_soundboard = Звукова панель
 nav_item_tts = Синтез мовлення
 nav_item_ws_server = WebSocket-сервер
@@ -215,7 +212,7 @@ settings_shortcuts_action_nav_live_chat = Відкрити живий чат
 settings_shortcuts_action_nav_event_feed = Відкрити стрічку подій
 settings_shortcuts_action_nav_actions = Відкрити дії
 settings_shortcuts_action_nav_globals = Відкрити глобальні змінні
-settings_shortcuts_action_nav_script_editor = Відкрити редактор скриптів
+settings_shortcuts_action_nav_script_editor = Відкрити скрипти
 settings_shortcuts_action_nav_settings = Відкрити налаштування
 settings_shortcuts_unbound = Не призначено
 settings_shortcuts_rebind = Змінити

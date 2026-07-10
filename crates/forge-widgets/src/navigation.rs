@@ -268,7 +268,7 @@ fn nav_leaf<'a, Msg: 'a + Clone>(
         .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
         .width(iced::Length::Fill)
         .style(move |_theme: &iced::Theme, status| match status {
-            ButtonStatus::Hovered | ButtonStatus::Pressed => ButtonStyle {
+            ButtonStatus::Hovered | ButtonStatus::Pressed if !active => ButtonStyle {
                 background: Some(iced::Background::Color(hover_bg)),
                 text_color: hover_text,
                 border: Border {

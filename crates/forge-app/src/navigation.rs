@@ -113,6 +113,7 @@ pub(crate) fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Side
         NavItem::MiniLabel(forge_widgets::tr!("nav_item_stream_apps")),
         flat_link(Integration::Obs),
         flat_link(Integration::VTube),
+        NavItem::MiniLabel(forge_widgets::tr!("nav_group_modules")),
         NavItem::Leaf {
             icon: Icon::Music,
             label: forge_widgets::tr!("nav_item_soundboard"),

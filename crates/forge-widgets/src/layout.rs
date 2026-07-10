@@ -82,6 +82,7 @@ pub fn app_footer<'a, Msg: 'a>(
     let text_faint = palette.text_faint;
     let text_secondary = palette.text_secondary;
     let success = palette.success;
+    let brand = palette.brand;
     let mono = font(FontRole::Monospace);
 
     let forge_label = text(crate::tr!("widget.layout.footer_app"))
@@ -89,11 +90,25 @@ pub fn app_footer<'a, Msg: 'a>(
         .color(text_muted)
         .font(mono);
     let dot_sep = text("·").size(FONT_XS).color(text_faint).font(mono);
-    let version_label = text(format!("v{version}"))
+
+    // Split a prerelease version ("0.2.0-beta.2") into a muted base and an
+    // accent stage tag; a plain release version renders the base alone.
+    let (version_base, stage_tag) = match version.split_once('-') {
+        Some((base, stage)) => (base, Some(stage)),
+        None => (version, None),
+    };
+    let version_label = text(format!("v{version_base}"))
         .size(FONT_XS)
-        .color(text_faint)
+        .color(text_muted)
         .font(mono);
-    let left = row![forge_label, dot_sep, version_label]
+    let mut version_group = row![version_label]
+        .spacing(5)
+        .align_y(iced::Alignment::Center);
+    if let Some(stage) = stage_tag {
+        version_group =
+            version_group.push(text(stage.to_owned()).size(FONT_XS).color(brand).font(mono));
+    }
+    let left = row![forge_label, dot_sep, version_group]
         .spacing(8)
         .align_y(iced::Alignment::Center);
 

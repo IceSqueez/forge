@@ -40,6 +40,7 @@ nav_item_event_feed = Стрічка подій
 nav_item_globals = Глобальні змінні
 nav_item_platforms = Платформи
 nav_item_stream_apps = Стрім-застосунки
+nav_group_modules = Модулі
 nav_item_soundboard = Звукова панель
 nav_item_tts = Синтез мовлення
 nav_item_ws_server = WebSocket-сервер

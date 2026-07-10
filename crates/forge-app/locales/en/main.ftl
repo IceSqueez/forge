@@ -40,6 +40,7 @@ nav_item_event_feed = Event feed
 nav_item_globals = Globals
 nav_item_platforms = Platforms
 nav_item_stream_apps = Stream apps
+nav_group_modules = Modules
 nav_item_soundboard = Soundboard
 nav_item_tts = Text-to-Speech
 nav_item_ws_server = WebSocket server

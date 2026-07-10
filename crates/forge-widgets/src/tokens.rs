@@ -249,6 +249,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn theme_id_storage_key_round_trips_and_rejects_unknown() {
+        // store->load must recover the identical id for every theme, or a
+        // one-sided edit to either match arm silently resets the user's saved
+        // theme on the next launch. Unknown keys must fall back to None, never
+        // panic or alias onto a real theme.
+        for id in ThemeId::ALL {
+            assert_eq!(ThemeId::from_storage_key(id.storage_key()), Some(id));
+        }
+        assert_eq!(ThemeId::from_storage_key("no_such_theme"), None);
+    }
+
+    #[test]
     fn spacing_density_orders_compact_lt_cozy_lt_spacious() {
         for s in [
             Spacing::Xxs,

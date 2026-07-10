@@ -259,6 +259,53 @@ mod tests {
     ];
 
     #[test]
+    fn scope_namespace_reports_shared_namespace_only_when_unanimous() {
+        static G_GET: MethodDescriptor = MethodDescriptor {
+            namespace: Some("globals"),
+            name: "get",
+            kind: SymbolKind::Fn,
+            params: &[],
+            return_type: "()",
+            doc: None,
+        };
+        static G_SET: MethodDescriptor = MethodDescriptor {
+            namespace: Some("globals"),
+            name: "set",
+            kind: SymbolKind::Fn,
+            params: &[],
+            return_type: "()",
+            doc: None,
+        };
+        static C_SEND: MethodDescriptor = MethodDescriptor {
+            namespace: Some("chat"),
+            name: "send",
+            kind: SymbolKind::Fn,
+            params: &[],
+            return_type: "()",
+            doc: None,
+        };
+        static ROOT_LOG: MethodDescriptor = MethodDescriptor {
+            namespace: None,
+            name: "log",
+            kind: SymbolKind::Fn,
+            params: &[],
+            return_type: "()",
+            doc: None,
+        };
+
+        // Unanimous namespace → surfaced for the footer scope suffix.
+        assert_eq!(scope_namespace(&[&G_GET, &G_SET]), Some("globals"));
+        // Two different namespaces → ambiguous, no suffix.
+        assert_eq!(scope_namespace(&[&G_GET, &C_SEND]), None);
+        // A root-level (None) entry alongside a namespaced one → not unanimous.
+        assert_eq!(scope_namespace(&[&G_GET, &ROOT_LOG]), None);
+        // Single root-level entry → no namespace to report.
+        assert_eq!(scope_namespace(&[&ROOT_LOG]), None);
+        // Empty candidate list → None (no panic on `.first()`).
+        assert_eq!(scope_namespace(&[]), None);
+    }
+
+    #[test]
     fn filter_empty_prefix_returns_all() {
         let result = filter_candidates(catalog(), "");
         assert_eq!(result.len(), catalog().len());

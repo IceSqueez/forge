@@ -1074,6 +1074,25 @@ mod tests {
     }
 
     #[test]
+    fn vip_badge_color_stays_distinct_from_sub_months_pill_and_co_shown_badges() {
+        // Why: VIP previously reused `warning` — the same yellow the "N mo"
+        // sub-months pill is drawn in (see the inline_badge fill using
+        // palette.warning) — so a VIP subscriber's badges blurred into the
+        // tenure pill. Pin VIP apart from the warning yellow and from the
+        // badges it actually co-renders with (SUB, MOD). A revert to `warning`
+        // must fail here. NOTE: VIP intentionally shares `brand` with BOT/TURBO,
+        // which never co-occur on one user, so those are not asserted apart.
+        let p = CATPPUCCIN_MOCHA;
+        let vip = badge_color(BadgeKind::Vip, p);
+        assert_ne!(
+            vip, p.warning,
+            "VIP must not match the sub-months warning yellow"
+        );
+        assert_ne!(vip, badge_color(BadgeKind::Subscriber, p));
+        assert_ne!(vip, badge_color(BadgeKind::Moderator, p));
+    }
+
+    #[test]
     fn update_publishes_user_click_on_release_inside_username_bounds() {
         use iced::advanced::Widget as _;
         let mut widget: ChatRowWidget<String> = ChatRowWidget::new(

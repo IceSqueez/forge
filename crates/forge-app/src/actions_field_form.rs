@@ -39,6 +39,22 @@ pub fn variant_to_display_str(v: &Variant) -> String {
     }
 }
 
+/// Keeps only the buffer entries that diverge from `default_config`, so a saved
+/// config stores a sparse diff rather than a full snapshot. Consumers restore
+/// the whole config via `forge_registry::effective_config`; storing the full
+/// buffer would freeze today's defaults into the row and mask later default
+/// changes for that field.
+pub fn sparse_overrides(
+    default_config: &BTreeMap<String, Variant>,
+    buffer: &BTreeMap<String, Variant>,
+) -> BTreeMap<String, Variant> {
+    buffer
+        .iter()
+        .filter(|(k, v)| default_config.get(*k) != Some(*v))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect()
+}
+
 fn dynamic_pick_list<'a, Message: Clone + 'a>(
     options: &[(String, String)],
     current_value: Option<&str>,

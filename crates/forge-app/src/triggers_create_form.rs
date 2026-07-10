@@ -175,11 +175,20 @@ pub fn update(
             };
             form.saving = true;
             form.validation_error = None;
+            let default_config_for_kind = rt
+                .trigger_registry
+                .get(&kind_id)
+                .map(|d| d.default_config())
+                .unwrap_or_default();
+            let overrides = crate::actions_field_form::sparse_overrides(
+                &default_config_for_kind,
+                &form.overrides_buffer,
+            );
             let instance = TriggerInstance {
                 id: TriggerInstanceId::new(),
                 kind_id,
                 name: form.name.clone(),
-                overrides: form.overrides_buffer.clone(),
+                overrides,
                 enabled: true,
                 user_defined: true,
                 platform_scope: form.platform_scope.clone(),

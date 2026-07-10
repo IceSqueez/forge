@@ -671,12 +671,8 @@ pub fn update(
                 return Task::none();
             };
             let default_cfg = descriptor.default_config();
-            let sparse: TriggerConfig = edit
-                .overrides_buffer
-                .iter()
-                .filter(|(k, v)| default_cfg.get(*k) != Some(*v))
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect();
+            let sparse: TriggerConfig =
+                crate::actions_field_form::sparse_overrides(&default_cfg, &edit.overrides_buffer);
             if let Some(edit) = state.config_edit.as_mut() {
                 edit.saving = true;
             }
@@ -1674,12 +1670,8 @@ fn config_section_view<'a>(
             })
             .collect();
 
-        let sparse: TriggerConfig = edit
-            .overrides_buffer
-            .iter()
-            .filter(|(k, v)| default_cfg.get(*k) != Some(*v))
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
+        let sparse: TriggerConfig =
+            crate::actions_field_form::sparse_overrides(&default_cfg, &edit.overrides_buffer);
         let dirty = sparse != row.overrides;
         let footer = config_edit_footer(dirty && !edit.saving, palette);
 

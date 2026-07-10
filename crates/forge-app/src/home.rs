@@ -884,6 +884,24 @@ fn home_glance_row<'a>(
     .into()
 }
 
+/// A 1px filled hairline between glance rows. A `BORDER_THIN` (0.5px) filled
+/// container floors to zero physical pixels and vanishes, so the row separators
+/// use a full pixel of `border_regular` instead.
+fn home_glance_divider<'a>(palette: &ForgePalette) -> Element<'a, Message> {
+    use iced::Background;
+    use iced::widget::container;
+
+    let color = palette.border_regular;
+    container(iced::widget::Space::new())
+        .width(Length::Fill)
+        .height(1.0)
+        .style(move |_theme: &Theme| iced::widget::container::Style {
+            background: Some(Background::Color(color)),
+            ..iced::widget::container::Style::default()
+        })
+        .into()
+}
+
 fn home_glance_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
     use iced::widget::{column, text};
 
@@ -916,14 +934,14 @@ fn home_glance_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, 
             palette.brand,
             palette
         ),
-        forge_widgets::divider(palette, forge_widgets::DividerAxis::Horizontal),
+        home_glance_divider(palette),
         home_glance_row(
             forge_widgets::tr!("home_glance_fired"),
             fired_val,
             palette.success,
             palette
         ),
-        forge_widgets::divider(palette, forge_widgets::DividerAxis::Horizontal),
+        home_glance_divider(palette),
         home_glance_row(
             forge_widgets::tr!("home_glance_globals"),
             globals_val,

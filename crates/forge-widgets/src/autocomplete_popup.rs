@@ -65,6 +65,18 @@ pub fn filter_candidates<'a>(
     matched
 }
 
+/// The single namespace every candidate shares, or `None` when the list spans
+/// several namespaces or contains root-level entries. Drives the footer scope
+/// suffix (`5 results · globals`) so the user sees which module the completion
+/// list is currently filtered to.
+fn scope_namespace(candidates: &[&'static MethodDescriptor]) -> Option<&'static str> {
+    let first = candidates.first()?.namespace?;
+    candidates
+        .iter()
+        .all(|d| d.namespace == Some(first))
+        .then_some(first)
+}
+
 pub fn autocomplete_popup<'a, Msg: 'a + Clone>(
     state: &'a AutocompletePopupState,
     candidates: &[&'static MethodDescriptor],
@@ -138,10 +150,14 @@ pub fn autocomplete_popup<'a, Msg: 'a + Clone>(
     let candidate_list = scrollable(column(rows)).height(list_height);
 
     let match_count = candidates.len();
-    let match_label = if match_count == 1 {
-        "1 match".to_string()
+    let base = if match_count == 1 {
+        "1 result".to_string()
     } else {
-        format!("{} matches", match_count)
+        format!("{match_count} results")
+    };
+    let match_label = match scope_namespace(candidates) {
+        Some(ns) => format!("{base} \u{00b7} {ns}"),
+        None => base,
     };
 
     let footer = container(

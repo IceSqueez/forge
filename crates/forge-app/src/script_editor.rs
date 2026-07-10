@@ -15,7 +15,7 @@ use forge_widgets::{
     apply_autocomplete_insert, badge, confirm_modal, filter_candidates, modal, prefix_under_cursor,
     row_actions, scan_type_hint, script_editor_widget, should_trigger_autocomplete, skeleton,
 };
-use iced::widget::{column, container, row, scrollable, text, text_editor, tooltip};
+use iced::widget::{column, container, row, scrollable, text, text_editor, text_input, tooltip};
 use iced::{Alignment, Background, Border, Element, Length};
 use time::OffsetDateTime;
 
@@ -866,157 +866,6 @@ pub fn update(
     }
 }
 
-struct ApiNamespace {
-    name: &'static str,
-    entries: Vec<ApiEntry>,
-}
-
-struct ApiEntry {
-    signature: &'static str,
-}
-
-fn api_catalog() -> Vec<ApiNamespace> {
-    vec![
-        ApiNamespace {
-            name: "FORGE :: CORE",
-            entries: vec![
-                ApiEntry {
-                    signature: "log(msg)",
-                },
-                ApiEntry {
-                    signature: "warn(msg)",
-                },
-                ApiEntry {
-                    signature: "sleep(ms)",
-                },
-            ],
-        },
-        ApiNamespace {
-            name: "FORGE :: CHAT",
-            entries: vec![
-                ApiEntry {
-                    signature: "send(text)",
-                },
-                ApiEntry {
-                    signature: "reply(to, text)",
-                },
-                ApiEntry {
-                    signature: "whisper(user, msg)",
-                },
-            ],
-        },
-        ApiNamespace {
-            name: "FORGE :: GLOBALS",
-            entries: vec![
-                ApiEntry {
-                    signature: "get(key)",
-                },
-                ApiEntry {
-                    signature: "set(key, val, persisted)",
-                },
-                ApiEntry {
-                    signature: "incr(key)",
-                },
-                ApiEntry {
-                    signature: "del(key)",
-                },
-            ],
-        },
-        ApiNamespace {
-            name: "FORGE :: OBS",
-            entries: vec![ApiEntry {
-                signature: "set_scene(n)",
-            }],
-        },
-        ApiNamespace {
-            name: "FORGE :: HTTP",
-            entries: vec![
-                ApiEntry {
-                    signature: "get(url)",
-                },
-                ApiEntry {
-                    signature: "post(url, body)",
-                },
-            ],
-        },
-    ]
-}
-
-fn run_button<'a>(
-    enabled: bool,
-    palette: &'a ForgePalette,
-    label_str: &str,
-) -> Element<'a, Message> {
-    use iced::widget::button;
-    use iced::{Color, Shadow};
-
-    let success = palette.success;
-    let shell = palette.shell;
-    let label = text(label_str.to_owned()).size(FONT_SM).color(Color {
-        a: if enabled { 1.0 } else { 0.4 },
-        ..shell
-    });
-    let msg = if enabled {
-        Some(Message::ScriptEditor(ScriptEditorMsg::RunRequested))
-    } else {
-        None
-    };
-    let mut btn = button(label).padding([spf(Spacing::Xxs), spf(Spacing::Sm)]);
-    if let Some(m) = msg {
-        btn = btn.on_press(m);
-    }
-    btn.style(move |_: &iced::Theme, _status| button::Style {
-        background: Some(Background::Color(Color {
-            a: if enabled { 1.0 } else { 0.3 },
-            ..success
-        })),
-        border: Border {
-            radius: 5.0.into(),
-            ..Border::default()
-        },
-        text_color: shell,
-        shadow: Shadow::default(),
-        snap: false,
-    })
-    .into()
-}
-
-fn save_button<'a>(
-    dirty: bool,
-    palette: &'a ForgePalette,
-    label_str: &str,
-) -> Element<'a, Message> {
-    use iced::widget::button;
-    use iced::{Color, Shadow};
-
-    let fg = if dirty {
-        palette.text_secondary
-    } else {
-        palette.text_faint
-    };
-    let label = text(label_str.to_owned()).size(FONT_SM).color(fg);
-    let msg = if dirty {
-        Some(Message::ScriptEditor(ScriptEditorMsg::SaveRequested))
-    } else {
-        None
-    };
-    let mut btn = button(label).padding([spf(Spacing::Xxs), spf(Spacing::Xs)]);
-    if let Some(m) = msg {
-        btn = btn.on_press(m);
-    }
-    btn.style(move |_: &iced::Theme, _status| button::Style {
-        background: Some(Background::Color(Color::TRANSPARENT)),
-        border: Border {
-            radius: 5.0.into(),
-            ..Border::default()
-        },
-        text_color: fg,
-        shadow: Shadow::default(),
-        snap: false,
-    })
-    .into()
-}
-
 fn format_cursor_position(line: usize, col: usize) -> String {
     format!("Ln {}, Col {}", line + 1, col + 1)
 }
@@ -1034,6 +883,7 @@ fn type_check_pill_label(error_count: usize) -> String {
 
 fn status_indicators_row<'a>(
     state: &'a ScriptEditorState,
+    engine_timeout_ms: &str,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let diag_count = state
@@ -1064,6 +914,27 @@ fn status_indicators_row<'a>(
         FONT_XXS,
     );
 
+    // The rhai sandbox is always active for editor runs (op/time limits,
+    // deny-by-default host access); the pill reflects that invariant rather
+    // than a toggle. The timeout mirrors the value the user configured in
+    // Settings → Scripting, read from the already-loaded snapshot buffer.
+    let (sandbox_bg, sandbox_fg) = StatusVariant::Positive.colors(palette);
+    let sandbox_pill = badge(sandbox_bg, sandbox_fg, "Sandbox: enabled", false, FONT_XXS);
+
+    let timeout_value = if engine_timeout_ms.trim().is_empty() {
+        "500"
+    } else {
+        engine_timeout_ms.trim()
+    };
+    let (timeout_bg, timeout_fg) = StatusVariant::Neutral.colors(palette);
+    let timeout_pill = badge(
+        timeout_bg,
+        timeout_fg,
+        format!("Timeout: {timeout_value}ms"),
+        false,
+        FONT_XXS,
+    );
+
     let (ln, col) = state
         .editor
         .as_ref()
@@ -1074,9 +945,16 @@ fn status_indicators_row<'a>(
         .color(palette.text_muted);
 
     container(
-        row![type_check, rhai_pill, cursor_label]
-            .spacing(spf(Spacing::Sm))
-            .align_y(Alignment::Center),
+        row![
+            type_check,
+            rhai_pill,
+            iced::widget::Space::new().width(Length::Fill),
+            sandbox_pill,
+            timeout_pill,
+            cursor_label
+        ]
+        .spacing(spf(Spacing::Sm))
+        .align_y(Alignment::Center),
     )
     .padding([spf(Spacing::Xxs), spf(Spacing::Sm)])
     .width(Length::Fill)
@@ -1437,12 +1315,24 @@ fn center_pane<'a>(
     .into()
 }
 
-fn right_pane<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
+fn api_kind_badge<'a>(
+    kind: forge_script::SymbolKind,
+    palette: &ForgePalette,
+) -> Element<'a, Message> {
+    let (label, bg) = match kind {
+        forge_script::SymbolKind::Fn => ("fn", palette.brand),
+        forge_script::SymbolKind::Property => ("prp", palette.info),
+    };
+    badge(bg, palette.shell, label, true, FONT_XXS)
+}
+
+fn right_pane<'a>(state: &'a ScriptEditorState, palette: &'a ForgePalette) -> Element<'a, Message> {
     let header = row![
         text(forge_widgets::tr!("script_editor_api_reference"))
             .size(FONT_SM)
             .color(palette.text_primary),
         iced::widget::Space::new().width(Length::Fill),
+        forge_widgets::icons::tabler_icon::<Message>(Icon::Pin, FONT_SM, palette.text_faint),
     ]
     .align_y(Alignment::Center)
     .padding(iced::Padding {
@@ -1452,57 +1342,78 @@ fn right_pane<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
         left: 0.0,
     });
 
-    let catalog = api_catalog();
-    let mut api_col = column![header].spacing(spf(Spacing::Xxs));
+    let search = text_input("Search modules\u{2026}", &state.api_docs_search)
+        .on_input(|q| Message::ScriptEditor(ScriptEditorMsg::ApiDocsSearchChanged(q)))
+        .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
+        .size(FONT_XS)
+        .style(
+            move |_: &iced::Theme, _status| iced::widget::text_input::Style {
+                background: Background::Color(palette.base),
+                border: Border {
+                    color: palette.border_regular,
+                    width: 0.5,
+                    radius: 6.0.into(),
+                },
+                icon: palette.text_faint,
+                placeholder: palette.text_extreme_faint,
+                value: palette.text_primary,
+                selection: iced::Color {
+                    a: 0.2,
+                    ..palette.brand
+                },
+            },
+        );
 
-    for ns in &catalog {
-        let ns_label = text(ns.name)
-            .size(FONT_XS)
-            .color(palette.text_muted)
-            .font(font(FontRole::Monospace));
-        api_col = api_col.push(container(ns_label).padding(iced::Padding {
-            top: spf(Spacing::Xs),
-            right: spf(Spacing::Xxs),
-            bottom: spf(Spacing::Xxs),
-            left: 0.0,
-        }));
+    let candidates = filter_candidates(catalog(), &state.api_docs_search);
+    let mut api_col = column![header, search].spacing(spf(Spacing::Xxs));
+    let mut current_ns: Option<Option<&'static str>> = None;
 
-        for entry in &ns.entries {
-            let kind_badge = {
-                use iced::Shadow;
-                use iced::widget::button;
-                let shell_color = palette.shell;
-                let badge_text = text("fn")
-                    .size(FONT_XS)
-                    .color(shell_color)
-                    .font(font(FontRole::Monospace));
-                button(badge_text)
-                    .padding([spf(Spacing::Xxs), spf(Spacing::Xxs)])
-                    .style(move |_: &iced::Theme, _status| button::Style {
-                        background: Some(Background::Color(palette.brand)),
-                        border: Border {
-                            radius: 2.0.into(),
-                            ..Border::default()
-                        },
-                        text_color: shell_color,
-                        shadow: Shadow::default(),
-                        snap: false,
-                    })
-            };
-            let sig = text(entry.signature)
-                .size(FONT_XS)
-                .color(palette.text_primary)
+    for entry in &candidates {
+        let ns = entry.namespace;
+        if current_ns != Some(ns) {
+            current_ns = Some(ns);
+            let ns_label = text(format!("FORGE :: {}", ns.unwrap_or("core").to_uppercase()))
+                .size(FONT_XXS)
+                .color(palette.text_muted)
                 .font(font(FontRole::Monospace));
-            let entry_row = row![kind_badge, sig]
-                .spacing(spf(Spacing::Xs))
-                .align_y(Alignment::Center);
-            api_col =
-                api_col.push(container(entry_row).padding([spf(Spacing::Xxs), spf(Spacing::Xxs)]));
+            api_col = api_col.push(container(ns_label).padding(iced::Padding {
+                top: spf(Spacing::Xs),
+                right: spf(Spacing::Xxs),
+                bottom: spf(Spacing::Xxs),
+                left: 0.0,
+            }));
         }
+
+        let params = entry
+            .params
+            .iter()
+            .map(|p| p.name)
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sig = text(format!("{}({params})", entry.name))
+            .size(FONT_XS)
+            .color(palette.text_primary)
+            .font(font(FontRole::Monospace));
+        let entry_row = row![api_kind_badge(entry.kind, palette), sig]
+            .spacing(spf(Spacing::Xs))
+            .align_y(Alignment::Center);
+        api_col =
+            api_col.push(container(entry_row).padding([spf(Spacing::Xxs), spf(Spacing::Xxs)]));
+    }
+
+    if candidates.is_empty() {
+        api_col = api_col.push(
+            container(
+                text(forge_widgets::tr!("script_editor_api_no_matches"))
+                    .size(FONT_XS)
+                    .color(palette.text_muted),
+            )
+            .padding([spf(Spacing::Sm), 0.0]),
+        );
     }
 
     container(scrollable(api_col).height(Length::Fill))
-        .width(Length::Fixed(200.0))
+        .width(Length::Fixed(220.0))
         .height(Length::Fill)
         .padding([spf(Spacing::Xs), spf(Spacing::Xs)])
         .style(move |_: &iced::Theme| container::Style {
@@ -1625,11 +1536,15 @@ pub fn script_editor_view<'a>(
 ) -> Element<'a, Message> {
     let state = &app.ui.script_editor;
 
-    let toolbar_actions = toolbar_action_row(state, palette);
-    let indicators = status_indicators_row(state, palette);
+    let toolbar_actions = toolbar_action_row(palette);
+    let indicators = status_indicators_row(
+        state,
+        &app.ui.settings_scripting.engine_timeout_buf,
+        palette,
+    );
     let left = left_pane(state, palette);
     let center = center_pane(state, palette);
-    let right = right_pane(palette);
+    let right = right_pane(state, palette);
 
     let three_pane = row![left, center, right]
         .width(Length::Fill)
@@ -1751,115 +1666,77 @@ fn pending_delete_modal<'a>(
     ))
 }
 
-fn toolbar_action_row<'a>(
-    state: &'a ScriptEditorState,
-    palette: &'a ForgePalette,
-) -> Element<'a, Message> {
+/// Non-functional Debug affordance: a placeholder for a planned step-debugger,
+/// rendered as a disabled control with an explanatory tooltip. It stays bespoke
+/// because the shared button primitives require an always-live `on_press`, which
+/// this control must not have until the feature exists.
+fn debug_placeholder_button<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
     use iced::widget::button;
     use iced::{Color, Shadow};
 
-    let dirty = state.is_dirty();
-    let has_script = state.editor.is_some();
-
-    let run_btn = run_button(
-        has_script,
-        palette,
-        &forge_widgets::tr!("script_editor_run"),
-    );
-    let save_btn = save_button(dirty, palette, &forge_widgets::tr!("script_editor_save"));
-
-    let fg_format = if has_script {
-        palette.text_secondary
-    } else {
-        palette.text_faint
-    };
-    let format_btn: Element<'a, Message> = {
-        let label = text(forge_widgets::tr!("script_editor_format"))
+    let fg = palette.disabled;
+    let inner = button(
+        text(forge_widgets::tr!("script_editor_debug"))
             .size(FONT_SM)
-            .color(fg_format);
-        let mut btn = button(label)
-            .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
-            .style(move |_: &iced::Theme, _status| button::Style {
-                background: Some(Background::Color(Color::TRANSPARENT)),
-                border: Border {
-                    radius: 5.0.into(),
-                    ..Border::default()
-                },
-                text_color: fg_format,
-                shadow: Shadow::default(),
-                snap: false,
-            });
-        if has_script {
-            btn = btn.on_press(Message::ScriptEditor(ScriptEditorMsg::FormatPressed));
-        }
-        btn.into()
-    };
+            .color(fg),
+    )
+    .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
+    .style(move |_: &iced::Theme, _status| button::Style {
+        background: Some(Background::Color(Color::TRANSPARENT)),
+        border: Border {
+            radius: 5.0.into(),
+            ..Border::default()
+        },
+        text_color: fg,
+        shadow: Shadow::default(),
+        snap: false,
+    });
+    let tip = container(
+        text(forge_widgets::tr!("script_editor_debug_tip"))
+            .size(FONT_XS)
+            .color(palette.text_primary),
+    )
+    .padding([spf(Spacing::Xxs), spf(Spacing::Sm)])
+    .style(move |_: &iced::Theme| container::Style {
+        background: Some(Background::Color(palette.elevated)),
+        border: Border {
+            color: palette.border_regular,
+            width: 0.5,
+            radius: 6.0.into(),
+        },
+        ..container::Style::default()
+    });
+    tooltip(inner, tip, tooltip::Position::Bottom).into()
+}
 
-    let api_docs_btn: Element<'a, Message> = {
-        let fg = palette.text_secondary;
-        button(
-            text(forge_widgets::tr!("script_editor_api_docs"))
-                .size(FONT_SM)
-                .color(fg),
-        )
-        .on_press(Message::ScriptEditor(ScriptEditorMsg::ApiDocsRequested))
-        .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
-        .style(move |_: &iced::Theme, _status| button::Style {
-            background: Some(Background::Color(Color::TRANSPARENT)),
-            border: Border {
-                radius: 5.0.into(),
-                ..Border::default()
-            },
-            text_color: fg,
-            shadow: Shadow::default(),
-            snap: false,
-        })
-        .into()
-    };
-
-    let debug_btn: Element<'a, Message> = {
-        let fg = palette.disabled;
-        let inner = button(
-            text(forge_widgets::tr!("script_editor_debug"))
-                .size(FONT_SM)
-                .color(fg),
-        )
-        .padding([spf(Spacing::Xxs), spf(Spacing::Xs)])
-        .style(move |_: &iced::Theme, _status| button::Style {
-            background: Some(Background::Color(Color::TRANSPARENT)),
-            border: Border {
-                radius: 5.0.into(),
-                ..Border::default()
-            },
-            text_color: fg,
-            shadow: Shadow::default(),
-            snap: false,
-        });
-        let tip = container(
-            text(forge_widgets::tr!("script_editor_debug_tip"))
-                .size(FONT_XS)
-                .color(palette.text_primary),
-        )
-        .padding([spf(Spacing::Xxs), spf(Spacing::Sm)])
-        .style(move |_: &iced::Theme| container::Style {
-            background: Some(Background::Color(palette.elevated)),
-            border: Border {
-                color: palette.border_regular,
-                width: 0.5,
-                radius: 6.0.into(),
-            },
-            ..container::Style::default()
-        });
-        tooltip(inner, tip, tooltip::Position::Bottom).into()
-    };
-
+fn toolbar_action_row<'a>(palette: &'a ForgePalette) -> Element<'a, Message> {
+    let run_btn = forge_widgets::primary_button(
+        forge_widgets::tr!("script_editor_run"),
+        Message::ScriptEditor(ScriptEditorMsg::RunRequested),
+        palette,
+    );
+    let save_btn = forge_widgets::ghost_button(
+        forge_widgets::tr!("script_editor_save"),
+        Message::ScriptEditor(ScriptEditorMsg::SaveRequested),
+        palette,
+    );
+    let format_btn = forge_widgets::ghost_button(
+        forge_widgets::tr!("script_editor_format"),
+        Message::ScriptEditor(ScriptEditorMsg::FormatPressed),
+        palette,
+    );
+    let api_docs_btn = forge_widgets::ghost_button(
+        forge_widgets::tr!("script_editor_api_docs"),
+        Message::ScriptEditor(ScriptEditorMsg::ApiDocsRequested),
+        palette,
+    );
     let divider = forge_widgets::divider(palette, forge_widgets::DividerAxis::Vertical);
 
     row![
         run_btn,
         save_btn,
         format_btn,
-        debug_btn,
+        debug_placeholder_button(palette),
         divider,
         api_docs_btn
     ]

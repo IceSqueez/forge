@@ -13,7 +13,7 @@ use iced::advanced::widget::Widget;
 use iced::advanced::widget::tree::{self, Tree};
 use iced::advanced::{Clipboard, Layout, Shell};
 use iced::widget::text_editor;
-use iced::{Element, Event, Length, Rectangle, Size, Vector};
+use iced::{Border, Color, Element, Event, Length, Rectangle, Shadow, Size, Vector};
 
 use crate::autocomplete_popup::{AutocompletePopupState, autocomplete_popup, filter_candidates};
 use crate::code_editor::CodeEditorState;
@@ -293,6 +293,10 @@ pub fn script_editor_widget<'a, Msg: Clone + 'a>(
         anchor_line: line,
         anchor_col: col,
         is_autocomplete,
+        active_line_tint: Color {
+            a: 0.06,
+            ..palette.brand
+        },
         on_message: Box::new(on_message),
     }
     .into()
@@ -306,6 +310,7 @@ struct ScriptEditorWidgetInner<'a, Msg: Clone> {
     anchor_line: usize,
     anchor_col: usize,
     is_autocomplete: bool,
+    active_line_tint: Color,
     on_message: Box<dyn Fn(ScriptEditorWidgetMsg) -> Msg>,
 }
 
@@ -375,6 +380,27 @@ impl<'a, Msg: Clone + 'a> Widget<Msg, iced::Theme, iced::Renderer>
             cursor,
             viewport,
         );
+
+        use iced::advanced::Renderer as _;
+
+        let bounds = layout.bounds();
+        let band_y = bounds.y + spf(Spacing::Sm) + self.anchor_line as f32 * LINE_HEIGHT;
+        if band_y >= bounds.y && band_y + LINE_HEIGHT <= bounds.y + bounds.height {
+            renderer.fill_quad(
+                renderer::Quad {
+                    bounds: Rectangle {
+                        x: bounds.x + GUTTER_WIDTH,
+                        y: band_y,
+                        width: (bounds.width - GUTTER_WIDTH).max(0.0),
+                        height: LINE_HEIGHT,
+                    },
+                    border: Border::default(),
+                    shadow: Shadow::default(),
+                    snap: false,
+                },
+                self.active_line_tint,
+            );
+        }
     }
 
     fn update(

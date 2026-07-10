@@ -164,3 +164,106 @@ fn extract_concurrent_viewers(body: &serde_json::Value) -> Option<u64> {
         .parse::<u64>()
         .ok()
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn make_poll(api_base: String, video_id: Option<String>) -> YoutubeViewerPoll {
+        let broadcast = ActiveBroadcastIdHandle::new();
+        broadcast.set(video_id);
+        let quota = Arc::new(Mutex::new(QuotaState::default()));
+        let (tx, _rx) = watch::channel(ViewerReport::Absent);
+        let source: TokenSource = Arc::new(|| {
+            Box::pin(async { Ok("test-token".to_owned()) })
+                as BoxFuture<'static, Result<String, PlatformError>>
+        });
+        YoutubeViewerPoll::new(source, broadcast, quota, tx).with_api_base(api_base)
+    }
+
+    #[test]
+    fn extract_reads_concurrent_viewers_from_nested_string_field() {
+        let body = json!({
+            "items": [ { "liveStreamingDetails": { "concurrentViewers": "1234" } } ]
+        });
+        assert_eq!(extract_concurrent_viewers(&body), Some(1234));
+    }
+
+    #[test]
+    fn extract_yields_none_for_every_absent_or_unparseable_shape() {
+        // Each shape breaks the nested path at a different link; none may be
+        // coerced to a zero count (that is the Absent/Live distinction).
+        for (label, body) in [
+            ("empty items", json!({ "items": [] })),
+            ("missing liveStreamingDetails", json!({ "items": [ {} ] })),
+            (
+                "missing concurrentViewers",
+                json!({ "items": [ { "liveStreamingDetails": {} } ] }),
+            ),
+            (
+                "non-numeric count",
+                json!({ "items": [ { "liveStreamingDetails": { "concurrentViewers": "many" } } ] }),
+            ),
+        ] {
+            assert_eq!(extract_concurrent_viewers(&body), None, "{label}");
+        }
+    }
+
+    #[tokio::test]
+    async fn poll_once_reports_live_count_when_broadcast_has_viewers() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/videos"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "items": [ { "liveStreamingDetails": { "concurrentViewers": "1234" } } ]
+            })))
+            .mount(&server)
+            .await;
+
+        let poll = make_poll(server.uri(), Some("vid123".to_owned()));
+        assert_eq!(
+            poll.poll_once().await,
+            Some(ViewerReport::Live { count: 1234 })
+        );
+    }
+
+    #[tokio::test]
+    async fn poll_once_reports_absent_when_count_is_hidden_not_live_zero() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/videos"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "items": [ { "liveStreamingDetails": {} } ]
+            })))
+            .mount(&server)
+            .await;
+
+        let poll = make_poll(server.uri(), Some("vid123".to_owned()));
+        assert_eq!(poll.poll_once().await, Some(ViewerReport::Absent));
+    }
+
+    #[tokio::test]
+    async fn poll_once_returns_none_on_non_200_keeping_last_figure() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/videos"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+
+        let poll = make_poll(server.uri(), Some("vid123".to_owned()));
+        assert_eq!(poll.poll_once().await, None);
+    }
+
+    #[tokio::test]
+    async fn poll_once_reports_absent_without_active_broadcast() {
+        // No active broadcast id: the poll short-circuits to Absent without a
+        // request, never a transient None.
+        let poll = make_poll("http://255.255.255.255".to_owned(), None);
+        assert_eq!(poll.poll_once().await, Some(ViewerReport::Absent));
+    }
+}

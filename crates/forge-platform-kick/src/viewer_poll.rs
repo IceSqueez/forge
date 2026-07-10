@@ -107,3 +107,71 @@ impl KickViewerPoll {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    async fn poll_against(slug: &str, response: ResponseTemplate) -> Option<ViewerReport> {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path(format!("/{slug}")))
+            .respond_with(response)
+            .mount(&server)
+            .await;
+        let (poll, _source) =
+            KickViewerPoll::with_endpoint(slug.to_owned(), reqwest::Client::new(), server.uri());
+        poll.poll_once().await
+    }
+
+    #[tokio::test]
+    async fn poll_once_reports_live_count_when_channel_is_live() {
+        let body = json!({
+            "chatroom": { "id": 1 },
+            "livestream": { "viewer_count": 500, "session_title": "playing" }
+        });
+        assert_eq!(
+            poll_against("live_slug", ResponseTemplate::new(200).set_body_json(body)).await,
+            Some(ViewerReport::Live { count: 500 })
+        );
+    }
+
+    #[tokio::test]
+    async fn poll_once_reports_live_zero_not_absent_for_genuine_zero_viewers() {
+        // A live channel with zero viewers is Live { 0 }, never Absent.
+        let body = json!({
+            "chatroom": { "id": 1 },
+            "livestream": { "viewer_count": 0, "session_title": "starting soon" }
+        });
+        assert_eq!(
+            poll_against("zero_slug", ResponseTemplate::new(200).set_body_json(body)).await,
+            Some(ViewerReport::Live { count: 0 })
+        );
+    }
+
+    #[tokio::test]
+    async fn poll_once_reports_absent_when_channel_is_offline() {
+        let body = json!({ "chatroom": { "id": 1 }, "livestream": null });
+        assert_eq!(
+            poll_against(
+                "offline_slug",
+                ResponseTemplate::new(200).set_body_json(body)
+            )
+            .await,
+            Some(ViewerReport::Absent)
+        );
+    }
+
+    #[tokio::test]
+    async fn poll_once_returns_none_on_non_200_keeping_last_figure() {
+        // A transient miss must not erase the last figure to Absent or Live { 0 }.
+        assert_eq!(
+            poll_against("err_slug", ResponseTemplate::new(500)).await,
+            None
+        );
+    }
+}

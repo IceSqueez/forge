@@ -271,6 +271,60 @@ mod tests {
     }
 
     #[test]
+    fn display_text_renders_mentions_and_diverges_from_body_text() {
+        // Contract: display_text keeps Text verbatim, renders Mention as
+        // "@username", and drops Emote/Link. This is where mentions surface —
+        // body_text deliberately omits them. The mixed case pins that divergence.
+        let cases = [
+            (
+                vec![
+                    ChatSegment::Text {
+                        text: "hey ".to_string(),
+                    },
+                    ChatSegment::Mention {
+                        username: "foo".to_string(),
+                    },
+                    ChatSegment::Text {
+                        text: " gg".to_string(),
+                    },
+                    ChatSegment::Emote {
+                        id: "1".to_string(),
+                        name: "KEKW".to_string(),
+                    },
+                    ChatSegment::Link {
+                        url: "https://x".to_string(),
+                        display: "x".to_string(),
+                    },
+                ],
+                "hey @foo gg",
+            ),
+            (
+                vec![ChatSegment::Mention {
+                    username: "solo".to_string(),
+                }],
+                "@solo",
+            ),
+            (vec![], ""),
+        ];
+        for (segments, expected) in cases {
+            let row = make_row(segments);
+            assert_eq!(row.display_text(), expected);
+        }
+
+        // Same input, the two accessors diverge on the mention.
+        let mixed = make_row(vec![
+            ChatSegment::Text {
+                text: "ping ".to_string(),
+            },
+            ChatSegment::Mention {
+                username: "bar".to_string(),
+            },
+        ]);
+        assert_eq!(mixed.display_text(), "ping @bar");
+        assert_eq!(mixed.body_text(), "ping ");
+    }
+
+    #[test]
     fn body_text_empty_when_no_text_segments() {
         let row = make_row(vec![
             ChatSegment::Emote {

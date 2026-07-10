@@ -417,6 +417,27 @@ mod tests {
     }
 
     #[test]
+    fn map_badges_maps_extended_set_ids_to_their_variants() {
+        // Real Twitch badge set_ids -> UserBadge. Guards against set_id typos
+        // (note the hyphens in "hype-train"/"bits-leader") and against wiring a
+        // set_id to the wrong variant. bits/bits-leader parse `info` into the
+        // amount/rank field.
+        let cases = [
+            ("partner", "", UserBadge::Partner),
+            ("premium", "", UserBadge::Premium),
+            ("founder", "", UserBadge::Founder),
+            ("turbo", "", UserBadge::Turbo),
+            ("hype-train", "", UserBadge::HypeTrain),
+            ("bits", "10000", UserBadge::Bits { amount: 10000 }),
+            ("bits-leader", "2", UserBadge::BitsLeader { rank: 2 }),
+        ];
+        for (set_id, info, expected) in cases {
+            let badges = serde_json::json!([{ "set_id": set_id, "id": "1", "info": info }]);
+            assert_eq!(map_badges(Some(&badges)), vec![expected], "set_id={set_id}");
+        }
+    }
+
+    #[test]
     fn map_badges_skips_unknown_set_ids() {
         let badges = serde_json::json!([
             { "set_id": "totally-unknown-set-id", "id": "1", "info": "" },

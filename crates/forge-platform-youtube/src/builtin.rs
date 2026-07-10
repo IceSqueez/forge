@@ -5,11 +5,11 @@ use std::time::Duration;
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, CapabilityFlags, ChatPlatform,
     ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthStream,
-    HealthValue, QuickAction, QuickActions, SectionIcon,
+    HealthValue, LiveViewerSource, QuickAction, QuickActions, SectionIcon, ViewerReport,
 };
 use forge_registry::{RegistryError, TriggerRegistry};
 use forge_types::{SubActionStep, Variant};
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, watch};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 
@@ -29,6 +29,7 @@ use crate::triggers::message_deleted::ChatMessageDeletedDescriptor;
 use crate::triggers::stream_offline::ChannelBroadcastEndedDescriptor;
 use crate::triggers::stream_online::ChannelBroadcastStartedDescriptor;
 use crate::triggers::title_changed::ChannelBroadcastTitleChangedDescriptor;
+use crate::viewer_poll::{YoutubeViewerPoll, YoutubeViewerSource};
 
 /// YouTube's Data API v3 default daily quota budget (project-level, shared
 /// across every endpoint the account calls). See `PLATFORMS_NOTES.md`.
@@ -61,6 +62,7 @@ pub struct YoutubeIntegrationBundle {
     platform: Arc<YoutubePlatform>,
     credentials_manager: Arc<YoutubeCredentialsManager>,
     quota: Arc<tokio::sync::Mutex<QuotaState>>,
+    viewer_report_tx: watch::Sender<ViewerReport>,
 }
 
 impl YoutubeIntegrationBundle {
@@ -71,6 +73,26 @@ impl YoutubeIntegrationBundle {
         quota: Arc<tokio::sync::Mutex<QuotaState>>,
     ) -> (Arc<Self>, broadcast::Sender<HealthDelta>) {
         let (health_tx, _) = broadcast::channel(16);
+        let (viewer_report_tx, _) = watch::channel(ViewerReport::Absent);
+
+        let token_source = {
+            let manager = Arc::clone(&credentials_manager);
+            Arc::new(move || {
+                let manager = Arc::clone(&manager);
+                Box::pin(async move { manager.get_valid_access_token().await })
+                    as futures::future::BoxFuture<'static, _>
+            })
+        };
+        tokio::spawn(
+            YoutubeViewerPoll::new(
+                token_source,
+                platform.active_broadcast_id(),
+                Arc::clone(&quota),
+                viewer_report_tx.clone(),
+            )
+            .run(),
+        );
+
         let bundle = Arc::new(Self {
             id: BuiltinId::new("youtube"),
             channel_id,
@@ -78,8 +100,13 @@ impl YoutubeIntegrationBundle {
             platform,
             credentials_manager,
             quota,
+            viewer_report_tx,
         });
         (bundle, health_tx)
+    }
+
+    pub fn viewer_source(&self) -> Box<dyn LiveViewerSource> {
+        Box::new(YoutubeViewerSource::new(self.viewer_report_tx.subscribe()))
     }
 
     fn current_state(&self) -> ConnectionState {

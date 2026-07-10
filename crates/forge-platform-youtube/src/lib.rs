@@ -15,6 +15,7 @@ pub mod send_chat;
 pub mod stream_metadata;
 pub mod sub_actions;
 pub mod triggers;
+pub mod viewer_poll;
 
 pub use active_broadcast_id::ActiveBroadcastIdHandle;
 pub use auth::{
@@ -36,3 +37,4 @@ pub use sub_actions::{
     BanUserRunner, SendMessageRunner, TimeoutUserRunner, UnbanUserRunner, UpdateCategoryRunner,
     UpdateDescriptionRunner, UpdatePrivacyRunner, UpdateTitleRunner, register_youtube_sub_actions,
 };
+pub use viewer_poll::{YoutubeViewerPoll, YoutubeViewerSource};

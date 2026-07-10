@@ -985,6 +985,9 @@ fn spawn_runtime(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> Option<Runtim
     }
 
     let live_viewers = spawn_live_viewer_aggregator();
+    if let Some(youtube_bundle) = &youtube_boot_bundle {
+        live_viewers.register(youtube_bundle.viewer_source());
+    }
     let sub_action_reg = Arc::new(sub_action_reg);
     let engine = spawn_action_engine(
         Arc::clone(&bus),

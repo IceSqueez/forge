@@ -68,6 +68,10 @@ impl YoutubePlatform {
             cancel: Mutex::new(None),
         }
     }
+
+    pub fn active_broadcast_id(&self) -> ActiveBroadcastIdHandle {
+        self.active_broadcast_id.clone()
+    }
 }
 
 #[async_trait]

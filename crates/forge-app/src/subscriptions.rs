@@ -392,6 +392,32 @@ pub fn subscription(app: &App) -> Subscription<Message> {
         Subscription::none()
     };
 
+    struct LiveViewersRecipe(forge_runtime::LiveViewerAggregatorHandle);
+
+    impl Recipe for LiveViewersRecipe {
+        type Output = Message;
+
+        fn hash(&self, state: &mut Hasher) {
+            use std::hash::Hash as _;
+            "home-live-viewers".hash(state);
+        }
+
+        fn stream(
+            self: Box<Self>,
+            _input: EventStream,
+        ) -> iced::futures::stream::BoxStream<'static, Self::Output> {
+            self.0
+                .subscribe()
+                .map(|count| Message::Home(HomeMsg::LiveViewersChanged(count)))
+                .boxed()
+        }
+    }
+
+    let home_live_viewers = match app.rt.live_viewers.as_ref() {
+        Some(handle) => from_recipe(LiveViewersRecipe(handle.clone())),
+        None => Subscription::none(),
+    };
+
     let soundboard_keys = if matches!(app.screen, Screen::Soundboard) {
         iced::keyboard::listen().filter_map(soundboard_hotkey_filter)
     } else {
@@ -467,6 +493,7 @@ pub fn subscription(app: &App) -> Subscription<Message> {
             health_subscription(state),
             server_tick,
             home_event_rate_tick,
+            home_live_viewers,
             soundboard_keys,
             app_shortcuts,
             tts_events,
@@ -480,6 +507,7 @@ pub fn subscription(app: &App) -> Subscription<Message> {
             chat_stream,
             server_tick,
             home_event_rate_tick,
+            home_live_viewers,
             soundboard_keys,
             app_shortcuts,
             tts_events,

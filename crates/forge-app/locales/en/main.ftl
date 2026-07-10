@@ -60,7 +60,7 @@ home_stats_retry = Retry
 
 home_card_audience_section = AUDIENCE
 home_card_audience_title = Chat
-home_card_audience_stat_label = viewers tracked
+home_card_audience_stat_label = viewers now
 home_card_audience_hint = Talk to your audience and see who's watching
 home_card_automation_section = AUTOMATION
 home_card_automation_title = Actions

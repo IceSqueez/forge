@@ -60,7 +60,7 @@ home_stats_retry = Повторити
 
 home_card_audience_section = АУДИТОРІЯ
 home_card_audience_title = Чат
-home_card_audience_stat_label = глядачів відстежується
+home_card_audience_stat_label = глядачів зараз
 home_card_audience_hint = Спілкуйтеся з аудиторією та бачте, хто дивиться
 home_card_automation_section = АВТОМАТИЗАЦІЯ
 home_card_automation_title = Дії

@@ -221,6 +221,7 @@ pub enum HomeMsg {
     LoadStats,
     StatsLoaded(Result<HomeStatsData, String>),
     EvPerSecondTick(f32),
+    LiveViewersChanged(forge_runtime::LiveViewerCount),
     ImportRequested,
     ImportCompleted(Result<String, String>),
 }

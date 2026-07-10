@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use forge_events::Event;
+use forge_runtime::LiveViewerCount;
 use forge_storage::GlobalsRepo;
 use forge_widgets::icons::{Icon, tabler_icon};
 use forge_widgets::tokens::{FONT_MD, FONT_SM, FONT_XS, Spacing, spf};
@@ -23,7 +24,6 @@ const MAX_EV_PER_SECOND_SAMPLES: usize = 60;
 /// Treated as a no-op rather than an error toast (cancel-is-not-a-failure).
 const IMPORT_CANCELLED: &str = "import cancelled";
 
-#[derive(Default)]
 pub struct HomeStats {
     pub actions_count: Option<usize>,
     pub triggers_fired: Option<u64>,
@@ -35,6 +35,20 @@ pub struct HomeStats {
     /// Last dashboard-stats load failure, surfaced as an in-place `inline_error`
     /// banner with a retry affordance. `None` while a load is pending or succeeded.
     pub stats_error: Option<String>,
+    pub live_viewers: LiveViewerCount,
+}
+
+impl Default for HomeStats {
+    fn default() -> Self {
+        Self {
+            actions_count: None,
+            triggers_fired: None,
+            globals_count: None,
+            ev_per_second_samples: Vec::new(),
+            stats_error: None,
+            live_viewers: LiveViewerCount::Empty,
+        }
+    }
 }
 
 impl HomeStats {
@@ -114,6 +128,10 @@ pub fn update(state: &mut HomeStats, rt: &RuntimeView, msg: HomeMsg) -> Task<Mes
                 let excess = state.ev_per_second_samples.len() - MAX_EV_PER_SECOND_SAMPLES;
                 state.ev_per_second_samples.drain(..excess);
             }
+            Task::none()
+        }
+        HomeMsg::LiveViewersChanged(count) => {
+            state.live_viewers = count;
             Task::none()
         }
     }
@@ -239,7 +257,10 @@ fn home_jump_cards<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, M
 
     let actions_count = app.ui.home.actions_count.unwrap_or(0);
     let triggers_fired = app.ui.home.triggers_fired.unwrap_or(0);
-    let chat_count = app.ui.live_chat.rows.len();
+    let viewers_stat = match app.ui.home.live_viewers {
+        LiveViewerCount::Reporting(n) => forge_widgets::fmt_number(n as f64, 0),
+        LiveViewerCount::Empty => "\u{2014}".to_owned(),
+    };
     let connectivity = Connectivity::resolve(&app.rt);
     let total_integrations = connectivity.total();
     let connected_integrations = connectivity.connected_count();
@@ -251,7 +272,7 @@ fn home_jump_cards<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, M
             icon_color: palette.brand,
             section_label: forge_widgets::tr!("home_card_audience_section"),
             title: forge_widgets::tr!("home_card_audience_title"),
-            stat: chat_count.to_string(),
+            stat: viewers_stat,
             stat_label: forge_widgets::tr!("home_card_audience_stat_label"),
             hint: forge_widgets::tr!("home_card_audience_hint"),
             on_press: Message::Navigate(Screen::LiveChat),

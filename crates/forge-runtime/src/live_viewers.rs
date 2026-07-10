@@ -109,3 +109,154 @@ async fn aggregate(
         });
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+    use std::time::Duration;
+
+    use forge_platform_core::ViewerReportStream;
+    use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+    use tokio_stream::wrappers::UnboundedReceiverStream;
+
+    /// A `LiveViewerSource` whose report stream drains a channel the test drives.
+    /// Holding the sender lets a test feed reports one at a time; dropping it ends
+    /// the stream, exercising the slot-drop path.
+    struct ChannelSource {
+        rx: Mutex<Option<UnboundedReceiver<ViewerReport>>>,
+    }
+
+    fn channel_source() -> (Box<dyn LiveViewerSource>, UnboundedSender<ViewerReport>) {
+        let (tx, rx) = unbounded_channel();
+        let source = Box::new(ChannelSource {
+            rx: Mutex::new(Some(rx)),
+        });
+        (source, tx)
+    }
+
+    impl LiveViewerSource for ChannelSource {
+        fn viewer_reports(&self) -> ViewerReportStream {
+            let rx = self
+                .rx
+                .lock()
+                .expect("mutex poisoned")
+                .take()
+                .expect("viewer_reports called once");
+            Box::pin(UnboundedReceiverStream::new(rx))
+        }
+    }
+
+    /// Consume aggregate items until `expected` is observed. The watch channel
+    /// coalesces (latest-value-wins), so intermediate values may be skipped; the
+    /// bounded timeout turns a never-arriving value (e.g. a `Reporting(0)` a buggy
+    /// impl collapsed to `Empty`) into a test failure instead of a hang.
+    async fn settle_to<S>(stream: &mut S, expected: LiveViewerCount)
+    where
+        S: Stream<Item = LiveViewerCount> + Unpin,
+    {
+        let outcome = tokio::time::timeout(Duration::from_secs(2), async {
+            while let Some(value) = stream.next().await {
+                if value == expected {
+                    return;
+                }
+            }
+            panic!("aggregate stream ended before reaching {expected:?}");
+        })
+        .await;
+        assert!(outcome.is_ok(), "timed out waiting for {expected:?}");
+    }
+
+    #[tokio::test]
+    async fn sum_is_additive_across_registered_slots() {
+        let handle = spawn_live_viewer_aggregator();
+        let mut sub = Box::pin(handle.subscribe());
+        let (src_a, tx_a) = channel_source();
+        let (src_b, tx_b) = channel_source();
+        handle.register(src_a);
+        handle.register(src_b);
+
+        tx_a.send(ViewerReport::Live { count: 3 }).unwrap();
+        settle_to(&mut sub, LiveViewerCount::Reporting(3)).await;
+        tx_b.send(ViewerReport::Live { count: 4 }).unwrap();
+        settle_to(&mut sub, LiveViewerCount::Reporting(7)).await;
+    }
+
+    #[tokio::test]
+    async fn absent_report_removes_only_its_own_slot() {
+        let handle = spawn_live_viewer_aggregator();
+        let mut sub = Box::pin(handle.subscribe());
+        let (src_a, tx_a) = channel_source();
+        let (src_b, tx_b) = channel_source();
+        handle.register(src_a);
+        handle.register(src_b);
+
+        tx_a.send(ViewerReport::Live { count: 5 }).unwrap();
+        settle_to(&mut sub, LiveViewerCount::Reporting(5)).await;
+        tx_b.send(ViewerReport::Live { count: 2 }).unwrap();
+        settle_to(&mut sub, LiveViewerCount::Reporting(7)).await;
+        tx_a.send(ViewerReport::Absent).unwrap();
+        settle_to(&mut sub, LiveViewerCount::Reporting(2)).await;
+    }
+
+    #[tokio::test]
+    async fn absent_on_the_last_reporting_slot_yields_empty() {
+        let handle = spawn_live_viewer_aggregator();
+        let mut sub = Box::pin(handle.subscribe());
+        let (src, tx) = channel_source();
+        handle.register(src);
+
+        tx.send(ViewerReport::Live { count: 5 }).unwrap();
+        settle_to(&mut sub, LiveViewerCount::Reporting(5)).await;
+        tx.send(ViewerReport::Absent).unwrap();
+        settle_to(&mut sub, LiveViewerCount::Empty).await;
+    }
+
+    #[tokio::test]
+    async fn stream_end_drops_only_that_slots_contribution() {
+        let handle = spawn_live_viewer_aggregator();
+        let mut sub = Box::pin(handle.subscribe());
+        let (src_a, tx_a) = channel_source();
+        let (src_b, tx_b) = channel_source();
+        handle.register(src_a);
+        handle.register(src_b);
+
+        tx_a.send(ViewerReport::Live { count: 4 }).unwrap();
+        settle_to(&mut sub, LiveViewerCount::Reporting(4)).await;
+        tx_b.send(ViewerReport::Live { count: 6 }).unwrap();
+        settle_to(&mut sub, LiveViewerCount::Reporting(10)).await;
+        drop(tx_a);
+        settle_to(&mut sub, LiveViewerCount::Reporting(6)).await;
+    }
+
+    #[tokio::test]
+    async fn single_zero_report_is_reporting_zero_not_empty() {
+        // Why: a platform reporting zero concurrent viewers (`Reporting(0)`) is a
+        // distinct state from no platform reporting at all (`Empty`). Collapsing
+        // one into the other is the highest-value regression this suite guards.
+        let handle = spawn_live_viewer_aggregator();
+        let mut sub = Box::pin(handle.subscribe());
+        let (src, tx) = channel_source();
+        handle.register(src);
+
+        tx.send(ViewerReport::Live { count: 0 }).unwrap();
+        settle_to(&mut sub, LiveViewerCount::Reporting(0)).await;
+    }
+
+    #[tokio::test]
+    async fn late_subscriber_resynchronizes_to_current_value() {
+        let handle = spawn_live_viewer_aggregator();
+        let mut early = Box::pin(handle.subscribe());
+        let (src, tx) = channel_source();
+        handle.register(src);
+
+        tx.send(ViewerReport::Live { count: 9 }).unwrap();
+        settle_to(&mut early, LiveViewerCount::Reporting(9)).await;
+
+        // A subscriber created only now must observe the current 9 on its first
+        // poll, not the `Empty` the aggregate was seeded with at spawn.
+        let mut late = Box::pin(handle.subscribe());
+        assert_eq!(late.next().await, Some(LiveViewerCount::Reporting(9)));
+    }
+}

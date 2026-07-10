@@ -625,7 +625,7 @@ fn home_connections_strip<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
         })
         .split_radius(radius(Radius::Md), 0.0);
 
-    let mut cells = row![].spacing(spf(Spacing::Xxs));
+    let mut cells = row![].spacing(1.0);
     for status in connectivity.statuses() {
         let integration = status.integration;
         let short_label = match integration {
@@ -859,10 +859,9 @@ fn home_glance_row<'a>(
     last: bool,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    use iced::widget::{container, row, text};
-    use iced::{Alignment, Border};
+    use iced::Alignment;
+    use iced::widget::{column, row, text};
 
-    let border_regular = palette.border_regular;
     let text_muted = palette.text_muted;
 
     let inner = row![
@@ -875,6 +874,7 @@ fn home_glance_row<'a>(
             .color(color)
             .font(font(FontRole::Monospace)),
     ]
+    .width(Length::Fill)
     .align_y(Alignment::Center)
     .padding(iced::Padding {
         top: 5.0,
@@ -883,19 +883,16 @@ fn home_glance_row<'a>(
         left: 0.0,
     });
 
-    let border_width = if last { 0.0 } else { 0.5 };
-
-    container(inner)
+    if last {
+        inner.into()
+    } else {
+        column![
+            inner,
+            forge_widgets::divider(palette, forge_widgets::DividerAxis::Horizontal),
+        ]
         .width(Length::Fill)
-        .style(move |_theme: &Theme| iced::widget::container::Style {
-            border: Border {
-                color: border_regular,
-                width: border_width,
-                radius: 0.0.into(),
-            },
-            ..iced::widget::container::Style::default()
-        })
         .into()
+    }
 }
 
 fn home_glance_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {

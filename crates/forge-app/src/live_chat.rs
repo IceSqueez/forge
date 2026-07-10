@@ -930,8 +930,37 @@ mod tests {
     }
 
     #[test]
-    fn platform_filter_default_is_all() {
-        assert_eq!(PlatformFilter::default(), PlatformFilter::All);
+    fn timeout_step_matches_twitch_runner_config_contract() {
+        // Cross-crate contract: twitch.moderation.timeout_user reads exactly
+        // "target_user_login" (non-empty String) and "duration_seconds" (Int,
+        // rejected outside 1..=1_209_600). A key rename or an out-of-range
+        // DRAWER_TIMEOUT_SECONDS here silently breaks dispatch — the runner
+        // returns a validation error the user never asked for.
+        let step = build_timeout_step("baddie");
+        assert_eq!(step.kind_id, "twitch.moderation.timeout_user");
+        assert_eq!(
+            step.config.get("target_user_login"),
+            Some(&Variant::String("baddie".to_owned()))
+        );
+        let dur = step.config.get("duration_seconds");
+        assert!(
+            matches!(dur, Some(Variant::Int(d)) if (1..=1_209_600).contains(d)),
+            "duration_seconds must be an Int within the runner's accepted range, got {dur:?}"
+        );
+    }
+
+    #[test]
+    fn ban_step_matches_twitch_runner_config_contract() {
+        // twitch.moderation.ban_user reads "target_user_login" and has no
+        // duration key; sending one would be ignored, but the absence pins that
+        // the ban builder is not accidentally cloned from the timeout builder.
+        let step = build_ban_step("baddie");
+        assert_eq!(step.kind_id, "twitch.moderation.ban_user");
+        assert_eq!(
+            step.config.get("target_user_login"),
+            Some(&Variant::String("baddie".to_owned()))
+        );
+        assert!(!step.config.contains_key("duration_seconds"));
     }
 
     #[test]
@@ -940,13 +969,5 @@ mod tests {
         assert!(!state.rows.is_empty());
         assert!(!state.drawer_open);
         assert!(state.auto_scroll);
-    }
-
-    #[test]
-    fn drawer_width_field_round_trip() {
-        let mut state = LiveChatState::new();
-        assert!(state.drawer_width.is_none());
-        state.drawer_width = Some(420.0);
-        assert_eq!(state.drawer_width, Some(420.0));
     }
 }

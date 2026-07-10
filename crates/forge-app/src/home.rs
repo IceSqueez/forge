@@ -856,15 +856,14 @@ fn home_glance_row<'a>(
     label: String,
     value: String,
     color: iced::Color,
-    last: bool,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     use iced::Alignment;
-    use iced::widget::{column, row, text};
+    use iced::widget::{row, text};
 
     let text_muted = palette.text_muted;
 
-    let inner = row![
+    row![
         text(label)
             .size(FONT_XS)
             .color(text_muted)
@@ -881,18 +880,8 @@ fn home_glance_row<'a>(
         right: 0.0,
         bottom: 5.0,
         left: 0.0,
-    });
-
-    if last {
-        inner.into()
-    } else {
-        column![
-            inner,
-            forge_widgets::divider(palette, forge_widgets::DividerAxis::Horizontal),
-        ]
-        .width(Length::Fill)
-        .into()
-    }
+    })
+    .into()
 }
 
 fn home_glance_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, Message> {
@@ -920,33 +909,31 @@ fn home_glance_card<'a>(app: &'a App, palette: &'a ForgePalette) -> Element<'a, 
         .size(FONT_SM)
         .color(text_primary);
 
-    let content = column![
-        header,
+    let rows = column![
         home_glance_row(
             forge_widgets::tr!("home_glance_actions"),
             actions_val,
             palette.brand,
-            false,
             palette
         ),
+        forge_widgets::divider(palette, forge_widgets::DividerAxis::Horizontal),
         home_glance_row(
             forge_widgets::tr!("home_glance_fired"),
             fired_val,
             palette.success,
-            false,
             palette
         ),
+        forge_widgets::divider(palette, forge_widgets::DividerAxis::Horizontal),
         home_glance_row(
             forge_widgets::tr!("home_glance_globals"),
             globals_val,
             palette.warning,
-            true,
             palette
         ),
     ]
     .spacing(0.0);
 
-    forge_widgets::card(content, palette)
+    forge_widgets::card(column![header, rows].spacing(spf(Spacing::Xs)), palette)
         .width(Length::FillPortion(10))
         .padding(spf(Spacing::Sm))
         .into()

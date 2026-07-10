@@ -73,7 +73,7 @@ fn measure_text_width<P: text::Paragraph<Font = Font>>(
 fn badge_color(kind: BadgeKind, palette: ForgePalette) -> Color {
     match kind {
         BadgeKind::Moderator => palette.success,
-        BadgeKind::Vip => palette.warning,
+        BadgeKind::Vip => palette.brand,
         BadgeKind::Bot => palette.brand,
         BadgeKind::Subscriber => palette.info,
         BadgeKind::Broadcaster => palette.random,
@@ -737,7 +737,7 @@ where
             }
             ChatBody::Cheer { .. } => {
                 renderer.draw_svg(
-                    svg::Svg::new(svg::Handle::from_memory(Icon::Bolt.bytes()))
+                    svg::Svg::new(svg::Handle::from_memory(Icon::Coin.bytes()))
                         .color(self.palette.warning),
                     Rectangle {
                         x: content_x,

@@ -350,23 +350,44 @@ fn live_chat_page_header<'a>(
         ));
     }
 
+    let chip_divider = container(iced::widget::Space::new().width(0.5).height(14.0))
+        .width(0.5)
+        .height(14.0)
+        .style(move |_: &iced::Theme| container::Style {
+            background: Some(Background::Color(p.border_regular)),
+            ..container::Style::default()
+        });
+    filter_chips.push(chip_divider.into());
+
     let label_events = forge_widgets::tr!("chat_filter_events");
-    let events_chip = forge_widgets::filter_chip(
-        palette,
-        &label_events,
-        p.warning,
+    let events_chip = forge_widgets::chip(
+        label_events,
+        forge_widgets::ChipGlyph::None,
         state.events_filter == EventsFilter::OnlyEvents,
-        Message::LiveChat(LiveChatMsg::EventsFilterToggled(
+        Some(Message::LiveChat(LiveChatMsg::EventsFilterToggled(
             if state.events_filter == EventsFilter::OnlyEvents {
                 EventsFilter::All
             } else {
                 EventsFilter::OnlyEvents
             },
-        )),
+        ))),
+        palette,
     );
     filter_chips.push(events_chip);
 
-    let chips = iced::widget::row(filter_chips).spacing(spf(Spacing::Xxs));
+    let label_hide_bots = forge_widgets::tr!("chat_filter_hide_bots");
+    let hide_bots_chip = forge_widgets::chip(
+        label_hide_bots,
+        forge_widgets::ChipGlyph::Icon(Icon::EyeOff, p.text_faint),
+        state.hide_bots,
+        Some(Message::LiveChat(LiveChatMsg::HideBotsToggled)),
+        palette,
+    );
+    filter_chips.push(hide_bots_chip);
+
+    let chips = iced::widget::row(filter_chips)
+        .spacing(spf(Spacing::Xxs))
+        .align_y(iced::alignment::Vertical::Center);
 
     let divider = container(iced::widget::Space::new().width(0.5).height(16.0))
         .width(0.5)
@@ -585,28 +606,37 @@ fn build_chat_area<'a>(
                 forge_widgets::tr!("chat_new_messages", count = count)
             };
 
-            let bubble = button(
+            let bubble_content = iced::widget::row![
+                tabler_icon(Icon::ArrowDown, FONT_XS, p.shell),
                 text(label)
                     .size(FONT_XS)
-                    .color(p.text_primary)
+                    .color(p.shell)
                     .font(font(FontRole::Body)),
-            )
-            .on_press(Message::LiveChat(LiveChatMsg::ScrollToBottom))
-            .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
-            .style(move |_theme: &iced::Theme, status| {
-                let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
-                button::Style {
-                    background: Some(Background::Color(if hovered { p.elevated } else { p.base })),
+            ]
+            .spacing(spf(Spacing::Xxs))
+            .align_y(iced::alignment::Vertical::Center);
+
+            let bubble = button(bubble_content)
+                .on_press(Message::LiveChat(LiveChatMsg::ScrollToBottom))
+                .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
+                .style(move |_theme: &iced::Theme, _status| button::Style {
+                    background: Some(Background::Color(p.brand)),
                     border: Border {
-                        color: p.brand,
-                        width: 0.5,
+                        color: Color::TRANSPARENT,
+                        width: 0.0,
                         radius: radius(Radius::Pill).into(),
                     },
-                    text_color: p.text_primary,
-                    shadow: iced::Shadow::default(),
+                    text_color: p.shell,
+                    shadow: iced::Shadow {
+                        color: Color {
+                            a: 0.4,
+                            ..Color::BLACK
+                        },
+                        offset: iced::Vector::new(0.0, 4.0),
+                        blur_radius: 14.0,
+                    },
                     snap: false,
-                }
-            });
+                });
 
             let floating_overlay = container(bubble)
                 .width(Length::Fill)

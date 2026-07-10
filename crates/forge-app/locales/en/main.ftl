@@ -1253,6 +1253,7 @@ chat_breadcrumb_audience = Audience
 chat_breadcrumb_chat = Chat
 chat_filter_all = All
 chat_filter_events = Events
+chat_filter_hide_bots = Hide bots
 chat_send_placeholder_disconnected = Connect a platform to send...
 chat_send_placeholder_connected = Send to chat...
 chat_no_messages_title = No messages

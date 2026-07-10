@@ -1261,6 +1261,7 @@ chat_breadcrumb_audience = Аудиторія
 chat_breadcrumb_chat = Чат
 chat_filter_all = Всі
 chat_filter_events = Події
+chat_filter_hide_bots = Сховати ботів
 chat_send_placeholder_disconnected = Підключіть платформу для відправки...
 chat_send_placeholder_connected = Надіслати в чат...
 chat_no_messages_title = Немає повідомлень

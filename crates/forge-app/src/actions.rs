@@ -48,31 +48,59 @@ pub enum PendingDelete {
     Step { action_id: ActionId, index: usize },
 }
 
+/// Identifies a sidebar group. An author-typed group name buckets an action
+/// into its own `Named` group; otherwise the action falls back to a
+/// trigger-derived `Category`. Category groups sort ahead of named ones.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ActionGroupKey {
+    Category(TriggerCategory),
+    Named(String),
+}
+
+impl ActionGroupKey {
+    pub fn display_name(&self) -> String {
+        match self {
+            ActionGroupKey::Category(category) => category.display_name(),
+            ActionGroupKey::Named(name) => name.to_uppercase(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ActionsGroup {
-    pub category: TriggerCategory,
+    pub key: ActionGroupKey,
     pub fired_24h: u32,
     pub actions: Vec<ActionSummary>,
 }
 
 pub fn group_summaries(summaries: Vec<ActionSummary>) -> Vec<ActionsGroup> {
-    let mut by_category: std::collections::BTreeMap<TriggerCategory, Vec<ActionSummary>> =
+    let mut by_key: std::collections::BTreeMap<ActionGroupKey, Vec<ActionSummary>> =
         std::collections::BTreeMap::new();
     for summary in summaries {
-        let category = summary
-            .first_trigger_kind_id
+        let key = match summary
+            .group
             .as_deref()
-            .map(category_of)
-            .unwrap_or(TriggerCategory::Ungrouped);
-        by_category.entry(category).or_default().push(summary);
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+        {
+            Some(name) => ActionGroupKey::Named(name.to_owned()),
+            None => ActionGroupKey::Category(
+                summary
+                    .first_trigger_kind_id
+                    .as_deref()
+                    .map(category_of)
+                    .unwrap_or(TriggerCategory::Ungrouped),
+            ),
+        };
+        by_key.entry(key).or_default().push(summary);
     }
-    by_category
+    by_key
         .into_iter()
-        .map(|(category, mut actions)| {
+        .map(|(key, mut actions)| {
             actions.sort_by_key(|a| a.name.to_lowercase());
             let fired_24h = actions.iter().map(|a| a.runs_24h).sum();
             ActionsGroup {
-                category,
+                key,
                 fired_24h,
                 actions,
             }
@@ -88,7 +116,7 @@ pub struct ActionsState {
     pub loading: bool,
     pub search: String,
     pub filter: ActionsFilter,
-    pub collapsed_groups: std::collections::HashSet<TriggerCategory>,
+    pub collapsed_groups: std::collections::HashSet<ActionGroupKey>,
     pub add_action_modal: Option<AddActionForm>,
     pub trigger_picker: Option<crate::actions_trigger_picker::TriggerPickerState>,
     pub add_sub_action_modal: Option<AddSubActionForm>,
@@ -997,14 +1025,17 @@ mod tests {
     #[tokio::test]
     async fn actions_without_triggers_land_in_ungrouped() {
         let dp = open_backend().await;
-        let a1 = make_action(&dp, "!so", Some("Chat Commands")).await;
-        let a2 = make_action(&dp, "HydrateCheck", Some("Timers")).await;
+        let a1 = make_action(&dp, "!so", None).await;
+        let a2 = make_action(&dp, "HydrateCheck", None).await;
         dp.action_repo().save(&a1).await.unwrap();
         dp.action_repo().save(&a2).await.unwrap();
 
         let tree = group_summaries(make_service(dp).list_summaries().await.unwrap());
         assert_eq!(tree.len(), 1);
-        assert_eq!(tree[0].category, TriggerCategory::Ungrouped);
+        assert_eq!(
+            tree[0].key,
+            ActionGroupKey::Category(TriggerCategory::Ungrouped)
+        );
         assert_eq!(tree[0].actions.len(), 2);
     }
 
@@ -1025,7 +1056,7 @@ mod tests {
 
         let tree = group_summaries(make_service(dp).list_summaries().await.unwrap());
         assert_eq!(tree.len(), 1);
-        assert_eq!(tree[0].category, TriggerCategory::Chat);
+        assert_eq!(tree[0].key, ActionGroupKey::Category(TriggerCategory::Chat));
     }
 
     #[tokio::test]
@@ -1036,7 +1067,10 @@ mod tests {
 
         let tree = group_summaries(make_service(dp).list_summaries().await.unwrap());
         assert_eq!(tree.len(), 1);
-        assert_eq!(tree[0].category, TriggerCategory::Ungrouped);
+        assert_eq!(
+            tree[0].key,
+            ActionGroupKey::Category(TriggerCategory::Ungrouped)
+        );
     }
 
     #[tokio::test]

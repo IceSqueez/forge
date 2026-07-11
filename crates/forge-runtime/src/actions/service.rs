@@ -58,6 +58,7 @@ impl ActionsService {
 
             summaries.push(ActionSummary {
                 id: action.id,
+                group: action.group.clone(),
                 name: action.name,
                 enabled: action.enabled,
                 sub_action_count: action.sub_actions.len() as u16,

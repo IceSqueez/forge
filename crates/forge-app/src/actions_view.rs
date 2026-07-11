@@ -51,7 +51,7 @@ pub(crate) fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
                 continue;
             }
 
-            let is_collapsed = actions_state.collapsed_groups.contains(&group.category);
+            let is_collapsed = actions_state.collapsed_groups.contains(&group.key);
             tree_col = tree_col.push(actions_group_header(group, is_collapsed, palette));
 
             if !is_collapsed {
@@ -265,7 +265,7 @@ fn actions_group_header<'a>(
     };
     let chevron_el = tabler_icon(chevron_icon, 11.0, p.text_muted);
 
-    let cat_el = text(group.category.display_name())
+    let cat_el = text(group.key.display_name())
         .size(FONT_XXS)
         .color(p.text_muted)
         .font(forge_widgets::font(forge_widgets::FontRole::Monospace));
@@ -284,7 +284,7 @@ fn actions_group_header<'a>(
     .spacing(spf(Spacing::Xs))
     .align_y(iced::alignment::Vertical::Center);
 
-    let cat = group.category.clone();
+    let cat = group.key.clone();
 
     button(container(inner).width(Length::Fill).padding([6, 14]))
         .on_press(Message::Actions(ActionsMsg::ToggleGroupCollapsed(cat)))

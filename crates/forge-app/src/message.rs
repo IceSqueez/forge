@@ -284,7 +284,7 @@ pub enum ActionsMsg {
     TriggerInstanceAssigned(Result<ActionId, String>),
     SearchChanged(String),
     FilterChanged(crate::actions::ActionsFilter),
-    ToggleGroupCollapsed(crate::actions::TriggerCategory),
+    ToggleGroupCollapsed(crate::actions::ActionGroupKey),
     TelemetryLoaded(Result<forge_storage::ActionTelemetry, String>),
     ToggleStepMenu(usize),
     ToggleActionMenu(forge_types::ActionId),

@@ -69,7 +69,7 @@ pub fn primary_button<'a, Msg: 'a + Clone>(
         iced::widget::text(label.into())
             .size(FONT_SM)
             .color(text_color)
-            .font(font_weighted(FontRole::Body, FontWeight::SemiBold)),
+            .font(font_weighted(FontRole::Body, FontWeight::Medium)),
     )
     .on_press(on_press)
     .padding([v, h])
@@ -91,7 +91,7 @@ pub fn primary_button_small<'a, Msg: 'a + Clone>(
         iced::widget::text(label.into())
             .size(FONT_SM)
             .color(text_color)
-            .font(font_weighted(FontRole::Body, FontWeight::SemiBold)),
+            .font(font_weighted(FontRole::Body, FontWeight::Medium)),
     )
     .on_press(on_press)
     .padding([v, h])
@@ -173,7 +173,7 @@ pub fn destructive_button<'a, Msg: 'a + Clone>(
         iced::widget::text(label.into())
             .size(FONT_SM)
             .color(text_color)
-            .font(font_weighted(FontRole::Body, FontWeight::SemiBold)),
+            .font(font_weighted(FontRole::Body, FontWeight::Medium)),
     )
     .on_press(on_press)
     .padding([v, h])

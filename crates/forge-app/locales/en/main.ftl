@@ -313,9 +313,6 @@ actions_menu_delete = Delete…
 
 ## Actions — footer
 
-actions_footer_showing = Showing { $visible } of { $total } · grouped by trigger
-actions_footer_storage = Storage: —
-actions_footer_autosaved = Auto-saved just now
 
 ## Actions — ESC hint
 

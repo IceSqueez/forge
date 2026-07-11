@@ -315,9 +315,6 @@ actions_menu_delete = Видалити…
 
 ## Дії — нижній рядок
 
-actions_footer_showing = Показано { $visible } з { $total } · згруповано за тригером
-actions_footer_storage = Сховище: —
-actions_footer_autosaved = Автозбереження щойно
 
 ## Дії — підказка ESC
 

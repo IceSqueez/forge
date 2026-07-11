@@ -14,7 +14,6 @@ pub(crate) fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
     let actions_state = &app.ui.actions;
 
     let total = actions_state.total_actions();
-    let visible = actions_state.visible_actions();
 
     let page_header = actions_page_header(actions_state, palette);
 
@@ -99,18 +98,14 @@ pub(crate) fn actions_view<'a>(app: &'a App, palette: &'a ForgePalette) -> Eleme
 
     let right_panel = crate::action_editor_view::detail_pane(app, palette);
 
-    let footer = actions_footer(visible, total, palette);
-
     let body = row![left_panel, left_hairline, right_panel]
         .spacing(0)
         .height(Length::Fill);
 
-    let body_and_footer: Element<'_, Message> = container(column![body, footer].spacing(0))
+    let main_view: Element<'_, Message> = container(body)
         .width(Length::Fill)
         .height(Length::Fill)
         .into();
-
-    let main_view: Element<'_, Message> = body_and_footer;
 
     let main_view: Element<'_, Message> =
         if let Some(form) = app.ui.actions.add_sub_action_modal.as_ref() {
@@ -173,26 +168,32 @@ fn actions_page_header<'a>(
         state.filter == ActionsFilter::All,
         Message::Actions(ActionsMsg::FilterChanged(ActionsFilter::All)),
     );
-    let chip_chat = forge_widgets::filter_chip(
-        palette,
-        &lbl_chat,
-        p.info,
+    let chip_chat = forge_widgets::chip(
+        lbl_chat,
+        forge_widgets::ChipGlyph::Icon(forge_widgets::Icon::MessageCircle, p.info),
         state.filter == ActionsFilter::Chat,
-        Message::Actions(ActionsMsg::FilterChanged(ActionsFilter::Chat)),
-    );
-    let chip_timers = forge_widgets::filter_chip(
+        Some(Message::Actions(ActionsMsg::FilterChanged(
+            ActionsFilter::Chat,
+        ))),
         palette,
-        &lbl_timers,
-        p.warning,
+    );
+    let chip_timers = forge_widgets::chip(
+        lbl_timers,
+        forge_widgets::ChipGlyph::Icon(forge_widgets::Icon::Clock, p.warning),
         state.filter == ActionsFilter::Timers,
-        Message::Actions(ActionsMsg::FilterChanged(ActionsFilter::Timers)),
-    );
-    let chip_points = forge_widgets::filter_chip(
+        Some(Message::Actions(ActionsMsg::FilterChanged(
+            ActionsFilter::Timers,
+        ))),
         palette,
-        &lbl_points,
-        p.accent_pink_light,
+    );
+    let chip_points = forge_widgets::chip(
+        lbl_points,
+        forge_widgets::ChipGlyph::Icon(forge_widgets::Icon::Star, p.accent_pink_light),
         state.filter == ActionsFilter::Points,
-        Message::Actions(ActionsMsg::FilterChanged(ActionsFilter::Points)),
+        Some(Message::Actions(ActionsMsg::FilterChanged(
+            ActionsFilter::Points,
+        ))),
+        palette,
     );
     let chips = row![chip_all, chip_chat, chip_timers, chip_points].spacing(spf(Spacing::Xxs));
 
@@ -204,10 +205,11 @@ fn actions_page_header<'a>(
             ..iced::widget::container::Style::default()
         });
 
-    let search = forge_widgets::search_input(
+    let search = forge_widgets::search_input_on(
         forge_widgets::tr!("actions_search_placeholder"),
         &state.search,
         |q| Message::Actions(ActionsMsg::SearchChanged(q)),
+        p.elevated,
         palette,
     );
 
@@ -513,56 +515,4 @@ fn actions_tree_row<'a>(
         .on_enter(Message::Actions(ActionsMsg::RowHover(action_id, true)))
         .on_exit(Message::Actions(ActionsMsg::RowHover(action_id, false)))
         .into()
-}
-
-fn actions_footer<'a>(
-    visible: usize,
-    total: usize,
-    palette: &'a ForgePalette,
-) -> Element<'a, Message> {
-    use iced::widget::{container, row, text};
-
-    let p = *palette;
-    let mono = forge_widgets::font(forge_widgets::FontRole::Monospace);
-
-    let left_str = forge_widgets::tr!(
-        "actions_footer_showing",
-        visible = visible as i64,
-        total = total as i64
-    );
-    let left_el = text(left_str).size(FONT_XS).color(p.text_faint).font(mono);
-
-    let storage_el = text(forge_widgets::tr!("actions_footer_storage"))
-        .size(FONT_XS)
-        .color(p.text_faint)
-        .font(mono);
-
-    let dot_size = 6.0_f32;
-    let green_dot = container(iced::widget::Space::new().width(dot_size).height(dot_size))
-        .width(dot_size)
-        .height(dot_size)
-        .style(move |_theme: &iced::Theme| iced::widget::container::Style {
-            background: Some(iced::Background::Color(p.success)),
-            border: iced::Border {
-                radius: (dot_size / 2.0).into(),
-                color: iced::Color::TRANSPARENT,
-                width: 0.0,
-            },
-            ..iced::widget::container::Style::default()
-        });
-
-    let saved_el = text(forge_widgets::tr!("actions_footer_autosaved"))
-        .size(FONT_XS)
-        .color(p.text_faint)
-        .font(mono);
-
-    let saved_group = row![green_dot, saved_el]
-        .spacing(spf(Spacing::Xxs))
-        .align_y(iced::alignment::Vertical::Center);
-
-    forge_widgets::status_footer(
-        vec![left_el.into()],
-        vec![storage_el.into(), saved_group.into()],
-        palette,
-    )
 }

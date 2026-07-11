@@ -192,7 +192,7 @@ fn add_row_button<'a>(
             .align_x(Alignment::Center),
     )
     .width(Length::Fill)
-    .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
+    .padding([9.0, 12.0])
     .on_press(msg)
     .style(
         move |_t: &iced::Theme, status| iced::widget::button::Style {
@@ -206,7 +206,7 @@ fn add_row_button<'a>(
             border: Border {
                 color: p.border_input,
                 width: BORDER_THIN,
-                radius: radius(Radius::Sm).into(),
+                radius: radius(Radius::Md).into(),
             },
             shadow: iced::Shadow::default(),
             snap: false,
@@ -220,6 +220,7 @@ fn add_row_button<'a>(
 fn row_icon_btn<'a>(
     icon: Icon,
     hover_tint: iced::Color,
+    solid_hover: bool,
     msg: Message,
     palette: &ForgePalette,
 ) -> Element<'a, Message> {
@@ -234,9 +235,13 @@ fn row_icon_btn<'a>(
                 background: match status {
                     iced::widget::button::Status::Hovered
                     | iced::widget::button::Status::Pressed => {
-                        Some(Background::Color(iced::Color {
-                            a: 0.10,
-                            ..hover_tint
+                        Some(Background::Color(if solid_hover {
+                            hover_tint
+                        } else {
+                            iced::Color {
+                                a: 0.10,
+                                ..hover_tint
+                            }
                         }))
                     }
                     _ => None,
@@ -281,13 +286,13 @@ fn step_icon_btn<'a>(
                         {
                             Some(Background::Color(p.surface_overlay))
                         }
-                        _ => Some(Background::Color(p.base)),
+                        _ => None,
                     },
                     text_color: icon_color,
                     border: Border {
-                        color: p.border_regular,
-                        width: BORDER_THIN,
-                        radius: radius(Radius::Sm).into(),
+                        color: iced::Color::TRANSPARENT,
+                        width: 0.0,
+                        radius: 4.0.into(),
                     },
                     shadow: iced::Shadow::default(),
                     snap: false,
@@ -577,7 +582,7 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
     let (pill_color, pill_label) = if action.enabled {
         (p.success, forge_widgets::tr!("action_editor_enabled"))
     } else {
-        (p.random, forge_widgets::tr!("action_editor_disabled"))
+        (p.text_faint, forge_widgets::tr!("action_editor_disabled"))
     };
     let pill: Element<'_, Message> = container(
         row![
@@ -587,11 +592,16 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
         .spacing(spf(Spacing::Xxs))
         .align_y(Alignment::Center),
     )
-    .padding([sp(Spacing::Xxs), sp(Spacing::Xs)])
+    .padding(iced::Padding {
+        top: 1.0,
+        right: 6.0,
+        bottom: 1.0,
+        left: 6.0,
+    })
     .style(move |_t: &iced::Theme| iced::widget::container::Style {
         background: Some(Background::Color(p.surface_overlay)),
         border: Border {
-            radius: radius(Radius::Sm).into(),
+            radius: 8.0.into(),
             ..Border::default()
         },
         ..iced::widget::container::Style::default()
@@ -711,12 +721,14 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
             let open_btn = row_icon_btn(
                 Icon::ExternalLink,
                 p.brand,
+                false,
                 Message::Actions(ActionsMsg::TriggerChipClicked(instance_id)),
                 palette,
             );
             let del_btn = row_icon_btn(
                 Icon::X,
                 p.random,
+                true,
                 Message::Actions(ActionsMsg::RemoveTriggerInstance(action_id, instance_id)),
                 palette,
             );
@@ -741,7 +753,7 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
                 .trailing(trailing)
                 .idle_background(p.elevated)
                 .bordered(p.border_regular, BORDER_THIN, radius(Radius::Md))
-                .padding([sp(Spacing::Xs), sp(Spacing::Sm)]);
+                .padding([9.0, 12.0]);
 
             triggers_col = triggers_col.push(trigger_card);
         }
@@ -890,7 +902,7 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
             .trailing(trailing)
             .idle_background(p.elevated)
             .bordered(p.border_regular, BORDER_THIN, radius(Radius::Md))
-            .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
+            .padding([9.0, 12.0])
             .into();
 
         let step_row: Element<'_, Message> = row![left_col, card]

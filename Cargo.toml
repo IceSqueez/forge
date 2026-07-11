@@ -31,6 +31,8 @@ members = [
   "crates/forge-speak-queue",
   "crates/forge-widgets",
   "crates/forge-app",
+  "crates/forge-components",
+  "crates/forge-desktop",
 ]
 default-members = ["crates/forge-app"]
 
@@ -130,15 +132,26 @@ block2 = { version = "0.6" }
 axum = { version = "0.8", features = ["ws"] }
 tower-http = { version = "0.7", features = ["cors", "fs"] }
 
-iced = { version = "0.14", features = [
+# Software renderer (tiny-skia) only: iced's wgpu backend drags naga 27, which fails to build
+# once gpui's naga 25 forces codespan-reporting/termcolor on in a unified workspace build. The
+# iced binary is on death row until the gpui cutover; drop this override when it is deleted.
+iced = { version = "0.14", default-features = false, features = [
   "tokio",
   "image",
   "svg",
   "advanced",
   "canvas",
   "lazy",
+  "tiny-skia",
+  "crisp",
+  "web-colors",
+  "thread-pool",
+  "linux-theme-detection",
+  "x11",
+  "wayland",
 ] }
 iced_fonts = { version = "0.3", features = ["bootstrap"] }
+gpui = { version = "=0.2.2" }
 fontdb = "0.23"
 
 rfd = { version = "0.17", default-features = false, features = [
@@ -163,6 +176,12 @@ fluent = { version = "0.17" }
 fluent-langneg = { version = "0.13" }
 unic-langid = { version = "0.9" }
 sys-locale = { version = "0.3" }
+
+# gpui pins core-foundation to exactly 0.10.0 (macOS target); the crates.io coremidi requires
+# >=0.10.1, and the two cannot share one 0.10.x. This vendored coremidi loosens its requirement
+# to "0.10" so the graph resolves at 0.10.0. macOS-only; drop once gpui relaxes its exact pin.
+[patch.crates-io]
+coremidi = { path = "vendor/coremidi" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

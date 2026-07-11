@@ -208,3 +208,51 @@ pub fn icon(icon: Icon, size: Pixels, color: Rgba) -> impl IntoElement {
         .path(icon.path())
         .text_color(color)
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use gpui::AssetSource;
+
+    use super::{Icon, IconAssets};
+
+    // Why: `from_name` is the only hand-written lookup in this file (the rest is
+    // macro-generated). The load-bearing contracts are (1) documented aliases
+    // collapse several distinct strings onto one variant — dropping an alias arm
+    // silently reroutes that string to the fallback — and (2) any unrecognised
+    // name degrades to `InfoCircle` rather than panicking; the compiler forces a
+    // `_` arm to exist but not which variant it yields, so this pins the choice.
+    #[test]
+    fn from_name_collapses_aliases_and_falls_back_to_info_circle() {
+        for (name, expected) in [
+            ("home", Icon::Home),
+            ("bolt", Icon::Bolt),
+            ("lightning", Icon::Bolt),
+            ("x", Icon::X),
+            ("close", Icon::X),
+            ("edit", Icon::Pencil),
+            ("gear", Icon::Settings),
+            // Unrecognised names (incl. the zero-length edge case) hit the
+            // `_ => InfoCircle` fallback, not any explicit arm.
+            ("", Icon::InfoCircle),
+            ("definitely-not-a-real-icon", Icon::InfoCircle),
+        ] {
+            assert_eq!(Icon::from_name(name), expected, "from_name({name:?})");
+        }
+    }
+
+    #[test]
+    fn load_resolves_known_icon_path_to_bytes() {
+        let loaded = IconAssets.load(Icon::Home.path()).unwrap();
+        assert!(
+            matches!(loaded, Some(bytes) if !bytes.is_empty()),
+            "known icon path did not resolve to non-empty bytes"
+        );
+    }
+
+    #[test]
+    fn load_returns_none_for_unknown_path() {
+        let loaded = IconAssets.load("tabler/does-not-exist.svg").unwrap();
+        assert!(loaded.is_none());
+    }
+}

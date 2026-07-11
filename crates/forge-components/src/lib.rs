@@ -2,6 +2,7 @@ pub mod breadcrumb;
 pub mod buttons;
 pub mod cards;
 pub mod chip;
+pub mod footer;
 pub mod icons;
 pub mod palette;
 pub mod status;
@@ -14,6 +15,7 @@ pub use buttons::{
 };
 pub use cards::{Card, RowCard, card, metric_card, row_card, stat_row};
 pub use chip::{Chip, ChipGlyph, chip, filter_chip_row};
+pub use footer::{FOOTER_HEIGHT, app_footer, split_version_stage};
 pub use icons::{Icon, IconAssets, icon, icon_inherit};
 pub use palette::{
     CATPPUCCIN_MOCHA, ForgePalette, LATTE, TOKYO_NIGHT, ThemeId, bd_mauve_soft, bd_warn_soft,

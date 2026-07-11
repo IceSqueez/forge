@@ -247,13 +247,18 @@ fn drawer_role_badge<'a>(kind: BadgeKind, palette: &ForgePalette) -> Element<'a,
             .color(text_color)
             .font(font(FontRole::Body)),
     )
-    .padding([sp(Spacing::Xxs), sp(Spacing::Xxs)])
+    .padding(iced::Padding {
+        top: 1.0,
+        right: 6.0,
+        bottom: 1.0,
+        left: 6.0,
+    })
     .style(move |_t: &iced::Theme| container::Style {
         background: Some(Background::Color(bg)),
         border: Border {
             color: Color::TRANSPARENT,
             width: 0.0,
-            radius: 3.0.into(),
+            radius: 8.0.into(),
         },
         ..container::Style::default()
     })
@@ -266,7 +271,7 @@ fn section_sep<'a, Msg: 'a>(palette: &'a ForgePalette) -> Element<'a, Msg> {
 
     let p = *palette;
     container(Space::new())
-        .height(0.5_f32)
+        .height(1.0_f32)
         .width(Length::Fill)
         .style(move |_t: &iced::Theme| container::Style {
             background: Some(Background::Color(p.border_regular)),
@@ -462,14 +467,18 @@ fn selected_viewer_detail<'a>(
     let btn_style = move |_t: &iced::Theme, s: button::Status| {
         let hovered = matches!(s, button::Status::Hovered | button::Status::Pressed);
         button::Style {
-            background: Some(Background::Color(Color::TRANSPARENT)),
+            background: Some(Background::Color(if hovered {
+                p.surface_overlay
+            } else {
+                Color::TRANSPARENT
+            })),
             border: Border {
                 color: if hovered {
                     p.border_input
                 } else {
                     p.border_regular
                 },
-                width: 0.5,
+                width: 1.0,
                 radius: radius(Radius::Sm).into(),
             },
             text_color: if hovered {

@@ -353,7 +353,7 @@ fn live_chat_page_header<'a>(
     );
 
     let mut filter_chips: Vec<Element<'a, Message>> = vec![chip_all];
-    for &pid in &state.connected_platforms {
+    for pid in [PlatformId::Twitch, PlatformId::YouTube, PlatformId::Kick] {
         let color = platform_filter_chip_color(pid, palette);
         let label = match pid {
             PlatformId::Twitch => "Twitch",
@@ -488,9 +488,10 @@ fn live_chat_page_header<'a>(
     .align_y(iced::alignment::Vertical::Center);
 
     let crumb_bar = forge_widgets::breadcrumb(
-        vec![forge_widgets::BreadcrumbCrumb::leaf(forge_widgets::tr!(
-            "chat_breadcrumb_chat"
-        ))],
+        vec![
+            forge_widgets::BreadcrumbCrumb::leaf(forge_widgets::tr!("chat_breadcrumb_audience")),
+            forge_widgets::BreadcrumbCrumb::leaf(forge_widgets::tr!("chat_breadcrumb_chat")),
+        ],
         Some(header_right.into()),
         palette,
     );

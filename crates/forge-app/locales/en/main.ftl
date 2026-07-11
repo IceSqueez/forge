@@ -1246,6 +1246,7 @@ stream_apps_vtube_desc = Vtuber avatar control: hotkeys, expressions, item trigg
 
 ## Live Chat — page header / filters
 
+chat_breadcrumb_audience = Audience
 chat_breadcrumb_chat = Chat
 chat_filter_all = All
 chat_filter_events = Events only

@@ -496,3 +496,113 @@ impl RenderOnce for RowCard {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::palette::CATPPUCCIN_MOCHA as P;
+
+    const EPS: f32 = 1e-6;
+
+    fn same_rgba(a: Rgba, b: Rgba) -> bool {
+        (a.r - b.r).abs() < EPS
+            && (a.g - b.g).abs() < EPS
+            && (a.b - b.b).abs() < EPS
+            && (a.a - b.a).abs() < EPS
+    }
+
+    /// Assert a resolved border slot: `None` = transparent rule, `Some` compared
+    /// channel-wise (including alpha).
+    #[allow(clippy::panic)]
+    fn assert_border(actual: Option<Rgba>, want: Option<Rgba>, label: &str) {
+        match (actual, want) {
+            (None, None) => {}
+            (Some(got), Some(w)) => assert!(
+                same_rgba(got, w),
+                "{label}: border hue mismatch — got {got:?}, want {w:?}",
+            ),
+            _ => panic!("{label}: border presence mismatch — got {actual:?}, want {want:?}"),
+        }
+    }
+
+    fn default_colors() -> RowCardColors {
+        row_card(SharedString::from("row"), &P).colors
+    }
+
+    // The load-bearing contract of a default row-card: which `ForgePalette` field
+    // each interaction state fills with, and that ONLY the selected state draws the
+    // accent border. Fills are compared channel-wise so a mis-wire to a neighbouring
+    // field (hover→elevated, selected→surface_overlay) fails — see the distinct-hue
+    // guard below, which pins that these three fields really are different.
+    #[test]
+    fn resolve_maps_each_state_to_its_keyed_fill_and_border() {
+        let c = default_colors();
+        let cases: [(RowState, Rgba, Option<Rgba>); 3] = [
+            (RowState::Idle, TRANSPARENT, None),
+            (RowState::Hover, P.surface_overlay, None),
+            (RowState::Selected, P.elevated, Some(P.brand)),
+        ];
+        for (state, want_fill, want_border) in cases {
+            let (fill, border) = c.resolve(state);
+            assert!(
+                same_rgba(fill, want_fill),
+                "{state:?}: fill mismatch — got {fill:?}, want {want_fill:?}",
+            );
+            assert_border(border, want_border, &format!("{state:?}"));
+        }
+    }
+
+    #[test]
+    fn idle_fill_is_fully_transparent_not_an_opaque_field() {
+        // Why: idle blends into the parent surface via alpha 0.0, NOT by borrowing an
+        // opaque near-black palette field. Pin the literal so wiring idle to any
+        // opaque field (which would carry alpha 1.0) fails here.
+        let idle_fill = default_colors().resolve(RowState::Idle).0;
+        assert_eq!(idle_fill.a, 0.0);
+    }
+
+    #[test]
+    fn idle_hover_and_selected_fills_are_distinguishable_hues() {
+        // Why: the per-state test compares fills channel-wise, so it only catches a
+        // mis-wire between states if their source palette fields are actually
+        // distinct. Guard that assumption so the main test keeps its teeth.
+        let c = default_colors();
+        let idle = c.resolve(RowState::Idle).0;
+        let hover = c.resolve(RowState::Hover).0;
+        let selected = c.resolve(RowState::Selected).0;
+        assert!(!same_rgba(idle, hover), "idle and hover fills collapsed");
+        assert!(
+            !same_rgba(hover, selected),
+            "hover and selected fills collapsed"
+        );
+        assert!(
+            !same_rgba(idle, selected),
+            "idle and selected fills collapsed"
+        );
+    }
+
+    #[test]
+    fn bordered_gives_idle_a_persistent_border_that_selected_overrides() {
+        // `.bordered` promotes the flat list-row to a bordered card: idle and hover
+        // now paint the explicit border, but the selected accent must still win.
+        let border_color = P.border_regular;
+        let c = row_card(SharedString::from("row"), &P)
+            .bordered(border_color, px(1.0), px(6.0))
+            .colors;
+        assert_border(
+            c.resolve(RowState::Idle).1,
+            Some(border_color),
+            "bordered idle",
+        );
+        assert_border(
+            c.resolve(RowState::Hover).1,
+            Some(border_color),
+            "bordered hover",
+        );
+        assert_border(
+            c.resolve(RowState::Selected).1,
+            Some(P.brand),
+            "bordered selected",
+        );
+    }
+}

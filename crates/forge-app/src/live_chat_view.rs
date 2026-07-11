@@ -274,21 +274,27 @@ pub fn live_chat_view<'a>(
         .width(Length::Fill)
         .height(Length::Fill);
 
-    let panel_content = crate::live_chat_drawer::drawer_panel(state, viewers, palette);
-    let sheet = forge_widgets::SideSheet::new(panel_content)
-        .open(state.drawer_open)
-        .palette(palette)
-        .width(forge_widgets::SheetWidth::new(
-            state.drawer_width.unwrap_or(360.0).clamp(280.0, 560.0),
-            280.0,
-            560.0,
-        ))
-        .resizable(true)
-        .sheet_key("viewers_drawer")
-        .on_close(Message::LiveChat(LiveChatMsg::ToggleDrawer))
-        .on_resize(|w| Message::LiveChat(LiveChatMsg::SheetResized(w)));
-
-    let body: Element<'a, Message> = iced::widget::stack![chat_column, sheet].into();
+    let body: Element<'a, Message> = if state.drawer_open {
+        let p = *palette;
+        let panel_content = crate::live_chat_drawer::drawer_panel(state, viewers, palette);
+        let panel = iced::widget::container(panel_content)
+            .width(Length::Fixed(320.0))
+            .height(Length::Fill)
+            .style(move |_theme: &iced::Theme| iced::widget::container::Style {
+                background: Some(iced::Background::Color(p.shell)),
+                border: iced::Border {
+                    color: p.border_regular,
+                    width: 1.0,
+                    radius: 0.0.into(),
+                },
+                ..iced::widget::container::Style::default()
+            });
+        iced::widget::row![chat_column, panel]
+            .height(Length::Fill)
+            .into()
+    } else {
+        chat_column.into()
+    };
 
     iced::widget::column![page_header, body]
         .height(Length::Fill)

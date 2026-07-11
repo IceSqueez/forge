@@ -241,21 +241,7 @@ fn drawer_role_badge<'a>(kind: BadgeKind, palette: &ForgePalette) -> Element<'a,
     use iced::widget::{container, text};
     use iced::{Background, Border};
 
-    let (label, text_color) = match kind {
-        BadgeKind::Broadcaster => ("LIVE", palette.warning),
-        BadgeKind::Moderator => ("MOD", palette.success),
-        BadgeKind::Vip => ("VIP", palette.brand),
-        BadgeKind::Subscriber => ("SUB", palette.info),
-        BadgeKind::Bot => ("BOT", palette.text_muted),
-        BadgeKind::Partner => ("PARTNER", palette.accent_teal),
-        BadgeKind::Premium => ("PRIME", palette.accent_pink_light),
-        BadgeKind::Founder => ("FOUNDER", palette.disabled),
-        BadgeKind::Turbo => ("TURBO", palette.brand),
-        BadgeKind::HypeTrain => ("HYPE", palette.warning),
-        BadgeKind::Bits => ("BITS", palette.bits),
-        BadgeKind::BitsLeader => ("BITS LEADER", palette.bits),
-    };
-    let p = *palette;
+    let (label, bg, text_color) = forge_widgets::badge_visual(kind, palette);
     container(
         text(label)
             .size(FONT_XS)
@@ -264,10 +250,10 @@ fn drawer_role_badge<'a>(kind: BadgeKind, palette: &ForgePalette) -> Element<'a,
     )
     .padding([sp(Spacing::Xxs), sp(Spacing::Xxs)])
     .style(move |_t: &iced::Theme| container::Style {
-        background: Some(Background::Color(p.surface_overlay)),
+        background: Some(Background::Color(bg)),
         border: Border {
-            color: p.border_regular,
-            width: 0.5,
+            color: Color::TRANSPARENT,
+            width: 0.0,
             radius: 3.0.into(),
         },
         ..container::Style::default()

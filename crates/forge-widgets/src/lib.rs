@@ -74,7 +74,7 @@ pub use cards::{
 };
 pub use charts::throughput_sparkline;
 pub use chat::{BadgeKind, ChatBody, ChatRow, Platform, PlatformTarget, filter_chip, input_bar};
-pub use chat_widget::ChatRowWidget;
+pub use chat_widget::{ChatRowWidget, badge_visual};
 pub use chip::{ChipGlyph, ChipSpec, chip, filter_chip_row};
 pub use clip_card::{ClipCardData, clip_card};
 pub use code_editor::{CodeEditorState, rhai_editor};

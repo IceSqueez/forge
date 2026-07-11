@@ -76,7 +76,7 @@ fn badge_color(kind: BadgeKind, palette: ForgePalette) -> Color {
         BadgeKind::Vip => palette.brand,
         BadgeKind::Bot => palette.brand,
         BadgeKind::Subscriber => palette.info,
-        BadgeKind::Broadcaster => palette.random,
+        BadgeKind::Broadcaster => palette.warning,
         BadgeKind::Partner => palette.accent_teal,
         BadgeKind::Premium => palette.accent_pink_light,
         BadgeKind::Founder => palette.disabled,
@@ -93,7 +93,7 @@ fn badge_label(kind: BadgeKind) -> &'static str {
         BadgeKind::Vip => "VIP",
         BadgeKind::Subscriber => "SUB",
         BadgeKind::Bot => "BOT",
-        BadgeKind::Broadcaster => "LIVE",
+        BadgeKind::Broadcaster => "OWN",
         BadgeKind::Partner => "PARTNER",
         BadgeKind::Premium => "PRIME",
         BadgeKind::Founder => "FOUNDER",
@@ -102,6 +102,16 @@ fn badge_label(kind: BadgeKind) -> &'static str {
         BadgeKind::Bits => "BITS",
         BadgeKind::BitsLeader => "BITS LEADER",
     }
+}
+
+/// Canonical badge appearance shared by the chat feed and the viewers drawer so
+/// the two never drift: `(label, solid role-colour fill, dark shell text)`.
+pub fn badge_visual(kind: BadgeKind, palette: &ForgePalette) -> (&'static str, Color, Color) {
+    (
+        badge_label(kind),
+        badge_color(kind, *palette),
+        palette.shell,
+    )
 }
 
 fn triggered_label(body: &ChatBody) -> Option<String> {
@@ -535,8 +545,7 @@ where
 
         for (i, badge_para) in state.paragraphs.badges.iter().enumerate() {
             let kind = self.data.badges[i];
-            let color = badge_color(kind, self.palette);
-            let bg = Color { a: 0.18, ..color };
+            let bg = badge_color(kind, self.palette);
             let pad = spf(Spacing::Xxs);
             let pill_w = badge_para.min_bounds().width + pad * 2.0;
             renderer.fill_quad(
@@ -563,7 +572,7 @@ where
                     x: cursor_x + pad,
                     y: top_row_y,
                 },
-                color,
+                self.palette.shell,
                 *viewport,
             );
             cursor_x += pill_w + BADGE_SPACING;

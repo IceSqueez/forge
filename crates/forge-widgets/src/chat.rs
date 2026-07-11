@@ -337,7 +337,7 @@ pub fn input_bar<'a, Msg: Clone + 'a>(
     )
     .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
     .style(move |_theme: &iced::Theme| container::Style {
-        background: Some(Background::Color(p.base)),
+        background: Some(Background::Color(p.elevated)),
         border: Border {
             color: p.border_input,
             width: 0.5,

@@ -529,7 +529,7 @@ fn live_chat_page_header<'a>(
         .width(Length::Fill)
         .padding([sp(Spacing::Xs), sp(Spacing::Md)])
         .style(move |_: &iced::Theme| container::Style {
-            background: Some(Background::Color(p.shell)),
+            background: Some(Background::Color(p.elevated)),
             border: Border {
                 color: p.border_regular,
                 width: 0.5,

@@ -441,7 +441,7 @@ where
                 shadow: Shadow::default(),
                 snap: true,
             },
-            p.base,
+            p.shell,
         );
 
         if let Some(header) = &self.config.header {

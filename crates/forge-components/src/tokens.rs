@@ -86,3 +86,10 @@ pub const FONT_XS: Pixels = px(12.0);
 pub const FONT_SM: Pixels = px(14.0);
 pub const FONT_MD: Pixels = px(16.0);
 pub const FONT_LG: Pixels = px(18.0);
+
+/// Default typeface families. Body copy renders in Inter; monospace surfaces
+/// (IDs, numeric chips, code) render in JetBrains Mono. The per-role user
+/// override layer is not yet ported to the gpui kit, so these are the fixed
+/// defaults a component falls back to.
+pub const DEFAULT_BODY_FAMILY: &str = "Inter";
+pub const DEFAULT_MONO_FAMILY: &str = "JetBrains Mono";

@@ -292,8 +292,8 @@ fn section_sep<'a, Msg: 'a>(palette: &'a ForgePalette) -> Element<'a, Msg> {
 
 fn drawer_header<'a>(state: &'a LiveChatState, palette: &'a ForgePalette) -> Element<'a, Message> {
     use forge_widgets::{FontRole, font, tokens::FONT_XS};
+    use iced::Length;
     use iced::widget::{column, container, text};
-    use iced::{Background, Border, Length};
 
     let p = *palette;
 
@@ -323,10 +323,19 @@ fn drawer_header<'a>(state: &'a LiveChatState, palette: &'a ForgePalette) -> Ele
         shown = shown_count as i64
     );
 
-    let count_row = text(count_label)
-        .font(font(FontRole::Monospace))
-        .size(FONT_XS)
-        .color(p.text_faint);
+    let title_row = iced::widget::row![
+        forge_widgets::tabler_icon(forge_widgets::Icon::Users, 13.0, p.brand),
+        text(forge_widgets::tr!("chat_viewers_title"))
+            .size(forge_widgets::tokens::FONT_SM)
+            .color(p.text_primary)
+            .font(font(FontRole::Body)),
+        text(count_label)
+            .font(font(FontRole::Monospace))
+            .size(FONT_XS)
+            .color(p.text_faint),
+    ]
+    .spacing(6.0)
+    .align_y(iced::alignment::Vertical::Center);
 
     let search_box = search_input(
         forge_widgets::tr!("chat_drawer_search_placeholder"),
@@ -335,20 +344,11 @@ fn drawer_header<'a>(state: &'a LiveChatState, palette: &'a ForgePalette) -> Ele
         palette,
     );
 
-    let header_content = column![count_row, search_box].spacing(spf(Spacing::Xs));
+    let header_content = column![title_row, search_box].spacing(spf(Spacing::Xs));
 
     let body = container(header_content)
-        .padding([sp(Spacing::Xs), sp(Spacing::Sm)])
-        .width(Length::Fill)
-        .style(move |_t: &iced::Theme| container::Style {
-            background: Some(Background::Color(Color::TRANSPARENT)),
-            border: Border {
-                color: p.border_regular,
-                width: 0.5,
-                radius: 0.0.into(),
-            },
-            ..container::Style::default()
-        });
+        .padding([sp(Spacing::Sm), sp(Spacing::Sm)])
+        .width(Length::Fill);
 
     iced::widget::column![body, section_sep::<Message>(palette)]
         .spacing(0)

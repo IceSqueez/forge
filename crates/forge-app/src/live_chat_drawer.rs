@@ -3,7 +3,7 @@ use std::collections::{HashSet, VecDeque};
 use forge_types::{UnifiedChatRow, UserBadge};
 use forge_widgets::{
     BadgeKind, ForgePalette,
-    tokens::{Spacing, sp, spf},
+    tokens::{FONT_XXS, Spacing, sp, spf},
 };
 use iced::{Color, Element, Length};
 use time::OffsetDateTime;
@@ -212,7 +212,7 @@ fn viewer_stat<'a, Msg: 'a>(
 
     let label_el = text(l)
         .font(font(FontRole::Monospace))
-        .size(FONT_XS)
+        .size(FONT_XXS)
         .color(p.text_muted);
 
     let value_el = text(v)
@@ -236,7 +236,6 @@ fn viewer_stat<'a, Msg: 'a>(
 }
 
 fn drawer_role_badge<'a>(kind: BadgeKind, palette: &ForgePalette) -> Element<'a, Message> {
-    use forge_widgets::tokens::FONT_XS;
     use forge_widgets::{FontRole, font};
     use iced::widget::{container, text};
     use iced::{Background, Border};
@@ -244,7 +243,7 @@ fn drawer_role_badge<'a>(kind: BadgeKind, palette: &ForgePalette) -> Element<'a,
     let (label, bg, text_color) = forge_widgets::badge_visual(kind, palette);
     container(
         text(label)
-            .size(FONT_XS)
+            .size(FONT_XXS)
             .color(text_color)
             .font(font(FontRole::Body)),
     )
@@ -312,7 +311,7 @@ fn drawer_header<'a>(state: &'a LiveChatState, palette: &'a ForgePalette) -> Ele
     let title_row = iced::widget::row![
         forge_widgets::tabler_icon(forge_widgets::Icon::Users, 13.0, p.brand),
         text(forge_widgets::tr!("chat_viewers_title"))
-            .size(forge_widgets::tokens::FONT_SM)
+            .size(forge_widgets::tokens::FONT_XS)
             .color(p.text_primary)
             .font(font(FontRole::Body)),
         text(count_label)
@@ -391,7 +390,7 @@ fn selected_viewer_detail<'a>(
     );
     let last_el = text(last_label)
         .font(font(FontRole::Monospace))
-        .size(FONT_XS)
+        .size(FONT_XXS)
         .color(p.text_muted);
 
     let mut name_row_items: Vec<Element<'a, Message>> = vec![name_el.into()];
@@ -612,7 +611,7 @@ fn drawer_viewer_row<'a>(
 ) -> Element<'a, Message> {
     use forge_widgets::{
         FontRole, font,
-        tokens::{FONT_SM, FONT_XS, Radius},
+        tokens::{FONT_XS, Radius},
     };
     use iced::widget::{Space, button, column, container, row, text};
     use iced::{Background, Border};
@@ -640,7 +639,7 @@ fn drawer_viewer_row<'a>(
 
     let name_el = text(summary.username.clone())
         .font(font(FontRole::Body))
-        .size(FONT_SM)
+        .size(FONT_XS)
         .color(p.text_primary);
 
     let mut name_row_items: Vec<Element<'a, Message>> = vec![name_el.into()];
@@ -656,14 +655,14 @@ fn drawer_viewer_row<'a>(
         summary.watch_time, summary.message_count
     ))
     .font(font(FontRole::Monospace))
-    .size(FONT_XS)
+    .size(FONT_XXS)
     .color(p.text_muted);
 
     let name_col = column![name_row, meta_el].spacing(spf(Spacing::Xxs));
 
     let last_el = text(summary.last_seen_label.clone())
         .font(font(FontRole::Monospace))
-        .size(FONT_XS)
+        .size(FONT_XXS)
         .color(p.text_faint);
 
     let row_content = row![
@@ -741,7 +740,7 @@ fn viewer_list<'a>(
     let section_header = container(
         text(section_label)
             .font(font(FontRole::Monospace))
-            .size(FONT_XS)
+            .size(FONT_XXS)
             .color(p.text_faint),
     )
     .padding([sp(Spacing::Xs), sp(Spacing::Sm)])

@@ -1254,10 +1254,9 @@ stream_apps_vtube_desc = Керування аватаром Vtuber: гаряч�
 
 ## Живий чат — заголовок / фільтри
 
-chat_breadcrumb_audience = Аудиторія
 chat_breadcrumb_chat = Чат
 chat_filter_all = Всі
-chat_filter_events = Події
+chat_filter_events = Лише події
 chat_filter_hide_bots = Сховати ботів
 chat_send_placeholder_disconnected = Підключіть платформу для відправки...
 chat_send_placeholder_connected = Надіслати в чат...

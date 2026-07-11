@@ -313,10 +313,9 @@ fn live_chat_page_header<'a>(
     let mono = forge_widgets::font(forge_widgets::FontRole::Monospace);
 
     let crumb_bar = forge_widgets::breadcrumb(
-        vec![
-            forge_widgets::BreadcrumbCrumb::leaf(forge_widgets::tr!("chat_breadcrumb_audience")),
-            forge_widgets::BreadcrumbCrumb::leaf(forge_widgets::tr!("chat_breadcrumb_chat")),
-        ],
+        vec![forge_widgets::BreadcrumbCrumb::leaf(forge_widgets::tr!(
+            "chat_breadcrumb_chat"
+        ))],
         None,
         palette,
     );

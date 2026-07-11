@@ -2,7 +2,7 @@ use std::collections::{HashSet, VecDeque};
 
 use forge_types::{UnifiedChatRow, UserBadge};
 use forge_widgets::{
-    BadgeKind, ForgePalette, search_input,
+    BadgeKind, ForgePalette,
     tokens::{Spacing, sp, spf},
 };
 use iced::{Color, Element, Length};
@@ -224,7 +224,7 @@ fn viewer_stat<'a, Msg: 'a>(
         .padding([sp(Spacing::Xs), sp(Spacing::Xs)])
         .width(Length::Fill)
         .style(move |_t: &iced::Theme| container::Style {
-            background: Some(Background::Color(p.base)),
+            background: Some(Background::Color(p.elevated)),
             border: Border {
                 color: Color::TRANSPARENT,
                 width: 0.0,
@@ -337,10 +337,11 @@ fn drawer_header<'a>(state: &'a LiveChatState, palette: &'a ForgePalette) -> Ele
     .spacing(6.0)
     .align_y(iced::alignment::Vertical::Center);
 
-    let search_box = search_input(
+    let search_box = forge_widgets::search_input_on(
         forge_widgets::tr!("chat_drawer_search_placeholder"),
         &state.drawer_search,
         |s| Message::LiveChat(LiveChatMsg::DrawerSearchChanged(s)),
+        p.elevated,
         palette,
     );
 
@@ -632,8 +633,8 @@ fn drawer_viewer_row<'a>(
 
     let p = *palette;
     let stripe_color = if is_sel { p.brand } else { Color::TRANSPARENT };
-    let selected_bg = p.elevated;
-    let hover_bg = p.base;
+    let selected_bg = p.surface_overlay;
+    let hover_bg = p.elevated;
 
     let stripe = container(Space::new().width(2).height(Length::Fill))
         .width(2)
@@ -846,7 +847,7 @@ fn whisper_modal<'a>(
 
     let is_empty = form.message.trim().is_empty();
     let send_bg = if is_empty { p.surface_overlay } else { p.brand };
-    let send_text_color = if is_empty { p.text_faint } else { p.base };
+    let send_text_color = if is_empty { p.text_faint } else { p.shell };
 
     let send_btn = button(
         text(forge_widgets::tr!("chat_drawer_whisper_send"))

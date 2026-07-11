@@ -185,6 +185,19 @@ pub fn search_input<'a, Msg: 'a + Clone>(
     on_change: impl Fn(String) -> Msg + 'a,
     palette: &ForgePalette,
 ) -> Element<'a, Msg> {
+    search_input_on(placeholder, value, on_change, palette.shell, palette)
+}
+
+/// [`search_input`] with an explicit surface fill, for search boxes that sit on
+/// a panel whose background matches the default `shell` fill (e.g. the crust
+/// viewers drawer, where the box uses the lighter `elevated` surface instead).
+pub fn search_input_on<'a, Msg: 'a + Clone>(
+    placeholder: impl Into<Cow<'a, str>>,
+    value: &'a str,
+    on_change: impl Fn(String) -> Msg + 'a,
+    surface: Color,
+    palette: &ForgePalette,
+) -> Element<'a, Msg> {
     let p = *palette;
     let ph: Cow<'a, str> = placeholder.into();
     let icon = tabler_icon(Icon::Search, 14.0, p.text_muted);
@@ -199,7 +212,7 @@ pub fn search_input<'a, Msg: 'a + Clone>(
     container(inner)
         .padding(input_padding())
         .style(move |_theme| container::Style {
-            background: Some(Background::Color(p.shell)),
+            background: Some(Background::Color(surface)),
             border: Border {
                 color: p.border_regular,
                 width: BORDER_THIN,

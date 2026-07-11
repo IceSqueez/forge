@@ -119,3 +119,45 @@ pub fn connection_status_badge(
         );
     badge_frame(palette.surface_overlay, row)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::palette::CATPPUCCIN_MOCHA;
+
+    /// `colors` maps each variant to a distinct semantic hue and derives the
+    /// chip fill as a translucent tint of that same hue.
+    ///
+    /// Why this is not tautological: the variant→field wiring is a hand-written
+    /// match with plausible wrong alternatives (Negative could be mis-wired to
+    /// `warning`, Neutral to `text_muted`), so a field swap that ships a bug
+    /// flips these assertions. The fill contract pins the magic tint alpha and
+    /// the "fill shares the ink's hue" relationship — `fill.a` is asserted as a
+    /// literal float, not recomputed via `with_alpha` (which would only restate
+    /// the impl).
+    #[test]
+    fn colors_map_each_variant_to_its_hue_with_a_translucent_tint_fill() {
+        let p = &CATPPUCCIN_MOCHA;
+        for (variant, expected_ink) in [
+            (StatusVariant::Positive, p.success),
+            (StatusVariant::Negative, p.random),
+            (StatusVariant::Neutral, p.disabled),
+        ] {
+            let (fill, ink) = variant.colors(p);
+
+            assert_eq!(ink, expected_ink, "{variant:?} ink hue");
+
+            // Fill is the same hue as the ink, only more transparent.
+            assert_eq!(
+                (fill.r, fill.g, fill.b),
+                (ink.r, ink.g, ink.b),
+                "{variant:?} fill hue"
+            );
+            assert!(
+                (fill.a - 0.18).abs() < 1e-6,
+                "{variant:?} fill alpha: got {}, want 0.18",
+                fill.a
+            );
+        }
+    }
+}

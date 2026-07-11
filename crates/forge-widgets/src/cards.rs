@@ -257,7 +257,7 @@ impl<'a, Msg: 'a> RowCard<'a, Msg> {
         self
     }
 
-    /// Mark the row selected: fills [`RowCard::selected_bg`] and draws a full
+    /// Mark the row selected: fills the selected background and draws a full
     /// accent border.
     #[must_use]
     pub fn selected(mut self, selected: bool) -> Self {

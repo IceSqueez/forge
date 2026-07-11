@@ -1284,6 +1284,7 @@ chat_header_viewers = { $count ->
 }
 chat_show_viewers = Показати глядачів
 chat_hide_viewers = Сховати глядачів
+chat_search_placeholder = Пошук повідомлень...
 chat_new_message = 1 нове повідомлення
 chat_new_messages = { $count ->
     [one] { $count } нове повідомлення

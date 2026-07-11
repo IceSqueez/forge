@@ -157,6 +157,7 @@ pub struct LiveChatState {
     pub events_filter: EventsFilter,
     pub hide_bots: bool,
     pub search_query: String,
+    pub search_open: bool,
     pub auto_scroll: bool,
     pub scroll_position: f32,
     pub input_buffer: String,
@@ -294,6 +295,7 @@ impl LiveChatState {
             events_filter: EventsFilter::All,
             hide_bots: false,
             search_query: String::new(),
+            search_open: false,
             auto_scroll: true,
             scroll_position: 0.0,
             input_buffer: String::new(),
@@ -357,6 +359,13 @@ pub fn update(state: &mut LiveChatState, rt: &RuntimeView, msg: LiveChatMsg) -> 
             state.search_query = q;
             if was_empty && !state.search_query.is_empty() {
                 state.auto_scroll = false;
+            }
+            Task::none()
+        }
+        LiveChatMsg::SearchToggled => {
+            state.search_open = !state.search_open;
+            if !state.search_open {
+                state.search_query.clear();
             }
             Task::none()
         }

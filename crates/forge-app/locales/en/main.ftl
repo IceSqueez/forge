@@ -1270,6 +1270,7 @@ chat_header_viewers = { $count ->
 }
 chat_show_viewers = Show viewers
 chat_hide_viewers = Hide viewers
+chat_search_placeholder = Search messages...
 chat_new_message = 1 new message
 chat_new_messages = { $count } new messages
 chat_viewers_title = Viewers

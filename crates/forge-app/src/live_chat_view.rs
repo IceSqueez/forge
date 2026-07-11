@@ -304,6 +304,32 @@ fn platform_filter_chip_color(id: PlatformId, palette: &ForgePalette) -> Color {
     platform_id_to_widget(id).color(palette)
 }
 
+fn filter_icon_button_style(
+    p: ForgePalette,
+) -> impl Fn(&iced::Theme, iced::widget::button::Status) -> iced::widget::button::Style {
+    move |_theme, status| {
+        let hovered = matches!(
+            status,
+            iced::widget::button::Status::Hovered | iced::widget::button::Status::Pressed
+        );
+        iced::widget::button::Style {
+            background: None,
+            text_color: if hovered {
+                p.text_primary
+            } else {
+                p.text_secondary
+            },
+            border: iced::Border {
+                color: iced::Color::TRANSPARENT,
+                width: 0.0,
+                radius: radius(Radius::Sm).into(),
+            },
+            shadow: iced::Shadow::default(),
+            snap: false,
+        }
+    }
+}
+
 fn live_chat_page_header<'a>(
     state: &'a LiveChatState,
     live_viewers: LiveViewerCount,
@@ -468,9 +494,41 @@ fn live_chat_page_header<'a>(
         palette,
     );
 
-    let filter_row = row![chips, iced::widget::Space::new().width(Length::Fill)]
-        .spacing(spf(Spacing::Xs))
-        .align_y(iced::alignment::Vertical::Center);
+    let toggle_icon = if state.search_open {
+        Icon::X
+    } else {
+        Icon::Search
+    };
+    let search_toggle = button(tabler_icon(toggle_icon, 15.0, p.text_faint))
+        .on_press(Message::LiveChat(LiveChatMsg::SearchToggled))
+        .padding(sp(Spacing::Xxs))
+        .style(filter_icon_button_style(p));
+
+    let search_control: Element<'a, Message> = if state.search_open {
+        row![
+            container(forge_widgets::search_input(
+                forge_widgets::tr!("chat_search_placeholder"),
+                &state.search_query,
+                |s| Message::LiveChat(LiveChatMsg::SearchChanged(s)),
+                palette,
+            ))
+            .width(Length::Fixed(220.0)),
+            search_toggle,
+        ]
+        .spacing(spf(Spacing::Xxs))
+        .align_y(iced::alignment::Vertical::Center)
+        .into()
+    } else {
+        search_toggle.into()
+    };
+
+    let filter_row = row![
+        chips,
+        iced::widget::Space::new().width(Length::Fill),
+        search_control,
+    ]
+    .spacing(spf(Spacing::Xs))
+    .align_y(iced::alignment::Vertical::Center);
 
     let filter_bar = container(filter_row)
         .width(Length::Fill)

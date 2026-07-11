@@ -667,6 +667,7 @@ pub enum LiveChatMsg {
     EventsFilterToggled(EventsFilter),
     HideBotsToggled,
     SearchChanged(String),
+    SearchToggled,
     AutoScrollToggled,
     InputChanged(String),
     CrossPostToggled,

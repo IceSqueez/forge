@@ -699,10 +699,9 @@ fn theme_option<'a>(
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     let (title, subtitle) = match theme_id {
-        forge_widgets::ThemeId::CatppuccinMocha => (
-            "Catppuccin Mocha",
-            forge_widgets::tr!("settings_theme_mocha_desc"),
-        ),
+        forge_widgets::ThemeId::CatppuccinMocha => {
+            ("Default", forge_widgets::tr!("settings_theme_mocha_desc"))
+        }
         forge_widgets::ThemeId::TokyoNight => (
             "Tokyo Night",
             forge_widgets::tr!("settings_theme_tokyo_desc"),

@@ -14,7 +14,7 @@ pub fn catppuccin_mocha() -> (Theme, ForgePalette) {
         danger: CATPPUCCIN_MOCHA.random,
     };
     (
-        Theme::custom("Catppuccin Mocha".to_owned(), palette),
+        Theme::custom("Default".to_owned(), palette),
         CATPPUCCIN_MOCHA,
     )
 }

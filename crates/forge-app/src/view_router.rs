@@ -38,7 +38,14 @@ pub fn view(app: &App) -> Element<'_, Message> {
 
     let screen_content: Element<'_, Message> = match &app.screen {
         Screen::Home => crate::home::home_view(app, palette),
-        Screen::LiveChat => live_chat_view(&app.ui.live_chat, &app.ui.viewers, &app.rt, palette),
+        Screen::LiveChat => live_chat_view(
+            &app.ui.live_chat,
+            &app.ui.viewers,
+            &app.rt,
+            app.ui.home.live_viewers,
+            &uptime_str,
+            palette,
+        ),
         Screen::Globals => globals_view(app, palette),
         Screen::ActionEditor(_) => crate::actions_view::actions_view(app, palette),
         Screen::Queues => queues_view(&app.ui.queues, palette),

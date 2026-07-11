@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use forge_runtime::LiveViewerCount;
 use forge_types::{ChatEventDetail, ChatSource, EventId, PlatformId, UnifiedChatRow, UserBadge};
 use forge_widgets::{
     BadgeKind, ChatBody, ChatRow, ForgePalette, Icon, Platform, PlatformTarget, tabler_icon,
@@ -230,9 +231,11 @@ pub fn live_chat_view<'a>(
     state: &'a LiveChatState,
     viewers: &'a ViewersState,
     rt: &RuntimeView,
+    live_viewers: LiveViewerCount,
+    uptime: &str,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
-    let page_header = live_chat_page_header(state, palette);
+    let page_header = live_chat_page_header(state, live_viewers, uptime, palette);
     let chat_area = build_chat_area(state, rt, palette);
 
     let targets: Vec<PlatformTarget<'a, Message>> = state
@@ -303,6 +306,8 @@ fn platform_filter_chip_color(id: PlatformId, palette: &ForgePalette) -> Color {
 
 fn live_chat_page_header<'a>(
     state: &'a LiveChatState,
+    live_viewers: LiveViewerCount,
+    uptime: &str,
     palette: &'a ForgePalette,
 ) -> Element<'a, Message> {
     use forge_widgets::tokens::FONT_XS;
@@ -310,15 +315,6 @@ fn live_chat_page_header<'a>(
     use iced::{Background, Border};
 
     let p = *palette;
-    let mono = forge_widgets::font(forge_widgets::FontRole::Monospace);
-
-    let crumb_bar = forge_widgets::breadcrumb(
-        vec![forge_widgets::BreadcrumbCrumb::leaf(forge_widgets::tr!(
-            "chat_breadcrumb_chat"
-        ))],
-        None,
-        palette,
-    );
 
     let label_all = forge_widgets::tr!("chat_filter_all");
     let chip_all = forge_widgets::filter_chip(
@@ -388,41 +384,6 @@ fn live_chat_page_header<'a>(
         .spacing(spf(Spacing::Xxs))
         .align_y(iced::alignment::Vertical::Center);
 
-    let divider = container(iced::widget::Space::new().width(0.5).height(16.0))
-        .width(0.5)
-        .height(16.0)
-        .style(move |_: &iced::Theme| container::Style {
-            background: Some(Background::Color(p.border_regular)),
-            ..container::Style::default()
-        });
-
-    let match_count = if state.search_query.is_empty() {
-        state.rows.len()
-    } else {
-        let q = state.search_query.as_str();
-        state
-            .rows
-            .iter()
-            .filter(|r| row_match_opacity(r, q) >= 1.0)
-            .count()
-    };
-
-    let viewer_count_str = if state.search_query.is_empty() {
-        let count = state.rows.len() as i64;
-        forge_widgets::tr!("chat_messages_count", count = count)
-    } else {
-        let count = match_count as i64;
-        forge_widgets::tr!("chat_matches_count", count = count)
-    };
-    let viewer_info = row![
-        text(viewer_count_str)
-            .size(FONT_XS)
-            .color(p.text_secondary)
-            .font(mono),
-    ]
-    .spacing(spf(Spacing::Xs))
-    .align_y(iced::alignment::Vertical::Center);
-
     let drawer_label = if state.drawer_open {
         forge_widgets::tr!("chat_hide_viewers")
     } else {
@@ -464,15 +425,52 @@ fn live_chat_page_header<'a>(
         }
     });
 
-    let filter_row = row![
-        chips,
-        iced::widget::Space::new().width(Length::Fill),
-        viewer_info,
-        divider,
-        drawer_btn
+    let viewers_dot_color = match live_viewers {
+        LiveViewerCount::Reporting(_) => p.success,
+        LiveViewerCount::Empty => p.text_faint,
+    };
+    let viewers_label = match live_viewers {
+        LiveViewerCount::Reporting(n) => forge_widgets::tr!(
+            "chat_header_viewers",
+            count = n as i64,
+            formatted = forge_widgets::fmt_number(n as f64, 0)
+        ),
+        LiveViewerCount::Empty => "\u{2014}".to_owned(),
+    };
+    let viewers_span = row![
+        forge_widgets::status_dot(viewers_dot_color, 6.0),
+        text(viewers_label).size(FONT_XS).color(p.text_secondary),
     ]
-    .spacing(spf(Spacing::Xs))
+    .spacing(spf(Spacing::Xxs))
     .align_y(iced::alignment::Vertical::Center);
+
+    let uptime_span = row![
+        tabler_icon(Icon::Clock, 12.0, p.text_muted),
+        text(uptime.to_owned()).size(FONT_XS).color(p.text_muted),
+    ]
+    .spacing(spf(Spacing::Xxs))
+    .align_y(iced::alignment::Vertical::Center);
+
+    let header_right = row![
+        viewers_span,
+        text("\u{00b7}").size(FONT_XS).color(p.text_faint),
+        uptime_span,
+        drawer_btn,
+    ]
+    .spacing(spf(Spacing::Sm))
+    .align_y(iced::alignment::Vertical::Center);
+
+    let crumb_bar = forge_widgets::breadcrumb(
+        vec![forge_widgets::BreadcrumbCrumb::leaf(forge_widgets::tr!(
+            "chat_breadcrumb_chat"
+        ))],
+        Some(header_right.into()),
+        palette,
+    );
+
+    let filter_row = row![chips, iced::widget::Space::new().width(Length::Fill)]
+        .spacing(spf(Spacing::Xs))
+        .align_y(iced::alignment::Vertical::Center);
 
     let filter_bar = container(filter_row)
         .width(Length::Fill)

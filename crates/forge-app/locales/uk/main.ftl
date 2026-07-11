@@ -1276,6 +1276,12 @@ chat_matches_count = { $count ->
     [many] { $count } збігів
    *[other] { $count } збігів
 }
+chat_header_viewers = { $count ->
+    [one] { $formatted } глядач
+    [few] { $formatted } глядачі
+    [many] { $formatted } глядачів
+   *[other] { $formatted } глядачів
+}
 chat_show_viewers = Показати глядачів
 chat_hide_viewers = Сховати глядачів
 chat_new_message = 1 нове повідомлення

@@ -1264,6 +1264,10 @@ chat_matches_count = { $count ->
     [one] { $count } match
    *[other] { $count } matches
 }
+chat_header_viewers = { $count ->
+    [one] { $formatted } viewer
+   *[other] { $formatted } viewers
+}
 chat_show_viewers = Show viewers
 chat_hide_viewers = Hide viewers
 chat_new_message = 1 new message

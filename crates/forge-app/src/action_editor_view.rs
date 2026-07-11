@@ -639,21 +639,28 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
     .align_y(Alignment::Start)
     .into();
 
-    let triggers_label = text(forge_widgets::tr!("action_editor_section_triggers"))
-        .size(FONT_XS)
-        .color(p.text_muted)
-        .font(mono);
+    let triggers_label = text(forge_widgets::tr!(
+        "action_editor_section_triggers_count",
+        count = detail.trigger_instances.len() as i64
+    ))
+    .size(FONT_XXS)
+    .color(p.text_muted)
+    .font(mono);
 
     let add_trigger_lbl = forge_widgets::tr!("action_editor_add_trigger");
-    let triggers_count = text(detail.trigger_instances.len().to_string())
-        .size(FONT_XS)
-        .color(p.text_faint)
-        .font(mono);
+    let triggers_hint = row![
+        tabler_icon(Icon::InfoCircle, 11.0, p.text_faint),
+        text(forge_widgets::tr!("action_editor_triggers_hint"))
+            .size(FONT_XXS)
+            .color(p.text_faint),
+    ]
+    .spacing(spf(Spacing::Xxs))
+    .align_y(Alignment::Center);
 
     let triggers_header: Element<'_, Message> = row![
         triggers_label,
         iced::widget::Space::new().width(Length::Fill),
-        triggers_count,
+        triggers_hint,
     ]
     .align_y(Alignment::Center)
     .into();
@@ -760,9 +767,10 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
 
     let header_left: Element<'_, Message> = if at_root {
         text(forge_widgets::tr!(
-            "action_editor_section_sub_actions_label"
+            "action_editor_section_sub_actions",
+            count = current_chain.len() as i64
         ))
-        .size(FONT_XS)
+        .size(FONT_XXS)
         .color(p.text_muted)
         .font(mono)
         .into()
@@ -770,16 +778,19 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
         breadcrumb_header(app, action, nav_path, palette)
     };
 
-    let sub_count = text(current_chain.len().to_string())
-        .size(FONT_XS)
-        .color(p.text_faint)
-        .font(mono);
-
-    let sub_header: Element<'_, Message> = row![
-        header_left,
-        iced::widget::Space::new().width(Length::Fill),
-        sub_count,
-    ]
+    let sub_header: Element<'_, Message> = if at_root {
+        row![header_left]
+    } else {
+        let sub_count = text(current_chain.len().to_string())
+            .size(FONT_XXS)
+            .color(p.text_faint)
+            .font(mono);
+        row![
+            header_left,
+            iced::widget::Space::new().width(Length::Fill),
+            sub_count,
+        ]
+    }
     .align_y(Alignment::Center)
     .into();
 
@@ -854,7 +865,7 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
 
         let icon_el = tabler_icon(step_icon, 13.0, p.text_secondary);
         let title_el = text(title)
-            .size(FONT_SM)
+            .size(FONT_XS)
             .color(p.text_primary)
             .font(font_weighted(FontRole::Body, FontWeight::SemiBold));
 

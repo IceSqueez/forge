@@ -16,14 +16,14 @@ pub fn action_stat<'a, Msg: 'a>(
     palette: &ForgePalette,
 ) -> Element<'a, Msg> {
     use forge_widgets::FontRole;
-    use forge_widgets::tokens::{FONT_SM, FONT_XS};
+    use forge_widgets::tokens::{FONT_SM, FONT_XXS};
     use iced::widget::{column, text};
 
     let p = *palette;
     let mono = forge_widgets::font(FontRole::Monospace);
 
     let label_el = text(label.to_owned())
-        .size(FONT_XS)
+        .size(FONT_XXS)
         .color(p.text_faint)
         .font(mono);
 
@@ -34,7 +34,7 @@ pub fn action_stat<'a, Msg: 'a>(
 
     if let Some(hint_str) = hint {
         let hint_el = text(hint_str.to_owned())
-            .size(FONT_XS)
+            .size(FONT_XXS)
             .color(p.text_muted)
             .font(mono);
         column![label_el, value_el, hint_el]

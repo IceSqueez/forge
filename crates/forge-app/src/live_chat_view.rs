@@ -285,10 +285,11 @@ pub fn live_chat_view<'a>(
         ))
         .resizable(true)
         .sheet_key("viewers_drawer")
+        .header_icon(Icon::Users, palette.brand)
         .header(forge_widgets::SheetHeader {
             title: std::borrow::Cow::Owned(forge_widgets::tr!("chat_viewers_title")),
             subtitle: None,
-            on_close: Some(Message::LiveChat(LiveChatMsg::ToggleDrawer)),
+            on_close: None,
         })
         .on_close(Message::LiveChat(LiveChatMsg::ToggleDrawer))
         .on_resize(|w| Message::LiveChat(LiveChatMsg::SheetResized(w)));

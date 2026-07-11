@@ -203,6 +203,7 @@ pub fn search_input_on<'a, Msg: 'a + Clone>(
     let icon = tabler_icon(Icon::Search, 14.0, p.text_muted);
     let input = text_input(ph.as_ref(), value)
         .on_input(on_change)
+        .size(FONT_XS)
         .padding(0)
         .width(iced::Length::Fill)
         .style(move |_theme, status| borderless_input_style(p, status));

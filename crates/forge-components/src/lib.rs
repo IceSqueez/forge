@@ -1,8 +1,10 @@
+pub mod chip;
 pub mod icons;
 pub mod palette;
 pub mod status;
 pub mod tokens;
 
+pub use chip::{Chip, ChipGlyph, chip, filter_chip_row};
 pub use icons::{Icon, IconAssets, icon};
 pub use palette::{
     CATPPUCCIN_MOCHA, ForgePalette, LATTE, TOKYO_NIGHT, ThemeId, bd_mauve_soft, bd_warn_soft,

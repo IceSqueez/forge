@@ -500,14 +500,14 @@ fn live_chat_page_header<'a>(
     } else {
         Icon::Search
     };
-    let search_toggle = button(tabler_icon(toggle_icon, 15.0, p.text_faint))
+    let search_toggle = button(tabler_icon(toggle_icon, 14.0, p.text_faint))
         .on_press(Message::LiveChat(LiveChatMsg::SearchToggled))
         .padding(sp(Spacing::Xxs))
         .style(filter_icon_button_style(p));
 
     let search_control: Element<'a, Message> = if state.search_open {
         row![
-            container(forge_widgets::search_input(
+            container(forge_widgets::search_input_compact(
                 forge_widgets::tr!("chat_search_placeholder"),
                 &state.search_query,
                 |s| Message::LiveChat(LiveChatMsg::SearchChanged(s)),

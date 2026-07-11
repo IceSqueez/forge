@@ -7,7 +7,7 @@ use iced::{
 
 use crate::icons::{Icon, tabler_icon};
 use crate::palette::ForgePalette;
-use crate::tokens::{BORDER_THIN, Radius, Spacing, radius, sp};
+use crate::tokens::{BORDER_THIN, FONT_XS, Radius, Spacing, radius, sp, spf};
 
 pub fn input_padding() -> Padding {
     Padding::from([sp(Spacing::Xs), sp(Spacing::Sm)])
@@ -198,6 +198,41 @@ pub fn search_input<'a, Msg: 'a + Clone>(
         .align_y(iced::Alignment::Center);
     container(inner)
         .padding(input_padding())
+        .style(move |_theme| container::Style {
+            background: Some(Background::Color(p.shell)),
+            border: Border {
+                color: p.border_regular,
+                width: BORDER_THIN,
+                radius: radius(Radius::Sm).into(),
+            },
+            ..container::Style::default()
+        })
+        .into()
+}
+
+/// Chip-height variant of [`search_input`]: `FONT_XS` text and `Xxs` vertical
+/// padding so it sits inline with filter chips and an icon toggle without
+/// changing the surrounding bar height when it appears.
+pub fn search_input_compact<'a, Msg: 'a + Clone>(
+    placeholder: impl Into<Cow<'a, str>>,
+    value: &'a str,
+    on_change: impl Fn(String) -> Msg + 'a,
+    palette: &ForgePalette,
+) -> Element<'a, Msg> {
+    let p = *palette;
+    let ph: Cow<'a, str> = placeholder.into();
+    let icon = tabler_icon(Icon::Search, FONT_XS, p.text_muted);
+    let input = text_input(ph.as_ref(), value)
+        .on_input(on_change)
+        .size(FONT_XS)
+        .padding(0)
+        .width(iced::Length::Fill)
+        .style(move |_theme, status| borderless_input_style(p, status));
+    let inner = row![icon, input]
+        .spacing(spf(Spacing::Xxs))
+        .align_y(iced::Alignment::Center);
+    container(inner)
+        .padding(Padding::from([sp(Spacing::Xxs), sp(Spacing::Sm)]))
         .style(move |_theme| container::Style {
             background: Some(Background::Color(p.shell)),
             border: Border {

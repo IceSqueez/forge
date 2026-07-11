@@ -1,11 +1,16 @@
+pub mod buttons;
 pub mod chip;
 pub mod icons;
 pub mod palette;
 pub mod status;
 pub mod tokens;
 
+pub use buttons::{
+    Button, destructive_button, ghost_button, ghost_button_with_icon, icon_button, primary_button,
+    primary_button_with_icon, primary_button_with_icon_right, secondary_button,
+};
 pub use chip::{Chip, ChipGlyph, chip, filter_chip_row};
-pub use icons::{Icon, IconAssets, icon};
+pub use icons::{Icon, IconAssets, icon, icon_inherit};
 pub use palette::{
     CATPPUCCIN_MOCHA, ForgePalette, LATTE, TOKYO_NIGHT, ThemeId, bd_mauve_soft, bd_warn_soft,
     bg_danger_soft, bg_warn_soft, with_alpha,

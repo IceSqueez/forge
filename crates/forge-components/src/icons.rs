@@ -209,6 +209,16 @@ pub fn icon(icon: Icon, size: Pixels, color: Rgba) -> impl IntoElement {
         .text_color(color)
 }
 
+/// Renders a tabler glyph that inherits the ambient text color instead of
+/// carrying its own tint. Because it declares no `text_color`, a hovered ancestor
+/// that sets one (`.hover(|s| s.text_color(..))`) cascades down and re-tints the
+/// glyph — the behavior a color-following affordance (e.g. an icon-only button
+/// whose glyph brightens with its frame) needs. Use [`icon`] when the glyph must
+/// hold a fixed tint regardless of parent state.
+pub fn icon_inherit(icon: Icon, size: Pixels) -> impl IntoElement {
+    svg().flex_none().size(size).path(icon.path())
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {

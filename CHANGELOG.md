@@ -1,12 +1,251 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.2.0-beta.3] - 2026-07-11
+### 🐛 Bug Fixes
+- *(triggers)* Store created instance config as sparse override diff
+- *(home)* Thin row dividers and hairline integration cell gaps
+- *(home)* Space glance header and divide every glance row
+- *(home)* Render glance row separators at one physical pixel
+- *(chat)* Trim breadcrumb to Chat and relabel events filter
+- *(chat)* Add users icon to viewers drawer header and drop its close X
+- *(chat)* Size the search field to chip height so the bar stops jumping
+- *(chat)* Make viewers drawer header a compact inline title with count
+- *(ui)* Paint side sheets with the crust surface to match panels
+- *(chat)* Use the elevated surface for filter bar and composer field
+- *(chat)* Match viewers drawer surfaces to design elevation
+- *(chat)* Unify feed and drawer badges as solid role fills
+- *(chat)* Scale drawer meta text down to the design font sizes
+- *(ui)* Tighten Xs and Sm spacing to the design scale
+- *(ui)* Size search input text to the design scale
+- *(chat)* Render the viewers drawer as a side panel not an overlay
+- *(chat)* Match drawer badge shape, section divider, and button hover
+- *(chat)* Show all platform chips and the audience breadcrumb
+- *(chat)* Match composer placeholder and platform pill to the design
+- *(actions)* Inline section counts, add trigger hint, scale meta text
+- *(actions)* Reconcile badge, cards, chips, search, and hovers to design
+- *(actions)* Bucket actions by their custom group name
+- *(actions)* Fix nav icon, chip glyphs, card hover/click, X hover, button weight
+
+### 🚀 Features
+- *(widgets)* Add primary-CTA empty state variant
+- *(viewers)* Add live viewer-count aggregate foundation
+- *(twitch)* Report live viewer count to the aggregate
+- *(youtube)* Poll and report live concurrent viewers
+- *(kick)* Poll and report live stream viewers
+- *(home)* Show live viewers-now figure on the audience card
+- *(chat)* Show live viewers and uptime in the page header
+- *(chat)* Add toggleable message search in the filter bar
+- *(settings)* Name the default theme Default
+- *(chat)* Send to a multi-select of platform targets
+
+### 🚜 Refactor
+- *(ui)* Reskin Triggers registry to match design
+- *(ui)* Reskin Action Editor rows and rename glyph
+- *(ui)* Reskin Event Feed chips, toolbar, and inspector
+- *(ui)* Reskin Globals with hover rows and multiline editor
+- *(ui)* Reskin TTS Filters stages and Voice Aliases
+- *(ui)* Reskin Script Editor toolbar, pills, and API catalog
+- *(ui)* Reskin toggle accents, toast stacking, and modals
+- *(ui)* Reskin Settings info rows and add server token caveat
+- *(ui)* Reskin shell nav grouping, hover guard, and footer
+- *(ui)* Reskin Chat badges, cheer icon, and filter bar
+- *(nav)* Match sidebar structure to design
+
+### 🧪 Testing
+- *(widgets)* Cover theme-id round-trip, vip badge distinctness, scope namespace
+- *(chat)* Cover display_text mention-split and extended badge set_ids
+- *(chat)* Pin moderation step config-key contract and prune tautologies
+- *(triggers)* Pin sparse override diff prunes revert-to-default
+- *(runtime)* Pin live-viewer aggregate sum/absent/drop/empty
+- *(platforms)* Cover viewer-poll live/absent/transient mapping
+
+## [0.2.0-beta.2] - 2026-07-05
+### ⚙️ Miscellaneous Tasks
+- Release
+
+### 🐛 Bug Fixes
+- *(widgets)* Fire popover menu item click before dismissing menu
+- *(ui)* Keep modal open when clicking inside its card
+
+### 🚀 Features
+- *(ui)* Add theme picker with persistence
+- *(ui)* Add slider primitive and adopt it in TTS
+- *(ui)* Add multiline text_area field and adopt it
+- *(ui)* Add skeleton loader and fix false-empty registry flicker
+- *(ui)* Add inline rename to globals and script rows
+- *(ui)* Add Esc and Ctrl+Enter keyboard affordance to overlays
+
+### 🚜 Refactor
+- *(ui)* Reskin Actions detail pane to match design
+- *(ui)* Reskin Actions list rows with hover overflow menu
+- *(ui)* Unify toggle switches on one sized primitive
+- *(obs)* Swap OBS panel toggle onto shared switch primitive
+- *(ui)* Unify modal chrome with size and icon-tile slots
+- *(ui)* Unify page headers on the breadcrumb primitive
+- *(ui)* Consolidate status footers on one primitive
+- *(widgets)* Add canonical state_icon dispatcher
+- *(ui)* Fold badge builders into one and unify platform identity
+- *(ui)* Consolidate filter chips on one primitive
+- *(ui)* Make card a flexible builder and adopt on Home
+- *(ui)* Collapse overview cards and converge metric sizing
+- *(ui)* Adopt shared card across TTS surfaces
+- *(ui)* Add shared row_card primitive and adopt it
+- *(ui)* Reskin Home health strip and event rows
+- *(ui)* Reskin Platforms and letter-tile the builtin hero
+
+### 🧪 Testing
+- *(tts)* Enable twitch emote source in stage-order fixtures
+
+## [0.2.0-beta.1] - 2026-07-04
+### ⚙️ Miscellaneous Tasks
+- Release
+
+### 🐛 Bug Fixes
+- *(ui)* Align palette hexes with per-theme design values
+- *(ui)* Tighten button padding, unify radius and label size
+- *(ui)* Align input backgrounds, padding, and focus ring with design
+- *(twitch)* Wire quick actions to real shoutout/ad/title runners
+- *(ui)* Scroll event feed to bottom when auto-scroll is on
+- *(tts)* Wire dashboard now-speaking, queue, and live volume
+- *(script)* Enforce persisted op-limit and timeout at execution
+- *(tts)* Hot-register cloud engines and reflect membership in badge
+- *(server)* Re-apply persisted settings on server restart
+- *(runtime)* Test-run fires trigger once and honors its phrase
+- *(ui)* Dim disabled trigger instances in action editor
+- *(runtime)* Honor configured persisted flag in globals runners
+- *(app)* Revert globals persist toggle on write failure
+- *(audio)* Persist output device preference and resolve it at boot
+- *(hotkey)* Re-register persisted bindings at boot
+- *(ui)* Remove dead trigger-row overflow glyph
+- *(storage)* Update globals persisted flag without bumping writes
+- *(app)* Stop inflating global writes counter on persist toggle
+- *(widgets)* Delete zero-consumer client-row and overlay-file-list widgets
+- *(tts)* Gate general emote strip on strip_twitch_emotes
+- *(ui)* Gate trigger-instance delete behind confirm modal
+- *(ui)* Reachable globals delete with confirm and undo
+- *(ui)* Gate Actions delete/unlink behind shared confirm modal
+- *(ui)* Make script delete reachable and confirm-gated, add rename
+- *(ui)* Gate last 4 destructive actions behind confirm modal
+- *(storage)* Make global rename atomic and collision-checked
+- *(ui)* Validate global names and lock kind on edit
+- *(ui)* Validate script body and guard dirty-state on navigation
+- *(storage)* Copy trigger-instance links on action duplicate
+- *(ui)* Surface export/replay/script/trigger-delete failures as toasts
+- *(widgets)* Add toast drop-shadow and undo accent color
+- *(twitch)* Feed live health deltas instead of dropping the sender
+- *(youtube)* Wire connected-state builtin bundle end to end
+- *(ui)* Feed connectivity resolver to sidebar dots and platform cards
+- *(ui)* Feed home throughput sparkline real ev/s samples
+- *(ui)* Read real emitter fields in event summaries
+- *(ui)* Walk caused_by edge for event feed CAUSED section
+- *(runtime)* Preserve nested branch/loop/switch step telemetry
+- *(ui)* Toast chat/TTS async outcomes and guard Replay double-fire
+- *(ui)* Resolve triggered-action chat badge via caused_by correlation
+- *(ui)* Carry youtube member level and milestone into chat row
+- *(tts)* Source engine and voice pickers from the live registry
+- *(chat)* Render mentions inline and cover the full badge roster
+
+### 🚀 Features
+- *(ui)* Add Inter Medium/SemiBold font weight axis
+- *(tts)* Wire voice-alias resolver to strategy and CRUD
+- *(tts)* Persist TTS trigger source toggles
+- *(tts)* Gate speak sub-action by message source toggles
+- *(tts)* Strip emote tokens from reward-sourced speech
+- *(widgets)* Add shared destructive-confirm modal primitive
+- *(ui)* Thread undo action through ToastMsg::Fired contract
+- *(obs)* Live metrics, cold-connect status, and catalog fixes
+- *(widgets)* Add status dot to sidebar FlatLink
+- *(twitch)* Poll live viewer count into health metrics
+- *(script)* Emit script.log bus events and count forge::error calls
+- *(ui)* Stream script console output from the event bus
+- *(ui)* Load Home stats on cold boot, surface failures, wire Import
+- *(triggers)* Add row overflow menu with rename and use-as-template
+- *(triggers)* Make instance config editable with per-field revert
+- *(tts)* Add block-from-TTS toggle to voice alias form
+- *(chat)* Dispatch timeout, ban, and TTS-block from viewer drawer
+- *(ui)* Add Discord, MIDI, Hotkey sidebar entries
+- *(settings)* Render version card and recent releases
+
+### 🚜 Refactor
+- *(ui)* Unify bespoke dividers onto shared primitive
+- *(server)* Remove dead server-control update-arms
+- *(settings)* Remove vacuum button absent from design
+- *(ui)* Derive connectivity from one shared 5-roster resolver
+- *(ui)* Remove dead Logs screen and sidebar-group scaffolding
+- *(widgets)* Extract shared platform identity letter-tile
+
+### 🛠️ Build
+- *(deps)* Bump notify-rust to 4.18
+
+### 🧪 Testing
+- *(ui)* Pin palette structural tokens to per-theme design values
+- *(script)* Guard persisted op-limit load and enforcement
+- *(tts)* Guard speak volume clamp, payload, and resolver commands
+- *(tts)* Guard cloud engine badge registry-membership derivation
+- *(runtime)* Guard record store-only with single replay delivery
+- *(app)* Cover configured phrase in synthesized test event
+- *(storage)* Cover globals persisted query and flag round-trip
+- *(runtime)* Preserve persisted flag across globals runners
+- *(app)* Revert globals persist toggle on write failure
+- *(runtime)* Cover speak source-gating classify and toggle seam
+- *(app)* Prune tautological trigger-synthesis tests
+- *(hotkeys)* Cover stale hotkey-combo orphan cleanup
+- *(ui)* Pin cheer detail renders as inline cheer body
+- *(runtime)* Cover nested branch/loop/switch step telemetry tagging
+- *(script)* Cover script.log emission and forge::error counting
+
+## [0.1.0] - 2026-07-03
+### ⚙️ Miscellaneous Tasks
+- Release
+
+### 🐛 Bug Fixes
+- *(app)* Show honest placeholders for unknown viewer stats
+- *(platform)* Serialize PlatformId::YouTube as "youtube"
+- *(app)* Emit canonical chat.send success kind for kick/youtube
+- *(chat)* Disable unimplemented viewer-menu actions
+- *(server)* Release inner mutex before drain in ServerHandle::stop
+- *(server)* Snapshot client rows before async subscription lookups
+- *(server)* Bind and shut down server outside the handle write lock
+- *(twitch)* Release OAuth flow lock during authorization wait
+- *(server)* Snapshot clients before async subscription lookups on metrics tick
+- *(server)* Clone ServerHandle out of the lock before accessor awaits
+- *(storage)* Prune action history and executions in retention task
+- *(ui)* Align radius and font scales with design tokens
+
+### 🚀 Features
+- *(platform)* Add connection-state event and shared-self chat trait
+- *(twitch)* Realize ChatPlatform with owned event stream
+- *(kick)* Realize ChatPlatform with owned event stream
+- *(youtube)* Realize ChatPlatform with poller-backed lifecycle
+- *(storage)* Add ActionRepo::record_execution production write path
+- *(runtime)* Record action executions to telemetry table
+
+### 🚜 Refactor
+- *(storage)* Remove orphaned test-only execution insert helper
+
+### 🛠️ Build
+- *(deps)* Bump aes-gcm to 0.11 and refresh lockfile
+
+### 🧪 Testing
+- *(kick)* Cover ChatPlatform lifecycle, send-reauth and control delegation
+- *(youtube)* Cover ChatPlatform connect/disconnect transitions and dedup
+- *(types)* Assert exact wire strings for all PlatformId variants
+- *(app)* Add chat.send mapping regression tests in event_feed
+- *(storage)* Cover record_execution telemetry round-trip
+- *(runtime)* Cover ActionEngine telemetry write path
+- *(twitch)* Cover one-shot OAuth flow consumption
+- *(server)* Cover stop idempotency and client-snapshot introspection
+- *(storage)* Cover retention pruning of action_history and executions
+- *(storage)* Cover decrypt rejecting wrong-length nonce
+
 ## [0.1.0-beta.16] - 2026-06-30
 ### ⚙️ Miscellaneous Tasks
 - *(deps)* Bump actions/cache from 5 to 6 (#36)
 - *(deps)* Bump arc-swap from 1.9.1 to 1.9.2 (#38)
 - *(deps)* Bump mockall from 0.14.0 to 0.15.0 (#39)
 - *(deps)* Bump open from 5.3.5 to 5.3.6 (#37)
+- Release
 
 ### 🐛 Bug Fixes
 - *(runtime)* Cancel in-flight action on queue clear without keep-current
@@ -20,6 +259,7 @@ All notable changes to this project will be documented in this file.
 
 ### 📚 Documentation
 - *(readme)* Document expanded sub-actions and flow control
+- *(release)* Release v0.1.0-beta.16
 
 ### 🚀 Features
 - *(runtime)* Add re-entrant chain executor with control-flow signals

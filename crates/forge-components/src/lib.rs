@@ -1,3 +1,4 @@
+pub mod breadcrumb;
 pub mod buttons;
 pub mod cards;
 pub mod chip;
@@ -6,6 +7,7 @@ pub mod palette;
 pub mod status;
 pub mod tokens;
 
+pub use breadcrumb::{Breadcrumb, BreadcrumbCrumb, breadcrumb};
 pub use buttons::{
     Button, destructive_button, ghost_button, ghost_button_with_icon, icon_button, primary_button,
     primary_button_with_icon, primary_button_with_icon_right, secondary_button,

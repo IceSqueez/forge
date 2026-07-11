@@ -54,7 +54,7 @@ pub fn resample(
         .map_err(|e| AudioError::Resample(e.to_string()))?;
 
     let output = resampler
-        .process(&input_adapter, 0, None)
+        .process(&input_adapter, None)
         .map_err(|e| AudioError::Resample(e.to_string()))?;
 
     let out_frames = output.frames();

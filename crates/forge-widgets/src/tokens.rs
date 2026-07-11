@@ -86,8 +86,8 @@ impl Spacing {
         match self {
             Self::None => 0.0,
             Self::Xxs => 4.0,
-            Self::Xs => 8.0,
-            Self::Sm => 12.0,
+            Self::Xs => 6.0,
+            Self::Sm => 10.0,
             Self::Md => 16.0,
             Self::Lg => 24.0,
         }

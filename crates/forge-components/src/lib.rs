@@ -5,6 +5,7 @@ pub mod chip;
 pub mod footer;
 pub mod icons;
 pub mod palette;
+pub mod side_sheet;
 pub mod status;
 pub mod tokens;
 
@@ -21,6 +22,7 @@ pub use palette::{
     CATPPUCCIN_MOCHA, ForgePalette, LATTE, TOKYO_NIGHT, ThemeId, bd_mauve_soft, bd_warn_soft,
     bg_danger_soft, bg_warn_soft, with_alpha,
 };
+pub use side_sheet::{SheetPosition, SheetWidth, SideSheet, side_sheet};
 pub use status::{StatusVariant, badge, connection_status_badge, status_dot};
 pub use tokens::{
     BORDER_ACCENT, BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG,

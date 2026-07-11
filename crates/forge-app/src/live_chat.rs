@@ -13,7 +13,6 @@ use iced::Task;
 use time::OffsetDateTime;
 
 use crate::Message;
-use crate::live_chat_view::platform_id_to_key;
 use crate::message::{LiveChatMsg, ToastMsg};
 use crate::runtime_view::RuntimeView;
 
@@ -161,9 +160,9 @@ pub struct LiveChatState {
     pub auto_scroll: bool,
     pub scroll_position: f32,
     pub input_buffer: String,
-    pub cross_post: bool,
-    pub primary_send_target: Option<PlatformId>,
-    pub secondary_send_targets: Vec<PlatformId>,
+    /// Platforms the composer will send to. Empty = send to every connected
+    /// platform; a non-empty set sends only to those (intersected with connected).
+    pub send_targets: Vec<PlatformId>,
     pub pending_sends: HashMap<SendId, PendingSendState>,
     pub connected_platforms: Vec<PlatformId>,
     pub next_send_id: SendId,
@@ -299,9 +298,7 @@ impl LiveChatState {
             auto_scroll: true,
             scroll_position: 0.0,
             input_buffer: String::new(),
-            cross_post: false,
-            primary_send_target: Some(PlatformId::Twitch),
-            secondary_send_targets: Vec::new(),
+            send_targets: Vec::new(),
             pending_sends: HashMap::new(),
             connected_platforms: vec![PlatformId::Twitch],
             next_send_id: 0,
@@ -377,29 +374,11 @@ pub fn update(state: &mut LiveChatState, rt: &RuntimeView, msg: LiveChatMsg) -> 
             state.input_buffer = s;
             Task::none()
         }
-        LiveChatMsg::CrossPostToggled => {
-            state.cross_post = !state.cross_post;
-            Task::none()
-        }
-        LiveChatMsg::PrimarySendTargetChanged(p) => {
-            state.primary_send_target = Some(p);
-            let dp: Arc<dyn forge_storage::SettingsRepo> =
-                Arc::clone(&rt.backend) as Arc<dyn forge_storage::SettingsRepo>;
-            let key_str = platform_id_to_key(p).to_owned();
-            Task::perform(
-                async move {
-                    dp.set_string("live_chat:primary_send_target", &key_str)
-                        .await
-                        .ok();
-                },
-                |_| Message::Noop,
-            )
-        }
-        LiveChatMsg::SecondarySendTargetToggled(p) => {
-            if let Some(pos) = state.secondary_send_targets.iter().position(|&t| t == p) {
-                state.secondary_send_targets.remove(pos);
+        LiveChatMsg::SendTargetToggled(p) => {
+            if let Some(pos) = state.send_targets.iter().position(|&t| t == p) {
+                state.send_targets.remove(pos);
             } else {
-                state.secondary_send_targets.push(p);
+                state.send_targets.push(p);
             }
             Task::none()
         }
@@ -409,22 +388,16 @@ pub fn update(state: &mut LiveChatState, rt: &RuntimeView, msg: LiveChatMsg) -> 
             if body.is_empty() {
                 return Task::none();
             }
-            let mut targets: Vec<PlatformId> = Vec::new();
-            if let Some(primary) = state.primary_send_target {
-                targets.push(primary);
-            }
-            if state.cross_post {
-                for &t in &state.secondary_send_targets {
-                    if !targets.contains(&t) {
-                        targets.push(t);
-                    }
-                }
-            }
-            if targets.is_empty()
-                && let Some(&first) = state.connected_platforms.first()
-            {
-                targets.push(first);
-            }
+            let targets: Vec<PlatformId> = if state.send_targets.is_empty() {
+                state.connected_platforms.clone()
+            } else {
+                state
+                    .send_targets
+                    .iter()
+                    .copied()
+                    .filter(|t| state.connected_platforms.contains(t))
+                    .collect()
+            };
             let mut tasks: Vec<Task<Message>> = Vec::new();
             for target in targets {
                 let send_id = state.next_send_id;
@@ -485,13 +458,9 @@ pub fn update(state: &mut LiveChatState, rt: &RuntimeView, msg: LiveChatMsg) -> 
         }
         LiveChatMsg::ConnectedPlatformsUpdated(platforms) => {
             state.connected_platforms = platforms;
-            let current_valid = state
-                .primary_send_target
-                .map(|p| state.connected_platforms.contains(&p))
-                .unwrap_or(false);
-            if !current_valid {
-                state.primary_send_target = state.connected_platforms.first().copied();
-            }
+            state
+                .send_targets
+                .retain(|t| state.connected_platforms.contains(t));
             Task::none()
         }
         LiveChatMsg::ToggleDrawer => {
@@ -884,8 +853,8 @@ mod tests {
         let rt = test_rt();
         let mut state = LiveChatState::new();
         state.input_buffer = "hello chat".to_owned();
-        state.primary_send_target = Some(PlatformId::Twitch);
-        state.cross_post = false;
+        state.connected_platforms = vec![PlatformId::Twitch];
+        // Empty send_targets means "every connected platform" — here just Twitch.
         let _ = update(&mut state, &rt, LiveChatMsg::SendPressed);
         assert!(state.input_buffer.is_empty());
         assert_eq!(state.pending_sends.len(), 1);
@@ -924,19 +893,6 @@ mod tests {
             state.pending_sends[&42].status,
             PendingSendStatus::Failed(_)
         ));
-    }
-
-    #[test]
-    fn primary_send_target_change_persists_to_settings() {
-        let rt = test_rt();
-        let mut state = LiveChatState::new();
-        state.primary_send_target = None;
-        let _ = update(
-            &mut state,
-            &rt,
-            LiveChatMsg::PrimarySendTargetChanged(PlatformId::YouTube),
-        );
-        assert_eq!(state.primary_send_target, Some(PlatformId::YouTube));
     }
 
     #[test]

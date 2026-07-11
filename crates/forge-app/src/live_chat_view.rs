@@ -71,14 +71,6 @@ fn platform_id_to_widget(id: PlatformId) -> Platform {
     }
 }
 
-pub(crate) fn platform_id_to_key(id: PlatformId) -> &'static str {
-    match id {
-        PlatformId::Twitch => "twitch",
-        PlatformId::YouTube => "youtube",
-        PlatformId::Kick => "kick",
-    }
-}
-
 fn unified_badge_to_kind(badge: &UserBadge) -> BadgeKind {
     match badge {
         UserBadge::Broadcaster => BadgeKind::Broadcaster,
@@ -238,20 +230,20 @@ pub fn live_chat_view<'a>(
     let page_header = live_chat_page_header(state, live_viewers, uptime, palette);
     let chat_area = build_chat_area(state, rt, palette);
 
-    let targets: Vec<PlatformTarget<'a, Message>> = state
-        .connected_platforms
-        .iter()
-        .map(|&p| {
-            let is_primary = state.primary_send_target == Some(p);
-            PlatformTarget {
-                platform: platform_id_to_widget(p),
-                active: is_primary,
-                on_press: Some(Box::new(move || {
-                    Message::LiveChat(LiveChatMsg::PrimarySendTargetChanged(p))
-                })),
-            }
-        })
-        .collect();
+    let targets: Vec<PlatformTarget<'a, Message>> =
+        [PlatformId::Twitch, PlatformId::YouTube, PlatformId::Kick]
+            .into_iter()
+            .map(|p| {
+                let active = state.send_targets.contains(&p);
+                PlatformTarget {
+                    platform: platform_id_to_widget(p),
+                    active,
+                    on_press: Some(Box::new(move || {
+                        Message::LiveChat(LiveChatMsg::SendTargetToggled(p))
+                    })),
+                }
+            })
+            .collect();
 
     let send_placeholder = if state.connected_platforms.is_empty() {
         forge_widgets::tr!("chat_send_placeholder_disconnected")

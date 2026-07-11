@@ -161,3 +161,29 @@ pub fn filter_chip_row(chips: Vec<Chip>, density: Density) -> impl IntoElement {
         .gap(spacing(Spacing::Xxs, density))
         .children(chips)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::palette::CATPPUCCIN_MOCHA;
+
+    // Pins the selected-vs-unselected contract of `chip`: active fills with
+    // `surface_overlay` and inks `text_primary`; inactive carries no fill and inks
+    // `text_secondary`. Asserted against a real palette whose fill/ink fields hold
+    // distinct hues (surface_overlay 0x313244 ≠ base; text_primary ≠ text_secondary
+    // ≠ text_muted), so mis-wiring any arm to a neighbouring field — active→base,
+    // ink→text_muted, or dropping/adding the fill — fails here. Not a literal
+    // restatement: the child module reaches the private resolved fields directly.
+    #[test]
+    fn chip_resolves_fill_and_ink_from_active_state() {
+        let p = &CATPPUCCIN_MOCHA;
+        for (active, expected_bg, expected_ink) in [
+            (true, Some(p.surface_overlay), p.text_primary),
+            (false, None, p.text_secondary),
+        ] {
+            let c = chip("filter", ChipGlyph::None, active, p);
+            assert_eq!(c.background, expected_bg, "background for active={active}");
+            assert_eq!(c.text_color, expected_ink, "text_color for active={active}");
+        }
+    }
+}

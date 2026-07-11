@@ -11,7 +11,11 @@ path = "src/main.rs"
 
 [dependencies]
 forge-components = { path = "../forge-components" }
+forge-events = { path = "../forge-events" }
+forge-runtime = { path = "../forge-runtime" }
 gpui = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
 
 [lints]
 workspace = true

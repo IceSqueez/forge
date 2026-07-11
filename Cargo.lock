@@ -2720,7 +2720,11 @@ name = "forge-desktop"
 version = "0.2.0-beta.3"
 dependencies = [
  "forge-components",
+ "forge-events",
+ "forge-runtime",
  "gpui",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

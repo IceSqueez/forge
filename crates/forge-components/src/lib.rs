@@ -1,7 +1,9 @@
+pub mod icons;
 pub mod palette;
 pub mod status;
 pub mod tokens;
 
+pub use icons::{Icon, IconAssets, icon};
 pub use palette::{
     CATPPUCCIN_MOCHA, ForgePalette, LATTE, TOKYO_NIGHT, ThemeId, bd_mauve_soft, bd_warn_soft,
     bg_danger_soft, bg_warn_soft, with_alpha,

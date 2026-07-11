@@ -1,4 +1,5 @@
-use gpui::{Context, Window, div, prelude::*, rgb};
+use forge_components::{Icon, icon};
+use gpui::{Context, Window, div, prelude::*, px, rgb};
 
 /// Aggregate root UI state: a single entity rather than a set of topic-scoped
 /// entities.
@@ -44,6 +45,7 @@ impl Render for UiState {
             .gap_2()
             .bg(rgb(0x1e1e2e))
             .text_color(rgb(0xcdd6f4))
+            .child(icon(Icon::Bolt, px(48.0), rgb(0xf9e2af)))
             .child(div().text_xl().child("forge runtime bridge"))
             .child(
                 div()

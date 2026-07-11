@@ -3,6 +3,7 @@ mod state;
 use std::sync::Arc;
 use std::time::Duration;
 
+use forge_components::IconAssets;
 use forge_events::{Event, EventSource, EventsError};
 use forge_runtime::{EventBus, NullEventLogRepo};
 use gpui::{
@@ -52,31 +53,33 @@ fn main() {
 
     // `rt` stays owned by this stack frame for the whole of `run` (which blocks
     // until the app quits), keeping the publisher task and time driver alive.
-    Application::new().run(move |cx: &mut App| {
-        let state = cx.new(|_| UiState::new());
+    Application::new()
+        .with_assets(IconAssets)
+        .run(move |cx: &mut App| {
+            let state = cx.new(|_| UiState::new());
 
-        start_bridge(cx, state.clone(), Arc::clone(&bus));
+            start_bridge(cx, state.clone(), Arc::clone(&bus));
 
-        let options = WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
-                None,
-                size(px(720.0), px(480.0)),
-                cx,
-            ))),
-            titlebar: Some(TitlebarOptions {
-                title: Some(SharedString::from("forge runtime bridge")),
+            let options = WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
+                    None,
+                    size(px(720.0), px(480.0)),
+                    cx,
+                ))),
+                titlebar: Some(TitlebarOptions {
+                    title: Some(SharedString::from("forge runtime bridge")),
+                    ..Default::default()
+                }),
+                app_id: Some("forge-desktop".to_owned()),
                 ..Default::default()
-            }),
-            app_id: Some("forge-desktop".to_owned()),
-            ..Default::default()
-        };
+            };
 
-        let root = state.clone();
-        match cx.open_window(options, move |_, _| root) {
-            Ok(_) => cx.activate(true),
-            Err(err) => eprintln!("forge-desktop: failed to open window: {err}"),
-        }
-    });
+            let root = state.clone();
+            match cx.open_window(options, move |_, _| root) {
+                Ok(_) => cx.activate(true),
+                Err(err) => eprintln!("forge-desktop: failed to open window: {err}"),
+            }
+        });
 }
 
 /// Starts the single runtime→UI bridge task on the foreground executor. It owns

@@ -265,3 +265,32 @@ impl RenderOnce for Overlay {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ease_out_cubic;
+
+    /// Pins the easing to `1 - (1-t)^3`: the two endpoints anchor the [0,1] range, the
+    /// midpoint distinguishes ease-OUT from the plausible wrong curves (ease-in `t^3`
+    /// gives 0.125, quadratic `1-(1-t)^2` gives 0.75, linear gives 0.5), and the
+    /// ascending sweep holds the curve non-decreasing.
+    #[test]
+    fn ease_out_cubic_traces_the_expected_curve() {
+        const EPS: f32 = 1e-6;
+
+        for (t, want) in [(0.0_f32, 0.0_f32), (0.5, 0.875), (1.0, 1.0)] {
+            assert!(
+                (ease_out_cubic(t) - want).abs() < EPS,
+                "ease_out_cubic({t}) = {}, want {want}",
+                ease_out_cubic(t),
+            );
+        }
+
+        let mut prev = f32::NEG_INFINITY;
+        for t in [0.0_f32, 0.25, 0.5, 0.75, 1.0] {
+            let y = ease_out_cubic(t);
+            assert!(y >= prev, "curve dipped at t={t}: {y} < {prev}");
+            prev = y;
+        }
+    }
+}

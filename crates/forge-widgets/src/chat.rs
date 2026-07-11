@@ -120,10 +120,10 @@ fn platform_target_button<'a, Msg: Clone + 'a>(
         (Color::TRANSPARENT, palette.text_faint)
     };
 
-    let content = text(letter)
-        .size(FONT_XS)
-        .color(text_color)
-        .font(font(FontRole::Body));
+    let content = text(letter).size(9.0).color(text_color).font(iced::Font {
+        weight: iced::font::Weight::Semibold,
+        ..font(FontRole::Body)
+    });
 
     let btn = button(
         container(content)
@@ -136,7 +136,7 @@ fn platform_target_button<'a, Msg: Clone + 'a>(
     .style(move |_theme: &iced::Theme, _status| button::Style {
         background: Some(Background::Color(bg)),
         border: Border {
-            radius: radius(Radius::Sm).into(),
+            radius: 4.0.into(),
             color: Color::TRANSPARENT,
             width: 0.0,
         },
@@ -287,7 +287,7 @@ pub fn input_bar<'a, Msg: Clone + 'a>(
         .on_input(on_input.clone())
         .on_submit(on_submit)
         .padding([0, 0])
-        .size(FONT_SM)
+        .size(13.0)
         .width(Length::Fill)
         .style(move |_theme: &iced::Theme, _status| text_input::Style {
             background: Background::Color(Color::TRANSPARENT),

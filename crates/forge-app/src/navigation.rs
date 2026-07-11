@@ -62,7 +62,7 @@ pub(crate) fn nav_items_for<'a>(app: &'a App, palette: &'a ForgePalette) -> Side
             on_press: Message::Navigate(Screen::ActionEditor(None)),
         },
         NavItem::Leaf {
-            icon: Icon::Bolt,
+            icon: Icon::TargetArrow,
             label: forge_widgets::tr!("nav_item_triggers"),
             active: is_triggers_registry,
             on_press: Message::Navigate(Screen::TriggersRegistry),

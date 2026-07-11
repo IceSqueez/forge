@@ -15,6 +15,9 @@ pub enum ChipGlyph {
     None,
     Dot(Color),
     Icon(Icon, Color),
+    /// A colored status dot plus a monochrome icon (the icon inherits the
+    /// chip's text colour), matching the design's category filter chips.
+    DotIcon(Color, Icon),
 }
 
 pub fn chip<'a, Msg: Clone + 'a>(
@@ -47,6 +50,10 @@ pub fn chip<'a, Msg: Clone + 'a>(
         ChipGlyph::None => {}
         ChipGlyph::Dot(color) => content = content.push(status_dot(color, 5.0)),
         ChipGlyph::Icon(icon, color) => content = content.push(tabler_icon(icon, FONT_XS, color)),
+        ChipGlyph::DotIcon(dot_color, icon) => {
+            content = content.push(status_dot(dot_color, 5.0));
+            content = content.push(tabler_icon(icon, FONT_XS, text_color));
+        }
     }
     content = content.push(label_text);
 

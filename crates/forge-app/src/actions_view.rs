@@ -170,7 +170,7 @@ fn actions_page_header<'a>(
     );
     let chip_chat = forge_widgets::chip(
         lbl_chat,
-        forge_widgets::ChipGlyph::Icon(forge_widgets::Icon::MessageCircle, p.info),
+        forge_widgets::ChipGlyph::DotIcon(p.info, forge_widgets::Icon::MessageCircle),
         state.filter == ActionsFilter::Chat,
         Some(Message::Actions(ActionsMsg::FilterChanged(
             ActionsFilter::Chat,
@@ -179,7 +179,7 @@ fn actions_page_header<'a>(
     );
     let chip_timers = forge_widgets::chip(
         lbl_timers,
-        forge_widgets::ChipGlyph::Icon(forge_widgets::Icon::Clock, p.warning),
+        forge_widgets::ChipGlyph::DotIcon(p.warning, forge_widgets::Icon::Clock),
         state.filter == ActionsFilter::Timers,
         Some(Message::Actions(ActionsMsg::FilterChanged(
             ActionsFilter::Timers,
@@ -188,7 +188,7 @@ fn actions_page_header<'a>(
     );
     let chip_points = forge_widgets::chip(
         lbl_points,
-        forge_widgets::ChipGlyph::Icon(forge_widgets::Icon::Star, p.accent_pink_light),
+        forge_widgets::ChipGlyph::DotIcon(p.accent_pink_light, forge_widgets::Icon::Star),
         state.filter == ActionsFilter::Points,
         Some(Message::Actions(ActionsMsg::FilterChanged(
             ActionsFilter::Points,

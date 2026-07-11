@@ -50,6 +50,7 @@ pub enum Icon {
     CircleX,
     ArrowBackUp,
     Star,
+    TargetArrow,
     Flag,
     LayoutSidebar,
     Search,
@@ -76,6 +77,7 @@ impl Icon {
             Icon::Home => include_bytes!("../assets/icons/tabler/home.svg"),
             Icon::Clock => include_bytes!("../assets/icons/tabler/clock.svg"),
             Icon::Bolt => include_bytes!("../assets/icons/tabler/bolt.svg"),
+            Icon::TargetArrow => include_bytes!("../assets/icons/tabler/target-arrow.svg"),
             Icon::Terminal => include_bytes!("../assets/icons/tabler/terminal-2.svg"),
             Icon::Broadcast => include_bytes!("../assets/icons/tabler/broadcast.svg"),
             Icon::LayoutGrid => include_bytes!("../assets/icons/tabler/layout-grid.svg"),
@@ -225,5 +227,29 @@ pub fn tabler_icon<'a, Msg: 'a>(icon: Icon, size: f32, color: Color) -> Element<
         .width(iced::Length::Fixed(size))
         .height(iced::Length::Fixed(size))
         .style(move |_theme: &iced::Theme, _status: svg::Status| svg::Style { color: Some(color) })
+        .into()
+}
+
+/// [`tabler_icon`] that recolors when hovered — for glyphs sitting on a button
+/// whose hover state fills a solid background (e.g. a destructive `X` that must
+/// stay legible once its button turns solid red).
+pub fn tabler_icon_hover<'a, Msg: 'a>(
+    icon: Icon,
+    size: f32,
+    idle: Color,
+    hover: Color,
+) -> Element<'a, Msg> {
+    let handle = svg::Handle::from_memory(icon.bytes());
+    svg::Svg::new(handle)
+        .width(iced::Length::Fixed(size))
+        .height(iced::Length::Fixed(size))
+        .style(
+            move |_theme: &iced::Theme, status: svg::Status| svg::Style {
+                color: Some(match status {
+                    svg::Status::Hovered => hover,
+                    _ => idle,
+                }),
+            },
+        )
         .into()
 }

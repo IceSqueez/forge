@@ -227,7 +227,12 @@ fn row_icon_btn<'a>(
     use iced::widget::button;
 
     let p = *palette;
-    button(tabler_icon(icon, 13.0, p.text_faint))
+    let glyph = if solid_hover {
+        forge_widgets::icons::tabler_icon_hover(icon, 13.0, p.text_faint, p.shell)
+    } else {
+        tabler_icon(icon, 13.0, p.text_faint)
+    };
+    button(glyph)
         .padding([sp(Spacing::Xxs), sp(Spacing::Xxs)])
         .on_press(msg)
         .style(
@@ -718,13 +723,6 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
                 .font(mono)
                 .wrapping(iced::widget::text::Wrapping::None);
 
-            let open_btn = row_icon_btn(
-                Icon::ExternalLink,
-                p.brand,
-                false,
-                Message::Actions(ActionsMsg::TriggerChipClicked(instance_id)),
-                palette,
-            );
             let del_btn = row_icon_btn(
                 Icon::X,
                 p.random,
@@ -744,7 +742,7 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
                 .spacing(spf(Spacing::Xs))
                 .align_y(Alignment::Center);
 
-            let trailing = row![open_btn, del_btn]
+            let trailing = row![del_btn]
                 .spacing(spf(Spacing::Xxs))
                 .align_y(Alignment::Center);
 
@@ -753,7 +751,10 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
                 .trailing(trailing)
                 .idle_background(p.elevated)
                 .bordered(p.border_regular, BORDER_THIN, radius(Radius::Md))
-                .padding([9.0, 12.0]);
+                .padding([9.0, 12.0])
+                .on_press(Message::Actions(ActionsMsg::TriggerChipClicked(
+                    instance_id,
+                )));
 
             triggers_col = triggers_col.push(trigger_card);
         }
@@ -903,6 +904,7 @@ pub(crate) fn detail_pane<'a>(app: &'a App, palette: &'a ForgePalette) -> Elemen
             .idle_background(p.elevated)
             .bordered(p.border_regular, BORDER_THIN, radius(Radius::Md))
             .padding([9.0, 12.0])
+            .on_press(Message::Noop)
             .into();
 
         let step_row: Element<'_, Message> = row![left_col, card]

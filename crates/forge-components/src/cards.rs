@@ -1,6 +1,6 @@
 use gpui::{
-    AnyElement, App, IntoElement, ParentElement, Pixels, RenderOnce, Rgba, SharedString, Styled,
-    Window, div, px,
+    AnyElement, App, ClickEvent, ElementId, InteractiveElement, IntoElement, ParentElement, Pixels,
+    RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
 };
 
 use crate::palette::ForgePalette;
@@ -211,4 +211,288 @@ pub fn stat_row(
                 .text_color(palette.text_primary)
                 .child(value.into()),
         )
+}
+
+/// Boxed click handler carried by a pressable row-card. gpui passes the click
+/// event plus the window and app contexts, through which the caller reaches its
+/// entity.
+type RowClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
+
+/// A fully transparent fill/border — the row-card's idle background and its
+/// unselected border color. The source's idle look is `Color::TRANSPARENT`, an
+/// off-palette sentinel rather than a theme field, so it is carried as a literal.
+const TRANSPARENT: Rgba = Rgba {
+    r: 0.0,
+    g: 0.0,
+    b: 0.0,
+    a: 0.0,
+};
+
+/// Border-rule width the row draws in every state. The idle border paints
+/// transparent so it reserves the inset up front — selecting swaps only the color,
+/// never the geometry, so the row never shifts as it selects. The source pins this
+/// at a literal 2px rule (off the sub-pixel `BORDER_THIN` / 1px `BORDER_ACCENT`
+/// scale), so it is carried as a literal.
+const ROW_BORDER: Pixels = px(2.0);
+
+/// Gap between a row's title and its meta line — a tight two-line stack the source
+/// pins at a literal 2px, off the `Spacing` scale.
+const TITLE_META_GAP: Pixels = px(2.0);
+
+/// The three interaction states a row-card paints in. `Selected` wins over
+/// `Hover`: a selected row keeps its selected fill and accent border while hovered.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum RowState {
+    Idle,
+    Hover,
+    Selected,
+}
+
+/// The resolved fills, accent and ink a row-card paints across its idle, hover and
+/// selected states — pinned to concrete `ForgePalette` fields up front so the built
+/// [`RowCard`] carries no palette borrow (same discipline as [`crate::buttons`]).
+#[derive(Clone, Copy)]
+pub(crate) struct RowCardColors {
+    /// Idle (unselected, un-hovered) fill. Defaults to transparent so the row
+    /// blends with its parent surface.
+    pub(crate) idle_bg: Rgba,
+    /// Fill under the pointer while unselected.
+    pub(crate) hover_bg: Rgba,
+    /// Fill when selected (wins over hover).
+    pub(crate) selected_bg: Rgba,
+    /// Border color when selected.
+    pub(crate) accent: Rgba,
+    /// Persistent unselected border color; `None` renders a transparent border (the
+    /// flat list-row look), `Some` turns the row into a bordered card.
+    pub(crate) idle_border: Option<Rgba>,
+    /// Row text ink, cascaded to the title/meta/trailing children.
+    pub(crate) text: Rgba,
+}
+
+impl RowCardColors {
+    /// Resolves the `(background, border)` pair the row paints in `state`. Selected
+    /// fills `selected_bg` and draws the `accent` border regardless of hover; idle
+    /// and hover share the (possibly transparent) `idle_border`, differing only in
+    /// fill. A `None` border means the row draws its rule transparent.
+    pub(crate) fn resolve(&self, state: RowState) -> (Rgba, Option<Rgba>) {
+        match state {
+            RowState::Idle => (self.idle_bg, self.idle_border),
+            RowState::Hover => (self.hover_bg, self.idle_border),
+            RowState::Selected => (self.selected_bg, Some(self.accent)),
+        }
+    }
+}
+
+/// Shared list-row surface: a `leading` visual (status dot or icon), a `title` plus
+/// optional `meta` line, and an optional `trailing` control cluster (toggle, badge
+/// or overflow menu). Standardizes the row scaffolding — spacing, padding, the
+/// selected accent border and the whole-row hover/press affordance — so list
+/// screens stop hand-rolling it.
+///
+/// Built via [`row_card`]. Interactive rows ([`RowCard::on_click`]) hover to a
+/// subtle `surface_overlay` and, when [`RowCard::selected`], fill `elevated` with a
+/// full `brand` accent border. `leading`/`title`/`meta`/`trailing` accept arbitrary
+/// elements so a row can host an inline rename field or a badge cluster verbatim.
+/// The idle border always paints (transparent by default) so selecting swaps color
+/// without shifting the row. [`RowCard::bordered`] gives it a persistent border and
+/// rounded corners, turning the flat list-row into a bordered card (selected still
+/// wins, swapping the border for the accent).
+#[derive(IntoElement)]
+pub struct RowCard {
+    leading: Option<AnyElement>,
+    title: AnyElement,
+    meta: Option<AnyElement>,
+    trailing: Option<AnyElement>,
+    selected: bool,
+    pub(crate) colors: RowCardColors,
+    border_width: Pixels,
+    corner_radius: Pixels,
+    density: Density,
+    id: Option<ElementId>,
+    on_click: Option<RowClick>,
+}
+
+/// Start a row-card carrying `title`. Defaults: no leading/meta/trailing, a
+/// transparent idle background, `elevated` selected fill, `surface_overlay` hover
+/// fill, `brand` accent border, a `ROW_BORDER` (2px) rule, square (flat) corners,
+/// `Spacing::Xs`/`Spacing::Md` inset at the `Cozy` step, `text_primary` ink, not
+/// interactive. Fills and ink resolve from `palette` up front so the built value
+/// carries no palette borrow.
+pub fn row_card(title: impl IntoElement, palette: &ForgePalette) -> RowCard {
+    RowCard {
+        leading: None,
+        title: title.into_any_element(),
+        meta: None,
+        trailing: None,
+        selected: false,
+        colors: RowCardColors {
+            idle_bg: TRANSPARENT,
+            hover_bg: palette.surface_overlay,
+            selected_bg: palette.elevated,
+            accent: palette.brand,
+            idle_border: None,
+            text: palette.text_primary,
+        },
+        border_width: ROW_BORDER,
+        corner_radius: px(0.0),
+        density: Density::default(),
+        id: None,
+        on_click: None,
+    }
+}
+
+impl RowCard {
+    /// Leading visual placed before the title column (status dot or icon).
+    #[must_use]
+    pub fn leading(mut self, el: impl IntoElement) -> Self {
+        self.leading = Some(el.into_any_element());
+        self
+    }
+
+    /// Secondary line rendered under the title (kind id, summary, path).
+    #[must_use]
+    pub fn meta(mut self, el: impl IntoElement) -> Self {
+        self.meta = Some(el.into_any_element());
+        self
+    }
+
+    /// Trailing control cluster pinned to the row's right edge.
+    #[must_use]
+    pub fn trailing(mut self, el: impl IntoElement) -> Self {
+        self.trailing = Some(el.into_any_element());
+        self
+    }
+
+    /// Marks the row selected: fills `selected_bg` and draws a full accent border,
+    /// overriding any hover feedback.
+    #[must_use]
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
+        self
+    }
+
+    /// Overrides the accent color used for the selected border (defaults to
+    /// `brand`).
+    #[must_use]
+    pub fn accent(mut self, color: Rgba) -> Self {
+        self.colors.accent = color;
+        self
+    }
+
+    /// Idle (unselected) background fill; defaults to transparent so the row blends
+    /// with its parent surface.
+    #[must_use]
+    pub fn idle_background(mut self, color: Rgba) -> Self {
+        self.colors.idle_bg = color;
+        self
+    }
+
+    /// Overrides the density used to scale the row's padding and inter-cell gap. A
+    /// bare [`row_card`] resolves these at `Density::Cozy`, which reproduces the
+    /// source's fixed inset exactly.
+    #[must_use]
+    pub fn density(mut self, density: Density) -> Self {
+        self.density = density;
+        self
+    }
+
+    /// Gives the row a persistent (unselected) border plus rounded corners, turning
+    /// the flat list-row into a bordered card. The `selected` state still wins,
+    /// swapping the border color for the accent.
+    #[must_use]
+    pub fn bordered(mut self, color: Rgba, width: Pixels, radius: Pixels) -> Self {
+        self.colors.idle_border = Some(color);
+        self.border_width = width;
+        self.corner_radius = radius;
+        self
+    }
+
+    /// Makes the row a whole-row press target. gpui needs a stable [`ElementId`] to
+    /// promote the frame to a stateful, clickable element, so the caller supplies
+    /// one alongside the handler (which mutates its own entity via the passed `cx`).
+    pub fn on_click(
+        mut self,
+        id: impl Into<ElementId>,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.id = Some(id.into());
+        self.on_click = Some(Box::new(handler));
+        self
+    }
+}
+
+impl RenderOnce for RowCard {
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+        let d = self.density;
+        let colors = self.colors;
+        let selected = self.selected;
+
+        // Two-line title stack: title over an optional meta line, a tight 2px gap
+        // apart so a leading-glyph-less and a glyphed row share the same title x.
+        let mut title_col = div()
+            .flex()
+            .flex_col()
+            .gap(TITLE_META_GAP)
+            .child(self.title);
+        if let Some(meta) = self.meta {
+            title_col = title_col.child(meta);
+        }
+
+        // Rest-state fill + border. Selected wins here; the hover delta is applied
+        // only in the interactive, non-selected arm below (the source's container
+        // branch has no hover at all).
+        let rest_state = if selected {
+            RowState::Selected
+        } else {
+            RowState::Idle
+        };
+        let (rest_bg, rest_border) = colors.resolve(rest_state);
+
+        // The whole row: [leading?] [title (fills)] [trailing?], vertically centered,
+        // one `Spacing::Xs` gap between cells, with the frame's padding/border/fill.
+        let mut root = div()
+            .w_full()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, d))
+            .py(spacing(Spacing::Xs, d))
+            .px(spacing(Spacing::Md, d))
+            .rounded(self.corner_radius)
+            .border(self.border_width)
+            .border_color(rest_border.unwrap_or(TRANSPARENT))
+            .bg(rest_bg)
+            .text_color(colors.text);
+
+        if let Some(leading) = self.leading {
+            root = root.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .pr(spacing(Spacing::Xs, d))
+                    .child(leading),
+            );
+        }
+        root = root.child(div().flex_1().child(title_col));
+        if let Some(trailing) = self.trailing {
+            root = root.child(div().flex().items_center().child(trailing));
+        }
+
+        match (self.id, self.on_click) {
+            (Some(id), Some(handler)) => {
+                let mut r = root.id(id).cursor_pointer();
+                // Selected fill wins over hover, so only an unselected interactive
+                // row lifts to its hover fill under the pointer / while pressed. The
+                // fill is resolved through the same state resolver (the border is
+                // unchanged on hover, so it is dropped here).
+                if !selected {
+                    let (hover_bg, _) = colors.resolve(RowState::Hover);
+                    r = r
+                        .hover(move |s| s.bg(hover_bg))
+                        .active(move |s| s.bg(hover_bg));
+                }
+                r.on_click(handler).into_any_element()
+            }
+            _ => root.into_any_element(),
+        }
+    }
 }

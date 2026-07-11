@@ -10,7 +10,7 @@ pub use buttons::{
     Button, destructive_button, ghost_button, ghost_button_with_icon, icon_button, primary_button,
     primary_button_with_icon, primary_button_with_icon_right, secondary_button,
 };
-pub use cards::{Card, card, metric_card, stat_row};
+pub use cards::{Card, RowCard, card, metric_card, row_card, stat_row};
 pub use chip::{Chip, ChipGlyph, chip, filter_chip_row};
 pub use icons::{Icon, IconAssets, icon, icon_inherit};
 pub use palette::{

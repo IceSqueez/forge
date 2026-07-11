@@ -422,3 +422,217 @@ pub fn icon_button(icon: Icon, palette: &ForgePalette) -> Button {
         palette,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::palette::CATPPUCCIN_MOCHA as P;
+
+    const EPS: f32 = 1e-6;
+
+    /// A resolved slot's expected shape: its hue comes from a `ForgePalette` field
+    /// (compared channel-wise), its alpha is pinned as a literal so a visual
+    /// regression that shifts a wash/dim constant fails here. `None` means the slot
+    /// is expected to carry no color (transparent fill / borderless).
+    type Slot = Option<(Rgba, f32)>;
+
+    fn same_rgb(a: Rgba, b: Rgba) -> bool {
+        (a.r - b.r).abs() < EPS && (a.g - b.g).abs() < EPS && (a.b - b.b).abs() < EPS
+    }
+
+    #[allow(clippy::panic)]
+    fn assert_slot(actual: Option<Rgba>, expected: Slot, label: &str) {
+        match (actual, expected) {
+            (None, None) => {}
+            (Some(got), Some((hue, alpha))) => {
+                assert!(
+                    same_rgb(got, hue),
+                    "{label}: hue rgb mismatch — got ({},{},{}), want ({},{},{})",
+                    got.r,
+                    got.g,
+                    got.b,
+                    hue.r,
+                    hue.g,
+                    hue.b,
+                );
+                assert!(
+                    (got.a - alpha).abs() < EPS,
+                    "{label}: alpha mismatch — got {}, want {alpha}",
+                    got.a,
+                );
+            }
+            _ => panic!("{label}: presence mismatch — got {actual:?}, want {expected:?}"),
+        }
+    }
+
+    // Each state test asserts the full (fill, ink, border) triple a variant paints
+    // in that state across all five variants. The load-bearing content is which
+    // palette field each hue comes from (mis-wire to a neighbour is caught by the
+    // distinct-hue test) and the alpha literal (a shifted wash/dim constant is a
+    // silent visual regression these pin).
+
+    #[test]
+    fn rest_colors_resolve_per_variant() {
+        let cases: [(ButtonVariant, Slot, Slot, Slot); 5] = [
+            // variant, fill, ink, border
+            (
+                ButtonVariant::Primary,
+                Some((P.brand, 1.0)),
+                Some((P.shell, 1.0)),
+                None,
+            ),
+            (
+                ButtonVariant::Destructive,
+                Some((P.random, 1.0)),
+                Some((P.shell, 1.0)),
+                None,
+            ),
+            (
+                ButtonVariant::Secondary,
+                None,
+                Some((P.text_secondary, 1.0)),
+                Some((P.border_regular, 1.0)),
+            ),
+            (
+                ButtonVariant::Ghost,
+                None,
+                Some((P.text_muted, 1.0)),
+                Some((P.border_regular, 1.0)),
+            ),
+            (
+                ButtonVariant::Icon,
+                None,
+                Some((P.text_secondary, 1.0)),
+                None,
+            ),
+        ];
+        for (variant, fill, ink, border) in cases {
+            let c = variant.colors(&P);
+            assert_slot(c.fill, fill, &format!("{variant:?} rest fill"));
+            assert_slot(Some(c.text), ink, &format!("{variant:?} rest ink"));
+            assert_slot(c.border, border, &format!("{variant:?} rest border"));
+        }
+    }
+
+    #[test]
+    fn hover_colors_resolve_per_variant() {
+        let cases: [(ButtonVariant, Slot, Slot, Slot); 5] = [
+            // variant, hover_fill, hover_ink, hover_border
+            (
+                ButtonVariant::Primary,
+                Some((P.brand, 0.92)),
+                Some((P.shell, 1.0)),
+                None,
+            ),
+            (
+                ButtonVariant::Destructive,
+                Some((P.random, 0.92)),
+                Some((P.shell, 1.0)),
+                None,
+            ),
+            (
+                ButtonVariant::Secondary,
+                Some((P.border_regular, 0.06)),
+                Some((P.text_primary, 1.0)),
+                Some((P.border_regular, 1.0)),
+            ),
+            (
+                ButtonVariant::Ghost,
+                None,
+                Some((P.text_primary, 1.0)),
+                Some((P.border_input, 1.0)),
+            ),
+            (
+                ButtonVariant::Icon,
+                Some((P.brand, 0.08)),
+                Some((P.text_primary, 1.0)),
+                None,
+            ),
+        ];
+        for (variant, fill, ink, border) in cases {
+            let c = variant.colors(&P);
+            assert_slot(c.hover_fill, fill, &format!("{variant:?} hover fill"));
+            assert_slot(Some(c.hover_text), ink, &format!("{variant:?} hover ink"));
+            assert_slot(c.hover_border, border, &format!("{variant:?} hover border"));
+        }
+    }
+
+    #[test]
+    fn disabled_colors_resolve_per_variant() {
+        let cases: [(ButtonVariant, Slot, Slot, Slot); 5] = [
+            // variant, disabled_fill, disabled_ink, disabled_border
+            (
+                ButtonVariant::Primary,
+                Some((P.brand, 0.4)),
+                Some((P.shell, 0.5)),
+                None,
+            ),
+            (
+                ButtonVariant::Destructive,
+                Some((P.random, 0.4)),
+                Some((P.shell, 0.5)),
+                None,
+            ),
+            (
+                ButtonVariant::Secondary,
+                None,
+                Some((P.text_secondary, 0.4)),
+                Some((P.border_regular, 0.4)),
+            ),
+            (
+                ButtonVariant::Ghost,
+                None,
+                Some((P.text_muted, 0.4)),
+                Some((P.border_regular, 0.4)),
+            ),
+            (
+                ButtonVariant::Icon,
+                None,
+                Some((P.text_secondary, 0.4)),
+                None,
+            ),
+        ];
+        for (variant, fill, ink, border) in cases {
+            let c = variant.colors(&P);
+            assert_slot(c.disabled_fill, fill, &format!("{variant:?} disabled fill"));
+            assert_slot(
+                Some(c.disabled_text),
+                ink,
+                &format!("{variant:?} disabled ink"),
+            );
+            assert_slot(
+                c.disabled_border,
+                border,
+                &format!("{variant:?} disabled border"),
+            );
+        }
+    }
+
+    /// The per-variant resolution tests assert each hue channel-wise against a
+    /// specific palette field; that only catches a mis-wire to a neighbouring field
+    /// if the two fields are actually different hues. Pin that assumption: every
+    /// field the button family keys on is a distinct hue under Mocha.
+    #[test]
+    fn keyed_palette_fields_are_distinct_hues() {
+        let fields = [
+            ("brand", P.brand),
+            ("random", P.random),
+            ("shell", P.shell),
+            ("text_primary", P.text_primary),
+            ("text_secondary", P.text_secondary),
+            ("text_muted", P.text_muted),
+            ("border_regular", P.border_regular),
+            ("border_input", P.border_input),
+        ];
+        for i in 0..fields.len() {
+            for j in (i + 1)..fields.len() {
+                let (na, a) = fields[i];
+                let (nb, b) = fields[j];
+                assert!(
+                    !same_rgb(a, b),
+                    "{na} and {nb} share a hue — a mis-wire between them would pass unnoticed",
+                );
+            }
+        }
+    }
+}

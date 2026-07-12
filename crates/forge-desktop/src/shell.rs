@@ -10,6 +10,7 @@ use crate::home::HomeView;
 use crate::integration_detail::IntegrationDetail;
 use crate::platforms::PlatformsView;
 use crate::presentation::{ActivePresentation, Presentation};
+use crate::queues::QueuesView;
 use crate::runtime_status::RuntimeStatus;
 use crate::screen::Screen;
 use crate::screen_stub::ScreenStub;
@@ -129,6 +130,7 @@ impl AppShell {
                 detail.into()
             }
             Screen::Settings => cx.new(SettingsView::new).into(),
+            Screen::Queues => cx.new(QueuesView::new).into(),
             Screen::Soundboard => cx.new(SoundboardView::new).into(),
             other => cx.new(|_| ScreenStub::new(other.clone())).into(),
         }

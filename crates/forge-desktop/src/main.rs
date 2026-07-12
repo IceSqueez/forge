@@ -14,6 +14,7 @@ mod integration_detail;
 mod integration_seed;
 mod platforms;
 mod presentation;
+mod queues;
 mod runtime_status;
 mod screen;
 mod screen_stub;

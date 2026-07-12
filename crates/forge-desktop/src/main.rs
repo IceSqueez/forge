@@ -3,6 +3,8 @@ mod chat;
 mod chat_feed;
 mod chrome;
 mod footer;
+mod home;
+mod home_stats;
 mod presentation;
 mod runtime_status;
 mod screen;
@@ -10,6 +12,7 @@ mod screen_stub;
 mod shell;
 mod sidebar;
 mod titlebar;
+mod topics;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -24,9 +27,11 @@ use gpui::{
 
 use crate::actions::register_shell_key_bindings;
 use crate::chat_feed::ChatFeed;
+use crate::home_stats::HomeStats;
 use crate::presentation::Presentation;
 use crate::runtime_status::RuntimeStatus;
 use crate::shell::AppShell;
+use crate::topics::Topics;
 
 /// Interval between synthetic `timer.tick` events published by the minimal runtime.
 const TICK_INTERVAL: Duration = Duration::from_secs(1);
@@ -90,7 +95,17 @@ fn main() {
             // connection exists; the bridge appends real events into this same
             // topic once platforms publish them.
             let chat_feed = cx.new(|_| ChatFeed::seeded());
-            start_bridge(cx, status.clone(), chat_feed.clone(), Arc::clone(&bus));
+            // Seeded so the Home dashboard renders visibly before any runtime
+            // dashboard source exists; the bridge advances it (e.g. on `action.done`)
+            // and real sources replace each field as they land.
+            let home_stats = cx.new(|_| HomeStats::seeded());
+            start_bridge(
+                cx,
+                status.clone(),
+                chat_feed.clone(),
+                home_stats.clone(),
+                Arc::clone(&bus),
+            );
 
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
@@ -113,11 +128,12 @@ fn main() {
 
             let status_for_window = status.clone();
             let chat_feed_for_window = chat_feed.clone();
+            let home_stats_for_window = home_stats.clone();
             match cx.open_window(options, move |window, cx| {
                 cx.new(|cx| {
                     AppShell::new(
                         status_for_window.clone(),
-                        chat_feed_for_window.clone(),
+                        Topics::new(chat_feed_for_window.clone(), home_stats_for_window.clone()),
                         window,
                         cx,
                     )
@@ -138,6 +154,7 @@ fn start_bridge(
     cx: &mut App,
     status: gpui::Entity<RuntimeStatus>,
     chat_feed: gpui::Entity<ChatFeed>,
+    home_stats: gpui::Entity<HomeStats>,
     bus: Arc<EventBus>,
 ) {
     cx.spawn(async move |cx| {
@@ -154,6 +171,20 @@ fn start_bridge(
                             .is_err()
                         {
                             // Topic entity released → the app is shutting down.
+                            break;
+                        }
+                    } else if event.kind == "action.done" {
+                        // No runner publishes `action.done` in the minimal runtime yet,
+                        // so this arm is dormant; it is the live path the Home
+                        // fired-today counter advances through once the action engine
+                        // runs.
+                        if home_stats
+                            .update(cx, |stats, cx| {
+                                stats.record_action_done();
+                                cx.notify();
+                            })
+                            .is_err()
+                        {
                             break;
                         }
                     } else if let Some(message) = ChatFeed::message_from_event(&event) {

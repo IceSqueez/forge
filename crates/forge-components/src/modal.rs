@@ -51,6 +51,9 @@ pub struct Modal {
     footer: Option<AnyElement>,
     header_icon: Option<(Icon, Rgba)>,
     size: ModalSize,
+    /// Explicit card width, overriding the [`ModalSize`] envelope when set — for a
+    /// dialog pinned to an exact px width that no size step reproduces.
+    width_override: Option<Pixels>,
     kbd_hint: Option<SharedString>,
     close_id: Option<ElementId>,
     on_close: Option<CloseHandler>,
@@ -80,6 +83,7 @@ pub fn modal(
         footer: None,
         header_icon: None,
         size: ModalSize::Md,
+        width_override: None,
         kbd_hint: None,
         close_id: None,
         on_close: None,
@@ -114,6 +118,15 @@ impl Modal {
     #[must_use]
     pub fn size(mut self, size: ModalSize) -> Self {
         self.size = size;
+        self
+    }
+
+    /// Pins the card to an exact `width`, overriding the [`ModalSize`] envelope — for
+    /// a dialog whose source width falls between the size steps. Left unset, the card
+    /// keeps its [`Modal::size`] width.
+    #[must_use]
+    pub fn width(mut self, width: Pixels) -> Self {
+        self.width_override = Some(width);
         self
     }
 
@@ -265,7 +278,9 @@ impl RenderOnce for Modal {
         div()
             .flex()
             .flex_col()
-            .w(modal_width(self.size))
+            .w(self
+                .width_override
+                .unwrap_or_else(|| modal_width(self.size)))
             .bg(self.card_bg)
             .rounded(radius(Radius::Lg))
             .overflow_hidden()

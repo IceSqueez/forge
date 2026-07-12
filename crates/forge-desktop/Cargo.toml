@@ -13,8 +13,10 @@ path = "src/main.rs"
 forge-components = { path = "../forge-components" }
 forge-events = { path = "../forge-events" }
 forge-runtime = { path = "../forge-runtime" }
+forge-types = { path = "../forge-types" }
 gpui = { workspace = true }
 serde_json = { workspace = true }
+time = { workspace = true }
 tokio = { workspace = true }
 
 [lints]

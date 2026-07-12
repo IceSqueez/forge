@@ -4,6 +4,7 @@ use crate::actions::{GoActions, GoChat, GoHome, GoSettings, GoTriggers, GoTwitch
 use crate::chat::ChatView;
 use crate::chrome::Chrome;
 use crate::event_feed::EventFeedView;
+use crate::globals_view::GlobalsView;
 use crate::home::HomeView;
 use crate::presentation::{ActivePresentation, Presentation};
 use crate::runtime_status::RuntimeStatus;
@@ -92,6 +93,9 @@ impl AppShell {
             }
             Screen::EventFeed => cx
                 .new(|cx| EventFeedView::new(topics.event_log.clone(), cx))
+                .into(),
+            Screen::Globals => cx
+                .new(|cx| GlobalsView::new(topics.globals.clone(), cx))
                 .into(),
             _ => cx.new(|_| ScreenStub::new(screen)).into(),
         }

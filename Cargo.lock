@@ -2747,8 +2747,10 @@ dependencies = [
  "forge-components",
  "forge-events",
  "forge-runtime",
+ "forge-types",
  "gpui",
  "serde_json",
+ "time",
  "tokio",
 ]
 

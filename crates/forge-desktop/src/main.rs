@@ -5,6 +5,8 @@ mod chrome;
 mod event_feed;
 mod event_log;
 mod footer;
+mod globals;
+mod globals_view;
 mod home;
 mod home_stats;
 mod presentation;
@@ -30,6 +32,7 @@ use gpui::{
 use crate::actions::register_shell_key_bindings;
 use crate::chat_feed::ChatFeed;
 use crate::event_log::EventLog;
+use crate::globals::Globals;
 use crate::home_stats::HomeStats;
 use crate::presentation::Presentation;
 use crate::runtime_status::RuntimeStatus;
@@ -106,6 +109,11 @@ fn main() {
             // traffic; the bridge streams live observability events into it, so the
             // boot tick publisher's `timer.tick` rows accumulate on top of the seed.
             let event_log = cx.new(|_| EventLog::seeded());
+            // Seeded so the Globals manager renders a representative sample across
+            // all seven Variant kinds before a storage provider is wired; there is
+            // no runtime source yet, so the bridge does not drain into it — edits
+            // mutate this in-memory cache directly.
+            let globals = cx.new(|_| Globals::seeded());
             start_bridge(
                 cx,
                 status.clone(),
@@ -138,6 +146,7 @@ fn main() {
             let chat_feed_for_window = chat_feed.clone();
             let home_stats_for_window = home_stats.clone();
             let event_log_for_window = event_log.clone();
+            let globals_for_window = globals.clone();
             match cx.open_window(options, move |window, cx| {
                 cx.new(|cx| {
                     AppShell::new(
@@ -146,6 +155,7 @@ fn main() {
                             chat_feed_for_window.clone(),
                             home_stats_for_window.clone(),
                             event_log_for_window.clone(),
+                            globals_for_window.clone(),
                         ),
                         window,
                         cx,

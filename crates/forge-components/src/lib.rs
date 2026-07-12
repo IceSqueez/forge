@@ -7,6 +7,7 @@ pub mod confirm;
 pub mod data;
 pub mod footer;
 pub mod icons;
+pub mod input_bar;
 pub mod menu;
 pub mod modal;
 pub mod overlay;
@@ -34,6 +35,7 @@ pub use confirm::{ConfirmModal, ConfirmTone, confirm_modal};
 pub use data::{ColumnWidth, DataRow, DataTable, data_table, hover_reveal};
 pub use footer::{FOOTER_HEIGHT, app_footer, split_version_stage};
 pub use icons::{Icon, IconAssets, icon, icon_inherit};
+pub use input_bar::{InputBar, InputBarEvent, platform_bit};
 pub use menu::{
     MenuButton, MenuEntry, MenuItem, MenuPlacement, actionable_count, menu_button, menu_divider,
     menu_header, menu_item,

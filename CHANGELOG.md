@@ -1,7 +1,69 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.3.0-beta.1] - 2026-07-12
+### ⚙️ Miscellaneous Tasks
+- *(deps)* Bump crossbeam-channel from 0.5.15 to 0.5.16 (#40)
+- *(deps)* Bump tokio-tungstenite, zbus, rubato, and regex
+
+### 🐛 Bug Fixes
+- *(widgets)* Drop private intra-doc link on RowCard::selected
+- *(audio)* Adapt the resampler call to the rubato 4.0 process signature
+
+### 🚀 Features
+- *(ui)* Scaffold the gpui forge-components and forge-desktop crates
+- *(desktop)* Bridge runtime timer ticks into the gpui uptime view
+- *(ui)* Port the design tokens into the gpui component kit
+- *(ui)* Add the status-dot indicator to the component kit
+- *(ui)* Add the tabler icon system to the component kit
+- *(ui)* Add the badge family to the component kit
+- *(ui)* Add the chip family to the component kit
+- *(ui)* Add the button family to the component kit
+- *(ui)* Add the card family to the component kit
+- *(ui)* Add the interactive row-card to the component kit
+- *(ui)* Add the breadcrumb to the component kit
+- *(ui)* Add the app footer to the component kit
+- *(ui)* Add the side-sheet panel to the component kit
+- *(ui)* Add the overlay primitive to the component kit
+- *(ui)* Add the base modal card to the component kit
+- *(ui)* Add the confirm modal to the component kit
+- *(ui)* Add the toggle switch to the component kit
+- *(ui)* Add the slider to the component kit
+- *(ui)* Add the single-line text input to the component kit
+- *(ui)* Add the search input to the component kit
+- *(ui)* Add the multi-line text area to the component kit
+- *(ui)* Add the type-to-confirm modal to the component kit
+- *(ui)* Add the picker modal to the component kit
+- *(ui)* Add the data table to the component kit
+- *(ui)* Add the overflow menu to the component kit
+- *(ui)* Add the chat row to the component kit
+- *(ui)* Add the chat input bar to the component kit
+- *(ui)* Add the tooltip to the component kit
+
+### 🧪 Testing
+- *(components)* Cover icon from_name aliases and asset loading
+- *(components)* Cover StatusVariant colors hue mapping and tint
+- *(components)* Pin chip active-state fill and ink resolution
+- *(components)* Cover button variant color resolution
+- *(components)* Cover row-card color resolution across states
+- *(components)* Cover version-stage first-dash split
+- *(components)* Pin ease_out_cubic curve shape and monotonicity
+- *(components)* Pin confirm tone accent to severity palette field
+- *(components)* Pin toggle_colors state-to-field mapping and accent gating
+- *(components)* Pin slider fraction/value_at clamping and inverse
+- *(components)* Cover grapheme-aware text-input editing
+- *(components)* Cover multi-line text-area editing
+- *(components)* Pin type-to-confirm match, border and bullet mapping
+- *(components)* Pin picker item_matches filter semantics
+- *(components)* Pin column_flex fixed-vs-flex flexbox mapping
+- *(components)* Pin menu actionable_count filtering
+- *(components)* Map chat-row badge/platform hues and triggered fan-in
+- *(components)* Cover input-bar target-selection bitset logic
+
 ## [0.2.0-beta.3] - 2026-07-11
+### ⚙️ Miscellaneous Tasks
+- Release
+
 ### 🐛 Bug Fixes
 - *(triggers)* Store created instance config as sparse override diff
 - *(home)* Thin row dividers and hairline integration cell gaps
@@ -26,6 +88,9 @@ All notable changes to this project will be documented in this file.
 - *(actions)* Reconcile badge, cards, chips, search, and hovers to design
 - *(actions)* Bucket actions by their custom group name
 - *(actions)* Fix nav icon, chip glyphs, card hover/click, X hover, button weight
+
+### 📚 Documentation
+- *(release)* Release v0.2.0-beta.3
 
 ### 🚀 Features
 - *(widgets)* Add primary-CTA empty state variant

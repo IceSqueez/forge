@@ -150,6 +150,7 @@ pub struct Button {
     colors: ButtonColors,
     density: Density,
     disabled: bool,
+    full_width: bool,
     id: Option<ElementId>,
     on_click: Option<ButtonClick>,
 }
@@ -172,6 +173,7 @@ impl Button {
             colors: variant.colors(palette),
             density: Density::default(),
             disabled: false,
+            full_width: false,
             id: None,
             on_click: None,
         }
@@ -181,6 +183,14 @@ impl Button {
     /// constructor resolves it at `Density::Cozy`.
     pub fn density(mut self, density: Density) -> Self {
         self.density = density;
+        self
+    }
+
+    /// Stretches the button to fill its parent's width and left-aligns its
+    /// content, for the full-column nav rows of a sectioned screen. A bare
+    /// constructor hugs its content instead.
+    pub fn full_width(mut self) -> Self {
+        self.full_width = true;
         self
     }
 
@@ -251,6 +261,9 @@ impl RenderOnce for Button {
             .text_size(FONT_SM)
             .text_color(text);
 
+        if self.full_width {
+            root = root.w_full().justify_start();
+        }
         if let Some(fill) = fill {
             root = root.bg(fill);
         }

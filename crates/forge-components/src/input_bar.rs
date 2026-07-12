@@ -506,3 +506,183 @@ impl Render for InputBar {
             .child(body)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::palette::CATPPUCCIN_MOCHA;
+
+    // Seed a headless InputBar carrying `targets` and run `f` against it. gpui's
+    // TestAppContext backs the window with a headless TestWindow (no GPU, no
+    // paint, no network) — the sanctioned in-process harness the other component
+    // suites use, not a "real service".
+    #[allow(clippy::unwrap_used)]
+    fn with_bar<R>(
+        cx: &mut gpui::TestAppContext,
+        targets: Vec<(Platform, bool)>,
+        f: impl FnOnce(&mut InputBar, &mut Window, &mut Context<InputBar>) -> R,
+    ) -> R {
+        let window = cx.add_window(|_window, cx| {
+            InputBar::new("placeholder", CATPPUCCIN_MOCHA, cx).with_targets(targets)
+        });
+        window
+            .update(cx, |bar, window, cx| f(bar, window, cx))
+            .unwrap()
+    }
+
+    #[test]
+    fn platform_bit_assigns_a_distinct_stable_bit_per_platform() {
+        // Why: the bit a platform occupies is a persistence contract — a stored
+        // targets bitset must decode to the same platforms after a restart, so
+        // the Twitch=low-bit / YouTube / Kick order is load-bearing, not
+        // incidental. Pinning the exact bit also guarantees the three are
+        // distinct powers of two, which is what lets `targets_bitset` OR them
+        // together without two platforms colliding on one bit.
+        assert_eq!(platform_bit(Platform::Twitch), 0b001);
+        assert_eq!(platform_bit(Platform::YouTube), 0b010);
+        assert_eq!(platform_bit(Platform::Kick), 0b100);
+    }
+
+    #[gpui::test]
+    fn targets_bitset_is_the_or_of_the_selected_platform_bits(cx: &mut gpui::TestAppContext) {
+        for (targets, expected) in [
+            (
+                vec![
+                    (Platform::Twitch, true),
+                    (Platform::YouTube, true),
+                    (Platform::Kick, true),
+                ],
+                0b111,
+            ),
+            // Multi-select must OR, not overwrite: Twitch(1) | Kick(4) = 5 with
+            // YouTube off. A naive fold that assigned instead of OR-ing would
+            // land on 4 (last selected) and fail here.
+            (
+                vec![
+                    (Platform::Twitch, true),
+                    (Platform::YouTube, false),
+                    (Platform::Kick, true),
+                ],
+                0b101,
+            ),
+            (
+                vec![
+                    (Platform::Twitch, false),
+                    (Platform::YouTube, true),
+                    (Platform::Kick, false),
+                ],
+                0b010,
+            ),
+            // Empty floor: nothing selected packs to zero, never a stray bit.
+            (
+                vec![
+                    (Platform::Twitch, false),
+                    (Platform::YouTube, false),
+                    (Platform::Kick, false),
+                ],
+                0b000,
+            ),
+        ] {
+            let bits = with_bar(cx, targets.clone(), |bar, _window, _cx| {
+                bar.targets_bitset()
+            });
+            assert_eq!(bits, expected, "bitset for {targets:?}");
+        }
+    }
+
+    #[gpui::test]
+    fn any_target_selected_is_true_only_when_a_target_is_on(cx: &mut gpui::TestAppContext) {
+        for (targets, expected) in [
+            (
+                vec![
+                    (Platform::Twitch, true),
+                    (Platform::YouTube, true),
+                    (Platform::Kick, true),
+                ],
+                true,
+            ),
+            (
+                vec![
+                    (Platform::Twitch, false),
+                    (Platform::YouTube, true),
+                    (Platform::Kick, false),
+                ],
+                true,
+            ),
+            (
+                vec![
+                    (Platform::Twitch, false),
+                    (Platform::YouTube, false),
+                    (Platform::Kick, false),
+                ],
+                false,
+            ),
+        ] {
+            let any = with_bar(cx, targets.clone(), |bar, _window, _cx| {
+                bar.any_target_selected()
+            });
+            assert_eq!(any, expected, "any_target_selected for {targets:?}");
+        }
+    }
+
+    #[gpui::test]
+    fn selected_targets_yields_the_on_platforms_in_strip_order(cx: &mut gpui::TestAppContext) {
+        for (targets, expected) in [
+            (
+                vec![
+                    (Platform::Twitch, true),
+                    (Platform::YouTube, false),
+                    (Platform::Kick, true),
+                ],
+                vec![Platform::Twitch, Platform::Kick],
+            ),
+            (
+                vec![
+                    (Platform::Twitch, false),
+                    (Platform::YouTube, true),
+                    (Platform::Kick, false),
+                ],
+                vec![Platform::YouTube],
+            ),
+            (
+                vec![
+                    (Platform::Twitch, false),
+                    (Platform::YouTube, false),
+                    (Platform::Kick, false),
+                ],
+                vec![],
+            ),
+        ] {
+            let selected = with_bar(cx, targets.clone(), |bar, _window, _cx| {
+                bar.selected_targets()
+            });
+            assert_eq!(selected, expected, "selected_targets for {targets:?}");
+        }
+    }
+
+    #[gpui::test]
+    fn toggling_a_target_flips_it_in_the_bitset_and_round_trips(cx: &mut gpui::TestAppContext) {
+        // Start all-on (0b111). Toggling YouTube (index 1) off must clear only
+        // its bit -> 0b101 and drop only YouTube from the selection; toggling it
+        // again must restore 0b111 — a clean round-trip proving toggle mutates
+        // exactly one entry with no leakage into its neighbours.
+        let (after_off, selected_off, after_on) = with_bar(
+            cx,
+            vec![
+                (Platform::Twitch, true),
+                (Platform::YouTube, true),
+                (Platform::Kick, true),
+            ],
+            |bar, _window, cx| {
+                bar.toggle_target(1, cx);
+                let off_bits = bar.targets_bitset();
+                let off_sel = bar.selected_targets();
+                bar.toggle_target(1, cx);
+                (off_bits, off_sel, bar.targets_bitset())
+            },
+        );
+        assert_eq!(after_off, 0b101);
+        assert_eq!(selected_off, vec![Platform::Twitch, Platform::Kick]);
+        assert_eq!(after_on, 0b111);
+    }
+}

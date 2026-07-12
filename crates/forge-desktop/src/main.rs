@@ -1,4 +1,6 @@
 mod actions;
+mod chat;
+mod chat_feed;
 mod chrome;
 mod footer;
 mod presentation;
@@ -21,6 +23,7 @@ use gpui::{
 };
 
 use crate::actions::register_shell_key_bindings;
+use crate::chat_feed::ChatFeed;
 use crate::presentation::Presentation;
 use crate::runtime_status::RuntimeStatus;
 use crate::shell::AppShell;
@@ -83,7 +86,11 @@ fn main() {
             register_shell_key_bindings(cx);
 
             let status = cx.new(|_| RuntimeStatus::new());
-            start_bridge(cx, status.clone(), Arc::clone(&bus));
+            // Seeded so the Chat screen renders visibly before any platform
+            // connection exists; the bridge appends real events into this same
+            // topic once platforms publish them.
+            let chat_feed = cx.new(|_| ChatFeed::seeded());
+            start_bridge(cx, status.clone(), chat_feed.clone(), Arc::clone(&bus));
 
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
@@ -105,8 +112,16 @@ fn main() {
             };
 
             let status_for_window = status.clone();
+            let chat_feed_for_window = chat_feed.clone();
             match cx.open_window(options, move |window, cx| {
-                cx.new(|cx| AppShell::new(status_for_window.clone(), window, cx))
+                cx.new(|cx| {
+                    AppShell::new(
+                        status_for_window.clone(),
+                        chat_feed_for_window.clone(),
+                        window,
+                        cx,
+                    )
+                })
             }) {
                 Ok(_) => cx.activate(true),
                 Err(err) => eprintln!("forge-desktop: failed to open window: {err}"),
@@ -119,22 +134,41 @@ fn main() {
 /// `cx.notify()`, from which observing views repaint. Broadcast recv is
 /// executor-agnostic (no tokio timer/reactor), so it runs safely off the gpui
 /// foreground executor while the publisher runs on the tokio runtime.
-fn start_bridge(cx: &mut App, status: gpui::Entity<RuntimeStatus>, bus: Arc<EventBus>) {
+fn start_bridge(
+    cx: &mut App,
+    status: gpui::Entity<RuntimeStatus>,
+    chat_feed: gpui::Entity<ChatFeed>,
+    bus: Arc<EventBus>,
+) {
     cx.spawn(async move |cx| {
         let mut subscription = bus.subscribe();
         loop {
             match subscription.recv().await {
                 Ok(event) => {
-                    if event.kind == "timer.tick"
-                        && status
+                    if event.kind == "timer.tick" {
+                        if status
                             .update(cx, |status, cx| {
                                 status.tick();
                                 cx.notify();
                             })
                             .is_err()
-                    {
-                        // Topic entity released → the app is shutting down.
-                        break;
+                        {
+                            // Topic entity released → the app is shutting down.
+                            break;
+                        }
+                    } else if let Some(message) = ChatFeed::message_from_event(&event) {
+                        // No platform publishes `chat.message` yet, so this arm is
+                        // dormant at runtime; it is the live path a real chat
+                        // connection appends through once it lands.
+                        if chat_feed
+                            .update(cx, |feed, cx| {
+                                feed.push(message);
+                                cx.notify();
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
                     }
                 }
                 // A lagging subscriber dropped some ticks; keep draining.

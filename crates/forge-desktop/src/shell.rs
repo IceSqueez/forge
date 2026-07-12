@@ -1,6 +1,8 @@
-use gpui::{Context, Entity, FocusHandle, Window, div, prelude::*};
+use gpui::{AnyView, AppContext, Context, Entity, FocusHandle, Window, div, prelude::*};
 
 use crate::actions::{GoActions, GoChat, GoHome, GoSettings, GoTriggers, GoTwitch, SHELL_CONTEXT};
+use crate::chat::ChatView;
+use crate::chat_feed::ChatFeed;
 use crate::chrome::Chrome;
 use crate::presentation::{ActivePresentation, Presentation};
 use crate::runtime_status::RuntimeStatus;
@@ -16,15 +18,24 @@ use crate::sidebar::NavRequested;
 /// children (the footer) or the boot bridge, never inlined here.
 pub struct AppShell {
     screen: Screen,
-    content: Entity<ScreenStub>,
+    content: AnyView,
     chrome: Chrome,
     focus: FocusHandle,
+    /// Chat-topic feed handle, injected into the [`ChatView`] on every route to
+    /// Chat so the seed and any bridged messages persist across navigation. A
+    /// runtime handle, not screen-internal state — the fifth and last root field.
+    chat_feed: Entity<ChatFeed>,
 }
 
 impl AppShell {
-    pub fn new(status: Entity<RuntimeStatus>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        status: Entity<RuntimeStatus>,
+        chat_feed: Entity<ChatFeed>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let screen = Screen::Home;
-        let content = cx.new(|_| ScreenStub::new(screen));
+        let content = Self::content_for(screen, &chat_feed, cx);
         let focus = cx.focus_handle();
         let chrome = Chrome::new(status, screen, cx);
 
@@ -48,6 +59,21 @@ impl AppShell {
             content,
             chrome,
             focus,
+            chat_feed,
+        }
+    }
+
+    /// Builds the active-screen child view for `screen`, erased to [`AnyView`] so
+    /// the router holds one field across heterogeneous screen types. Chat gets the
+    /// real [`ChatView`] (fed the shared topic + the active palette); every other
+    /// destination still routes to the placeholder until its screen lands.
+    fn content_for(screen: Screen, feed: &Entity<ChatFeed>, cx: &mut Context<Self>) -> AnyView {
+        match screen {
+            Screen::Chat => {
+                let palette = cx.palette();
+                cx.new(|cx| ChatView::new(feed.clone(), palette, cx)).into()
+            }
+            _ => cx.new(|_| ScreenStub::new(screen)).into(),
         }
     }
 
@@ -59,7 +85,7 @@ impl AppShell {
             return;
         }
         self.screen = screen;
-        self.content = cx.new(|_| ScreenStub::new(screen));
+        self.content = Self::content_for(screen, &self.chat_feed, cx);
         self.chrome.sidebar.update(cx, |sidebar, cx| {
             sidebar.set_current(screen);
             cx.notify();

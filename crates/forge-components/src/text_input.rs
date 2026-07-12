@@ -168,6 +168,14 @@ impl TextInput {
         cx.notify();
     }
 
+    /// Repins (or clears) the static border/corner at runtime — the runtime twin of
+    /// the [`TextInput::static_chrome`] builder. `Some((border, corner))` pins a fixed
+    /// frame reflecting an external state (e.g. a validity signal); `None` restores the
+    /// default focus-reactive border. The caller repaints after setting it.
+    pub fn set_static_chrome(&mut self, chrome: Option<(Rgba, Radius)>) {
+        self.static_chrome = chrome;
+    }
+
     pub fn set_content(&mut self, text: impl Into<SharedString>, cx: &mut Context<Self>) {
         self.content = text.into();
         let end = self.content.len();

@@ -27,6 +27,7 @@ mod titlebar;
 mod topics;
 mod tts;
 mod tts_dashboard;
+mod tts_engines;
 
 use std::sync::Arc;
 use std::time::Duration;

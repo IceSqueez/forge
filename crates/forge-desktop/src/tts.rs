@@ -8,6 +8,7 @@ use gpui::{
 
 use crate::presentation::ActivePresentation;
 use crate::tts_dashboard::TtsDashboardView;
+use crate::tts_engines::TtsEnginesView;
 
 /// Tab-button vertical padding — the parity source pins the tab hit-target at a
 /// fixed 7px inset, off the `Spacing` scale, so it is carried as a named literal.
@@ -74,21 +75,24 @@ impl TtsSection {
 
 /// The Text-to-Speech screen view-entity: a breadcrumb header with an
 /// engines-ready chip, a horizontal tab bar over the six [`TtsSection`]s, and the
-/// active section's pane. Owns the active section plus the Dashboard child
-/// view-entity; the other five sections are deferred placeholders until their
-/// slices land. Holds no domain state — the dashboard caches its own seeded stub
-/// state and drives the real speak-queue through a runtime handle once wired.
+/// active section's pane. Owns the active section plus the Dashboard and Engines
+/// child view-entities; the other four sections are deferred placeholders until
+/// their slices land. Holds no domain state — each child caches its own seeded stub
+/// state and drives the real runtime through a handle once wired.
 pub struct TtsView {
     section: TtsSection,
     dashboard: Entity<TtsDashboardView>,
+    engines: Entity<TtsEnginesView>,
 }
 
 impl TtsView {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let dashboard = cx.new(TtsDashboardView::new);
+        let engines = cx.new(TtsEnginesView::new);
         Self {
             section: TtsSection::Dashboard,
             dashboard,
+            engines,
         }
     }
 
@@ -185,11 +189,13 @@ impl TtsView {
             .child(div().w_full().h(TAB_INDICATOR_H).bg(indicator))
     }
 
-    /// The active section's pane. Dashboard renders the real child view-entity;
-    /// the other five render a deferred placeholder inside the screen frame.
+    /// The active section's pane. Dashboard and Engines render their real child
+    /// view-entities; the other four render a deferred placeholder inside the screen
+    /// frame.
     fn render_content(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         match self.section {
             TtsSection::Dashboard => self.dashboard.clone().into_any_element(),
+            TtsSection::Engines => self.engines.clone().into_any_element(),
             other => deferred_pane(other, palette, density),
         }
     }

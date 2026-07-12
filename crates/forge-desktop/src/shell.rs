@@ -19,6 +19,7 @@ use crate::sidebar::NavRequested;
 use crate::soundboard::SoundboardView;
 use crate::stream_apps::StreamAppsView;
 use crate::topics::Topics;
+use crate::tts::TtsView;
 
 /// Root shell view-entity. Holds the router discriminant, the single active-screen
 /// child entity, the chrome bundle (title bar / sidebar / footer child entities),
@@ -132,6 +133,7 @@ impl AppShell {
             Screen::Settings => cx.new(SettingsView::new).into(),
             Screen::Queues => cx.new(QueuesView::new).into(),
             Screen::Soundboard => cx.new(SoundboardView::new).into(),
+            Screen::Tts => cx.new(TtsView::new).into(),
             other => cx.new(|_| ScreenStub::new(other.clone())).into(),
         }
     }

@@ -25,6 +25,8 @@ mod soundboard;
 mod stream_apps;
 mod titlebar;
 mod topics;
+mod tts;
+mod tts_dashboard;
 
 use std::sync::Arc;
 use std::time::Duration;

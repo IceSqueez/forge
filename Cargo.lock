@@ -2749,6 +2749,7 @@ dependencies = [
  "forge-platform-core",
  "forge-runtime",
  "forge-types",
+ "futures-util",
  "gpui",
  "serde_json",
  "time",

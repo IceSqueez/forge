@@ -1,4 +1,5 @@
 use forge_components::ForgePalette;
+use forge_platform_core::BuiltinId;
 use gpui::{Rgba, SharedString};
 
 use crate::screen::Screen;
@@ -32,15 +33,21 @@ impl Integration {
         }
     }
 
-    /// Router destination a connection cell navigates to when clicked.
+    /// Stable builtin key routed into the generic integration detail screen.
+    pub fn builtin_id(self) -> BuiltinId {
+        BuiltinId::new(match self {
+            Integration::Twitch => "twitch",
+            Integration::YouTube => "youtube",
+            Integration::Kick => "kick",
+            Integration::Obs => "obs",
+            Integration::VTube => "vtube",
+        })
+    }
+
+    /// Router destination a connection cell navigates to when clicked — the generic
+    /// integration detail parameterized by this integration's builtin id.
     pub fn screen(self) -> Screen {
-        match self {
-            Integration::Twitch => Screen::Twitch,
-            Integration::YouTube => Screen::YouTube,
-            Integration::Kick => Screen::Kick,
-            Integration::Obs => Screen::Obs,
-            Integration::VTube => Screen::VTube,
-        }
+        Screen::BuiltinDetail(self.builtin_id())
     }
 
     /// Brand-mark hue, resolved from the active palette so the dot re-tints with the

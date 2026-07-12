@@ -1,11 +1,14 @@
 use forge_components::Icon;
+use forge_platform_core::BuiltinId;
 
 /// Top-level router discriminant: the shell renders exactly one screen at a time
-/// behind fixed chrome. Every sidebar destination is a variant
-/// here; navigation swaps the active-screen child entity. Parameterized detail
-/// screens (`ActionEditor(id)`, sectioned `Tts`/`Settings`, error states) widen
-/// this enum as each real screen lands — today each variant routes to a stub.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// behind fixed chrome. Every sidebar destination is a variant here; navigation
+/// swaps the active-screen child entity. Platforms and stream apps do not get their
+/// own variant — they all route through the single parameterized
+/// [`Screen::BuiltinDetail`], which the one generic integration-detail view renders
+/// from the target's four `Builtin*` traits. The enum is `Clone` (not `Copy`)
+/// because `BuiltinDetail` carries an owned [`BuiltinId`].
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Screen {
     Home,
     Chat,
@@ -16,11 +19,7 @@ pub enum Screen {
     Globals,
     Scripts,
     Platforms,
-    Twitch,
-    YouTube,
-    Kick,
-    Obs,
-    VTube,
+    BuiltinDetail(BuiltinId),
     Tts,
     Soundboard,
     Midi,
@@ -31,7 +30,7 @@ pub enum Screen {
 }
 
 impl Screen {
-    pub fn title(self) -> &'static str {
+    pub fn title(&self) -> &'static str {
         match self {
             Screen::Home => "Home",
             Screen::Chat => "Chat",
@@ -42,11 +41,7 @@ impl Screen {
             Screen::Globals => "Globals",
             Screen::Scripts => "Scripts",
             Screen::Platforms => "Platforms",
-            Screen::Twitch => "Twitch",
-            Screen::YouTube => "YouTube",
-            Screen::Kick => "Kick",
-            Screen::Obs => "OBS Studio",
-            Screen::VTube => "VTube Studio",
+            Screen::BuiltinDetail(_) => "Integration",
             Screen::Tts => "Text-to-Speech",
             Screen::Soundboard => "Soundboard",
             Screen::Midi => "MIDI",
@@ -57,10 +52,11 @@ impl Screen {
         }
     }
 
-    /// Glyph shown in the routed screen's placeholder header. Platform and
-    /// stream-app screens share the broadcast glyph (their sidebar entry carries a
-    /// brand dot instead of an icon); every other screen maps to its nav glyph.
-    pub fn icon(self) -> Icon {
+    /// Glyph shown in the routed screen's placeholder header. The Platforms overview
+    /// and every integration detail share the broadcast glyph (their sidebar entries
+    /// carry a brand dot instead of an icon); every other screen maps to its nav
+    /// glyph.
+    pub fn icon(&self) -> Icon {
         match self {
             Screen::Home => Icon::Home,
             Screen::Chat => Icon::MessageCircle,
@@ -70,12 +66,7 @@ impl Screen {
             Screen::EventFeed => Icon::Activity,
             Screen::Globals => Icon::Variable,
             Screen::Scripts => Icon::FileCode,
-            Screen::Platforms
-            | Screen::Twitch
-            | Screen::YouTube
-            | Screen::Kick
-            | Screen::Obs
-            | Screen::VTube => Icon::Broadcast,
+            Screen::Platforms | Screen::BuiltinDetail(_) => Icon::Broadcast,
             Screen::Tts => Icon::Volume,
             Screen::Soundboard => Icon::Music,
             Screen::Midi => Icon::PlugConnected,

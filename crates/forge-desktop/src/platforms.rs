@@ -223,7 +223,7 @@ impl PlatformsView {
             .bg(palette.elevated)
             .cursor_pointer()
             .hover(move |s| s.border_color(hover_border))
-            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.go(target, cx)))
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.go(target.clone(), cx)))
             .child(tile)
             .child(info)
             .child(icon(Icon::ChevronRight, CHEVRON_SIZE, palette.text_faint))

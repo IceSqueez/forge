@@ -2,6 +2,7 @@ use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, FONT_XS, FONT_XXS, ForgePalette, Icon,
     Radius, icon, icon_inherit, radius, status_dot,
 };
+use forge_platform_core::BuiltinId;
 use gpui::{
     AnyElement, ClickEvent, Context, EventEmitter, FontWeight, Pixels, Rgba, SharedString, Window,
     div, prelude::*, px,
@@ -153,32 +154,32 @@ impl SidebarNav {
             NavEntry::FlatLink {
                 dot: palette.brand,
                 label: "Twitch",
-                screen: Screen::Twitch,
+                screen: Screen::BuiltinDetail(BuiltinId::new("twitch")),
                 connected: false,
             },
             NavEntry::FlatLink {
                 dot: palette.random,
                 label: "YouTube",
-                screen: Screen::YouTube,
+                screen: Screen::BuiltinDetail(BuiltinId::new("youtube")),
                 connected: false,
             },
             NavEntry::FlatLink {
                 dot: palette.info,
                 label: "Kick",
-                screen: Screen::Kick,
+                screen: Screen::BuiltinDetail(BuiltinId::new("kick")),
                 connected: false,
             },
             NavEntry::MiniLabel("Stream apps"),
             NavEntry::FlatLink {
                 dot: palette.success,
                 label: "OBS Studio",
-                screen: Screen::Obs,
+                screen: Screen::BuiltinDetail(BuiltinId::new("obs")),
                 connected: false,
             },
             NavEntry::FlatLink {
                 dot: palette.warning,
                 label: "VTube Studio",
-                screen: Screen::VTube,
+                screen: Screen::BuiltinDetail(BuiltinId::new("vtube")),
                 connected: false,
             },
             NavEntry::MiniLabel("Modules"),
@@ -276,7 +277,9 @@ impl SidebarNav {
             .rounded(radius(Radius::Sm))
             .text_color(fg)
             .cursor_pointer()
-            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.request(screen, cx)))
+            .on_click(
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.request(screen.clone(), cx)),
+            )
             .children(children);
         if active {
             row = row.bg(palette.surface_overlay);

@@ -1,4 +1,5 @@
 mod actions;
+mod builtin_sections;
 mod chat;
 mod chat_feed;
 mod chrome;
@@ -9,6 +10,8 @@ mod globals;
 mod globals_view;
 mod home;
 mod home_stats;
+mod integration_detail;
+mod integration_seed;
 mod platforms;
 mod presentation;
 mod runtime_status;

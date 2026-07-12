@@ -1,0 +1,548 @@
+use std::sync::Arc;
+use std::time::Duration;
+
+use forge_platform_core::{
+    ActiveRow, BannerLevel, BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus,
+    CapabilityFlags, ConnectionState, ContentList, ContentListItem, DetailSection, HeaderAction,
+    HealthBar, HealthLevel, HealthMetric, HealthStream, HealthValue, InfoField, KeyValueRow,
+    ListFooter, PickerKind, QuickAction, QuickActions, SectionIcon, StatColumn, SubscriptionRow,
+    SubscriptionStatus,
+};
+use forge_types::SubActionStep;
+
+/// Static trait outputs for one integration, seeded so the generic detail screen
+/// renders visibly before a runtime bridge feeds live snapshots. Every field is a
+/// pre-baked value the four `Builtin*` traits return; the detail view reads them
+/// through the trait objects, exactly as it will read a live integration.
+pub struct IntegrationSeed {
+    pub icon: SectionIcon,
+    pub status: Arc<dyn BuiltinStatus>,
+    pub health: Arc<dyn BuiltinHealth>,
+    pub content: Arc<dyn BuiltinContent>,
+    pub quick: Arc<dyn QuickActions>,
+}
+
+struct SnapshotStatus {
+    id: BuiltinId,
+    display_name: String,
+    version: Option<String>,
+    endpoint: Option<String>,
+    uptime: Option<Duration>,
+    connection: ConnectionState,
+    capability_flags: CapabilityFlags,
+    header_actions: Vec<HeaderAction>,
+}
+
+impl BuiltinStatus for SnapshotStatus {
+    fn id(&self) -> &BuiltinId {
+        &self.id
+    }
+    fn display_name(&self) -> &str {
+        &self.display_name
+    }
+    fn version(&self) -> Option<&str> {
+        self.version.as_deref()
+    }
+    fn connection(&self) -> ConnectionState {
+        self.connection
+    }
+    fn uptime(&self) -> Option<Duration> {
+        self.uptime
+    }
+    fn endpoint(&self) -> Option<&str> {
+        self.endpoint.as_deref()
+    }
+    fn capability_flags(&self) -> CapabilityFlags {
+        self.capability_flags.clone()
+    }
+    fn header_actions(&self) -> Vec<HeaderAction> {
+        self.header_actions.clone()
+    }
+}
+
+struct SnapshotHealth {
+    metrics: [HealthMetric; 4],
+}
+
+impl BuiltinHealth for SnapshotHealth {
+    fn metrics(&self) -> [HealthMetric; 4] {
+        self.metrics.clone()
+    }
+    fn stream(&self) -> HealthStream {
+        Box::pin(futures_util::stream::empty())
+    }
+}
+
+struct SnapshotContent {
+    sections: Vec<DetailSection>,
+}
+
+impl BuiltinContent for SnapshotContent {
+    fn sections(&self) -> Vec<DetailSection> {
+        self.sections.clone()
+    }
+}
+
+struct SnapshotQuickActions {
+    actions: Vec<QuickAction>,
+}
+
+impl QuickActions for SnapshotQuickActions {
+    fn actions(&self) -> Vec<QuickAction> {
+        self.actions.clone()
+    }
+}
+
+fn text_metric(label: &str, primary: &str, secondary: Option<&str>) -> HealthMetric {
+    HealthMetric {
+        label: label.to_owned(),
+        value: HealthValue::Text {
+            primary: primary.to_owned(),
+            secondary: secondary.map(ToOwned::to_owned),
+        },
+    }
+}
+
+fn status_metric(label: &str, val: &str, active: bool, detail: Option<&str>) -> HealthMetric {
+    HealthMetric {
+        label: label.to_owned(),
+        value: HealthValue::Status {
+            label: val.to_owned(),
+            active,
+            detail: detail.map(ToOwned::to_owned),
+        },
+    }
+}
+
+fn ratio_metric(label: &str, used: u64, total: u64, reset_hint: Option<&str>) -> HealthMetric {
+    HealthMetric {
+        label: label.to_owned(),
+        value: HealthValue::Ratio {
+            used,
+            total,
+            reset_hint: reset_hint.map(ToOwned::to_owned),
+        },
+    }
+}
+
+fn list_item(icon: &str, name: &str, active: bool, active_label: Option<&str>) -> ContentListItem {
+    ContentListItem {
+        icon: SectionIcon::new(icon),
+        name: name.to_owned(),
+        monospace_name: false,
+        active,
+        active_label: active_label.map(ToOwned::to_owned),
+        trailing: Vec::new(),
+        enabled: true,
+    }
+}
+
+fn quick(
+    label: &str,
+    icon: &str,
+    kind_id: &str,
+    picker: Option<PickerKind>,
+    enabled: bool,
+) -> QuickAction {
+    QuickAction {
+        label: label.to_owned(),
+        icon: SectionIcon::new(icon),
+        enabled,
+        subaction_template: SubActionStep {
+            kind_id: kind_id.to_owned(),
+            config: std::collections::BTreeMap::new(),
+            enabled: true,
+            label: None,
+        },
+        picker,
+    }
+}
+
+/// Builds the representative seed for `id`. Twitch, OBS and Kick carry rich,
+/// distinct section shapes (subscriptions / scopes / info card; two-column lists /
+/// stats grid; hybrid banner / key-value list) so the one generic renderer is
+/// exercised across the whole `DetailSection` vocabulary. Every other integration
+/// falls back to a connected-less overview so its detail still opens with a real
+/// visual frame.
+pub fn seed(id: &BuiltinId) -> IntegrationSeed {
+    match id.as_str() {
+        "twitch" => twitch(),
+        "obs" => obs(),
+        "kick" => kick(),
+        "youtube" => generic(id, "YouTube", "brand-youtube"),
+        "vtube" => generic(id, "VTube Studio", "mood-smile"),
+        "discord" => generic(id, "Discord", "brand-discord"),
+        "midi" => generic(id, "MIDI", "piano"),
+        "hotkeys" => generic(id, "Hotkeys", "keyboard"),
+        _ => generic(id, "Integration", "broadcast"),
+    }
+}
+
+fn assemble(
+    icon: &str,
+    status: SnapshotStatus,
+    metrics: [HealthMetric; 4],
+    sections: Vec<DetailSection>,
+    actions: Vec<QuickAction>,
+) -> IntegrationSeed {
+    IntegrationSeed {
+        icon: SectionIcon::new(icon),
+        status: Arc::new(status),
+        health: Arc::new(SnapshotHealth { metrics }),
+        content: Arc::new(SnapshotContent { sections }),
+        quick: Arc::new(SnapshotQuickActions { actions }),
+    }
+}
+
+fn twitch() -> IntegrationSeed {
+    let status = SnapshotStatus {
+        id: BuiltinId::new("twitch"),
+        display_name: "Twitch".to_owned(),
+        version: Some("Helix v5".to_owned()),
+        endpoint: Some("eventsub.wss.twitch.tv".to_owned()),
+        uptime: Some(Duration::from_secs(8040)),
+        connection: ConnectionState::Connected,
+        capability_flags: CapabilityFlags {
+            limited: false,
+            label: None,
+        },
+        header_actions: vec![
+            HeaderAction::Reconnect,
+            HeaderAction::RefreshToken,
+            HeaderAction::Disconnect,
+        ],
+    };
+    let metrics = [
+        status_metric("Chat", "Connected", true, Some("tmi.twitch.tv")),
+        text_metric("Messages", "1,204", Some("peak 42/s")),
+        ratio_metric("EventSub", 12, 12, None),
+        ratio_metric("API budget", 642, 800, Some("resets 60s")),
+    ];
+    let subs = DetailSection::SubscriptionList {
+        title: "EventSub subscriptions".to_owned(),
+        icon: SectionIcon::new("rss"),
+        items: vec![
+            SubscriptionRow {
+                name: "channel.follow".to_owned(),
+                status: SubscriptionStatus::Active,
+                version: Some("v2".to_owned()),
+                event_count: Some(1240),
+                error_label: None,
+            },
+            SubscriptionRow {
+                name: "channel.subscribe".to_owned(),
+                status: SubscriptionStatus::Active,
+                version: Some("v1".to_owned()),
+                event_count: Some(88),
+                error_label: None,
+            },
+            SubscriptionRow {
+                name: "channel.cheer".to_owned(),
+                status: SubscriptionStatus::Degraded,
+                version: Some("v1".to_owned()),
+                event_count: None,
+                error_label: Some("retrying".to_owned()),
+            },
+            SubscriptionRow {
+                name: "channel.raid".to_owned(),
+                status: SubscriptionStatus::Active,
+                version: Some("v1".to_owned()),
+                event_count: Some(12),
+                error_label: None,
+            },
+        ],
+        footer: Some(ListFooter {
+            cta_label: Some("Manage subscriptions".to_owned()),
+            trailing_label: Some("4 topics".to_owned()),
+        }),
+    };
+    let scopes = DetailSection::ScopesList {
+        title: "OAuth scopes".to_owned(),
+        scopes: vec![
+            "chat:read".to_owned(),
+            "chat:edit".to_owned(),
+            "channel:read:subscriptions".to_owned(),
+            "bits:read".to_owned(),
+            "moderator:read:followers".to_owned(),
+        ],
+        footer: Some(ListFooter {
+            cta_label: None,
+            trailing_label: Some("5 granted".to_owned()),
+        }),
+    };
+    let live = DetailSection::InfoCard {
+        title: "Live broadcast".to_owned(),
+        live: true,
+        fields: vec![
+            InfoField {
+                label: "Viewers".to_owned(),
+                value: "1,204".to_owned(),
+                monospace_value: false,
+            },
+            InfoField {
+                label: "Category".to_owned(),
+                value: "Just Chatting".to_owned(),
+                monospace_value: false,
+            },
+            InfoField {
+                label: "Uptime".to_owned(),
+                value: "2h 14m".to_owned(),
+                monospace_value: false,
+            },
+            InfoField {
+                label: "Latency".to_owned(),
+                value: "2.1s".to_owned(),
+                monospace_value: true,
+            },
+        ],
+        health_bar: Some(HealthBar {
+            fraction: 0.72,
+            label: "72%".to_owned(),
+            level: HealthLevel::Good,
+        }),
+    };
+    let actions = vec![
+        quick("Run ad", "bolt", "twitch.ads.run", None, true),
+        quick("Create clip", "video", "twitch.clips.create", None, true),
+        quick(
+            "Commercial",
+            "broadcast",
+            "twitch.ads.commercial",
+            None,
+            true,
+        ),
+        quick(
+            "Shoutout",
+            "speakerphone",
+            "twitch.chat.shoutout",
+            None,
+            true,
+        ),
+    ];
+    assemble(
+        "brand-twitch",
+        status,
+        metrics,
+        vec![subs, scopes, live],
+        actions,
+    )
+}
+
+fn obs() -> IntegrationSeed {
+    let status = SnapshotStatus {
+        id: BuiltinId::new("obs"),
+        display_name: "OBS Studio".to_owned(),
+        version: Some("obs-websocket v5".to_owned()),
+        endpoint: Some("ws://localhost:4455".to_owned()),
+        uptime: Some(Duration::from_secs(2880)),
+        connection: ConnectionState::Connected,
+        capability_flags: CapabilityFlags {
+            limited: false,
+            label: None,
+        },
+        header_actions: vec![HeaderAction::Reconnect, HeaderAction::Disconnect],
+    };
+    let metrics = [
+        status_metric("WebSocket", "Connected", true, Some("v5.5.4")),
+        text_metric("Scenes", "6", None),
+        status_metric("Streaming", "Live", true, Some("6000 kb/s")),
+        text_metric("Dropped", "0.2%", Some("stable")),
+    ];
+    let scenes = ContentList {
+        title: "Scenes".to_owned(),
+        icon: SectionIcon::new("layout"),
+        count_label: Some("4".to_owned()),
+        items: vec![
+            list_item("layout", "Main", true, Some("Live")),
+            list_item("layout", "BRB", false, None),
+            list_item("layout", "Gameplay", false, None),
+            list_item("layout", "Ending", false, None),
+        ],
+        footer: None,
+    };
+    let sources = ContentList {
+        title: "Sources".to_owned(),
+        icon: SectionIcon::new("device-desktop"),
+        count_label: Some("4".to_owned()),
+        items: vec![
+            list_item("device-desktop", "Webcam", true, Some("On")),
+            list_item("device-desktop", "Game Capture", true, Some("On")),
+            list_item("device-desktop", "Chat Overlay", false, None),
+            list_item("volume", "Mic/Aux", false, None),
+        ],
+        footer: None,
+    };
+    let stats = DetailSection::StatsGrid {
+        title: "Stream stats".to_owned(),
+        icon: SectionIcon::new("activity"),
+        columns: vec![
+            StatColumn {
+                label: "Bitrate".to_owned(),
+                value: "6000".to_owned(),
+                subtitle: "kb/s".to_owned(),
+            },
+            StatColumn {
+                label: "FPS".to_owned(),
+                value: "60".to_owned(),
+                subtitle: "target 60".to_owned(),
+            },
+            StatColumn {
+                label: "Dropped".to_owned(),
+                value: "0.2%".to_owned(),
+                subtitle: "stable".to_owned(),
+            },
+        ],
+    };
+    let actions = vec![
+        quick(
+            "Switch scene",
+            "arrows-shuffle",
+            "obs.scenes.switch_current",
+            Some(PickerKind::Scene),
+            true,
+        ),
+        quick(
+            "Toggle source",
+            "eye",
+            "obs.sources.toggle",
+            Some(PickerKind::Source),
+            true,
+        ),
+        quick("Record", "record", "obs.record.start", None, true),
+        quick(
+            "Toggle mute",
+            "volume",
+            "obs.audio.toggle_mute",
+            Some(PickerKind::Input),
+            true,
+        ),
+    ];
+    assemble(
+        "broadcast",
+        status,
+        metrics,
+        vec![
+            DetailSection::TwoColumnLists {
+                left: scenes,
+                right: sources,
+            },
+            stats,
+        ],
+        actions,
+    )
+}
+
+fn kick() -> IntegrationSeed {
+    let status = SnapshotStatus {
+        id: BuiltinId::new("kick"),
+        display_name: "Kick".to_owned(),
+        version: None,
+        endpoint: Some("pusher.kick.com".to_owned()),
+        uptime: Some(Duration::from_secs(3720)),
+        connection: ConnectionState::Connected,
+        capability_flags: CapabilityFlags {
+            limited: true,
+            label: Some("Hybrid transport".to_owned()),
+        },
+        header_actions: vec![HeaderAction::Reconnect, HeaderAction::Disconnect],
+    };
+    let metrics = [
+        status_metric("Chat", "Connected", true, Some("pusher ws")),
+        text_metric("Messages", "312", None),
+        text_metric("Channel", "streamer", None),
+        text_metric("Mode", "read via ws", None),
+    ];
+    let banner = DetailSection::WarningBanner {
+        level: BannerLevel::Info,
+        title: "Hybrid chat transport".to_owned(),
+        body: "Chat receive rides the community Pusher WebSocket; writes use the official API."
+            .to_owned(),
+        cta: None,
+    };
+    let channel = DetailSection::KeyValueList {
+        title: "Channel".to_owned(),
+        icon: SectionIcon::new("user"),
+        items: vec![
+            KeyValueRow {
+                icon: SectionIcon::new("user"),
+                name: "streamer".to_owned(),
+                tag: Some("id 4421".to_owned()),
+                action: None,
+            },
+            KeyValueRow {
+                icon: SectionIcon::new("users"),
+                name: "12,004 followers".to_owned(),
+                tag: None,
+                action: None,
+            },
+            KeyValueRow {
+                icon: SectionIcon::new("star"),
+                name: "318 subscribers".to_owned(),
+                tag: None,
+                action: None,
+            },
+        ],
+    };
+    let actions = vec![
+        quick("Send message", "message", "kick.chat.send", None, true),
+        quick("Clear chat", "trash", "kick.chat.clear", None, true),
+        quick("Slow mode", "clock", "kick.chat.slow_mode", None, true),
+        quick("Ban user", "ban", "kick.mod.ban", None, false),
+    ];
+    assemble(
+        "brand-kick",
+        status,
+        metrics,
+        vec![banner, channel],
+        actions,
+    )
+}
+
+fn generic(id: &BuiltinId, display_name: &str, icon: &str) -> IntegrationSeed {
+    let status = SnapshotStatus {
+        id: id.clone(),
+        display_name: display_name.to_owned(),
+        version: None,
+        endpoint: None,
+        uptime: None,
+        connection: ConnectionState::Disconnected,
+        capability_flags: CapabilityFlags {
+            limited: false,
+            label: None,
+        },
+        header_actions: vec![HeaderAction::Reconnect],
+    };
+    let metrics = [
+        status_metric("Status", "Not connected", false, None),
+        text_metric("Activity", "—", None),
+        text_metric("Session", "—", None),
+        text_metric("Detail", "—", None),
+    ];
+    let overview = DetailSection::ActiveItemList {
+        title: "Overview".to_owned(),
+        icon: SectionIcon::new("info-circle"),
+        items: vec![ActiveRow {
+            name: "Connect to see live status".to_owned(),
+            active: false,
+            mode_label: Some("idle".to_owned()),
+        }],
+    };
+    let details = DetailSection::InfoCard {
+        title: "Details".to_owned(),
+        live: false,
+        fields: vec![
+            InfoField {
+                label: "Status".to_owned(),
+                value: "Not connected".to_owned(),
+                monospace_value: false,
+            },
+            InfoField {
+                label: "Since".to_owned(),
+                value: "—".to_owned(),
+                monospace_value: true,
+            },
+        ],
+        health_bar: None,
+    };
+    assemble(icon, status, metrics, vec![overview, details], Vec::new())
+}

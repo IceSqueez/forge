@@ -1,3 +1,4 @@
+use forge_platform_core::BuiltinId;
 use gpui::{AnyView, AppContext, Context, Entity, FocusHandle, Window, div, prelude::*};
 
 use crate::actions::{GoActions, GoChat, GoHome, GoSettings, GoTriggers, GoTwitch, SHELL_CONTEXT};
@@ -6,6 +7,7 @@ use crate::chrome::Chrome;
 use crate::event_feed::EventFeedView;
 use crate::globals_view::GlobalsView;
 use crate::home::HomeView;
+use crate::integration_detail::IntegrationDetail;
 use crate::platforms::PlatformsView;
 use crate::presentation::{ActivePresentation, Presentation};
 use crate::runtime_status::RuntimeStatus;
@@ -41,15 +43,15 @@ impl AppShell {
         cx: &mut Context<Self>,
     ) -> Self {
         let screen = Screen::Home;
-        let content = Self::content_for(screen, &topics, cx);
+        let content = Self::content_for(&screen, &topics, cx);
         let focus = cx.focus_handle();
-        let chrome = Chrome::new(status, screen, cx);
+        let chrome = Chrome::new(status, screen.clone(), cx);
 
         // The sidebar voices navigation intent; the root is the sole router owner.
         cx.subscribe(
             &chrome.sidebar,
             |this, _sidebar, event: &NavRequested, cx| {
-                this.navigate(event.0, cx);
+                this.navigate(event.0.clone(), cx);
             },
         )
         .detach();
@@ -78,12 +80,12 @@ impl AppShell {
     /// Screens that voice navigation intent do so through [`NavRequested`]; Home is
     /// wired here the same way the sidebar is — the shell subscribes and routes, so
     /// the active screen stays single-sourced on this root.
-    fn content_for(screen: Screen, topics: &Topics, cx: &mut Context<Self>) -> AnyView {
+    fn content_for(screen: &Screen, topics: &Topics, cx: &mut Context<Self>) -> AnyView {
         match screen {
             Screen::Home => {
                 let home = cx.new(|cx| HomeView::new(topics.home_stats.clone(), cx));
                 cx.subscribe(&home, |this, _home, event: &NavRequested, cx| {
-                    this.navigate(event.0, cx);
+                    this.navigate(event.0.clone(), cx);
                 })
                 .detach();
                 home.into()
@@ -102,13 +104,22 @@ impl AppShell {
             Screen::Platforms => {
                 let platforms = cx.new(|cx| PlatformsView::new(topics.platforms.clone(), cx));
                 cx.subscribe(&platforms, |this, _view, event: &NavRequested, cx| {
-                    this.navigate(event.0, cx);
+                    this.navigate(event.0.clone(), cx);
                 })
                 .detach();
                 platforms.into()
             }
+            Screen::BuiltinDetail(id) => {
+                let id = id.clone();
+                let detail = cx.new(|cx| IntegrationDetail::new(id, cx));
+                cx.subscribe(&detail, |this, _view, event: &NavRequested, cx| {
+                    this.navigate(event.0.clone(), cx);
+                })
+                .detach();
+                detail.into()
+            }
             Screen::Settings => cx.new(SettingsView::new).into(),
-            _ => cx.new(|_| ScreenStub::new(screen)).into(),
+            other => cx.new(|_| ScreenStub::new(other.clone())).into(),
         }
     }
 
@@ -119,12 +130,12 @@ impl AppShell {
         if self.screen == screen {
             return;
         }
-        self.screen = screen;
-        self.content = Self::content_for(screen, &self.topics, cx);
+        self.content = Self::content_for(&screen, &self.topics, cx);
         self.chrome.sidebar.update(cx, |sidebar, cx| {
-            sidebar.set_current(screen);
+            sidebar.set_current(screen.clone());
             cx.notify();
         });
+        self.screen = screen;
         cx.notify();
     }
 
@@ -145,7 +156,7 @@ impl AppShell {
     }
 
     fn go_twitch(&mut self, _: &GoTwitch, _: &mut Window, cx: &mut Context<Self>) {
-        self.navigate(Screen::Twitch, cx);
+        self.navigate(Screen::BuiltinDetail(BuiltinId::new("twitch")), cx);
     }
 
     fn go_settings(&mut self, _: &GoSettings, _: &mut Window, cx: &mut Context<Self>) {

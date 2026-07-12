@@ -2,6 +2,7 @@ pub mod breadcrumb;
 pub mod buttons;
 pub mod cards;
 pub mod chip;
+pub mod confirm;
 pub mod footer;
 pub mod icons;
 pub mod modal;
@@ -18,6 +19,7 @@ pub use buttons::{
 };
 pub use cards::{Card, RowCard, card, metric_card, row_card, stat_row};
 pub use chip::{Chip, ChipGlyph, chip, filter_chip_row};
+pub use confirm::{ConfirmModal, ConfirmTone, confirm_modal};
 pub use footer::{FOOTER_HEIGHT, app_footer, split_version_stage};
 pub use icons::{Icon, IconAssets, icon, icon_inherit};
 pub use modal::{Modal, modal};

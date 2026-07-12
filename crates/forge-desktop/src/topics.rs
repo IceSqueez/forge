@@ -1,6 +1,7 @@
 use gpui::Entity;
 
 use crate::chat_feed::ChatFeed;
+use crate::event_log::EventLog;
 use crate::home_stats::HomeStats;
 
 /// Plain grouping of the runtime→UI bridge topic entities — the observable caches
@@ -13,13 +14,19 @@ use crate::home_stats::HomeStats;
 pub struct Topics {
     pub chat_feed: Entity<ChatFeed>,
     pub home_stats: Entity<HomeStats>,
+    pub event_log: Entity<EventLog>,
 }
 
 impl Topics {
-    pub fn new(chat_feed: Entity<ChatFeed>, home_stats: Entity<HomeStats>) -> Self {
+    pub fn new(
+        chat_feed: Entity<ChatFeed>,
+        home_stats: Entity<HomeStats>,
+        event_log: Entity<EventLog>,
+    ) -> Self {
         Self {
             chat_feed,
             home_stats,
+            event_log,
         }
     }
 }

@@ -2,6 +2,8 @@ mod actions;
 mod chat;
 mod chat_feed;
 mod chrome;
+mod event_feed;
+mod event_log;
 mod footer;
 mod home;
 mod home_stats;
@@ -27,6 +29,7 @@ use gpui::{
 
 use crate::actions::register_shell_key_bindings;
 use crate::chat_feed::ChatFeed;
+use crate::event_log::EventLog;
 use crate::home_stats::HomeStats;
 use crate::presentation::Presentation;
 use crate::runtime_status::RuntimeStatus;
@@ -99,11 +102,16 @@ fn main() {
             // dashboard source exists; the bridge advances it (e.g. on `action.done`)
             // and real sources replace each field as they land.
             let home_stats = cx.new(|_| HomeStats::seeded());
+            // Seeded so the Event Feed renders a representative sample before real
+            // traffic; the bridge streams live observability events into it, so the
+            // boot tick publisher's `timer.tick` rows accumulate on top of the seed.
+            let event_log = cx.new(|_| EventLog::seeded());
             start_bridge(
                 cx,
                 status.clone(),
                 chat_feed.clone(),
                 home_stats.clone(),
+                event_log.clone(),
                 Arc::clone(&bus),
             );
 
@@ -129,11 +137,16 @@ fn main() {
             let status_for_window = status.clone();
             let chat_feed_for_window = chat_feed.clone();
             let home_stats_for_window = home_stats.clone();
+            let event_log_for_window = event_log.clone();
             match cx.open_window(options, move |window, cx| {
                 cx.new(|cx| {
                     AppShell::new(
                         status_for_window.clone(),
-                        Topics::new(chat_feed_for_window.clone(), home_stats_for_window.clone()),
+                        Topics::new(
+                            chat_feed_for_window.clone(),
+                            home_stats_for_window.clone(),
+                            event_log_for_window.clone(),
+                        ),
                         window,
                         cx,
                     )
@@ -155,6 +168,7 @@ fn start_bridge(
     status: gpui::Entity<RuntimeStatus>,
     chat_feed: gpui::Entity<ChatFeed>,
     home_stats: gpui::Entity<HomeStats>,
+    event_log: gpui::Entity<EventLog>,
     bus: Arc<EventBus>,
 ) {
     cx.spawn(async move |cx| {
@@ -162,6 +176,20 @@ fn start_bridge(
         loop {
             match subscription.recv().await {
                 Ok(event) => {
+                    // Every observability event streams into the feed topic first
+                    // (the feed's own Pause flag gates collection). This is the live
+                    // runtime→UI edge the Event Feed screen observes; `timer.tick`
+                    // rows accumulate here on top of the boot seed.
+                    if let Some(item) = EventLog::item_from_event(&event)
+                        && event_log
+                            .update(cx, |log, cx| {
+                                log.push(item);
+                                cx.notify();
+                            })
+                            .is_err()
+                    {
+                        break;
+                    }
                     if event.kind == "timer.tick" {
                         if status
                             .update(cx, |status, cx| {

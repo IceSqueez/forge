@@ -3,6 +3,7 @@ use gpui::{AnyView, AppContext, Context, Entity, FocusHandle, Window, div, prelu
 use crate::actions::{GoActions, GoChat, GoHome, GoSettings, GoTriggers, GoTwitch, SHELL_CONTEXT};
 use crate::chat::ChatView;
 use crate::chrome::Chrome;
+use crate::event_feed::EventFeedView;
 use crate::home::HomeView;
 use crate::presentation::{ActivePresentation, Presentation};
 use crate::runtime_status::RuntimeStatus;
@@ -89,6 +90,9 @@ impl AppShell {
                 cx.new(|cx| ChatView::new(topics.chat_feed.clone(), palette, cx))
                     .into()
             }
+            Screen::EventFeed => cx
+                .new(|cx| EventFeedView::new(topics.event_log.clone(), cx))
+                .into(),
             _ => cx.new(|_| ScreenStub::new(screen)).into(),
         }
     }

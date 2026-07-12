@@ -4,6 +4,7 @@ use crate::chat_feed::ChatFeed;
 use crate::event_log::EventLog;
 use crate::globals::Globals;
 use crate::home_stats::HomeStats;
+use crate::platforms::PlatformConnectivity;
 
 /// Plain grouping of the runtime→UI bridge topic entities — the observable caches
 /// the boot bridge drains the runtime bus into. It is a state-less handle bundle,
@@ -17,6 +18,7 @@ pub struct Topics {
     pub home_stats: Entity<HomeStats>,
     pub event_log: Entity<EventLog>,
     pub globals: Entity<Globals>,
+    pub platforms: Entity<PlatformConnectivity>,
 }
 
 impl Topics {
@@ -25,12 +27,14 @@ impl Topics {
         home_stats: Entity<HomeStats>,
         event_log: Entity<EventLog>,
         globals: Entity<Globals>,
+        platforms: Entity<PlatformConnectivity>,
     ) -> Self {
         Self {
             chat_feed,
             home_stats,
             event_log,
             globals,
+            platforms,
         }
     }
 }

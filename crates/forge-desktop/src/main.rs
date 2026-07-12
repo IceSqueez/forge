@@ -9,6 +9,7 @@ mod globals;
 mod globals_view;
 mod home;
 mod home_stats;
+mod platforms;
 mod presentation;
 mod runtime_status;
 mod screen;
@@ -35,6 +36,7 @@ use crate::chat_feed::ChatFeed;
 use crate::event_log::EventLog;
 use crate::globals::Globals;
 use crate::home_stats::HomeStats;
+use crate::platforms::PlatformConnectivity;
 use crate::presentation::Presentation;
 use crate::runtime_status::RuntimeStatus;
 use crate::shell::AppShell;
@@ -115,6 +117,10 @@ fn main() {
             // no runtime source yet, so the bridge does not drain into it — edits
             // mutate this in-memory cache directly.
             let globals = cx.new(|_| Globals::seeded());
+            // Seeded so the Platforms overview renders visibly before a connectivity
+            // bridge exists; the bridge replaces each entry as the platform-connection
+            // stream lands.
+            let platforms = cx.new(|_| PlatformConnectivity::seeded());
             start_bridge(
                 cx,
                 status.clone(),
@@ -148,6 +154,7 @@ fn main() {
             let home_stats_for_window = home_stats.clone();
             let event_log_for_window = event_log.clone();
             let globals_for_window = globals.clone();
+            let platforms_for_window = platforms.clone();
             match cx.open_window(options, move |window, cx| {
                 cx.new(|cx| {
                     AppShell::new(
@@ -157,6 +164,7 @@ fn main() {
                             home_stats_for_window.clone(),
                             event_log_for_window.clone(),
                             globals_for_window.clone(),
+                            platforms_for_window.clone(),
                         ),
                         window,
                         cx,

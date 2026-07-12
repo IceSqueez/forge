@@ -6,6 +6,7 @@ use crate::chrome::Chrome;
 use crate::event_feed::EventFeedView;
 use crate::globals_view::GlobalsView;
 use crate::home::HomeView;
+use crate::platforms::PlatformsView;
 use crate::presentation::{ActivePresentation, Presentation};
 use crate::runtime_status::RuntimeStatus;
 use crate::screen::Screen;
@@ -98,6 +99,14 @@ impl AppShell {
             Screen::Globals => cx
                 .new(|cx| GlobalsView::new(topics.globals.clone(), cx))
                 .into(),
+            Screen::Platforms => {
+                let platforms = cx.new(|cx| PlatformsView::new(topics.platforms.clone(), cx));
+                cx.subscribe(&platforms, |this, _view, event: &NavRequested, cx| {
+                    this.navigate(event.0, cx);
+                })
+                .detach();
+                platforms.into()
+            }
             Screen::Settings => cx.new(SettingsView::new).into(),
             _ => cx.new(|_| ScreenStub::new(screen)).into(),
         }

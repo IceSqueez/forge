@@ -338,7 +338,7 @@ impl HomeView {
             "connected".to_owned(),
             "Manage platforms, apps and modules",
             warn,
-            Screen::Twitch,
+            Screen::Platforms,
             palette,
             density,
             cx,

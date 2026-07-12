@@ -15,6 +15,7 @@ pub enum Screen {
     EventFeed,
     Globals,
     Scripts,
+    Platforms,
     Twitch,
     YouTube,
     Kick,
@@ -40,6 +41,7 @@ impl Screen {
             Screen::EventFeed => "Event feed",
             Screen::Globals => "Globals",
             Screen::Scripts => "Scripts",
+            Screen::Platforms => "Platforms",
             Screen::Twitch => "Twitch",
             Screen::YouTube => "YouTube",
             Screen::Kick => "Kick",
@@ -68,9 +70,12 @@ impl Screen {
             Screen::EventFeed => Icon::Activity,
             Screen::Globals => Icon::Variable,
             Screen::Scripts => Icon::FileCode,
-            Screen::Twitch | Screen::YouTube | Screen::Kick | Screen::Obs | Screen::VTube => {
-                Icon::Broadcast
-            }
+            Screen::Platforms
+            | Screen::Twitch
+            | Screen::YouTube
+            | Screen::Kick
+            | Screen::Obs
+            | Screen::VTube => Icon::Broadcast,
             Screen::Tts => Icon::Volume,
             Screen::Soundboard => Icon::Music,
             Screen::Midi => Icon::PlugConnected,

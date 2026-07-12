@@ -2713,6 +2713,7 @@ name = "forge-components"
 version = "0.2.0-beta.3"
 dependencies = [
  "gpui",
+ "unicode-segmentation",
 ]
 
 [[package]]

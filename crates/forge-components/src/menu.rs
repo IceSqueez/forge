@@ -501,3 +501,36 @@ impl RenderOnce for MenuButton {
         root
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn noop(_: &ClickEvent, _: &mut Window, _: &mut App) {}
+
+    #[test]
+    fn actionable_count_counts_only_enabled_items() {
+        // Contract: an actionable row is an ENABLED `MenuItem::Item`. Dividers,
+        // headers and disabled items are all non-actionable. A mixed slice pins
+        // that the filter excludes disabled rows AND structural rows (not just
+        // one of the two), and the degenerate slices pin the zero floor.
+        let cases: Vec<(Vec<MenuItem>, usize)> = vec![
+            (
+                vec![
+                    menu_item("first", "First", noop).into(),
+                    menu_item("blocked", "Blocked", noop).disabled(true).into(),
+                    menu_divider(),
+                    menu_header("Section"),
+                    menu_item("second", "Second", noop).into(),
+                ],
+                2,
+            ),
+            (vec![], 0),
+            (vec![menu_divider(), menu_header("Only structure")], 0),
+        ];
+
+        for (items, expected) in cases {
+            assert_eq!(actionable_count(&items), expected);
+        }
+    }
+}

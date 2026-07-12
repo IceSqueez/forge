@@ -333,3 +333,42 @@ impl RenderOnce for ConfirmModal {
         card
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::palette::CATPPUCCIN_MOCHA;
+
+    fn assert_same_hue(got: Rgba, want: Rgba) {
+        assert_eq!(got.r, want.r, "red channel");
+        assert_eq!(got.g, want.g, "green channel");
+        assert_eq!(got.b, want.b, "blue channel");
+        assert_eq!(got.a, want.a, "alpha channel");
+    }
+
+    // Pins the tone->palette-field mapping so a mis-wire (e.g. Warning keyed onto
+    // `random`, `brand`, or `text_muted`) fails here. Channel-wise so it also
+    // catches a swap to any other field that happened to share a component.
+    #[test]
+    fn tone_resolves_to_its_severity_palette_field() {
+        let p = &CATPPUCCIN_MOCHA;
+        for (tone, want) in [
+            (ConfirmTone::Destructive, p.random),
+            (ConfirmTone::Warning, p.warning),
+        ] {
+            assert_same_hue(tone.accent(p), want);
+        }
+    }
+
+    // Guard giving the mapping test teeth: the two tones must land on visibly
+    // different hues, so pinning each to a distinct field is a real constraint
+    // rather than two names for one colour.
+    #[test]
+    fn destructive_and_warning_are_distinct_hues() {
+        let p = &CATPPUCCIN_MOCHA;
+        assert_ne!(
+            ConfirmTone::Destructive.accent(p),
+            ConfirmTone::Warning.accent(p),
+        );
+    }
+}

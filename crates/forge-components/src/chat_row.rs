@@ -579,3 +579,151 @@ impl RenderOnce for ChatRowView {
             .child(content)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::palette::CATPPUCCIN_MOCHA;
+
+    /// Channel-wise colour identity. `Rgba` carries neither `Debug` nor `Eq`, so
+    /// this stands in for the `assert_eq!` the hue assertions would otherwise reach
+    /// for.
+    fn same_rgba(a: Rgba, b: Rgba) -> bool {
+        a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a
+    }
+
+    #[test]
+    fn badge_maps_each_kind_to_its_hue_field_and_caption() {
+        let p = CATPPUCCIN_MOCHA;
+
+        // Guard: the distinct palette fields the badge map draws from are pairwise
+        // distinct, so each per-kind hue row below has teeth — a mis-wire to a
+        // neighbouring field (VIP onto `warning`, Subscriber onto `success`, ...)
+        // resolves to a detectably different colour rather than a silent alias.
+        // `brand` (Vip/Bot/Turbo) and `bits` (Bits/BitsLeader) are intentionally
+        // shared within their own group and appear once here.
+        let distinct = [
+            p.success,
+            p.brand,
+            p.info,
+            p.warning,
+            p.accent_teal,
+            p.accent_pink_light,
+            p.disabled,
+            p.bits,
+        ];
+        for i in 0..distinct.len() {
+            for j in (i + 1)..distinct.len() {
+                assert!(
+                    !same_rgba(distinct[i], distinct[j]),
+                    "badge hue fields {i} and {j} collide",
+                );
+            }
+        }
+
+        // Captions are deliberate abbreviations (OWN not OWNER, PRIME not PREMIUM,
+        // HYPE not HYPE TRAIN) — a future "tidy-up" that expands them is the
+        // regression this row pins.
+        for (kind, hue, label) in [
+            (BadgeKind::Moderator, p.success, "MOD"),
+            (BadgeKind::Vip, p.brand, "VIP"),
+            (BadgeKind::Subscriber, p.info, "SUB"),
+            (BadgeKind::Bot, p.brand, "BOT"),
+            (BadgeKind::Broadcaster, p.warning, "OWN"),
+            (BadgeKind::Partner, p.accent_teal, "PARTNER"),
+            (BadgeKind::Premium, p.accent_pink_light, "PRIME"),
+            (BadgeKind::Founder, p.disabled, "FOUNDER"),
+            (BadgeKind::Turbo, p.brand, "TURBO"),
+            (BadgeKind::HypeTrain, p.warning, "HYPE"),
+            (BadgeKind::Bits, p.bits, "BITS"),
+            (BadgeKind::BitsLeader, p.bits, "BITS LEADER"),
+        ] {
+            assert!(same_rgba(badge_color(kind, &p), hue), "hue for {kind:?}");
+            assert_eq!(badge_label(kind), label, "label for {kind:?}");
+        }
+    }
+
+    #[test]
+    fn platform_maps_each_source_to_its_tile_hue_and_letter() {
+        let p = CATPPUCCIN_MOCHA;
+
+        // Guard: the three tile hues are distinct, so a swapped arm returns a
+        // detectably wrong colour rather than the same value on two sources.
+        assert!(!same_rgba(p.brand, p.random));
+        assert!(!same_rgba(p.random, p.info));
+        assert!(!same_rgba(p.brand, p.info));
+
+        for (platform, hue, letter) in [
+            (Platform::Twitch, p.brand, "T"),
+            (Platform::YouTube, p.random, "Y"),
+            (Platform::Kick, p.info, "K"),
+        ] {
+            assert!(same_rgba(platform.color(&p), hue), "hue for {platform:?}");
+            assert_eq!(platform.letter(), letter, "letter for {platform:?}");
+        }
+    }
+
+    #[test]
+    fn triggered_is_carried_only_by_the_pill_bearing_bodies() {
+        // `triggered()` fans three variants' optional pill into one accessor and
+        // must return `None` for the two bodies that carry no pill field
+        // (Message, Cheer). Both the Some-passthrough and the structural `None`
+        // are pinned here.
+        let cases: [(ChatBody, Option<&str>); 7] = [
+            (ChatBody::Message("hi".into()), None),
+            (
+                ChatBody::Subscription {
+                    descriptor: "".into(),
+                    months: None,
+                    message: None,
+                    triggered: Some("greet".into()),
+                },
+                Some("greet"),
+            ),
+            (
+                ChatBody::Subscription {
+                    descriptor: "".into(),
+                    months: None,
+                    message: None,
+                    triggered: None,
+                },
+                None,
+            ),
+            (
+                ChatBody::Cheer {
+                    descriptor: "".into(),
+                    bits: 0,
+                    text: "".into(),
+                },
+                None,
+            ),
+            (
+                ChatBody::Raid {
+                    descriptor: "".into(),
+                    viewers: "".into(),
+                    triggered: Some("raid-fx".into()),
+                },
+                Some("raid-fx"),
+            ),
+            (
+                ChatBody::Command {
+                    command: "".into(),
+                    triggered: Some("run · 12ms".into()),
+                },
+                Some("run · 12ms"),
+            ),
+            (
+                ChatBody::Command {
+                    command: "".into(),
+                    triggered: None,
+                },
+                None,
+            ),
+        ];
+        for (body, expected) in cases {
+            let got = body.triggered();
+            let got: Option<&str> = got.as_ref().map(|s| s.as_ref());
+            assert_eq!(got, expected, "for {body:?}");
+        }
+    }
+}

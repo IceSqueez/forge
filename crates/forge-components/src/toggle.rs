@@ -135,3 +135,38 @@ impl RenderOnce for Toggle {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::palette::CATPPUCCIN_MOCHA;
+
+    /// Pins the on/off → (track, thumb) field mapping AND that the `on_track` accent
+    /// is honored only while on. The accent sentinel is `brand`, deliberately distinct
+    /// from both the bare-`toggle` default (`success`) and the off-track fill
+    /// (`surface_overlay`): so if the off arm wrongly returned `on_track`, the off row
+    /// would paint `brand` instead of `surface_overlay` and fail here.
+    #[test]
+    fn resolves_track_and_thumb_per_state_applying_accent_only_when_on() {
+        let p = &CATPPUCCIN_MOCHA;
+        let accent = p.brand;
+
+        // Guard: the four keyed hues must be pairwise distinct, else a swapped field
+        // assignment in production could satisfy the assertions by coincidence.
+        let keyed = [p.brand, p.shell, p.surface_overlay, p.text_faint];
+        for (i, a) in keyed.iter().enumerate() {
+            for b in &keyed[i + 1..] {
+                assert_ne!(a, b, "keyed palette hues must be distinct");
+            }
+        }
+
+        for (on, want_track, want_thumb) in [
+            (true, accent, p.shell),
+            (false, p.surface_overlay, p.text_faint),
+        ] {
+            let c = toggle_colors(on, accent, p);
+            assert_eq!(c.track, want_track, "track mismatch for on={on}");
+            assert_eq!(c.thumb, want_thumb, "thumb mismatch for on={on}");
+        }
+    }
+}

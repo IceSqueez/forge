@@ -4,6 +4,7 @@ pub mod cards;
 pub mod chip;
 pub mod footer;
 pub mod icons;
+pub mod modal;
 pub mod overlay;
 pub mod palette;
 pub mod side_sheet;
@@ -19,6 +20,7 @@ pub use cards::{Card, RowCard, card, metric_card, row_card, stat_row};
 pub use chip::{Chip, ChipGlyph, chip, filter_chip_row};
 pub use footer::{FOOTER_HEIGHT, app_footer, split_version_stage};
 pub use icons::{Icon, IconAssets, icon, icon_inherit};
+pub use modal::{Modal, modal};
 pub use overlay::{Overlay, OverlayPosition, overlay};
 pub use palette::{
     CATPPUCCIN_MOCHA, ForgePalette, LATTE, TOKYO_NIGHT, ThemeId, bd_mauve_soft, bd_warn_soft,

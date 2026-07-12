@@ -189,3 +189,75 @@ impl RenderOnce for Slider {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{fraction, value_at};
+
+    const EPS: f32 = 1e-5;
+    const MIN: f32 = 20.0;
+    const MAX: f32 = 100.0;
+
+    fn close(a: f32, b: f32) -> bool {
+        (a - b).abs() < EPS
+    }
+
+    #[test]
+    fn fraction_normalizes_and_clamps_across_the_span() {
+        for (value, expected) in [
+            (MIN, 0.0),        // lower bound maps to 0
+            (MAX, 1.0),        // upper bound maps to 1
+            (60.0, 0.5),       // midpoint of [20, 100]
+            (MIN - 30.0, 0.0), // below min clamps to 0
+            (MAX + 30.0, 1.0), // above max clamps to 1
+        ] {
+            let f = fraction(value, MIN, MAX);
+            assert!(
+                close(f, expected),
+                "fraction({value}) = {f}, want {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn fraction_returns_zero_when_span_is_not_positive() {
+        // Why: a naive (value - min) / (max - min) divides by zero here and yields
+        // NaN/inf, which would corrupt the track width. The guard must return 0.0.
+        for (min, max) in [(50.0, 50.0), (100.0, 20.0)] {
+            let f = fraction(75.0, min, max);
+            assert!(
+                f.is_finite(),
+                "fraction over span [{min},{max}] = {f}, not finite"
+            );
+            assert!(
+                close(f, 0.0),
+                "fraction over span [{min},{max}] = {f}, want 0.0"
+            );
+        }
+    }
+
+    #[test]
+    fn value_at_maps_fraction_back_onto_the_range_and_clamps() {
+        for (frac, expected) in [
+            (0.0, MIN),  // start of track is min
+            (1.0, MAX),  // end of track is max
+            (0.5, 60.0), // midpoint of [20, 100]
+            (-0.5, MIN), // below 0 clamps to min
+            (1.5, MAX),  // above 1 clamps to max
+        ] {
+            let v = value_at(frac, MIN, MAX);
+            assert!(
+                close(v, expected),
+                "value_at({frac}) = {v}, want {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn value_at_is_the_inverse_of_fraction_over_the_valid_range() {
+        for v in [MIN, 35.0, 60.0, 99.9, MAX] {
+            let round = value_at(fraction(v, MIN, MAX), MIN, MAX);
+            assert!(close(round, v), "round-trip of {v} = {round}");
+        }
+    }
+}

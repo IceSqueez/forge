@@ -9,5 +9,8 @@ repository.workspace = true
 gpui = { workspace = true }
 unicode-segmentation = "1.13"
 
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }
+
 [lints]
 workspace = true

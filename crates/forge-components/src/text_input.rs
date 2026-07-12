@@ -755,3 +755,183 @@ impl Render for TextInput {
             .child(TextElement { input: cx.entity() })
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    // Seed a headless TextInput with `content`, then run `f` against its private
+    // editing methods and return what `f` observes. gpui's TestAppContext backs
+    // the window with a headless TestWindow — no GPU, no paint, no network — so
+    // this is the sanctioned in-process harness, not a "real service".
+    fn with_input<R>(
+        cx: &mut gpui::TestAppContext,
+        content: &str,
+        f: impl FnOnce(&mut TextInput, &mut Window, &mut Context<TextInput>) -> R,
+    ) -> R {
+        let window = cx.add_window(|_window, cx| TextInput::new("placeholder", cx));
+        window
+            .update(cx, |input, window, cx| {
+                input.set_content(content.to_string(), cx);
+                f(input, window, cx)
+            })
+            .unwrap()
+    }
+
+    #[gpui::test]
+    fn backspace_deletes_the_whole_previous_grapheme_cluster(cx: &mut gpui::TestAppContext) {
+        // Why: previous_boundary must step one extended grapheme cluster, never a
+        // byte or a codepoint. A byte-based cursor slices mid-emoji (panic on the
+        // non-char-boundary slice); a codepoint-based one tears a ZWJ / flag
+        // cluster apart. set_content parks the caret at the end, so one backspace
+        // removes the final cluster.
+        for (before, after) in [
+            ("a😀", "a"),    // 4-byte astral emoji removed whole
+            ("café", "caf"), // 2-byte é removed whole
+            ("🇺🇦", ""),      // regional-indicator flag: one cluster, 8 bytes
+            ("👨‍👩‍👧", ""),      // ZWJ family: one cluster, many codepoints
+        ] {
+            let content = with_input(cx, before, |input, window, cx| {
+                input.backspace(&Backspace, window, cx);
+                input.content().to_string()
+            });
+            assert_eq!(content, after, "backspace on {before:?}");
+        }
+    }
+
+    #[gpui::test]
+    fn delete_removes_the_whole_next_grapheme_cluster(cx: &mut gpui::TestAppContext) {
+        for (before, after) in [("😀a", "a"), ("🇺🇦b", "b"), ("👨‍👩‍👧z", "z")] {
+            let content = with_input(cx, before, |input, window, cx| {
+                input.home(&Home, window, cx); // caret to offset 0
+                input.delete(&Delete, window, cx);
+                input.content().to_string()
+            });
+            assert_eq!(content, after, "delete-forward on {before:?}");
+        }
+    }
+
+    #[gpui::test]
+    fn cursor_left_lands_only_on_grapheme_boundaries(cx: &mut gpui::TestAppContext) {
+        // "a😀b": grapheme starts sit at byte offsets 0, 1, 5 (total len 6). The
+        // caret must never rest at 2, 3 or 4 (inside the emoji's 4 bytes).
+        let stops = with_input(cx, "a😀b", |input, window, cx| {
+            input.end(&End, window, cx); // caret at len 6
+            let mut seen = Vec::new();
+            for _ in 0..3 {
+                input.left(&Left, window, cx);
+                seen.push(input.cursor_offset());
+            }
+            seen
+        });
+        assert_eq!(stops, vec![5usize, 1, 0]);
+    }
+
+    #[gpui::test]
+    fn cursor_right_lands_only_on_grapheme_boundaries(cx: &mut gpui::TestAppContext) {
+        let stops = with_input(cx, "a😀b", |input, window, cx| {
+            input.home(&Home, window, cx); // caret at offset 0
+            let mut seen = Vec::new();
+            for _ in 0..3 {
+                input.right(&Right, window, cx);
+                seen.push(input.cursor_offset());
+            }
+            seen
+        });
+        assert_eq!(stops, vec![1usize, 5, 6]);
+    }
+
+    #[gpui::test]
+    fn typing_inserts_text_at_the_cursor_and_advances_it(cx: &mut gpui::TestAppContext) {
+        let (content, cursor) = with_input(cx, "helo", |input, window, cx| {
+            input.home(&Home, window, cx);
+            input.right(&Right, window, cx);
+            input.right(&Right, window, cx); // caret between "he" and "lo" -> offset 2
+            input.replace_text_in_range(None, "l", window, cx);
+            (input.content().to_string(), input.cursor_offset())
+        });
+        assert_eq!(content, "hello");
+        assert_eq!(cursor, 3); // caret sits just after the inserted grapheme
+    }
+
+    #[gpui::test]
+    fn select_all_then_type_replaces_the_entire_content(cx: &mut gpui::TestAppContext) {
+        let content = with_input(cx, "hello world", |input, window, cx| {
+            input.select_all(&SelectAll, window, cx);
+            input.replace_text_in_range(None, "X", window, cx);
+            input.content().to_string()
+        });
+        assert_eq!(content, "X");
+    }
+
+    #[gpui::test]
+    fn backspace_with_a_selection_deletes_exactly_the_selection(cx: &mut gpui::TestAppContext) {
+        // A non-empty selection means backspace deletes the selection verbatim and
+        // does NOT swallow an extra grapheme before it.
+        let content = with_input(cx, "hello", |input, window, cx| {
+            input.home(&Home, window, cx);
+            for _ in 0..3 {
+                input.select_right(&SelectRight, window, cx); // select "hel" (0..3)
+            }
+            input.backspace(&Backspace, window, cx);
+            input.content().to_string()
+        });
+        assert_eq!(content, "lo");
+    }
+
+    #[gpui::test]
+    fn backspace_at_the_start_is_a_no_op(cx: &mut gpui::TestAppContext) {
+        let content = with_input(cx, "hi", |input, window, cx| {
+            input.home(&Home, window, cx);
+            input.backspace(&Backspace, window, cx);
+            input.content().to_string()
+        });
+        assert_eq!(content, "hi");
+    }
+
+    #[gpui::test]
+    fn delete_at_the_end_is_a_no_op(cx: &mut gpui::TestAppContext) {
+        let content = with_input(cx, "hi", |input, window, cx| {
+            input.end(&End, window, cx);
+            input.delete(&Delete, window, cx);
+            input.content().to_string()
+        });
+        assert_eq!(content, "hi");
+    }
+
+    #[gpui::test]
+    fn read_only_input_rejects_every_edit_path(cx: &mut gpui::TestAppContext) {
+        // Why: read_only is a hard invariant — no edit action nor the IME replace
+        // path may mutate the buffer.
+        let window = cx.add_window(|_window, cx| TextInput::new("", cx).read_only(true));
+        let content = window
+            .update(cx, |input, window, cx| {
+                input.set_content("locked".to_string(), cx);
+                input.backspace(&Backspace, window, cx);
+                input.home(&Home, window, cx);
+                input.delete(&Delete, window, cx);
+                input.replace_text_in_range(None, "x", window, cx);
+                input.content().to_string()
+            })
+            .unwrap();
+        assert_eq!(content, "locked");
+    }
+
+    #[gpui::test]
+    fn utf16_offsets_map_across_the_astral_plane(cx: &mut gpui::TestAppContext) {
+        // "a😀b": 😀 is 4 UTF-8 bytes but 2 UTF-16 code units (a surrogate pair).
+        // The IME coordinate mapping must count surrogate pairs, not chars — a
+        // char-count impl would report byte 5 as utf16 2 instead of 3.
+        with_input(cx, "a😀b", |input, _window, _cx| {
+            for (byte, utf16) in [(0usize, 0usize), (1, 1), (5, 3), (6, 4)] {
+                assert_eq!(input.offset_to_utf16(byte), utf16, "byte {byte} -> utf16");
+                assert_eq!(
+                    input.offset_from_utf16(utf16),
+                    byte,
+                    "utf16 {utf16} -> byte"
+                );
+            }
+        });
+    }
+}

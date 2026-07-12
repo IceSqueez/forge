@@ -203,3 +203,33 @@ impl RenderOnce for DataTable {
         root
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn column_flex_maps_each_width_to_its_flexbox_spec() {
+        // Why: the Fixed -> (grow 0, shrink 0, fixed=Some) vs
+        // Flex(n) -> (grow n, shrink 1, basis 0/fixed=None) split is the
+        // load-bearing layout decision. A Fixed column that could shrink, or a
+        // Flex column carrying a pixel basis, silently breaks row sizing.
+        let cases = [
+            (
+                ColumnWidth::Fixed(px(120.0)),
+                0.0_f32,
+                0.0_f32,
+                Some(px(120.0)),
+            ),
+            (ColumnWidth::Flex(1.0), 1.0, 1.0, None),
+            (ColumnWidth::Flex(2.0), 2.0, 1.0, None),
+        ];
+
+        for (width, grow, shrink, fixed) in cases {
+            let spec = column_flex(width);
+            assert_eq!(spec.grow, grow, "grow for {width:?}");
+            assert_eq!(spec.shrink, shrink, "shrink for {width:?}");
+            assert_eq!(spec.fixed, fixed, "fixed for {width:?}");
+        }
+    }
+}

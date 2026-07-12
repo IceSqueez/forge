@@ -4,14 +4,15 @@ use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, Element, ElementId, ElementInputHandler,
     Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, GlobalElementId, Hsla,
     KeyBinding, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad,
-    Pixels, Point, ShapedLine, SharedString, Style, TextRun, UTF16Selection, UnderlineStyle,
+    Pixels, Point, Rgba, ShapedLine, SharedString, Style, TextRun, UTF16Selection, UnderlineStyle,
     Window, actions, div, fill, point, prelude::*, px, relative, size,
 };
 use unicode_segmentation::UnicodeSegmentation;
 
+use crate::icons::{Icon, icon};
 use crate::palette::{CATPPUCCIN_MOCHA, ForgePalette, with_alpha};
 use crate::tokens::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, Density, FONT_XS, Radius, Spacing, radius, spacing,
+    BORDER_THIN, DEFAULT_BODY_FAMILY, Density, FONT_SM, FONT_XS, Radius, Spacing, radius, spacing,
 };
 
 const KEY_CONTEXT: &str = "ForgeTextInput";
@@ -86,6 +87,9 @@ pub struct TextInput {
     density: Density,
     font_size: Pixels,
     read_only: bool,
+    leading_icon: Option<(Icon, Rgba)>,
+    on_surface: bool,
+    static_chrome: Option<(Rgba, Radius)>,
 }
 
 impl EventEmitter<InputEvent> for TextInput {}
@@ -107,6 +111,9 @@ impl TextInput {
             density: Density::Cozy,
             font_size: FONT_XS,
             read_only: false,
+            leading_icon: None,
+            on_surface: false,
+            static_chrome: None,
         }
     }
 
@@ -127,6 +134,29 @@ impl TextInput {
 
     pub fn read_only(mut self, read_only: bool) -> Self {
         self.read_only = read_only;
+        self
+    }
+
+    /// Renders `glyph` (tinted `tint`) as a leading affordance before the text,
+    /// insetting the editable region so the caret and click-to-position math stay
+    /// aligned to the shifted text origin.
+    pub fn leading_icon(mut self, glyph: Icon, tint: Rgba) -> Self {
+        self.leading_icon = Some((glyph, tint));
+        self
+    }
+
+    /// Fills the field with the palette's `elevated` surface instead of the base
+    /// `shell`, for a field that sits on a raised panel (e.g. a drawer).
+    pub fn on_surface(mut self) -> Self {
+        self.on_surface = true;
+        self
+    }
+
+    /// Pins the border to `border` and the corner to `corner`, dropping the
+    /// default focus-reactive border + `Radius::Md`. Used by the search variant,
+    /// whose frame is a calm static outline rather than a focus-tracking one.
+    pub fn static_chrome(mut self, border: Rgba, corner: Radius) -> Self {
+        self.static_chrome = Some((border, corner));
         self
     }
 
@@ -358,6 +388,29 @@ impl TextInput {
             .find_map(|(idx, _)| (idx > offset).then_some(idx))
             .unwrap_or(self.content.len())
     }
+}
+
+/// A [`TextInput`] preconfigured as a search field: a leading search glyph tinted
+/// `text_muted` precedes the text, and the field adopts `palette`.
+pub fn search_input(
+    placeholder: impl Into<SharedString>,
+    palette: ForgePalette,
+    cx: &mut Context<TextInput>,
+) -> TextInput {
+    TextInput::new(placeholder, cx)
+        .with_palette(palette)
+        .leading_icon(Icon::Search, palette.text_muted)
+        .static_chrome(palette.border_regular, Radius::Sm)
+}
+
+/// [`search_input`] for a box on a raised panel: fills with the palette's
+/// `elevated` surface rather than the base `shell`.
+pub fn search_input_on_surface(
+    placeholder: impl Into<SharedString>,
+    palette: ForgePalette,
+    cx: &mut Context<TextInput>,
+) -> TextInput {
+    search_input(placeholder, palette, cx).on_surface()
 }
 
 impl EntityInputHandler for TextInput {
@@ -703,20 +756,31 @@ impl Focusable for TextInput {
 impl Render for TextInput {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let focused = self.focus_handle.is_focused(window);
-        let border_color = if self.read_only {
-            self.palette.disabled
-        } else if focused {
-            self.palette.border_active
-        } else {
-            self.palette.border_input
+        let (border_color, corner) = match self.static_chrome {
+            Some((border, corner)) => (border, corner),
+            None => {
+                let border = if self.read_only {
+                    self.palette.disabled
+                } else if focused {
+                    self.palette.border_active
+                } else {
+                    self.palette.border_input
+                };
+                (border, Radius::Md)
+            }
         };
         let text_color = if self.read_only {
             self.palette.text_muted
         } else {
             self.palette.text_primary
         };
+        let surface = if self.on_surface {
+            self.palette.elevated
+        } else {
+            self.palette.shell
+        };
 
-        div()
+        let field = div()
             .key_context(KEY_CONTEXT)
             .track_focus(&self.focus_handle)
             .cursor(CursorStyle::IBeam)
@@ -744,15 +808,27 @@ impl Render for TextInput {
             .overflow_hidden()
             .px(spacing(Spacing::Sm, self.density))
             .py(spacing(Spacing::Xs, self.density))
-            .bg(self.palette.shell)
+            .bg(surface)
             .border(BORDER_THIN)
             .border_color(border_color)
-            .rounded(radius(Radius::Md))
+            .rounded(radius(corner))
             .font_family(DEFAULT_BODY_FAMILY)
             .text_size(self.font_size)
             .text_color(text_color)
-            .line_height(self.font_size * 1.5)
-            .child(TextElement { input: cx.entity() })
+            .line_height(self.font_size * 1.5);
+
+        match self.leading_icon {
+            Some((glyph, tint)) => field
+                .gap(spacing(Spacing::Xs, self.density))
+                .child(icon(glyph, FONT_SM, tint))
+                .child(
+                    div()
+                        .flex_1()
+                        .overflow_hidden()
+                        .child(TextElement { input: cx.entity() }),
+                ),
+            None => field.child(TextElement { input: cx.entity() }),
+        }
     }
 }
 

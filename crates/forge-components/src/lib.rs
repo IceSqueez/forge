@@ -9,6 +9,7 @@ pub mod modal;
 pub mod overlay;
 pub mod palette;
 pub mod side_sheet;
+pub mod slider;
 pub mod status;
 pub mod toggle;
 pub mod tokens;
@@ -30,6 +31,7 @@ pub use palette::{
     bg_danger_soft, bg_warn_soft, with_alpha,
 };
 pub use side_sheet::{SheetPosition, SheetWidth, SideSheet, side_sheet};
+pub use slider::{Slider, slider};
 pub use status::{StatusVariant, badge, connection_status_badge, status_dot};
 pub use toggle::{Toggle, toggle};
 pub use tokens::{

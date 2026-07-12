@@ -20,6 +20,7 @@ mod screen_stub;
 mod settings;
 mod shell;
 mod sidebar;
+mod soundboard;
 mod stream_apps;
 mod titlebar;
 mod topics;

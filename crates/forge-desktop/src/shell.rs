@@ -15,6 +15,7 @@ use crate::screen::Screen;
 use crate::screen_stub::ScreenStub;
 use crate::settings::SettingsView;
 use crate::sidebar::NavRequested;
+use crate::soundboard::SoundboardView;
 use crate::stream_apps::StreamAppsView;
 use crate::topics::Topics;
 
@@ -128,6 +129,7 @@ impl AppShell {
                 detail.into()
             }
             Screen::Settings => cx.new(SettingsView::new).into(),
+            Screen::Soundboard => cx.new(SoundboardView::new).into(),
             other => cx.new(|_| ScreenStub::new(other.clone())).into(),
         }
     }

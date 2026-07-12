@@ -9,6 +9,7 @@ use gpui::{
 use crate::presentation::ActivePresentation;
 use crate::tts_dashboard::TtsDashboardView;
 use crate::tts_engines::TtsEnginesView;
+use crate::voice_aliases::VoiceAliasesView;
 
 /// Tab-button vertical padding — the parity source pins the tab hit-target at a
 /// fixed 7px inset, off the `Spacing` scale, so it is carried as a named literal.
@@ -83,16 +84,19 @@ pub struct TtsView {
     section: TtsSection,
     dashboard: Entity<TtsDashboardView>,
     engines: Entity<TtsEnginesView>,
+    aliases: Entity<VoiceAliasesView>,
 }
 
 impl TtsView {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let dashboard = cx.new(TtsDashboardView::new);
         let engines = cx.new(TtsEnginesView::new);
+        let aliases = cx.new(VoiceAliasesView::new);
         Self {
             section: TtsSection::Dashboard,
             dashboard,
             engines,
+            aliases,
         }
     }
 
@@ -196,6 +200,7 @@ impl TtsView {
         match self.section {
             TtsSection::Dashboard => self.dashboard.clone().into_any_element(),
             TtsSection::Engines => self.engines.clone().into_any_element(),
+            TtsSection::Aliases => self.aliases.clone().into_any_element(),
             other => deferred_pane(other, palette, density),
         }
     }

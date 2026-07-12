@@ -6,6 +6,7 @@ pub mod confirm;
 pub mod data;
 pub mod footer;
 pub mod icons;
+pub mod menu;
 pub mod modal;
 pub mod overlay;
 pub mod palette;
@@ -31,6 +32,10 @@ pub use confirm::{ConfirmModal, ConfirmTone, confirm_modal};
 pub use data::{ColumnWidth, DataRow, DataTable, data_table, hover_reveal};
 pub use footer::{FOOTER_HEIGHT, app_footer, split_version_stage};
 pub use icons::{Icon, IconAssets, icon, icon_inherit};
+pub use menu::{
+    MenuButton, MenuEntry, MenuItem, MenuPlacement, actionable_count, menu_button, menu_divider,
+    menu_header, menu_item,
+};
 pub use modal::{Modal, modal};
 pub use overlay::{Overlay, OverlayPosition, overlay};
 pub use palette::{

@@ -8,6 +8,7 @@ pub mod icons;
 pub mod modal;
 pub mod overlay;
 pub mod palette;
+pub mod picker;
 pub mod side_sheet;
 pub mod slider;
 pub mod status;
@@ -34,6 +35,7 @@ pub use palette::{
     CATPPUCCIN_MOCHA, ForgePalette, LATTE, TOKYO_NIGHT, ThemeId, bd_mauve_soft, bd_warn_soft,
     bg_danger_soft, bg_warn_soft, with_alpha,
 };
+pub use picker::{Picker, PickerEvent, PickerItem, PickerLabels};
 pub use side_sheet::{SheetPosition, SheetWidth, SideSheet, side_sheet};
 pub use slider::{Slider, slider};
 pub use status::{StatusVariant, badge, connection_status_badge, status_dot};

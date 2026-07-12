@@ -5,6 +5,7 @@ pub mod chat_row;
 pub mod chip;
 pub mod confirm;
 pub mod data;
+pub mod fonts;
 pub mod footer;
 pub mod icons;
 pub mod input_bar;
@@ -34,6 +35,7 @@ pub use chat_row::{BadgeKind, ChatBody, ChatRow, ChatRowView, Platform, chat_row
 pub use chip::{Chip, ChipGlyph, chip, filter_chip_row};
 pub use confirm::{ConfirmModal, ConfirmTone, confirm_modal};
 pub use data::{ColumnWidth, DataRow, DataTable, data_table, hover_reveal};
+pub use fonts::embedded_fonts;
 pub use footer::{FOOTER_HEIGHT, app_footer, split_version_stage};
 pub use icons::{Icon, IconAssets, icon, icon_inherit};
 pub use input_bar::{InputBar, InputBarEvent, platform_bit};

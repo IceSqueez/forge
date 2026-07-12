@@ -1,27 +1,34 @@
-mod state;
+mod actions;
+mod presentation;
+mod runtime_status;
+mod screen;
+mod screen_stub;
+mod shell;
 
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_components::IconAssets;
+use forge_components::{Density, IconAssets, ThemeId, bind_text_area_keys, bind_text_input_keys};
 use forge_events::{Event, EventSource, EventsError};
 use forge_runtime::{EventBus, NullEventLogRepo};
 use gpui::{
     App, AppContext, Application, Bounds, SharedString, TitlebarOptions, WindowBounds,
     WindowOptions, px, size,
 };
-use state::UiState;
+
+use crate::actions::register_shell_key_bindings;
+use crate::presentation::Presentation;
+use crate::runtime_status::RuntimeStatus;
+use crate::shell::AppShell;
 
 /// Interval between synthetic `timer.tick` events published by the minimal runtime.
 const TICK_INTERVAL: Duration = Duration::from_secs(1);
 
-/// Runtime → UI bridge: one live runtime value flows runtime → bridge task →
-/// root `Entity<UiState>` → repaint.
-///
-/// The tokio runtime owns the bus and the tick publisher; the gpui shell holds
-/// only an `Arc<EventBus>` handle and drains it from a single boot-time bridge
-/// task. No runtime state lives in the UI; no shared mutable state crosses the
-/// boundary in either direction.
+/// Boots the gpui app shell: the tokio runtime owns the bus and a tick publisher;
+/// the shell registers fonts, installs the presentation global, binds keys, starts
+/// the single runtime→UI bridge task, and opens the window on the root
+/// [`AppShell`]. The runtime remains fully behind handles — no runtime state lives
+/// in the UI, and no gpui type crosses back into any backend crate.
 fn main() {
     let rt = match tokio::runtime::Runtime::new() {
         Ok(rt) => rt,
@@ -33,9 +40,9 @@ fn main() {
 
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
 
-    // Minimal runtime: a single tokio task publishing `timer.tick` observability
-    // events onto the bus. Stands in for the full timer subsystem — the spike
-    // only needs genuine bus traffic to prove the drain-then-notify path.
+    // Minimal runtime: one tokio task publishing `timer.tick` observability events.
+    // Stands in for the full timer subsystem — the shell only needs genuine bus
+    // traffic to prove the drain-then-notify path into a topic entity.
     {
         let bus = Arc::clone(&bus);
         rt.spawn(async move {
@@ -51,31 +58,47 @@ fn main() {
         });
     }
 
-    // `rt` stays owned by this stack frame for the whole of `run` (which blocks
-    // until the app quits), keeping the publisher task and time driver alive.
+    // `rt` stays owned by this frame for the whole of `run` (which blocks until the
+    // app quits), keeping the publisher task and time driver alive.
     Application::new()
         .with_assets(IconAssets)
         .run(move |cx: &mut App| {
-            let state = cx.new(|_| UiState::new());
+            // Register embedded typefaces BEFORE the window opens, or real text
+            // falls back to gpui's built-in face.
+            if let Err(err) = cx
+                .text_system()
+                .add_fonts(forge_components::embedded_fonts())
+            {
+                eprintln!("forge-desktop: failed to register embedded fonts: {err}");
+            }
 
-            start_bridge(cx, state.clone(), Arc::clone(&bus));
+            cx.set_global(Presentation::new(ThemeId::default(), Density::default()));
+
+            bind_text_input_keys(cx);
+            bind_text_area_keys(cx);
+            register_shell_key_bindings(cx);
+
+            let status = cx.new(|_| RuntimeStatus::new());
+            start_bridge(cx, status.clone(), Arc::clone(&bus));
 
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
                     None,
-                    size(px(720.0), px(480.0)),
+                    size(px(1080.0), px(720.0)),
                     cx,
                 ))),
                 titlebar: Some(TitlebarOptions {
-                    title: Some(SharedString::from("forge runtime bridge")),
+                    title: Some(SharedString::from("forge")),
                     ..Default::default()
                 }),
                 app_id: Some("forge-desktop".to_owned()),
                 ..Default::default()
             };
 
-            let root = state.clone();
-            match cx.open_window(options, move |_, _| root) {
+            let status_for_window = status.clone();
+            match cx.open_window(options, move |window, cx| {
+                cx.new(|cx| AppShell::new(status_for_window.clone(), window, cx))
+            }) {
                 Ok(_) => cx.activate(true),
                 Err(err) => eprintln!("forge-desktop: failed to open window: {err}"),
             }
@@ -83,25 +106,25 @@ fn main() {
 }
 
 /// Starts the single runtime→UI bridge task on the foreground executor. It owns
-/// the bus subscription, and for each `timer.tick` applies the new value onto
-/// the root entity + `cx.notify()`, from which the view repaints. Broadcast recv
-/// is executor-agnostic (no tokio timer/reactor), so it runs safely off the gpui
+/// the bus subscription and, for each `timer.tick`, advances the topic entity +
+/// `cx.notify()`, from which observing views repaint. Broadcast recv is
+/// executor-agnostic (no tokio timer/reactor), so it runs safely off the gpui
 /// foreground executor while the publisher runs on the tokio runtime.
-fn start_bridge(cx: &mut App, state: gpui::Entity<UiState>, bus: Arc<EventBus>) {
+fn start_bridge(cx: &mut App, status: gpui::Entity<RuntimeStatus>, bus: Arc<EventBus>) {
     cx.spawn(async move |cx| {
         let mut subscription = bus.subscribe();
         loop {
             match subscription.recv().await {
                 Ok(event) => {
                     if event.kind == "timer.tick"
-                        && state
-                            .update(cx, |ui, cx| {
-                                ui.on_timer_tick();
+                        && status
+                            .update(cx, |status, cx| {
+                                status.tick();
                                 cx.notify();
                             })
                             .is_err()
                     {
-                        // Root entity released → the app is shutting down.
+                        // Topic entity released → the app is shutting down.
                         break;
                     }
                 }

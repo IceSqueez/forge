@@ -368,3 +368,42 @@ impl Render for Picker {
             .child(footer)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::item_matches;
+
+    // One table pinning the exact filter contract: empty query matches everything;
+    // otherwise a case-insensitive substring hit on the label OR the sublabel. Each row
+    // targets a distinct clause a plausible wrong impl would break — case-folding in
+    // either direction, the label-OR-sublabel disjunction, mid-string (not prefix) hits,
+    // and the empty-query short-circuit with an absent sublabel.
+    #[test]
+    fn item_matches_follows_case_insensitive_substring_over_label_or_sublabel() {
+        let cases = [
+            // Empty query matches every item, even one with no sublabel.
+            ("OBS Scene", None, "", true),
+            // Case-insensitive on the label: lowercase query against a mixed-case label...
+            ("OBS Scene", None, "scene", true),
+            // ...and the other direction — uppercase query against a mixed-case label.
+            ("OBS Scene", None, "SCENE", true),
+            // The needle lives only in the sublabel; the label alone would miss.
+            ("Start", Some("obs.start.recording"), "record", true),
+            // Present in neither label nor sublabel → no match.
+            ("Start", Some("obs.start.recording"), "zzz", false),
+            // Absent sublabel with a non-matching label returns false without panicking.
+            ("Start", None, "stop", false),
+            // The hit sits mid-string ("connect" inside "Reconnect"), pinning substring —
+            // not starts_with — semantics.
+            ("Reconnect", None, "connect", true),
+        ];
+
+        for (label, sublabel, query, expected) in cases {
+            assert_eq!(
+                item_matches(label, sublabel, query),
+                expected,
+                "item_matches({label:?}, {sublabel:?}, {query:?})",
+            );
+        }
+    }
+}

@@ -10,6 +10,7 @@ pub mod overlay;
 pub mod palette;
 pub mod side_sheet;
 pub mod status;
+pub mod toggle;
 pub mod tokens;
 
 pub use breadcrumb::{Breadcrumb, BreadcrumbCrumb, breadcrumb};
@@ -30,6 +31,7 @@ pub use palette::{
 };
 pub use side_sheet::{SheetPosition, SheetWidth, SideSheet, side_sheet};
 pub use status::{StatusVariant, badge, connection_status_badge, status_dot};
+pub use toggle::{Toggle, toggle};
 pub use tokens::{
     BORDER_ACCENT, BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG,
     FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ModalSize, Radius, Spacing, modal_width, radius, spacing,

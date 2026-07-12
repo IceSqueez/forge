@@ -18,7 +18,21 @@ impl RuntimeStatus {
         self.uptime_secs = self.uptime_secs.saturating_add(1);
     }
 
-    pub fn uptime_secs(&self) -> u64 {
-        self.uptime_secs
+    /// Human-readable uptime for the footer: hours+minutes once past an hour,
+    /// minutes+seconds once past a minute, else bare seconds (`"2h 14m"`,
+    /// `"3m 7s"`, `"12s"`). Pure formatting, kept off `render` so it stays
+    /// directly exercisable.
+    pub fn uptime_human(&self) -> String {
+        let secs = self.uptime_secs;
+        let hours = secs / 3600;
+        let minutes = (secs % 3600) / 60;
+        let seconds = secs % 60;
+        if hours > 0 {
+            format!("{hours}h {minutes}m")
+        } else if minutes > 0 {
+            format!("{minutes}m {seconds}s")
+        } else {
+            format!("{seconds}s")
+        }
     }
 }

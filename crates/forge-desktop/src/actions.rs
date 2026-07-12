@@ -7,14 +7,7 @@ pub const SHELL_CONTEXT: &str = "ForgeShell";
 
 actions!(
     forge_shell,
-    [
-        GoHome,
-        GoChat,
-        GoActions,
-        GoTriggers,
-        GoPlatforms,
-        GoSettings
-    ]
+    [GoHome, GoChat, GoActions, GoTriggers, GoTwitch, GoSettings]
 );
 
 /// Installs the shell's global navigation key bindings. The binary MUST call this
@@ -31,8 +24,8 @@ pub fn register_shell_key_bindings(cx: &mut App) {
         KeyBinding::new("ctrl-3", GoActions, Some(SHELL_CONTEXT)),
         KeyBinding::new("cmd-4", GoTriggers, Some(SHELL_CONTEXT)),
         KeyBinding::new("ctrl-4", GoTriggers, Some(SHELL_CONTEXT)),
-        KeyBinding::new("cmd-5", GoPlatforms, Some(SHELL_CONTEXT)),
-        KeyBinding::new("ctrl-5", GoPlatforms, Some(SHELL_CONTEXT)),
+        KeyBinding::new("cmd-5", GoTwitch, Some(SHELL_CONTEXT)),
+        KeyBinding::new("ctrl-5", GoTwitch, Some(SHELL_CONTEXT)),
         KeyBinding::new("cmd-6", GoSettings, Some(SHELL_CONTEXT)),
         KeyBinding::new("ctrl-6", GoSettings, Some(SHELL_CONTEXT)),
     ]);

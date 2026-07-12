@@ -1,9 +1,13 @@
 mod actions;
+mod chrome;
+mod footer;
 mod presentation;
 mod runtime_status;
 mod screen;
 mod screen_stub;
 mod shell;
+mod sidebar;
+mod titlebar;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -13,7 +17,7 @@ use forge_events::{Event, EventSource, EventsError};
 use forge_runtime::{EventBus, NullEventLogRepo};
 use gpui::{
     App, AppContext, Application, Bounds, SharedString, TitlebarOptions, WindowBounds,
-    WindowOptions, px, size,
+    WindowOptions, point, px, size,
 };
 
 use crate::actions::register_shell_key_bindings;
@@ -89,7 +93,12 @@ fn main() {
                 ))),
                 titlebar: Some(TitlebarOptions {
                     title: Some(SharedString::from("forge")),
-                    ..Default::default()
+                    // Draw our own branded chrome. On
+                    // macOS/Windows this hides the OS bar; the macOS traffic
+                    // lights inset into the custom bar's left padding, vertically
+                    // centered in its 32px height.
+                    appears_transparent: true,
+                    traffic_light_position: Some(point(px(14.0), px(10.0))),
                 }),
                 app_id: Some("forge-desktop".to_owned()),
                 ..Default::default()

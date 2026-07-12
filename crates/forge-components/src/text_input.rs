@@ -7,7 +7,6 @@ use gpui::{
     Pixels, Point, Rgba, ShapedLine, SharedString, Style, TextRun, UTF16Selection, UnderlineStyle,
     Window, actions, div, fill, point, prelude::*, px, relative, size,
 };
-use unicode_segmentation::UnicodeSegmentation;
 
 use crate::icons::{Icon, icon};
 use crate::palette::{CATPPUCCIN_MOCHA, ForgePalette, with_alpha};
@@ -341,29 +340,11 @@ impl TextInput {
     }
 
     fn offset_from_utf16(&self, offset: usize) -> usize {
-        let mut utf8_offset = 0;
-        let mut utf16_count = 0;
-        for ch in self.content.chars() {
-            if utf16_count >= offset {
-                break;
-            }
-            utf16_count += ch.len_utf16();
-            utf8_offset += ch.len_utf8();
-        }
-        utf8_offset
+        crate::text_edit::offset_from_utf16(&self.content, offset)
     }
 
     fn offset_to_utf16(&self, offset: usize) -> usize {
-        let mut utf16_offset = 0;
-        let mut utf8_count = 0;
-        for ch in self.content.chars() {
-            if utf8_count >= offset {
-                break;
-            }
-            utf8_count += ch.len_utf8();
-            utf16_offset += ch.len_utf16();
-        }
-        utf16_offset
+        crate::text_edit::offset_to_utf16(&self.content, offset)
     }
 
     fn range_to_utf16(&self, range: &Range<usize>) -> Range<usize> {
@@ -375,18 +356,11 @@ impl TextInput {
     }
 
     fn previous_boundary(&self, offset: usize) -> usize {
-        self.content
-            .grapheme_indices(true)
-            .rev()
-            .find_map(|(idx, _)| (idx < offset).then_some(idx))
-            .unwrap_or(0)
+        crate::text_edit::previous_grapheme_boundary(&self.content, offset)
     }
 
     fn next_boundary(&self, offset: usize) -> usize {
-        self.content
-            .grapheme_indices(true)
-            .find_map(|(idx, _)| (idx > offset).then_some(idx))
-            .unwrap_or(self.content.len())
+        crate::text_edit::next_grapheme_boundary(&self.content, offset)
     }
 }
 

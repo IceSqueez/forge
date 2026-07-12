@@ -11,6 +11,8 @@ pub mod palette;
 pub mod side_sheet;
 pub mod slider;
 pub mod status;
+pub mod text_area;
+pub(crate) mod text_edit;
 pub mod text_input;
 pub mod toggle;
 pub mod tokens;
@@ -34,6 +36,7 @@ pub use palette::{
 pub use side_sheet::{SheetPosition, SheetWidth, SideSheet, side_sheet};
 pub use slider::{Slider, slider};
 pub use status::{StatusVariant, badge, connection_status_badge, status_dot};
+pub use text_area::{TextArea, bind_text_area_keys};
 pub use text_input::{
     InputEvent, TextInput, bind_text_input_keys, search_input, search_input_on_surface,
 };

@@ -55,6 +55,9 @@ enum NavEntry {
     SectionLabel(&'static str),
     /// Tighter uppercase heading over a flat cluster (`PLATFORMS`, `MODULES`).
     MiniLabel(&'static str),
+    /// Same tight uppercase heading, but navigable to an overview screen when
+    /// clicked (`STREAM APPS` → the stream-apps overview).
+    MiniLabelLink { label: &'static str, screen: Screen },
     /// Primary leaf: 15px glyph that recolors to brand when active.
     SectionLeaf {
         icon: Icon,
@@ -169,7 +172,10 @@ impl SidebarNav {
                 screen: Screen::BuiltinDetail(BuiltinId::new("kick")),
                 connected: false,
             },
-            NavEntry::MiniLabel("Stream apps"),
+            NavEntry::MiniLabelLink {
+                label: "Stream apps",
+                screen: Screen::StreamApps,
+            },
             NavEntry::FlatLink {
                 dot: palette.success,
                 label: "OBS Studio",
@@ -246,6 +252,35 @@ impl SidebarNav {
             .pt(MINI_LABEL_PAD_TOP)
             .pb(MINI_LABEL_PAD_BOTTOM)
             .px(ITEM_PAD_H)
+            .child(SharedString::from(text.to_uppercase()))
+            .into_any_element()
+    }
+
+    /// Navigable variant of [`Self::mini_label`]: the same tight uppercase caption,
+    /// but a click voices a [`NavRequested`] toward `screen` (the section's overview)
+    /// and a hover lifts the caption ink to signal the affordance.
+    fn mini_label_link(
+        &self,
+        text: &'static str,
+        screen: Screen,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let hover_ink = palette.text_muted;
+        div()
+            .id(text)
+            .font_family(DEFAULT_MONO_FAMILY)
+            .font_weight(FontWeight::MEDIUM)
+            .text_size(FONT_XXS)
+            .text_color(palette.text_faint)
+            .pt(MINI_LABEL_PAD_TOP)
+            .pb(MINI_LABEL_PAD_BOTTOM)
+            .px(ITEM_PAD_H)
+            .cursor_pointer()
+            .hover(move |s| s.text_color(hover_ink))
+            .on_click(
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.request(screen.clone(), cx)),
+            )
             .child(SharedString::from(text.to_uppercase()))
             .into_any_element()
     }
@@ -333,6 +368,9 @@ impl SidebarNav {
         match entry {
             NavEntry::SectionLabel(text) => Self::section_label(text, palette),
             NavEntry::MiniLabel(text) => Self::mini_label(text, palette),
+            NavEntry::MiniLabelLink { label, screen } => {
+                self.mini_label_link(label, screen, palette, cx)
+            }
             NavEntry::SectionLeaf {
                 icon: ic,
                 label,

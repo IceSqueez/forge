@@ -3,8 +3,8 @@ use forge_platform_core::BuiltinId;
 
 /// Top-level router discriminant: the shell renders exactly one screen at a time
 /// behind fixed chrome. Every sidebar destination is a variant here; navigation
-/// swaps the active-screen child entity. Platforms and stream apps do not get their
-/// own variant — they all route through the single parameterized
+/// swaps the active-screen child entity. Platforms and Stream Apps each get their
+/// own overview variant, but the per-integration detail is a single parameterized
 /// [`Screen::BuiltinDetail`], which the one generic integration-detail view renders
 /// from the target's four `Builtin*` traits. The enum is `Clone` (not `Copy`)
 /// because `BuiltinDetail` carries an owned [`BuiltinId`].
@@ -19,6 +19,7 @@ pub enum Screen {
     Globals,
     Scripts,
     Platforms,
+    StreamApps,
     BuiltinDetail(BuiltinId),
     Tts,
     Soundboard,
@@ -41,6 +42,7 @@ impl Screen {
             Screen::Globals => "Globals",
             Screen::Scripts => "Scripts",
             Screen::Platforms => "Platforms",
+            Screen::StreamApps => "Stream apps",
             Screen::BuiltinDetail(_) => "Integration",
             Screen::Tts => "Text-to-Speech",
             Screen::Soundboard => "Soundboard",
@@ -66,7 +68,7 @@ impl Screen {
             Screen::EventFeed => Icon::Activity,
             Screen::Globals => Icon::Variable,
             Screen::Scripts => Icon::FileCode,
-            Screen::Platforms | Screen::BuiltinDetail(_) => Icon::Broadcast,
+            Screen::Platforms | Screen::StreamApps | Screen::BuiltinDetail(_) => Icon::Broadcast,
             Screen::Tts => Icon::Volume,
             Screen::Soundboard => Icon::Music,
             Screen::Midi => Icon::PlugConnected,

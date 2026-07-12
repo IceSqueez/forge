@@ -74,14 +74,15 @@ const PLATFORMS: [PlatformRow; 3] = [
     ),
 ];
 
-/// Topic-scoped observable cache backing the Platforms overview: the connected
-/// state of each streaming platform. It holds a cached read, never runtime state of
-/// its own; the runtime→UI bridge advances it and `cx.notify()`s so the observing
-/// [`PlatformsView`] repaints.
+/// Topic-scoped observable cache backing the Platforms and Stream Apps overviews:
+/// the connected state of each integration, keyed by [`Integration`] so a single
+/// topic serves both the chat platforms and the stream apps. It holds a cached read,
+/// never runtime state of its own; the runtime→UI bridge advances it and
+/// `cx.notify()`s so the observing overview views repaint.
 ///
-/// Seeded at boot with a representative sample (Twitch connected, YouTube and Kick
-/// not) so the screen renders visibly before a connectivity bridge exists; the
-/// bridge replaces each entry as the platform-connection stream lands.
+/// Seeded at boot with a representative sample (Twitch connected, the rest not) so
+/// the screens render visibly before a connectivity bridge exists; the bridge
+/// replaces each entry as the connection stream lands.
 pub struct PlatformConnectivity {
     connections: Vec<(Integration, bool)>,
 }
@@ -93,6 +94,8 @@ impl PlatformConnectivity {
                 (Integration::Twitch, true),
                 (Integration::YouTube, false),
                 (Integration::Kick, false),
+                (Integration::Obs, false),
+                (Integration::VTube, false),
             ],
         }
     }

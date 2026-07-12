@@ -15,6 +15,7 @@ use crate::screen::Screen;
 use crate::screen_stub::ScreenStub;
 use crate::settings::SettingsView;
 use crate::sidebar::NavRequested;
+use crate::stream_apps::StreamAppsView;
 use crate::topics::Topics;
 
 /// Root shell view-entity. Holds the router discriminant, the single active-screen
@@ -108,6 +109,14 @@ impl AppShell {
                 })
                 .detach();
                 platforms.into()
+            }
+            Screen::StreamApps => {
+                let apps = cx.new(|cx| StreamAppsView::new(topics.platforms.clone(), cx));
+                cx.subscribe(&apps, |this, _view, event: &NavRequested, cx| {
+                    this.navigate(event.0.clone(), cx);
+                })
+                .detach();
+                apps.into()
             }
             Screen::BuiltinDetail(id) => {
                 let id = id.clone();

@@ -13,6 +13,7 @@ mod presentation;
 mod runtime_status;
 mod screen;
 mod screen_stub;
+mod settings;
 mod shell;
 mod sidebar;
 mod titlebar;

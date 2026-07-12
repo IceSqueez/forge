@@ -10,6 +10,7 @@ use crate::presentation::{ActivePresentation, Presentation};
 use crate::runtime_status::RuntimeStatus;
 use crate::screen::Screen;
 use crate::screen_stub::ScreenStub;
+use crate::settings::SettingsView;
 use crate::sidebar::NavRequested;
 use crate::topics::Topics;
 
@@ -97,6 +98,7 @@ impl AppShell {
             Screen::Globals => cx
                 .new(|cx| GlobalsView::new(topics.globals.clone(), cx))
                 .into(),
+            Screen::Settings => cx.new(SettingsView::new).into(),
             _ => cx.new(|_| ScreenStub::new(screen)).into(),
         }
     }

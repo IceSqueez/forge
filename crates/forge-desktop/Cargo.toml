@@ -12,6 +12,7 @@ path = "src/main.rs"
 [dependencies]
 forge-components = { path = "../forge-components" }
 forge-events = { path = "../forge-events" }
+forge-platform-core = { path = "../forge-platform-core" }
 forge-runtime = { path = "../forge-runtime" }
 forge-types = { path = "../forge-types" }
 gpui = { workspace = true }

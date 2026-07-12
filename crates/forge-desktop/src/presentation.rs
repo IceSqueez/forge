@@ -9,6 +9,7 @@ use gpui::{App, Global};
 /// View-entities read this global and pass `palette` into kit components through
 /// the components' existing parameter; the kit itself never reads the global.
 pub struct Presentation {
+    pub theme: ThemeId,
     pub palette: ForgePalette,
     pub density: Density,
 }
@@ -16,6 +17,7 @@ pub struct Presentation {
 impl Presentation {
     pub fn new(theme: ThemeId, density: Density) -> Self {
         Self {
+            theme,
             palette: theme.palette(),
             density,
         }
@@ -30,6 +32,7 @@ impl Global for Presentation {}
 pub trait ActivePresentation {
     fn palette(&self) -> ForgePalette;
     fn density(&self) -> Density;
+    fn theme(&self) -> ThemeId;
 }
 
 impl ActivePresentation for App {
@@ -39,5 +42,9 @@ impl ActivePresentation for App {
 
     fn density(&self) -> Density {
         self.global::<Presentation>().density
+    }
+
+    fn theme(&self) -> ThemeId {
+        self.global::<Presentation>().theme
     }
 }

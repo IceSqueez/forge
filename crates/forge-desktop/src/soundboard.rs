@@ -1,7 +1,7 @@
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM,
-    FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextInput,
-    breadcrumb, ghost_button_with_icon, icon, modal, overlay, primary_button,
+    FONT_XS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextInput,
+    breadcrumb, field_label, ghost_button_with_icon, icon, modal, overlay, primary_button,
     primary_button_with_icon, radius, row_card, secondary_button, slider, spacing, with_alpha,
 };
 use gpui::{
@@ -779,27 +779,6 @@ impl Render for SoundboardView {
             .child(body)
             .children(modal_overlay)
     }
-}
-
-/// A titled modal field: an uppercase monospace caption over its control (the
-/// variant editor's `section` shape, restated for this screen).
-fn field_label(
-    palette: &ForgePalette,
-    label: &'static str,
-    control: impl IntoElement,
-) -> impl IntoElement {
-    div()
-        .flex()
-        .flex_col()
-        .gap(spacing(Spacing::Xxs, Density::Cozy))
-        .child(
-            div()
-                .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_XXS)
-                .text_color(palette.text_faint)
-                .child(label),
-        )
-        .child(control)
 }
 
 /// A clip card's duration / hotkey chip: a bordered `surface_overlay` pill inking a

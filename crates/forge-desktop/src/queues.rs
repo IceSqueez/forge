@@ -1,8 +1,8 @@
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM,
-    FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextInput,
-    breadcrumb, icon, modal, overlay, primary_button, primary_button_with_icon, radius,
-    secondary_button, spacing, toggle, with_alpha,
+    FONT_XS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextInput,
+    breadcrumb, field_label, icon, modal, overlay, primary_button, primary_button_with_icon,
+    radius, secondary_button, spacing, toggle, with_alpha,
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Window, div,
@@ -1032,27 +1032,6 @@ fn warning_ghost_button(
                 .text_color(palette.warning)
                 .child(label),
         )
-}
-
-/// A titled modal field: an uppercase monospace caption over its control. The same
-/// shape the Soundboard modal uses; a third occurrence should be promoted to the kit.
-fn field_label(
-    palette: &ForgePalette,
-    label: &'static str,
-    control: impl IntoElement,
-) -> impl IntoElement {
-    div()
-        .flex()
-        .flex_col()
-        .gap(spacing(Spacing::Xxs, Density::Cozy))
-        .child(
-            div()
-                .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_XXS)
-                .text_color(palette.text_faint)
-                .child(label),
-        )
-        .child(control)
 }
 
 /// The representative queue roster the screen seeds before a queue scheduler is

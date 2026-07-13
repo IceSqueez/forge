@@ -5,9 +5,31 @@ use gpui::{
 
 use crate::palette::ForgePalette;
 use crate::tokens::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, Radius,
-    Spacing, radius, spacing,
+    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, FONT_XXS,
+    Radius, Spacing, radius, spacing,
 };
+
+/// A monospace caption label stacked above its control — the form-field pattern
+/// used by the Soundboard and Queues edit modals. The label inks `text_faint` at
+/// `FONT_XXS`; the control renders verbatim beneath it.
+pub fn field_label(
+    palette: &ForgePalette,
+    label: &'static str,
+    control: impl IntoElement,
+) -> impl IntoElement {
+    div()
+        .flex()
+        .flex_col()
+        .gap(spacing(Spacing::Xxs, Density::Cozy))
+        .child(
+            div()
+                .font_family(DEFAULT_MONO_FAMILY)
+                .text_size(FONT_XXS)
+                .text_color(palette.text_faint)
+                .child(label),
+        )
+        .child(control)
+}
 
 /// Column gap between a [`metric_card`]'s label, value and sublabel lines. The
 /// source pins this at a literal 4px — a tight caption stack that sits off the

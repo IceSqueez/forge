@@ -1,16 +1,16 @@
 use std::collections::BTreeMap;
 
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, ChipGlyph, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
-    Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, MenuPlacement, ModalSize,
-    OverlayPosition, Radius, Spacing, TextInput, badge, breadcrumb, chip, confirm_modal,
-    ghost_button_with_icon, icon, icon_inherit, menu_button, menu_divider, menu_item, modal,
-    overlay, primary_button, primary_button_with_icon, search_input, secondary_button, spacing,
-    status_dot, toggle,
+    BORDER_ACCENT, BORDER_THIN, BreadcrumbCrumb, ChipGlyph, ConfirmTone, DEFAULT_BODY_FAMILY,
+    DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent,
+    MenuPlacement, ModalSize, OverlayPosition, Radius, Spacing, TextInput, badge, breadcrumb, chip,
+    confirm_modal, ghost_button_with_icon, icon, icon_inherit, menu_button, menu_divider,
+    menu_item, modal, overlay, primary_button, primary_button_with_icon, radius, search_input,
+    secondary_button, spacing, status_dot, toggle,
 };
 use gpui::{
-    AnyElement, ClickEvent, Context, Div, Entity, FontWeight, Pixels, Rgba, SharedString,
-    Subscription, Window, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, Div, ElementId, Entity, FontWeight, Pixels, Rgba,
+    SharedString, Subscription, Window, div, prelude::*, px,
 };
 
 use crate::presentation::ActivePresentation;
@@ -98,6 +98,61 @@ const DELETE_BTN_RADIUS: Pixels = px(6.0);
 const DELETE_GLYPH: Pixels = px(11.0);
 const DISABLED_BTN_OPACITY: f32 = 0.6;
 
+// Unified "Add" grid picker (centred category-grid modal). All literals below are
+// pinned to the design's fixed px scale, off the `Spacing` / `Radius` / `FONT_*`
+// tokens where the design diverges from them. Kept identical to the Actions screen's
+// grid picker so the two read as one component (a later audit promotes them to a
+// shared kit element).
+/// Card envelope (design 660×600).
+const GRID_W: Pixels = px(660.0);
+const GRID_H: Pixels = px(600.0);
+/// Shared horizontal band inset — every band gutters to 16px in the design.
+const GRID_BAND_PAD_H: Pixels = px(16.0);
+/// Header icon tile: 30px side, 7px corner, 15px glyph.
+const GRID_TILE: Pixels = px(30.0);
+const GRID_TILE_RADIUS: Pixels = px(7.0);
+const GRID_TILE_ICON: Pixels = px(15.0);
+/// Header row gap and vertical pad, plus the close glyph size.
+const GRID_HEADER_GAP: Pixels = px(11.0);
+const GRID_HEADER_PAD_V: Pixels = px(13.0);
+const GRID_CLOSE_ICON: Pixels = px(15.0);
+/// Search band top/bottom pad, the leading glyph and the input font.
+const GRID_SEARCH_PAD_T: Pixels = px(11.0);
+const GRID_SEARCH_PAD_B: Pixels = px(9.0);
+const GRID_SEARCH_ICON: Pixels = px(14.0);
+const GRID_SEARCH_FS: Pixels = px(13.0);
+/// Scope-chip band vertical pad, chip pad and its leading category dot.
+const GRID_CHIPS_PAD_V: Pixels = px(9.0);
+const GRID_CHIP_PAD_V: Pixels = px(4.0);
+const GRID_CHIP_PAD_H: Pixels = px(10.0);
+const GRID_CHIP_DOT: Pixels = px(5.0);
+/// Grid body vertical pad, inter-group gap, and the group-header label / dot.
+const GRID_BODY_PAD_V: Pixels = px(13.0);
+const GRID_GROUP_GAP: Pixels = px(14.0);
+const GRID_GROUP_HEADER_MB: Pixels = px(8.0);
+const GRID_GROUP_FS: Pixels = px(9.5);
+const GRID_GROUP_DOT: Pixels = px(5.0);
+/// Card row / pair gap.
+const GRID_CARD_GAP: Pixels = px(8.0);
+/// Card padding, its leading tile (26px / 7px corner / 13px glyph) and name font.
+const GRID_CARD_PAD_V: Pixels = px(11.0);
+const GRID_CARD_PAD_H: Pixels = px(12.0);
+const GRID_CARD_TILE: Pixels = px(26.0);
+const GRID_CARD_TILE_RADIUS: Pixels = px(7.0);
+const GRID_CARD_ICON: Pixels = px(13.0);
+const GRID_CARD_NAME_FS: Pixels = px(12.5);
+const GRID_CARD_ROW_MB: Pixels = px(6.0);
+/// Meta font shared by subtitle / chips / match-count / card desc (design 11px).
+const GRID_META_FS: Pixels = px(11.0);
+/// Footer vertical pad and the `Esc` kbd chip (pad 1/5, 3px corner).
+const GRID_FOOTER_PAD_V: Pixels = px(8.0);
+const GRID_KBD_PAD_V: Pixels = px(1.0);
+const GRID_KBD_PAD_H: Pixels = px(5.0);
+const GRID_KBD_RADIUS: Pixels = px(3.0);
+/// Empty-state vertical pad and its glyph.
+const GRID_EMPTY_PAD_V: Pixels = px(50.0);
+const GRID_EMPTY_GLYPH: Pixels = px(22.0);
+
 /// Local id for a seeded trigger instance. `forge-desktop` wires no trigger-instance
 /// repo yet, so instances are seeded in-memory and ids minted from a per-view counter
 /// rather than the runtime's persistent id.
@@ -141,6 +196,20 @@ impl Platform {
         }
     }
 
+    /// Stable scope-chip identity for the kind picker, matching the design's
+    /// `PLATFORM_META` key.
+    fn key(self) -> &'static str {
+        match self {
+            Platform::Twitch => "twitch",
+            Platform::Youtube => "youtube",
+            Platform::Kick => "kick",
+            Platform::Obs => "obs",
+            Platform::Timer => "timer",
+            Platform::Script => "script",
+            Platform::Core => "core",
+        }
+    }
+
     /// The brand dot hue, mapped from the design's Catppuccin accent per source:
     /// twitch=mauve, youtube=red, kick/core=sky, obs=teal, timer=yellow, script=peach.
     fn dot(self, palette: &ForgePalette) -> Rgba {
@@ -159,47 +228,132 @@ impl Platform {
 /// A seeded trigger kind — the reusable descriptor a trigger instance configures.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum TriggerKind {
-    NewSubscriber,
-    RaidReceived,
     ChatCommand,
+    ChatMessage,
+    NewSubscriber,
+    Cheer,
+    RaidReceived,
+    NewFollower,
     IntervalWhenLive,
     CronSchedule,
+    SpecificTime,
     SceneChanged,
+    StreamStarted,
     ReplaySaved,
+    IncomingWebhook,
+    FileChanged,
+    ActionCompleted,
+    GlobalChanged,
 }
 
 impl TriggerKind {
+    /// Kind-picker catalog order, grouped so each `platform · subgroup` band lands
+    /// contiguously in the grid.
+    const ALL: [TriggerKind; 16] = [
+        TriggerKind::ChatCommand,
+        TriggerKind::ChatMessage,
+        TriggerKind::NewSubscriber,
+        TriggerKind::Cheer,
+        TriggerKind::RaidReceived,
+        TriggerKind::NewFollower,
+        TriggerKind::IntervalWhenLive,
+        TriggerKind::CronSchedule,
+        TriggerKind::SpecificTime,
+        TriggerKind::SceneChanged,
+        TriggerKind::StreamStarted,
+        TriggerKind::ReplaySaved,
+        TriggerKind::IncomingWebhook,
+        TriggerKind::FileChanged,
+        TriggerKind::ActionCompleted,
+        TriggerKind::GlobalChanged,
+    ];
+
     fn platform(self) -> Platform {
         match self {
-            TriggerKind::NewSubscriber | TriggerKind::RaidReceived | TriggerKind::ChatCommand => {
-                Platform::Twitch
+            TriggerKind::ChatCommand
+            | TriggerKind::ChatMessage
+            | TriggerKind::NewSubscriber
+            | TriggerKind::Cheer
+            | TriggerKind::RaidReceived
+            | TriggerKind::NewFollower => Platform::Twitch,
+            TriggerKind::IntervalWhenLive
+            | TriggerKind::CronSchedule
+            | TriggerKind::SpecificTime => Platform::Timer,
+            TriggerKind::SceneChanged | TriggerKind::StreamStarted | TriggerKind::ReplaySaved => {
+                Platform::Obs
             }
-            TriggerKind::IntervalWhenLive | TriggerKind::CronSchedule => Platform::Timer,
-            TriggerKind::SceneChanged | TriggerKind::ReplaySaved => Platform::Obs,
+            TriggerKind::IncomingWebhook | TriggerKind::FileChanged => Platform::Script,
+            TriggerKind::ActionCompleted | TriggerKind::GlobalChanged => Platform::Core,
         }
     }
 
     fn label(self) -> &'static str {
         match self {
-            TriggerKind::NewSubscriber => "Channel Subscriber",
-            TriggerKind::RaidReceived => "Channel Raid",
             TriggerKind::ChatCommand => "Chat command",
+            TriggerKind::ChatMessage => "Chat message",
+            TriggerKind::NewSubscriber => "Channel Subscriber",
+            TriggerKind::Cheer => "Cheer (bits)",
+            TriggerKind::RaidReceived => "Channel Raid",
+            TriggerKind::NewFollower => "New follower",
             TriggerKind::IntervalWhenLive => "Interval (when live)",
             TriggerKind::CronSchedule => "Cron schedule",
+            TriggerKind::SpecificTime => "Specific time",
             TriggerKind::SceneChanged => "Scene changed",
+            TriggerKind::StreamStarted => "Stream started",
             TriggerKind::ReplaySaved => "Replay buffer saved",
+            TriggerKind::IncomingWebhook => "Incoming webhook",
+            TriggerKind::FileChanged => "File changed",
+            TriggerKind::ActionCompleted => "Action completed",
+            TriggerKind::GlobalChanged => "Global changed",
         }
     }
 
     fn kind_id(self) -> &'static str {
         match self {
-            TriggerKind::NewSubscriber => "twitch.subs-bits.new-subscriber",
-            TriggerKind::RaidReceived => "twitch.raids.raid-received",
             TriggerKind::ChatCommand => "twitch.chat.chat-command",
+            TriggerKind::ChatMessage => "twitch.chat.chat-message",
+            TriggerKind::NewSubscriber => "twitch.subs-bits.new-subscriber",
+            TriggerKind::Cheer => "twitch.subs-bits.cheer",
+            TriggerKind::RaidReceived => "twitch.raids.raid-received",
+            TriggerKind::NewFollower => "twitch.followers.new-follower",
             TriggerKind::IntervalWhenLive => "timer.intervals.interval-when-live",
             TriggerKind::CronSchedule => "timer.intervals.cron-schedule",
+            TriggerKind::SpecificTime => "timer.intervals.specific-time",
             TriggerKind::SceneChanged => "obs.scenes.scene-changed",
+            TriggerKind::StreamStarted => "obs.streaming.stream-started",
             TriggerKind::ReplaySaved => "obs.streaming.replay-saved",
+            TriggerKind::IncomingWebhook => "script.webhook.incoming",
+            TriggerKind::FileChanged => "script.fs.file-changed",
+            TriggerKind::ActionCompleted => "core.forge.action-completed",
+            TriggerKind::GlobalChanged => "core.forge.global-changed",
+        }
+    }
+
+    /// The `platform · subgroup` band this kind groups under — the middle segment of
+    /// its `kind_id`.
+    fn subgroup(self) -> &'static str {
+        self.kind_id().split('.').nth(1).unwrap_or("")
+    }
+
+    /// One-line human summary shown under the card name in the kind picker.
+    fn desc(self) -> &'static str {
+        match self {
+            TriggerKind::ChatCommand => "Fires on a !command in chat",
+            TriggerKind::ChatMessage => "Every message posted in chat",
+            TriggerKind::NewSubscriber => "A new paid subscription",
+            TriggerKind::Cheer => "Bits cheered in chat",
+            TriggerKind::RaidReceived => "An incoming raid",
+            TriggerKind::NewFollower => "A new follower",
+            TriggerKind::IntervalWhenLive => "Every N minutes while live",
+            TriggerKind::CronSchedule => "On a cron expression",
+            TriggerKind::SpecificTime => "At a wall-clock time",
+            TriggerKind::SceneChanged => "Active scene switched",
+            TriggerKind::StreamStarted => "OBS started streaming",
+            TriggerKind::ReplaySaved => "Replay buffer flushed to disk",
+            TriggerKind::IncomingWebhook => "An inbound HTTP webhook",
+            TriggerKind::FileChanged => "A watched file changed",
+            TriggerKind::ActionCompleted => "Another action finished",
+            TriggerKind::GlobalChanged => "A global variable changed",
         }
     }
 
@@ -207,13 +361,22 @@ impl TriggerKind {
     /// glyph where the design's Tabler name has no imported counterpart.
     fn glyph(self) -> Icon {
         match self {
-            TriggerKind::NewSubscriber => Icon::Star,
-            TriggerKind::RaidReceived => Icon::Flag,
             TriggerKind::ChatCommand => Icon::MessageCircle,
+            TriggerKind::ChatMessage => Icon::MessageCircle,
+            TriggerKind::NewSubscriber => Icon::Star,
+            TriggerKind::Cheer => Icon::Coin,
+            TriggerKind::RaidReceived => Icon::Flag,
+            TriggerKind::NewFollower => Icon::Users,
             TriggerKind::IntervalWhenLive => Icon::Clock,
             TriggerKind::CronSchedule => Icon::Clock,
+            TriggerKind::SpecificTime => Icon::Clock,
             TriggerKind::SceneChanged => Icon::Repeat,
+            TriggerKind::StreamStarted => Icon::Broadcast,
             TriggerKind::ReplaySaved => Icon::Download,
+            TriggerKind::IncomingWebhook => Icon::Globe,
+            TriggerKind::FileChanged => Icon::FileCode,
+            TriggerKind::ActionCompleted => Icon::CircleCheck,
+            TriggerKind::GlobalChanged => Icon::Variable,
         }
     }
 
@@ -236,12 +399,21 @@ impl TriggerKind {
                 ("global_cd", "0s"),
                 ("permission", "everyone"),
             ],
+            TriggerKind::ChatMessage => &[("min_length", "0"), ("ignore_commands", "true")],
+            TriggerKind::Cheer => &[("min_bits", "1")],
+            TriggerKind::NewFollower => &[],
             TriggerKind::IntervalWhenLive => {
                 &[("every", "60s"), ("jitter", "0s"), ("only_live", "true")]
             }
             TriggerKind::CronSchedule => &[("cron", "0 * * * *"), ("timezone", "Europe/Kyiv")],
+            TriggerKind::SpecificTime => &[("time", "20:00:00"), ("timezone", "Europe/Kyiv")],
             TriggerKind::SceneChanged => &[("from", "\u{2014}"), ("to", "\u{2014}")],
+            TriggerKind::StreamStarted => &[],
             TriggerKind::ReplaySaved => &[("rename_to", "\u{2014}")],
+            TriggerKind::IncomingWebhook => &[("path", "/hook"), ("method", "POST")],
+            TriggerKind::FileChanged => &[("path", "~/watch.txt"), ("debounce", "500ms")],
+            TriggerKind::ActionCompleted => &[("action", "\u{2014}")],
+            TriggerKind::GlobalChanged => &[("global", "\u{2014}")],
         }
     }
 
@@ -355,6 +527,8 @@ pub struct TriggersRegistryView {
     field_edit: Option<FieldEditForm>,
     pending_delete: Option<InstanceId>,
     confirm_disable: Option<InstanceId>,
+    kind_picker: Option<KindPickerForm>,
+    grid_hover: Option<SharedString>,
     next_id: u64,
     _search_sub: Subscription,
 }
@@ -387,6 +561,8 @@ impl TriggersRegistryView {
             field_edit: None,
             pending_delete: None,
             confirm_disable: None,
+            kind_picker: None,
+            grid_hover: None,
             next_id,
             _search_sub: search_sub,
         }
@@ -642,22 +818,122 @@ impl TriggersRegistryView {
         cx.notify();
     }
 
-    /// Seeds a default chat-command instance and selects it — the design's inline New
-    /// behavior. The full kind-picker create wizard is TR-C.
-    fn new_trigger(&mut self, cx: &mut Context<Self>) {
+    // --- new trigger: kind picker -----------------------------------------
+
+    /// Opens the centred grid kind-picker. Picking a kind mints a new instance of it
+    /// and drops the user into the config side-sheet to name and tune it.
+    fn open_kind_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let palette = cx.palette();
+        let placeholder: SharedString =
+            format!("Search {} trigger kinds\u{2026}", TriggerKind::ALL.len()).into();
+        let search_field = cx.new(|cx| {
+            TextInput::new(placeholder, cx)
+                .with_palette(palette)
+                .leading_icon(Icon::Search, palette.text_muted)
+                .with_font_size(GRID_SEARCH_FS)
+                .static_chrome(palette.border_regular, Radius::Sm)
+        });
+        let search_sub = cx.subscribe(&search_field, Self::on_grid_search_event);
+        search_field.read(cx).focus(window);
+        self.menu_open = None;
+        self.grid_hover = None;
+        self.kind_picker = Some(KindPickerForm {
+            search_field,
+            search: String::new(),
+            scope: None,
+            _search_sub: search_sub,
+        });
+        cx.notify();
+    }
+
+    fn on_grid_search_event(
+        &mut self,
+        field: Entity<TextInput>,
+        event: &InputEvent,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            InputEvent::Changed(text) => {
+                let palette = cx.palette();
+                let Some(form) = self.kind_picker.as_mut() else {
+                    return;
+                };
+                form.search = text.to_string();
+                let border = if form.search.trim().is_empty() {
+                    palette.border_regular
+                } else {
+                    palette.warning
+                };
+                field.update(cx, |input, cx| {
+                    input.set_static_chrome(Some((border, Radius::Sm)));
+                    cx.notify();
+                });
+                cx.notify();
+            }
+            InputEvent::Cancelled => self.cancel_kind_picker(cx),
+            InputEvent::Submitted(_) => {}
+        }
+    }
+
+    fn clear_grid_search(&mut self, cx: &mut Context<Self>) {
+        let palette = cx.palette();
+        if let Some(form) = self.kind_picker.as_mut() {
+            form.search.clear();
+            let field = form.search_field.clone();
+            field.update(cx, |input, cx| {
+                input.set_content("", cx);
+                input.set_static_chrome(Some((palette.border_regular, Radius::Sm)));
+            });
+        }
+        cx.notify();
+    }
+
+    fn set_grid_scope(&mut self, scope: Option<SharedString>, cx: &mut Context<Self>) {
+        if let Some(form) = self.kind_picker.as_mut() {
+            form.scope = scope;
+        }
+        cx.notify();
+    }
+
+    fn set_grid_hover(&mut self, id: SharedString, hovered: bool, cx: &mut Context<Self>) {
+        if hovered {
+            if self.grid_hover.as_ref() != Some(&id) {
+                self.grid_hover = Some(id);
+                cx.notify();
+            }
+        } else if self.grid_hover.as_ref() == Some(&id) {
+            self.grid_hover = None;
+            cx.notify();
+        }
+    }
+
+    fn cancel_kind_picker(&mut self, cx: &mut Context<Self>) {
+        self.kind_picker = None;
+        self.grid_hover = None;
+        cx.notify();
+    }
+
+    /// Mints a fresh, enabled instance of the picked kind (default name, kind defaults,
+    /// no overrides, unused), selects it to open the config side-sheet, and closes the
+    /// picker.
+    fn pick_kind(&mut self, kind: TriggerKind, cx: &mut Context<Self>) {
         let id = self.mint_id();
         self.instances.insert(
             0,
             TriggerInstance {
                 id,
-                name: "New trigger".to_owned(),
-                kind: TriggerKind::ChatCommand,
+                name: format!("New {}", kind.label()),
+                kind,
                 enabled: true,
                 overrides: BTreeMap::new(),
                 used_in: Vec::new(),
             },
         );
         self.selected = Some(id);
+        self.sheet_rename = None;
+        self.field_edit = None;
+        self.kind_picker = None;
+        self.grid_hover = None;
         cx.notify();
     }
 
@@ -1005,7 +1281,7 @@ impl TriggersRegistryView {
 
         let new_btn = primary_button_with_icon(Icon::Plus, "New trigger", palette).on_click(
             "triggers-new",
-            cx.listener(|this, _: &ClickEvent, _, cx| this.new_trigger(cx)),
+            cx.listener(|this, _: &ClickEvent, window, cx| this.open_kind_picker(window, cx)),
         );
 
         div()
@@ -1378,7 +1654,9 @@ impl TriggersRegistryView {
             primary_button_with_icon(Icon::Plus, "Create your first trigger", palette)
                 .on_click(
                     "triggers-empty-new",
-                    cx.listener(|this, _: &ClickEvent, _, cx| this.new_trigger(cx)),
+                    cx.listener(|this, _: &ClickEvent, window, cx| {
+                        this.open_kind_picker(window, cx)
+                    }),
                 )
                 .into_any_element()
         };
@@ -1889,6 +2167,441 @@ impl TriggersRegistryView {
             .into_any_element()
     }
 
+    // --- render: kind picker ----------------------------------------------
+
+    /// Trigger-kind catalog grouped by `platform · subgroup` in `TriggerKind::ALL`
+    /// order — the create picker shows kinds only (no saved instances).
+    fn kind_groups(&self, palette: &ForgePalette) -> Vec<GridGroup> {
+        let mut groups: Vec<GridGroup> = Vec::new();
+        for kind in TriggerKind::ALL {
+            let platform = kind.platform();
+            let color = platform.dot(palette);
+            let label = format!("{} \u{b7} {}", platform.label(), kind.subgroup());
+            let item = GridItem {
+                id: SharedString::from(kind.kind_id()),
+                name: kind.label().to_owned(),
+                desc: kind.desc().to_owned(),
+                glyph: kind.glyph(),
+                color,
+                kind,
+            };
+            match groups.iter_mut().find(|g| g.label == label) {
+                Some(g) => g.items.push(item),
+                None => groups.push(GridGroup {
+                    label,
+                    color,
+                    scope: SharedString::from(platform.key()),
+                    items: vec![item],
+                }),
+            }
+        }
+        groups
+    }
+
+    /// The scope filter chips — one per platform present, deduped in group order.
+    fn grid_scopes(&self, palette: &ForgePalette) -> Vec<(SharedString, String, Rgba)> {
+        let mut seen: Vec<(SharedString, String, Rgba)> = Vec::new();
+        for g in self.kind_groups(palette) {
+            if seen.iter().any(|(id, _, _)| id == &g.scope) {
+                continue;
+            }
+            seen.push((g.scope.clone(), scope_label(&g.label), g.color));
+        }
+        seen
+    }
+
+    fn render_kind_picker(
+        &self,
+        form: &KindPickerForm,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let accent = palette.warning;
+        let searching = !form.search.trim().is_empty();
+        let query = form.search.trim().to_lowercase();
+
+        let visible: Vec<GridGroup> = self
+            .kind_groups(palette)
+            .into_iter()
+            .filter(|g| searching || form.scope.is_none() || form.scope.as_ref() == Some(&g.scope))
+            .map(|mut g| {
+                if searching {
+                    g.items.retain(|it| {
+                        it.name.to_lowercase().contains(&query)
+                            || it.desc.to_lowercase().contains(&query)
+                    });
+                }
+                g
+            })
+            .filter(|g| !g.items.is_empty())
+            .collect();
+        let total: usize = visible.iter().map(|g| g.items.len()).sum();
+
+        let card = div()
+            .w(GRID_W)
+            .h(GRID_H)
+            .flex()
+            .flex_col()
+            .overflow_hidden()
+            .bg(palette.elevated)
+            .rounded(radius(Radius::Lg))
+            .border(BORDER_ACCENT)
+            .border_color(palette.border_regular)
+            .child(self.render_grid_header(accent, palette, cx))
+            .child(self.render_grid_search(form, palette, cx))
+            .children((!searching).then(|| self.render_grid_chips(form, palette, cx)))
+            .child(self.render_grid_body(form, accent, visible, total, palette, cx))
+            .child(render_grid_footer(palette));
+
+        let view = cx.entity();
+        overlay(card, palette)
+            .position(OverlayPosition::Center)
+            .on_dismiss("triggers-grid-scrim", move |_window, cx| {
+                view.update(cx, |this, cx| this.cancel_kind_picker(cx));
+            })
+            .into_any_element()
+    }
+
+    fn render_grid_header(
+        &self,
+        accent: Rgba,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let count = TriggerKind::ALL.len();
+
+        let tile = div()
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .size(GRID_TILE)
+            .rounded(GRID_TILE_RADIUS)
+            .bg(palette.surface_overlay)
+            .child(icon(Icon::Bolt, GRID_TILE_ICON, accent));
+
+        let subtitle = div()
+            .overflow_hidden()
+            .font_family(DEFAULT_BODY_FAMILY)
+            .text_size(GRID_META_FS)
+            .text_color(palette.text_faint)
+            .child(format!("{count} trigger types"));
+
+        let titles = div()
+            .flex_1()
+            .min_w(px(0.0))
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_size(FONT_SM)
+                    .text_color(palette.text_primary)
+                    .child("Add trigger"),
+            )
+            .child(subtitle);
+
+        let close = div()
+            .id("triggers-grid-close")
+            .flex_none()
+            .p(px(4.0))
+            .cursor_pointer()
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_kind_picker(cx)))
+            .child(icon(Icon::X, GRID_CLOSE_ICON, palette.text_faint));
+
+        div()
+            .flex_none()
+            .flex()
+            .items_center()
+            .gap(GRID_HEADER_GAP)
+            .py(GRID_HEADER_PAD_V)
+            .px(GRID_BAND_PAD_H)
+            .border_b(BORDER_ACCENT)
+            .border_color(palette.surface_overlay)
+            .child(tile)
+            .child(titles)
+            .child(close)
+            .into_any_element()
+    }
+
+    fn render_grid_search(
+        &self,
+        form: &KindPickerForm,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let mut row = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .child(form.search_field.clone()),
+            );
+        if !form.search.is_empty() {
+            row = row.child(
+                div()
+                    .id("triggers-grid-search-clear")
+                    .flex_none()
+                    .cursor_pointer()
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.clear_grid_search(cx)))
+                    .child(icon(Icon::X, GRID_SEARCH_ICON, palette.text_faint)),
+            );
+        }
+
+        div()
+            .flex_none()
+            .pt(GRID_SEARCH_PAD_T)
+            .pb(GRID_SEARCH_PAD_B)
+            .px(GRID_BAND_PAD_H)
+            .border_b(BORDER_ACCENT)
+            .border_color(palette.surface_overlay)
+            .child(row)
+            .into_any_element()
+    }
+
+    fn render_grid_chips(
+        &self,
+        form: &KindPickerForm,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let mut row = div()
+            .id("triggers-grid-chips")
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .overflow_x_scroll()
+            .child(grid_scope_chip(
+                "triggers-grid-scope-all",
+                "All",
+                None,
+                form.scope.is_none(),
+                palette,
+                cx.listener(|this, _: &ClickEvent, _, cx| this.set_grid_scope(None, cx)),
+            ));
+
+        for (id, label, dot) in self.grid_scopes(palette) {
+            let active = form.scope.as_ref() == Some(&id);
+            let scope_id = id.clone();
+            row = row.child(grid_scope_chip(
+                SharedString::from(format!("triggers-grid-scope-{id}")),
+                label,
+                Some(dot),
+                active,
+                palette,
+                cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.set_grid_scope(Some(scope_id.clone()), cx)
+                }),
+            ));
+        }
+
+        div()
+            .flex_none()
+            .py(GRID_CHIPS_PAD_V)
+            .px(GRID_BAND_PAD_H)
+            .border_b(BORDER_ACCENT)
+            .border_color(palette.surface_overlay)
+            .child(row)
+            .into_any_element()
+    }
+
+    fn render_grid_body(
+        &self,
+        form: &KindPickerForm,
+        accent: Rgba,
+        visible: Vec<GridGroup>,
+        total: usize,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let query = form.search.trim().to_owned();
+        let searching = !query.is_empty();
+        let mut col = div().flex().flex_col();
+
+        if searching {
+            col = col.child(
+                div()
+                    .pb(spacing(Spacing::Sm, Density::Cozy))
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(GRID_META_FS)
+                    .text_color(palette.text_faint)
+                    .child(format!(
+                        "{total} {} for \u{201c}{query}\u{201d}",
+                        if total == 1 { "match" } else { "matches" },
+                    )),
+            );
+        }
+
+        if visible.is_empty() {
+            col = col.child(
+                div()
+                    .w_full()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap(spacing(Spacing::Sm, Density::Cozy))
+                    .py(GRID_EMPTY_PAD_V)
+                    .child(icon(Icon::Search, GRID_EMPTY_GLYPH, palette.text_faint))
+                    .child(
+                        div()
+                            .font_family(DEFAULT_BODY_FAMILY)
+                            .text_size(FONT_XS)
+                            .text_color(palette.text_muted)
+                            .child(format!("Nothing matches \u{201c}{query}\u{201d}")),
+                    ),
+            );
+        }
+
+        for group in &visible {
+            col = col.child(self.render_grid_group(group, accent, palette, cx));
+        }
+
+        div()
+            .id("triggers-grid-body")
+            .flex_1()
+            .min_h(px(0.0))
+            .overflow_y_scroll()
+            .py(GRID_BODY_PAD_V)
+            .px(GRID_BAND_PAD_H)
+            .child(col)
+            .into_any_element()
+    }
+
+    fn render_grid_group(
+        &self,
+        group: &GridGroup,
+        accent: Rgba,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let header = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .pb(GRID_GROUP_HEADER_MB)
+            .child(
+                div()
+                    .flex_none()
+                    .size(GRID_GROUP_DOT)
+                    .rounded(radius(Radius::Pill))
+                    .bg(group.color),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(GRID_GROUP_FS)
+                    .text_color(palette.text_muted)
+                    .child(group.label.to_uppercase()),
+            )
+            .child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(GRID_GROUP_FS)
+                    .text_color(palette.text_faint)
+                    .child(group.items.len().to_string()),
+            );
+
+        let mut rows = div().flex().flex_col().gap(GRID_CARD_GAP);
+        for chunk in group.items.chunks(2) {
+            let mut pair = div().flex().gap(GRID_CARD_GAP);
+            for item in chunk {
+                pair = pair.child(self.render_grid_card(item, accent, palette, cx));
+            }
+            if chunk.len() == 1 {
+                pair = pair.child(div().flex_1());
+            }
+            rows = rows.child(pair);
+        }
+
+        div()
+            .w_full()
+            .pb(GRID_GROUP_GAP)
+            .child(header)
+            .child(rows)
+            .into_any_element()
+    }
+
+    fn render_grid_card(
+        &self,
+        item: &GridItem,
+        accent: Rgba,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let id = item.id.clone();
+        let hovered = self.grid_hover.as_ref() == Some(&id);
+        let border = if hovered {
+            palette.border_regular
+        } else {
+            palette.surface_overlay
+        };
+
+        let tile = div()
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .size(GRID_CARD_TILE)
+            .rounded(GRID_CARD_TILE_RADIUS)
+            .bg(palette.surface_overlay)
+            .child(icon(item.glyph, GRID_CARD_ICON, item.color));
+
+        let name = div()
+            .flex_1()
+            .min_w(px(0.0))
+            .overflow_hidden()
+            .font_family(DEFAULT_BODY_FAMILY)
+            .font_weight(FontWeight::MEDIUM)
+            .text_size(GRID_CARD_NAME_FS)
+            .text_color(palette.text_primary)
+            .child(item.name.clone());
+
+        let tint = if hovered { accent } else { palette.text_faint };
+        let top = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .pb(GRID_CARD_ROW_MB)
+            .child(tile)
+            .child(name)
+            .child(icon(Icon::Plus, GRID_CARD_ICON, tint));
+
+        let desc = div()
+            .overflow_hidden()
+            .font_family(DEFAULT_BODY_FAMILY)
+            .text_size(GRID_META_FS)
+            .text_color(palette.text_muted)
+            .child(item.desc.clone());
+
+        let kind = item.kind;
+        div()
+            .id(id.clone())
+            .flex_1()
+            .min_w(px(0.0))
+            .flex()
+            .flex_col()
+            .py(GRID_CARD_PAD_V)
+            .px(GRID_CARD_PAD_H)
+            .rounded(radius(Radius::Md))
+            .border(BORDER_ACCENT)
+            .border_color(border)
+            .bg(palette.shell)
+            .cursor_pointer()
+            .child(top)
+            .child(desc)
+            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                this.set_grid_hover(id.clone(), *hovered, cx)
+            }))
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.pick_kind(kind, cx)))
+            .into_any_element()
+    }
+
     // --- render: modals ---------------------------------------------------
 
     fn render_disable_confirm(
@@ -2074,6 +2787,10 @@ impl Render for TriggersRegistryView {
             .rename
             .as_ref()
             .map(|form| self.render_rename_modal(form, &palette, cx));
+        let kind_picker = self
+            .kind_picker
+            .as_ref()
+            .map(|form| self.render_kind_picker(form, &palette, cx));
 
         div()
             .size_full()
@@ -2086,7 +2803,150 @@ impl Render for TriggersRegistryView {
             .children(disable_modal)
             .children(delete_modal)
             .children(rename_modal)
+            .children(kind_picker)
     }
+}
+
+// ── kind picker data ──────────────────────────────────────────────────────
+
+/// The open create kind-picker: the live search field + query and the active scope
+/// chip. Unlike the Actions picker there is no target-action context — picking mints
+/// a fresh instance of the chosen kind.
+struct KindPickerForm {
+    search_field: Entity<TextInput>,
+    search: String,
+    scope: Option<SharedString>,
+    _search_sub: Subscription,
+}
+
+/// One selectable trigger-kind card in the grid.
+struct GridItem {
+    id: SharedString,
+    name: String,
+    desc: String,
+    glyph: Icon,
+    color: Rgba,
+    kind: TriggerKind,
+}
+
+/// A titled `platform · subgroup` band of kind cards.
+struct GridGroup {
+    label: String,
+    color: Rgba,
+    scope: SharedString,
+    items: Vec<GridItem>,
+}
+
+/// The scope-chip label for a group: the segment before the ` · ` platform separator.
+fn scope_label(group_label: &str) -> String {
+    group_label
+        .split(" \u{b7} ")
+        .next()
+        .unwrap_or(group_label)
+        .to_owned()
+}
+
+/// A scope filter chip: active pills fill `surface_overlay` with a `border_regular`
+/// outline; inactive ones stay transparent. An optional leading platform dot leads
+/// the label.
+fn grid_scope_chip(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    dot: Option<Rgba>,
+    active: bool,
+    palette: &ForgePalette,
+    handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> AnyElement {
+    let (bg, text_color, border): (Rgba, Rgba, Rgba) = if active {
+        (
+            palette.surface_overlay,
+            palette.text_primary,
+            palette.border_regular,
+        )
+    } else {
+        (
+            gpui::transparent_black().into(),
+            palette.text_secondary,
+            gpui::transparent_black().into(),
+        )
+    };
+    let mut chip = div()
+        .id(id.into())
+        .flex_none()
+        .flex()
+        .items_center()
+        .gap(GRID_CHIP_DOT)
+        .py(GRID_CHIP_PAD_V)
+        .px(GRID_CHIP_PAD_H)
+        .rounded(radius(Radius::Pill))
+        .border(BORDER_ACCENT)
+        .border_color(border)
+        .bg(bg)
+        .cursor_pointer()
+        .on_click(handler);
+    if let Some(dot) = dot {
+        chip = chip.child(
+            div()
+                .flex_none()
+                .size(GRID_CHIP_DOT)
+                .rounded(radius(Radius::Pill))
+                .bg(dot),
+        );
+    }
+    chip.child(
+        div()
+            .font_family(DEFAULT_BODY_FAMILY)
+            .text_size(GRID_META_FS)
+            .text_color(text_color)
+            .child(label.into()),
+    )
+    .into_any_element()
+}
+
+/// The grid modal's footer band: the create hint on the left, an `Esc` chip on the
+/// right.
+fn render_grid_footer(palette: &ForgePalette) -> impl IntoElement {
+    div()
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_between()
+        .py(GRID_FOOTER_PAD_V)
+        .px(GRID_BAND_PAD_H)
+        .bg(palette.shell)
+        .border_t(BORDER_ACCENT)
+        .border_color(palette.surface_overlay)
+        .child(
+            div()
+                .font_family(DEFAULT_BODY_FAMILY)
+                .text_size(FONT_XXS)
+                .text_color(palette.text_faint)
+                .child("Pick a trigger kind \u{2014} configure it after"),
+        )
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(spacing(Spacing::Xxs, Density::Cozy))
+                .child(
+                    div()
+                        .font_family(DEFAULT_MONO_FAMILY)
+                        .text_size(FONT_XXS)
+                        .text_color(palette.text_faint)
+                        .py(GRID_KBD_PAD_V)
+                        .px(GRID_KBD_PAD_H)
+                        .rounded(GRID_KBD_RADIUS)
+                        .bg(palette.surface_overlay)
+                        .child("Esc"),
+                )
+                .child(
+                    div()
+                        .font_family(DEFAULT_BODY_FAMILY)
+                        .text_size(FONT_XXS)
+                        .text_color(palette.text_faint)
+                        .child("to cancel"),
+                ),
+        )
 }
 
 // ── seeded stub state ─────────────────────────────────────────────────────

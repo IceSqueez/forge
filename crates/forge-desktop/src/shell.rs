@@ -14,6 +14,7 @@ use crate::queues::QueuesView;
 use crate::runtime_status::RuntimeStatus;
 use crate::screen::Screen;
 use crate::screen_stub::ScreenStub;
+use crate::server_console::ServerConsoleView;
 use crate::settings::SettingsView;
 use crate::sidebar::NavRequested;
 use crate::soundboard::SoundboardView;
@@ -134,6 +135,7 @@ impl AppShell {
             Screen::Queues => cx.new(QueuesView::new).into(),
             Screen::Soundboard => cx.new(SoundboardView::new).into(),
             Screen::Tts => cx.new(TtsView::new).into(),
+            Screen::Server => cx.new(ServerConsoleView::new).into(),
             other => cx.new(|_| ScreenStub::new(other.clone())).into(),
         }
     }

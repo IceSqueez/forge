@@ -19,6 +19,7 @@ mod queues;
 mod runtime_status;
 mod screen;
 mod screen_stub;
+mod server_console;
 mod settings;
 mod shell;
 mod sidebar;

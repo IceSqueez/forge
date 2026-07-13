@@ -4,10 +4,12 @@ use forge_components::{
 };
 use forge_platform_core::BuiltinId;
 use gpui::{
-    AnyElement, ClickEvent, Context, EventEmitter, FontWeight, Pixels, Rgba, SharedString, Window,
-    div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Rgba, SharedString,
+    Window, div, prelude::*, px,
 };
 
+use crate::home_stats::Integration;
+use crate::platforms::PlatformConnectivity;
 use crate::presentation::{ActivePresentation, Presentation};
 use crate::screen::Screen;
 
@@ -71,11 +73,13 @@ enum NavEntry {
         screen: Screen,
     },
     /// Platform / stream-app leaf: a brand square, a label, and a live-status dot.
+    /// The dot's connected state is read from the connectivity topic at render time,
+    /// keyed by `integ`.
     FlatLink {
         dot: Rgba,
         label: &'static str,
         screen: Screen,
-        connected: bool,
+        integ: Integration,
     },
 }
 
@@ -86,15 +90,25 @@ enum NavEntry {
 /// presentation `Global`.
 pub struct SidebarNav {
     current: Screen,
+    connectivity: Entity<PlatformConnectivity>,
 }
 
 impl EventEmitter<NavRequested> for SidebarNav {}
 
 impl SidebarNav {
-    pub fn new(current: Screen, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        current: Screen,
+        connectivity: Entity<PlatformConnectivity>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         cx.observe_global::<Presentation>(|_, cx| cx.notify())
             .detach();
-        Self { current }
+        // Repaint the connection dots when the connectivity topic advances.
+        cx.observe(&connectivity, |_, _, cx| cx.notify()).detach();
+        Self {
+            current,
+            connectivity,
+        }
     }
 
     /// Confirmed active screen pushed from the root after it routes a request.
@@ -107,8 +121,9 @@ impl SidebarNav {
     }
 
     /// Grouped roster (every row except the bottom-pinned Settings). Brand-dot
-    /// colors resolve from `palette`; the connection dots are stubbed disconnected
-    /// until the platform-health bridge topic lands.
+    /// colors resolve from `palette`; each platform / stream-app leaf's live
+    /// connection dot is read from the connectivity topic at render time, keyed by
+    /// its [`Integration`].
     fn roster(palette: &ForgePalette) -> Vec<NavEntry> {
         vec![
             NavEntry::SectionLeaf {
@@ -158,19 +173,19 @@ impl SidebarNav {
                 dot: palette.brand,
                 label: "Twitch",
                 screen: Screen::BuiltinDetail(BuiltinId::new("twitch")),
-                connected: false,
+                integ: Integration::Twitch,
             },
             NavEntry::FlatLink {
                 dot: palette.random,
                 label: "YouTube",
                 screen: Screen::BuiltinDetail(BuiltinId::new("youtube")),
-                connected: false,
+                integ: Integration::YouTube,
             },
             NavEntry::FlatLink {
                 dot: palette.info,
                 label: "Kick",
                 screen: Screen::BuiltinDetail(BuiltinId::new("kick")),
-                connected: false,
+                integ: Integration::Kick,
             },
             NavEntry::MiniLabelLink {
                 label: "Stream apps",
@@ -180,13 +195,13 @@ impl SidebarNav {
                 dot: palette.success,
                 label: "OBS Studio",
                 screen: Screen::BuiltinDetail(BuiltinId::new("obs")),
-                connected: false,
+                integ: Integration::Obs,
             },
             NavEntry::FlatLink {
                 dot: palette.warning,
                 label: "VTube Studio",
                 screen: Screen::BuiltinDetail(BuiltinId::new("vtube")),
-                connected: false,
+                integ: Integration::VTube,
             },
             NavEntry::MiniLabel("Modules"),
             NavEntry::FlatIconLeaf {
@@ -406,8 +421,9 @@ impl SidebarNav {
                 dot,
                 label,
                 screen,
-                connected,
+                integ,
             } => {
+                let connected = self.connectivity.read(cx).is_connected(integ);
                 let active = self.current == screen;
                 let fg = if active {
                     palette.text_primary

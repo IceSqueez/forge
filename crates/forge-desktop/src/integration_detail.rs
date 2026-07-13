@@ -4,16 +4,18 @@ use forge_components::{
     breadcrumb, confirm_modal, icon, overlay, radius, spacing, with_alpha,
 };
 use forge_platform_core::{
-    BuiltinId, CapabilityFlags, ConnectionState, DetailSection, HeaderAction, HealthMetric,
-    QuickAction, SectionIcon,
+    BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinStatus, CapabilityFlags, ConnectionState,
+    DetailSection, HeaderAction, HealthMetric, QuickAction, QuickActions, SectionIcon,
 };
 use gpui::{
-    AnyElement, ClickEvent, Context, EventEmitter, FontWeight, Rgba, Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, Rgba, Subscription, Window,
+    div, prelude::*, px,
 };
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::builtin_sections::{content_sections, format_uptime, health_grid};
-use crate::integration_seed::seed;
+use crate::platforms::PlatformConnectivity;
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
@@ -23,9 +25,21 @@ use crate::toasts::PushToast;
 /// trait outputs — status, health metrics, content sections, quick actions — and
 /// renders them uniformly, so no integration has any per-screen detail code: a
 /// new integration reaches this view by supplying the four traits, nothing here
-/// changes. The view holds a cached snapshot of those outputs (a runtime bridge
-/// will refresh them); it never switches on the integration id when rendering.
+/// changes. It never switches on the integration id when rendering.
+///
+/// The view holds the live trait objects and a cached snapshot read from them: the
+/// snapshot is read synchronously on mount and re-read whenever the observed
+/// connectivity topic advances (a `platform.connection.changed` fold), so the header,
+/// alt-state, health, content and quick actions track the real `ConnectionState`.
 pub struct IntegrationDetail {
+    // Live trait surface, held so the snapshot can be re-read on a connection change.
+    // `control` (lifecycle verbs) is wired to real dispatch in a later phase.
+    status: Arc<dyn BuiltinStatus>,
+    health: Arc<dyn BuiltinHealth>,
+    content: Arc<dyn BuiltinContent>,
+    quick: Arc<dyn QuickActions>,
+    #[allow(dead_code)]
+    control: Option<Arc<dyn BuiltinControl>>,
     icon: SectionIcon,
     display_name: String,
     version: Option<String>,
@@ -43,31 +57,77 @@ pub struct IntegrationDetail {
     /// Transient feedback line for a dispatched lifecycle/quick action. Without a
     /// live runtime the action is stubbed and only this toast is shown.
     toast: Option<String>,
+    /// Held so the connectivity observation lives for the view's lifetime.
+    _conn_obs: Subscription,
 }
 
 impl EventEmitter<NavRequested> for IntegrationDetail {}
 
 impl IntegrationDetail {
-    pub fn new(id: BuiltinId, _cx: &mut Context<Self>) -> Self {
-        let s = seed(&id);
-        // Consume the four traits into cached snapshot fields, exactly as a live
-        // integration's traits would be read once at attach.
-        let status = &s.status;
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        icon: SectionIcon,
+        status: Arc<dyn BuiltinStatus>,
+        health: Arc<dyn BuiltinHealth>,
+        content: Arc<dyn BuiltinContent>,
+        quick: Arc<dyn QuickActions>,
+        control: Option<Arc<dyn BuiltinControl>>,
+        connectivity: Entity<PlatformConnectivity>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        // The connectivity fold advances on a `platform.connection.changed`; re-read
+        // this integration's live snapshot from its trait objects whenever it does.
+        let conn_obs = cx.observe(&connectivity, |this, _, cx| this.reload(cx));
+
+        let display_name = status.display_name().to_owned();
+        let version = status.version().map(ToOwned::to_owned);
+        let endpoint = status.endpoint().map(ToOwned::to_owned);
+        let uptime = status.uptime();
+        let connection = status.connection();
+        let capability_flags = status.capability_flags();
+        let header_actions = status.header_actions();
+        let health_metrics = health.metrics();
+        let sections = content.sections();
+        let quick_actions = quick.actions();
+
         Self {
-            icon: s.icon.clone(),
-            display_name: status.display_name().to_owned(),
-            version: status.version().map(ToOwned::to_owned),
-            endpoint: status.endpoint().map(ToOwned::to_owned),
-            uptime: status.uptime(),
-            connection: status.connection(),
-            capability_flags: status.capability_flags(),
-            header_actions: status.header_actions(),
-            health_metrics: s.health.metrics(),
-            sections: s.content.sections(),
-            quick_actions: s.quick.actions(),
+            status,
+            health,
+            content,
+            quick,
+            control,
+            icon,
+            display_name,
+            version,
+            endpoint,
+            uptime,
+            connection,
+            capability_flags,
+            header_actions,
+            health_metrics,
+            sections,
+            quick_actions,
             pending_disconnect: false,
             toast: None,
+            _conn_obs: conn_obs,
         }
+    }
+
+    /// Re-reads the cached snapshot from the live trait objects and repaints. Called
+    /// when the connectivity topic advances so the header, alt-state, health, content
+    /// and quick actions reflect the integration's current `ConnectionState`.
+    fn reload(&mut self, cx: &mut Context<Self>) {
+        self.display_name = self.status.display_name().to_owned();
+        self.version = self.status.version().map(ToOwned::to_owned);
+        self.endpoint = self.status.endpoint().map(ToOwned::to_owned);
+        self.uptime = self.status.uptime();
+        self.connection = self.status.connection();
+        self.capability_flags = self.status.capability_flags();
+        self.header_actions = self.status.header_actions();
+        self.health_metrics = self.health.metrics();
+        self.sections = self.content.sections();
+        self.quick_actions = self.quick.actions();
+        cx.notify();
     }
 
     fn go_back(&mut self, cx: &mut Context<Self>) {
@@ -425,6 +485,73 @@ impl IntegrationDetail {
             })
     }
 
+    /// The runtime-gated alt-state banner, selected purely from the integration's
+    /// `ConnectionState` — no per-integration branch. A live `Connected` integration
+    /// shows no banner; the transient and disconnected states each surface a strip
+    /// above the detail (reconnecting / connecting-in-flight / not-connected), while
+    /// the full detail frame stays visible beneath.
+    fn state_banner(&self, palette: &ForgePalette, density: Density) -> Option<AnyElement> {
+        let (accent, glyph, title, detail): (Rgba, Icon, &str, &str) = match self.connection {
+            ConnectionState::Connected => return None,
+            ConnectionState::Connecting => (
+                palette.info,
+                Icon::Refresh,
+                "Connecting…",
+                "Establishing a session with this integration.",
+            ),
+            ConnectionState::Reconnecting => (
+                palette.warning,
+                Icon::Refresh,
+                "Reconnecting…",
+                "The session dropped; forge is re-establishing it.",
+            ),
+            ConnectionState::Disconnected => (
+                palette.text_muted,
+                Icon::PlugConnected,
+                "Not connected",
+                "Use Reconnect above to link this integration.",
+            ),
+        };
+
+        let text_col = div()
+            .flex_1()
+            .min_w(px(0.0))
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xxs, density))
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_SM)
+                    .text_color(palette.text_primary)
+                    .child(title.to_owned()),
+            )
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_muted)
+                    .child(detail.to_owned()),
+            );
+
+        Some(
+            div()
+                .w_full()
+                .flex()
+                .items_start()
+                .gap(spacing(Spacing::Sm, density))
+                .py(spacing(Spacing::Sm, density))
+                .px(spacing(Spacing::Md, density))
+                .rounded(radius(Radius::Md))
+                .border(BORDER_THIN)
+                .border_color(accent)
+                .bg(palette.elevated)
+                .child(icon(glyph, FONT_SM, accent))
+                .child(text_col)
+                .into_any_element(),
+        )
+    }
+
     fn toast_banner(
         &self,
         message: String,
@@ -470,6 +597,7 @@ impl Render for IntegrationDetail {
             self.connection,
             ConnectionState::Connecting | ConnectionState::Reconnecting
         );
+        let state_banner = self.state_banner(&palette, density);
         let health = health_grid(&self.health_metrics, reconnecting, &palette, density);
         let content = content_sections(&self.sections, &palette, density);
         let quick = self.quick_actions_card(&palette, density, cx);
@@ -479,6 +607,7 @@ impl Render for IntegrationDetail {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Md, density))
+            .children(state_banner)
             .child(header_card)
             .child(health)
             .child(content)

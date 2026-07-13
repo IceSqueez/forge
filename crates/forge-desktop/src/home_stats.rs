@@ -41,13 +41,31 @@ impl Integration {
 
     /// Stable builtin key routed into the generic integration detail screen.
     pub fn builtin_id(self) -> BuiltinId {
-        BuiltinId::new(match self {
+        BuiltinId::new(self.id_str())
+    }
+
+    /// The stable builtin id string for this integration.
+    pub fn id_str(self) -> &'static str {
+        match self {
             Integration::Twitch => "twitch",
             Integration::YouTube => "youtube",
             Integration::Kick => "kick",
             Integration::Obs => "obs",
             Integration::VTube => "vtube",
-        })
+        }
+    }
+
+    /// Resolves an integration from a runtime `platform_id` / builtin id string, or
+    /// `None` for an id outside the five-integration connectivity roster.
+    pub fn from_id(id: &str) -> Option<Self> {
+        match id {
+            "twitch" => Some(Integration::Twitch),
+            "youtube" => Some(Integration::YouTube),
+            "kick" => Some(Integration::Kick),
+            "obs" => Some(Integration::Obs),
+            "vtube" => Some(Integration::VTube),
+            _ => None,
+        }
     }
 
     /// Router destination a connection cell navigates to when clicked — the generic

@@ -6,6 +6,7 @@ use forge_components::{
     Radius, Spacing, card, icon, primary_button, radius, spacing,
 };
 use forge_events::EventsError;
+use forge_platform_core::CONNECTION_STATE_CHANGED_KIND;
 use forge_runtime::EventBus;
 use gpui::{
     AnyElement, App, AppContext, AsyncApp, Context, Entity, Window, WindowHandle, div, prelude::*,
@@ -15,7 +16,7 @@ use crate::boot::{BootFailure, build_runtime};
 use crate::chat_feed::ChatFeed;
 use crate::event_log::EventLog;
 use crate::globals::Globals;
-use crate::home_stats::HomeStats;
+use crate::home_stats::{HomeStats, Integration};
 use crate::platforms::PlatformConnectivity;
 use crate::presentation::{ActivePresentation, Presentation};
 use crate::runtime_handles::RuntimeHandles;
@@ -29,10 +30,11 @@ enum BootState {
     Booting,
     Ready {
         shell: Entity<AppShell>,
-        // Owned here to keep the runtime's engine/scheduler/evaluator tasks alive;
-        // screens read these handles once their phase wires them.
+        // Owned here to keep the runtime's engine/scheduler/evaluator tasks alive for
+        // the app's lifetime; the shell holds a second `Arc` clone through which
+        // screens reach the runtime.
         #[allow(dead_code)]
-        handles: RuntimeHandles,
+        handles: Arc<RuntimeHandles>,
     },
     Failed(BootFailure),
 }
@@ -62,7 +64,7 @@ impl RootView {
         self.window = Some(window);
     }
 
-    fn mark_ready(&mut self, shell: Entity<AppShell>, handles: RuntimeHandles) {
+    fn mark_ready(&mut self, shell: Entity<AppShell>, handles: Arc<RuntimeHandles>) {
         self.state = BootState::Ready { shell, handles };
     }
 
@@ -90,7 +92,7 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
     let home_stats = cx.new(|_| HomeStats::new());
     let event_log = cx.new(|_| EventLog::new());
     let globals = cx.new(|_| Globals::seeded());
-    let platforms = cx.new(|_| PlatformConnectivity::seeded());
+    let platforms = cx.new(|_| PlatformConnectivity::new());
 
     let (result_tx, result_rx) =
         tokio::sync::oneshot::channel::<Result<RuntimeHandles, BootFailure>>();
@@ -107,14 +109,24 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
         };
         match outcome {
             Ok(handles) => {
+                let handles = Arc::new(handles);
                 let bus = Arc::clone(&handles.bus);
+                let handles_for_shell = Arc::clone(&handles);
                 let status_for_clock = status.clone();
                 let chat_feed_for_bridge = chat_feed.clone();
                 let home_stats_for_bridge = home_stats.clone();
                 let event_log_for_bridge = event_log.clone();
+                let platforms_for_bridge = platforms.clone();
                 let applied = window.update(cx, |root, window, cx| {
+                    // Seed the connectivity cache from each mounted builtin's live
+                    // connection snapshot before the bridge takes over live updates.
+                    platforms.update(cx, |connectivity, cx| {
+                        connectivity.seed_from_builtins(&handles.builtins);
+                        cx.notify();
+                    });
                     let topics = Topics::new(chat_feed, home_stats, event_log, globals, platforms);
-                    let shell = cx.new(|cx| AppShell::new(status, topics, window, cx));
+                    let shell =
+                        cx.new(|cx| AppShell::new(status, topics, handles_for_shell, window, cx));
                     root.mark_ready(shell, handles);
                     cx.notify();
                 });
@@ -124,6 +136,7 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
                         chat_feed_for_bridge,
                         home_stats_for_bridge,
                         event_log_for_bridge,
+                        platforms_for_bridge,
                         bus,
                     );
                     start_uptime_clock(cx, status_for_clock);
@@ -143,14 +156,17 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
 /// Boot-global bus drain, owned by the shell for the app's lifetime. It subscribes to
 /// the real bus and folds each event into the matching topic cache, from which
 /// observing views repaint: every observability row into the event feed, `action.done`
-/// and other notable kinds into the Home highlight reel + fired-today counter, and
-/// `chat.message` into the chat feed. A lagging broadcast receiver drops some rows and
-/// keeps draining; a closed bus or a released topic entity ends the task.
+/// and other notable kinds into the Home highlight reel + fired-today counter,
+/// `chat.message` into the chat feed, and `platform.connection.changed` into the
+/// platform-connectivity cache (sidebar dots, footer connected/total, overview badges,
+/// BuiltinDetail alt-states). A lagging broadcast receiver drops some rows and keeps
+/// draining; a closed bus or a released topic entity ends the task.
 fn start_bridge(
     cx: &mut AsyncApp,
     chat_feed: Entity<ChatFeed>,
     home_stats: Entity<HomeStats>,
     event_log: Entity<EventLog>,
+    platforms: Entity<PlatformConnectivity>,
     bus: Arc<EventBus>,
 ) {
     cx.spawn(async move |cx| {
@@ -158,6 +174,26 @@ fn start_bridge(
         loop {
             match subscription.recv().await {
                 Ok(event) => {
+                    if event.kind == CONNECTION_STATE_CHANGED_KIND
+                        && let Some(integ) = event
+                            .payload
+                            .get("platform_id")
+                            .and_then(|v| v.as_str())
+                            .and_then(Integration::from_id)
+                    {
+                        let connected = event.payload.get("state").and_then(|v| v.as_str())
+                            == Some("connected");
+                        if platforms
+                            .update(cx, |connectivity, cx| {
+                                if connectivity.set_connected(integ, connected) {
+                                    cx.notify();
+                                }
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
                     if let Some(item) = EventLog::item_from_event(&event)
                         && event_log
                             .update(cx, |log, cx| {

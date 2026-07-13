@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use forge_components::{Density, FOOTER_HEIGHT, Spacing, spacing, toast_card};
 use forge_platform_core::BuiltinId;
 use gpui::{
@@ -13,9 +15,11 @@ use crate::event_feed::EventFeedView;
 use crate::globals_view::GlobalsView;
 use crate::home::HomeView;
 use crate::integration_detail::IntegrationDetail;
+use crate::integration_seed;
 use crate::platforms::PlatformsView;
 use crate::presentation::{ActivePresentation, Presentation};
 use crate::queues::QueuesView;
+use crate::runtime_handles::RuntimeHandles;
 use crate::runtime_status::RuntimeStatus;
 use crate::screen::Screen;
 use crate::script_editor::ScriptEditorView;
@@ -33,35 +37,49 @@ use crate::tts::TtsView;
 /// transient notification floats over an open modal rather than behind it.
 const TOAST_PRIORITY: usize = 2;
 
-/// Root shell view-entity. Holds the router discriminant, the single active-screen
-/// child entity, the chrome bundle (title bar / sidebar / footer child entities),
-/// its own focus handle, and the bridge-topics bundle — five top-level fields,
-/// within the ≤5 budget. It owns no screen-internal or domain state; the routed
-/// screen is a separate view-entity swapped on navigation, and the runtime→UI topic
-/// caches live behind the `topics` bundle, handed to whichever screen consumes them.
-pub struct AppShell {
+/// The active-screen router pair: the current [`Screen`] discriminant and the single
+/// child view-entity rendering it (erased to [`AnyView`]). Bundling the two into one
+/// field keeps [`AppShell`] within its ≤5 top-level field budget alongside the three
+/// aggregation bundles (chrome / topics / handles) and the focus handle.
+struct Router {
     screen: Screen,
     content: AnyView,
+}
+
+/// Root shell view-entity. Holds the active-screen router pair, the chrome bundle
+/// (title bar / sidebar / footer child entities), its own focus handle, the bridge-
+/// topics bundle, and the inbound runtime handle bundle — five top-level fields,
+/// within the ≤5 budget. It owns no screen-internal or domain state; the routed
+/// screen is a separate view-entity swapped on navigation, the runtime→UI topic
+/// caches live behind the `topics` bundle, and the runtime command/read handles live
+/// behind the `handles` bundle — each handed to whichever screen consumes them.
+pub struct AppShell {
+    router: Router,
     chrome: Chrome,
     focus: FocusHandle,
     /// The runtime→UI bridge topic caches (chat feed, home stats, …). Grouping them
     /// behind one field — as [`Chrome`] groups the chrome children — keeps the root
-    /// within its ≤5-field budget while each topic persists across navigation. The
-    /// fifth and last root field.
+    /// within its ≤5-field budget while each topic persists across navigation.
     topics: Topics,
+    /// The inbound grouping of the runtime's command/read handles (including the live
+    /// `builtins` trait-object map). A shared `Arc` — the window root holds the other
+    /// clone to keep the runtime alive — from which `content_for` hands each screen the
+    /// handle(s) it consumes.
+    handles: Arc<RuntimeHandles>,
 }
 
 impl AppShell {
     pub fn new(
         status: Entity<RuntimeStatus>,
         topics: Topics,
+        handles: Arc<RuntimeHandles>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
         let screen = Screen::Home;
-        let content = Self::content_for(&screen, &topics, cx);
+        let content = Self::content_for(&screen, &topics, &handles, cx);
         let focus = cx.focus_handle();
-        let chrome = Chrome::new(status, screen.clone(), cx);
+        let chrome = Chrome::new(status, topics.platforms.clone(), screen.clone(), cx);
 
         // The sidebar voices navigation intent; the root is the sole router owner.
         cx.subscribe(
@@ -82,11 +100,11 @@ impl AppShell {
         window.focus(&focus);
 
         Self {
-            screen,
-            content,
+            router: Router { screen, content },
             chrome,
             focus,
             topics,
+            handles,
         }
     }
 
@@ -99,7 +117,17 @@ impl AppShell {
     /// Screens that voice navigation intent do so through [`NavRequested`]; Home is
     /// wired here the same way the sidebar is — the shell subscribes and routes, so
     /// the active screen stays single-sourced on this root.
-    fn content_for(screen: &Screen, topics: &Topics, cx: &mut Context<Self>) -> AnyView {
+    ///
+    /// A [`Screen::BuiltinDetail`] is fed the live `Builtin*` trait objects for its id
+    /// from the runtime `handles`; an id absent from the map (no credentials, or bring-
+    /// up failed) falls back to the static [`integration_seed`] so the detail still
+    /// opens with a real visual frame.
+    fn content_for(
+        screen: &Screen,
+        topics: &Topics,
+        handles: &Arc<RuntimeHandles>,
+        cx: &mut Context<Self>,
+    ) -> AnyView {
         match screen {
             Screen::Home => {
                 let home = cx.new(|cx| HomeView::new(topics.home_stats.clone(), cx));
@@ -137,8 +165,44 @@ impl AppShell {
                 apps.into()
             }
             Screen::BuiltinDetail(id) => {
-                let id = id.clone();
-                let detail = cx.new(|cx| IntegrationDetail::new(id, cx));
+                let connectivity = topics.platforms.clone();
+                let detail = match handles.builtins.get(id) {
+                    Some(obj) => {
+                        let icon = obj.icon.clone();
+                        let status = obj.status.clone();
+                        let health = obj.health.clone();
+                        let content = obj.content.clone();
+                        let quick = obj.quick.clone();
+                        let control = obj.control.clone();
+                        cx.new(|cx| {
+                            IntegrationDetail::new(
+                                icon,
+                                status,
+                                health,
+                                content,
+                                quick,
+                                control,
+                                connectivity,
+                                cx,
+                            )
+                        })
+                    }
+                    None => {
+                        let seed = integration_seed::seed(id);
+                        cx.new(|cx| {
+                            IntegrationDetail::new(
+                                seed.icon,
+                                seed.status,
+                                seed.health,
+                                seed.content,
+                                seed.quick,
+                                None,
+                                connectivity,
+                                cx,
+                            )
+                        })
+                    }
+                };
                 cx.subscribe(&detail, |this, _view, event: &NavRequested, cx| {
                     this.navigate(event.0.clone(), cx);
                 })
@@ -167,15 +231,15 @@ impl AppShell {
     /// selection back into the sidebar so its highlight tracks the single source of
     /// truth (this root's `screen`). A no-op when already there.
     fn navigate(&mut self, screen: Screen, cx: &mut Context<Self>) {
-        if self.screen == screen {
+        if self.router.screen == screen {
             return;
         }
-        self.content = Self::content_for(&screen, &self.topics, cx);
+        self.router.content = Self::content_for(&screen, &self.topics, &self.handles, cx);
         self.chrome.sidebar.update(cx, |sidebar, cx| {
             sidebar.set_current(screen.clone());
             cx.notify();
         });
-        self.screen = screen;
+        self.router.screen = screen;
         cx.notify();
     }
 
@@ -280,7 +344,7 @@ impl Render for AppShell {
                     .flex_1()
                     .h_full()
                     .overflow_hidden()
-                    .child(self.content.clone()),
+                    .child(self.router.content.clone()),
             );
 
         let root = div()

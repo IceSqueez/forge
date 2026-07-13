@@ -3,12 +3,16 @@ use forge_components::{
     ForgePalette, Icon, Radius, Spacing, breadcrumb, connection_status_badge, icon, radius,
     spacing,
 };
+use std::collections::HashMap;
+
+use forge_platform_core::{BuiltinId, ConnectionState};
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Subscription,
     Window, div, prelude::*, px,
 };
 
 use crate::home_stats::Integration;
+use crate::integrations::BuiltinObject;
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
@@ -74,29 +78,39 @@ const PLATFORMS: [PlatformRow; 3] = [
     ),
 ];
 
-/// Topic-scoped observable cache backing the Platforms and Stream Apps overviews:
-/// the connected state of each integration, keyed by [`Integration`] so a single
-/// topic serves both the chat platforms and the stream apps. It holds a cached read,
-/// never runtime state of its own; the runtime→UI bridge advances it and
-/// `cx.notify()`s so the observing overview views repaint.
-///
-/// Seeded at boot with a representative sample (Twitch connected, the rest not) so
-/// the screens render visibly before a connectivity bridge exists; the bridge
-/// replaces each entry as the connection stream lands.
+/// The five integrations tracked on the connectivity overview, in display order:
+/// the three chat platforms then the two stream apps.
+const ROSTER: [Integration; 5] = [
+    Integration::Twitch,
+    Integration::YouTube,
+    Integration::Kick,
+    Integration::Obs,
+    Integration::VTube,
+];
+
+/// Topic-scoped observable cache backing the Platforms and Stream Apps overviews,
+/// the sidebar connection dots and the footer connected/total readout: the connected
+/// state of each integration, keyed by [`Integration`] so a single topic serves the
+/// chat platforms and the stream apps. It holds a cached read, never runtime state of
+/// its own; the runtime→UI bridge seeds it from the live `BuiltinStatus` snapshots at
+/// boot and advances each entry on a `platform.connection.changed` bus event, then
+/// `cx.notify()`s so the observing views repaint.
 pub struct PlatformConnectivity {
     connections: Vec<(Integration, bool)>,
 }
 
+impl Default for PlatformConnectivity {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PlatformConnectivity {
-    pub fn seeded() -> Self {
+    /// An all-disconnected cache — the pre-boot state before the bridge seeds live
+    /// connection snapshots.
+    pub fn new() -> Self {
         Self {
-            connections: vec![
-                (Integration::Twitch, true),
-                (Integration::YouTube, false),
-                (Integration::Kick, false),
-                (Integration::Obs, false),
-                (Integration::VTube, false),
-            ],
+            connections: ROSTER.iter().map(|integ| (*integ, false)).collect(),
         }
     }
 
@@ -108,6 +122,42 @@ impl PlatformConnectivity {
             .find(|(i, _)| *i == integ)
             .map(|(_, connected)| *connected)
             .unwrap_or(false)
+    }
+
+    /// Sets `integ`'s connected flag, returning whether the value actually changed so
+    /// the caller only repaints on a real transition. An integration outside the
+    /// roster is ignored.
+    pub fn set_connected(&mut self, integ: Integration, connected: bool) -> bool {
+        if let Some(entry) = self.connections.iter_mut().find(|(i, _)| *i == integ)
+            && entry.1 != connected
+        {
+            entry.1 = connected;
+            return true;
+        }
+        false
+    }
+
+    /// The number of integrations currently connected — the footer readout's numerator.
+    pub fn connected_count(&self) -> usize {
+        self.connections.iter().filter(|(_, ok)| *ok).count()
+    }
+
+    /// The roster size — the footer readout's denominator.
+    pub fn total_count(&self) -> usize {
+        self.connections.len()
+    }
+
+    /// Seeds every roster entry from the live `BuiltinStatus` snapshot of the matching
+    /// mounted builtin, treating an integration absent from the map (no credentials, or
+    /// bring-up failed) as disconnected. Called once at boot before the bridge takes
+    /// over live updates.
+    pub fn seed_from_builtins(&mut self, builtins: &HashMap<BuiltinId, BuiltinObject>) {
+        for (integ, connected) in self.connections.iter_mut() {
+            *connected = builtins
+                .get(&integ.builtin_id())
+                .map(|obj| obj.status.connection() == ConnectionState::Connected)
+                .unwrap_or(false);
+        }
     }
 }
 

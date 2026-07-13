@@ -7,6 +7,7 @@ pub mod confirm;
 pub mod data;
 pub mod fonts;
 pub mod footer;
+pub mod grid_picker;
 pub mod icons;
 pub mod input_bar;
 pub mod menu;
@@ -39,6 +40,10 @@ pub use confirm::{ConfirmModal, ConfirmTone, confirm_modal};
 pub use data::{ColumnWidth, DataRow, DataTable, data_table, hover_reveal};
 pub use fonts::embedded_fonts;
 pub use footer::{FOOTER_HEIGHT, app_footer, split_version_stage};
+pub use grid_picker::{
+    GridPicker, GridPickerConfig, GridPickerEvent, GridPickerGroup, GridPickerItem,
+    GridPickerItemState, GridPickerSubtitle,
+};
 pub use icons::{Icon, IconAssets, icon, icon_inherit};
 pub use input_bar::{InputBar, InputBarEvent, platform_bit};
 pub use menu::{

@@ -2,9 +2,9 @@ use forge_events::{Event, EventSource};
 use gpui::SharedString;
 
 /// Upper bound on retained feed rows. The screen renders every filtered row into a
-/// flat column (no virtualization yet), and the boot tick publisher appends one row
-/// per second, so the ring is bounded to keep the repaint cheap. The real 10,000
-/// capacity + a virtualized list land with the production event pipeline.
+/// flat column (no virtualization yet), so the ring is bounded to keep the repaint
+/// cheap under the live bus firehose. The real 10,000 capacity + a virtualized list
+/// land with the production event pipeline.
 const RING_CAP: usize = 500;
 
 /// Which slice of the stream a filter tab keeps. Ported 1:1 from the shipping feed:
@@ -78,29 +78,6 @@ impl EventItem {
             EventFilter::Errors => k.contains("error") || k.contains("fail"),
         }
     }
-
-    fn seed(
-        id: &'static str,
-        timestamp: &'static str,
-        source: EventSource,
-        kind: &'static str,
-        summary: &'static str,
-        result_tag: Option<&'static str>,
-        user: (&'static str, &'static str),
-    ) -> Self {
-        let is_error = kind.contains("error") || kind.contains("fail");
-        Self {
-            id: id.into(),
-            timestamp: timestamp.into(),
-            source,
-            kind: kind.into(),
-            summary: summary.into(),
-            result_tag: result_tag.map(Into::into),
-            is_error,
-            user_login: user.0.into(),
-            user_platform: user.1.into(),
-        }
-    }
 }
 
 /// Topic-scoped observable entity fed by the runtime→UI bridge: the sole owner of
@@ -109,9 +86,10 @@ impl EventItem {
 /// `cx.notify()`s so the observing feed screen repaints. Holds no runtime state of
 /// its own — only the rows it has been handed, a capacity ring, and a paused flag.
 ///
-/// Seeded at boot with a representative sample so the screen renders visibly before
-/// any real runtime traffic; live events (the boot tick publisher, and real
-/// integrations once they publish) append through the same [`EventLog::push`] path.
+/// Starts empty and live: the boot-global bridge drains the real event bus and
+/// appends every observability row through [`EventLog::push`], so the feed reflects
+/// actual runtime traffic rather than a static sample. Renders empty-but-live until
+/// the runtime publishes.
 pub struct EventLog {
     items: Vec<EventItem>,
     /// When set, [`EventLog::push`] drops incoming rows — the screen's Pause toggle
@@ -120,114 +98,11 @@ pub struct EventLog {
 }
 
 impl EventLog {
-    /// A representative starter set spanning the source + type taxonomy the filter
-    /// tabs slice on (chat, command, subscription, cheer, timer, scene, action
-    /// lifecycle, a global write, and a failed request). Clearly a slice stub — real
-    /// traffic streams in through [`EventLog::push`] over the bridge.
-    pub fn seeded() -> Self {
-        let items = vec![
-            EventItem::seed(
-                "seed-00000001",
-                "14:02:07.184",
-                EventSource::Twitch,
-                "chat.message",
-                "koval_dev: Hello everyone! Stream looks great",
-                Some("\u{2192} 1 action"),
-                ("koval_dev", "twitch"),
-            ),
-            EventItem::seed(
-                "seed-00000002",
-                "14:02:11.902",
-                EventSource::Core,
-                "command.matched",
-                "!quote by danylo_ua",
-                Some("\u{2192} trigger fired"),
-                ("danylo_ua", "twitch"),
-            ),
-            EventItem::seed(
-                "seed-00000003",
-                "14:02:11.921",
-                EventSource::Core,
-                "action.start",
-                "Quote of the day",
-                None,
-                ("", ""),
-            ),
-            EventItem::seed(
-                "seed-00000004",
-                "14:02:11.939",
-                EventSource::Core,
-                "action.done",
-                "success",
-                Some("18ms total"),
-                ("", ""),
-            ),
-            EventItem::seed(
-                "seed-00000005",
-                "14:02:24.507",
-                EventSource::Twitch,
-                "twitch.subscription",
-                "maksym_dn subscribed at tier 1",
-                Some("\u{2192} 1 action"),
-                ("maksym_dn", "twitch"),
-            ),
-            EventItem::seed(
-                "seed-00000006",
-                "14:02:38.113",
-                EventSource::Twitch,
-                "twitch.cheer",
-                "haash_ cheered 500 bits",
-                Some("\u{2192} 1 action"),
-                ("haash_", "twitch"),
-            ),
-            EventItem::seed(
-                "seed-00000007",
-                "14:02:45.660",
-                EventSource::YouTube,
-                "youtube.chat.message",
-                "olena_lv: first time catching this live",
-                Some("no match"),
-                ("olena_lv", "youtube"),
-            ),
-            EventItem::seed(
-                "seed-00000008",
-                "14:02:52.030",
-                EventSource::Timer,
-                "timer.tick",
-                "hydration-reminder",
-                None,
-                ("", ""),
-            ),
-            EventItem::seed(
-                "seed-00000009",
-                "14:03:03.418",
-                EventSource::Obs,
-                "scene.changed",
-                "\"Starting soon\" \u{2192} \"Live\"",
-                None,
-                ("", ""),
-            ),
-            EventItem::seed(
-                "seed-00000010",
-                "14:03:09.774",
-                EventSource::Rhai,
-                "global.set",
-                "hydration = 3",
-                None,
-                ("", ""),
-            ),
-            EventItem::seed(
-                "seed-00000011",
-                "14:03:15.201",
-                EventSource::Http,
-                "request.fail",
-                "helix/users \u{2192} 429",
-                Some("retry in 30s"),
-                ("", ""),
-            ),
-        ];
+    /// An empty, unpaused feed. Rows arrive live over the bridge via
+    /// [`EventLog::push`].
+    pub fn new() -> Self {
         Self {
-            items,
+            items: Vec::new(),
             paused: false,
         }
     }
@@ -271,10 +146,10 @@ impl EventLog {
     }
 
     /// Decodes a bus event into a feed row. Every observability event maps to a row,
-    /// so at runtime the boot tick publisher's `timer.tick` events stream in live on
-    /// top of the seed. The summary/result-tag mapping is provisional (the shipping
-    /// feed resolves richer per-kind payloads); once the full event pipeline lands
-    /// this decode is replaced by the shared summary formatter.
+    /// so the whole runtime firehose streams into the feed live. The summary/result-tag
+    /// mapping is provisional (the shipping feed resolves richer per-kind payloads);
+    /// once the full event pipeline lands this decode is replaced by the shared
+    /// summary formatter.
     pub fn item_from_event(event: &Event) -> Option<EventItem> {
         let ts = event.timestamp;
         let timestamp = format!(
@@ -303,8 +178,9 @@ impl EventLog {
 
     /// Best-effort one-line summary for a live event. Reads a small set of known
     /// payload fields; unknown kinds fall back to the kind string. Provisional for
-    /// the slice — the production feed owns the exhaustive per-kind formatter.
-    fn summarize(event: &Event) -> String {
+    /// the slice — the production feed owns the exhaustive per-kind formatter. Shared
+    /// with the Home highlight reel so both surfaces phrase an event identically.
+    pub(crate) fn summarize(event: &Event) -> String {
         let p = &event.payload;
         match event.kind.as_str() {
             k if is_chat_message_kind(k) => {

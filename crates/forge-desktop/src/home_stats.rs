@@ -1,12 +1,18 @@
 use forge_components::ForgePalette;
+use forge_events::{Event, EventSource};
 use forge_platform_core::BuiltinId;
 use gpui::{Rgba, SharedString};
 
+use crate::event_log::EventLog;
 use crate::screen::Screen;
 
 /// Em-dash rendered wherever a stat has no value yet — the empty state a runtime
 /// read collapses to before its source is wired.
 const EM_DASH: &str = "\u{2014}";
+
+/// Upper bound on retained highlight rows. The card renders only the newest five, so
+/// a small ring keeps the fold cheap under the live bus firehose.
+const RECENT_CAP: usize = 50;
 
 /// The five first-class integrations surfaced on Home: three chat platforms and
 /// two stream apps. Each maps to a sidebar destination, a display label and a
@@ -76,6 +82,17 @@ pub enum SourceHue {
 }
 
 impl SourceHue {
+    /// Keys a highlight row to its source hue. The three chat platforms carry their
+    /// brand hue; every other runtime source collapses to the core success hue.
+    fn from_source(source: EventSource) -> Self {
+        match source {
+            EventSource::Twitch => SourceHue::Twitch,
+            EventSource::YouTube => SourceHue::YouTube,
+            EventSource::Kick => SourceHue::Kick,
+            _ => SourceHue::Core,
+        }
+    }
+
     pub fn color(self, palette: &ForgePalette) -> Rgba {
         match self {
             SourceHue::Twitch => palette.brand,
@@ -100,20 +117,23 @@ pub struct HomeEvent {
 }
 
 impl HomeEvent {
-    fn new(
-        time: &'static str,
-        source: &'static str,
-        name: &'static str,
-        desc: &'static str,
-        hue: SourceHue,
-    ) -> Self {
-        Self {
-            time: time.into(),
-            source: source.into(),
-            name: name.into(),
-            desc: desc.into(),
-            hue,
+    /// Decodes a notable observability event into a highlight row, or `None` for the
+    /// high-frequency low-level kinds ([`is_home_notable`]) that belong only in the
+    /// full event feed. The one-line summary is shared with the feed so both surfaces
+    /// phrase an event identically.
+    fn from_event(event: &Event) -> Option<Self> {
+        if !is_home_notable(&event.kind) {
+            return None;
         }
+        let ts = event.timestamp;
+        let time = format!("{:02}:{:02}:{:02}", ts.hour(), ts.minute(), ts.second());
+        Some(Self {
+            time: time.into(),
+            source: source_label(event.source).into(),
+            name: event.kind.clone().into(),
+            desc: EventLog::summarize(event).into(),
+            hue: SourceHue::from_source(event.source),
+        })
     }
 }
 
@@ -141,10 +161,11 @@ pub struct ObsHealth {
 /// optional OBS health — never runtime state of its own. The bridge advances it and
 /// `cx.notify()`s so the observing [`crate::home::HomeView`] repaints.
 ///
-/// Seeded at boot with a representative sample so the screen renders visibly before
-/// any runtime dashboard source exists; each field is replaced as its real source
-/// (the dashboard-stats query, the live-viewer aggregate, the connection-health and
-/// OBS-health bridges) lands and drains through this same entity.
+/// Starts empty and live: the highlight reel and the fired-today counter are fed by
+/// the boot-global bridge off the real bus, while the remaining fields (live viewers,
+/// action/global counts, connection status, OBS health) collapse to their empty
+/// state ("—", all-disconnected, no health card) until their own source bridges land
+/// in later phases and drain through this same entity.
 pub struct HomeStats {
     live_viewers: Option<u64>,
     actions_count: Option<usize>,
@@ -156,81 +177,44 @@ pub struct HomeStats {
 }
 
 impl HomeStats {
-    /// Representative starter readout — clearly a slice stub. Two of five
-    /// integrations connected (Twitch + OBS), so the connections card warns and the
-    /// stream-health card renders; five recent events; dashboard counts mirroring
-    /// the design mockup. Real bridges replace each field as they land.
-    pub fn seeded() -> Self {
+    /// An empty, live-fed readout: every stat at its empty state and the full
+    /// five-integration roster listed as disconnected (the roster is static UI
+    /// knowledge; per-integration connection status arrives with the connectivity
+    /// bridge in a later phase). Highlights and the fired-today counter fill in live
+    /// over the bridge.
+    pub fn new() -> Self {
         let connections = vec![
-            (Integration::Twitch, true),
+            (Integration::Twitch, false),
             (Integration::YouTube, false),
             (Integration::Kick, false),
-            (Integration::Obs, true),
+            (Integration::Obs, false),
             (Integration::VTube, false),
         ];
 
-        let obs_health = Some(ObsHealth {
-            bitrate: "6,200".into(),
-            dropped: "0".into(),
-            dropped_pct: Some("0.00%".into()),
-            dropped_ok: true,
-            fps: "60.0".into(),
-            cpu: "8.2".into(),
-            throughput: vec![
-                12.0, 14.0, 11.0, 16.0, 13.0, 18.0, 15.0, 20.0, 17.0, 14.0, 19.0, 16.0, 21.0, 18.0,
-                15.0, 13.0, 17.0, 20.0, 16.0, 12.0, 14.0, 18.0, 22.0, 19.0, 15.0, 11.0, 13.0, 17.0,
-                16.0, 14.0,
-            ],
-        });
-
-        // Oldest first; the card shows the newest five reversed.
-        let recent_events = vec![
-            HomeEvent::new(
-                "14:02:19",
-                "twitch",
-                "command.matched",
-                "!discord by nightbot42",
-                SourceHue::Twitch,
-            ),
-            HomeEvent::new(
-                "14:02:41",
-                "youtube",
-                "subscription",
-                "maksym_dn subscribed at tier 1",
-                SourceHue::YouTube,
-            ),
-            HomeEvent::new(
-                "14:03:04",
-                "twitch",
-                "cheer",
-                "haash_ cheered 500 bits",
-                SourceHue::Twitch,
-            ),
-            HomeEvent::new(
-                "14:03:18",
-                "core",
-                "action.done",
-                "raid-welcome fired",
-                SourceHue::Core,
-            ),
-            HomeEvent::new(
-                "14:03:29",
-                "kick",
-                "chat.message",
-                "stream_fan_kyiv checking in",
-                SourceHue::Kick,
-            ),
-        ];
-
         Self {
-            live_viewers: Some(1284),
-            actions_count: Some(47),
-            triggers_fired: Some(1284),
-            globals_count: Some(31),
+            live_viewers: None,
+            actions_count: None,
+            triggers_fired: None,
+            globals_count: None,
             connections,
-            obs_health,
-            recent_events,
+            obs_health: None,
+            recent_events: Vec::new(),
         }
+    }
+
+    /// Folds a bus event into the highlight reel, dropping the low-level kinds that
+    /// belong only in the full feed and evicting the oldest row once the ring is full.
+    /// Reports whether a row was actually appended so the bridge only repaints Home on
+    /// a real change. Kept free of `cx` so it stays directly exercisable.
+    pub fn record_event(&mut self, event: &Event) -> bool {
+        let Some(home_event) = HomeEvent::from_event(event) else {
+            return false;
+        };
+        if self.recent_events.len() >= RECENT_CAP {
+            self.recent_events.remove(0);
+        }
+        self.recent_events.push(home_event);
+        true
     }
 
     /// Increments the fired-today counter on an `action.done` observability event.
@@ -294,6 +278,39 @@ impl HomeStats {
             .take(limit)
             .cloned()
             .collect()
+    }
+}
+
+/// Whether an event kind is a notable Home highlight rather than low-level firehose
+/// noise. The high-frequency internals — per-sub-action runs, raw global writes,
+/// inline script execs, and action starts — stay in the full event feed only;
+/// everything else (action.done, command.matched, chat, platform social events,
+/// scene changes, request failures) is a "something happened" row. Provisional slice
+/// mapping until the production dashboard owns the curation.
+fn is_home_notable(kind: &str) -> bool {
+    !(kind.starts_with("subaction.")
+        || kind == "action.start"
+        || kind.starts_with("global.")
+        || kind.starts_with("script."))
+}
+
+/// Lowercased source name for a highlight row's source label.
+fn source_label(source: EventSource) -> &'static str {
+    match source {
+        EventSource::Twitch => "twitch",
+        EventSource::YouTube => "youtube",
+        EventSource::Kick => "kick",
+        EventSource::Core => "core",
+        EventSource::Rhai => "rhai",
+        EventSource::Http => "http",
+        EventSource::Obs => "obs",
+        EventSource::VTube => "vtube",
+        EventSource::Discord => "discord",
+        EventSource::Midi => "midi",
+        EventSource::Hotkey => "hotkey",
+        EventSource::Timer => "timer",
+        EventSource::Server => "server",
+        EventSource::Audio => "audio",
     }
 }
 

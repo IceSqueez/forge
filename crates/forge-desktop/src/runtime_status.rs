@@ -1,21 +1,30 @@
-/// Topic-scoped observable entity fed by the runtime→UI bridge. The bridge is the
-/// sole owner of the bus→UI edge; it drains the runtime bus and applies each
-/// relevant change here, then `cx.notify()`s so observing view-entities repaint.
-/// Holds no runtime state of its own — only the values it has been handed.
+use std::time::Instant;
+
+/// Topic-scoped observable entity backing the footer uptime readout. The runtime
+/// publishes no periodic tick, so uptime is measured against the moment this entity
+/// was constructed: a boot-timestamp clock. A boot-started foreground loop recomputes
+/// the elapsed seconds once per second and `cx.notify()`s so the footer repaints.
+/// Holds no runtime state of its own — only the boot instant and the derived seconds.
 pub struct RuntimeStatus {
+    started_at: Instant,
     uptime_secs: u64,
 }
 
 impl RuntimeStatus {
     pub fn new() -> Self {
-        Self { uptime_secs: 0 }
+        Self {
+            started_at: Instant::now(),
+            uptime_secs: 0,
+        }
     }
 
-    /// Advances uptime by one second per observed `timer.tick`. The bridge pairs
-    /// this with `cx.notify()`; keeping the mutation free of `cx` leaves it
-    /// directly exercisable.
-    pub fn tick(&mut self) {
-        self.uptime_secs = self.uptime_secs.saturating_add(1);
+    /// Recomputes uptime as the whole seconds elapsed since construction, saturating
+    /// so a non-monotonic clock reading can never underflow (Windows monotonic epoch
+    /// starts near zero). The clock loop passes `Instant::now()` and pairs this with
+    /// `cx.notify()`; taking `now` as an argument keeps the mutation directly
+    /// exercisable.
+    pub fn refresh(&mut self, now: Instant) {
+        self.uptime_secs = now.saturating_duration_since(self.started_at).as_secs();
     }
 
     /// Human-readable uptime for the footer: hours+minutes once past an hour,

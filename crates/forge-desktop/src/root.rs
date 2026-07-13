@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use forge_components::{
     DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG, FONT_SM, ForgePalette, Icon,
@@ -85,9 +86,9 @@ impl RootView {
 /// executor and transitions the window root. Re-usable for the initial boot and Retry.
 pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView>, cx: &mut App) {
     let status = cx.new(|_| RuntimeStatus::new());
-    let chat_feed = cx.new(|_| ChatFeed::seeded());
-    let home_stats = cx.new(|_| HomeStats::seeded());
-    let event_log = cx.new(|_| EventLog::seeded());
+    let chat_feed = cx.new(|_| ChatFeed::new());
+    let home_stats = cx.new(|_| HomeStats::new());
+    let event_log = cx.new(|_| EventLog::new());
     let globals = cx.new(|_| Globals::seeded());
     let platforms = cx.new(|_| PlatformConnectivity::seeded());
 
@@ -107,7 +108,7 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
         match outcome {
             Ok(handles) => {
                 let bus = Arc::clone(&handles.bus);
-                let status_for_bridge = status.clone();
+                let status_for_clock = status.clone();
                 let chat_feed_for_bridge = chat_feed.clone();
                 let home_stats_for_bridge = home_stats.clone();
                 let event_log_for_bridge = event_log.clone();
@@ -120,12 +121,12 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
                 if applied.is_ok() {
                     start_bridge(
                         cx,
-                        status_for_bridge,
                         chat_feed_for_bridge,
                         home_stats_for_bridge,
                         event_log_for_bridge,
                         bus,
                     );
+                    start_uptime_clock(cx, status_for_clock);
                 }
             }
             Err(failure) => {
@@ -140,13 +141,13 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
 }
 
 /// Boot-global bus drain, owned by the shell for the app's lifetime. It subscribes to
-/// the real bus and folds each observability row into the matching topic cache, from
-/// which observing views repaint. It is the single insertion point later phases extend
-/// (connection dots, dashboard counters, uptime); at idle boot the bus is quiet, so the
-/// seeded screens are unchanged.
+/// the real bus and folds each event into the matching topic cache, from which
+/// observing views repaint: every observability row into the event feed, `action.done`
+/// and other notable kinds into the Home highlight reel + fired-today counter, and
+/// `chat.message` into the chat feed. A lagging broadcast receiver drops some rows and
+/// keeps draining; a closed bus or a released topic entity ends the task.
 fn start_bridge(
     cx: &mut AsyncApp,
-    status: Entity<RuntimeStatus>,
     chat_feed: Entity<ChatFeed>,
     home_stats: Entity<HomeStats>,
     event_log: Entity<EventLog>,
@@ -167,27 +168,23 @@ fn start_bridge(
                     {
                         break;
                     }
-                    if event.kind == "timer.tick" {
-                        if status
-                            .update(cx, |status, cx| {
-                                status.tick();
-                                cx.notify();
-                            })
-                            .is_err()
-                        {
-                            break;
-                        }
-                    } else if event.kind == "action.done" {
-                        if home_stats
-                            .update(cx, |stats, cx| {
+                    let is_action_done = event.kind == "action.done";
+                    if home_stats
+                        .update(cx, |stats, cx| {
+                            let mut changed = stats.record_event(&event);
+                            if is_action_done {
                                 stats.record_action_done();
+                                changed = true;
+                            }
+                            if changed {
                                 cx.notify();
-                            })
-                            .is_err()
-                        {
-                            break;
-                        }
-                    } else if let Some(message) = ChatFeed::message_from_event(&event)
+                            }
+                        })
+                        .is_err()
+                    {
+                        break;
+                    }
+                    if let Some(message) = ChatFeed::message_from_event(&event)
                         && chat_feed
                             .update(cx, |feed, cx| {
                                 feed.push(message);
@@ -200,6 +197,29 @@ fn start_bridge(
                 }
                 Err(EventsError::LaggingReceiver) => {}
                 Err(_) => break,
+            }
+        }
+    })
+    .detach();
+}
+
+/// Boot-timestamp uptime clock, owned by the shell for the app's lifetime. The runtime
+/// publishes no periodic tick, so uptime is measured off the foreground executor: once
+/// per second it recomputes the seconds elapsed since [`RuntimeStatus`] construction
+/// and `cx.notify()`s so the footer repaints. The timer never blocks paint; a released
+/// status entity ends the task.
+fn start_uptime_clock(cx: &mut AsyncApp, status: Entity<RuntimeStatus>) {
+    cx.spawn(async move |cx| {
+        loop {
+            cx.background_executor().timer(Duration::from_secs(1)).await;
+            if status
+                .update(cx, |status, cx| {
+                    status.refresh(Instant::now());
+                    cx.notify();
+                })
+                .is_err()
+            {
+                break;
             }
         }
     })

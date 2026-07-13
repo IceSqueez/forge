@@ -19,43 +19,6 @@ pub struct ChatMessage {
 }
 
 impl ChatMessage {
-    fn message(
-        timestamp: &'static str,
-        platform: Platform,
-        badges: Vec<BadgeKind>,
-        username: &'static str,
-        text: &'static str,
-    ) -> Self {
-        let is_bot = badges.contains(&BadgeKind::Bot);
-        Self {
-            timestamp: timestamp.into(),
-            platform,
-            badges,
-            username: username.into(),
-            body: ChatBody::Message(text.into()),
-            is_event: false,
-            is_bot,
-        }
-    }
-
-    fn event(
-        timestamp: &'static str,
-        platform: Platform,
-        badges: Vec<BadgeKind>,
-        username: &'static str,
-        body: ChatBody,
-    ) -> Self {
-        Self {
-            timestamp: timestamp.into(),
-            platform,
-            badges,
-            username: username.into(),
-            body,
-            is_event: true,
-            is_bot: false,
-        }
-    }
-
     /// True when `query` (already lowercased by the caller) is found in the author
     /// name or the body's primary text. Drives the search dim: a non-match is faded
     /// rather than removed.
@@ -88,91 +51,19 @@ impl ChatMessage {
 /// decoded chat line here, then `cx.notify()`s so the observing chat screen
 /// repaints. Holds no runtime state of its own — only the rows it has been handed.
 ///
-/// Seeded at boot with a representative sample so the screen renders visibly
-/// before any platform connection exists; real events (once platforms publish
-/// them) append through the same [`ChatFeed::push`] path and replace the sample as
-/// they arrive.
+/// Starts empty and live: the boot-global bridge drains `chat.message` events off
+/// the real bus and appends each decoded line through [`ChatFeed::push`]. Renders
+/// empty-but-live until a platform connection publishes chat.
 pub struct ChatFeed {
     messages: Vec<ChatMessage>,
 }
 
 impl ChatFeed {
-    /// A representative starter set: three platforms, role badges (MOD / SUB / VIP
-    /// / BOT), and event rows (subscription, raid with a triggered action, cheer).
-    /// Clearly a slice stub — real connections drain real events over the bridge.
-    pub fn seeded() -> Self {
-        let messages = vec![
-            ChatMessage::message(
-                "14:02:07",
-                Platform::Twitch,
-                vec![BadgeKind::Moderator],
-                "koval_dev",
-                "Hello everyone! Stream looks great today",
-            ),
-            ChatMessage::message(
-                "14:02:19",
-                Platform::YouTube,
-                vec![],
-                "olena_lv",
-                "First time catching this live, loving the setup",
-            ),
-            ChatMessage::message(
-                "14:02:34",
-                Platform::Twitch,
-                vec![BadgeKind::Subscriber],
-                "danylo_ua",
-                "that transition was insane",
-            ),
-            ChatMessage::event(
-                "14:02:41",
-                Platform::Twitch,
-                vec![BadgeKind::Subscriber],
-                "maksym_dn",
-                ChatBody::Subscription {
-                    descriptor: " subscribed at tier 1".into(),
-                    months: Some(5),
-                    message: Some("keep it up, best stream on Twitch!".into()),
-                    triggered: None,
-                },
-            ),
-            ChatMessage::message(
-                "14:02:52",
-                Platform::Kick,
-                vec![],
-                "stream_fan_kyiv",
-                "Kick chat checking in",
-            ),
-            ChatMessage::message(
-                "14:03:04",
-                Platform::YouTube,
-                vec![BadgeKind::Bot],
-                "nightbot42",
-                "!discord — join the community server",
-            ),
-            ChatMessage::event(
-                "14:03:18",
-                Platform::Twitch,
-                vec![],
-                "lviv_gamer",
-                ChatBody::Raid {
-                    descriptor: " is raiding with".into(),
-                    viewers: "512 viewers".into(),
-                    triggered: Some("raid-welcome".into()),
-                },
-            ),
-            ChatMessage::event(
-                "14:03:29",
-                Platform::Twitch,
-                vec![BadgeKind::Vip],
-                "haash_",
-                ChatBody::Cheer {
-                    descriptor: " cheered".into(),
-                    bits: 500,
-                    text: "take my bits, incredible play!".into(),
-                },
-            ),
-        ];
-        Self { messages }
+    /// An empty feed. Lines arrive live over the bridge via [`ChatFeed::push`].
+    pub fn new() -> Self {
+        Self {
+            messages: Vec::new(),
+        }
     }
 
     /// The rows in arrival order (oldest first); the screen renders newest at the

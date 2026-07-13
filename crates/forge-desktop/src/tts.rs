@@ -10,6 +10,7 @@ use crate::presentation::ActivePresentation;
 use crate::tts_dashboard::TtsDashboardView;
 use crate::tts_engines::TtsEnginesView;
 use crate::tts_filters::TtsFiltersView;
+use crate::tts_triggers::TtsTriggersView;
 use crate::voice_aliases::VoiceAliasesView;
 
 /// Tab-button vertical padding — the parity source pins the tab hit-target at a
@@ -87,6 +88,7 @@ pub struct TtsView {
     engines: Entity<TtsEnginesView>,
     aliases: Entity<VoiceAliasesView>,
     filters: Entity<TtsFiltersView>,
+    triggers: Entity<TtsTriggersView>,
 }
 
 impl TtsView {
@@ -95,12 +97,14 @@ impl TtsView {
         let engines = cx.new(TtsEnginesView::new);
         let aliases = cx.new(VoiceAliasesView::new);
         let filters = cx.new(TtsFiltersView::new);
+        let triggers = cx.new(TtsTriggersView::new);
         Self {
             section: TtsSection::Dashboard,
             dashboard,
             engines,
             aliases,
             filters,
+            triggers,
         }
     }
 
@@ -206,6 +210,7 @@ impl TtsView {
             TtsSection::Engines => self.engines.clone().into_any_element(),
             TtsSection::Aliases => self.aliases.clone().into_any_element(),
             TtsSection::Filters => self.filters.clone().into_any_element(),
+            TtsSection::Triggers => self.triggers.clone().into_any_element(),
             other => deferred_pane(other, palette, density),
         }
     }

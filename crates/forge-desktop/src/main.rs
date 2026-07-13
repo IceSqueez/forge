@@ -29,6 +29,7 @@ mod tts;
 mod tts_dashboard;
 mod tts_engines;
 mod tts_filters;
+mod tts_triggers;
 mod voice_aliases;
 
 use std::sync::Arc;

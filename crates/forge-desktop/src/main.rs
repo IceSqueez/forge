@@ -27,6 +27,7 @@ mod sidebar;
 mod soundboard;
 mod stream_apps;
 mod titlebar;
+mod toasts;
 mod topics;
 mod triggers_registry;
 mod tts;
@@ -110,6 +111,7 @@ fn main() {
             }
 
             cx.set_global(Presentation::new(ThemeId::default(), Density::default()));
+            cx.set_global(crate::toasts::Toasts::new());
 
             bind_text_input_keys(cx);
             bind_text_area_keys(cx);

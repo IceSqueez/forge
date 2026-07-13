@@ -1,6 +1,6 @@
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, ForgePalette,
-    InputEvent, Radius, Spacing, TextInput, card, radius, spacing,
+    InputEvent, Radius, Spacing, TextInput, ToastKind, card, radius, spacing,
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, Pixels, Rgba, SharedString, Subscription, Window,
@@ -8,6 +8,7 @@ use gpui::{
 };
 
 use crate::presentation::ActivePresentation;
+use crate::toasts::PushToast;
 
 /// Engine status-dot side — the parity source pins the header dot at a fixed 7px square,
 /// off the `Spacing` scale, so it is carried as a named literal.
@@ -195,6 +196,7 @@ impl CloudTtsEnginesView {
             CloudEngineKind::OpenAI => self.openai.dirty = false,
             CloudEngineKind::Polly => self.polly.dirty = false,
         }
+        cx.push_toast(ToastKind::Success, "Credentials saved");
         cx.notify();
     }
 

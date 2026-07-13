@@ -1,7 +1,7 @@
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density,
-    FONT_LG, FONT_SM, FONT_XS, ForgePalette, Icon, OverlayPosition, Radius, Spacing, breadcrumb,
-    confirm_modal, icon, overlay, radius, spacing, with_alpha,
+    FONT_LG, FONT_SM, FONT_XS, ForgePalette, Icon, OverlayPosition, Radius, Spacing, ToastKind,
+    breadcrumb, confirm_modal, icon, overlay, radius, spacing, with_alpha,
 };
 use forge_platform_core::{
     BuiltinId, CapabilityFlags, ConnectionState, DetailSection, HeaderAction, HealthMetric,
@@ -17,6 +17,7 @@ use crate::integration_seed::seed;
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
+use crate::toasts::PushToast;
 
 /// The single generic integration detail screen. It consumes the four `Builtin*`
 /// trait outputs — status, health metrics, content sections, quick actions — and
@@ -111,9 +112,9 @@ impl IntegrationDetail {
         }
         // Real dispatch routes through the runtime's action engine as a pre-filled
         // SubAction (and, for picker actions, opens the scene/source picker first).
-        // With no live runtime the dispatch is stubbed to a feedback toast.
-        self.toast = Some(format!("{} — queued", action.label));
-        cx.notify();
+        // With no live runtime the dispatch is stubbed to a global toast.
+        let label = action.label.clone();
+        cx.push_toast(ToastKind::Info, format!("{label} — queued"));
     }
 
     fn dismiss_toast(&mut self, cx: &mut Context<Self>) {

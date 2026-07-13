@@ -1,5 +1,9 @@
+use forge_components::{Density, FOOTER_HEIGHT, Spacing, spacing, toast_card};
 use forge_platform_core::BuiltinId;
-use gpui::{AnyView, AppContext, Context, Entity, FocusHandle, Window, div, prelude::*};
+use gpui::{
+    AnyElement, AnyView, App, AppContext, Context, Entity, FocusHandle, Window, deferred, div,
+    prelude::*,
+};
 
 use crate::actions::{GoActions, GoChat, GoHome, GoSettings, GoTriggers, GoTwitch, SHELL_CONTEXT};
 use crate::actions_screen::ScreenActionsView;
@@ -20,9 +24,14 @@ use crate::settings::SettingsView;
 use crate::sidebar::NavRequested;
 use crate::soundboard::SoundboardView;
 use crate::stream_apps::StreamAppsView;
+use crate::toasts::Toasts;
 use crate::topics::Topics;
 use crate::triggers_registry::TriggersRegistryView;
 use crate::tts::TtsView;
+
+/// Draw priority for the deferred toast host. One above the overlay priority so a
+/// transient notification floats over an open modal rather than behind it.
+const TOAST_PRIORITY: usize = 2;
 
 /// Root shell view-entity. Holds the router discriminant, the single active-screen
 /// child entity, the chrome bundle (title bar / sidebar / footer child entities),
@@ -66,6 +75,9 @@ impl AppShell {
         // Repaint when the presentation global (theme / density) is replaced.
         cx.observe_global::<Presentation>(|_, cx| cx.notify())
             .detach();
+
+        // Repaint the toast host whenever a toast is pushed or dismissed.
+        cx.observe_global::<Toasts>(|_, cx| cx.notify()).detach();
 
         window.focus(&focus);
 
@@ -190,6 +202,66 @@ impl AppShell {
     fn go_settings(&mut self, _: &GoSettings, _: &mut Window, cx: &mut Context<Self>) {
         self.navigate(Screen::Settings, cx);
     }
+
+    /// Builds the bottom-right toast host from the `Toasts` global, or `None` when the
+    /// queue is empty. Each card's dismiss and action controls capture only the toast
+    /// id and reach back into the global at click time, so this borrows the queue
+    /// immutably while it renders. The host draws in a deferred pass above ordinary
+    /// content (and any open overlay).
+    fn toast_host(&self, cx: &App) -> Option<AnyElement> {
+        let toasts = cx.global::<Toasts>();
+        if toasts.items().is_empty() {
+            return None;
+        }
+        let palette = cx.palette();
+
+        let mut column = div()
+            .flex()
+            .flex_col()
+            .items_end()
+            .gap(spacing(Spacing::Sm, Density::Cozy));
+
+        for data in toasts.items() {
+            let id = data.id;
+            let mut card = toast_card(data.kind, data.message.clone(), &palette).on_dismiss(
+                ("toast-dismiss", id as usize),
+                move |_, _, cx: &mut App| {
+                    cx.global_mut::<Toasts>().dismiss(id);
+                },
+            );
+            if let Some(glyph) = data.icon {
+                card = card.icon(glyph);
+            }
+            if let Some(action) = &data.action {
+                card = card.action(
+                    ("toast-action", id as usize),
+                    action.label.clone(),
+                    move |_, window, cx: &mut App| {
+                        // Taking the toast out both removes it and yields its owned
+                        // callback, which then runs against the freed context.
+                        if let Some(data) = cx.global_mut::<Toasts>().take(id)
+                            && let Some(action) = data.action
+                        {
+                            (action.on_action)(window, cx);
+                        }
+                    },
+                );
+            }
+            column = column.child(card);
+        }
+
+        Some(
+            deferred(
+                div()
+                    .absolute()
+                    .right(spacing(Spacing::Md, Density::Cozy))
+                    .bottom(FOOTER_HEIGHT + spacing(Spacing::Sm, Density::Cozy))
+                    .child(column),
+            )
+            .with_priority(TOAST_PRIORITY)
+            .into_any_element(),
+        )
+    }
 }
 
 impl Render for AppShell {
@@ -211,7 +283,7 @@ impl Render for AppShell {
                     .child(self.content.clone()),
             );
 
-        div()
+        let root = div()
             .key_context(SHELL_CONTEXT)
             .track_focus(&self.focus)
             .on_action(cx.listener(Self::go_home))
@@ -221,11 +293,15 @@ impl Render for AppShell {
             .on_action(cx.listener(Self::go_twitch))
             .on_action(cx.listener(Self::go_settings))
             .size_full()
+            // Positioning context the bottom-right toast host anchors against.
+            .relative()
             .flex()
             .flex_col()
             .bg(palette.base)
             .child(self.chrome.titlebar.clone())
             .child(body)
-            .child(self.chrome.footer.clone())
+            .child(self.chrome.footer.clone());
+
+        root.children(self.toast_host(cx))
     }
 }

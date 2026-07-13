@@ -20,6 +20,7 @@ pub mod status;
 pub mod text_area;
 pub(crate) mod text_edit;
 pub mod text_input;
+pub mod toast;
 pub mod toggle;
 pub mod tokens;
 pub mod tooltip;
@@ -57,6 +58,7 @@ pub use text_area::{TextArea, bind_text_area_keys};
 pub use text_input::{
     InputEvent, TextInput, bind_text_input_keys, search_input, search_input_on_surface,
 };
+pub use toast::{ToastAction, ToastCard, ToastData, ToastKind, toast_card};
 pub use toggle::{Toggle, toggle};
 pub use tokens::{
     BORDER_ACCENT, BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG,

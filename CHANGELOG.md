@@ -1,14 +1,62 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.3.0-beta.2] - 2026-07-13
+### 🐛 Bug Fixes
+- *(desktop)* Route midi/hotkey/discord modules to integration detail
+
+### 🚀 Features
+- *(desktop)* Boot the gpui app shell with fonts, theme global, and screen router
+- *(desktop)* Add the sidebar nav, footer, and title bar chrome
+- *(desktop)* Add the live chat screen with a seeded message feed
+- *(desktop)* Add the home dashboard screen
+- *(desktop)* Add the event feed screen
+- *(desktop)* Add the globals variables screen
+- *(components)* Add full-width button builder
+- *(desktop)* Add the settings screen
+- *(desktop)* Add the platforms overview screen
+- *(desktop)* Add the generic integration detail screen
+- *(desktop)* Add the stream apps overview screen
+- *(components)* Add explicit width override to modal
+- *(desktop)* Add the soundboard screen
+- *(desktop)* Add the queues screen
+- *(desktop)* Add the tts screen frame and dashboard
+- *(desktop)* Add the tts engines section
+- *(desktop)* Add the tts voice aliases section
+- *(desktop)* Add the tts filters section
+- *(desktop)* Add the tts triggers section
+- *(desktop)* Add the tts cloud engines section
+- *(desktop)* Add the websocket server console screen
+- *(desktop)* Add the actions screen list pane
+- *(desktop)* Add the actions editor step list
+- *(desktop)* Add the actions trigger links and picker
+- *(desktop)* Add the actions branch drill-in editing
+- *(desktop)* Add the triggers registry list and filters
+- *(desktop)* Add the triggers registry config side-sheet
+- *(desktop)* Add the triggers registry create picker
+- *(desktop)* Add the script editor screen
+- *(desktop)* Add the script editor api reference and run modal
+- *(components)* Add a secure masked mode to text input
+- *(desktop)* Add the global toast host
+- *(components)* Add a sparkline chart and wire throughput cards
+
+### 🚜 Refactor
+- *(desktop)* Unify add-step and add-trigger into a grid picker
+- *(components)* Promote the add picker to a shared grid component
+- *(desktop)* Split the actions screen into submodules
+
 ## [0.3.0-beta.1] - 2026-07-12
 ### ⚙️ Miscellaneous Tasks
 - *(deps)* Bump crossbeam-channel from 0.5.15 to 0.5.16 (#40)
 - *(deps)* Bump tokio-tungstenite, zbus, rubato, and regex
+- Release
 
 ### 🐛 Bug Fixes
 - *(widgets)* Drop private intra-doc link on RowCard::selected
 - *(audio)* Adapt the resampler call to the rubato 4.0 process signature
+
+### 📚 Documentation
+- *(release)* Release v0.3.0-beta.1
 
 ### 🚀 Features
 - *(ui)* Scaffold the gpui forge-components and forge-desktop crates

@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, ChipGlyph, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
-    Density, FONT_LG, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, MenuPlacement,
-    ModalSize, OverlayPosition, Radius, SheetPosition, Spacing, TextArea, TextInput, breadcrumb,
-    chip, confirm_modal, ghost_button_with_icon, icon, menu_button, menu_divider, menu_item, modal,
-    overlay, primary_button, primary_button_with_icon, radius, row_card, search_input,
-    secondary_button, side_sheet, spacing, status_dot, toggle,
+    BORDER_ACCENT, BORDER_THIN, BreadcrumbCrumb, ChipGlyph, ConfirmTone, DEFAULT_BODY_FAMILY,
+    DEFAULT_MONO_FAMILY, Density, FONT_LG, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
+    InputEvent, MenuPlacement, ModalSize, OverlayPosition, Radius, SheetPosition, Spacing,
+    TextArea, TextInput, badge, breadcrumb, chip, confirm_modal, ghost_button_with_icon, icon,
+    menu_button, menu_divider, menu_item, modal, overlay, primary_button, primary_button_with_icon,
+    radius, row_card, search_input, secondary_button, side_sheet, spacing, status_dot, toggle,
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, FontWeight, Pixels, Rgba,
@@ -84,28 +84,63 @@ const PANE_PAD_V: Pixels = px(18.0);
 const PANE_PAD_H: Pixels = px(22.0);
 /// Bottom gap under a non-final step block (fixed 6px).
 const STEP_GAP: Pixels = px(6.0);
-/// Right side-sheet width for the add-sub-action panel (fixed 480px seed in the source).
+/// Right side-sheet width for the edit-sub-action panel (fixed 480px seed in the source).
 const SUB_SHEET_W: Pixels = px(480.0);
-/// Right side-sheet width for the trigger picker (fixed 560px seed in the source).
-const PICKER_SHEET_W: Pixels = px(560.0);
-/// Trigger-picker platform column width (fixed 140px) and subgroup column width
-/// (fixed 160px); the trigger list fills the remaining width.
-const PICKER_PLATFORM_W: Pixels = px(140.0);
-const PICKER_SUBGROUP_W: Pixels = px(160.0);
-/// Vertical hairline rule between the picker's three columns (fixed 0.5px).
-const PICKER_DIV_W: Pixels = px(0.5);
-/// Leading brand-dot disc on a platform row (fixed 6px) and its corner (fixed 3px).
-const PICKER_PLATFORM_DOT: Pixels = px(6.0);
-const PICKER_PLATFORM_DOT_RADIUS: Pixels = px(3.0);
-/// Platform / subgroup / default-trigger button corner (fixed 4px).
-const PICKER_BTN_RADIUS: Pixels = px(4.0);
-/// Selected-row outline width on a platform / subgroup button (fixed 1px).
-const PICKER_SEL_BORDER: Pixels = px(1.0);
-/// Leading indent ahead of a custom-instance chip's icon (fixed 16px).
-const PICKER_CHIP_INDENT: Pixels = px(16.0);
-/// Picker footer bar padding (fixed 12px vertical / 16px horizontal).
-const PICKER_FOOTER_PAD_V: Pixels = px(12.0);
-const PICKER_FOOTER_PAD_H: Pixels = px(16.0);
+
+// Unified "Add" grid picker (centred category-grid modal). All literals below are
+// pinned to the design's fixed px scale, off the `Spacing` / `Radius` / `FONT_*`
+// tokens where the design diverges from them.
+/// Card envelope (design 660×600).
+const GRID_W: Pixels = px(660.0);
+const GRID_H: Pixels = px(600.0);
+/// Shared horizontal band inset — every band gutters to 16px in the design.
+const GRID_BAND_PAD_H: Pixels = px(16.0);
+/// Header icon tile: 30px side, 7px corner, 15px glyph.
+const GRID_TILE: Pixels = px(30.0);
+const GRID_TILE_RADIUS: Pixels = px(7.0);
+const GRID_TILE_ICON: Pixels = px(15.0);
+/// Header row gap and vertical pad, plus the close glyph size.
+const GRID_HEADER_GAP: Pixels = px(11.0);
+const GRID_HEADER_PAD_V: Pixels = px(13.0);
+const GRID_CLOSE_ICON: Pixels = px(15.0);
+/// Search band top/bottom pad, the box corner, the leading glyph and the input font.
+const GRID_SEARCH_PAD_T: Pixels = px(11.0);
+const GRID_SEARCH_PAD_B: Pixels = px(9.0);
+const GRID_SEARCH_ICON: Pixels = px(14.0);
+const GRID_SEARCH_FS: Pixels = px(13.0);
+/// Scope-chip band vertical pad, chip pad and its leading category dot.
+const GRID_CHIPS_PAD_V: Pixels = px(9.0);
+const GRID_CHIP_PAD_V: Pixels = px(4.0);
+const GRID_CHIP_PAD_H: Pixels = px(10.0);
+const GRID_CHIP_DOT: Pixels = px(5.0);
+/// Grid body vertical pad, inter-group gap, and the group-header label / dot.
+const GRID_BODY_PAD_V: Pixels = px(13.0);
+const GRID_GROUP_GAP: Pixels = px(14.0);
+const GRID_GROUP_HEADER_MB: Pixels = px(8.0);
+const GRID_GROUP_FS: Pixels = px(9.5);
+const GRID_GROUP_DOT: Pixels = px(5.0);
+/// Card row / pair gap.
+const GRID_CARD_GAP: Pixels = px(8.0);
+/// Card padding, its leading tile (26px / 7px corner / 13px glyph) and name font.
+const GRID_CARD_PAD_V: Pixels = px(11.0);
+const GRID_CARD_PAD_H: Pixels = px(12.0);
+const GRID_CARD_TILE: Pixels = px(26.0);
+const GRID_CARD_TILE_RADIUS: Pixels = px(7.0);
+const GRID_CARD_ICON: Pixels = px(13.0);
+const GRID_CARD_NAME_FS: Pixels = px(12.5);
+const GRID_CARD_ROW_MB: Pixels = px(6.0);
+/// Meta font shared by subtitle / chips / match-count / card desc (design 11px).
+const GRID_META_FS: Pixels = px(11.0);
+/// Footer vertical pad and the `Esc` kbd chip (pad 1/5, 3px corner).
+const GRID_FOOTER_PAD_V: Pixels = px(8.0);
+const GRID_KBD_PAD_V: Pixels = px(1.0);
+const GRID_KBD_PAD_H: Pixels = px(5.0);
+const GRID_KBD_RADIUS: Pixels = px(3.0);
+/// Empty-state vertical pad and its glyph.
+const GRID_EMPTY_PAD_V: Pixels = px(50.0);
+const GRID_EMPTY_GLYPH: Pixels = px(22.0);
+/// Badge font on a card's added / off state pill.
+const GRID_BADGE_FS: Pixels = px(9.0);
 
 /// Authoring depth ceiling for nested sub-chains. Drilling past this into an
 /// *empty* branch is disabled (no new depth is created), while an already-deeper
@@ -212,9 +247,14 @@ pub struct ScreenActionsView {
     add_modal: Option<AddActionForm>,
     pending_delete: Option<ActionId>,
     detail: Option<ActionDetail>,
-    sub_form: Option<AddSubActionForm>,
+    sub_form: Option<EditSubActionForm>,
     step_menu_open: Option<usize>,
-    trigger_picker: Option<TriggerPickerForm>,
+    /// The unified centred "Add" grid picker, driving both sub-action and trigger
+    /// adds off its `kind`.
+    grid_picker: Option<GridPickerForm>,
+    /// Element id of the grid card currently under the pointer, so its frame and
+    /// trailing glyph recolour on hover (the design's per-card hover feedback).
+    grid_hover: Option<SharedString>,
     pending_trigger_unlink: Option<usize>,
     /// Drill-in path into the selected action's nested sub-chains. Empty = the
     /// step list renders the action's top-level chain; each frame descends one
@@ -257,7 +297,8 @@ impl ScreenActionsView {
             detail: None,
             sub_form: None,
             step_menu_open: None,
-            trigger_picker: None,
+            grid_picker: None,
+            grid_hover: None,
             pending_trigger_unlink: None,
             nav_path: Vec::new(),
             case_fields: BTreeMap::new(),
@@ -1200,81 +1241,24 @@ impl ScreenActionsView {
         cx.notify();
     }
 
-    // --- editor: add-sub-action side sheet --------------------------------
+    // --- editor: edit-sub-action side sheet -------------------------------
 
-    fn open_sub_action(
-        &mut self,
-        editing: Option<usize>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn open_edit_sub_action(&mut self, i: usize, cx: &mut Context<Self>) {
         let palette = cx.palette();
-        let search_field = cx.new(|cx| search_input("Search sub-actions...", palette, cx));
-        let search_sub = cx.subscribe(&search_field, Self::on_sub_search_event);
-
-        let mut mode = SubFormStep::PickKind;
-        let mut selected_kind = None;
-        let mut fields: Vec<(&'static SubField, Entity<TextInput>)> = Vec::new();
-        if let Some(i) = editing {
-            let seeded = self
-                .current_chain()
-                .get(i)
-                .map(|step| (step.kind, step.config.clone()));
-            if let Some((kind, seed)) = seeded {
-                fields = build_sub_fields(kind, &seed, palette, cx);
-                selected_kind = Some(kind);
-                mode = SubFormStep::FillForm;
-            }
-        }
-
-        if editing.is_none() {
-            search_field.read(cx).focus(window);
-        }
-        self.step_menu_open = None;
-        self.sub_form = Some(AddSubActionForm {
-            mode,
-            search_field,
-            search: String::new(),
-            selected_kind,
-            fields,
-            editing_index: editing,
-            _search_sub: search_sub,
-        });
-        cx.notify();
-    }
-
-    fn on_sub_search_event(
-        &mut self,
-        _field: Entity<TextInput>,
-        event: &InputEvent,
-        cx: &mut Context<Self>,
-    ) {
-        if let InputEvent::Changed(text) = event
-            && let Some(form) = self.sub_form.as_mut()
-        {
-            form.search = text.to_string();
-            cx.notify();
-        }
-    }
-
-    fn pick_sub_kind(&mut self, kind: SubKind, cx: &mut Context<Self>) {
-        let palette = cx.palette();
-        let seed = kind.seed_config();
+        let Some((kind, seed)) = self
+            .current_chain()
+            .get(i)
+            .map(|step| (step.kind, step.config.clone()))
+        else {
+            return;
+        };
         let fields = build_sub_fields(kind, &seed, palette, cx);
-        if let Some(form) = self.sub_form.as_mut() {
-            form.selected_kind = Some(kind);
-            form.fields = fields;
-            form.mode = SubFormStep::FillForm;
-        }
-        cx.notify();
-    }
-
-    fn back_to_kind_picker(&mut self, cx: &mut Context<Self>) {
-        if let Some(form) = self.sub_form.as_mut() {
-            form.mode = SubFormStep::PickKind;
-            form.selected_kind = None;
-            form.fields.clear();
-        }
+        self.step_menu_open = None;
+        self.sub_form = Some(EditSubActionForm {
+            kind,
+            fields,
+            index: i,
+        });
         cx.notify();
     }
 
@@ -1284,14 +1268,11 @@ impl ScreenActionsView {
     }
 
     fn submit_sub_action(&mut self, cx: &mut Context<Self>) {
-        let (kind, editing, fields) = {
+        let (kind, index, fields) = {
             let Some(form) = self.sub_form.as_ref() else {
                 return;
             };
-            let Some(kind) = form.selected_kind else {
-                return;
-            };
-            (kind, form.editing_index, form.fields.clone())
+            (form.kind, form.index, form.fields.clone())
         };
 
         let mut config = BTreeMap::new();
@@ -1299,16 +1280,13 @@ impl ScreenActionsView {
             config.insert(spec.key.to_owned(), input.read(cx).content().to_owned());
         }
 
-        if let Some(chain) = self.current_chain_mut() {
-            match editing {
-                // Editing keeps the step's nested branches / cases intact — only its
-                // kind + scalar config are re-authored from the form.
-                Some(i) if i < chain.len() => {
-                    chain[i].kind = kind;
-                    chain[i].config = config;
-                }
-                _ => chain.push(EditorStep::new(kind, config)),
-            }
+        // Editing keeps the step's nested branches / cases intact — only its kind +
+        // scalar config are re-authored from the form.
+        if let Some(chain) = self.current_chain_mut()
+            && let Some(step) = chain.get_mut(index)
+        {
+            step.kind = kind;
+            step.config = config;
         }
         self.sync_selected_count();
         self.sync_case_fields(cx);
@@ -1316,59 +1294,142 @@ impl ScreenActionsView {
         cx.notify();
     }
 
-    // --- trigger links: picker + unlink -----------------------------------
+    // --- editor: unified "Add" grid picker --------------------------------
 
-    fn open_trigger_picker(&mut self, cx: &mut Context<Self>) {
+    fn open_grid_picker(&mut self, kind: PickerKind, window: &mut Window, cx: &mut Context<Self>) {
         let Some(action_id) = self.selected else {
             return;
         };
         if self.detail.is_none() {
             return;
         }
-        self.trigger_picker = Some(TriggerPickerForm {
+        let palette = cx.palette();
+        let placeholder: SharedString = match kind {
+            PickerKind::Step => format!("Search {} sub-actions\u{2026}", SUB_KINDS.len()).into(),
+            PickerKind::Trigger => "Search triggers\u{2026}".into(),
+        };
+        let search_field = cx.new(|cx| {
+            TextInput::new(placeholder, cx)
+                .with_palette(palette)
+                .leading_icon(Icon::Search, palette.text_muted)
+                .with_font_size(GRID_SEARCH_FS)
+                .static_chrome(palette.border_regular, Radius::Sm)
+        });
+        let search_sub = cx.subscribe(&search_field, Self::on_grid_search_event);
+        search_field.read(cx).focus(window);
+        let trigger_entries = match kind {
+            PickerKind::Trigger => seed_picker_entries(),
+            PickerKind::Step => Vec::new(),
+        };
+        self.step_menu_open = None;
+        self.grid_hover = None;
+        self.grid_picker = Some(GridPickerForm {
+            kind,
             action_id,
-            level1: None,
-            level2: None,
-            entries: seed_picker_entries(),
+            search_field,
+            search: String::new(),
+            scope: None,
+            trigger_entries,
+            _search_sub: search_sub,
         });
         cx.notify();
     }
 
-    fn cancel_trigger_picker(&mut self, cx: &mut Context<Self>) {
-        self.trigger_picker = None;
-        cx.notify();
+    fn on_grid_search_event(
+        &mut self,
+        field: Entity<TextInput>,
+        event: &InputEvent,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            InputEvent::Changed(text) => {
+                let palette = cx.palette();
+                let Some(form) = self.grid_picker.as_mut() else {
+                    return;
+                };
+                form.search = text.to_string();
+                let border = if form.search.trim().is_empty() {
+                    palette.border_regular
+                } else {
+                    form.kind.accent(&palette)
+                };
+                field.update(cx, |input, cx| {
+                    input.set_static_chrome(Some((border, Radius::Sm)));
+                    cx.notify();
+                });
+                cx.notify();
+            }
+            InputEvent::Cancelled => self.cancel_grid_picker(cx),
+            InputEvent::Submitted(_) => {}
+        }
     }
 
-    fn picker_select_platform(&mut self, group: PlatformGroup, cx: &mut Context<Self>) {
-        if let Some(form) = self.trigger_picker.as_mut() {
-            form.level1 = Some(group);
-            form.level2 = None;
+    fn clear_grid_search(&mut self, cx: &mut Context<Self>) {
+        let palette = cx.palette();
+        if let Some(form) = self.grid_picker.as_mut() {
+            form.search.clear();
+            let field = form.search_field.clone();
+            field.update(cx, |input, cx| {
+                input.set_content("", cx);
+                input.set_static_chrome(Some((palette.border_regular, Radius::Sm)));
+            });
         }
         cx.notify();
     }
 
-    fn picker_select_subgroup(&mut self, label: String, cx: &mut Context<Self>) {
-        if let Some(form) = self.trigger_picker.as_mut() {
-            form.level2 = Some(label);
+    fn set_grid_scope(&mut self, scope: Option<SharedString>, cx: &mut Context<Self>) {
+        if let Some(form) = self.grid_picker.as_mut() {
+            form.scope = scope;
         }
         cx.notify();
     }
 
-    /// Links a picked trigger to the open action by appending its card to the loaded
-    /// detail, then closes the picker. Applies only while the picker's action is still
-    /// the selected one.
-    fn link_trigger(&mut self, trigger: SeededTrigger, cx: &mut Context<Self>) {
+    fn set_grid_hover(&mut self, id: SharedString, hovered: bool, cx: &mut Context<Self>) {
+        if hovered {
+            if self.grid_hover.as_ref() != Some(&id) {
+                self.grid_hover = Some(id);
+                cx.notify();
+            }
+        } else if self.grid_hover.as_ref() == Some(&id) {
+            self.grid_hover = None;
+            cx.notify();
+        }
+    }
+
+    fn cancel_grid_picker(&mut self, cx: &mut Context<Self>) {
+        self.grid_picker = None;
+        self.grid_hover = None;
+        cx.notify();
+    }
+
+    fn grid_pick_step(&mut self, kind: SubKind, cx: &mut Context<Self>) {
+        if let Some(chain) = self.current_chain_mut() {
+            chain.push(EditorStep::new(kind, kind.seed_config()));
+        }
+        self.sync_selected_count();
+        self.sync_case_fields(cx);
+        self.grid_picker = None;
+        self.grid_hover = None;
+        cx.notify();
+    }
+
+    /// Links a picked trigger to the open action, guarding on the picker still
+    /// targeting the selected action, then closes the picker.
+    fn grid_pick_trigger(&mut self, trigger: SeededTrigger, cx: &mut Context<Self>) {
         let same = self
-            .trigger_picker
+            .grid_picker
             .as_ref()
             .zip(self.detail.as_ref())
             .is_some_and(|(f, d)| f.action_id == d.action_id);
         if same && let Some(detail) = self.detail.as_mut() {
             detail.triggers.push(trigger);
         }
-        self.trigger_picker = None;
+        self.grid_picker = None;
+        self.grid_hover = None;
         cx.notify();
     }
+
+    // --- trigger links: unlink --------------------------------------------
 
     /// Navigate-to-registry intent for a trigger card. The triggers registry screen is
     /// not yet built in `forge-desktop`, so the click is inert.
@@ -1622,7 +1683,9 @@ impl ScreenActionsView {
             "Add trigger",
             palette.warning,
             palette,
-            cx.listener(|this, _: &ClickEvent, _, cx| this.open_trigger_picker(cx)),
+            cx.listener(|this, _: &ClickEvent, window, cx| {
+                this.open_grid_picker(PickerKind::Trigger, window, cx)
+            }),
         ));
 
         div()
@@ -1698,7 +1761,7 @@ impl ScreenActionsView {
                     palette.brand,
                     palette,
                     cx.listener(|this, _: &ClickEvent, window, cx| {
-                        this.open_sub_action(None, window, cx)
+                        this.open_grid_picker(PickerKind::Step, window, cx)
                     }),
                 )),
         );
@@ -2108,8 +2171,8 @@ impl ScreenActionsView {
                 menu_item(
                     SharedString::from(format!("actions-step-edit-{i}")),
                     "Edit…",
-                    cx.listener(move |this, _: &ClickEvent, window, cx| {
-                        this.open_sub_action(Some(i), window, cx)
+                    cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        this.open_edit_sub_action(i, cx)
                     }),
                 )
                 .icon(Icon::InfoCircle)
@@ -2166,217 +2229,25 @@ impl ScreenActionsView {
             .into_any_element()
     }
 
-    // --- render: add-sub-action side sheet --------------------------------
+    // --- render: edit-sub-action side sheet -------------------------------
 
     fn render_sub_action_modal(
         &self,
-        form: &AddSubActionForm,
+        form: &EditSubActionForm,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let title = if form.editing_index.is_some() {
-            "Edit sub-action"
-        } else {
-            "Add sub-action"
-        };
-
-        let body_inner = match form.mode {
-            SubFormStep::PickKind => self.render_kind_picker(form, palette, cx),
-            SubFormStep::FillForm => self.render_kind_form(form, palette, cx),
-        };
-        let body = div()
-            .id("actions-sub-scroll")
-            .flex_1()
-            .min_h(px(0.0))
-            .overflow_y_scroll()
-            .child(body_inner);
-
-        let cancel = secondary_button("Cancel", palette).on_click(
-            "actions-sub-cancel",
-            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_sub_action(cx)),
-        );
-        let buttons = if matches!(form.mode, SubFormStep::FillForm) {
-            let label = if form.editing_index.is_some() {
-                "Save"
-            } else {
-                "Add sub-action"
-            };
-            let valid = form.selected_kind.is_some();
-            div()
-                .flex()
-                .items_center()
-                .gap(spacing(Spacing::Xs, Density::Cozy))
-                .child(cancel)
-                .child(primary_button(label, palette).disabled(!valid).on_click(
-                    "actions-sub-submit",
-                    cx.listener(|this, _: &ClickEvent, _, cx| this.submit_sub_action(cx)),
-                ))
-                .into_any_element()
-        } else {
-            div().flex().child(cancel).into_any_element()
-        };
-
-        let footer = div()
-            .w_full()
-            .flex()
-            .items_center()
-            .justify_between()
-            .py(px(12.0))
-            .px(px(16.0))
-            .border_t(HALF_BORDER)
-            .border_color(palette.border_regular)
-            .child(
-                div()
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_faint)
-                    .child("ESC to cancel"),
-            )
-            .child(buttons);
-
-        let content = div()
-            .size_full()
-            .flex()
-            .flex_col()
-            .child(body)
-            .child(footer);
-
-        let sheet = side_sheet(SUB_SHEET_W, content, palette)
-            .position(SheetPosition::Right)
-            .header(title)
-            .on_close(
-                "actions-sub-close",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_sub_action(cx)),
-            );
-
-        let view = cx.entity();
-        overlay(sheet, palette)
-            .position(OverlayPosition::Right(SUB_SHEET_W))
-            .on_dismiss("actions-sub-scrim", move |_window, cx| {
-                view.update(cx, |this, cx| this.cancel_sub_action(cx));
-            })
-            .into_any_element()
-    }
-
-    fn render_kind_picker(
-        &self,
-        form: &AddSubActionForm,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let search_lower = form.search.to_lowercase();
-
-        let header = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child("Select a sub-action type"),
-            )
-            .child(form.search_field.clone());
-
-        let matches = |kind: SubKind| {
-            search_lower.is_empty()
-                || kind.label().to_lowercase().contains(&search_lower)
-                || kind.summary_hint().to_lowercase().contains(&search_lower)
-        };
-
-        // Category section order mirrors the source's label-keyed grouping: sections
-        // sorted by their display label, kinds sorted by label within each section.
-        let mut categories: Vec<SubCategory> = Vec::new();
-        for kind in SUB_KINDS {
-            let cat = kind.category();
-            if !categories.contains(&cat) {
-                categories.push(cat);
-            }
-        }
-        categories.sort_by(|a, b| a.label().cmp(b.label()));
-
-        let mut list = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xs, Density::Cozy));
-        let mut any = false;
-        for cat in categories {
-            let mut kinds: Vec<SubKind> = SUB_KINDS
-                .into_iter()
-                .filter(|k| k.category() == cat && matches(*k))
-                .collect();
-            if kinds.is_empty() {
-                continue;
-            }
-            kinds.sort_by(|a, b| a.label().cmp(b.label()));
-            any = true;
-            list = list.child(picker_section_header(cat.label(), kinds.len(), palette));
-            let dot_color = cat.color(palette);
-            for kind in kinds {
-                list = list.child(render_kind_row(kind, dot_color, palette, cx));
-            }
-        }
-        if !any {
-            list = list.child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_muted)
-                    .child("No matching sub-actions"),
-            );
-        }
-
-        div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
-            .child(header)
-            .child(list)
-            .into_any_element()
-    }
-
-    fn render_kind_form(
-        &self,
-        form: &AddSubActionForm,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let kind_label = form.selected_kind.map(SubKind::label).unwrap_or("");
-
-        let back = div()
-            .id("actions-sub-back")
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
-            .cursor_pointer()
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.back_to_kind_picker(cx)))
-            .child(icon(Icon::ArrowBackUp, CARD_GLYPH, palette.text_secondary))
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_secondary)
-                    .child("Back"),
-            );
-
-        let header = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
-            .child(back)
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(kind_label),
-            );
-
         let mut fields_col = div()
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Sm, Density::Cozy))
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_SM)
+                    .text_color(palette.text_primary)
+                    .child(form.kind.label()),
+            )
             .child(
                 div()
                     .font_family(DEFAULT_MONO_FAMILY)
@@ -2410,12 +2281,69 @@ impl ScreenActionsView {
             );
         }
 
-        div()
+        let body = div()
+            .id("actions-sub-scroll")
+            .flex_1()
+            .min_h(px(0.0))
+            .overflow_y_scroll()
+            .py(spacing(Spacing::Md, Density::Cozy))
+            .px(spacing(Spacing::Md, Density::Cozy))
+            .child(fields_col);
+
+        let cancel = secondary_button("Cancel", palette).on_click(
+            "actions-sub-cancel",
+            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_sub_action(cx)),
+        );
+        let save = primary_button("Save", palette).on_click(
+            "actions-sub-submit",
+            cx.listener(|this, _: &ClickEvent, _, cx| this.submit_sub_action(cx)),
+        );
+        let buttons = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .child(cancel)
+            .child(save);
+
+        let footer = div()
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_between()
+            .py(px(12.0))
+            .px(px(16.0))
+            .border_t(HALF_BORDER)
+            .border_color(palette.border_regular)
+            .child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_faint)
+                    .child("ESC to cancel"),
+            )
+            .child(buttons);
+
+        let content = div()
+            .size_full()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
-            .child(header)
-            .child(fields_col)
+            .child(body)
+            .child(footer);
+
+        let sheet = side_sheet(SUB_SHEET_W, content, palette)
+            .position(SheetPosition::Right)
+            .header("Edit sub-action")
+            .on_close(
+                "actions-sub-close",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_sub_action(cx)),
+            );
+
+        let view = cx.entity();
+        overlay(sheet, palette)
+            .position(OverlayPosition::Right(SUB_SHEET_W))
+            .on_dismiss("actions-sub-scrim", move |_window, cx| {
+                view.update(cx, |this, cx| this.cancel_sub_action(cx));
+            })
             .into_any_element()
     }
 
@@ -2746,363 +2674,492 @@ impl ScreenActionsView {
             .into_any_element()
     }
 
-    fn render_trigger_picker(
+    fn render_grid_picker(
         &self,
-        form: &TriggerPickerForm,
+        form: &GridPickerForm,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let platform_col = self.render_picker_platforms(form, palette, cx);
-        let subgroup_col = self.render_picker_subgroups(form, palette, cx);
-        let trigger_col = self.render_picker_entries(form, palette, cx);
+        let accent = form.kind.accent(palette);
+        let searching = !form.search.trim().is_empty();
+        let query = form.search.trim().to_lowercase();
 
-        let vdivider = || {
-            div()
-                .w(PICKER_DIV_W)
-                .h_full()
-                .flex_none()
-                .bg(palette.border_regular)
-        };
+        // Scope + query filter: a live query overrides the scope; each group keeps
+        // only its surviving cards, and empty groups drop out.
+        let visible: Vec<GridGroup> = self
+            .grid_groups(form, palette)
+            .into_iter()
+            .filter(|g| searching || form.scope.is_none() || form.scope.as_ref() == Some(&g.scope))
+            .map(|mut g| {
+                if searching {
+                    g.items.retain(|it| {
+                        it.name.to_lowercase().contains(&query)
+                            || it.desc.to_lowercase().contains(&query)
+                    });
+                }
+                g
+            })
+            .filter(|g| !g.items.is_empty())
+            .collect();
+        let total: usize = visible.iter().map(|g| g.items.len()).sum();
 
-        let body = div()
-            .flex_1()
-            .min_h(px(0.0))
-            .flex()
-            .flex_row()
-            .child(platform_col)
-            .child(vdivider())
-            .child(subgroup_col)
-            .child(vdivider())
-            .child(trigger_col);
-
-        let footer = div()
-            .w_full()
-            .flex()
-            .items_center()
-            .justify_end()
-            .py(PICKER_FOOTER_PAD_V)
-            .px(PICKER_FOOTER_PAD_H)
-            .border(HALF_BORDER)
-            .border_color(palette.border_regular)
-            .child(secondary_button("Cancel", palette).on_click(
-                "actions-picker-cancel",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_trigger_picker(cx)),
-            ));
-
-        let content = div()
-            .size_full()
+        let card = div()
+            .w(GRID_W)
+            .h(GRID_H)
             .flex()
             .flex_col()
-            .child(body)
-            .child(footer);
-
-        let sheet = side_sheet(PICKER_SHEET_W, content, palette)
-            .position(SheetPosition::Right)
-            .header("Add trigger")
-            .on_close(
-                "actions-picker-close",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_trigger_picker(cx)),
-            );
+            .overflow_hidden()
+            .bg(palette.elevated)
+            .rounded(radius(Radius::Lg))
+            .border(BORDER_ACCENT)
+            .border_color(palette.border_regular)
+            .child(self.render_grid_header(form, accent, palette, cx))
+            .child(self.render_grid_search(form, palette, cx))
+            .children((!searching).then(|| self.render_grid_chips(form, palette, cx)))
+            .child(self.render_grid_body(form, accent, visible, total, palette, cx))
+            .child(render_grid_footer(form, palette));
 
         let view = cx.entity();
-        overlay(sheet, palette)
-            .position(OverlayPosition::Right(PICKER_SHEET_W))
-            .on_dismiss("actions-picker-scrim", move |_window, cx| {
-                view.update(cx, |this, cx| this.cancel_trigger_picker(cx));
+        overlay(card, palette)
+            .position(OverlayPosition::Center)
+            .on_dismiss("actions-grid-scrim", move |_window, cx| {
+                view.update(cx, |this, cx| this.cancel_grid_picker(cx));
             })
             .into_any_element()
     }
 
-    fn render_picker_platforms(
+    fn render_grid_header(
         &self,
-        form: &TriggerPickerForm,
+        form: &GridPickerForm,
+        accent: Rgba,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let mut col = div()
+        let ctx_name = self
+            .detail
+            .as_ref()
+            .map(|d| d.name.clone())
+            .unwrap_or_else(|| "this action".to_owned());
+        let (count, sub_word) = match form.kind {
+            PickerKind::Step => (SUB_KINDS.len(), "sub-actions"),
+            PickerKind::Trigger => (form.trigger_entries.len(), "trigger types"),
+        };
+
+        let tile = div()
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .size(GRID_TILE)
+            .rounded(GRID_TILE_RADIUS)
+            .bg(palette.surface_overlay)
+            .child(icon(form.kind.header_icon(), GRID_TILE_ICON, accent));
+
+        let subtitle = div()
+            .flex()
+            .items_center()
+            .gap(px(4.0))
+            .overflow_hidden()
+            .font_family(DEFAULT_BODY_FAMILY)
+            .text_size(GRID_META_FS)
+            .child(div().text_color(palette.text_faint).child(form.kind.ctx()))
+            .child(div().text_color(accent).child(ctx_name))
+            .child(
+                div()
+                    .text_color(palette.text_faint)
+                    .child(format!("\u{b7} {count} {sub_word}")),
+            );
+
+        let titles = div()
+            .flex_1()
+            .min_w(px(0.0))
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
-            .py(spacing(Spacing::Sm, Density::Cozy))
-            .px(spacing(Spacing::Xs, Density::Cozy));
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_size(FONT_SM)
+                    .text_color(palette.text_primary)
+                    .child(form.kind.title()),
+            )
+            .child(subtitle);
 
-        for group in PLATFORM_GROUPS {
-            let selected = form.level1 == Some(group);
-            let dot = div()
-                .size(PICKER_PLATFORM_DOT)
-                .flex_none()
-                .rounded(PICKER_PLATFORM_DOT_RADIUS)
-                .bg(group.color(palette));
-            let label = div()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_SM)
-                .text_color(if selected {
-                    palette.text_primary
-                } else {
-                    palette.text_secondary
-                })
-                .child(group.label());
-
-            let mut btn = div()
-                .id(SharedString::from(format!(
-                    "actions-picker-plat-{}",
-                    group.key()
-                )))
-                .w_full()
-                .flex()
-                .items_center()
-                .gap(spacing(Spacing::Xs, Density::Cozy))
-                .py(spacing(Spacing::Xs, Density::Cozy))
-                .px(spacing(Spacing::Sm, Density::Cozy))
-                .rounded(PICKER_BTN_RADIUS)
-                .border(if selected { PICKER_SEL_BORDER } else { px(0.0) })
-                .border_color(palette.brand)
-                .cursor_pointer()
-                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                    this.picker_select_platform(group, cx)
-                }))
-                .child(dot)
-                .child(label);
-            if selected {
-                btn = btn.bg(palette.surface_overlay);
-            }
-            col = col.child(btn);
-        }
+        let close = div()
+            .id("actions-grid-close")
+            .flex_none()
+            .p(px(4.0))
+            .cursor_pointer()
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_grid_picker(cx)))
+            .child(icon(Icon::X, GRID_CLOSE_ICON, palette.text_faint));
 
         div()
-            .id("actions-picker-platforms")
-            .w(PICKER_PLATFORM_W)
             .flex_none()
-            .h_full()
-            .overflow_y_scroll()
-            .child(col)
+            .flex()
+            .items_center()
+            .gap(GRID_HEADER_GAP)
+            .py(GRID_HEADER_PAD_V)
+            .px(GRID_BAND_PAD_H)
+            .border_b(BORDER_ACCENT)
+            .border_color(palette.surface_overlay)
+            .child(tile)
+            .child(titles)
+            .child(close)
             .into_any_element()
     }
 
-    fn render_picker_subgroups(
+    fn render_grid_search(
         &self,
-        form: &TriggerPickerForm,
+        form: &GridPickerForm,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let mut col = div()
+        let mut row = div()
             .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
-            .py(spacing(Spacing::Sm, Density::Cozy))
-            .px(spacing(Spacing::Xs, Density::Cozy));
+            .items_center()
+            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .child(form.search_field.clone()),
+            );
+        if !form.search.is_empty() {
+            row = row.child(
+                div()
+                    .id("actions-grid-search-clear")
+                    .flex_none()
+                    .cursor_pointer()
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.clear_grid_search(cx)))
+                    .child(icon(Icon::X, GRID_SEARCH_ICON, palette.text_faint)),
+            );
+        }
 
-        let subgroups = form.subgroups();
-        if form.level1.is_none() {
-            col = col.child(picker_hint("Select a platform", palette));
-        } else if subgroups.is_empty() {
-            col = col.child(picker_hint("No triggers available", palette));
-        } else {
-            for label in subgroups {
-                let selected = form.level2.as_deref() == Some(label.as_str());
-                let click_label = label.clone();
-                let mut btn = div()
-                    .id(SharedString::from(format!("actions-picker-sub-{label}")))
+        div()
+            .flex_none()
+            .pt(GRID_SEARCH_PAD_T)
+            .pb(GRID_SEARCH_PAD_B)
+            .px(GRID_BAND_PAD_H)
+            .border_b(BORDER_ACCENT)
+            .border_color(palette.surface_overlay)
+            .child(row)
+            .into_any_element()
+    }
+
+    fn render_grid_chips(
+        &self,
+        form: &GridPickerForm,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let mut row = div()
+            .id("actions-grid-chips")
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .overflow_x_scroll()
+            .child(grid_scope_chip(
+                "actions-grid-scope-all",
+                "All",
+                None,
+                form.scope.is_none(),
+                palette,
+                cx.listener(|this, _: &ClickEvent, _, cx| this.set_grid_scope(None, cx)),
+            ));
+
+        for (id, label, dot) in self.grid_scopes(form, palette) {
+            let active = form.scope.as_ref() == Some(&id);
+            let scope_id = id.clone();
+            row = row.child(grid_scope_chip(
+                SharedString::from(format!("actions-grid-scope-{id}")),
+                label,
+                Some(dot),
+                active,
+                palette,
+                cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.set_grid_scope(Some(scope_id.clone()), cx)
+                }),
+            ));
+        }
+
+        div()
+            .flex_none()
+            .py(GRID_CHIPS_PAD_V)
+            .px(GRID_BAND_PAD_H)
+            .border_b(BORDER_ACCENT)
+            .border_color(palette.surface_overlay)
+            .child(row)
+            .into_any_element()
+    }
+
+    fn render_grid_body(
+        &self,
+        form: &GridPickerForm,
+        accent: Rgba,
+        visible: Vec<GridGroup>,
+        total: usize,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let query = form.search.trim().to_owned();
+        let searching = !query.is_empty();
+        let mut col = div().flex().flex_col();
+
+        if searching {
+            col = col.child(
+                div()
+                    .pb(spacing(Spacing::Sm, Density::Cozy))
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(GRID_META_FS)
+                    .text_color(palette.text_faint)
+                    .child(format!(
+                        "{total} {} for \u{201c}{query}\u{201d}",
+                        if total == 1 { "match" } else { "matches" },
+                    )),
+            );
+        }
+
+        if visible.is_empty() {
+            col = col.child(
+                div()
                     .w_full()
                     .flex()
+                    .flex_col()
                     .items_center()
-                    .py(spacing(Spacing::Xs, Density::Cozy))
-                    .px(spacing(Spacing::Sm, Density::Cozy))
-                    .rounded(PICKER_BTN_RADIUS)
-                    .border(if selected { PICKER_SEL_BORDER } else { px(0.0) })
-                    .border_color(palette.brand)
-                    .cursor_pointer()
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                        this.picker_select_subgroup(click_label.clone(), cx)
-                    }))
+                    .gap(spacing(Spacing::Sm, Density::Cozy))
+                    .py(GRID_EMPTY_PAD_V)
+                    .child(icon(Icon::Search, GRID_EMPTY_GLYPH, palette.text_faint))
                     .child(
                         div()
                             .font_family(DEFAULT_BODY_FAMILY)
-                            .text_size(FONT_SM)
-                            .text_color(if selected {
-                                palette.text_primary
-                            } else {
-                                palette.text_secondary
-                            })
-                            .child(label.clone()),
-                    );
-                if selected {
-                    btn = btn.bg(palette.surface_overlay);
-                }
-                col = col.child(btn);
-            }
+                            .text_size(FONT_XS)
+                            .text_color(palette.text_muted)
+                            .child(format!("Nothing matches \u{201c}{query}\u{201d}")),
+                    ),
+            );
+        }
+
+        for group in &visible {
+            col = col.child(self.render_grid_group(group, accent, palette, cx));
         }
 
         div()
-            .id("actions-picker-subgroups")
-            .w(PICKER_SUBGROUP_W)
-            .flex_none()
-            .h_full()
+            .id("actions-grid-body")
+            .flex_1()
+            .min_h(px(0.0))
             .overflow_y_scroll()
+            .py(GRID_BODY_PAD_V)
+            .px(GRID_BAND_PAD_H)
             .child(col)
             .into_any_element()
     }
 
-    fn render_picker_entries(
+    fn render_grid_group(
         &self,
-        form: &TriggerPickerForm,
+        group: &GridGroup,
+        accent: Rgba,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let mut col = div()
+        let header = div()
             .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
-            .py(spacing(Spacing::Xs, Density::Cozy))
-            .px(spacing(Spacing::Sm, Density::Cozy));
+            .items_center()
+            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .pb(GRID_GROUP_HEADER_MB)
+            .child(
+                div()
+                    .flex_none()
+                    .size(GRID_GROUP_DOT)
+                    .rounded(radius(Radius::Pill))
+                    .bg(group.color),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(GRID_GROUP_FS)
+                    .text_color(palette.text_muted)
+                    .child(group.label.to_uppercase()),
+            )
+            .child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(GRID_GROUP_FS)
+                    .text_color(palette.text_faint)
+                    .child(group.items.len().to_string()),
+            );
 
-        let visible = form.visible_entries();
-        if form.level1.is_none() {
-            col = col.child(picker_hint(
-                "Select a platform to browse triggers.",
-                palette,
-            ));
-        } else if visible.is_empty() {
-            col = col.child(picker_hint(
-                "No triggers available for this selection.",
-                palette,
-            ));
-        } else {
-            for entry in visible {
-                let group = platform_group_for(entry.kind_id);
-                col = col.child(self.render_picker_default(entry, group, palette, cx));
-                for chip in &entry.customs {
-                    col = col.child(self.render_picker_custom(entry, chip, group, palette, cx));
-                }
+        let mut rows = div().flex().flex_col().gap(GRID_CARD_GAP);
+        for chunk in group.items.chunks(2) {
+            let mut pair = div().flex().gap(GRID_CARD_GAP);
+            for item in chunk {
+                pair = pair.child(self.render_grid_card(item, accent, palette, cx));
             }
+            if chunk.len() == 1 {
+                pair = pair.child(div().flex_1());
+            }
+            rows = rows.child(pair);
         }
 
         div()
-            .id("actions-picker-entries")
+            .w_full()
+            .pb(GRID_GROUP_GAP)
+            .child(header)
+            .child(rows)
+            .into_any_element()
+    }
+
+    fn render_grid_card(
+        &self,
+        item: &GridItem,
+        accent: Rgba,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let id = item.id.clone();
+        let hovered = self.grid_hover.as_ref() == Some(&id);
+        let dim = !matches!(item.state, CardState::Add);
+        let border = if hovered && !dim {
+            palette.border_regular
+        } else {
+            palette.surface_overlay
+        };
+
+        let tile = div()
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .size(GRID_CARD_TILE)
+            .rounded(GRID_CARD_TILE_RADIUS)
+            .bg(palette.surface_overlay)
+            .child(icon(item.glyph, GRID_CARD_ICON, item.color));
+
+        let name = div()
             .flex_1()
             .min_w(px(0.0))
-            .h_full()
-            .overflow_y_scroll()
-            .child(col)
-            .into_any_element()
-    }
+            .overflow_hidden()
+            .font_family(DEFAULT_BODY_FAMILY)
+            .font_weight(FontWeight::MEDIUM)
+            .text_size(GRID_CARD_NAME_FS)
+            .text_color(palette.text_primary)
+            .child(item.name.clone());
 
-    fn render_picker_default(
-        &self,
-        entry: &PickerEntry,
-        group: PlatformGroup,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let name = entry.label.to_owned();
-        let kind_label = group.label().to_owned();
-        let glyph = group.glyph();
-        let hover = palette.surface_overlay;
+        let trailing: AnyElement = match item.state {
+            CardState::Added => badge(
+                palette.surface_overlay,
+                palette.success,
+                "added",
+                true,
+                GRID_BADGE_FS,
+            )
+            .into_any_element(),
+            CardState::Off => badge(
+                palette.surface_overlay,
+                palette.text_faint,
+                "off",
+                true,
+                GRID_BADGE_FS,
+            )
+            .into_any_element(),
+            CardState::Add => {
+                let tint = if hovered { accent } else { palette.text_faint };
+                icon(Icon::Plus, GRID_CARD_ICON, tint).into_any_element()
+            }
+        };
 
-        div()
-            .id(SharedString::from(format!(
-                "actions-picker-default-{}",
-                entry.default_id
-            )))
-            .w_full()
+        let top = div()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, Density::Cozy))
-            .py(spacing(Spacing::Xs, Density::Cozy))
-            .px(spacing(Spacing::Xs, Density::Cozy))
-            .rounded(PICKER_BTN_RADIUS)
-            .border(HALF_BORDER)
-            .border_color(palette.border_regular)
+            .pb(GRID_CARD_ROW_MB)
+            .child(tile)
+            .child(name)
+            .child(trailing);
+
+        let desc = div()
+            .overflow_hidden()
+            .font_family(DEFAULT_BODY_FAMILY)
+            .text_size(GRID_META_FS)
+            .text_color(palette.text_muted)
+            .child(item.desc.clone());
+
+        let card = div()
+            .flex_1()
+            .min_w(px(0.0))
+            .flex()
+            .flex_col()
+            .py(GRID_CARD_PAD_V)
+            .px(GRID_CARD_PAD_H)
+            .rounded(radius(Radius::Md))
+            .border(BORDER_ACCENT)
+            .border_color(border)
+            .bg(palette.shell)
+            .child(top)
+            .child(desc);
+
+        if dim {
+            return card.opacity(0.5).into_any_element();
+        }
+
+        let pick = item.pick.clone();
+        card.id(id.clone())
             .cursor_pointer()
-            .hover(move |s| s.bg(hover))
-            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                this.link_trigger(
-                    SeededTrigger {
-                        name: name.clone(),
-                        kind_label: kind_label.clone(),
-                        condition: String::new(),
-                        glyph,
-                        enabled: true,
-                    },
-                    cx,
-                )
+            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                this.set_grid_hover(id.clone(), *hovered, cx)
             }))
-            .child(icon(Icon::PlayerPlay, FONT_XS, palette.brand))
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(entry.label.to_owned()),
-            )
-            .child(div().flex_1())
-            .child(
-                div()
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_faint)
-                    .child("(default)"),
-            )
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                this.grid_apply_pick(pick.clone(), cx)
+            }))
             .into_any_element()
     }
 
-    fn render_picker_custom(
-        &self,
-        entry: &PickerEntry,
-        chip: &PickerCustom,
-        group: PlatformGroup,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let name = chip.name.to_owned();
-        let kind_label = entry.label.to_owned();
-        let condition = chip.override_summary.to_owned();
-        let glyph = group.glyph();
-        let hover = palette.surface_overlay;
+    fn grid_apply_pick(&mut self, pick: GridPick, cx: &mut Context<Self>) {
+        match pick {
+            GridPick::Step(kind) => self.grid_pick_step(kind, cx),
+            GridPick::Trigger(seed) => self.grid_pick_trigger(
+                SeededTrigger {
+                    name: seed.name,
+                    kind_label: seed.kind_label,
+                    condition: seed.condition,
+                    glyph: seed.glyph,
+                    enabled: seed.enabled,
+                },
+                cx,
+            ),
+        }
+    }
 
-        div()
-            .id(SharedString::from(format!(
-                "actions-picker-custom-{}",
-                chip.id
-            )))
-            .w_full()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
-            .py(spacing(Spacing::Xxs, Density::Cozy))
-            .px(spacing(Spacing::Xs, Density::Cozy))
-            .cursor_pointer()
-            .hover(move |s| s.bg(hover))
-            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                this.link_trigger(
-                    SeededTrigger {
-                        name: name.clone(),
-                        kind_label: kind_label.clone(),
-                        condition: condition.clone(),
-                        glyph,
-                        enabled: true,
-                    },
-                    cx,
-                )
-            }))
-            .child(div().w(PICKER_CHIP_INDENT).flex_none())
-            .child(icon(Icon::Plus, FONT_XS, palette.success))
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_secondary)
-                    .child(chip.name.to_owned()),
-            )
-            .child(div().flex_1())
-            .child(
-                div()
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_muted)
-                    .child(chip.override_summary.to_owned()),
-            )
-            .into_any_element()
+    fn grid_groups(&self, form: &GridPickerForm, palette: &ForgePalette) -> Vec<GridGroup> {
+        match form.kind {
+            PickerKind::Step => build_step_groups(palette),
+            PickerKind::Trigger => {
+                build_trigger_groups(&form.trigger_entries, self.detail.as_ref(), palette)
+            }
+        }
+    }
+
+    fn grid_scopes(
+        &self,
+        form: &GridPickerForm,
+        palette: &ForgePalette,
+    ) -> Vec<(SharedString, String, Rgba)> {
+        let cap = match form.kind {
+            PickerKind::Trigger => 6,
+            PickerKind::Step => 7,
+        };
+        let mut seen: Vec<(SharedString, String, Rgba)> = Vec::new();
+        for g in self.grid_groups(form, palette) {
+            if g.scope.as_ref() == "all" || seen.iter().any(|(id, _, _)| id == &g.scope) {
+                continue;
+            }
+            seen.push((g.scope.clone(), scope_label(&g.label), g.color));
+            if seen.len() >= cap {
+                break;
+            }
+        }
+        seen
     }
 
     fn render_trigger_unlink_confirm(
@@ -3173,10 +3230,10 @@ impl Render for ScreenActionsView {
             .sub_form
             .as_ref()
             .map(|form| self.render_sub_action_modal(form, &palette, cx));
-        let picker = self
-            .trigger_picker
+        let grid_picker = self
+            .grid_picker
             .as_ref()
-            .map(|form| self.render_trigger_picker(form, &palette, cx));
+            .map(|form| self.render_grid_picker(form, &palette, cx));
         let unlink_modal = self
             .pending_trigger_unlink
             .map(|index| self.render_trigger_unlink_confirm(index, &palette, cx));
@@ -3191,7 +3248,7 @@ impl Render for ScreenActionsView {
             .children(add_modal)
             .children(delete_modal)
             .children(sub_modal)
-            .children(picker)
+            .children(grid_picker)
             .children(unlink_modal)
     }
 }
@@ -3362,6 +3419,20 @@ impl SubCategory {
             SubCategory::Logic | SubCategory::Delay | SubCategory::Util => palette.text_muted,
         }
     }
+
+    /// Stable scope slug used for the grid's scope chips and element ids.
+    fn slug(self) -> &'static str {
+        match self {
+            SubCategory::Chat => "chat",
+            SubCategory::Tts => "tts",
+            SubCategory::Audio => "audio",
+            SubCategory::Globals => "globals",
+            SubCategory::Logic => "logic",
+            SubCategory::Delay => "delay",
+            SubCategory::Files => "files",
+            SubCategory::Util => "util",
+        }
+    }
 }
 
 impl SubKind {
@@ -3379,6 +3450,24 @@ impl SubKind {
             SubKind::IfThenElse => "If / Then / Else",
             SubKind::Loop => "Loop",
             SubKind::Switch => "Switch / Case",
+        }
+    }
+
+    /// Stable slug used to mint the grid card's element id.
+    fn slug(self) -> &'static str {
+        match self {
+            SubKind::SendChat => "send-chat",
+            SubKind::Speak => "speak",
+            SubKind::PlaySound => "play-sound",
+            SubKind::SetGlobal => "set-global",
+            SubKind::RandomInt => "random-int",
+            SubKind::Delay => "delay",
+            SubKind::Log => "log",
+            SubKind::ReadFile => "read-file",
+            SubKind::SubAction => "sub-action",
+            SubKind::IfThenElse => "if-then-else",
+            SubKind::Loop => "loop",
+            SubKind::Switch => "switch",
         }
     }
 
@@ -3866,19 +3955,6 @@ enum PlatformGroup {
     Core,
 }
 
-const PLATFORM_GROUPS: [PlatformGroup; 10] = [
-    PlatformGroup::Twitch,
-    PlatformGroup::YouTube,
-    PlatformGroup::Kick,
-    PlatformGroup::Obs,
-    PlatformGroup::VTube,
-    PlatformGroup::Midi,
-    PlatformGroup::Hotkey,
-    PlatformGroup::Discord,
-    PlatformGroup::Script,
-    PlatformGroup::Core,
-];
-
 impl PlatformGroup {
     fn label(self) -> &'static str {
         match self {
@@ -3985,73 +4061,28 @@ fn sub_group_label_for(kind_id: &str) -> String {
         .join(" ")
 }
 
-/// One selectable trigger in the picker: a default instance plus any user-defined
+/// One selectable trigger in the grid: a default instance plus any user-defined
 /// custom instances.
 struct PickerEntry {
     kind_id: &'static str,
     label: &'static str,
+    desc: &'static str,
     sub_group: String,
     default_id: u64,
     customs: Vec<PickerCustom>,
 }
 
-/// A user-defined custom instance chip nested under its [`PickerEntry`].
+/// A user-defined custom instance card nested under its [`PickerEntry`].
 struct PickerCustom {
     id: u64,
     name: &'static str,
     override_summary: &'static str,
+    enabled: bool,
 }
 
-/// The open trigger picker: the action it links into plus the two-level selection
-/// (`level1` platform, `level2` subgroup) over the seeded entries.
-struct TriggerPickerForm {
-    action_id: ActionId,
-    level1: Option<PlatformGroup>,
-    level2: Option<String>,
-    entries: Vec<PickerEntry>,
-}
-
-impl TriggerPickerForm {
-    /// Entries under the selected platform (all entries while no platform is picked).
-    fn platform_entries(&self) -> Vec<&PickerEntry> {
-        self.entries
-            .iter()
-            .filter(|e| {
-                self.level1
-                    .map(|g| platform_group_for(e.kind_id) == g)
-                    .unwrap_or(true)
-            })
-            .collect()
-    }
-
-    /// Distinct subgroup labels under the selected platform, in first-seen order.
-    fn subgroups(&self) -> Vec<String> {
-        let mut seen: Vec<String> = Vec::new();
-        for entry in self.platform_entries() {
-            if !seen.iter().any(|s| s == &entry.sub_group) {
-                seen.push(entry.sub_group.clone());
-            }
-        }
-        seen
-    }
-
-    /// Entries surviving both the platform and (when set) the subgroup selection.
-    fn visible_entries(&self) -> Vec<&PickerEntry> {
-        self.platform_entries()
-            .into_iter()
-            .filter(|e| {
-                self.level2
-                    .as_deref()
-                    .map(|sg| sg == e.sub_group)
-                    .unwrap_or(true)
-            })
-            .collect()
-    }
-}
-
-/// The representative picker catalog seeded before a trigger registry is wired: a few
+/// The representative catalog seeded before a trigger registry is wired: a few
 /// platforms, each carrying one or two kinds with a default and an occasional custom
-/// instance, so every column and both the default/custom rows render populated.
+/// instance, so every grid group and both the default / saved cards render populated.
 fn seed_picker_entries() -> Vec<PickerEntry> {
     let counter = std::cell::Cell::new(0u64);
     let id = || {
@@ -4059,50 +4090,420 @@ fn seed_picker_entries() -> Vec<PickerEntry> {
         counter.set(v + 1);
         v
     };
-    let entry =
-        |kind_id: &'static str, label: &'static str, customs: Vec<PickerCustom>| PickerEntry {
-            kind_id,
-            label,
-            sub_group: sub_group_label_for(kind_id),
-            default_id: id(),
-            customs,
-        };
+    let entry = |kind_id: &'static str,
+                 label: &'static str,
+                 desc: &'static str,
+                 customs: Vec<PickerCustom>| PickerEntry {
+        kind_id,
+        label,
+        desc,
+        sub_group: sub_group_label_for(kind_id),
+        default_id: id(),
+        customs,
+    };
     vec![
         entry(
             "twitch.chat.command",
             "Chat command",
+            "Fires on a !command in chat",
             vec![PickerCustom {
                 id: id(),
                 name: "!hello",
                 override_summary: "command=!hello",
+                enabled: true,
             }],
         ),
         entry(
             "twitch.support.subscriber",
             "New subscriber",
-            vec![PickerCustom {
-                id: id(),
-                name: "VIP sub alert",
-                override_summary: "tier=3000",
-            }],
+            "A new paid subscription",
+            vec![
+                PickerCustom {
+                    id: id(),
+                    name: "VIP sub alert",
+                    override_summary: "tier=3000",
+                    enabled: true,
+                },
+                PickerCustom {
+                    id: id(),
+                    name: "Gift-bomb alert",
+                    override_summary: "min gifts=5",
+                    enabled: false,
+                },
+            ],
         ),
-        entry("twitch.points.reward", "Channel point reward", Vec::new()),
-        entry("youtube.chat.message", "Chat message", Vec::new()),
-        entry("youtube.support.member", "New member", Vec::new()),
-        entry("kick.chat.command", "Chat command", Vec::new()),
-        entry("obs.scenes.current_changed", "Scene changed", Vec::new()),
-        entry("obs.stream.started", "Stream started", Vec::new()),
-        entry("core.timer.tick", "Timer tick", Vec::new()),
+        entry(
+            "twitch.points.reward",
+            "Channel point reward",
+            "A channel-point reward redeemed",
+            Vec::new(),
+        ),
+        entry(
+            "youtube.chat.message",
+            "Chat message",
+            "Every message posted in chat",
+            Vec::new(),
+        ),
+        entry(
+            "youtube.support.member",
+            "New member",
+            "A new channel membership",
+            Vec::new(),
+        ),
+        entry(
+            "kick.chat.command",
+            "Chat command",
+            "Fires on a !command in chat",
+            Vec::new(),
+        ),
+        entry(
+            "obs.scenes.current_changed",
+            "Scene changed",
+            "Active scene switched",
+            Vec::new(),
+        ),
+        entry(
+            "obs.stream.started",
+            "Stream started",
+            "OBS started streaming",
+            Vec::new(),
+        ),
+        entry(
+            "core.timer.tick",
+            "Timer tick",
+            "Every N minutes while live",
+            Vec::new(),
+        ),
     ]
 }
 
-/// A faint mono hint line inside a picker column (empty / prompt states).
-fn picker_hint(label: &'static str, palette: &ForgePalette) -> impl IntoElement {
+// ── unified grid picker data ────────────────────────────────────────────────
+
+/// Which add flow the unified grid picker drives.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PickerKind {
+    Step,
+    Trigger,
+}
+
+impl PickerKind {
+    fn accent(self, palette: &ForgePalette) -> Rgba {
+        match self {
+            PickerKind::Step => palette.brand,
+            PickerKind::Trigger => palette.warning,
+        }
+    }
+
+    fn header_icon(self) -> Icon {
+        match self {
+            PickerKind::Step => Icon::LayoutGrid,
+            PickerKind::Trigger => Icon::Bolt,
+        }
+    }
+
+    fn title(self) -> &'static str {
+        match self {
+            PickerKind::Step => "Add sub-action",
+            PickerKind::Trigger => "Add trigger",
+        }
+    }
+
+    fn ctx(self) -> &'static str {
+        match self {
+            PickerKind::Step => "Inserting into",
+            PickerKind::Trigger => "Fires",
+        }
+    }
+}
+
+/// The open unified "Add" grid picker: which flow it drives, the action it targets,
+/// the live search field + query, the active scope chip, and (trigger flow only) the
+/// seeded catalog it groups.
+struct GridPickerForm {
+    kind: PickerKind,
+    action_id: ActionId,
+    search_field: Entity<TextInput>,
+    search: String,
+    scope: Option<SharedString>,
+    trigger_entries: Vec<PickerEntry>,
+    _search_sub: Subscription,
+}
+
+/// A card's addability state in the grid.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CardState {
+    Add,
+    Added,
+    Off,
+}
+
+/// What picking a grid card applies to the open action.
+#[derive(Clone)]
+enum GridPick {
+    Step(SubKind),
+    Trigger(TriggerSeed),
+}
+
+/// The values needed to mint a [`SeededTrigger`] when a trigger card is picked.
+#[derive(Clone)]
+struct TriggerSeed {
+    name: String,
+    kind_label: String,
+    condition: String,
+    glyph: Icon,
+    enabled: bool,
+}
+
+/// One selectable card in the grid.
+struct GridItem {
+    id: SharedString,
+    name: String,
+    desc: String,
+    glyph: Icon,
+    color: Rgba,
+    state: CardState,
+    pick: GridPick,
+}
+
+/// A titled group of cards under one category (steps) or platform · subgroup
+/// (triggers).
+struct GridGroup {
+    label: String,
+    color: Rgba,
+    scope: SharedString,
+    items: Vec<GridItem>,
+}
+
+/// The seeded sub-action catalog as grid groups, one per [`SubCategory`] in
+/// first-seen order.
+fn build_step_groups(palette: &ForgePalette) -> Vec<GridGroup> {
+    let mut groups: Vec<GridGroup> = Vec::new();
+    for kind in SUB_KINDS {
+        let cat = kind.category();
+        let scope = SharedString::from(cat.slug());
+        let color = cat.color(palette);
+        let item = GridItem {
+            id: SharedString::from(format!("step-{}", kind.slug())),
+            name: kind.label().to_owned(),
+            desc: kind.summary_hint().to_owned(),
+            glyph: kind.glyph(),
+            color,
+            state: CardState::Add,
+            pick: GridPick::Step(kind),
+        };
+        match groups.iter_mut().find(|g| g.scope == scope) {
+            Some(g) => g.items.push(item),
+            None => groups.push(GridGroup {
+                label: cat.label().to_owned(),
+                color,
+                scope,
+                items: vec![item],
+            }),
+        }
+    }
+    groups
+}
+
+/// The seeded trigger catalog as grid groups: a leading "Your saved triggers" group
+/// from the custom instances (cards flagged `Added` when already linked), then one
+/// group per platform · subgroup of default kinds.
+fn build_trigger_groups(
+    entries: &[PickerEntry],
+    detail: Option<&ActionDetail>,
+    palette: &ForgePalette,
+) -> Vec<GridGroup> {
+    let linked: Vec<&str> = detail
+        .map(|d| d.triggers.iter().map(|t| t.name.as_str()).collect())
+        .unwrap_or_default();
+
+    let mut groups: Vec<GridGroup> = Vec::new();
+
+    let mut saved: Vec<GridItem> = Vec::new();
+    for entry in entries {
+        let group = platform_group_for(entry.kind_id);
+        for custom in &entry.customs {
+            let added = linked.contains(&custom.name);
+            let state = if !custom.enabled {
+                CardState::Off
+            } else if added {
+                CardState::Added
+            } else {
+                CardState::Add
+            };
+            saved.push(GridItem {
+                id: SharedString::from(format!("trig-custom-{}", custom.id)),
+                name: custom.name.to_owned(),
+                desc: custom.override_summary.to_owned(),
+                glyph: group.glyph(),
+                color: group.color(palette),
+                state,
+                pick: GridPick::Trigger(TriggerSeed {
+                    name: custom.name.to_owned(),
+                    kind_label: entry.label.to_owned(),
+                    condition: custom.override_summary.to_owned(),
+                    glyph: group.glyph(),
+                    enabled: true,
+                }),
+            });
+        }
+    }
+    if !saved.is_empty() {
+        groups.push(GridGroup {
+            label: "Your saved triggers".to_owned(),
+            color: palette.bits,
+            scope: SharedString::from("all"),
+            items: saved,
+        });
+    }
+
+    for entry in entries {
+        let group = platform_group_for(entry.kind_id);
+        let scope = SharedString::from(group.key());
+        let label = format!("{} \u{b7} {}", group.label(), entry.sub_group);
+        let item = GridItem {
+            id: SharedString::from(format!("trig-default-{}", entry.default_id)),
+            name: entry.label.to_owned(),
+            desc: entry.desc.to_owned(),
+            glyph: group.glyph(),
+            color: group.color(palette),
+            state: CardState::Add,
+            pick: GridPick::Trigger(TriggerSeed {
+                name: entry.label.to_owned(),
+                kind_label: group.label().to_owned(),
+                condition: String::new(),
+                glyph: group.glyph(),
+                enabled: true,
+            }),
+        };
+        match groups.iter_mut().find(|g| g.label == label) {
+            Some(g) => g.items.push(item),
+            None => groups.push(GridGroup {
+                label,
+                color: group.color(palette),
+                scope,
+                items: vec![item],
+            }),
+        }
+    }
+
+    groups
+}
+
+/// The scope-chip label for a group: the segment before the ` · ` platform /
+/// category separator (the whole label when there is none).
+fn scope_label(group_label: &str) -> String {
+    group_label
+        .split(" \u{b7} ")
+        .next()
+        .unwrap_or(group_label)
+        .to_owned()
+}
+
+/// A scope filter chip: active pills fill `surface_overlay` with a `border_regular`
+/// outline; inactive ones stay transparent. An optional leading category dot leads
+/// the label.
+fn grid_scope_chip(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    dot: Option<Rgba>,
+    active: bool,
+    palette: &ForgePalette,
+    handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> AnyElement {
+    let (bg, text_color, border): (Rgba, Rgba, Rgba) = if active {
+        (
+            palette.surface_overlay,
+            palette.text_primary,
+            palette.border_regular,
+        )
+    } else {
+        (
+            gpui::transparent_black().into(),
+            palette.text_secondary,
+            gpui::transparent_black().into(),
+        )
+    };
+    let mut chip = div()
+        .id(id.into())
+        .flex_none()
+        .flex()
+        .items_center()
+        .gap(GRID_CHIP_DOT)
+        .py(GRID_CHIP_PAD_V)
+        .px(GRID_CHIP_PAD_H)
+        .rounded(radius(Radius::Pill))
+        .border(BORDER_ACCENT)
+        .border_color(border)
+        .bg(bg)
+        .cursor_pointer()
+        .on_click(handler);
+    if let Some(dot) = dot {
+        chip = chip.child(
+            div()
+                .flex_none()
+                .size(GRID_CHIP_DOT)
+                .rounded(radius(Radius::Pill))
+                .bg(dot),
+        );
+    }
+    chip.child(
+        div()
+            .font_family(DEFAULT_BODY_FAMILY)
+            .text_size(GRID_META_FS)
+            .text_color(text_color)
+            .child(label.into()),
+    )
+    .into_any_element()
+}
+
+/// The grid modal's footer band: a per-kind hint on the left, an `Esc` chip on the
+/// right.
+fn render_grid_footer(form: &GridPickerForm, palette: &ForgePalette) -> impl IntoElement {
+    let hint = match form.kind {
+        PickerKind::Step => "Added with smart defaults \u{2014} edit inline after",
+        PickerKind::Trigger => "Pick a trigger \u{2014} configure it in the Triggers registry",
+    };
     div()
-        .font_family(DEFAULT_MONO_FAMILY)
-        .text_size(FONT_XS)
-        .text_color(palette.text_faint)
-        .child(label)
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_between()
+        .py(GRID_FOOTER_PAD_V)
+        .px(GRID_BAND_PAD_H)
+        .bg(palette.shell)
+        .border_t(BORDER_ACCENT)
+        .border_color(palette.surface_overlay)
+        .child(
+            div()
+                .font_family(DEFAULT_BODY_FAMILY)
+                .text_size(FONT_XXS)
+                .text_color(palette.text_faint)
+                .child(hint),
+        )
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(spacing(Spacing::Xxs, Density::Cozy))
+                .child(
+                    div()
+                        .font_family(DEFAULT_MONO_FAMILY)
+                        .text_size(FONT_XXS)
+                        .text_color(palette.text_faint)
+                        .py(GRID_KBD_PAD_V)
+                        .px(GRID_KBD_PAD_H)
+                        .rounded(GRID_KBD_RADIUS)
+                        .bg(palette.surface_overlay)
+                        .child("Esc"),
+                )
+                .child(
+                    div()
+                        .font_family(DEFAULT_BODY_FAMILY)
+                        .text_size(FONT_XXS)
+                        .text_color(palette.text_faint)
+                        .child("to cancel"),
+                ),
+        )
 }
 
 /// The loaded editor payload for the selected action — seeded locally until the
@@ -4116,23 +4517,14 @@ struct ActionDetail {
     triggers: Vec<SeededTrigger>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum SubFormStep {
-    PickKind,
-    FillForm,
-}
-
-/// The open add/edit-sub-action side sheet. Its config inputs are child [`TextInput`]
-/// entities owning their own edit state; the picker search, the selected kind and the
-/// edit index are plain fields.
-struct AddSubActionForm {
-    mode: SubFormStep,
-    search_field: Entity<TextInput>,
-    search: String,
-    selected_kind: Option<SubKind>,
+/// The open edit-sub-action side sheet. Its config inputs are child [`TextInput`]
+/// entities owning their own edit state; the kind and the edited step index are plain
+/// fields. Adding a step no longer routes through here — the unified grid picker
+/// appends with smart defaults, and this sheet only re-authors an existing step.
+struct EditSubActionForm {
+    kind: SubKind,
     fields: Vec<(&'static SubField, Entity<TextInput>)>,
-    editing_index: Option<usize>,
-    _search_sub: Subscription,
+    index: usize,
 }
 
 /// Builds the config inputs for `kind`, each seeded from `seed` (an existing step's
@@ -4480,50 +4872,5 @@ fn drill_in_chip(
         .cursor_pointer()
         .hover(move |s| s.bg(hover))
         .on_click(handler)
-        .into_any_element()
-}
-
-/// A category section header inside the kind picker: an uppercase mono label with the
-/// group's kind count, matching the source's `LABEL · N` section bar.
-fn picker_section_header(
-    label: &'static str,
-    count: usize,
-    palette: &ForgePalette,
-) -> impl IntoElement {
-    div()
-        .py(spacing(Spacing::Xs, Density::Cozy))
-        .px(spacing(Spacing::Md, Density::Cozy))
-        .font_family(DEFAULT_MONO_FAMILY)
-        .text_size(FONT_XXS)
-        .text_color(palette.text_muted)
-        .child(format!("{} \u{b7} {}", label.to_uppercase(), count))
-}
-
-/// A sub-action-kind picker row: a leading category dot, the kind label and its
-/// one-line summary, selecting the kind on click.
-fn render_kind_row(
-    kind: SubKind,
-    dot_color: Rgba,
-    palette: &ForgePalette,
-    cx: &mut Context<ScreenActionsView>,
-) -> AnyElement {
-    let title = div()
-        .font_family(DEFAULT_BODY_FAMILY)
-        .text_size(FONT_SM)
-        .text_color(palette.text_primary)
-        .child(kind.label());
-    let meta = div()
-        .font_family(DEFAULT_BODY_FAMILY)
-        .text_size(FONT_XS)
-        .text_color(palette.text_faint)
-        .child(kind.summary_hint());
-
-    row_card(title, palette)
-        .leading(status_dot(dot_color, TRIGGER_DOT))
-        .meta(meta)
-        .on_click(
-            SharedString::from(format!("actions-kind-{}", kind.label())),
-            cx.listener(move |this, _: &ClickEvent, _, cx| this.pick_sub_kind(kind, cx)),
-        )
         .into_any_element()
 }

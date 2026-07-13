@@ -10,6 +10,39 @@ use std::ops::Range;
 
 use unicode_segmentation::UnicodeSegmentation;
 
+/// The glyph a secure field paints in place of each real grapheme cluster (U+2022
+/// BULLET). One bullet per cluster keeps the masked width proportional to the value.
+pub(crate) const MASK_GLYPH: &str = "\u{2022}";
+
+/// The on-screen masking string for `text`: exactly one [`MASK_GLYPH`] per extended
+/// grapheme cluster, so a multi-byte cluster still occupies a single mask slot and the
+/// caret cannot desync from the real buffer.
+pub(crate) fn mask_graphemes(text: &str) -> String {
+    MASK_GLYPH.repeat(text.graphemes(true).count())
+}
+
+/// Maps a grapheme-boundary byte offset in `text` to the matching byte offset in its
+/// [`mask_graphemes`] rendering: the count of clusters starting before `byte_offset`,
+/// each contributing one [`MASK_GLYPH`].
+pub(crate) fn mask_offset(text: &str, byte_offset: usize) -> usize {
+    let clusters_before = text
+        .grapheme_indices(true)
+        .take_while(|(idx, _)| *idx < byte_offset)
+        .count();
+    clusters_before * MASK_GLYPH.len()
+}
+
+/// Inverse of [`mask_offset`]: maps a byte offset in the masked rendering back to the
+/// grapheme-boundary byte offset in `text` (mask slots are fixed-width, so integer
+/// division recovers the cluster index).
+pub(crate) fn content_offset_for_mask(text: &str, mask_offset: usize) -> usize {
+    let cluster_index = mask_offset / MASK_GLYPH.len();
+    text.grapheme_indices(true)
+        .map(|(idx, _)| idx)
+        .nth(cluster_index)
+        .unwrap_or(text.len())
+}
+
 /// The byte offset of the grapheme-cluster boundary immediately before `offset`,
 /// or `0` when `offset` is already at or before the start. Steps one whole extended
 /// grapheme cluster so the caret never lands inside a multi-byte cluster (emoji, ZWJ

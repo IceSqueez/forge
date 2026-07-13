@@ -86,6 +86,7 @@ pub struct TextInput {
     density: Density,
     font_size: Pixels,
     read_only: bool,
+    secure: bool,
     leading_icon: Option<(Icon, Rgba)>,
     on_surface: bool,
     static_chrome: Option<(Rgba, Radius)>,
@@ -110,6 +111,7 @@ impl TextInput {
             density: Density::Cozy,
             font_size: FONT_XS,
             read_only: false,
+            secure: false,
             leading_icon: None,
             on_surface: false,
             static_chrome: None,
@@ -133,6 +135,15 @@ impl TextInput {
 
     pub fn read_only(mut self, read_only: bool) -> Self {
         self.read_only = read_only;
+        self
+    }
+
+    /// Masks the field: the on-screen glyphs become one bullet per grapheme cluster
+    /// while `content()` and the emitted events keep the real value. Clipboard copy/cut
+    /// of the secret is suppressed while masked. For credential fields (API keys,
+    /// secrets) that must never render in plaintext.
+    pub fn secure(mut self, secure: bool) -> Self {
+        self.secure = secure;
         self
     }
 
@@ -259,6 +270,9 @@ impl TextInput {
     }
 
     fn copy(&mut self, _: &Copy, _: &mut Window, cx: &mut Context<Self>) {
+        if self.secure {
+            return;
+        }
         if !self.selected_range.is_empty() {
             cx.write_to_clipboard(ClipboardItem::new_string(
                 self.content[self.selected_range.clone()].to_string(),
@@ -270,9 +284,11 @@ impl TextInput {
         if self.read_only || self.selected_range.is_empty() {
             return;
         }
-        cx.write_to_clipboard(ClipboardItem::new_string(
-            self.content[self.selected_range.clone()].to_string(),
-        ));
+        if !self.secure {
+            cx.write_to_clipboard(ClipboardItem::new_string(
+                self.content[self.selected_range.clone()].to_string(),
+            ));
+        }
         self.replace_text_in_range(None, "", window, cx);
     }
 
@@ -331,7 +347,12 @@ impl TextInput {
         if position.y > bounds.bottom() {
             return self.content.len();
         }
-        line.closest_index_for_x(position.x - bounds.left() + self.scroll_offset)
+        let index = line.closest_index_for_x(position.x - bounds.left() + self.scroll_offset);
+        if self.secure {
+            crate::text_edit::content_offset_for_mask(&self.content, index)
+        } else {
+            index
+        }
     }
 
     fn select_to(&mut self, offset: usize, cx: &mut Context<Self>) {
@@ -499,13 +520,21 @@ impl EntityInputHandler for TextInput {
     ) -> Option<Bounds<Pixels>> {
         let last_layout = self.last_layout.as_ref()?;
         let range = self.range_from_utf16(&range_utf16);
+        let (start, end) = if self.secure {
+            (
+                crate::text_edit::mask_offset(&self.content, range.start),
+                crate::text_edit::mask_offset(&self.content, range.end),
+            )
+        } else {
+            (range.start, range.end)
+        };
         Some(Bounds::from_corners(
             point(
-                bounds.left() - self.scroll_offset + last_layout.x_for_index(range.start),
+                bounds.left() - self.scroll_offset + last_layout.x_for_index(start),
                 bounds.top(),
             ),
             point(
-                bounds.left() - self.scroll_offset + last_layout.x_for_index(range.end),
+                bounds.left() - self.scroll_offset + last_layout.x_for_index(end),
                 bounds.bottom(),
             ),
         ))
@@ -519,7 +548,12 @@ impl EntityInputHandler for TextInput {
     ) -> Option<usize> {
         let line_point = self.last_bounds?.localize(&point)?;
         let last_layout = self.last_layout.as_ref()?;
-        let utf8_index = last_layout.index_for_x(point.x - line_point.x + self.scroll_offset)?;
+        let index = last_layout.index_for_x(point.x - line_point.x + self.scroll_offset)?;
+        let utf8_index = if self.secure {
+            crate::text_edit::content_offset_for_mask(&self.content, index)
+        } else {
+            index
+        };
         Some(self.offset_to_utf16(utf8_index))
     }
 }
@@ -582,13 +616,29 @@ impl Element for TextElement {
         let selected_range = input.selected_range.clone();
         let cursor = input.cursor_offset();
         let palette = input.palette;
+        let secure = input.secure;
         let mut scroll_offset = input.scroll_offset;
         let style = window.text_style();
 
         let (display_text, text_color): (SharedString, Hsla) = if content.is_empty() {
             (input.placeholder.clone(), palette.text_muted.into())
+        } else if secure {
+            (
+                SharedString::from(crate::text_edit::mask_graphemes(&content)),
+                style.color,
+            )
         } else {
-            (content, style.color)
+            (content.clone(), style.color)
+        };
+
+        // Caret and selection offsets index the real buffer; while masked the shaped line
+        // is bullets, so each real byte offset maps to its bullet-string counterpart.
+        let display_index = |offset: usize| -> usize {
+            if secure {
+                crate::text_edit::mask_offset(&content, offset)
+            } else {
+                offset
+            }
         };
 
         let run = TextRun {
@@ -599,7 +649,7 @@ impl Element for TextElement {
             underline: None,
             strikethrough: None,
         };
-        let runs = if let Some(marked_range) = input.marked_range.as_ref() {
+        let runs = if let Some(marked_range) = input.marked_range.as_ref().filter(|_| !secure) {
             vec![
                 TextRun {
                     len: marked_range.start,
@@ -631,7 +681,7 @@ impl Element for TextElement {
             .text_system()
             .shape_line(display_text.clone(), font_size, &runs, None);
 
-        let cursor_x = line.x_for_index(cursor);
+        let cursor_x = line.x_for_index(display_index(cursor));
         let full_width = line.x_for_index(display_text.len());
         let width = bounds.size.width;
 
@@ -668,11 +718,11 @@ impl Element for TextElement {
                 Some(fill(
                     Bounds::from_corners(
                         point(
-                            origin_x + line.x_for_index(selected_range.start),
+                            origin_x + line.x_for_index(display_index(selected_range.start)),
                             bounds.top(),
                         ),
                         point(
-                            origin_x + line.x_for_index(selected_range.end),
+                            origin_x + line.x_for_index(display_index(selected_range.end)),
                             bounds.bottom(),
                         ),
                     ),

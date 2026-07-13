@@ -114,13 +114,13 @@ impl CloudTtsEnginesView {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let palette = cx.palette();
 
-        let azure_api = field("Subscription key", AZURE_SEED_KEY, palette, cx);
-        let azure_region = field("e.g. eastus", "eastus", palette, cx);
-        let eleven_api = field("xi-api-key", "", palette, cx);
-        let openai_api = field("sk-...", "", palette, cx);
-        let polly_access = field("AKIA...", "", palette, cx);
-        let polly_secret = field("secret access key", "", palette, cx);
-        let polly_region = field("e.g. us-east-1", "", palette, cx);
+        let azure_api = field("Subscription key", AZURE_SEED_KEY, true, palette, cx);
+        let azure_region = field("e.g. eastus", "eastus", false, palette, cx);
+        let eleven_api = field("xi-api-key", "", true, palette, cx);
+        let openai_api = field("sk-...", "", true, palette, cx);
+        let polly_access = field("AKIA...", "", false, palette, cx);
+        let polly_secret = field("secret access key", "", true, palette, cx);
+        let polly_region = field("e.g. us-east-1", "", false, palette, cx);
 
         let mut subs = Vec::new();
         for (entity, kind) in [
@@ -622,10 +622,12 @@ fn labeled_field(
 }
 
 /// Builds a credential text-field entity seeded with `initial` and adopting `palette`,
-/// rendered at the source's `FONT_SM` body size.
+/// rendered at the source's `FONT_SM` body size. `secure` masks secret fields (API keys,
+/// secret access keys) so they never render in plaintext.
 fn field(
     placeholder: &'static str,
     initial: &str,
+    secure: bool,
     palette: ForgePalette,
     cx: &mut Context<CloudTtsEnginesView>,
 ) -> Entity<TextInput> {
@@ -633,7 +635,8 @@ fn field(
     cx.new(|cx| {
         let mut input = TextInput::new(placeholder, cx)
             .with_palette(palette)
-            .with_font_size(FONT_SM);
+            .with_font_size(FONT_SM)
+            .secure(secure);
         if !initial.is_empty() {
             input.set_content(initial, cx);
         }

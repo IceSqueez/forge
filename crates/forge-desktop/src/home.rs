@@ -1,7 +1,7 @@
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG,
     FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, breadcrumb, card,
-    ghost_button_with_icon, icon, radius, spacing, status_dot,
+    ghost_button_with_icon, icon, radius, spacing, sparkline, status_dot,
 };
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Rgba, Subscription,
@@ -442,8 +442,6 @@ impl HomeView {
                     .child("last 60s · auto-refresh"),
             );
 
-        // Throughput sparkline is a later slice; the column renders its label over an
-        // em-dash placeholder inside the real frame.
         let throughput = div()
             .flex_1()
             .flex()
@@ -458,10 +456,9 @@ impl HomeView {
             )
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_MD)
-                    .text_color(palette.text_faint)
-                    .child("\u{2014}"),
+                    .w_full()
+                    .h(px(40.0))
+                    .child(sparkline(&health.throughput, palette.brand)),
             );
 
         let dropped_color = if health.dropped_ok {

@@ -16,6 +16,7 @@ pub mod palette;
 pub mod picker;
 pub mod side_sheet;
 pub mod slider;
+pub mod sparkline;
 pub mod status;
 pub mod text_area;
 pub(crate) mod text_edit;
@@ -53,6 +54,7 @@ pub use palette::{
 pub use picker::{Picker, PickerEvent, PickerItem, PickerLabels};
 pub use side_sheet::{SheetPosition, SheetWidth, SideSheet, side_sheet};
 pub use slider::{Slider, slider};
+pub use sparkline::{Sparkline, sparkline};
 pub use status::{StatusVariant, badge, connection_status_badge, status_dot};
 pub use text_area::{TextArea, bind_text_area_keys};
 pub use text_input::{

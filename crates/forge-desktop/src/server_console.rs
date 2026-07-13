@@ -2,7 +2,7 @@ use forge_components::breadcrumb::BreadcrumbCrumb;
 use forge_components::{
     BORDER_THIN, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS,
     FONT_XXS, ForgePalette, Icon, OverlayPosition, Radius, Spacing, badge, breadcrumb, card,
-    confirm_modal, icon, metric_card, overlay, radius, spacing, status_dot, with_alpha,
+    confirm_modal, icon, metric_card, overlay, radius, spacing, sparkline, status_dot, with_alpha,
 };
 use forge_events::EventSource;
 use gpui::{
@@ -12,8 +12,7 @@ use gpui::{
 
 use crate::presentation::ActivePresentation;
 
-/// Newest-first cap on retained throughput samples; the deferred sparkline reads the
-/// tail of this history once a kit chart component lands.
+/// Newest-first cap on retained throughput samples plotted by the throughput sparkline.
 const MAX_BANDWIDTH_SAMPLES: usize = 60;
 /// Subscription chips shown inline before collapsing the remainder into a "+N more"
 /// pill — the parity source pins this at three visible chips.
@@ -711,9 +710,6 @@ impl ServerConsoleView {
             .into_any_element()
     }
 
-    /// The throughput card. The drawn sparkline is deferred until a kit chart
-    /// component exists; the card frame and header render with a numeric band as
-    /// placeholder content so the section stays present.
     fn throughput_card(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         let sample_count = self.bandwidth_samples.len().min(MAX_BANDWIDTH_SAMPLES);
         let peak = self
@@ -749,21 +745,13 @@ impl ServerConsoleView {
                     .child(format!("last {sample_count}s · peak {peak:.0} KB/s")),
             );
 
-        let placeholder = div()
+        let chart = div()
             .w_full()
             .h(px(48.0))
-            .flex()
-            .items_center()
-            .justify_center()
+            .p(px(4.0))
             .rounded(radius(Radius::Sm))
             .bg(palette.shell)
-            .child(
-                div()
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_faint)
-                    .child("—"),
-            );
+            .child(sparkline(&self.bandwidth_samples, palette.brand));
 
         card(
             div()
@@ -771,7 +759,7 @@ impl ServerConsoleView {
                 .flex_col()
                 .gap(spacing(Spacing::Sm, density))
                 .child(header)
-                .child(placeholder),
+                .child(chart),
             palette,
         )
         .padding(spacing(Spacing::Md, density))

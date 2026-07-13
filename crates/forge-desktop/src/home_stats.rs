@@ -130,6 +130,9 @@ pub struct ObsHealth {
     pub dropped_ok: bool,
     pub fps: SharedString,
     pub cpu: SharedString,
+    /// Recent events-per-second history, oldest→newest, plotted by the throughput
+    /// sparkline on the stream-health card.
+    pub throughput: Vec<f32>,
 }
 
 /// Topic-scoped observable entity backing the Home screen, fed by the runtime→UI
@@ -173,6 +176,11 @@ impl HomeStats {
             dropped_ok: true,
             fps: "60.0".into(),
             cpu: "8.2".into(),
+            throughput: vec![
+                12.0, 14.0, 11.0, 16.0, 13.0, 18.0, 15.0, 20.0, 17.0, 14.0, 19.0, 16.0, 21.0, 18.0,
+                15.0, 13.0, 17.0, 20.0, 16.0, 12.0, 14.0, 18.0, 22.0, 19.0, 15.0, 11.0, 13.0, 17.0,
+                16.0, 14.0,
+            ],
         });
 
         // Oldest first; the card shows the newest five reversed.

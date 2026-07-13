@@ -173,7 +173,7 @@ pub fn seed(id: &BuiltinId) -> IntegrationSeed {
         "vtube" => generic(id, "VTube Studio", "mood-smile"),
         "discord" => generic(id, "Discord", "brand-discord"),
         "midi" => generic(id, "MIDI", "piano"),
-        "hotkeys" => generic(id, "Hotkeys", "keyboard"),
+        "hotkey" => generic(id, "Hotkeys", "keyboard"),
         _ => generic(id, "Integration", "broadcast"),
     }
 }

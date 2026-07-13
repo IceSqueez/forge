@@ -202,17 +202,17 @@ impl SidebarNav {
             NavEntry::FlatIconLeaf {
                 icon: Icon::PlugConnected,
                 label: "MIDI",
-                screen: Screen::Midi,
+                screen: Screen::BuiltinDetail(BuiltinId::new("midi")),
             },
             NavEntry::FlatIconLeaf {
                 icon: Icon::Keyboard,
                 label: "Hotkeys",
-                screen: Screen::Hotkeys,
+                screen: Screen::BuiltinDetail(BuiltinId::new("hotkey")),
             },
             NavEntry::FlatIconLeaf {
                 icon: Icon::Send,
                 label: "Discord",
-                screen: Screen::Discord,
+                screen: Screen::BuiltinDetail(BuiltinId::new("discord")),
             },
             NavEntry::FlatIconLeaf {
                 icon: Icon::Server,

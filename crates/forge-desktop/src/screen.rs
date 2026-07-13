@@ -23,9 +23,6 @@ pub enum Screen {
     BuiltinDetail(BuiltinId),
     Tts,
     Soundboard,
-    Midi,
-    Hotkeys,
-    Discord,
     Server,
     Settings,
 }
@@ -46,9 +43,6 @@ impl Screen {
             Screen::BuiltinDetail(_) => "Integration",
             Screen::Tts => "Text-to-Speech",
             Screen::Soundboard => "Soundboard",
-            Screen::Midi => "MIDI",
-            Screen::Hotkeys => "Hotkeys",
-            Screen::Discord => "Discord",
             Screen::Server => "WebSocket server",
             Screen::Settings => "Settings",
         }
@@ -71,9 +65,6 @@ impl Screen {
             Screen::Platforms | Screen::StreamApps | Screen::BuiltinDetail(_) => Icon::Broadcast,
             Screen::Tts => Icon::Volume,
             Screen::Soundboard => Icon::Music,
-            Screen::Midi => Icon::PlugConnected,
-            Screen::Hotkeys => Icon::Keyboard,
-            Screen::Discord => Icon::Send,
             Screen::Server => Icon::Server,
             Screen::Settings => Icon::Settings,
         }

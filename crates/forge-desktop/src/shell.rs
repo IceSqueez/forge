@@ -14,7 +14,7 @@ use crate::presentation::{ActivePresentation, Presentation};
 use crate::queues::QueuesView;
 use crate::runtime_status::RuntimeStatus;
 use crate::screen::Screen;
-use crate::screen_stub::ScreenStub;
+use crate::script_editor::ScriptEditorView;
 use crate::server_console::ServerConsoleView;
 use crate::settings::SettingsView;
 use crate::sidebar::NavRequested;
@@ -140,7 +140,14 @@ impl AppShell {
             Screen::Server => cx.new(ServerConsoleView::new).into(),
             Screen::Actions => cx.new(ScreenActionsView::new).into(),
             Screen::Triggers => cx.new(TriggersRegistryView::new).into(),
-            other => cx.new(|_| ScreenStub::new(other.clone())).into(),
+            Screen::Scripts => {
+                let editor = cx.new(ScriptEditorView::new);
+                cx.subscribe(&editor, |this, _view, event: &NavRequested, cx| {
+                    this.navigate(event.0.clone(), cx);
+                })
+                .detach();
+                editor.into()
+            }
         }
     }
 

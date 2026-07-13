@@ -27,7 +27,8 @@ use crate::text_edit::{
 };
 use crate::text_input::InputEvent;
 use crate::tokens::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, Density, FONT_XS, Radius, Spacing, radius, spacing,
+    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_XS, Radius, Spacing,
+    radius, spacing,
 };
 
 const KEY_CONTEXT: &str = "ForgeTextArea";
@@ -157,6 +158,9 @@ pub struct TextArea {
     palette: ForgePalette,
     density: Density,
     font_size: Pixels,
+    /// Typeface the buffer renders in. Defaults to the body family; a code buffer
+    /// switches it to the monospace family via [`TextArea::mono`].
+    font_family: &'static str,
     read_only: bool,
     height: Pixels,
     on_surface: bool,
@@ -181,6 +185,7 @@ impl TextArea {
             palette: CATPPUCCIN_MOCHA,
             density: Density::Cozy,
             font_size: FONT_XS,
+            font_family: DEFAULT_BODY_FAMILY,
             read_only: false,
             height: DEFAULT_AREA_HEIGHT,
             on_surface: false,
@@ -208,6 +213,14 @@ impl TextArea {
         self
     }
 
+    /// Renders the buffer in the monospace family instead of the body family, for a
+    /// code buffer. The set family propagates through the render `div`'s text style
+    /// into the shaper, so the cached layout (and caret geometry) shape monospaced.
+    pub fn mono(mut self) -> Self {
+        self.font_family = DEFAULT_MONO_FAMILY;
+        self
+    }
+
     pub fn read_only(mut self, read_only: bool) -> Self {
         self.read_only = read_only;
         self
@@ -226,6 +239,14 @@ impl TextArea {
 
     pub fn set_palette(&mut self, palette: ForgePalette, cx: &mut Context<Self>) {
         self.palette = palette;
+        cx.notify();
+    }
+
+    /// Resizes the viewport height after construction. An auto-growing code buffer
+    /// recomputes this from its line count on each edit so the field hugs its
+    /// content instead of scrolling within a fixed viewport.
+    pub fn set_height(&mut self, height: Pixels, cx: &mut Context<Self>) {
+        self.height = height;
         cx.notify();
     }
 
@@ -983,7 +1004,7 @@ impl Render for TextArea {
             .border(BORDER_THIN)
             .border_color(border_color)
             .rounded(radius(Radius::Md))
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(self.font_family)
             .text_size(self.font_size)
             .text_color(text_color)
             .line_height(self.font_size * 1.5)

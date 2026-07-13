@@ -19,7 +19,7 @@ mod presentation;
 mod queues;
 mod runtime_status;
 mod screen;
-mod screen_stub;
+mod script_editor;
 mod server_console;
 mod settings;
 mod shell;

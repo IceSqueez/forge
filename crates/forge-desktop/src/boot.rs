@@ -12,6 +12,7 @@ use forge_runtime::{
 use forge_storage::{DataProvider, GlobalsRepo, SettingsRepo, StorageError, UserGlobalsRepo};
 use forge_storage_sqlite::SqliteBackend;
 
+use crate::integrations::build_integrations;
 use crate::runtime_handles::RuntimeHandles;
 
 /// Outcome of a failed boot, differentiated by cause so the shell routes to the
@@ -82,12 +83,15 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
     ) {
         eprintln!("forge-desktop: core sub-action registration failed: {e}");
     }
-    let sub_action_registry = Arc::new(sub_action_reg);
-
     let mut trigger_reg = TriggerRegistry::new();
     if let Err(e) = register_core_triggers(&mut trigger_reg) {
         eprintln!("forge-desktop: core trigger registration failed: {e}");
     }
+
+    let integrations =
+        build_integrations(&mut sub_action_reg, &mut trigger_reg, &backend, &bus).await;
+
+    let sub_action_registry = Arc::new(sub_action_reg);
     let trigger_registry = Arc::new(trigger_reg);
     let trigger_instance_repo = backend.trigger_instance_repo();
     for descriptor in trigger_registry.all() {
@@ -127,6 +131,9 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
         scheduler.clone(),
     );
     let live_viewers = spawn_live_viewer_aggregator();
+    for source in integrations.viewer_sources {
+        live_viewers.register(source);
+    }
 
     Ok(RuntimeHandles {
         backend,
@@ -138,5 +145,6 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
         scheduler,
         trigger_evaluator,
         live_viewers,
+        builtins: integrations.builtins,
     })
 }

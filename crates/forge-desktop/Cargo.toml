@@ -10,16 +10,26 @@ name = "forge-desktop"
 path = "src/main.rs"
 
 [dependencies]
+async-trait = { workspace = true }
 forge-components = { path = "../forge-components" }
+forge-discord = { path = "../forge-discord" }
 forge-events = { path = "../forge-events" }
+forge-hotkey = { path = "../forge-hotkey" }
+forge-midi = { path = "../forge-midi" }
+forge-obs = { path = "../forge-obs" }
 forge-platform-core = { path = "../forge-platform-core" }
+forge-platform-kick = { path = "../forge-platform-kick" }
+forge-platform-twitch = { path = "../forge-platform-twitch" }
+forge-platform-youtube = { path = "../forge-platform-youtube" }
 forge-registry = { path = "../forge-registry" }
 forge-runtime = { path = "../forge-runtime" }
 forge-storage = { path = "../forge-storage" }
 forge-storage-sqlite = { path = "../forge-storage-sqlite" }
 forge-types = { path = "../forge-types" }
+forge-vtube = { path = "../forge-vtube" }
 futures-util = { workspace = true }
 gpui = { workspace = true }
+reqwest = { workspace = true }
 serde_json = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }

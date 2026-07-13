@@ -1,11 +1,15 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
+use forge_platform_core::BuiltinId;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
     ActionEngineHandle, EventBus, LiveViewerAggregatorHandle, QueueSchedulerHandle, ScriptRegistry,
     TriggerEvaluatorHandle,
 };
 use forge_storage::DataProvider;
+
+use crate::integrations::BuiltinObject;
 
 /// Inbound grouping of the runtime's individually-exposed command handles, assembled
 /// once at boot and handed to the shell's `Ready` state. There is no aggregate handle
@@ -26,4 +30,5 @@ pub struct RuntimeHandles {
     pub scheduler: QueueSchedulerHandle,
     pub trigger_evaluator: TriggerEvaluatorHandle,
     pub live_viewers: LiveViewerAggregatorHandle,
+    pub builtins: HashMap<BuiltinId, BuiltinObject>,
 }

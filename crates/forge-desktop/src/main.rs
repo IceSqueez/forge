@@ -15,6 +15,7 @@ mod home;
 mod home_stats;
 mod integration_detail;
 mod integration_seed;
+mod integrations;
 mod platforms;
 mod presentation;
 mod queues;
